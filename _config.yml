@@ -5,9 +5,8 @@ description: "Kube-DC Documentation"
 url: "https://docs.kube-dc.com"
 
 # Use Just the Docs via remote_theme
-remote_theme: just-the-docs/just-the-docs
+theme: minima
 plugins:
-  - jekyll-remote-theme
   - jekyll-seo-tag
 
 # Optional: Just the Docs configuration
