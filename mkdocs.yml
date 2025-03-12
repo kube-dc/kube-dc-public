@@ -1,8 +1,8 @@
 site_name: Kube-DC
 site_url: 'https://docs.kube-dc.com'   # Adjust if you have a specific docs domain
 
-repo_name: 'shalb/kube-dc'
-repo_url: 'https://github.com/shalb/kube-dc'
+repo_name: 'kube-dc/kube-dc-public'
+repo_url: 'https://github.com/kube-dc/kube-dc-public'
 
 nav:
   - Introduction:
