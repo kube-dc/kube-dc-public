@@ -102,7 +102,7 @@ extra:
     - icon: fontawesome/brands/github
       link: https://github.com/shalb/kube-dc
     - icon: fontawesome/brands/slack
-      link: <SlackChannelLinkIfAny>
+      link: https://join.slack.com/t/kube-dc/shared_invite/zt-31mr5c6ci-W3kYQ7qGDULlGQ5QJjsxmA
     - icon: fontawesome/brands/twitter
       link: <TwitterHandleIfAny>
   analytics:
