@@ -1,6 +1,7 @@
 1. Configure network. Ubuntu 24 netplan example (all nodes): 
  
 ```yaml
+
 network:
   version: 2
   renderer: networkd
