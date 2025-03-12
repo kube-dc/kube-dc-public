@@ -1,0 +1,12 @@
+{{- $cidr := .variables.cluster_config.default_external_network.cidr -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ovn-external-gw-config
+  namespace: kube-system
+data:
+  enable-external-gw: "true"
+  external-gw-nodes: {{ range $i, $node := .variables.cluster_config.default_external_network.nodes_list }}{{ if ge $i 1 }},{{ end }}{{ $node }}{{ end }}
+  type: "centralized"  
+  external-gw-nic: {{ .variables.cluster_config.default_external_network.interface }}
+  external-gw-addr: {{ .variables.cluster_config.default_external_network.gateway }}/{{ (splitList "/" $cidr) | last }}

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vpc-dns-config
+  namespace: kube-system
+data:
+  coredns-vip: {{ .variables.cluster_config.cluster_dns | default "10.101.0.11" }}
+  enable-vpc-dns: "true"
+  nad-name: ovn-nad
+  nad-provider: ovn-nad.default.ovn
+  coredns-image: coredns/coredns:1.9.4

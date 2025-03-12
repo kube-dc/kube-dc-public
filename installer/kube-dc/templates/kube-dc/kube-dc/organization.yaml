@@ -1,0 +1,9 @@
+apiVersion: kube-dc.com/v1
+kind: Organization
+metadata:
+  name: {{ .variables.create_default.organization.name }}
+  namespace: {{ .variables.create_default.organization.name }}
+spec: 
+  description: {{ .variables.create_default.organization.description }}
+  email: {{ .variables.create_default.organization.email }}
+

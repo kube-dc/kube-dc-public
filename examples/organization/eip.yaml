@@ -1,0 +1,6 @@
+apiVersion: kube-dc.com/v1
+kind: EIp
+metadata:
+  name: ssh-arti
+  namespace: shalb-demo
+spec: {}  

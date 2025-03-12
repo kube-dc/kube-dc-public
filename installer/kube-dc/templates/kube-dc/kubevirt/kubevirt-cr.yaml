@@ -1,0 +1,32 @@
+apiVersion: kubevirt.io/v1
+kind: KubeVirt
+metadata:
+  name: kubevirt
+  namespace: kubevirt
+spec:
+  monitorNamespace: monitoring
+  monitorAccount: prom-operator-kube-prometh-operator
+  serviceMonitorNamespace: kubevirt
+  certificateRotateStrategy: {}
+  configuration:
+    developerConfiguration:
+      featureGates:
+      - DataVolumes
+      - SRIOV
+      - CPUManager
+      - Sidecar
+      - Snapshot
+      - HotplugVolumes
+      - ClusterResourceSet
+      - CPUNodeDiscovery
+      - LiveMigration
+    selinuxLauncherType: virt_launcher.process
+    network:
+      defaultNetworkInterface: masquerade
+    smbios:
+      family: KubeVirt
+      manufacturer: KubeVirt
+      product: None
+  customizeComponents: {}
+  uninstallStrategy: BlockUninstallIfWorkloadsExist
+

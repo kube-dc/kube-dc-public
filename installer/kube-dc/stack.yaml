@@ -1,0 +1,63 @@
+name: cluster
+template: "./templates/kube-dc/"
+kind: Stack
+backend: default
+variables:
+  debug: "true"
+  kubeconfig: /home/arti/.kube/config
+
+  monitoring:
+    prom_storage: 20Gi
+    retention_size: 17GiB
+    retention: 365d
+  
+  cluster_config:
+    pod_cidr: "10.100.0.0/16"
+    svc_cidr: "10.101.0.0/16"
+    join_cidr: "100.64.0.0/16"
+    cluster_dns: "10.101.0.11"
+    default_external_network:
+      nodes_list:
+        - kube-dc-master-1
+        - kube-dc-worker-1
+      name: external4011
+      vlan_id: "4011"
+      interface: "enp0s31f6"
+      cidr: "167.235.85.112/29"
+      gateway: 167.235.85.113
+      mtu: "1400"
+    
+  node_external_ip: 138.201.253.201
+
+  email: "noreply@shalb.com"
+  domain: "dev.kube-dc.com"
+  install_terraform: true
+
+  create_default:
+    organization:
+      name: shalb
+      description: "My test org my-org 1"
+      email: "arti@shalb.com"
+    project:
+      name: demo
+      cidr_block: "10.0.10.0/24"
+   
+
+  versions:
+    kube_dc: "v0.1.20" # release version
+    rke2: "v1.32.1+rke2r1"
+    # kubevirt: "v1.3.0"
+    # kubevirt_cdi: "v1.59.0"
+    # cluster_api: "v1.8.1"
+    # cluster_api_k3s_provider:  "v1.2.2"
+    # kyverno: "v1.10.0"
+    # terraform: "1.9.4"
+    kube_ovn: "v1.13.2"
+    # multus_helm: "2.1.11"
+    # ingress_nginx_helm: "4.11.1"
+    keycloak_helm: "24.3.0"
+    prom_operator_helm: "67.4.0"
+    # kube_dc: "v0.1.1-dev1"
+    # cert_manager_helm: "v1.14.4"
+
+    

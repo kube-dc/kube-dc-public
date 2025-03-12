@@ -1,0 +1,13 @@
+apiVersion: kube-dc.com/v1
+kind: OrganizationGroup
+metadata:
+  name: "app-manager"
+  namespace: shalb
+spec:
+  permissions:
+  - project: "demo"
+    roles:
+    - admin
+  - project: "prod"
+    roles:
+    - resource-manager

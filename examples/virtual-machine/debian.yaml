@@ -1,0 +1,74 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: debian-base-img
+spec:
+  pvc:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 14G
+    storageClassName: local-path
+  source:
+    http:
+      url: https://cdimage.debian.org/cdimage/cloud/buster/20240204-1647/debian-10-generic-amd64-20240204-1647.qcow2
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: debian-base-img
+  namespace: demo
+spec:
+  running: true
+  template:
+    spec:
+      networks:
+      - name: vpc_net_0
+        multus:
+          default: true
+          networkName: default/ovn-demo
+      domain:
+        devices:
+          interfaces:
+            - name: vpc_net_0
+              bridge: {}
+          disks:
+          - disk: 
+              bus: virtio
+            name: root-volume
+          - name: cloudinitdisk
+            disk:
+              bus: virtio
+        machine:
+          type: ""
+        cpu:
+          cores: 1
+        memory:
+          guest: 4G
+      readinessProbe:
+        guestAgentPing: {}
+        # exec:
+        #   command: ["/bin/echo"]
+        failureThreshold: 10
+        initialDelaySeconds: 20
+        periodSeconds: 10
+        timeoutSeconds: 5
+      terminationGracePeriodSeconds: 60
+      volumes:
+      - dataVolume:
+          name: debian-base-img
+        name: root-volume
+      - name: cloudinitdisk
+        cloudInitNoCloud:
+          userData: |-
+            #cloud-config
+            chpasswd: { expire: False }
+            password: qweasdz123
+            ssh_pwauth: True
+            package_update: true
+            package_upgrade: true
+            packages:
+            - qemu-guest-agent
+            runcmd:
+            - [ systemctl, start, qemu-guest-agent ]

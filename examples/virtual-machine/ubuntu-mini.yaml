@@ -1,0 +1,95 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: ubuntu-mini
+spec:
+  pvc:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 20G
+    storageClassName: local-path
+  source:
+    http:
+      url: https://cloud-images.ubuntu.com/minimal/daily/noble/current/noble-minimal-cloudimg-amd64.img
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: ubuntu-mini
+  labels:
+    ubuntu-mini: ssh
+spec:
+  running: true
+  template:
+    metadata:
+      labels:                  # Add this section for VMI labels
+        ubuntu-mini: ssh
+    spec:
+      networks:
+      - name: vpc_net_0
+        multus:
+          default: true
+          networkName: shalb-demo/default
+      domain:
+        devices:
+          interfaces:
+            - name: vpc_net_0
+              bridge: {}
+          disks:
+          - disk: 
+              bus: virtio
+            name: root-volume
+          - name: cloudinitdisk
+            disk:
+              bus: virtio
+        machine:
+          type: ""
+        cpu:
+          cores: 5
+        memory:
+          guest: 8G
+      readinessProbe:
+        guestAgentPing: {}
+        failureThreshold: 10
+        initialDelaySeconds: 30
+        periodSeconds: 10
+        timeoutSeconds: 5
+      accessCredentials:
+      - sshPublicKey:
+          source:
+            secret:
+              secretName: authorized-keys-default
+          propagationMethod:
+            qemuGuestAgent:
+              users:
+              - ubuntu
+      terminationGracePeriodSeconds: 60
+      volumes:
+      - dataVolume:
+          name: ubuntu-mini
+        name: root-volume
+      - name: cloudinitdisk
+        cloudInitNoCloud:
+          userData: |-
+            #cloud-config
+            package_update: true
+            package_upgrade: true
+            packages:
+            - qemu-guest-agent
+            runcmd:
+            - systemctl enable --now qemu-guest-agent
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ubuntu-mini-ssh
+spec:
+  ports:
+  - port: 22
+    protocol: TCP
+    targetPort: 22
+  selector:
+    ubuntu-mini: ssh
+  type: ClusterIP

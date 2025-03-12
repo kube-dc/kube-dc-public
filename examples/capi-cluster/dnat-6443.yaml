@@ -1,0 +1,10 @@
+kind: IptablesDnatRule
+apiVersion: kubeovn.io/v1
+metadata:
+  name: demo-dnat-kube-api
+spec:
+  eip: demo-eip-ext
+  externalPort: '6443'
+  internalIp: 10.101.99.189
+  internalPort: '6443'
+  protocol: tcp

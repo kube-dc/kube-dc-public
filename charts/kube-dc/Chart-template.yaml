@@ -1,0 +1,9 @@
+apiVersion: v2
+name: kube-dc
+description: A Helm chart for kube-dc manager
+
+type: application
+
+version: ${KUBE_DC_VERSION}
+
+appVersion: ${KUBE_DC_VERSION}

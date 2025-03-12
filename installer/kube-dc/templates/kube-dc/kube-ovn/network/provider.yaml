@@ -1,0 +1,6 @@
+apiVersion: kubeovn.io/v1
+kind: ProviderNetwork
+metadata:
+  name: {{ .variables.cluster_config.default_external_network.name }}
+spec:
+  defaultInterface: {{ .variables.cluster_config.default_external_network.interface }}

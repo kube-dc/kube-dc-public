@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kube-dc.manager.fullname" . }}
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "kube-dc.manager.selectorLabels" . | nindent 6 }}
+  replicas: 1
+  template:
+    metadata:
+      {{- with .Values.manager.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "kube-dc.manager.labels" . | nindent 8 }}
+        {{- with .Values.manager.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.manager.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - command:
+        - /manager
+        args:
+          - --leader-elect
+          - --health-probe-bind-address=:8081
+          - --config-secret-name=master-config
+          - --config-secret-namespace=$(NAMESPACE)
+          - --zap-log-level={{ .Values.manager.logLevel | default "1" }}
+          - --keycloak-debug={{ .Values.manager.keycloakDebug | default "false" }}
+        env:
+          - name: NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+        image: "{{ .Values.manager.image.repository }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}"
+        name: manager
+        securityContext:
+          allowPrivilegeEscalation: true
+          capabilities:
+            add:
+            - "ALL"
+          privileged: true
+          fsGroup: 0
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.manager.resources | nindent 12 }}
+        volumeMounts:
+        - mountPath: "/etc/kube-auth-conf.yaml"
+          name: auth-config
+          subPath: {{ .Values.manager.kubernetesAuthConfig.filename }}
+      serviceAccountName: {{ include "kube-dc.manager.serviceAccountName" . }}
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - name: auth-config
+        hostPath:
+          path: {{ .Values.manager.kubernetesAuthConfig.path }}
+      {{- with .Values.manager.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.manager.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.manager.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

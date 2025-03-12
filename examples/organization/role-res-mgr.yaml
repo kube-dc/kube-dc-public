@@ -1,0 +1,35 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"rbac.authorization.k8s.io/v1","kind":"Role","metadata":{"annotations":{},"name":"resource-manager","namespace":"shalb-prod"},"rules":[{"apiGroups":[""],"resources":["pods","services"],"verbs":["get","list","create","watch","delete"]},{"apiGroups":["apps"],"resources":["deployments","daemonsets","replicasets"],"verbs":["get","list","create","watch","delete"]}]}
+  creationTimestamp: "2025-02-19T15:47:40Z"
+  name: resource-manager
+  namespace: shalb-prod
+  resourceVersion: "14755722"
+  uid: 9f69141a-6426-4edb-a0b3-865b1844076d
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - services
+  verbs:
+  - get
+  - list
+  - create
+  - watch
+  - delete
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  - daemonsets
+  - replicasets
+  verbs:
+  - get
+  - list
+  - create
+  - watch
+  - delete

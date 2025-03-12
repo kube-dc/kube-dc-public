@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: resource-manager
+  namespace: shalb-prod
+rules:
+  - apiGroups: [""]  # "" indicates the core API group
+    resources: ["pods", "services"]
+    verbs: ["get", "list", "create", "watch", "delete"]
+
+  - apiGroups: ["apps"]
+    resources: ["deployments", "daemonsets", "replicasets"]
+    verbs: ["get", "list", "create", "watch", "delete"]

@@ -1,0 +1,8 @@
+apiVersion: kube-dc.com/v1
+kind: Project
+metadata:
+  name: dev
+  namespace: shalb
+spec:
+  cidrBlock: "10.1.0.0/16"
+

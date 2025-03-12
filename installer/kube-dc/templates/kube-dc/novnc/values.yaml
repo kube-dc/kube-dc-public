@@ -1,0 +1,68 @@
+# novnc-deployment.yml
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  namespace: novnc
+  name: novnc
+  labels:
+    app: novnc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: novnc
+  template:
+    metadata:
+      labels:
+        app: novnc
+    spec:
+      containers:
+        - image: jhankins/docker-novnc:latest
+          imagePullPolicy: IfNotPresent
+          name: novnc
+          args:
+            - --vnc
+            - jays-pc.nutt.local:5900
+          ports:
+            - name: novnc
+              containerPort: 6080
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: novnc
+  namespace: novnc
+spec:
+  ports:
+      - protocol: TCP
+        name: novnc
+        port: 6080
+  selector:
+      app: novnc
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod-http
+    kubernetes.io/ingress.class: nginx
+  name: novnc
+  namespace: novnc
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: novnc.dev.kube-dc.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: novnc
+            port:
+              name: novnc
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - novnc.dev.kube-dc.com
+    secretName: novnc.dev.kube-dc.com-tls

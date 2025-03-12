@@ -1,0 +1,8 @@
+name: dev
+kind: Project
+backend: default
+variables:
+  organization: shalb
+exports:
+  CDEV_COLLECT_USAGE_STATS: false
+

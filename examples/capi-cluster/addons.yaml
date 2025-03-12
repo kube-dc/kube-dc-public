@@ -1,0 +1,348 @@
+apiVersion: v1
+data:
+  infraClusterLabels: csi-driver/cluster=tenant
+  infraClusterNamespace: demo
+kind: ConfigMap
+metadata:
+  name: driver-config-demo
+  namespace: demo
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubevirt-csi-demo
+  namespace: demo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kubevirt-csi-demo
+  namespace: demo
+rules:
+- apiGroups:
+  - cdi.kubevirt.io
+  resources:
+  - datavolumes
+  verbs:
+  - get
+  - create
+  - delete
+- apiGroups:
+  - kubevirt.io
+  resources:
+  - virtualmachineinstances
+  verbs:
+  - list
+  - get
+- apiGroups:
+  - subresources.kubevirt.io
+  resources:
+  - virtualmachineinstances/addvolume
+  - virtualmachineinstances/removevolume
+  verbs:
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  creationTimestamp: null
+  name: kubevirt-csi-demo
+  namespace: demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kubevirt-csi-demo
+subjects:
+- kind: ServiceAccount
+  name: kubevirt-csi-demo
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: driver-config
+  namespace: demo
+data:
+  infraClusterNamespace: demo
+  infraClusterLabels: csi-driver/cluster=tenant
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: kubevirt-csi-driver-demo
+  name: kubevirt-csi-controller-demo
+  namespace: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubevirt-csi-driver-demo
+  template:
+    metadata:
+      labels:
+        app: kubevirt-csi-driver-demo
+    spec:
+      containers:
+      - args:
+        - --endpoint=$(CSI_ENDPOINT)
+        - --infra-cluster-namespace=$(INFRACLUSTER_NAMESPACE)
+        - --infra-cluster-labels=$(INFRACLUSTER_LABELS)
+        - --tenant-cluster-kubeconfig=/var/run/secrets/tenantcluster/value
+        - --run-node-service=false
+        - --run-controller-service=true
+        - --v=5
+        env:
+        - name: KUBERNETES_SERVICE_HOST 
+          value: "88.99.29.250"
+        - name: KUBERNETES_SERVICE_PORT
+          value: "6443"
+        - name: CSI_ENDPOINT
+          value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
+        - name: KUBE_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: INFRACLUSTER_NAMESPACE
+          valueFrom:
+            configMapKeyRef:
+              key: infraClusterNamespace
+              name: driver-config-demo
+        - name: INFRACLUSTER_LABELS
+          valueFrom:
+            configMapKeyRef:
+              key: infraClusterLabels
+              name: driver-config-demo
+        - name: INFRA_STORAGE_CLASS_ENFORCEMENT
+          valueFrom:
+            configMapKeyRef:
+              key: infraStorageClassEnforcement
+              name: driver-config-demo
+              optional: true
+        image: shalb/kubevirt-csi-driver:0.0.1
+        imagePullPolicy: Always
+        name: csi-driver
+        ports:
+        - containerPort: 10301
+          name: healthz
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /var/lib/csi/sockets/pluginproxy/
+          name: socket-dir
+        - mountPath: /var/run/secrets/tenantcluster
+          name: tenantcluster
+      - args:
+        - --csi-address=$(ADDRESS)
+        - --default-fstype=ext4
+        - --kubeconfig=/var/run/secrets/tenantcluster/value
+        - --v=5
+        - --timeout=3m
+        - --retry-interval-max=1m
+        env:
+        - name: ADDRESS
+          value: /var/lib/csi/sockets/pluginproxy/csi.sock
+        image: quay.io/openshift/origin-csi-external-provisioner:latest
+        name: csi-provisioner
+        volumeMounts:
+        - mountPath: /var/lib/csi/sockets/pluginproxy/
+          name: socket-dir
+        - mountPath: /var/run/secrets/tenantcluster
+          name: tenantcluster
+      - args:
+        - --csi-address=$(ADDRESS)
+        - --kubeconfig=/var/run/secrets/tenantcluster/value
+        - --v=5
+        - --timeout=3m
+        - --retry-interval-max=1m
+        env:
+        - name: ADDRESS
+          value: /var/lib/csi/sockets/pluginproxy/csi.sock
+        image: quay.io/openshift/origin-csi-external-attacher:latest
+        name: csi-attacher
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /var/lib/csi/sockets/pluginproxy/
+          name: socket-dir
+        - mountPath: /var/run/secrets/tenantcluster
+          name: tenantcluster
+      - args:
+        - --csi-address=/csi/csi.sock
+        - --probe-timeout=3s
+        - --health-port=10301
+        image: quay.io/openshift/origin-csi-livenessprobe:latest
+        name: csi-liveness-probe
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+        - mountPath: /var/run/secrets/tenantcluster
+          name: tenantcluster
+      nodeSelector:
+        node-role.kubernetes.io/master: "true"
+      priorityClassName: system-cluster-critical
+      serviceAccount: kubevirt-csi-demo
+      tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+        operator: Exists
+      volumes:
+      - emptyDir: {}
+        name: socket-dir
+      - name: tenantcluster
+        secret:
+          secretName: demo-kubeconfig
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kccm-demo
+  namespace: demo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kccm-demo
+  namespace: demo
+rules:
+- apiGroups:
+  - kubevirt.io
+  resources:
+  - virtualmachines
+  verbs:
+  - get
+  - watch
+  - list
+- apiGroups:
+  - kubevirt.io
+  resources:
+  - virtualmachineinstances
+  verbs:
+  - get
+  - watch
+  - list
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - services
+  verbs:
+  - '*'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  creationTimestamp: null
+  name: kccm-demo
+  namespace: demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kccm-demo
+subjects:
+- kind: ServiceAccount
+  name: kccm-demo
+  namespace: demo
+---
+apiVersion: v1
+data:
+  cloud-config: |
+    loadBalancer:
+      creationPollInterval: 5
+      creationPollTimeout: 60
+    namespace: demo
+    instancesV2:
+      enabled: true
+      zoneAndRegionEnabled: false
+kind: ConfigMap
+metadata:
+  name: cloud-config-demo
+  namespace: demo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    k8s-app: kccm-demo
+  name: kccm-demo
+  namespace: demo
+  annotations:
+    ovn.kubernetes.io/logical_router: ovn-cluster
+    ovn.kubernetes.io/logical_switch: ovn-default
+    ovn.kubernetes.io/vpc: ovn-cluster
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: kccm-demo
+  template:
+    metadata:
+      labels:
+        k8s-app: kccm-demo
+    spec:
+      containers:
+      - args:
+        - --cloud-provider=kubevirt
+        - --cloud-config=/etc/cloud/cloud-config
+        - --kubeconfig=/etc/kubernetes/kubeconfig/value
+        - --authentication-skip-lookup=true
+        - --cluster-name=demo
+        command:
+        - /bin/kubevirt-cloud-controller-manager
+        image: quay.io/kubevirt/kubevirt-cloud-controller-manager:main
+        imagePullPolicy: Always
+        name: kubevirt-cloud-controller-manager
+        env:
+        - name: KUBERNETES_SERVICE_HOST 
+          value: "88.99.29.250"
+        - name: KUBERNETES_SERVICE_PORT
+          value: "6443"
+        resources:
+          requests:
+            cpu: 100m
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - mountPath: /etc/kubernetes/kubeconfig
+          name: kubeconfig
+          readOnly: true
+        - mountPath: /etc/cloud
+          name: cloud-config
+          readOnly: true
+      nodeSelector:
+        node-role.kubernetes.io/master: "true"
+      serviceAccountName: kccm-demo
+      tolerations:
+      - effect: NoSchedule
+        key: node.cloudprovider.kubernetes.io/uninitialized
+        value: "true"
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+      volumes:
+      - configMap:
+          name: cloud-config-demo
+        name: cloud-config
+      - name: kubeconfig
+        secret:
+          items:
+          - key: value
+            path: value
+          secretName: demo-kubeconfig

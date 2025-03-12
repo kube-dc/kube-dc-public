@@ -1,0 +1,147 @@
+# https://github.com/grafana/loki/blob/main/production/helm/loki/values.yaml
+# https://grafana.com/docs/loki/latest/configure/
+
+loki:
+  auth_enabled: false
+  storage:
+    aws:
+      s3: s3://logs-user:Yd3khf8jefHD83@loki-minio:9000
+      s3forcepathstyle: true
+    type: s3
+    bucketNames:
+      admin: admin
+      chunks: chunks
+      ruler: ruler
+  schemaConfig:
+    configs:
+      - from: "2025-01-01"
+        store: tsdb
+        object_store: s3
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+  limits_config:
+    max_line_size: 0
+    ingestion_rate_mb: 20
+    ingestion_burst_size_mb: 40
+    retention_period: 7d
+    retention_stream:
+      - selector: '{namespace="monitoring"}'
+        priority: 1
+        period: 24h
+  compactor:
+    compaction_interval: 10m
+    retention_enabled: true
+    retention_delete_delay: 20m
+    delete_request_store: s3
+  server:
+    grpc_server_max_recv_msg_size: 8388608
+  rulerConfig:
+    wal:
+      dir: /tmp/ruler-wal
+    storage:
+      type: local
+      local:
+        directory: /rules
+    remote_write:
+      enabled: true
+      client:
+        url: http://prom-operator-kube-prometh-prometheus:9090/api/v1/write
+  ingester:
+    chunk_encoding: snappy
+  tracing:
+    enabled: false
+  querier:
+    # Default is 4, if you have enough memory and CPU you can increase, reduce if OOMing
+    max_concurrent: 4
+
+sidecar:
+  rules:
+    enabled: true
+    label: loki_rule
+    folder: /rules/fake
+
+gateway:
+  nginxConfig:
+    serverSnippet: 'proxy_read_timeout 300s;'
+  ingress:
+    enabled: false
+
+resultsCache:
+  defaultValidity: 1h
+  allocatedMemory: 3072
+
+chunksCache:
+  defaultValidity: 4h
+  allocatedMemory: 8192
+
+deploymentMode: SimpleScalable
+
+backend:
+  replicas: 2
+read:
+  replicas: 2
+write:
+  replicas: 2
+
+# Enable minio for storage
+minio:
+  enabled: true
+  replicas: 1
+  # Minio requires 2 to 16 drives for erasure code (drivesPerNode * replicas)
+  # https://docs.min.io/docs/minio-erasure-code-quickstart-guide
+  # Since we only have 1 replica, that means 2 drives must be used.
+  drivesPerNode: 2
+  # root user; not used for GEL authentication
+  rootUser: admin
+  rootPassword: Hduh38hcbk
+  # The first user in the list below is used for Loki/GEL authentication.
+  # You can add additional users if desired; they will not impact Loki/GEL.
+  # `accessKey` = username, `secretKey` = password
+  users:
+    - accessKey: logs-user
+      secretKey: Yd3khf8jefHD83
+      policy: readwrite
+  buckets:
+    - name: chunks
+      policy: none
+      purge: false
+    - name: ruler
+      policy: none
+      purge: false
+    - name: admin
+      policy: none
+      purge: false
+  persistence:
+    size: 10Gi
+    annotations: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  # Allow the address used by Loki to refer to Minio to be overridden
+  address: null
+
+# Zero out replica counts of other deployment modes
+singleBinary:
+  replicas: 0
+
+ingester:
+  replicas: 0
+querier:
+  replicas: 0
+queryFrontend:
+  replicas: 0
+queryScheduler:
+  replicas: 0
+distributor:
+  replicas: 0
+compactor:
+  replicas: 0
+indexGateway:
+  replicas: 0
+bloomCompactor:
+  replicas: 0
+bloomGateway:
+  replicas: 0

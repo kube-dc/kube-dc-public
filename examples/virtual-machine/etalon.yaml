@@ -1,0 +1,70 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: artivm-root
+spec:
+  pvc:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 20G
+    storageClassName: local-path
+  source:
+    http:
+      url: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: artivm
+  namespace: shalb-demo
+spec:
+  running: true
+  template:
+    spec:
+      networks:
+      - name: main_0
+        multus:
+          default: true
+          networkName: shalb-demo/default
+      domain:
+        devices:
+          interfaces:
+            - name: main_0
+              bridge: {}
+          disks:
+          - disk:
+              bus: virtio
+            name: root-volume
+          - name: cloudinitdisk
+            disk:
+              bus: virtio
+        cpu:
+          cores: 5
+        memory:
+          guest: 8G
+      readinessProbe:
+        guestAgentPing: {}
+        failureThreshold: 10
+        initialDelaySeconds: 30
+        periodSeconds: 10
+        timeoutSeconds: 5
+      terminationGracePeriodSeconds: 60
+      volumes:
+      - dataVolume:
+          name: artivm-root
+        name: root-volume
+      - name: cloudinitdisk
+        cloudInitNoCloud:
+          userData: |-
+            #cloud-config
+            package_update: true
+            package_upgrade: true
+            chpasswd: { expire: False }
+            password: qweasdz123
+            ssh_pwauth: True
+            packages:
+            - qemu-guest-agent
+            runcmd:
+            - [ systemctl, start, qemu-guest-agent ]

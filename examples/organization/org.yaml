@@ -1,0 +1,9 @@
+apiVersion: kube-dc.com/v1
+kind: Organization
+metadata:
+  name: shalb
+  namespace: shalb
+spec: 
+  description: "Shalb organization"
+  email: "arti@shalb.com"
+

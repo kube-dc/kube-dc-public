@@ -1,0 +1,514 @@
+{{- $kubeDcChartVersion := (.variables.versions.kube_dc                      | default "0.0.7" | quote) -}}
+{{- $terraformVersion := (.variables.versions.terraform                      | default "1.9.4" | quote) -}}
+{{- $kubevirtVersion := (.variables.versions.kubevirt                        | default "v1.3.0" | quote) -}}
+{{- $kubevirtCdiVersion := (.variables.versions.kubevirt_cdi                 | default "v1.59.0" | quote) -}}
+{{- $clusterApiVersion := (.variables.versions.cluster_api                   | default "v1.8.1" | quote) -}}
+{{- $capiK3sProviderVersion := (.variables.versions.cluster_api_k3s_provider | default "v1.2.2" | quote) -}}
+{{- $kyvernoVersion := (.variables.versions.kyverno                          | default "v1.10.0" | quote) -}}
+{{- $kubeOvnChartVersion := (.variables.versions.kube_ovn                    | default "v1.13.2" | quote) -}}
+{{- $multusChartVersion := (.variables.versions.multus_helm                  | default "2.1.11" | quote) -}}
+{{- $ingressNginxChartVersion := (.variables.versions.ingress_nginx_helm     | default "4.11.1" | quote) -}}
+{{- $keycloakChartVersion := (.variables.versions.keycloak_helm              | default "24.3.0" | quote) -}}
+{{- $certManagerChartVersion := (.variables.versions.cert_manager_helm       | default "v1.14.4"| quote) -}}
+{{- $promChartVersion := (.variables.versions.prom_operator_helm             | default "67.4.0"| quote) -}}
+{{- $lokiChartVersion := (.variables.versions.loki_helm                      | default "6.11.0"| quote) -}}
+{{- $alloyChartVersion := (.variables.versions.alloy_helm                    | default "0.10.1"| quote) -}}
+
+name: cluster
+kind: StackTemplate
+units:
+{{- if .variables.install_terraform }}
+  -
+    name: install-tf-bin
+    type: shell
+    apply:
+      commands:
+        - curl -LO https://raw.github.com/robertpeteuil/terraform-installer/master/terraform-install.sh
+        - chmod +x terraform-install.sh
+        - sudo ./terraform-install.sh -i {{ $terraformVersion }}
+        - terraform -v
+{{- end }}
+  -
+    name: keycloak-pass-generator
+    type: shell
+    apply:
+      commands:
+        - echo "password=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 12; echo)"
+    outputs:
+      type: separator
+      separator: "="
+  -
+    name: prom-pass-generator
+    type: shell
+    apply:
+      commands:
+        - echo "password=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 12; echo)"
+    outputs:
+      type: separator
+      separator: "="
+
+  -
+    name: list-master-nodes
+    type: shell
+    env:
+      KUBECONFIG:  {{ .variables.kubeconfig | default "~/.kube/config" }}
+    apply:
+      commands:
+        - echo master_nodes_list=$(kubectl get no -lkube-ovn/role=master --no-headers -o wide | awk '{print $6}' | tr \\n ',' | sed 's/,$//')
+        - echo ovn_db_endpoints_list=$(kubectl get no -lkube-ovn/role=master --no-headers -o wide | awk '{print "tcp:"$6":6641"}' | tr \\n ',' | sed 's/,$//')
+    outputs:
+      type: separator
+      separator: "="
+  -
+    name: prom-operator-crds
+    type: shell
+    depends_on: this.list-master-nodes
+    env:
+      KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    apply:
+      commands:
+        - kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-alertmanagerconfigs.yaml
+        - kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-alertmanagers.yaml
+        - kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-podmonitors.yaml
+        - kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-probes.yaml
+        - kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-prometheusagents.yaml
+        - kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-prometheuses.yaml
+        - kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-prometheusrules.yaml
+        - kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-scrapeconfigs.yaml
+        - kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-servicemonitors.yaml
+        - kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-thanosrulers.yaml  
+    destroy:
+      commands:
+        - kubectl delete -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-alertmanagerconfigs.yaml
+        - kubectl delete -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-alertmanagers.yaml
+        - kubectl delete -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-podmonitors.yaml
+        - kubectl delete -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-probes.yaml
+        - kubectl delete -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-prometheusagents.yaml
+        - kubectl delete -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-prometheuses.yaml
+        - kubectl delete -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-prometheusrules.yaml
+        - kubectl delete -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-scrapeconfigs.yaml
+        - kubectl delete -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-servicemonitors.yaml
+        - kubectl delete -f https://raw.githubusercontent.com/prometheus-community/helm-charts/refs/tags/kube-prometheus-stack-{{ $promChartVersion }}/charts/kube-prometheus-stack/charts/crds/crds/crd-thanosrulers.yaml  
+
+  -
+    name: kube-ovn
+    type: helm
+    depends_on: this.prom-operator-crds
+    source:
+      repository: "https://kubeovn.github.io/kube-ovn/"
+      chart: "kube-ovn"
+      version: {{ $kubeOvnChartVersion }}
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    pre_hook:
+      on_destroy: true
+      on_apply: false
+      on_plan: false
+      command: |
+        wget https://raw.githubusercontent.com/kubeovn/kube-ovn/kube-ovn-{{ $kubeOvnChartVersion }}/dist/images/cleanup.sh
+        export KUBECONFIG={{ .variables.kubeconfig | default "~/.kube/config" }}; bash cleanup.sh
+    additional_options:
+      namespace: kube-system
+      wait: true
+    values:
+      - file: ./kube-ovn/values.yaml
+        apply_template: true
+    inputs:
+      MASTER_NODES: "{{ output "this.list-master-nodes.master_nodes_list" }}"
+  -
+    name: multus-cni
+    type: helm
+    depends_on: this.kube-ovn
+    source:
+      repository: "oci://registry-1.docker.io/bitnamicharts"
+      chart: "multus-cni"
+      version: {{ $multusChartVersion }}
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    additional_options:
+      namespace: kube-system
+      wait: true
+  -
+    name: kube-ovn-patch
+    type: shell
+    depends_on:
+      - this.multus-cni
+    env:
+      {{- if .variables.debug }}
+      KUBE_DC_DEBUG: true
+      {{- end }}
+      KUBE_DC_GATEWAY_SWITCH: {{ .variables.cluster_config.default_external_network.name }}
+      KUBE_DC_VLAN_ID: {{ .variables.cluster_config.default_external_network.vlan_id }}
+      KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
+      KUBE_DC_MTU: {{ .variables.cluster_config.default_external_network.mtu | default "1400" }}
+      KUBE_DC_EXT_NET_NODES_LIST: {{ range $i, $node := .variables.cluster_config.default_external_network.nodes_list }}{{ if ge $i 1 }},{{ end }}{{ $node }}{{ end }}
+    create_files:
+        - file: patch.sh
+          content: {{ insertYAML (readFile "./kube-ovn/patch.sh") }}
+    apply:
+      commands:
+        - bash patch.sh {{ .variables.cluster_config.default_external_network.vlan_id }} {{ .variables.cluster_config.default_external_network.name }}
+  -
+    name: kube-ovn-provider-net
+    type: kubernetes
+    depends_on: this.kube-ovn-patch
+    source:  ./kube-ovn/network/provider.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
+    name: kube-ovn-vlan
+    type: kubernetes
+    depends_on: this.kube-ovn-provider-net
+    source:  ./kube-ovn/network/vlan.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
+    name: kube-ovn-subnet
+    type: kubernetes
+    depends_on: this.kube-ovn-vlan
+    source:  ./kube-ovn/network/subnet.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    pre_hook:
+      on_destroy: true
+      on_apply: false
+      on_plan: false
+      command: |
+        export KUBECONFIG={{ .variables.kubeconfig | default "~/.kube/config" }}; kubectl patch subnet {{ .variables.cluster_config.default_external_network.name }} -p '{"metadata":{"finalizers":[]}}' --type=merge
+  -
+    name: kube-ovn-external-gw-conf
+    type: kubernetes
+    depends_on: this.kube-ovn-subnet
+    source:  ./kube-ovn/network/config-cm.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
+    name: kube-ovn-vpc-dns-patch
+    type: shell
+    depends_on:
+      - this.kube-ovn-external-gw-conf
+    env:
+      {{- if .variables.debug }}
+      KUBE_DC_DEBUG: true
+      {{- end }}
+      KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    create_files:
+        - file: patch-dns.sh
+          content: {{ insertYAML (readFile "./kube-ovn/patch-dns.sh") }}
+    apply:
+      commands:
+        - bash patch-dns.sh
+  -
+    name: kube-ovn-vpc-dns
+    type: kubernetes
+    depends_on: this.kube-ovn-vpc-dns-patch
+    source:  ./kube-ovn/dns
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+      timeout: 600
+  -
+    name: local-path
+    type: shell
+    depends_on: this.kube-ovn-vpc-dns
+    env:
+      KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    apply:
+      commands:
+        - kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.31/deploy/local-path-storage.yaml
+        - |
+         kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+
+  -
+    name: ingress-nginx
+    type: helm
+    depends_on: this.kube-ovn-vpc-dns
+    source:
+      repository: "https://kubernetes.github.io/ingress-nginx"
+      chart: "ingress-nginx"
+      version: {{ $ingressNginxChartVersion }}
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    values:
+      - file: ./ingress-nginx/values.yaml
+        apply_template: true
+    additional_options:
+      namespace: "ingress-nginx"
+      create_namespace: true
+      wait: true
+  -
+    name: cert-manager
+    type: helm
+    depends_on: this.kube-ovn-vpc-dns
+    source:
+      repository: "https://charts.jetstack.io"
+      chart: "cert-manager"
+      version:  {{ $certManagerChartVersion }}
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    values:
+      - file: ./cert-manager/values.yaml
+        apply_template: true
+    additional_options:
+      namespace: "cert-manager"
+      create_namespace: true
+      wait: true
+  -
+    name: cert-manager-cluster-issuer
+    type: kubernetes
+    depends_on: this.cert-manager
+    source:  ./cert-manager/clusterissuer.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
+    name: cluster-api
+    type: shell
+    depends_on:
+      - this.kubevirt-cr
+      - this.kubevirt-cdi-cr
+      - this.cert-manager-cluster-issuer
+      - this.kyverno
+    env:
+      EXP_CLUSTER_RESOURCE_SET: "true"
+      CLUSTER_API_VERSION: {{ $clusterApiVersion }}
+      KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
+      {{- if .variables.debug }}
+      KUBE_DC_DEBUG: true
+      {{- end }}
+    create_files:
+        - file: install_capi.sh
+          content: {{ insertYAML (readFile "./cluster-api/install.sh") }}
+        - file: clusterctl.yaml
+          content: |
+            providers:
+            - name: "k3s"
+              url: https://github.com/cluster-api-provider-k3s/cluster-api-k3s/releases/latest/samples/deployment/bootstrap-k3s/{{ $capiK3sProviderVersion }}/bootstrap-components.yaml
+              type: "BootstrapProvider"
+            - name: "k3s"
+              url: https://github.com/cluster-api-provider-k3s/cluster-api-k3s/releases/latest/samples/deployment/control-plane-k3s/{{ $capiK3sProviderVersion }}/control-plane-components.yaml
+              type: "ControlPlaneProvider"
+    apply:
+      commands:
+        - bash install_capi.sh
+    destroy:
+      commands:
+        - clusterctl delete --infrastructure kubevirt --bootstrap k3s --control-plane k3s
+  -
+    name: kyverno
+    type: shell
+    depends_on: this.kube-ovn-vpc-dns
+    env:
+      KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    apply:
+      commands:
+        - |
+          if ! kubectl rollout status deployment/kyverno-admission-controller deployment/kyverno-background-controller deployment/kyverno-cleanup-controller deployment/kyverno-reports-controller -n kyverno --timeout 300s
+          then
+            kubectl create -f https://github.com/kyverno/kyverno/releases/download/{{ $kyvernoVersion }}/install.yaml
+            kubectl rollout status deployment/kyverno-admission-controller deployment/kyverno-background-controller deployment/kyverno-cleanup-controller deployment/kyverno-reports-controller -n kyverno --timeout 300s
+          else
+            echo "kyverno already installed, ignore"
+          fi
+    destroy:
+      commands:
+        - kubectl delete -f https://github.com/kyverno/kyverno/releases/download/{{ $kyvernoVersion }}/install.yaml
+  -
+    name: prom-operator
+    type: helm
+    depends_on: this.ingress-nginx
+    source:
+      repository: "https://prometheus-community.github.io/helm-charts"
+      chart: "kube-prometheus-stack"
+      version:  {{ $promChartVersion }}
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    values:
+      - file: ./monitoring/kube-prometheus-stack.yaml
+        apply_template: true
+    additional_options:
+      namespace: "monitoring"
+      create_namespace: true
+      wait: true
+  -
+    name: loki
+    type: helm
+    depends_on: this.prom-operator
+    source:
+      repository: "https://grafana.github.io/helm-charts"
+      chart: "loki"
+      version:  {{ $lokiChartVersion }}
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    values:
+      - file: ./monitoring/loki.yaml
+        apply_template: true
+    additional_options:
+      namespace: "monitoring"
+      create_namespace: true
+      wait: false
+  -
+    name: alloy
+    type: helm
+    depends_on: this.loki
+    source:
+      repository: "https://grafana.github.io/helm-charts"
+      chart: "alloy"
+      version:  {{ $alloyChartVersion }}
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    values:
+      - file: ./monitoring/alloy.yaml
+        apply_template: true
+    additional_options:
+      namespace: "monitoring"
+      create_namespace: true
+      wait: false
+  -
+    name: kube-ovn-monitors
+    type: shell
+    depends_on: this.prom-operator
+    env:
+      KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    apply:
+      commands:
+        - kubectl apply -f https://raw.githubusercontent.com/kubeovn/kube-ovn/refs/tags/{{ $kubeOvnChartVersion }}/dist/monitoring/cni-monitor.yaml
+        - kubectl apply -f https://raw.githubusercontent.com/kubeovn/kube-ovn/refs/tags/{{ $kubeOvnChartVersion }}/dist/monitoring/pinger-monitor.yaml
+        - kubectl apply -f https://raw.githubusercontent.com/kubeovn/kube-ovn/refs/tags/{{ $kubeOvnChartVersion }}/dist/monitoring/controller-monitor.yaml
+        - kubectl apply -f https://raw.githubusercontent.com/kubeovn/kube-ovn/refs/tags/{{ $kubeOvnChartVersion }}/dist/monitoring/ovn-monitor.yaml
+    destroy:
+      commands:
+        - kubectl delete -f https://raw.githubusercontent.com/kubeovn/kube-ovn/refs/tags/{{ $kubeOvnChartVersion }}/dist/monitoring/cni-monitor.yaml
+        - kubectl delete -f https://raw.githubusercontent.com/kubeovn/kube-ovn/refs/tags/{{ $kubeOvnChartVersion }}/dist/monitoring/pinger-monitor.yaml
+        - kubectl delete -f https://raw.githubusercontent.com/kubeovn/kube-ovn/refs/tags/{{ $kubeOvnChartVersion }}/dist/monitoring/controller-monitor.yaml
+        - kubectl delete -f https://raw.githubusercontent.com/kubeovn/kube-ovn/refs/tags/{{ $kubeOvnChartVersion }}/dist/monitoring/ovn-monitor.yaml
+  -
+    name: kubevirt-operator
+    type: shell
+    depends_on: this.prom-operator
+    env:
+      KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    apply:
+      commands:
+        - kubectl apply -f https://github.com/kubevirt/kubevirt/releases/download/{{ $kubevirtVersion }}/kubevirt-operator.yaml
+        - kubectl rollout status deployment/virt-operator -n kubevirt --timeout 300s
+    destroy:
+      commands:
+        - kubectl delete -f https://github.com/kubevirt/kubevirt/releases/download/{{ $kubevirtVersion }}/kubevirt-operator.yaml
+  -
+    name: kubevirt-cdi-operator
+    type: shell
+    depends_on: this.prom-operator
+    env:
+      KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    apply:
+      commands:
+        - kubectl apply -f https://github.com/kubevirt/containerized-data-importer/releases/download/{{ $kubevirtCdiVersion }}/cdi-operator.yaml
+        - kubectl rollout status deployment/cdi-operator -n cdi --timeout 300s
+    destroy:
+      commands:
+        - kubectl delete -f https://github.com/kubevirt/containerized-data-importer/releases/download/{{ $kubevirtCdiVersion }}/cdi-operator.yaml
+
+  -
+    name: kubevirt-cr
+    type: kubernetes
+    depends_on: 
+      - this.prom-operator
+      - this.kubevirt-operator
+    source: ./kubevirt/kubevirt-cr.yaml
+    env:
+      KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    post_hook:
+      on_destroy: false
+      command: |
+          while [ -z "$(kubectl get kubevirt/kubevirt -n kubevirt | grep Deployed)" ]
+          do
+            echo "Waiting for kubevirt deployed..."
+            sleep 2
+          done
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
+    name: kubevirt-cdi-cr
+    type: kubernetes
+    depends_on:
+      - this.prom-operator
+      - this.kubevirt-cdi-operator
+    source:  ./kubevirt/cdi-cr.yaml
+    env:
+      KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    post_hook:
+      on_destroy: false
+      command: |
+          while [ -z "$(kubectl get cdi/cdi -n kubevirt | grep Deployed)" ]
+          do
+            echo "Waiting for kubevirt CDI deployed..."
+            sleep 2
+          done
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
+    name: keycloak
+    type: helm
+    depends_on: this.ingress-nginx
+    source:
+      repository: "oci://registry-1.docker.io/bitnamicharts"
+      chart: "keycloak"
+      version:  {{ $keycloakChartVersion }}
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    values:
+      - file: ./keycloak/values.yaml
+        apply_template: true
+    additional_options:
+      namespace: "keycloak"
+      create_namespace: true
+      wait: true
+      timeout: 600
+  -
+    name: kube-dc
+    type: helm
+    depends_on:
+      - this.keycloak
+    source:
+      repository: "oci://registry-1.docker.io/shalb"
+      chart: "kube-dc"
+      version:  {{ $kubeDcChartVersion }}
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    values:
+      - file: ./kube-dc/values.yaml
+        apply_template: true
+    additional_options:
+      namespace: "kube-dc"
+      create_namespace: true
+      wait: true
+  -
+    name: kube-dc-organization-namespace
+    type: kubernetes
+    depends_on: this.kube-dc
+    source:  ./kube-dc/ns.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
+    name: kube-dc-organization
+    type: kubernetes
+    depends_on: this.kube-dc-organization-namespace
+    source:  ./kube-dc/organization.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
+    name: kube-dc-project
+    type: kubernetes
+    depends_on: this.kube-dc-organization
+    source:  ./kube-dc/project.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
+    name: outputs
+    type: printer
+    depends_on:
+      - this.kube-dc
+    outputs:
+      keycloak_hostname: "https://login.{{ .variables.domain }}"
+      keycloak_password: "{{ output "this.keycloak-pass-generator.password" }}"
+      keycloak_user: admin
+

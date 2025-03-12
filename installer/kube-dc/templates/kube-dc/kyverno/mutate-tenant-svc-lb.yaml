@@ -1,0 +1,27 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: lb-svc-annotate
+spec:
+  rules:
+  - name: lb-svc-annotate
+    preconditions:
+      all:
+      - key: "{{ request.object.spec.type }}"
+        operator: Equals
+        value: "LoadBalancer"
+    match:
+      any:
+      - resources:
+          kinds:
+          - Service
+          selector:
+            matchLabels:
+              cluster.x-k8s.io/cluster-name: "*"
+    mutate:
+      patchStrategicMerge:
+        metadata:
+          annotations:
+            ovn-vpc-external-network.kube-system.kubernetes.io/logical_switch: "ovn-vpc-external-network"
+            ovn.kubernetes.io/attachmentprovider: "ovn-vpc-external-network.kube-system"
+            ovn.kubernetes.io/vpc: "{{request.namespace}}-vpc"

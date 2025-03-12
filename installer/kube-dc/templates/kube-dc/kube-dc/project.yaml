@@ -1,0 +1,10 @@
+apiVersion: kube-dc.com/v1
+kind: Project
+metadata:
+  name: {{ .variables.create_default.project.name }}
+  namespace: {{ .variables.create_default.organization.name }}
+spec:
+  cidrBlock: {{ .variables.create_default.project.cidr_block }}
+  externalSubnet: {{ .variables.cluster_config.default_external_network.name }}
+  externalSubnetGwIp: {{ .variables.cluster_config.default_external_network.gateway }}
+

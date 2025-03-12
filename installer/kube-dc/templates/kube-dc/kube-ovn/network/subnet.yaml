@@ -1,0 +1,12 @@
+apiVersion: kubeovn.io/v1
+kind: Subnet
+metadata:
+  name:  {{ .variables.cluster_config.default_external_network.name }}
+  labels:
+    network.kube-dc.com/allow-projects: "all"
+spec:
+  protocol: IPv4
+  cidrBlock: {{ .variables.cluster_config.default_external_network.cidr }}
+  gateway: {{ .variables.cluster_config.default_external_network.gateway }}
+  vlan: vlan{{ .variables.cluster_config.default_external_network.vlan_id }}
+  mtu: {{ .variables.cluster_config.default_external_network.mtu | default 1400 }}

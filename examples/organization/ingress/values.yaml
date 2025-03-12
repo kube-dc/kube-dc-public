@@ -1,0 +1,24 @@
+controller:
+  ingressClassResource:
+    enabled: false  # Disables the default IngressClass creation
+  ingressClass: ""  # No default IngressClass
+  scope:
+    enabled: true  # Enables namespace-scoped mode
+    namespace: shalb-demo  # Restricts the controller to this namespace
+  watchIngressWithoutClass: false
+  admissionWebhooks:
+    enabled: false
+  service:
+    annotations:
+      service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"
+  extraEnvs:
+    - name: KUBERNETES_SERVICE_HOST
+      value: 138.201.253.201
+    - name: KUBERNETES_SERVICE_PORT
+      value: "6443"
+rbac:
+  create: true
+  scope: true
+
+defaultBackend:
+  enabled: false  # Disables the default backend

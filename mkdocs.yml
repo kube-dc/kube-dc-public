@@ -1,0 +1,109 @@
+site_name: Kube-DC
+site_url: 'https://docs.kube-dc.com'   # Adjust if you have a specific docs domain
+
+repo_name: 'shalb/kube-dc'
+repo_url: 'https://github.com/shalb/kube-dc'
+
+nav:
+  - Introduction:
+    - What Is Kube-DC?: index.md
+    - Core Features: core-features.md
+  - Quick Start:
+    - Overview: quickstart-overview.md
+    - Hetzner Dedicated Servers Setup: quickstart-hetzner.md
+    - Minimal HA Setup (Bare Metal): quickstart-bare-metal.md
+    - Installing on Existing K8s: quickstart-existing-k8s.md
+  - Architecture & Concepts:
+    - Overall Architecture: architecture-overview.md
+    - Multi-Tenancy & RBAC: architecture-multi-tenancy.md
+    - Virtualization (KubeVirt): architecture-virtualization.md
+    - Networking (Kube-OVN, VLANs): architecture-networking.md
+    - Projects & Namespaces: projects-namespaces.md
+    - Billing & Quotas: billing-quotas.md
+  - Installation & Configuration:
+    - Prerequisites & System Prep: install-prereqs.md
+    - Installing Kube-DC Stack: install-kube-dc.md
+    - Post-Install Setup: post-install-setup.md
+    - Upgrade & Maintenance: upgrade-maintenance.md
+  - Tutorials:
+    - Deploying VMs & Containers: tutorial-virtual-machines.md
+    - Multi-Tenant Demo: tutorial-multi-tenant.md
+    - Managed Services Setup: tutorial-managed-services.md
+    - Billing & Cost Management Demo: tutorial-billing.md
+  - Operations:
+    - Monitoring & Logging: ops-monitoring-logging.md
+    - Security Best Practices: ops-security.md
+    - Backup & Recovery: ops-backup-recovery.md
+    - Scalability & Performance: ops-scaling-performance.md
+  - Reference:
+    - CLI & Tools: reference-cli-tools.md
+    - Custom Resource Definitions: reference-crds.md
+    - Configuration Files: reference-config-files.md
+    - API Endpoints: reference-api.md
+  - FAQ & Troubleshooting: faq-troubleshooting.md
+  - Community & Support: community-support.md
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - pymdownx.inlinehilite
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.superfences
+  - pymdownx.tilde
+  - toc:
+      permalink: ' ¶'
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+theme:
+  name: 'material'
+  custom_dir: docs/theme-overrides  # Change if using a different path for custom CSS/JS
+  include_search_page: false
+  search_index_only: true
+  language: en
+  features:
+    - navigation.tabs
+    - content.code.copy
+    - content.code.select
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: indigo
+      toggle:
+        icon: material/toggle-switch-off-outline
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      primary: black
+      scheme: slate
+      toggle:
+        icon: material/toggle-switch
+        name: Switch to light mode
+  font:
+    text: Roboto
+    code: Roboto Mono
+  favicon: 'images/favicon.png'     # Update with your favicon
+  icon:
+    repo: 'fontawesome/brands/github'
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/shalb/kube-dc
+    - icon: fontawesome/brands/slack
+      link: <SlackChannelLinkIfAny>
+    - icon: fontawesome/brands/twitter
+      link: <TwitterHandleIfAny>
+  analytics:
+    provider: gtm

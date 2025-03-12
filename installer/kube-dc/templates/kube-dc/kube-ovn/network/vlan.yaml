@@ -1,0 +1,7 @@
+apiVersion: kubeovn.io/v1
+kind: Vlan
+metadata:
+  name: vlan{{ .variables.cluster_config.default_external_network.vlan_id }}
+spec:
+  id: {{ .variables.cluster_config.default_external_network.vlan_id }}
+  provider: {{ .variables.cluster_config.default_external_network.name }}

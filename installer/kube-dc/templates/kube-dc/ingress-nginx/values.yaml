@@ -1,0 +1,8 @@
+controller:
+  service:
+    externalIPs:
+      - "{{ .variables.node_external_ip }}"
+  admissionWebhooks:
+    enabled: false
+  ingressClassResource:
+    default: false

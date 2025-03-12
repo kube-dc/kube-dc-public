@@ -1,0 +1,85 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: alpine-base-img
+spec:
+  pvc:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 10G
+    storageClassName: local-path
+  source:
+    http:
+      url: https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/cloud/nocloud_alpine-3.19.1-x86_64-bios-cloudinit-r0.qcow2
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: alpine-base-img
+  labels:
+    kubevirt.io/app: alpine-nginx
+spec:
+  running: true
+  template:
+    metadata:
+      labels:
+        kubevirt.io/app: alpine-nginx  
+    spec:
+      networks:
+      - name: vpc_net_0
+        multus:
+          default: true
+          networkName: default
+      domain:
+        devices:
+          interfaces:
+            - name: vpc_net_0
+              bridge: {}
+          disks:
+          - disk: 
+              bus: virtio
+            name: root-volume
+          - name: cloudinitdisk
+            disk:
+              bus: virtio
+        machine:
+          type: ""
+        cpu:
+          cores: 1
+        memory:
+          guest: 8G
+      readinessProbe:
+        # exec:
+        #   command: ["/usr/bin/curl", "http://127.0.0.1:80"]
+        guestAgentPing: {}
+        failureThreshold: 10
+        initialDelaySeconds: 60
+        periodSeconds: 10
+        timeoutSeconds: 5
+      terminationGracePeriodSeconds: 0
+      volumes:
+      - dataVolume:
+          name: alpine-base-img
+        name: root-volume
+      - name: cloudinitdisk
+        cloudInitNoCloud:
+          userData: |-
+            #cloud-config
+            chpasswd: { expire: False }
+            password: qweasdz123
+            ssh_pwauth: True
+            package_update: true
+            package_upgrade: true
+            ssh_authorized_keys:
+            - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCKlCN0bHCvB2qxqwLWQkQjWb9fBz+Ve4qAwWBxJN54rLWdOQYznEdndWFLUCvTDodx0OSGRqas6jezPcQOWD3/gfH3pl1CC4qmH8OWMkusY8vnkMDWmNV++tW02Fr5EAIYc7nCneMurNiTbr4qhy7dMBXI5d5qvTenfxoOU9Ii77eE4ht/d9lKgsQcRERH5wsU7B4mivY3OVGklK2LrA/gvsCCwfxuYTI2RKPve88DHdRqmeAzSjUp/WlmTmgkLCpu5WsZ4BG5ISfspl8WV8qLaupG/6ysjX+a/TlACuimZeoHXh1TsAwsgcpAC21pIman1ZM+5BB9ZVLze3rLAZlBkCwcTIkMTOSzFOGpAE3XcvJ8Bq3Ez7yPrSFo1+EX9Plqkg6d7aQ91x8IOKJPVZ5K4nod0cRLixi7BukizN1ws1fjIKWdFAAkrqrtoFQD3dBwYnRk1WRjIMjxvdWZz81iv9fiRfBkDYKd/Yo8wu2iu3WCjlTe6mLqu6ViFK//cSk=
+            packages:
+            - qemu-guest-agent
+            - sudo
+            - curl
+            - nginx
+            runcmd:
+            - rc-update add qemu-guest-agent default
+            - rc-update add nginx default
+            - openrc

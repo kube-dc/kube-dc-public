@@ -1,0 +1,10 @@
+ipv4:
+  POD_CIDR: {{ .variables.cluster_config.POD_CIDR | default "10.100.0.0/16" }}   
+  POD_GATEWAY: {{ .variables.cluster_config.POD_GATEWAY | default "10.100.0.1" }} 
+  SVC_CIDR: {{ .variables.cluster_config.SVC_CIDR | default "10.101.0.0/16" }}
+  JOIN_CIDR: {{ .variables.cluster_config.JOIN_CIDR | default "100.64.0.0/16" }} 
+
+func:
+  ENABLE_NAT_GW: "true"
+  ENABLE_LB_SVC: "false"
+  ENABLE_TPROXY: "true"

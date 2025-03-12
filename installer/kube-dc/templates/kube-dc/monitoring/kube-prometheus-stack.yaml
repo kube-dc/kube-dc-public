@@ -1,0 +1,65 @@
+crd:
+  enabled: false
+
+prometheusOperator:
+  admissionWebhooks:
+    enabled: false
+  tls:
+    enabled: false
+
+prometheus-node-exporter:
+  prometheus:
+    monitor:
+      enabled: true
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_endpoint_node_name]
+          targetLabel: node
+
+
+grafana:
+  adminPassword: {{ output "this.prom-pass-generator.password" }}
+  additionalDataSources:
+    - name: Alertmanager
+      type: alertmanager
+      url: http://prom-operator-kube-prometh-alertmanager:9093
+      editable: true
+      access: proxy
+      version: 2
+      jsonData:
+        implementation: prometheus
+    - name: Loki
+      type: loki
+      url: http://loki-gateway
+      access: proxy
+      editable: true
+  ingress:
+    enabled: true
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod-http
+    hosts:
+      - grafana.{{ .variables.domain }}
+    path: "/"
+    tls:
+      - secretName: tls-grafana
+        hosts:
+          - grafana.{{ .variables.domain  }}
+
+prometheus:
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+
+    retention: {{ .variables.monitoring.retention }}
+    retentionSize: {{ .variables.monitoring.retention_size }}
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: {{ .variables.monitoring.prom_storage }}
+    enableFeatures:
+      - "--enable-feature=memory-snapshot-on-shutdown"
+

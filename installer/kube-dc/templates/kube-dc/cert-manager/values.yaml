@@ -1,0 +1,12 @@
+ingressShim:
+  defaultIssuerKind: "ClusterIssuer"
+  defaultACMEChallengeType: "http01"
+  defaultIssuerName: "letsencrypt-prod"
+securityContext:
+  enabled: false
+serviceAccount:
+  create: false
+installCRDs: true
+webhook:
+  enabled: false
+
