@@ -1,0 +1,30 @@
+# Basic site info
+title: "Kube-DC"
+description: "Kube-DC Documentation"
+# If you have a custom domain like docs.kube-dc.com, set it here
+url: "https://docs.kube-dc.com"
+
+# Use Just the Docs via remote_theme
+remote_theme: just-the-docs/just-the-docs
+plugins:
+  - jekyll-remote-theme
+  - jekyll-seo-tag
+
+# Optional: Just the Docs configuration
+just_the_docs:
+  # If you have a logo, uncomment and place the file in /assets/images/
+  # logo: /assets/images/logo.png
+
+# Navigation (left sidebar)
+# Each item can map to "Title: path" or "Title: filename.md"
+# Because your .md files are in /docs, reference them with that path.
+nav:
+  - Introduction:
+    - "What Is Kube-DC?": docs/index.md
+    - "Core Features": docs/core-features.md
+
+  - "Quick Start":
+    - "Overview": docs/quickstart-overview.md
+    - "Hetzner Dedicated Servers Setup": docs/quickstart-hetzner.md
+    - "Minimal HA Setup (Bare Metal)": docs/quickstart-bare-metal.md
+    - "Installing on Existing K8s": docs/quickstart-existing-k8s.md
