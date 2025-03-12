@@ -2,7 +2,7 @@ name: update-website
 on:
   push:
     branches:
-      - master
+      - main
       - mkdocs
     paths:
       - 'mkdocs.yml'
