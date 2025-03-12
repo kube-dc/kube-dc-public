@@ -104,6 +104,6 @@ extra:
     - icon: fontawesome/brands/slack
       link: https://join.slack.com/t/kube-dc/shared_invite/zt-31mr5c6ci-W3kYQ7qGDULlGQ5QJjsxmA
     - icon: fontawesome/brands/twitter
-      link: <TwitterHandleIfAny>
+      link: https://kube-dc.com
   analytics:
     provider: gtm
