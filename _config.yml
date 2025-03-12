@@ -15,7 +15,7 @@ just_the_docs:
   # If you have a logo, uncomment and place the file in /assets/images/
   # logo: /assets/images/logo.png
 
-# Navigation (left sidebar)
+# Navigation (left sidebar) 
 # Each item can map to "Title: path" or "Title: filename.md"
 # Because your .md files are in /docs, reference them with that path.
 nav:
