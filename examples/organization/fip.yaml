@@ -1,9 +1,9 @@
 apiVersion: kube-dc.com/v1
 kind: FIp
 metadata:
-  name: debianfip
+  name: fedora-arti
   namespace: shalb-demo
 spec:
-  ipAddress: 10.0.10.10
+  ipAddress: 10.0.10.171
   eip: ssh-arti
 
