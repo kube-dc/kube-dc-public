@@ -1,4 +1,4 @@
-name: update-website
+name: Deploy MkDocs
 
 on:
   push:
@@ -10,24 +10,48 @@ on:
       - 'docs/**'
 
 permissions:
-  contents: write  # This allows GitHub Actions to push to the repository
+  contents: write
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # 1) Check out your repo with the built-in GitHub token
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}  # Use built-in token with write permissions
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-python@v4
+      # 2) Configure Git to use the Actions bot credentials
+      - name: Configure Git Credentials
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # 3) Set up Python 3.x
+      - uses: actions/setup-python@v5
         with:
-          python-version: 3.x
+          python-version: '3.x'
 
+      # 4) (Option A) Date-based cache: Weekly invalidation
+      - name: Set Cache ID
+        run: echo "cache_id=$(date --utc '+%V')" >> $GITHUB_ENV
+
+      - name: Cache Dependencies
+        uses: actions/cache@v4
+        with:
+          # We store ephemeral build artifacts in `.cache`, feel free to adapt
+          path: .cache
+          key: mkdocs-material-${{ env.cache_id }}
+          restore-keys: |
+            mkdocs-material-
+
+      # 5) Install MkDocs Material (and other plugins if needed)
       - name: Install MkDocs
         run: pip install --upgrade mkdocs-material
 
+      # 6) Deploy to gh-pages with your forced approach
       - name: Deploy to GitHub Pages
         env:
           GIT_AUTHOR_NAME: "GitHub Actions"
@@ -35,7 +59,7 @@ jobs:
           GIT_COMMITTER_NAME: "GitHub Actions"
           GIT_COMMITTER_EMAIL: "github-actions@github.com"
         run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "github-actions@github.com"
+          # Make sure your remote uses the GitHub token
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/kube-dc/kube-dc-public.git
+          # Build and push to gh-pages
           mkdocs gh-deploy --force
