@@ -21,7 +21,7 @@ Kube-DC extends Kubernetes with a robust set of features designed for enterprise
 
 Kube-DC's multi-tenant architecture allows service providers to host multiple organizations with complete isolation and customization.
 
-### Key Capabilities
+**Capabilities:**
 
 - **Multi-Organization Support**: Host multiple organizations on a single Kube-DC installation with complete logical separation
 - **Custom SSO Integration**: Each organization can configure its own identity provider:
@@ -36,8 +36,6 @@ Kube-DC's multi-tenant architecture allows service providers to host multiple or
 - **Flexible RBAC**: Assign fine-grained permissions to groups for specific projects or resources
 - **Organizational Quotas**: Set resource limits at the organization level to ensure fair resource allocation
 
-### Use Cases
-
 !!! example "Real-World Applications"
     - **Managed Service Providers**: Host multiple client organizations with separate authentication systems
     - **Enterprise IT**: Separate departments with different authentication requirements
@@ -50,15 +48,13 @@ Kube-DC's multi-tenant architecture allows service providers to host multiple or
 
 Every project in Kube-DC is allocated its own Kubernetes namespace with extended capabilities for running both containers and virtual machines.
 
-### Key Capabilities
+**Capabilities:**
 
 - **Unified Management**: Deploy and manage both VMs and containers from a single interface
 - **Project Isolation**: Complete network and resource isolation between projects
 - **Resource Quotas**: Set limits on CPU, memory, storage, and other resources per project
 - **Integrated Dashboard**: View and manage all workloads through a unified web interface
 - **Custom Templates**: Create and use templates for quick deployment of common workloads
-
-### Use Cases
 
 !!! example "Real-World Applications"
     - **Application Modernization**: Run legacy VMs alongside containerized microservices
@@ -72,7 +68,7 @@ Every project in Kube-DC is allocated its own Kubernetes namespace with extended
 
 Kube-DC provides advanced networking capabilities that bridge traditional data center networking with cloud-native concepts.
 
-### Key Capabilities
+**Capabilities:**
 
 - **Dedicated VPC per Project**: Each project gets its own virtual network environment
 - **VLAN Integration**: Connect to physical network infrastructure using VLANs
@@ -83,8 +79,6 @@ Kube-DC provides advanced networking capabilities that bridge traditional data c
 - **Load Balancer Integration**: Create and manage load balancers for services and VMs
 - **Network Policies**: Define granular rules for network traffic filtering
 - **DNS Management**: Automatic DNS for services and VMs with custom domain support
-
-### Use Cases
 
 !!! example "Real-World Applications"
     - **Hybrid Cloud Deployments**: Extend on-premises networks to containerized workloads
@@ -98,7 +92,7 @@ Kube-DC provides advanced networking capabilities that bridge traditional data c
 
 Built on KubeVirt, Kube-DC provides enterprise-grade virtualization capabilities integrated with Kubernetes.
 
-### Key Capabilities
+**Capabilities:**
 
 - **Hardware Vendor Support**: Compatible with major hardware vendors' servers and components
 - **GPU Passthrough**: Support for Nvidia GPU passthrough to virtual machines
@@ -110,8 +104,6 @@ Built on KubeVirt, Kube-DC provides enterprise-grade virtualization capabilities
 - **VM Templates**: Create and use templates for rapid VM provisioning
 - **Custom Boot Options**: Configure boot order, firmware settings, and UEFI support
 - **VM Import/Export**: Import existing VMs from other platforms
-
-### Use Cases
 
 !!! example "Real-World Applications"
     - **Legacy Application Support**: Run applications that require traditional VMs
@@ -126,7 +118,7 @@ Built on KubeVirt, Kube-DC provides enterprise-grade virtualization capabilities
 
 Kube-DC leverages and extends the Kubernetes API to enable comprehensive infrastructure automation.
 
-### Key Capabilities
+**Capabilities:**
 
 - **Native Kubernetes API**: Manage all Kube-DC resources using standard Kubernetes tools
 - **Custom Resource Definitions (CRDs)**: Extended Kubernetes objects for managing organizations, projects, VMs, and more
@@ -135,8 +127,6 @@ Kube-DC leverages and extends the Kubernetes API to enable comprehensive infrast
 - **Ansible Integration**: Ansible modules for managing Kube-DC resources
 - **Crossplane Support**: Use Crossplane to provision and manage Kube-DC resources
 - **Pulumi Provider**: Programmatically manage Kube-DC using multiple languages
-
-### Use Cases
 
 !!! example "Real-World Applications"
     - **Automated Infrastructure**: Create fully automated infrastructure provisioning workflows
@@ -151,7 +141,7 @@ Kube-DC leverages and extends the Kubernetes API to enable comprehensive infrast
 
 Kube-DC includes comprehensive resource tracking and billing capabilities suitable for both service providers and internal IT organizations.
 
-### Key Capabilities
+**Capabilities:**
 
 - **Resource Metering**: Track usage of CPU, memory, storage, GPU, and network resources
 - **Custom Pricing Models**: Define pricing tiers for different resource types and customers
@@ -161,8 +151,6 @@ Kube-DC includes comprehensive resource tracking and billing capabilities suitab
 - **Usage Reporting**: Generate detailed usage reports for analysis and billing
 - **Billing API**: Integrate with external billing systems through a comprehensive API
 - **Chargeback Models**: Support for various internal chargeback models for enterprise use
-
-### Use Cases
 
 !!! example "Real-World Applications"
     - **Managed Service Providers**: Bill customers for exact resource usage
@@ -176,7 +164,7 @@ Kube-DC includes comprehensive resource tracking and billing capabilities suitab
 
 Kube-DC provides a platform for delivering managed services on top of its infrastructure.
 
-### Key Capabilities
+**Capabilities:**
 
 - **Database as a Service**: Deploy and manage databases with automated operations
   - PostgreSQL
@@ -195,8 +183,6 @@ Kube-DC provides a platform for delivering managed services on top of its infras
 - **Backup Services**: Automated backup solutions for VMs and containers
 - **Monitoring as a Service**: Multi-tenant monitoring solutions
 - **Service Catalog**: Self-service provisioning of common services
-
-### Use Cases
 
 !!! example "Real-World Applications"
     - **Internal Platform Team**: Provide managed services to development teams
