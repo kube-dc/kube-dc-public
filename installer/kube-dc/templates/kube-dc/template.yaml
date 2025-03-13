@@ -508,7 +508,13 @@ units:
     depends_on:
       - this.kube-dc
     outputs:
-      keycloak_hostname: "https://login.{{ .variables.domain }}"
-      keycloak_password: "{{ output "this.keycloak-pass-generator.password" }}"
+      console_url: "https://console.{{ .variables.domain }}"
+      keycloak_url: "https://login.{{ .variables.domain }}"
       keycloak_user: admin
+      keycloak_password: "{{ output "this.keycloak-pass-generator.password" }}"
+      organization_name: "{{ .variables.create_default.organization.name }}"
+      project_name: "{{ .variables.create_default.project.name }}"
+      organization_admin_username: admin
+      retrieve_organization_password: "kubectl get secret realm-access -n {{ .variables.create_default.organization.name }} -o jsonpath='{.data.password}' | base64 --decode"
+
 
