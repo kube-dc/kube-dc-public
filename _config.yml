@@ -5,14 +5,8 @@ description: "Kube-DC Documentation"
 url: "https://docs.kube-dc.com"
 
 # Use Just the Docs via remote_theme
-theme: minima
 plugins:
   - jekyll-seo-tag
-
-# Optional: Just the Docs configuration
-just_the_docs:
-  # If you have a logo, uncomment and place the file in /assets/images/
-  # logo: /assets/images/logo.png
 
 # Navigation (left sidebar) 
 # Each item can map to "Title: path" or "Title: filename.md"
