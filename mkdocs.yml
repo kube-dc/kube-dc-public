@@ -11,7 +11,7 @@ nav:
   - Quick Start:
     - Overview: quickstart-overview.md
     - Hetzner Dedicated Servers Setup: quickstart-hetzner.md
-    - Minimal HA Setup (Bare Metal): quickstart-bare-metal.md
+    - Minimal HA Setup: quickstart-ha.md
     - Installing on Existing K8s: quickstart-existing-k8s.md
   - Architecture & Concepts:
     - Overall Architecture: architecture-overview.md
