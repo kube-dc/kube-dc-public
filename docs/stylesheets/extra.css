@@ -1,0 +1,54 @@
+:root > * {
+  --md-primary-fg-color: #002952;
+  --md-primary-fg-color--light: #1a4374;
+  --md-primary-fg-color--dark: #001c3b;
+}
+
+/* Make menu text links brighter but keep menu background same as header */
+.md-tabs {
+  background-color: var(--md-primary-fg-color); /* Same as header */
+}
+
+.md-tabs__link {
+  color: rgba(255, 255, 255, 0.9) !important; /* Brighter text */
+  font-weight: 500;
+}
+
+.md-tabs__link--active,
+.md-tabs__link:hover {
+  color: white !important;
+  font-weight: 600;
+}
+
+/* Ensure footer matches header color */
+.md-footer {
+  background-color: var(--md-primary-fg-color);
+}
+
+/* Improve link visibility in dark mode */
+[data-md-color-scheme="slate"] {
+  --md-typeset-a-color: #4dabf7 !important; /* Bright blue for better visibility */
+}
+
+[data-md-color-scheme="slate"] .md-nav__link:not(.md-nav__link--active) {
+  color: #b8c5d9 !important; /* Lighter color for sidebar links */
+}
+
+[data-md-color-scheme="slate"] .md-nav__link:hover {
+  color: #4dabf7 !important; /* Bright blue on hover */
+}
+
+[data-md-color-scheme="slate"] .md-nav__item--active > .md-nav__link {
+  color: #4dabf7 !important; /* Bright blue for active links */
+  font-weight: 600;
+}
+
+/* Improve table of contents visibility */
+[data-md-color-scheme="slate"] .md-nav--secondary .md-nav__link {
+  color: #b8c5d9 !important;
+}
+
+[data-md-color-scheme="slate"] .md-nav--secondary .md-nav__link:hover,
+[data-md-color-scheme="slate"] .md-nav--secondary .md-nav__link--active {
+  color: #4dabf7 !important;
+}

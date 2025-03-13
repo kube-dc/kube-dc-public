@@ -79,13 +79,13 @@ theme:
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: black
+      primary: custom
       accent: indigo
       toggle:
         icon: material/toggle-switch-off-outline
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
-      primary: black
+      primary: custom
       scheme: slate
       toggle:
         icon: material/toggle-switch
@@ -94,8 +94,12 @@ theme:
     text: Roboto
     code: Roboto Mono
   favicon: 'images/favicon.png'     # Update with your favicon
+  logo: 'images/logo.png'
   icon:
     repo: 'fontawesome/brands/github'
+
+extra_css:
+  - stylesheets/extra.css
 
 extra:
   social:
