@@ -1,7 +1,7 @@
 # Kube-DC
 
 <p align="center">
-  <img src="docs/images/logo.png" alt="Kube-DC Logo" width="300">
+  <img src="docs/images/logo-readme.png" alt="Kube-DC Logo" width="300">
 </p>
 
 <p align="center">
