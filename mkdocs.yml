@@ -18,7 +18,6 @@ nav:
     - Multi-Tenancy & RBAC: architecture-multi-tenancy.md
     - Virtualization (KubeVirt): architecture-virtualization.md
     - Networking (Kube-OVN, VLANs): architecture-networking.md
-    - Projects & Namespaces: projects-namespaces.md
     - Billing & Quotas: billing-quotas.md
   - Installation & Configuration:
     - Prerequisites & System Prep: install-prereqs.md
