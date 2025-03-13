@@ -8,13 +8,11 @@
       
       
       
-        <link rel="canonical" href="https://docs.kube-dc.com/architecture-overview/">
+        <link rel="canonical" href="https://docs.kube-dc.com/architecture-networking/">
       
       
-        <link rel="prev" href="../quickstart-hetzner/">
+        <link rel="prev" href="../architecture-multi-tenancy/">
       
-      
-        <link rel="next" href="../architecture-multi-tenancy/">
       
       
       <link rel="icon" href="../images/favicon.png">
@@ -22,7 +20,7 @@
     
     
       
-        <title>Overall Architecture - Kube-DC</title>
+        <title>Networking (Kube-OVN, VLANs) - Kube-DC</title>
       
     
     
@@ -83,7 +81,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#overall-architecture" class="md-skip">
+        <a href="#networking-kube-ovn-vlans" class="md-skip">
           Skip to content
         </a>
       
@@ -116,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Overall Architecture
+              Networking (Kube-OVN, VLANs)
             
           </span>
         </div>
@@ -263,7 +261,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+        <a href="../architecture-overview/" class="md-tabs__link">
           
   
   Architecture & Concepts
@@ -696,31 +694,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  <span class="md-ellipsis">
-    Overall Architecture
-    
-  </span>
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../architecture-overview/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -730,80 +707,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#core-components" class="md-nav__link">
-    <span class="md-ellipsis">
-      Core Components
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#architectural-layers" class="md-nav__link">
-    <span class="md-ellipsis">
-      Architectural Layers
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#multi-tenant-organization" class="md-nav__link">
-    <span class="md-ellipsis">
-      Multi-Tenant Organization
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#network-architecture" class="md-nav__link">
-    <span class="md-ellipsis">
-      Network Architecture
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#virtualization-architecture" class="md-nav__link">
-    <span class="md-ellipsis">
-      Virtualization Architecture
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#key-benefits" class="md-nav__link">
-    <span class="md-ellipsis">
-      Key Benefits
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -857,10 +760,31 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../architecture-networking/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Networking (Kube-OVN, VLANs)
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   <span class="md-ellipsis">
@@ -870,6 +794,227 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#network-architecture-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Network Architecture Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network-elements" class="md-nav__link">
+    <span class="md-ellipsis">
+      Network Elements
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Network Elements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#user-visible-network-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      User-Visible Network Resources
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="User-Visible Network Resources">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#external-ip-eip" class="md-nav__link">
+    <span class="md-ellipsis">
+      External IP (EIP)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#floating-ip-fip" class="md-nav__link">
+    <span class="md-ellipsis">
+      Floating IP (FIP)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kubernetes-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      Kubernetes Service
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#service-type-loadbalancer" class="md-nav__link">
+    <span class="md-ellipsis">
+      Service Type LoadBalancer
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#internal-network-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      Internal Network Resources
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Internal Network Resources">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#dnat-rule" class="md-nav__link">
+    <span class="md-ellipsis">
+      DNAT Rule
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#snat" class="md-nav__link">
+    <span class="md-ellipsis">
+      SNAT
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#project-network-provisioning" class="md-nav__link">
+    <span class="md-ellipsis">
+      Project Network Provisioning
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#load-balancer-implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Load Balancer Implementation
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#kube-ovn-for-vpc-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      Kube-OVN for VPC Management
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Kube-OVN for VPC Management">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#vpc-isolation" class="md-nav__link">
+    <span class="md-ellipsis">
+      VPC Isolation
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#default-vpc-vs-custom-vpc" class="md-nav__link">
+    <span class="md-ellipsis">
+      Default VPC vs. Custom VPC
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#overlay-vs-underlay-networks" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overlay vs. Underlay Networks
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Overlay vs. Underlay Networks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#overlay-networks" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overlay Networks
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#underlay-networks" class="md-nav__link">
+    <span class="md-ellipsis">
+      Underlay Networks
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network-security" class="md-nav__link">
+    <span class="md-ellipsis">
+      Network Security
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1509,54 +1654,201 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#core-components" class="md-nav__link">
+  <a href="#network-architecture-overview" class="md-nav__link">
     <span class="md-ellipsis">
-      Core Components
+      Network Architecture Overview
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#architectural-layers" class="md-nav__link">
+  <a href="#network-elements" class="md-nav__link">
     <span class="md-ellipsis">
-      Architectural Layers
+      Network Elements
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Network Elements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#user-visible-network-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      User-Visible Network Resources
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="User-Visible Network Resources">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#external-ip-eip" class="md-nav__link">
+    <span class="md-ellipsis">
+      External IP (EIP)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#floating-ip-fip" class="md-nav__link">
+    <span class="md-ellipsis">
+      Floating IP (FIP)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kubernetes-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      Kubernetes Service
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#service-type-loadbalancer" class="md-nav__link">
+    <span class="md-ellipsis">
+      Service Type LoadBalancer
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#internal-network-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      Internal Network Resources
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Internal Network Resources">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#dnat-rule" class="md-nav__link">
+    <span class="md-ellipsis">
+      DNAT Rule
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#snat" class="md-nav__link">
+    <span class="md-ellipsis">
+      SNAT
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#project-network-provisioning" class="md-nav__link">
+    <span class="md-ellipsis">
+      Project Network Provisioning
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#multi-tenant-organization" class="md-nav__link">
+  <a href="#load-balancer-implementation" class="md-nav__link">
     <span class="md-ellipsis">
-      Multi-Tenant Organization
+      Load Balancer Implementation
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#network-architecture" class="md-nav__link">
+  <a href="#kube-ovn-for-vpc-management" class="md-nav__link">
     <span class="md-ellipsis">
-      Network Architecture
+      Kube-OVN for VPC Management
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Kube-OVN for VPC Management">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#vpc-isolation" class="md-nav__link">
+    <span class="md-ellipsis">
+      VPC Isolation
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#virtualization-architecture" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#default-vpc-vs-custom-vpc" class="md-nav__link">
     <span class="md-ellipsis">
-      Virtualization Architecture
+      Default VPC vs. Custom VPC
     </span>
   </a>
   
 </li>
+        
+      </ul>
+    </nav>
+  
+</li>
       
         <li class="md-nav__item">
-  <a href="#key-benefits" class="md-nav__link">
+  <a href="#overlay-vs-underlay-networks" class="md-nav__link">
     <span class="md-ellipsis">
-      Key Benefits
+      Overlay vs. Underlay Networks
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Overlay vs. Underlay Networks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#overlay-networks" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overlay Networks
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#underlay-networks" class="md-nav__link">
+    <span class="md-ellipsis">
+      Underlay Networks
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network-security" class="md-nav__link">
+    <span class="md-ellipsis">
+      Network Security
     </span>
   </a>
   
@@ -1581,86 +1873,201 @@
   
 
 
-<h1 id="overall-architecture">Overall Architecture<a class="headerlink" href="#overall-architecture" title="Permanent link"> ¶</a></h1>
-<p>Kube-DC provides a comprehensive multi-tenant cloud infrastructure platform built on Kubernetes and enhanced with enterprise-grade features like virtualization, networking, and identity management.</p>
-<h2 id="core-components">Core Components<a class="headerlink" href="#core-components" title="Permanent link"> ¶</a></h2>
-<p>The Kube-DC architecture consists of several key components that work together to deliver a complete cloud platform:</p>
-<pre class="mermaid"><code>graph TD
-    K8s[Kubernetes] --&gt; KubeVirt[KubeVirt]    
-    K8s --&gt; KubeOVN[Kube-OVN]    
-    K8s --&gt; Keycloak[Keycloak]    
-    K8s --&gt; MetalLB[MetalLB]    
-    K8s --&gt; MultiTenant[Multi-Tenant Controller]
+<h1 id="networking-kube-ovn-vlans">Networking (Kube-OVN, VLANs)<a class="headerlink" href="#networking-kube-ovn-vlans" title="Permanent link"> ¶</a></h1>
+<p>Kube-DC provides advanced networking capabilities through Kube-OVN, enabling multi-tenant network isolation, external connectivity, and flexible service exposure. This document explains the key networking components and how they operate within the Kube-DC architecture.</p>
+<h2 id="network-architecture-overview">Network Architecture Overview<a class="headerlink" href="#network-architecture-overview" title="Permanent link"> ¶</a></h2>
+<p>Kube-DC's networking architecture is built on Kube-OVN, which supports both overlay and underlay networks and provides Virtual Private Cloud (VPC) capabilities for tenant isolation.</p>
+<pre class="mermaid"><code>graph TB
+    Internet((Internet)) --&gt;|Ingress| EIP[External IP]
+    EIP --&gt;|DNAT| VPC[VPC Network]
+    VPC --&gt;|SNAT| EIP
 
-    KubeVirt --&gt;|Provides| VMs[Virtual Machines]
-    KubeOVN --&gt;|Manages| Networking[Network VLANs/VPCs]
-    Keycloak --&gt;|Controls| IAM[Identity &amp; Access]
-    MetalLB --&gt;|Enables| LoadBalancing[Load Balancing]
-    MultiTenant --&gt;|Organizes| Resources[Resources]</code></pre>
-<h2 id="architectural-layers">Architectural Layers<a class="headerlink" href="#architectural-layers" title="Permanent link"> ¶</a></h2>
-<p>Kube-DC is organized into four main architectural layers:</p>
+    subgraph "VPC Network"
+        FIP[Floating IP] --&gt;|Maps to| VM[VM / Pod]
+        SVC[Service LoadBalancer] --&gt;|Routes to| POD[Pods]
+    end
+
+    subgraph "Project Namespaces"
+        PROJ1[Project A]
+        PROJ2[Project B]
+    end
+
+    VPC --&gt;|Isolates| PROJ1
+    VPC --&gt;|Isolates| PROJ2</code></pre>
+<h2 id="network-elements">Network Elements<a class="headerlink" href="#network-elements" title="Permanent link"> ¶</a></h2>
+<h3 id="user-visible-network-resources">User-Visible Network Resources<a class="headerlink" href="#user-visible-network-resources" title="Permanent link"> ¶</a></h3>
+<h4 id="external-ip-eip">External IP (EIP)<a class="headerlink" href="#external-ip-eip" title="Permanent link"> ¶</a></h4>
+<p>External IPs provide connectivity from the public internet to resources within Kube-DC. Each EIP is allocated from the provider network.</p>
+<p><strong>Example EIP YAML:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc.com/v1</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">EIp</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ssh-arti</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb-demo</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nt">spec</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span><span class="w">  </span>
+</span></code></pre></div>
+<h4 id="floating-ip-fip">Floating IP (FIP)<a class="headerlink" href="#floating-ip-fip" title="Permanent link"> ¶</a></h4>
+<p>Floating IPs map an internal IP address (of a VM or pod) to an External IP, enabling direct access to specific resources.</p>
+<p><strong>Example FIP YAML:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc.com/v1</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">FIp</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fedora-arti</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb-demo</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">ipAddress</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0.10.171</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="nt">eip</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ssh-arti</span>
+</span></code></pre></div>
+<h4 id="kubernetes-service">Kubernetes Service<a class="headerlink" href="#kubernetes-service" title="Permanent link"> ¶</a></h4>
+<p>Standard Kubernetes Services for in-cluster service discovery and load balancing.</p>
+<h4 id="service-type-loadbalancer">Service Type LoadBalancer<a class="headerlink" href="#service-type-loadbalancer" title="Permanent link"> ¶</a></h4>
+<p>Creates and maps an EIP to a service that routes traffic to pods or VMs. Can use either a dedicated EIP or the project's default EIP.</p>
+<p><strong>Example Service LoadBalancer YAML with default gateway EIP:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Service</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nginx-service-lb</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb-demo</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="nt">service.nlb.kube-dc.com/bind-on-default-gw-eip</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">LoadBalancer</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">  </span><span class="nt">selector</span><span class="p">:</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">    </span><span class="nt">app</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nginx</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span><span class="nt">ports</span><span class="p">:</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http</span>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">      </span><span class="nt">protocol</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">TCP</span>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">      </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">80</span>
+</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">      </span><span class="nt">targetPort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">80</span>
+</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https</span>
+</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">      </span><span class="nt">protocol</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">TCP</span>
+</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">      </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">443</span>
+</span><span id="__span-2-20"><a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="w">      </span><span class="nt">targetPort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">443</span>
+</span></code></pre></div>
+<p><strong>Example Service LoadBalancer for VM SSH access:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Service</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vm-ssh</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb-demo</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">    </span><span class="nt">service.nlb.kube-dc.com/bind-on-default-gw-eip</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">LoadBalancer</span>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span><span class="nt">selector</span><span class="p">:</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">    </span><span class="nt">vm.kubevirt.io/name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">debian</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">  </span><span class="nt">ports</span><span class="p">:</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ssh</span>
+</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="w">      </span><span class="nt">protocol</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">TCP</span>
+</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">      </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2222</span>
+</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">      </span><span class="nt">targetPort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">22</span>
+</span></code></pre></div>
+<h3 id="internal-network-resources">Internal Network Resources<a class="headerlink" href="#internal-network-resources" title="Permanent link"> ¶</a></h3>
+<h4 id="dnat-rule">DNAT Rule<a class="headerlink" href="#dnat-rule" title="Permanent link"> ¶</a></h4>
+<p>Destination Network Address Translation rules proxy requests from the internet through an EIP to resources within the VPC network. These are created automatically when an EIP is associated with a resource.</p>
+<h4 id="snat">SNAT<a class="headerlink" href="#snat" title="Permanent link"> ¶</a></h4>
+<p>Source Network Address Translation is used for outbound connections from VPC subnets through EIPs, allowing resources within the VPC to communicate with the internet.</p>
+<h2 id="project-network-provisioning">Project Network Provisioning<a class="headerlink" href="#project-network-provisioning" title="Permanent link"> ¶</a></h2>
+<p>When a new project is created in Kube-DC:</p>
 <ol>
-<li><strong>Infrastructure Layer</strong></li>
-<li>Bare metal servers or cloud infrastructure</li>
-<li>Kubernetes core services</li>
-<li>
-<p>Storage subsystems</p>
-</li>
-<li>
-<p><strong>Virtualization Layer</strong></p>
-</li>
-<li>KubeVirt for VM provisioning and management</li>
-<li>Container workloads</li>
-<li>
-<p>Hybrid application support</p>
-</li>
-<li>
-<p><strong>Networking Layer</strong></p>
-</li>
-<li>Kube-OVN for software-defined networking</li>
-<li>Multi-tenant network isolation</li>
-<li>
-<p>External IP addressing and service exposure</p>
-</li>
-<li>
-<p><strong>Management Layer</strong></p>
-</li>
-<li>Multi-tenancy resource organization</li>
-<li>Identity and access management via Keycloak</li>
-<li>User interface and API access</li>
+<li>The project is allocated a dedicated subnet from the VPC CIDR range</li>
+<li>Each project connected to the internet receives an EIP</li>
+<li>All project outbound traffic is routed through its assigned EIP</li>
+<li>Project-specific network policies are applied for isolation</li>
 </ol>
-<h2 id="multi-tenant-organization">Multi-Tenant Organization<a class="headerlink" href="#multi-tenant-organization" title="Permanent link"> ¶</a></h2>
-<p>Kube-DC introduces a hierarchical resource organization model:</p>
+<p><strong>Example project creation with CIDR allocation:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc.com/v1</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Project</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">demo</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nt">cidrBlock</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;10.0.10.0/24&quot;</span>
+</span></code></pre></div>
+<h2 id="load-balancer-implementation">Load Balancer Implementation<a class="headerlink" href="#load-balancer-implementation" title="Permanent link"> ¶</a></h2>
+<p>Kube-DC uses a specialized implementation for Service LoadBalancers:</p>
 <ul>
-<li><strong>Organizations</strong> - Top-level entities representing companies or teams</li>
-<li><strong>Projects</strong> - Logical groupings of resources within an organization</li>
-<li><strong>Groups</strong> - Collections of users with defined roles and permissions</li>
+<li>When a Service with type <code>LoadBalancer</code> is created, an OVS-based LoadBalancer routes traffic to service endpoints</li>
+<li>Endpoints can be Kubernetes pods or KubeVirt VMs</li>
+<li>The LoadBalancer can use either:</li>
+<li>The project's default gateway EIP (with annotation <code>service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"</code>)</li>
+<li>A dedicated EIP (with annotation <code>service.nlb.kube-dc.com/bind-on-eip: "eip-name"</code>)</li>
 </ul>
-<p>This multi-tenant structure maps to Kubernetes and Keycloak components to provide isolation and access control. For detailed information on the multi-tenancy architecture, see the <a href="../architecture-multi-tenancy/">Multi-Tenancy &amp; RBAC</a> documentation.</p>
-<h2 id="network-architecture">Network Architecture<a class="headerlink" href="#network-architecture" title="Permanent link"> ¶</a></h2>
-<p>Kube-DC leverages Kube-OVN to provide advanced networking capabilities:</p>
+<h2 id="kube-ovn-for-vpc-management">Kube-OVN for VPC Management<a class="headerlink" href="#kube-ovn-for-vpc-management" title="Permanent link"> ¶</a></h2>
+<p>Kube-OVN is a key component of Kube-DC's networking architecture, providing the foundation for multi-tenant network isolation through VPC networks.</p>
+<h3 id="vpc-isolation">VPC Isolation<a class="headerlink" href="#vpc-isolation" title="Permanent link"> ¶</a></h3>
+<p>Different VPC networks are independent of each other and can be separately configured with:
+- Subnet CIDRs
+- Routing policies
+- Security policies
+- Outbound gateways
+- EIP allocations</p>
+<h3 id="default-vpc-vs-custom-vpc">Default VPC vs. Custom VPC<a class="headerlink" href="#default-vpc-vs-custom-vpc" title="Permanent link"> ¶</a></h3>
+<p>Kube-OVN distinguishes between two types of VPC networks:</p>
+<ol>
+<li><strong>Default VPC</strong></li>
+<li>Supports standard Kubernetes networking features</li>
+<li>Enables node and pod access</li>
+<li>Supports NodePort functionality</li>
+<li>Allows network access-based health checks</li>
+<li>Provides DNS capabilities</li>
+<li>
+<p>Uses network policies and subnet ACLs for isolation</p>
+</li>
+<li>
+<p><strong>Custom VPC</strong></p>
+</li>
+<li>Provides stronger isolation for multi-tenant networks</li>
+<li>Supports static routing</li>
+<li>Manages EIP and NAT gateways</li>
+<li>Has limitations on some Kubernetes networking features</li>
+</ol>
+<h2 id="overlay-vs-underlay-networks">Overlay vs. Underlay Networks<a class="headerlink" href="#overlay-vs-underlay-networks" title="Permanent link"> ¶</a></h2>
+<p>Kube-DC supports both networking approaches:</p>
+<h3 id="overlay-networks">Overlay Networks<a class="headerlink" href="#overlay-networks" title="Permanent link"> ¶</a></h3>
 <ul>
-<li>Virtual Private Clouds (VPCs) for network isolation</li>
-<li>External and Floating IPs for service exposure</li>
-<li>Load balancing and service routing</li>
+<li>Software-defined networks that encapsulate packets</li>
+<li>Provide maximum flexibility for network segmentation</li>
+<li>Independent of physical network topology</li>
+<li>Managed entirely by Kube-OVN</li>
+<li>Ideal for multi-tenant environments</li>
 </ul>
-<p>For detailed information on the networking architecture, see the <a href="../architecture-networking/">Networking (Kube-OVN, VLANs)</a> documentation.</p>
-<h2 id="virtualization-architecture">Virtualization Architecture<a class="headerlink" href="#virtualization-architecture" title="Permanent link"> ¶</a></h2>
-<p>Kube-DC integrates KubeVirt to enable VM workloads alongside containers:</p>
+<h3 id="underlay-networks">Underlay Networks<a class="headerlink" href="#underlay-networks" title="Permanent link"> ¶</a></h3>
 <ul>
-<li>VM lifecycle management through Kubernetes APIs</li>
-<li>Hardware passthrough capabilities</li>
-<li>Mixed container and VM environments</li>
+<li>Direct mapping to physical network infrastructure</li>
+<li>Better performance with reduced encapsulation overhead</li>
+<li>Requires coordination with physical network infrastructure</li>
+<li>Physical switches handle data-plane forwarding</li>
+<li>Cannot be isolated by VPCs as they are managed by physical switches</li>
 </ul>
-<p>For detailed information on the virtualization architecture, see the <a href="architecture-virtualization.md">Virtualization (KubeVirt)</a> documentation.</p>
-<h2 id="key-benefits">Key Benefits<a class="headerlink" href="#key-benefits" title="Permanent link"> ¶</a></h2>
-<ul>
-<li><strong>Multi-tenant isolation</strong>: Secure separation between organizations and projects</li>
-<li><strong>Unified management</strong>: Single platform for VMs and containers</li>
-<li><strong>Network flexibility</strong>: Advanced SDN capabilities with Kube-OVN</li>
-<li><strong>Enterprise security</strong>: Integrated identity management with Keycloak</li>
-<li><strong>API-driven architecture</strong>: Consistent interfaces for automation and integration</li>
-</ul>
+<h2 id="network-security">Network Security<a class="headerlink" href="#network-security" title="Permanent link"> ¶</a></h2>
+<p>Kube-DC implements multiple layers of network security:</p>
+<ol>
+<li><strong>Project Isolation</strong></li>
+<li>Each project receives its own subnet</li>
+<li>
+<p>Traffic between projects is controlled by network policies</p>
+</li>
+<li>
+<p><strong>VPC Segmentation</strong></p>
+</li>
+<li>Projects can be placed in different VPCs for stricter isolation</li>
+<li>
+<p>Each VPC has its own network stack and routing tables</p>
+</li>
+<li>
+<p><strong>Kubernetes Network Policies</strong></p>
+</li>
+<li>Fine-grained control over ingress and egress traffic</li>
+<li>
+<p>Can be applied at the namespace, pod, or service level</p>
+</li>
+<li>
+<p><strong>Subnet ACLs</strong></p>
+</li>
+<li>Control traffic at the subnet level</li>
+<li>Provide an additional layer of security beyond network policies</li>
+</ol>
 
 
 
