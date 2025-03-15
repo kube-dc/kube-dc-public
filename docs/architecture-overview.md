@@ -11,13 +11,13 @@ graph TD
     K8s[Kubernetes] --> KubeVirt[KubeVirt]    
     K8s --> KubeOVN[Kube-OVN]    
     K8s --> Keycloak[Keycloak]    
-    K8s --> MetalLB[MetalLB]    
+    K8s --> LBController[Kube-DC LB Controller]    
     K8s --> MultiTenant[Multi-Tenant Controller]
     
     KubeVirt -->|Provides| VMs[Virtual Machines]
     KubeOVN -->|Manages| Networking[Network VLANs/VPCs]
     Keycloak -->|Controls| IAM[Identity & Access]
-    MetalLB -->|Enables| LoadBalancing[Load Balancing]
+    LBController -->|Enables| LoadBalancing[Load Balancing]
     MultiTenant -->|Organizes| Resources[Resources]
 ```
 

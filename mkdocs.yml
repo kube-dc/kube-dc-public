@@ -10,37 +10,37 @@ nav:
     - Core Features: core-features.md
   - Quick Start:
     - Overview: quickstart-overview.md
-    - Hetzner Dedicated Servers Setup: quickstart-hetzner.md
-    - Minimal HA Setup: quickstart-ha.md
-    - Installing on Existing K8s: quickstart-existing-k8s.md
+    - Deployment on Hetzner: quickstart-hetzner.md
+    # - Minimal HA Setup: quickstart-ha.md
+    # - Installing on Existing K8s: quickstart-existing-k8s.md
   - Architecture & Concepts:
     - Overall Architecture: architecture-overview.md
     - Multi-Tenancy & RBAC: architecture-multi-tenancy.md
     - Virtualization (KubeVirt): architecture-virtualization.md
     - Networking (Kube-OVN, VLANs): architecture-networking.md
-    - Billing & Quotas: billing-quotas.md
-  - Installation & Configuration:
-    - Prerequisites & System Prep: install-prereqs.md
-    - Installing Kube-DC Stack: install-kube-dc.md
-    - Post-Install Setup: post-install-setup.md
-    - Upgrade & Maintenance: upgrade-maintenance.md
-  - Tutorials:
-    - Deploying VMs & Containers: tutorial-virtual-machines.md
-    - Multi-Tenant Demo: tutorial-multi-tenant.md
-    - Managed Services Setup: tutorial-managed-services.md
-    - Billing & Cost Management Demo: tutorial-billing.md
-  - Operations:
-    - Monitoring & Logging: ops-monitoring-logging.md
-    - Security Best Practices: ops-security.md
-    - Backup & Recovery: ops-backup-recovery.md
-    - Scalability & Performance: ops-scaling-performance.md
-  - Reference:
-    - CLI & Tools: reference-cli-tools.md
-    - Custom Resource Definitions: reference-crds.md
-    - Configuration Files: reference-config-files.md
-    - API Endpoints: reference-api.md
-  - FAQ & Troubleshooting: faq-troubleshooting.md
-  - Community & Support: community-support.md
+    # - Billing & Quotas: billing-quotas.md
+  #- Installation & Configuration:
+    # - Prerequisites & System Prep: install-prereqs.md
+    # - Installing Kube-DC Stack: install-kube-dc.md
+    # - Post-Install Setup: post-install-setup.md
+    # - Upgrade & Maintenance: upgrade-maintenance.md
+  #- Tutorials:
+    # - Deploying VMs & Containers: tutorial-virtual-machines.md
+    # - Multi-Tenant Demo: tutorial-multi-tenant.md
+    # - Managed Services Setup: tutorial-managed-services.md
+    # - Billing & Cost Management Demo: tutorial-billing.md
+  # - Operations:
+    # - Monitoring & Logging: ops-monitoring-logging.md
+    # - Security Best Practices: ops-security.md
+    # - Backup & Recovery: ops-backup-recovery.md
+    # - Scalability & Performance: ops-scaling-performance.md
+  #- Reference:
+    # - CLI & Tools: reference-cli-tools.md
+    # - Custom Resource Definitions: reference-crds.md
+    # - Configuration Files: reference-config-files.md
+    # - API Endpoints: reference-api.md
+  # - FAQ & Troubleshooting: faq-troubleshooting.md
+  # - Community & Support: community-support.md
 
 markdown_extensions:
   - admonition

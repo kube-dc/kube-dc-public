@@ -135,14 +135,8 @@ On the master node, install Cluster.dev:
 curl -fsSL https://raw.githubusercontent.com/shalb/cluster.dev/master/scripts/get_cdev.sh | sh
 ```
 
-### 2. Clone the Kube-DC Repository
 
-```bash
-git clone https://github.com/shalb/kube-dc.git
-cd kube-dc
-```
-
-### 3. Configure and Install RKE2 on Master Node
+### 2. Configure and Install RKE2 on Master Node
 
 Install kubectl:
 
@@ -285,18 +279,13 @@ Create the stack configuration file:
 ```bash
 cat <<EOF > ~/kube-dc-hetzner/stack.yaml
 name: cluster
-template: "./templates/kube-dc/"
+template: https://github.com/kube-dc/kube-dc-public//installer/kube-dc?ref=main
 kind: Stack
 backend: default
 variables:
   debug: "true"
-  kubeconfig: /home/arti/.kube/config
+  kubeconfig: /home/arti/.kube/config # Change for your username path to RKE kubeconfig
 
-  monitoring:
-    prom_storage: 20Gi
-    retention_size: 17GiB
-    retention: 365d
-  
   cluster_config:
     pod_cidr: "10.100.0.0/16"
     svc_cidr: "10.101.0.0/16"
@@ -328,6 +317,11 @@ variables:
       name: demo
       cidr_block: "10.1.0.0/16"
 
+  monitoring:
+    prom_storage: 20Gi
+    retention_size: 17GiB
+    retention: 365d
+
   versions:
     kube_dc: "v0.1.20" # release version
     rke2: "v1.32.1+rke2r1"
@@ -345,25 +339,50 @@ cdev apply
 
 This process will take 15-20 minutes to complete. You can monitor the deployment progress in the terminal output.
 
+### 4. Verify Installation
+
+After successful deployment, you will receive console and login credentials for deployment admin user.
+Also if you have created some default organization youll get organization admin credentials. Example:
+
+```bash
+keycloak_user = admin
+organization_admin_username = admin
+organization_name = shalb
+project_name = demo
+retrieve_organization_password = kubectl get secret realm-access -n shalb -o jsonpath='{.data.password}' | base64 -d
+retrieve_organization_realm_url = kubectl get secret realm-access -n shalb -o jsonpath='{.data.url}' | base64 -d
+console_url = https://console.dev.kube-dc.com
+keycloak_password = XXXXXXXX
+keycloak_url = https://login.dev.kube-dc.com
+```
+
 ## Post-Installation Steps
 
-### 1. Access Kube-DC UI
+### 1. Access Kube-DC UI using default organization credentials
 
-After the installation completes, the Kube-DC UI should be accessible at `https://kube-api.yourdomain.com` (if you've configured DNS) or directly via the master node's public IP.
+After the installation completes, the Kube-DC UI should be accessible at `https://console.yourdomain.com`.
+In cdev output there are output for default organization, project and admin user for default organization:
 
-### 2. Set Up Initial Organization
+```bash
+console_url = https://console.dev.kube-dc.com
+organization_admin_username = admin
+organization_name = shalb
+project_name = demo
+retrieve_organization_password = kubectl get secret realm-access -n shalb -o jsonpath='{.data.password}' | base64 -d
+retrieve_organization_realm_url = kubectl get secret realm-access -n shalb -o jsonpath='{.data.url}' | base64 -d
+```
 
-Follow the on-screen instructions to create your first organization and projects.
+### 2. Keep credentials for Keycloak master admin user
 
-### 3. Configure Floating IPs and Load Balancers
+You can save global Keycloak credentials if you need to manage other organizations as super-admin.
+Master admin user credentials:
 
-Kube-DC automatically configures the Hetzner additional subnet to provide floating IPs for your workloads. This is a wrapper on top of Kube-OVN that enables:
+```bash
+keycloak_user = admin
+keycloak_password = XXXXXXXX
+keycloak_url = https://login.dev.kube-dc.com
+```
 
-- **Floating IP allocation**: Dynamically assign public IPs to VMs and services
-- **Load balancer with external IPs**: Distribute traffic to services with public visibility
-- **Default gateway per project**: Isolate network traffic between projects
-
-These IPs can be assigned to services using the `LoadBalancer` type or directly to VMs.
 
 ## Troubleshooting
 

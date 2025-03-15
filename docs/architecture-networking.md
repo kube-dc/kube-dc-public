@@ -8,23 +8,38 @@ Kube-DC's networking architecture is built on Kube-OVN, which supports both over
 
 ```mermaid
 graph TB
-    Internet((Internet)) -->|Ingress| EIP[External IP]
-    EIP -->|DNAT| VPC[VPC Network]
-    VPC -->|SNAT| EIP
-    
-    subgraph "VPC Network"
-        FIP[Floating IP] -->|Maps to| VM[VM / Pod]
-        SVC[Service LoadBalancer] -->|Routes to| POD[Pods]
+    Internet((Internet)) <-->|Ingress/Egress| FW[VPC Firewall]
+
+    subgraph "Project A (Namespace + VPC)"
+        PROJ_A_EIP[Project A EIP] <--> FW
+        PROJ_A_EIP -->|Default NAT GW| PROJ_A_NET[Project A Network]
+        
+        SVC_LB_A[Service LoadBalancer<br/>with annotation] -->|Uses| PROJ_A_EIP
+        SVC_LB_A -->|Routes to| POD_A[Pods]
+        SVC_LB_A -->|Routes to| VM_A[VMs]
+        
+        FIP_A[Floating IP] -->|Maps to| VM_A_TARGET[Specific VM/Pod]
     end
     
-    subgraph "Project Namespaces"
-        PROJ1[Project A]
-        PROJ2[Project B]
+    subgraph "Project B (Namespace + VPC)"
+        PROJ_B_EIP[Project B EIP] <--> FW
+        PROJ_B_EIP -->|Default NAT GW| PROJ_B_NET[Project B Network]
+        
+        SVC_LB_B[Service LoadBalancer<br/>with annotation] -->|Uses| PROJ_B_EIP
+        SVC_LB_B -->|Routes to| POD_B[Pods]
+        SVC_LB_B -->|Routes to| VM_B[VMs]
+        
+        DEDICATED_EIP[Dedicated EIP] <--> FW
+        SVC_LB_B_DEDICATED[Service LoadBalancer<br/>with dedicated EIP] -->|Uses| DEDICATED_EIP
     end
-    
-    VPC -->|Isolates| PROJ1
-    VPC -->|Isolates| PROJ2
 ```
+
+In this architecture:
+- Each project gets its own namespace and VPC
+- Each project receives its own EIP that acts as a NAT gateway for outbound traffic
+- Service LoadBalancers can route traffic to both Pods and VMs
+- Service LoadBalancers can use either the project's default EIP (via annotation) or a dedicated EIP
+- Floating IPs can map specific VMs or Pods to External IPs for direct access
 
 ## Network Elements
 
@@ -169,24 +184,6 @@ Different VPC networks are independent of each other and can be separately confi
 - Security policies
 - Outbound gateways
 - EIP allocations
-
-### Default VPC vs. Custom VPC
-
-Kube-OVN distinguishes between two types of VPC networks:
-
-1. **Default VPC**
-   - Supports standard Kubernetes networking features
-   - Enables node and pod access
-   - Supports NodePort functionality
-   - Allows network access-based health checks
-   - Provides DNS capabilities
-   - Uses network policies and subnet ACLs for isolation
-
-2. **Custom VPC**
-   - Provides stronger isolation for multi-tenant networks
-   - Supports static routing
-   - Manages EIP and NAT gateways
-   - Has limitations on some Kubernetes networking features
 
 ## Overlay vs. Underlay Networks
 
