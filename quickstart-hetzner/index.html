@@ -22,7 +22,7 @@
     
     
       
-        <title>Hetzner Dedicated Servers Setup - Kube-DC</title>
+        <title>Deployment on Hetzner - Kube-DC</title>
       
     
     
@@ -116,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Hetzner Dedicated Servers Setup
+              Deployment on Hetzner
             
           </span>
         </div>
@@ -271,112 +271,6 @@
         </a>
       </li>
     
-  
-
-      
-        
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../install-prereqs.md" class="md-tabs__link">
-          
-  
-  Installation & Configuration
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../tutorial-virtual-machines.md" class="md-tabs__link">
-          
-  
-  Tutorials
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../ops-monitoring-logging.md" class="md-tabs__link">
-          
-  
-  Operations
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../reference-cli-tools.md" class="md-tabs__link">
-          
-  
-  Reference
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-    <li class="md-tabs__item">
-      <a href="../faq-troubleshooting.md" class="md-tabs__link">
-        
-  
-    
-  
-  FAQ & Troubleshooting
-
-      </a>
-    </li>
-  
-
-      
-        
-  
-  
-  
-    <li class="md-tabs__item">
-      <a href="../community-support.md" class="md-tabs__link">
-        
-  
-    
-  
-  Community & Support
-
-      </a>
-    </li>
   
 
       
@@ -600,7 +494,7 @@
           
   
   <span class="md-ellipsis">
-    Hetzner Dedicated Servers Setup
+    Deployment on Hetzner
     
   </span>
   
@@ -612,7 +506,7 @@
         
   
   <span class="md-ellipsis">
-    Hetzner Dedicated Servers Setup
+    Deployment on Hetzner
     
   </span>
   
@@ -729,18 +623,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-clone-the-kube-dc-repository" class="md-nav__link">
+  <a href="#2-configure-and-install-rke2-on-master-node" class="md-nav__link">
     <span class="md-ellipsis">
-      2. Clone the Kube-DC Repository
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#3-configure-and-install-rke2-on-master-node" class="md-nav__link">
-    <span class="md-ellipsis">
-      3. Configure and Install RKE2 on Master Node
+      2. Configure and Install RKE2 on Master Node
     </span>
   </a>
   
@@ -797,6 +682,15 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#4-verify-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Verify Installation
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -813,27 +707,18 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#1-access-kube-dc-ui" class="md-nav__link">
+  <a href="#1-access-kube-dc-ui-using-default-organization-credentials" class="md-nav__link">
     <span class="md-ellipsis">
-      1. Access Kube-DC UI
+      1. Access Kube-DC UI using default organization credentials
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-set-up-initial-organization" class="md-nav__link">
+  <a href="#2-keep-credentials-for-keycloak-master-admin-user" class="md-nav__link">
     <span class="md-ellipsis">
-      2. Set Up Initial Organization
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#3-configure-floating-ips-and-load-balancers" class="md-nav__link">
-    <span class="md-ellipsis">
-      3. Configure Floating IPs and Load Balancers
+      2. Keep credentials for Keycloak master admin user
     </span>
   </a>
   
@@ -857,50 +742,6 @@
   
 </nav>
       
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../quickstart-ha.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Minimal HA Setup
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../quickstart-existing-k8s.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Installing on Existing K8s
-    
-  </span>
-  
-
-      </a>
     </li>
   
 
@@ -1003,7 +844,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../architecture-virtualization.md" class="md-nav__link">
+      <a href="../architecture-virtualization/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1040,609 +881,9 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../billing-quotas.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Billing & Quotas
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-      
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
-        
-          
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
-            
-  
-  <span class="md-ellipsis">
-    Installation & Configuration
-    
-  </span>
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_4">
-            <span class="md-nav__icon md-icon"></span>
-            Installation & Configuration
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../install-prereqs.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Prerequisites & System Prep
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../install-kube-dc.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Installing Kube-DC Stack
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../post-install-setup.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Post-Install Setup
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../upgrade-maintenance.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Upgrade & Maintenance
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-      
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
-        
-          
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
-            
-  
-  <span class="md-ellipsis">
-    Tutorials
-    
-  </span>
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5">
-            <span class="md-nav__icon md-icon"></span>
-            Tutorials
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../tutorial-virtual-machines.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Deploying VMs & Containers
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../tutorial-multi-tenant.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Multi-Tenant Demo
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../tutorial-managed-services.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Managed Services Setup
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../tutorial-billing.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Billing & Cost Management Demo
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-      
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
-        
-          
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
-            
-  
-  <span class="md-ellipsis">
-    Operations
-    
-  </span>
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_6">
-            <span class="md-nav__icon md-icon"></span>
-            Operations
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../ops-monitoring-logging.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Monitoring & Logging
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../ops-security.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Security Best Practices
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../ops-backup-recovery.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Backup & Recovery
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../ops-scaling-performance.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Scalability & Performance
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-      
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
-            
-  
-  <span class="md-ellipsis">
-    Reference
-    
-  </span>
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            Reference
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../reference-cli-tools.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    CLI & Tools
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../reference-crds.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Custom Resource Definitions
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../reference-config-files.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Configuration Files
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../reference-api.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    API Endpoints
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../faq-troubleshooting.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    FAQ & Troubleshooting
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../community-support.md" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    Community & Support
-    
-  </span>
-  
-
-      </a>
     </li>
   
 
@@ -1768,18 +1009,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-clone-the-kube-dc-repository" class="md-nav__link">
+  <a href="#2-configure-and-install-rke2-on-master-node" class="md-nav__link">
     <span class="md-ellipsis">
-      2. Clone the Kube-DC Repository
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#3-configure-and-install-rke2-on-master-node" class="md-nav__link">
-    <span class="md-ellipsis">
-      3. Configure and Install RKE2 on Master Node
+      2. Configure and Install RKE2 on Master Node
     </span>
   </a>
   
@@ -1836,6 +1068,15 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#4-verify-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Verify Installation
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1852,27 +1093,18 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#1-access-kube-dc-ui" class="md-nav__link">
+  <a href="#1-access-kube-dc-ui-using-default-organization-credentials" class="md-nav__link">
     <span class="md-ellipsis">
-      1. Access Kube-DC UI
+      1. Access Kube-DC UI using default organization credentials
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-set-up-initial-organization" class="md-nav__link">
+  <a href="#2-keep-credentials-for-keycloak-master-admin-user" class="md-nav__link">
     <span class="md-ellipsis">
-      2. Set Up Initial Organization
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#3-configure-floating-ips-and-load-balancers" class="md-nav__link">
-    <span class="md-ellipsis">
-      3. Configure Floating IPs and Load Balancers
+      2. Keep credentials for Keycloak master admin user
     </span>
   </a>
   
@@ -2011,195 +1243,209 @@
 <p>On the master node, install Cluster.dev:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/shalb/cluster.dev/master/scripts/get_cdev.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>sh
 </span></code></pre></div>
-<h3 id="2-clone-the-kube-dc-repository">2. Clone the Kube-DC Repository<a class="headerlink" href="#2-clone-the-kube-dc-repository" title="Permanent link"> ¶</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/shalb/kube-dc.git
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nb">cd</span><span class="w"> </span>kube-dc
-</span></code></pre></div>
-<h3 id="3-configure-and-install-rke2-on-master-node">3. Configure and Install RKE2 on Master Node<a class="headerlink" href="#3-configure-and-install-rke2-on-master-node" title="Permanent link"> ¶</a></h3>
+<h3 id="2-configure-and-install-rke2-on-master-node">2. Configure and Install RKE2 on Master Node<a class="headerlink" href="#2-configure-and-install-rke2-on-master-node" title="Permanent link"> ¶</a></h3>
 <p>Install kubectl:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>curl<span class="w"> </span>-LO<span class="w"> </span><span class="s2">&quot;https://dl.k8s.io/release/</span><span class="k">$(</span>curl<span class="w"> </span>-L<span class="w"> </span>-s<span class="w"> </span>https://dl.k8s.io/release/stable.txt<span class="k">)</span><span class="s2">/bin/linux/amd64/kubectl&quot;</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>chmod<span class="w"> </span>+x<span class="w"> </span>kubectl
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>sudo<span class="w"> </span>mv<span class="w"> </span>kubectl<span class="w"> </span>/usr/local/bin/
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>curl<span class="w"> </span>-LO<span class="w"> </span><span class="s2">&quot;https://dl.k8s.io/release/</span><span class="k">$(</span>curl<span class="w"> </span>-L<span class="w"> </span>-s<span class="w"> </span>https://dl.k8s.io/release/stable.txt<span class="k">)</span><span class="s2">/bin/linux/amd64/kubectl&quot;</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>chmod<span class="w"> </span>+x<span class="w"> </span>kubectl
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>sudo<span class="w"> </span>mv<span class="w"> </span>kubectl<span class="w"> </span>/usr/local/bin/
 </span></code></pre></div>
 <p>Create RKE2 configuration (replace the external IP with your server's public IP):</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>sudo<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/etc/rancher/rke2/
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>cat<span class="w"> </span><span class="s">&lt;&lt;EOF | sudo tee /etc/rancher/rke2/config.yaml</span>
-</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="s">node-name: kube-dc-master-1</span>
-</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="s">disable-cloud-controller: true</span>
-</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="s">disable: rke2-ingress-nginx</span>
-</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="s">cni: none</span>
-</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="s">cluster-cidr: &quot;10.100.0.0/16&quot;</span>
-</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="s">service-cidr: &quot;10.101.0.0/16&quot;</span>
-</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="s">cluster-dns: &quot;10.101.0.11&quot;</span>
-</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="s">node-label:</span>
-</span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="s">  - kube-dc-manager=true</span>
-</span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="s">  - kube-ovn/role=master</span>
-</span><span id="__span-10-14"><a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="s">kube-apiserver-arg: </span>
-</span><span id="__span-10-15"><a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="s">  - authentication-config=/etc/rancher/auth-conf.yaml</span>
-</span><span id="__span-10-16"><a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="s">debug: true</span>
-</span><span id="__span-10-17"><a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="s">node-external-ip: YOUR_MASTER_PUBLIC_IP # Main IP provided by Hetzner for server</span>
-</span><span id="__span-10-18"><a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="s">tls-san:</span>
-</span><span id="__span-10-19"><a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a><span class="s">  - kube-api.yourdomain.com</span>
-</span><span id="__span-10-20"><a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a><span class="s">  - YOUR_MASTER_PUBLIC_IP</span>
-</span><span id="__span-10-21"><a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a><span class="s">advertise-address: YOUR_MASTER_PUBLIC_IP</span>
-</span><span id="__span-10-22"><a id="__codelineno-10-22" name="__codelineno-10-22" href="#__codelineno-10-22"></a><span class="s">node-ip: 192.168.100.2</span>
-</span><span id="__span-10-23"><a id="__codelineno-10-23" name="__codelineno-10-23" href="#__codelineno-10-23"></a><span class="s">EOF</span>
-</span><span id="__span-10-24"><a id="__codelineno-10-24" name="__codelineno-10-24" href="#__codelineno-10-24"></a>
-</span><span id="__span-10-25"><a id="__codelineno-10-25" name="__codelineno-10-25" href="#__codelineno-10-25"></a>cat<span class="w"> </span><span class="s">&lt;&lt;EOF | sudo tee /etc/rancher/auth-conf.yaml</span>
-</span><span id="__span-10-26"><a id="__codelineno-10-26" name="__codelineno-10-26" href="#__codelineno-10-26"></a><span class="s">apiVersion: apiserver.config.k8s.io/v1beta1</span>
-</span><span id="__span-10-27"><a id="__codelineno-10-27" name="__codelineno-10-27" href="#__codelineno-10-27"></a><span class="s">kind: AuthenticationConfiguration</span>
-</span><span id="__span-10-28"><a id="__codelineno-10-28" name="__codelineno-10-28" href="#__codelineno-10-28"></a><span class="s">jwt: []</span>
-</span><span id="__span-10-29"><a id="__codelineno-10-29" name="__codelineno-10-29" href="#__codelineno-10-29"></a><span class="s">EOF</span>
-</span><span id="__span-10-30"><a id="__codelineno-10-30" name="__codelineno-10-30" href="#__codelineno-10-30"></a>sudo<span class="w"> </span>chmod<span class="w"> </span><span class="m">666</span><span class="w"> </span>/etc/rancher/auth-conf.yaml
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>sudo<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/etc/rancher/rke2/
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>cat<span class="w"> </span><span class="s">&lt;&lt;EOF | sudo tee /etc/rancher/rke2/config.yaml</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="s">node-name: kube-dc-master-1</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="s">disable-cloud-controller: true</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="s">disable: rke2-ingress-nginx</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="s">cni: none</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="s">cluster-cidr: &quot;10.100.0.0/16&quot;</span>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="s">service-cidr: &quot;10.101.0.0/16&quot;</span>
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="s">cluster-dns: &quot;10.101.0.11&quot;</span>
+</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="s">node-label:</span>
+</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="s">  - kube-dc-manager=true</span>
+</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="s">  - kube-ovn/role=master</span>
+</span><span id="__span-9-14"><a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="s">kube-apiserver-arg: </span>
+</span><span id="__span-9-15"><a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a><span class="s">  - authentication-config=/etc/rancher/auth-conf.yaml</span>
+</span><span id="__span-9-16"><a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="s">debug: true</span>
+</span><span id="__span-9-17"><a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a><span class="s">node-external-ip: YOUR_MASTER_PUBLIC_IP # Main IP provided by Hetzner for server</span>
+</span><span id="__span-9-18"><a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a><span class="s">tls-san:</span>
+</span><span id="__span-9-19"><a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a><span class="s">  - kube-api.yourdomain.com</span>
+</span><span id="__span-9-20"><a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a><span class="s">  - YOUR_MASTER_PUBLIC_IP</span>
+</span><span id="__span-9-21"><a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a><span class="s">advertise-address: YOUR_MASTER_PUBLIC_IP</span>
+</span><span id="__span-9-22"><a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a><span class="s">node-ip: 192.168.100.2</span>
+</span><span id="__span-9-23"><a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a><span class="s">EOF</span>
+</span><span id="__span-9-24"><a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a>
+</span><span id="__span-9-25"><a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a>cat<span class="w"> </span><span class="s">&lt;&lt;EOF | sudo tee /etc/rancher/auth-conf.yaml</span>
+</span><span id="__span-9-26"><a id="__codelineno-9-26" name="__codelineno-9-26" href="#__codelineno-9-26"></a><span class="s">apiVersion: apiserver.config.k8s.io/v1beta1</span>
+</span><span id="__span-9-27"><a id="__codelineno-9-27" name="__codelineno-9-27" href="#__codelineno-9-27"></a><span class="s">kind: AuthenticationConfiguration</span>
+</span><span id="__span-9-28"><a id="__codelineno-9-28" name="__codelineno-9-28" href="#__codelineno-9-28"></a><span class="s">jwt: []</span>
+</span><span id="__span-9-29"><a id="__codelineno-9-29" name="__codelineno-9-29" href="#__codelineno-9-29"></a><span class="s">EOF</span>
+</span><span id="__span-9-30"><a id="__codelineno-9-30" name="__codelineno-9-30" href="#__codelineno-9-30"></a>sudo<span class="w"> </span>chmod<span class="w"> </span><span class="m">666</span><span class="w"> </span>/etc/rancher/auth-conf.yaml
 </span></code></pre></div>
 <p>Install RKE2 server:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTALL_RKE2_VERSION</span><span class="o">=</span><span class="s2">&quot;v1.32.1+rke2r1&quot;</span>
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTALL_RKE2_TYPE</span><span class="o">=</span><span class="s2">&quot;server&quot;</span>
-</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>curl<span class="w"> </span>-sfL<span class="w"> </span>https://get.rke2.io<span class="w"> </span><span class="p">|</span><span class="w"> </span>sh<span class="w"> </span>-
-</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>rke2-server.service
-</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>rke2-server.service
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTALL_RKE2_VERSION</span><span class="o">=</span><span class="s2">&quot;v1.32.1+rke2r1&quot;</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTALL_RKE2_TYPE</span><span class="o">=</span><span class="s2">&quot;server&quot;</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>curl<span class="w"> </span>-sfL<span class="w"> </span>https://get.rke2.io<span class="w"> </span><span class="p">|</span><span class="w"> </span>sh<span class="w"> </span>-
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>rke2-server.service
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>rke2-server.service
 </span></code></pre></div>
 <p>Check the installation progress:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>sudo<span class="w"> </span>journalctl<span class="w"> </span>-u<span class="w"> </span>rke2-server<span class="w"> </span>-f
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>sudo<span class="w"> </span>journalctl<span class="w"> </span>-u<span class="w"> </span>rke2-server<span class="w"> </span>-f
 </span></code></pre></div>
 <p>Configure kubectl:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>~/.kube
-</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>sudo<span class="w"> </span>cp<span class="w"> </span>/etc/rancher/rke2/rke2.yaml<span class="w"> </span>~/.kube/config
-</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>sudo<span class="w"> </span>chown<span class="w"> </span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span>:<span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="w"> </span>~/.kube/config
-</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>chmod<span class="w"> </span><span class="m">600</span><span class="w"> </span>~/.kube/config
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>~/.kube
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>sudo<span class="w"> </span>cp<span class="w"> </span>/etc/rancher/rke2/rke2.yaml<span class="w"> </span>~/.kube/config
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>sudo<span class="w"> </span>chown<span class="w"> </span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span>:<span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span><span class="w"> </span>~/.kube/config
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>chmod<span class="w"> </span><span class="m">600</span><span class="w"> </span>~/.kube/config
 </span></code></pre></div>
 <p>Verify the cluster status:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>nodes
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>nodes
 </span></code></pre></div>
 <h3 id="4-join-worker-node-to-the-cluster">4. Join Worker Node to the Cluster<a class="headerlink" href="#4-join-worker-node-to-the-cluster" title="Permanent link"> ¶</a></h3>
 <p>Get the join token from the master node:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>sudo<span class="w"> </span>cat<span class="w"> </span>/var/lib/rancher/rke2/server/node-token
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>sudo<span class="w"> </span>cat<span class="w"> </span>/var/lib/rancher/rke2/server/node-token
 </span></code></pre></div>
 <p>On the worker node, create the RKE2 configuration (replace TOKEN with the token from the master node):</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>sudo<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/etc/rancher/rke2/
-</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>
-</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>cat<span class="w"> </span><span class="s">&lt;&lt;EOF | sudo tee /etc/rancher/rke2/config.yaml</span>
-</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="s">token: &lt;TOKEN&gt;</span>
-</span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="s">server: https://192.168.100.2:9345 # Master node local IP</span>
-</span><span id="__span-16-6"><a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="s">node-name: kube-dc-worker-1</span>
-</span><span id="__span-16-7"><a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="s">node-ip: 192.168.100.3</span>
-</span><span id="__span-16-8"><a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="s">EOF</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>sudo<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/etc/rancher/rke2/
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>
+</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>cat<span class="w"> </span><span class="s">&lt;&lt;EOF | sudo tee /etc/rancher/rke2/config.yaml</span>
+</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="s">token: &lt;TOKEN&gt;</span>
+</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="s">server: https://192.168.100.2:9345 # Master node local IP</span>
+</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="s">node-name: kube-dc-worker-1</span>
+</span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="s">node-ip: 192.168.100.3</span>
+</span><span id="__span-15-8"><a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="s">EOF</span>
 </span></code></pre></div>
 <p>Install RKE2 agent:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTALL_RKE2_VERSION</span><span class="o">=</span><span class="s2">&quot;v1.32.1+rke2r1&quot;</span>
-</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTALL_RKE2_TYPE</span><span class="o">=</span><span class="s2">&quot;agent&quot;</span>
-</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>curl<span class="w"> </span>-sfL<span class="w"> </span>https://get.rke2.io<span class="w"> </span><span class="p">|</span><span class="w"> </span>sh<span class="w"> </span>-
-</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>rke2-agent.service
-</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>rke2-agent.service
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTALL_RKE2_VERSION</span><span class="o">=</span><span class="s2">&quot;v1.32.1+rke2r1&quot;</span>
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">INSTALL_RKE2_TYPE</span><span class="o">=</span><span class="s2">&quot;agent&quot;</span>
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>curl<span class="w"> </span>-sfL<span class="w"> </span>https://get.rke2.io<span class="w"> </span><span class="p">|</span><span class="w"> </span>sh<span class="w"> </span>-
+</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>rke2-agent.service
+</span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>rke2-agent.service
 </span></code></pre></div>
 <p>Monitor the agent service:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>sudo<span class="w"> </span>journalctl<span class="w"> </span>-u<span class="w"> </span>rke2-agent<span class="w"> </span>-f
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>sudo<span class="w"> </span>journalctl<span class="w"> </span>-u<span class="w"> </span>rke2-agent<span class="w"> </span>-f
 </span></code></pre></div>
 <p>Verify on the master node that the worker joined successfully:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>nodes
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>nodes
 </span></code></pre></div>
 <h2 id="install-kube-dc-components">Install Kube-DC Components<a class="headerlink" href="#install-kube-dc-components" title="Permanent link"> ¶</a></h2>
 <h3 id="1-create-clusterdev-project-configuration">1. Create Cluster.dev Project Configuration<a class="headerlink" href="#1-create-clusterdev-project-configuration" title="Permanent link"> ¶</a></h3>
 <p>On the master node, create a project configuration file:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>~/kube-dc-hetzner
-</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>cat<span class="w"> </span><span class="s">&lt;&lt;EOF &gt; ~/kube-dc-hetzner/project.yaml</span>
-</span><span id="__span-20-3"><a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="s">kind: Project</span>
-</span><span id="__span-20-4"><a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="s">name: kube-dc-hetzner</span>
-</span><span id="__span-20-5"><a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a><span class="s">variables:</span>
-</span><span id="__span-20-6"><a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a><span class="s">  kubeconfig: ~/.kube/config</span>
-</span><span id="__span-20-7"><a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="s">  debug: true</span>
-</span><span id="__span-20-8"><a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a><span class="s">EOF</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>~/kube-dc-hetzner
+</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>cat<span class="w"> </span><span class="s">&lt;&lt;EOF &gt; ~/kube-dc-hetzner/project.yaml</span>
+</span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="s">kind: Project</span>
+</span><span id="__span-19-4"><a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="s">name: kube-dc-hetzner</span>
+</span><span id="__span-19-5"><a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="s">variables:</span>
+</span><span id="__span-19-6"><a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="s">  kubeconfig: ~/.kube/config</span>
+</span><span id="__span-19-7"><a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="s">  debug: true</span>
+</span><span id="__span-19-8"><a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a><span class="s">EOF</span>
 </span></code></pre></div>
 <h3 id="2-create-clusterdev-stack-configuration">2. Create Cluster.dev Stack Configuration<a class="headerlink" href="#2-create-clusterdev-stack-configuration" title="Permanent link"> ¶</a></h3>
 <p>Create the stack configuration file:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>cat<span class="w"> </span><span class="s">&lt;&lt;EOF &gt; ~/kube-dc-hetzner/stack.yaml</span>
-</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="s">name: cluster</span>
-</span><span id="__span-21-3"><a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="s">template: &quot;./templates/kube-dc/&quot;</span>
-</span><span id="__span-21-4"><a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="s">kind: Stack</span>
-</span><span id="__span-21-5"><a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a><span class="s">backend: default</span>
-</span><span id="__span-21-6"><a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a><span class="s">variables:</span>
-</span><span id="__span-21-7"><a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a><span class="s">  debug: &quot;true&quot;</span>
-</span><span id="__span-21-8"><a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a><span class="s">  kubeconfig: /home/arti/.kube/config</span>
-</span><span id="__span-21-9"><a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a>
-</span><span id="__span-21-10"><a id="__codelineno-21-10" name="__codelineno-21-10" href="#__codelineno-21-10"></a><span class="s">  monitoring:</span>
-</span><span id="__span-21-11"><a id="__codelineno-21-11" name="__codelineno-21-11" href="#__codelineno-21-11"></a><span class="s">    prom_storage: 20Gi</span>
-</span><span id="__span-21-12"><a id="__codelineno-21-12" name="__codelineno-21-12" href="#__codelineno-21-12"></a><span class="s">    retention_size: 17GiB</span>
-</span><span id="__span-21-13"><a id="__codelineno-21-13" name="__codelineno-21-13" href="#__codelineno-21-13"></a><span class="s">    retention: 365d</span>
-</span><span id="__span-21-14"><a id="__codelineno-21-14" name="__codelineno-21-14" href="#__codelineno-21-14"></a>
-</span><span id="__span-21-15"><a id="__codelineno-21-15" name="__codelineno-21-15" href="#__codelineno-21-15"></a><span class="s">  cluster_config:</span>
-</span><span id="__span-21-16"><a id="__codelineno-21-16" name="__codelineno-21-16" href="#__codelineno-21-16"></a><span class="s">    pod_cidr: &quot;10.100.0.0/16&quot;</span>
-</span><span id="__span-21-17"><a id="__codelineno-21-17" name="__codelineno-21-17" href="#__codelineno-21-17"></a><span class="s">    svc_cidr: &quot;10.101.0.0/16&quot;</span>
-</span><span id="__span-21-18"><a id="__codelineno-21-18" name="__codelineno-21-18" href="#__codelineno-21-18"></a><span class="s">    join_cidr: &quot;100.64.0.0/16&quot;</span>
-</span><span id="__span-21-19"><a id="__codelineno-21-19" name="__codelineno-21-19" href="#__codelineno-21-19"></a><span class="s">    cluster_dns: &quot;10.101.0.11&quot;</span>
-</span><span id="__span-21-20"><a id="__codelineno-21-20" name="__codelineno-21-20" href="#__codelineno-21-20"></a><span class="s">    default_external_network:</span>
-</span><span id="__span-21-21"><a id="__codelineno-21-21" name="__codelineno-21-21" href="#__codelineno-21-21"></a><span class="s">      nodes_list: # list of nodes, where 4011 vlan (external network) is accessible</span>
-</span><span id="__span-21-22"><a id="__codelineno-21-22" name="__codelineno-21-22" href="#__codelineno-21-22"></a><span class="s">        - kube-dc-master-1</span>
-</span><span id="__span-21-23"><a id="__codelineno-21-23" name="__codelineno-21-23" href="#__codelineno-21-23"></a><span class="s">        - kube-dc-worker-1</span>
-</span><span id="__span-21-24"><a id="__codelineno-21-24" name="__codelineno-21-24" href="#__codelineno-21-24"></a><span class="s">      name: external4011</span>
-</span><span id="__span-21-25"><a id="__codelineno-21-25" name="__codelineno-21-25" href="#__codelineno-21-25"></a><span class="s">      vlan_id: &quot;4011&quot;</span>
-</span><span id="__span-21-26"><a id="__codelineno-21-26" name="__codelineno-21-26" href="#__codelineno-21-26"></a><span class="s">      interface: &quot;enp0s31f6&quot;</span>
-</span><span id="__span-21-27"><a id="__codelineno-21-27" name="__codelineno-21-27" href="#__codelineno-21-27"></a><span class="s">      cidr: &quot;167.235.85.112/29&quot; # External subnet provided by Hetzner</span>
-</span><span id="__span-21-28"><a id="__codelineno-21-28" name="__codelineno-21-28" href="#__codelineno-21-28"></a><span class="s">      gateway: 167.235.85.113 # Gateway for external subnet</span>
-</span><span id="__span-21-29"><a id="__codelineno-21-29" name="__codelineno-21-29" href="#__codelineno-21-29"></a><span class="s">      mtu: &quot;1400&quot;</span>
-</span><span id="__span-21-30"><a id="__codelineno-21-30" name="__codelineno-21-30" href="#__codelineno-21-30"></a>
-</span><span id="__span-21-31"><a id="__codelineno-21-31" name="__codelineno-21-31" href="#__codelineno-21-31"></a><span class="s">  node_external_ip: 22.22.22.2 # wildcard *.dev.kube-dc.com shoud be faced on this ip</span>
-</span><span id="__span-21-32"><a id="__codelineno-21-32" name="__codelineno-21-32" href="#__codelineno-21-32"></a>
-</span><span id="__span-21-33"><a id="__codelineno-21-33" name="__codelineno-21-33" href="#__codelineno-21-33"></a><span class="s">  email: &quot;noreply@shalb.com&quot;</span>
-</span><span id="__span-21-34"><a id="__codelineno-21-34" name="__codelineno-21-34" href="#__codelineno-21-34"></a><span class="s">  domain: &quot;dev.kube-dc.com&quot;</span>
-</span><span id="__span-21-35"><a id="__codelineno-21-35" name="__codelineno-21-35" href="#__codelineno-21-35"></a><span class="s">  install_terraform: true</span>
-</span><span id="__span-21-36"><a id="__codelineno-21-36" name="__codelineno-21-36" href="#__codelineno-21-36"></a>
-</span><span id="__span-21-37"><a id="__codelineno-21-37" name="__codelineno-21-37" href="#__codelineno-21-37"></a><span class="s">  create_default:</span>
-</span><span id="__span-21-38"><a id="__codelineno-21-38" name="__codelineno-21-38" href="#__codelineno-21-38"></a><span class="s">    organization:</span>
-</span><span id="__span-21-39"><a id="__codelineno-21-39" name="__codelineno-21-39" href="#__codelineno-21-39"></a><span class="s">      name: shalb</span>
-</span><span id="__span-21-40"><a id="__codelineno-21-40" name="__codelineno-21-40" href="#__codelineno-21-40"></a><span class="s">      description: &quot;My test org my-org 1&quot;</span>
-</span><span id="__span-21-41"><a id="__codelineno-21-41" name="__codelineno-21-41" href="#__codelineno-21-41"></a><span class="s">      email: &quot;arti@shalb.com&quot;</span>
-</span><span id="__span-21-42"><a id="__codelineno-21-42" name="__codelineno-21-42" href="#__codelineno-21-42"></a><span class="s">    project:</span>
-</span><span id="__span-21-43"><a id="__codelineno-21-43" name="__codelineno-21-43" href="#__codelineno-21-43"></a><span class="s">      name: demo</span>
-</span><span id="__span-21-44"><a id="__codelineno-21-44" name="__codelineno-21-44" href="#__codelineno-21-44"></a><span class="s">      cidr_block: &quot;10.1.0.0/16&quot;</span>
-</span><span id="__span-21-45"><a id="__codelineno-21-45" name="__codelineno-21-45" href="#__codelineno-21-45"></a>
-</span><span id="__span-21-46"><a id="__codelineno-21-46" name="__codelineno-21-46" href="#__codelineno-21-46"></a><span class="s">  versions:</span>
-</span><span id="__span-21-47"><a id="__codelineno-21-47" name="__codelineno-21-47" href="#__codelineno-21-47"></a><span class="s">    kube_dc: &quot;v0.1.20&quot; # release version</span>
-</span><span id="__span-21-48"><a id="__codelineno-21-48" name="__codelineno-21-48" href="#__codelineno-21-48"></a><span class="s">    rke2: &quot;v1.32.1+rke2r1&quot;</span>
-</span><span id="__span-21-49"><a id="__codelineno-21-49" name="__codelineno-21-49" href="#__codelineno-21-49"></a><span class="s">EOF</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>cat<span class="w"> </span><span class="s">&lt;&lt;EOF &gt; ~/kube-dc-hetzner/stack.yaml</span>
+</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="s">name: cluster</span>
+</span><span id="__span-20-3"><a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="s">template: https://github.com/kube-dc/kube-dc-public//installer/kube-dc?ref=main</span>
+</span><span id="__span-20-4"><a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="s">kind: Stack</span>
+</span><span id="__span-20-5"><a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a><span class="s">backend: default</span>
+</span><span id="__span-20-6"><a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a><span class="s">variables:</span>
+</span><span id="__span-20-7"><a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="s">  debug: &quot;true&quot;</span>
+</span><span id="__span-20-8"><a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a><span class="s">  kubeconfig: /home/arti/.kube/config # Change for your username path to RKE kubeconfig</span>
+</span><span id="__span-20-9"><a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a>
+</span><span id="__span-20-10"><a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a><span class="s">  cluster_config:</span>
+</span><span id="__span-20-11"><a id="__codelineno-20-11" name="__codelineno-20-11" href="#__codelineno-20-11"></a><span class="s">    pod_cidr: &quot;10.100.0.0/16&quot;</span>
+</span><span id="__span-20-12"><a id="__codelineno-20-12" name="__codelineno-20-12" href="#__codelineno-20-12"></a><span class="s">    svc_cidr: &quot;10.101.0.0/16&quot;</span>
+</span><span id="__span-20-13"><a id="__codelineno-20-13" name="__codelineno-20-13" href="#__codelineno-20-13"></a><span class="s">    join_cidr: &quot;100.64.0.0/16&quot;</span>
+</span><span id="__span-20-14"><a id="__codelineno-20-14" name="__codelineno-20-14" href="#__codelineno-20-14"></a><span class="s">    cluster_dns: &quot;10.101.0.11&quot;</span>
+</span><span id="__span-20-15"><a id="__codelineno-20-15" name="__codelineno-20-15" href="#__codelineno-20-15"></a><span class="s">    default_external_network:</span>
+</span><span id="__span-20-16"><a id="__codelineno-20-16" name="__codelineno-20-16" href="#__codelineno-20-16"></a><span class="s">      nodes_list: # list of nodes, where 4011 vlan (external network) is accessible</span>
+</span><span id="__span-20-17"><a id="__codelineno-20-17" name="__codelineno-20-17" href="#__codelineno-20-17"></a><span class="s">        - kube-dc-master-1</span>
+</span><span id="__span-20-18"><a id="__codelineno-20-18" name="__codelineno-20-18" href="#__codelineno-20-18"></a><span class="s">        - kube-dc-worker-1</span>
+</span><span id="__span-20-19"><a id="__codelineno-20-19" name="__codelineno-20-19" href="#__codelineno-20-19"></a><span class="s">      name: external4011</span>
+</span><span id="__span-20-20"><a id="__codelineno-20-20" name="__codelineno-20-20" href="#__codelineno-20-20"></a><span class="s">      vlan_id: &quot;4011&quot;</span>
+</span><span id="__span-20-21"><a id="__codelineno-20-21" name="__codelineno-20-21" href="#__codelineno-20-21"></a><span class="s">      interface: &quot;enp0s31f6&quot;</span>
+</span><span id="__span-20-22"><a id="__codelineno-20-22" name="__codelineno-20-22" href="#__codelineno-20-22"></a><span class="s">      cidr: &quot;167.235.85.112/29&quot; # External subnet provided by Hetzner</span>
+</span><span id="__span-20-23"><a id="__codelineno-20-23" name="__codelineno-20-23" href="#__codelineno-20-23"></a><span class="s">      gateway: 167.235.85.113 # Gateway for external subnet</span>
+</span><span id="__span-20-24"><a id="__codelineno-20-24" name="__codelineno-20-24" href="#__codelineno-20-24"></a><span class="s">      mtu: &quot;1400&quot;</span>
+</span><span id="__span-20-25"><a id="__codelineno-20-25" name="__codelineno-20-25" href="#__codelineno-20-25"></a>
+</span><span id="__span-20-26"><a id="__codelineno-20-26" name="__codelineno-20-26" href="#__codelineno-20-26"></a><span class="s">  node_external_ip: 22.22.22.2 # wildcard *.dev.kube-dc.com shoud be faced on this ip</span>
+</span><span id="__span-20-27"><a id="__codelineno-20-27" name="__codelineno-20-27" href="#__codelineno-20-27"></a>
+</span><span id="__span-20-28"><a id="__codelineno-20-28" name="__codelineno-20-28" href="#__codelineno-20-28"></a><span class="s">  email: &quot;noreply@shalb.com&quot;</span>
+</span><span id="__span-20-29"><a id="__codelineno-20-29" name="__codelineno-20-29" href="#__codelineno-20-29"></a><span class="s">  domain: &quot;dev.kube-dc.com&quot;</span>
+</span><span id="__span-20-30"><a id="__codelineno-20-30" name="__codelineno-20-30" href="#__codelineno-20-30"></a><span class="s">  install_terraform: true</span>
+</span><span id="__span-20-31"><a id="__codelineno-20-31" name="__codelineno-20-31" href="#__codelineno-20-31"></a>
+</span><span id="__span-20-32"><a id="__codelineno-20-32" name="__codelineno-20-32" href="#__codelineno-20-32"></a><span class="s">  create_default:</span>
+</span><span id="__span-20-33"><a id="__codelineno-20-33" name="__codelineno-20-33" href="#__codelineno-20-33"></a><span class="s">    organization:</span>
+</span><span id="__span-20-34"><a id="__codelineno-20-34" name="__codelineno-20-34" href="#__codelineno-20-34"></a><span class="s">      name: shalb</span>
+</span><span id="__span-20-35"><a id="__codelineno-20-35" name="__codelineno-20-35" href="#__codelineno-20-35"></a><span class="s">      description: &quot;My test org my-org 1&quot;</span>
+</span><span id="__span-20-36"><a id="__codelineno-20-36" name="__codelineno-20-36" href="#__codelineno-20-36"></a><span class="s">      email: &quot;arti@shalb.com&quot;</span>
+</span><span id="__span-20-37"><a id="__codelineno-20-37" name="__codelineno-20-37" href="#__codelineno-20-37"></a><span class="s">    project:</span>
+</span><span id="__span-20-38"><a id="__codelineno-20-38" name="__codelineno-20-38" href="#__codelineno-20-38"></a><span class="s">      name: demo</span>
+</span><span id="__span-20-39"><a id="__codelineno-20-39" name="__codelineno-20-39" href="#__codelineno-20-39"></a><span class="s">      cidr_block: &quot;10.1.0.0/16&quot;</span>
+</span><span id="__span-20-40"><a id="__codelineno-20-40" name="__codelineno-20-40" href="#__codelineno-20-40"></a>
+</span><span id="__span-20-41"><a id="__codelineno-20-41" name="__codelineno-20-41" href="#__codelineno-20-41"></a><span class="s">  monitoring:</span>
+</span><span id="__span-20-42"><a id="__codelineno-20-42" name="__codelineno-20-42" href="#__codelineno-20-42"></a><span class="s">    prom_storage: 20Gi</span>
+</span><span id="__span-20-43"><a id="__codelineno-20-43" name="__codelineno-20-43" href="#__codelineno-20-43"></a><span class="s">    retention_size: 17GiB</span>
+</span><span id="__span-20-44"><a id="__codelineno-20-44" name="__codelineno-20-44" href="#__codelineno-20-44"></a><span class="s">    retention: 365d</span>
+</span><span id="__span-20-45"><a id="__codelineno-20-45" name="__codelineno-20-45" href="#__codelineno-20-45"></a>
+</span><span id="__span-20-46"><a id="__codelineno-20-46" name="__codelineno-20-46" href="#__codelineno-20-46"></a><span class="s">  versions:</span>
+</span><span id="__span-20-47"><a id="__codelineno-20-47" name="__codelineno-20-47" href="#__codelineno-20-47"></a><span class="s">    kube_dc: &quot;v0.1.20&quot; # release version</span>
+</span><span id="__span-20-48"><a id="__codelineno-20-48" name="__codelineno-20-48" href="#__codelineno-20-48"></a><span class="s">    rke2: &quot;v1.32.1+rke2r1&quot;</span>
+</span><span id="__span-20-49"><a id="__codelineno-20-49" name="__codelineno-20-49" href="#__codelineno-20-49"></a><span class="s">EOF</span>
 </span></code></pre></div>
 <h3 id="3-deploy-kube-dc">3. Deploy Kube-DC<a class="headerlink" href="#3-deploy-kube-dc" title="Permanent link"> ¶</a></h3>
 <p>Run Cluster.dev to deploy Kube-DC components:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="nb">cd</span><span class="w"> </span>~/kube-dc-hetzner
-</span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>cdev<span class="w"> </span>apply
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="nb">cd</span><span class="w"> </span>~/kube-dc-hetzner
+</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>cdev<span class="w"> </span>apply
 </span></code></pre></div>
 <p>This process will take 15-20 minutes to complete. You can monitor the deployment progress in the terminal output.</p>
+<h3 id="4-verify-installation">4. Verify Installation<a class="headerlink" href="#4-verify-installation" title="Permanent link"> ¶</a></h3>
+<p>After successful deployment, you will receive console and login credentials for deployment admin user.
+Also if you have created some default organization youll get organization admin credentials. Example:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="nv">keycloak_user</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>admin
+</span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="nv">organization_admin_username</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>admin
+</span><span id="__span-22-3"><a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="nv">organization_name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>shalb
+</span><span id="__span-22-4"><a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="nv">project_name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>demo
+</span><span id="__span-22-5"><a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a><span class="nv">retrieve_organization_password</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>kubectl<span class="w"> </span>get<span class="w"> </span>secret<span class="w"> </span>realm-access<span class="w"> </span>-n<span class="w"> </span>shalb<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.data.password}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>base64<span class="w"> </span>-d
+</span><span id="__span-22-6"><a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a><span class="nv">retrieve_organization_realm_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>kubectl<span class="w"> </span>get<span class="w"> </span>secret<span class="w"> </span>realm-access<span class="w"> </span>-n<span class="w"> </span>shalb<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.data.url}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>base64<span class="w"> </span>-d
+</span><span id="__span-22-7"><a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a><span class="nv">console_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>https://console.dev.kube-dc.com
+</span><span id="__span-22-8"><a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a><span class="nv">keycloak_password</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>XXXXXXXX
+</span><span id="__span-22-9"><a id="__codelineno-22-9" name="__codelineno-22-9" href="#__codelineno-22-9"></a><span class="nv">keycloak_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>https://login.dev.kube-dc.com
+</span></code></pre></div>
 <h2 id="post-installation-steps">Post-Installation Steps<a class="headerlink" href="#post-installation-steps" title="Permanent link"> ¶</a></h2>
-<h3 id="1-access-kube-dc-ui">1. Access Kube-DC UI<a class="headerlink" href="#1-access-kube-dc-ui" title="Permanent link"> ¶</a></h3>
-<p>After the installation completes, the Kube-DC UI should be accessible at <code>https://kube-api.yourdomain.com</code> (if you've configured DNS) or directly via the master node's public IP.</p>
-<h3 id="2-set-up-initial-organization">2. Set Up Initial Organization<a class="headerlink" href="#2-set-up-initial-organization" title="Permanent link"> ¶</a></h3>
-<p>Follow the on-screen instructions to create your first organization and projects.</p>
-<h3 id="3-configure-floating-ips-and-load-balancers">3. Configure Floating IPs and Load Balancers<a class="headerlink" href="#3-configure-floating-ips-and-load-balancers" title="Permanent link"> ¶</a></h3>
-<p>Kube-DC automatically configures the Hetzner additional subnet to provide floating IPs for your workloads. This is a wrapper on top of Kube-OVN that enables:</p>
-<ul>
-<li><strong>Floating IP allocation</strong>: Dynamically assign public IPs to VMs and services</li>
-<li><strong>Load balancer with external IPs</strong>: Distribute traffic to services with public visibility</li>
-<li><strong>Default gateway per project</strong>: Isolate network traffic between projects</li>
-</ul>
-<p>These IPs can be assigned to services using the <code>LoadBalancer</code> type or directly to VMs.</p>
+<h3 id="1-access-kube-dc-ui-using-default-organization-credentials">1. Access Kube-DC UI using default organization credentials<a class="headerlink" href="#1-access-kube-dc-ui-using-default-organization-credentials" title="Permanent link"> ¶</a></h3>
+<p>After the installation completes, the Kube-DC UI should be accessible at <code>https://console.yourdomain.com</code>.
+In cdev output there are output for default organization, project and admin user for default organization:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="nv">console_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>https://console.dev.kube-dc.com
+</span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a><span class="nv">organization_admin_username</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>admin
+</span><span id="__span-23-3"><a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="nv">organization_name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>shalb
+</span><span id="__span-23-4"><a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a><span class="nv">project_name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>demo
+</span><span id="__span-23-5"><a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a><span class="nv">retrieve_organization_password</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>kubectl<span class="w"> </span>get<span class="w"> </span>secret<span class="w"> </span>realm-access<span class="w"> </span>-n<span class="w"> </span>shalb<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.data.password}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>base64<span class="w"> </span>-d
+</span><span id="__span-23-6"><a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a><span class="nv">retrieve_organization_realm_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>kubectl<span class="w"> </span>get<span class="w"> </span>secret<span class="w"> </span>realm-access<span class="w"> </span>-n<span class="w"> </span>shalb<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.data.url}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>base64<span class="w"> </span>-d
+</span></code></pre></div>
+<h3 id="2-keep-credentials-for-keycloak-master-admin-user">2. Keep credentials for Keycloak master admin user<a class="headerlink" href="#2-keep-credentials-for-keycloak-master-admin-user" title="Permanent link"> ¶</a></h3>
+<p>You can save global Keycloak credentials if you need to manage other organizations as super-admin.
+Master admin user credentials:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="nv">keycloak_user</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>admin
+</span><span id="__span-24-2"><a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a><span class="nv">keycloak_password</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>XXXXXXXX
+</span><span id="__span-24-3"><a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a><span class="nv">keycloak_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>https://login.dev.kube-dc.com
+</span></code></pre></div>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link"> ¶</a></h2>
 <p>If you encounter issues during the installation:</p>
 <ol>
 <li>
 <p>Check the RKE2 server/agent logs:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>sudo<span class="w"> </span>journalctl<span class="w"> </span>-u<span class="w"> </span>rke2-server<span class="w"> </span>-f<span class="w">  </span><span class="c1"># On master</span>
-</span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>sudo<span class="w"> </span>journalctl<span class="w"> </span>-u<span class="w"> </span>rke2-agent<span class="w"> </span>-f<span class="w">   </span><span class="c1"># On worker</span>
+   <div class="language-bash highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>sudo<span class="w"> </span>journalctl<span class="w"> </span>-u<span class="w"> </span>rke2-server<span class="w"> </span>-f<span class="w">  </span><span class="c1"># On master</span>
+</span><span id="__span-25-2"><a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>sudo<span class="w"> </span>journalctl<span class="w"> </span>-u<span class="w"> </span>rke2-agent<span class="w"> </span>-f<span class="w">   </span><span class="c1"># On worker</span>
 </span></code></pre></div></p>
 </li>
 <li>
 <p>Check the Kube-OVN logs:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span>-l<span class="w"> </span><span class="nv">app</span><span class="o">=</span>kube-ovn-controller
+   <div class="language-bash highlight"><pre><span></span><code><span id="__span-26-1"><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span>-l<span class="w"> </span><span class="nv">app</span><span class="o">=</span>kube-ovn-controller
 </span></code></pre></div></p>
 </li>
 <li>
 <p>Verify network connectivity between nodes on the private network:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>ping<span class="w"> </span><span class="m">192</span>.168.100.2<span class="w">  </span><span class="c1"># From worker node</span>
-</span><span id="__span-25-2"><a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>ping<span class="w"> </span><span class="m">192</span>.168.100.3<span class="w">  </span><span class="c1"># From master node</span>
+   <div class="language-bash highlight"><pre><span></span><code><span id="__span-27-1"><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>ping<span class="w"> </span><span class="m">192</span>.168.100.2<span class="w">  </span><span class="c1"># From worker node</span>
+</span><span id="__span-27-2"><a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a>ping<span class="w"> </span><span class="m">192</span>.168.100.3<span class="w">  </span><span class="c1"># From master node</span>
 </span></code></pre></div></p>
 </li>
 </ol>
