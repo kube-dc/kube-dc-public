@@ -6,6 +6,12 @@ Kube-DC provides a comprehensive multi-tenant cloud infrastructure platform buil
 
 The Kube-DC architecture consists of several key components that work together to deliver a complete cloud platform:
 
+![Kube-DC Architecture Overview](images/project-overview.png)
+
+## Architectural Layers
+Kube-DC is organized into four main architectural layers:
+
+
 ```mermaid
 graph TD
     K8s[Kubernetes] --> KubeVirt[KubeVirt]    
@@ -21,8 +27,6 @@ graph TD
     MultiTenant -->|Organizes| Resources[Resources]
 ```
 
-## Architectural Layers
-Kube-DC is organized into four main architectural layers:
 
 **Infrastructure Layer**
 

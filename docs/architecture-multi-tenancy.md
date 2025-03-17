@@ -99,6 +99,7 @@ spec:
 ```
 
 **Mapping:**
+
 - OrganizationGroups are implemented as Kubernetes Custom Resource Definitions (CRDs)
 - Each OrganizationGroup maps to a Keycloak Group
 - The permissions defined in OrganizationGroups determine the Kubernetes RoleBindings that grant access to resources
@@ -106,20 +107,24 @@ spec:
 
 ## Authentication and Authorization Flow
 
-1. **User Authentication:**
+**User Authentication:**
+
    - Users authenticate through Keycloak
    - Upon successful authentication, users receive JSON Web Tokens (JWTs)
 
-2. **Group and Role Assignment:**
+**Group and Role Assignment:**
+
    - Users are assigned to Keycloak Groups based on their OrganizationGroup membership
    - Keycloak maps these groups to corresponding roles
 
-3. **Kubernetes Authorization:**
+**Kubernetes Authorization:**
+
    - The Kubernetes API server validates the user's JWT
    - RoleBindings determine what actions the user can perform within each namespace
    - Resource access is controlled at the Project (namespace) level
 
-4. **Resource Access:**
+**Resource Access:**
+
    - Users can only access resources in projects where they have appropriate role assignments
    - Actions are restricted based on the permissions defined in their roles
 
