@@ -374,7 +374,8 @@ retrieve_organization_realm_url = kubectl get secret realm-access -n shalb -o js
 
 ### 2. Keep credentials for Keycloak master admin user
 
-You can save global Keycloak credentials if you need to manage other organizations as super-admin.
+You can save global Keycloak credentials if you need to manage Keycloak as super-admin.
+
 Master admin user credentials:
 
 ```bash
@@ -382,7 +383,6 @@ keycloak_user = admin
 keycloak_password = XXXXXXXX
 keycloak_url = https://login.dev.kube-dc.com
 ```
-
 
 ## Troubleshooting
 

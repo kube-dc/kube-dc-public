@@ -24,8 +24,8 @@ nav:
     # - Installing Kube-DC Stack: install-kube-dc.md
     # - Post-Install Setup: post-install-setup.md
     # - Upgrade & Maintenance: upgrade-maintenance.md
-  #- Tutorials:
-    # - Deploying VMs & Containers: tutorial-virtual-machines.md
+  - User Guide:
+    - Deploying VMs & Containers: tutorial-virtual-machines.md
     # - Multi-Tenant Demo: tutorial-multi-tenant.md
     # - Managed Services Setup: tutorial-managed-services.md
     # - Billing & Cost Management Demo: tutorial-billing.md
@@ -103,7 +103,7 @@ extra_css:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/shalb/kube-dc
+      link: https://github.com/kube-dc/kube-dc-public
     - icon: fontawesome/brands/slack
       link: https://join.slack.com/t/kube-dc/shared_invite/zt-31mr5c6ci-W3kYQ7qGDULlGQ5QJjsxmA
     - icon: fontawesome/brands/twitter
