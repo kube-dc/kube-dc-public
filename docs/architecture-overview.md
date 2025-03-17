@@ -22,25 +22,28 @@ graph TD
 ```
 
 ## Architectural Layers
-
 Kube-DC is organized into four main architectural layers:
 
-1. **Infrastructure Layer**
+**Infrastructure Layer**
+
    - Bare metal servers or cloud infrastructure
    - Kubernetes core services
    - Storage subsystems
 
-2. **Virtualization Layer**
+**Virtualization Layer**
+
    - KubeVirt for VM provisioning and management
    - Container workloads
    - Hybrid application support
 
-3. **Networking Layer**
+**Networking Layer**
+
    - Kube-OVN for software-defined networking
    - Multi-tenant network isolation
    - External IP addressing and service exposure
 
-4. **Management Layer**
+**Management Layer**
+
    - Multi-tenancy resource organization
    - Identity and access management via Keycloak
    - User interface and API access
