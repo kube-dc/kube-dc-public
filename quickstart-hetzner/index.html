@@ -1248,10 +1248,12 @@
 <h3 id="2-configure-vswitch">2. Configure vSwitch<a class="headerlink" href="#2-configure-vswitch" title="Permanent link"> ¶</a></h3>
 <p>In the Hetzner Robot interface:</p>
 <ol>
-<li>Create a vSwitch if you don't have one already</li>
-<li>Add your servers to the vSwitch</li>
+<li>Create a <a href="https://robot.hetzner.com/vswitch/index">vSwitch</a> if you don't have one already</li>
+<li>Add your servers to the vSwitch
+  <img alt="Hetzner vSwitch" src="../images/hetzner_vswitch.png" /></li>
 <li>Request an additional subnet to be used for external IPs (Floating IPs)</li>
-<li>Assign the subnet to your vSwitch</li>
+<li>Assign the subnet to your vSwitch:
+  <img alt="Hetzner vSwitch" src="../images/hetzner_vswitch_network.png" /></li>
 </ol>
 <p>You will get two vlan ids, one for the local network(in example 4012) and one for the external subnet with public ips(in example 4011).</p>
 <h2 id="network-configuration">Network Configuration<a class="headerlink" href="#network-configuration" title="Permanent link"> ¶</a></h2>
