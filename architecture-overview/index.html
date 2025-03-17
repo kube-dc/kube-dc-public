@@ -935,36 +935,30 @@
     MultiTenant --&gt;|Organizes| Resources[Resources]</code></pre>
 <h2 id="architectural-layers">Architectural Layers<a class="headerlink" href="#architectural-layers" title="Permanent link"> ¶</a></h2>
 <p>Kube-DC is organized into four main architectural layers:</p>
-<ol>
-<li><strong>Infrastructure Layer</strong></li>
+<p><strong>Infrastructure Layer</strong></p>
+<ul>
 <li>Bare metal servers or cloud infrastructure</li>
 <li>Kubernetes core services</li>
-<li>
-<p>Storage subsystems</p>
-</li>
-<li>
+<li>Storage subsystems</li>
+</ul>
 <p><strong>Virtualization Layer</strong></p>
-</li>
+<ul>
 <li>KubeVirt for VM provisioning and management</li>
 <li>Container workloads</li>
-<li>
-<p>Hybrid application support</p>
-</li>
-<li>
+<li>Hybrid application support</li>
+</ul>
 <p><strong>Networking Layer</strong></p>
-</li>
+<ul>
 <li>Kube-OVN for software-defined networking</li>
 <li>Multi-tenant network isolation</li>
-<li>
-<p>External IP addressing and service exposure</p>
-</li>
-<li>
+<li>External IP addressing and service exposure</li>
+</ul>
 <p><strong>Management Layer</strong></p>
-</li>
+<ul>
 <li>Multi-tenancy resource organization</li>
 <li>Identity and access management via Keycloak</li>
 <li>User interface and API access</li>
-</ol>
+</ul>
 <h2 id="multi-tenant-organization">Multi-Tenant Organization<a class="headerlink" href="#multi-tenant-organization" title="Permanent link"> ¶</a></h2>
 <p>Kube-DC introduces a hierarchical resource organization model:</p>
 <ul>
