@@ -52,6 +52,7 @@ units:
     type: shell
     env:
       KUBECONFIG:  {{ .variables.kubeconfig | default "~/.kube/config" }}
+      CHANGE: "sad"
     apply:
       commands:
         - echo master_nodes_list=$(kubectl get no -lkube-ovn/role=master --no-headers -o wide | awk '{print $6}' | tr \\n ',' | sed 's/,$//')
@@ -134,6 +135,7 @@ units:
     depends_on:
       - this.multus-cni
     env:
+      TEST: "true"
       {{- if .variables.debug }}
       KUBE_DC_DEBUG: true
       {{- end }}
@@ -516,5 +518,5 @@ units:
       project_name: "{{ .variables.create_default.project.name }}"
       organization_admin_username: admin
       retrieve_organization_password: "kubectl get secret realm-access -n {{ .variables.create_default.organization.name }} -o jsonpath='{.data.password}' | base64 --decode"
-
-
+      retrieve_organization_realm_url: "kubectl get secret realm-access -n {{ .variables.create_default.organization.name }} -o jsonpath='{.data.url}' | base64 --decode"
+      MASTER_NODES: "{{ output "this.list-master-nodes.master_nodes_list" }}"

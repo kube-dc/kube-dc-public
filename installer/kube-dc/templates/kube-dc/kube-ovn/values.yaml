@@ -8,3 +8,4 @@ func:
   ENABLE_NAT_GW: "true"
   ENABLE_LB_SVC: "false"
   ENABLE_TPROXY: "true"
+  UPD: "true"
