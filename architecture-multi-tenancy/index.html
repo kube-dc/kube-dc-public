@@ -1106,39 +1106,35 @@
 </span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="nt">roles</span><span class="p">:</span>
 </span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">resource-manager</span>
 </span></code></pre></div>
-<p><strong>Mapping:</strong>
-- OrganizationGroups are implemented as Kubernetes Custom Resource Definitions (CRDs)
-- Each OrganizationGroup maps to a Keycloak Group
-- The permissions defined in OrganizationGroups determine the Kubernetes RoleBindings that grant access to resources
-- Different roles can be assigned for different projects</p>
+<p><strong>Mapping:</strong></p>
+<ul>
+<li>OrganizationGroups are implemented as Kubernetes Custom Resource Definitions (CRDs)</li>
+<li>Each OrganizationGroup maps to a Keycloak Group</li>
+<li>The permissions defined in OrganizationGroups determine the Kubernetes RoleBindings that grant access to resources</li>
+<li>Different roles can be assigned for different projects</li>
+</ul>
 <h2 id="authentication-and-authorization-flow">Authentication and Authorization Flow<a class="headerlink" href="#authentication-and-authorization-flow" title="Permanent link"> ¶</a></h2>
-<ol>
-<li><strong>User Authentication:</strong></li>
+<p><strong>User Authentication:</strong></p>
+<ul>
 <li>Users authenticate through Keycloak</li>
-<li>
-<p>Upon successful authentication, users receive JSON Web Tokens (JWTs)</p>
-</li>
-<li>
+<li>Upon successful authentication, users receive JSON Web Tokens (JWTs)</li>
+</ul>
 <p><strong>Group and Role Assignment:</strong></p>
-</li>
+<ul>
 <li>Users are assigned to Keycloak Groups based on their OrganizationGroup membership</li>
-<li>
-<p>Keycloak maps these groups to corresponding roles</p>
-</li>
-<li>
+<li>Keycloak maps these groups to corresponding roles</li>
+</ul>
 <p><strong>Kubernetes Authorization:</strong></p>
-</li>
+<ul>
 <li>The Kubernetes API server validates the user's JWT</li>
 <li>RoleBindings determine what actions the user can perform within each namespace</li>
-<li>
-<p>Resource access is controlled at the Project (namespace) level</p>
-</li>
-<li>
+<li>Resource access is controlled at the Project (namespace) level</li>
+</ul>
 <p><strong>Resource Access:</strong></p>
-</li>
+<ul>
 <li>Users can only access resources in projects where they have appropriate role assignments</li>
 <li>Actions are restricted based on the permissions defined in their roles</li>
-</ol>
+</ul>
 <h2 id="role-based-access-control">Role-Based Access Control<a class="headerlink" href="#role-based-access-control" title="Permanent link"> ¶</a></h2>
 <p>Kube-DC provides several built-in roles that can be assigned to users via OrganizationGroups:</p>
 <ul>

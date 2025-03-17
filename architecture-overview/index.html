@@ -921,6 +921,9 @@
 <p>Kube-DC provides a comprehensive multi-tenant cloud infrastructure platform built on Kubernetes and enhanced with enterprise-grade features like virtualization, networking, and identity management.</p>
 <h2 id="core-components">Core Components<a class="headerlink" href="#core-components" title="Permanent link"> ¶</a></h2>
 <p>The Kube-DC architecture consists of several key components that work together to deliver a complete cloud platform:</p>
+<p><img alt="Kube-DC Architecture Overview" src="../images/project-overview.png" /></p>
+<h2 id="architectural-layers">Architectural Layers<a class="headerlink" href="#architectural-layers" title="Permanent link"> ¶</a></h2>
+<p>Kube-DC is organized into four main architectural layers:</p>
 <pre class="mermaid"><code>graph TD
     K8s[Kubernetes] --&gt; KubeVirt[KubeVirt]    
     K8s --&gt; KubeOVN[Kube-OVN]    
@@ -933,8 +936,6 @@
     Keycloak --&gt;|Controls| IAM[Identity &amp; Access]
     LBController --&gt;|Enables| LoadBalancing[Load Balancing]
     MultiTenant --&gt;|Organizes| Resources[Resources]</code></pre>
-<h2 id="architectural-layers">Architectural Layers<a class="headerlink" href="#architectural-layers" title="Permanent link"> ¶</a></h2>
-<p>Kube-DC is organized into four main architectural layers:</p>
 <p><strong>Infrastructure Layer</strong></p>
 <ul>
 <li>Bare metal servers or cloud infrastructure</li>
