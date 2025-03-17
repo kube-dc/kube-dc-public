@@ -505,6 +505,27 @@ units:
     provider_conf:
       config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
   -
+    name: novnc-namespace
+    type: kubernetes
+    depends_on: this.kube-dc
+    source:  ./novnc/ns.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
+    name: novnc-deployment
+    type: kubernetes
+    depends_on: this.novnc-namespace
+    source:  ./novnc/deploy.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
+    name: novnc-service
+    type: kubernetes
+    depends_on: this.novnc-namespace
+    source:  ./novnc/svc.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
     name: outputs
     type: printer
     depends_on:

@@ -1,0 +1,28 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  namespace: novnc
+  name: novnc
+  labels:
+    app: novnc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: novnc
+  template:
+    metadata:
+      labels:
+        app: novnc
+    spec:
+      containers:
+        - image: jhankins/docker-novnc:latest
+          imagePullPolicy: IfNotPresent
+          name: novnc
+          args:
+            - --vnc
+            - jays-pc.nutt.local:5900
+          ports:
+            - name: novnc
+              containerPort: 6080
+      restartPolicy: Always
