@@ -28,7 +28,7 @@ Kube-DC's virtualization is powered by KubeVirt and consists of several componen
 3. Navigate to "Virtual Machines" in the left sidebar
 4. Click the "+" button to create a new VM
 
-![VM List View](../assets/images/vm-list-view.png)
+![VM List View](images/vm-list-view.png)
 
 ### Step 2: Configure Basic VM Parameters
 
@@ -38,7 +38,7 @@ In the VM creation wizard, specify the basic parameters:
 2. **Operation System**: Select from the dropdown (e.g., "Ubuntu 24.04")
 3. **Advanced Options**: Expand this section if you want to customize the image source
 
-![VM Creation Step 1](../assets/images/vm-creation-step1.png)
+![VM Creation Step 1](images/vm-creation-step1.png)
 
 ### Step 3: Configure VM Resources
 
@@ -57,7 +57,7 @@ Continue configuring the VM:
 3. The UI shows the actual YAML that will be applied
 4. Click "Finish" to create the VM
 
-![VM Creation Review](../assets/images/vm-creation-review.png)
+![VM Creation Review](images/vm-creation-review.png)
 
 ### Step 5: Monitor VM Creation
 
@@ -66,8 +66,6 @@ After creation:
 1. You'll be redirected to the VM list
 2. Wait for the VM to reach "Running" state
 3. Note the assigned IP address
-
-![VM List with New VM](../assets/images/vm-list-with-new.png)
 
 ## Managing VMs via the UI
 
@@ -80,7 +78,7 @@ Click on a VM name to view its details page, which includes:
 3. **Performance Metrics**: Real-time CPU, memory, and storage usage
 4. **Conditions**: Agent connection and other status indicators
 
-![VM Details View](../assets/images/vm-details-view.png)
+![VM Details View](images/vm-details-view.png)
 
 ### Accessing VM Console
 
