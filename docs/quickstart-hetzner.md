@@ -24,10 +24,13 @@ Install Ubuntu 24.04 LTS on all servers through the Hetzner Robot interface.
 
 In the Hetzner Robot interface:
 
-  1. Create a vSwitch if you don't have one already
+  1. Create a [vSwitch](https://robot.hetzner.com/vswitch/index) if you don't have one already
   2. Add your servers to the vSwitch
+  ![Hetzner vSwitch](images/hetzner_vswitch.png)
   3. Request an additional subnet to be used for external IPs (Floating IPs)
-  4. Assign the subnet to your vSwitch
+  4. Assign the subnet to your vSwitch:
+  ![Hetzner vSwitch](images/hetzner_vswitch_network.png)
+
 
 You will get two vlan ids, one for the local network(in example 4012) and one for the external subnet with public ips(in example 4011).
 

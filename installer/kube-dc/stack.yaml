@@ -44,7 +44,7 @@ variables:
    
 
   versions:
-    kube_dc: "v0.1.20" # release version
+    kube_dc: "v0.1.21" # release version
     rke2: "v1.32.1+rke2r1"
     # kubevirt: "v1.3.0"
     # kubevirt_cdi: "v1.59.0"
