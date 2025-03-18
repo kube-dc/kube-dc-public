@@ -26,7 +26,7 @@ metadata:
   namespace: shalb-demo
 spec:
   controlPlaneEndpoint:
-    host: 167.235.85.116
+    host: 167.235.85.115
     port: 6443
   controlPlaneServiceTemplate:
     spec:
