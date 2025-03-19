@@ -7,7 +7,4 @@ spec:
   permissions:
   - project: "demo"
     roles:
-    - admin
-  - project: "prod"
-    roles:
     - resource-manager

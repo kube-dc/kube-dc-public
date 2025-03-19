@@ -3,11 +3,18 @@ service:
 
 ingress:
   enabled: true
-  ingressClassName: ""
+  ingressClassName: "shalb-demo"
   hostname: wordpress.kube-dc.com
   annotations:
     cert-manager.io/issuer: letsencrypt-http
   tls: true
+
+extraEnvVars:
+  - name: WORDPRESS_SITE_URL
+    value: "https://wordpress.kube-dc.com"
+  - name: WORDPRESS_BLOG_NAME
+    value: "My Blog"
+
 
 networkPolicy:
   enabled: false

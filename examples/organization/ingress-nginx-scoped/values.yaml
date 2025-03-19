@@ -16,6 +16,8 @@ controller:
       value: 138.201.253.201
     - name: KUBERNETES_SERVICE_PORT
       value: "6443"
+    - name: DEBUG
+      value: "true"
 rbac:
   create: true
   scope: true
