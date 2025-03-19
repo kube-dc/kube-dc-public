@@ -26,6 +26,7 @@ nav:
     # - Upgrade & Maintenance: upgrade-maintenance.md
   - User Guide:
     - Deploying VMs & Containers: tutorial-virtual-machines.md
+    - User & Group Management: user-groups.md
     # - Multi-Tenant Demo: tutorial-multi-tenant.md
     # - Managed Services Setup: tutorial-managed-services.md
     # - Billing & Cost Management Demo: tutorial-billing.md
