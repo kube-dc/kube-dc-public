@@ -8,13 +8,11 @@
       
       
       
-        <link rel="canonical" href="https://docs.kube-dc.com/architecture-multi-tenancy/">
+        <link rel="canonical" href="https://docs.kube-dc.com/user-groups/">
       
       
-        <link rel="prev" href="../architecture-overview/">
+        <link rel="prev" href="../tutorial-virtual-machines/">
       
-      
-        <link rel="next" href="../architecture-virtualization/">
       
       
       <link rel="icon" href="../images/favicon.png">
@@ -22,7 +20,7 @@
     
     
       
-        <title>Multi-Tenancy & RBAC - Kube-DC</title>
+        <title>User & Group Management - Kube-DC</title>
       
     
     
@@ -83,7 +81,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#multi-tenancy-rbac" class="md-skip">
+        <a href="#user-and-group-management" class="md-skip">
           Skip to content
         </a>
       
@@ -116,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Multi-Tenancy & RBAC
+              User & Group Management
             
           </span>
         </div>
@@ -257,12 +255,10 @@
         
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
+      <li class="md-tabs__item">
         <a href="../architecture-overview/" class="md-tabs__link">
           
   
@@ -277,10 +273,12 @@
         
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
+      <li class="md-tabs__item md-tabs__item--active">
         <a href="../tutorial-virtual-machines/" class="md-tabs__link">
           
   
@@ -520,28 +518,23 @@
       
   
   
-    
   
   
-  
     
     
     
       
-        
-        
-      
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
         
           
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -553,7 +546,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             Architecture & Concepts
@@ -586,31 +579,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  <span class="md-ellipsis">
-    Multi-Tenancy & RBAC
-    
-  </span>
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../architecture-multi-tenancy/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -620,137 +592,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#core-components-and-mapping-structure" class="md-nav__link">
-    <span class="md-ellipsis">
-      Core Components and Mapping Structure
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#organization-structure" class="md-nav__link">
-    <span class="md-ellipsis">
-      Organization Structure
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Organization Structure">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#organization" class="md-nav__link">
-    <span class="md-ellipsis">
-      Organization
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#project" class="md-nav__link">
-    <span class="md-ellipsis">
-      Project
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#organizationgroup" class="md-nav__link">
-    <span class="md-ellipsis">
-      OrganizationGroup
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#authentication-and-authorization-flow" class="md-nav__link">
-    <span class="md-ellipsis">
-      Authentication and Authorization Flow
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#role-based-access-control" class="md-nav__link">
-    <span class="md-ellipsis">
-      Role-Based Access Control
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#implementation-details" class="md-nav__link">
-    <span class="md-ellipsis">
-      Implementation Details
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Implementation Details">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#kubernetes-components" class="md-nav__link">
-    <span class="md-ellipsis">
-      Kubernetes Components
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#keycloak-integration" class="md-nav__link">
-    <span class="md-ellipsis">
-      Keycloak Integration
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#practical-application" class="md-nav__link">
-    <span class="md-ellipsis">
-      Practical Application
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -811,23 +652,28 @@
       
   
   
+    
   
   
+  
     
     
     
-      
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
         
           
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -839,7 +685,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             User Guide
@@ -872,10 +718,31 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../user-groups/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    User & Group Management
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   <span class="md-ellipsis">
@@ -885,6 +752,119 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      Prerequisites
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-by-step-guide" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step-by-Step Guide
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step-by-Step Guide">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#creating-project-roles" class="md-nav__link">
+    <span class="md-ellipsis">
+      Creating Project Roles
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#creating-organization-groups" class="md-nav__link">
+    <span class="md-ellipsis">
+      Creating Organization Groups
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#managing-users-in-keycloak" class="md-nav__link">
+    <span class="md-ellipsis">
+      Managing Users in Keycloak
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Managing Users in Keycloak">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#access-keycloak-admin-console" class="md-nav__link">
+    <span class="md-ellipsis">
+      Access Keycloak Admin Console
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#create-and-configure-users" class="md-nav__link">
+    <span class="md-ellipsis">
+      Create and Configure Users
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#accessing-kube-dc-ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      Accessing Kube-DC UI
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -924,46 +904,74 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#core-components-and-mapping-structure" class="md-nav__link">
+  <a href="#overview" class="md-nav__link">
     <span class="md-ellipsis">
-      Core Components and Mapping Structure
+      Overview
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#organization-structure" class="md-nav__link">
+  <a href="#prerequisites" class="md-nav__link">
     <span class="md-ellipsis">
-      Organization Structure
+      Prerequisites
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Organization Structure">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-by-step-guide" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step-by-Step Guide
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step-by-Step Guide">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#organization" class="md-nav__link">
+  <a href="#creating-project-roles" class="md-nav__link">
     <span class="md-ellipsis">
-      Organization
+      Creating Project Roles
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#project" class="md-nav__link">
+  <a href="#creating-organization-groups" class="md-nav__link">
     <span class="md-ellipsis">
-      Project
+      Creating Organization Groups
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#organizationgroup" class="md-nav__link">
+  <a href="#managing-users-in-keycloak" class="md-nav__link">
     <span class="md-ellipsis">
-      OrganizationGroup
+      Managing Users in Keycloak
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Managing Users in Keycloak">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#access-keycloak-admin-console" class="md-nav__link">
+    <span class="md-ellipsis">
+      Access Keycloak Admin Console
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#create-and-configure-users" class="md-nav__link">
+    <span class="md-ellipsis">
+      Create and Configure Users
     </span>
   </a>
   
@@ -973,48 +981,11 @@
     </nav>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#authentication-and-authorization-flow" class="md-nav__link">
-    <span class="md-ellipsis">
-      Authentication and Authorization Flow
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#role-based-access-control" class="md-nav__link">
-    <span class="md-ellipsis">
-      Role-Based Access Control
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#implementation-details" class="md-nav__link">
-    <span class="md-ellipsis">
-      Implementation Details
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Implementation Details">
-      <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#kubernetes-components" class="md-nav__link">
+  <a href="#accessing-kube-dc-ui" class="md-nav__link">
     <span class="md-ellipsis">
-      Kubernetes Components
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#keycloak-integration" class="md-nav__link">
-    <span class="md-ellipsis">
-      Keycloak Integration
+      Accessing Kube-DC UI
     </span>
   </a>
   
@@ -1022,15 +993,6 @@
         
       </ul>
     </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#practical-application" class="md-nav__link">
-    <span class="md-ellipsis">
-      Practical Application
-    </span>
-  </a>
   
 </li>
       
@@ -1053,158 +1015,129 @@
   
 
 
-<h1 id="multi-tenancy-rbac">Multi-Tenancy &amp; RBAC<a class="headerlink" href="#multi-tenancy-rbac" title="Permanent link"> ¶</a></h1>
-<p>Kube-DC implements a comprehensive multi-tenant architecture that leverages Kubernetes namespaces and Keycloak for identity and access management. This document explains how organizations, projects, and groups in Kube-DC are mapped to Kubernetes and Keycloak objects.</p>
-<h2 id="core-components-and-mapping-structure">Core Components and Mapping Structure<a class="headerlink" href="#core-components-and-mapping-structure" title="Permanent link"> ¶</a></h2>
-<p>The following diagram illustrates the mapping between Kube-DC structures and the underlying Kubernetes and Keycloak components:</p>
-<pre class="mermaid"><code>graph TD
-    User[User 1] --&gt;|Authenticates| KC[Keycloak Realm]
-    User --&gt;|Obtains Group and Role| KCG[Keycloak Group]
-    User --&gt;|Obtains Group and Role| KCR[Keycloak Role]
+<h1 id="user-and-group-management">User and Group Management<a class="headerlink" href="#user-and-group-management" title="Permanent link"> ¶</a></h1>
+<p>This guide explains how to set up and manage users, groups, and roles in Kube-DC using Kubernetes RBAC and Keycloak integration.</p>
+<!-- 
+??? note "TODO: Items to Complete"
+    - [ ] Add doc on retrieving Organization Admin kubeconfig
+    - [ ] Add example YAML for full-access role
+    - [ ] Add example YAML for read-only role
+    - [ ] Add example YAML for k8s-user role
+    - [ ] Add example YAML for vm-user role
+    - [ ] Add troubleshooting section for common permission issues
+    - [ ] Document how to revoke user access
+    - [ ] Create section on auditing user activities
+-->
 
-    ORG[Organization] --&gt;|Maps to| ORGNS[Organization Namespace]
-
-    ORGNS --&gt;|Contains| ORGGRP[Organization Group]
-
-    PROJ[Project A] --&gt;|Maps to| PNS[Project A NS]
-    PROJ2[Project B] --&gt;|Maps to| PNS2[Project B NS]
-
-    ORGGRP --&gt;|Maps to| K8GRPCRD[Group CRD]
-    ORGGRP --&gt;|Maps to| KCGRP[Keycloak Group]
-
-    KCGRP --&gt;|Maps to| K8SROLE[K8s RoleBinding]
-    KCR --&gt;|Maps to| K8SROLE
-
-    K8GRPCRD --&gt;|Defines permissions for| PNS
-    K8GRPCRD --&gt;|Defines permissions for| PNS2
-
-    KK[Keycloak Client Role] --&gt;|KK to K8s Role Mapping| K8R[K8s Role]</code></pre>
-<h2 id="organization-structure">Organization Structure<a class="headerlink" href="#organization-structure" title="Permanent link"> ¶</a></h2>
-<h3 id="organization">Organization<a class="headerlink" href="#organization" title="Permanent link"> ¶</a></h3>
-<p>An Organization is the top-level entity in Kube-DC that represents a company, department, or team.</p>
-<p><strong>Example Organization YAML:</strong></p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc.com/v1</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Organization</span>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link"> ¶</a></h2>
+<p>Kube-DC implements a multi-tenant access control system that combines:</p>
+<ul>
+<li><strong>Kubernetes RBAC</strong>: Handles resource-level permissions within namespaces</li>
+<li><strong>Organization Groups</strong>: Manages project-level access across namespaces</li>
+<li><strong>Keycloak Integration</strong>: Provides user authentication and group management</li>
+</ul>
+<h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link"> ¶</a></h2>
+<p>This guide assumes you're working from an <strong>Organization Admin</strong> perspective. You'll need:</p>
+<ul>
+<li>Access to the Kube-DC cluster with organization admin privileges</li>
+<li><code>kubectl</code> configured to access your cluster with organization admin privileges</li>
+<li>Access to the Keycloak organization admin console</li>
+</ul>
+<div class="admonition tip">
+<p class="admonition-title">Before You Begin</p>
+<p>During organization and project creation you will get a namespace with organization name <code>&lt;orgname&gt;</code> created and project namespace with <code>&lt;orgname&gt;-&lt;projectname&gt;</code> pattern.</p>
+</div>
+<h2 id="step-by-step-guide">Step-by-Step Guide<a class="headerlink" href="#step-by-step-guide" title="Permanent link"> ¶</a></h2>
+<h3 id="creating-project-roles">Creating Project Roles<a class="headerlink" href="#creating-project-roles" title="Permanent link"> ¶</a></h3>
+<p>Create a Kubernetes Role to define permissions within a project namespace. These roles dictate what actions users can perform on specific resources.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rbac.k8s.io/v1</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Role</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nt">spec</span><span class="p">:</span><span class="w"> </span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Shalb</span><span class="nv"> </span><span class="s">organization&quot;</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nt">email</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;arti@shalb.com&quot;</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb-demo</span><span class="w">  </span><span class="c1"># Replace with your project namespace</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">resource-manager</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nt">rules</span><span class="p">:</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">apiGroups</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;&quot;</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># &quot;&quot; indicates the core API group</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">    </span><span class="nt">resources</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;pods&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;services&quot;</span><span class="p p-Indicator">]</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="nt">verbs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;get&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;list&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;create&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;watch&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;delete&quot;</span><span class="p p-Indicator">]</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">apiGroups</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;apps&quot;</span><span class="p p-Indicator">]</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">    </span><span class="nt">resources</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;deployments&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;daemonsets&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;replicasets&quot;</span><span class="p p-Indicator">]</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">    </span><span class="nt">verbs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;get&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;list&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;create&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;watch&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;delete&quot;</span><span class="p p-Indicator">]</span>
 </span></code></pre></div>
-<p><strong>Mapping:</strong>
-- Each Organization maps to a dedicated Kubernetes namespace with the same name
-- A corresponding Keycloak Client is created for the organization
-- The Organization serves as a logical grouping for Projects and OrganizationGroups</p>
-<h3 id="project">Project<a class="headerlink" href="#project" title="Permanent link"> ¶</a></h3>
-<p>A Project represents a logical grouping of resources within an Organization. Projects help segregate workloads and manage access control.</p>
-<p><strong>Example Project YAML:</strong></p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc.com/v1</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Project</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">demo</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">cidrBlock</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;10.0.10.0/24&quot;</span>
+<p>Apply the role to your namespace using:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>role.yaml
 </span></code></pre></div>
-<p><strong>Mapping:</strong>
-- Each Project maps to a dedicated Kubernetes namespace in the format: <code>{organization}-{project}</code> (e.g., <code>shalb-demo</code>)
-- Projects receive their own network CIDR block for resource isolation
-- Kubernetes namespaces provide the boundary for resource quotas and access control</p>
-<h3 id="organizationgroup">OrganizationGroup<a class="headerlink" href="#organizationgroup" title="Permanent link"> ¶</a></h3>
-<p>An OrganizationGroup maps users to roles within specific projects, defining what actions they can perform.</p>
-<p><strong>Example OrganizationGroup YAML:</strong></p>
+<div class="admonition warning">
+<p class="admonition-title">Role Scope</p>
+<p>Remember that Roles are namespace-scoped. If you need permissions across multiple namespaces, you need to create a separate Role in each Project namespace.</p>
+</div>
+<h3 id="creating-organization-groups">Creating Organization Groups<a class="headerlink" href="#creating-organization-groups" title="Permanent link"> ¶</a></h3>
+<p>Create an OrganizationGroup Custom Resource (CR) to define group permissions across projects.</p>
+<div class="admonition important">
+<p class="admonition-title">Key Points</p>
+<ul>
+<li>The OrganizationGroup CR automatically creates a corresponding group in Keycloak</li>
+<li>This CR <strong>must be created in the organization namespace</strong>, not the project namespace</li>
+<li>Role bindings would be created by this CR</li>
+</ul>
+</div>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc.com/v1</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">OrganizationGroup</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;app-manager&quot;</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb</span><span class="w">  </span><span class="c1"># namespace of the organization (not the project)</span>
 </span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">permissions</span><span class="p">:</span>
 </span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">project</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;demo&quot;</span>
 </span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nt">roles</span><span class="p">:</span>
-</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">admin</span>
-</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">project</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;prod&quot;</span>
-</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="nt">roles</span><span class="p">:</span>
-</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">resource-manager</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">resource-manager</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span><span class="c1"># Additional projects and roles can be added:</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span><span class="c1"># - project: &quot;prod&quot;</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="c1">#   roles:</span>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span><span class="c1">#   - resource-manager</span>
 </span></code></pre></div>
-<p><strong>Mapping:</strong></p>
-<ul>
-<li>OrganizationGroups are implemented as Kubernetes Custom Resource Definitions (CRDs)</li>
-<li>Each OrganizationGroup maps to a Keycloak Group</li>
-<li>The permissions defined in OrganizationGroups determine the Kubernetes RoleBindings that grant access to resources</li>
-<li>Different roles can be assigned for different projects</li>
-</ul>
-<h2 id="authentication-and-authorization-flow">Authentication and Authorization Flow<a class="headerlink" href="#authentication-and-authorization-flow" title="Permanent link"> ¶</a></h2>
-<p><strong>User Authentication:</strong></p>
-<ul>
-<li>Users authenticate through Keycloak</li>
-<li>Upon successful authentication, users receive JSON Web Tokens (JWTs)</li>
-</ul>
-<p><strong>Group and Role Assignment:</strong></p>
-<ul>
-<li>Users are assigned to Keycloak Groups based on their OrganizationGroup membership</li>
-<li>Keycloak maps these groups to corresponding roles</li>
-</ul>
-<p><strong>Kubernetes Authorization:</strong></p>
-<ul>
-<li>The Kubernetes API server validates the user's JWT</li>
-<li>RoleBindings determine what actions the user can perform within each namespace</li>
-<li>Resource access is controlled at the Project (namespace) level</li>
-</ul>
-<p><strong>Resource Access:</strong></p>
-<ul>
-<li>Users can only access resources in projects where they have appropriate role assignments</li>
-<li>Actions are restricted based on the permissions defined in their roles</li>
-</ul>
-<h2 id="role-based-access-control">Role-Based Access Control<a class="headerlink" href="#role-based-access-control" title="Permanent link"> ¶</a></h2>
-<p>Kube-DC provides several built-in roles that can be assigned to users via OrganizationGroups:</p>
-<ul>
-<li><strong>Admin:</strong> Full access to all resources within a project</li>
-<li><strong>Resource Manager:</strong> Can create and manage resources, but cannot modify project settings</li>
-<li><strong>Viewer:</strong> Read-only access to project resources</li>
-</ul>
-<p><strong>Example Role YAML:</strong></p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc.com/v1</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Role</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">resource-manager</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">rules</span><span class="p">:</span>
-</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">apiGroups</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;*&quot;</span><span class="p p-Indicator">]</span>
-</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">    </span><span class="nt">resources</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;pods&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;services&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;deployments&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;statefulsets&quot;</span><span class="p p-Indicator">]</span>
-</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">    </span><span class="nt">verbs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;get&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;list&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;watch&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;create&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;update&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;patch&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;delete&quot;</span><span class="p p-Indicator">]</span>
-</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">apiGroups</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;kubevirt.io&quot;</span><span class="p p-Indicator">]</span>
-</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">    </span><span class="nt">resources</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;virtualmachines&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;virtualmachineinstances&quot;</span><span class="p p-Indicator">]</span>
-</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">    </span><span class="nt">verbs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;get&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;list&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;watch&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;create&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;update&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;patch&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;delete&quot;</span><span class="p p-Indicator">]</span>
+<p>Apply the group configuration:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>organization-group.yaml
 </span></code></pre></div>
-<h2 id="implementation-details">Implementation Details<a class="headerlink" href="#implementation-details" title="Permanent link"> ¶</a></h2>
-<h3 id="kubernetes-components">Kubernetes Components<a class="headerlink" href="#kubernetes-components" title="Permanent link"> ¶</a></h3>
-<ul>
-<li><strong>Namespaces:</strong> Used to isolate Organizations and Projects</li>
-<li><strong>RBAC:</strong> Role-Based Access Control for managing permissions</li>
-<li><strong>CRDs:</strong> Custom Resource Definitions for Kube-DC specific resources</li>
-<li><strong>NetworkPolicies:</strong> Ensure network isolation between Projects</li>
-</ul>
-<h3 id="keycloak-integration">Keycloak Integration<a class="headerlink" href="#keycloak-integration" title="Permanent link"> ¶</a></h3>
-<ul>
-<li><strong>Realm:</strong> Represents the authentication domain</li>
-<li><strong>Clients:</strong> Each Organization has a dedicated client</li>
-<li><strong>Groups:</strong> Map to OrganizationGroups in Kube-DC</li>
-<li><strong>Roles:</strong> Define permissions that can be assigned to users</li>
-<li><strong>Role Mappings:</strong> Connect Keycloak roles to Kubernetes RBAC</li>
-</ul>
-<h2 id="practical-application">Practical Application<a class="headerlink" href="#practical-application" title="Permanent link"> ¶</a></h2>
-<p>When a user is added to an organization group in Kube-DC:</p>
+<h3 id="managing-users-in-keycloak">Managing Users in Keycloak<a class="headerlink" href="#managing-users-in-keycloak" title="Permanent link"> ¶</a></h3>
+<h4 id="access-keycloak-admin-console">Access Keycloak Admin Console<a class="headerlink" href="#access-keycloak-admin-console" title="Permanent link"> ¶</a></h4>
+<p>Retrieve Keycloak access credentials from your organization namespace:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>secret<span class="w"> </span>realm-access<span class="w"> </span>-n<span class="w"> </span>shalb<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.data.url}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>base64<span class="w"> </span>-d
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>secret<span class="w"> </span>realm-access<span class="w"> </span>-n<span class="w"> </span>shalb<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.data.user}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>base64<span class="w"> </span>-d
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>kubectl<span class="w"> </span>get<span class="w"> </span>secret<span class="w"> </span>realm-access<span class="w"> </span>-n<span class="w"> </span>shalb<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.data.password}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>base64<span class="w"> </span>-d
+</span></code></pre></div>
+<div class="admonition tip">
+<p class="admonition-title">Remember</p>
+<p>Replace <code>shalb</code> with your own organization namespace in the commands above.</p>
+</div>
+<h4 id="create-and-configure-users">Create and Configure Users<a class="headerlink" href="#create-and-configure-users" title="Permanent link"> ¶</a></h4>
 <ol>
-<li>The corresponding Keycloak group membership is created</li>
-<li>The user inherits roles based on the group's permissions</li>
-<li>When the user accesses the Kubernetes API, their JWT contains the group and role information</li>
-<li>Kubernetes RBAC evaluates the JWT against RoleBindings to determine access</li>
-<li>The user can operate only within the boundaries of their assigned permissions</li>
+<li>Log in to the Keycloak admin console using the retrieved credentials</li>
+<li>Navigate to <strong>Users → Add User</strong>
+<img alt="Add User" src="../images/keycloak-add-user.png" /></li>
+<li>Fill in the required user information</li>
+<li>Set up initial password in the <strong>Credentials</strong> tab</li>
+<li>Add the user to the appropriate group (e.g., "app-manager") via the <strong>Groups</strong> tab
+<img alt="Join Group" src="../images/keycloak-user-join-group.png" /></li>
 </ol>
-<p>This multi-layered approach ensures secure isolation between tenants while providing fine-grained access control within each project.</p>
+<div class="admonition info">
+<p class="admonition-title">User Group Mapping</p>
+<p>Any groups created via OrganizationGroup CRs will appear automatically in Keycloak. Changes to group membership in Keycloak are synchronized with Kubernetes RBAC.</p>
+</div>
+<h3 id="accessing-kube-dc-ui">Accessing Kube-DC UI<a class="headerlink" href="#accessing-kube-dc-ui" title="Permanent link"> ¶</a></h3>
+<ol>
+<li>Navigate to the Kube-DC UI login page</li>
+<li>Log in using the credentials created in Keycloak</li>
+<li>Verify access to assigned project resources</li>
+</ol>
+<div class="admonition tip">
+<p class="admonition-title">Permissions Troubleshooting</p>
+<p>If a user cannot access expected resources:
+- Verify they're assigned to the correct groups in Keycloak
+- Check that the OrganizationGroup CR includes the correct projects and roles
+- Ensure the underlying Kubernetes Roles have appropriate permissions
+- Examine the Keycloak logs for authentication issues</p>
+<p>Permission changes may take up to 5 minutes to propagate through the system.</p>
+</div>
 
 
 
