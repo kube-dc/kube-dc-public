@@ -1,0 +1,47 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kube-dc-kubectl
+  namespace: shalb-demo
+  labels:
+    app: kube-dc
+    component: kubectl
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: kube-dc
+        component: kubectl
+    spec:
+      containers:
+      - name: kubectl
+        image: shalb/kube-dc-kubectl:v0.1.22
+        env:
+        - name: KUBE_DC_KEYCLOAK_ENDPOINT
+          value: "https://login.dev.kube-dc.com"
+        - name: KUBE_DC_ORGANIZATION
+          value: "shalb"
+        - name: KUBE_DC_REFRESH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: kube-dc-secret
+              key: refresh_token
+        - name: SERVER_ENDPOINT
+          value: "138.201.253.201:6443"
+        - name: CLUSTER_NAME
+          value: "shalb"
+        - name: USER_NAME
+          value: "arti"
+        volumeMounts:
+        - name: token-cache
+          mountPath: /tmp
+      volumes:
+      - name: token-cache
+        emptyDir:
+          medium: Memory
+          sizeLimit: 1Mi
+      restartPolicy: Never
+      # securityContext:
+      #   runAsNonRoot: false
+      #   runAsUser: 0
