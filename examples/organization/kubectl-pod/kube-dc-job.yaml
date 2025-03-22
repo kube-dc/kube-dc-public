@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: kubectl
-        image: shalb/kube-dc-kubectl:v0.1.22
+        image: shalb/kube-dc-kubectl:v0.2.4
         env:
         - name: KUBE_DC_KEYCLOAK_ENDPOINT
           value: "https://login.dev.kube-dc.com"
