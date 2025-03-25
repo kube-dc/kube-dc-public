@@ -53,7 +53,7 @@ variables:
     # kyverno: "v1.10.0"
     # terraform: "1.9.4"
     kube_ovn: "v1.13.2"
-    # multus_helm: "2.1.11"
+    # multus_helm: "2.2.9"
     # ingress_nginx_helm: "4.11.1"
     keycloak_helm: "24.3.0"
     prom_operator_helm: "67.4.0"

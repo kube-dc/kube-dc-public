@@ -1,0 +1,76 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: arti-alpine-net-root
+spec:
+  pvc:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 10G
+    storageClassName: local-path
+  source:
+    http:
+      url: https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: arti-alpine-net
+  namespace: shalb-demo
+spec:
+  running: true
+  template:
+    spec:
+      networks:
+      - name: default
+        pod: {}
+      domain:
+        devices:
+          interfaces:
+            - name: default
+              bridge: {}
+          disks:
+          - disk: 
+              bus: virtio
+            name: root-volume
+          - name: cloudinitdisk
+            disk:
+              bus: virtio
+        machine:
+          type: ""
+        cpu:
+          cores: 1
+        memory:
+          guest: 1G
+      readinessProbe:
+        guestAgentPing: {}
+        failureThreshold: 10
+        initialDelaySeconds: 30
+        periodSeconds: 10
+        timeoutSeconds: 5
+      accessCredentials:
+      - sshPublicKey:
+          source:
+            secret:
+              secretName: authorized-keys-default
+          propagationMethod:
+            qemuGuestAgent:
+              users:
+              - ubuntu
+      terminationGracePeriodSeconds: 60
+      volumes:
+      - dataVolume:
+          name: arti-alpine-net-root
+        name: root-volume
+      - name: cloudinitdisk
+        cloudInitNoCloud:
+          userData: |-
+            #cloud-config
+            package_update: true
+            package_upgrade: true
+            packages:
+            - qemu-guest-agent
+            runcmd:
+            - systemctl enable --now qemu-guest-agent

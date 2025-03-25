@@ -1,23 +1,23 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: kube-dc-kubectl
+  name: kube-dc-ssh
   namespace: shalb-demo
   labels:
     app: kube-dc
-    component: kubectl
+    component: ssh
 spec:
   backoffLimit: 3
   template:
     metadata:
       labels:
         app: kube-dc
-        component: kubectl
-        service: kubectl-console
+        component: ssh
+        service: ssh-console
     spec:
       terminationGracePeriodSeconds: 2
       containers:
-      - name: kubectl
+      - name: ssh
         image: shalb/kube-dc-kubectl:v0.4.3
         ports:
         - containerPort: 7681
@@ -40,35 +40,26 @@ spec:
           timeoutSeconds: 2
           failureThreshold: 8
         env:
-        - name: KEYCLOAK_ENDPOINT
-          value: "https://login.dev.kube-dc.com"
-        - name: ORGANIZATION
-          value: "shalb"
-        - name: REFRESH_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: kube-dc-secret
-              key: refresh_token
-        - name: SERVER_ENDPOINT
-          value: "kube-api.dev.kube-dc.com:6443"
-        - name: CLUSTER_NAME
-          value: "shalb"
-        - name: USER_NAME
-          value: "arti"
         - name: COMMAND
-          value: "kubectl_console"
+          value: "ssh_console"
         - name: ONCE
-          value: "true"
+          value: "false"
         - name: TTL
           value: "1200"
+        - name: OS_IMAGE_USER
+          value: "ubuntu"
+        - name: VMI_IP
+          value: "10.0.10.24"
         volumeMounts:
-        - name: token-cache
-          mountPath: /tmp
+        - mountPath: /usr/local/ssh-private-key/
+          name: ssh-private-key
+          subPath: id_rsa
+          readOnly: true
       volumes:
-      - name: token-cache
-        emptyDir:
-          medium: Memory
-          sizeLimit: 1Mi
+      - name: ssh-private-key
+        secret:
+          defaultMode: 256
+          secretName: ssh-keypair-default
       restartPolicy: Never
       # securityContext:
       #   runAsNonRoot: false
