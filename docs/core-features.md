@@ -2,17 +2,7 @@
 
 Kube-DC extends Kubernetes with a robust set of features designed for enterprise data center operations. This page provides detailed technical specifications and use cases for each of Kube-DC's core capabilities.
 
-> Looking for a high-level overview? Visit our [introduction page](index.md).
-
-## Table of Contents
-
-- [Organization Management](#organization-management)
-- [Namespace as a Service](#namespace-as-a-service)
-- [Network Management](#network-management)
-- [Virtualization](#virtualization)
-- [Infrastructure as Code](#infrastructure-as-code)
-- [Integrated Flexible Billing](#integrated-flexible-billing)
-- [Management Services](#management-services)
+> Looking for a Architectural details? Visit our [architectural overview](architecture-overview.md).
 
 ## Organization Management
 
@@ -123,10 +113,6 @@ Kube-DC leverages and extends the Kubernetes API to enable comprehensive infrast
 - **Native Kubernetes API**: Manage all Kube-DC resources using standard Kubernetes tools
 - **Custom Resource Definitions (CRDs)**: Extended Kubernetes objects for managing organizations, projects, VMs, and more
 - **GitOps Compatible**: Deploy and manage infrastructure using GitOps workflows
-- **Terraform Provider**: Official Terraform provider for Kube-DC resources
-- **Ansible Integration**: Ansible modules for managing Kube-DC resources
-- **Crossplane Support**: Use Crossplane to provision and manage Kube-DC resources
-- **Pulumi Provider**: Programmatically manage Kube-DC using multiple languages
 
 !!! example "Real-World Applications"
     - **Automated Infrastructure**: Create fully automated infrastructure provisioning workflows
@@ -166,23 +152,30 @@ Kube-DC provides a platform for delivering managed services on top of its infras
 
 **Capabilities:**
 
-- **Database as a Service**: Deploy and manage databases with automated operations
+**Database as a Service**: Deploy and manage databases with automated operations
+
   - PostgreSQL
   - MySQL/MariaDB
   - Microsoft SQL Server
   - And more
-- **Object Storage**: S3-compatible storage with multi-tenancy support
-- **NoSQL Databases**: Managed NoSQL database offerings
+
+**Object Storage**: S3-compatible storage with multi-tenancy support
+
+**NoSQL Databases**: Managed NoSQL database offerings
+
   - Redis
   - MongoDB
   - Elasticsearch/OpenSearch
-- **AI/ML Platform**: Infrastructure for deploying and serving AI/ML models
+
+**AI/ML Platform**: Infrastructure for deploying and serving AI/ML models
+
   - LLM serving
   - Model training infrastructure
   - GPU resource allocation
-- **Backup Services**: Automated backup solutions for VMs and containers
-- **Monitoring as a Service**: Multi-tenant monitoring solutions
-- **Service Catalog**: Self-service provisioning of common services
+
+**Backup Services**: Automated backup solutions for VMs and containers
+**Monitoring as a Service**: Multi-tenant monitoring solutions
+**Service Catalog**: Self-service provisioning of common services
 
 !!! example "Real-World Applications"
     - **Internal Platform Team**: Provide managed services to development teams

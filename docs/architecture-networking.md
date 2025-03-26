@@ -209,18 +209,22 @@ Kube-DC supports both networking approaches:
 
 Kube-DC implements multiple layers of network security:
 
-1. **Project Isolation**
+**Project Isolation**
+
    - Each project receives its own subnet
    - Traffic between projects is controlled by network policies
 
-2. **VPC Segmentation**
+**VPC Segmentation**
+
    - Projects can be placed in different VPCs for stricter isolation
    - Each VPC has its own network stack and routing tables
 
-3. **Kubernetes Network Policies**
+**Kubernetes Network Policies**
+
    - Fine-grained control over ingress and egress traffic
    - Can be applied at the namespace, pod, or service level
 
-4. **Subnet ACLs**
+**Subnet ACLs**
+
    - Control traffic at the subnet level
    - Provide an additional layer of security beyond network policies

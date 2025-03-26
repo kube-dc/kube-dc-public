@@ -51,6 +51,7 @@ spec:
 ```
 
 **Mapping:**
+
 - Each Organization maps to a dedicated Kubernetes namespace with the same name
 - A corresponding Keycloak Client is created for the organization
 - The Organization serves as a logical grouping for Projects and OrganizationGroups
@@ -72,6 +73,7 @@ spec:
 ```
 
 **Mapping:**
+
 - Each Project maps to a dedicated Kubernetes namespace in the format: `{organization}-{project}` (e.g., `shalb-demo`)
 - Projects receive their own network CIDR block for resource isolation
 - Kubernetes namespaces provide the boundary for resource quotas and access control

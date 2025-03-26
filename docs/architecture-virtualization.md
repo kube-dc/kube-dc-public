@@ -183,7 +183,7 @@ Health checks ensure:
 
 Kube-DC provides an intuitive web interface for VM management:
 
-![VM Management UI](../assets/images/vm-management.png)
+![VM Management UI](images/vm-details-view.png)
 
 ### VM Dashboard Features
 
@@ -257,7 +257,6 @@ VMs in Kube-DC operate within the same multi-tenant architecture as containers:
 
 - VMs are created within specific projects
 - Organization and project permissions control VM access
-- Resource quotas apply to VM resources
 - Network isolation is enforced between projects
 - VM metrics are included in project billing and quotas
 
@@ -275,13 +274,6 @@ VMs in Kube-DC operate within the same multi-tenant architecture as containers:
 - Use cloud-init for automated VM configuration
 - Configure readiness probes for proper health monitoring
 - Use virtio drivers for improved performance
-
-### Security Considerations
-
-- Use SSH keys instead of passwords when possible
-- Apply security updates automatically through cloud-init
-- Use network policies to restrict VM communication
-- Consider using encrypted storage for sensitive workloads
 
 ## Conclusion
 

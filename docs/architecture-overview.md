@@ -9,7 +9,7 @@ The Kube-DC architecture consists of several key components that work together t
 ![Kube-DC Architecture Overview](images/project-overview.png)
 
 ## Architectural Layers
-Kube-DC is organized into four main architectural layers:
+Kube-DC is organized into main architectural layers:
 
 
 ```mermaid
@@ -23,8 +23,8 @@ graph TD
     KubeVirt -->|Provides| VMs[Virtual Machines]
     KubeOVN -->|Manages| Networking[Network VLANs/VPCs]
     Keycloak -->|Controls| IAM[Identity & Access]
-    LBController -->|Enables| LoadBalancing[Load Balancing]
-    MultiTenant -->|Organizes| Resources[Resources]
+    LBController -->|Enables| LoadBalancing[Load Balancing, Floating IPs]
+    MultiTenant -->|Organizes| Resources[Organization and Projects]
 ```
 
 
