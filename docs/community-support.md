@@ -5,6 +5,7 @@ Kube-DC has multiple channels for support, community engagement, and professiona
 ## Community Support
 
 ### GitHub Discussions
+
 - Ask questions and engage with the community
 - Share your experiences and solutions
 - Report bugs and request features
@@ -13,6 +14,7 @@ Kube-DC has multiple channels for support, community engagement, and professiona
 
 ### Slack Community
 Join our active Slack community to:
+
 - Get real-time help from community members
 - Connect with other Kube-DC users
 - Share your use cases and solutions
@@ -28,9 +30,11 @@ Join our active Slack community to:
 ## Professional Services
 
 ### Commercial Support
+
 We offer various tiers of commercial support:
 
 #### Basic Support
+
 - Business hours support (9/5)
 - Email support
 - 24-hour response time
@@ -71,19 +75,24 @@ We offer various tiers of commercial support:
 ## Getting Support
 
 ### For Community Support
+
 1. Check the [documentation](https://docs.kube-dc.com)
 2. Search existing [GitHub Issues](https://github.com/kube-dc/kube-dc-public/issues)
 3. Join our [Slack community](https://join.slack.com/t/kube-dc/shared_invite/zt-31mr5c6ci-W3kYQ7qGDULlGQ5QJjsxmA)
 4. Post on [GitHub Discussions](https://github.com/kube-dc/kube-dc-public/discussions)
 
 ### For Commercial Support
+
 Contact our sales team:
+
 - Email: support@kube-dc.com
 - Website: [https://kube-dc.com/](https://kube-dc.com/)
 - Phone: +380632441621
 
 ## Contributing
+
 We welcome contributions from the community! Check our [Contributing Guide](https://github.com/kube-dc/kube-dc-public/blob/main/CONTRIBUTING.md) to learn how you can:
+
 - Submit bug reports and feature requests
 - Contribute code
 - Improve documentation
