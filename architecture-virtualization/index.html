@@ -899,15 +899,6 @@
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#security-considerations" class="md-nav__link">
-    <span class="md-ellipsis">
-      Security Considerations
-    </span>
-  </a>
-  
-</li>
-        
       </ul>
     </nav>
   
@@ -1028,11 +1019,33 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-groups/" class="md-nav__link">
+      <a href="../tutorial-user-groups/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
     User & Group Management
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial-ip-and-lb/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Manage IP's and Load Balancers
     
   </span>
   
@@ -1317,15 +1330,6 @@
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#security-considerations" class="md-nav__link">
-    <span class="md-ellipsis">
-      Security Considerations
-    </span>
-  </a>
-  
-</li>
-        
       </ul>
     </nav>
   
@@ -1512,7 +1516,7 @@
 - Custom health check scripts pass</p>
 <h2 id="web-ui-management">Web UI Management<a class="headerlink" href="#web-ui-management" title="Permanent link"> ¶</a></h2>
 <p>Kube-DC provides an intuitive web interface for VM management:</p>
-<p><img alt="VM Management UI" src="../assets/images/vm-management.png" /></p>
+<p><img alt="VM Management UI" src="../images/vm-details-view.png" /></p>
 <h3 id="vm-dashboard-features">VM Dashboard Features<a class="headerlink" href="#vm-dashboard-features" title="Permanent link"> ¶</a></h3>
 <p>The VM dashboard provides:</p>
 <ul>
@@ -1567,7 +1571,6 @@
 <ul>
 <li>VMs are created within specific projects</li>
 <li>Organization and project permissions control VM access</li>
-<li>Resource quotas apply to VM resources</li>
 <li>Network isolation is enforced between projects</li>
 <li>VM metrics are included in project billing and quotas</li>
 </ul>
@@ -1584,13 +1587,6 @@
 <li>Use cloud-init for automated VM configuration</li>
 <li>Configure readiness probes for proper health monitoring</li>
 <li>Use virtio drivers for improved performance</li>
-</ul>
-<h3 id="security-considerations">Security Considerations<a class="headerlink" href="#security-considerations" title="Permanent link"> ¶</a></h3>
-<ul>
-<li>Use SSH keys instead of passwords when possible</li>
-<li>Apply security updates automatically through cloud-init</li>
-<li>Use network policies to restrict VM communication</li>
-<li>Consider using encrypted storage for sensitive workloads</li>
 </ul>
 <h2 id="conclusion">Conclusion<a class="headerlink" href="#conclusion" title="Permanent link"> ¶</a></h2>
 <p>Kube-DC's integration of KubeVirt provides a seamless experience for managing both VMs and containers in a single platform. This unified approach simplifies infrastructure management, improves resource utilization, and enables hybrid application architectures that combine the benefits of both virtualization and containerization.</p>

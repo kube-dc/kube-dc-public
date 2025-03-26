@@ -457,15 +457,6 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#table-of-contents" class="md-nav__link">
-    <span class="md-ellipsis">
-      Table of Contents
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#organization-management" class="md-nav__link">
     <span class="md-ellipsis">
       Organization Management
@@ -836,11 +827,33 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-groups/" class="md-nav__link">
+      <a href="../tutorial-user-groups/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
     User & Group Management
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial-ip-and-lb/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Manage IP's and Load Balancers
     
   </span>
   
@@ -883,15 +896,6 @@
       Table of contents
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#table-of-contents" class="md-nav__link">
-    <span class="md-ellipsis">
-      Table of Contents
-    </span>
-  </a>
-  
-</li>
       
         <li class="md-nav__item">
   <a href="#organization-management" class="md-nav__link">
@@ -978,18 +982,8 @@
 <h1 id="core-features">Core Features<a class="headerlink" href="#core-features" title="Permanent link"> ¶</a></h1>
 <p>Kube-DC extends Kubernetes with a robust set of features designed for enterprise data center operations. This page provides detailed technical specifications and use cases for each of Kube-DC's core capabilities.</p>
 <blockquote>
-<p>Looking for a high-level overview? Visit our <a href="../">introduction page</a>.</p>
+<p>Looking for a Architectural details? Visit our <a href="../architecture-overview/">architectural overview</a>.</p>
 </blockquote>
-<h2 id="table-of-contents">Table of Contents<a class="headerlink" href="#table-of-contents" title="Permanent link"> ¶</a></h2>
-<ul>
-<li><a href="#organization-management">Organization Management</a></li>
-<li><a href="#namespace-as-a-service">Namespace as a Service</a></li>
-<li><a href="#network-management">Network Management</a></li>
-<li><a href="#virtualization">Virtualization</a></li>
-<li><a href="#infrastructure-as-code">Infrastructure as Code</a></li>
-<li><a href="#integrated-flexible-billing">Integrated Flexible Billing</a></li>
-<li><a href="#management-services">Management Services</a></li>
-</ul>
 <h2 id="organization-management">Organization Management<a class="headerlink" href="#organization-management" title="Permanent link"> ¶</a></h2>
 <div class="admonition info">
 <p class="admonition-title">Foundation for Multi-Tenancy</p>
@@ -1108,10 +1102,6 @@
 <li><strong>Native Kubernetes API</strong>: Manage all Kube-DC resources using standard Kubernetes tools</li>
 <li><strong>Custom Resource Definitions (CRDs)</strong>: Extended Kubernetes objects for managing organizations, projects, VMs, and more</li>
 <li><strong>GitOps Compatible</strong>: Deploy and manage infrastructure using GitOps workflows</li>
-<li><strong>Terraform Provider</strong>: Official Terraform provider for Kube-DC resources</li>
-<li><strong>Ansible Integration</strong>: Ansible modules for managing Kube-DC resources</li>
-<li><strong>Crossplane Support</strong>: Use Crossplane to provision and manage Kube-DC resources</li>
-<li><strong>Pulumi Provider</strong>: Programmatically manage Kube-DC using multiple languages</li>
 </ul>
 <div class="admonition example">
 <p class="admonition-title">Real-World Applications</p>
@@ -1154,25 +1144,29 @@
 </div>
 <p>Kube-DC provides a platform for delivering managed services on top of its infrastructure.</p>
 <p><strong>Capabilities:</strong></p>
+<p><strong>Database as a Service</strong>: Deploy and manage databases with automated operations</p>
 <ul>
-<li><strong>Database as a Service</strong>: Deploy and manage databases with automated operations</li>
 <li>PostgreSQL</li>
 <li>MySQL/MariaDB</li>
 <li>Microsoft SQL Server</li>
 <li>And more</li>
-<li><strong>Object Storage</strong>: S3-compatible storage with multi-tenancy support</li>
-<li><strong>NoSQL Databases</strong>: Managed NoSQL database offerings</li>
+</ul>
+<p><strong>Object Storage</strong>: S3-compatible storage with multi-tenancy support</p>
+<p><strong>NoSQL Databases</strong>: Managed NoSQL database offerings</p>
+<ul>
 <li>Redis</li>
 <li>MongoDB</li>
 <li>Elasticsearch/OpenSearch</li>
-<li><strong>AI/ML Platform</strong>: Infrastructure for deploying and serving AI/ML models</li>
+</ul>
+<p><strong>AI/ML Platform</strong>: Infrastructure for deploying and serving AI/ML models</p>
+<ul>
 <li>LLM serving</li>
 <li>Model training infrastructure</li>
 <li>GPU resource allocation</li>
-<li><strong>Backup Services</strong>: Automated backup solutions for VMs and containers</li>
-<li><strong>Monitoring as a Service</strong>: Multi-tenant monitoring solutions</li>
-<li><strong>Service Catalog</strong>: Self-service provisioning of common services</li>
 </ul>
+<p><strong>Backup Services</strong>: Automated backup solutions for VMs and containers
+<strong>Monitoring as a Service</strong>: Multi-tenant monitoring solutions
+<strong>Service Catalog</strong>: Self-service provisioning of common services</p>
 <div class="admonition example">
 <p class="admonition-title">Real-World Applications</p>
 <ul>

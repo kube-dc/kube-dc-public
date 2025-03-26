@@ -875,11 +875,33 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-groups/" class="md-nav__link">
+      <a href="../tutorial-user-groups/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
     User & Group Management
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial-ip-and-lb/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Manage IP's and Load Balancers
     
   </span>
   
@@ -1092,10 +1114,12 @@
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Shalb</span><span class="nv"> </span><span class="s">organization&quot;</span>
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nt">email</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;arti@shalb.com&quot;</span>
 </span></code></pre></div>
-<p><strong>Mapping:</strong>
-- Each Organization maps to a dedicated Kubernetes namespace with the same name
-- A corresponding Keycloak Client is created for the organization
-- The Organization serves as a logical grouping for Projects and OrganizationGroups</p>
+<p><strong>Mapping:</strong></p>
+<ul>
+<li>Each Organization maps to a dedicated Kubernetes namespace with the same name</li>
+<li>A corresponding Keycloak Client is created for the organization</li>
+<li>The Organization serves as a logical grouping for Projects and OrganizationGroups</li>
+</ul>
 <h3 id="project">Project<a class="headerlink" href="#project" title="Permanent link"> ¶</a></h3>
 <p>A Project represents a logical grouping of resources within an Organization. Projects help segregate workloads and manage access control.</p>
 <p><strong>Example Project YAML:</strong></p>
@@ -1107,10 +1131,12 @@
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">cidrBlock</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;10.0.10.0/24&quot;</span>
 </span></code></pre></div>
-<p><strong>Mapping:</strong>
-- Each Project maps to a dedicated Kubernetes namespace in the format: <code>{organization}-{project}</code> (e.g., <code>shalb-demo</code>)
-- Projects receive their own network CIDR block for resource isolation
-- Kubernetes namespaces provide the boundary for resource quotas and access control</p>
+<p><strong>Mapping:</strong></p>
+<ul>
+<li>Each Project maps to a dedicated Kubernetes namespace in the format: <code>{organization}-{project}</code> (e.g., <code>shalb-demo</code>)</li>
+<li>Projects receive their own network CIDR block for resource isolation</li>
+<li>Kubernetes namespaces provide the boundary for resource quotas and access control</li>
+</ul>
 <h3 id="organizationgroup">OrganizationGroup<a class="headerlink" href="#organizationgroup" title="Permanent link"> ¶</a></h3>
 <p>An OrganizationGroup maps users to roles within specific projects, defining what actions they can perform.</p>
 <p><strong>Example OrganizationGroup YAML:</strong></p>

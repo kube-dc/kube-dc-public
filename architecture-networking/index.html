@@ -956,11 +956,33 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-groups/" class="md-nav__link">
+      <a href="../tutorial-user-groups/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
     User & Group Management
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial-ip-and-lb/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Manage IP's and Load Balancers
     
   </span>
   
@@ -1378,32 +1400,26 @@
 </ul>
 <h2 id="network-security">Network Security<a class="headerlink" href="#network-security" title="Permanent link"> ¶</a></h2>
 <p>Kube-DC implements multiple layers of network security:</p>
-<ol>
-<li><strong>Project Isolation</strong></li>
+<p><strong>Project Isolation</strong></p>
+<ul>
 <li>Each project receives its own subnet</li>
-<li>
-<p>Traffic between projects is controlled by network policies</p>
-</li>
-<li>
+<li>Traffic between projects is controlled by network policies</li>
+</ul>
 <p><strong>VPC Segmentation</strong></p>
-</li>
+<ul>
 <li>Projects can be placed in different VPCs for stricter isolation</li>
-<li>
-<p>Each VPC has its own network stack and routing tables</p>
-</li>
-<li>
+<li>Each VPC has its own network stack and routing tables</li>
+</ul>
 <p><strong>Kubernetes Network Policies</strong></p>
-</li>
+<ul>
 <li>Fine-grained control over ingress and egress traffic</li>
-<li>
-<p>Can be applied at the namespace, pod, or service level</p>
-</li>
-<li>
+<li>Can be applied at the namespace, pod, or service level</li>
+</ul>
 <p><strong>Subnet ACLs</strong></p>
-</li>
+<ul>
 <li>Control traffic at the subnet level</li>
 <li>Provide an additional layer of security beyond network policies</li>
-</ol>
+</ul>
 
 
 

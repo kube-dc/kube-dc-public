@@ -818,11 +818,33 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-groups/" class="md-nav__link">
+      <a href="../tutorial-user-groups/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
     User & Group Management
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial-ip-and-lb/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Manage IP's and Load Balancers
     
   </span>
   
@@ -945,7 +967,7 @@
 <p>The Kube-DC architecture consists of several key components that work together to deliver a complete cloud platform:</p>
 <p><img alt="Kube-DC Architecture Overview" src="../images/project-overview.png" /></p>
 <h2 id="architectural-layers">Architectural Layers<a class="headerlink" href="#architectural-layers" title="Permanent link"> ¶</a></h2>
-<p>Kube-DC is organized into four main architectural layers:</p>
+<p>Kube-DC is organized into main architectural layers:</p>
 <pre class="mermaid"><code>graph TD
     K8s[Kubernetes] --&gt; KubeVirt[KubeVirt]    
     K8s --&gt; KubeOVN[Kube-OVN]    
@@ -956,8 +978,8 @@
     KubeVirt --&gt;|Provides| VMs[Virtual Machines]
     KubeOVN --&gt;|Manages| Networking[Network VLANs/VPCs]
     Keycloak --&gt;|Controls| IAM[Identity &amp; Access]
-    LBController --&gt;|Enables| LoadBalancing[Load Balancing]
-    MultiTenant --&gt;|Organizes| Resources[Resources]</code></pre>
+    LBController --&gt;|Enables| LoadBalancing[Load Balancing, Floating IPs]
+    MultiTenant --&gt;|Organizes| Resources[Organization and Projects]</code></pre>
 <p><strong>Infrastructure Layer</strong></p>
 <ul>
 <li>Bare metal servers or cloud infrastructure</li>
