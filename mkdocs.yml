@@ -42,7 +42,7 @@ nav:
     # - Configuration Files: reference-config-files.md
     # - API Endpoints: reference-api.md
   # - FAQ & Troubleshooting: faq-troubleshooting.md
-  # - Community & Support: community-support.md
+  - Community & Support: community-support.md
 
 markdown_extensions:
   - admonition
