@@ -83,17 +83,25 @@ On all nodes, update, upgrade, and install required software:
 ```bash
 sudo apt -y update
 sudo apt -y upgrade
-sudo apt -y install unzip iptables
+sudo apt -y install unzip iptables linux-headers-$(uname -r)
+```
+
+Update to the latest kernel version:
+
+```bash
+sudo apt -y install linux-generic
+sudo reboot
+```
+
+After the server reboots, verify your kernel version:
+
+```bash
+uname -r
 ```
 
 Optimize system settings by adding to `/etc/sysctl.conf`:
 
 ```bash
-# Disable IPv6
-net.ipv6.conf.all.disable_ipv6 = 1
-net.ipv6.conf.default.disable_ipv6 = 1
-net.ipv6.conf.lo.disable_ipv6 = 1
-
 # Increase inotify limits
 fs.inotify.max_user_watches=1524288
 fs.inotify.max_user_instances=4024
@@ -101,6 +109,19 @@ fs.inotify.max_user_instances=4024
 # Network optimization for Kubernetes
 net.bridge.bridge-nf-call-iptables = 1
 net.ipv4.ip_forward = 1
+```
+
+Ensure the nf_conntrack module is loaded:
+
+```bash
+# Check if the module is loaded
+lsmod | grep nf_conntrack
+
+# If not loaded, load it manually
+sudo modprobe nf_conntrack
+
+# To ensure it's loaded on boot, add it to /etc/modules
+echo "nf_conntrack" | sudo tee -a /etc/modules
 ```
 
 Apply the changes:

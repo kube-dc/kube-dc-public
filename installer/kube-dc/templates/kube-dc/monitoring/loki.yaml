@@ -1,6 +1,7 @@
 # https://github.com/grafana/loki/blob/main/production/helm/loki/values.yaml
 # https://grafana.com/docs/loki/latest/configure/
-
+global:
+  dnsService: "rke2-coredns-rke2-coredns"
 loki:
   auth_enabled: false
   storage:
