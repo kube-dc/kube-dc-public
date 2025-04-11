@@ -96,6 +96,13 @@ Kube-DC provides organizations with a unified management interface for all their
 
 Comprehensive documentation is available at [docs.kube-dc.com](https://docs.kube-dc.com).
 
+Key documentation sections:
+- [Core Features](https://docs.kube-dc.com/core-features/)
+- [Architecture & Concepts](https://docs.kube-dc.com/architecture-overview/)
+- [Installation Guides](https://docs.kube-dc.com/quickstart-overview/)
+- [Multi-Tenancy Management](https://docs.kube-dc.com/creating-and-managing-entities/)
+- [API Reference](https://docs.kube-dc.com/reference-api/)
+
 ## Community
 
 Kube-DC is built with a focus on community collaboration. We welcome contributions, bug reports, and feature requests.

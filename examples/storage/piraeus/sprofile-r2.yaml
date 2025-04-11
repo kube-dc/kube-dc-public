@@ -1,0 +1,13 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: StorageProfile
+metadata:
+  name: linstor-bs2
+spec:
+  cloneStrategy: csi-clone
+  claimPropertySets:
+  - accessModes:
+    - ReadWriteOnce
+    volumeMode: Filesystem
+  - accessModes:
+    - ReadWriteOnce
+    volumeMode: Block

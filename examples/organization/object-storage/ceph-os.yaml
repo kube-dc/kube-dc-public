@@ -1,0 +1,94 @@
+apiVersion: ceph.rook.io/v1
+kind: CephObjectStore
+metadata:
+  name: ceph-objectstore
+  namespace: shalb-demo
+  labels:
+    app: rook-ceph-objectstore
+spec:
+  # The metadata pool spec
+  metadataPool:
+    # The failure domain: host (logical) or osd (physical)
+    failureDomain: host
+    # Replication configuration for data reliability
+    replicated:
+      # Number of copies/replicas for the data
+      size: 2
+      # Require at least this many nodes to be healthy for writes
+      requireSafeReplicaSize: true
+
+  # The data pool spec
+  dataPool:
+    # The failure domain: host (logical) or osd (physical)
+    failureDomain: host
+    # Erasure coding for better storage efficiency
+    erasureCoded:
+      # Number of data chunks per object
+      dataChunks: 2
+      # Number of coding chunks for redundancy
+      codingChunks: 1
+    # Additional pool parameters
+    parameters:
+      # Enable S3 bulk operations
+      bulk: "true"
+
+  # Preserve pools on deletion to prevent data loss
+  preservePoolsOnDelete: false
+
+  # Gateway service configuration
+  gateway:
+    # The port the RGW service will be listening on
+    port: 80
+    # Uncomment to enable HTTPS access
+    # securePort: 443
+    # Reference to the secret containing the SSL certificate
+    # sslCertificateRef: ceph-objectstore-cert
+    # Number of RGW instances to run in the cluster
+    instances: 1
+    # Resource configuration for the RGW pods
+    resources:
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+    # # Placement constraints for the gateway pods
+    # placement:
+    #   nodeAffinity:
+    #     requiredDuringSchedulingIgnoredDuringExecution:
+    #       nodeSelectorTerms:
+    #       - matchExpressions:
+    #         - key: kubernetes.io/hostname
+    #           operator: In
+    #           values:
+    #           - worker-node1
+    #           - worker-node2
+    #           - worker-node3
+    # # Pod priority class name
+    priorityClassName: system-cluster-critical
+
+  # Health check for the object store
+  healthCheck:
+    bucket:
+      interval: 60s
+      timeout: 5s
+    
+---
+
+# Object Store User for accessing the S3-compatible storage
+apiVersion: ceph.rook.io/v1
+kind: CephObjectStoreUser
+metadata:
+  name: ceph-objectstore-user
+  namespace: shalb-demo
+spec:
+  # The store to create the user in
+  store: ceph-objectstore
+  # Display name for the user
+  displayName: "Ceph Object Store User"
+  # Optional: quotas for limiting bucket usage
+  # quotas:
+  #   maxBuckets: 10
+  #   maxSize: 1073741824  # 1GB
+  #   maxObjects: 1000000

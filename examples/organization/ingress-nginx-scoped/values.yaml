@@ -1,11 +1,11 @@
 controller:
   ingressClassResource:
-    enabled: false  # Disables the default IngressClass creation
-  ingressClass: ""  # No default IngressClass
+    enabled: false  # Disables the IngressClass creation
+  ingressClass: ""  # No IngressClass
   scope:
     enabled: true  # Enables namespace-scoped mode
     namespace: shalb-demo  # Restricts the controller to this namespace
-  watchIngressWithoutClass: false
+  watchIngressWithoutClass: true
   admissionWebhooks:
     enabled: false
   service:
@@ -13,11 +13,11 @@ controller:
       service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"
   extraEnvs:
     - name: KUBERNETES_SERVICE_HOST
-      value: 138.201.253.201
+      value: kube-api.dev.kube-dc.com
     - name: KUBERNETES_SERVICE_PORT
       value: "6443"
     - name: DEBUG
-      value: "true"
+      value: "false"
 rbac:
   create: true
   scope: true

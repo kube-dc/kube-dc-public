@@ -3,7 +3,7 @@ service:
 
 ingress:
   enabled: true
-  ingressClassName: "shalb-demo"
+  ingressClassName: ""
   hostname: wordpress.kube-dc.com
   annotations:
     cert-manager.io/issuer: letsencrypt-http

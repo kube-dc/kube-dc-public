@@ -1,25 +1,8 @@
-apiVersion: cdi.kubevirt.io/v1beta1
-kind: DataVolume
-metadata:
-  name: live-migration-root
-  namespace: shalb-dev
-spec:
-  pvc:
-    accessModes:
-    - ReadWriteMany
-    resources:
-      requests:
-        storage: 30G
-    storageClassName: ceph-filesystem
-  source:
-    http:
-      url: https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
----
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
 metadata:
-  name: live-migration
-  namespace: shalb-dev
+  name: new-vm-name
+  namespace: shalb-demo
 spec:
   running: true
   template:
@@ -28,7 +11,7 @@ spec:
       - name: vpc_net_0
         multus:
           default: true
-          networkName: shalb-dev/default
+          networkName: shalb-demo/default
       domain:
         devices:
           interfaces:
@@ -61,11 +44,11 @@ spec:
           propagationMethod:
             qemuGuestAgent:
               users:
-              - ubuntu
+              - alpine
       terminationGracePeriodSeconds: 60
       volumes:
       - dataVolume:
-          name: live-migration-root
+          name: test-linstor2
         name: root-volume
       - name: cloudinitdisk
         cloudInitNoCloud:
@@ -76,4 +59,6 @@ spec:
             packages:
             - qemu-guest-agent
             runcmd:
-            - systemctl enable --now qemu-guest-agent
+            - apk --update add sudo
+            - rc-service qemu-guest-agent restart
+            - rc-update add qemu-guest-agent default

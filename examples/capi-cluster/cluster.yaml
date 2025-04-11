@@ -60,7 +60,7 @@ spec:
                 resources:
                   requests:
                     storage: 30G
-                storageClassName: local-path
+                storageClassName: ceph-filesystem
               source:
                 http:
                   url: https://cloud-images.ubuntu.com/minimal/daily/noble/current/noble-minimal-cloudimg-amd64.img
@@ -69,7 +69,7 @@ spec:
             spec:
               domain:
                 cpu:
-                  cores: 2
+                  cores: 1
                 devices:
                   disks:
                   - disk:
@@ -84,7 +84,6 @@ spec:
                     enabled: true
                 firmware:
                   bootloader:
-                    efi: {}
                 memory:
                   guest: 10Gi
               evictionStrategy: External
@@ -168,7 +167,7 @@ spec:
                 resources:
                   requests:
                     storage: 30G
-                storageClassName: local-path
+                storageClassName: ceph-filesystem
               source:
                 http:
                   url: https://cloud-images.ubuntu.com/minimal/daily/noble/current/noble-minimal-cloudimg-amd64.img
@@ -177,7 +176,7 @@ spec:
             spec:
               domain:
                 cpu:
-                  cores: 2
+                  cores: 1
                 devices:
                   disks:
                   - disk:
