@@ -1,1 +1,0 @@
-helm install longhorn longhorn/longhorn --namespace longhorn-system --create-namespace --version 1.8.1 --values values.yaml

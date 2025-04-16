@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="800" height="600" fill="#f8f9fa" />
+  
+  <!-- Title -->
+  <text x="400" y="40" font-family="Arial" font-size="24" text-anchor="middle" fill="#333">Kube-DC Object Storage Infrastructure</text>
+  
+  <!-- Kubernetes Cluster Box -->
+  <rect x="50" y="80" width="700" height="460" rx="10" ry="10" fill="#ffffff" stroke="#cccccc" stroke-width="2" />
+  <text x="400" y="110" font-family="Arial" font-size="18" text-anchor="middle" fill="#326CE5">Kubernetes Cluster</text>
+  
+  <!-- Control Plane -->
+  <rect x="100" y="140" width="280" height="160" rx="5" ry="5" fill="#e6f3ff" stroke="#326CE5" stroke-width="2" />
+  <text x="240" y="160" font-family="Arial" font-size="16" text-anchor="middle" fill="#333">Control Plane</text>
+  
+  <!-- API Server -->
+  <rect x="130" y="180" width="100" height="40" rx="5" ry="5" fill="#ffffff" stroke="#326CE5" stroke-width="1" />
+  <text x="180" y="205" font-family="Arial" font-size="12" text-anchor="middle" fill="#333">API Server</text>
+  
+  <!-- AuthN/AuthZ -->
+  <rect x="250" y="180" width="100" height="40" rx="5" ry="5" fill="#ffffff" stroke="#326CE5" stroke-width="1" />
+  <text x="300" y="205" font-family="Arial" font-size="12" text-anchor="middle" fill="#333">Keycloak</text>
+  
+  <!-- S3 Controller -->
+  <rect x="130" y="240" width="220" height="40" rx="5" ry="5" fill="#ffffff" stroke="#F58536" stroke-width="1" />
+  <text x="240" y="265" font-family="Arial" font-size="12" text-anchor="middle" fill="#333">S3 Controller</text>
+  
+  <!-- Object Storage -->
+  <rect x="420" y="140" width="280" height="160" rx="5" ry="5" fill="#fff8e6" stroke="#F58536" stroke-width="2" />
+  <text x="560" y="160" font-family="Arial" font-size="16" text-anchor="middle" fill="#333">Object Storage</text>
+  
+  <!-- Object Storage Components -->
+  <rect x="450" y="180" width="100" height="40" rx="5" ry="5" fill="#ffffff" stroke="#F58536" stroke-width="1" />
+  <text x="500" y="205" font-family="Arial" font-size="12" text-anchor="middle" fill="#333">S3 API</text>
+  
+  <!-- Bucket -->
+  <rect x="570" y="180" width="100" height="40" rx="5" ry="5" fill="#ffffff" stroke="#F58536" stroke-width="1" />
+  <text x="620" y="205" font-family="Arial" font-size="12" text-anchor="middle" fill="#333">Buckets</text>
+  
+  <!-- Storage Backend -->
+  <rect x="450" y="240" width="220" height="40" rx="5" ry="5" fill="#ffffff" stroke="#F58536" stroke-width="1" />
+  <text x="560" y="265" font-family="Arial" font-size="12" text-anchor="middle" fill="#333">Storage Backend</text>
+  
+  <!-- User Workloads -->
+  <rect x="100" y="340" width="600" height="160" rx="5" ry="5" fill="#e6ffe6" stroke="#009900" stroke-width="2" />
+  <text x="400" y="360" font-family="Arial" font-size="16" text-anchor="middle" fill="#333">User Workloads</text>
+  
+  <!-- Workloads -->
+  <rect x="130" y="380" width="160" height="40" rx="5" ry="5" fill="#ffffff" stroke="#009900" stroke-width="1" />
+  <text x="210" y="405" font-family="Arial" font-size="12" text-anchor="middle" fill="#333">Cloud Shell</text>
+  
+  <rect x="320" y="380" width="160" height="40" rx="5" ry="5" fill="#ffffff" stroke="#009900" stroke-width="1" />
+  <text x="400" y="405" font-family="Arial" font-size="12" text-anchor="middle" fill="#333">Tenant Applications</text>
+  
+  <rect x="510" y="380" width="160" height="40" rx="5" ry="5" fill="#ffffff" stroke="#009900" stroke-width="1" />
+  <text x="590" y="405" font-family="Arial" font-size="12" text-anchor="middle" fill="#333">AI/ML Workloads</text>
+  
+  <!-- Example Yamls -->
+  <rect x="190" y="440" width="400" height="40" rx="5" ry="5" fill="#ffffff" stroke="#666666" stroke-width="1" />
+  <text x="390" y="465" font-family="Arial" font-size="12" text-anchor="middle" fill="#333">bucket.yaml, s3-public-policy.json</text>
+  
+  <!-- Connection Lines -->
+  <!-- API Server to Keycloak -->
+  <line x1="230" y1="200" x2="250" y2="200" stroke="#326CE5" stroke-width="2" />
+  
+  <!-- API Server to S3 Controller -->
+  <line x1="180" y1="220" x2="180" y2="240" stroke="#326CE5" stroke-width="2" />
+  
+  <!-- Keycloak to S3 Controller -->
+  <line x1="300" y1="220" x2="300" y2="240" stroke="#326CE5" stroke-width="2" />
+  
+  <!-- S3 Controller to S3 API -->
+  <line x1="350" y1="260" x2="450" y2="200" stroke="#F58536" stroke-width="2" />
+  
+  <!-- S3 API to Buckets -->
+  <line x1="550" y1="200" x2="570" y2="200" stroke="#F58536" stroke-width="2" />
+  
+  <!-- S3 API to Storage Backend -->
+  <line x1="500" y1="220" x2="500" y2="240" stroke="#F58536" stroke-width="2" />
+  
+  <!-- Buckets to Storage Backend -->
+  <line x1="620" y1="220" x2="620" y2="240" stroke="#F58536" stroke-width="2" />
+  
+  <!-- Cloud Shell to S3 Controller -->
+  <line x1="180" y1="380" x2="180" y2="280" stroke="#009900" stroke-width="2" stroke-dasharray="5,5" />
+  
+  <!-- Tenant Apps to S3 API -->
+  <line x1="400" y1="380" x2="480" y2="220" stroke="#009900" stroke-width="2" stroke-dasharray="5,5" />
+  
+  <!-- AI/ML to Storage Backend -->
+  <line x1="590" y1="380" x2="590" y2="280" stroke="#009900" stroke-width="2" stroke-dasharray="5,5" />
+  
+  <!-- Example Yamls to S3 Controller -->
+  <line x1="300" y1="440" x2="240" y2="280" stroke="#666666" stroke-width="2" stroke-dasharray="5,5" />
+</svg>

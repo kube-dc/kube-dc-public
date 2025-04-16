@@ -1,0 +1,8 @@
+apiVersion: objectbucket.io/v1alpha1
+kind: ObjectBucketClaim
+metadata:
+  name: filestorage
+  namespace: shalb-demo
+spec:
+  bucketName: filestorage
+  storageClassName: shalb-object-storage

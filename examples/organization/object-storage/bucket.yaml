@@ -1,0 +1,8 @@
+apiVersion: objectbucket.io/v1alpha1
+kind: ObjectBucketClaim
+metadata:
+  name: arti-test2
+  namespace: shalb-dev
+spec:
+  bucketName: arti-test2
+  storageClassName: ceph-bucket

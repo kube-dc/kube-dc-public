@@ -8,6 +8,7 @@ metadata:
     component: kubectl
 spec:
   backoffLimit: 3
+  ttlSecondsAfterFinished: 2
   template:
     metadata:
       labels:
@@ -18,7 +19,7 @@ spec:
       terminationGracePeriodSeconds: 2
       containers:
       - name: kubectl
-        image: shalb/kube-dc-kubectl:v0.4.3
+        image: shalb/kube-dc-kubectl:v0.5.1
         ports:
         - containerPort: 7681
           name: ttyd
@@ -50,7 +51,7 @@ spec:
               name: kube-dc-secret
               key: refresh_token
         - name: SERVER_ENDPOINT
-          value: "kube-api.dev.kube-dc.com:6443"
+          value: "https://kube-api.dev.kube-dc.com:6443"
         - name: CLUSTER_NAME
           value: "shalb"
         - name: USER_NAME
@@ -59,8 +60,6 @@ spec:
           value: "kubectl_console"
         - name: ONCE
           value: "true"
-        - name: TTL
-          value: "1200"
         volumeMounts:
         - name: token-cache
           mountPath: /tmp

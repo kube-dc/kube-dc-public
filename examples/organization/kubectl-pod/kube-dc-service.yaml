@@ -6,6 +6,11 @@ metadata:
   annotations:
     # service.nlb.kube-dc.com/bind-on-eip: nginx-dev
     service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"
+  ownerReferences:
+  - apiVersion: batch/v1
+    kind: Job
+    name: kube-dc-kubectl
+    uid: d729131d-f518-430e-ad3b-7acaa28d9f0c
   labels:
     app: kube-dc
     component: kubectl
