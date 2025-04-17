@@ -38,36 +38,43 @@ You will get two vlan ids, one for the local network(in example 4012) and one fo
 
 ### 1. Configure Network Interfaces
 
-SSH into each server and configure the networking using Netplan. Edit `/etc/netplan/60-kube-dc.yaml`:
+SSH into each server and configure the networking using Netplan.  
+Backup default netplan config:  
+```bash
+mkdir /root/tmp/
+mv /etc/netplan/*.yaml /root/tmp/
+```
+Create new config(`/etc/netplan/60-kube-dc.yaml`)  
+Replace values with `example` by values from default file(see it in `/root/tmp/`):
 
 ```yaml
 network:
   version: 2
   renderer: networkd
   ethernets:
-    enp0s31f6:  # Primary network interface name (check your actual interface name)
+    enp0s31f6_example:  # Primary network interface name (get it from default netplan config)
       addresses:
-        - 22.22.22.2/24  # Primary IP address and subnet mask (main IP provided by Herzner)
+        - 22.22.22.2_example/24  # Primary IP address and subnet mask (get it from default netplan config)
       routes:
         - to: 0.0.0.0/0  # Default route for all traffic
-          via: 22.22.22.1  # Gateway IP address (Also provided by Hernzer)
+          via: 22.22.22.1_example  # Gateway IP address (get it from default netplan config)
           on-link: true  # Indicates the gateway is directly reachable
           metric: 100  # Route priority (lower = higher priority)
       routing-policy:
-        - from: 22.22.22.2  # Source-based routing for traffic from gateway
+        - from: 22.22.22.2_example  # Source-based routing for traffic from gateway (Primary IP)
           table: 100  # Custom routing table ID
       nameservers:
         addresses:
           - 8.8.8.8  # Primary DNS server (Google)
           - 8.8.4.4  # Secondary DNS server (Google)
   vlans:
-    enp0s31f6.4012:  # VLAN interface name (format: interface.vlan_id)
-      id: 4012  # VLAN ID (must match your Hetzner vSwitch ID)
-      link: enp0s31f6  # Parent interface for VLAN 
+    enp0s31f6.4012_example:  # VLAN interface name (format: interface.vlan_id, see your VLAN in https://robot.hetzner.com/vswitch/index)
+      id: 4012_example  # VLAN ID (must match your Hetzner vSwitch ID, same vlan_id)
+      link: enp0s31f6_example  # Parent interface for VLAN (same interface from default netplan config)
       mtu: 1460  # Maximum Transmission Unit size
       addresses:
-        - 192.168.100.2/22  # Master node IP on private network
-        # Use 192.168.100.3/22 for worker node in its config
+        - 192.168.100.2/22  # Master node IP on private network (This for master node setup)
+       #- 192.168.100.3/22  # Worker node IP                    (This for master node setup)
 ```
 
 Apply the configuration:
@@ -106,8 +113,7 @@ Optimize system settings by adding to `/etc/sysctl.conf`:
 fs.inotify.max_user_watches=1524288
 fs.inotify.max_user_instances=4024
 
-# Network optimization for Kubernetes
-net.bridge.bridge-nf-call-iptables = 1
+# Enable packet forwarding
 net.ipv4.ip_forward = 1
 ```
 
@@ -189,12 +195,12 @@ node-label:
 kube-apiserver-arg: 
   - authentication-config=/etc/rancher/auth-conf.yaml
 debug: true
-node-external-ip: YOUR_MASTER_PUBLIC_IP # Main IP provided by Hetzner for server
+node-external-ip: 22.22.22.2_example # Primary IP address (get it from default netplan config)
 tls-san:
   - kube-api.yourdomain.com
-  - YOUR_MASTER_PUBLIC_IP
-advertise-address: YOUR_MASTER_PUBLIC_IP
-node-ip: 192.168.100.2
+  - 192.168.100.2 # Master node IP on private network (This for master node setup)
+advertise-address: 192.168.100.2 # Master node IP on private network (This for master node setup)
+node-ip: 192.168.100.2 # Master node IP on private network (This for master node setup)
 EOF
 
 cat <<EOF | sudo tee /etc/rancher/auth-conf.yaml
@@ -215,7 +221,7 @@ sudo systemctl enable rke2-server.service
 sudo systemctl start rke2-server.service
 ```
 
-Check the installation progress:
+You can check the installation logs here:
 
 ```bash
 sudo journalctl -u rke2-server -f
@@ -234,6 +240,9 @@ Verify the cluster status:
 
 ```bash
 kubectl get nodes
+# If you see this output then you can proceed:
+NAME               STATUS     ROLES
+kube-dc-master-1   NotReady   control-plane,etcd,master
 ```
 
 ### 4. Join Worker Node to the Cluster
@@ -241,12 +250,14 @@ kubectl get nodes
 Get the join token from the master node:
 
 ```bash
+# on master node
 sudo cat /var/lib/rancher/rke2/server/node-token
 ```
 
 On the worker node, create the RKE2 configuration (replace TOKEN with the token from the master node):
 
 ```bash
+# on worker node
 sudo mkdir -p /etc/rancher/rke2/
 
 cat <<EOF | sudo tee /etc/rancher/rke2/config.yaml
@@ -260,6 +271,7 @@ EOF
 Install RKE2 agent:
 
 ```bash
+# on worker node
 export INSTALL_RKE2_VERSION="v1.32.1+rke2r1"
 export INSTALL_RKE2_TYPE="agent"
 curl -sfL https://get.rke2.io | sh -
@@ -270,16 +282,18 @@ sudo systemctl start rke2-agent.service
 Monitor the agent service:
 
 ```bash
+# on worker node
 sudo journalctl -u rke2-agent -f
 ```
 
 Verify on the master node that the worker joined successfully:
 
 ```bash
+# on master node
 kubectl get nodes
 ```
 
-## Install Kube-DC Components
+## Install Kube-DC Components on Master Node
 
 ### 1. Create Cluster.dev Project Configuration
 
@@ -290,6 +304,7 @@ mkdir -p ~/kube-dc-hetzner
 cat <<EOF > ~/kube-dc-hetzner/project.yaml
 kind: Project
 name: kube-dc-hetzner
+backend: "default"
 variables:
   kubeconfig: ~/.kube/config
   debug: true
@@ -298,17 +313,17 @@ EOF
 
 ### 2. Create Cluster.dev Stack Configuration
 
-Create the stack configuration file:
+Create the stack configuration file(replace `example` by appropriate values):
 
 ```bash
 cat <<EOF > ~/kube-dc-hetzner/stack.yaml
 name: cluster
-template: https://github.com/kube-dc/kube-dc-public//installer/kube-dc?ref=main
+template: https://github.com/kube-dc/kube-dc-public//installer/kube-dc/templates/kube-dc?ref=main
 kind: Stack
 backend: default
 variables:
   debug: "true"
-  kubeconfig: /home/arti/.kube/config # Change for your username path to RKE kubeconfig
+  kubeconfig: /root/.kube/config # Change for your username path to RKE kubeconfig
 
   cluster_config:
     pod_cidr: "10.100.0.0/16"
@@ -319,24 +334,25 @@ variables:
       nodes_list: # list of nodes, where 4011 vlan (external network) is accessible
         - kube-dc-master-1
         - kube-dc-worker-1
-      name: external4011
-      vlan_id: "4011"
-      interface: "enp0s31f6"
-      cidr: "167.235.85.112/29" # External subnet provided by Hetzner
-      gateway: 167.235.85.113 # Gateway for external subnet
+      name: external4011_example # VLAN interface for this name you can find here https://robot.hetzner.com/vswitch/index
+      vlan_id: "4011_example" # VLAN interface id, see your VLAN in https://robot.hetzner.com/vswitch/index
+      interface: "enp0s31f6_example" # Parent interface for VLAN (same interface from default netplan config)
+      cidr: "33.33.33.33_example/29" # External subnet provided by Hetzner (should see during VLAN creation here https://robot.hetzner.com/vswitch/index)
+      gateway: 33.33.33.34_example # Gateway for external subnet (should see during VLAN creation here https://robot.hetzner.com/vswitch/index)
       mtu: "1400"
     
-  node_external_ip: 22.22.22.2 # wildcard *.dev.kube-dc.com shoud be faced on this ip
+  node_external_ip: 22.22.22.2_example # Primary IP address (get it from default netplan config). Wildcard *.dev.kube-dc.com shoud be faced on this ip
 
-  email: "noreply@shalb.com"
-  domain: "dev.kube-dc.com"
+
+  email: "noreply@example.com"
+  domain: "dev.example-kube-dc.com"
   install_terraform: true
 
   create_default:
     organization:
-      name: shalb
+      name: example
       description: "My test org my-org 1"
-      email: "arti@shalb.com"
+      email: "example@example.com"
     project:
       name: demo
       cidr_block: "10.1.0.0/16"
@@ -347,8 +363,7 @@ variables:
     retention: 365d
 
   versions:
-    kube_dc: "v0.1.20" # release version
-    rke2: "v1.32.1+rke2r1"
+    kube_dc: "v0.1.21" # release version
 EOF
 ```
 
@@ -371,10 +386,10 @@ Also if you have created some default organization youll get organization admin 
 ```bash
 keycloak_user = admin
 organization_admin_username = admin
-organization_name = shalb
+organization_name = example
 project_name = demo
-retrieve_organization_password = kubectl get secret realm-access -n shalb -o jsonpath='{.data.password}' | base64 -d
-retrieve_organization_realm_url = kubectl get secret realm-access -n shalb -o jsonpath='{.data.url}' | base64 -d
+retrieve_organization_password = kubectl get secret realm-access -n example -o jsonpath='{.data.password}' | base64 -d
+retrieve_organization_realm_url = kubectl get secret realm-access -n example -o jsonpath='{.data.url}' | base64 -d
 console_url = https://console.dev.kube-dc.com
 keycloak_password = XXXXXXXX
 keycloak_url = https://login.dev.kube-dc.com
@@ -385,15 +400,15 @@ keycloak_url = https://login.dev.kube-dc.com
 ### 1. Access Kube-DC UI using default organization credentials
 
 After the installation completes, the Kube-DC UI should be accessible at `https://console.yourdomain.com`.
-In cdev output there are output for default organization, project and admin user for default organization:
+In cdev output there are output for default organization, project and admin user for default organization(use `retrieve_organization_password` to login):
 
 ```bash
 console_url = https://console.dev.kube-dc.com
 organization_admin_username = admin
-organization_name = shalb
+organization_name = example
 project_name = demo
-retrieve_organization_password = kubectl get secret realm-access -n shalb -o jsonpath='{.data.password}' | base64 -d
-retrieve_organization_realm_url = kubectl get secret realm-access -n shalb -o jsonpath='{.data.url}' | base64 -d
+retrieve_organization_password = kubectl get secret realm-access -n example -o jsonpath='{.data.password}' | base64 -d
+retrieve_organization_realm_url = kubectl get secret realm-access -n example -o jsonpath='{.data.url}' | base64 -d
 ```
 
 ### 2. Keep credentials for Keycloak master admin user
