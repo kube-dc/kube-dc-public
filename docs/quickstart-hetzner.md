@@ -85,11 +85,21 @@ sudo netplan apply
 
 ### 2. System Optimization
 
-On all nodes, update, upgrade, and install required software:
+Downgrade kernel (due to a bug in kernel https://github.com/k3s-io/k3s/issues/11175):
 
 ```bash
 sudo apt -y update
-sudo apt -y upgrade
+sudo apt install linux-image-6.8.0-52-generic linux-headers-6.8.0-52-generic
+# Remove previous kernel
+sudo apt-get remove --purge linux-image-6.8.0-58-generic linux-headers-6.8.0-58-generic
+# Reboot
+sudo reboot
+
+```
+
+On all nodes, update, upgrade, and install required software:
+
+```bash
 sudo apt -y install unzip iptables linux-headers-$(uname -r)
 ```
 

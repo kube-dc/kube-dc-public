@@ -5,7 +5,7 @@
 {{- $clusterApiVersion := (.variables.versions.cluster_api                   | default "v1.8.1" | quote) -}}
 {{- $capiK3sProviderVersion := (.variables.versions.cluster_api_k3s_provider | default "v1.2.2" | quote) -}}
 {{- $kyvernoVersion := (.variables.versions.kyverno                          | default "v1.10.0" | quote) -}}
-{{- $kubeOvnChartVersion := (.variables.versions.kube_ovn                    | default "v1.13.2" | quote) -}}
+{{- $kubeOvnChartVersion := (.variables.versions.kube_ovn                    | default "v1.13.8" | quote) -}}
 {{- $multusChartVersion := (.variables.versions.multus_helm                  | default "2.2.9" | quote) -}}
 {{- $ingressNginxChartVersion := (.variables.versions.ingress_nginx_helm     | default "4.11.1" | quote) -}}
 {{- $keycloakChartVersion := (.variables.versions.keycloak_helm              | default "24.3.0" | quote) -}}

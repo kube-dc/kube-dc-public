@@ -52,7 +52,7 @@ variables:
     # cluster_api_k3s_provider:  "v1.2.2"
     # kyverno: "v1.10.0"
     # terraform: "1.9.4"
-    kube_ovn: "v1.13.2"
+    kube_ovn: "v1.13.8"
     # multus_helm: "2.2.9"
     # ingress_nginx_helm: "4.11.1"
     keycloak_helm: "24.3.0"
