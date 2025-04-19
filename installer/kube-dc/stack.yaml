@@ -19,8 +19,8 @@ variables:
     default_external_network:
       nodes_list:
         - kube-dc-master-1
-        - kube-dc-worker-1
-        - kube-dc-worker-2
+        # - kube-dc-worker-1
+        # - kube-dc-worker-2
       name: external4011
       vlan_id: "4011"
       interface: "enp0s31f6"
@@ -45,7 +45,7 @@ variables:
    
 
   versions:
-    kube_dc: "v0.1.21" # release version
+    kube_dc: "v0.1.27" # release version
     # kubevirt: "v1.3.0"
     # kubevirt_cdi: "v1.59.0"
     # cluster_api: "v1.8.1"
