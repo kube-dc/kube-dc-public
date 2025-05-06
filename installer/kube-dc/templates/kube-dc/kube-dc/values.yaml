@@ -20,6 +20,19 @@ manager:
 
   nodeSelector:
     kube-dc-manager: "true"
+  
+  {{- if .variables.cluster_config.default_gw_network_type }}
+  defaultGwNetworkType: {{ .variables.cluster_config.default_gw_network_type }}
+  {{- end }}
+  {{- if .variables.cluster_config.default_eip_network_type }}
+  defaultEipNetworkType: {{ .variables.cluster_config.default_eip_network_type }}
+  {{- end }}
+  {{- if .variables.cluster_config.default_fip_network_type }}
+  defaultFipNetworkType: {{ .variables.cluster_config.default_fip_network_type }}
+  {{- end }}
+  {{- if .variables.cluster_config.default_svc_lb_network_type }}
+  defaultSvcLbNetworkType: {{ .variables.cluster_config.default_svc_lb_network_type }}
+  {{- end }}
 
 frontend:
   replicaCount: 1

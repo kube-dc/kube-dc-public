@@ -12,6 +12,10 @@ variables:
     retention: 365d
   
   cluster_config:
+    default_gw_network_type: "cloud"
+    default_eip_network_type: "public"
+    default_fip_network_type: "public"
+    default_svc_lb_network_type: "public"
     POD_CIDR: "10.100.0.0/16"
     POD_GATEWAY: "10.100.0.1"
     SVC_CIDR: "10.101.0.0/16"
