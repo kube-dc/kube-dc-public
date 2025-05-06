@@ -49,10 +49,11 @@ variables:
     project:
       name: demo
       cidr_block: "10.0.10.0/24"
+      egress_network_type: public
    
 
   versions:
-    kube_dc: "v0.1.27" # release version
+    kube_dc: "v0.1.28" # release version
     # kubevirt: "v1.3.0"
     # kubevirt_cdi: "v1.59.0"
     # cluster_api: "v1.8.1"

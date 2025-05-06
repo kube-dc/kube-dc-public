@@ -5,6 +5,5 @@ metadata:
   namespace: {{ .variables.create_default.organization.name }}
 spec:
   cidrBlock: {{ .variables.create_default.project.cidr_block }}
-  externalSubnet: {{ .variables.cluster_config.default_external_network.name }}
-  externalSubnetGwIp: {{ .variables.cluster_config.default_external_network.gateway }}
+  egressNetworkType: {{ .variables.create_default.project.egress_network_type | default "public" }}
 
