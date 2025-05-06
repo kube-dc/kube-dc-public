@@ -42,17 +42,27 @@ spec:
               cidrBlock:
                 description: CidrBlock general VPC subnet IP range
                 type: string
-              externalSubnet:
-                description: ExternalSubnet the name of external subnet to connect
-                  VPC Gateway
+              egressNetworkType:
+                description: |-
+                  EgressNetworkType controls how this project's internet gateway is addressed and accessible.
+                  Options:
+                  - "public": The project's internet gateway will receive a public IP address.
+                     - Resources in this project can access the internet directly and may be accessed from the internet (subject to firewall rules).
+                     - Choose this if workloads require direct public internet connectivity.
+                  - "cloud": The project's internet gateway will receive an internal (private) cloud IP address only.
+                     - Resources can access the internet via NAT/shared gateways, but are NOT directly accessible from the public internet.
+                     - Resources can communicate with other projects in the same cloud using internal IPs.
+                     - Choose this for internal workloads that should not be exposed to the public internet.
+                enum:
+                - public
+                - cloud
                 type: string
-              externalSubnetGwIp:
-                description: ExternalSubnet the name of external subnet to connect
-                  VPC Gateway
-                type: string
+                x-kubernetes-validations:
+                - message: egressNetworkType is immutable
+                  rule: self == oldSelf
               gwLanIp:
-                description: GwInternalIp IP address to assign to vpc nat gateway
-                  inside CidrBlock subnet
+                description: GwLanIp IP address to assign to vpc nat gateway inside
+                  CidrBlock subnet
                 type: string
             required:
             - cidrBlock
@@ -61,6 +71,8 @@ spec:
             description: ProjectStatus defines the observed state of Project.
             properties:
               conditions:
+                description: Conditions represents the latest available observations
+                  of the project's current state
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

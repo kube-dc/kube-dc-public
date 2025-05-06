@@ -48,16 +48,39 @@ spec:
             properties:
               eip:
                 type: string
+              externalNetworkType:
+                description: |-
+                  ExternalNetworkType specifies the type of external network for this floating IP.
+                  Options:
+                  - "public": The FIP will be allocated from the public IP pool.
+                     - The assigned IP will be accessible from the public internet (subject to firewall rules).
+                     - Use this for workloads that require direct internet access.
+                  - "cloud": The FIP will be allocated from the internal cloud IP pool.
+                     - The assigned IP will NOT be accessible from the public internet, but can be used for communication between projects within the cloud.
+                     - Use this for internal workloads that do not require public exposure.
+                enum:
+                - public
+                - cloud
+                type: string
+                x-kubernetes-validations:
+                - message: externalNetworkType is immutable
+                  rule: self == oldSelf
               ipAddress:
                 description: 'Target pod or vm. Format: "vm:<vm-name>" or "pod:<pod-name>"'
                 type: string
             required:
             - ipAddress
             type: object
+            x-kubernetes-validations:
+            - message: eip and externalNetworkType cannot be set at the same time
+              rule: '(has(self.eip) && self.eip != "") ? !has(self.externalNetworkType)
+                || self.externalNetworkType == "" : true'
           status:
             description: FIpStatus defines the observed state of FIp.
             properties:
               conditions:
+                description: Conditions represents the latest available observations
+                  of the FIp's current state
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -114,12 +137,20 @@ spec:
                   type: object
                 type: array
               eip:
+                description: EIp is the reference to the external IP resource associated
+                  with this floating IP
                 type: string
               externalIP:
+                description: ExternalIP is the allocated external IP address for this
+                  floating IP
                 type: string
               ovnFip:
+                description: OvnFip is the reference to the OVN floating IP resource
                 type: string
               ready:
+                default: false
+                description: Ready indicates whether the floating IP is properly configured
+                  and usable
                 type: boolean
             required:
             - eip

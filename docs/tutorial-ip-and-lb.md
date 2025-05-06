@@ -24,6 +24,36 @@ Kube-DC's networking is built on Kube-OVN and includes several key components:
 
 Each project in Kube-DC automatically receives a default EIP that acts as a NAT gateway for outbound traffic. You can also create additional EIPs for specific services.
 
+### EIP Allocation Algorithm
+
+When an EIP is created, Kube-DC follows a specific algorithm to allocate the external subnet:
+
+1. **Check Default Subnet Compatibility**
+   - The system first checks if the EIP's required external network type matches the default external subnet type
+   - If they match, it looks for a free OEIP in that subnet
+   - If a free OEIP is found, it's connected to the EIP
+   - If no free OEIP exists, a new one is created
+
+2. **Check Connected Subnets**
+   - If the required network type is different from the default, the system takes a list of external subnets already connected to the project's VPC
+   - It retrieves all free OEIPs from these connected subnets
+   - If at least one free OEIP is found, it's connected to the EIP
+
+3. **Select Best Available Subnet**
+   - If no connected subnets have free IPs, the system takes a complete list of available external networks
+   - Networks are sorted by the number of available IPs (descending order)
+   - The network with the most free addresses is selected
+
+4. **Connect New Subnet to VPC**
+   - The selected subnet is connected to the project's VPC
+   - The system waits for the OEIP resource to be created
+   - Once created, the OEIP is connected to the EIP
+
+5. **Error Handling**
+   - If no networks with free IPs are available, the operation fails with an error
+
+This algorithm ensures optimal IP address utilization while providing the flexibility to support different external network types.
+
 ### Creating an EIP Using kubectl
 
 For automation or GitOps workflows, you can create EIPs using kubectl and YAML manifests.

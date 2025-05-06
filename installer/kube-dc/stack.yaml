@@ -12,26 +12,29 @@ variables:
     retention: 365d
   
   cluster_config:
-    pod_cidr: "10.100.0.0/16"
-    svc_cidr: "10.101.0.0/16"
-    join_cidr: "100.64.0.0/16"
+    POD_CIDR: "10.100.0.0/16"
+    POD_GATEWAY: "10.100.0.1"
+    SVC_CIDR: "10.101.0.0/16"
+    JOIN_CIDR: "172.30.0.0/22"
     cluster_dns: "10.101.0.11"
     default_external_network:
+      type: cloud
       nodes_list:
         - kube-dc-master-1
-        # - kube-dc-worker-1
-        # - kube-dc-worker-2
-      name: external4011
+        - kube-dc-worker-1
+      name: external-def
       vlan_id: "4011"
       interface: "enp0s31f6"
-      cidr: "167.235.85.112/29"
-      gateway: 167.235.85.113
+      cidr: "100.65.0.0/16" # "168.119.17.48/28"
+      gateway: 100.65.0.1
       mtu: "1400"
+      exclude_ips: 
+      - "100.65.0.1..100.65.0.100"
     
-  node_external_ip: 138.201.253.201
+  node_external_ip: 88.99.29.250
 
   email: "noreply@shalb.com"
-  domain: "dev.kube-dc.com"
+  domain: "stage.kube-dc.com"
   install_terraform: true
 
   create_default:

@@ -53,12 +53,37 @@ spec:
             description: EIpSpec defines the desired state of EIp.
             properties:
               childRef:
+                description: ChildRef child object reference
                 type: string
+                x-kubernetes-validations:
+                - message: childRef is immutable
+                  rule: self == oldSelf
+              externalNetworkType:
+                description: |-
+                  ExternalNetworkType specifies the type of external network for this EIP.
+                  Options:
+                  - "public": The EIP will be allocated from the public IP pool.
+                     - The assigned IP will be accessible from the public internet (subject to firewall rules).
+                     - Use this for resources that need to be reachable from outside the cloud.
+                  - "cloud": The EIP will be allocated from the internal cloud IP pool.
+                     - The assigned IP will NOT be accessible from the public internet, but can be used for internal cloud communication.
+                     - Use this for resources that should only be reachable within the cloud environment.
+                type: string
+                x-kubernetes-validations:
+                - message: externalNetworkType is immutable
+                  rule: self == oldSelf
             type: object
+            x-kubernetes-validations:
+            - message: externalNetworkType and childRef cannot be set at the same
+                time
+              rule: '(has(self.externalNetworkType) && self.externalNetworkType !=
+                "") ? !has(self.childRef) || self.childRef == "" : true'
           status:
             description: EIpStatus defines the observed state of EIp.
             properties:
               conditions:
+                description: Conditions represents the latest available observations
+                  of the EIp's current state
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -115,12 +140,19 @@ spec:
                   type: object
                 type: array
               deleteReleased:
+                description: DeleteReleased indicates whether the EIP should be automatically
+                  deleted when released
                 type: boolean
               ipAddress:
+                description: IpAddress is the allocated external IP address
                 type: string
               ovnEIpRef:
+                description: OvnEipRef is the reference to the corresponding OVN external
+                  IP resource
                 type: string
               owners:
+                description: Owners contains the list of resources that currently
+                  own this EIP
                 items:
                   properties:
                     ownerRef:
@@ -130,11 +162,18 @@ spec:
                   type: object
                 type: array
               ownershipType:
+                default: Released
+                description: Ownerships represents the current ownership status of
+                  this EIP (Released, Exclusive, or Shared)
                 type: string
               ready:
+                default: false
+                description: Ready indicates whether the EIP is properly configured
+                  and usable
                 type: boolean
             required:
             - ovnEIpRef
+            - ownershipType
             - ready
             type: object
         type: object

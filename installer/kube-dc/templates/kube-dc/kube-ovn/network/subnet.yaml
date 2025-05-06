@@ -3,10 +3,16 @@ kind: Subnet
 metadata:
   name:  {{ .variables.cluster_config.default_external_network.name }}
   labels:
-    network.kube-dc.com/allow-projects: "all"
+    network.kube-dc.com/external: "true"
+    network.kube-dc.com/default-external: "true"
+    network.kube-dc.com/external-network-type: {{ .variables.cluster_config.default_external_network.type | default "cloud" }}
 spec:
   protocol: IPv4
   cidrBlock: {{ .variables.cluster_config.default_external_network.cidr }}
   gateway: {{ .variables.cluster_config.default_external_network.gateway }}
   vlan: vlan{{ .variables.cluster_config.default_external_network.vlan_id }}
   mtu: {{ .variables.cluster_config.default_external_network.mtu | default 1400 }}
+  {{- if .variables.cluster_config.default_external_network.exclude_ips }} 
+  excludeIps:
+  {{- toYaml .variables.cluster_config.default_external_network.exclude_ips | nindent 2 }}
+  {{- end }}

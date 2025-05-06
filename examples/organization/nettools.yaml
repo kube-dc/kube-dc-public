@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: net-tools
+  namespace: shalb-dev
+spec:
+  selector:
+    matchLabels:
+      name: net-tools
+  template:
+    metadata:
+      labels:
+        name: net-tools
+    spec:
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      containers:
+        - name: net-tools
+          image: rtsp/net-tools:latest
+          imagePullPolicy: IfNotPresent
+      terminationGracePeriodSeconds: 30
