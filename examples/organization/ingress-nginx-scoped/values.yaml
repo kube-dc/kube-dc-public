@@ -13,7 +13,7 @@ controller:
       service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"
   extraEnvs:
     - name: KUBERNETES_SERVICE_HOST
-      value: kube-api.dev.kube-dc.com
+      value: kube-api.stage.kube-dc.com
     - name: KUBERNETES_SERVICE_PORT
       value: "6443"
     - name: DEBUG
