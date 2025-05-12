@@ -40,6 +40,10 @@ spec:
             - name: http
               containerPort: 80 # {{ .Values.frontend.service.port }}
               protocol: TCP
+          {{- with .Values.frontend.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           livenessProbe:
             {{- toYaml .Values.frontend.livenessProbe | nindent 12 }}
           readinessProbe:

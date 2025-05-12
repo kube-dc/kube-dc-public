@@ -1,3 +1,5 @@
+kubeApiExternalUrl: {{ printf "kube-api.%s:6443" .variables.domain }}
+
 manager:
   logLevel: 5 # - Debug
   keycloakDebug: false

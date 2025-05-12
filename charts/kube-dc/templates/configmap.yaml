@@ -5,4 +5,10 @@ metadata:
 data:
   env.js: |
     window.backendURL = 'http{{- if .Values.backend.ingress.tls.enabled }}s{{ end }}://{{ .Values.backend.ingress.host }}';
+    window.frontendURL = 'http{{- if .Values.frontend.ingress.tls.enabled }}s{{ end }}://{{ .Values.frontend.ingress.host }}';
     window.keycloakURL = '{{ .Values.manager.keycloakSecret.url }}';
+    {{- if .Values.frontend.extraJsEnv }}
+    {{- range $key, $value := .Values.frontend.extraJsEnv }}
+    window.{{ $key }} = '{{ $value }}';
+    {{- end }}
+    {{- end }}

@@ -1,13 +1,23 @@
+kubeApiExternalUrl: "" # Required, example: "kube-api.stage.kube-dc.com:6443"
+
 manager:
   logLevel: 1 # 5 - Debug
   keycloakDebug: false
   ovnDbIps: "" # Required, example: "tcp:192.168.0.1:6641"
+  extraEnv: []
+    # - name: EXAMPLE_VAR
+    #   value: "example-value"
+    # - name: SECRET_VAR
+    #   valueFrom:
+    #     secretKeyRef:
+    #       name: mysecret
+    #       key: secretkey
 
   kubernetesAuthConfig:
     path: /etc/rancher
     filename: auth-conf.yaml
 
-  keycloakSecret:
+  keycloakSecret: {}
     # url: <KEYCLOAK_URL>
     # user: <KEYCLOAK_USER>
     # password: <KEYCLOAK_PASSWORD>
@@ -41,7 +51,22 @@ manager:
 
 frontend:
   replicaCount: 1
-
+  # Extra environment variables for the container
+  extraEnv: []
+    # - name: EXAMPLE_VAR
+    #   value: "example-value"
+    # - name: SECRET_VAR
+    #   valueFrom:
+    #     secretKeyRef:
+    #       name: mysecret
+    #       key: secretkey
+  
+  # Extra JavaScript environment variables for the frontend application
+  # These will be available as window.VARIABLE_NAME in the frontend code
+  extraJsEnv: {}
+    # apiVersion: "v1"
+    # featureNewUI: "true"
+    # authTimeout: "3600"
   image:
     repository: shalb/kube-dc-ui-frontend
     pullPolicy: IfNotPresent
@@ -129,7 +154,13 @@ frontend:
 
 backend:
   replicaCount: 1
-
+  extraEnv: []
+      # - name: PROM_URL
+      #   value: "http://prometheus:9090"
+      # - name: PROJECT_SHELL_API_URL
+      #   value: "http://project-shell-api:8080"
+      # - name: KEYCLOAK_URL
+      #   value: "http://keycloak:8080"
   image:
     repository: shalb/kube-dc-ui-backend
     pullPolicy: IfNotPresent

@@ -1,10 +1,10 @@
 apiVersion: kube-dc.com/v1
 kind: FIp
 metadata:
-  name: fedora
+  name: alpine
   namespace: shalb-demo
 spec:
-  ipAddress: 10.0.10.7
-  externalNetworkType: cloud
+  ipAddress: 10.0.10.75
+  externalNetworkType: public
 
 

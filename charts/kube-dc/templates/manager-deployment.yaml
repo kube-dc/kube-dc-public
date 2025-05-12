@@ -44,6 +44,10 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
+          {{- with .Values.manager.extraEnv }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
+
         image: "{{ .Values.manager.image.repository }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}"
         name: manager
         securityContext:

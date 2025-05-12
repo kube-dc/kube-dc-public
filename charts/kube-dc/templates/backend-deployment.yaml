@@ -40,6 +40,16 @@ spec:
             - name: http
               containerPort: 3333 #{{ .Values.backend.service.port }}
               protocol: TCP
+          env:
+            - name: PROM_URL
+              value: "http://prom-operator-kube-prometh-prometheus.monitoring:9090"
+            - name: PROJECT_SHELL_API_URL
+              value: "{{ .Values.kubeApiExternalUrl }}"
+            - name: KEYCLOAK_URL
+              value: "{{ .Values.manager.keycloakSecret.url }}"
+          {{- with .Values.backend.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           livenessProbe:
             {{- toYaml .Values.backend.livenessProbe | nindent 12 }}
           readinessProbe:

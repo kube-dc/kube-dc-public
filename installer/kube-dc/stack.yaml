@@ -12,7 +12,7 @@ variables:
     retention: 365d
   
   cluster_config:
-    default_gw_network_type: "cloud"
+    default_gw_network_type: "public"
     default_eip_network_type: "public"
     default_fip_network_type: "public"
     default_svc_lb_network_type: "public"
@@ -22,24 +22,25 @@ variables:
     JOIN_CIDR: "172.30.0.0/22"
     cluster_dns: "10.101.0.11"
     default_external_network:
-      type: cloud
+      type: public
       nodes_list:
         - kube-dc-master-1
         - kube-dc-worker-1
       name: external-def
       vlan_id: "4011"
       interface: "enp0s31f6"
-      cidr: "100.65.0.0/16" # "168.119.17.48/28"
-      gateway: 100.65.0.1
+      cidr: "168.119.17.48/28" # "100.65.0.0/16" #
+      gateway: "168.119.17.49"
       mtu: "1400"
       exclude_ips: 
-      - "100.65.0.1..100.65.0.100"
+      - "168.119.17.49"
     
   node_external_ip: 88.99.29.250
 
   email: "noreply@shalb.com"
   domain: "stage.kube-dc.com"
   install_terraform: true
+  kubeApiExternalUrl: "https://kube-api.stage.kube-dc.com:6443"
 
   create_default:
     organization:
@@ -53,7 +54,7 @@ variables:
    
 
   versions:
-    kube_dc: "v0.1.28" # release version
+    kube_dc: "v0.1.29" # release version
     # kubevirt: "v1.3.0"
     # kubevirt_cdi: "v1.59.0"
     # cluster_api: "v1.8.1"
