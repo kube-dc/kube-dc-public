@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: debug-net
+  name: debug-net
+  namespace: shalb-dev
+spec:
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: debug-net
+  template:
+    metadata:
+      labels:
+        app: debug-net
+    spec:
+      containers:
+      - args:
+        - |
+          while true; do
+            date
+            if ping -c1 -W1 1.1.1.1 > /dev/null; then
+              echo "[SUCCESS] Ping to 1.1.1.1 succeeded"
+            else
+              echo "[ERROR] Ping to 1.1.1.1 failed"
+            fi
+            
+            if ping -c1 -W1 88.99.218.47 > /dev/null; then
+              echo "[SUCCESS] Ping to 88.99.218.47 succeeded"
+            else
+              echo "[ERROR] Ping to 88.99.218.47 failed"
+            fi
+            
+            if ping -c1 -W1 213.133.100.98 > /dev/null; then
+              echo "[SUCCESS] Ping to 213.133.100.98 (hydrogen.ns.hetzner.com) succeeded"
+            else
+              echo "[ERROR] Ping to 213.133.100.98 (hydrogen.ns.hetzner.com) failed"
+            fi
+            
+            if ping -c1 -W1 88.198.229.192 > /dev/null; then
+              echo "[SUCCESS] Ping to 88.198.229.192 (oxygen.ns.hetzner.com) succeeded"
+            else
+              echo "[ERROR] Ping to 88.198.229.192 (oxygen.ns.hetzner.com) failed"
+            fi
+            
+            if ping -c1 -W1 193.47.99.5 > /dev/null; then
+              echo "[SUCCESS] Ping to 193.47.99.5 (helium.ns.hetzner.de) succeeded"
+            else
+              echo "[ERROR] Ping to 193.47.99.5 (helium.ns.hetzner.de) failed"
+            fi
+            
+            sleep 1
+          done
+        command:
+        - /bin/sh
+        - -c
+        image: nicolaka/netshoot
+        imagePullPolicy: Always
+        name: debug-net
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+  updateStrategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate

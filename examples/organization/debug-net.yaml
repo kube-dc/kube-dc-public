@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  annotations:
+    deprecated.daemonset.template.generation: "1"
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"apps/v1","kind":"DaemonSet","metadata":{"annotations":{},"labels":{"app":"debug-net"},"name":"debug-net","namespace":"shalb-demo"},"spec":{"selector":{"matchLabels":{"app":"debug-net"}},"template":{"metadata":{"labels":{"app":"debug-net"}},"spec":{"containers":[{"args":["while true; do \n  date; \n  if ping -c1 -W1 1.1.1.1 \u003e /dev/null; then \n    echo \"[SUCCESS] Ping to 1.1.1.1 succeeded\"; \n  else \n    echo \"[ERROR] Ping to 1.1.1.1 failed\"; \n  fi; \n  if ping -c1 -W1 88.99.218.47 \u003e /dev/null; then \n    echo \"[SUCCESS] Ping to 88.99.218.47 succeeded\"; \n  else \n    echo \"[ERROR] Ping to 88.99.218.47 failed\"; \n  fi; \n  if ping -c1 -W1 213.133.100.98 \u003e /dev/null; then \n    echo \"[SUCCESS] Ping to 213.133.100.98 (hydrogen.ns.hetzner.com) succeeded\"; \n  else \n    echo \"[ERROR] Ping to 213.133.100.98 (hydrogen.ns.hetzner.com) failed\"; \n  fi;\n  if ping -c1 -W1 88.198.229.192 \u003e /dev/null; then \n    echo \"[SUCCESS] Ping to 88.198.229.192 (oxygen.ns.hetzner.com) succeeded\"; \n  else \n    echo \"[ERROR] Ping to 88.198.229.192 (oxygen.ns.hetzner.com) failed\"; \n  fi;\n  if ping -c1 -W1 193.47.99.5 \u003e /dev/null; then \n    echo \"[SUCCESS] Ping to 193.47.99.5 (helium.ns.hetzner.de) succeeded\"; \n  else \n    echo \"[ERROR] Ping to 193.47.99.5 (helium.ns.hetzner.de) failed\"; \n  fi;\n  sleep 1; \ndone\n"],"command":["/bin/sh","-c"],"image":"nicolaka/netshoot","name":"debug-net","resources":{"limits":{"cpu":"100m","memory":"64Mi"},"requests":{"cpu":"10m","memory":"32Mi"}}}]}}}}
+  creationTimestamp: "2025-05-15T11:00:43Z"
+  generation: 1
+  labels:
+    app: debug-net
+  name: debug-net
+  namespace: shalb-demo
+  resourceVersion: "22076765"
+  uid: 3c40cf79-db54-4c78-ab6b-a68a1aaab0a8
+spec:
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: debug-net
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: debug-net
+    spec:
+      containers:
+      - args:
+        - "while true; do \n  date; \n  if ping -c1 -W1 1.1.1.1 > /dev/null; then
+          \n    echo \"[SUCCESS] Ping to 1.1.1.1 succeeded\"; \n  else \n    echo
+          \"[ERROR] Ping to 1.1.1.1 failed\"; \n  fi; \n  if ping -c1 -W1 88.99.218.47
+          > /dev/null; then \n    echo \"[SUCCESS] Ping to 88.99.218.47 succeeded\";
+          \n  else \n    echo \"[ERROR] Ping to 88.99.218.47 failed\"; \n  fi; \n
+          \ if ping -c1 -W1 213.133.100.98 > /dev/null; then \n    echo \"[SUCCESS]
+          Ping to 213.133.100.98 (hydrogen.ns.hetzner.com) succeeded\"; \n  else \n
+          \   echo \"[ERROR] Ping to 213.133.100.98 (hydrogen.ns.hetzner.com) failed\";
+          \n  fi;\n  if ping -c1 -W1 88.198.229.192 > /dev/null; then \n    echo \"[SUCCESS]
+          Ping to 88.198.229.192 (oxygen.ns.hetzner.com) succeeded\"; \n  else \n
+          \   echo \"[ERROR] Ping to 88.198.229.192 (oxygen.ns.hetzner.com) failed\";
+          \n  fi;\n  if ping -c1 -W1 193.47.99.5 > /dev/null; then \n    echo \"[SUCCESS]
+          Ping to 193.47.99.5 (helium.ns.hetzner.de) succeeded\"; \n  else \n    echo
+          \"[ERROR] Ping to 193.47.99.5 (helium.ns.hetzner.de) failed\"; \n  fi;\n
+          \ sleep 1; \ndone\n"
+        command:
+        - /bin/sh
+        - -c
+        image: nicolaka/netshoot
+        imagePullPolicy: Always
+        name: debug-net
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+  updateStrategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate

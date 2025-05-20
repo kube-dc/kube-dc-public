@@ -29,11 +29,14 @@ variables:
       name: external-def
       vlan_id: "4011"
       interface: "enp0s31f6"
-      cidr: "168.119.17.48/28" # "100.65.0.0/16" #
+      cidr: "168.119.17.48/28"
+      # cidr: "100.65.0.0/16"
       gateway: "168.119.17.49"
+      # gateway: "100.65.0.1"
       mtu: "1400"
       exclude_ips: 
       - "168.119.17.49"
+      # - "100.65.0.1..100.65.0.100"
     
   node_external_ip: 88.99.29.250
 

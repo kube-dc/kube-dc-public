@@ -2,7 +2,7 @@ apiVersion: cluster.x-k8s.io/v1beta1
 kind: Cluster
 metadata:
   name: demo
-  namespace: shalb-demo
+  namespace: shalb-dev
 spec:
   clusterNetwork:
     pods:
@@ -12,21 +12,21 @@ spec:
     apiVersion: controlplane.cluster.x-k8s.io/v1beta1
     kind: KThreesControlPlane
     name: demo-control-plane
-    namespace: shalb-demo
+    namespace: shalb-dev
   infrastructureRef:
     apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
     kind: KubevirtCluster
     name: demo
-    namespace: shalb-demo
+    namespace: shalb-dev
 ---
 apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
 kind: KubevirtCluster
 metadata:
   name: demo
-  namespace: shalb-demo
+  namespace: shalb-dev
 spec:
   controlPlaneEndpoint:
-    host: 167.235.85.115
+    host: 168.119.17.50
     port: 6443
   controlPlaneServiceTemplate:
     spec:
@@ -35,12 +35,8 @@ spec:
 apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
 kind: KubevirtMachineTemplate
 metadata:
-  annotations:
-    ovn.kubernetes.io/logical_router: demo-vpc
-    ovn.kubernetes.io/logical_switch: demo-subnet
-    ovn.kubernetes.io/vpc: demo-vpc
   name: demo-control-plane
-  namespace: shalb-demo
+  namespace: shalb-dev
 spec:
   template:
     spec:
@@ -48,7 +44,7 @@ spec:
         checkStrategy: none
       virtualMachineTemplate:
         metadata:
-          namespace: shalb-demo
+          namespace: shalb-dev
         spec:
           dataVolumeTemplates:
           - metadata:
@@ -60,7 +56,7 @@ spec:
                 resources:
                   requests:
                     storage: 30G
-                storageClassName: ceph-filesystem
+                storageClassName: local-path
               source:
                 http:
                   url: https://cloud-images.ubuntu.com/minimal/daily/noble/current/noble-minimal-cloudimg-amd64.img
@@ -90,7 +86,7 @@ spec:
               networks:
               - multus:
                   default: true
-                  networkName: shalb-demo/default
+                  networkName: shalb-dev/default
                 name: ovn-vpc
               readinessProbe:
                 failureThreshold: 10
@@ -116,13 +112,13 @@ apiVersion: controlplane.cluster.x-k8s.io/v1beta1
 kind: KThreesControlPlane
 metadata:
   name: demo-control-plane
-  namespace: shalb-demo
+  namespace: shalb-dev
 spec:
   infrastructureTemplate:
     apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
     kind: KubevirtMachineTemplate
     name: demo-control-plane
-    namespace: shalb-demo
+    namespace: shalb-dev
   kthreesConfigSpec:
     agentConfig:
       kubeletArgs:
@@ -147,7 +143,7 @@ apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
 kind: KubevirtMachineTemplate
 metadata:
   name: demo-md-0
-  namespace: shalb-demo
+  namespace: shalb-dev
 spec:
   template:
     spec:
@@ -155,7 +151,7 @@ spec:
         checkStrategy: none
       virtualMachineTemplate:
         metadata:
-          namespace: shalb-demo
+          namespace: shalb-dev
         spec:
           dataVolumeTemplates:
           - metadata:
@@ -167,7 +163,7 @@ spec:
                 resources:
                   requests:
                     storage: 30G
-                storageClassName: ceph-filesystem
+                storageClassName: local-path
               source:
                 http:
                   url: https://cloud-images.ubuntu.com/minimal/daily/noble/current/noble-minimal-cloudimg-amd64.img
@@ -198,7 +194,7 @@ spec:
               networks:
               - multus:
                   default: true
-                  networkName: shalb-demo/default
+                  networkName: shalb-dev/default
                 name: ovn-vpc
               readinessProbe:
                 failureThreshold: 10
@@ -224,7 +220,7 @@ apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
 kind: KThreesConfigTemplate
 metadata:
   name: demo-md-0
-  namespace: shalb-demo
+  namespace: shalb-dev
 spec:
   template:
     spec:
@@ -248,7 +244,7 @@ apiVersion: cluster.x-k8s.io/v1beta1
 kind: MachineDeployment
 metadata:
   name: demo-md-0
-  namespace: shalb-demo
+  namespace: shalb-dev
 spec:
   clusterName: demo
   replicas: 3
@@ -261,11 +257,11 @@ spec:
           apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
           kind: KThreesConfigTemplate
           name: demo-md-0
-          namespace: shalb-demo
+          namespace: shalb-dev
       clusterName: demo
       infrastructureRef:
         apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
         kind: KubevirtMachineTemplate
         name: demo-md-0
-        namespace: shalb-demo
+        namespace: shalb-dev
       version: v1.28.5+k3s1

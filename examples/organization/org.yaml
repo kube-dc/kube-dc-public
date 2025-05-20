@@ -1,9 +1,9 @@
 apiVersion: kube-dc.com/v1
 kind: Organization
 metadata:
-  name: shalb
-  namespace: shalb
+  name: arti
+  namespace: arti
 spec: 
-  description: "Shalb organization"
-  email: "arti@shalb.com"
+  description: "Arti organization"
+  email: "arti1@shalb.com"
 

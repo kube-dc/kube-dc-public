@@ -1,10 +1,10 @@
 apiVersion: kube-dc.com/v1
 kind: FIp
 metadata:
-  name: alpine
-  namespace: shalb-demo
+  name: ubuntu
+  namespace: shalb-dev
 spec:
-  ipAddress: 10.0.10.75
+  ipAddress: 10.1.0.12
   externalNetworkType: public
 
 
