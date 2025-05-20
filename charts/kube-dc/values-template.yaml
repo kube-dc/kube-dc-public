@@ -153,6 +153,7 @@ frontend:
   affinity: {}
 
 backend:
+  keycloakUrl: ""
   replicaCount: 1
   extraEnv: []
       # - name: PROM_URL

@@ -46,7 +46,7 @@ spec:
             - name: PROJECT_SHELL_API_URL
               value: "{{ .Values.kubeApiExternalUrl }}"
             - name: KEYCLOAK_URL
-              value: "{{ .Values.manager.keycloakSecret.url }}"
+              value: "{{ .Values.backend.keycloakUrl }}"
           {{- with .Values.backend.extraEnv }}
             {{- toYaml . | nindent 12 }}
           {{- end }}

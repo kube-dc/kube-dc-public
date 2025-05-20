@@ -2,7 +2,7 @@ apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
 metadata:
   name: live-migration-root
-  namespace: shalb-dev
+  namespace: shalb-demo
 spec:
   pvc:
     accessModes:
@@ -19,7 +19,7 @@ apiVersion: kubevirt.io/v1
 kind: VirtualMachine
 metadata:
   name: live-migration
-  namespace: shalb-dev
+  namespace: shalb-demo
 spec:
   running: true
   template:
@@ -28,7 +28,7 @@ spec:
       - name: vpc_net_0
         multus:
           default: true
-          networkName: shalb-dev/default
+          networkName: shalb-demo/default
       domain:
         devices:
           interfaces:

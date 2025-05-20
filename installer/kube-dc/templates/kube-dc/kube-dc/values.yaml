@@ -52,6 +52,7 @@ frontend:
       secretName: kube-dc-frontend-tls
 
 backend:
+  keycloakUrl: "{{ .variables.cluster_config.keycloak_hostname | default ( printf "login.%s" .variables.domain ) }}"
   replicaCount: 1
   service:
     type: ClusterIP

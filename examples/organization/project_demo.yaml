@@ -4,5 +4,6 @@ metadata:
   name: demo
   namespace: shalb
 spec:
+  egressNetworkType: public
   cidrBlock: "10.0.10.0/24"
 
