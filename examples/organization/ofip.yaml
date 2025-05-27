@@ -1,0 +1,16 @@
+kind: OvnEip
+apiVersion: kubeovn.io/v1
+metadata:
+  name: oeip-test
+spec:
+  externalSubnet: external-1
+  type: nat
+---
+kind: OvnFip
+apiVersion: kubeovn.io/v1
+metadata:
+  name: ofip-test
+spec:
+  ovnEip: oeip-test
+  vpc: shalb-dev
+  v4Ip: 10.1.0.9

@@ -5,4 +5,5 @@ metadata:
   namespace: shalb
 spec:
   cidrBlock: "10.0.10.0/16"
+  egressNetworkType: public
 

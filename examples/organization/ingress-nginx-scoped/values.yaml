@@ -4,13 +4,13 @@ controller:
   ingressClass: ""  # No IngressClass
   scope:
     enabled: true  # Enables namespace-scoped mode
-    namespace: shalb-dev  # Restricts the controller to this namespace
+    namespace: shalb-demo  # Restricts the controller to this namespace
   watchIngressWithoutClass: true
   admissionWebhooks:
     enabled: false
   service:
-    annotations: {}
-      # service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"
+    annotations:
+      service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"
   extraEnvs:
     - name: KUBERNETES_SERVICE_HOST
       value: kube-api.stage.kube-dc.com

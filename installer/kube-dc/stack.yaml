@@ -30,13 +30,10 @@ variables:
       vlan_id: "4011"
       interface: "enp0s31f6"
       cidr: "168.119.17.48/28"
-      # cidr: "100.65.0.0/16"
       gateway: "168.119.17.49"
-      # gateway: "100.65.0.1"
       mtu: "1400"
       exclude_ips: 
       - "168.119.17.49"
-      # - "100.65.0.1..100.65.0.100"
     
   node_external_ip: 88.99.29.250
 
@@ -57,14 +54,14 @@ variables:
    
 
   versions:
-    kube_dc: "v0.1.29" # release version
+    kube_dc: "v0.1.31" # release version
     # kubevirt: "v1.3.0"
     # kubevirt_cdi: "v1.59.0"
     # cluster_api: "v1.8.1"
     # cluster_api_k3s_provider:  "v1.2.2"
     # kyverno: "v1.10.0"
     # terraform: "1.9.4"
-    kube_ovn: "v1.13.8"
+    kube_ovn: "v1.13.12"
     # multus_helm: "2.2.9"
     # ingress_nginx_helm: "4.11.1"
     keycloak_helm: "24.3.0"

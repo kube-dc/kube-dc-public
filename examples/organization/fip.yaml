@@ -1,10 +1,10 @@
 apiVersion: kube-dc.com/v1
 kind: FIp
 metadata:
-  name: ubuntu
-  namespace: shalb-dev
+  name: nettools-worker
+  namespace: shalb-demo
 spec:
-  ipAddress: 10.1.0.12
+  ipAddress: 10.0.10.6
   externalNetworkType: public
 
 
