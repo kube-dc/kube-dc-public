@@ -408,20 +408,11 @@ if [ -z "${BASE64_ENCODED_CA_CERT}" ]; then
     case "$cert_option" in
         1)
             echo -e "\n${YELLOW}Paste your base64 encoded certificate below${NC}"
-            echo -e "${YELLOW}(End input with a single line containing only 'END')${NC}"
-            cert_data=""
-            while IFS= read -r line; do
-                [ "$line" = "END" ] && break
-                cert_data="${cert_data}${line}"
-            done
-            
-            if [ -n "$cert_data" ]; then
-                export BASE64_ENCODED_CA_CERT="$cert_data"
-                echo "export BASE64_ENCODED_CA_CERT=\"${BASE64_ENCODED_CA_CERT}\"" >> "${CONFIG_DIR}/.env"
-                echo -e "${GREEN}Certificate data saved.${NC}"
-            else
-                echo -e "${YELLOW}No certificate data provided. Using insecure connection.${NC}"
-            fi
+            echo -e "${YELLOW}(The certificate will be captured automatically, press Enter after pasting)${NC}"
+            read -r certificate_data
+            BASE64_ENCODED_CA_CERT="$certificate_data"
+            echo "export BASE64_ENCODED_CA_CERT=\"${BASE64_ENCODED_CA_CERT}\"" >> "${CONFIG_DIR}/.env"
+            echo -e "${GREEN}Certificate data saved.${NC}"
             ;;
         2)
             check_env_var "CA_CERT_FILE" "Path to cluster CA certificate file" ""
