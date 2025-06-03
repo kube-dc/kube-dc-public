@@ -1,0 +1,79 @@
+#!/bin/bash
+
+# Get the directory of the script
+SCRIPT_DIR="/scripts"
+
+# Check if jq is installed
+if ! command -v jq &> /dev/null; then
+    echo "Error: jq is required but not installed. Please install jq package." >&2
+    exit 1
+fi
+
+# Function to decode JWT payload
+decode_jwt() {
+    local jwt=$1
+    # Extract the payload (second part of the JWT)
+    local payload=$(echo -n "$jwt" | cut -d "." -f2)
+    # Base64 decode the payload
+    # Add padding if needed
+    local mod4=$((${#payload} % 4))
+    if [ $mod4 -eq 2 ]; then
+        payload="${payload}=="
+    elif [ $mod4 -eq 3 ]; then
+        payload="${payload}="
+    fi
+    # Decode base64 URL-safe string
+    echo -n "$payload" | tr '_-' '/+' | base64 -d 2>/dev/null
+}
+
+# Get the token using refresh_token.sh
+TOKEN_DATA=$(${SCRIPT_DIR}/refresh_token.sh)
+# Extract just the token
+ACCESS_TOKEN=$(echo "$TOKEN_DATA" | jq -r '.status.token')
+
+if [[ -z "$ACCESS_TOKEN" || "$ACCESS_TOKEN" == "null" ]]; then
+    echo "Error: Failed to get access token" >&2
+    exit 1
+fi
+
+# Decode the JWT to get the namespaces
+JWT_PAYLOAD=$(decode_jwt "$ACCESS_TOKEN")
+NAMESPACES=($(echo "$JWT_PAYLOAD" | jq -r '.namespaces[]' 2>/dev/null))
+
+if [ ${#NAMESPACES[@]} -eq 0 ]; then
+    echo "Error: No namespaces found in token" >&2
+    exit 1
+fi
+
+# Display available namespaces
+echo "Available namespaces:"
+for i in "${!NAMESPACES[@]}"; do
+    echo "  $((i+1)). ${NAMESPACES[$i]}"
+done
+
+# Get user selection
+SELECTED_INDEX=0
+if [ ${#NAMESPACES[@]} -eq 1 ]; then
+    echo "Only one namespace available. Selecting ${NAMESPACES[0]}."
+    SELECTED_INDEX=0
+else
+    while true; do
+        read -p "Select namespace (1-${#NAMESPACES[@]}): " SELECTION
+        if [[ "$SELECTION" =~ ^[0-9]+$ ]] && [ "$SELECTION" -ge 1 ] && [ "$SELECTION" -le ${#NAMESPACES[@]} ]; then
+            SELECTED_INDEX=$((SELECTION-1))
+            break
+        fi
+        echo "Invalid selection. Please enter a number between 1 and ${#NAMESPACES[@]}."
+    done
+fi
+
+SELECTED_NAMESPACE=${NAMESPACES[$SELECTED_INDEX]}
+echo "Setting current namespace to: $SELECTED_NAMESPACE"
+
+# Get current context
+CURRENT_CONTEXT=$(kubectl config current-context)
+
+# Update the namespace for the current context
+kubectl config set-context "$CURRENT_CONTEXT" --namespace="$SELECTED_NAMESPACE"
+
+echo "Namespace has been set to '$SELECTED_NAMESPACE' for context '$CURRENT_CONTEXT'"

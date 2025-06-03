@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: debug-net
+  name: debug-net
+  namespace: shalb-demo
+spec:
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: debug-net
+  template:
+    metadata:
+      labels:
+        app: debug-net
+    spec:
+      containers:
+      - name: debug-net
+        image: shalb/go-pinger:latest
+        imagePullPolicy: Always
+        args:
+          - "-i"
+          - "1.0"
+          - "-t"
+          - "2.0"
+          - "-v"
+          - "1.1.1.1"
+          - "88.99.218.47"
+          - "213.133.100.98"
+          - "88.198.229.192"
+          - "193.47.99.5"
+          - "185.12.64.2"
+          - "91.224.10.2"
+          - "168.119.17.60"
+        env:
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+        securityContext:
+          capabilities:
+            add: ["NET_RAW", "NET_ADMIN"]
+
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+  updateStrategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate

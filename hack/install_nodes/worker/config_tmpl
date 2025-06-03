@@ -1,0 +1,4 @@
+token: ${SERVER_TOKEN}
+server: https://${CP_HOST}:${CP_PORT} # Controlplane
+node-name: kube-dc-worker-1
+node-ip: 192.168.1.4

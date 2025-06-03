@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: debug-net-tcpdump
+  name: debug-net-tcpdump
+  namespace: kube-system
+spec:
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: debug-net-tcpdump
+  template:
+    metadata:
+      labels:
+        app: debug-net-tcpdump
+    spec:
+      hostNetwork: true
+      containers:
+      # Container for external interface monitoring
+      - args:
+        - |
+          echo "Running external interface capture on Node: $NODE_NAME"
+          tcpdump -e -vvv -n -i enp0s31f6 icmp and host 213.133.100.98 2>&1 | sed "s/^/[EXT:$NODE_NAME] /"
+        command:
+        - /bin/sh
+        - -c
+        image: nicolaka/netshoot
+        imagePullPolicy: Always
+        name: external-tcpdump
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        securityContext:
+          privileged: true
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+      # Container for br-int mirror0 interface monitoring
+      - args:
+        - |
+          echo "Running br-int mirror0 capture on Node: $NODE_NAME"
+          # Wait for interface to be up
+          while ! ip link show mirror0 up > /dev/null 2>&1; do
+            echo "Waiting for mirror0 interface..."
+            sleep 2
+          done
+          # Start capture
+          tcpdump -e -vvv -n -i mirror0 host 213.133.100.98 2>&1 | sed "s/^/[MIRROR:$NODE_NAME] /"
+        command:
+        - /bin/sh
+        - -c
+        image: nicolaka/netshoot
+        imagePullPolicy: Always
+        name: mirror-tcpdump
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        securityContext:
+          privileged: true
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+      dnsPolicy: ClusterFirstWithHostNet
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      terminationGracePeriodSeconds: 2
+  updateStrategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
