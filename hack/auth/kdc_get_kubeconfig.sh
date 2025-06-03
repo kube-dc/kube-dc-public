@@ -50,6 +50,7 @@ check_env_var() {
             read -p "Use saved ${var_description} [${var_value}]? (Y/n): " use_saved
             if [[ -z "$use_saved" || "$use_saved" =~ ^[Yy] ]]; then
                 export "${var_name}"="${var_value}"
+                # Store value without appending to output to prevent concatenation
                 return
             fi
         fi
@@ -63,7 +64,12 @@ check_env_var() {
             read -p "Enter ${var_description}: " var_value
         fi
 
+        # Directly set the variable without displaying it again
         export "${var_name}"="${var_value}"
+        # Clean up any previous entries for this variable
+        if [ -f "${CONFIG_DIR}/.env" ]; then
+            sed -i "/^export ${var_name}=/d" "${CONFIG_DIR}/.env" 2>/dev/null || true
+        fi
         echo "export ${var_name}=\"${var_value}\"" >> "${CONFIG_DIR}/.env"
     else
         echo -e "${var_name} already set: ${GREEN}${!var_name}${NC}"
