@@ -8,26 +8,24 @@
       
       
       
-        <link rel="canonical" href="https://docs.kube-dc.com/">
+        <link rel="canonical" href="https://docs.kube-dc.com/tutorial-kubeconfig/">
       
       
       
-        <link rel="next" href="core-features/">
       
-      
-      <link rel="icon" href="images/favicon.png">
+      <link rel="icon" href="../images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.14">
     
     
       
-        <title>What Is Kube-DC? - Kube-DC</title>
+        <title>Obtaining and Using Kubeconfig in Your Local Console - Kube-DC</title>
       
     
     
-      <link rel="stylesheet" href="assets/stylesheets/main.342714a4.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.342714a4.min.css">
       
         
-        <link rel="stylesheet" href="assets/stylesheets/palette.06af60db.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
       
       
 
@@ -46,9 +44,9 @@
       
     
     
-      <link rel="stylesheet" href="stylesheets/extra.css">
+      <link rel="stylesheet" href="../stylesheets/extra.css">
     
-    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
   
@@ -81,7 +79,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#what-is-kube-dc" class="md-skip">
+        <a href="#obtaining-and-using-kubeconfig-in-your-local-console" class="md-skip">
           Skip to content
         </a>
       
@@ -95,9 +93,9 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="." title="Kube-DC" class="md-header__button md-logo" aria-label="Kube-DC" data-md-component="logo">
+    <a href=".." title="Kube-DC" class="md-header__button md-logo" aria-label="Kube-DC" data-md-component="logo">
       
-  <img src="images/logo.png" alt="logo">
+  <img src="../images/logo.png" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -114,7 +112,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              What Is Kube-DC?
+              Obtaining and Using Kubeconfig in Your Local Console
             
           </span>
         </div>
@@ -223,13 +221,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="." class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href=".." class="md-tabs__link">
           
   
   
@@ -249,7 +245,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="quickstart-overview/" class="md-tabs__link">
+        <a href="../quickstart-overview/" class="md-tabs__link">
           
   
   
@@ -269,7 +265,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="architecture-overview/" class="md-tabs__link">
+        <a href="../architecture-overview/" class="md-tabs__link">
           
   
   
@@ -289,7 +285,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="tutorial-virtual-machines/" class="md-tabs__link">
+        <a href="../tutorial-virtual-machines/" class="md-tabs__link">
           
   
   
@@ -307,7 +303,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="community-support/" class="md-tabs__link">
+      <a href="../community-support/" class="md-tabs__link">
         
   
   
@@ -342,9 +338,9 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="." title="Kube-DC" class="md-nav__button md-logo" aria-label="Kube-DC" data-md-component="logo">
+    <a href=".." title="Kube-DC" class="md-nav__button md-logo" aria-label="Kube-DC" data-md-component="logo">
       
-  <img src="images/logo.png" alt="logo">
+  <img src="../images/logo.png" alt="logo">
 
     </a>
     Kube-DC
@@ -368,29 +364,24 @@
       
   
   
-    
   
   
-  
     
     
     
     
       
-        
-        
-      
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
         
           
-          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="">
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
             
   
   
@@ -403,7 +394,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_1">
             <span class="md-nav__icon md-icon"></span>
             Introduction
@@ -414,32 +405,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    What Is Kube-DC?
-    
-  </span>
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="." class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
         
   
   
@@ -450,104 +419,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
-    <span class="md-ellipsis">
-      Overview
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#key-features-at-a-glance" class="md-nav__link">
-    <span class="md-ellipsis">
-      Key Features at a Glance
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#why-choose-kube-dc" class="md-nav__link">
-    <span class="md-ellipsis">
-      Why Choose Kube-DC?
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Why Choose Kube-DC?">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#for-enterprise-it" class="md-nav__link">
-    <span class="md-ellipsis">
-      For Enterprise IT
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#for-service-providers" class="md-nav__link">
-    <span class="md-ellipsis">
-      For Service Providers
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#for-devops-teams" class="md-nav__link">
-    <span class="md-ellipsis">
-      For DevOps Teams
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#getting-started" class="md-nav__link">
-    <span class="md-ellipsis">
-      Getting Started
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#community-and-support" class="md-nav__link">
-    <span class="md-ellipsis">
-      Community and Support
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -560,7 +431,7 @@
   
   
     <li class="md-nav__item">
-      <a href="core-features/" class="md-nav__link">
+      <a href="../core-features/" class="md-nav__link">
         
   
   
@@ -631,7 +502,7 @@
   
   
     <li class="md-nav__item">
-      <a href="quickstart-overview/" class="md-nav__link">
+      <a href="../quickstart-overview/" class="md-nav__link">
         
   
   
@@ -654,7 +525,7 @@
   
   
     <li class="md-nav__item">
-      <a href="quickstart-hetzner/" class="md-nav__link">
+      <a href="../quickstart-hetzner/" class="md-nav__link">
         
   
   
@@ -725,7 +596,7 @@
   
   
     <li class="md-nav__item">
-      <a href="architecture-overview/" class="md-nav__link">
+      <a href="../architecture-overview/" class="md-nav__link">
         
   
   
@@ -748,7 +619,7 @@
   
   
     <li class="md-nav__item">
-      <a href="architecture-multi-tenancy/" class="md-nav__link">
+      <a href="../architecture-multi-tenancy/" class="md-nav__link">
         
   
   
@@ -771,7 +642,7 @@
   
   
     <li class="md-nav__item">
-      <a href="architecture-virtualization/" class="md-nav__link">
+      <a href="../architecture-virtualization/" class="md-nav__link">
         
   
   
@@ -794,7 +665,7 @@
   
   
     <li class="md-nav__item">
-      <a href="architecture-networking/" class="md-nav__link">
+      <a href="../architecture-networking/" class="md-nav__link">
         
   
   
@@ -865,7 +736,7 @@
   
   
     <li class="md-nav__item">
-      <a href="tutorial-virtual-machines/" class="md-nav__link">
+      <a href="../tutorial-virtual-machines/" class="md-nav__link">
         
   
   
@@ -888,7 +759,7 @@
   
   
     <li class="md-nav__item">
-      <a href="tutorial-user-groups/" class="md-nav__link">
+      <a href="../tutorial-user-groups/" class="md-nav__link">
         
   
   
@@ -911,7 +782,7 @@
   
   
     <li class="md-nav__item">
-      <a href="tutorial-ip-and-lb/" class="md-nav__link">
+      <a href="../tutorial-ip-and-lb/" class="md-nav__link">
         
   
   
@@ -941,7 +812,7 @@
   
   
     <li class="md-nav__item">
-      <a href="community-support/" class="md-nav__link">
+      <a href="../community-support/" class="md-nav__link">
         
   
   
@@ -992,46 +863,46 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#key-features-at-a-glance" class="md-nav__link">
+  <a href="#prerequisites" class="md-nav__link">
     <span class="md-ellipsis">
-      Key Features at a Glance
+      Prerequisites
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#why-choose-kube-dc" class="md-nav__link">
+  <a href="#using-the-authentication-helper-script" class="md-nav__link">
     <span class="md-ellipsis">
-      Why Choose Kube-DC?
+      Using the Authentication Helper Script
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Why Choose Kube-DC?">
+    <nav class="md-nav" aria-label="Using the Authentication Helper Script">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#for-enterprise-it" class="md-nav__link">
+  <a href="#step-1-download-and-run-the-authentication-script" class="md-nav__link">
     <span class="md-ellipsis">
-      For Enterprise IT
+      Step 1: Download and Run the Authentication Script
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#for-service-providers" class="md-nav__link">
+  <a href="#step-2-activate-the-generated-configuration" class="md-nav__link">
     <span class="md-ellipsis">
-      For Service Providers
+      Step 2: Activate the Generated Configuration
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#for-devops-teams" class="md-nav__link">
+  <a href="#step-3-test-your-connection" class="md-nav__link">
     <span class="md-ellipsis">
-      For DevOps Teams
+      Step 3: Test Your Connection
     </span>
   </a>
   
@@ -1043,18 +914,51 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#getting-started" class="md-nav__link">
+  <a href="#troubleshooting" class="md-nav__link">
     <span class="md-ellipsis">
-      Getting Started
+      Troubleshooting
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#authentication-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Authentication Issues
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#permission-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Permission Issues
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security-considerations" class="md-nav__link">
+    <span class="md-ellipsis">
+      Security Considerations
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#community-and-support" class="md-nav__link">
+  <a href="#next-steps" class="md-nav__link">
     <span class="md-ellipsis">
-      Community and Support
+      Next Steps
     </span>
   </a>
   
@@ -1079,50 +983,104 @@
   
 
 
-<h1 id="what-is-kube-dc">What Is Kube-DC?<a class="headerlink" href="#what-is-kube-dc" title="Permanent link"> ¶</a></h1>
-<p>Kube-DC is an advanced, enterprise-grade platform that transforms Kubernetes into a comprehensive Data Center solution supporting both virtual machines and containerized workloads. It provides organizations with a unified management interface for all their infrastructure needs, from multi-tenancy and virtualization to networking and billing.</p>
+<h1 id="obtaining-and-using-kubeconfig-in-your-local-console">Obtaining and Using Kubeconfig in Your Local Console<a class="headerlink" href="#obtaining-and-using-kubeconfig-in-your-local-console" title="Permanent link"> ¶</a></h1>
+<p>This guide explains how to obtain and configure a kubeconfig file for the kube-dc platform to use in your local development environment.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link"> ¶</a></h2>
-<p>Kube-DC bridges the gap between traditional virtualization and modern container orchestration, allowing teams to run both legacy workloads and cloud-native applications on the same platform. By leveraging Kubernetes as the foundation, Kube-DC inherits its robust ecosystem while extending functionality to support enterprise requirements.</p>
-<p><img alt="Kube-DC Architecture Overview" src="images/arch-overview.png" /></p>
-<h2 id="key-features-at-a-glance">Key Features at a Glance<a class="headerlink" href="#key-features-at-a-glance" title="Permanent link"> ¶</a></h2>
-<p>Kube-DC offers a comprehensive set of features designed for modern data center operations:</p>
+<p>The kubeconfig file is essential for authenticating with the Kubernetes API server. In kube-dc, authentication is handled through Keycloak, which provides secure token-based access.</p>
+<p>This tutorial covers:
+- Setting up the authentication script
+- Generating a kubeconfig file
+- Using kubeconfig with kubectl
+- Troubleshooting common issues</p>
+<h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link"> ¶</a></h2>
+<p>Before you begin, ensure you have:</p>
 <ul>
-<li><strong>Multi-Tenancy</strong> - Host multiple organizations with isolated environments and custom SSO integration</li>
-<li><strong>Unified Workload Management</strong> - Run both VMs and containers on the same platform</li>
-<li><strong>Advanced Networking</strong> - VPC per project, VLAN support, and software-defined networking</li>
-<li><strong>Enterprise Virtualization</strong> - KubeVirt integration with GPU passthrough and live migration</li>
-<li><strong>Infrastructure as Code</strong> - Kubernetes-native APIs with support for Terraform, Ansible, and more</li>
-<li><strong>Integrated Billing</strong> - Track and allocate costs for all resources</li>
-<li><strong>Managed Services Platform</strong> - Deploy databases, storage, and AI/ML infrastructure</li>
+<li>Access to a kube-dc organization and project</li>
+<li>Your Keycloak username and password</li>
+<li><code>kubectl</code> installed on your local machine</li>
+<li><code>curl</code> and <code>jq</code> utilities installed (required for token operations)</li>
 </ul>
-<p>For detailed information about each feature, including capabilities and use cases, visit the <a href="core-features/">Core Features</a> page.</p>
-<h2 id="why-choose-kube-dc">Why Choose Kube-DC?<a class="headerlink" href="#why-choose-kube-dc" title="Permanent link"> ¶</a></h2>
-<h3 id="for-enterprise-it">For Enterprise IT<a class="headerlink" href="#for-enterprise-it" title="Permanent link"> ¶</a></h3>
+<h2 id="using-the-authentication-helper-script">Using the Authentication Helper Script<a class="headerlink" href="#using-the-authentication-helper-script" title="Permanent link"> ¶</a></h2>
+<p>kube-dc provides a helper script that simplifies the kubeconfig generation process.</p>
+<h3 id="step-1-download-and-run-the-authentication-script">Step 1: Download and Run the Authentication Script<a class="headerlink" href="#step-1-download-and-run-the-authentication-script" title="Permanent link"> ¶</a></h3>
+<p>You can download the authentication script directly from the public repository:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Create a directory for the script</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>~/kube-dc-scripts
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Download the script</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>curl<span class="w"> </span>-o<span class="w"> </span>~/kube-dc-scripts/kdc_get_kubeconfig.sh<span class="w"> </span>https://raw.githubusercontent.com/kube-dc/kube-dc-public/main/hack/auth/kdc_get_kubeconfig.sh
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Make it executable</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>chmod<span class="w"> </span>+x<span class="w"> </span>~/kube-dc-scripts/kdc_get_kubeconfig.sh
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># Run the authentication script with your project name</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>~/kube-dc-scripts/kdc_get_kubeconfig.sh<span class="w"> </span>your-project-name
+</span></code></pre></div>
+<p>Alternatively, if you have the entire repository cloned:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># If you have the repository already cloned</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nb">cd</span><span class="w"> </span>kube-dc
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>./hack/auth/kdc_get_kubeconfig.sh<span class="w"> </span>your-project-name
+</span></code></pre></div>
+<p>The script will prompt you for the following information:
+- Keycloak endpoint URL (e.g., <code>https://login.dev.kube-dc.com</code>)
+- Organization name (your Keycloak realm)
+- Kubernetes API server URL (e.g., <code>https://kube-api.dev.kube-dc.com:6443</code>)
+- Cluster name (usually <code>kube-dc</code>)
+- User name (your Keycloak username)
+- Context name (usually <code>kube-dc</code>)
+- CA certificate (you can provide this as a file, paste it directly, or skip for insecure mode)</p>
+<h3 id="step-2-activate-the-generated-configuration">Step 2: Activate the Generated Configuration<a class="headerlink" href="#step-2-activate-the-generated-configuration" title="Permanent link"> ¶</a></h3>
+<p>After the script completes, activate the configuration:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">source</span><span class="w"> </span>~/.kube/kube-dc-your-project-name/activate.sh
+</span></code></pre></div>
+<p>This will set the <code>KUBECONFIG</code> environment variable to point to your new configuration file.</p>
+<h3 id="step-3-test-your-connection">Step 3: Test Your Connection<a class="headerlink" href="#step-3-test-your-connection" title="Permanent link"> ¶</a></h3>
+<p>Test that your kubeconfig works correctly:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods
+</span></code></pre></div>
+<p>On first use, you'll be prompted to enter your Keycloak username and password. The script will obtain tokens and cache them for subsequent commands.</p>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link"> ¶</a></h2>
+<h3 id="authentication-issues">Authentication Issues<a class="headerlink" href="#authentication-issues" title="Permanent link"> ¶</a></h3>
+<p>If you're experiencing authentication problems:</p>
+<ol>
+<li>
+<p><strong>Token expiration</strong>: The refresh token may have expired. Delete the <code>.refresh_token</code> file in your kubeconfig directory and try again:
+   <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>rm<span class="w"> </span>~/.kube/kube-dc-*/scripts/.refresh_token
+</span></code></pre></div></p>
+</li>
+<li>
+<p><strong>Invalid credentials</strong>: Ensure you're using the correct username and password for your Keycloak account.</p>
+</li>
+<li>
+<p><strong>Connection issues</strong>: Verify your network can reach the Keycloak and API servers.</p>
+</li>
+</ol>
+<h3 id="permission-issues">Permission Issues<a class="headerlink" href="#permission-issues" title="Permanent link"> ¶</a></h3>
+<p>If you can authenticate but receive permission errors:</p>
+<ol>
+<li>
+<p><strong>Namespace access</strong>: Ensure you're using the correct namespace in your context. Your namespace should be in the format <code>organization-project</code>.</p>
+</li>
+<li>
+<p><strong>Role assignment</strong>: Contact your organization administrator to verify you have the appropriate roles assigned in Keycloak.</p>
+</li>
+<li>
+<p><strong>Resource-specific permissions</strong>: Check that your role has permissions for the specific resources you're trying to access.</p>
+</li>
+</ol>
+<h2 id="security-considerations">Security Considerations<a class="headerlink" href="#security-considerations" title="Permanent link"> ¶</a></h2>
 <ul>
-<li>Run legacy VMs alongside modern containers</li>
-<li>Implement chargeback models for departmental resource usage</li>
-<li>Provide self-service infrastructure while maintaining governance</li>
-<li>Reduce operational costs by consolidating virtualization and container platforms</li>
+<li>Keep your kubeconfig file secure (600 permissions)</li>
+<li>Never share your refresh or access tokens</li>
+<li>Be cautious when using <code>insecure-skip-tls-verify: true</code> in production environments</li>
+<li>If your credentials may be compromised, contact your administrator to revoke your tokens</li>
 </ul>
-<h3 id="for-service-providers">For Service Providers<a class="headerlink" href="#for-service-providers" title="Permanent link"> ¶</a></h3>
+<h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link"> ¶</a></h2>
 <ul>
-<li>Offer multi-tenant infrastructure with complete isolation</li>
-<li>Provide value-added services beyond basic IaaS</li>
-<li>Implement flexible billing based on actual resource usage</li>
-<li>Support diverse customer workloads on a single platform</li>
+<li><a href="../user-groups/">User and Group Management</a>: Learn about role-based access control</li>
+<li><a href="../tutorial-virtual-machines/">Tutorial: Virtual Machines</a>: Deploy your first VM</li>
+<li><a href="../examples/">Examples</a>: Explore example manifests for various resources</li>
 </ul>
-<h3 id="for-devops-teams">For DevOps Teams<a class="headerlink" href="#for-devops-teams" title="Permanent link"> ¶</a></h3>
-<ul>
-<li>Unify VM and container management workflows</li>
-<li>Implement infrastructure as code for all resources</li>
-<li>Integrate with existing CI/CD pipelines</li>
-<li>Enable developer self-service while maintaining control</li>
-</ul>
-<h2 id="getting-started">Getting Started<a class="headerlink" href="#getting-started" title="Permanent link"> ¶</a></h2>
-<p>Ready to explore Kube-DC? Check out our <a href="quickstart-overview/">Quick Start guides</a> to begin your journey.</p>
-<p>For a deeper understanding of the underlying architecture and concepts, visit the <a href="architecture-overview/">Architecture &amp; Concepts</a> section.</p>
-<h2 id="community-and-support">Community and Support<a class="headerlink" href="#community-and-support" title="Permanent link"> ¶</a></h2>
-<p>Kube-DC is built with a focus on community collaboration. Visit our <a href="community-support/">Community &amp; Support</a> page to learn how to get involved, report issues, or seek assistance.</p>
 
 
 
@@ -1210,10 +1168,10 @@
     
     
       
-      <script id="__config" type="application/json">{"base": ".", "features": ["navigation.tabs", "content.code.copy", "content.code.select"], "search": "assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"base": "..", "features": ["navigation.tabs", "content.code.copy", "content.code.select"], "search": "../assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="assets/javascripts/bundle.13a4f30d.min.js"></script>
+      <script src="../assets/javascripts/bundle.13a4f30d.min.js"></script>
       
     
   </body>
