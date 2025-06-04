@@ -105,6 +105,7 @@ create_directories() {
     echo -e "\n${BLUE}Creating directory structure...${NC}"
     mkdir -p "${SCRIPTS_DIR}"
     mkdir -p "${CONFIG_DIR}"
+    mkdir -p "${HOME}/.kube-dc/bin"
     chmod 700 "${BASE_DIR}"
     echo -e "${GREEN}Directories created.${NC}"
 }
@@ -343,15 +344,19 @@ create_activation_script() {
 #!/bin/bash
 
 # Source this file to activate the kube-dc environment
-# Usage: source ~/.kube/kube-dc-${PROJECT_NAME}/activate.sh
+# Usage: source ~/.kube-dc/${ORGANIZATION}-${PROJECT_NAME}/activate.sh
 
-export KUBECONFIG=~/.kube/kube-dc-${PROJECT_NAME}/kubeconfig
-source ~/.kube/kube-dc-${PROJECT_NAME}/.env
+export KUBECONFIG=~/.kube-dc/${ORGANIZATION}-${PROJECT_NAME}/kubeconfig
+source ~/.kube-dc/${ORGANIZATION}-${PROJECT_NAME}/.env
+
+# Set up kn alias for namespace switching
+alias kn="${HOME}/.kube-dc/bin/kn"
 
 echo "Kube-DC environment for ${PROJECT_NAME} activated."
 echo "Using namespace: ${NAMESPACE}"
 echo "You can now use kubectl commands to interact with your cluster."
 echo "For example: kubectl get pods"
+echo "Use 'kn' to list and switch between available namespaces."
 EOF
     chmod +x "${BASE_DIR}/activate.sh"
     echo -e "${GREEN}Activation script created.${NC}"
@@ -404,6 +409,169 @@ debug_env_info() {
 }
 
 # Main function
+# Install the kn script for namespace switching
+install_kn_script() {
+    echo -e "\n${BLUE}Installing namespace switcher...${NC}"
+    # Source path for the kn script
+    local kn_source="$(dirname "$0")/kn"
+    
+    # If the script is not found in the same directory, try to use the embedded version
+    if [ ! -f "$kn_source" ]; then
+        # Create kn script directly
+        cat > "${HOME}/.kube-dc/bin/kn" << 'EOF'
+#!/bin/bash
+
+# kn - Kubernetes namespace switcher for kube-dc
+# Falls back to kubens if not in a kube-dc context
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Function to decode JWT payload
+decode_jwt() {
+    local jwt=$1
+    # Extract the payload (second part of the JWT)
+    local payload=$(echo -n "$jwt" | cut -d "." -f2)
+    # Base64 decode the payload
+    # Add padding if needed
+    local mod4=$((${#payload} % 4))
+    if [ $mod4 -eq 2 ]; then
+        payload="${payload}=="
+    elif [ $mod4 -eq 3 ]; then
+        payload="${payload}="
+    fi
+    # Decode base64 URL-safe string
+    echo -n "$payload" | tr '_-' '/+' | base64 -d 2>/dev/null
+}
+
+# Function to extract JWT token from exec-based kubeconfig
+get_jwt_token() {
+    local refresh_script=$(kubectl config view --minify -o jsonpath='{.users[0].user.exec.command}')
+    
+    # Check if this is a kube-dc refresh token script
+    if [[ "$refresh_script" == *"refresh_token.sh" ]]; then
+        # Execute the refresh token script to get the token
+        local token_json=$($refresh_script 2>/dev/null)
+        echo $(echo "$token_json" | jq -r '.status.token' 2>/dev/null)
+    else
+        return 1
+    fi
+}
+
+# Function to get available namespaces from JWT claims
+get_available_namespaces() {
+    local token=$1
+    local jwt_payload=$(decode_jwt "$token")
+    
+    # Extract namespaces from JWT payload
+    # This assumes a standard JWT format with resource_access claim
+    echo "$jwt_payload" | jq -r '.resource_access["kube-dc"].roles[]? // empty' 2>/dev/null | grep -oP "^namespace:.*" | sed 's/^namespace://'
+}
+
+# Function to switch to a namespace
+switch_namespace() {
+    local namespace=$1
+    kubectl config set-context --current --namespace="$namespace"
+    echo -e "${GREEN}Namespace changed to${NC} $namespace"
+}
+
+# Main function
+main() {
+    # Check if we have a kube-dc context
+    local context_name=$(kubectl config current-context 2>/dev/null)
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}Error: No active kubectl context found${NC}"
+        exit 1
+    fi
+    
+    # Try to get JWT token
+    local token=$(get_jwt_token)
+    
+    if [ $? -eq 0 ] && [ -n "$token" ]; then
+        # kube-dc context - get namespaces from JWT
+        echo -e "${BLUE}kube-dc context detected.${NC}"
+        
+        # Get available namespaces
+        local namespaces=($(get_available_namespaces "$token"))
+        
+        if [ ${#namespaces[@]} -eq 0 ]; then
+            echo -e "${YELLOW}No namespaces found in your access token.${NC}"
+            return 1
+        fi
+        
+        if [ -n "$1" ]; then
+            # Check if the requested namespace is in the list
+            namespace_found=false
+            for ns in "${namespaces[@]}"; do
+                if [ "$ns" = "$1" ]; then
+                    namespace_found=true
+                    break
+                fi
+            done
+            
+            if [ "$namespace_found" = true ]; then
+                switch_namespace "$1"
+            else
+                echo -e "${RED}Error: You don't have access to namespace${NC} $1"
+                echo -e "${YELLOW}Available namespaces:${NC}"
+                printf "  %s\n" "${namespaces[@]}"
+            fi
+        else
+            # Interactive selection if no namespace specified
+            echo -e "${YELLOW}Please select a namespace:${NC}"
+            
+            # Print available namespaces with numbers
+            for i in "${!namespaces[@]}"; do
+                echo -e "  $((i+1))) ${namespaces[$i]}"
+            done
+            
+            # Get user selection
+            read -p "Enter number [1-${#namespaces[@]}]: " selection
+            
+            if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#namespaces[@]}" ]; then
+                switch_namespace "${namespaces[$((selection-1))]}"
+            else
+                echo -e "${RED}Invalid selection${NC}"
+                exit 1
+            fi
+        fi
+    else
+        # Not a kube-dc context or token couldn't be retrieved
+        # Fall back to kubens if available
+        if command -v kubens &> /dev/null; then
+            kubens "$@"
+        else
+            # Basic namespace switching if kubens is not available
+            if [ -n "$1" ]; then
+                kubectl config set-context --current --namespace="$1"
+                echo "Namespace changed to $1"
+            else
+                echo -e "Current namespace: $(kubectl config view --minify --output 'jsonpath={..namespace}')"
+                echo -e "Available namespaces:"
+                kubectl get namespaces -o name | sed 's/^namespace\///' 
+            fi
+        fi
+    fi
+}
+
+# Run the main function with all arguments
+main "$@"
+EOF
+    else
+        # Copy the kn script from the repository to the bin directory
+        cp "$kn_source" "${HOME}/.kube-dc/bin/kn"
+    fi
+    
+    # Make it executable
+    chmod +x "${HOME}/.kube-dc/bin/kn"
+    echo -e "${GREEN}kn namespace switcher installed.${NC}"
+}
+
 main() {
     # Show required environment variables
     debug_env_info
@@ -468,12 +636,14 @@ fi
     create_refresh_token_script
     create_kubeconfig
     create_activation_script
+    install_kn_script
     
     echo -e "\n${GREEN}Setup completed successfully!${NC}"
     echo -e "To use your new kubeconfig, run:"
-    echo -e "${YELLOW}source ~/.kube/kube-dc-${PROJECT_NAME}/activate.sh${NC}"
+    echo -e "${YELLOW}source ~/.kube-dc/${ORGANIZATION}-${PROJECT_NAME}/activate.sh${NC}"
     echo -e "\nThis will set KUBECONFIG to point to your new configuration."
     echo -e "When you first run a kubectl command, you may be prompted for your credentials."
+    echo -e "\nUse the ${YELLOW}kn${NC} command to view and select from available namespaces."
     
     if [ -n "${BASE64_ENCODED_CA_CERT}" ]; then
         echo -e "\n${GREEN}Your connection is secure with the provided certificate.${NC}"

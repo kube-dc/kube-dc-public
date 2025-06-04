@@ -65,10 +65,23 @@ The script will prompt you for the following information:
 After the script completes, activate the configuration:
 
 ```bash
-source ~/.kube-dc/your-org-your-project-name/activate.sh
+source ~/.kube-dc/your-org-your-project/activate.sh
 ```
 
-This will set the `KUBECONFIG` environment variable to point to your new configuration file.
+This will:
+
+1. Set the `KUBECONFIG` environment variable to point to your new configuration
+2. Source the environment variables from the `.env` file
+3. Add the `kn` alias for namespace switching
+4. Display instructions for using kubectl
+
+You can now use `kubectl` commands as usual:
+
+```bash
+kubectl get pods
+```
+
+On first use, you'll be prompted to enter your Keycloak username and password. The script will obtain tokens and cache them for subsequent commands.
 
 ### Step 3: Test Your Connection
 
@@ -81,6 +94,27 @@ kubectl get pods
 On first use, you'll be prompted to enter your Keycloak username and password. The script will obtain tokens and cache them for subsequent commands.
 
 
+
+## Using the Namespace Switcher
+
+The `kn` tool is installed automatically during setup and is configured as an alias when you activate the environment. It allows you to easily view and switch between namespaces that your token has permissions to access.
+
+### Features
+
+- **Intelligent Operation**: When used with a kube-dc context, it reads namespace permissions directly from your JWT token
+- **Interactive Selection**: Run `kn` without arguments to see a list of available namespaces
+- **Direct Selection**: Specify a namespace with `kn my-namespace`
+- **Fallback Mode**: If not in a kube-dc context, falls back to `kubens` or basic kubectl namespace commands
+
+### Examples
+
+```bash
+# List available namespaces and select interactively
+kn
+
+# Switch directly to a specific namespace
+kn shalb-demo
+```
 
 ## Troubleshooting
 
