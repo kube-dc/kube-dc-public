@@ -1,44 +1,24 @@
 #!/bin/bash
-
+#
 # kn - Kubernetes namespace switcher for kube-dc
-# Falls back to kubens if not in a kube-dc context
+# This script detects if you're in a kube-dc context and extracts
+# available namespaces from your JWT token, then allows switching
+# between them.
 
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
+YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Function to decode JWT payload
+# Function to decode JWT token payload - simpler approach without padding calculation
 decode_jwt() {
-    local jwt=$1
-    # Extract the payload (second part of the JWT)
-    local payload=$(echo -n "$jwt" | cut -d "." -f2)
-    # Base64 decode the payload
-    # Add padding if needed
-    local mod4=$((${#payload} % 4))
-    if [ $mod4 -eq 2 ]; then
-        payload="${payload}=="
-    elif [ $mod4 -eq 3 ]; then
-        payload="${payload}="
-    fi
-    # Decode base64 URL-safe string
-    echo -n "$payload" | tr '_-' '/+' | base64 -d 2>/dev/null
-}
-
-# Function to extract JWT token from exec-based kubeconfig
-get_jwt_token() {
-    local refresh_script=$(kubectl config view --minify -o jsonpath='{.users[0].user.exec.command}')
+    local token=$1
+    local payload=$(echo "$token" | cut -d '.' -f 2)
     
-    # Check if this is a kube-dc refresh token script
-    if [[ "$refresh_script" == *"refresh_token.sh" ]]; then
-        # Execute the refresh token script to get the token
-        local token_json=$($refresh_script 2>/dev/null)
-        echo $(echo "$token_json" | jq -r '.status.token' 2>/dev/null)
-    else
-        return 1
-    fi
+    # Try to decode with both standard base64 and macOS base64
+    echo "$payload" | base64 --decode 2>/dev/null || echo "$payload" | base64 -D 2>/dev/null || echo "$payload"
 }
 
 # Function to get available namespaces from JWT claims
@@ -46,97 +26,225 @@ get_available_namespaces() {
     local token=$1
     local jwt_payload=$(decode_jwt "$token")
     
-    # Extract namespaces from JWT payload in a cross-platform way (macOS compatible)
-    # This assumes a standard JWT format with resource_access claim
-    echo "$jwt_payload" | jq -r '.resource_access["kube-dc"].roles[]? // empty' 2>/dev/null | grep -o "^namespace:.*" | sed 's/^namespace://'
+    # Add debug output if DEBUG=1 is set
+    if [ "${DEBUG:-0}" = "1" ]; then
+        echo "DEBUG: JWT payload structure:" >&2
+        echo "$jwt_payload" | jq . 2>/dev/null || echo "Error parsing JWT payload" >&2
+    fi
+    
+    # Look for project roles with namespace prefix
+    local roles_found=false
+    local namespaces=""
+    
+    # If the token didn't decode properly or jq isn't available, show a warning
+    if ! command -v jq &>/dev/null; then
+        echo "WARNING: jq is not installed. Cannot parse JWT token." >&2
+        return 1
+    fi
+    
+    # First try with the standard format
+    if namespaces=$(echo "$jwt_payload" | jq -r '.resource_access["kube-dc"].roles[]? // empty' 2>/dev/null | grep -o "^namespace:.*" 2>/dev/null | sed 's/^namespace://'); then
+        if [ -n "$namespaces" ]; then
+            roles_found=true
+        fi
+    fi
+    
+    # If that failed, try with realm_access
+    if [ "$roles_found" = "false" ]; then
+        if namespaces=$(echo "$jwt_payload" | jq -r '.realm_access.roles[]? // empty' 2>/dev/null | grep -o "^namespace:.*" 2>/dev/null | sed 's/^namespace://'); then
+            if [ -n "$namespaces" ]; then
+                roles_found=true
+            fi
+        fi
+    fi
+    
+    # Last resort: try to find anything that looks like a namespace
+    if [ "$roles_found" = "false" ]; then
+        if [ "${DEBUG:-0}" = "1" ]; then
+            echo "DEBUG: Trying to extract any role that looks like a namespace" >&2
+        fi
+        
+        # Try to get all roles from different locations
+        local all_roles=""
+        all_roles+=$(echo "$jwt_payload" | jq -r '.resource_access[]?.roles[]? // empty' 2>/dev/null)$'\n'
+        all_roles+=$(echo "$jwt_payload" | jq -r '.realm_access.roles[]? // empty' 2>/dev/null)$'\n'
+        all_roles+=$(echo "$jwt_payload" | jq -r '.groups[]? // empty' 2>/dev/null)$'\n'
+        
+        # For debugging, print all roles if available
+        if [ "${DEBUG:-0}" = "1" ] && [ -n "$all_roles" ]; then
+            echo "DEBUG: All roles found:" >&2
+            echo "$all_roles" >&2
+        fi
+        
+        # Filter for valid kubernetes namespace names (lowercase, numbers, dashes)
+        namespaces=$(echo "$all_roles" | grep -E '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' 2>/dev/null || echo "")
+    fi
+    
+    # If we still couldn't find any namespaces, try to get the current namespace
+    if [ -z "$namespaces" ]; then
+        current_ns=$(kubectl config view --minify --output 'jsonpath={..namespace}' 2>/dev/null)
+        if [ -n "$current_ns" ]; then
+            echo "$current_ns"
+        fi
+    else
+        echo "$namespaces"
+    fi
 }
 
 # Function to switch to a namespace
 switch_namespace() {
     local namespace=$1
+    echo -e "${BLUE}Switching to namespace:${NC} $namespace"
     kubectl config set-context --current --namespace="$namespace"
-    echo -e "${GREEN}Namespace changed to${NC} $namespace"
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}Successfully switched to namespace:${NC} $namespace"
+    else
+        echo -e "${RED}Failed to switch to namespace:${NC} $namespace"
+        return 1
+    fi
+}
+
+# Check if a file path contains refresh_token.sh
+is_refresh_token_script() {
+    local path="$1"
+    if [[ "$path" == *"refresh_token.sh"* ]]; then
+        return 0
+    else
+        return 1
+    fi
 }
 
 # Main function
 main() {
-    # Check if we have a kube-dc context
-    local context_name=$(kubectl config current-context 2>/dev/null)
-    
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}Error: No active kubectl context found${NC}"
-        exit 1
+    local namespace=""
+    if [ $# -gt 0 ]; then
+        namespace="$1"
     fi
     
-    # Try to get JWT token
-    local token=$(get_jwt_token)
+    # Try to detect if we're in a kube-dc context
+    local ctx
+    ctx=$(kubectl config current-context 2>/dev/null) || { echo -e "${RED}No active kubectl context found.${NC}"; exit 1; }
     
-    if [ $? -eq 0 ] && [ -n "$token" ]; then
-        # kube-dc context - get namespaces from JWT
+    # Get the user associated with the current context
+    local user
+    user=$(kubectl config view --minify -o jsonpath="{.contexts[?(@.name==\"$ctx\")].context.user}" 2>/dev/null)
+    
+    # Get the exec command from the user entry in the kubeconfig
+    local exec_cmd
+    exec_cmd=$(kubectl config view -o jsonpath="{.users[?(@.name==\"$user\")].user.exec.command}" 2>/dev/null) || exec_cmd=""
+    
+    # Check if this is a refresh_token.sh script (kube-dc)
+    if is_refresh_token_script "$exec_cmd"; then
         echo -e "${BLUE}kube-dc context detected.${NC}"
         
-        # Get available namespaces
-        local namespaces=($(get_available_namespaces "$token"))
+        # Get the args for the refresh script
+        local refresh_args
+        refresh_args=$(kubectl config view -o jsonpath="{.users[?(@.name==\"$user\")].user.exec.args[*]}" 2>/dev/null) || refresh_args=""
         
-        if [ ${#namespaces[@]} -eq 0 ]; then
-            echo -e "${YELLOW}No namespaces found in your access token.${NC}"
-            return 1
+        # Run the refresh script to get token
+        local token
+        token=$($exec_cmd $refresh_args 2>/dev/null) || { echo -e "${RED}Failed to get access token.${NC}"; exit 1; }
+        
+        if [ -z "$token" ]; then
+            echo -e "${RED}Empty token received. Please check your authentication.${NC}"
+            exit 1
         fi
         
-        if [ -n "$1" ]; then
+        # Extract available namespaces from the token
+        local namespaces_list
+        namespaces_list=$(get_available_namespaces "$token") || namespaces_list=""
+        
+        # If no namespaces found in token, get current namespace
+        if [ -z "$namespaces_list" ]; then
+            echo -e "${YELLOW}No namespaces found in your access token.${NC}"
+            # Use the current namespace rather than trying to list all namespaces
+            local current_ns
+            current_ns=$(kubectl config view --minify --output 'jsonpath={..namespace}' 2>/dev/null) || current_ns="default"
+            echo -e "${GREEN}Your current namespace is:${NC} ${BLUE}$current_ns${NC}"
+            
+            # Always add the current namespace to the list if it's not already there
+            namespaces_list="$current_ns"
+        fi
+        
+        # Convert the newline-separated list to an array, filtering out empty lines
+        mapfile -t namespaces < <(echo "$namespaces_list" | grep -v '^$')
+        
+        # If a namespace was specified, check if it's in the list
+        if [ -n "$namespace" ]; then
             # Check if the requested namespace is in the list
             namespace_found=false
             for ns in "${namespaces[@]}"; do
-                if [ "$ns" = "$1" ]; then
+                if [ "$ns" = "$namespace" ]; then
                     namespace_found=true
                     break
                 fi
             done
             
             if [ "$namespace_found" = true ]; then
-                switch_namespace "$1"
+                switch_namespace "$namespace"
             else
-                echo -e "${RED}Error: You don't have access to namespace${NC} $1"
+                echo -e "${RED}Error: You don't have access to namespace${NC} $namespace"
                 echo -e "${YELLOW}Available namespaces:${NC}"
                 printf "  %s\n" "${namespaces[@]}"
             fi
         else
             # Interactive selection if no namespace specified
-            echo -e "${YELLOW}Please select a namespace:${NC}"
+            echo -e "${YELLOW}Available namespaces:${NC}"
+            
+            # Skip interactive selection if there's only one namespace
+            if [ ${#namespaces[@]} -eq 1 ]; then
+                echo -e "  1) ${namespaces[0]}"
+                echo -e "${BLUE}Auto-selecting the only available namespace.${NC}"
+                switch_namespace "${namespaces[0]}"
+                exit $?
+            fi
             
             # Print available namespaces with numbers
             for i in "${!namespaces[@]}"; do
-                echo -e "  $((i+1))) ${namespaces[$i]}"
+                if [ -n "${namespaces[$i]}" ]; then
+                    echo -e "  $((i+1))) ${namespaces[$i]}"
+                fi
             done
             
-            # Get user selection
-            read -p "Enter number [1-${#namespaces[@]}]: " selection
+            # Get user selection with timeout
+            read -p "Enter number [1-${#namespaces[@]}] or press Enter to keep current: " -t 30 selection || true
             
+            # Handle empty input (keep current namespace)
+            if [ -z "$selection" ]; then
+                echo -e "${GREEN}Keeping current namespace.${NC}"
+                exit 0
+            fi
+            
+            # Process valid selection
             if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#namespaces[@]}" ]; then
                 switch_namespace "${namespaces[$((selection-1))]}"
             else
-                echo -e "${RED}Invalid selection${NC}"
+                echo -e "${RED}Invalid selection. Keeping current namespace.${NC}"
                 exit 1
             fi
         fi
     else
-        # Not a kube-dc context or token couldn't be retrieved
-        # Fall back to kubens if available
-        if command -v kubens &> /dev/null; then
-            kubens "$@"
-        else
-            # Basic namespace switching if kubens is not available
-            if [ -n "$1" ]; then
-                kubectl config set-context --current --namespace="$1"
-                echo "Namespace changed to $1"
+        # Not a kube-dc context, try kubens
+        if command -v kubens &>/dev/null; then
+            echo -e "${BLUE}Using kubens...${NC}"
+            if [ -n "$namespace" ]; then
+                kubens "$namespace"
             else
-                echo -e "Current namespace: $(kubectl config view --minify --output 'jsonpath={..namespace}')"
-                echo -e "Available namespaces:"
-                kubectl get namespaces -o name | sed 's/^namespace\///'
+                kubens
+            fi
+        else
+            # Basic kubectl namespace switching
+            if [ -n "$namespace" ]; then
+                echo -e "${BLUE}Switching to namespace:${NC} $namespace"
+                kubectl config set-context --current --namespace="$namespace"
+            else
+                current_ns=$(kubectl config view --minify --output 'jsonpath={..namespace}')
+                echo -e "${GREEN}Current namespace is:${NC} ${BLUE}$current_ns${NC}"
+                echo -e "${YELLOW}To switch namespace, run:${NC} kn <namespace>"
             fi
         fi
     fi
 }
 
-# Run the main function with all arguments
+# Parse arguments and call main
 main "$@"

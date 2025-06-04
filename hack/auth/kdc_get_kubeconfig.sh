@@ -439,54 +439,34 @@ debug_env_info() {
 # Install the kn script for namespace switching
 install_kn_script() {
     echo -e "\n${BLUE}Installing namespace switcher...${NC}"
-    # Source path for the kn script
-    local kn_source="$(dirname "$0")/kn"
     
-    # If the script is not found in the same directory, try to use the embedded version
-    if [ ! -f "$kn_source" ]; then
-        # Create kn script directly
-        cat > "${HOME}/.kube-dc/bin/kn" << 'EOF'
-#!/bin/bash
-
-# kn - Kubernetes namespace switcher for kube-dc
-# Falls back to kubens if not in a kube-dc context
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# Function to decode JWT payload
-decode_jwt() {
-    local jwt=$1
-    # Extract the payload (second part of the JWT)
-    local payload=$(echo -n "$jwt" | cut -d "." -f2)
-    # Base64 decode the payload
-    # Add padding if needed
-    local mod4=$((${#payload} % 4))
-    if [ $mod4 -eq 2 ]; then
-        payload="${payload}=="
-    elif [ $mod4 -eq 3 ]; then
-        payload="${payload}="
-    fi
-    # Decode base64 URL-safe string
-    echo -n "$payload" | tr '_-' '/+' | base64 -d 2>/dev/null
-}
-
-# Function to extract JWT token from exec-based kubeconfig
-get_jwt_token() {
-    local refresh_script=$(kubectl config view --minify -o jsonpath='{.users[0].user.exec.command}')
+    # Check if the kn script exists in the same directory as this script
+    local script_dir=$(dirname "$(readlink -f "$0")")
+    local kn_source="${script_dir}/kn"
     
-    # Check if this is a kube-dc refresh token script
-    if [[ "$refresh_script" == *"refresh_token.sh" ]]; then
-        # Execute the refresh token script to get the token
-        local token_json=$($refresh_script 2>/dev/null)
-        echo $(echo "$token_json" | jq -r '.status.token' 2>/dev/null)
+    mkdir -p "${HOME}/.kube-dc/bin"
+    
+    # First try to copy from the same directory if it exists
+    if [ -f "$kn_source" ]; then
+        echo -e "${GREEN}Found kn script in the same directory.${NC}"
+        cp "$kn_source" "${HOME}/.kube-dc/bin/kn"
     else
-        return 1
+        # If not found locally, download from GitHub
+        echo -e "${YELLOW}Downloading kn script from GitHub...${NC}"
+        if command -v curl &>/dev/null; then
+            curl -s -o "${HOME}/.kube-dc/bin/kn" https://raw.githubusercontent.com/shalb/kube-dc/main/hack/auth/kn
+        elif command -v wget &>/dev/null; then
+            wget -q -O "${HOME}/.kube-dc/bin/kn" https://raw.githubusercontent.com/shalb/kube-dc/main/hack/auth/kn
+        else
+            echo -e "${RED}Error: Neither curl nor wget found. Cannot download kn script.${NC}"
+            echo -e "${YELLOW}Please install the kn script manually by copying it from the GitHub repository.${NC}"
+            return 1
+        fi
     fi
+    
+    # Make the script executable
+    chmod +x "${HOME}/.kube-dc/bin/kn"
+    echo -e "${GREEN}Namespace switcher installed to ${HOME}/.kube-dc/bin/kn${NC}"
 }
 
 # Function to get available namespaces from JWT claims
@@ -494,110 +474,80 @@ get_available_namespaces() {
     local token=$1
     local jwt_payload=$(decode_jwt "$token")
     
-    # Extract namespaces from JWT payload in a cross-platform way (macOS compatible)
-    # This assumes a standard JWT format with resource_access claim
-    echo "$jwt_payload" | jq -r '.resource_access["kube-dc"].roles[]? // empty' 2>/dev/null | grep -o "^namespace:.*" | sed 's/^namespace://'
-}
-
-# Function to switch to a namespace
-switch_namespace() {
-    local namespace=$1
-    kubectl config set-context --current --namespace="$namespace"
-    echo -e "${GREEN}Namespace changed to${NC} $namespace"
-}
-
-# Main function
-main() {
-    # Check if we have a kube-dc context
-    local context_name=$(kubectl config current-context 2>/dev/null)
-    
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}Error: No active kubectl context found${NC}"
-        exit 1
+    # Add debug output if DEBUG=1 is set
+    if [ "${DEBUG:-0}" = "1" ]; then
+        echo "DEBUG: JWT payload structure:" >&2
+        echo "$jwt_payload" | jq . >&2
     fi
     
-    # Try to get JWT token
-    local token=$(get_jwt_token)
+    # Look for project roles with namespace prefix
+    local roles_found=false
+    local namespaces=""
     
-    if [ $? -eq 0 ] && [ -n "$token" ]; then
-        # kube-dc context - get namespaces from JWT
-        echo -e "${BLUE}kube-dc context detected.${NC}"
-        
-        # Get available namespaces
-        local namespaces=($(get_available_namespaces "$token"))
-        
-        if [ ${#namespaces[@]} -eq 0 ]; then
-            echo -e "${YELLOW}No namespaces found in your access token.${NC}"
-            return 1
+    # If the token didn't decode properly or jq isn't available, show a warning
+    if ! command -v jq &>/dev/null; then
+        echo "WARNING: jq is not installed. Cannot parse JWT token." >&2
+        return 1
+    fi
+    
+    # First try with the standard format
+    if namespaces=$(echo "$jwt_payload" | jq -r '.resource_access["kube-dc"].roles[]? // empty' 2>/dev/null | grep -o "^namespace:.*" 2>/dev/null | sed 's/^namespace://'); then
+        if [ -n "$namespaces" ]; then
+            roles_found=true
+        fi
+    fi
+    
+    # If that failed, try with realm_access
+    if [ "$roles_found" = "false" ]; then
+        if namespaces=$(echo "$jwt_payload" | jq -r '.realm_access.roles[]? // empty' 2>/dev/null | grep -o "^namespace:.*" 2>/dev/null | sed 's/^namespace://'); then
+            if [ -n "$namespaces" ]; then
+                roles_found=true
+            fi
+        fi
+    fi
+    
+    # Last resort: try to find anything that looks like a namespace
+    if [ "$roles_found" = "false" ]; then
+        if [ "${DEBUG:-0}" = "1" ]; then
+            echo "DEBUG: Trying to extract any role that looks like a namespace" >&2
         fi
         
-        if [ -n "$1" ]; then
-            # Check if the requested namespace is in the list
-            namespace_found=false
-            for ns in "${namespaces[@]}"; do
-                if [ "$ns" = "$1" ]; then
-                    namespace_found=true
-                    break
-                fi
-            done
-            
-            if [ "$namespace_found" = true ]; then
-                switch_namespace "$1"
-            else
-                echo -e "${RED}Error: You don't have access to namespace${NC} $1"
-                echo -e "${YELLOW}Available namespaces:${NC}"
-                printf "  %s\n" "${namespaces[@]}"
-            fi
-        else
-            # Interactive selection if no namespace specified
-            echo -e "${YELLOW}Please select a namespace:${NC}"
-            
-            # Print available namespaces with numbers
-            for i in "${!namespaces[@]}"; do
-                echo -e "  $((i+1))) ${namespaces[$i]}"
-            done
-            
-            # Get user selection
-            read -p "Enter number [1-${#namespaces[@]}]: " selection
-            
-            if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#namespaces[@]}" ]; then
-                switch_namespace "${namespaces[$((selection-1))]}"
-            else
-                echo -e "${RED}Invalid selection${NC}"
-                exit 1
-            fi
+        # Try to get all roles from different locations
+        local all_roles=""
+        all_roles+=$(echo "$jwt_payload" | jq -r '.resource_access[]?.roles[]? // empty' 2>/dev/null)$'\n'
+        all_roles+=$(echo "$jwt_payload" | jq -r '.realm_access.roles[]? // empty' 2>/dev/null)$'\n'
+        all_roles+=$(echo "$jwt_payload" | jq -r '.groups[]? // empty' 2>/dev/null)$'\n'
+        
+        # For debugging, print all roles if available
+        if [ "${DEBUG:-0}" = "1" ] && [ -n "$all_roles" ]; then
+            echo "DEBUG: All roles found:" >&2
+            echo "$all_roles" >&2
+        fi
+        
+        # Filter for valid kubernetes namespace names (lowercase, numbers, dashes)
+        namespaces=$(echo "$all_roles" | grep -E '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' 2>/dev/null || echo "")
+    fi
+    
+    # If we couldn't find any namespaces, use the current namespace
+    if [ -z "$namespaces" ]; then
+        current_ns=$(kubectl config view --minify --output 'jsonpath={..namespace}' 2>/dev/null)
+        if [ -n "$current_ns" ]; then
+            echo "$current_ns"
         fi
     else
-        # Not a kube-dc context or token couldn't be retrieved
-        # Fall back to kubens if available
-        if command -v kubens &> /dev/null; then
-            kubens "$@"
-        else
-            # Basic namespace switching if kubens is not available
-            if [ -n "$1" ]; then
-                kubectl config set-context --current --namespace="$1"
-                echo "Namespace changed to $1"
-            else
-                echo -e "Current namespace: $(kubectl config view --minify --output 'jsonpath={..namespace}')"
-                echo -e "Available namespaces:"
-                kubectl get namespaces -o name | sed 's/^namespace\///' 
-            fi
-        fi
+        echo "$namespaces"
     fi
 }
 
-# Run the main function with all arguments
-main "$@"
-EOF
-    else
-        # Copy the kn script from the repository to the bin directory
-        cp "$kn_source" "${HOME}/.kube-dc/bin/kn"
-    fi
+# Function to decode JWT payload
+decode_jwt() {
+    local token=$1
+    local payload=$(echo "$token" | cut -d '.' -f 2)
     
-    # Make it executable
-    chmod +x "${HOME}/.kube-dc/bin/kn"
-    echo -e "${GREEN}kn namespace switcher installed.${NC}"
+    # Try to decode with both standard base64 and macOS base64
+    echo "$payload" | base64 --decode 2>/dev/null || echo "$payload" | base64 -D 2>/dev/null || echo "$payload"
 }
+
 
 main() {
     # Show required environment variables
