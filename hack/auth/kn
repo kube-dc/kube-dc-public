@@ -141,12 +141,35 @@ main() {
         local refresh_args
         refresh_args=$(kubectl config view -o jsonpath="{.users[?(@.name==\"$user\")].user.exec.args[*]}" 2>/dev/null) || refresh_args=""
         
-        # Run the refresh script to get token
-        local token
-        token=$($exec_cmd $refresh_args 2>/dev/null) || { echo -e "${RED}Failed to get access token.${NC}"; exit 1; }
+        # Run the refresh script to get token JSON
+        local token_json token
+        token_json=$($exec_cmd $refresh_args 2>/dev/null) || { echo -e "${RED}Failed to get access token.${NC}"; exit 1; }
+        
+        if [ -z "$token_json" ]; then
+            echo -e "${RED}Empty token received. Please check your authentication.${NC}"
+            exit 1
+        fi
+        
+        # Extract the actual token from the JSON response
+        if command -v jq &>/dev/null; then
+            token=$(echo "$token_json" | jq -r '.status.token' 2>/dev/null)
+            
+            # Debug output if enabled
+            if [ "${DEBUG:-0}" = "1" ]; then
+                echo "DEBUG: Token JSON structure:" >&2
+                echo "$token_json" | jq . >&2
+            fi
+        else
+            # Fallback if jq is not available
+            token=$(echo "$token_json" | grep -o '"token":"[^"]*"' | sed 's/"token":"\(.*\)"/\1/')
+        fi
         
         if [ -z "$token" ]; then
-            echo -e "${RED}Empty token received. Please check your authentication.${NC}"
+            echo -e "${RED}Failed to extract token from response. Please check your authentication.${NC}"
+            if [ "${DEBUG:-0}" = "1" ]; then
+                echo "DEBUG: Raw token response:" >&2
+                echo "$token_json" >&2
+            fi
             exit 1
         fi
         
