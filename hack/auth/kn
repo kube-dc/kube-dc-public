@@ -32,63 +32,90 @@ get_available_namespaces() {
         echo "$jwt_payload" | jq . 2>/dev/null || echo "Error parsing JWT payload" >&2
     fi
     
-    # Look for project roles with namespace prefix
-    local roles_found=false
-    local namespaces=""
-    
     # If the token didn't decode properly or jq isn't available, show a warning
     if ! command -v jq &>/dev/null; then
         echo "WARNING: jq is not installed. Cannot parse JWT token." >&2
         return 1
     fi
     
-    # First try with the standard format
-    if namespaces=$(echo "$jwt_payload" | jq -r '.resource_access["kube-dc"].roles[]? // empty' 2>/dev/null | grep -o "^namespace:.*" 2>/dev/null | sed 's/^namespace://'); then
-        if [ -n "$namespaces" ]; then
-            roles_found=true
-        fi
-    fi
+    # Get the current namespace for fallback
+    local current_ns=$(kubectl config view --minify --output 'jsonpath={..namespace}' 2>/dev/null || echo "")
     
-    # If that failed, try with realm_access
-    if [ "$roles_found" = "false" ]; then
-        if namespaces=$(echo "$jwt_payload" | jq -r '.realm_access.roles[]? // empty' 2>/dev/null | grep -o "^namespace:.*" 2>/dev/null | sed 's/^namespace://'); then
-            if [ -n "$namespaces" ]; then
-                roles_found=true
-            fi
-        fi
-    fi
+    # Try multiple methods to extract namespaces, in order of reliability
     
-    # Last resort: try to find anything that looks like a namespace
-    if [ "$roles_found" = "false" ]; then
+    # Method 1: Direct namespaces field in the token (most reliable when available)
+    local found_namespaces
+    found_namespaces=$(echo "$jwt_payload" | jq -r '.namespaces[]? // empty' 2>/dev/null)
+    
+    # Check if we found anything from the direct field
+    if [ -n "$found_namespaces" ]; then
         if [ "${DEBUG:-0}" = "1" ]; then
-            echo "DEBUG: Trying to extract any role that looks like a namespace" >&2
+            echo "DEBUG: Found namespaces from direct field" >&2
         fi
-        
-        # Try to get all roles from different locations
-        local all_roles=""
-        all_roles+=$(echo "$jwt_payload" | jq -r '.resource_access[]?.roles[]? // empty' 2>/dev/null)$'\n'
-        all_roles+=$(echo "$jwt_payload" | jq -r '.realm_access.roles[]? // empty' 2>/dev/null)$'\n'
-        all_roles+=$(echo "$jwt_payload" | jq -r '.groups[]? // empty' 2>/dev/null)$'\n'
-        
-        # For debugging, print all roles if available
-        if [ "${DEBUG:-0}" = "1" ] && [ -n "$all_roles" ]; then
-            echo "DEBUG: All roles found:" >&2
-            echo "$all_roles" >&2
-        fi
-        
-        # Filter for valid kubernetes namespace names (lowercase, numbers, dashes)
-        namespaces=$(echo "$all_roles" | grep -E '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' 2>/dev/null || echo "")
+        echo "$found_namespaces"
+        return 0
     fi
     
-    # If we still couldn't find any namespaces, try to get the current namespace
-    if [ -z "$namespaces" ]; then
-        current_ns=$(kubectl config view --minify --output 'jsonpath={..namespace}' 2>/dev/null)
-        if [ -n "$current_ns" ]; then
-            echo "$current_ns"
-        fi
-    else
-        echo "$namespaces"
+    # Method 2: Look for namespace-prefixed roles (second most reliable)
+    local prefixed_namespaces
+    prefixed_namespaces=$(echo "$jwt_payload" | jq -r '.resource_access["kube-dc"].roles[]? // empty' 2>/dev/null | grep -o "^namespace:.*" 2>/dev/null | sed 's/^namespace://')
+    
+    if [ -z "$prefixed_namespaces" ]; then
+        prefixed_namespaces=$(echo "$jwt_payload" | jq -r '.realm_access.roles[]? // empty' 2>/dev/null | grep -o "^namespace:.*" 2>/dev/null | sed 's/^namespace://')
     fi
+    
+    if [ -n "$prefixed_namespaces" ]; then
+        if [ "${DEBUG:-0}" = "1" ]; then
+            echo "DEBUG: Found namespaces with namespace: prefix" >&2
+        fi
+        echo "$prefixed_namespaces"
+        return 0
+    fi
+    
+    # Method 3: Look for role entries that match namespace format in kube-dc context
+    # Extract roles from specific kube-dc section as these are most likely namespaces
+    local kube_dc_roles
+    kube_dc_roles=$(echo "$jwt_payload" | jq -r '.resource_access["kube-dc"].roles[]? // empty' 2>/dev/null)
+    
+    if [ -n "$kube_dc_roles" ]; then
+        if [ "${DEBUG:-0}" = "1" ]; then
+            echo "DEBUG: Found kube-dc roles" >&2
+        fi
+        
+        # Filter for Kubernetes namespace format (lowercase letters, numbers, hyphens)
+        local ns_from_roles
+        ns_from_roles=$(echo "$kube_dc_roles" | grep -E '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' 2>/dev/null)
+        
+        if [ -n "$ns_from_roles" ]; then
+            echo "$ns_from_roles"
+            return 0
+        fi
+    fi
+    
+    # Method 4: If we have a current namespace, use it as fallback
+    if [ -n "$current_ns" ]; then
+        if [ "${DEBUG:-0}" = "1" ]; then
+            echo "DEBUG: Using current namespace as fallback" >&2
+        fi
+        echo "$current_ns"
+        return 0
+    fi
+    
+    # Method 5: Last resort, check available namespaces via kubectl
+    if [ "${DEBUG:-0}" = "1" ]; then
+        echo "DEBUG: Falling back to kubectl get namespaces" >&2
+    fi
+    
+    local k8s_namespaces
+    k8s_namespaces=$(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | tr ' ' '\n')
+    
+    if [ -n "$k8s_namespaces" ]; then
+        echo "$k8s_namespaces"
+        return 0
+    fi
+    
+    # No namespaces found
+    return 1
 }
 
 # Function to switch to a namespace
@@ -177,17 +204,23 @@ main() {
         local namespaces_list
         namespaces_list=$(get_available_namespaces "$token") || namespaces_list=""
         
-        # If no namespaces found in token, get current namespace
-        if [ -z "$namespaces_list" ]; then
-            echo -e "${YELLOW}No namespaces found in your access token.${NC}"
-            # Use the current namespace rather than trying to list all namespaces
-            local current_ns
-            current_ns=$(kubectl config view --minify --output 'jsonpath={..namespace}' 2>/dev/null) || current_ns="default"
+        # Extract namespaces from JWT token
+        namespaces_list=$(get_available_namespaces "$token")
+        
+        # Clean up namespace list - only keep valid namespace names (lowercase alphanumeric with hyphens)
+        # This ensures we don't include any debug output or invalid entries
+        cleaned_namespaces=$(echo "$namespaces_list" | grep -E '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' 2>/dev/null || echo "")
+        
+        if [ -z "$cleaned_namespaces" ]; then
+            echo -e "${YELLOW}No valid namespaces found in your access token.${NC}"
             echo -e "${GREEN}Your current namespace is:${NC} ${BLUE}$current_ns${NC}"
             
-            # Always add the current namespace to the list if it's not already there
-            namespaces_list="$current_ns"
+            # Use current namespace as fallback
+            cleaned_namespaces="$current_ns"
         fi
+        
+        # Use the cleaned namespaces list
+        namespaces_list="$cleaned_namespaces"
         
         # Convert the newline-separated list to an array, filtering out empty lines
         # Using a more compatible approach for macOS Bash 3.2 (which doesn't support mapfile)
