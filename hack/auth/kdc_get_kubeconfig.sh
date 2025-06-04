@@ -6,18 +6,42 @@
 
 set -e
 
-# Project name must be provided
-if [ -z "$1" ]; then
-    echo -e "\033[0;31mError: Project name is required.\033[0m"
-    echo -e "Usage: ./kdc_get_kubeconfig.sh <project-name>"
-    echo -e "Example: ./kdc_get_kubeconfig.sh my-project"
+# Input argument (e.g., org/project)
+ARG_INPUT=$1
+
+# Check if input argument is provided
+if [ -z "${ARG_INPUT}" ]; then
+    echo -e "${RED}Error: Organization and Project name are required.${NC}"
+    echo -e "Usage: ./kdc_get_kubeconfig.sh <organization/project-name>"
+    echo -e "Example: ./kdc_get_kubeconfig.sh my-org/my-project"
     exit 1
 fi
 
-PROJECT_NAME=$1
+# Parse ORGANIZATION and PROJECT_NAME from the input
+if [[ "${ARG_INPUT}" == */* ]]; then
+    ORGANIZATION=$(echo "${ARG_INPUT}" | cut -d'/' -f1)
+    PROJECT_NAME=$(echo "${ARG_INPUT}" | cut -d'/' -f2)
+else
+    echo -e "${RED}Error: Invalid format. Please use <organization/project-name>.${NC}"
+    echo -e "Usage: ./kdc_get_kubeconfig.sh <organization/project-name>"
+    echo -e "Example: ./kdc_get_kubeconfig.sh my-org/my-project"
+    exit 1
+fi
+
+# Validate that ORGANIZATION and PROJECT_NAME are not empty after parsing
+if [ -z "${ORGANIZATION}" ] || [ -z "${PROJECT_NAME}" ]; then
+    echo -e "${RED}Error: Organization or Project name cannot be empty.${NC}"
+    echo -e "Usage: ./kdc_get_kubeconfig.sh <organization/project-name>"
+    echo -e "Example: ./kdc_get_kubeconfig.sh my-org/my-project"
+    exit 1
+fi
+
+export ORGANIZATION # Export it so subsequent calls and scripts can see it as set
+echo -e "Using Organization: ${GREEN}${ORGANIZATION}${NC}"
+echo -e "Using Project: ${GREEN}${PROJECT_NAME}${NC}"
 
 # Base directories
-BASE_DIR=~/.kube/kube-dc-${PROJECT_NAME}
+BASE_DIR=~/.kube-dc/${ORGANIZATION}-${PROJECT_NAME}
 SCRIPTS_DIR=${BASE_DIR}/scripts
 CONFIG_DIR=${BASE_DIR}
 
@@ -390,6 +414,8 @@ main() {
     if [ ! -f "${CONFIG_DIR}/.env" ]; then
         touch "${CONFIG_DIR}/.env"
         chmod 600 "${CONFIG_DIR}/.env"
+        # Ensure ORGANIZATION is saved in the project's .env file (idempotent)
+        grep -qxF "export ORGANIZATION=\"${ORGANIZATION}\"" "${CONFIG_DIR}/.env" || echo "export ORGANIZATION=\"${ORGANIZATION}\"" >> "${CONFIG_DIR}/.env"
     fi
 
     # Check or prompt for environment variables

@@ -31,16 +31,16 @@ You can download the authentication script directly from the public repository:
 
 ```bash
 # Create a directory for the script
-mkdir -p ~/kube-dc-scripts
+mkdir -p ~/.kube-dc/bin
 
 # Download the script
-curl -o ~/kube-dc-scripts/kdc_get_kubeconfig.sh https://raw.githubusercontent.com/kube-dc/kube-dc-public/main/hack/auth/kdc_get_kubeconfig.sh
+curl -o ~/.kube-dc/bin/kdc_get_kubeconfig.sh https://raw.githubusercontent.com/kube-dc/kube-dc-public/main/hack/auth/kdc_get_kubeconfig.sh
 
 # Make it executable
-chmod +x ~/kube-dc-scripts/kdc_get_kubeconfig.sh
+chmod +x ~/.kube-dc/bin/kdc_get_kubeconfig.sh
 
-# Run the authentication script with your project name
-~/kube-dc-scripts/kdc_get_kubeconfig.sh your-project-name
+# Run the authentication script with your organization and project name
+~/.kube-dc/bin/kdc_get_kubeconfig.sh your-org/your-project
 ```
 
 Alternatively, if you have the entire repository cloned:
@@ -48,7 +48,7 @@ Alternatively, if you have the entire repository cloned:
 ```bash
 # If you have the repository already cloned
 cd kube-dc
-./hack/auth/kdc_get_kubeconfig.sh your-project-name
+./hack/auth/kdc_get_kubeconfig.sh your-org/your-project
 ```
 
 The script will prompt you for the following information:
@@ -65,7 +65,7 @@ The script will prompt you for the following information:
 After the script completes, activate the configuration:
 
 ```bash
-source ~/.kube/kube-dc-your-project-name/activate.sh
+source ~/.kube-dc/your-org-your-project-name/activate.sh
 ```
 
 This will set the `KUBECONFIG` environment variable to point to your new configuration file.
@@ -90,7 +90,7 @@ If you're experiencing authentication problems:
 
 1. **Token expiration**: The refresh token may have expired. Delete the `.refresh_token` file in your kubeconfig directory and try again:
    ```bash
-   rm ~/.kube/kube-dc-*/scripts/.refresh_token
+   rm ~/.kube-dc/*-*/scripts/.refresh_token
    ```
 
 2. **Invalid credentials**: Ensure you're using the correct username and password for your Keycloak account.
