@@ -460,9 +460,9 @@ install_kn_script() {
         # If not found locally, download from GitHub
         echo -e "${YELLOW}Downloading kn script from GitHub...${NC}"
         if command -v curl &>/dev/null; then
-            curl -s -o "${HOME}/.kube-dc/bin/kn" https://raw.githubusercontent.com/shalb/kube-dc/main/hack/auth/kn
+            curl -s -o "${HOME}/.kube-dc/bin/kn" https://raw.githubusercontent.com/kube-dc/kube-dc-public/refs/heads/main/hack/auth/kn
         elif command -v wget &>/dev/null; then
-            wget -q -O "${HOME}/.kube-dc/bin/kn" https://raw.githubusercontent.com/shalb/kube-dc/main/hack/auth/kn
+            wget -q -O "${HOME}/.kube-dc/bin/kn" https://raw.githubusercontent.com/kube-dc/kube-dc-public/refs/heads/main/hack/auth/kn
         else
             echo -e "${RED}Error: Neither curl nor wget found. Cannot download kn script.${NC}"
             echo -e "${YELLOW}Please install the kn script manually by copying it from the GitHub repository.${NC}"
