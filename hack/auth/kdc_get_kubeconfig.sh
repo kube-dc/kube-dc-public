@@ -467,9 +467,9 @@ get_available_namespaces() {
     local token=$1
     local jwt_payload=$(decode_jwt "$token")
     
-    # Extract namespaces from JWT payload
+    # Extract namespaces from JWT payload in a cross-platform way (macOS compatible)
     # This assumes a standard JWT format with resource_access claim
-    echo "$jwt_payload" | jq -r '.resource_access["kube-dc"].roles[]? // empty' 2>/dev/null | grep -oP "^namespace:.*" | sed 's/^namespace://'
+    echo "$jwt_payload" | jq -r '.resource_access["kube-dc"].roles[]? // empty' 2>/dev/null | grep -o "^namespace:.*" | sed 's/^namespace://'
 }
 
 # Function to switch to a namespace
