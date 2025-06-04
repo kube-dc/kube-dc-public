@@ -441,7 +441,13 @@ install_kn_script() {
     echo -e "\n${BLUE}Installing namespace switcher...${NC}"
     
     # Check if the kn script exists in the same directory as this script
-    local script_dir=$(dirname "$(readlink -f "$0")")
+    # Use a cross-platform approach for getting the script directory
+    local script_path="$0"
+    if [[ "$script_path" != /* ]]; then
+        # If not an absolute path, prepend current directory
+        script_path="$(pwd)/$script_path"
+    fi
+    local script_dir=$(dirname "$script_path")
     local kn_source="${script_dir}/kn"
     
     mkdir -p "${HOME}/.kube-dc/bin"

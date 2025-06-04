@@ -167,7 +167,9 @@ main() {
         fi
         
         # Convert the newline-separated list to an array, filtering out empty lines
-        mapfile -t namespaces < <(echo "$namespaces_list" | grep -v '^$')
+        # Using a more compatible approach for macOS Bash 3.2 (which doesn't support mapfile)
+        local IFS=$'\n'
+        namespaces=( $(echo "$namespaces_list" | grep -v '^$') )
         
         # If a namespace was specified, check if it's in the list
         if [ -n "$namespace" ]; then
@@ -206,8 +208,18 @@ main() {
                 fi
             done
             
-            # Get user selection with timeout
-            read -p "Enter number [1-${#namespaces[@]}] or press Enter to keep current: " -t 30 selection || true
+            # Get user selection with a cross-platform approach
+            # macOS doesn't support the -t timeout option in read
+            echo -n "Enter number [1-${#namespaces[@]}] or press Enter to keep current: "
+            
+            # Check if we can use timeout features
+            if [ "$(uname)" = "Darwin" ]; then
+                # macOS approach: read without timeout
+                read selection
+            else
+                # Linux approach with timeout
+                read -t 30 selection || true
+            fi
             
             # Handle empty input (keep current namespace)
             if [ -z "$selection" ]; then
