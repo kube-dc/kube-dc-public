@@ -926,6 +926,39 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#using-the-namespace-switcher" class="md-nav__link">
+    <span class="md-ellipsis">
+      Using the Namespace Switcher
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Using the Namespace Switcher">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features" class="md-nav__link">
+    <span class="md-ellipsis">
+      Features
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      Examples
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#troubleshooting" class="md-nav__link">
     <span class="md-ellipsis">
       Troubleshooting
@@ -1101,6 +1134,39 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#using-the-namespace-switcher" class="md-nav__link">
+    <span class="md-ellipsis">
+      Using the Namespace Switcher
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Using the Namespace Switcher">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features" class="md-nav__link">
+    <span class="md-ellipsis">
+      Features
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      Examples
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#troubleshooting" class="md-nav__link">
     <span class="md-ellipsis">
       Troubleshooting
@@ -1218,21 +1284,47 @@
 - CA certificate (you can provide this as a file, paste it directly, or skip for insecure mode)</p>
 <h3 id="step-2-activate-the-generated-configuration">Step 2: Activate the Generated Configuration<a class="headerlink" href="#step-2-activate-the-generated-configuration" title="Permanent link"> ¶</a></h3>
 <p>After the script completes, activate the configuration:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">source</span><span class="w"> </span>~/.kube-dc/your-org-your-project-name/activate.sh
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">source</span><span class="w"> </span>~/.kube-dc/your-org-your-project/activate.sh
 </span></code></pre></div>
-<p>This will set the <code>KUBECONFIG</code> environment variable to point to your new configuration file.</p>
-<h3 id="step-3-test-your-connection">Step 3: Test Your Connection<a class="headerlink" href="#step-3-test-your-connection" title="Permanent link"> ¶</a></h3>
-<p>Test that your kubeconfig works correctly:</p>
+<p>This will:</p>
+<ol>
+<li>Set the <code>KUBECONFIG</code> environment variable to point to your new configuration</li>
+<li>Source the environment variables from the <code>.env</code> file</li>
+<li>Add the <code>kn</code> alias for namespace switching</li>
+<li>Display instructions for using kubectl</li>
+</ol>
+<p>You can now use <code>kubectl</code> commands as usual:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods
 </span></code></pre></div>
 <p>On first use, you'll be prompted to enter your Keycloak username and password. The script will obtain tokens and cache them for subsequent commands.</p>
+<h3 id="step-3-test-your-connection">Step 3: Test Your Connection<a class="headerlink" href="#step-3-test-your-connection" title="Permanent link"> ¶</a></h3>
+<p>Test that your kubeconfig works correctly:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods
+</span></code></pre></div>
+<p>On first use, you'll be prompted to enter your Keycloak username and password. The script will obtain tokens and cache them for subsequent commands.</p>
+<h2 id="using-the-namespace-switcher">Using the Namespace Switcher<a class="headerlink" href="#using-the-namespace-switcher" title="Permanent link"> ¶</a></h2>
+<p>The <code>kn</code> tool is installed automatically during setup and is configured as an alias when you activate the environment. It allows you to easily view and switch between namespaces that your token has permissions to access.</p>
+<h3 id="features">Features<a class="headerlink" href="#features" title="Permanent link"> ¶</a></h3>
+<ul>
+<li><strong>Intelligent Operation</strong>: When used with a kube-dc context, it reads namespace permissions directly from your JWT token</li>
+<li><strong>Interactive Selection</strong>: Run <code>kn</code> without arguments to see a list of available namespaces</li>
+<li><strong>Direct Selection</strong>: Specify a namespace with <code>kn my-namespace</code></li>
+<li><strong>Fallback Mode</strong>: If not in a kube-dc context, falls back to <code>kubens</code> or basic kubectl namespace commands</li>
+</ul>
+<h3 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link"> ¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># List available namespaces and select interactively</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>kn
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># Switch directly to a specific namespace</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>kn<span class="w"> </span>shalb-demo
+</span></code></pre></div>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link"> ¶</a></h2>
 <h3 id="authentication-issues">Authentication Issues<a class="headerlink" href="#authentication-issues" title="Permanent link"> ¶</a></h3>
 <p>If you're experiencing authentication problems:</p>
 <ol>
 <li>
 <p><strong>Token expiration</strong>: The refresh token may have expired. Delete the <code>.refresh_token</code> file in your kubeconfig directory and try again:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>rm<span class="w"> </span>~/.kube-dc/*-*/scripts/.refresh_token
+   <div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>rm<span class="w"> </span>~/.kube-dc/*-*/scripts/.refresh_token
 </span></code></pre></div></p>
 </li>
 <li>
