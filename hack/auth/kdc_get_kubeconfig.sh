@@ -59,6 +59,34 @@ echo -e "${BLUE}==========================================${NC}"
 echo -e "Setting up for project: ${YELLOW}${PROJECT_NAME}${NC}\n"
 
 # Check and prompt for required environment variables
+# Function to safely update environment variables in .env file
+safe_update_env() {
+    local var_name=$1
+    local var_value=$2
+    
+    # Create .env file if it doesn't exist
+    if [ ! -f "${CONFIG_DIR}/.env" ]; then
+        touch "${CONFIG_DIR}/.env"
+        chmod 600 "${CONFIG_DIR}/.env"
+    fi
+    
+    # Remove any existing entries for this variable
+    if [ -f "${CONFIG_DIR}/.env" ]; then
+        # Different approach for macOS (BSD) vs Linux (GNU)
+        if [[ "$(uname)" == "Darwin" ]]; then
+            # macOS/BSD version
+            sed -i "" "/^export ${var_name}=/d" "${CONFIG_DIR}/.env" 2>/dev/null || true
+        else
+            # Linux/GNU version
+            sed -i "/^export ${var_name}=/d" "${CONFIG_DIR}/.env" 2>/dev/null || true
+        fi
+    fi
+    
+    # Add the new value
+    echo "export ${var_name}=\"${var_value}\"" >> "${CONFIG_DIR}/.env"
+    echo -e "${var_name} saved to config: ${GREEN}${var_value}${NC}"
+}
+
 check_env_var() {
     local var_name=$1
     local var_description=$2
@@ -74,7 +102,7 @@ check_env_var() {
             read -p "Use saved ${var_description} [${var_value}]? (Y/n): " use_saved
             if [[ -z "$use_saved" || "$use_saved" =~ ^[Yy] ]]; then
                 export "${var_name}"="${var_value}"
-                # Store value without appending to output to prevent concatenation
+                # No need to update .env as it already has this value
                 return
             fi
         fi
@@ -90,13 +118,12 @@ check_env_var() {
 
         # Directly set the variable without displaying it again
         export "${var_name}"="${var_value}"
-        # Clean up any previous entries for this variable
-        if [ -f "${CONFIG_DIR}/.env" ]; then
-            sed -i "/^export ${var_name}=/d" "${CONFIG_DIR}/.env" 2>/dev/null || true
-        fi
-        echo "export ${var_name}=\"${var_value}\"" >> "${CONFIG_DIR}/.env"
+        # Save to .env file using the safe update function
+        safe_update_env "${var_name}" "${var_value}"
     else
         echo -e "${var_name} already set: ${GREEN}${!var_name}${NC}"
+        # Also save existing environment variables
+        safe_update_env "${var_name}" "${!var_name}"
     fi
 }
 
@@ -331,7 +358,7 @@ preferences:
 EOF
     
     # Save the namespace to env file
-    echo "export NAMESPACE=\"${NAMESPACE}\"" >> "${CONFIG_DIR}/.env"
+    safe_update_env "NAMESPACE" "${NAMESPACE}"
 
     chmod 600 "${CONFIG_DIR}/kubeconfig"
     echo -e "${GREEN}Kubeconfig created at:${NC} ${CONFIG_DIR}/kubeconfig"
@@ -578,13 +605,14 @@ main() {
     
     create_directories
     
-    # Save current values to .env file if it doesn't exist
+    # Create .env file if it doesn't exist and ensure ORGANIZATION is saved
     if [ ! -f "${CONFIG_DIR}/.env" ]; then
         touch "${CONFIG_DIR}/.env"
         chmod 600 "${CONFIG_DIR}/.env"
-        # Ensure ORGANIZATION is saved in the project's .env file (idempotent)
-        grep -qxF "export ORGANIZATION=\"${ORGANIZATION}\"" "${CONFIG_DIR}/.env" || echo "export ORGANIZATION=\"${ORGANIZATION}\"" >> "${CONFIG_DIR}/.env"
     fi
+    
+    # Always ensure ORGANIZATION is saved in the project's .env file
+    safe_update_env "ORGANIZATION" "${ORGANIZATION}"
 
     # Check or prompt for environment variables
     check_env_var "KEYCLOAK_ENDPOINT" "Keycloak endpoint URL" "https://keycloak.example.com"
@@ -592,7 +620,7 @@ main() {
     # Client ID is always kube-dc for this project
 export CLIENT_ID="kube-dc"
 echo -e "CLIENT_ID set to: ${GREEN}${CLIENT_ID}${NC}"
-echo "export CLIENT_ID=\"${CLIENT_ID}\"" >> "${CONFIG_DIR}/.env"
+safe_update_env "CLIENT_ID" "${CLIENT_ID}"
     check_env_var "API_SERVER" "Kubernetes API server URL" "https://kube-api.example.com:6443"
     check_env_var "CLUSTER_NAME" "Kubernetes cluster name" "kube-dc"
     check_env_var "USER_NAME" "Kubernetes user name" "keycloak-user"
@@ -611,14 +639,14 @@ if [ -z "${BASE64_ENCODED_CA_CERT}" ]; then
             echo -e "${YELLOW}(The certificate will be captured automatically, press Enter after pasting)${NC}"
             read -r certificate_data
             BASE64_ENCODED_CA_CERT="$certificate_data"
-            echo "export BASE64_ENCODED_CA_CERT=\"${BASE64_ENCODED_CA_CERT}\"" >> "${CONFIG_DIR}/.env"
+            safe_update_env "BASE64_ENCODED_CA_CERT" "${BASE64_ENCODED_CA_CERT}"
             echo -e "${GREEN}Certificate data saved.${NC}"
             ;;
         2)
             check_env_var "CA_CERT_FILE" "Path to cluster CA certificate file" ""
             if [ -n "${CA_CERT_FILE}" ] && [ -f "${CA_CERT_FILE}" ]; then
                 export BASE64_ENCODED_CA_CERT=$(base64 -w 0 "${CA_CERT_FILE}")
-                echo "export BASE64_ENCODED_CA_CERT=\"${BASE64_ENCODED_CA_CERT}\"" >> "${CONFIG_DIR}/.env"
+                safe_update_env "BASE64_ENCODED_CA_CERT" "${BASE64_ENCODED_CA_CERT}"
                 echo -e "${GREEN}Certificate encoded and saved.${NC}"
             else
                 echo -e "${YELLOW}Invalid certificate file path. Using insecure connection.${NC}"
