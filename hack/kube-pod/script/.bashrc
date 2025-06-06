@@ -44,7 +44,38 @@ fi
 
 # Function to get the current Kubernetes namespace
 get_k8s_namespace() {
-  kubectl config view --minify --output 'jsonpath={..namespace}' 2>/dev/null || echo "default"
+  local namespace=""
+  
+  # Try to get namespace from kube config using grep and awk (faster than kubectl and doesn't require jq)
+  if [ -f "$HOME/.kube/config" ]; then
+    # Get current context
+    local current_context=$(grep "current-context:" "$HOME/.kube/config" 2>/dev/null | awk '{print $2}')
+    
+    if [ -n "$current_context" ]; then
+      # Find the namespace for the current context
+      # This extracts lines between "- context:" and the next section after finding the current context
+      namespace=$(awk -v ctx="$current_context" '
+        /- context:/ { in_ctx=0 }
+        /- name: / && $3 == ctx { in_ctx=1 }
+        in_ctx && /namespace: / { print $2; exit }
+      ' "$HOME/.kube/config")
+    fi
+  fi
+  
+  # Check if namespace is empty or not set
+  if [ -z "$namespace" ]; then
+    # Try to get namespace from service account
+    if [ -f "/var/run/secrets/kubernetes.io/serviceaccount/namespace" ]; then
+      namespace=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace 2>/dev/null)
+    fi
+    
+    # If still empty, use default
+    if [ -z "$namespace" ]; then
+      namespace="default"
+    fi
+  fi
+  
+  echo "$namespace"
 }
 
 # Set prompt to show organization and namespace

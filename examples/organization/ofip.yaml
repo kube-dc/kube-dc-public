@@ -1,16 +1,16 @@
 kind: OvnEip
 apiVersion: kubeovn.io/v1
 metadata:
-  name: oeip-test
+  name: oeip-test-master
 spec:
-  externalSubnet: external-1
+  externalSubnet: external-def
   type: nat
 ---
 kind: OvnFip
 apiVersion: kubeovn.io/v1
 metadata:
-  name: ofip-test
+  name: ofip-test-master
 spec:
-  ovnEip: oeip-test
-  vpc: shalb-dev
-  v4Ip: 10.1.0.9
+  ovnEip: oeip-test-master
+  vpc: shalb-demo
+  v4Ip: 10.0.10.139

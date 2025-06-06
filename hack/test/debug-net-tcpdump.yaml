@@ -73,6 +73,31 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
+      # Container for ARP monitoring on external interface
+      - args:
+        - |
+          echo "Running external interface ARP monitoring on Node: $NODE_NAME"
+          tcpdump -e -vvv -n -i enp0s31f6 arp 2>&1 | sed "s/^/[EXT-ARP:$NODE_NAME] /"
+        command:
+        - /bin/sh
+        - -c
+        image: nicolaka/netshoot
+        imagePullPolicy: Always
+        name: external-arp-tcpdump
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        securityContext:
+          privileged: true
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
       dnsPolicy: ClusterFirstWithHostNet
       restartPolicy: Always
       schedulerName: default-scheduler
