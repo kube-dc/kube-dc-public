@@ -1,0 +1,263 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: default-project-admin-role
+rules:
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumeclaims
+  - services
+  - secrets
+  - serviceaccounts
+  - configmaps
+  verbs:
+  - '*'
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - '*'
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - roles
+  - rolebindings
+  verbs:
+  - '*'
+- apiGroups:
+  - k8s.cni.cncf.io
+  resources:
+  - network-attachment-definitions
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - kubevirt.io
+  resources:
+  - virtualmachines
+  - virtualmachineinstances
+  verbs:
+  - '*'
+- apiGroups:
+  - subresources.kubevirt.io
+  resources:
+  - virtualmachineinstances/guestosinfo
+  - virtualmachineinstances/console
+  - virtualmachineinstances/vnc
+  verbs:
+  - get
+- apiGroups:
+  - subresources.kubevirt.io
+  resources:
+  - virtualmachines/start
+  - virtualmachines/stop
+  - virtualmachines/restart
+  - virtualmachines/addvolume
+  - virtualmachines/removevolume
+  - virtualmachines/migrate
+  - virtualmachines/memorydump
+  - virtualmachines/stop
+  - virtualmachines/pause
+  verbs:
+  - update
+- apiGroups:
+  - subresources.kubevirt.io
+  resources:
+  - virtualmachineinstances/pause
+  - virtualmachineinstances/unpause
+  - virtualmachineinstances/addvolume
+  - virtualmachineinstances/removevolume
+  - virtualmachineinstances/freeze
+  - virtualmachineinstances/unfreeze
+  - virtualmachineinstances/softreboot
+  - virtualmachineinstances/sev/setupsession
+  - virtualmachineinstances/sev/injectlaunchsecret
+  verbs:
+  - update
+- apiGroups:
+  - subresources.kubevirt.io
+  resources:
+  - virtualmachines/expand-spec
+  - virtualmachines/stop
+  verbs:
+  - update
+- apiGroups:
+  - cdi.kubevirt.io
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - autoscaling
+  resources:
+  - horizontalpodautoscalers
+  verbs:
+  - '*'
+- apiGroups:
+  - cluster.x-k8s.io
+  resources:
+  - clusters
+  - machinedeployments
+  verbs:
+  - '*'
+- apiGroups:
+  - controlplane.cluster.x-k8s.io
+  resources:
+  - kthreescontrolplanes
+  verbs:
+  - '*'
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - kubevirtmachinetemplates
+  - kubevirtclusters
+  verbs:
+  - '*'
+- apiGroups:
+  - bootstrap.cluster.x-k8s.io
+  resources:
+  - kthreesconfigtemplates
+  verbs:
+  - '*'
+- apiGroups:
+  - addons.cluster.x-k8s.io
+  resources:
+  - clusterresourcesets
+  verbs:
+  - '*'
+- apiGroups:
+  - ""
+  resources:
+  - endpoints
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - delete
+- apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - delete
+- apiGroups:
+  - extensions
+  resources:
+  - deployments
+  - replicasets
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - delete
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - delete
+- apiGroups:
+  - apps
+  resources:
+  - replicasets
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - delete
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - delete
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - delete
+- apiGroups:
+  - kube-dc.com
+  resources:
+  - eips
+  - fips
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - pods/log
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - cert-manager.io
+  resources:
+  - issuers
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - delete
+- apiGroups:
+  - policy
+  resources:
+  - poddisruptionbudgets
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - delete
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - get
+  - list

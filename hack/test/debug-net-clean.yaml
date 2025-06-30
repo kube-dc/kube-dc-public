@@ -4,7 +4,7 @@ metadata:
   labels:
     app: debug-net
   name: debug-net
-  namespace: shalb-demo
+  namespace: shalb-dev
 spec:
   revisionHistoryLimit: 10
   selector:
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: debug-net
-        image: shalb/go-pinger:latest
+        image: shalb/go-pinger:0.0.11
         imagePullPolicy: Always
         args:
           - "-i"
@@ -32,12 +32,15 @@ spec:
           - "193.47.99.5"
           - "185.12.64.2"
           - "91.224.10.2"
-          - "168.119.17.60"
         env:
           - name: NODE_NAME
             valueFrom:
               fieldRef:
                 fieldPath: spec.nodeName
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
         securityContext:
           capabilities:
             add: ["NET_RAW", "NET_ADMIN"]

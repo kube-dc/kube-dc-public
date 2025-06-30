@@ -1,7 +1,7 @@
 apiVersion: kube-dc.com/v1
 kind: FIp
 metadata:
-  name: nettools-worker
+  name: alpine
   namespace: shalb-demo
 spec:
   ipAddress: 10.0.10.6

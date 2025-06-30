@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: net-tools
-  namespace: shalb-demo
+  namespace: shalb-dev
 spec:
   selector:
     matchLabels:

@@ -20,6 +20,7 @@ var (
 	sentTimeTracker     map[int]map[string]time.Time
 	sentTimeTrackerLock sync.Mutex
 	nodeName            string
+	namespace           string
 )
 
 type PingResult struct {
@@ -74,7 +75,7 @@ func main() {
 	timeoutFlag := flag.Float64("t", 2.0, "Timeout for ping responses in seconds")
 	// Just parse -v flag for backwards compatibility
 	_ = flag.Bool("v", false, "Verbose output")
-	
+
 	// Setup logging for stdout and stderr - these will be used consistently throughout the code
 	flag.Parse()
 
@@ -166,7 +167,7 @@ func main() {
 					if len(echo.Data) >= 8 {
 						txTime = time.Unix(0, int64(byteArrayToUint64(echo.Data[:8])))
 					}
-					
+
 					// Get sent time from our tracker if available
 					sentTimeTrackerLock.Lock()
 					sentTime := txTime
@@ -199,11 +200,15 @@ func main() {
 
 	// Initialize the global sent time tracker
 	sentTimeTracker = make(map[int]map[string]time.Time)
-	
+
 	// Get node name from environment variable
 	nodeName = os.Getenv("NODE_NAME")
 	if nodeName == "" {
 		nodeName = "unknown"
+	}
+	namespace = os.Getenv("POD_NAMESPACE")
+	if namespace == "" {
+		namespace = "unknown"
 	}
 
 	// Main loop
@@ -225,11 +230,11 @@ func main() {
 			responseMux.Lock()
 			responseMap[batchID] = make(map[string]bool)
 			responseMux.Unlock()
-			
+
 			sentTimeTrackerLock.Lock()
 			sentTimeTracker[batchID] = make(map[string]time.Time)
 			sentTimeTrackerLock.Unlock()
-			
+
 			responseMux.Lock()
 			for _, target := range targets {
 				responseMap[batchID][target] = true
@@ -303,7 +308,7 @@ func main() {
 						}
 						return
 					}
-					
+
 					// Record sent time
 					sentTimeTrackerLock.Lock()
 					if sentTimeMap, ok := sentTimeTracker[batchID]; ok {
@@ -334,9 +339,9 @@ func main() {
 							}
 						}
 						sentTimeTrackerLock.Unlock()
-						
+
 						now := time.Now()
-						
+
 						// Create timeout result
 						result := PingResult{
 							Target:      target,
@@ -347,17 +352,14 @@ func main() {
 							SentTime:    sentTime,
 							LoggedError: true, // Mark as already logged
 						}
-						
+
 						// Print a single line with all information
 						// Add ERROR: prefix for Grafana to properly colorize as red
-						fmt.Fprintf(os.Stderr, "ERROR: [%s] FAILED sent to %s at %s ID %d after %.2fms: %v\n",
-							nodeName,
-							result.Target,
-							result.SentTime.Format("15:04:05.000"),
-							result.ICMPID,
-							float64(now.Sub(sentTime).Microseconds())/1000.0,
+						fmt.Fprintf(os.Stderr, "ERROR: [%s/%s] FAILED sent to %s at %s ID %d after %.2fms: %v\n",
+							nodeName, namespace, result.Target, result.SentTime.Format("15:04:05.000"),
+							result.ICMPID, float64(result.Timestamp.Sub(result.SentTime).Microseconds())/1000.0,
 							result.Err)
-							
+
 						// Still send to channel for stats
 						resultChan <- result
 					}
@@ -382,20 +384,16 @@ func main() {
 
 				// Always show ping results
 				if result.Success {
-					fmt.Fprintf(os.Stdout, "[%s] SUCCESS sent to %s at %s ID %d time %.2fms\n",
-						nodeName,
-						result.Target,
-						result.SentTime.Format("15:04:05.000"),
-						result.ICMPID,
-						float64(result.RTT.Microseconds())/1000.0)
+					// Success log
+					fmt.Fprintf(os.Stdout, "[%s/%s] SUCCESS sent to %s at %s ID %d time %.2fms\n",
+						nodeName, namespace, result.Target, result.SentTime.Format("15:04:05.000"),
+						result.ICMPID, float64(result.RTT.Microseconds())/1000.0)
+
 				} else if !result.LoggedError {
 					// Only print if not already logged
-					fmt.Fprintf(os.Stderr, "ERROR: [%s] FAILED sent to %s at %s ID %d after %.2fms: %v\n",
-						nodeName,
-						result.Target,
-						result.SentTime.Format("15:04:05.000"),
-						result.ICMPID,
-						float64(result.Timestamp.Sub(result.SentTime).Microseconds())/1000.0,
+					fmt.Fprintf(os.Stderr, "ERROR: [%s/%s] FAILED sent to %s at %s ID %d after %.2fms: %v\n",
+						nodeName, namespace, result.Target, result.SentTime.Format("15:04:05.000"),
+						result.ICMPID, float64(result.Timestamp.Sub(result.SentTime).Microseconds())/1000.0,
 						result.Err)
 				}
 			}
