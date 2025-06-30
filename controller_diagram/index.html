@@ -1086,20 +1086,20 @@
   end
 
   subgraph OVNNB["OVN Northbound DB &amp; OVS"]
-    OVNNB[ovn-nb.db]
+    OVNNBdb[ovn-nb.db]
     OVSOCK[ovs-db socket]
   end
 
   EIPdef --&gt; EIPcr
   EIPcr --&gt; EIPsync
-  EIPsync --&gt; OVNNB
+  EIPsync --&gt; OVNNBdb
 
-  FIPsync --&gt;|Sync EIP + Floating IP| OVNNB
+  FIPsync --&gt;|Sync EIP + Floating IP| OVNNBdb
 
-  LBsync --&gt;|Ensure external IP via EIp CR| OVNNB
-  LBsync --&gt;|Configure Virtual IPs in LB| OVNNB
+  LBsync --&gt;|Ensure external IP via EIp CR| OVNNBdb
+  LBsync --&gt;|Configure Virtual IPs in LB| OVNNBdb
 
-  OVNNB --&gt; OVSOCK
+  OVNNBdb --&gt; OVSOCK
 
   classDef flow fill:#eef,stroke:#666,stroke-width:1px;
   class EIPdef,EIPcr,EIPsync,FIPsync,LBsync flow;</code></pre>
