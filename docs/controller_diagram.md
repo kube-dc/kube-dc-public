@@ -69,23 +69,23 @@ Below is a focused diagram showing how Kube-OVN and Multus CNI are installed and
 ```mermaid
 flowchart LR
   subgraph Installer
-    KOV[Kube-OVN Helm Chart]
-    MULT[Multus CNI Helm Chart]
+    KOV["Kube-OVN Helm Chart"]
+    MULT["Multus CNI Helm Chart"]
   end
 
   KOV --> MULT
 
   subgraph CNIInfra["CNI Infrastructure"]
-    OVN[ovn-daemon (kube-ovn)]
-    MPods[Multus Pods]
+    OVN["ovn-daemon (kube-ovn)"]
+    MPods["Multus Pods"]
   end
 
   MULT --> MPods
   KOV --> OVN
   OVN & MPods --> CNIInfra
 
-  NewNAD[NewProjectNad Controller]
-  NADCRD[NetworkAttachmentDefinition CR]
+  NewNAD["NewProjectNad Controller"]
+  NADCRD["NetworkAttachmentDefinition CR"]
   CNIConfig["Spec.Config: {type:'kube-ovn', server_socket:'/run/openvswitch/kube-ovn-daemon.sock', provider:<proj>} "]
   PodAttach["Pod annotation 'k8s.v1.cni.cncf.io/networks' = NAD"]
 
@@ -110,7 +110,7 @@ Referenced code:
 ```mermaid
 flowchart TD
   subgraph ProjectNet["Project Networking Controllers"]
-    EIPdef[NewProjectEip (Default Gateway EIP)]
+    EIPdef["NewProjectEip (Default Gateway EIP)"]
     EIPcr[NewProjectEip CR]
     EIPsync[EIpReconciler]
     FIPsync[FIpReconciler]
