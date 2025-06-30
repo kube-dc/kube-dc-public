@@ -22,12 +22,12 @@ flowchart TB
   end
 
   subgraph Logic["Business Logic Packages"]
-    OGi[internal/organization]
-    PI [internal/project]
-    OGG[internal/organizationgroup]
-    SLP[internal/service_lb]
-    OBJ[internal/objmgr]
-    UTL[internal/utils]
+    OGi["internal/organization"]
+    PI["internal/project"]
+    OGG["internal/organizationgroup"]
+    SLP["internal/service_lb"]
+    OBJ["internal/objmgr"]
+    UTL["internal/utils"]
   end
 
   subgraph Ext["External Dependencies"]
