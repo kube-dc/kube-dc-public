@@ -118,20 +118,20 @@ flowchart TD
   end
 
   subgraph OVNNB["OVN Northbound DB & OVS"]
-    OVNNB[ovn-nb.db]
+    OVNNBdb[ovn-nb.db]
     OVSOCK[ovs-db socket]
   end
 
   EIPdef --> EIPcr
   EIPcr --> EIPsync
-  EIPsync --> OVNNB
+  EIPsync --> OVNNBdb
 
-  FIPsync -->|Sync EIP + Floating IP| OVNNB
+  FIPsync -->|Sync EIP + Floating IP| OVNNBdb
 
-  LBsync -->|Ensure external IP via EIp CR| OVNNB
-  LBsync -->|Configure Virtual IPs in LB| OVNNB
+  LBsync -->|Ensure external IP via EIp CR| OVNNBdb
+  LBsync -->|Configure Virtual IPs in LB| OVNNBdb
 
-  OVNNB --> OVSOCK
+  OVNNBdb --> OVSOCK
 
   classDef flow fill:#eef,stroke:#666,stroke-width:1px;
   class EIPdef,EIPcr,EIPsync,FIPsync,LBsync flow;
