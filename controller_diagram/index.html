@@ -1042,23 +1042,23 @@
 <p>Below is a focused diagram showing how Kube-OVN and Multus CNI are installed and integrated via the Project NetworkAttachmentDefinition.</p>
 <pre class="mermaid"><code>flowchart LR
   subgraph Installer
-    KOV[Kube-OVN Helm Chart]
-    MULT[Multus CNI Helm Chart]
+    KOV["Kube-OVN Helm Chart"]
+    MULT["Multus CNI Helm Chart"]
   end
 
   KOV --&gt; MULT
 
   subgraph CNIInfra["CNI Infrastructure"]
-    OVN[ovn-daemon (kube-ovn)]
-    MPods[Multus Pods]
+    OVN["ovn-daemon (kube-ovn)"]
+    MPods["Multus Pods"]
   end
 
   MULT --&gt; MPods
   KOV --&gt; OVN
   OVN &amp; MPods --&gt; CNIInfra
 
-  NewNAD[NewProjectNad Controller]
-  NADCRD[NetworkAttachmentDefinition CR]
+  NewNAD["NewProjectNad Controller"]
+  NADCRD["NetworkAttachmentDefinition CR"]
   CNIConfig["Spec.Config: {type:'kube-ovn', server_socket:'/run/openvswitch/kube-ovn-daemon.sock', provider:&lt;proj&gt;} "]
   PodAttach["Pod annotation 'k8s.v1.cni.cncf.io/networks' = NAD"]
 
@@ -1078,7 +1078,7 @@
 <h2 id="eip-fip-serviceloadbalancer-networking-flows">EIP, FIP &amp; ServiceLoadBalancer Networking Flows<a class="headerlink" href="#eip-fip-serviceloadbalancer-networking-flows" title="Permanent link"> ¶</a></h2>
 <pre class="mermaid"><code>flowchart TD
   subgraph ProjectNet["Project Networking Controllers"]
-    EIPdef[NewProjectEip (Default Gateway EIP)]
+    EIPdef["NewProjectEip (Default Gateway EIP)"]
     EIPcr[NewProjectEip CR]
     EIPsync[EIpReconciler]
     FIPsync[FIpReconciler]
