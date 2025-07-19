@@ -893,7 +893,14 @@
 <li>Adding a <code>res_network_policy.go</code> file in <code>internal/project</code>.</li>
 <li>Updating <code>internal/project/project.go</code> to call the new function.</li>
 <li>Rebuilding and deploying the controller image (<code>make docker-build deploy</code>).</li>
-<li>Re-enabling the e2e test in <code>tests/e2e/project_test.go</code>.</li>
+<li>
+<p>Re-enabling the e2e test in <code>tests/e2e/project_test.go</code>.</p>
+</li>
+<li class="task-list-item">
+<p><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>Fix Project Controller Deletion Deadlock</strong></p>
+</li>
+<li><strong>Issue</strong>: The <code>Project</code> controller gets stuck in a deadlock when deleting a <code>Project</code> that has an empty <code>spec.egressNetworkType</code>. The deletion logic in <code>internal/project/res_vpc.go</code> incorrectly attempts to re-generate the <code>kube-ovn</code> VPC if it's not found, which fails because <code>utils.SelectBestExternalSubnet</code> requires an <code>egressNetworkType</code>.</li>
+<li><strong>Fix</strong>: In <code>internal/project/res_vpc.go</code>, inside the <code>NewProjectVpc</code> function, modify the <code>IsNotFound</code> error handling. Before attempting to regenerate the VPC, add a check to see if the project has a <code>DeletionTimestamp</code>. If it does, the function should return the <code>NotFound</code> error directly, as this is an expected condition during cleanup, and regeneration should not occur.</li>
 </ul>
 
 
