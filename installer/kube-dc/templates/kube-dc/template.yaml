@@ -5,7 +5,7 @@
 {{- $clusterApiVersion := (.variables.versions.cluster_api                   | default "v1.8.1" | quote) -}}
 {{- $capiK3sProviderVersion := (.variables.versions.cluster_api_k3s_provider | default "v1.2.2" | quote) -}}
 {{- $kyvernoVersion := (.variables.versions.kyverno                          | default "v1.10.0" | quote) -}}
-{{- $kubeOvnChartVersion := (.variables.versions.kube_ovn                    | default "v1.13.8" | quote) -}}
+{{- $kubeOvnChartVersion := (.variables.versions.kube_ovn                    | default "v1.14.3" | quote) -}}
 {{- $multusChartVersion := (.variables.versions.multus_helm                  | default "2.2.9" | quote) -}}
 {{- $ingressNginxChartVersion := (.variables.versions.ingress_nginx_helm     | default "4.11.1" | quote) -}}
 {{- $keycloakChartVersion := (.variables.versions.keycloak_helm              | default "24.3.0" | quote) -}}
@@ -13,6 +13,7 @@
 {{- $promChartVersion := (.variables.versions.prom_operator_helm             | default "67.4.0"| quote) -}}
 {{- $lokiChartVersion := (.variables.versions.loki_helm                      | default "6.11.0"| quote) -}}
 {{- $alloyChartVersion := (.variables.versions.alloy_helm                    | default "0.10.1"| quote) -}}
+{{- $helmProviderVersion := (.variables.versions.helm_provider_version                    | default "2.17.0"| quote) -}}
 
 name: cluster
 kind: StackTemplate
@@ -94,6 +95,7 @@ units:
   -
     name: kube-ovn
     type: helm
+    provider_version: {{ $helmProviderVersion }}
     depends_on: this.prom-operator-crds
     source:
       repository: "https://kubeovn.github.io/kube-ovn/"
@@ -119,6 +121,7 @@ units:
   -
     name: multus-cni
     type: helm
+    provider_version: {{ $helmProviderVersion }}
     depends_on: this.kube-ovn
     source:
       repository: "oci://registry-1.docker.io/bitnamicharts"
@@ -185,10 +188,26 @@ units:
     provider_conf:
       config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
   -
+    name: kube-ovn-external-route-setup
+    type: shell
+    depends_on: this.kube-ovn-external-gw-conf
+    env:
+      {{- if .variables.debug }}
+      KUBE_DC_DEBUG: true
+      {{- end }}
+      KUBE_DC_EXTERNAL_GATEWAY: {{ .variables.cluster_config.default_external_network.gateway }}
+      KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    create_files:
+        - file: setup-external-route.sh
+          content: {{ insertYAML (readFile "./kube-ovn/setup-external-route.sh") }}
+    apply:
+      commands:
+        - bash setup-external-route.sh
+  -
     name: kube-ovn-vpc-dns-patch
     type: shell
     depends_on:
-      - this.kube-ovn-external-gw-conf
+      - this.kube-ovn-external-route-setup
     env:
       {{- if .variables.debug }}
       KUBE_DC_DEBUG: true
@@ -223,6 +242,7 @@ units:
   -
     name: ingress-nginx
     type: helm
+    provider_version: {{ $helmProviderVersion }}
     depends_on: this.kube-ovn-vpc-dns
     source:
       repository: "https://kubernetes.github.io/ingress-nginx"
@@ -240,6 +260,7 @@ units:
   -
     name: cert-manager
     type: helm
+    provider_version: {{ $helmProviderVersion }}
     depends_on: this.kube-ovn-vpc-dns
     source:
       repository: "https://charts.jetstack.io"
@@ -316,6 +337,7 @@ units:
   -
     name: prom-operator
     type: helm
+    provider_version: {{ $helmProviderVersion }}
     depends_on: this.ingress-nginx
     source:
       repository: "https://prometheus-community.github.io/helm-charts"
@@ -333,6 +355,7 @@ units:
   -
     name: loki
     type: helm
+    provider_version: {{ $helmProviderVersion }}
     depends_on: this.prom-operator
     source:
       repository: "https://grafana.github.io/helm-charts"
@@ -350,6 +373,7 @@ units:
   -
     name: alloy
     type: helm
+    provider_version: {{ $helmProviderVersion }}
     depends_on: this.loki
     source:
       repository: "https://grafana.github.io/helm-charts"
@@ -450,6 +474,7 @@ units:
   -
     name: keycloak
     type: helm
+    provider_version: {{ $helmProviderVersion }}
     depends_on: this.ingress-nginx
     source:
       repository: "oci://registry-1.docker.io/bitnamicharts"
@@ -468,6 +493,7 @@ units:
   -
     name: kube-dc
     type: helm
+    provider_version: {{ $helmProviderVersion }}
     depends_on:
       - this.keycloak
     source:
