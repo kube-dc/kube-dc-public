@@ -1,0 +1,43 @@
+# Additional External Network Configuration Example
+# This example shows how to configure an additional public external network
+# alongside the default cloud external network in Kube-OVN
+
+# Prerequisites:
+# 1. Physical interface (e.g., enp0s31f6) configured for VLAN trunking
+# 2. Hetzner vSwitch configured with VLAN ID (e.g., 4011)
+# 3. Public subnet ordered from Hetzner (e.g., 168.119.17.48/28)
+# 4. ProviderNetwork already exists (ext-cloud)
+
+---
+# VLAN Configuration for the additional external network
+# This VLAN will be attached to the existing ProviderNetwork
+apiVersion: kubeovn.io/v1
+kind: Vlan
+metadata:
+  name: vlan4011
+spec:
+  id: 4011
+  provider: ext-cloud  # Use existing ProviderNetwork
+
+---
+# External Subnet Configuration
+# This creates the additional public subnet for real public IPs
+apiVersion: kubeovn.io/v1
+kind: Subnet
+metadata:
+  name: ext-public
+  labels:
+    network.kube-dc.com/external-network-type: "public"
+spec:
+  cidrBlock: 168.119.17.48/28
+  gateway: 168.119.17.49
+  excludeIps:
+    - "168.119.17.49..168.119.17.50"  # Reserve gateway and first IP
+  vlan: vlan4011
+  mtu: 1400
+  protocol: IPv4
+  private: false
+  natOutgoing: false
+  gatewayType: distributed
+  vpc: ovn-cluster
+  provider: ovn

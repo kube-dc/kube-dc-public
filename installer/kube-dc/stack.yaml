@@ -4,7 +4,7 @@ kind: Stack
 backend: default
 variables:
   debug: "true"
-  kubeconfig: /home/arti/.kube/config
+  kubeconfig: /home/voa/.kube/config
 
   monitoring:
     prom_storage: 20Gi
@@ -45,8 +45,8 @@ variables:
   create_default:
     organization:
       name: shalb
-      description: "My test org my-org 1"
-      email: "arti@shalb.com"
+      description: "Demo Organization"
+      email: "demo@kube-dc.com"
     project:
       name: demo
       cidr_block: "10.0.10.0/24"
@@ -61,7 +61,7 @@ variables:
     # cluster_api_k3s_provider:  "v1.2.2"
     # kyverno: "v1.10.0"
     # terraform: "1.9.4"
-    kube_ovn: "v1.13.13"
+    kube_ovn: "v1.14.4"
     # multus_helm: "2.2.9"
     # ingress_nginx_helm: "4.11.1"
     keycloak_helm: "24.3.0"
