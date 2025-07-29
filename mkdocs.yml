@@ -37,7 +37,8 @@ nav:
     # - Security Best Practices: ops-security.md
     # - Backup & Recovery: ops-backup-recovery.md
     # - Scalability & Performance: ops-scaling-performance.md
-  #- Reference:
+  - Reference:
+    - Project Resources: project_resources.md
     # - CLI & Tools: reference-cli-tools.md
     # - Custom Resource Definitions: reference-crds.md
     # - Configuration Files: reference-config-files.md
