@@ -1,0 +1,13 @@
+---
+apiVersion: kube-dc.com/v1
+kind: Project
+metadata:
+  name: test-project-e2e-manual
+  namespace: test-org-e2e-manual
+  labels:
+    app.kubernetes.io/managed-by: kube-dc
+    kube-dc.com/test: e2e-manual
+    kube-dc.com/organization: test-org-e2e-manual
+spec:
+  cidrBlock: "10.150.0.0/16"
+  egressNetworkType: cloud

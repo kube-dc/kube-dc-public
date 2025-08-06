@@ -37,7 +37,7 @@ variables:
     
   node_external_ip: 88.99.29.250
 
-  email: "noreply@shalb.com"
+  email: "noreply@kube-dc.com"
   domain: "stage.kube-dc.com"
   install_terraform: true
   kubeApiExternalUrl: "https://kube-api.stage.kube-dc.com:6443"
@@ -55,18 +55,17 @@ variables:
 
   versions:
     kube_dc: "v0.1.33" # release version
-    # kubevirt: "v1.3.0"
-    # kubevirt_cdi: "v1.59.0"
+    kubevirt: "v1.6.0"
+    kubevirt_cdi: "v1.62.0"
     # cluster_api: "v1.8.1"
     # cluster_api_k3s_provider:  "v1.2.2"
     # kyverno: "v1.10.0"
     # terraform: "1.9.4"
     kube_ovn: "v1.14.4"
-    # multus_helm: "2.2.9"
+    multus_helm: "2.2.19"
     # ingress_nginx_helm: "4.11.1"
     keycloak_helm: "24.3.0"
     prom_operator_helm: "67.4.0"
-    # kube_dc: "v0.1.1-dev1"
     # cert_manager_helm: "v1.14.4"
 
     

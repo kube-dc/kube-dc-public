@@ -1,0 +1,166 @@
+# Ubuntu VM with cloud-init and SSH access
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: ubuntu-server-img
+  namespace: test-org-e2e-manual-test-project-e2e-manual
+spec:
+  pvc:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 10Gi
+    storageClassName: local-path
+  source:
+    http:
+      url: https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64-disk-kvm.img
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: ubuntu-server
+  namespace: test-org-e2e-manual-test-project-e2e-manual
+  labels:
+    app: ubuntu-server
+    os: ubuntu
+    version: "20.04"
+spec:
+  running: true
+  template:
+    metadata:
+      labels:
+        app: ubuntu-server
+    spec:
+      domain:
+        cpu:
+          cores: 2
+        resources:
+          requests:
+            memory: 2Gi
+        devices:
+          disks:
+          - name: rootdisk
+            disk:
+              bus: virtio
+          - name: cloudinitdisk
+            disk:
+              bus: virtio
+          interfaces:
+          - name: default
+            masquerade: {}
+      networks:
+      - name: default
+        pod: {}
+      volumes:
+      - name: rootdisk
+        dataVolume:
+          name: ubuntu-server-img
+      - name: cloudinitdisk
+        cloudInitNoCloud:
+          userData: |
+            #cloud-config
+            users:
+            - name: ubuntu
+              sudo: ALL=(ALL) NOPASSWD:ALL
+              ssh_authorized_keys:
+              - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC... # Add your SSH key here
+            package_update: true
+            packages:
+            - nginx
+            - curl
+            - htop
+            runcmd:
+            - systemctl enable nginx
+            - systemctl start nginx
+            - echo "<h1>Ubuntu VM in Kube-DC</h1>" > /var/www/html/index.html
+---
+# CirrOS VM for testing (lightweight)
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: cirros-test-img
+  namespace: test-org-e2e-manual-test-project-e2e-manual
+spec:
+  pvc:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1Gi
+    storageClassName: local-path
+  source:
+    http:
+      url: http://download.cirros-cloud.net/0.5.2/cirros-0.5.2-x86_64-disk.img
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: cirros-test
+  namespace: test-org-e2e-manual-test-project-e2e-manual
+  labels:
+    app: cirros-test
+    os: cirros
+    purpose: testing
+spec:
+  running: true
+  template:
+    metadata:
+      labels:
+        app: cirros-test
+    spec:
+      domain:
+        resources:
+          requests:
+            memory: 128Mi
+        devices:
+          disks:
+          - name: rootdisk
+            disk:
+              bus: virtio
+          interfaces:
+          - name: default
+            masquerade: {}
+      networks:
+      - name: default
+        pod: {}
+      volumes:
+      - name: rootdisk
+        dataVolume:
+          name: cirros-test-img
+---
+# Service to expose Ubuntu VM SSH
+apiVersion: v1
+kind: Service
+metadata:
+  name: ubuntu-vm-ssh
+  namespace: test-org-e2e-manual-test-project-e2e-manual
+  annotations:
+    service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"
+spec:
+  type: LoadBalancer
+  selector:
+    app: ubuntu-server
+  ports:
+  - name: ssh
+    protocol: TCP
+    port: 22
+    targetPort: 22
+---
+# Service to expose Ubuntu VM HTTP
+apiVersion: v1
+kind: Service
+metadata:
+  name: ubuntu-vm-web
+  namespace: test-org-e2e-manual-test-project-e2e-manual
+  annotations:
+    service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"
+spec:
+  type: LoadBalancer
+  selector:
+    app: ubuntu-server
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: 80

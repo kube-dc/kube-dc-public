@@ -1,0 +1,58 @@
+apiVersion: kube-dc.com/v1
+kind: EIp
+metadata:
+  name: web-server-eip
+  namespace: test-org-e2e-manual-test-project-e2e-manual
+  labels:
+    purpose: web-server
+    environment: e2e-test
+    kube-dc.com/test: e2e-manual
+spec:
+  # External network type - use 'cloud' for cloud providers, 'public' for public networks
+  externalNetworkType: cloud
+---
+apiVersion: kube-dc.com/v1
+kind: EIp
+metadata:
+  name: database-eip
+  namespace: test-org-e2e-manual-test-project-e2e-manual
+  labels:
+    purpose: database
+    environment: e2e-test
+    kube-dc.com/test: e2e-manual
+spec:
+  externalNetworkType: cloud
+---
+apiVersion: kube-dc.com/v1
+kind: EIp
+metadata:
+  name: api-server-eip
+  namespace: shalb-demo
+  labels:
+    purpose: api-server
+    environment: demo
+spec:
+  externalNetworkType: public
+---
+# Example of EIP usage in service annotation
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-server-service
+  namespace: shalb-demo
+  annotations:
+    # Bind to specific EIP by name
+    service.nlb.kube-dc.com/bind-on-eip: "web-server-eip"
+spec:
+  type: LoadBalancer
+  selector:
+    app: web-server
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 8080
+    - name: https
+      protocol: TCP
+      port: 443
+      targetPort: 8443

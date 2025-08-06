@@ -13,10 +13,10 @@
 {{- $promChartVersion := (.variables.versions.prom_operator_helm             | default "67.4.0"| quote) -}}
 {{- $lokiChartVersion := (.variables.versions.loki_helm                      | default "6.11.0"| quote) -}}
 {{- $alloyChartVersion := (.variables.versions.alloy_helm                    | default "0.10.1"| quote) -}}
-{{- $helmProviderVersion := (.variables.versions.helm_provider_version                    | default "2.17.0"| quote) -}}
 
 name: cluster
 kind: StackTemplate
+cliVersion: ">= 0.9.8"
 units:
 {{- if .variables.install_terraform }}
   -
@@ -95,7 +95,6 @@ units:
   -
     name: kube-ovn
     type: helm
-    provider_version: {{ $helmProviderVersion }}
     depends_on: this.prom-operator-crds
     source:
       repository: "https://kubeovn.github.io/kube-ovn/"
@@ -121,7 +120,6 @@ units:
   -
     name: multus-cni
     type: helm
-    provider_version: {{ $helmProviderVersion }}
     depends_on: this.kube-ovn
     source:
       repository: "oci://registry-1.docker.io/bitnamicharts"
@@ -242,7 +240,6 @@ units:
   -
     name: ingress-nginx
     type: helm
-    provider_version: {{ $helmProviderVersion }}
     depends_on: this.kube-ovn-vpc-dns
     source:
       repository: "https://kubernetes.github.io/ingress-nginx"
@@ -260,7 +257,6 @@ units:
   -
     name: cert-manager
     type: helm
-    provider_version: {{ $helmProviderVersion }}
     depends_on: this.kube-ovn-vpc-dns
     source:
       repository: "https://charts.jetstack.io"
@@ -337,7 +333,6 @@ units:
   -
     name: prom-operator
     type: helm
-    provider_version: {{ $helmProviderVersion }}
     depends_on: this.ingress-nginx
     source:
       repository: "https://prometheus-community.github.io/helm-charts"
@@ -355,7 +350,6 @@ units:
   -
     name: loki
     type: helm
-    provider_version: {{ $helmProviderVersion }}
     depends_on: this.prom-operator
     source:
       repository: "https://grafana.github.io/helm-charts"
@@ -373,7 +367,6 @@ units:
   -
     name: alloy
     type: helm
-    provider_version: {{ $helmProviderVersion }}
     depends_on: this.loki
     source:
       repository: "https://grafana.github.io/helm-charts"
@@ -474,7 +467,6 @@ units:
   -
     name: keycloak
     type: helm
-    provider_version: {{ $helmProviderVersion }}
     depends_on: this.ingress-nginx
     source:
       repository: "oci://registry-1.docker.io/bitnamicharts"
@@ -493,7 +485,6 @@ units:
   -
     name: kube-dc
     type: helm
-    provider_version: {{ $helmProviderVersion }}
     depends_on:
       - this.keycloak
     source:

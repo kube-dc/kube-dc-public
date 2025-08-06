@@ -1,0 +1,12 @@
+---
+apiVersion: kube-dc.com/v1
+kind: Organization
+metadata:
+  name: test-org-e2e-manual
+  namespace: test-org-e2e-manual
+  labels:
+    app.kubernetes.io/managed-by: kube-dc
+    kube-dc.com/test: e2e-manual
+spec:
+  description: "E2E Manual Test Organization for comprehensive testing"
+  email: "e2e-test@example.com"

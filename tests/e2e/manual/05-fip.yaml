@@ -1,0 +1,81 @@
+apiVersion: kube-dc.com/v1
+kind: FIp
+metadata:
+  name: vm-alpine-fip
+  namespace: test-org-e2e-manual-test-project-e2e-manual
+  labels:
+    vm-name: alpine-vm
+    purpose: virtual-machine
+    environment: e2e-test
+    kube-dc.com/test: e2e-manual
+spec:
+  # Specific IP address within project CIDR range (10.150.0.0/16)
+  ipAddress: 10.150.1.10
+  externalNetworkType: cloud
+---
+apiVersion: kube-dc.com/v1
+kind: FIp
+metadata:
+  name: vm-ubuntu-fip
+  namespace: test-org-e2e-manual-test-project-e2e-manual
+  labels:
+    vm-name: ubuntu-vm
+    purpose: virtual-machine
+    environment: e2e-test
+    kube-dc.com/test: e2e-manual
+spec:
+  ipAddress: 10.150.1.20
+  externalNetworkType: cloud
+---
+apiVersion: kube-dc.com/v1
+kind: FIp
+metadata:
+  name: database-pod-fip
+  namespace: test-org-e2e-manual-test-project-e2e-manual
+  labels:
+    app: database
+    purpose: pod
+    environment: e2e-test
+    kube-dc.com/test: e2e-manual
+spec:
+  ipAddress: 10.150.1.30
+  externalNetworkType: public
+---
+# Example Pod using FIP
+apiVersion: v1
+kind: Pod
+metadata:
+  name: database-pod
+  namespace: test-org-e2e-manual-test-project-e2e-manual
+  labels:
+    app: database
+  annotations:
+    # Assign specific FIP to pod
+    fip.kube-dc.com/assign: "database-pod-fip"
+spec:
+  containers:
+  - name: postgres
+    image: postgres:13-alpine
+    env:
+    - name: POSTGRES_DB
+      value: "testdb"
+    - name: POSTGRES_USER
+      value: "testuser"
+    - name: POSTGRES_PASSWORD
+      value: "testpass"
+    ports:
+    - containerPort: 5432
+      protocol: TCP
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 200m
+        memory: 256Mi
+    volumeMounts:
+    - name: postgres-data
+      mountPath: /var/lib/postgresql/data
+  volumes:
+  - name: postgres-data
+    emptyDir: {}
