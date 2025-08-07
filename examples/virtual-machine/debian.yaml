@@ -12,7 +12,7 @@ spec:
     storageClassName: local-path
   source:
     http:
-      url: https://cdimage.debian.org/cdimage/cloud/buster/20240204-1647/debian-10-generic-amd64-20240204-1647.qcow2
+      url: https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2
 ---
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine

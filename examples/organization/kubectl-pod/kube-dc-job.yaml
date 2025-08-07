@@ -19,7 +19,7 @@ spec:
       terminationGracePeriodSeconds: 2
       containers:
       - name: kubectl
-        image: shalb/kube-dc-kubectl:v0.5.1
+        image: shalb/kube-dc-kubectl:v0.5.2
         ports:
         - containerPort: 7681
           name: ttyd
