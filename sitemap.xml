@@ -2,74 +2,74 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://docs.kube-dc.com/</loc>
-         <lastmod>2025-08-07</lastmod>
+         <lastmod>2025-08-09</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/CODEBASE_CONTEXT/</loc>
-         <lastmod>2025-08-07</lastmod>
+         <lastmod>2025-08-09</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/architecture-multi-tenancy/</loc>
-         <lastmod>2025-08-07</lastmod>
+         <lastmod>2025-08-09</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/architecture-networking/</loc>
-         <lastmod>2025-08-07</lastmod>
+         <lastmod>2025-08-09</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/architecture-overview/</loc>
-         <lastmod>2025-08-07</lastmod>
+         <lastmod>2025-08-09</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/architecture-virtualization/</loc>
-         <lastmod>2025-08-07</lastmod>
+         <lastmod>2025-08-09</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/community-support/</loc>
-         <lastmod>2025-08-07</lastmod>
+         <lastmod>2025-08-09</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/controller_diagram/</loc>
-         <lastmod>2025-08-07</lastmod>
+         <lastmod>2025-08-09</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/core-features/</loc>
-         <lastmod>2025-08-07</lastmod>
+         <lastmod>2025-08-09</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/project_resources/</loc>
-         <lastmod>2025-08-07</lastmod>
+         <lastmod>2025-08-09</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/quickstart-hetzner/</loc>
-         <lastmod>2025-08-07</lastmod>
+         <lastmod>2025-08-09</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/quickstart-overview/</loc>
-         <lastmod>2025-08-07</lastmod>
+         <lastmod>2025-08-09</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/todo/</loc>
-         <lastmod>2025-08-07</lastmod>
+         <lastmod>2025-08-09</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/tutorial-ip-and-lb/</loc>
-         <lastmod>2025-08-07</lastmod>
+         <lastmod>2025-08-09</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/tutorial-kubeconfig/</loc>
-         <lastmod>2025-08-07</lastmod>
+         <lastmod>2025-08-09</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/tutorial-user-groups/</loc>
-         <lastmod>2025-08-07</lastmod>
+         <lastmod>2025-08-09</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/tutorial-virtual-machines/</loc>
-         <lastmod>2025-08-07</lastmod>
+         <lastmod>2025-08-09</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/user-groups/</loc>
-         <lastmod>2025-08-07</lastmod>
+         <lastmod>2025-08-09</lastmod>
     </url>
 </urlset>

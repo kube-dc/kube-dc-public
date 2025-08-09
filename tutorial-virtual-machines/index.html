@@ -1007,9 +1007,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#centos-8" class="md-nav__link">
+  <a href="#centos-stream-9" class="md-nav__link">
     <span class="md-ellipsis">
-      CentOS 8
+      CentOS Stream 9
     </span>
   </a>
   
@@ -1559,9 +1559,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#centos-8" class="md-nav__link">
+  <a href="#centos-stream-9" class="md-nav__link">
     <span class="md-ellipsis">
-      CentOS 8
+      CentOS Stream 9
     </span>
   </a>
   
@@ -1984,7 +1984,7 @@
 </span><span id="__span-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="w">    </span><span class="nt">http</span><span class="p">:</span>
 </span><span id="__span-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="w">      </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/cloud/nocloud_alpine-3.19.1-x86_64-bios-cloudinit-r0.qcow2</span>
 </span></code></pre></div>
-<h3 id="centos-8">CentOS 8<a class="headerlink" href="#centos-8" title="Permanent link"> ¶</a></h3>
+<h3 id="centos-stream-9">CentOS Stream 9<a class="headerlink" href="#centos-stream-9" title="Permanent link"> ¶</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cdi.kubevirt.io/v1beta1</span>
 </span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">DataVolume</span>
 </span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nt">metadata</span><span class="p">:</span>
@@ -1999,8 +1999,9 @@
 </span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">    </span><span class="nt">storageClassName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">local-path</span>
 </span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
 </span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">    </span><span class="nt">http</span><span class="p">:</span>
-</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">      </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://cloud.centos.org/centos/8-stream/x86_64/images/CentOS-Stream-GenericCloud-8-20230710.0.x86_64.qcow2</span>
+</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">      </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2</span>
 </span></code></pre></div>
+<p><strong>Note</strong>: CentOS Stream 9 requires additional SELinux configuration to enable guest agent SSH key injection. The OS configuration includes proper SELinux booleans and contexts to allow guest agent operations. See the CentOS example in <code>examples/virtual-machine/centos-8.yaml</code> for the complete cloud-init configuration with SELinux setup.</p>
 <h2 id="virtual-machine-health-checks">Virtual Machine Health Checks<a class="headerlink" href="#virtual-machine-health-checks" title="Permanent link"> ¶</a></h2>
 <p>Kube-DC supports VM health checks to ensure your VMs are running properly:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">spec</span><span class="p">:</span>
