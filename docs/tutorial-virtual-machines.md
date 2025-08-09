@@ -292,7 +292,7 @@ spec:
       url: https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/cloud/nocloud_alpine-3.19.1-x86_64-bios-cloudinit-r0.qcow2
 ```
 
-### CentOS 8
+### CentOS Stream 9
 
 ```yaml
 apiVersion: cdi.kubevirt.io/v1beta1
@@ -309,8 +309,10 @@ spec:
     storageClassName: local-path
   source:
     http:
-      url: https://cloud.centos.org/centos/8-stream/x86_64/images/CentOS-Stream-GenericCloud-8-20230710.0.x86_64.qcow2
+      url: https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2
 ```
+
+**Note**: CentOS Stream 9 requires additional SELinux configuration to enable guest agent SSH key injection. The OS configuration includes proper SELinux booleans and contexts to allow guest agent operations. See the CentOS example in `examples/virtual-machine/centos-8.yaml` for the complete cloud-init configuration with SELinux setup.
 
 ## Virtual Machine Health Checks
 
