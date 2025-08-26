@@ -8,9 +8,13 @@
       
       
       
-        <link rel="canonical" href="https://docs.kube-dc.com/user-groups/">
+        <link rel="canonical" href="https://docs.kube-dc.com/tutorial-networking-external/">
       
       
+        <link rel="prev" href="../tutorial-ip-and-lb/">
+      
+      
+        <link rel="next" href="../tutorial-kubeconfig/">
       
       
       <link rel="icon" href="../images/favicon.png">
@@ -18,7 +22,7 @@
     
     
       
-        <title>User and Group Management - Kube-DC</title>
+        <title>Additional External Networks - Kube-DC</title>
       
     
     
@@ -79,7 +83,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#user-and-group-management" class="md-skip">
+        <a href="#additional-external-network-configuration" class="md-skip">
           Skip to content
         </a>
       
@@ -112,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              User and Group Management
+              Additional External Networks
             
           </span>
         </div>
@@ -281,10 +285,12 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
+      <li class="md-tabs__item md-tabs__item--active">
         <a href="../tutorial-virtual-machines/" class="md-tabs__link">
           
   
@@ -712,24 +718,29 @@
       
   
   
+    
   
   
+  
     
     
     
     
-      
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
         
           
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
             
   
   
@@ -742,7 +753,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             User Guide
@@ -822,10 +833,32 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../tutorial-networking-external/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Additional External Networks
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -836,6 +869,245 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network-types-explained-by-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      Network Types Explained by Example
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Network Types Explained by Example">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cloud-network-egressnetworktype-cloud" class="md-nav__link">
+    <span class="md-ellipsis">
+      Cloud Network (egressNetworkType: cloud)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#public-network-egressnetworktype-public" class="md-nav__link">
+    <span class="md-ellipsis">
+      Public Network (egressNetworkType: public)
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      Architecture
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-cluster-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Example Cluster Usage
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Example Cluster Usage">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#choosing-the-right-network" class="md-nav__link">
+    <span class="md-ellipsis">
+      Choosing the Right Network
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ovsovn-modifications-applied" class="md-nav__link">
+    <span class="md-ellipsis">
+      OVS/OVN Modifications Applied
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="OVS/OVN Modifications Applied">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-ovs-bridge-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. OVS Bridge Configuration
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-ovn-logical-switches" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. OVN Logical Switches
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-providernetwork-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. ProviderNetwork Status
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      Configuration Steps
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration Steps">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-apply-vlan-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Apply VLAN Configuration
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-verify-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Verify Configuration
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-test-with-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Test with Project
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      Key Points
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      Prerequisites
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      Troubleshooting
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#check-vlan-interface-on-nodes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Check VLAN Interface on Nodes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#check-ovn-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      Check OVN Resources
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-connectivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      Test Connectivity
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1000,65 +1272,28 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
+  <a href="#network-types-explained-by-example" class="md-nav__link">
     <span class="md-ellipsis">
-      Prerequisites
+      Network Types Explained by Example
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-by-step-guide" class="md-nav__link">
-    <span class="md-ellipsis">
-      Step-by-Step Guide
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Step-by-Step Guide">
+    <nav class="md-nav" aria-label="Network Types Explained by Example">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#creating-project-roles" class="md-nav__link">
+  <a href="#cloud-network-egressnetworktype-cloud" class="md-nav__link">
     <span class="md-ellipsis">
-      Creating Project Roles
+      Cloud Network (egressNetworkType: cloud)
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#creating-organization-groups" class="md-nav__link">
+  <a href="#public-network-egressnetworktype-public" class="md-nav__link">
     <span class="md-ellipsis">
-      Creating Organization Groups
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#managing-users-in-keycloak" class="md-nav__link">
-    <span class="md-ellipsis">
-      Managing Users in Keycloak
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Managing Users in Keycloak">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#access-keycloak-admin-console" class="md-nav__link">
-    <span class="md-ellipsis">
-      Access Keycloak Admin Console
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#create-and-configure-users" class="md-nav__link">
-    <span class="md-ellipsis">
-      Create and Configure Users
+      Public Network (egressNetworkType: public)
     </span>
   </a>
   
@@ -1068,11 +1303,174 @@
     </nav>
   
 </li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      Architecture
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-cluster-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Example Cluster Usage
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Example Cluster Usage">
+      <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#accessing-kube-dc-ui" class="md-nav__link">
+  <a href="#choosing-the-right-network" class="md-nav__link">
     <span class="md-ellipsis">
-      Accessing Kube-DC UI
+      Choosing the Right Network
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ovsovn-modifications-applied" class="md-nav__link">
+    <span class="md-ellipsis">
+      OVS/OVN Modifications Applied
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="OVS/OVN Modifications Applied">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-ovs-bridge-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. OVS Bridge Configuration
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-ovn-logical-switches" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. OVN Logical Switches
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-providernetwork-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. ProviderNetwork Status
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      Configuration Steps
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration Steps">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-apply-vlan-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Apply VLAN Configuration
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-verify-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Verify Configuration
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-test-with-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Test with Project
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      Key Points
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      Prerequisites
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      Troubleshooting
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#check-vlan-interface-on-nodes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Check VLAN Interface on Nodes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#check-ovn-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      Check OVN Resources
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-connectivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      Test Connectivity
     </span>
   </a>
   
@@ -1102,129 +1500,146 @@
   
 
 
-<h1 id="user-and-group-management">User and Group Management<a class="headerlink" href="#user-and-group-management" title="Permanent link"> ¶</a></h1>
-<p>This guide explains how to set up and manage users, groups, and roles in Kube-DC using Kubernetes RBAC and Keycloak integration.</p>
-<!-- 
-??? note "TODO: Items to Complete"
-    - [ ] Add doc on retrieving Organization Admin kubeconfig
-    - [ ] Add example YAML for full-access role
-    - [ ] Add example YAML for read-only role
-    - [ ] Add example YAML for k8s-user role
-    - [ ] Add example YAML for vm-user role
-    - [ ] Add troubleshooting section for common permission issues
-    - [ ] Document how to revoke user access
-    - [ ] Create section on auditing user activities
--->
-
+<h1 id="additional-external-network-configuration">Additional External Network Configuration<a class="headerlink" href="#additional-external-network-configuration" title="Permanent link"> ¶</a></h1>
+<p>This guide explains how to add additional external networks to Kube-DC alongside the default cloud network.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link"> ¶</a></h2>
-<p>Kube-DC implements a multi-tenant access control system that combines:</p>
+<p>The configuration demonstrates how to add a second external network (public) to an existing Kube-DC setup that already has a cloud external network, using multiple VLANs on a single physical interface per node.</p>
+<h2 id="network-types-explained-by-example">Network Types Explained by Example<a class="headerlink" href="#network-types-explained-by-example" title="Permanent link"> ¶</a></h2>
+<h3 id="cloud-network-egressnetworktype-cloud">Cloud Network (<code>egressNetworkType: cloud</code>)<a class="headerlink" href="#cloud-network-egressnetworktype-cloud" title="Permanent link"> ¶</a></h3>
 <ul>
-<li><strong>Kubernetes RBAC</strong>: Handles resource-level permissions within namespaces</li>
-<li><strong>Organization Groups</strong>: Manages project-level access across namespaces</li>
-<li><strong>Keycloak Integration</strong>: Provides user authentication and group management</li>
+<li><strong>Purpose</strong>: Default external network for most workloads</li>
+<li><strong>Subnet</strong>: <code>ext-cloud</code> (100.65.0.0/16) on VLAN 4013</li>
+<li><strong>Use Cases</strong>: </li>
+<li>General internet access for applications</li>
+<li>Standard egress traffic from project workloads</li>
+<li>Cost-effective external connectivity</li>
+<li><strong>IP Pool</strong>: Large address space (65,000+ IPs available)</li>
 </ul>
+<h3 id="public-network-egressnetworktype-public">Public Network (<code>egressNetworkType: public</code>)<a class="headerlink" href="#public-network-egressnetworktype-public" title="Permanent link"> ¶</a></h3>
+<ul>
+<li><strong>Purpose</strong>: Premium external network for specialized workloads</li>
+<li><strong>Subnet</strong>: <code>ext-public</code> (168.119.17.48/28) on VLAN 4011</li>
+<li><strong>Use Cases</strong>:</li>
+<li>Production services requiring dedicated public IPs</li>
+<li>Load balancers and ingress controllers</li>
+<li>Services needing specific public IP ranges or routing</li>
+<li><strong>IP Pool</strong>: Limited address space with real ipv4 addresses (16 IPs total)</li>
+</ul>
+<h2 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link"> ¶</a></h2>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Physical Interface (enp0s31f6)
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── VLAN 4013 (Cloud Network) - 100.65.0.0/16 (ext-cloud)
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>└── VLAN 4011 (Public Network) - 168.119.17.48/28 (ext-public)
+</span></code></pre></div>
+<h2 id="example-cluster-usage">Example Cluster Usage<a class="headerlink" href="#example-cluster-usage" title="Permanent link"> ¶</a></h2>
+<ul>
+<li><strong>shalb-demo project</strong>: Uses <code>egressNetworkType: cloud</code> → EIP: 100.65.0.102 (development/testing)</li>
+<li><strong>shalb-dev project</strong>: Uses <code>egressNetworkType: public</code> → EIP: 168.119.17.51 (development with public access)</li>
+<li><strong>shalb-envoy project</strong>: Uses <code>egressNetworkType: public</code> → EIPs: 168.119.17.52, 168.119.17.54 (production load balancer)</li>
+</ul>
+<h3 id="choosing-the-right-network">Choosing the Right Network<a class="headerlink" href="#choosing-the-right-network" title="Permanent link"> ¶</a></h3>
+<p><strong>Use Cloud Network when:</strong>
+- Need basic internet connectivity
+- Don't require specific public IP ranges</p>
+<p><strong>Use Public Network when:</strong>
+- Need dedicated public IP addresses
+- Have specific routing or compliance requirements
+- Running load balancers or ingress controllers</p>
+<h2 id="ovsovn-modifications-applied">OVS/OVN Modifications Applied<a class="headerlink" href="#ovsovn-modifications-applied" title="Permanent link"> ¶</a></h2>
+<h3 id="1-ovs-bridge-configuration">1. OVS Bridge Configuration<a class="headerlink" href="#1-ovs-bridge-configuration" title="Permanent link"> ¶</a></h3>
+<p>The system automatically creates the necessary OVS infrastructure:</p>
+<p><strong>Bridge: <code>br-ext-cloud</code></strong>
+- Physical interface <code>enp0s31f6</code> attached with VLAN trunking
+- Trunk VLANs: <code>[0, 4011, 4013]</code>
+- Patch ports for both external networks:
+  - <code>patch-localnet.ext-cloud-to-br-int</code> ↔ <code>patch-br-int-to-localnet.ext-cloud</code>
+  - <code>patch-localnet.ext-public-to-br-int</code> ↔ <code>patch-br-int-to-localnet.ext-public</code></p>
+<h3 id="2-ovn-logical-switches">2. OVN Logical Switches<a class="headerlink" href="#2-ovn-logical-switches" title="Permanent link"> ¶</a></h3>
+<p>Two logical switches are created automatically:
+- <code>ext-cloud</code> (for VLAN 4013)
+- <code>ext-public</code> (for VLAN 4011)</p>
+<h3 id="3-providernetwork-status">3. ProviderNetwork Status<a class="headerlink" href="#3-providernetwork-status" title="Permanent link"> ¶</a></h3>
+<p>The existing ProviderNetwork <code>ext-cloud</code> is updated to include both VLANs:
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">status</span><span class="p">:</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">vlans</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;vlan4013&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;vlan4011&quot;</span><span class="p p-Indicator">]</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">ready</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">readyNodes</span><span class="p">:</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc-master-1</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc-worker-1</span>
+</span></code></pre></div></p>
+<h2 id="configuration-steps">Configuration Steps<a class="headerlink" href="#configuration-steps" title="Permanent link"> ¶</a></h2>
+<h3 id="1-apply-vlan-configuration">1. Apply VLAN Configuration<a class="headerlink" href="#1-apply-vlan-configuration" title="Permanent link"> ¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>examples/networking/additional-external-network.yaml
+</span></code></pre></div>
+<h3 id="2-verify-configuration">2. Verify Configuration<a class="headerlink" href="#2-verify-configuration" title="Permanent link"> ¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Check ProviderNetwork VLANs</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>provider-network<span class="w"> </span>ext-cloud<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.status.vlans}&#39;</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="c1"># Expected output: [&quot;vlan4013&quot;,&quot;vlan4011&quot;]</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1"># Check external subnets</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>kubectl<span class="w"> </span>get<span class="w"> </span>subnets<span class="w"> </span>ext-cloud<span class="w"> </span>ext-public
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># Expected: ext-cloud (100.65.0.0/16) and ext-public (168.119.17.48/28)</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="c1"># Check EIP assignments</span>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>kubectl<span class="w"> </span>get<span class="w"> </span>eips<span class="w"> </span>-A
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="c1"># Shows which projects are using which external networks</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="c1"># Check OVS bridge configuration</span>
+</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span><span class="o">[</span>ovs-pod<span class="o">]</span><span class="w"> </span>--<span class="w"> </span>ovs-vsctl<span class="w"> </span>show<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-A<span class="w"> </span><span class="m">10</span><span class="w"> </span><span class="s2">&quot;br-ext-cloud&quot;</span>
+</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>
+</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="c1"># Check OVN logical switches</span>
+</span><span id="__span-3-17"><a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span><span class="o">[</span>ovn-central-pod<span class="o">]</span><span class="w"> </span>--<span class="w"> </span>ovn-nbctl<span class="w"> </span>ls-list<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>ext
+</span></code></pre></div>
+<h3 id="3-test-with-project">3. Test with Project<a class="headerlink" href="#3-test-with-project" title="Permanent link"> ¶</a></h3>
+<p>Create projects to test both network types:</p>
+<p><strong>Project using Cloud Network:</strong>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc.com/v1</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Project</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test-project-cloud</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test-org</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nt">cidrBlock</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.200.0.0/24</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span><span class="nt">egressNetworkType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cloud</span><span class="w">  </span><span class="c1"># Uses ext-cloud subnet (100.65.0.0/16)</span>
+</span></code></pre></div></p>
+<p><strong>Project using Public Network:</strong>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc.com/v1</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Project</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test-project-public</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test-org</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">cidrBlock</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.201.0.0/24</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span><span class="nt">egressNetworkType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">public</span><span class="w">  </span><span class="c1"># Uses ext-public subnet (168.119.17.48/28)</span>
+</span></code></pre></div></p>
+<h2 id="key-points">Key Points<a class="headerlink" href="#key-points" title="Permanent link"> ¶</a></h2>
+<ol>
+<li><strong>Single ProviderNetwork</strong>: Use one ProviderNetwork per physical interface with multiple VLANs attached</li>
+<li><strong>Automatic Configuration</strong>: OVS bridges, patch ports, and OVN logical switches are created automatically</li>
+<li><strong>VLAN Trunking</strong>: The physical interface supports multiple VLANs simultaneously</li>
+<li><strong>No Manual OVS Changes</strong>: All OVS/OVN modifications are handled by Kube-DC controllers</li>
+</ol>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link"> ¶</a></h2>
-<p>This guide assumes you're working from an <strong>Organization Admin</strong> perspective. You'll need:</p>
 <ul>
-<li>Access to the Kube-DC cluster with organization admin privileges</li>
-<li><code>kubectl</code> configured to access your cluster with organization admin privileges</li>
-<li>Access to the Keycloak organization admin console</li>
+<li>Physical network infrastructure supporting VLAN trunking</li>
+<li>vSwitch configured with appropriate VLAN IDs</li>
 </ul>
-<div class="admonition tip">
-<p class="admonition-title">Before You Begin</p>
-<p>During organization and project creation you will get a namespace with organization name <code>&lt;orgname&gt;</code> created and project namespace with <code>&lt;orgname&gt;-&lt;projectname&gt;</code> pattern.</p>
-</div>
-<h2 id="step-by-step-guide">Step-by-Step Guide<a class="headerlink" href="#step-by-step-guide" title="Permanent link"> ¶</a></h2>
-<h3 id="creating-project-roles">Creating Project Roles<a class="headerlink" href="#creating-project-roles" title="Permanent link"> ¶</a></h3>
-<p>Create a Kubernetes Role to define permissions within a project namespace. These roles dictate what actions users can perform on specific resources.</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rbac.k8s.io/v1</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Role</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb-demo</span><span class="w">  </span><span class="c1"># Replace with your project namespace</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">resource-manager</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nt">rules</span><span class="p">:</span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">apiGroups</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;&quot;</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># &quot;&quot; indicates the core API group</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">    </span><span class="nt">resources</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;pods&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;services&quot;</span><span class="p p-Indicator">]</span>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="nt">verbs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;get&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;list&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;create&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;watch&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;delete&quot;</span><span class="p p-Indicator">]</span>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">apiGroups</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;apps&quot;</span><span class="p p-Indicator">]</span>
-</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">    </span><span class="nt">resources</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;deployments&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;daemonsets&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;replicasets&quot;</span><span class="p p-Indicator">]</span>
-</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">    </span><span class="nt">verbs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;get&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;list&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;create&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;watch&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;delete&quot;</span><span class="p p-Indicator">]</span>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link"> ¶</a></h2>
+<h3 id="check-vlan-interface-on-nodes">Check VLAN Interface on Nodes<a class="headerlink" href="#check-vlan-interface-on-nodes" title="Permanent link"> ¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># On cluster nodes</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>ip<span class="w"> </span>link<span class="w"> </span>show<span class="w"> </span>enp0s31f6.4011
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>ip<span class="w"> </span>addr<span class="w"> </span>show<span class="w"> </span>enp0s31f6.4011
 </span></code></pre></div>
-<p>Apply the role to your namespace using:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>role.yaml
+<h3 id="check-ovn-resources">Check OVN Resources<a class="headerlink" href="#check-ovn-resources" title="Permanent link"> ¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Check OVN-EIP resources</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>ovn-eip<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>ext-public
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Check subnet status</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>kubectl<span class="w"> </span>get<span class="w"> </span>subnet<span class="w"> </span>ext-public<span class="w"> </span>-o<span class="w"> </span>yaml
 </span></code></pre></div>
-<div class="admonition warning">
-<p class="admonition-title">Role Scope</p>
-<p>Remember that Roles are namespace-scoped. If you need permissions across multiple namespaces, you need to create a separate Role in each Project namespace.</p>
-</div>
-<h3 id="creating-organization-groups">Creating Organization Groups<a class="headerlink" href="#creating-organization-groups" title="Permanent link"> ¶</a></h3>
-<p>Create an OrganizationGroup Custom Resource (CR) to define group permissions across projects.</p>
-<div class="admonition important">
-<p class="admonition-title">Key Points</p>
-<ul>
-<li>The OrganizationGroup CR automatically creates a corresponding group in Keycloak</li>
-<li>This CR <strong>must be created in the organization namespace</strong>, not the project namespace</li>
-<li>Role bindings would be created by this CR</li>
-</ul>
-</div>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc.com/v1</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">OrganizationGroup</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;app-manager&quot;</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb</span><span class="w">  </span><span class="c1"># namespace of the organization (not the project)</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">permissions</span><span class="p">:</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">project</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;demo&quot;</span>
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nt">roles</span><span class="p">:</span>
-</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">resource-manager</span>
-</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span><span class="c1"># Additional projects and roles can be added:</span>
-</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span><span class="c1"># - project: &quot;prod&quot;</span>
-</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="c1">#   roles:</span>
-</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span><span class="c1">#   - resource-manager</span>
+<h3 id="test-connectivity">Test Connectivity<a class="headerlink" href="#test-connectivity" title="Permanent link"> ¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Test from pod</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-n<span class="w"> </span><span class="o">[</span>namespace<span class="o">]</span><span class="w"> </span><span class="o">[</span>pod<span class="o">]</span><span class="w"> </span>--<span class="w"> </span>wget<span class="w"> </span>-qO-<span class="w"> </span>http://httpbin.org/ip
 </span></code></pre></div>
-<p>Apply the group configuration:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>organization-group.yaml
-</span></code></pre></div>
-<h3 id="managing-users-in-keycloak">Managing Users in Keycloak<a class="headerlink" href="#managing-users-in-keycloak" title="Permanent link"> ¶</a></h3>
-<h4 id="access-keycloak-admin-console">Access Keycloak Admin Console<a class="headerlink" href="#access-keycloak-admin-console" title="Permanent link"> ¶</a></h4>
-<p>Retrieve Keycloak access credentials from your organization namespace:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>secret<span class="w"> </span>realm-access<span class="w"> </span>-n<span class="w"> </span>shalb<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.data.url}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>base64<span class="w"> </span>-d
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>secret<span class="w"> </span>realm-access<span class="w"> </span>-n<span class="w"> </span>shalb<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.data.user}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>base64<span class="w"> </span>-d
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>kubectl<span class="w"> </span>get<span class="w"> </span>secret<span class="w"> </span>realm-access<span class="w"> </span>-n<span class="w"> </span>shalb<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.data.password}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>base64<span class="w"> </span>-d
-</span></code></pre></div>
-<div class="admonition tip">
-<p class="admonition-title">Remember</p>
-<p>Replace <code>shalb</code> with your own organization namespace in the commands above.</p>
-</div>
-<h4 id="create-and-configure-users">Create and Configure Users<a class="headerlink" href="#create-and-configure-users" title="Permanent link"> ¶</a></h4>
-<ol>
-<li>Log in to the Keycloak admin console using the retrieved credentials</li>
-<li>Navigate to <strong>Users → Add User</strong>
-<img alt="Add User" src="../images/keycloak-add-user.png" /></li>
-<li>Fill in the required user information</li>
-<li>Set up initial password in the <strong>Credentials</strong> tab</li>
-<li>Add the user to the appropriate group (e.g., "app-manager") via the <strong>Groups</strong> tab
-<img alt="Join Group" src="../images/keycloak-user-join-group.png" /></li>
-</ol>
-<div class="admonition info">
-<p class="admonition-title">User Group Mapping</p>
-<p>Any groups created via OrganizationGroup CRs will appear automatically in Keycloak. Changes to group membership in Keycloak are synchronized with Kubernetes RBAC.</p>
-</div>
-<h3 id="accessing-kube-dc-ui">Accessing Kube-DC UI<a class="headerlink" href="#accessing-kube-dc-ui" title="Permanent link"> ¶</a></h3>
-<ol>
-<li>Navigate to the Kube-DC UI login page</li>
-<li>Log in using the credentials created in Keycloak</li>
-<li>Verify access to assigned project resources</li>
-</ol>
-<div class="admonition tip">
-<p class="admonition-title">Permissions Troubleshooting</p>
-<p>If a user cannot access expected resources:
-- Verify they're assigned to the correct groups in Keycloak
-- Check that the OrganizationGroup CR includes the correct projects and roles
-- Ensure the underlying Kubernetes Roles have appropriate permissions
-- Examine the Keycloak logs for authentication issues</p>
-<p>Permission changes may take up to 5 minutes to propagate through the system.</p>
-</div>
 
 
 
