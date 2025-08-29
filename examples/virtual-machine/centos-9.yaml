@@ -1,0 +1,94 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: centos-9-base-img
+spec:
+  pvc:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 15G
+    storageClassName: local-path
+  source:
+    http:
+      url: https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: centos-9-base-img
+spec:
+  running: true
+  template:
+    spec:
+      accessCredentials:
+      - sshPublicKey:
+          propagationMethod:
+            qemuGuestAgent:
+              users:
+              - centos
+          source:
+            secret:
+              secretName: authorized-keys-default
+      networks:
+      - name: vpc_net_0
+        multus:
+          default: true
+          networkName: shalb-dev/default
+      domain:
+        devices:
+          interfaces:
+            - name: vpc_net_0
+              bridge: {}
+          disks:
+          - disk: 
+              bus: virtio
+            name: root-volume
+          - name: cloudinitdisk
+            disk:
+              bus: virtio
+        machine:
+          type: q35
+        cpu:
+          cores: 1
+        memory:
+          guest: 4G
+      readinessProbe:
+        guestAgentPing: {}
+        failureThreshold: 10
+        initialDelaySeconds: 30
+        periodSeconds: 10
+        timeoutSeconds: 5
+      terminationGracePeriodSeconds: 60
+      volumes:
+      - dataVolume:
+          name: centos-9-base-img
+        name: root-volume
+      - name: cloudinitdisk
+        cloudInitNoCloud:
+          userData: |-
+            #cloud-config
+            package_update: true
+            package_upgrade: true
+            users:
+            - name: centos
+              groups: wheel
+              sudo: ALL=(ALL) NOPASSWD:ALL
+              shell: /bin/bash
+              lock_passwd: false
+            packages:
+            - qemu-guest-agent
+            - lrzsz
+            - policycoreutils-python-utils
+            runcmd:
+            - setenforce 0
+            - sed -i 's/SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
+            - setsebool -P virt_qemu_ga_manage_ssh 1
+            - setsebool -P virt_qemu_ga_exec 1
+            - setsebool -P virt_qemu_ga_file_transfer 1
+            - restorecon -R /usr/bin/qemu-ga
+            - semanage fcontext -a -t virt_qemu_ga_exec_t '/usr/bin/qemu-ga' || true
+            - restorecon /usr/bin/qemu-ga
+            - systemctl enable --now qemu-guest-agent
+            - systemctl restart qemu-guest-agent
