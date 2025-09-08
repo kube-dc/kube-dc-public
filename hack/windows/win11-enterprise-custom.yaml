@@ -1,0 +1,87 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: win11-enterprise-custom
+  namespace: shalb-dev
+spec:
+  runStrategy: Always
+  template:
+    metadata:
+      labels:
+        kubevirt.io/vm: win11-enterprise-custom
+    spec:
+      readinessProbe:
+        guestAgentPing: {}
+        failureThreshold: 10
+        initialDelaySeconds: 60
+        periodSeconds: 10
+        timeoutSeconds: 5
+      accessCredentials:
+      - sshPublicKey:
+          source:
+            secret:
+              secretName: authorized-keys-default
+          propagationMethod:
+            qemuGuestAgent:
+              users:
+              - kube-dc
+      terminationGracePeriodSeconds: 180
+      domain:
+        cpu:
+          cores: 4
+          model: host-model
+        memory:
+          guest: 12Gi
+        firmware:
+          bootloader:
+            efi:
+              secureBoot: true
+              persistent: true
+        features:
+          smm:
+            enabled: true
+        devices:
+          tpm:
+            persistent: true
+          disks:
+            - name: windows-disk
+              disk:
+                bus: sata
+            - name: cloudinitdisk
+              disk:
+                bus: sata
+          interfaces:
+            - name: vpc_net_0
+              bridge: {}
+        resources:
+          requests:
+            memory: 12Gi
+            cpu: 4
+      networks:
+        - name: vpc_net_0
+          multus:
+            default: true
+            networkName: shalb-dev/default
+      volumes:
+        - name: windows-disk
+          dataVolume:
+            name: windows11-enterprise-custom-disk
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              users:
+                - name: kube-dc
+                  groups: administrators
+                  shell: cmd
+                  lock_passwd: false
+                  passwd: $6$rounds=4096$saltsalt$L9uC.dYbxgLyGweFl8mM9.5c7Jq4OqNlkQjJ8V8K2L3M4N5O6P7Q8R9S0T1U2V3W4X5Y6Z7A8B9C0D1E2F3G4H5
+              packages:
+                - qemu-guest-agent
+                - openssh
+              runcmd:
+                - powershell -Command "Set-Service -Name QEMU-GA -StartupType Automatic"
+                - powershell -Command "Start-Service QEMU-GA"
+                - powershell -Command "Set-Service -Name sshd -StartupType Automatic"
+                - powershell -Command "Start-Service sshd"
+                - powershell -Command "New-NetFirewallRule -DisplayName 'SSH' -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow"

@@ -1,0 +1,111 @@
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: windows11-installer
+  namespace: shalb-dev
+spec:
+  source:
+    http:
+      url: "http://iso.stage.kube-dc.com/Win11_24H2_EnglishInternational_x64.iso"
+  storage:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 6Gi
+    storageClassName: local-path
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: virtio-drivers
+  namespace: shalb-dev
+spec:
+  source:
+    http:
+      url: "http://iso.stage.kube-dc.com/virtio-win.iso"
+  storage:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1Gi
+    storageClassName: local-path
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: windows11-disk
+  namespace: shalb-dev
+spec:
+  source:
+    blank: {}
+  storage:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 60Gi
+    storageClassName: local-path
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: windows11-vm
+  namespace: shalb-dev
+spec:
+  runStrategy: Always
+  template:
+    metadata:
+      labels:
+        kubevirt.io/vm: windows11-vm
+    spec:
+      domain:
+        machine:
+          type: q35
+        cpu:
+          cores: 4
+        memory:
+          guest: 12Gi
+        firmware:
+          bootloader:
+            efi:
+              secureBoot: true
+              persistent: true
+        features:
+          smm:
+            enabled: true
+        devices:
+          tpm:
+            persistent: true
+          autoattachGraphicsDevice: true
+          disks:
+            - name: windows11-installer
+              cdrom:
+                bus: sata
+              bootOrder: 1
+            - name: virtio-drivers
+              cdrom:
+                bus: sata
+            - name: windows11-disk
+              disk:
+                bus: virtio
+          interfaces:
+            - name: vpc_net_0
+              bridge: {}
+      networks:
+        - name: vpc_net_0
+          multus:
+            default: true
+            networkName: shalb-dev/default
+      volumes:
+        - name: windows11-disk
+          dataVolume:
+            name: windows11-disk
+        - name: windows11-installer
+          dataVolume:
+            name: windows11-installer
+        - name: virtio-drivers
+          dataVolume:
+            name: virtio-drivers

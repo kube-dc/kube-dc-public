@@ -1,0 +1,17 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: windows11-enterprise-custom-disk
+  namespace: shalb-dev
+spec:
+  source:
+    pvc:
+      namespace: shalb-dev
+      name: windows11-enterprise-disk
+  storage:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 60Gi
+    storageClassName: local-path

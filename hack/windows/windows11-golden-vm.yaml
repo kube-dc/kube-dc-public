@@ -1,0 +1,66 @@
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: windows11-golden-disk
+  namespace: shalb-dev
+spec:
+  source:
+    pvc:
+      name: windows11-disk
+      namespace: shalb-dev
+  storage:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 60Gi
+    storageClassName: local-path
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: windows11-golden-vm
+  namespace: shalb-dev
+spec:
+  runStrategy: Always
+  template:
+    metadata:
+      labels:
+        kubevirt.io/vm: windows11-golden-vm
+    spec:
+      domain:
+        machine:
+          type: q35
+        cpu:
+          cores: 4
+        memory:
+          guest: 8Gi
+        firmware:
+          bootloader:
+            efi:
+              secureBoot: true
+              persistent: true
+        features:
+          smm:
+            enabled: true
+        devices:
+          tpm:
+            persistent: true
+          autoattachGraphicsDevice: true
+          disks:
+            - name: windows11-golden-disk
+              disk:
+                bus: sata
+          interfaces:
+            - name: vpc_net_0
+              bridge: {}
+      networks:
+        - name: vpc_net_0
+          multus:
+            default: true
+            networkName: shalb-dev/default
+      volumes:
+        - name: windows11-golden-disk
+          dataVolume:
+            name: windows11-golden-disk

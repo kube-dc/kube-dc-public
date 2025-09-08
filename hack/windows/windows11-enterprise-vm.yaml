@@ -1,0 +1,88 @@
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: windows11-enterprise-installer
+  namespace: shalb-dev
+spec:
+  source:
+    http:
+      url: "http://iso.stage.kube-dc.com/windows11-enterprise-us.iso"
+  storage:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 6Gi
+    storageClassName: local-path
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: windows11-enterprise-disk
+  namespace: shalb-dev
+spec:
+  source:
+    blank: {}
+  storage:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 60Gi
+    storageClassName: local-path
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: windows11-enterprise-vm
+  namespace: shalb-dev
+spec:
+  runStrategy: Always
+  template:
+    metadata:
+      labels:
+        kubevirt.io/vm: windows11-enterprise-vm
+    spec:
+      domain:
+        machine:
+          type: q35
+        cpu:
+          cores: 4
+        memory:
+          guest: 12Gi
+        firmware:
+          bootloader:
+            efi:
+              secureBoot: true
+              persistent: true
+        features:
+          smm:
+            enabled: true
+        devices:
+          tpm:
+            persistent: true
+          autoattachGraphicsDevice: true
+          disks:
+            - name: windows11-enterprise-installer
+              cdrom:
+                bus: sata
+              bootOrder: 1
+            - name: virtio-drivers
+              cdrom:
+                bus: sata
+            - name: windows11-enterprise-disk
+              disk:
+                bus: sata
+          interfaces: []
+      networks: []
+      volumes:
+        - name: windows11-enterprise-disk
+          dataVolume:
+            name: windows11-enterprise-disk
+        - name: windows11-enterprise-installer
+          dataVolume:
+            name: windows11-enterprise-installer
+        - name: virtio-drivers
+          dataVolume:
+            name: virtio-drivers
