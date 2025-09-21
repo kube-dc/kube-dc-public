@@ -123,10 +123,16 @@ frontend:
     httpGet:
       path: /
       port: 80
+    timeoutSeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
   readinessProbe:
     httpGet:
       path: /
       port: 80
+    timeoutSeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
 
   autoscaling:
     enabled: false
@@ -217,10 +223,16 @@ backend:
     httpGet:
       path: /
       port: 3333
+    timeoutSeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
   readinessProbe:
     httpGet:
       path: /
       port: 3333
+    timeoutSeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
 
   autoscaling:
     enabled: false
