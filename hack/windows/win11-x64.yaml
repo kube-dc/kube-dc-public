@@ -12,7 +12,7 @@ metadata:
 spec:
   source:
     http:
-      url: "http://iso.stage.kube-dc.com/windows11-x64-golden.qcow2"
+      url: "https://iso.stage.kube-dc.com/windows11-x64-golden.qcow2"
   storage:
     accessModes:
       - ReadWriteOnce

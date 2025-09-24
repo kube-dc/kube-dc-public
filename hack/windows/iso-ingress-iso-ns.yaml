@@ -4,12 +4,17 @@ metadata:
   name: iso-server-ingress
   namespace: iso
   annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod-http
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
 spec:
   ingressClassName: nginx
+  tls:
+  - hosts:
+    - iso.stage.kube-dc.com
+    secretName: iso-server-tls
   rules:
   - host: iso.stage.kube-dc.com
     http:

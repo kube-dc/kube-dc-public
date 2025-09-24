@@ -119,20 +119,27 @@ spec:
     targetPort: 80
 ```
 
-### 1.4 Ingress Configuration
+### 1.4 Ingress Configuration with TLS
 
 ```yaml
 # hack/windows/iso-ingress-iso-ns.yaml
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: iso-ingress
+  name: iso-server-ingress
   namespace: iso
   annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: "25g"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "1800"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "1800"
+    cert-manager.io/cluster-issuer: letsencrypt-prod-http
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
 spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - iso.stage.kube-dc.com
+    secretName: iso-server-tls
   rules:
   - host: iso.stage.kube-dc.com
     http:
@@ -141,7 +148,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: nginx-iso-server
+            name: iso-server
             port:
               number: 80
 ```
@@ -197,8 +204,8 @@ kubectl cp hack/windows/install-openssh-windows.ps1 iso/iso-upload-pod:/storage/
 kubectl delete pod iso-upload-pod -n iso --wait=true
 
 # Verify files are accessible
-curl -I http://iso.stage.kube-dc.com/win11-x64.iso
-curl -I http://iso.stage.kube-dc.com/virtio-win.iso
+curl -I https://iso.stage.kube-dc.com/win11-x64.iso
+curl -I https://iso.stage.kube-dc.com/virtio-win.iso
 ```
 
 ## Step 3: Fresh Windows Installation
@@ -252,12 +259,12 @@ After Windows installation, configure SSH and RDP access:
 
 ```powershell
 # Method 1: Download and run script
-Invoke-WebRequest -Uri "http://iso.stage.kube-dc.com/install-openssh-windows.ps1" -OutFile "install-openssh-windows.ps1"
+Invoke-WebRequest -Uri "https://iso.stage.kube-dc.com/install-openssh-windows.ps1" -OutFile "install-openssh-windows.ps1"
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 .\install-openssh-windows.ps1
 
 # Method 2: Direct execution (bypass execution policy)
-PowerShell -ExecutionPolicy Bypass -Command "Invoke-Expression (Invoke-WebRequest -Uri 'http://iso.stage.kube-dc.com/install-openssh-windows.ps1').Content"
+PowerShell -ExecutionPolicy Bypass -Command "Invoke-Expression (Invoke-WebRequest -Uri 'https://iso.stage.kube-dc.com/install-openssh-windows.ps1').Content"
 ```
 
 **Script Features:**
@@ -345,7 +352,7 @@ kubectl cp shalb-dev/export-golden-image:/pvc/windows11-x64-golden.qcow2 /tmp/
 kubectl cp /tmp/windows11-x64-golden.qcow2 iso/iso-upload-pod:/storage/
 
 # Verify golden image is available
-curl -I http://iso.stage.kube-dc.com/windows11-x64-golden.qcow2
+curl -I https://iso.stage.kube-dc.com/windows11-x64-golden.qcow2
 
 # Clean up export pod
 kubectl delete pod export-golden-image -n shalb-dev --wait=true
@@ -471,15 +478,15 @@ kubectl top pods -n <namespace> | grep virt-launcher
 
 Once deployed, the following resources are available:
 
-- **Windows 11 ISO**: `http://iso.stage.kube-dc.com/win11-x64.iso` (5.4GB)
-- **VirtIO Drivers**: `http://iso.stage.kube-dc.com/virtio-win.iso` (700MB)
-- **SSH Script**: `http://iso.stage.kube-dc.com/install-openssh-windows.ps1` (5KB)
-- **Golden Image**: `http://iso.stage.kube-dc.com/windows11-x64-golden.qcow2` (21.3GB)
+- **Windows 11 ISO**: `https://iso.stage.kube-dc.com/win11-x64.iso` (5.4GB)
+- **VirtIO Drivers**: `https://iso.stage.kube-dc.com/virtio-win.iso` (700MB)
+- **SSH Script**: `https://iso.stage.kube-dc.com/install-openssh-windows.ps1` (5KB)
+- **Golden Image**: `https://iso.stage.kube-dc.com/windows11-x64-golden.qcow2` (21.3GB)
 
 ## Security Considerations
 
 - **SSH Keys**: Use KubeVirt accessCredentials for secure key injection
-- **Windows Updates**: Keep golden images updated regularly
+{{ ... }}
 - **Network Policies**: Implement Kubernetes network policies for VM isolation
 - **Sysprep**: Run before creating golden images to avoid SID conflicts
 - **Firewall**: Script configures Windows Firewall appropriately for SSH, RDP, and ICMP

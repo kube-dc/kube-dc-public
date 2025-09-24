@@ -40,6 +40,9 @@ spec:
           qemu-img info windows11-x64-golden.qcow2
           ls -lh windows11-x64-golden.qcow2
           
+          # Upload to ISO server storage (using internal service)
+          curl -T windows11-x64-golden.qcow2 http://iso-server.iso.svc.cluster.local/windows11-x64-golden.qcow2 || echo "Upload failed, manual copy required"
+          
           # Show converted image size in GB
           QCOW2_SIZE_BYTES=$(qemu-img info --output=json windows11-x64-golden.qcow2 | grep '"virtual-size"' | cut -d: -f2 | tr -d ' ,')
           QCOW2_SIZE_GB=$((QCOW2_SIZE_BYTES / 1024 / 1024 / 1024))
