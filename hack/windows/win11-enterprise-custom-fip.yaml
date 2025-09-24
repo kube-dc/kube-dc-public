@@ -1,8 +1,0 @@
-apiVersion: kube-dc.com/v1
-kind: FIp
-metadata:
-  name: win11-enterprise-custom
-  namespace: shalb-dev
-spec:
-  ipAddress: 10.1.0.68
-  externalNetworkType: public

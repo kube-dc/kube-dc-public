@@ -1,0 +1,14 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataSource
+metadata:
+  name: windows11-enterprise-golden
+  namespace: shalb-dev
+  labels:
+    app: golden-image
+    os: windows11
+    version: enterprise
+spec:
+  source:
+    pvc:
+      name: windows11-enterprise-custom-disk
+      namespace: shalb-dev

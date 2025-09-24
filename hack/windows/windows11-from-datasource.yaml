@@ -1,0 +1,104 @@
+---
+# Windows 11 VM from DataSource (PVC clone - most reliable method)
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: windows11-from-datasource
+  namespace: shalb-dev
+  labels:
+    app: windows11-vm
+    source: datasource-clone
+    os: windows11
+spec:
+  sourceRef:
+    kind: DataSource
+    name: windows11-enterprise-golden
+    namespace: shalb-dev
+  storage:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 60Gi
+    storageClassName: local-path
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: windows11-from-datasource
+  namespace: shalb-dev
+  labels:
+    app: windows11-vm
+    source: datasource-clone
+    os: windows11
+spec:
+  runStrategy: RerunOnFailure  # Use runStrategy instead of deprecated running field
+  template:
+    metadata:
+      labels:
+        kubevirt.io/domain: windows11-from-datasource
+        kubevirt.io/size: medium
+    spec:
+      domain:
+        cpu:
+          cores: 4
+          sockets: 1
+          threads: 1
+        devices:
+          disks:
+            - name: harddrive
+              disk:
+                bus: virtio  # VirtIO drivers already installed in golden image
+          inputs:
+            - type: tablet
+              bus: usb
+              name: tablet
+          interfaces:
+            - name: vpc_net_0
+              bridge: {}
+        features:
+          acpi: {}
+          apic: {}
+          hyperv:
+            relaxed: {}
+            vapic: {}
+            spinlocks:
+              spinlocks: 8191
+            vpindex: {}
+            runtime: {}
+            synic: {}
+            reset: {}
+            frequencies: {}
+        firmware:
+          bootloader:
+            efi:
+              secureBoot: false
+        machine:
+          type: pc-q35-rhel8.6.0
+        resources:
+          requests:
+            memory: 8Gi
+            cpu: 2
+          limits:
+            memory: 8Gi
+            cpu: 4
+      # Use Multus networking for proper IP assignment
+      networks:
+        - name: vpc_net_0
+          multus:
+            default: true
+            networkName: shalb-dev/default
+      volumes:
+        - name: harddrive
+          dataVolume:
+            name: windows11-from-datasource
+      # SSH key injection via QEMU Guest Agent (already configured in golden image)
+      accessCredentials:
+        - sshPublicKey:
+            source:
+              secret:
+                secretName: authorized-keys-default
+            propagationMethod:
+              qemuGuestAgent:
+                users:
+                  - kube-dc

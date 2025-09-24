@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: export-golden-image
+  namespace: shalb-dev
+  labels:
+    app: golden-image-export
+spec:
+  restartPolicy: Never
+  containers:
+    - name: exporter
+      image: ubuntu:22.04
+      command: ["sh", "-c"]
+      args:
+        - |
+          set -e
+          echo "Starting golden image export..."
+          
+          # Install qemu-utils
+          apt-get update && apt-get install -y qemu-utils
+          
+          cd /pvc
+          
+          # Check source disk
+          ls -lh disk.img
+          echo "Source disk info:"
+          qemu-img info disk.img
+          
+          # Show disk size in GB
+          DISK_SIZE_BYTES=$(qemu-img info --output=json disk.img | grep '"virtual-size"' | cut -d: -f2 | tr -d ' ,')
+          DISK_SIZE_GB=$((DISK_SIZE_BYTES / 1024 / 1024 / 1024))
+          echo "Disk size: ${DISK_SIZE_GB}GB (${DISK_SIZE_BYTES} bytes)"
+          
+          # Convert to qcow2 with compression
+          echo "Converting to qcow2 format..."
+          qemu-img convert -p -O qcow2 -c disk.img windows11-x64-golden.qcow2
+          
+          # Verify converted image
+          echo "Converted image info:"
+          qemu-img info windows11-x64-golden.qcow2
+          ls -lh windows11-x64-golden.qcow2
+          
+          # Show converted image size in GB
+          QCOW2_SIZE_BYTES=$(qemu-img info --output=json windows11-x64-golden.qcow2 | grep '"virtual-size"' | cut -d: -f2 | tr -d ' ,')
+          QCOW2_SIZE_GB=$((QCOW2_SIZE_BYTES / 1024 / 1024 / 1024))
+          QCOW2_ACTUAL_SIZE=$(ls -l windows11-x64-golden.qcow2 | awk '{print $5}')
+          QCOW2_ACTUAL_GB=$((QCOW2_ACTUAL_SIZE / 1024 / 1024 / 1024))
+          echo "QCOW2 virtual size: ${QCOW2_SIZE_GB}GB (${QCOW2_SIZE_BYTES} bytes)"
+          echo "QCOW2 actual size: ${QCOW2_ACTUAL_GB}GB (${QCOW2_ACTUAL_SIZE} bytes)"
+          
+          echo "Export complete. Keeping container running for file extraction..."
+          sleep 3600
+      volumeMounts:
+        - name: golden-disk
+          mountPath: /pvc
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "1"
+        limits:
+          memory: "4Gi"
+          cpu: "2"
+  volumes:
+    - name: golden-disk
+      persistentVolumeClaim:
+        claimName: windows11-disk

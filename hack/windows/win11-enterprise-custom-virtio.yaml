@@ -46,10 +46,10 @@ spec:
           disks:
             - name: windows-disk
               disk:
-                bus: sata
+                bus: virtio
             - name: cloudinitdisk
               disk:
-                bus: sata
+                bus: virtio
           interfaces:
             - name: vpc_net_0
               bridge: {}

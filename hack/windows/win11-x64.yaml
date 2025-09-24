@@ -1,0 +1,116 @@
+---
+# Windows 11 VM from Golden Image (HTTP source - cross-namespace compatible)
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: win11-x64-disk
+  namespace: shalb-dev
+  labels:
+    app: windows11-vm
+    source: golden-image-http
+    os: windows11
+spec:
+  source:
+    http:
+      url: "http://iso.stage.kube-dc.com/windows11-x64-golden.qcow2"
+  storage:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 60Gi
+    storageClassName: local-path
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: win11-x64
+  namespace: shalb-dev
+  labels:
+    app: windows11-vm
+    source: golden-image-http
+    os: windows11
+spec:
+  runStrategy: RerunOnFailure  # More reliable than Always for golden images
+  template:
+    metadata:
+      labels:
+        kubevirt.io/domain: win11-x64
+        kubevirt.io/size: medium
+    spec:
+      readinessProbe:
+        guestAgentPing: {}
+        failureThreshold: 10
+        initialDelaySeconds: 60
+        periodSeconds: 10
+        timeoutSeconds: 5
+      accessCredentials:
+      - sshPublicKey:
+          source:
+            secret:
+              secretName: authorized-keys-default
+          propagationMethod:
+            qemuGuestAgent:
+              users:
+              - kube-dc
+      terminationGracePeriodSeconds: 180
+      domain:
+        cpu:
+          cores: 2
+          sockets: 1
+          threads: 1
+          model: host-model
+        memory:
+          guest: 8Gi
+        firmware:
+          bootloader:
+            efi:
+              secureBoot: false  # Disable for golden image compatibility
+              persistent: true
+        features:
+          smm:
+            enabled: true
+          acpi: {}
+          apic: {}
+          hyperv:
+            relaxed: {}
+            vapic: {}
+            spinlocks:
+              spinlocks: 8191
+            vpindex: {}
+            runtime: {}
+            synic: {}
+            reset: {}
+            frequencies: {}
+        devices:
+          tpm:
+            persistent: true
+          disks:
+            - name: windows-disk
+              disk:
+                bus: virtio  # VirtIO drivers pre-installed in golden image
+          inputs:
+            - type: tablet
+              bus: usb
+              name: tablet
+          interfaces:
+            - name: vpc_net_0
+              bridge: {}
+        machine:
+          type: pc-q35-rhel8.6.0
+        resources:
+          requests:
+            memory: 8Gi
+            cpu: 2
+          limits:
+            memory: 8Gi
+            cpu: 2
+      networks:
+        - name: vpc_net_0
+          multus:
+            default: true
+            networkName: shalb-dev/default
+      volumes:
+        - name: windows-disk
+          dataVolume:
+            name: win11-x64-disk
