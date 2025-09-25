@@ -1,0 +1,167 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: images-configmap
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: os-images
+data:
+  images.yaml: |
+    images:
+      - OS_NAME: "Ubuntu 24.04"
+        CLOUD_USER: ubuntu
+        OS_IMAGE_URL: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+        MIN_MEMORY: "1G"
+        MIN_VCPU: "1"
+        MIN_STORAGE: "20G"
+        FIRMWARE_TYPE: "bios"
+        MACHINE_TYPE: "q35"
+        FEATURES: "acpi"
+        CLOUD_INIT: |
+          #cloud-config
+          package_update: true
+          package_upgrade: true
+          packages:
+            - qemu-guest-agent
+          runcmd:
+            - systemctl enable --now qemu-guest-agent
+      - OS_NAME: "CentOS Stream 9"
+        CLOUD_USER: centos
+        OS_IMAGE_URL: "https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2"
+        MIN_MEMORY: "2G"
+        MIN_VCPU: "1"
+        MIN_STORAGE: "20G"
+        FIRMWARE_TYPE: "bios"
+        MACHINE_TYPE: "q35"
+        FEATURES: "acpi"
+        CLOUD_INIT: |
+          #cloud-config
+          package_update: true
+          package_upgrade: true
+          users:
+          - name: centos
+            groups: wheel
+            sudo: ALL=(ALL) NOPASSWD:ALL
+            shell: /bin/bash
+            lock_passwd: false
+          packages:
+            - qemu-guest-agent
+            - lrzsz
+            - policycoreutils-python-utils
+          runcmd:
+            - setenforce 0
+            - sed -i 's/SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
+            - setsebool -P virt_qemu_ga_manage_ssh 1
+            - setsebool -P virt_qemu_ga_exec 1
+            - setsebool -P virt_qemu_ga_file_transfer 1
+            - restorecon -R /usr/bin/qemu-ga
+            - semanage fcontext -a -t virt_qemu_ga_exec_t '/usr/bin/qemu-ga' || true
+            - restorecon /usr/bin/qemu-ga
+            - systemctl enable --now qemu-guest-agent
+            - systemctl restart qemu-guest-agent
+      - OS_NAME: "CirrOS (test)"
+        CLOUD_USER: cirros
+        OS_IMAGE_URL: "http://download.cirros-cloud.net/0.5.2/cirros-0.5.2-x86_64-disk.img"
+        MIN_MEMORY: "512M"
+        MIN_VCPU: "1"
+        MIN_STORAGE: "5G"
+        FIRMWARE_TYPE: "bios"
+        MACHINE_TYPE: "q35"
+        FEATURES: "acpi"
+        CLOUD_INIT: |
+          #cloud-config
+      - OS_NAME: "Debian 12 LTS"
+        CLOUD_USER: debian
+        OS_IMAGE_URL: "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
+        MIN_MEMORY: "1G"
+        MIN_VCPU: "1"
+        MIN_STORAGE: "20G"
+        FIRMWARE_TYPE: "bios"
+        MACHINE_TYPE: "q35"
+        FEATURES: "acpi"
+        CLOUD_INIT: |
+          #cloud-config
+          package_update: true
+          package_upgrade: true
+          packages:
+            - qemu-guest-agent
+          runcmd:
+            - systemctl enable --now qemu-guest-agent
+      - OS_NAME: "Fedora 39"
+        CLOUD_USER: fedora
+        OS_IMAGE_URL: "http://mirror.uv.es/mirror/fedora/linux/releases/39/Cloud/x86_64/images/Fedora-Cloud-Base-39-1.5.x86_64.qcow2"
+        MIN_MEMORY: "2G"
+        MIN_VCPU: "1"
+        MIN_STORAGE: "25G"
+        FIRMWARE_TYPE: "bios"
+        MACHINE_TYPE: "q35"
+        FEATURES: "acpi"
+        CLOUD_INIT: |
+          #cloud-config
+          package_update: true
+          package_upgrade: true
+          packages:
+            - qemu-guest-agent
+          runcmd:
+            - systemctl enable --now qemu-guest-agent
+      - OS_NAME: "openSUSE Leap 15.3"
+        CLOUD_USER: suse
+        OS_IMAGE_URL: "https://download.opensuse.org/distribution/leap/15.3/appliances/openSUSE-Leap-15.3-JeOS.x86_64-OpenStack-Cloud.qcow2"
+        MIN_MEMORY: "2G"
+        MIN_VCPU: "1"
+        MIN_STORAGE: "20G"
+        FIRMWARE_TYPE: "bios"
+        MACHINE_TYPE: "q35"
+        FEATURES: "acpi"
+        CLOUD_INIT: |
+          #cloud-config
+          package_update: true
+          package_upgrade: true
+          packages:
+            - qemu-guest-agent
+          runcmd:
+            - systemctl enable --now qemu-guest-agent
+      - OS_NAME: "Alpine Linux 3.19"
+        CLOUD_USER: alpine
+        OS_IMAGE_URL: "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/cloud/nocloud_alpine-3.19.1-x86_64-bios-cloudinit-r0.qcow2"
+        MIN_MEMORY: "512M"
+        MIN_VCPU: "1"
+        MIN_STORAGE: "10G"
+        FIRMWARE_TYPE: "bios"
+        MACHINE_TYPE: "q35"
+        FEATURES: "acpi"
+        CLOUD_INIT: |
+          #cloud-config
+          package_update: true
+          package_upgrade: true
+          packages:
+            - qemu-guest-agent
+          runcmd:
+            - rc-service qemu-guest-agent restart
+            - rc-update add qemu-guest-agent default
+      - OS_NAME: "Windows 11 Enterprise (Golden Image)"
+        CLOUD_USER: kube-dc
+        OS_IMAGE_URL: "https://iso.stage.kube-dc.com/windows11-x64-golden.qcow2"
+        MIN_MEMORY: "8G"
+        MIN_VCPU: "2"
+        MIN_STORAGE: "60G"
+        FIRMWARE_TYPE: "efi"
+        MACHINE_TYPE: "pc-q35-rhel8.6.0"
+        FEATURES: "hyperv,acpi,apic,smm,tpm"
+        CLOUD_INIT: |
+          # Windows golden image - pre-configured with SSH, RDP, and VirtIO drivers
+          # No cloud-init needed - uses QEMU Guest Agent for SSH key injection
+      - OS_NAME: "Windows 11 Enterprise (Fresh Install)"
+        CLOUD_USER: Administrator
+        OS_IMAGE_URL: "https://iso.stage.kube-dc.com/win11-x64.iso"
+        MIN_MEMORY: "8G"
+        MIN_VCPU: "4"
+        MIN_STORAGE: "60G"
+        FIRMWARE_TYPE: "efi"
+        MACHINE_TYPE: "pc-q35-rhel8.6.0"
+        FEATURES: "hyperv,acpi,apic,smm,tpm"
+        BOOT_ORDER: "cdrom,disk"
+        ADDITIONAL_DISKS: "virtio-drivers"
+        CLOUD_INIT: |
+          # Fresh Windows installation with VirtIO drivers
+          # Requires manual setup via VNC console

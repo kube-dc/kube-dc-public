@@ -30,6 +30,8 @@ nav:
     - Manage IP's and Load Balancers: tutorial-ip-and-lb.md
     - Additional External Networks: tutorial-networking-external.md
     - Configuring Kubeconfig for Local Access: tutorial-kubeconfig.md
+    - Windows VM Setup: tutorial-windows-vm.md
+    - Managing OS Images: managing-os-images.md
     # - Multi-Tenant Demo: tutorial-multi-tenant.md
     # - Managed Services Setup: tutorial-managed-services.md
     # - Billing & Cost Management Demo: tutorial-billing.md
