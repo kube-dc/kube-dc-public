@@ -1763,8 +1763,12 @@
 <li><strong>Finalizer</strong>: <code>kubeovn.io/kube-ovn-controller</code></li>
 <li><strong>Created by</strong>: <code>NewProjectVpc()</code> in <code>internal/project/res_vpc.go</code></li>
 <li><strong>Dependencies</strong>: Namespace must exist</li>
-<li><strong>Configuration</strong>:</li>
-<li>Static routes to external subnets</li>
+<li>
+<p><strong>Configuration</strong>:</p>
+</li>
+<li>
+<p>Static routes to external subnets</p>
+</li>
 <li>Extra external subnets based on <code>egressNetworkType</code></li>
 </ul>
 <h3 id="3-eip-external-ip-default-gateway">3. EIp (External IP - Default Gateway)<a class="headerlink" href="#3-eip-external-ip-default-gateway" title="Permanent link"> ¶</a></h3>
@@ -1775,8 +1779,12 @@
 <li><strong>Finalizer</strong>: <code>eip.kube-dc.com/finalizer</code></li>
 <li><strong>Created by</strong>: <code>NewProjectEip()</code> in <code>internal/project/res_eip_default.go</code></li>
 <li><strong>Dependencies</strong>: Namespace must exist</li>
-<li><strong>Ownership States</strong>:</li>
-<li><code>Released</code>: No active owners (initial state)</li>
+<li>
+<p><strong>Ownership States</strong>:</p>
+</li>
+<li>
+<p><code>Released</code>: No active owners (initial state)</p>
+</li>
 <li><code>Shared</code>: Has SNAT rule and/or LoadBalancer services as owners</li>
 <li><code>Exclusive</code>: Used by FIp resources</li>
 </ul>
@@ -1787,10 +1795,18 @@
 <li><strong>Finalizer</strong>: <code>kubeovn.io/kube-ovn-controller</code></li>
 <li><strong>Created by</strong>: EIp controller via <code>NewOvEipRes()</code> in <code>internal/eip/ovn_eip_res.go</code></li>
 <li><strong>Dependencies</strong>: EIp must exist, external subnet must be available</li>
-<li><strong>Labels</strong>:</li>
-<li><code>network.kube-dc.com/eip</code>: <code>{namespace}.{eip-name}</code></li>
-<li><strong>Annotations</strong>:</li>
-<li><code>kube-dc.com/ovn-eip-created-by-eip</code>: <code>{namespace}.{eip-name}</code></li>
+<li>
+<p><strong>Labels</strong>:</p>
+</li>
+<li>
+<p><code>network.kube-dc.com/eip</code>: <code>{namespace}.{eip-name}</code></p>
+</li>
+<li>
+<p><strong>Annotations</strong>:</p>
+</li>
+<li>
+<p><code>kube-dc.com/ovn-eip-created-by-eip</code>: <code>{namespace}.{eip-name}</code></p>
+</li>
 </ul>
 <h3 id="5-subnet">5. Subnet<a class="headerlink" href="#5-subnet" title="Permanent link"> ¶</a></h3>
 <ul>
@@ -1799,8 +1815,12 @@
 <li><strong>Finalizer</strong>: <code>kubeovn.io/kube-ovn-controller</code></li>
 <li><strong>Created by</strong>: <code>NewProjectSubnet()</code> in <code>internal/project/res_subnet.go</code></li>
 <li><strong>Dependencies</strong>: VPC must exist</li>
-<li><strong>Configuration</strong>:</li>
-<li>CIDR block from project spec</li>
+<li>
+<p><strong>Configuration</strong>:</p>
+</li>
+<li>
+<p>CIDR block from project spec</p>
+</li>
 <li>Associated with project VPC</li>
 <li>Gateway IP (first IP in CIDR)</li>
 </ul>
@@ -1821,8 +1841,12 @@
 <li><strong>Finalizer</strong>: <code>kubeovn.io/kube-ovn-controller</code></li>
 <li><strong>Created by</strong>: <code>NewProjectSnat()</code> in <code>internal/project/res_snat.go</code></li>
 <li><strong>Dependencies</strong>: OvnEip must exist and have IP assigned</li>
-<li><strong>Configuration</strong>:</li>
-<li>Links project subnet to external IP</li>
+<li>
+<p><strong>Configuration</strong>:</p>
+</li>
+<li>
+<p>Links project subnet to external IP</p>
+</li>
 <li>Enables outbound internet access for pods</li>
 </ul>
 <h3 id="8-secrets">8. Secrets<a class="headerlink" href="#8-secrets" title="Permanent link"> ¶</a></h3>

@@ -1705,9 +1705,11 @@
 <h1 id="windows-11-vm-tutorial-complete-setup-guide">Windows 11 VM Tutorial - Complete Setup Guide<a class="headerlink" href="#windows-11-vm-tutorial-complete-setup-guide" title="Permanent link"> ¶</a></h1>
 <p>This comprehensive guide covers the complete process of setting up Windows 11 VMs in KubeVirt, from infrastructure setup to golden image creation and deployment.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link"> ¶</a></h2>
-<p>This tutorial provides two deployment methods:
-1. <strong>Golden Image Deployment</strong> (Recommended) - Deploy pre-configured VMs in 5-10 minutes
-2. <strong>Fresh Installation</strong> - Create custom Windows installations with full control</p>
+<p>This tutorial provides two deployment methods:</p>
+<ol>
+<li><strong>Golden Image Deployment</strong> (Recommended) - Deploy pre-configured VMs in 5-10 minutes</li>
+<li><strong>Fresh Installation</strong> - Create custom Windows installations with full control</li>
+</ol>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link"> ¶</a></h2>
 <ul>
 <li>KubeVirt and CDI installed and running</li>
@@ -1855,7 +1857,7 @@
 <h3 id="21-download-windows-11-enterprise-iso">2.1 Download Windows 11 Enterprise ISO<a class="headerlink" href="#21-download-windows-11-enterprise-iso" title="Permanent link"> ¶</a></h3>
 <ol>
 <li>Visit: https://www.microsoft.com/en-us/evalcenter/download-windows-11-enterprise</li>
-<li>Select: <strong>ISO – Enterprise download 64-bit edition</strong> (90-day evaluation)</li>
+<li>Select: <strong>ISO – Enterprise download 64-bit edition</strong> (90-day evaluation)  </li>
 <li>Download the ISO file (approximately 5.4GB)</li>
 </ol>
 <h3 id="22-download-virtio-drivers">2.2 Download VirtIO Drivers<a class="headerlink" href="#22-download-virtio-drivers" title="Permanent link"> ¶</a></h3>
@@ -1907,18 +1909,32 @@
 </span></code></pre></div>
 <p><strong>Installation Steps:</strong></p>
 <ol>
-<li><strong>Boot from Windows ISO</strong>: VM boots from Windows installer (bootOrder: 1)</li>
-<li><strong>Load VirtIO Drivers</strong>: </li>
+<li>
+<p><strong>Boot from Windows ISO</strong>: VM boots from Windows installer (bootOrder: 1)</p>
+</li>
+<li>
+<p><strong>Load VirtIO Drivers</strong>: </p>
+</li>
 <li>When prompted for disk drivers, click "Load driver"</li>
 <li>Browse to VirtIO drivers CDROM</li>
 <li>Navigate to <code>/amd64/w11/</code> folder</li>
 <li>Install <strong>VirtIO SCSI controller</strong> drivers (for disk access)</li>
-<li><strong>DO NOT install network drivers yet</strong> (to create local account)</li>
-<li><strong>Install Windows</strong>: </li>
+<li>
+<p><strong>DO NOT install network drivers yet</strong> (to create local account)</p>
+</li>
+<li>
+<p><strong>Install Windows</strong>: </p>
+</li>
 <li>Select the 60GB VirtIO disk for installation</li>
-<li>Complete Windows 11 setup with local account</li>
-<li><strong>Post-Installation</strong>:</li>
-<li>Install remaining VirtIO drivers from CDROM (network, balloon, RNG)</li>
+<li>
+<p>Complete Windows 11 setup with local account</p>
+</li>
+<li>
+<p><strong>Post-Installation</strong>:</p>
+</li>
+<li>
+<p>Install remaining VirtIO drivers from CDROM (network, balloon, RNG)</p>
+</li>
 <li>Install QEMU Guest Agent from VirtIO drivers CDROM</li>
 <li>Run Windows Updates</li>
 </ol>
@@ -1932,13 +1948,15 @@
 </span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="c"># Method 2: Direct execution (bypass execution policy)</span>
 </span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="n">PowerShell</span> <span class="n">-ExecutionPolicy</span> <span class="n">Bypass</span> <span class="n">-Command</span> <span class="s2">&quot;Invoke-Expression (Invoke-WebRequest -Uri &#39;https://iso.stage.kube-dc.com/install-openssh-windows.ps1&#39;).Content&quot;</span>
 </span></code></pre></div>
-<p><strong>Script Features:</strong>
-- ✅ Installs OpenSSH Server using Windows capabilities
-- ✅ Configures SSH service for automatic startup
-- ✅ Opens SSH port 22 in Windows Firewall (all network profiles)
-- ✅ Enables Remote Desktop (port 3389)
-- ✅ Enables ICMP ping (IPv4 and IPv6)
-- ✅ Provides detailed verification and status reporting</p>
+<p><strong>Script Features:</strong></p>
+<ul>
+<li>✅ Installs OpenSSH Server using Windows capabilities</li>
+<li>✅ Configures SSH service for automatic startup  </li>
+<li>✅ Opens SSH port 22 in Windows Firewall (all network profiles)</li>
+<li>✅ Enables Remote Desktop (port 3389)</li>
+<li>✅ Enables ICMP ping (IPv4 and IPv6)</li>
+<li>✅ Provides detailed verification and status reporting</li>
+</ul>
 <h2 id="step-4-create-golden-image">Step 4: Create Golden Image<a class="headerlink" href="#step-4-create-golden-image" title="Permanent link"> ¶</a></h2>
 <h3 id="41-prepare-vm-for-golden-image">4.1 Prepare VM for Golden Image<a class="headerlink" href="#41-prepare-vm-for-golden-image" title="Permanent link"> ¶</a></h3>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># 1. Inside Windows VM, run Sysprep (optional but recommended)</span>

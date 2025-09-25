@@ -2074,7 +2074,7 @@
 <ol>
 <li>
 <p><strong>Update the ConfigMap:</strong>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Old URL</span>
+   <div class="language-yaml highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Old URL</span>
 </span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nt">OS_IMAGE_URL</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;https://old-server.com/ubuntu-24.04.qcow2&quot;</span>
 </span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="c1"># New URL  </span>
 </span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="nt">OS_IMAGE_URL</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;https://new-server.com/ubuntu-24.04.qcow2&quot;</span>
@@ -2082,7 +2082,7 @@
 </li>
 <li>
 <p><strong>Apply changes:</strong>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>charts/kube-dc/templates/os-images-configmap.yaml
+   <div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>charts/kube-dc/templates/os-images-configmap.yaml
 </span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>kubectl<span class="w"> </span>rollout<span class="w"> </span>restart<span class="w"> </span>deployment/kube-dc-backend<span class="w"> </span>-n<span class="w"> </span>kube-dc
 </span></code></pre></div></p>
 </li>
@@ -2142,7 +2142,7 @@
 <h3 id="resource-requirements_1">Resource Requirements<a class="headerlink" href="#resource-requirements_1" title="Permanent link"> ¶</a></h3>
 <ol>
 <li><strong>Set realistic minimums</strong> - Don't under-provision resources</li>
-<li><strong>Consider workload</strong> - Different use cases need different resources</li>
+<li><strong>Consider workload</strong> - Different use cases need different resources  </li>
 <li><strong>Test performance</strong> - Verify VMs perform well with set resources</li>
 </ol>
 <h3 id="security">Security<a class="headerlink" href="#security" title="Permanent link"> ¶</a></h3>
