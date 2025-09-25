@@ -217,18 +217,18 @@ kubectl rollout restart deployment/kube-dc-backend -n kube-dc
 If an image URL changes or becomes unavailable:
 
 1. **Update the ConfigMap:**
-```yaml
-# Old URL
-OS_IMAGE_URL: "https://old-server.com/ubuntu-24.04.qcow2"
-# New URL  
-OS_IMAGE_URL: "https://new-server.com/ubuntu-24.04.qcow2"
-```
+   ```yaml
+   # Old URL
+   OS_IMAGE_URL: "https://old-server.com/ubuntu-24.04.qcow2"
+   # New URL  
+   OS_IMAGE_URL: "https://new-server.com/ubuntu-24.04.qcow2"
+   ```
 
 2. **Apply changes:**
-```bash
-kubectl apply -f charts/kube-dc/templates/os-images-configmap.yaml
-kubectl rollout restart deployment/kube-dc-backend -n kube-dc
-```
+   ```bash
+   kubectl apply -f charts/kube-dc/templates/os-images-configmap.yaml
+   kubectl rollout restart deployment/kube-dc-backend -n kube-dc
+   ```
 
 ## Testing Changes
 
@@ -305,7 +305,7 @@ kubectl rollout restart deployment/kube-dc-backend -n kube-dc
 ### Resource Requirements
 
 1. **Set realistic minimums** - Don't under-provision resources
-2. **Consider workload** - Different use cases need different resources
+2. **Consider workload** - Different use cases need different resources  
 3. **Test performance** - Verify VMs perform well with set resources
 
 ### Security

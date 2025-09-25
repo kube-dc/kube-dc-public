@@ -32,6 +32,7 @@ When a Project is created, resources are synchronized in this order:
 - **Created by**: `NewProjectVpc()` in `internal/project/res_vpc.go`
 - **Dependencies**: Namespace must exist
 - **Configuration**:
+  
   - Static routes to external subnets
   - Extra external subnets based on `egressNetworkType`
 
@@ -43,6 +44,7 @@ When a Project is created, resources are synchronized in this order:
 - **Created by**: `NewProjectEip()` in `internal/project/res_eip_default.go`
 - **Dependencies**: Namespace must exist
 - **Ownership States**:
+  
   - `Released`: No active owners (initial state)
   - `Shared`: Has SNAT rule and/or LoadBalancer services as owners
   - `Exclusive`: Used by FIp resources
@@ -54,8 +56,11 @@ When a Project is created, resources are synchronized in this order:
 - **Created by**: EIp controller via `NewOvEipRes()` in `internal/eip/ovn_eip_res.go`
 - **Dependencies**: EIp must exist, external subnet must be available
 - **Labels**:
+  
   - `network.kube-dc.com/eip`: `{namespace}.{eip-name}`
+  
 - **Annotations**:
+  
   - `kube-dc.com/ovn-eip-created-by-eip`: `{namespace}.{eip-name}`
 
 ### 5. Subnet
@@ -65,6 +70,7 @@ When a Project is created, resources are synchronized in this order:
 - **Created by**: `NewProjectSubnet()` in `internal/project/res_subnet.go`
 - **Dependencies**: VPC must exist
 - **Configuration**:
+  
   - CIDR block from project spec
   - Associated with project VPC
   - Gateway IP (first IP in CIDR)
@@ -85,6 +91,7 @@ When a Project is created, resources are synchronized in this order:
 - **Created by**: `NewProjectSnat()` in `internal/project/res_snat.go`
 - **Dependencies**: OvnEip must exist and have IP assigned
 - **Configuration**:
+  
   - Links project subnet to external IP
   - Enables outbound internet access for pods
 

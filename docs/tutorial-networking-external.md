@@ -21,6 +21,7 @@ The configuration demonstrates how to add a second external network (public) to 
 - **Purpose**: Premium external network for specialized workloads
 - **Subnet**: `ext-public` (168.119.17.48/28) on VLAN 4011
 - **Use Cases**:
+  
   - Production services requiring dedicated public IPs
   - Load balancers and ingress controllers
   - Services needing specific public IP ranges or routing

@@ -5,6 +5,7 @@ This comprehensive guide covers the complete process of setting up Windows 11 VM
 ## Overview
 
 This tutorial provides two deployment methods:
+
 1. **Golden Image Deployment** (Recommended) - Deploy pre-configured VMs in 5-10 minutes
 2. **Fresh Installation** - Create custom Windows installations with full control
 
@@ -172,7 +173,7 @@ kubectl get ingress -n iso
 ### 2.1 Download Windows 11 Enterprise ISO
 
 1. Visit: https://www.microsoft.com/en-us/evalcenter/download-windows-11-enterprise
-2. Select: **ISO – Enterprise download 64-bit edition** (90-day evaluation)
+2. Select: **ISO – Enterprise download 64-bit edition** (90-day evaluation)  
 3. Download the ISO file (approximately 5.4GB)
 
 ### 2.2 Download VirtIO Drivers
@@ -239,16 +240,20 @@ virtctl vnc windows11-vm -n shalb-dev --proxy-only --port 5900
 **Installation Steps:**
 
 1. **Boot from Windows ISO**: VM boots from Windows installer (bootOrder: 1)
+
 2. **Load VirtIO Drivers**: 
    - When prompted for disk drivers, click "Load driver"
    - Browse to VirtIO drivers CDROM
    - Navigate to `/amd64/w11/` folder
    - Install **VirtIO SCSI controller** drivers (for disk access)
    - **DO NOT install network drivers yet** (to create local account)
+
 3. **Install Windows**: 
    - Select the 60GB VirtIO disk for installation
    - Complete Windows 11 setup with local account
+
 4. **Post-Installation**:
+   
    - Install remaining VirtIO drivers from CDROM (network, balloon, RNG)
    - Install QEMU Guest Agent from VirtIO drivers CDROM
    - Run Windows Updates
@@ -268,8 +273,9 @@ PowerShell -ExecutionPolicy Bypass -Command "Invoke-Expression (Invoke-WebReques
 ```
 
 **Script Features:**
+
 - ✅ Installs OpenSSH Server using Windows capabilities
-- ✅ Configures SSH service for automatic startup
+- ✅ Configures SSH service for automatic startup  
 - ✅ Opens SSH port 22 in Windows Firewall (all network profiles)
 - ✅ Enables Remote Desktop (port 3389)
 - ✅ Enables ICMP ping (IPv4 and IPv6)
