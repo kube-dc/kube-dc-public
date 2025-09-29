@@ -105,7 +105,7 @@ data:
           runcmd:
             - systemctl enable --now qemu-guest-agent
       - OS_NAME: "openSUSE Leap 15.3"
-        CLOUD_USER: suse
+        CLOUD_USER: opensuse
         OS_IMAGE_URL: "https://download.opensuse.org/distribution/leap/15.3/appliances/openSUSE-Leap-15.3-JeOS.x86_64-OpenStack-Cloud.qcow2"
         MIN_MEMORY: "2G"
         MIN_VCPU: "1"
