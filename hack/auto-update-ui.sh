@@ -65,6 +65,19 @@ path=$(dirname -- "$( readlink -f -- "$0"; )")
 frontendPath=$(cd -- "${path}/../ui/frontend" &> /dev/null && pwd) 
 backendPath=$(cd -- "${path}/../ui/backend" &> /dev/null && pwd)
 
+# Generate build info file for frontend
+echo "Generating build info file..."
+cat > "${frontendPath}/src/build-info.js" << EOF
+// Auto-generated build information
+// Generated on: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+window.BUILD_INFO = {
+  version: "${new_version}",
+  buildTime: "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  previousVersion: "${KUBE_DC_VERSION}",
+  registry: "${REGISTRY_URL}/${REGISTRY_REPO}"
+};
+EOF
+
 cd "${backendPath}"
 docker build -t ${REGISTRY_REPO}/kube-dc-ui-backend:${new_version} .
 docker push ${REGISTRY_REPO}/kube-dc-ui-backend:${new_version}
