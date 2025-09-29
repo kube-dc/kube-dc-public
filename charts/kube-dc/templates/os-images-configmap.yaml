@@ -66,10 +66,6 @@ data:
         MIN_VCPU: "1"
         MIN_STORAGE: "5G"
         FIRMWARE_TYPE: "bios"
-        MACHINE_TYPE: "q35"
-        FEATURES: "acpi"
-        CLOUD_INIT: |
-          #cloud-config
       - OS_NAME: "Debian 12 LTS"
         CLOUD_USER: debian
         OS_IMAGE_URL: "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
@@ -78,7 +74,6 @@ data:
         MIN_STORAGE: "20G"
         FIRMWARE_TYPE: "bios"
         MACHINE_TYPE: "q35"
-        FEATURES: "acpi"
         CLOUD_INIT: |
           #cloud-config
           package_update: true
@@ -87,9 +82,9 @@ data:
             - qemu-guest-agent
           runcmd:
             - systemctl enable --now qemu-guest-agent
-      - OS_NAME: "Fedora 39"
+      - OS_NAME: "Fedora 41"
         CLOUD_USER: fedora
-        OS_IMAGE_URL: "http://mirror.uv.es/mirror/fedora/linux/releases/39/Cloud/x86_64/images/Fedora-Cloud-Base-39-1.5.x86_64.qcow2"
+        OS_IMAGE_URL: "https://dl.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2"
         MIN_MEMORY: "2G"
         MIN_VCPU: "1"
         MIN_STORAGE: "25G"
@@ -102,8 +97,16 @@ data:
           package_upgrade: true
           packages:
             - qemu-guest-agent
+            - policycoreutils-python-utils
           runcmd:
+            - setenforce 0
+            - sed -i 's/SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
+            - setsebool -P virt_qemu_ga_manage_ssh 1
+            - setsebool -P virt_qemu_ga_exec 1
+            - setsebool -P virt_qemu_ga_file_transfer 1
+            - restorecon -R /usr/bin/qemu-ga
             - systemctl enable --now qemu-guest-agent
+            - systemctl restart qemu-guest-agent
       - OS_NAME: "openSUSE Leap 15.3"
         CLOUD_USER: opensuse
         OS_IMAGE_URL: "https://download.opensuse.org/distribution/leap/15.3/appliances/openSUSE-Leap-15.3-JeOS.x86_64-OpenStack-Cloud.qcow2"
@@ -139,6 +142,29 @@ data:
           runcmd:
             - rc-service qemu-guest-agent restart
             - rc-update add qemu-guest-agent default
+      - OS_NAME: "Gentoo Linux"
+        CLOUD_USER: gentoo
+        OS_IMAGE_URL: "https://distfiles.gentoo.org/releases/amd64/autobuilds/20250928T160345Z/di-amd64-cloudinit-20250928T160345Z.qcow2"
+        MIN_MEMORY: "2G"
+        MIN_VCPU: "1"
+        MIN_STORAGE: "25G"
+        FIRMWARE_TYPE: "efi"
+        MACHINE_TYPE: "q35"
+        FEATURES: "acpi"
+        CLOUD_INIT: |
+          #cloud-config
+          users:
+          - name: gentoo
+            groups: wheel
+            sudo: ALL=(ALL) NOPASSWD:ALL
+            shell: /bin/bash
+            lock_passwd: false
+          package_update: true
+          packages:
+            - app-emulation/qemu-guest-agent
+          runcmd:
+            - systemctl enable qemu-guest-agent
+            - systemctl start qemu-guest-agent
       - OS_NAME: "Windows 11 Enterprise (Golden Image)"
         CLOUD_USER: kube-dc
         OS_IMAGE_URL: "https://iso.stage.kube-dc.com/windows11-x64-golden.qcow2"
