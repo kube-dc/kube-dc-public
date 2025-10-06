@@ -1,30 +1,53 @@
+# Method 1: VM Interface Targeting - automatically resolves VM interface IP
 apiVersion: kube-dc.com/v1
 kind: FIp
 metadata:
-  name: vm-alpine-fip
+  name: vm-ubuntu-interface-fip
   namespace: test-org-e2e-manual-test-project-e2e-manual
   labels:
-    vm-name: alpine-vm
+    vm-name: ubuntu-server
     purpose: virtual-machine
     environment: e2e-test
     kube-dc.com/test: e2e-manual
+    targeting-method: vm-interface
+spec:
+  vmTarget:
+    vmName: ubuntu-server        # Targets the ubuntu-server VM from 08-vm-examples.yaml
+    # interfaceName not specified - will use first interface automatically
+  externalNetworkType: cloud
+---
+# Method 1b: VM Interface Targeting with explicit interface name
+apiVersion: kube-dc.com/v1
+kind: FIp
+metadata:
+  name: vm-cirros-interface-fip
+  namespace: test-org-e2e-manual-test-project-e2e-manual
+  labels:
+    vm-name: cirros-test
+    purpose: virtual-machine
+    environment: e2e-test
+    kube-dc.com/test: e2e-manual
+    targeting-method: vm-interface-explicit
+spec:
+  vmTarget:
+    vmName: cirros-test          # Targets the cirros-test VM from 08-vm-examples.yaml
+    interfaceName: default       # Explicit interface name
+  externalNetworkType: public
+---
+# Method 2: Direct IP Targeting - specify exact IP address
+apiVersion: kube-dc.com/v1
+kind: FIp
+metadata:
+  name: vm-direct-ip-fip
+  namespace: test-org-e2e-manual-test-project-e2e-manual
+  labels:
+    purpose: virtual-machine
+    environment: e2e-test
+    kube-dc.com/test: e2e-manual
+    targeting-method: direct-ip
 spec:
   # Specific IP address within project CIDR range (10.150.0.0/16)
   ipAddress: 10.150.1.10
-  externalNetworkType: cloud
----
-apiVersion: kube-dc.com/v1
-kind: FIp
-metadata:
-  name: vm-ubuntu-fip
-  namespace: test-org-e2e-manual-test-project-e2e-manual
-  labels:
-    vm-name: ubuntu-vm
-    purpose: virtual-machine
-    environment: e2e-test
-    kube-dc.com/test: e2e-manual
-spec:
-  ipAddress: 10.150.1.20
   externalNetworkType: cloud
 ---
 apiVersion: kube-dc.com/v1
