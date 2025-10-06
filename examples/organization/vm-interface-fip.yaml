@@ -1,0 +1,43 @@
+# Example: Attaching Floating IP to VM Interface
+# This example demonstrates two methods for attaching external IPs in Kube-DC FIP resources.
+
+# Method 1: VM interface targeting - automatically resolves VM interface IP
+apiVersion: kube-dc.com/v1
+kind: FIp
+metadata:
+  name: web-server-fip
+  namespace: shalb-demo
+spec:
+  # VM interface targeting
+  vmTarget:
+    vmName: web-server              # Name of the VirtualMachine or VirtualMachineInstance
+    interfaceName: vpc_net_0        # Optional: specific interface name (defaults to first interface)
+  
+  # External network type selection
+  externalNetworkType: public       # Options: "public" or "cloud"
+  
+  # Note: Do not specify both vmTarget and ipAddress - they are mutually exclusive
+
+---
+# Alternative example using cloud network type
+apiVersion: kube-dc.com/v1
+kind: FIp
+metadata:
+  name: database-vm-fip
+  namespace: shalb-demo
+spec:
+  vmTarget:
+    vmName: database-server
+    # interfaceName not specified - will use first available interface
+  externalNetworkType: cloud        # Uses internal cloud network (not publicly accessible)
+
+---
+# Method 2: Direct IP targeting - specify exact IP address
+apiVersion: kube-dc.com/v1
+kind: FIp
+metadata:
+  name: direct-ip-fip
+  namespace: shalb-demo
+spec:
+  ipAddress: 10.0.10.171           # Direct IP address targeting
+  externalNetworkType: public

@@ -15,8 +15,17 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .status.resolvedTargetIP
+      name: Target IP
+      type: string
     - jsonPath: .status.externalIP
       name: External IP
+      type: string
+    - jsonPath: .status.targetVMInterface.vmName
+      name: VM
+      type: string
+    - jsonPath: .status.targetVMInterface.interfaceName
+      name: Interface
       type: string
     - jsonPath: .status.ready
       name: Ready
@@ -66,15 +75,32 @@ spec:
                 - message: externalNetworkType is immutable
                   rule: self == oldSelf
               ipAddress:
-                description: 'Target pod or vm. Format: "vm:<vm-name>" or "pod:<pod-name>"'
+                description: Target IP address for direct IP targeting (legacy method)
                 type: string
-            required:
-            - ipAddress
+              vmTarget:
+                description: Target VM interface for VM-based targeting (new method)
+                properties:
+                  interfaceName:
+                    description: InterfaceName is the name of the network interface
+                      on the VM (optional, defaults to first interface)
+                    type: string
+                  vmName:
+                    description: VMName is the name of the VirtualMachine or VirtualMachineInstance
+                      in the same namespace
+                    type: string
+                required:
+                - vmName
+                type: object
             type: object
             x-kubernetes-validations:
             - message: eip and externalNetworkType cannot be set at the same time
               rule: '(has(self.eip) && self.eip != "") ? !has(self.externalNetworkType)
                 || self.externalNetworkType == "" : true'
+            - message: ipAddress and vmTarget cannot be set at the same time
+              rule: '(has(self.ipAddress) && self.ipAddress != "") ? !has(self.vmTarget)
+                : true'
+            - message: either ipAddress or vmTarget must be specified
+              rule: has(self.ipAddress) || has(self.vmTarget)
           status:
             description: FIpStatus defines the observed state of FIp.
             properties:
@@ -152,6 +178,31 @@ spec:
                 description: Ready indicates whether the floating IP is properly configured
                   and usable
                 type: boolean
+              resolvedTargetIP:
+                description: ResolvedTargetIP is the actual internal IP address being
+                  targeted (resolved from VM interface if vmTarget is used)
+                type: string
+              targetVMInterface:
+                description: TargetVMInterface contains information about the resolved
+                  VM interface (when vmTarget is used)
+                properties:
+                  interfaceName:
+                    description: InterfaceName is the resolved interface name
+                    type: string
+                  ipAddress:
+                    description: IPAddress is the current IP address of the interface
+                    type: string
+                  mac:
+                    description: MAC is the MAC address of the interface
+                    type: string
+                  vmName:
+                    description: VMName is the resolved VM name
+                    type: string
+                required:
+                - interfaceName
+                - ipAddress
+                - vmName
+                type: object
             required:
             - eip
             - externalIP
