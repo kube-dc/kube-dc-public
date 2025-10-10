@@ -18,7 +18,7 @@ check_arg_exists() {
 }
 
 # Get VLAN ID from script argument
-if [ -z "$KUBE_DC_GATEWAY_SWITCH" || -z "$KUBE_DC_VLAN_ID" || -z "$KUBE_DC_EXT_NET_NODES_LIST" || -z "$KUBE_DC_MTU"  ]; then
+if [ -z "$KUBE_DC_GATEWAY_SWITCH" ] || [ -z "$KUBE_DC_VLAN_ID" ] || [ -z "$KUBE_DC_EXT_NET_NODES_LIST" ] || [ -z "$KUBE_DC_MTU" ]; then
   echo "Usage: $0 KUBE_DC_GATEWAY_SWITCH KUBE_DC_VLAN_ID KUBE_DC_EXT_NET_NODES_LIST KUBE_DC_MTU required"
   exit 1
 fi

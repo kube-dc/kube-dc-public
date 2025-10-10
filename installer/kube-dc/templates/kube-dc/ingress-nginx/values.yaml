@@ -1,4 +1,7 @@
 controller:
+  # Enable hostNetwork for single-node installations to expose ports 80/443 on host
+  hostNetwork: true
+  dnsPolicy: ClusterFirstWithHostNet
   service:
     externalIPs:
       - "{{ .variables.node_external_ip }}"

@@ -6,7 +6,7 @@ loki:
   auth_enabled: false
   storage:
     aws:
-      s3: s3://logs-user:Yd3khf8jefHD83@loki-minio:9000
+      s3: s3://logs-user:{{ output "this.loki-minio-user-pass-generator.password" }}@loki-minio:9000
       s3forcepathstyle: true
     type: s3
     bucketNames:
@@ -72,19 +72,44 @@ gateway:
 resultsCache:
   defaultValidity: 1h
   allocatedMemory: 3072
+  resources:
+    requests:
+      memory: 128Mi
+    limits:
+      memory: 512Mi
 
 chunksCache:
   defaultValidity: 4h
   allocatedMemory: 8192
+  resources:
+    requests:
+      memory: 256Mi
+    limits:
+      memory: 1Gi
 
 deploymentMode: SimpleScalable
 
 backend:
-  replicas: 2
+  replicas: 1
+  resources:
+    requests:
+      memory: 256Mi
+    limits:
+      memory: 1Gi
 read:
-  replicas: 2
+  replicas: 1
+  resources:
+    requests:
+      memory: 256Mi
+    limits:
+      memory: 512Mi
 write:
-  replicas: 2
+  replicas: 1
+  resources:
+    requests:
+      memory: 256Mi
+    limits:
+      memory: 512Mi
 
 # Enable minio for storage
 minio:
@@ -96,13 +121,13 @@ minio:
   drivesPerNode: 2
   # root user; not used for GEL authentication
   rootUser: admin
-  rootPassword: Hduh38hcbk
+  rootPassword: {{ output "this.loki-minio-root-pass-generator.password" }}
   # The first user in the list below is used for Loki/GEL authentication.
   # You can add additional users if desired; they will not impact Loki/GEL.
   # `accessKey` = username, `secretKey` = password
   users:
     - accessKey: logs-user
-      secretKey: Yd3khf8jefHD83
+      secretKey: {{ output "this.loki-minio-user-pass-generator.password" }}
       policy: readwrite
   buckets:
     - name: chunks
@@ -119,8 +144,9 @@ minio:
     annotations: {}
   resources:
     requests:
-      cpu: 100m
       memory: 128Mi
+    limits:
+      memory: 256Mi
   # Allow the address used by Loki to refer to Minio to be overridden
   address: null
 

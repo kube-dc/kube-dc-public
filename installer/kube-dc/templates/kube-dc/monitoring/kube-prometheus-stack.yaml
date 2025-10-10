@@ -1,13 +1,12 @@
 crd:
   enabled: false
 
-prometheusOperator:
-  admissionWebhooks:
-    enabled: false
-  tls:
-    enabled: false
-
 prometheus-node-exporter:
+  resources:
+    requests:
+      memory: 32Mi
+    limits:
+      memory: 64Mi
   prometheus:
     monitor:
       enabled: true
@@ -18,6 +17,12 @@ prometheus-node-exporter:
 
 grafana:
   adminPassword: {{ output "this.prom-pass-generator.password" }}
+  replicas: 1
+  resources:
+    requests:
+      memory: 128Mi
+    limits:
+      memory: 512Mi
   additionalDataSources:
     - name: Alertmanager
       type: alertmanager
@@ -47,6 +52,12 @@ grafana:
 
 prometheus:
   prometheusSpec:
+    replicas: 1
+    resources:
+      requests:
+        memory: 1Gi
+      limits:
+        memory: 2Gi
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
     probeSelectorNilUsesHelmValues: false
@@ -63,4 +74,31 @@ prometheus:
               storage: {{ .variables.monitoring.prom_storage }}
     enableFeatures:
       - "--enable-feature=memory-snapshot-on-shutdown"
+
+prometheusOperator:
+  admissionWebhooks:
+    enabled: false
+  tls:
+    enabled: false
+  resources:
+    requests:
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+alertmanager:
+  alertmanagerSpec:
+    replicas: 1
+    resources:
+      requests:
+        memory: 128Mi
+      limits:
+        memory: 256Mi
+
+kube-state-metrics:
+  resources:
+    requests:
+      memory: 64Mi
+    limits:
+      memory: 128Mi
 

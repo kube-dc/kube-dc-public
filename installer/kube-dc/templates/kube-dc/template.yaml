@@ -1,11 +1,11 @@
 {{- $kubeDcChartVersion := (.variables.versions.kube_dc                      | default "v0.1.33" | quote) -}}
 {{- $terraformVersion := (.variables.versions.terraform                      | default "1.9.4" | quote) -}}
-{{- $kubevirtVersion := (.variables.versions.kubevirt                        | default "v1.3.0" | quote) -}}
+{{- $kubevirtVersion := (.variables.versions.kubevirt                        | default "v1.6.0" | quote) -}}
 {{- $kubevirtCdiVersion := (.variables.versions.kubevirt_cdi                 | default "v1.59.0" | quote) -}}
 {{- $clusterApiVersion := (.variables.versions.cluster_api                   | default "v1.8.1" | quote) -}}
 {{- $capiK3sProviderVersion := (.variables.versions.cluster_api_k3s_provider | default "v1.2.2" | quote) -}}
-{{- $kyvernoVersion := (.variables.versions.kyverno                          | default "v1.10.0" | quote) -}}
-{{- $kubeOvnChartVersion := (.variables.versions.kube_ovn                    | default "v1.14.3" | quote) -}}
+{{- $kyvernoVersion := (.variables.versions.kyverno                          | default "v1.15.2" | quote) -}}
+{{- $kubeOvnChartVersion := (.variables.versions.kube_ovn                    | default "v1.14.10" | quote) -}}
 {{- $multusChartVersion := (.variables.versions.multus_helm                  | default "2.2.9" | quote) -}}
 {{- $ingressNginxChartVersion := (.variables.versions.ingress_nginx_helm     | default "4.11.1" | quote) -}}
 {{- $keycloakChartVersion := (.variables.versions.keycloak_helm              | default "24.3.0" | quote) -}}
@@ -40,6 +40,24 @@ units:
       separator: "="
   -
     name: prom-pass-generator
+    type: shell
+    apply:
+      commands:
+        - echo "password=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 12; echo)"
+    outputs:
+      type: separator
+      separator: "="
+  -
+    name: loki-minio-root-pass-generator
+    type: shell
+    apply:
+      commands:
+        - echo "password=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 12; echo)"
+    outputs:
+      type: separator
+      separator: "="
+  -
+    name: loki-minio-user-pass-generator
     type: shell
     apply:
       commands:
@@ -119,17 +137,31 @@ units:
       MASTER_NODES: "{{ output "this.list-master-nodes.master_nodes_list" }}"
   -
     name: multus-cni
-    type: helm
+    type: shell
     depends_on: this.kube-ovn
-    source:
-      repository: "oci://registry-1.docker.io/bitnamicharts"
-      chart: "multus-cni"
-      version: {{ $multusChartVersion }}
-    provider_conf:
-      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
-    additional_options:
-      namespace: kube-system
-      wait: true
+    env:
+      KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    apply:
+      commands:
+        - kubectl apply -f https://raw.githubusercontent.com/k8snetworkplumbingwg/multus-cni/v4.1.0/deployments/multus-daemonset-thick.yml
+        - |
+          kubectl patch daemonset kube-multus-ds -n kube-system --type=json -p='[
+            {
+              "op": "add",
+              "path": "/spec/template/spec/containers/0/resources",
+              "value": {
+                "limits": {
+                  "memory": "512Mi",
+                  "cpu": "500m"
+                },
+                "requests": {
+                  "memory": "256Mi",
+                  "cpu": "100m"
+                }
+              }
+            }
+          ]'
+        - kubectl rollout status daemonset/kube-multus-ds -n kube-system --timeout=300s
   -
     name: kube-ovn-patch
     type: shell
