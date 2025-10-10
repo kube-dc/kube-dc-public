@@ -1,0 +1,94 @@
+# FIP Reconciliation Test Case with Cirros VM
+# Tests the issue where FIP doesn't properly update when VM is recreated
+#
+# PROBLEM:
+# When a VM is deleted and recreated with the same name:
+# - kube-dc FIP controller updates FIp.status.resolvedTargetIP with new VM IP ✅
+# - kube-dc FIP controller updates OvnFip.spec.v4Ip with new VM IP ✅
+# - kube-ovn controller DOES NOT reconcile OvnFip.status.v4Ip ❌
+# - NAT rules in OVN still point to old IP ❌
+# - SSH to VM fails ❌
+#
+# WORKAROUND:
+# Delete the OvnFip resource - it will be recreated with correct IP
+#
+# PROPOSED FIX:
+# Force delete/recreate OvnFip when target IP changes instead of just updating spec
+
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: cirros-fip-test-root
+  namespace: shalb-dev
+spec:
+  source:
+    http:
+      url: http://download.cirros-cloud.net/0.5.2/cirros-0.5.2-x86_64-disk.img
+  pvc:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1Gi
+    storageClassName: local-path
+
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: cirros-fip-test
+  namespace: shalb-dev
+spec:
+  running: true
+  template:
+    metadata:
+      labels:
+        kubevirt.io/vm: cirros-fip-test
+    spec:
+      domain:
+        cpu:
+          cores: 1
+        memory:
+          guest: 512M
+        devices:
+          disks:
+          - disk:
+              bus: virtio
+            name: root-volume
+          - disk:
+              bus: virtio
+            name: cloudinitdisk
+          interfaces:
+          - bridge: {}
+            name: vpc_net_0
+      networks:
+      - name: vpc_net_0
+        multus:
+          default: true
+          networkName: shalb-dev/default
+      volumes:
+      - name: root-volume
+        dataVolume:
+          name: cirros-fip-test-root
+      - name: cloudinitdisk
+        cloudInitNoCloud:
+          userData: |
+            #cloud-config
+            password: gocubsgo
+            chpasswd: { expire: False }
+            ssh_pwauth: True
+            ssh_authorized_keys:
+              - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMFQBgrVz2kDCEWP+5LEnRf4SzZJP6wBVTYFrJa6kzw8 voa@kube-dc-bastion
+
+---
+apiVersion: kube-dc.com/v1
+kind: FIp
+metadata:
+  name: cirros-fip-test
+  namespace: shalb-dev
+spec:
+  externalNetworkType: public
+  vmTarget:
+    vmName: cirros-fip-test
+    interfaceName: vpc_net_0

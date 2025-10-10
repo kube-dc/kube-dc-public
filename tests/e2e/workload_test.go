@@ -15,7 +15,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
 var _ = Describe("Workload E2E Tests", func() {
@@ -110,65 +109,65 @@ var _ = Describe("Workload E2E Tests", func() {
 			Logf("FIp %s ready with external IP: %s", customFip.Name, customFip.Status.ExternalIP)
 
 			By("Cleaning up FIP")
-		Expect(k8sClient.Delete(ctx, customFip)).Should(Succeed())
-	})
+			Expect(k8sClient.Delete(ctx, customFip)).Should(Succeed())
+		})
 
-	It("Should create and manage VM interface FIP resources successfully", func() {
-		By("Creating a FIP with VM interface targeting - testing new vmTarget functionality")
-		vmInterfaceFip := &kubedccomv1.FIp{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-vm-interface-fip",
-				Namespace: projectNsName,
-			},
-			Spec: kubedccomv1.FIpSpec{
-				VMTarget: &kubedccomv1.VMTarget{
-					VMName: "nonexistent-vm", // This will test error handling
+		It("Should create and manage VM interface FIP resources successfully", func() {
+			By("Creating a FIP with VM interface targeting - testing new vmTarget functionality")
+			vmInterfaceFip := &kubedccomv1.FIp{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-vm-interface-fip",
+					Namespace: projectNsName,
 				},
-				ExternalNetworkType: kubedccomv1.ExternalNetworkTypeCloud,
-			},
-		}
-		Expect(k8sClient.Create(ctx, vmInterfaceFip)).Should(Succeed())
-		Logf("Created VM interface FIp: %s targeting VM: %s", vmInterfaceFip.Name, vmInterfaceFip.Spec.VMTarget.VMName)
-
-		By("Verifying FIP handles missing VM gracefully")
-		Consistently(func() (bool, error) {
-			lookupKey := types.NamespacedName{Name: "test-vm-interface-fip", Namespace: projectNsName}
-			err := k8sClient.Get(ctx, lookupKey, vmInterfaceFip)
-			if err != nil {
-				return false, err
+				Spec: kubedccomv1.FIpSpec{
+					VMTarget: &kubedccomv1.VMTarget{
+						VMName: "nonexistent-vm", // This will test error handling
+					},
+					ExternalNetworkType: kubedccomv1.ExternalNetworkTypeCloud,
+				},
 			}
-			// Should not be ready since VM doesn't exist
-			return !vmInterfaceFip.Status.Ready, nil
-		}, time.Second*10, interval).Should(BeTrue(), "VM interface FIp should not be ready when VM doesn't exist")
+			Expect(k8sClient.Create(ctx, vmInterfaceFip)).Should(Succeed())
+			Logf("Created VM interface FIp: %s targeting VM: %s", vmInterfaceFip.Name, vmInterfaceFip.Spec.VMTarget.VMName)
 
-		By("Verifying VM interface FIP CRD fields are properly set")
-		Expect(vmInterfaceFip.Spec.VMTarget).NotTo(BeNil(), "VMTarget should be set")
-		Expect(vmInterfaceFip.Spec.VMTarget.VMName).To(Equal("nonexistent-vm"), "VM name should match")
-		Expect(vmInterfaceFip.Spec.IpAddress).To(BeEmpty(), "IpAddress should be empty when using vmTarget")
-		Logf("VM interface FIp validation successful - vmTarget properly configured")
+			By("Verifying FIP handles missing VM gracefully")
+			Consistently(func() (bool, error) {
+				lookupKey := types.NamespacedName{Name: "test-vm-interface-fip", Namespace: projectNsName}
+				err := k8sClient.Get(ctx, lookupKey, vmInterfaceFip)
+				if err != nil {
+					return false, err
+				}
+				// Should not be ready since VM doesn't exist
+				return !vmInterfaceFip.Status.Ready, nil
+			}, time.Second*10, interval).Should(BeTrue(), "VM interface FIp should not be ready when VM doesn't exist")
 
-		By("Cleaning up VM interface FIP")
-		Expect(k8sClient.Delete(ctx, vmInterfaceFip)).Should(Succeed())
-	})
+			By("Verifying VM interface FIP CRD fields are properly set")
+			Expect(vmInterfaceFip.Spec.VMTarget).NotTo(BeNil(), "VMTarget should be set")
+			Expect(vmInterfaceFip.Spec.VMTarget.VMName).To(Equal("nonexistent-vm"), "VM name should match")
+			Expect(vmInterfaceFip.Spec.IpAddress).To(BeEmpty(), "IpAddress should be empty when using vmTarget")
+			Logf("VM interface FIp validation successful - vmTarget properly configured")
 
-	It("Should deploy and expose nginx pod with LoadBalancer service", func() {
-		By("Creating a dedicated EIP for nginx service")
-		nginxEip := &kubedccomv1.EIp{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "nginx-service-eip",
-				Namespace: projectNsName,
-			},
-			Spec: kubedccomv1.EIpSpec{
-				ExternalNetworkType: kubedccomv1.ExternalNetworkTypeCloud,
-			},
-		}
-		Expect(k8sClient.Create(ctx, nginxEip)).Should(Succeed())
-		Logf("Created nginx service EIp: %s", nginxEip.Name)
+			By("Cleaning up VM interface FIP")
+			Expect(k8sClient.Delete(ctx, vmInterfaceFip)).Should(Succeed())
+		})
 
-		By("Waiting for nginx EIP to become ready")
-		Eventually(func() (bool, error) {
-			lookupKey := types.NamespacedName{Name: "nginx-service-eip", Namespace: projectNsName}
-			err := k8sClient.Get(ctx, lookupKey, nginxEip)
+		It("Should deploy and expose nginx pod with LoadBalancer service", func() {
+			By("Creating a dedicated EIP for nginx service")
+			nginxEip := &kubedccomv1.EIp{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "nginx-service-eip",
+					Namespace: projectNsName,
+				},
+				Spec: kubedccomv1.EIpSpec{
+					ExternalNetworkType: kubedccomv1.ExternalNetworkTypeCloud,
+				},
+			}
+			Expect(k8sClient.Create(ctx, nginxEip)).Should(Succeed())
+			Logf("Created nginx service EIp: %s", nginxEip.Name)
+
+			By("Waiting for nginx EIP to become ready")
+			Eventually(func() (bool, error) {
+				lookupKey := types.NamespacedName{Name: "nginx-service-eip", Namespace: projectNsName}
+				err := k8sClient.Get(ctx, lookupKey, nginxEip)
 				if err != nil {
 					return false, err
 				}

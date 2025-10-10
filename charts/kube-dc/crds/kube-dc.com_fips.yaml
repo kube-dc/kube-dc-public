@@ -75,10 +75,10 @@ spec:
                 - message: externalNetworkType is immutable
                   rule: self == oldSelf
               ipAddress:
-                description: Target IP address for direct IP targeting (legacy method)
+                description: Target IP address for direct IP targeting
                 type: string
               vmTarget:
-                description: Target VM interface for VM-based targeting (new method)
+                description: Target VM interface for VM-based targeting
                 properties:
                   interfaceName:
                     description: InterfaceName is the name of the network interface
