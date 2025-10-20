@@ -461,7 +461,7 @@ sudo apt-get update -qq
 
 # Install required packages
 log_info "Installing required packages..."
-sudo apt-get install -y -qq unzip iptables dnsutils linux-headers-$(uname -r) > /dev/null 2>&1
+sudo apt-get install -y -qq curl unzip iptables dnsutils git linux-headers-$(uname -r) > /dev/null 2>&1
 
 # Configure sysctl
 log_info "Configuring system parameters..."
@@ -597,20 +597,58 @@ log_success "RKE2 Kubernetes installed"
 # Step 5: Generate cdev configuration
 log_info "Step 5/7: Generating cluster.dev configuration..."
 
-# Copy local templates to installation directory
-log_info "Copying Kube-DC templates..."
-if [ -d "/home/voa/projects/kube-dc/installer/kube-dc/templates" ]; then
-    # Running from development environment
-    cp -r /home/voa/projects/kube-dc/installer/kube-dc/templates ./
-elif [ -d "$HOME/kube-dc-templates/kube-dc" ]; then
-    # Templates were pre-copied (new structure)
-    mkdir -p ./templates
-    cp -r $HOME/kube-dc-templates/kube-dc ./templates/
-elif [ -d "$HOME/kube-dc-templates/templates" ]; then
-    # Templates were pre-copied (old structure)
-    cp -r $HOME/kube-dc-templates/templates ./
+# Detect latest kube-dc version from Docker Hub
+log_info "Checking Docker Hub for latest kube-dc version..."
+
+# Function to get latest tag from Docker Hub
+get_latest_docker_tag() {
+    local repo=$1
+    local tag=$(curl -s "https://registry.hub.docker.com/v2/repositories/${repo}/tags?page_size=100" | \
+        grep -oP '"name":"\Kv[0-9]+\.[0-9]+\.[0-9]+"' | \
+        tr -d '"' | \
+        sort -V | \
+        tail -1)
+    echo "$tag"
+}
+
+# Get latest tags for each component
+MANAGER_TAG=$(get_latest_docker_tag "shalb/kube-dc-controller-manager")
+FRONTEND_TAG=$(get_latest_docker_tag "shalb/kube-dc-frontend")
+BACKEND_TAG=$(get_latest_docker_tag "shalb/kube-dc-backend")
+
+# Use manager tag as the main version, fallback to default if not found
+if [ -n "$MANAGER_TAG" ]; then
+    KUBE_DC_VERSION="$MANAGER_TAG"
+    log_success "Latest version from Docker Hub: ${KUBE_DC_VERSION}"
+    log_info "  Manager: ${MANAGER_TAG}"
+    log_info "  Frontend: ${FRONTEND_TAG}"
+    log_info "  Backend: ${BACKEND_TAG}"
 else
-    log_warning "Local templates not found, will use remote repository"
+    KUBE_DC_VERSION="v0.1.33"
+    log_warning "Could not fetch from Docker Hub, using default: ${KUBE_DC_VERSION}"
+fi
+
+# Download templates from GitHub
+log_info "Downloading Kube-DC templates from GitHub (main branch)..."
+if [ ! -d "./templates" ]; then
+    # Download templates using git sparse-checkout for efficiency
+    mkdir -p ./templates
+    cd ./templates
+    git init
+    git remote add origin https://github.com/shalb/kube-dc.git
+    git config core.sparseCheckout true
+    echo "installer/kube-dc/templates/kube-dc/*" >> .git/info/sparse-checkout
+    git pull --depth=1 origin main
+    
+    # Move templates to correct location
+    if [ -d "installer/kube-dc/templates/kube-dc" ]; then
+        mv installer/kube-dc/templates/kube-dc/* .
+        rm -rf installer .git
+    fi
+    cd ..
+    log_success "Templates downloaded"
+else
+    log_info "Templates already exist, skipping download"
 fi
 
 # Create project.yaml
@@ -623,15 +661,9 @@ variables:
   debug: true
 PROJYAML
 
-# Create stack.yaml
-# Use local templates if available, otherwise use remote
-if [ -d "./templates/kube-dc" ]; then
-    TEMPLATE_PATH="./templates/kube-dc/"
-    log_success "Using local templates"
-else
-    TEMPLATE_PATH="https://github.com/kube-dc/kube-dc-public//installer/kube-dc/templates/kube-dc?ref=main"
-    log_warning "Using remote templates from GitHub"
-fi
+# Create stack.yaml using local templates
+TEMPLATE_PATH="./templates/"
+log_info "Using local templates from: ${TEMPLATE_PATH}"
 
 cat > stack.yaml << STACKYAML
 name: cluster
@@ -683,7 +715,10 @@ variables:
     retention: 365d
   
   versions:
-    kube_dc: "v0.1.33"
+    kube_dc: "${KUBE_DC_VERSION}"
+    manager: "${MANAGER_TAG}"
+    frontend: "${FRONTEND_TAG}"
+    backend: "${BACKEND_TAG}"
 STACKYAML
 
 log_success "Configuration generated"
