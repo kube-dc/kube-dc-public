@@ -1,0 +1,98 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pi-calculation
+  labels:
+    app: pi-calculator
+    type: batch
+spec:
+  template:
+    metadata:
+      labels:
+        app: pi-calculator
+    spec:
+      containers:
+      - name: pi
+        image: perl:5.34
+        command: ["perl", "-Mbignum=bpi", "-wle", "print bpi(2000)"]
+        resources:
+          limits:
+            memory: 128Mi
+            cpu: 200m
+          requests:
+            memory: 64Mi
+            cpu: 100m
+      restartPolicy: Never
+  backoffLimit: 4
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: data-processing
+  labels:
+    app: data-processor
+    type: batch
+spec:
+  template:
+    metadata:
+      labels:
+        app: data-processor
+    spec:
+      containers:
+      - name: processor
+        image: busybox:1.35
+        command: 
+        - /bin/sh
+        - -c
+        - |
+          echo "Starting data processing..."
+          for i in $(seq 1 10); do
+            echo "Processing batch $i of 10"
+            sleep 2
+          done
+          echo "Data processing complete!"
+        resources:
+          limits:
+            memory: 64Mi
+            cpu: 100m
+          requests:
+            memory: 32Mi
+            cpu: 50m
+      restartPolicy: Never
+  backoffLimit: 3
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: database-backup
+  labels:
+    app: db-backup
+    type: maintenance
+spec:
+  template:
+    metadata:
+      labels:
+        app: db-backup
+    spec:
+      containers:
+      - name: backup
+        image: alpine:3.17
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Starting database backup..."
+          echo "Connecting to database..."
+          sleep 5
+          echo "Creating backup archive..."
+          sleep 5
+          echo "Backup completed successfully!"
+        resources:
+          limits:
+            memory: 128Mi
+            cpu: 150m
+          requests:
+            memory: 64Mi
+            cpu: 75m
+      restartPolicy: OnFailure
+  backoffLimit: 2
