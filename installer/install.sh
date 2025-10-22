@@ -73,37 +73,34 @@ echo ""
 read -p "Press Enter to continue or Ctrl+C to cancel..."
 
 # Pre-flight checks
-log_header "Pre-flight Checks"
+log_header "Step 1/7: Pre-flight Checks"
 
-# Check OS
-log_info "Checking operating system..."
-if [[ -f /etc/os-release ]]; then
-    . /etc/os-release
-    if [[ "$ID" == "ubuntu" && "$VERSION_ID" == "24.04" ]]; then
-        log_success "Ubuntu 24.04 LTS detected"
-    else
-        log_warning "OS: $PRETTY_NAME (Ubuntu 24.04 recommended)"
-    fi
-else
-    log_error "Cannot determine OS version"
+# Check if running as root
+if [[ $EUID -eq 0 ]]; then
+   log_error "This script must NOT be run as root"
+   exit 1
+fi
+
+# Check operating system
+if ! grep -q "Ubuntu" /etc/os-release; then
+    log_error "This installer only supports Ubuntu"
+    log_info "Detected: $(grep PRETTY_NAME /etc/os-release | cut -d'"' -f2)"
     exit 1
 fi
 
-# Check resources
-log_info "Checking system resources..."
-TOTAL_MEM=$(free -g | awk '/^Mem:/{print $2}')
+log_success "Running on Ubuntu"
+
+# Check system resources
 TOTAL_CPU=$(nproc)
-TOTAL_DISK=$(df -BG / | awk 'NR==2 {print $2}' | sed 's/G//')
+TOTAL_MEM=$(free -g | awk '/^Mem:/{print $2}')
 
-if [[ $TOTAL_MEM -ge 14 ]]; then
-    log_success "Memory: ${TOTAL_MEM}GB (✓ >= 16GB recommended)"
-else
-    log_warning "Memory: ${TOTAL_MEM}GB (⚠ 16GB recommended)"
-fi
+log_info "System resources:"
+echo "  CPU cores: ${TOTAL_CPU}"
+echo "  Memory: ${TOTAL_MEM}GB"
+echo ""
 
-if [[ $TOTAL_CPU -ge 4 ]]; then
-    log_success "CPU cores: ${TOTAL_CPU} (✓ >= 4 required)"
-else
+if [ "$TOTAL_CPU" -lt 4 ]; then
+    log_error "Minimum 4 CPU cores required (found: ${TOTAL_CPU})"
     log_error "CPU cores: ${TOTAL_CPU} (✗ 4 cores minimum required)"
     exit 1
 fi
@@ -493,7 +490,22 @@ log_success "System prepared"
 # Step 4: Install RKE2
 log_info "Step 4/7: Installing RKE2 Kubernetes..."
 
-# Create RKE2 config
+# Check if RKE2 is already installed and running
+if systemctl is-active --quiet rke2-server.service 2>/dev/null; then
+    log_info "RKE2 is already running, skipping installation"
+    export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
+    export PATH="/var/lib/rancher/rke2/bin:$PATH"
+    log_success "Using existing RKE2 installation"
+    # Verify it's working
+    if kubectl get nodes &>/dev/null; then
+        log_success "RKE2 cluster is healthy"
+    else
+        log_warning "RKE2 is running but cluster needs attention"
+    fi
+else
+    log_info "Installing fresh RKE2 cluster..."
+    
+    # Create RKE2 config
 sudo mkdir -p /etc/rancher/rke2/
 
 sudo tee /etc/rancher/rke2/config.yaml > /dev/null << RKECONFIG
@@ -592,7 +604,8 @@ for i in {1..60}; do
     sleep 5
 done
 
-log_success "RKE2 Kubernetes installed"
+    log_success "RKE2 Kubernetes installed"
+fi
 
 # Step 5: Generate cdev configuration
 log_info "Step 5/7: Generating cluster.dev configuration..."
@@ -603,50 +616,65 @@ log_info "Checking Docker Hub for latest kube-dc version..."
 # Function to get latest tag from Docker Hub
 get_latest_docker_tag() {
     local repo=$1
-    local tag=$(curl -s "https://registry.hub.docker.com/v2/repositories/${repo}/tags?page_size=100" | \
-        grep -oP '"name":"\Kv[0-9]+\.[0-9]+\.[0-9]+"' | \
-        tr -d '"' | \
+    local response=$(curl -s --max-time 10 "https://registry.hub.docker.com/v2/repositories/${repo}/tags?page_size=100")
+    
+    # Extract version tags including dev versions
+    local tag=$(echo "$response" | \
+        grep -oE '"name"[[:space:]]*:[[:space:]]*"v[0-9]+\.[0-9]+\.[0-9]+(-dev[0-9]+)?"' | \
+        grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+(-dev[0-9]+)?' | \
         sort -V | \
         tail -1)
+    
     echo "$tag"
 }
 
 # Get latest tags for each component
-MANAGER_TAG=$(get_latest_docker_tag "shalb/kube-dc-controller-manager")
-FRONTEND_TAG=$(get_latest_docker_tag "shalb/kube-dc-frontend")
-BACKEND_TAG=$(get_latest_docker_tag "shalb/kube-dc-backend")
+MANAGER_TAG=$(get_latest_docker_tag "shalb/kube-dc-manager")
+FRONTEND_TAG=$(get_latest_docker_tag "shalb/kube-dc-ui-frontend")
+BACKEND_TAG=$(get_latest_docker_tag "shalb/kube-dc-ui-backend")
 
-# Use manager tag as the main version, fallback to default if not found
-if [ -n "$MANAGER_TAG" ]; then
-    KUBE_DC_VERSION="$MANAGER_TAG"
-    log_success "Latest version from Docker Hub: ${KUBE_DC_VERSION}"
+# Use stable chart version, dev versions for images
+KUBE_DC_CHART_VERSION="v0.1.33"  # Helm chart version (stable)
+
+if [ -n "$MANAGER_TAG" ] && [ "$MANAGER_TAG" != "" ]; then
+    log_success "Latest image versions from Docker Hub:"
     log_info "  Manager: ${MANAGER_TAG}"
     log_info "  Frontend: ${FRONTEND_TAG}"
     log_info "  Backend: ${BACKEND_TAG}"
+    log_info "  Chart: ${KUBE_DC_CHART_VERSION} (stable)"
 else
-    KUBE_DC_VERSION="v0.1.33"
-    log_warning "Could not fetch from Docker Hub, using default: ${KUBE_DC_VERSION}"
+    # Fallback: use chart version for images too
+    MANAGER_TAG="$KUBE_DC_CHART_VERSION"
+    FRONTEND_TAG="$KUBE_DC_CHART_VERSION"
+    BACKEND_TAG="$KUBE_DC_CHART_VERSION"
+    log_warning "Could not fetch from Docker Hub, using default: ${KUBE_DC_CHART_VERSION}"
 fi
 
-# Download templates from GitHub
+# Download templates from GitHub public repository
 log_info "Downloading Kube-DC templates from GitHub (main branch)..."
-if [ ! -d "./templates" ]; then
-    # Download templates using git sparse-checkout for efficiency
+if [ ! -f "./templates/template.yaml" ]; then
+    # Remove incomplete templates directory if it exists
+    rm -rf ./templates
+    
+    # Download using curl/wget for simplicity
+    log_info "Fetching templates archive..."
     mkdir -p ./templates
     cd ./templates
-    git init
-    git remote add origin https://github.com/shalb/kube-dc.git
-    git config core.sparseCheckout true
-    echo "installer/kube-dc/templates/kube-dc/*" >> .git/info/sparse-checkout
-    git pull --depth=1 origin main
     
-    # Move templates to correct location
-    if [ -d "installer/kube-dc/templates/kube-dc" ]; then
-        mv installer/kube-dc/templates/kube-dc/* .
-        rm -rf installer .git
+    # Download the specific directory as tarball
+    curl -sL https://github.com/kube-dc/kube-dc-public/archive/refs/heads/main.tar.gz | \
+        tar -xz --strip-components=5 kube-dc-public-main/installer/kube-dc/templates/kube-dc
+    
+    # Verify templates downloaded correctly
+    if [ -f "template.yaml" ]; then
+        log_success "Templates downloaded successfully"
+    else
+        cd ..
+        rm -rf ./templates
+        log_error "Failed to download templates - template.yaml not found"
+        exit 1
     fi
     cd ..
-    log_success "Templates downloaded"
 else
     log_info "Templates already exist, skipping download"
 fi
@@ -677,7 +705,10 @@ variables:
   cluster_config:
     pod_cidr: "10.100.0.0/16"
     svc_cidr: "10.101.0.0/16"
-    join_cidr: "100.64.0.0/16"
+    join_cidr: "172.30.0.0/20"
+    POD_CIDR: "10.100.0.0/16"
+    SVC_CIDR: "10.101.0.0/16"
+    JOIN_CIDR: "172.30.0.0/20"
     cluster_dns: "10.101.0.11"
     # Minimal external network config (required by template, but not actually used)
     # Real external networks can be added later via kube-dc-configure.sh
@@ -707,7 +738,7 @@ variables:
     project:
       name: ${PROJECT_NAME}
       cidr_block: "10.0.10.0/24"
-      egress_network_type: "public"
+      egress_network_type: "cloud"
   
   monitoring:
     prom_storage: 20Gi
@@ -715,7 +746,7 @@ variables:
     retention: 365d
   
   versions:
-    kube_dc: "${KUBE_DC_VERSION}"
+    kube_dc: "${KUBE_DC_CHART_VERSION}"
     manager: "${MANAGER_TAG}"
     frontend: "${FRONTEND_TAG}"
     backend: "${BACKEND_TAG}"

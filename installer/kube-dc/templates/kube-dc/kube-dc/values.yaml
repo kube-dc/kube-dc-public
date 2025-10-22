@@ -8,6 +8,9 @@ manager:
 
   image:
     pullPolicy: Always
+    {{- if .variables.versions.manager }}
+    tag: {{ .variables.versions.manager }}
+    {{- end }}
 
   kubernetesAuthConfig:
     path: /etc/rancher
@@ -37,6 +40,10 @@ manager:
   {{- end }}
 
 frontend:
+  {{- if .variables.versions.frontend }}
+  image:
+    tag: {{ .variables.versions.frontend }}
+  {{- end }}
   replicaCount: 1
   service:
     type: ClusterIP
@@ -66,6 +73,10 @@ frontend:
       secretName: kube-dc-frontend-tls
 
 backend:
+  {{- if .variables.versions.backend }}
+  image:
+    tag: {{ .variables.versions.backend }}
+  {{- end }}
   keycloakUrl: "{{ .variables.cluster_config.keycloak_hostname | default ( printf "login.%s" .variables.domain ) }}"
   replicaCount: 1
   service:
