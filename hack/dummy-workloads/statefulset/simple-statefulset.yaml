@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: simple-headless
+  labels:
+    app: simple
+spec:
+  ports:
+  - port: 8080
+    name: http
+  clusterIP: None
+  selector:
+    app: simple
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: simple-statefulset
+spec:
+  serviceName: "simple-headless"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: simple
+  template:
+    metadata:
+      labels:
+        app: simple
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:latest
+        command: 
+        - sh
+        - -c
+        - "while true; do echo 'StatefulSet pod running'; sleep 30; done"
