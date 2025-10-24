@@ -27,10 +27,11 @@ spec:
         image: quay.io/fluentd_elasticsearch/fluentd:v2.5.2
         resources:
           limits:
-            memory: 200Mi
+            memory: 50Mi
+            cpu: 20m
           requests:
-            cpu: 100m
-            memory: 200Mi
+            cpu: 5m
+            memory: 25Mi
         volumeMounts:
         - name: varlog
           mountPath: /var/log
@@ -70,10 +71,11 @@ spec:
           protocol: TCP
         resources:
           limits:
-            memory: 180Mi
+            memory: 50Mi
+            cpu: 20m
           requests:
-            cpu: 102m
-            memory: 180Mi
+            cpu: 5m
+            memory: 25Mi
         volumeMounts:
         - name: proc
           mountPath: /host/proc

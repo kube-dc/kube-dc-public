@@ -44,11 +44,11 @@ spec:
           value: "dummypassword"
         resources:
           limits:
-            memory: 512Mi
-            cpu: 500m
+            memory: 128Mi
+            cpu: 100m
           requests:
-            memory: 256Mi
-            cpu: 250m
+            memory: 64Mi
+            cpu: 20m
         volumeMounts:
         - name: mongodb-data
           mountPath: /data/db
@@ -59,7 +59,7 @@ spec:
       accessModes: [ "ReadWriteOnce" ]
       resources:
         requests:
-          storage: 1Gi
+          storage: 100Mi
 ---
 apiVersion: v1
 kind: Service
@@ -115,11 +115,11 @@ spec:
           value: "128M"
         resources:
           limits:
-            memory: 1Gi
-            cpu: 500m
+            memory: 256Mi
+            cpu: 100m
           requests:
-            memory: 512Mi
-            cpu: 250m
+            memory: 128Mi
+            cpu: 20m
         volumeMounts:
         - name: cassandra-data
           mountPath: /var/lib/cassandra
@@ -130,4 +130,4 @@ spec:
       accessModes: [ "ReadWriteOnce" ]
       resources:
         requests:
-          storage: 2Gi
+          storage: 200Mi

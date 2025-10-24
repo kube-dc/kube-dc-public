@@ -17,11 +17,11 @@ spec:
         command: ["perl", "-Mbignum=bpi", "-wle", "print bpi(2000)"]
         resources:
           limits:
-            memory: 128Mi
-            cpu: 200m
+            memory: 32Mi
+            cpu: 50m
           requests:
-            memory: 64Mi
-            cpu: 100m
+            memory: 16Mi
+            cpu: 10m
       restartPolicy: Never
   backoffLimit: 4
 ---
@@ -53,11 +53,11 @@ spec:
           echo "Data processing complete!"
         resources:
           limits:
-            memory: 64Mi
-            cpu: 100m
+            memory: 16Mi
+            cpu: 20m
           requests:
-            memory: 32Mi
-            cpu: 50m
+            memory: 8Mi
+            cpu: 5m
       restartPolicy: Never
   backoffLimit: 3
 ---
@@ -89,10 +89,10 @@ spec:
           echo "Backup completed successfully!"
         resources:
           limits:
-            memory: 128Mi
-            cpu: 150m
+            memory: 32Mi
+            cpu: 30m
           requests:
-            memory: 64Mi
-            cpu: 75m
+            memory: 16Mi
+            cpu: 10m
       restartPolicy: OnFailure
   backoffLimit: 2

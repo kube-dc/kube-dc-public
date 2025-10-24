@@ -23,11 +23,11 @@ spec:
         - containerPort: 80
         resources:
           limits:
-            memory: 128Mi
-            cpu: 200m
+            memory: 32Mi
+            cpu: 50m
           requests:
-            memory: 64Mi
-            cpu: 100m
+            memory: 16Mi
+            cpu: 10m
 ---
 apiVersion: apps/v1
 kind: ReplicaSet
@@ -55,8 +55,8 @@ spec:
         - containerPort: 3000
         resources:
           limits:
-            memory: 256Mi
-            cpu: 300m
+            memory: 64Mi
+            cpu: 50m
           requests:
-            memory: 128Mi
-            cpu: 150m
+            memory: 32Mi
+            cpu: 10m

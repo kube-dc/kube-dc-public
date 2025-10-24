@@ -23,11 +23,11 @@ spec:
         - containerPort: 80
         resources:
           limits:
-            memory: 128Mi
-            cpu: 250m
+            memory: 32Mi
+            cpu: 50m
           requests:
-            memory: 64Mi
-            cpu: 100m
+            memory: 16Mi
+            cpu: 10m
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -54,11 +54,11 @@ spec:
         - containerPort: 6379
         resources:
           limits:
-            memory: 256Mi
-            cpu: 200m
+            memory: 64Mi
+            cpu: 50m
           requests:
-            memory: 128Mi
-            cpu: 100m
+            memory: 32Mi
+            cpu: 10m
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -90,8 +90,8 @@ spec:
         - containerPort: 5432
         resources:
           limits:
-            memory: 512Mi
-            cpu: 500m
+            memory: 128Mi
+            cpu: 100m
           requests:
-            memory: 256Mi
-            cpu: 250m
+            memory: 64Mi
+            cpu: 20m
