@@ -185,6 +185,15 @@ Different VPC networks are independent of each other and can be separately confi
 - Outbound gateways
 - EIP allocations
 
+### Cross-Type EIP Routing
+
+When a project uses a different external network type for Service LoadBalancers than its default egress (e.g., `egressNetworkType: cloud` with EIPs from `ext-public`), Kube-DC automatically:
+- Selects and persists a "preferred external subnet" per network type via VPC annotations (`kube-dc.com/preferred-external-subnet.<type>`)
+- Configures VPC policy routes to ensure reply traffic uses the correct external gateway
+- Ensures consistent subnet allocation for subsequent EIPs of the same type
+
+This mechanism prevents asymmetric routing issues while maintaining deterministic network paths across project resources.
+
 ## Overlay vs. Underlay Networks
 
 Kube-DC supports both networking approaches:
