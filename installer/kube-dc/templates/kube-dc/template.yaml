@@ -1,4 +1,4 @@
-{{- $kubeDcChartVersion := (.variables.versions.kube_dc                      | default "v0.1.33" | quote) -}}
+{{- $kubeDcChartVersion := (.variables.versions.kube_dc                      | default "v0.1.34" | quote) -}}
 {{- $terraformVersion := (.variables.versions.terraform                      | default "1.9.4" | quote) -}}
 {{- $kubevirtVersion := (.variables.versions.kubevirt                        | default "v1.6.0" | quote) -}}
 {{- $kubevirtCdiVersion := (.variables.versions.kubevirt_cdi                 | default "v1.59.0" | quote) -}}

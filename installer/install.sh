@@ -634,7 +634,7 @@ FRONTEND_TAG=$(get_latest_docker_tag "shalb/kube-dc-ui-frontend")
 BACKEND_TAG=$(get_latest_docker_tag "shalb/kube-dc-ui-backend")
 
 # Use stable chart version, dev versions for images
-KUBE_DC_CHART_VERSION="v0.1.33"  # Helm chart version (stable)
+KUBE_DC_CHART_VERSION="v0.1.34"  # Helm chart version (stable)
 
 if [ -n "$MANAGER_TAG" ] && [ "$MANAGER_TAG" != "" ]; then
     log_success "Latest image versions from Docker Hub:"

@@ -52,9 +52,6 @@ Physical Interface (enp0s31f6)
 - Have specific routing or compliance requirements
 - Running load balancers or ingress controllers
 
-**Note on Cross-Type Usage:**
-You can create a project with `egressNetworkType: cloud` and still use public EIPs for Service LoadBalancers. Kube-DC automatically handles routing via VPC policy routes and sticky subnet selection to ensure proper connectivity.
-
 ## OVS/OVN Modifications Applied
 
 ### 1. OVS Bridge Configuration
