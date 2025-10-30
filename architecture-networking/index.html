@@ -890,15 +890,6 @@
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#cross-type-eip-routing" class="md-nav__link">
-    <span class="md-ellipsis">
-      Cross-Type EIP Routing
-    </span>
-  </a>
-  
-</li>
-        
       </ul>
     </nav>
   
@@ -1435,15 +1426,6 @@
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#cross-type-eip-routing" class="md-nav__link">
-    <span class="md-ellipsis">
-      Cross-Type EIP Routing
-    </span>
-  </a>
-  
-</li>
-        
       </ul>
     </nav>
   
@@ -1653,12 +1635,6 @@
 - Security policies
 - Outbound gateways
 - EIP allocations</p>
-<h3 id="cross-type-eip-routing">Cross-Type EIP Routing<a class="headerlink" href="#cross-type-eip-routing" title="Permanent link"> ¶</a></h3>
-<p>When a project uses a different external network type for Service LoadBalancers than its default egress (e.g., <code>egressNetworkType: cloud</code> with EIPs from <code>ext-public</code>), Kube-DC automatically:
-- Selects and persists a "preferred external subnet" per network type via VPC annotations (<code>kube-dc.com/preferred-external-subnet.&lt;type&gt;</code>)
-- Configures VPC policy routes to ensure reply traffic uses the correct external gateway
-- Ensures consistent subnet allocation for subsequent EIPs of the same type</p>
-<p>This mechanism prevents asymmetric routing issues while maintaining deterministic network paths across project resources.</p>
 <h2 id="overlay-vs-underlay-networks">Overlay vs. Underlay Networks<a class="headerlink" href="#overlay-vs-underlay-networks" title="Permanent link"> ¶</a></h2>
 <p>Kube-DC supports both networking approaches:</p>
 <h3 id="overlay-networks">Overlay Networks<a class="headerlink" href="#overlay-networks" title="Permanent link"> ¶</a></h3>

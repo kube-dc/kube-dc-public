@@ -1594,8 +1594,6 @@
 - Need dedicated public IP addresses
 - Have specific routing or compliance requirements
 - Running load balancers or ingress controllers</p>
-<p><strong>Note on Cross-Type Usage:</strong>
-You can create a project with <code>egressNetworkType: cloud</code> and still use public EIPs for Service LoadBalancers. Kube-DC automatically handles routing via VPC policy routes and sticky subnet selection to ensure proper connectivity.</p>
 <h2 id="ovsovn-modifications-applied">OVS/OVN Modifications Applied<a class="headerlink" href="#ovsovn-modifications-applied" title="Permanent link"> ¶</a></h2>
 <h3 id="1-ovs-bridge-configuration">1. OVS Bridge Configuration<a class="headerlink" href="#1-ovs-bridge-configuration" title="Permanent link"> ¶</a></h3>
 <p>The system automatically creates the necessary OVS infrastructure:</p>
