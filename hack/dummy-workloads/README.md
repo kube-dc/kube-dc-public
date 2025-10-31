@@ -26,6 +26,15 @@ This directory contains example Kubernetes workload resources for testing and de
 - **frontend-replicaset**: 3 replicas of nginx frontend
 - **api-replicaset**: 2 replicas of Node.js API server
 
+### Services (service.yaml)
+- **nginx-service**: ClusterIP service for nginx deployment
+- **redis-service**: ClusterIP service for Redis deployment
+- **postgres-service**: ClusterIP service for PostgreSQL deployment
+
+### Ingresses (ingress.yaml)
+- **nginx-ingress**: Ingress for nginx service (host: nginx.local)
+- **redis-ingress**: Ingress for Redis service (host: redis.local)
+
 ## Usage
 
 ### Apply All Resources
@@ -53,6 +62,8 @@ kubectl apply -f daemonset.yaml -n <your-namespace>
 kubectl apply -f job.yaml -n <your-namespace>
 kubectl apply -f statefulset.yaml -n <your-namespace>
 kubectl apply -f replicaset.yaml -n <your-namespace>
+kubectl apply -f service.yaml -n <your-namespace>
+kubectl apply -f ingress.yaml -n <your-namespace>
 ```
 
 ### View Resources
@@ -65,6 +76,8 @@ kubectl get daemonsets -n <your-namespace>
 kubectl get jobs -n <your-namespace>
 kubectl get statefulsets -n <your-namespace>
 kubectl get replicasets -n <your-namespace>
+kubectl get services -n <your-namespace>
+kubectl get ingresses -n <your-namespace>
 kubectl get pods -n <your-namespace>
 ```
 
@@ -82,6 +95,7 @@ chmod +x delete-all.sh
 - **StatefulSets** require a StorageClass to be available in your cluster for PersistentVolumeClaims
 - **DaemonSets** will create one pod per node in your cluster
 - **Jobs** will run to completion and can be cleaned up after they finish
+- **Ingresses** require an Ingress Controller (e.g., nginx-ingress) to be installed in your cluster
 - All resources use minimal resource requests/limits suitable for testing environments
 
 ## Resource Requirements

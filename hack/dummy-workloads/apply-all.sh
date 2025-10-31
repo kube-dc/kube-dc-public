@@ -33,6 +33,16 @@ echo ""
 echo "Creating ReplicaSets..."
 kubectl apply -f replicaset.yaml -n $NAMESPACE
 
+# Apply Services
+echo ""
+echo "Creating Services..."
+kubectl apply -f service.yaml -n $NAMESPACE
+
+# Apply Ingresses
+echo ""
+echo "Creating Ingresses..."
+kubectl apply -f ingress.yaml -n $NAMESPACE
+
 echo ""
 echo "================================================"
 echo "All resources applied successfully!"
@@ -43,3 +53,5 @@ echo "  kubectl get daemonsets -n $NAMESPACE"
 echo "  kubectl get jobs -n $NAMESPACE"
 echo "  kubectl get statefulsets -n $NAMESPACE"
 echo "  kubectl get replicasets -n $NAMESPACE"
+echo "  kubectl get services -n $NAMESPACE"
+echo "  kubectl get ingresses -n $NAMESPACE"
