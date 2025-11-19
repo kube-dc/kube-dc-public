@@ -177,6 +177,26 @@ Apply this manifest:
 kubectl apply -f vm-ssh-lb.yaml
 ```
 
+### Automatic External Endpoints
+
+Kube-DC automatically creates external endpoints for every LoadBalancer service, providing stable DNS-based access across VPC boundaries.
+
+When a LoadBalancer service gets an external IP, the controller creates:
+- **External Service**: `<service-name>-ext` (headless service)
+- **Endpoints**: Points to the LoadBalancer's external IP
+
+This enables cross-VPC communication using stable DNS names like `etcd-lb-ext.shalb-demo.svc.cluster.local:2379` instead of hardcoded IP addresses.
+
+**Verify external endpoints:**
+
+```bash
+# List all external endpoints
+kubectl get endpoints -A --selector=kube-dc.com/managed-by=service-lb-controller
+
+# Check specific service
+kubectl get svc,endpoints -n shalb-demo nginx-service-lb-ext
+```
+
 ## Managing Network Resources with kubectl
 
 Check the status of network resources:

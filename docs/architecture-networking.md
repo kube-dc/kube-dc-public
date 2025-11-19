@@ -172,6 +172,18 @@ Kube-DC uses a specialized implementation for Service LoadBalancers:
   - The project's default gateway EIP (with annotation `service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"`)
   - A dedicated EIP (with annotation `service.nlb.kube-dc.com/bind-on-eip: "eip-name"`)
 
+### Automatic External Endpoints (v0.1.34+)
+
+Kube-DC automatically creates external endpoints for LoadBalancer services to enable cross-VPC communication.
+
+When a LoadBalancer receives an external IP, the controller creates:
+- **External Service** (`<service-name>-ext`): Headless service
+- **Endpoints** (`<service-name>-ext`): Points to the LoadBalancer's external IP
+
+This solves cross-VPC access by providing stable DNS names (e.g., `etcd-lb-ext.shalb-envoy.svc.cluster.local`) instead of hardcoded IPs. Endpoints are automatically updated when IPs change and deleted with the LoadBalancer service.
+
+External endpoints are labeled with `kube-dc.com/managed-by: service-lb-controller`.
+
 ## Kube-OVN for VPC Management
 
 Kube-OVN is a key component of Kube-DC's networking architecture, providing the foundation for multi-tenant network isolation through VPC networks.
