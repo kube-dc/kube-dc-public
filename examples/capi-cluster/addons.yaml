@@ -284,10 +284,6 @@ metadata:
     k8s-app: kccm-demo
   name: kccm-demo
   namespace: demo
-  annotations:
-    ovn.kubernetes.io/logical_router: ovn-cluster
-    ovn.kubernetes.io/logical_switch: ovn-default
-    ovn.kubernetes.io/vpc: ovn-cluster
 spec:
   replicas: 1
   selector:
