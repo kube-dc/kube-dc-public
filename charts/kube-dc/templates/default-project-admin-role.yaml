@@ -228,6 +228,22 @@ rules:
   - watch
   - delete
 - apiGroups:
+  - k8s.kube-dc.com
+  resources:
+  - kdcclusters
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - ""
   resources:
   - pods/log
