@@ -231,10 +231,13 @@ rules:
   - k8s.kube-dc.com
   resources:
   - kdcclusters
+  - kdcclusterdatastores
   verbs:
+  - create
   - get
   - list
   - watch
+  - delete
 - apiGroups:
   - ""
   resources:
