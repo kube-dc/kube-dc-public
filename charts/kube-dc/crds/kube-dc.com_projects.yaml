@@ -66,6 +66,7 @@ spec:
                 type: string
             required:
             - cidrBlock
+            - egressNetworkType
             type: object
           status:
             description: ProjectStatus defines the observed state of Project.
