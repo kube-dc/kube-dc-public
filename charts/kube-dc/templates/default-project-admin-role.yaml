@@ -4,16 +4,6 @@ metadata:
   name: default-project-admin-role
 rules:
 - apiGroups:
-  - batch
-  resources:
-  - jobs
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-  - delete
-- apiGroups:
   - ""
   resources:
   - persistentvolumeclaims
@@ -68,7 +58,6 @@ rules:
   - virtualmachines/removevolume
   - virtualmachines/migrate
   - virtualmachines/memorydump
-  - virtualmachines/stop
   - virtualmachines/pause
   verbs:
   - update
@@ -90,7 +79,6 @@ rules:
   - subresources.kubevirt.io
   resources:
   - virtualmachines/expand-spec
-  - virtualmachines/stop
   verbs:
   - update
 - apiGroups:
@@ -166,17 +154,6 @@ rules:
   - watch
   - delete
 - apiGroups:
-  - extensions
-  resources:
-  - deployments
-  - replicasets
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-  - delete
-- apiGroups:
   - batch
   resources:
   - jobs
@@ -238,6 +215,8 @@ rules:
   - list
   - watch
   - delete
+  - patch
+  - update
 - apiGroups:
   - ""
   resources:
