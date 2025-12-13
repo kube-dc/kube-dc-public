@@ -5,16 +5,7 @@ This document outlines the current product backlog for the Kube-DC project, orga
 ## 🚀 Active Epics
 
 ### [Epic] Windows Support
-**Status**: In Progress
-
-- ✅ **[Platform] Windows QCOW and documented pipeline on preparing golden image**
-  - Complete Windows 11 VM implementation with VirtIO drivers
-  - HTTP-based ISO serving infrastructure
-  - Documentation for Windows VM setup and configuration
-
-- 🔄 **Fix issues on metrics from Windows VMs**
-  - Address Windows-specific monitoring and metrics collection
-  - Ensure proper guest agent integration for Windows
+**Status**: Done
 
 ### [Epic] VMware Migration
 **Status**: Research Phase
@@ -28,7 +19,7 @@ This document outlines the current product backlog for the Kube-DC project, orga
 **Status**: Planning
 
 - 📋 **UI for project and roles**
-  - Implement project management interface
+  - Implement project management interface 
   - Role-based access control UI components
   - User and group management interfaces
 
