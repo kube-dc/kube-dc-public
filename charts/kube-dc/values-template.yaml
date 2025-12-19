@@ -271,3 +271,40 @@ backend:
   tolerations: []
 
   affinity: {}
+
+# k8-manager - Kubernetes cluster management controller
+k8Manager:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: shalb/kube-dc-k8-manager
+    pullPolicy: IfNotPresent
+    tag: {{ .variables.versions.k8_manager | default "latest" | quote }}
+
+  # Kamaji datastore configuration
+  kamajiDatastoreName: "default"
+  kamajiDatastoreNamespace: "kamaji-system"
+
+  # Enable metrics endpoint
+  metricsEnabled: false
+
+  # Extra arguments for the manager
+  extraArgs: []
+
+  # Extra environment variables
+  extraEnv: []
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi
+
+  nodeSelector: {}
+
+  tolerations: []
+
+  affinity: {}

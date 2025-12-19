@@ -1,0 +1,431 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: kdcclusterdatastores.k8s.kube-dc.com
+spec:
+  group: k8s.kube-dc.com
+  names:
+    kind: KdcClusterDatastore
+    listKind: KdcClusterDatastoreList
+    plural: kdcclusterdatastores
+    shortNames:
+    - kdc-ds
+    singular: kdcclusterdatastore
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.etcd.ready
+      name: Etcd Ready
+      type: boolean
+    - jsonPath: .status.dataStore.name
+      name: DataStore
+      type: string
+    - jsonPath: .status.referenceCount
+      name: References
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: KdcClusterDatastore is the Schema for the kdcclusterdatastores
+          API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of KdcClusterDatastore
+            properties:
+              certificates:
+                description: Certificate management configuration
+                properties:
+                  duration:
+                    default: 2160h
+                    description: Certificate duration
+                    type: string
+                  issuer:
+                    description: cert-manager Issuer configuration
+                    properties:
+                      kind:
+                        default: ClusterIssuer
+                        description: Issuer or ClusterIssuer
+                        enum:
+                        - Issuer
+                        - ClusterIssuer
+                        type: string
+                      name:
+                        default: etcd-ca-issuer
+                        description: Issuer/ClusterIssuer name
+                        type: string
+                    type: object
+                  renewBefore:
+                    default: 720h
+                    description: Renew before expiry
+                    type: string
+                type: object
+              dataStore:
+                description: Kamaji DataStore configuration
+                properties:
+                  endpointTemplate:
+                    description: Custom endpoint template
+                    type: string
+                  name:
+                    description: |-
+                      DataStore name in kamaji-system
+                      Defaults to metadata.name
+                    type: string
+                type: object
+              etcd:
+                description: Etcd cluster configuration
+                properties:
+                  compaction:
+                    description: Auto-compaction configuration to prevent database
+                      space exhaustion
+                    properties:
+                      mode:
+                        default: periodic
+                        description: 'Compaction mode: "periodic" or "revision"'
+                        enum:
+                        - periodic
+                        - revision
+                        type: string
+                      retention:
+                        default: 1h
+                        description: |-
+                          Retention period for periodic mode (e.g., "1h", "24h")
+                          or number of revisions for revision mode
+                        type: string
+                    type: object
+                  image:
+                    description: Custom etcd image
+                    type: string
+                  quotaBackendBytes:
+                    default: 8589934592
+                    description: 'Backend quota in bytes (default: 8GB)'
+                    format: int64
+                    type: integer
+                  replicas:
+                    default: 3
+                    description: Number of etcd replicas (1, 3, 5, 7, 9)
+                    enum:
+                    - 1
+                    - 3
+                    - 5
+                    - 7
+                    - 9
+                    format: int32
+                    type: integer
+                  resources:
+                    description: Resource requirements
+                    properties:
+                      claims:
+                        description: |-
+                          Claims lists the names of resources, defined in spec.resourceClaims,
+                          that are used by this container.
+
+                          This field depends on the
+                          DynamicResourceAllocation feature gate.
+
+                          This field is immutable. It can only be set for containers.
+                        items:
+                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                          properties:
+                            name:
+                              description: |-
+                                Name must match the name of one entry in pod.spec.resourceClaims of
+                                the Pod where this field is used. It makes that resource available
+                                inside a container.
+                              type: string
+                            request:
+                              description: |-
+                                Request is the name chosen for a request in the referenced claim.
+                                If empty, everything from the claim is made available, otherwise
+                                only the result of this request.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Limits describes the maximum amount of compute resources allowed.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Requests describes the minimum amount of compute resources required.
+                          If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                          otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                    type: object
+                  storage:
+                    description: Storage configuration
+                    properties:
+                      size:
+                        default: 10Gi
+                        description: PVC size per etcd replica
+                        type: string
+                      storageClassName:
+                        default: local-path
+                        description: StorageClass name
+                        type: string
+                    type: object
+                  version:
+                    default: v3.5.11
+                    description: etcd version
+                    type: string
+                required:
+                - replicas
+                type: object
+              networkPolicy:
+                description: Network policy configuration
+                properties:
+                  allowedNamespaces:
+                    description: Additional namespaces allowed to access etcd
+                    items:
+                      type: string
+                    type: array
+                  enabled:
+                    default: false
+                    description: Enable NetworkPolicy creation
+                    type: boolean
+                type: object
+              service:
+                description: LoadBalancer service configuration
+                properties:
+                  eip:
+                    description: EIP configuration
+                    properties:
+                      create:
+                        default: false
+                        description: |-
+                          Create new EIP or use existing default-gw
+                          Default: false (use existing default-gw)
+                        type: boolean
+                      externalNetworkType:
+                        description: External network type (required if create=true)
+                        enum:
+                        - public
+                        - cloud
+                        type: string
+                      name:
+                        description: |-
+                          EIP name
+                          - If create=false (default): uses "default-gw"
+                          - If create=true: creates new EIP with this name (required)
+                        type: string
+                      publicIpName:
+                        description: Public IP resource name (if create=true)
+                        type: string
+                    type: object
+                  port:
+                    default: 2379
+                    description: |-
+                      External port for LoadBalancer service (exposed on EIP)
+                      Default: 2379
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                type: object
+            required:
+            - etcd
+            type: object
+          status:
+            description: status defines the observed state of KdcClusterDatastore
+            properties:
+              conditions:
+                description: Conditions
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              dataStore:
+                description: DataStore status
+                properties:
+                  endpoint:
+                    type: string
+                  name:
+                    type: string
+                  ready:
+                    type: boolean
+                required:
+                - ready
+                type: object
+              etcd:
+                description: etcd status
+                properties:
+                  endpoints:
+                    items:
+                      type: string
+                    type: array
+                  loadBalancerIP:
+                    type: string
+                  ready:
+                    type: boolean
+                  readyReplicas:
+                    format: int32
+                    type: integer
+                  replicas:
+                    format: int32
+                    type: integer
+                required:
+                - ready
+                - readyReplicas
+                - replicas
+                type: object
+              lastReconcileTime:
+                description: Last reconcile time
+                format: date-time
+                type: string
+              observedGeneration:
+                description: Observed generation
+                format: int64
+                type: integer
+              phase:
+                description: Overall phase
+                enum:
+                - Pending
+                - Provisioning
+                - Ready
+                - Failed
+                - Degraded
+                type: string
+              referenceCount:
+                description: Number of kdc-cluster resources using this datastore
+                format: int32
+                type: integer
+              resources:
+                description: Resource inventory
+                properties:
+                  eip:
+                    description: EIPInfo represents EIP resource information
+                    properties:
+                      ip:
+                        type: string
+                      name:
+                        type: string
+                    type: object
+                  secrets:
+                    items:
+                      description: SecretInfo represents Secret resource information
+                      properties:
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                      type: object
+                    type: array
+                  services:
+                    items:
+                      description: ServiceInfo represents Service resource information
+                      properties:
+                        externalIP:
+                          type: string
+                        name:
+                          type: string
+                        type:
+                          type: string
+                      type: object
+                    type: array
+                type: object
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

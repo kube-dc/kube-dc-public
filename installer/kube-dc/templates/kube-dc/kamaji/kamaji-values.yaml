@@ -1,0 +1,33 @@
+# Kamaji values
+# Custom kube-dc build with additional features
+{{- $kamajiImageTag := (.variables.versions.kamaji_image | default "edge-25.11.21-kube-dc") -}}
+
+image:
+  repository: shalb/kamaji
+  tag: {{ $kamajiImageTag }}
+  pullPolicy: IfNotPresent
+
+# Default datastore configuration
+datastore:
+  enabled: true
+  driver: etcd
+  endpoints:
+    - kamaji-etcd-0.kamaji-etcd.kamaji-system.svc.cluster.local:2379
+    - kamaji-etcd-1.kamaji-etcd.kamaji-system.svc.cluster.local:2379
+    - kamaji-etcd-2.kamaji-etcd.kamaji-system.svc.cluster.local:2379
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Enable telemetry
+telemetry:
+  disabled: false
+
+# Logging
+loggingDevel:
+  enable: false

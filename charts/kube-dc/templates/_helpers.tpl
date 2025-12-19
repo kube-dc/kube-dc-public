@@ -109,3 +109,34 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- default (include "kube-dc.manager.fullname" .) .Values.manager.serviceAccount.name }}
 {{- end }}
 
+{{- define "kube-dc.k8manager.name" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 52 | trimSuffix "-" }}-k8-manager
+{{- end }}
+
+{{- define "kube-dc.k8manager.fullname" -}}
+{{- if .Values.fullnameOverride }}
+{{- .Values.fullnameOverride | trunc 52 | trimSuffix "-" }}-k8-manager
+{{- else }}
+{{- $name := default .Chart.Name .Values.nameOverride }}
+{{- if contains $name .Release.Name }}
+{{- .Release.Name | trunc 52 | trimSuffix "-" }}-k8-manager
+{{- else }}
+{{- printf "%s-%s" .Release.Name $name | trunc 52 | trimSuffix "-" }}-k8-manager
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "kube-dc.k8manager.labels" -}}
+helm.sh/chart: {{ include "kube-dc.chart" . }}
+{{ include "kube-dc.k8manager.selectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{- define "kube-dc.k8manager.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "kube-dc.k8manager.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+

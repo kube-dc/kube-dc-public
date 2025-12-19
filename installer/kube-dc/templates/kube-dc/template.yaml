@@ -14,6 +14,9 @@
 {{- $promChartVersion := (.variables.versions.prom_operator_helm             | default "67.4.0"| quote) -}}
 {{- $lokiChartVersion := (.variables.versions.loki_helm                      | default "6.11.0"| quote) -}}
 {{- $alloyChartVersion := (.variables.versions.alloy_helm                    | default "0.10.1"| quote) -}}
+{{- $kamajiChartVersion := (.variables.versions.kamaji_helm                  | default "1.0.0"| quote) -}}
+{{- $kamajiEtcdChartVersion := (.variables.versions.kamaji_etcd_helm         | default "0.14.0"| quote) -}}
+{{- $kamajiImageTag := (.variables.versions.kamaji_image                     | default "edge-25.11.21-kube-dc" | quote) -}}
 
 name: cluster
 kind: StackTemplate
@@ -352,6 +355,40 @@ units:
     destroy:
       commands:
         - clusterctl delete --infrastructure kubevirt --bootstrap k3s --control-plane k3s
+  -
+    name: kamaji-etcd
+    type: helm
+    depends_on: this.cert-manager-cluster-issuer
+    source:
+      repository: "https://clastix.github.io/charts"
+      chart: "kamaji-etcd"
+      version: {{ $kamajiEtcdChartVersion }}
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    values:
+      - file: ./kamaji/kamaji-etcd-values.yaml
+        apply_template: true
+    additional_options:
+      namespace: "kamaji-system"
+      create_namespace: true
+      wait: true
+  -
+    name: kamaji
+    type: helm
+    depends_on: this.kamaji-etcd
+    source:
+      repository: "https://clastix.github.io/charts"
+      chart: "kamaji"
+      version: {{ $kamajiChartVersion }}
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    values:
+      - file: ./kamaji/kamaji-values.yaml
+        apply_template: true
+    additional_options:
+      namespace: "kamaji-system"
+      create_namespace: true
+      wait: true
   -
     name: kyverno
     type: shell

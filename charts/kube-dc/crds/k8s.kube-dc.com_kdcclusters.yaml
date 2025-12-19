@@ -1,0 +1,408 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: kdcclusters.k8s.kube-dc.com
+spec:
+  group: k8s.kube-dc.com
+  names:
+    kind: KdcCluster
+    listKind: KdcClusterList
+    plural: kdcclusters
+    shortNames:
+    - kdc-cl
+    singular: kdccluster
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.version
+      name: Version
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.endpoint
+      name: Endpoint
+      type: string
+    - jsonPath: .status.dataStoreName
+      name: DataStore
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: KdcCluster is the Schema for the kdcclusters API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: KdcClusterSpec defines the desired state of KdcCluster
+            properties:
+              controlPlane:
+                description: Control plane configuration
+                properties:
+                  replicas:
+                    default: 2
+                    description: Number of control plane replicas
+                    format: int32
+                    type: integer
+                type: object
+              dataStore:
+                description: DataStore reference
+                properties:
+                  dedicated:
+                    default: false
+                    description: |-
+                      Create a dedicated DataStore for this cluster
+                      When true, creates a dedicated etcd DataStore that will be deleted with the cluster
+                      When false (default), uses an existing shared DataStore
+                    type: boolean
+                  eipName:
+                    description: |-
+                      EIP name to use for the dedicated DataStore LoadBalancer service
+                      Defaults to "default-gw" if not specified
+                    type: string
+                  name:
+                    description: |-
+                      Name of the KdcClusterDatastore to use
+                      If not specified, will auto-discover in same namespace
+                    type: string
+                  namespace:
+                    description: Namespace of the DataStore (defaults to cluster namespace)
+                    type: string
+                  port:
+                    description: |-
+                      Port to expose the dedicated DataStore on the shared EIP
+                      Must be unique per EIP to avoid conflicts
+                      Defaults to 2379 if not specified
+                    format: int32
+                    maximum: 65535
+                    minimum: 1024
+                    type: integer
+                type: object
+              eip:
+                description: External IP configuration for API server
+                properties:
+                  create:
+                    default: true
+                    description: Create a new EIP or use existing
+                    type: boolean
+                  externalNetworkType:
+                    default: public
+                    description: External network type (public/cloud)
+                    type: string
+                  name:
+                    description: Name of existing EIP to use (if create=false)
+                    type: string
+                type: object
+              enableClusterAPI:
+                default: false
+                description: |-
+                  Enable Cluster API integration
+                  When enabled, creates CAPI Cluster and KamajiControlPlane resources
+                type: boolean
+              network:
+                description: Network configuration
+                properties:
+                  podCIDR:
+                    default: 10.244.0.0/16
+                    description: Pod CIDR
+                    type: string
+                  serviceCIDR:
+                    default: 10.96.0.0/12
+                    description: Service CIDR
+                    type: string
+                type: object
+              version:
+                description: Kubernetes version for the control plane
+                type: string
+              workers:
+                description: |-
+                  Worker node pools configuration (requires enableClusterAPI=true)
+                  Supports multiple pools with different configurations
+                items:
+                  description: |-
+                    WorkerPoolSpec defines a worker node pool configuration for CAPI + KubeVirt
+                    Supports multiple pools with different CPU, memory, and architecture profiles
+                  properties:
+                    architecture:
+                      default: amd64
+                      description: |-
+                        Architecture for this worker pool (amd64, arm64, etc.)
+                        Used for node selection and image variants
+                      type: string
+                    cloudsigma:
+                      description: CloudSigma-specific configuration (used when infrastructureProvider=cloudsigma)
+                      properties:
+                        ccmImage:
+                          default: docker.io/shalb/cloudsigma-ccm:latest
+                          description: Cloud Controller Manager image
+                          type: string
+                        cpuMHz:
+                          description: |-
+                            CPU in MHz (overrides calculation from cpuCores)
+                            If not specified, CPU is calculated as: cpuCores * mhzPerCore (default: 2000 MHz per core)
+                            Example: 2000 = 2 GHz (1 core), 4000 = 4 GHz (2 cores with 2 GHz each)
+                          format: int32
+                          minimum: 1000
+                          type: integer
+                        diskSizeGB:
+                          description: |-
+                            Disk size in GB (overrides default calculation from memory)
+                            If not specified, disk size is calculated based on memory (e.g., 2x memory)
+                          format: int32
+                          type: integer
+                        imageUUID:
+                          description: |-
+                            CloudSigma image UUID (boot disk/image)
+                            This is the VM template/image UUID from CloudSigma
+                          type: string
+                        meta:
+                          additionalProperties:
+                            type: string
+                          description: CloudSigma server metadata (key-value pairs)
+                          type: object
+                        mhzPerCore:
+                          default: 2000
+                          description: |-
+                            MHz per core (used when converting cpuCores to MHz)
+                            Default: 2000 MHz per core (CloudSigma default)
+                            Example: mhzPerCore=3000 with cpuCores=2 gives 6000 MHz total
+                          format: int32
+                          minimum: 1000
+                          type: integer
+                        nics:
+                          description: Network interface configurations
+                          items:
+                            description: CloudSigmaNICSpec defines a CloudSigma network
+                              interface configuration
+                            properties:
+                              ipv4Conf:
+                                description: IP v4 configuration mode (dhcp, manual,
+                                  or empty for auto)
+                                type: string
+                              vlan:
+                                description: VLAN UUID (optional, omit for public
+                                  NAT IP)
+                                type: string
+                            type: object
+                          type: array
+                        region:
+                          description: CloudSigma region (zrh, lvs, sjc, tyo, or "next"
+                            for testing)
+                          type: string
+                        tags:
+                          description: CloudSigma server tags
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - imageUUID
+                      type: object
+                    cpuCores:
+                      default: 1
+                      description: |-
+                        CPU cores per worker
+                        For KubeVirt: Supports whole numbers (1, 2, 4, etc.)
+                        For other providers: Check provider documentation
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    image:
+                      description: |-
+                        Container disk image for KubeVirt workers only
+                        For CloudSigma, use cloudsigma.imageUUID instead
+                        Default for KubeVirt: quay.io/capk/ubuntu-2404-container-disk:v1.34.1
+                      type: string
+                    infrastructureProvider:
+                      default: kubevirt
+                      description: |-
+                        Infrastructure provider for this worker pool
+                        Determines which CAPI infrastructure provider to use (kubevirt, aws, azure, etc.)
+                      type: string
+                    labels:
+                      additionalProperties:
+                        type: string
+                      description: Node labels to apply to workers in this pool
+                      type: object
+                    memory:
+                      default: 2Gi
+                      description: Memory per worker (e.g., "2Gi", "4Gi", "8Gi")
+                      type: string
+                    name:
+                      description: |-
+                        Name of the worker pool (must be unique within cluster)
+                        Used to generate MachineDeployment name: {cluster-name}-{pool-name}
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                    replicas:
+                      default: 2
+                      description: Number of worker replicas in this pool
+                      format: int32
+                      minimum: 0
+                      type: integer
+                    taints:
+                      description: Node taints to apply to workers in this pool
+                      items:
+                        description: |-
+                          The node this Taint is attached to has the "effect" on
+                          any pod that does not tolerate the Taint.
+                        properties:
+                          effect:
+                            description: |-
+                              Required. The effect of the taint on pods
+                              that do not tolerate the taint.
+                              Valid effects are NoSchedule, PreferNoSchedule and NoExecute.
+                            type: string
+                          key:
+                            description: Required. The taint key to be applied to
+                              a node.
+                            type: string
+                          timeAdded:
+                            description: TimeAdded represents the time at which the
+                              taint was added.
+                            format: date-time
+                            type: string
+                          value:
+                            description: The taint value corresponding to the taint
+                              key.
+                            type: string
+                        required:
+                        - effect
+                        - key
+                        type: object
+                      type: array
+                  required:
+                  - name
+                  type: object
+                type: array
+            required:
+            - version
+            type: object
+          status:
+            description: KdcClusterStatus defines the observed state of KdcCluster
+            properties:
+              conditions:
+                description: Conditions represent the latest available observations
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              controlPlaneReady:
+                description: ControlPlaneReady indicates if control plane is ready
+                type: boolean
+              dataStoreName:
+                description: DataStoreName is the name of the referenced DataStore
+                type: string
+              eipName:
+                description: EIPName is the name of the created or referenced EIP
+                type: string
+              endpoint:
+                description: Endpoint is the API server endpoint
+                type: string
+              phase:
+                description: Phase represents the current phase of the cluster
+                type: string
+              workerPools:
+                description: WorkerPools status for each worker pool
+                items:
+                  description: WorkerPoolStatus defines the observed state of a worker
+                    pool
+                  properties:
+                    name:
+                      description: Name of the worker pool
+                      type: string
+                    phase:
+                      description: Phase of the worker pool (Provisioning, Ready,
+                        Failed)
+                      type: string
+                    readyReplicas:
+                      description: ReadyReplicas is the number of ready replicas
+                      format: int32
+                      type: integer
+                    replicas:
+                      description: Replicas is the current number of replicas
+                      format: int32
+                      type: integer
+                  required:
+                  - name
+                  - readyReplicas
+                  - replicas
+                  type: object
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
