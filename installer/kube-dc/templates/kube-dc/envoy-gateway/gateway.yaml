@@ -1,4 +1,5 @@
 {{- $domain := .variables.domain -}}
+{{- $nodeExternalIP := .variables.node_external_ip -}}
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
@@ -6,6 +7,9 @@ metadata:
   namespace: envoy-gateway-system
 spec:
   gatewayClassName: eg
+  addresses:
+  - type: IPAddress
+    value: {{ $nodeExternalIP }}
   listeners:
   # HTTP for ACME challenges and redirects
   - name: http
