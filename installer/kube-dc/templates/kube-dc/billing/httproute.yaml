@@ -1,0 +1,81 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: tls-billing
+  namespace: billing
+spec:
+  secretName: tls-billing
+  issuerRef:
+    name: letsencrypt-prod-http
+    kind: ClusterIssuer
+  dnsNames:
+  - billing.{{ .variables.domain }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: tls-billing-api
+  namespace: billing
+spec:
+  secretName: tls-billing-api
+  issuerRef:
+    name: letsencrypt-prod-http
+    kind: ClusterIssuer
+  dnsNames:
+  - billing-api.{{ .variables.domain }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: billing
+  namespace: billing
+spec:
+  parentRefs:
+  - name: eg
+    namespace: envoy-gateway-system
+    sectionName: https-billing
+  hostnames:
+  - billing.{{ .variables.domain }}
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: billing-dashboard-svc
+      port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: billing-api
+  namespace: billing
+spec:
+  parentRefs:
+  - name: eg
+    namespace: envoy-gateway-system
+    sectionName: https-billing-api
+  hostnames:
+  - billing-api.{{ .variables.domain }}
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: billing-api-svc
+      port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-gateway-to-billing-secrets
+  namespace: billing
+spec:
+  from:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    namespace: envoy-gateway-system
+  to:
+  - group: ""
+    kind: Secret

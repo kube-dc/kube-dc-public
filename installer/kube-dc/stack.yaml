@@ -54,7 +54,7 @@ variables:
    
 
   versions:
-    kube_dc: "v0.1.33" # release version
+    kube_dc: "v0.1.35" # release version
     kubevirt: "v1.6.0"
     kubevirt_cdi: "v1.62.0"
     # cluster_api: "v1.8.1"

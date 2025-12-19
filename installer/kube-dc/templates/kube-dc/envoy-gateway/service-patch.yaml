@@ -1,0 +1,18 @@
+{{- $nodeExternalIP := .variables.node_external_ip -}}
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: custom-proxy-config
+  namespace: envoy-gateway-system
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        externalTrafficPolicy: Cluster
+        patch:
+          type: StrategicMerge
+          value:
+            spec:
+              externalIPs:
+              - {{ $nodeExternalIP }}

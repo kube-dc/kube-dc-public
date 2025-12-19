@@ -38,7 +38,7 @@ grafana:
       access: proxy
       editable: true
   ingress:
-    enabled: true
+    enabled: false  # Disabled - using Envoy Gateway HTTPRoute instead
     annotations:
       cert-manager.io/cluster-issuer: letsencrypt-prod-http
       kubernetes.io/ingress.class: nginx

@@ -27,7 +27,7 @@ manager:
   image:
     repository: shalb/kube-dc-manager
     pullPolicy: IfNotPresent
-    tag: "${KUBE_DC_VERSION}"
+    tag: "v0.1.35"
 
   imagePullSecrets: []
   nameOverride: ""
@@ -70,7 +70,7 @@ frontend:
   image:
     repository: shalb/kube-dc-ui-frontend
     pullPolicy: IfNotPresent
-    tag: "${KUBE_DC_VERSION}"
+    tag: "v0.1.35"
 
   imagePullSecrets: []
   nameOverride: ""
@@ -177,7 +177,7 @@ backend:
   image:
     repository: shalb/kube-dc-ui-backend
     pullPolicy: IfNotPresent
-    tag: "${KUBE_DC_VERSION}"
+    tag: "v0.1.35"
 
   imagePullSecrets: []
   nameOverride: ""

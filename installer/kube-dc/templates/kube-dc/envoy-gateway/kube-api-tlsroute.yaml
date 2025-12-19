@@ -1,0 +1,16 @@
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TLSRoute
+metadata:
+  name: kube-api
+  namespace: default
+spec:
+  parentRefs:
+  - name: eg
+    namespace: envoy-gateway-system
+    sectionName: tls-passthrough
+  hostnames:
+  - kube-api.{{ .variables.domain }}
+  rules:
+  - backendRefs:
+    - name: kubernetes
+      port: 443

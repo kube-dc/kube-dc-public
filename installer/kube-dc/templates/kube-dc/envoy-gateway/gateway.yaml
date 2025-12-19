@@ -1,0 +1,117 @@
+{{- $domain := .variables.domain -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: eg
+  namespace: envoy-gateway-system
+spec:
+  gatewayClassName: eg
+  listeners:
+  # HTTP for ACME challenges and redirects
+  - name: http
+    protocol: HTTP
+    port: 80
+    allowedRoutes:
+      namespaces:
+        from: All
+  # HTTPS listeners with per-host TLS termination
+  - name: https-keycloak
+    protocol: HTTPS
+    port: 443
+    hostname: login.{{ $domain }}
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: login.{{ $domain }}-tls
+        namespace: keycloak
+    allowedRoutes:
+      namespaces:
+        from: All
+  - name: https-console
+    protocol: HTTPS
+    port: 443
+    hostname: console.{{ $domain }}
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: kube-dc-frontend-tls
+        namespace: kube-dc
+    allowedRoutes:
+      namespaces:
+        from: All
+  - name: https-backend
+    protocol: HTTPS
+    port: 443
+    hostname: backend.{{ $domain }}
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: kube-dc-backend-tls
+        namespace: kube-dc
+    allowedRoutes:
+      namespaces:
+        from: All
+  - name: https-grafana
+    protocol: HTTPS
+    port: 443
+    hostname: grafana.{{ $domain }}
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: tls-grafana
+        namespace: monitoring
+    allowedRoutes:
+      namespaces:
+        from: All
+  - name: https-billing
+    protocol: HTTPS
+    port: 443
+    hostname: billing.{{ $domain }}
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: tls-billing
+        namespace: billing
+    allowedRoutes:
+      namespaces:
+        from: All
+  - name: https-billing-api
+    protocol: HTTPS
+    port: 443
+    hostname: billing-api.{{ $domain }}
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: tls-billing-api
+        namespace: billing
+    allowedRoutes:
+      namespaces:
+        from: All
+  - name: https-iso
+    protocol: HTTPS
+    port: 443
+    hostname: iso.{{ $domain }}
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: iso-server-tls
+        namespace: iso
+    allowedRoutes:
+      namespaces:
+        from: All
+  # TLS Passthrough for Kubernetes APIs
+  - name: tls-passthrough
+    protocol: TLS
+    port: 6443
+    tls:
+      mode: Passthrough
+    allowedRoutes:
+      namespaces:
+        from: All

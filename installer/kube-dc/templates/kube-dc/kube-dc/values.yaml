@@ -8,9 +8,7 @@ manager:
 
   image:
     pullPolicy: Always
-    {{- if .variables.versions.manager }}
-    tag: {{ .variables.versions.manager }}
-    {{- end }}
+    tag: {{ .variables.versions.manager | default "v0.1.34-dev10" }}
 
   kubernetesAuthConfig:
     path: /etc/rancher
@@ -40,10 +38,9 @@ manager:
   {{- end }}
 
 frontend:
-  {{- if .variables.versions.frontend }}
   image:
-    tag: {{ .variables.versions.frontend }}
-  {{- end }}
+    pullPolicy: Always
+    tag: {{ .variables.versions.frontend | default "v0.1.34-dev36" }}
   replicaCount: 1
   service:
     type: ClusterIP
@@ -62,10 +59,16 @@ frontend:
     timeoutSeconds: 5
     periodSeconds: 10
     failureThreshold: 3
+  gateway:
+    enabled: true
+    parentRef:
+      name: eg
+      namespace: envoy-gateway-system
   ingress:
+    enabled: false
     annotations:
-      kubernetes.io/ingress.class: "nginx"  # specify the class, redundant if ingressClassName is used and recognized
-      cert-manager.io/cluster-issuer: "letsencrypt-prod-http"  # specify the cert-manager issuer
+      kubernetes.io/ingress.class: "nginx"
+      cert-manager.io/cluster-issuer: "letsencrypt-prod-http"
     host: {{ printf "console.%s" .variables.domain }}
     className: nginx
     tls:
@@ -73,10 +76,9 @@ frontend:
       secretName: kube-dc-frontend-tls
 
 backend:
-  {{- if .variables.versions.backend }}
   image:
-    tag: {{ .variables.versions.backend }}
-  {{- end }}
+    pullPolicy: Always
+    tag: {{ .variables.versions.backend | default "v0.1.34-dev36" }}
   keycloakUrl: "{{ .variables.cluster_config.keycloak_hostname | default ( printf "login.%s" .variables.domain ) }}"
   replicaCount: 1
   service:
@@ -96,12 +98,17 @@ backend:
     timeoutSeconds: 5
     periodSeconds: 10
     failureThreshold: 3
-  ingress:
+  gateway:
     enabled: true
+    parentRef:
+      name: eg
+      namespace: envoy-gateway-system
+  ingress:
+    enabled: false
     className: nginx
     annotations:
-      kubernetes.io/ingress.class: "nginx"  # specify the class, redundant if ingressClassName is used and recognized
-      cert-manager.io/cluster-issuer: "letsencrypt-prod-http"  # specify the cert-manager issuer
+      kubernetes.io/ingress.class: "nginx"
+      cert-manager.io/cluster-issuer: "letsencrypt-prod-http"
     host: {{ printf "backend.%s" .variables.domain }}
     tls:
       enabled: true

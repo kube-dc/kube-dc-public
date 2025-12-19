@@ -1,3 +1,4 @@
+{{- if not .Values.backend.gateway.enabled }}
 {{- $fullName := include "kube-dc.backend.fullname" . -}}
 {{- $svcPort := .Values.backend.service.port -}}
 {{- if and .Values.backend.ingress.className (not (semverCompare ">=1.18-0" .Capabilities.KubeVersion.GitVersion)) }}
@@ -49,3 +50,4 @@ spec:
               serviceName: {{ $fullName }}
               servicePort: {{ $svcPort }}
               {{- end }}
+{{- end }}

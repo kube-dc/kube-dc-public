@@ -1,0 +1,40 @@
+{{- if .Values.frontend.gateway.enabled }}
+{{- $fullName := include "kube-dc.frontend.fullname" . -}}
+{{- $svcPort := .Values.frontend.service.port -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "kube-dc.frontend.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+  - name: {{ .Values.frontend.gateway.parentRef.name | default "eg" }}
+    namespace: {{ .Values.frontend.gateway.parentRef.namespace | default "envoy-gateway-system" }}
+    sectionName: {{ .Values.frontend.gateway.parentRef.sectionName | default "https-console" }}
+  hostnames:
+  - {{ .Values.frontend.ingress.host }}
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: {{ $fullName }}
+      port: {{ $svcPort }}
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-gateway-to-kube-dc-secrets
+  labels:
+    {{- include "kube-dc.frontend.labels" . | nindent 4 }}
+spec:
+  from:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    namespace: envoy-gateway-system
+  to:
+  - group: ""
+    kind: Secret
+{{- end }}
