@@ -259,3 +259,38 @@ rules:
   verbs:
   - get
   - list
+# Gateway API resources for service exposure
+- apiGroups:
+  - gateway.networking.k8s.io
+  resources:
+  - httproutes
+  - grpcroutes
+  - tlsroutes
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - delete
+  - update
+  - patch
+# Envoy Gateway Backend resources (read-only - auto-created by controller)
+- apiGroups:
+  - gateway.envoyproxy.io
+  resources:
+  - backends
+  verbs:
+  - get
+  - list
+  - watch
+# cert-manager Certificate resources for TLS
+- apiGroups:
+  - cert-manager.io
+  resources:
+  - certificates
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - delete

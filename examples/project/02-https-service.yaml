@@ -1,0 +1,109 @@
+# HTTPS Service Exposure Example with Automatic TLS Certificate
+# Exposes a web application via HTTPS with Let's Encrypt certificate
+#
+# Prerequisites:
+# - Apply 00-issuer.yaml first
+# - DNS record: my-secure-app.example.com -> Gateway IP (88.99.29.250)
+# - Project with cloud networking
+#
+# Usage:
+#   kubectl apply -f 00-issuer.yaml  # If not already done
+#   kubectl apply -f 02-https-service.yaml
+#
+# Verify certificate:
+#   kubectl get certificate my-secure-app-tls
+#
+# Test:
+#   curl https://my-secure-app.example.com
+---
+# Sample application deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-secure-app
+  labels:
+    app: my-secure-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: my-secure-app
+  template:
+    metadata:
+      labels:
+        app: my-secure-app
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+          name: http
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+---
+# LoadBalancer Service with ext-cloud IP
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-secure-app
+  annotations:
+    service.nlb.kube-dc.com/bind-on-eip: default-gw
+    service.nlb.kube-dc.com/create-gateway-backend: "true"
+spec:
+  type: LoadBalancer
+  selector:
+    app: my-secure-app
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
+---
+# Certificate request - cert-manager will handle ACME HTTP-01 challenge
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: my-secure-app-tls
+spec:
+  secretName: my-secure-app-tls-secret
+  issuerRef:
+    name: letsencrypt
+    kind: Issuer
+  dnsNames:
+  - my-secure-app.example.com  # Replace with your domain
+---
+# HTTPRoute with HTTPS (references the certificate secret)
+# Note: For TLS termination at Gateway, the Gateway needs a listener for your hostname
+# Option 1: Use existing HTTPS listener if your domain matches
+# Option 2: Request platform admin to add a listener for your domain
+#
+# This example uses HTTP with redirect to HTTPS pattern
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: my-secure-app
+spec:
+  parentRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: eg
+    namespace: envoy-gateway-system
+    sectionName: http  # HTTP listener
+  hostnames:
+  - "my-secure-app.example.com"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - group: gateway.envoyproxy.io
+      kind: Backend
+      name: my-secure-app-backend
+      port: 80

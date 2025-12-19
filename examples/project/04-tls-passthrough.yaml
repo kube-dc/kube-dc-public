@@ -1,0 +1,136 @@
+# TLS Passthrough Example
+# For services that handle their own TLS termination (e.g., Kubernetes API servers)
+#
+# This is useful when:
+# - Your application must terminate TLS itself
+# - You need end-to-end encryption
+# - You're exposing a Kubernetes API server
+#
+# Prerequisites:
+# - DNS record: api.example.com -> Gateway IP (88.99.29.250)
+# - Project with cloud networking
+# - Your app handles TLS termination
+#
+# Usage:
+#   kubectl apply -f 04-tls-passthrough.yaml
+#
+# Test:
+#   curl -k https://api.example.com:6443
+---
+# Sample TLS-terminating application
+# This example uses nginx with self-signed cert
+# Replace with your actual TLS-terminating application
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-api-server
+  labels:
+    app: my-api-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-api-server
+  template:
+    metadata:
+      labels:
+        app: my-api-server
+    spec:
+      containers:
+      - name: nginx-ssl
+        image: nginx:alpine
+        ports:
+        - containerPort: 443
+          name: https
+        volumeMounts:
+        - name: tls
+          mountPath: /etc/nginx/ssl
+          readOnly: true
+        - name: nginx-conf
+          mountPath: /etc/nginx/conf.d
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+      volumes:
+      - name: tls
+        secret:
+          secretName: my-api-server-tls
+      - name: nginx-conf
+        configMap:
+          name: my-api-server-nginx-conf
+---
+# Nginx config for TLS termination
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-api-server-nginx-conf
+data:
+  default.conf: |
+    server {
+        listen 443 ssl;
+        ssl_certificate /etc/nginx/ssl/tls.crt;
+        ssl_certificate_key /etc/nginx/ssl/tls.key;
+        
+        location / {
+            return 200 'TLS Passthrough Works!\n';
+            add_header Content-Type text/plain;
+        }
+    }
+---
+# Self-signed certificate (for demo - use proper certs in production)
+# In production, use cert-manager to generate this
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-api-server-tls
+type: kubernetes.io/tls
+stringData:
+  tls.crt: |
+    -----BEGIN CERTIFICATE-----
+    # Replace with your actual certificate
+    -----END CERTIFICATE-----
+  tls.key: |
+    -----BEGIN PRIVATE KEY-----
+    # Replace with your actual private key
+    -----END PRIVATE KEY-----
+---
+# LoadBalancer Service with ext-cloud IP
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-api-server
+  annotations:
+    service.nlb.kube-dc.com/bind-on-eip: default-gw
+    service.nlb.kube-dc.com/create-gateway-backend: "true"
+spec:
+  type: LoadBalancer
+  selector:
+    app: my-api-server
+  ports:
+  - name: https
+    port: 6443
+    targetPort: 443
+    protocol: TCP
+---
+# TLSRoute for passthrough (Gateway doesn't terminate TLS)
+# The Gateway passes encrypted traffic directly to your app
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TLSRoute
+metadata:
+  name: my-api-server
+spec:
+  parentRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: eg
+    namespace: envoy-gateway-system
+    sectionName: tls-passthrough  # TLS passthrough listener on port 6443
+  hostnames:
+  - "api.example.com"  # Replace with your domain (SNI matching)
+  rules:
+  - backendRefs:
+    - group: gateway.envoyproxy.io
+      kind: Backend
+      name: my-api-server-backend
+      port: 6443

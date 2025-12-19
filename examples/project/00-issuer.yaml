@@ -1,0 +1,41 @@
+# Issuer for Let's Encrypt HTTP-01 Challenge
+# This issuer uses the shared Envoy Gateway for ACME HTTP-01 validation
+#
+# Prerequisites:
+# - DNS record pointing your domain to the Gateway IP (88.99.29.250)
+# - Project with cloud networking (egressNetworkType: cloud)
+#
+# Usage:
+#   kubectl apply -f 00-issuer.yaml
+#
+# Note: For production, use letsencrypt-prod. For testing, use letsencrypt-staging.
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: letsencrypt
+  # Apply in your project namespace
+spec:
+  acme:
+    # Use staging for testing (no rate limits)
+    # server: https://acme-staging-v02.api.letsencrypt.org/directory
+    
+    # Use production for real certificates
+    server: https://acme-v02.api.letsencrypt.org/directory
+    
+    # Your email for certificate expiration notifications
+    email: admin@example.com
+    
+    # Secret to store the ACME account private key
+    privateKeySecretRef:
+      name: letsencrypt-account-key
+    
+    # HTTP-01 challenge using Gateway API
+    solvers:
+    - http01:
+        gatewayHTTPRoute:
+          parentRefs:
+          - group: gateway.networking.k8s.io
+            kind: Gateway
+            name: eg
+            namespace: envoy-gateway-system

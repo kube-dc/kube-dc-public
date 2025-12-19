@@ -1,0 +1,106 @@
+# gRPC Service Exposure Example with TLS
+# Exposes a gRPC service via the shared Gateway
+#
+# Prerequisites:
+# - Apply 00-issuer.yaml first
+# - DNS record: grpc-api.example.com -> Gateway IP (88.99.29.250)
+# - Project with cloud networking
+#
+# Usage:
+#   kubectl apply -f 00-issuer.yaml  # If not already done
+#   kubectl apply -f 03-grpc-service.yaml
+#
+# Test with grpcurl:
+#   grpcurl -plaintext grpc-api.example.com:80 list
+#   grpcurl grpc-api.example.com:443 list  # With TLS
+---
+# Sample gRPC application deployment
+# Replace with your actual gRPC application
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grpc-api
+  labels:
+    app: grpc-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: grpc-api
+  template:
+    metadata:
+      labels:
+        app: grpc-api
+    spec:
+      containers:
+      - name: grpc-server
+        # Example: grpc health check service for testing
+        image: grpc/java-example-hostname:latest
+        ports:
+        - containerPort: 50051
+          name: grpc
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+---
+# LoadBalancer Service with ext-cloud IP
+apiVersion: v1
+kind: Service
+metadata:
+  name: grpc-api
+  annotations:
+    service.nlb.kube-dc.com/bind-on-eip: default-gw
+    service.nlb.kube-dc.com/create-gateway-backend: "true"
+spec:
+  type: LoadBalancer
+  selector:
+    app: grpc-api
+  ports:
+  - name: grpc
+    port: 50051
+    targetPort: 50051
+    protocol: TCP
+---
+# Certificate for gRPC TLS
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: grpc-api-tls
+spec:
+  secretName: grpc-api-tls-secret
+  issuerRef:
+    name: letsencrypt
+    kind: Issuer
+  dnsNames:
+  - grpc-api.example.com  # Replace with your domain
+---
+# GRPCRoute to expose via shared Gateway
+# Note: GRPCRoute requires Gateway API v1alpha2 or later
+apiVersion: gateway.networking.k8s.io/v1
+kind: GRPCRoute
+metadata:
+  name: grpc-api
+spec:
+  parentRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: eg
+    namespace: envoy-gateway-system
+    sectionName: http  # gRPC over HTTP/2
+  hostnames:
+  - "grpc-api.example.com"  # Replace with your domain
+  rules:
+  - matches:
+    - method:
+        # Match all gRPC methods
+        service: "*"
+        method: "*"
+    backendRefs:
+    - group: gateway.envoyproxy.io
+      kind: Backend
+      name: grpc-api-backend
+      port: 50051
