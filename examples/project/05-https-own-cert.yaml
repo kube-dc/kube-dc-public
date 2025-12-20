@@ -1,0 +1,90 @@
+# HTTPS Service with User-Provided Certificate
+# Use this when you want to manage your own TLS certificate instead of auto-provisioning.
+#
+# This example uses a pre-existing TLS secret for the Gateway listener.
+# The Gateway terminates TLS - your app just serves plain HTTP.
+#
+# Prerequisites:
+# - Project with cloud networking (egressNetworkType: cloud)
+# - TLS secret with your certificate (tls.crt and tls.key)
+#
+# Usage:
+#   # 1. Create your TLS secret (from existing cert files)
+#   kubectl create secret tls my-custom-tls --cert=path/to/tls.crt --key=path/to/tls.key
+#
+#   # 2. Apply this manifest
+#   kubectl apply -f 05-https-own-cert.yaml
+#
+# Or use cert-manager to create the certificate first:
+#   kubectl apply -f - <<EOF
+#   apiVersion: cert-manager.io/v1
+#   kind: Certificate
+#   metadata:
+#     name: my-custom-cert
+#   spec:
+#     secretName: my-custom-tls
+#     issuerRef:
+#       name: letsencrypt
+#       kind: Issuer
+#     dnsNames:
+#     - my-app.example.com
+#   EOF
+#
+# Test:
+#   curl https://my-app.example.com
+---
+# Sample application deployment - serves plain HTTP
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-custom-cert-app
+  labels:
+    app: my-custom-cert-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: my-custom-cert-app
+  template:
+    metadata:
+      labels:
+        app: my-custom-cert-app
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+          name: http
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+---
+# LoadBalancer Service with user-provided TLS secret
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-custom-cert-app
+  annotations:
+    # Use HTTPS with gateway-terminated TLS
+    service.nlb.kube-dc.com/expose-route: "https"
+    
+    # Use your own TLS secret instead of auto-provisioning
+    # The secret must contain tls.crt and tls.key
+    service.nlb.kube-dc.com/tls-secret: "my-custom-tls"
+    
+    # Required: Specify your custom hostname (must match certificate)
+    service.nlb.kube-dc.com/route-hostname: "my-app.example.com"
+spec:
+  type: LoadBalancer
+  selector:
+    app: my-custom-cert-app
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP

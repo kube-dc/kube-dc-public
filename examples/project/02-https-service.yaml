@@ -1,10 +1,21 @@
-# HTTPS Service Exposure Example with Automatic TLS Certificate
-# Exposes a web application via HTTPS with Let's Encrypt certificate
+# HTTPS Service Exposure Example (Gateway-Terminated TLS)
+# Exposes a web application via HTTPS with automatic certificate issuance.
+# The Gateway terminates TLS - your app just serves plain HTTP!
+#
+# This is the SIMPLEST way to expose an HTTPS service.
+# The controller will automatically create:
+# - EIP (external IP allocation)
+# - Backend (for Gateway routing)
+# - Certificate (via cert-manager)
+# - Gateway Listener (HTTPS with certificate)
+# - HTTPRoute (pointing to the listener)
+#
+# Auto-generated hostname format: {service}-{namespace}.{base_domain}
+# Example: my-secure-app-demo.stage.kube-dc.com
 #
 # Prerequisites:
-# - Apply 00-issuer.yaml first
-# - DNS record: my-secure-app.example.com -> Gateway IP (88.99.29.250)
-# - Project with cloud networking
+# - Apply 00-issuer.yaml first (for certificate issuance)
+# - Project with cloud networking (egressNetworkType: cloud)
 #
 # Usage:
 #   kubectl apply -f 00-issuer.yaml  # If not already done
@@ -14,9 +25,10 @@
 #   kubectl get certificate my-secure-app-tls
 #
 # Test:
-#   curl https://my-secure-app.example.com
+#   curl https://my-secure-app-{namespace}.{base_domain}
 ---
-# Sample application deployment
+# Sample application deployment - serves plain HTTP
+# No TLS configuration needed in the app!
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -47,14 +59,23 @@ spec:
             cpu: 50m
             memory: 64Mi
 ---
-# LoadBalancer Service with ext-cloud IP
+# LoadBalancer Service with automatic HTTPS route
+# The controller will auto-create: EIP, Backend, Certificate, Gateway Listener, and HTTPRoute
 apiVersion: v1
 kind: Service
 metadata:
   name: my-secure-app
   annotations:
-    service.nlb.kube-dc.com/bind-on-eip: default-gw
-    service.nlb.kube-dc.com/create-gateway-backend: "true"
+    # Automatically expose via HTTPS with gateway-terminated TLS
+    # Creates: Certificate + Gateway Listener + HTTPRoute
+    # Gateway terminates TLS - app serves plain HTTP
+    service.nlb.kube-dc.com/expose-route: "https"
+    
+    # Optional: Custom hostname (overrides auto-generated)
+    # service.nlb.kube-dc.com/route-hostname: "my-app.example.com"
+    
+    # Optional: Custom issuer name (default: letsencrypt)
+    # service.nlb.kube-dc.com/tls-issuer: "letsencrypt"
 spec:
   type: LoadBalancer
   selector:
@@ -64,46 +85,3 @@ spec:
     port: 80
     targetPort: 80
     protocol: TCP
----
-# Certificate request - cert-manager will handle ACME HTTP-01 challenge
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: my-secure-app-tls
-spec:
-  secretName: my-secure-app-tls-secret
-  issuerRef:
-    name: letsencrypt
-    kind: Issuer
-  dnsNames:
-  - my-secure-app.example.com  # Replace with your domain
----
-# HTTPRoute with HTTPS (references the certificate secret)
-# Note: For TLS termination at Gateway, the Gateway needs a listener for your hostname
-# Option 1: Use existing HTTPS listener if your domain matches
-# Option 2: Request platform admin to add a listener for your domain
-#
-# This example uses HTTP with redirect to HTTPS pattern
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: my-secure-app
-spec:
-  parentRefs:
-  - group: gateway.networking.k8s.io
-    kind: Gateway
-    name: eg
-    namespace: envoy-gateway-system
-    sectionName: http  # HTTP listener
-  hostnames:
-  - "my-secure-app.example.com"
-  rules:
-  - matches:
-    - path:
-        type: PathPrefix
-        value: /
-    backendRefs:
-    - group: gateway.envoyproxy.io
-      kind: Backend
-      name: my-secure-app-backend
-      port: 80
