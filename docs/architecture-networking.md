@@ -37,7 +37,7 @@ Kube-DC supports two external network types:
 │  │   168.119.17.48/28      │              │   100.65.0.0/16         │       │
 │  │                         │              │                         │       │
 │  │   Gateway: 168.119.17.49│              │   Gateway: 100.65.0.1   │       │
-│  │   Internet-routable ✅  │              │   Internal-only ❌       │       │
+│  │   Internet-routable     │              │   Internal-only         │       │
 │  └───────────┬─────────────┘              └───────────┬─────────────┘       │
 │              │                                        │                     │
 │              └────────────────┬───────────────────────┘                     │
@@ -107,7 +107,7 @@ Kube-DC supports two external network types:
 │   │  project-a Router       │   │  │   │  project-b Router       │   │
 │   │                         │   │  │   │                         │   │
 │   │  EIP: 100.65.0.102      │   │  │   │  EIP: 168.119.17.51     │   │
-│   │  (ext-cloud) ❌         │   │  │   │  (ext-public) ✅         │   │
+│   │  (ext-cloud)            │   │  │   │  (ext-public)           │   │
 │   │                         │   │  │   │                         │   │
 │   │  SNAT: 10.0.10.0/24     │   │  │   │  SNAT: 10.0.20.0/24     │   │
 │   │       → 100.65.0.102    │   │  │   │       → 168.119.17.51   │   │
@@ -140,10 +140,10 @@ Kube-DC provides multiple ways to expose services:
 │   │                                                                         │   │
 │   │   Internet → Envoy Gateway (88.99.29.250:443) → HTTPRoute → Service     │   │
 │   │                                                                         │   │
-│   │   ✅ Automatic TLS certificates                                         │   │
-│   │   ✅ Auto-generated hostnames                                           │   │
-│   │   ✅ Shared infrastructure (cost-effective)                             │   │
-│   │   ✅ HTTP/HTTPS/gRPC support                                            │   │
+│   │   -  Automatic TLS certificates                                         │   │
+│   │   -  Auto-generated hostnames                                           │   │
+│   │   -  Shared infrastructure (cost-effective)                             │   │
+│   │   -  HTTP/HTTPS/gRPC support                                            │   │
 │   │                                                                         │   │
 │   │   Annotations:                                                          │   │
 │   │   • expose-route: https                                                 │   │
@@ -155,9 +155,9 @@ Kube-DC provides multiple ways to expose services:
 │   │                                                                         │   │
 │   │   Internet → EIP (dedicated IP) → OVN LB → Service → Pods/VMs           │   │
 │   │                                                                         │   │
-│   │   ✅ Dedicated IP address                                               │   │
-│   │   ✅ Any TCP/UDP protocol                                               │   │
-│   │   ✅ Direct VM access                                                   │   │
+│   │   -  Dedicated IP address                                               │   │
+│   │   -  Any TCP/UDP protocol                                               │   │
+│   │   -  Direct VM access                                                   │   │
 │   │                                                                         │   │
 │   │   Annotations:                                                          │   │
 │   │   • bind-on-default-gw-eip: "true"                                      │   │
@@ -169,8 +169,8 @@ Kube-DC provides multiple ways to expose services:
 │   │                                                                         │   │
 │   │   Internet → EIP → 1:1 NAT → Internal IP (VM/Pod)                       │   │
 │   │                                                                         │   │
-│   │   ✅ Direct IP mapping                                                  │   │
-│   │   ✅ VM sees public IP                                                  │   │
+│   │   -  Direct IP mapping                                                  │   │
+│   │   -  VM sees public IP                                                  │   │
 │   └─────────────────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```

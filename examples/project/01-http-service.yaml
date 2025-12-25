@@ -1,15 +1,23 @@
 # HTTP Service Exposure Example
 # Exposes a simple web application via HTTP on port 80
 #
+# This example uses automatic route creation via service annotations.
+# The controller will automatically create:
+# - EIP (external IP allocation)
+# - Backend (for Gateway routing)
+# - HTTPRoute (with auto-generated hostname)
+#
+# Auto-generated hostname format: {service}-{namespace}.{base_domain}
+# Example: my-app-demo.stage.kube-dc.com
+#
 # Prerequisites:
-# - DNS record: my-app.example.com -> Gateway IP (88.99.29.250)
-# - Project with cloud networking
+# - Project with cloud networking (egressNetworkType: cloud)
 #
 # Usage:
 #   kubectl apply -f 01-http-service.yaml
 #
 # Test:
-#   curl http://my-app.example.com
+#   curl http://my-app-{namespace}.{base_domain}
 ---
 # Sample application deployment
 apiVersion: apps/v1
@@ -42,17 +50,22 @@ spec:
             cpu: 50m
             memory: 64Mi
 ---
-# LoadBalancer Service with ext-cloud IP
-# The controller will auto-create a Backend resource for Gateway routing
+# LoadBalancer Service with automatic route exposure
+# The controller will auto-create: EIP, Backend, and HTTPRoute
 apiVersion: v1
 kind: Service
 metadata:
   name: my-app
   annotations:
-    # Bind to project's default gateway EIP
-    service.nlb.kube-dc.com/bind-on-eip: default-gw
-    # Auto-create Backend for Gateway API routing
-    service.nlb.kube-dc.com/create-gateway-backend: "true"
+    # Automatically expose via HTTP route
+    # Creates: Backend + HTTPRoute with auto-generated hostname
+    service.nlb.kube-dc.com/expose-route: "http"
+    
+    # Optional: Custom hostname (overrides auto-generated)
+    # service.nlb.kube-dc.com/route-hostname: "my-app.example.com"
+    
+    # Optional: Specific port for multi-port services
+    # service.nlb.kube-dc.com/route-port: "80"
 spec:
   type: LoadBalancer
   selector:
@@ -62,30 +75,3 @@ spec:
     port: 80
     targetPort: 80
     protocol: TCP
----
-# HTTPRoute to expose via shared Gateway
-# Routes traffic from Gateway to the Backend (not Service directly)
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: my-app
-spec:
-  parentRefs:
-  - group: gateway.networking.k8s.io
-    kind: Gateway
-    name: eg
-    namespace: envoy-gateway-system
-    sectionName: http  # Use the HTTP listener on port 80
-  hostnames:
-  - "my-app.example.com"  # Replace with your domain
-  rules:
-  - matches:
-    - path:
-        type: PathPrefix
-        value: /
-    backendRefs:
-    # Reference the auto-created Backend (service-name + "-backend")
-    - group: gateway.envoyproxy.io
-      kind: Backend
-      name: my-app-backend
-      port: 80
