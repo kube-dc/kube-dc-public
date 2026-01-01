@@ -17,6 +17,7 @@
 {{- $kamajiChartVersion := (.variables.versions.kamaji_helm                  | default "1.0.0"| quote) -}}
 {{- $kamajiEtcdChartVersion := (.variables.versions.kamaji_etcd_helm         | default "0.14.0"| quote) -}}
 {{- $kamajiImageTag := (.variables.versions.kamaji_image                     | default "edge-25.11.21-kube-dc" | quote) -}}
+{{- $sveltosVersion := (.variables.versions.sveltos                          | default "v0.57.3"| quote) -}}
 
 name: cluster
 kind: StackTemplate
@@ -355,6 +356,20 @@ units:
     destroy:
       commands:
         - clusterctl delete --infrastructure kubevirt --bootstrap k3s --control-plane k3s
+  -
+    name: sveltos
+    type: shell
+    depends_on: this.capi
+    env:
+      KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    apply:
+      commands:
+        - kubectl apply -f https://raw.githubusercontent.com/projectsveltos/sveltos/{{ $sveltosVersion }}/manifest/manifest.yaml
+        - kubectl rollout status deployment/addon-controller -n projectsveltos --timeout 300s
+        - kubectl rollout status deployment/sc-manager -n projectsveltos --timeout 300s
+    destroy:
+      commands:
+        - kubectl delete -f https://raw.githubusercontent.com/projectsveltos/sveltos/{{ $sveltosVersion }}/manifest/manifest.yaml --ignore-not-found
   -
     name: kamaji-etcd
     type: helm
