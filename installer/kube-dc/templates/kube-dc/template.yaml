@@ -70,6 +70,17 @@ units:
     outputs:
       type: separator
       separator: "="
+{{- if .variables.sso.enabled }}
+  -
+    name: sso-broker-secret-generator
+    type: shell
+    apply:
+      commands:
+        - echo "secret=$(openssl rand -base64 32 | tr -d '\n')"
+    outputs:
+      type: separator
+      separator: "="
+{{- end }}
 
   -
     name: list-master-nodes

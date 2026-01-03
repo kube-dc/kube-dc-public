@@ -20,6 +20,12 @@ manager:
     password: {{ output "this.keycloak-pass-generator.password" }}
     masterRealm: master
     consoleUrl: https://{{ printf "console.%s" .variables.domain }}
+    {{- if .variables.sso.enabled }}
+    ssoEnabled: true
+    ssoBrokerSecret: {{ .variables.sso.broker_secret | default (output "this.sso-broker-secret-generator.secret") }}
+    googleClientId: {{ .variables.sso.google_client_id }}
+    googleClientSecret: {{ .variables.sso.google_client_secret }}
+    {{- end }}
 
   nodeSelector:
     kube-dc-manager: "true"
