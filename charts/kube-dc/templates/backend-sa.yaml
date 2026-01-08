@@ -90,6 +90,12 @@ rules:
   - apiGroups: ["kubeovn.io"]
     resources: ["*"]
     verbs: ["get", "list"]
+  - apiGroups: ["kube-dc.com"]
+    resources: ["organizations"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["create", "get", "list", "watch"]
     
 ---
 apiVersion: rbac.authorization.k8s.io/v1

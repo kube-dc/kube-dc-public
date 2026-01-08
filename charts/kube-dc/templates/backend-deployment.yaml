@@ -47,6 +47,16 @@ spec:
               value: "{{ .Values.kubeApiExternalUrl }}"
             - name: KEYCLOAK_URL
               value: "{{ .Values.backend.keycloakUrl }}"
+            - name: KEYCLOAK_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: master-config
+                  key: user
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: master-config
+                  key: password
           {{- with .Values.backend.extraEnv }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
