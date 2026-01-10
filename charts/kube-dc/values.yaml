@@ -165,15 +165,23 @@ frontend:
   affinity: {}
 
 backend:
-  keycloakUrl: ""
+  # Note: keycloakUrl, consoleUrl, appUrl are read from master-config secret
+  
+  # SMTP configuration for email notifications (all required for email to work)
+  smtp:
+    enabled: false
+    host: "" # e.g., "smtp.gmail.com"
+    port: "587"
+    secure: "false" # "true" for port 465
+    user: "" # SMTP username
+    password: "" # SMTP password (use secret reference in production)
+    from: "" # e.g., "noreply@example.com"
+    fromName: "Kube-DC"
+  
   replicaCount: 1
   extraEnv: []
       # - name: PROM_URL
       #   value: "http://prometheus:9090"
-      # - name: PROJECT_SHELL_API_URL
-      #   value: "http://project-shell-api:8080"
-      # - name: KEYCLOAK_URL
-      #   value: "http://keycloak:8080"
   image:
     repository: shalb/kube-dc-ui-backend
     pullPolicy: IfNotPresent

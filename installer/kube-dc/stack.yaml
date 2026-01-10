@@ -42,6 +42,17 @@ variables:
   install_terraform: true
   kubeApiExternalUrl: "https://kube-api.stage.kube-dc.com:6443"
 
+  # SMTP configuration for email notifications
+  smtp:
+    enabled: true
+    host: "smtp.gmail.com"
+    port: "587"
+    secure: "false"
+    user: ""        # Not required - IP whitelisted
+    password: ""    # Not required - IP whitelisted
+    from: "noreply@kube-dc.com"
+    fromName: "Kube-DC"
+
   create_default:
     organization:
       name: shalb

@@ -370,7 +370,7 @@ units:
   -
     name: sveltos
     type: shell
-    depends_on: this.capi
+    depends_on: this.cluster-api
     env:
       KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
     apply:

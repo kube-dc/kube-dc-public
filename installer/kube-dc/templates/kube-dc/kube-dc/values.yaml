@@ -85,7 +85,20 @@ backend:
   image:
     pullPolicy: Always
     tag: {{ .variables.versions.backend | default "v0.1.34-dev36" }}
-  keycloakUrl: "{{ .variables.cluster_config.keycloak_hostname | default ( printf "login.%s" .variables.domain ) }}"
+  # Note: keycloakUrl, consoleUrl, appUrl are read from master-config secret
+  
+  {{- if .variables.smtp.enabled }}
+  smtp:
+    enabled: true
+    host: "{{ .variables.smtp.host }}"
+    port: "{{ .variables.smtp.port }}"
+    secure: "{{ .variables.smtp.secure }}"
+    user: "{{ .variables.smtp.user }}"
+    password: "{{ .variables.smtp.password }}"
+    from: "{{ .variables.smtp.from }}"
+    fromName: "{{ .variables.smtp.fromName }}"
+  {{- end }}
+  
   replicaCount: 1
   service:
     type: ClusterIP
