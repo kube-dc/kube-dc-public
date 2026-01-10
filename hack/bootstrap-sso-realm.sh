@@ -405,6 +405,50 @@ create_console_client() {
     log_info "kube-dc console client created"
 }
 
+configure_user_profile() {
+    log_info "Configuring user profile with custom attributes..."
+    
+    # Get current user profile
+    local current_profile=$(curl -s \
+        -H "Authorization: Bearer $ADMIN_TOKEN" \
+        "${KEYCLOAK_URL}/admin/realms/${SSO_REALM}/users/profile")
+    
+    # Check if pending_org_requests already exists
+    local has_attr=$(echo "$current_profile" | jq -r '.attributes[] | select(.name=="pending_org_requests") | .name')
+    
+    if [ "$has_attr" == "pending_org_requests" ]; then
+        log_warn "pending_org_requests attribute already configured"
+        return 0
+    fi
+    
+    # Add pending_org_requests attribute to the profile
+    local updated_profile=$(echo "$current_profile" | jq '.attributes += [{
+        "name": "pending_org_requests",
+        "displayName": "Pending Organization Requests",
+        "permissions": {
+            "view": ["admin"],
+            "edit": ["admin"]
+        },
+        "multivalued": true
+    }]')
+    
+    local response=$(curl -s -w "\n%{http_code}" -X PUT \
+        -H "Authorization: Bearer $ADMIN_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "$updated_profile" \
+        "${KEYCLOAK_URL}/admin/realms/${SSO_REALM}/users/profile")
+    
+    local http_code=$(echo "$response" | tail -n1)
+    
+    if [ "$http_code" != "200" ]; then
+        log_error "Failed to configure user profile. HTTP: $http_code"
+        echo "$response"
+        exit 1
+    fi
+    
+    log_info "User profile configured with pending_org_requests attribute"
+}
+
 create_orgs_group() {
     log_info "Creating /orgs parent group..."
     
@@ -461,6 +505,7 @@ main() {
     create_google_idp
     create_console_client
     create_broker_client
+    configure_user_profile
     create_orgs_group
     print_summary
 }

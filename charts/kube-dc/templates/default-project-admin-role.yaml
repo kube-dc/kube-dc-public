@@ -1,296 +1,389 @@
+# =============================================================================
+# Project Role Templates
+# These roles are copied to each project namespace during project creation.
+# =============================================================================
+
+---
+# Admin Role - Full access to all project resources
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: default-project-admin-role
 rules:
-- apiGroups:
-  - ""
-  resources:
-  - persistentvolumeclaims
-  - services
-  - secrets
-  - serviceaccounts
-  - configmaps
-  verbs:
-  - '*'
-- apiGroups:
-  - apps
-  resources:
-  - deployments
-  verbs:
-  - '*'
-- apiGroups:
-  - rbac.authorization.k8s.io
-  resources:
-  - roles
-  - rolebindings
-  verbs:
-  - '*'
-- apiGroups:
-  - k8s.cni.cncf.io
-  resources:
-  - network-attachment-definitions
-  verbs:
-  - get
-  - list
-- apiGroups:
-  - kubevirt.io
-  resources:
-  - virtualmachines
-  - virtualmachineinstances
-  verbs:
-  - '*'
-- apiGroups:
-  - subresources.kubevirt.io
-  resources:
-  - virtualmachineinstances/guestosinfo
-  - virtualmachineinstances/console
-  - virtualmachineinstances/vnc
-  verbs:
-  - get
-- apiGroups:
-  - subresources.kubevirt.io
-  resources:
-  - virtualmachines/start
-  - virtualmachines/stop
-  - virtualmachines/restart
-  - virtualmachines/addvolume
-  - virtualmachines/removevolume
-  - virtualmachines/migrate
-  - virtualmachines/memorydump
-  - virtualmachines/pause
-  verbs:
-  - update
-- apiGroups:
-  - subresources.kubevirt.io
-  resources:
-  - virtualmachineinstances/pause
-  - virtualmachineinstances/unpause
-  - virtualmachineinstances/addvolume
-  - virtualmachineinstances/removevolume
-  - virtualmachineinstances/freeze
-  - virtualmachineinstances/unfreeze
-  - virtualmachineinstances/softreboot
-  - virtualmachineinstances/sev/setupsession
-  - virtualmachineinstances/sev/injectlaunchsecret
-  verbs:
-  - update
-- apiGroups:
-  - subresources.kubevirt.io
-  resources:
-  - virtualmachines/expand-spec
-  verbs:
-  - update
-- apiGroups:
-  - cdi.kubevirt.io
-  resources:
-  - '*'
-  verbs:
-  - '*'
-- apiGroups:
-  - autoscaling
-  resources:
-  - horizontalpodautoscalers
-  verbs:
-  - '*'
-- apiGroups:
-  - cluster.x-k8s.io
-  resources:
-  - clusters
-  - machinedeployments
-  verbs:
-  - '*'
-- apiGroups:
-  - controlplane.cluster.x-k8s.io
-  resources:
-  - kthreescontrolplanes
-  verbs:
-  - '*'
-- apiGroups:
-  - infrastructure.cluster.x-k8s.io
-  resources:
-  - kubevirtmachinetemplates
-  - kubevirtclusters
-  verbs:
-  - '*'
-- apiGroups:
-  - bootstrap.cluster.x-k8s.io
-  resources:
-  - kthreesconfigtemplates
-  verbs:
-  - '*'
-- apiGroups:
-  - addons.cluster.x-k8s.io
-  resources:
-  - clusterresourcesets
-  verbs:
-  - '*'
-- apiGroups:
-  - ""
-  resources:
-  - endpoints
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - pods
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-  - delete
-- apiGroups:
-  - apps
-  resources:
-  - daemonsets
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-  - delete
-- apiGroups:
-  - batch
-  resources:
-  - jobs
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-  - delete
-- apiGroups:
-  - apps
-  resources:
-  - replicasets
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-  - delete
-- apiGroups:
-  - apps
-  resources:
-  - statefulsets
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-  - delete
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - ingresses
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-  - delete
-- apiGroups:
-  - kube-dc.com
-  resources:
-  - eips
-  - fips
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-  - delete
-- apiGroups:
-  - k8s.kube-dc.com
-  resources:
-  - kdcclusters
-  - kdcclusterdatastores
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-  - delete
-  - patch
-  - update
-- apiGroups:
-  - ""
-  resources:
-  - events
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - pods/log
-  verbs:
-  - get
-  - list
-- apiGroups:
-  - cert-manager.io
-  resources:
-  - issuers
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-  - delete
-- apiGroups:
-  - policy
-  resources:
-  - poddisruptionbudgets
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-  - delete
-- apiGroups:
-  - discovery.k8s.io
-  resources:
-  - endpointslices
-  verbs:
-  - get
-  - list
-# Gateway API resources for service exposure
-- apiGroups:
-  - gateway.networking.k8s.io
-  resources:
-  - httproutes
-  - grpcroutes
-  - tlsroutes
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-  - delete
-  - update
-  - patch
-# Envoy Gateway Backend resources (read-only - auto-created by controller)
-- apiGroups:
-  - gateway.envoyproxy.io
-  resources:
-  - backends
-  verbs:
-  - get
-  - list
-  - watch
-# cert-manager Certificate resources for TLS
-- apiGroups:
-  - cert-manager.io
-  resources:
-  - certificates
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-  - delete
+# Core resources
+- apiGroups: [""]
+  resources: [persistentvolumeclaims, services, secrets, serviceaccounts, configmaps]
+  verbs: ["*"]
+- apiGroups: [""]
+  resources: [endpoints]
+  verbs: [get, list, watch]
+- apiGroups: [""]
+  resources: [pods]
+  verbs: [create, get, list, watch, delete]
+- apiGroups: [""]
+  resources: [pods/log]
+  verbs: [get, list]
+- apiGroups: [""]
+  resources: [events]
+  verbs: [get, list, watch]
+# Apps
+- apiGroups: [apps]
+  resources: [deployments]
+  verbs: ["*"]
+- apiGroups: [apps]
+  resources: [daemonsets, replicasets, statefulsets]
+  verbs: [create, get, list, watch, delete]
+# RBAC
+- apiGroups: [rbac.authorization.k8s.io]
+  resources: [roles, rolebindings]
+  verbs: ["*"]
+# Networking
+- apiGroups: [k8s.cni.cncf.io]
+  resources: [network-attachment-definitions]
+  verbs: [get, list]
+- apiGroups: [networking.k8s.io]
+  resources: [ingresses]
+  verbs: [create, get, list, watch, delete]
+# KubeVirt VMs
+- apiGroups: [kubevirt.io]
+  resources: [virtualmachines, virtualmachineinstances]
+  verbs: ["*"]
+- apiGroups: [subresources.kubevirt.io]
+  resources: [virtualmachineinstances/guestosinfo, virtualmachineinstances/console, virtualmachineinstances/vnc]
+  verbs: [get]
+- apiGroups: [subresources.kubevirt.io]
+  resources: [virtualmachines/start, virtualmachines/stop, virtualmachines/restart, virtualmachines/addvolume, virtualmachines/removevolume, virtualmachines/migrate, virtualmachines/memorydump, virtualmachines/pause]
+  verbs: [update]
+- apiGroups: [subresources.kubevirt.io]
+  resources: [virtualmachineinstances/pause, virtualmachineinstances/unpause, virtualmachineinstances/addvolume, virtualmachineinstances/removevolume, virtualmachineinstances/freeze, virtualmachineinstances/unfreeze, virtualmachineinstances/softreboot, virtualmachineinstances/sev/setupsession, virtualmachineinstances/sev/injectlaunchsecret]
+  verbs: [update]
+- apiGroups: [subresources.kubevirt.io]
+  resources: [virtualmachines/expand-spec]
+  verbs: [update]
+# CDI (Containerized Data Importer)
+- apiGroups: [cdi.kubevirt.io]
+  resources: ["*"]
+  verbs: ["*"]
+# Autoscaling
+- apiGroups: [autoscaling]
+  resources: [horizontalpodautoscalers]
+  verbs: ["*"]
+# Cluster API (KDC Clusters)
+- apiGroups: [cluster.x-k8s.io]
+  resources: [clusters, machinedeployments]
+  verbs: ["*"]
+- apiGroups: [controlplane.cluster.x-k8s.io]
+  resources: [kthreescontrolplanes]
+  verbs: ["*"]
+- apiGroups: [infrastructure.cluster.x-k8s.io]
+  resources: [kubevirtmachinetemplates, kubevirtclusters]
+  verbs: ["*"]
+- apiGroups: [bootstrap.cluster.x-k8s.io]
+  resources: [kthreesconfigtemplates]
+  verbs: ["*"]
+- apiGroups: [addons.cluster.x-k8s.io]
+  resources: [clusterresourcesets]
+  verbs: ["*"]
+# Batch
+- apiGroups: [batch]
+  resources: [jobs]
+  verbs: [create, get, list, watch, delete]
+# Kube-DC resources
+- apiGroups: [kube-dc.com]
+  resources: [eips, fips]
+  verbs: [create, get, list, watch, delete]
+- apiGroups: [k8s.kube-dc.com]
+  resources: [kdcclusters, kdcclusterdatastores]
+  verbs: [create, get, list, watch, delete, patch, update]
+# Cert-manager
+- apiGroups: [cert-manager.io]
+  resources: [issuers, certificates]
+  verbs: [create, get, list, watch, delete]
+# Policy
+- apiGroups: [policy]
+  resources: [poddisruptionbudgets]
+  verbs: [create, get, list, watch, delete]
+# Discovery
+- apiGroups: [discovery.k8s.io]
+  resources: [endpointslices]
+  verbs: [get, list]
+# Gateway API
+- apiGroups: [gateway.networking.k8s.io]
+  resources: [httproutes, grpcroutes, tlsroutes]
+  verbs: [create, get, list, watch, delete, update, patch]
+- apiGroups: [gateway.envoyproxy.io]
+  resources: [backends]
+  verbs: [get, list, watch]
+
+---
+# Developer Role - Can manage VMs, containers, workloads (no RBAC, no secrets management)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: default-project-developer-role
+rules:
+# Core resources (no secrets write)
+- apiGroups: [""]
+  resources: [persistentvolumeclaims, services, serviceaccounts, configmaps]
+  verbs: ["*"]
+- apiGroups: [""]
+  resources: [secrets]
+  verbs: [get, list]
+- apiGroups: [""]
+  resources: [endpoints]
+  verbs: [get, list, watch]
+- apiGroups: [""]
+  resources: [pods]
+  verbs: [create, get, list, watch, delete]
+- apiGroups: [""]
+  resources: [pods/log]
+  verbs: [get, list]
+- apiGroups: [""]
+  resources: [events]
+  verbs: [get, list, watch]
+# Apps
+- apiGroups: [apps]
+  resources: [deployments, daemonsets, replicasets, statefulsets]
+  verbs: [create, get, list, watch, delete, update, patch]
+# Networking
+- apiGroups: [k8s.cni.cncf.io]
+  resources: [network-attachment-definitions]
+  verbs: [get, list]
+- apiGroups: [networking.k8s.io]
+  resources: [ingresses]
+  verbs: [create, get, list, watch, delete]
+# KubeVirt VMs - full CRUD
+- apiGroups: [kubevirt.io]
+  resources: [virtualmachines, virtualmachineinstances]
+  verbs: ["*"]
+- apiGroups: [subresources.kubevirt.io]
+  resources: [virtualmachineinstances/guestosinfo, virtualmachineinstances/console, virtualmachineinstances/vnc]
+  verbs: [get]
+- apiGroups: [subresources.kubevirt.io]
+  resources: [virtualmachines/start, virtualmachines/stop, virtualmachines/restart, virtualmachines/addvolume, virtualmachines/removevolume, virtualmachines/migrate, virtualmachines/memorydump, virtualmachines/pause]
+  verbs: [update]
+- apiGroups: [subresources.kubevirt.io]
+  resources: [virtualmachineinstances/pause, virtualmachineinstances/unpause, virtualmachineinstances/addvolume, virtualmachineinstances/removevolume, virtualmachineinstances/freeze, virtualmachineinstances/unfreeze, virtualmachineinstances/softreboot]
+  verbs: [update]
+- apiGroups: [subresources.kubevirt.io]
+  resources: [virtualmachines/expand-spec]
+  verbs: [update]
+# CDI
+- apiGroups: [cdi.kubevirt.io]
+  resources: ["*"]
+  verbs: ["*"]
+# Autoscaling
+- apiGroups: [autoscaling]
+  resources: [horizontalpodautoscalers]
+  verbs: [create, get, list, watch, delete, update, patch]
+# KDC Clusters - full CRUD
+- apiGroups: [cluster.x-k8s.io]
+  resources: [clusters, machinedeployments]
+  verbs: [get, list, watch]
+- apiGroups: [k8s.kube-dc.com]
+  resources: [kdcclusters, kdcclusterdatastores]
+  verbs: [create, get, list, watch, delete, patch, update]
+# Batch
+- apiGroups: [batch]
+  resources: [jobs]
+  verbs: [create, get, list, watch, delete]
+# Kube-DC resources
+- apiGroups: [kube-dc.com]
+  resources: [eips, fips]
+  verbs: [create, get, list, watch, delete]
+# Cert-manager
+- apiGroups: [cert-manager.io]
+  resources: [issuers, certificates]
+  verbs: [create, get, list, watch, delete]
+# Policy
+- apiGroups: [policy]
+  resources: [poddisruptionbudgets]
+  verbs: [create, get, list, watch, delete]
+# Discovery
+- apiGroups: [discovery.k8s.io]
+  resources: [endpointslices]
+  verbs: [get, list]
+# Gateway API
+- apiGroups: [gateway.networking.k8s.io]
+  resources: [httproutes, grpcroutes, tlsroutes]
+  verbs: [create, get, list, watch, delete, update, patch]
+- apiGroups: [gateway.envoyproxy.io]
+  resources: [backends]
+  verbs: [get, list, watch]
+
+---
+# Project Manager Role - Can view all resources, manage some settings (no VM/container CRUD)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: default-project-manager-role
+rules:
+# Core resources - read + limited write
+- apiGroups: [""]
+  resources: [persistentvolumeclaims, services, serviceaccounts, configmaps]
+  verbs: [get, list, watch]
+- apiGroups: [""]
+  resources: [secrets]
+  verbs: [get, list]
+- apiGroups: [""]
+  resources: [endpoints]
+  verbs: [get, list, watch]
+- apiGroups: [""]
+  resources: [pods]
+  verbs: [get, list, watch]
+- apiGroups: [""]
+  resources: [pods/log]
+  verbs: [get, list]
+- apiGroups: [""]
+  resources: [events]
+  verbs: [get, list, watch]
+# Apps - read only
+- apiGroups: [apps]
+  resources: [deployments, daemonsets, replicasets, statefulsets]
+  verbs: [get, list, watch]
+# Networking - read only
+- apiGroups: [k8s.cni.cncf.io]
+  resources: [network-attachment-definitions]
+  verbs: [get, list]
+- apiGroups: [networking.k8s.io]
+  resources: [ingresses]
+  verbs: [get, list, watch]
+# KubeVirt VMs - read + console access
+- apiGroups: [kubevirt.io]
+  resources: [virtualmachines, virtualmachineinstances]
+  verbs: [get, list, watch]
+- apiGroups: [subresources.kubevirt.io]
+  resources: [virtualmachineinstances/guestosinfo, virtualmachineinstances/console, virtualmachineinstances/vnc]
+  verbs: [get]
+# CDI - read only
+- apiGroups: [cdi.kubevirt.io]
+  resources: ["*"]
+  verbs: [get, list, watch]
+# Autoscaling - read only
+- apiGroups: [autoscaling]
+  resources: [horizontalpodautoscalers]
+  verbs: [get, list, watch]
+# Cluster API - read only
+- apiGroups: [cluster.x-k8s.io]
+  resources: [clusters, machinedeployments]
+  verbs: [get, list, watch]
+- apiGroups: [controlplane.cluster.x-k8s.io]
+  resources: [kthreescontrolplanes]
+  verbs: [get, list, watch]
+- apiGroups: [infrastructure.cluster.x-k8s.io]
+  resources: [kubevirtmachinetemplates, kubevirtclusters]
+  verbs: [get, list, watch]
+# Batch - read only
+- apiGroups: [batch]
+  resources: [jobs]
+  verbs: [get, list, watch]
+# Kube-DC resources - read only
+- apiGroups: [kube-dc.com]
+  resources: [eips, fips]
+  verbs: [get, list, watch]
+- apiGroups: [k8s.kube-dc.com]
+  resources: [kdcclusters, kdcclusterdatastores]
+  verbs: [get, list, watch]
+# Cert-manager - read only
+- apiGroups: [cert-manager.io]
+  resources: [issuers, certificates]
+  verbs: [get, list, watch]
+# Policy - read only
+- apiGroups: [policy]
+  resources: [poddisruptionbudgets]
+  verbs: [get, list, watch]
+# Discovery
+- apiGroups: [discovery.k8s.io]
+  resources: [endpointslices]
+  verbs: [get, list]
+# Gateway API - read only
+- apiGroups: [gateway.networking.k8s.io]
+  resources: [httproutes, grpcroutes, tlsroutes]
+  verbs: [get, list, watch]
+- apiGroups: [gateway.envoyproxy.io]
+  resources: [backends]
+  verbs: [get, list, watch]
+
+---
+# User Role - Read-only access to project resources
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: default-project-user-role
+rules:
+# Core resources - read only (no secrets)
+- apiGroups: [""]
+  resources: [persistentvolumeclaims, services, serviceaccounts, configmaps]
+  verbs: [get, list]
+- apiGroups: [""]
+  resources: [endpoints]
+  verbs: [get, list]
+- apiGroups: [""]
+  resources: [pods]
+  verbs: [get, list]
+- apiGroups: [""]
+  resources: [pods/log]
+  verbs: [get]
+- apiGroups: [""]
+  resources: [events]
+  verbs: [get, list]
+# Apps - read only
+- apiGroups: [apps]
+  resources: [deployments, daemonsets, replicasets, statefulsets]
+  verbs: [get, list]
+# Networking - read only
+- apiGroups: [k8s.cni.cncf.io]
+  resources: [network-attachment-definitions]
+  verbs: [get, list]
+- apiGroups: [networking.k8s.io]
+  resources: [ingresses]
+  verbs: [get, list]
+# KubeVirt VMs - read only (no console)
+- apiGroups: [kubevirt.io]
+  resources: [virtualmachines, virtualmachineinstances]
+  verbs: [get, list]
+- apiGroups: [subresources.kubevirt.io]
+  resources: [virtualmachineinstances/guestosinfo]
+  verbs: [get]
+# CDI - read only
+- apiGroups: [cdi.kubevirt.io]
+  resources: ["*"]
+  verbs: [get, list]
+# Autoscaling - read only
+- apiGroups: [autoscaling]
+  resources: [horizontalpodautoscalers]
+  verbs: [get, list]
+# Cluster API - read only
+- apiGroups: [cluster.x-k8s.io]
+  resources: [clusters, machinedeployments]
+  verbs: [get, list]
+# Batch - read only
+- apiGroups: [batch]
+  resources: [jobs]
+  verbs: [get, list]
+# Kube-DC resources - read only
+- apiGroups: [kube-dc.com]
+  resources: [eips, fips]
+  verbs: [get, list]
+- apiGroups: [k8s.kube-dc.com]
+  resources: [kdcclusters, kdcclusterdatastores]
+  verbs: [get, list]
+# Cert-manager - read only
+- apiGroups: [cert-manager.io]
+  resources: [issuers, certificates]
+  verbs: [get, list]
+# Policy - read only
+- apiGroups: [policy]
+  resources: [poddisruptionbudgets]
+  verbs: [get, list]
+# Discovery
+- apiGroups: [discovery.k8s.io]
+  resources: [endpointslices]
+  verbs: [get, list]
+# Gateway API - read only
+- apiGroups: [gateway.networking.k8s.io]
+  resources: [httproutes, grpcroutes, tlsroutes]
+  verbs: [get, list]
+- apiGroups: [gateway.envoyproxy.io]
+  resources: [backends]
+  verbs: [get, list]

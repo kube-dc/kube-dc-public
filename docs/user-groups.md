@@ -23,6 +23,54 @@ Kube-DC implements a multi-tenant access control system that combines:
 - **Organization Groups**: Manages project-level access across namespaces
 - **Keycloak Integration**: Provides user authentication and group management
 
+## Standard Roles
+
+Kube-DC automatically creates standard roles when organizations and projects are provisioned. These provide a baseline permission structure that can be extended with custom roles.
+
+### Organization-Level Roles
+
+| Role | Group | Permissions |
+|------|-------|-------------|
+| `{org}-admin` | `org-admin` | Full CRUD on organizations, projects, organizationgroups |
+| `{org}-user` | `user` | Read-only access to organization and projects list |
+
+### Project-Level Roles
+
+| Role | Description | Key Permissions |
+|------|-------------|-----------------|
+| `admin` | Full project access | All resources: `*` verbs, RBAC management |
+| `developer` | VM/workload management | VMs, pods, services: full CRUD; secrets: read-only; no RBAC |
+| `project-manager` | View + console access | All resources: get, list, watch; VM console/VNC access |
+| `user` | Read-only access | All resources: get, list; no console, no secrets |
+
+### Automatic Role Bindings
+
+When a project is created, the following bindings are automatically configured:
+
+| RoleBinding | Subject | Role | Purpose |
+|-------------|---------|------|---------|
+| `org-admin` | `{org}:org-admin` | `admin` | Org admins get full project access |
+| `user` | `{org}:user` | `user` | All org users get read-only access |
+
+### Assigning Elevated Access
+
+To grant users elevated access (developer or project-manager roles), create an OrganizationGroup:
+
+```yaml
+apiVersion: kube-dc.com/v1
+kind: OrganizationGroup
+metadata:
+  name: dev-team
+  namespace: shalb  # organization namespace
+spec:
+  permissions:
+  - project: demo
+    roles:
+    - developer  # grants developer role in shalb-demo project
+```
+
+This creates a Keycloak group `dev-team`. Add users to this group in Keycloak to grant them developer access to the specified project.
+
 ## Prerequisites
 
 This guide assumes you're working from an **Organization Admin** perspective. You'll need:
@@ -36,16 +84,25 @@ This guide assumes you're working from an **Organization Admin** perspective. Yo
 
 ## Step-by-Step Guide
 
-### Creating Project Roles
+### Creating Custom Project Roles
 
-Create a Kubernetes Role to define permissions within a project namespace. These roles dictate what actions users can perform on specific resources.
+While Kube-DC provides standard roles (`admin`, `developer`, `project-manager`, `user`) that cover most use cases, you can create custom Kubernetes Roles for specialized permission requirements.
+
+!!! note "When to Use Custom Roles"
+    Custom roles are useful when:
+    
+    - You need permissions not covered by standard roles
+    - You want to restrict access to specific resource types
+    - You need fine-grained control over particular workloads
+
+**Example: Custom role for managing deployments and services**
 
 ```yaml
 apiVersion: rbac.k8s.io/v1
 kind: Role
 metadata:
   namespace: shalb-demo  # Replace with your project namespace
-  name: resource-manager
+  name: deployment-manager  # Custom role name
 rules:
   - apiGroups: [""]  # "" indicates the core API group
     resources: ["pods", "services"]
@@ -55,14 +112,14 @@ rules:
     verbs: ["get", "list", "create", "watch", "delete"]
 ```
 
-Apply the role to your namespace using:
+Apply the custom role:
 
 ```bash
-kubectl apply -f role.yaml
+kubectl apply -f custom-role.yaml
 ```
 
 !!! warning "Role Scope"
-    Remember that Roles are namespace-scoped. If you need permissions across multiple namespaces, you need to create a separate Role in each Project namespace.
+    Roles are namespace-scoped. If you need permissions across multiple namespaces, create the Role in each project namespace or reference it via OrganizationGroup.
 
 ### Creating Organization Groups
 
@@ -83,11 +140,11 @@ spec:
   permissions:
   - project: "demo"
     roles:
-    - resource-manager
+    - developer  # standard role, or use custom role name like 'deployment-manager'
   # Additional projects and roles can be added:
   # - project: "prod"
   #   roles:
-  #   - resource-manager
+  #   - project-manager
 ```
 
 Apply the group configuration:
