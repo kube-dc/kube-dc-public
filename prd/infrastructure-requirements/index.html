@@ -1,0 +1,3978 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://docs.kube-dc.com/prd/infrastructure-requirements/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Kube-DC Infrastructure Requirements - Kube-DC</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+  
+
+
+  
+  
+    <script>"undefined"!=typeof __md_analytics&&__md_analytics()</script>
+  
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#kube-dc-infrastructure-requirements" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Kube-DC" class="md-header__button md-logo" aria-label="Kube-DC" data-md-component="logo">
+      
+  <img src="../../images/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Kube-DC
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Kube-DC Infrastructure Requirements
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17 6H7c-3.31 0-6 2.69-6 6s2.69 6 6 6h10c3.31 0 6-2.69 6-6s-2.69-6-6-6m0 10H7c-2.21 0-4-1.79-4-4s1.79-4 4-4h10c2.21 0 4 1.79 4 4s-1.79 4-4 4M7 9c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17 7H7a5 5 0 0 0-5 5 5 5 0 0 0 5 5h10a5 5 0 0 0 5-5 5 5 0 0 0-5-5m0 8a3 3 0 0 1-3-3 3 3 0 0 1 3-3 3 3 0 0 1 3 3 3 3 0 0 1-3 3"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/kube-dc/kube-dc-public" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kube-dc/kube-dc-public
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../.." class="md-tabs__link">
+          
+  
+  
+  Introduction
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../quickstart-overview/" class="md-tabs__link">
+          
+  
+  
+  Quick Start
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture-overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture & Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tutorial-virtual-machines/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../project_resources/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../community-support/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Community & Support
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Kube-DC" class="md-nav__button md-logo" aria-label="Kube-DC" data-md-component="logo">
+      
+  <img src="../../images/logo.png" alt="logo">
+
+    </a>
+    Kube-DC
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/kube-dc/kube-dc-public" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kube-dc/kube-dc-public
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Introduction
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    What Is Kube-DC?
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../core-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Quick Start
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quickstart-overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quickstart-hetzner/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment on Hetzner
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture & Concepts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture & Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture-overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overall Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture-multi-tenancy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi-Tenancy & RBAC
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture-virtualization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Virtualization (KubeVirt)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture-networking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Networking (Kube-OVN, VLANs)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial-virtual-machines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deploying VMs & Containers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial-user-groups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User & Group Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial-service-exposure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Service Exposure Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial-networking-external/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Additional External Networks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial-kubeconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuring Kubeconfig for Local Access
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial-windows-vm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows VM Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial-sso-google-auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Google SSO Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../managing-os-images/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Managing OS Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../project_resources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Resources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../community-support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Community & Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#architecture-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture Overview
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Architecture Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#management-platform-provider-infrastructure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Management Platform (Provider Infrastructure)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tenant-infrastructure-customer-infrastructure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tenant Infrastructure (Customer Infrastructure)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#management-cluster-base-requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Management Cluster Base Requirements
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Management Cluster Base Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#production-setup-3-vm-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Production Setup: 3-VM Architecture
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#management-cluster-components-shared-infrastructure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Management Cluster Components (Shared Infrastructure)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Management Cluster Components (Shared Infrastructure)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#core-platform-components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Platform Components
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#monitoring-stack-shared" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Monitoring Stack (Shared)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#networking-stack-shared" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Networking Stack (Shared)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#virtualization-stack-shared" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Virtualization Stack (Shared)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cluster-api-stack-shared" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cluster API Stack (Shared)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#management-cluster-total-base-infrastructure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Management Cluster Total (Base Infrastructure)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-tenant-cluster-components-multiply-by-number-of-clusters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Tenant Cluster Components (Multiply by Number of Clusters)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Per-Tenant Cluster Components (Multiply by Number of Clusters)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#control-plane-kamaji-tenantcontrolplane" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Control Plane (Kamaji TenantControlPlane)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dedicated-etcd-optional-per-cluster" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dedicated etcd (Optional, per Cluster)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#worker-nodes-configurable-per-cluster" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Worker Nodes (Configurable per Cluster)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Worker Nodes (Configurable per Cluster)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example-worker-configurations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Worker Configurations
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cloudsigma-specific-components-per-cluster-using-cloudsigma" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CloudSigma-Specific Components (Per Cluster using CloudSigma)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cninetworking-per-cluster-if-using-cilium" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CNI/Networking (Per Cluster - if using Cilium)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-tenant-cluster-total" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Tenant Cluster Total
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Per-Tenant Cluster Total">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#configuration-1-minimal-shared-etcd-2-minimal-workers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration 1: Minimal (Shared etcd, 2 minimal workers)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-2-standard-shared-etcd-3-standard-workers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration 2: Standard (Shared etcd, 3 standard workers)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-3-production-dedicated-etcd-3-standard-workers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration 3: Production (Dedicated etcd, 3 standard workers)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-deployment-scenarios" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Deployment Scenarios
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Example Deployment Scenarios">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#scenario-1-small-platform-5-tenant-clusters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scenario 1: Small Platform (5 Tenant Clusters)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scenario-2-medium-platform-20-tenant-clusters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scenario 2: Medium Platform (20 Tenant Clusters)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scenario-3-large-platform-50-tenant-clusters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scenario 3: Large Platform (50 Tenant Clusters)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#storage-requirements-breakdown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Storage Requirements Breakdown
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Storage Requirements Breakdown">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#management-cluster-persistent-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Management Cluster Persistent Storage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-tenant-cluster-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Tenant Cluster Storage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network-requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network Requirements
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Network Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bandwidth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bandwidth
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ip-address-requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IP Address Requirements
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="IP Address Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#management-cluster-kube-ovn" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Management Cluster (Kube-OVN)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-tenant-cluster" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Tenant Cluster
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#external-ips" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        External IPs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#notes-and-recommendations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes and Recommendations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Notes and Recommendations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#scaling-considerations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scaling Considerations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resource-overhead" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resource Overhead
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#high-availability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        High Availability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cost-optimization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cost Optimization
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#actual-production-cluster-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Actual Production Cluster Analysis
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Actual Production Cluster Analysis">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#current-deployment-stagekube-dccom" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current Deployment (stage.kube-dc.com)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tenant-cluster-resource-consumption-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tenant Cluster Resource Consumption Analysis
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tenant Cluster Resource Consumption Analysis">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example-banja-and-xxx-clusters-cloudsigma-example-3415fbd3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: "banja" and "xxx" Clusters (cloudsigma-example-3415fbd3)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#platform-components-resource-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Platform Components Resource Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#actual-vs-theoretical-requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Actual vs Theoretical Requirements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#storage-usage-persistent-volumes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Storage Usage (Persistent Volumes)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cloudsigma-platform-capacity-planning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CloudSigma Platform Capacity Planning
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CloudSigma Platform Capacity Planning">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#proposed-hardware-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Proposed Hardware Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-tenant-cluster-resource-consumption-cloudsigma" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Tenant Cluster Resource Consumption (CloudSigma)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Per-Tenant Cluster Resource Consumption (CloudSigma)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#components-per-tenant-cluster" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Components per Tenant Cluster:
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#average-per-cluster-mixed-etcd-topology" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Average per Cluster (Mixed etcd Topology)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#capacity-calculation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Capacity Calculation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Capacity Calculation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#total-available-resources-after-k8s-overhead-15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Total Available Resources (after K8s overhead ~15%)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#capacity-by-constraint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Capacity by Constraint
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recommended-capacity-50-60-tenant-clusters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended Capacity: 50-60 Tenant Clusters
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Recommended Capacity: 50-60 Tenant Clusters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breakdown-by-etcd-topology-5050-split" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breakdown by etcd Topology (50/50 split)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resource-distribution-across-nodes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resource Distribution Across Nodes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scaling-strategies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scaling Strategies
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Scaling Strategies">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#to-increase-capacity-beyond-60-clusters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        To Increase Capacity Beyond 60 Clusters:
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kamaji-scaling-best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Kamaji Scaling Best Practices
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#production-recommendations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Production Recommendations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#customer-infrastructure-not-counted-in-management-cluster" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Customer Infrastructure (Not Counted in Management Cluster)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="kube-dc-infrastructure-requirements">Kube-DC Infrastructure Requirements<a class="headerlink" href="#kube-dc-infrastructure-requirements" title="Permanent link"> ¶</a></h1>
+<p>This document outlines the resource requirements for deploying and operating a Kube-DC platform.</p>
+<h2 id="architecture-overview">Architecture Overview<a class="headerlink" href="#architecture-overview" title="Permanent link"> ¶</a></h2>
+<h3 id="management-platform-provider-infrastructure">Management Platform (Provider Infrastructure)<a class="headerlink" href="#management-platform-provider-infrastructure" title="Permanent link"> ¶</a></h3>
+<p>The Kube-DC management platform runs on <strong>3 VMs</strong> that host:
+- Kubernetes control plane (RKE2/K3s)
+- All Kube-DC platform components (controllers, UI, monitoring)
+- Kamaji controller for managing tenant control planes
+- Tenant control plane pods (scaled on-demand)</p>
+<p><strong>Key Principle:</strong> Tenant control planes run as pods on the management cluster and scale flexibly by adding more VMs to the management cluster as tenant count grows.</p>
+<h3 id="tenant-infrastructure-customer-infrastructure">Tenant Infrastructure (Customer Infrastructure)<a class="headerlink" href="#tenant-infrastructure-customer-infrastructure" title="Permanent link"> ¶</a></h3>
+<ul>
+<li><strong>Worker VMs:</strong> Run on customer's CloudSigma account</li>
+<li><strong>Storage (Disks):</strong> Provisioned on customer's CloudSigma account via CSI driver</li>
+<li><strong>Networking:</strong> Customer's CloudSigma network resources (IPs, VLANs)</li>
+</ul>
+<p><strong>Key Principle:</strong> Customer workloads and data remain on customer infrastructure. Only the control plane is managed centrally.</p>
+<hr />
+<h2 id="management-cluster-base-requirements">Management Cluster Base Requirements<a class="headerlink" href="#management-cluster-base-requirements" title="Permanent link"> ¶</a></h2>
+<h3 id="production-setup-3-vm-architecture">Production Setup: 3-VM Architecture<a class="headerlink" href="#production-setup-3-vm-architecture" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>VM Role</th>
+<th>Nb VMs</th>
+<th>CPU Cores</th>
+<th>CPU (GHz)</th>
+<th>RAM (GB)</th>
+<th>DISK (GB)</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Control Plane + Tenant CP Host</strong></td>
+<td>3</td>
+<td>8</td>
+<td>16-24</td>
+<td>64</td>
+<td>200+</td>
+<td>K8s control plane, platform components, tenant control planes</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Scaling Model:</strong>
+- Start with 3 VMs for HA and base capacity
+- Add VMs horizontally as tenant cluster count grows
+- Each additional VM can host ~10-20 tenant control planes
+- No distinction between "master" and "worker" - all nodes can host tenant control planes</p>
+<hr />
+<h2 id="management-cluster-components-shared-infrastructure">Management Cluster Components (Shared Infrastructure)<a class="headerlink" href="#management-cluster-components-shared-infrastructure" title="Permanent link"> ¶</a></h2>
+<p>These components run once in the management cluster and serve all tenant clusters.</p>
+<h3 id="core-platform-components">Core Platform Components<a class="headerlink" href="#core-platform-components" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Nb Instances</th>
+<th>CPU (cores)</th>
+<th>CPU (MHz)</th>
+<th>RAM per Instance (GB)</th>
+<th>DISK per Instance (GB)</th>
+<th>Unmounted Drives (GB)</th>
+<th>Type</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Kube-DC Manager</strong></td>
+<td>1</td>
+<td>0.5</td>
+<td>1000</td>
+<td>0.5</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>Core controller managing CRDs</td>
+</tr>
+<tr>
+<td><strong>UI Frontend</strong></td>
+<td>1</td>
+<td>0.2</td>
+<td>400</td>
+<td>0.5</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>React application</td>
+</tr>
+<tr>
+<td><strong>UI Backend</strong></td>
+<td>1</td>
+<td>0.5</td>
+<td>1000</td>
+<td>1</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>Node.js API server</td>
+</tr>
+<tr>
+<td><strong>Keycloak</strong></td>
+<td>1</td>
+<td>0.25</td>
+<td>500</td>
+<td>0.5</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>Identity and access management</td>
+</tr>
+<tr>
+<td><strong>Keycloak PostgreSQL</strong></td>
+<td>1</td>
+<td>0.25</td>
+<td>500</td>
+<td>0.25</td>
+<td>5</td>
+<td>-</td>
+<td>Pod</td>
+<td>Keycloak database</td>
+</tr>
+<tr>
+<td><strong>Kamaji Controller</strong></td>
+<td>1</td>
+<td>0.5</td>
+<td>1000</td>
+<td>0.25</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>Tenant control plane manager</td>
+</tr>
+<tr>
+<td><strong>Kamaji etcd</strong></td>
+<td>3</td>
+<td>0.5</td>
+<td>1000</td>
+<td>0.5</td>
+<td>-</td>
+<td>10</td>
+<td>StatefulSet</td>
+<td>Shared etcd for all tenant control planes (default)</td>
+</tr>
+<tr>
+<td><strong>Cert-Manager</strong></td>
+<td>1</td>
+<td>0.2</td>
+<td>400</td>
+<td>0.25</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>Certificate automation</td>
+</tr>
+<tr>
+<td><strong>Envoy Gateway</strong></td>
+<td>2</td>
+<td>0.5</td>
+<td>1000</td>
+<td>0.5</td>
+<td>-</td>
+<td>-</td>
+<td>Deployment</td>
+<td>Ingress controller</td>
+</tr>
+<tr>
+<td><strong>noVNC</strong></td>
+<td>1</td>
+<td>0.1</td>
+<td>200</td>
+<td>0.25</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>VM console access</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Subtotal (Core Platform):</strong> ~5 CPU cores, ~5 GB RAM, ~15 GB storage</p>
+<h3 id="monitoring-stack-shared">Monitoring Stack (Shared)<a class="headerlink" href="#monitoring-stack-shared" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Nb Instances</th>
+<th>CPU (cores)</th>
+<th>CPU (MHz)</th>
+<th>RAM per Instance (GB)</th>
+<th>DISK per Instance (GB)</th>
+<th>Unmounted Drives (GB)</th>
+<th>Type</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Prometheus</strong></td>
+<td>1</td>
+<td>1</td>
+<td>2000</td>
+<td>2</td>
+<td>-</td>
+<td>20</td>
+<td>StatefulSet</td>
+<td>Metrics storage and alerting</td>
+</tr>
+<tr>
+<td><strong>Prometheus Operator</strong></td>
+<td>1</td>
+<td>0.5</td>
+<td>1000</td>
+<td>0.25</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>Prometheus lifecycle manager</td>
+</tr>
+<tr>
+<td><strong>Alertmanager</strong></td>
+<td>1</td>
+<td>0.5</td>
+<td>1000</td>
+<td>0.25</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>Alert routing and notification</td>
+</tr>
+<tr>
+<td><strong>Grafana</strong></td>
+<td>1</td>
+<td>0.5</td>
+<td>1000</td>
+<td>0.5</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>Visualization dashboards</td>
+</tr>
+<tr>
+<td><strong>Loki Backend</strong></td>
+<td>1</td>
+<td>0.5</td>
+<td>1000</td>
+<td>1</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>Log aggregation backend</td>
+</tr>
+<tr>
+<td><strong>Loki Read</strong></td>
+<td>1</td>
+<td>0.5</td>
+<td>1000</td>
+<td>0.5</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>Log query service</td>
+</tr>
+<tr>
+<td><strong>Loki Write</strong></td>
+<td>1</td>
+<td>0.5</td>
+<td>1000</td>
+<td>0.5</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>Log ingestion service</td>
+</tr>
+<tr>
+<td><strong>Loki Minio</strong></td>
+<td>1</td>
+<td>0.5</td>
+<td>1000</td>
+<td>0.25</td>
+<td>-</td>
+<td>10</td>
+<td>StatefulSet</td>
+<td>Object storage for logs (2 drives)</td>
+</tr>
+<tr>
+<td><strong>Grafana Alloy</strong></td>
+<td>1+</td>
+<td>0.2</td>
+<td>400</td>
+<td>0.25</td>
+<td>-</td>
+<td>-</td>
+<td>DaemonSet</td>
+<td>Metrics/logs collector (per node)</td>
+</tr>
+<tr>
+<td><strong>Node Exporter</strong></td>
+<td>1+</td>
+<td>0.1</td>
+<td>200</td>
+<td>0.06</td>
+<td>-</td>
+<td>-</td>
+<td>DaemonSet</td>
+<td>Node metrics (per node)</td>
+</tr>
+<tr>
+<td><strong>Kube State Metrics</strong></td>
+<td>1</td>
+<td>0.2</td>
+<td>400</td>
+<td>0.12</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>Kubernetes metrics</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Subtotal (Monitoring):</strong> ~5 CPU cores, ~6 GB RAM, ~30 GB storage</p>
+<h3 id="networking-stack-shared">Networking Stack (Shared)<a class="headerlink" href="#networking-stack-shared" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Nb Instances</th>
+<th>CPU (cores)</th>
+<th>CPU (MHz)</th>
+<th>RAM per Instance (GB)</th>
+<th>DISK per Instance (GB)</th>
+<th>Unmounted Drives (GB)</th>
+<th>Type</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Kube-OVN Controller</strong></td>
+<td>1</td>
+<td>1</td>
+<td>2000</td>
+<td>1</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>OVN network controller</td>
+</tr>
+<tr>
+<td><strong>Kube-OVN CNI</strong></td>
+<td>1+</td>
+<td>0.5</td>
+<td>1000</td>
+<td>0.5</td>
+<td>-</td>
+<td>-</td>
+<td>DaemonSet</td>
+<td>CNI plugin (per node)</td>
+</tr>
+<tr>
+<td><strong>OVN Central</strong></td>
+<td>3</td>
+<td>0.5</td>
+<td>1000</td>
+<td>1</td>
+<td>-</td>
+<td>-</td>
+<td>StatefulSet</td>
+<td>OVN database cluster</td>
+</tr>
+<tr>
+<td><strong>Multus CNI</strong></td>
+<td>1+</td>
+<td>0.1</td>
+<td>200</td>
+<td>0.25</td>
+<td>-</td>
+<td>-</td>
+<td>DaemonSet</td>
+<td>Multi-network support (per node)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Subtotal (Networking):</strong> ~4 CPU cores, ~5 GB RAM</p>
+<h3 id="virtualization-stack-shared">Virtualization Stack (Shared)<a class="headerlink" href="#virtualization-stack-shared" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Nb Instances</th>
+<th>CPU (cores)</th>
+<th>CPU (MHz)</th>
+<th>RAM per Instance (GB)</th>
+<th>DISK per Instance (GB)</th>
+<th>Unmounted Drives (GB)</th>
+<th>Type</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>KubeVirt Operator</strong></td>
+<td>1</td>
+<td>0.5</td>
+<td>1000</td>
+<td>0.5</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>VM lifecycle manager</td>
+</tr>
+<tr>
+<td><strong>KubeVirt Handler</strong></td>
+<td>1+</td>
+<td>0.2</td>
+<td>400</td>
+<td>0.25</td>
+<td>-</td>
+<td>-</td>
+<td>DaemonSet</td>
+<td>VM runtime (per node)</td>
+</tr>
+<tr>
+<td><strong>CDI Operator</strong></td>
+<td>1</td>
+<td>0.5</td>
+<td>1000</td>
+<td>0.5</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>DataVolume manager</td>
+</tr>
+<tr>
+<td><strong>CDI Controller</strong></td>
+<td>1</td>
+<td>0.2</td>
+<td>400</td>
+<td>0.25</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>Import/upload controller</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Subtotal (Virtualization):</strong> ~2 CPU cores, ~2 GB RAM</p>
+<h3 id="cluster-api-stack-shared">Cluster API Stack (Shared)<a class="headerlink" href="#cluster-api-stack-shared" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Nb Instances</th>
+<th>CPU (cores)</th>
+<th>CPU (MHz)</th>
+<th>RAM per Instance (GB)</th>
+<th>DISK per Instance (GB)</th>
+<th>Unmounted Drives (GB)</th>
+<th>Type</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>CAPI Controller</strong></td>
+<td>1</td>
+<td>0.5</td>
+<td>1000</td>
+<td>0.5</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>Cluster API core</td>
+</tr>
+<tr>
+<td><strong>CAPI KubeVirt Provider</strong></td>
+<td>1</td>
+<td>0.2</td>
+<td>400</td>
+<td>0.25</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>KubeVirt infrastructure provider</td>
+</tr>
+<tr>
+<td><strong>CAPI K3s Provider</strong></td>
+<td>1</td>
+<td>0.2</td>
+<td>400</td>
+<td>0.25</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>K3s bootstrap/control plane</td>
+</tr>
+<tr>
+<td><strong>Sveltos</strong></td>
+<td>1</td>
+<td>0.2</td>
+<td>400</td>
+<td>0.25</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>Addon deployment controller</td>
+</tr>
+<tr>
+<td><strong>Kyverno</strong></td>
+<td>3</td>
+<td>0.2</td>
+<td>400</td>
+<td>0.25</td>
+<td>-</td>
+<td>-</td>
+<td>Deployment</td>
+<td>Policy engine</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Subtotal (Cluster API):</strong> ~2 CPU cores, ~2 GB RAM</p>
+<hr />
+<h2 id="management-cluster-total-base-infrastructure">Management Cluster Total (Base Infrastructure)<a class="headerlink" href="#management-cluster-total-base-infrastructure" title="Permanent link"> ¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>CPU Cores</th>
+<th>RAM (GB)</th>
+<th>Storage (GB)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Core Platform</td>
+<td>~5</td>
+<td>~5</td>
+<td>~15</td>
+</tr>
+<tr>
+<td>Monitoring</td>
+<td>~5</td>
+<td>~6</td>
+<td>~30</td>
+</tr>
+<tr>
+<td>Networking</td>
+<td>~4</td>
+<td>~5</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Virtualization</td>
+<td>~2</td>
+<td>~2</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Cluster API</td>
+<td>~2</td>
+<td>~2</td>
+<td>-</td>
+</tr>
+<tr>
+<td><strong>TOTAL</strong></td>
+<td><strong>~18</strong></td>
+<td><strong>~20</strong></td>
+<td><strong>~45</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Note:</strong> This excludes:
+- OS and system processes overhead (~2 CPU, ~4 GB RAM)
+- etcd for Kubernetes control plane (~1 CPU, ~2 GB RAM, ~20 GB storage)
+- RKE2/K3s components (~2 CPU, ~4 GB RAM)</p>
+<p><strong>Recommended Management Cluster Minimum:</strong> 24 CPU cores, 32 GB RAM, 100 GB storage per node</p>
+<hr />
+<h2 id="per-tenant-cluster-components-multiply-by-number-of-clusters">Per-Tenant Cluster Components (Multiply by Number of Clusters)<a class="headerlink" href="#per-tenant-cluster-components-multiply-by-number-of-clusters" title="Permanent link"> ¶</a></h2>
+<p>These components are deployed for EACH tenant Kubernetes cluster created via KdcCluster.</p>
+<h3 id="control-plane-kamaji-tenantcontrolplane">Control Plane (Kamaji TenantControlPlane)<a class="headerlink" href="#control-plane-kamaji-tenantcontrolplane" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Nb Instances</th>
+<th>CPU (cores)</th>
+<th>CPU (MHz)</th>
+<th>RAM per Instance (GB)</th>
+<th>DISK per Instance (GB)</th>
+<th>Unmounted Drives (GB)</th>
+<th>Type</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>kube-apiserver</strong></td>
+<td>2</td>
+<td>0.5</td>
+<td>1000</td>
+<td>1</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>Kubernetes API server (HA)</td>
+</tr>
+<tr>
+<td><strong>kube-controller-manager</strong></td>
+<td>2</td>
+<td>0.5</td>
+<td>1000</td>
+<td>0.5</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>K8s controller manager</td>
+</tr>
+<tr>
+<td><strong>kube-scheduler</strong></td>
+<td>2</td>
+<td>0.2</td>
+<td>400</td>
+<td>0.25</td>
+<td>-</td>
+<td>-</td>
+<td>Pod</td>
+<td>K8s scheduler</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Subtotal per Cluster (Control Plane with shared etcd):</strong> ~2.4 CPU cores, ~3.5 GB RAM</p>
+<h3 id="dedicated-etcd-optional-per-cluster">Dedicated etcd (Optional, per Cluster)<a class="headerlink" href="#dedicated-etcd-optional-per-cluster" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Nb Instances</th>
+<th>CPU (cores)</th>
+<th>CPU (MHz)</th>
+<th>RAM per Instance (GB)</th>
+<th>DISK per Instance (GB)</th>
+<th>Unmounted Drives (GB)</th>
+<th>Type</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>etcd</strong></td>
+<td>3</td>
+<td>0.5</td>
+<td>1000</td>
+<td>0.5</td>
+<td>-</td>
+<td>10</td>
+<td>StatefulSet</td>
+<td>Dedicated etcd cluster (if not using shared)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Subtotal (Dedicated etcd):</strong> ~1.5 CPU cores, ~1.5 GB RAM, ~30 GB storage</p>
+<h3 id="worker-nodes-configurable-per-cluster">Worker Nodes (Configurable per Cluster)<a class="headerlink" href="#worker-nodes-configurable-per-cluster" title="Permanent link"> ¶</a></h3>
+<p>Worker nodes are provisioned as VMs via Cluster API. Resources depend on tenant requirements.</p>
+<h4 id="example-worker-configurations">Example Worker Configurations<a class="headerlink" href="#example-worker-configurations" title="Permanent link"> ¶</a></h4>
+<p><strong>Minimal Worker:</strong>
+- CPU: 1 core (2000 MHz)
+- RAM: 1 GB
+- Disk: 20 GB</p>
+<p><strong>Standard Worker:</strong>
+- CPU: 2 cores (4000 MHz)
+- RAM: 4 GB
+- Disk: 40 GB</p>
+<p><strong>High-Memory Worker:</strong>
+- CPU: 4 cores (8000 MHz)
+- RAM: 16 GB
+- Disk: 80 GB</p>
+<h3 id="cloudsigma-specific-components-per-cluster-using-cloudsigma">CloudSigma-Specific Components (Per Cluster using CloudSigma)<a class="headerlink" href="#cloudsigma-specific-components-per-cluster-using-cloudsigma" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Nb Instances</th>
+<th>CPU (cores)</th>
+<th>CPU (MHz)</th>
+<th>RAM per Instance (GB)</th>
+<th>DISK per Instance (GB)</th>
+<th>Unmounted Drives (GB)</th>
+<th>Type</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>CloudSigma CCM</strong></td>
+<td>1</td>
+<td>0.2</td>
+<td>400</td>
+<td>0.1</td>
+<td>-</td>
+<td>-</td>
+<td>DaemonSet</td>
+<td>Cloud controller manager (on control plane)</td>
+</tr>
+<tr>
+<td><strong>CloudSigma CSI Controller</strong></td>
+<td>1</td>
+<td>0.5</td>
+<td>1000</td>
+<td>0.25</td>
+<td>-</td>
+<td>-</td>
+<td>Deployment</td>
+<td>Storage provisioner controller</td>
+</tr>
+<tr>
+<td><strong>CloudSigma CSI Node</strong></td>
+<td>1+</td>
+<td>0.5</td>
+<td>1000</td>
+<td>0.25</td>
+<td>-</td>
+<td>-</td>
+<td>DaemonSet</td>
+<td>CSI node plugin (per worker)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Subtotal (CloudSigma integration per cluster):</strong> ~1.2 CPU cores, ~0.6 GB RAM</p>
+<h3 id="cninetworking-per-cluster-if-using-cilium">CNI/Networking (Per Cluster - if using Cilium)<a class="headerlink" href="#cninetworking-per-cluster-if-using-cilium" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Nb Instances</th>
+<th>CPU (cores)</th>
+<th>CPU (MHz)</th>
+<th>RAM per Instance (GB)</th>
+<th>DISK per Instance (GB)</th>
+<th>Unmounted Drives (GB)</th>
+<th>Type</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cilium Agent</strong></td>
+<td>1+</td>
+<td>0.1</td>
+<td>200</td>
+<td>0.5</td>
+<td>-</td>
+<td>-</td>
+<td>DaemonSet</td>
+<td>CNI agent (per node)</td>
+</tr>
+<tr>
+<td><strong>Cilium Operator</strong></td>
+<td>1</td>
+<td>0.1</td>
+<td>200</td>
+<td>0.12</td>
+<td>-</td>
+<td>-</td>
+<td>Deployment</td>
+<td>Cilium operator</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Subtotal (Cilium per cluster):</strong> ~0.2 CPU cores (+ per node), ~0.62 GB RAM</p>
+<hr />
+<h2 id="per-tenant-cluster-total">Per-Tenant Cluster Total<a class="headerlink" href="#per-tenant-cluster-total" title="Permanent link"> ¶</a></h2>
+<h3 id="configuration-1-minimal-shared-etcd-2-minimal-workers">Configuration 1: Minimal (Shared etcd, 2 minimal workers)<a class="headerlink" href="#configuration-1-minimal-shared-etcd-2-minimal-workers" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>CPU Cores</th>
+<th>RAM (GB)</th>
+<th>Storage (GB)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Control Plane (2 replicas)</td>
+<td>2.4</td>
+<td>3.5</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Workers (2x minimal)</td>
+<td>2</td>
+<td>2</td>
+<td>40</td>
+</tr>
+<tr>
+<td>CloudSigma Integration</td>
+<td>1.2</td>
+<td>0.6</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Cilium CNI</td>
+<td>0.4</td>
+<td>1.1</td>
+<td>-</td>
+</tr>
+<tr>
+<td><strong>TOTAL</strong></td>
+<td><strong>6</strong></td>
+<td><strong>7.2</strong></td>
+<td><strong>40</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="configuration-2-standard-shared-etcd-3-standard-workers">Configuration 2: Standard (Shared etcd, 3 standard workers)<a class="headerlink" href="#configuration-2-standard-shared-etcd-3-standard-workers" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>CPU Cores</th>
+<th>RAM (GB)</th>
+<th>Storage (GB)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Control Plane (2 replicas)</td>
+<td>2.4</td>
+<td>3.5</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Workers (3x standard)</td>
+<td>6</td>
+<td>12</td>
+<td>120</td>
+</tr>
+<tr>
+<td>CloudSigma Integration</td>
+<td>1.7</td>
+<td>1.35</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Cilium CNI</td>
+<td>0.5</td>
+<td>1.62</td>
+<td>-</td>
+</tr>
+<tr>
+<td><strong>TOTAL</strong></td>
+<td><strong>10.6</strong></td>
+<td><strong>18.47</strong></td>
+<td><strong>120</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="configuration-3-production-dedicated-etcd-3-standard-workers">Configuration 3: Production (Dedicated etcd, 3 standard workers)<a class="headerlink" href="#configuration-3-production-dedicated-etcd-3-standard-workers" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>CPU Cores</th>
+<th>RAM (GB)</th>
+<th>Storage (GB)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Control Plane (2 replicas)</td>
+<td>2.4</td>
+<td>3.5</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Dedicated etcd (3 replicas)</td>
+<td>1.5</td>
+<td>1.5</td>
+<td>30</td>
+</tr>
+<tr>
+<td>Workers (3x standard)</td>
+<td>6</td>
+<td>12</td>
+<td>120</td>
+</tr>
+<tr>
+<td>CloudSigma Integration</td>
+<td>1.7</td>
+<td>1.35</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Cilium CNI</td>
+<td>0.5</td>
+<td>1.62</td>
+<td>-</td>
+</tr>
+<tr>
+<td><strong>TOTAL</strong></td>
+<td><strong>12.1</strong></td>
+<td><strong>19.97</strong></td>
+<td><strong>150</strong></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="example-deployment-scenarios">Example Deployment Scenarios<a class="headerlink" href="#example-deployment-scenarios" title="Permanent link"> ¶</a></h2>
+<h3 id="scenario-1-small-platform-5-tenant-clusters">Scenario 1: Small Platform (5 Tenant Clusters)<a class="headerlink" href="#scenario-1-small-platform-5-tenant-clusters" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Infrastructure</th>
+<th>CPU Cores</th>
+<th>RAM (GB)</th>
+<th>Storage (GB)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Management Cluster Base</td>
+<td>18</td>
+<td>20</td>
+<td>45</td>
+</tr>
+<tr>
+<td>5x Tenant Clusters (Standard)</td>
+<td>53</td>
+<td>92.35</td>
+<td>600</td>
+</tr>
+<tr>
+<td>OS/System Overhead (3 nodes)</td>
+<td>6</td>
+<td>12</td>
+<td>60</td>
+</tr>
+<tr>
+<td><strong>TOTAL</strong></td>
+<td><strong>77</strong></td>
+<td><strong>124.35</strong></td>
+<td><strong>705</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Recommended Infrastructure:</strong>
+- 3x Master/Worker nodes: 32 cores, 48 GB RAM, 300 GB SSD each</p>
+<h3 id="scenario-2-medium-platform-20-tenant-clusters">Scenario 2: Medium Platform (20 Tenant Clusters)<a class="headerlink" href="#scenario-2-medium-platform-20-tenant-clusters" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Infrastructure</th>
+<th>CPU Cores</th>
+<th>RAM (GB)</th>
+<th>Storage (GB)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Management Cluster Base</td>
+<td>18</td>
+<td>20</td>
+<td>45</td>
+</tr>
+<tr>
+<td>20x Tenant Clusters (Standard)</td>
+<td>212</td>
+<td>369.4</td>
+<td>2400</td>
+</tr>
+<tr>
+<td>OS/System Overhead (6 nodes)</td>
+<td>12</td>
+<td>24</td>
+<td>120</td>
+</tr>
+<tr>
+<td><strong>TOTAL</strong></td>
+<td><strong>242</strong></td>
+<td><strong>413.4</strong></td>
+<td><strong>2565</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Recommended Infrastructure:</strong>
+- 3x Master nodes: 32 cores, 64 GB RAM, 500 GB SSD each
+- 6x Worker nodes: 48 cores, 96 GB RAM, 1 TB SSD each</p>
+<h3 id="scenario-3-large-platform-50-tenant-clusters">Scenario 3: Large Platform (50 Tenant Clusters)<a class="headerlink" href="#scenario-3-large-platform-50-tenant-clusters" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Infrastructure</th>
+<th>CPU Cores</th>
+<th>RAM (GB)</th>
+<th>Storage (GB)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Management Cluster Base</td>
+<td>18</td>
+<td>20</td>
+<td>45</td>
+</tr>
+<tr>
+<td>50x Tenant Clusters (Standard)</td>
+<td>530</td>
+<td>923.5</td>
+<td>6000</td>
+</tr>
+<tr>
+<td>OS/System Overhead (12 nodes)</td>
+<td>24</td>
+<td>48</td>
+<td>240</td>
+</tr>
+<tr>
+<td><strong>TOTAL</strong></td>
+<td><strong>572</strong></td>
+<td><strong>991.5</strong></td>
+<td><strong>6285</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Recommended Infrastructure:</strong>
+- 3x Master nodes: 64 cores, 128 GB RAM, 1 TB SSD each
+- 12x Worker nodes: 64 cores, 128 GB RAM, 2 TB SSD each</p>
+<hr />
+<h2 id="storage-requirements-breakdown">Storage Requirements Breakdown<a class="headerlink" href="#storage-requirements-breakdown" title="Permanent link"> ¶</a></h2>
+<h3 id="management-cluster-persistent-storage">Management Cluster Persistent Storage<a class="headerlink" href="#management-cluster-persistent-storage" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Volume Type</th>
+<th>Size per Instance</th>
+<th>Instances</th>
+<th>Total</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Kamaji etcd</td>
+<td>10 GB</td>
+<td>3</td>
+<td>30 GB</td>
+<td>Shared etcd datastore</td>
+</tr>
+<tr>
+<td>Prometheus</td>
+<td>20 GB</td>
+<td>1</td>
+<td>20 GB</td>
+<td>Metrics storage (configurable: 365d retention)</td>
+</tr>
+<tr>
+<td>Loki Minio</td>
+<td>10 GB</td>
+<td>1</td>
+<td>10 GB</td>
+<td>Log storage (7d retention)</td>
+</tr>
+<tr>
+<td>Keycloak PostgreSQL</td>
+<td>5 GB</td>
+<td>1</td>
+<td>5 GB</td>
+<td>User database</td>
+</tr>
+<tr>
+<td><strong>TOTAL</strong></td>
+<td>-</td>
+<td>-</td>
+<td><strong>65 GB</strong></td>
+<td>-</td>
+</tr>
+</tbody>
+</table>
+<h3 id="per-tenant-cluster-storage">Per-Tenant Cluster Storage<a class="headerlink" href="#per-tenant-cluster-storage" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Volume Type</th>
+<th>Size per Instance</th>
+<th>Instances</th>
+<th>Total</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Dedicated etcd (optional)</td>
+<td>10 GB</td>
+<td>3</td>
+<td>30 GB</td>
+<td>Per-cluster etcd</td>
+</tr>
+<tr>
+<td>Worker OS Disk</td>
+<td>20-80 GB</td>
+<td>N</td>
+<td>Variable</td>
+<td>OS and container images</td>
+</tr>
+<tr>
+<td>Tenant PVCs</td>
+<td>Variable</td>
+<td>Variable</td>
+<td>Variable</td>
+<td>Application storage via CSI</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="network-requirements">Network Requirements<a class="headerlink" href="#network-requirements" title="Permanent link"> ¶</a></h2>
+<h3 id="bandwidth">Bandwidth<a class="headerlink" href="#bandwidth" title="Permanent link"> ¶</a></h3>
+<ul>
+<li><strong>Management Cluster Internal:</strong> 10 Gbps recommended (node-to-node)</li>
+<li><strong>External Access:</strong> 1 Gbps minimum for API/UI</li>
+<li><strong>Storage Network (if separate):</strong> 10 Gbps recommended</li>
+</ul>
+<h3 id="ip-address-requirements">IP Address Requirements<a class="headerlink" href="#ip-address-requirements" title="Permanent link"> ¶</a></h3>
+<h4 id="management-cluster-kube-ovn">Management Cluster (Kube-OVN)<a class="headerlink" href="#management-cluster-kube-ovn" title="Permanent link"> ¶</a></h4>
+<ul>
+<li>Pod CIDR: /16 recommended (65,536 IPs)</li>
+<li>Service CIDR: /16 recommended (65,536 IPs)</li>
+<li>Per Project VPC: /16 (configurable)</li>
+</ul>
+<h4 id="per-tenant-cluster">Per-Tenant Cluster<a class="headerlink" href="#per-tenant-cluster" title="Permanent link"> ¶</a></h4>
+<ul>
+<li>Pod CIDR: /16 (65,536 IPs per cluster)</li>
+<li>Service CIDR: /16 (65,536 IPs per cluster)</li>
+</ul>
+<h4 id="external-ips">External IPs<a class="headerlink" href="#external-ips" title="Permanent link"> ¶</a></h4>
+<ul>
+<li>Management cluster: 1-5 public IPs (UI, API, monitoring)</li>
+<li>Per tenant cluster: Variable (depends on LoadBalancer services)</li>
+</ul>
+<hr />
+<h2 id="notes-and-recommendations">Notes and Recommendations<a class="headerlink" href="#notes-and-recommendations" title="Permanent link"> ¶</a></h2>
+<h3 id="scaling-considerations">Scaling Considerations<a class="headerlink" href="#scaling-considerations" title="Permanent link"> ¶</a></h3>
+<ol>
+<li><strong>Horizontal Scaling:</strong></li>
+<li>Add worker nodes to management cluster as tenant cluster count grows</li>
+<li>Management cluster workers can be scaled independently</li>
+<li>
+<p>Each worker node can host ~10-20 tenant control plane pods</p>
+</li>
+<li>
+<p><strong>Vertical Scaling:</strong></p>
+</li>
+<li>Increase worker node resources for larger tenant worker VMs</li>
+<li>
+<p>Monitoring stack may need scaling with high pod/metric count</p>
+</li>
+<li>
+<p><strong>Storage Scaling:</strong></p>
+</li>
+<li>Prometheus retention and storage grow with cluster count</li>
+<li>Consider external object storage for Loki at scale</li>
+<li>Plan for ~50 GB additional storage per 10 tenant clusters</li>
+</ol>
+<h3 id="resource-overhead">Resource Overhead<a class="headerlink" href="#resource-overhead" title="Permanent link"> ¶</a></h3>
+<ul>
+<li><strong>Kubernetes System:</strong> ~10-15% CPU/RAM overhead</li>
+<li><strong>VM Runtime (KubeVirt):</strong> ~10-20% overhead per VM</li>
+<li><strong>Network Overhead:</strong> ~5-10% CPU for OVN/CNI</li>
+</ul>
+<h3 id="high-availability">High Availability<a class="headerlink" href="#high-availability" title="Permanent link"> ¶</a></h3>
+<ul>
+<li><strong>Management Cluster:</strong> 3+ master nodes, 3+ worker nodes</li>
+<li><strong>etcd:</strong> Always use 3 or 5 replicas (odd number)</li>
+<li><strong>Control Planes:</strong> 2+ replicas per tenant cluster</li>
+<li><strong>Monitoring:</strong> Consider external storage for production</li>
+</ul>
+<h3 id="cost-optimization">Cost Optimization<a class="headerlink" href="#cost-optimization" title="Permanent link"> ¶</a></h3>
+<ol>
+<li>Use shared etcd for non-critical tenant clusters</li>
+<li>Right-size worker VMs based on actual workload</li>
+<li>Enable cluster autoscaling for variable workloads</li>
+<li>Use lower retention for Prometheus/Loki in dev environments</li>
+</ol>
+<hr />
+<h2 id="actual-production-cluster-analysis">Actual Production Cluster Analysis<a class="headerlink" href="#actual-production-cluster-analysis" title="Permanent link"> ¶</a></h2>
+<h3 id="current-deployment-stagekube-dccom">Current Deployment (stage.kube-dc.com)<a class="headerlink" href="#current-deployment-stagekube-dccom" title="Permanent link"> ¶</a></h3>
+<p><strong>Management Cluster Hardware:</strong>
+- <strong>Node Count:</strong> 2 nodes (kube-dc-master-1, kube-dc-worker-1)
+- <strong>Per Node:</strong> 8 CPU cores, 64 GB RAM, Debian 12
+- <strong>Total Capacity:</strong> 16 cores, 128 GB RAM</p>
+<p><strong>Resource Utilization (Live):</strong>
+- <strong>kube-dc-master-1:</strong> 40% CPU (3.2 cores), 49% RAM (31 GB)
+- <strong>kube-dc-worker-1:</strong> 33% CPU (2.7 cores), 64% RAM (41 GB)
+- <strong>Total Used:</strong> ~6 cores (37%), ~72 GB RAM (56%)</p>
+<p><strong>Tenant Clusters Hosted:</strong> 7 active KdcClusters</p>
+<table>
+<thead>
+<tr>
+<th>Namespace</th>
+<th>Cluster Name</th>
+<th>Control Plane Replicas</th>
+<th>Worker Replicas</th>
+<th>Datastore Type</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cloudsigma-example-3415fbd3</td>
+<td>banja</td>
+<td>1</td>
+<td>2</td>
+<td>banja-etcd (dedicated)</td>
+</tr>
+<tr>
+<td>cloudsigma-example-3415fbd3</td>
+<td>xxx</td>
+<td>1</td>
+<td>1</td>
+<td>banja-etcd (shared)</td>
+</tr>
+<tr>
+<td>cloudsigma-tan-dovan-90e02d2d</td>
+<td>c1</td>
+<td>1</td>
+<td>3</td>
+<td>c1-etcd (dedicated)</td>
+</tr>
+<tr>
+<td>shalb-demo</td>
+<td>demo-cluster</td>
+<td>1</td>
+<td>1</td>
+<td>demo-cluster-etcd (dedicated)</td>
+</tr>
+<tr>
+<td>shalb-demo</td>
+<td>k3s-cluster</td>
+<td>2</td>
+<td>1</td>
+<td>k3s-cluster-etcd (dedicated)</td>
+</tr>
+<tr>
+<td>shalb-demo</td>
+<td>my-cluster</td>
+<td>2</td>
+<td>2</td>
+<td>my-cluster-etcd (dedicated)</td>
+</tr>
+<tr>
+<td>shalb-envoy</td>
+<td>three-cluster</td>
+<td>2</td>
+<td>1</td>
+<td>three-cluster-etcd (dedicated)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="tenant-cluster-resource-consumption-analysis">Tenant Cluster Resource Consumption Analysis<a class="headerlink" href="#tenant-cluster-resource-consumption-analysis" title="Permanent link"> ¶</a></h3>
+<h4 id="example-banja-and-xxx-clusters-cloudsigma-example-3415fbd3">Example: "banja" and "xxx" Clusters (cloudsigma-example-3415fbd3)<a class="headerlink" href="#example-banja-and-xxx-clusters-cloudsigma-example-3415fbd3" title="Permanent link"> ¶</a></h4>
+<p><strong>Control Plane Pods (Management Cluster):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Pod Count</th>
+<th>CPU Request</th>
+<th>Memory Request</th>
+<th>Actual Location</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>banja-cp</td>
+<td>1</td>
+<td>None</td>
+<td>None</td>
+<td>kube-dc-worker-1</td>
+</tr>
+<tr>
+<td>banja-etcd</td>
+<td>1</td>
+<td>None</td>
+<td>None</td>
+<td>kube-dc-worker-1</td>
+</tr>
+<tr>
+<td>xxx-cp</td>
+<td>1</td>
+<td>None</td>
+<td>None</td>
+<td>kube-dc-worker-1</td>
+</tr>
+<tr>
+<td>csccm-banja (CCM)</td>
+<td>1</td>
+<td>10m</td>
+<td>64Mi</td>
+<td>kube-dc-worker-1</td>
+</tr>
+<tr>
+<td>csccm-xxx (CCM)</td>
+<td>1</td>
+<td>10m</td>
+<td>64Mi</td>
+<td>kube-dc-worker-1</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Worker VMs (Customer CloudSigma Account):</strong>
+- Banja: 2 workers (2 cores, 4GB each) = 4 cores, 8GB total
+- xxx: 1 worker (2 cores, 4GB) = 2 cores, 4GB total</p>
+<p><strong>Key Observations:</strong></p>
+<ol>
+<li><strong>No Resource Limits:</strong> Most tenant control plane pods have no CPU/memory requests, relying on cluster overcommit</li>
+<li><strong>Shared etcd:</strong> xxx cluster uses banja's etcd datastore (cost optimization)</li>
+<li><strong>Lightweight Control Planes:</strong> Each tenant CP consumes ~0.5-1 GB RAM in practice</li>
+<li><strong>Management Overhead:</strong> CloudSigma CCM pods: 10m CPU, 64Mi RAM per cluster</li>
+<li><strong>Worker VMs on Customer Infrastructure:</strong> Worker nodes NOT visible in management cluster metrics</li>
+</ol>
+<h3 id="platform-components-resource-usage">Platform Components Resource Usage<a class="headerlink" href="#platform-components-resource-usage" title="Permanent link"> ¶</a></h3>
+<p><strong>Core Platform (kube-dc namespace):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>CPU Request</th>
+<th>Memory Request</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>kube-dc-manager</td>
+<td>None</td>
+<td>None</td>
+<td>Core controller</td>
+</tr>
+<tr>
+<td>kube-dc-backend</td>
+<td>None</td>
+<td>None</td>
+<td>API server</td>
+</tr>
+<tr>
+<td>kube-dc-frontend</td>
+<td>None</td>
+<td>None</td>
+<td>React UI</td>
+</tr>
+<tr>
+<td>kube-dc-k8-manager</td>
+<td>10m</td>
+<td>64Mi</td>
+<td>Tenant cluster controller</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Monitoring Stack (monitoring namespace):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>CPU Request</th>
+<th>Memory Request</th>
+<th>Storage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Prometheus</td>
+<td>None</td>
+<td>1Gi</td>
+<td>20Gi</td>
+</tr>
+<tr>
+<td>Grafana</td>
+<td>None</td>
+<td>None</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Alertmanager</td>
+<td>None</td>
+<td>128Mi</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Loki Backend</td>
+<td>None</td>
+<td>None</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Loki Write</td>
+<td>None</td>
+<td>256Mi</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Loki Read</td>
+<td>None</td>
+<td>256Mi</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Loki Minio</td>
+<td>100m</td>
+<td>128Mi</td>
+<td>10Gi</td>
+</tr>
+<tr>
+<td>Node Exporter (per node)</td>
+<td>None</td>
+<td>32Mi</td>
+<td>-</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Shared Infrastructure (kamaji-system namespace):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>CPU Request</th>
+<th>Memory Request</th>
+<th>Storage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Kamaji Controller</td>
+<td>100m</td>
+<td>20Mi</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Kamaji etcd (3 replicas)</td>
+<td>None</td>
+<td>None</td>
+<td>30Gi (3x10Gi)</td>
+</tr>
+<tr>
+<td>CAPI Kamaji Controller</td>
+<td>10m</td>
+<td>64Mi</td>
+<td>-</td>
+</tr>
+</tbody>
+</table>
+<h3 id="actual-vs-theoretical-requirements">Actual vs Theoretical Requirements<a class="headerlink" href="#actual-vs-theoretical-requirements" title="Permanent link"> ¶</a></h3>
+<p><strong>Current Cluster Efficiency:</strong>
+- <strong>7 tenant clusters</strong> running on 16 cores, 128 GB RAM
+- <strong>Average per cluster:</strong> ~0.9 cores, ~10 GB RAM (management overhead only)
+- <strong>Platform base:</strong> ~4 cores, ~20 GB RAM
+- <strong>Remaining capacity:</strong> ~6 cores, ~36 GB RAM for additional tenants</p>
+<p><strong>Scaling Projection:</strong>
+- Current 2-node cluster can support ~10-15 tenant clusters before CPU/RAM constraints
+- With 3-node architecture (24 cores, 192 GB): ~20-30 tenant clusters
+- Adding 1 node per 10 tenant clusters is recommended for stability</p>
+<p><strong>Resource Optimization Observed:</strong>
+- Resource requests not set on most components → cluster overcommit strategy
+- Shared etcd reduces storage requirements (xxx uses banja's etcd)
+- Control plane memory footprint lower than theoretical (0.5-1GB vs 1-2GB estimated)</p>
+<h3 id="storage-usage-persistent-volumes">Storage Usage (Persistent Volumes)<a class="headerlink" href="#storage-usage-persistent-volumes" title="Permanent link"> ¶</a></h3>
+<p><strong>Management Cluster Storage:</strong>
+- Kamaji shared etcd: 30 GB (3x 10GB PVCs)
+- Prometheus: 20 GB
+- Loki/Minio: 10 GB
+- Keycloak PostgreSQL: ~5 GB
+- <strong>Per tenant etcd (dedicated):</strong> 10-30 GB (1-3 replicas)</p>
+<p><strong>Total Storage in Use:</strong> ~500-600 GB across all tenant etcd instances + monitoring</p>
+<hr />
+<h2 id="cloudsigma-platform-capacity-planning">CloudSigma Platform Capacity Planning<a class="headerlink" href="#cloudsigma-platform-capacity-planning" title="Permanent link"> ¶</a></h2>
+<h3 id="proposed-hardware-configuration">Proposed Hardware Configuration<a class="headerlink" href="#proposed-hardware-configuration" title="Permanent link"> ¶</a></h3>
+<p><strong>Management Cluster Infrastructure:</strong></p>
+<table>
+<thead>
+<tr>
+<th>VM Role</th>
+<th>Nb VMs</th>
+<th>CPU Cores</th>
+<th>CPU (GHz)</th>
+<th>RAM (GB)</th>
+<th>Disk (GB)</th>
+<th>Backup (GB)</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Master-1</td>
+<td>1</td>
+<td>8</td>
+<td>16</td>
+<td>32</td>
+<td>200</td>
+<td>300</td>
+<td>K8s control plane + tenant CPs</td>
+</tr>
+<tr>
+<td>Master-2</td>
+<td>1</td>
+<td>8</td>
+<td>16</td>
+<td>32</td>
+<td>200</td>
+<td>300</td>
+<td>K8s control plane + tenant CPs</td>
+</tr>
+<tr>
+<td>Master-3</td>
+<td>1</td>
+<td>8</td>
+<td>16</td>
+<td>32</td>
+<td>200</td>
+<td>300</td>
+<td>K8s control plane + tenant CPs</td>
+</tr>
+<tr>
+<td>Worker-1</td>
+<td>1</td>
+<td>16</td>
+<td>32</td>
+<td>64</td>
+<td>250</td>
+<td>300</td>
+<td>Tenant CPs + monitoring</td>
+</tr>
+<tr>
+<td>Worker-2</td>
+<td>1</td>
+<td>16</td>
+<td>32</td>
+<td>64</td>
+<td>250</td>
+<td>300</td>
+<td>Tenant CPs + monitoring</td>
+</tr>
+<tr>
+<td>Management VM</td>
+<td>1</td>
+<td>4</td>
+<td>16</td>
+<td>32</td>
+<td>200</td>
+<td>300</td>
+<td>Optional dedicated management</td>
+</tr>
+<tr>
+<td><strong>TOTAL</strong></td>
+<td><strong>6</strong></td>
+<td><strong>60</strong></td>
+<td><strong>128</strong></td>
+<td><strong>256</strong></td>
+<td><strong>1300</strong></td>
+<td><strong>1800</strong></td>
+<td>-</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Configuration Notes:</strong>
+- All 5 nodes (3 masters + 2 workers) can host tenant control planes
+- Management VM can be used for backups, monitoring, or additional capacity
+- Total usable for tenant CPs: 52 cores, 224 GB RAM (after K8s overhead)</p>
+<h3 id="per-tenant-cluster-resource-consumption-cloudsigma">Per-Tenant Cluster Resource Consumption (CloudSigma)<a class="headerlink" href="#per-tenant-cluster-resource-consumption-cloudsigma" title="Permanent link"> ¶</a></h3>
+<h4 id="components-per-tenant-cluster">Components per Tenant Cluster:<a class="headerlink" href="#components-per-tenant-cluster" title="Permanent link"> ¶</a></h4>
+<p><strong>1. Tenant Control Plane Pod (on Management Cluster)</strong>
+- <strong>kube-apiserver:</strong> ~200-300Mi RAM, 50-100m CPU
+- <strong>kube-controller-manager:</strong> ~150-200Mi RAM, 25-50m CPU
+- <strong>kube-scheduler:</strong> ~50-100Mi RAM, 10-25m CPU
+- <strong>Total per TCP:</strong> ~500Mi RAM, ~100m CPU</p>
+<p><strong>2. CloudSigma Cloud Controller Manager (per cluster)</strong>
+- <strong>csccm pod:</strong> 64Mi RAM, 10m CPU (observed)
+- <strong>Total:</strong> 64Mi RAM, 10m CPU</p>
+<p><strong>3. etcd Datastore (50% 1-node / 50% 3-node)</strong></p>
+<p><strong>1-node etcd (50% of clusters):</strong>
+- <strong>etcd pod:</strong> 512Mi RAM, 100m CPU, 10Gi storage
+- <strong>Total:</strong> 512Mi RAM, 100m CPU, 10Gi</p>
+<p><strong>3-node etcd (50% of clusters):</strong>
+- <strong>etcd pods (3x):</strong> 1536Mi RAM (512Mi×3), 300m CPU (100m×3), 30Gi storage (10Gi×3)
+- <strong>Total:</strong> 1536Mi RAM, 300m CPU, 30Gi</p>
+<h4 id="average-per-cluster-mixed-etcd-topology">Average per Cluster (Mixed etcd Topology)<a class="headerlink" href="#average-per-cluster-mixed-etcd-topology" title="Permanent link"> ¶</a></h4>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>CPU (cores)</th>
+<th>RAM (GB)</th>
+<th>Storage (GB)</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Control Plane Pod</td>
+<td>0.1</td>
+<td>0.5</td>
+<td>-</td>
+<td>3-in-1 pod</td>
+</tr>
+<tr>
+<td>CloudSigma CCM</td>
+<td>0.01</td>
+<td>0.06</td>
+<td>-</td>
+<td>Per cluster</td>
+</tr>
+<tr>
+<td>etcd (1-node)</td>
+<td>0.1</td>
+<td>0.5</td>
+<td>10</td>
+<td>50% of clusters</td>
+</tr>
+<tr>
+<td>etcd (3-node)</td>
+<td>0.3</td>
+<td>1.5</td>
+<td>30</td>
+<td>50% of clusters</td>
+</tr>
+<tr>
+<td><strong>Average</strong></td>
+<td><strong>0.21</strong></td>
+<td><strong>1.06</strong></td>
+<td><strong>20</strong></td>
+<td>Weighted avg</td>
+</tr>
+<tr>
+<td><strong>Conservative</strong></td>
+<td><strong>0.3</strong></td>
+<td><strong>1.5</strong></td>
+<td><strong>20</strong></td>
+<td>With overhead</td>
+</tr>
+</tbody>
+</table>
+<h3 id="capacity-calculation">Capacity Calculation<a class="headerlink" href="#capacity-calculation" title="Permanent link"> ¶</a></h3>
+<h4 id="total-available-resources-after-k8s-overhead-15">Total Available Resources (after K8s overhead ~15%)<a class="headerlink" href="#total-available-resources-after-k8s-overhead-15" title="Permanent link"> ¶</a></h4>
+<table>
+<thead>
+<tr>
+<th>Resource</th>
+<th>Total</th>
+<th>K8s Overhead (15%)</th>
+<th>Available</th>
+<th>Reserved for Platform (20%)</th>
+<th><strong>Usable for Tenants</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU Cores</td>
+<td>60</td>
+<td>9</td>
+<td>51</td>
+<td>10</td>
+<td><strong>41 cores</strong></td>
+</tr>
+<tr>
+<td>RAM (GB)</td>
+<td>256</td>
+<td>38</td>
+<td>218</td>
+<td>44</td>
+<td><strong>174 GB</strong></td>
+</tr>
+<tr>
+<td>Storage (GB)</td>
+<td>1300</td>
+<td>-</td>
+<td>1300</td>
+<td>100</td>
+<td><strong>1200 GB</strong></td>
+</tr>
+</tbody>
+</table>
+<h4 id="capacity-by-constraint">Capacity by Constraint<a class="headerlink" href="#capacity-by-constraint" title="Permanent link"> ¶</a></h4>
+<p><strong>CPU Constraint:</strong>
+- Usable CPU: 41 cores
+- Per cluster: 0.3 cores
+- <strong>Capacity: ~136 clusters</strong></p>
+<p><strong>Memory Constraint:</strong>
+- Usable RAM: 174 GB
+- Per cluster: 1.5 GB
+- <strong>Capacity: ~116 clusters</strong></p>
+<p><strong>Storage Constraint:</strong>
+- Usable Storage: 1200 GB
+- Per cluster: 20 GB (average)
+- <strong>Capacity: ~60 clusters</strong></p>
+<p><strong>Bottleneck: Storage</strong> (most restrictive)</p>
+<h3 id="recommended-capacity-50-60-tenant-clusters"><strong>Recommended Capacity: 50-60 Tenant Clusters</strong><a class="headerlink" href="#recommended-capacity-50-60-tenant-clusters" title="Permanent link"> ¶</a></h3>
+<h4 id="breakdown-by-etcd-topology-5050-split">Breakdown by etcd Topology (50/50 split)<a class="headerlink" href="#breakdown-by-etcd-topology-5050-split" title="Permanent link"> ¶</a></h4>
+<table>
+<thead>
+<tr>
+<th>Cluster Type</th>
+<th>Count</th>
+<th>etcd Nodes</th>
+<th>etcd Storage</th>
+<th>TCP + CCM Resources</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>1-node etcd</strong></td>
+<td>25-30</td>
+<td>25-30</td>
+<td>250-300 GB</td>
+<td>25-30 × (0.11 cores, 0.56 GB)</td>
+</tr>
+<tr>
+<td><strong>3-node etcd</strong></td>
+<td>25-30</td>
+<td>75-90</td>
+<td>750-900 GB</td>
+<td>25-30 × (0.11 cores, 0.56 GB)</td>
+</tr>
+<tr>
+<td><strong>TOTAL</strong></td>
+<td><strong>50-60</strong></td>
+<td><strong>100-120</strong></td>
+<td><strong>1000-1200 GB</strong></td>
+<td><strong>5.5-6.6 cores, 28-34 GB</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="resource-distribution-across-nodes">Resource Distribution Across Nodes<a class="headerlink" href="#resource-distribution-across-nodes" title="Permanent link"> ¶</a></h3>
+<p><strong>Assuming 60 tenant clusters evenly distributed:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Role</th>
+<th>TCP Pods</th>
+<th>etcd Pods</th>
+<th>CPU Used</th>
+<th>RAM Used</th>
+<th>Storage Used</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Master-1</td>
+<td>K8s CP + TCP host</td>
+<td>12</td>
+<td>20</td>
+<td>~6 cores</td>
+<td>~20 GB</td>
+<td>~200 GB</td>
+</tr>
+<tr>
+<td>Master-2</td>
+<td>K8s CP + TCP host</td>
+<td>12</td>
+<td>20</td>
+<td>~6 cores</td>
+<td>~20 GB</td>
+<td>~200 GB</td>
+</tr>
+<tr>
+<td>Master-3</td>
+<td>K8s CP + TCP host</td>
+<td>12</td>
+<td>20</td>
+<td>~6 cores</td>
+<td>~20 GB</td>
+<td>~200 GB</td>
+</tr>
+<tr>
+<td>Worker-1</td>
+<td>TCP + Monitoring</td>
+<td>12</td>
+<td>20</td>
+<td>~7 cores</td>
+<td>~25 GB</td>
+<td>~250 GB</td>
+</tr>
+<tr>
+<td>Worker-2</td>
+<td>TCP + Monitoring</td>
+<td>12</td>
+<td>20</td>
+<td>~7 cores</td>
+<td>~25 GB</td>
+<td>~250 GB</td>
+</tr>
+<tr>
+<td><strong>TOTAL</strong></td>
+<td>-</td>
+<td><strong>60</strong></td>
+<td><strong>100</strong></td>
+<td><strong>32 cores</strong></td>
+<td><strong>110 GB</strong></td>
+<td><strong>1100 GB</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="scaling-strategies">Scaling Strategies<a class="headerlink" href="#scaling-strategies" title="Permanent link"> ¶</a></h3>
+<h4 id="to-increase-capacity-beyond-60-clusters">To Increase Capacity Beyond 60 Clusters:<a class="headerlink" href="#to-increase-capacity-beyond-60-clusters" title="Permanent link"> ¶</a></h4>
+<p><strong>Option 1: Add Storage</strong>
+- Expand disk on Worker-1 and Worker-2 to 500 GB each
+- <strong>New Capacity:</strong> ~100 clusters (limited by CPU/RAM)</p>
+<p><strong>Option 2: Add Worker Nodes</strong>
+- Add 2 more workers: 32 cores, 128 GB RAM, 500 GB disk each
+- <strong>New Capacity:</strong> ~150 clusters</p>
+<p><strong>Option 3: Use Shared etcd (Kamaji default)</strong>
+- 3-node shared etcd for all clusters instead of dedicated
+- Saves: ~950 GB storage, ~20 cores, ~80 GB RAM
+- <strong>New Capacity:</strong> 200+ clusters (limited by control plane density)</p>
+<p><strong>Option 4: External etcd Storage</strong>
+- Move etcd storage to separate storage cluster or cloud object storage
+- Management cluster only hosts control plane pods
+- <strong>New Capacity:</strong> 300+ clusters (Kamaji scaling limit per management cluster)</p>
+<h3 id="kamaji-scaling-best-practices">Kamaji Scaling Best Practices<a class="headerlink" href="#kamaji-scaling-best-practices" title="Permanent link"> ¶</a></h3>
+<p><strong>From Kamaji Official Documentation:</strong></p>
+<ol>
+<li><strong>Control Plane Density:</strong> 50-100 tenant control planes per management node recommended</li>
+<li><strong>etcd Sizing:</strong> </li>
+<li>Shared etcd: 3-node cluster can handle 100+ tenant clusters</li>
+<li>Dedicated etcd: 1 or 3 nodes per cluster based on SLA requirements</li>
+<li><strong>Resource Overcommit:</strong> Kamaji leverages Kubernetes QoS, safe to run without strict resource limits</li>
+<li><strong>High Availability:</strong> Distribute TCP pods across nodes using pod anti-affinity</li>
+</ol>
+<h3 id="production-recommendations">Production Recommendations<a class="headerlink" href="#production-recommendations" title="Permanent link"> ¶</a></h3>
+<p><strong>Conservative (50 clusters):</strong>
+- Current hardware configuration as-is
+- 25 clusters with 1-node etcd (dev/test)
+- 25 clusters with 3-node etcd (production)
+- Leaves 20% headroom for growth</p>
+<p><strong>Standard (60 clusters):</strong>
+- Current hardware configuration
+- 30 clusters with 1-node etcd
+- 30 clusters with 3-node etcd
+- Uses ~85% of available storage</p>
+<p><strong>Aggressive (100+ clusters):</strong>
+- Add storage expansion or additional worker nodes
+- Use shared etcd for majority of clusters
+- Reserve dedicated etcd for critical production clusters only</p>
+<h3 id="customer-infrastructure-not-counted-in-management-cluster">Customer Infrastructure (Not Counted in Management Cluster)<a class="headerlink" href="#customer-infrastructure-not-counted-in-management-cluster" title="Permanent link"> ¶</a></h3>
+<p><strong>Per Tenant Cluster Workers (CloudSigma):</strong>
+- Worker VMs: Run on customer's CloudSigma account
+- CSI Driver storage: Customer's CloudSigma disks
+- Networking: Customer's CloudSigma IPs/VLANs</p>
+<p><strong>Example Customer Workload:</strong>
+- 3 workers × (4 cores, 8 GB) = 12 cores, 24 GB on customer side
+- 100 GB storage per worker via CSI = 300 GB on customer CloudSigma</p>
+<p><strong>Management cluster only hosts control plane - customer workloads NOT included in above calculations.</strong></p>
+<hr />
+<p><em>Last Updated: January 2025</em>
+<em>Document Version: 2.1 - Added CloudSigma capacity planning with Kamaji scaling guidelines</em></p>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <!-- 
+  Copyright and theme information
+-->
+
+<div class="md-copyright">
+  <div class="md-copyright__highlight">
+    Project developed by <a href="https://shalb.com" target="_blank">SHALB</a>
+  </div>
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/kube-dc/kube-dc-public" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://join.slack.com/t/kube-dc/shared_invite/zt-31mr5c6ci-W3kYQ7qGDULlGQ5QJjsxmA" target="_blank" rel="noopener" title="join.slack.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M94.1 315.1c0 25.9-21.2 47.1-47.1 47.1S0 341 0 315.1 21.2 268 47.1 268h47.1v47.1zm23.7 0c0-25.9 21.2-47.1 47.1-47.1s47.1 21.2 47.1 47.1v117.8c0 25.9-21.2 47.1-47.1 47.1s-47.1-21.2-47.1-47.1zm47.1-189c-25.9 0-47.1-21.2-47.1-47.1s21.2-47 47.1-47S212 53.2 212 79.1v47.1h-47.1zm0 23.7c25.9 0 47.1 21.2 47.1 47.1S190.8 244 164.9 244H47.1C21.2 244 0 222.8 0 196.9s21.2-47.1 47.1-47.1zm189 47.1c0-25.9 21.2-47.1 47.1-47.1s47 21.2 47 47.1-21.2 47.1-47.1 47.1h-47.1v-47.1zm-23.7 0c0 25.9-21.2 47.1-47.1 47.1S236 222.8 236 196.9V79.1c0-25.9 21.2-47.1 47.1-47.1s47.1 21.2 47.1 47.1zm-47.1 189c25.9 0 47.1 21.2 47.1 47.1s-21.2 47-47.1 47-47.1-21.2-47.1-47.1v-47.1h47.1zm0-23.7c-25.9 0-47.1-21.2-47.1-47.1s21.2-47.1 47.1-47.1h117.8c25.9 0 47.1 21.2 47.1 47.1s-21.2 47.1-47.1 47.1z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://kube-dc.com" target="_blank" rel="noopener" title="kube-dc.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M459.4 151.7c.3 4.5.3 9.1.3 13.6 0 138.7-105.6 298.6-298.6 298.6-59.5 0-114.7-17.2-161.1-47.1 8.4 1 16.6 1.3 25.3 1.3 49.1 0 94.2-16.6 130.3-44.8-46.1-1-84.8-31.2-98.1-72.8 6.5 1 13 1.6 19.8 1.6 9.4 0 18.8-1.3 27.6-3.6-48.1-9.7-84.1-52-84.1-103v-1.3c14 7.8 30.2 12.7 47.4 13.3-28.3-18.8-46.8-51-46.8-87.4 0-19.5 5.2-37.4 14.3-53C87.4 130.8 165 172.4 252.1 176.9c-1.6-7.8-2.6-15.9-2.6-24C249.5 95.1 296.3 48 354.4 48c30.2 0 57.5 12.7 76.7 33.1 23.7-4.5 46.5-13.3 66.6-25.3-7.8 24.4-24.4 44.8-46.1 57.8 21.1-2.3 41.6-8.1 60.4-16.2-14.3 20.8-32.2 39.3-52.6 54.3"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "content.code.copy", "content.code.select"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
