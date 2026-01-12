@@ -1,0 +1,24 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: capk-selfsigned-issuer
+  namespace: capk-system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: capk-serving-cert
+  namespace: capk-system
+spec:
+  dnsNames:
+  - capk-webhook-service.capk-system.svc
+  - capk-webhook-service.capk-system.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: capk-selfsigned-issuer
+  secretName: capk-webhook-service-cert
+  duration: 8760h  # 1 year
+  renewBefore: 720h  # 30 days before expiry - cert-manager will auto-renew

@@ -361,6 +361,8 @@ units:
             - name: "k3s"
               url: https://github.com/cluster-api-provider-k3s/cluster-api-k3s/releases/latest/samples/deployment/control-plane-k3s/{{ $capiK3sProviderVersion }}/control-plane-components.yaml
               type: "ControlPlaneProvider"
+        - file: capk-webhook-cert.yaml
+          content: {{ insertYAML (readFile "./cluster-api/capk-webhook-cert.yaml") }}
     apply:
       commands:
         - bash install_capi.sh
