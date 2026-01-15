@@ -603,6 +603,13 @@ units:
     provider_conf:
       config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
   -
+    name: keycloak-theme
+    type: kubernetes
+    depends_on: this.keycloak-httproute
+    source: ./keycloak/theme-configmap.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
     name: kube-dc
     type: helm
     depends_on:

@@ -28,20 +28,6 @@ service:
   http:
     enabled: true
 
-ingress:
-  enabled: false  # Disabled - using Envoy Gateway HTTPRoute instead
-  ingressClassName: nginx
-  hostname: {{ .variables.cluster_config.keycloak_hostname | default ( printf "login.%s" .variables.domain ) }}
-  hostnameStrict: true
-  path: /
-  pathType: Prefix
-  servicePort: http
-  annotations:
-    kubernetes.io/ingress.class: "nginx"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod-http"
-  tls: true
-  secrets: []
-
 production: true
 
 ## Proxy settings for running behind a reverse proxy (Envoy Gateway)
@@ -68,6 +54,43 @@ resources:
   requests:
     cpu: 250m
     memory: 512Mi
+
+# Kube-DC custom theme deployment
+initContainers:
+  - name: theme-extractor
+    image: docker.io/bitnamilegacy/keycloak:26.0.7-debian-12-r0
+    command:
+      - /bin/bash
+      - -c
+      - |
+        echo "Extracting Kube-DC theme..."
+        if [ -f /theme-jar/kube-dc-theme.jar ]; then
+          mkdir -p /themes/kube-dc
+          cd /themes/kube-dc
+          jar xf /theme-jar/kube-dc-theme.jar
+          echo "Theme extracted successfully"
+          ls -la /themes/kube-dc/
+        else
+          echo "Theme JAR not found, skipping..."
+        fi
+    volumeMounts:
+      - name: kube-dc-theme-jar
+        mountPath: /theme-jar
+      - name: themes
+        mountPath: /themes
+
+extraVolumes:
+  - name: kube-dc-theme-jar
+    configMap:
+      name: kube-dc-theme
+      optional: true
+  - name: themes
+    emptyDir: {}
+
+extraVolumeMounts:
+  - name: themes
+    mountPath: /opt/bitnami/keycloak/themes/kube-dc
+    subPath: kube-dc
 
 # Override PostgreSQL to use bitnamilegacy images
 postgresql:

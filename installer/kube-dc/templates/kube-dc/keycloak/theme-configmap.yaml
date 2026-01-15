@@ -1,0 +1,15 @@
+{{- if .variables.cluster_config.keycloak_custom_theme_enabled | default true }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-dc-theme
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/component: theme
+binaryData:
+  # Base64-encoded theme JAR file
+  # To rebuild: cd hack/keycloak-theme && ./build-theme.sh && cp build/kube-dc-theme.jar ../../installer/kube-dc/templates/kube-dc/keycloak/
+  kube-dc-theme.jar: {{ readFile "./keycloak/kube-dc-theme.jar" | b64enc | quote }}
+{{- end }}

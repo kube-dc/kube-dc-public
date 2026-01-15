@@ -1,0 +1,956 @@
+/*
+ * Kube-DC Account Theme - Light Design
+ * Matches PatternFly 5 frontend styling with white background
+ */
+
+:root {
+    --kube-dc-header: #002952;
+    --kube-dc-primary: #0066CC;
+    --kube-dc-accent: #40199A;
+    --kube-dc-text: #151515;
+    --kube-dc-text-muted: #6a6e73;
+    --kube-dc-border: #d2d2d2;
+    --kube-dc-bg-light: #f5f5f5;
+}
+
+/* PatternFly Red Hat fonts */
+@import url('https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@400;500;600;700&family=Red+Hat+Text:wght@400;500;600&display=swap');
+
+/* ============================================
+ * Global Background - White Theme
+ * ============================================ */
+
+body {
+    background: #ffffff !important;
+    color: var(--kube-dc-text) !important;
+    font-family: "Red Hat Text", "RedHatText", "Overpass", helvetica, arial, sans-serif !important;
+    font-size: 16px !important;
+    -webkit-font-smoothing: antialiased !important;
+    -moz-osx-font-smoothing: grayscale !important;
+    text-rendering: optimizeLegibility !important;
+}
+
+/* Main page wrapper */
+.pf-c-page,
+.pf-v5-c-page {
+    background: #ffffff !important;
+}
+
+/* ============================================
+ * Header/Masthead - Dark Blue
+ * ============================================ */
+
+/* Masthead - ensure ENTIRE header is dark blue */
+.pf-c-masthead,
+.pf-v5-c-masthead,
+.pf-c-masthead *,
+.pf-v5-c-masthead *,
+.pf-c-masthead__main,
+.pf-v5-c-masthead__main {
+    background-color: var(--kube-dc-header) !important;
+    background: var(--kube-dc-header) !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-bottom: none !important;
+}
+
+/* Show logo in header */
+.pf-c-masthead__brand,
+.pf-v5-c-masthead__brand {
+    padding: 0.5rem 1rem !important;
+    display: flex !important;
+    align-items: center !important;
+    background-color: var(--kube-dc-header) !important;
+}
+
+/* Hamburger menu toggle - clean styling */
+.pf-c-masthead__toggle,
+.pf-v5-c-masthead__toggle {
+    background-color: var(--kube-dc-header) !important;
+    padding: 0.5rem !important;
+}
+
+/* Menu toggle button - NO BORDERS, clean dark blue */
+.pf-c-masthead__toggle button,
+.pf-v5-c-masthead__toggle button {
+    background-color: var(--kube-dc-header) !important;
+    background: var(--kube-dc-header) !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 0.5rem !important;
+}
+
+/* Hamburger button hover - keep same */
+.pf-c-masthead__toggle button:hover,
+.pf-v5-c-masthead__toggle button:hover {
+    background-color: var(--kube-dc-header) !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* Hamburger icon color - white */
+.pf-c-masthead__toggle svg,
+.pf-v5-c-masthead__toggle svg,
+.pf-c-masthead__toggle .pf-v5-c-button__icon,
+.pf-v5-c-masthead__toggle .pf-v5-c-button__icon {
+    color: #ffffff !important;
+    fill: #ffffff !important;
+}
+
+/* Hamburger button - override plain button style in header */
+.pf-c-masthead .pf-c-button.pf-m-plain,
+.pf-v5-c-masthead .pf-v5-c-button.pf-m-plain {
+    background-color: var(--kube-dc-header) !important;
+    background: var(--kube-dc-header) !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+/* Ultra-specific for nav-toggle button */
+#nav-toggle,
+button#nav-toggle,
+.pf-v5-c-masthead__toggle button,
+.pf-v5-c-masthead__toggle .pf-v5-c-button {
+    background-color: var(--kube-dc-header) !important;
+    background: var(--kube-dc-header) !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+#nav-toggle:hover,
+#nav-toggle:focus,
+#nav-toggle:active {
+    background-color: var(--kube-dc-header) !important;
+    background: var(--kube-dc-header) !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* Logo image must be visible */
+.pf-c-masthead__brand img,
+.pf-v5-c-masthead__brand img,
+img[alt="Logo"] {
+    height: 32px !important;
+    width: auto !important;
+    display: block !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    max-width: 32px !important;
+}
+
+/* Add "KUBE-DC" text next to logo - match frontend styling */
+.pf-c-masthead__brand::after,
+.pf-v5-c-masthead__brand::after {
+    content: "KUBE-DC";
+    color: #ffffff;
+    font-family: "Red Hat Display", "RedHatDisplay", sans-serif;
+    font-size: 1.4em;
+    font-weight: 400;
+    margin-left: 0.5em;
+    letter-spacing: normal;
+}
+
+/* User dropdown in header - make text white and visible */
+.pf-c-dropdown__toggle,
+.pf-v5-c-dropdown__toggle {
+    color: #ffffff !important;
+    background-color: var(--kube-dc-header) !important;
+}
+
+.pf-c-dropdown__toggle span,
+.pf-v5-c-dropdown__toggle span {
+    color: #ffffff !important;
+}
+
+/* Avatar circle */
+.pf-c-avatar,
+.pf-v5-c-avatar {
+    border: 2px solid #ffffff !important;
+}
+
+/* Dropdown menu container in header */
+.pf-c-masthead .pf-c-dropdown,
+.pf-v5-c-masthead .pf-v5-c-dropdown {
+    background-color: var(--kube-dc-header) !important;
+}
+
+/* Masthead content - ensure everything is white text and dark blue bg */
+.pf-c-masthead__content,
+.pf-v5-c-masthead__content,
+.pf-c-masthead__content *,
+.pf-v5-c-masthead__content * {
+    color: #ffffff !important;
+    background-color: var(--kube-dc-header) !important;
+    background: var(--kube-dc-header) !important;
+}
+
+/* Remove any black backgrounds in header */
+.pf-c-masthead [style*="background"],
+.pf-v5-c-masthead [style*="background"] {
+    background-color: var(--kube-dc-header) !important;
+    background: var(--kube-dc-header) !important;
+}
+
+/* ============================================
+ * Sidebar Navigation - Light Background
+ * ============================================ */
+
+.pf-c-page__sidebar,
+.pf-v5-c-page__sidebar {
+    background: #ffffff !important;
+    border-right: 1px solid var(--kube-dc-border) !important;
+}
+
+.pf-c-nav,
+.pf-v5-c-nav {
+    background: transparent !important;
+}
+
+/* Navigation links */
+.pf-c-nav__link,
+.pf-v5-c-nav__link {
+    color: var(--kube-dc-text) !important;
+    font-weight: 400 !important;
+    border: none !important;
+    border-top: none !important;
+    border-bottom: none !important;
+}
+
+/* Navigation items - no borders */
+.pf-c-nav__item,
+.pf-v5-c-nav__item {
+    border: none !important;
+    border-top: none !important;
+    border-bottom: none !important;
+}
+
+/* Navigation buttons - no borders, shadows, outlines */
+button.pf-c-nav__link,
+button.pf-v5-c-nav__link {
+    border: none !important;
+    border-top: none !important;
+    border-bottom: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+/* Remove pseudo-element separators */
+.pf-c-nav__link::before,
+.pf-v5-c-nav__link::before,
+.pf-c-nav__link::after,
+.pf-v5-c-nav__link::after,
+.pf-c-nav__item::before,
+.pf-v5-c-nav__item::before,
+.pf-c-nav__item::after,
+.pf-v5-c-nav__item::after {
+    display: none !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* Navigation list - no separators */
+.pf-c-nav__list,
+.pf-v5-c-nav__list {
+    border: none !important;
+}
+
+.pf-c-nav__list > *,
+.pf-v5-c-nav__list > * {
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* Navigation hover - visible light gray background */
+.pf-c-nav__link:hover,
+.pf-v5-c-nav__link:hover,
+button.pf-c-nav__link:hover,
+button.pf-v5-c-nav__link:hover {
+    background-color: #f5f5f5 !important;
+    color: var(--kube-dc-primary) !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* Navigation expandable sections - NO BLACK backgrounds */
+.pf-c-nav__subnav,
+.pf-v5-c-nav__subnav,
+.pf-c-nav__section,
+.pf-v5-c-nav__section {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+}
+
+/* Navigation items inside expandable sections */
+.pf-c-nav__subnav .pf-c-nav__link,
+.pf-v5-c-nav__subnav .pf-v5-c-nav__link {
+    background-color: #ffffff !important;
+    color: var(--kube-dc-text) !important;
+}
+
+/* Expandable navigation toggle - white background */
+.pf-c-nav__item.pf-m-expandable,
+.pf-v5-c-nav__item.pf-m-expandable {
+    background-color: #ffffff !important;
+}
+
+/* Expanded state - keep white */
+.pf-c-nav__item.pf-m-expandable.pf-m-expanded,
+.pf-v5-c-nav__item.pf-m-expandable.pf-m-expanded > .pf-c-nav__link,
+.pf-v5-c-nav__item.pf-m-expandable.pf-m-expanded > .pf-v5-c-nav__link {
+    background-color: #f5f5f5 !important;
+    color: var(--kube-dc-text) !important;
+}
+
+/* Active/current navigation item - NO BLACK backgrounds */
+.pf-c-nav__link.pf-m-current,
+.pf-v5-c-nav__link.pf-m-current {
+    background-color: #e7f5ff !important;
+    color: var(--kube-dc-primary) !important;
+    font-weight: 600 !important;
+}
+
+.pf-c-nav__link.pf-m-current::after,
+.pf-v5-c-nav__link.pf-m-current::after {
+    border-left-color: var(--kube-dc-primary) !important;
+    border-bottom-color: transparent !important;
+}
+
+/* Remove all black/dark selection backgrounds */
+.pf-m-selected,
+[aria-selected="true"] {
+    background-color: #e7f5ff !important;
+    color: var(--kube-dc-primary) !important;
+}
+
+/* ============================================
+ * Main Content Area - White Background
+ * ============================================ */
+
+.pf-c-page__main,
+.pf-v5-c-page__main {
+    background: #ffffff !important;
+}
+
+.pf-c-page__main-section,
+.pf-v5-c-page__main-section {
+    background: #ffffff !important;
+}
+
+/* Content cards/panels */
+.pf-c-card,
+.pf-v5-c-card {
+    background: #ffffff !important;
+    border: 1px solid var(--kube-dc-border) !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* ============================================
+ * Typography
+ * ============================================ */
+
+/* PatternFly Typography - Red Hat fonts */
+.pf-c-title,
+.pf-v5-c-title,
+h1, h2, h3, h4, h5, h6 {
+    font-family: "Red Hat Display", "RedHatDisplay", sans-serif !important;
+    color: var(--kube-dc-text) !important;
+    font-weight: 600 !important;
+    -webkit-font-smoothing: antialiased !important;
+    -moz-osx-font-smoothing: grayscale !important;
+}
+
+.pf-c-content h1,
+.pf-v5-c-content h1 {
+    font-size: 28px !important;
+    line-height: 1.3 !important;
+}
+
+.pf-c-content h2,
+.pf-v5-c-content h2 {
+    font-size: 24px !important;
+    line-height: 1.3 !important;
+}
+
+.pf-c-content h3,
+.pf-v5-c-content h3 {
+    font-size: 20px !important;
+    line-height: 1.3 !important;
+}
+
+/* Body text */
+p, span, div {
+    font-family: "Red Hat Text", "RedHatText", sans-serif !important;
+    -webkit-font-smoothing: antialiased !important;
+    -moz-osx-font-smoothing: grayscale !important;
+}
+
+/* Description text */
+.pf-c-description-list__description,
+.pf-v5-c-description-list__description {
+    color: var(--kube-dc-text) !important;
+}
+
+/* ============================================
+ * Forms and Inputs
+ * ============================================ */
+
+/* Form labels */
+.pf-c-form__label,
+.pf-v5-c-form__label {
+    color: var(--kube-dc-text) !important;
+    font-weight: 600 !important;
+    font-family: "Red Hat Text", "RedHatText", sans-serif !important;
+    font-size: 14px !important;
+}
+
+/* Input fields - larger font size to match login */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+textarea,
+.pf-c-form-control,
+.pf-v5-c-form-control,
+.pf-c-text-input-group__text-input,
+.pf-v5-c-text-input-group__text-input {
+    font-size: 16px !important;
+    font-family: "Red Hat Text", "RedHatText", sans-serif !important;
+}
+
+/* ============================================
+ * Buttons
+ * ============================================ */
+
+/* Primary button */
+.pf-c-button.pf-m-primary,
+.pf-v5-c-button.pf-m-primary {
+    background-color: var(--kube-dc-primary) !important;
+    border-color: var(--kube-dc-primary) !important;
+    color: #ffffff !important;
+}
+
+.pf-c-button.pf-m-primary:hover,
+.pf-v5-c-button.pf-m-primary:hover {
+    background-color: #0052a3 !important;
+    border-color: #0052a3 !important;
+}
+
+/* Secondary button - blue with white text */
+.pf-c-button.pf-m-secondary,
+.pf-v5-c-button.pf-m-secondary {
+    background-color: var(--kube-dc-primary) !important;
+    border: 1px solid var(--kube-dc-primary) !important;
+    color: #ffffff !important;
+}
+
+.pf-c-button.pf-m-secondary:hover,
+.pf-v5-c-button.pf-m-secondary:hover {
+    background-color: #0052a3 !important;
+    border-color: #0052a3 !important;
+    color: #ffffff !important;
+}
+
+/* Cancel/Default buttons - blue primary style */
+.pf-c-button.btn-default,
+.pf-v5-c-button.btn-default,
+button.btn-default,
+#cancelTOTPBtn {
+    background-color: var(--kube-dc-primary) !important;
+    background: var(--kube-dc-primary) !important;
+    border: 1px solid var(--kube-dc-primary) !important;
+    color: #ffffff !important;
+}
+
+.pf-c-button.btn-default:hover,
+.pf-v5-c-button.btn-default:hover,
+button.btn-default:hover,
+#cancelTOTPBtn:hover {
+    background-color: #0052a3 !important;
+    border-color: #0052a3 !important;
+    color: #ffffff !important;
+}
+
+/* Control/Plain buttons - NO BLACK backgrounds */
+.pf-c-button.pf-m-control,
+.pf-v5-c-button.pf-m-control,
+.pf-c-button.pf-m-plain,
+.pf-v5-c-button.pf-m-plain {
+    background-color: #f0f0f0 !important;
+    color: var(--kube-dc-text) !important;
+    border: 1px solid var(--kube-dc-border) !important;
+}
+
+.pf-c-button.pf-m-control:hover,
+.pf-v5-c-button.pf-m-control:hover,
+.pf-c-button.pf-m-plain:hover,
+.pf-v5-c-button.pf-m-plain:hover {
+    background-color: #e0e0e0 !important;
+    color: var(--kube-dc-text) !important;
+}
+
+/* Search/submit buttons in input groups - light gray */
+.pf-c-input-group .pf-c-button,
+.pf-v5-c-input-group .pf-v5-c-button {
+    background-color: #f0f0f0 !important;
+    color: var(--kube-dc-text) !important;
+    border: 1px solid var(--kube-dc-border) !important;
+}
+
+.pf-c-input-group .pf-c-button:hover,
+.pf-v5-c-input-group .pf-v5-c-button:hover {
+    background-color: #e0e0e0 !important;
+}
+
+/* Link buttons - keep as links unless they are form actions */
+.pf-c-button.pf-m-link:not([data-testid]):not([data-testrole]),
+.pf-v5-c-button.pf-m-link:not([data-testid]):not([data-testrole]) {
+    background-color: transparent !important;
+    border: none !important;
+    color: var(--kube-dc-primary) !important;
+}
+
+.pf-c-button.pf-m-link:not([data-testid]):not([data-testrole]):hover,
+.pf-v5-c-button.pf-m-link:not([data-testid]):not([data-testrole]):hover {
+    background-color: transparent !important;
+    color: #0052a3 !important;
+    text-decoration: none !important;
+}
+
+/* Form action link buttons - blue with white text */
+button[data-testid="cancel"].pf-m-link,
+button[data-testid].pf-m-link,
+button[data-testrole].pf-m-link {
+    background-color: var(--kube-dc-primary) !important;
+    border: 1px solid var(--kube-dc-primary) !important;
+    color: #ffffff !important;
+}
+
+button[data-testid="cancel"].pf-m-link:hover,
+button[data-testid].pf-m-link:hover,
+button[data-testrole].pf-m-link:hover {
+    background-color: #0052a3 !important;
+    border-color: #0052a3 !important;
+    color: #ffffff !important;
+}
+
+/* ============================================
+ * Links
+ * ============================================ */
+
+a {
+    color: var(--kube-dc-primary) !important;
+    text-decoration: none;
+}
+
+a:hover {
+    color: #0052a3 !important;
+    text-decoration: none !important;
+}
+
+/* ============================================
+ * Alerts and Messages
+ * ============================================ */
+
+.pf-c-alert,
+.pf-v5-c-alert {
+    background: #ffffff !important;
+}
+
+.pf-c-alert.pf-m-success,
+.pf-v5-c-alert.pf-m-success {
+    border-left: 3px solid #3e8635 !important;
+}
+
+.pf-c-alert.pf-m-danger,
+.pf-v5-c-alert.pf-m-danger {
+    border-left: 3px solid #c9190b !important;
+}
+
+.pf-c-alert.pf-m-warning,
+.pf-v5-c-alert.pf-m-warning {
+    border-left: 3px solid #f0ab00 !important;
+}
+
+/* ============================================
+ * Tables and Lists
+ * ============================================ */
+
+.pf-c-table,
+.pf-v5-c-table {
+    background: #ffffff !important;
+}
+
+.pf-c-table thead,
+.pf-v5-c-table thead {
+    background: #f5f5f5 !important;
+    border-bottom: 2px solid var(--kube-dc-border) !important;
+}
+
+.pf-c-table tbody tr,
+.pf-v5-c-table tbody tr {
+    border-bottom: 1px solid var(--kube-dc-border) !important;
+}
+
+/* ============================================
+ * Modals and Overlays
+ * ============================================ */
+
+.pf-c-modal-box,
+.pf-v5-c-modal-box {
+    background: #ffffff !important;
+    color: var(--kube-dc-text) !important;
+}
+
+.pf-c-backdrop,
+.pf-v5-c-backdrop {
+    background-color: rgba(0, 0, 0, 0.4) !important;
+}
+
+/* ============================================
+ * Remove ALL Black Backgrounds - Replace with White
+ * ============================================ */
+
+/* Target all dark/black background elements */
+[style*="background: rgb(33, 37, 41)"],
+[style*="background-color: rgb(33, 37, 41)"],
+[style*="background: #212529"],
+[style*="background-color: #212529"],
+[style*="background: black"],
+[style*="background-color: black"],
+[style*="background: #000"],
+[style*="background-color: #000"],
+[style*="background: rgb(51, 51, 51)"],
+[style*="background-color: rgb(51, 51, 51)"],
+[style*="background: #333"],
+[style*="background-color: #333"],
+.bg-dark,
+.pf-c-data-list__item.pf-m-clickable.pf-m-selected {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: var(--kube-dc-text) !important;
+}
+
+/* Force ALL navigation items to white background */
+.pf-c-nav *,
+.pf-v5-c-nav * {
+    background-color: transparent !important;
+}
+
+.pf-c-nav,
+.pf-v5-c-nav {
+    background-color: #ffffff !important;
+}
+
+/* Remove any dark borders */
+[style*="border-color: rgb(33, 37, 41)"],
+[style*="border-color: #212529"],
+[style*="border-color: black"] {
+    border-color: var(--kube-dc-border) !important;
+}
+
+/* Data list items - white background */
+.pf-c-data-list__item,
+.pf-v5-c-data-list__item {
+    background: #ffffff !important;
+    border: 1px solid var(--kube-dc-border) !important;
+    margin-bottom: 8px !important;
+}
+
+.pf-c-data-list__item:hover,
+.pf-v5-c-data-list__item:hover {
+    background: transparent !important;
+}
+
+/* Data list cell text */
+.pf-c-data-list__cell,
+.pf-v5-c-data-list__cell {
+    color: var(--kube-dc-text) !important;
+}
+
+/* Make device/browser text more visible in sessions */
+.pf-c-data-list__cell .pf-v5-c-content p,
+.pf-v5-c-data-list__cell .pf-v5-c-content p,
+.pf-c-data-list__cell p,
+.pf-v5-c-data-list__cell p {
+    color: var(--kube-dc-text) !important;
+    opacity: 1 !important;
+    font-weight: 400 !important;
+}
+
+/* Specifically target session title span */
+.session-title,
+span.session-title,
+.pf-v5-u-mr-md.session-title,
+span.pf-v5-u-mr-md {
+    color: var(--kube-dc-text) !important;
+    opacity: 1 !important;
+    font-weight: 500 !important;
+}
+
+/* Description list - white backgrounds */
+.pf-c-description-list,
+.pf-v5-c-description-list {
+    background: #ffffff !important;
+}
+
+.pf-c-description-list__group,
+.pf-v5-c-description-list__group {
+    background: #ffffff !important;
+    padding: 12px 0 !important;
+    border-bottom: 1px solid #f0f0f0 !important;
+}
+
+.pf-c-description-list__term,
+.pf-v5-c-description-list__term {
+    color: var(--kube-dc-text) !important;
+    font-weight: 700 !important;
+    font-size: 14px !important;
+}
+
+.pf-c-description-list__description,
+.pf-v5-c-description-list__description {
+    color: var(--kube-dc-text) !important;
+    font-size: 16px !important;
+    font-weight: 400 !important;
+}
+
+/* Stack and panel backgrounds */
+.pf-c-stack,
+.pf-v5-c-stack,
+.pf-c-panel,
+.pf-v5-c-panel {
+    background: #ffffff !important;
+}
+
+/* Level items */
+.pf-c-level,
+.pf-v5-c-level {
+    background: transparent !important;
+}
+
+/* Text content areas */
+.pf-c-text-content,
+.pf-v5-c-text-content {
+    color: var(--kube-dc-text) !important;
+}
+
+/* Breadcrumb */
+.pf-c-breadcrumb,
+.pf-v5-c-breadcrumb {
+    color: var(--kube-dc-text) !important;
+}
+
+/* All text elements inside account console */
+#root * {
+    -webkit-font-smoothing: antialiased !important;
+    -moz-osx-font-smoothing: grayscale !important;
+}
+
+/* Fix sidebar dark backgrounds - make white */
+.pf-c-page__sidebar-body,
+.pf-v5-c-page__sidebar-body {
+    background: #ffffff !important;
+}
+
+/* Placeholder text color */
+::placeholder {
+    color: #6a6e73 !important;
+    opacity: 1 !important;
+}
+
+
+/* ============================================
+ * Data Tables/Toolbars - Remove Black Backgrounds
+ * ============================================ */
+
+/* Toolbar and data toolbar - white background */
+.pf-c-toolbar,
+.pf-v5-c-toolbar,
+.pf-c-data-toolbar,
+.pf-v5-c-data-toolbar {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+}
+
+/* Search/filter bars */
+.pf-c-input-group,
+.pf-v5-c-input-group {
+    background-color: #ffffff !important;
+}
+
+/* Table headers and dark elements */
+thead,
+th {
+    background-color: #f5f5f5 !important;
+    color: var(--kube-dc-text) !important;
+}
+
+/* Pagination */
+.pf-c-pagination,
+.pf-v5-c-pagination {
+    background-color: transparent !important;
+}
+
+
+/* Form action buttons only - not navigation */
+button[type="submit"]:not(.pf-c-masthead *):not(.pf-v5-c-masthead *):not(.pf-c-nav *):not(.pf-v5-c-nav *),
+button[data-testid="save"]:not(.pf-c-masthead *):not(.pf-v5-c-masthead *),
+button[data-testid="cancel"]:not(.pf-c-masthead *):not(.pf-v5-c-masthead *),
+button[data-testrole="update"]:not(.pf-c-masthead *):not(.pf-v5-c-masthead *) {
+    background-color: var(--kube-dc-primary) !important;
+    color: #ffffff !important;
+    border: 1px solid var(--kube-dc-primary) !important;
+}
+
+/* Primary buttons */
+button.pf-m-primary,
+button.pf-v5-m-primary,
+.pf-c-button.pf-m-primary,
+.pf-v5-c-button.pf-m-primary {
+    background-color: var(--kube-dc-primary) !important;
+    color: #ffffff !important;
+}
+
+/* Badges and labels */
+span[class*="badge"],
+span[class*="label"],
+.pf-c-badge,
+.pf-v5-c-badge,
+.pf-c-label,
+.pf-v5-c-label {
+    background-color: #f0f0f0 !important;
+    color: var(--kube-dc-text) !important;
+}
+
+/* BUT - text spans should have transparent backgrounds */
+p span,
+div span:not([class*="badge"]):not([class*="label"]) {
+    background-color: transparent !important;
+    background: transparent !important;
+}
+
+/* Regular text - transparent backgrounds */
+p, div:not([class*="button"]):not([class*="badge"]) {
+    background-color: transparent !important;
+}
+
+/* Form labels and text - TRANSPARENT backgrounds */
+label,
+label *,
+.pf-c-form__label,
+.pf-v5-c-form__label,
+.pf-c-form__label *,
+.pf-v5-c-form__label *,
+.pf-c-form__label-text,
+.pf-v5-c-form__label-text,
+span.pf-v5-c-form__label-text,
+span.pf-c-form__label-text {
+    background-color: transparent !important;
+    background: transparent !important;
+}
+
+/* Form group labels */
+.pf-c-form__group-label,
+.pf-v5-c-form__group-label,
+.pf-c-form__group-label *,
+.pf-v5-c-form__group-label * {
+    background-color: transparent !important;
+    background: transparent !important;
+}
+
+/* Required asterisk - red with transparent background */
+.pf-c-form__label-required,
+.pf-v5-c-form__label-required,
+span.pf-c-form__label-required,
+span.pf-v5-c-form__label-required {
+    background-color: transparent !important;
+    background: transparent !important;
+    color: #c9190b !important; /* PatternFly danger/red color */
+}
+
+/* Form helper text */
+.pf-c-form__helper-text,
+.pf-v5-c-form__helper-text {
+    background-color: transparent !important;
+}
+
+/* All headings - transparent */
+h1, h2, h3, h4, h5, h6 {
+    background-color: transparent !important;
+}
+
+/* ============================================
+ * Form Inputs - Match Login Console Style
+ * ============================================ */
+
+/* Span wrapper - transparent no borders */
+span.pf-c-form-control,
+span.pf-v5-c-form-control {
+    background-color: transparent !important;
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+}
+
+/* Input fields - match login console exactly */
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="tel"],
+textarea {
+    width: 100% !important;
+    padding: 8px 12px !important;
+    font-size: 14px !important;
+    font-weight: 400 !important;
+    color: var(--kube-dc-text) !important;
+    background-color: #ffffff !important;
+    border-top: 1px solid #f0f0f0 !important;
+    border-left: 1px solid #f0f0f0 !important;
+    border-right: 1px solid #f0f0f0 !important;
+    border-bottom: 1px solid #b8bbbe !important;
+    border-radius: 0 !important;
+    transition: border-color 0.2s !important;
+    box-shadow: none !important;
+}
+
+/* Input focus state - blue bottom border like login */
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="email"]:focus,
+input[type="tel"]:focus,
+textarea:focus {
+    outline: none !important;
+    border-bottom-color: #0066CC !important;
+    border-bottom-width: 2px !important;
+    border-top-color: #f0f0f0 !important;
+    border-left-color: #f0f0f0 !important;
+    border-right-color: #f0f0f0 !important;
+    box-shadow: none !important;
+}
+/* Make description text more visible */
+p[data-ouia-component-type="PF5/Text"],
+.pf-v5-c-content p {
+    color: var(--kube-dc-text) !important;
+    font-weight: 400 !important;
+    opacity: 1 !important;
+}
+
+/* Make jump links more visible */
+.pf-v5-c-jump-links__link-text,
+.pf-c-jump-links__link-text {
+    color: var(--kube-dc-text) !important;
+    font-weight: 600 !important;
+    opacity: 1 !important;
+}
+
+/* Jump links hover - no underline */
+.pf-v5-c-jump-links__link:hover,
+.pf-c-jump-links__link:hover {
+    text-decoration: none !important;
+}
