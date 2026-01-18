@@ -6,6 +6,7 @@ STRIPE_SECRET_KEY="${STRIPE_SECRET_KEY:-}"
 STRIPE_PRICE_STARTER="${STRIPE_PRICE_STARTER:-}"
 STRIPE_PRICE_PROFESSIONAL="${STRIPE_PRICE_PROFESSIONAL:-}"
 STRIPE_PRICE_ENTERPRISE="${STRIPE_PRICE_ENTERPRISE:-}"
+CONSOLE_URL="${CONSOLE_URL:-}"
 
 increment_version() {
   input_version=$1
@@ -102,6 +103,12 @@ kubectl set image -n ${NAMESPACE} deployment/kube-dc-frontend kube-dc=${REGISTRY
 
 # Create/update Stripe secret and patch deployment if credentials are provided
 if [[ -n "${STRIPE_SECRET_KEY}" ]]; then
+  # Default console URL if not provided
+  if [[ -z "${CONSOLE_URL}" ]]; then
+    echo "Warning: CONSOLE_URL not set. Using default. Set CONSOLE_URL to your frontend URL for Stripe redirects."
+    CONSOLE_URL="https://console.kube-dc.com"
+  fi
+
   echo "Creating/updating Stripe secret..."
   kubectl create secret generic kube-dc-backend-stripe \
     --namespace ${NAMESPACE} \
@@ -109,6 +116,7 @@ if [[ -n "${STRIPE_SECRET_KEY}" ]]; then
     --from-literal=price-starter="${STRIPE_PRICE_STARTER}" \
     --from-literal=price-professional="${STRIPE_PRICE_PROFESSIONAL}" \
     --from-literal=price-enterprise="${STRIPE_PRICE_ENTERPRISE}" \
+    --from-literal=console-url="${CONSOLE_URL}" \
     --dry-run=client -o yaml | kubectl apply -f -
   
   # Check if STRIPE_SECRET_KEY env var already exists in deployment
@@ -118,7 +126,8 @@ if [[ -n "${STRIPE_SECRET_KEY}" ]]; then
       {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_SECRET_KEY", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "secret-key"}}}},
       {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_PRICE_STARTER", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "price-starter"}}}},
       {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_PRICE_PROFESSIONAL", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "price-professional"}}}},
-      {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_PRICE_ENTERPRISE", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "price-enterprise"}}}}
+      {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_PRICE_ENTERPRISE", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "price-enterprise"}}}},
+      {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "CONSOLE_URL", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "console-url"}}}}
     ]'
   else
     echo "Stripe environment variables already configured. Restarting backend deployment..."
