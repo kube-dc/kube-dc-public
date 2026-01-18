@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# Stripe configuration (set these values or use environment variables)
+STRIPE_SECRET_KEY="${STRIPE_SECRET_KEY:-}"
+STRIPE_PRICE_STARTER="${STRIPE_PRICE_STARTER:-}"
+STRIPE_PRICE_PROFESSIONAL="${STRIPE_PRICE_PROFESSIONAL:-}"
+STRIPE_PRICE_ENTERPRISE="${STRIPE_PRICE_ENTERPRISE:-}"
+
 increment_version() {
   input_version=$1
   if [[ $input_version =~ ^(v[0-9]+\.[0-9]+\.[0-9]+)(-dev([0-9]+))?$ ]]; then
@@ -93,6 +99,33 @@ cd "${frontendPath}"
 docker build -t ${REGISTRY_REPO}/kube-dc-ui-frontend:${new_version} .
 docker push ${REGISTRY_REPO}/kube-dc-ui-frontend:${new_version}
 kubectl set image -n ${NAMESPACE} deployment/kube-dc-frontend kube-dc=${REGISTRY_REPO}/kube-dc-ui-frontend:${new_version}
+
+# Create/update Stripe secret and patch deployment if credentials are provided
+if [[ -n "${STRIPE_SECRET_KEY}" ]]; then
+  echo "Creating/updating Stripe secret..."
+  kubectl create secret generic kube-dc-backend-stripe \
+    --namespace ${NAMESPACE} \
+    --from-literal=secret-key="${STRIPE_SECRET_KEY}" \
+    --from-literal=price-starter="${STRIPE_PRICE_STARTER}" \
+    --from-literal=price-professional="${STRIPE_PRICE_PROFESSIONAL}" \
+    --from-literal=price-enterprise="${STRIPE_PRICE_ENTERPRISE}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  
+  # Check if STRIPE_SECRET_KEY env var already exists in deployment
+  if ! kubectl get deployment kube-dc-backend -n ${NAMESPACE} -o jsonpath='{.spec.template.spec.containers[0].env[*].name}' | grep -q "STRIPE_SECRET_KEY"; then
+    echo "Adding Stripe environment variables to backend deployment..."
+    kubectl patch deployment kube-dc-backend -n ${NAMESPACE} --type='json' -p='[
+      {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_SECRET_KEY", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "secret-key"}}}},
+      {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_PRICE_STARTER", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "price-starter"}}}},
+      {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_PRICE_PROFESSIONAL", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "price-professional"}}}},
+      {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_PRICE_ENTERPRISE", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "price-enterprise"}}}}
+    ]'
+  else
+    echo "Stripe environment variables already configured. Restarting backend deployment..."
+    kubectl rollout restart -n ${NAMESPACE} deployment/kube-dc-backend
+  fi
+  echo "Stripe integration complete."
+fi
 
 
 
