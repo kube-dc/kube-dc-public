@@ -2,154 +2,158 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://docs.kube-dc.com/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/CODEBASE_CONTEXT/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/architecture-multi-tenancy/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/architecture-networking/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/architecture-overview/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/architecture-virtualization/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/community-support/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/controller_diagram/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/core-features/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/internal-billing-integration/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/managing-os-images/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/product-backlog/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/project_resources/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/quickstart-hetzner/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/quickstart-overview/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/roadmap/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/todo/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/tutorial-kubeconfig/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/tutorial-networking-external/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/tutorial-service-exposure/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/tutorial-sso-google-auth/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/tutorial-user-groups/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/tutorial-virtual-machines/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/tutorial-windows-vm/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/user-groups/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/prd/acme_challenge_http_route/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
+    </url>
+    <url>
+         <loc>https://docs.kube-dc.com/prd/auth-config-sync/</loc>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/prd/certificate-management-monitoring/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/prd/cloud_current_network/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/prd/cloud_network_enable_cluster/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/prd/components-inventory/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/prd/dynamic_https_listeners/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/prd/endpoint_for_lb/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/prd/gateway_sharding/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/prd/infrastructure-requirements/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/prd/organization_standard_groups/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/prd/ovn_database_stability_improvements/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/prd/service_lb_sync_issue/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
     <url>
          <loc>https://docs.kube-dc.com/prd/svc_lb_architecture/</loc>
-         <lastmod>2026-01-12</lastmod>
+         <lastmod>2026-01-19</lastmod>
     </url>
 </urlset>
