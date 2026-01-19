@@ -316,3 +316,19 @@ k8Manager:
   tolerations: []
 
   affinity: {}
+
+# Auth Config Sync DaemonSet - syncs auth config from ConfigMap to control-plane nodes
+# This ensures OIDC authentication config is available on all API server nodes
+authConfigSync:
+  enabled: true
+  image:
+    repository: busybox
+    tag: "1.36"
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 50m
+      memory: 32Mi
+    requests:
+      cpu: 10m
+      memory: 16Mi

@@ -1,0 +1,97 @@
+{{- if .Values.authConfigSync.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kube-dc-auth-config-sync
+  labels:
+    helm.sh/chart: {{ include "kube-dc.chart" . }}
+    app.kubernetes.io/name: kube-dc-auth-config-sync
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: auth-config-sync
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kube-dc-auth-config-sync
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kube-dc-auth-config-sync
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: auth-config-sync
+    spec:
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: "true"
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+        operator: Exists
+      serviceAccountName: kube-dc-auth-config-sync
+      containers:
+      - name: sync
+        image: {{ .Values.authConfigSync.image.repository }}:{{ .Values.authConfigSync.image.tag }}
+        imagePullPolicy: {{ .Values.authConfigSync.image.pullPolicy }}
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          echo "Starting auth config sync daemon..."
+          TARGET="{{ .Values.manager.kubernetesAuthConfig.path }}/{{ .Values.manager.kubernetesAuthConfig.filename }}"
+          SOURCE="/config/{{ .Values.manager.kubernetesAuthConfig.filename }}"
+          LAST_HASH=""
+          
+          sync_file() {
+            if [ -f "$SOURCE" ]; then
+              CURRENT_HASH=$(md5sum "$SOURCE" 2>/dev/null | cut -d' ' -f1)
+              if [ "$CURRENT_HASH" != "$LAST_HASH" ]; then
+                cp "$SOURCE" "$TARGET"
+                chmod 0666 "$TARGET"
+                LAST_HASH="$CURRENT_HASH"
+                echo "$(date): Synced $SOURCE -> $TARGET (hash: $CURRENT_HASH)"
+              fi
+            fi
+          }
+          
+          # Initial sync
+          sync_file
+          
+          # Poll for changes every 2 seconds (ConfigMap symlink updates don't trigger inotify reliably)
+          echo "Watching for changes..."
+          while true; do
+            sync_file
+            sleep 2
+          done
+        securityContext:
+          privileged: true
+          runAsUser: 0
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: host-path
+          mountPath: {{ .Values.manager.kubernetesAuthConfig.path }}
+        resources:
+          {{- toYaml .Values.authConfigSync.resources | nindent 10 }}
+      volumes:
+      - name: config
+        configMap:
+          name: kube-dc-auth-config
+          optional: true
+      - name: host-path
+        hostPath:
+          path: {{ .Values.manager.kubernetesAuthConfig.path }}
+          type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-dc-auth-config-sync
+  labels:
+    helm.sh/chart: {{ include "kube-dc.chart" . }}
+    app.kubernetes.io/name: kube-dc-auth-config-sync
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: auth-config-sync
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
