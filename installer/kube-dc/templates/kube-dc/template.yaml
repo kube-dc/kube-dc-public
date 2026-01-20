@@ -149,8 +149,6 @@ units:
     values:
       - file: ./kube-ovn/values.yaml
         apply_template: true
-    inputs:
-      MASTER_NODES: "{{ output "this.list-master-nodes.master_nodes_list" }}"
   -
     name: multus-cni
     type: shell
@@ -233,27 +231,27 @@ units:
     source:  ./kube-ovn/network/config-cm.yaml
     provider_conf:
       config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
-  -
-    name: kube-ovn-external-route-setup
-    type: shell
-    depends_on: this.kube-ovn-external-gw-conf
-    env:
-      {{- if .variables.debug }}
-      KUBE_DC_DEBUG: true
-      {{- end }}
-      KUBE_DC_EXTERNAL_GATEWAY: {{ .variables.cluster_config.default_external_network.gateway }}
-      KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
-    create_files:
-        - file: setup-external-route.sh
-          content: {{ insertYAML (readFile "./kube-ovn/setup-external-route.sh") }}
-    apply:
-      commands:
-        - bash setup-external-route.sh
+  # -
+  #   name: kube-ovn-external-route-setup
+  #   type: shell
+  #   depends_on: this.kube-ovn-external-gw-conf
+  #   env:
+  #     {{- if .variables.debug }}
+  #     KUBE_DC_DEBUG: true
+  #     {{- end }}
+  #     KUBE_DC_EXTERNAL_GATEWAY: {{ .variables.cluster_config.default_external_network.gateway }}
+  #     KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  #   create_files:
+  #       - file: setup-external-route.sh
+  #         content: {{ insertYAML (readFile "./kube-ovn/setup-external-route.sh") }}
+  #   apply:
+  #     commands:
+  #       - bash setup-external-route.sh
   -
     name: kube-ovn-vpc-dns-patch
     type: shell
     depends_on:
-      - this.kube-ovn-external-route-setup
+      - this.kube-ovn-external-gw-conf
     env:
       {{- if .variables.debug }}
       KUBE_DC_DEBUG: true
@@ -307,6 +305,17 @@ units:
     type: kubernetes
     depends_on: this.cert-manager
     source:  ./cert-manager/clusterissuer.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
+    name: tls-certificates
+    type: kubernetes
+    depends_on:
+      - this.cert-manager-cluster-issuer
+      - this.keycloak
+      - this.kube-dc
+      - this.prom-operator
+    source: ./cert-manager/certificates.yaml
     provider_conf:
       config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
   -
@@ -386,7 +395,7 @@ units:
   -
     name: kamaji-etcd
     type: helm
-    depends_on: this.cert-manager-cluster-issuer
+    depends_on: this.kamaji
     source:
       repository: "https://clastix.github.io/charts"
       chart: "kamaji-etcd"
@@ -403,7 +412,7 @@ units:
   -
     name: kamaji
     type: helm
-    depends_on: this.kamaji-etcd
+    depends_on: this.cert-manager-cluster-issuer
     source:
       repository: "https://clastix.github.io/charts"
       chart: "kamaji"
@@ -604,11 +613,15 @@ units:
       config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
   -
     name: keycloak-theme
-    type: kubernetes
+    type: shell
     depends_on: this.keycloak-httproute
-    source: ./keycloak/theme-configmap.yaml
-    provider_conf:
-      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    work_dir: ./keycloak/
+    apply:
+      commands:
+        - bash ./apply-theme.sh {{ .variables.kubeconfig | default "~/.kube/config" }}
+    destroy:
+      commands:
+        - kubectl --kubeconfig={{ .variables.kubeconfig | default "~/.kube/config" }} delete configmap kube-dc-theme -n keycloak --ignore-not-found
   -
     name: kube-dc
     type: helm
@@ -627,6 +640,16 @@ units:
       namespace: "kube-dc"
       create_namespace: true
       wait: true
+  -
+    name: keycloak-set-theme
+    type: shell
+    depends_on:
+      - this.keycloak-theme
+      - this.kube-dc
+    work_dir: ./keycloak/
+    apply:
+      commands:
+        - bash ./set-theme.sh {{ .variables.kubeconfig | default "~/.kube/config" }}
   -
     name: kube-dc-organization-namespace
     type: kubernetes

@@ -11,5 +11,5 @@ metadata:
 binaryData:
   # Base64-encoded theme JAR file
   # To rebuild: cd hack/keycloak-theme && ./build-theme.sh && cp build/kube-dc-theme.jar ../../installer/kube-dc/templates/kube-dc/keycloak/
-  kube-dc-theme.jar: {{ readFile "./keycloak/kube-dc-theme.jar" | b64enc | quote }}
+  kube-dc-theme.jar: {{ readFile "./kube-dc-theme.jar" | b64enc | quote }}
 {{- end }}

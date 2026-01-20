@@ -1,3 +1,5 @@
+MASTER_NODES: {{ output "this.list-master-nodes.master_nodes_list" }}
+
 ipv4:
   POD_CIDR: {{ .variables.cluster_config.POD_CIDR | default "10.100.0.0/16" }}   
   POD_GATEWAY: {{ .variables.cluster_config.POD_GATEWAY | default "10.100.0.1" }} 

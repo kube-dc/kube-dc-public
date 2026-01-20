@@ -43,6 +43,9 @@ manager:
   defaultSvcLbNetworkType: {{ .variables.cluster_config.default_svc_lb_network_type }}
   {{- end }}
 
+  # Base domain for auto-generated service hostnames (e.g., {service}-{namespace}.{base_domain})
+  baseDomain: {{ .variables.domain }}
+
 frontend:
   image:
     pullPolicy: Always
@@ -80,6 +83,12 @@ frontend:
     tls:
       enabled: true
       secretName: kube-dc-frontend-tls
+
+k8Manager:
+  enabled: true
+  image:
+    pullPolicy: Always
+    tag: {{ .variables.versions.k8_manager | default "latest" }}
 
 backend:
   image:

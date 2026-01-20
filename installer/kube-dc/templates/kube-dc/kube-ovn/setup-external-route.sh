@@ -24,11 +24,23 @@ for i in {1..60}; do
     sleep 5
 done
 
-# Get OVN central pod
-OVN_POD=$(kubectl get pod -n kube-system -l app=ovn-central -o jsonpath='{.items[0].metadata.name}')
+# Wait for OVN NB database socket to be ready on any pod
+echo "Waiting for OVN NB database to be ready..."
+OVN_POD=""
+for i in {1..30}; do
+    for pod in $(kubectl get pod -n kube-system -l app=ovn-central -o jsonpath='{.items[*].metadata.name}'); do
+        if kubectl exec -n kube-system "$pod" -c ovn-central -- ovn-nbctl show >/dev/null 2>&1; then
+            echo "OVN NB database is ready on pod: $pod"
+            OVN_POD="$pod"
+            break 2
+        fi
+    done
+    echo "Waiting for OVN NB database... ($i/30)"
+    sleep 5
+done
 
 if [ -z "$OVN_POD" ]; then
-    echo "ERROR: Could not find OVN central pod"
+    echo "ERROR: Could not find a working OVN central pod"
     exit 1
 fi
 
@@ -36,7 +48,7 @@ echo "Using OVN central pod: $OVN_POD"
 
 # Check for existing default routes
 echo "Checking existing default routes..."
-EXISTING_ROUTES=$(kubectl exec -n kube-system "$OVN_POD" -- ovn-nbctl lr-route-list ovn-cluster 2>/dev/null | grep "0.0.0.0/0" || true)
+EXISTING_ROUTES=$(kubectl exec -n kube-system "$OVN_POD" -c ovn-central -- ovn-nbctl lr-route-list ovn-cluster 2>/dev/null | grep "0.0.0.0/0" || true)
 
 if [ -n "$EXISTING_ROUTES" ]; then
     echo "Found existing default routes:"
@@ -45,15 +57,15 @@ if [ -n "$EXISTING_ROUTES" ]; then
     # Remove old default route via join network if it exists
     if echo "$EXISTING_ROUTES" | grep -q "172.30.0.1"; then
         echo "Removing old default route via join network (172.30.0.1)..."
-        kubectl exec -n kube-system "$OVN_POD" -- ovn-nbctl lr-route-del ovn-cluster 0.0.0.0/0 172.30.0.1 || true
+        kubectl exec -n kube-system "$OVN_POD" -c ovn-central -- ovn-nbctl lr-route-del ovn-cluster 0.0.0.0/0 172.30.0.1 || true
     fi
 fi
 
 # Add new default route via external gateway
 echo "Adding default route via external gateway: $KUBE_DC_EXTERNAL_GATEWAY"
-kubectl exec -n kube-system "$OVN_POD" -- ovn-nbctl lr-route-add ovn-cluster 0.0.0.0/0 "$KUBE_DC_EXTERNAL_GATEWAY" || {
+kubectl exec -n kube-system "$OVN_POD" -c ovn-central -- ovn-nbctl lr-route-add ovn-cluster 0.0.0.0/0 "$KUBE_DC_EXTERNAL_GATEWAY" || {
     echo "Route may already exist, checking..."
-    if kubectl exec -n kube-system "$OVN_POD" -- ovn-nbctl lr-route-list ovn-cluster | grep -q "$KUBE_DC_EXTERNAL_GATEWAY"; then
+    if kubectl exec -n kube-system "$OVN_POD" -c ovn-central -- ovn-nbctl lr-route-list ovn-cluster | grep -q "$KUBE_DC_EXTERNAL_GATEWAY"; then
         echo "Route already configured correctly"
     else
         echo "ERROR: Failed to add route"
@@ -63,6 +75,6 @@ kubectl exec -n kube-system "$OVN_POD" -- ovn-nbctl lr-route-add ovn-cluster 0.0
 
 # Verify the route
 echo "Verifying route configuration..."
-kubectl exec -n kube-system "$OVN_POD" -- ovn-nbctl lr-route-list ovn-cluster | grep "0.0.0.0/0"
+kubectl exec -n kube-system "$OVN_POD" -c ovn-central -- ovn-nbctl lr-route-list ovn-cluster | grep "0.0.0.0/0"
 
 echo "External route setup completed successfully"

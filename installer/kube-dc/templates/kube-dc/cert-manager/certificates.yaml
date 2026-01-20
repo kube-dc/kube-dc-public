@@ -1,0 +1,53 @@
+{{- $domain := .variables.domain -}}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: login-tls
+  namespace: keycloak
+spec:
+  secretName: login.{{ $domain }}-tls
+  issuerRef:
+    name: letsencrypt-prod-http
+    kind: ClusterIssuer
+  dnsNames:
+    - login.{{ $domain }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: console-tls
+  namespace: kube-dc
+spec:
+  secretName: kube-dc-frontend-tls
+  issuerRef:
+    name: letsencrypt-prod-http
+    kind: ClusterIssuer
+  dnsNames:
+    - console.{{ $domain }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: backend-tls
+  namespace: kube-dc
+spec:
+  secretName: kube-dc-backend-tls
+  issuerRef:
+    name: letsencrypt-prod-http
+    kind: ClusterIssuer
+  dnsNames:
+    - backend.{{ $domain }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: grafana-tls
+  namespace: monitoring
+spec:
+  secretName: tls-grafana
+  issuerRef:
+    name: letsencrypt-prod-http
+    kind: ClusterIssuer
+  dnsNames:
+    - grafana.{{ $domain }}
