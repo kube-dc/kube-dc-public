@@ -231,6 +231,13 @@ units:
     source:  ./kube-ovn/network/config-cm.yaml
     provider_conf:
       config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
+    name: kube-ovn-vpc-cloud-network
+    type: kubernetes
+    depends_on: this.kube-ovn-external-gw-conf
+    source:  ./kube-ovn/network/ovn-cluster-vpc-config.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
   # -
   #   name: kube-ovn-external-route-setup
   #   type: shell

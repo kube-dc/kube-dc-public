@@ -1,0 +1,27 @@
+---
+# Patch ovn-cluster VPC to enable access to ext-cloud network (100.65.0.0/16)
+# This allows kamaji-system and other management components to reach services on ext-cloud
+apiVersion: kubeovn.io/v1
+kind: Vpc
+metadata:
+  name: ovn-cluster
+spec:
+  enableExternal: true
+  staticRoutes:
+  - cidr: 100.65.0.0/16
+    nextHopIP: 100.65.0.1
+    policy: policyDst
+  policyRoutes:
+  - action: allow
+    match: ip4.dst == 100.65.0.0/16
+    priority: 31000
+---
+# SNAT rule for return traffic from ext-cloud
+# Translates ovn-default (10.100.0.0/16) to 100.65.0.101 for external connectivity
+apiVersion: kubeovn.io/v1
+kind: OvnSnatRule
+metadata:
+  name: ovn-cluster-to-ext-cloud
+spec:
+  ovnEip: ovn-cluster-ext-cloud
+  vpcSubnet: ovn-default
