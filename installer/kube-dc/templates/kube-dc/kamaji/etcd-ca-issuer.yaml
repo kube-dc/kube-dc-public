@@ -1,0 +1,36 @@
+# Self-signed issuer for generating the etcd CA
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+---
+# Certificate for etcd CA
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: etcd-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: etcd-ca
+  secretName: etcd-ca-secret
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+  duration: 87600h # 10 years
+  renewBefore: 720h # 30 days
+---
+# ClusterIssuer that uses the etcd CA for issuing certificates
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: etcd-ca-issuer
+spec:
+  ca:
+    secretName: etcd-ca-secret

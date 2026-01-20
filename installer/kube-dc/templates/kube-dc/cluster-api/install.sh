@@ -15,7 +15,7 @@ sudo chown -R "$(whoami):$(whoami)" "${HOME}/.cluster-api/"
 cp ./clusterctl.yaml "${HOME}/.cluster-api/"
 
 export EXP_CLUSTER_RESOURCE_SET=true
-clusterctl init --infrastructure kubevirt --bootstrap k3s --control-plane k3s
+clusterctl init --infrastructure kubevirt --bootstrap k3s --control-plane k3s --control-plane kamaji
 
 echo "Installing CAPK webhook certificate with auto-renewal..."
 # Wait for capk-system namespace to be created

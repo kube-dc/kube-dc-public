@@ -393,9 +393,16 @@ units:
       commands:
         - kubectl delete -f https://raw.githubusercontent.com/projectsveltos/sveltos/{{ $sveltosVersion }}/manifest/manifest.yaml --ignore-not-found
   -
+    name: etcd-ca-issuer
+    type: kubernetes
+    depends_on: this.kamaji
+    source: ./kamaji/etcd-ca-issuer.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
     name: kamaji-etcd
     type: helm
-    depends_on: this.kamaji
+    depends_on: this.etcd-ca-issuer
     source:
       repository: "https://clastix.github.io/charts"
       chart: "kamaji-etcd"
@@ -628,9 +635,7 @@ units:
     depends_on:
       - this.keycloak
     source:
-      repository: "oci://registry-1.docker.io/shalb"
-      chart: "kube-dc"
-      version:  {{ $kubeDcChartVersion }}
+      chart: "/home/voa/projects/kube-dc/charts/kube-dc"
     provider_conf:
       config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
     values:
@@ -650,6 +655,7 @@ units:
     apply:
       commands:
         - bash ./set-theme.sh {{ .variables.kubeconfig | default "~/.kube/config" }}
+{{- if .variables.create_default.enabled }}
   -
     name: kube-dc-organization-namespace
     type: kubernetes
@@ -671,6 +677,7 @@ units:
     source:  ./kube-dc/project.yaml
     provider_conf:
       config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+{{- end }}
   -
     name: novnc-namespace
     type: kubernetes
