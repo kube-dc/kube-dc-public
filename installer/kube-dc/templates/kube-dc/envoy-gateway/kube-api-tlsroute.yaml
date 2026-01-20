@@ -7,7 +7,7 @@ spec:
   parentRefs:
   - name: eg
     namespace: envoy-gateway-system
-    sectionName: tls-passthrough
+    sectionName: tls-passthrough-wildcard
   hostnames:
   - kube-api.{{ .variables.domain }}
   rules:

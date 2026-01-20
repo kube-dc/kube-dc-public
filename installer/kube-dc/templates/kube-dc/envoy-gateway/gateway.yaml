@@ -111,7 +111,7 @@ spec:
       namespaces:
         from: All
   # TLS Passthrough for Kubernetes APIs
-  - name: tls-passthrough
+  - name: tls-passthrough-wildcard
     protocol: TLS
     port: 6443
     tls:
