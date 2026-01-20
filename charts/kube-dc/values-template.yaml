@@ -111,7 +111,7 @@ frontend:
     annotations: {}
       # kubernetes.io/ingress.class: nginx
       # kubernetes.io/tls-acme: "true"
-    host: frontend.dev.kube-dc.com
+    host: "" # Set to your frontend hostname, e.g., console.example.com
     tls:
       enabled: false
       secretName: kube-dc-frontend
@@ -217,7 +217,7 @@ backend:
     className: ""
     annotations: {}
       # kubernetes.io/ingress.class: nginx
-    host: backend.dev.kube-dc.com
+    host: "" # Set to your backend hostname, e.g., backend.example.com
     tls:
       enabled: true
       secretName: kube-dc-backend
