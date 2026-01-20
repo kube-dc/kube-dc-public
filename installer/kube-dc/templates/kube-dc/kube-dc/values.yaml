@@ -69,20 +69,10 @@ frontend:
     periodSeconds: 10
     failureThreshold: 3
   gateway:
-    enabled: true
+    hostname: {{ printf "console.%s" .variables.domain }}
     parentRef:
       name: eg
       namespace: envoy-gateway-system
-  ingress:
-    enabled: false
-    annotations:
-      kubernetes.io/ingress.class: "nginx"
-      cert-manager.io/cluster-issuer: "letsencrypt-prod-http"
-    host: {{ printf "console.%s" .variables.domain }}
-    className: nginx
-    tls:
-      enabled: true
-      secretName: kube-dc-frontend-tls
 
 k8Manager:
   enabled: true
@@ -127,19 +117,9 @@ backend:
     periodSeconds: 10
     failureThreshold: 3
   gateway:
-    enabled: true
+    hostname: {{ printf "backend.%s" .variables.domain }}
     parentRef:
       name: eg
       namespace: envoy-gateway-system
-  ingress:
-    enabled: false
-    className: nginx
-    annotations:
-      kubernetes.io/ingress.class: "nginx"
-      cert-manager.io/cluster-issuer: "letsencrypt-prod-http"
-    host: {{ printf "backend.%s" .variables.domain }}
-    tls:
-      enabled: true
-      secretName: kube-dc-backend-tls
 
 

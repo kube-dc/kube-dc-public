@@ -100,22 +100,10 @@ frontend:
     port: 8080
 
   gateway:
-    enabled: false
+    hostname: "" # Required: Set to your frontend hostname, e.g., console.example.com
     parentRef:
       name: eg
       namespace: envoy-gateway-system
-
-  ingress:
-    enabled: false
-    className: ""
-    annotations: {}
-      # kubernetes.io/ingress.class: nginx
-      # kubernetes.io/tls-acme: "true"
-    host: "" # Set to your frontend hostname, e.g., console.example.com
-    tls:
-      enabled: false
-      secretName: kube-dc-frontend
-
 
   resources: {}
     # limits:
@@ -215,21 +203,10 @@ backend:
     port: 8080
 
   gateway:
-    enabled: false
+    hostname: "" # Required: Set to your backend hostname, e.g., backend.example.com
     parentRef:
       name: eg
       namespace: envoy-gateway-system
-
-  ingress:
-    enabled: false
-    className: ""
-    annotations: {}
-      # kubernetes.io/ingress.class: nginx
-    host: "" # Set to your backend hostname, e.g., backend.example.com
-    tls:
-      enabled: true
-      secretName: kube-dc-backend
-
 
   resources: {}
     # limits:

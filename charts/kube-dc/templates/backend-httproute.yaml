@@ -1,4 +1,3 @@
-{{- if .Values.backend.gateway.enabled }}
 {{- $fullName := include "kube-dc.backend.fullname" . -}}
 {{- $svcPort := .Values.backend.service.port -}}
 apiVersion: gateway.networking.k8s.io/v1
@@ -13,7 +12,7 @@ spec:
     namespace: {{ .Values.backend.gateway.parentRef.namespace | default "envoy-gateway-system" }}
     sectionName: {{ .Values.backend.gateway.parentRef.sectionName | default "https-backend" }}
   hostnames:
-  - {{ .Values.backend.ingress.host }}
+  - {{ .Values.backend.gateway.hostname }}
   rules:
   - matches:
     - path:
@@ -22,4 +21,3 @@ spec:
     backendRefs:
     - name: {{ $fullName }}
       port: {{ $svcPort }}
-{{- end }}
