@@ -1,0 +1,40 @@
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: cilium-cni
+spec:
+  clusterSelector:
+    matchLabels:
+      cni: cilium
+  policyRefs:
+  - deploymentType: Remote
+    kind: ConfigMap
+    name: cilium-cni-template
+    namespace: projectsveltos
+  syncMode: Continuous
+  validateHealths:
+  - featureID: Resources
+    group: apps
+    kind: DaemonSet
+    labelFilters:
+    - key: k8s-app
+      operation: Equal
+      value: cilium
+    name: cilium-daemonset-health
+    namespace: kube-system
+    script: |
+      function evaluate()
+        hs = {}
+        hs.healthy = false
+        hs.message = "waiting for cilium daemonset"
+        if obj.status ~= nil then
+          if obj.status.numberReady ~= nil and obj.status.desiredNumberScheduled ~= nil then
+            if obj.status.numberReady == obj.status.desiredNumberScheduled then
+              hs.healthy = true
+              hs.message = "cilium daemonset is ready"
+            end
+          end
+        end
+        return hs
+      end
+    version: v1

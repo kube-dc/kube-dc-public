@@ -110,10 +110,20 @@ spec:
     allowedRoutes:
       namespaces:
         from: All
-  # TLS Passthrough for Kubernetes APIs
-  - name: tls-passthrough-wildcard
+  # TLS Passthrough for management cluster Kubernetes API (port 6443)
+  - name: tls-passthrough
     protocol: TLS
     port: 6443
+    tls:
+      mode: Passthrough
+    allowedRoutes:
+      namespaces:
+        from: All
+  # TLS Passthrough for KdcCluster control planes (port 443 with wildcard hostname)
+  - name: tls-passthrough-wildcard
+    protocol: TLS
+    port: 443
+    hostname: "*.{{ $domain }}"
     tls:
       mode: Passthrough
     allowedRoutes:

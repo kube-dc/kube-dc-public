@@ -400,6 +400,15 @@ units:
       commands:
         - kubectl delete -f https://raw.githubusercontent.com/projectsveltos/sveltos/{{ $sveltosVersion }}/manifest/manifest.yaml --ignore-not-found
   -
+    name: sveltos-cilium-cni
+    type: kubernetes
+    depends_on: this.sveltos
+    source:
+      - ./sveltos/cilium-cni-configmap.yaml
+      - ./sveltos/cilium-cni-clusterprofile.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
     name: etcd-ca-issuer
     type: kubernetes
     depends_on: this.kamaji
