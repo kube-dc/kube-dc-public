@@ -50,7 +50,7 @@ spec:
 | Feature | Cloud Project | Public Project |
 |---------|---------------|----------------|
 | **Default EIP source** | `ext-cloud` | `ext-public` |
-| **Can get public EIPs** | Would be supported (specify `externalNetworkType: public`) | ✅ Yes (default) |
+| **Can get public EIPs** | ✅ Yes (specify `externalNetworkType: public`) | ✅ Yes (default) |
 | **Can use Gateway Routes** | ✅ Yes | ✅ Yes |
 | **Can use EIP + LB** | ✅ Yes | ✅ Yes |
 | **Can run VMs** | ✅ Yes | ✅ Yes |
@@ -480,6 +480,26 @@ spec:
   eip: my-eip             # Name of existing EIP
 ```
 
+### ⚠️ Important Limitation: FIP and LoadBalancer Conflicts
+
+**A pod/VM cannot simultaneously serve as:**
+1. A target for a **public FIP**
+2. A backend for a **cloud-network LoadBalancer** service
+
+This is because public FIPs create source-based policy routes that redirect ALL outbound traffic from that IP to the public gateway, breaking cloud-network services.
+
+**Example conflict:**
+```
+Pod IP: 10.0.0.30
+├── Public FIP → Routes all traffic to public gateway (91.224.11.1)
+└── Cloud LoadBalancer → Expects traffic via cloud gateway (100.65.0.1) ❌ BROKEN
+```
+
+**Workarounds:**
+- Use separate pods for FIP targets and cloud-service backends
+- Use the same network type for both (all public or all cloud)
+- Choose one exposure method per pod
+
 ---
 
 # Part 3: Choosing the Right Approach
@@ -635,6 +655,7 @@ kubectl describe svc my-lb -n my-project
 | 503 error | Backend not ready | Check pod status |
 | EIP pending | No available IPs | Check subnet capacity |
 | Connection timeout | DNS not configured | Point DNS to Gateway/EIP |
+| Cloud LB stopped working after FIP created | FIP policy route conflict | Use separate pods or delete FIP (see [limitation](#️-important-limitation-fip-and-loadbalancer-conflicts)) |
 
 ---
 

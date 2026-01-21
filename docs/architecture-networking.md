@@ -125,6 +125,30 @@ Kube-DC supports two external network types:
 | `join` | ovn-cluster | 172.30.0.0/22 | Node-to-OVN connectivity |
 | `{project}-default` | {project} | 10.x.x.x/24 | Customer pods/VMs |
 
+### Policy Routing for Secondary External Networks
+
+When an EIP is allocated from a **secondary external network** (different from the project's default), kube-dc automatically creates **policy routes** to ensure return traffic uses the correct gateway.
+
+**Example**: A cloud project (`egressNetworkType: cloud`) with a public EIP:
+
+```
+Project: my-project (default: ext-cloud)
+├── Default Route: 0.0.0.0/0 → 100.65.0.1 (cloud gateway)
+├── Public FIP: 91.224.11.10 → 10.0.0.7 (pod IP)
+└── Policy Route: ip4.src == 10.0.0.7 → 91.224.11.1 (public gateway)
+```
+
+Without the policy route, return traffic from the pod would use the default cloud gateway, causing SNAT to fail and packets to be dropped.
+
+**Priority levels**:
+| Priority | Purpose |
+|----------|---------|
+| 31000 | Allow internal subnet traffic |
+| 30010 | SvcLB source-based reroute |
+| 30000 | FIP source-based reroute |
+
+See [Secondary External Network PRD](prd/secondary-external-network-fip.md) for implementation details.
+
 ---
 
 ## Service Exposure
