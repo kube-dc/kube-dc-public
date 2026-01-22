@@ -9,3 +9,4 @@ data:
   nad-name: ovn-nad
   nad-provider: ovn-nad.default.ovn
   coredns-image: coredns/coredns:1.9.4
+  k8s-service-host: {{ .variables.cluster_config.SVC_CIDR | default "10.101.0.0/16" }}
