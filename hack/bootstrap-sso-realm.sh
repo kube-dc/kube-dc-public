@@ -245,7 +245,7 @@ create_google_idp() {
         "storeToken": false,
         "linkOnly": false,
         "firstBrokerLoginFlowAlias": "auto-link-broker-login",
-        "authenticateByDefault": true,
+        "authenticateByDefault": false,
         "config": {
             "clientId": "'$GOOGLE_CLIENT_ID'",
             "clientSecret": "'$GOOGLE_CLIENT_SECRET'",
