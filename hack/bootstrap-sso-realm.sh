@@ -7,6 +7,8 @@
 # - GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
 # - CONSOLE_URL (optional, defaults to https://console.kube-dc.com)
 # - SSO_BROKER_SECRET (optional, auto-generated if not set)
+# - SMTP_HOST, SMTP_PORT, SMTP_FROM, SMTP_FROM_NAME (optional, for email notifications)
+# - SMTP_USER, SMTP_PASSWORD (optional, if SMTP requires authentication)
 #
 # This script sets up:
 # - SSO realm with self-registration and email verification
@@ -29,6 +31,29 @@ NC='\033[0m'
 log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+build_smtp_config() {
+    if [ -n "$SMTP_HOST" ]; then
+        local smtp_json='{'
+        smtp_json+='"host":"'"$SMTP_HOST"'"'
+        smtp_json+=',"port":"'"${SMTP_PORT:-587}"'"'
+        smtp_json+=',"from":"'"${SMTP_FROM:-noreply@kube-dc.com}"'"'
+        smtp_json+=',"fromDisplayName":"'"${SMTP_FROM_NAME:-Kube-DC}"'"'
+        smtp_json+=',"starttls":"true"'
+        smtp_json+=',"ssl":"false"'
+        if [ -n "$SMTP_USER" ]; then
+            smtp_json+=',"auth":"true"'
+            smtp_json+=',"user":"'"$SMTP_USER"'"'
+            smtp_json+=',"password":"'"$SMTP_PASSWORD"'"'
+        else
+            smtp_json+=',"auth":"false"'
+        fi
+        smtp_json+='}'
+        echo "$smtp_json"
+    else
+        echo '{}'
+    fi
+}
 
 check_prerequisites() {
     log_info "Checking prerequisites..."
@@ -107,7 +132,7 @@ create_sso_realm() {
         "loginTheme": "kube-dc",
         "accountTheme": "kube-dc",
         "emailTheme": "kube-dc",
-        "smtpServer": {},
+        "smtpServer": $(build_smtp_config),
         "requiredCredentials": ["password"],
         "defaultSignatureAlgorithm": "RS256",
         "accessTokenLifespan": 300,
