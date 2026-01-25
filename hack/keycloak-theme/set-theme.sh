@@ -109,7 +109,6 @@ UPDATED_MASTER=$(echo "${MASTER_CONFIG}" | jq \
   '.defaultDefaultClientScopes = (.defaultDefaultClientScopes // []) |
    .loginTheme = $theme |
    .accountTheme = $theme |
-   .adminTheme = $theme |
    .emailTheme = $theme')
 
 RESPONSE=$(curl -s -w "\n%{http_code}" -X PUT "${KEYCLOAK_URL}/admin/realms/${MASTER_REALM}" \
