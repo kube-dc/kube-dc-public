@@ -26,14 +26,8 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format_overrides:
-      - goos: windows
-        format: zip
-    files:
-      - README.md
-      - LICENSE*
+    format: binary
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
   name_template: 'checksums.txt'
@@ -55,16 +49,3 @@ release:
     name: kube-dc-public
   prerelease: auto
   name_template: "kube-dc CLI v{{.Version}}"
-
-brews:
-  - name: kube-dc
-    repository:
-      owner: kube-dc
-      name: homebrew-tap
-    homepage: "https://github.com/kube-dc/kube-dc-public"
-    description: "CLI for Kube-DC Kubernetes authentication"
-    license: "Apache-2.0"
-    install: |
-      bin.install "kube-dc"
-    test: |
-      system "#{bin}/kube-dc", "version"

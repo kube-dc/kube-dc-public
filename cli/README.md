@@ -16,31 +16,20 @@ Browser-based authentication CLI for Kube-DC clusters, following patterns from A
 
 ```bash
 # Linux (amd64)
-curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_linux_amd64.tar.gz | tar xz
-sudo mv kube-dc /usr/local/bin/
+sudo curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_linux_amd64 -o /usr/local/bin/kube-dc && sudo chmod +x /usr/local/bin/kube-dc
 
 # Linux (arm64)
-curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_linux_arm64.tar.gz | tar xz
-sudo mv kube-dc /usr/local/bin/
+sudo curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_linux_arm64 -o /usr/local/bin/kube-dc && sudo chmod +x /usr/local/bin/kube-dc
 
 # macOS (Apple Silicon)
-curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_darwin_arm64.tar.gz | tar xz
-sudo mv kube-dc /usr/local/bin/
+sudo curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_darwin_arm64 -o /usr/local/bin/kube-dc && sudo chmod +x /usr/local/bin/kube-dc
 
 # macOS (Intel)
-curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_darwin_amd64.tar.gz | tar xz
-sudo mv kube-dc /usr/local/bin/
+sudo curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_darwin_amd64 -o /usr/local/bin/kube-dc && sudo chmod +x /usr/local/bin/kube-dc
 
 # Windows (PowerShell)
-Invoke-WebRequest -Uri https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_windows_amd64.zip -OutFile kube-dc.zip
-Expand-Archive kube-dc.zip -DestinationPath .
+Invoke-WebRequest -Uri https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_windows_amd64.exe -OutFile kube-dc.exe
 Move-Item kube-dc.exe C:\Windows\System32\
-```
-
-### Homebrew (macOS/Linux)
-
-```bash
-brew install kube-dc/tap/kube-dc
 ```
 
 ### From Source
