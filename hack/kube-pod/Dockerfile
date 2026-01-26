@@ -1,8 +1,9 @@
 ARG CLOUDSHELL_VERSION=v0.8.5
-ARG KUBECTL_VERSION=v1.32.0
+ARG KUBECTL_VERSION=v1.35.0
 ARG STERN_VERSION=1.32.0
 ARG VIRTCTL_VERSION=v1.6.0
 ARG TTYD_VERSION=1.7.8
+ARG K9S_VERSION=v0.50.4
 ARG KUBE_DC_VERSION=latest
 
 # Add a named builder stage for cloudshell
@@ -26,7 +27,16 @@ RUN apt-get update && \
     wget \
     iputils-ping \
     net-tools \
-    openssh-client && \
+    openssh-client \
+    bash-completion \
+    zsh \
+    fish \
+    vim \
+    less \
+    htop \
+    dnsutils \
+    netcat-openbsd \
+    procps && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -38,10 +48,13 @@ ARG KUBECTL_VERSION
 ARG STERN_VERSION
 ARG VIRTCTL_VERSION
 ARG TTYD_VERSION
+ARG K9S_VERSION
 ARG KUBE_DC_VERSION
 
 # Create necessary directories
-RUN mkdir -p /usr/local/etc /scripts /root/.kube /usr/lib/ttyd
+RUN mkdir -p /usr/local/etc /scripts /root/.kube /usr/lib/ttyd \
+    /etc/bash_completion.d /usr/share/zsh/site-functions \
+    /root/.config/fish/completions
 
 # Install all binaries in a single layer to reduce size
 RUN set -e && \
@@ -61,7 +74,27 @@ RUN set -e && \
     curl -L -o /usr/local/bin/ttyd https://github.com/cloudtty/ttyd/releases/download/${TTYD_VERSION}/ttyd.${ttydArch} && \
     chmod +x /usr/local/bin/ttyd && \
     curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_linux_amd64 -o /usr/local/bin/kube-dc && \
-    chmod +x /usr/local/bin/kube-dc
+    chmod +x /usr/local/bin/kube-dc && \
+    curl -sL https://github.com/derailed/k9s/releases/download/${K9S_VERSION}/k9s_Linux_amd64.tar.gz | tar xz -C /usr/local/bin k9s && \
+    chmod +x /usr/local/bin/k9s
+
+# Generate shell completions for all tools
+RUN kubectl completion bash > /etc/bash_completion.d/kubectl && \
+    kubectl completion zsh > /usr/share/zsh/site-functions/_kubectl && \
+    kubectl completion fish > /root/.config/fish/completions/kubectl.fish && \
+    kube-dc completion bash > /etc/bash_completion.d/kube-dc && \
+    kube-dc completion zsh > /usr/share/zsh/site-functions/_kube-dc && \
+    kube-dc completion fish > /root/.config/fish/completions/kube-dc.fish && \
+    helm completion bash > /etc/bash_completion.d/helm && \
+    helm completion zsh > /usr/share/zsh/site-functions/_helm && \
+    helm completion fish > /root/.config/fish/completions/helm.fish && \
+    stern --completion bash > /etc/bash_completion.d/stern && \
+    stern --completion zsh > /usr/share/zsh/site-functions/_stern && \
+    stern --completion fish > /root/.config/fish/completions/stern.fish && \
+    virtctl completion bash > /etc/bash_completion.d/virtctl && \
+    virtctl completion zsh > /usr/share/zsh/site-functions/_virtctl && \
+    virtctl completion fish > /root/.config/fish/completions/virtctl.fish && \
+    echo 'complete -o default -F __start_kubectl k' >> /etc/bash_completion.d/kubectl
 
 # Copy index.html from cloudshell image
 COPY --from=cloudshell /usr/lib/ttyd/index.html /usr/lib/ttyd/index.html

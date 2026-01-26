@@ -2,29 +2,91 @@
 # see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
 # for examples
 
+# Core aliases
 alias k=kubectl
 alias kn="kube-dc ns"
+alias h=helm
+alias v=virtctl
+alias k9=k9s
+
+# kubectl get aliases
+alias kg="kubectl get"
+alias kgp="kubectl get pods"
+alias kgpo="kubectl get pods"
+alias kgd="kubectl get deployments"
+alias kgs="kubectl get services"
+alias kgn="kubectl get nodes"
+alias kgns="kubectl get namespaces"
+alias kgcm="kubectl get configmaps"
+alias kgsec="kubectl get secrets"
+alias kgpv="kubectl get pv"
+alias kgpvc="kubectl get pvc"
+alias kgi="kubectl get ingress"
+alias kgj="kubectl get jobs"
+alias kgcj="kubectl get cronjobs"
+alias kgds="kubectl get daemonsets"
+alias kgss="kubectl get statefulsets"
+alias kgrs="kubectl get replicasets"
+alias kgev="kubectl get events --sort-by='.lastTimestamp'"
+alias kgall="kubectl get all"
+
+# kubectl describe aliases
+alias kd="kubectl describe"
+alias kdp="kubectl describe pod"
+alias kdd="kubectl describe deployment"
+alias kds="kubectl describe service"
+alias kdn="kubectl describe node"
+
+# kubectl apply/delete aliases
 alias ka="kubectl apply -f"
-alias kd="kubectl delete -f"
-alias kp="kubectl get pod"
+alias kaf="kubectl apply -f"
+alias kdel="kubectl delete"
+alias kdelf="kubectl delete -f"
+
+# kubectl exec/logs aliases
 alias ke="kubectl exec -it"
+alias kex="kubectl exec -it"
+alias kl="kubectl logs"
+alias klf="kubectl logs -f"
+alias klt="kubectl logs --tail"
+
+# kubectl edit/scale
+alias ked="kubectl edit"
+alias ksc="kubectl scale"
+
+# kubectl context/config
+alias kctx="kubectl config get-contexts"
+alias kcuc="kubectl config use-context"
+
+# watch aliases
+alias kw="kubectl get pods -w"
+alias kwp="kubectl get pods -w"
+
+# wide output
+alias kgpw="kubectl get pods -o wide"
+alias kgdw="kubectl get deployments -o wide"
+alias kgsw="kubectl get services -o wide"
+
+# yaml output
+alias kgpy="kubectl get pods -o yaml"
+alias kgdy="kubectl get deployments -o yaml"
 
 # Welcome message with available commands
 show_help() {
   echo ""
   echo "  🚀 Kube-DC kubectl console"
   echo ""
-  echo "  Available commands:"
-  echo "    k         - kubectl"
-  echo "    kn        - switch namespace (kube-dc ns)"
-  echo "    kp        - get pods"
-  echo "    ka <file> - apply yaml"
-  echo "    kd <file> - delete yaml"
-  echo "    ke <pod>  - exec into pod"
+  echo "  Core: k=kubectl, h=helm, v=virtctl, k9=k9s, kn=namespace"
   echo ""
-  echo "  Namespace switching:"
-  echo "    kube-dc ns              - list available namespaces"
-  echo "    kube-dc ns <namespace>  - switch to namespace"
+  echo "  Get:  kgp=pods, kgd=deploy, kgs=svc, kgn=nodes"
+  echo "        kgcm=configmaps, kgsec=secrets, kgall=all"
+  echo ""
+  echo "  Ops:  ka=apply, kdel=delete, ke=exec, kl=logs"
+  echo "        klf=logs -f, kd=describe, ked=edit"
+  echo ""
+  echo "  Tools: vim, htop, dig, nc, stern"
+  echo "  Namespace: kube-dc ns [name]"
+  echo "  Shells: bash (default), zsh, fish"
   echo ""
 }
 
