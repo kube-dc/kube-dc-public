@@ -85,7 +85,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#obtaining-and-using-kubeconfig-in-your-local-console" class="md-skip">
+        <a href="#kube-dc-cli-kubernetes-access" class="md-skip">
           Skip to content
         </a>
       
@@ -1028,33 +1028,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
+  <a href="#installation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Prerequisites
+        Installation
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#using-the-authentication-helper-script" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Using the Authentication Helper Script
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Using the Authentication Helper Script">
+    <nav class="md-nav" aria-label="Installation">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#step-1-download-and-run-the-authentication-script" class="md-nav__link">
+  <a href="#macos" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 1: Download and Run the Authentication Script
+        macOS
       
     </span>
   </a>
@@ -1062,10 +1051,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#step-2-activate-the-generated-configuration" class="md-nav__link">
+  <a href="#linux" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 2: Activate the Generated Configuration
+        Linux
       
     </span>
   </a>
@@ -1073,10 +1062,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#step-3-test-your-connection" class="md-nav__link">
+  <a href="#windows" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 3: Test Your Connection
+        Windows
       
     </span>
   </a>
@@ -1089,22 +1078,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#using-the-namespace-switcher" class="md-nav__link">
+  <a href="#quick-start" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Using the Namespace Switcher
+        Quick Start
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Using the Namespace Switcher">
+    <nav class="md-nav" aria-label="Quick Start">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#features" class="md-nav__link">
+  <a href="#1-login-to-your-organization" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Features
+        1. Login to your organization
       
     </span>
   </a>
@@ -1112,10 +1101,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
+  <a href="#2-switch-namespaceproject" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Examples
+        2. Switch namespace/project
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-use-kubectl-normally" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Use kubectl normally
       
     </span>
   </a>
@@ -1124,6 +1124,139 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#commands-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Commands Reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Commands Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#kube-dc-login" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        kube-dc login
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kube-dc-ns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        kube-dc ns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kube-dc-use" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        kube-dc use
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kube-dc-logout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        kube-dc logout
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kube-dc-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        kube-dc config
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How It Works
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How It Works">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#authentication-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication Flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kubeconfig-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Kubeconfig Integration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#token-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Token Lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shell-completions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shell Completions
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1140,10 +1273,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#authentication-issues" class="md-nav__link">
+  <a href="#session-expired" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Authentication Issues
+        Session Expired
       
     </span>
   </a>
@@ -1151,10 +1284,32 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#permission-issues" class="md-nav__link">
+  <a href="#context-not-found" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Permission Issues
+        Context Not Found
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clear-all-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clear All Credentials
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#debug-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Debug Mode
       
     </span>
   </a>
@@ -1167,10 +1322,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#security-considerations" class="md-nav__link">
+  <a href="#security-best-practices" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Security Considerations
+        Security Best Practices
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#project-console-web-terminal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Project Console (Web Terminal)
       
     </span>
   </a>
@@ -1438,33 +1604,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
+  <a href="#installation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Prerequisites
+        Installation
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#using-the-authentication-helper-script" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Using the Authentication Helper Script
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Using the Authentication Helper Script">
+    <nav class="md-nav" aria-label="Installation">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#step-1-download-and-run-the-authentication-script" class="md-nav__link">
+  <a href="#macos" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 1: Download and Run the Authentication Script
+        macOS
       
     </span>
   </a>
@@ -1472,10 +1627,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#step-2-activate-the-generated-configuration" class="md-nav__link">
+  <a href="#linux" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 2: Activate the Generated Configuration
+        Linux
       
     </span>
   </a>
@@ -1483,10 +1638,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#step-3-test-your-connection" class="md-nav__link">
+  <a href="#windows" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 3: Test Your Connection
+        Windows
       
     </span>
   </a>
@@ -1499,22 +1654,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#using-the-namespace-switcher" class="md-nav__link">
+  <a href="#quick-start" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Using the Namespace Switcher
+        Quick Start
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Using the Namespace Switcher">
+    <nav class="md-nav" aria-label="Quick Start">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#features" class="md-nav__link">
+  <a href="#1-login-to-your-organization" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Features
+        1. Login to your organization
       
     </span>
   </a>
@@ -1522,10 +1677,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
+  <a href="#2-switch-namespaceproject" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Examples
+        2. Switch namespace/project
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-use-kubectl-normally" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Use kubectl normally
       
     </span>
   </a>
@@ -1534,6 +1700,139 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#commands-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Commands Reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Commands Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#kube-dc-login" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        kube-dc login
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kube-dc-ns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        kube-dc ns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kube-dc-use" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        kube-dc use
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kube-dc-logout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        kube-dc logout
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kube-dc-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        kube-dc config
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How It Works
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How It Works">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#authentication-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication Flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kubeconfig-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Kubeconfig Integration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#token-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Token Lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shell-completions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shell Completions
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1550,10 +1849,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#authentication-issues" class="md-nav__link">
+  <a href="#session-expired" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Authentication Issues
+        Session Expired
       
     </span>
   </a>
@@ -1561,10 +1860,32 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#permission-issues" class="md-nav__link">
+  <a href="#context-not-found" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Permission Issues
+        Context Not Found
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clear-all-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clear All Credentials
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#debug-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Debug Mode
       
     </span>
   </a>
@@ -1577,10 +1898,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#security-considerations" class="md-nav__link">
+  <a href="#security-best-practices" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Security Considerations
+        Security Best Practices
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#project-console-web-terminal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Project Console (Web Terminal)
       
     </span>
   </a>
@@ -1618,124 +1950,183 @@
   
 
 
-<h1 id="obtaining-and-using-kubeconfig-in-your-local-console">Obtaining and Using Kubeconfig in Your Local Console<a class="headerlink" href="#obtaining-and-using-kubeconfig-in-your-local-console" title="Permanent link"> ¶</a></h1>
-<p>This guide explains how to obtain and configure a kubeconfig file for the kube-dc platform to use in your local development environment.</p>
+<h1 id="kube-dc-cli-kubernetes-access">Kube-DC CLI - Kubernetes Access<a class="headerlink" href="#kube-dc-cli-kubernetes-access" title="Permanent link"> ¶</a></h1>
+<p>This guide explains how to install and use the <code>kube-dc</code> CLI tool to access Kubernetes clusters managed by the kube-dc platform.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link"> ¶</a></h2>
-<p>The kubeconfig file is essential for authenticating with the Kubernetes API server. In kube-dc, authentication is handled through Keycloak, which provides secure token-based access.</p>
-<p>This tutorial covers:
-- Setting up the authentication script
-- Generating a kubeconfig file
-- Using kubeconfig with kubectl
-- Troubleshooting common issues</p>
-<h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link"> ¶</a></h2>
-<p>Before you begin, ensure you have:</p>
+<p>The <code>kube-dc</code> CLI provides secure, browser-based authentication for Kubernetes access. It handles:</p>
 <ul>
-<li>Access to a kube-dc organization and project</li>
-<li>Your Keycloak username and password</li>
-<li><code>kubectl</code> installed on your local machine</li>
-<li><code>curl</code> and <code>jq</code> utilities installed (required for token operations)</li>
+<li><strong>Browser-based login</strong> - No passwords in terminal</li>
+<li><strong>Automatic token refresh</strong> - 30-day session with seamless refresh</li>
+<li><strong>Multi-cluster support</strong> - Manage multiple organizations and projects</li>
+<li><strong>Namespace switching</strong> - Easy namespace management based on your permissions</li>
 </ul>
-<h2 id="using-the-authentication-helper-script">Using the Authentication Helper Script<a class="headerlink" href="#using-the-authentication-helper-script" title="Permanent link"> ¶</a></h2>
-<p>kube-dc provides a helper script that simplifies the kubeconfig generation process.</p>
-<h3 id="step-1-download-and-run-the-authentication-script">Step 1: Download and Run the Authentication Script<a class="headerlink" href="#step-1-download-and-run-the-authentication-script" title="Permanent link"> ¶</a></h3>
-<p>You can download the authentication script directly from the public repository:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Create a directory for the script</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>~/.kube-dc/bin
+<h2 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link"> ¶</a></h2>
+<h3 id="macos">macOS<a class="headerlink" href="#macos" title="Permanent link"> ¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Using Homebrew</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>brew<span class="w"> </span>install<span class="w"> </span>kube-dc/tap/kube-dc
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Download the script</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>curl<span class="w"> </span>-o<span class="w"> </span>~/.kube-dc/bin/kdc_get_kubeconfig.sh<span class="w"> </span>https://raw.githubusercontent.com/kube-dc/kube-dc-public/main/hack/auth/kdc_get_kubeconfig.sh
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Make it executable</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>chmod<span class="w"> </span>+x<span class="w"> </span>~/.kube-dc/bin/kdc_get_kubeconfig.sh
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># Run the authentication script with your organization and project name</span>
-</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>~/.kube-dc/bin/kdc_get_kubeconfig.sh<span class="w"> </span>your-org/your-project
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Or download directly</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>curl<span class="w"> </span>-sL<span class="w"> </span>https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_darwin_amd64<span class="w"> </span>-o<span class="w"> </span>/usr/local/bin/kube-dc
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>chmod<span class="w"> </span>+x<span class="w"> </span>/usr/local/bin/kube-dc
 </span></code></pre></div>
-<p>Alternatively, if you have the entire repository cloned:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># If you have the repository already cloned</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nb">cd</span><span class="w"> </span>kube-dc
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>./hack/auth/kdc_get_kubeconfig.sh<span class="w"> </span>your-org/your-project
+<h3 id="linux">Linux<a class="headerlink" href="#linux" title="Permanent link"> ¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>curl<span class="w"> </span>-sL<span class="w"> </span>https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_linux_amd64<span class="w"> </span>-o<span class="w"> </span>/usr/local/bin/kube-dc
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>chmod<span class="w"> </span>+x<span class="w"> </span>/usr/local/bin/kube-dc
 </span></code></pre></div>
-<p>The script will prompt you for the following information:
-- Keycloak endpoint URL (e.g., <code>https://login.dev.kube-dc.com</code>)
-- Organization name (your Keycloak realm)
-- Kubernetes API server URL (e.g., <code>https://kube-api.dev.kube-dc.com:6443</code>)
-- Cluster name (usually <code>kube-dc</code>)
-- User name (your Keycloak username)
-- Context name (usually <code>kube-dc</code>)
-- CA certificate (you can provide this as a file, paste it directly, or skip for insecure mode)</p>
-<h3 id="step-2-activate-the-generated-configuration">Step 2: Activate the Generated Configuration<a class="headerlink" href="#step-2-activate-the-generated-configuration" title="Permanent link"> ¶</a></h3>
-<p>After the script completes, activate the configuration:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">source</span><span class="w"> </span>~/.kube-dc/your-org-your-project/activate.sh
+<h3 id="windows">Windows<a class="headerlink" href="#windows" title="Permanent link"> ¶</a></h3>
+<div class="language-powershell highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c"># Download from releases page</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nb">Invoke-WebRequest</span> <span class="n">-Uri</span> <span class="s2">&quot;https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_windows_amd64.exe&quot;</span> <span class="n">-OutFile</span> <span class="s2">&quot;$env:USERPROFILE\bin\kube-dc.exe&quot;</span>
 </span></code></pre></div>
-<p>This will:</p>
+<h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link"> ¶</a></h2>
+<h3 id="1-login-to-your-organization">1. Login to your organization<a class="headerlink" href="#1-login-to-your-organization" title="Permanent link"> ¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kube-dc<span class="w"> </span>login<span class="w"> </span>--domain<span class="w"> </span>kube-dc.cloud<span class="w"> </span>--org<span class="w"> </span>shalb
+</span></code></pre></div>
+<p>This opens your browser for secure authentication. After login:
+- Your kubeconfig is automatically configured
+- Contexts are created for each project you have access to
+- Tokens are securely cached (~/.kube-dc/credentials/)</p>
+<h3 id="2-switch-namespaceproject">2. Switch namespace/project<a class="headerlink" href="#2-switch-namespaceproject" title="Permanent link"> ¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># List available namespaces</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>kube-dc<span class="w"> </span>ns
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># Switch to a project</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>kube-dc<span class="w"> </span>ns<span class="w"> </span>shalb-demo
+</span></code></pre></div>
+<h3 id="3-use-kubectl-normally">3. Use kubectl normally<a class="headerlink" href="#3-use-kubectl-normally" title="Permanent link"> ¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>kubectl<span class="w"> </span>top<span class="w"> </span>pods
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>my-pod
+</span></code></pre></div>
+<h2 id="commands-reference">Commands Reference<a class="headerlink" href="#commands-reference" title="Permanent link"> ¶</a></h2>
+<h3 id="kube-dc-login"><code>kube-dc login</code><a class="headerlink" href="#kube-dc-login" title="Permanent link"> ¶</a></h3>
+<p>Authenticate with a kube-dc platform.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>kube-dc<span class="w"> </span>login<span class="w"> </span>--domain<span class="w"> </span>&lt;domain&gt;<span class="w"> </span>--org<span class="w"> </span>&lt;organization&gt;
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1"># Examples</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>kube-dc<span class="w"> </span>login<span class="w"> </span>--domain<span class="w"> </span>kube-dc.cloud<span class="w"> </span>--org<span class="w"> </span>shalb
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>kube-dc<span class="w"> </span>login<span class="w"> </span>--domain<span class="w"> </span>stage.kube-dc.com<span class="w"> </span>--org<span class="w"> </span>mycompany
+</span></code></pre></div>
+<p><strong>Options:</strong>
+- <code>--domain</code> - Platform domain (e.g., kube-dc.cloud)
+- <code>--org</code> - Organization/realm name
+- <code>--insecure</code> - Skip TLS verification (not recommended for production)</p>
+<h3 id="kube-dc-ns"><code>kube-dc ns</code><a class="headerlink" href="#kube-dc-ns" title="Permanent link"> ¶</a></h3>
+<p>Switch between namespaces you have access to.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># List available namespaces (shows * for current)</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>kube-dc<span class="w"> </span>ns
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Switch to a namespace</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>kube-dc<span class="w"> </span>ns<span class="w"> </span>shalb-demo
+</span></code></pre></div>
+<h3 id="kube-dc-use"><code>kube-dc use</code><a class="headerlink" href="#kube-dc-use" title="Permanent link"> ¶</a></h3>
+<p>Switch between kube-dc contexts.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># List all kube-dc contexts</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>kube-dc<span class="w"> </span>use
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Switch to a specific context</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>kube-dc<span class="w"> </span>use<span class="w"> </span>shalb/demo
+</span></code></pre></div>
+<h3 id="kube-dc-logout"><code>kube-dc logout</code><a class="headerlink" href="#kube-dc-logout" title="Permanent link"> ¶</a></h3>
+<p>Remove cached credentials.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Logout from current server</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>kube-dc<span class="w"> </span><span class="nb">logout</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># Logout from all servers</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>kube-dc<span class="w"> </span><span class="nb">logout</span><span class="w"> </span>--all
+</span></code></pre></div>
+<h3 id="kube-dc-config"><code>kube-dc config</code><a class="headerlink" href="#kube-dc-config" title="Permanent link"> ¶</a></h3>
+<p>View configuration and token status.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Show current configuration</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>kube-dc<span class="w"> </span>config<span class="w"> </span>show
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="c1"># List all kube-dc contexts</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>kube-dc<span class="w"> </span>config<span class="w"> </span>get-contexts
+</span></code></pre></div>
+<h2 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link"> ¶</a></h2>
+<h3 id="authentication-flow">Authentication Flow<a class="headerlink" href="#authentication-flow" title="Permanent link"> ¶</a></h3>
 <ol>
-<li>Set the <code>KUBECONFIG</code> environment variable to point to your new configuration</li>
-<li>Source the environment variables from the <code>.env</code> file</li>
-<li>Add the <code>kn</code> alias for namespace switching</li>
-<li>Display instructions for using kubectl</li>
+<li><strong>Login</strong>: Browser opens to Keycloak login page</li>
+<li><strong>OAuth2 PKCE</strong>: Secure token exchange without exposing credentials</li>
+<li><strong>Token Storage</strong>: Encrypted tokens stored in <code>~/.kube-dc/credentials/</code></li>
+<li><strong>kubectl Integration</strong>: Acts as credential plugin for kubectl</li>
 </ol>
-<p>You can now use <code>kubectl</code> commands as usual:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods
+<h3 id="kubeconfig-integration">Kubeconfig Integration<a class="headerlink" href="#kubeconfig-integration" title="Permanent link"> ¶</a></h3>
+<p>After login, your kubeconfig contains entries like:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">contexts</span><span class="p">:</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc/shalb/demo</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">context</span><span class="p">:</span>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">    </span><span class="nt">cluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc-kube-dc.cloud-shalb</span>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">    </span><span class="nt">user</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc@kube-dc.cloud/shalb</span>
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">    </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb-demo</span>
+</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>
+</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="nt">users</span><span class="p">:</span>
+</span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc@kube-dc.cloud/shalb</span>
+</span><span id="__span-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="w">  </span><span class="nt">user</span><span class="p">:</span>
+</span><span id="__span-11-11"><a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="w">    </span><span class="nt">exec</span><span class="p">:</span>
+</span><span id="__span-11-12"><a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a><span class="w">      </span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">client.authentication.k8s.io/v1</span>
+</span><span id="__span-11-13"><a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a><span class="w">      </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc</span>
+</span><span id="__span-11-14"><a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a><span class="w">      </span><span class="nt">args</span><span class="p">:</span>
+</span><span id="__span-11-15"><a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">credential</span>
+</span><span id="__span-11-16"><a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">--server</span>
+</span><span id="__span-11-17"><a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://kube-api.kube-dc.cloud:6443</span>
 </span></code></pre></div>
-<p>On first use, you'll be prompted to enter your Keycloak username and password. The script will obtain tokens and cache them for subsequent commands.</p>
-<h3 id="step-3-test-your-connection">Step 3: Test Your Connection<a class="headerlink" href="#step-3-test-your-connection" title="Permanent link"> ¶</a></h3>
-<p>Test that your kubeconfig works correctly:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods
-</span></code></pre></div>
-<p>On first use, you'll be prompted to enter your Keycloak username and password. The script will obtain tokens and cache them for subsequent commands.</p>
-<h2 id="using-the-namespace-switcher">Using the Namespace Switcher<a class="headerlink" href="#using-the-namespace-switcher" title="Permanent link"> ¶</a></h2>
-<p>The <code>kn</code> tool is installed automatically during setup and is configured as an alias when you activate the environment. It allows you to easily view and switch between namespaces that your token has permissions to access.</p>
-<h3 id="features">Features<a class="headerlink" href="#features" title="Permanent link"> ¶</a></h3>
+<h3 id="token-lifecycle">Token Lifecycle<a class="headerlink" href="#token-lifecycle" title="Permanent link"> ¶</a></h3>
 <ul>
-<li><strong>Intelligent Operation</strong>: When used with a kube-dc context, it reads namespace permissions directly from your JWT token</li>
-<li><strong>Interactive Selection</strong>: Run <code>kn</code> without arguments to see a list of available namespaces</li>
-<li><strong>Direct Selection</strong>: Specify a namespace with <code>kn my-namespace</code></li>
-<li><strong>Fallback Mode</strong>: If not in a kube-dc context, falls back to <code>kubens</code> or basic kubectl namespace commands</li>
+<li><strong>Access Token</strong>: Short-lived (5 minutes), automatically refreshed</li>
+<li><strong>Refresh Token</strong>: 30-day validity with offline_access scope</li>
+<li><strong>Auto-refresh</strong>: Tokens refresh transparently when kubectl runs</li>
 </ul>
-<h3 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link"> ¶</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># List available namespaces and select interactively</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>kn
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># Switch directly to a specific namespace</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>kn<span class="w"> </span>shalb-demo
+<h2 id="shell-completions">Shell Completions<a class="headerlink" href="#shell-completions" title="Permanent link"> ¶</a></h2>
+<p>Enable tab completion for your shell:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Bash</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>kube-dc<span class="w"> </span>completion<span class="w"> </span>bash<span class="w"> </span>&gt;<span class="w"> </span>/etc/bash_completion.d/kube-dc
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># Zsh</span>
+</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>kube-dc<span class="w"> </span>completion<span class="w"> </span>zsh<span class="w"> </span>&gt;<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">fpath</span><span class="p">[1]</span><span class="si">}</span><span class="s2">/_kube-dc&quot;</span>
+</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>
+</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="c1"># Fish</span>
+</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>kube-dc<span class="w"> </span>completion<span class="w"> </span>fish<span class="w"> </span>&gt;<span class="w"> </span>~/.config/fish/completions/kube-dc.fish
 </span></code></pre></div>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link"> ¶</a></h2>
-<h3 id="authentication-issues">Authentication Issues<a class="headerlink" href="#authentication-issues" title="Permanent link"> ¶</a></h3>
-<p>If you're experiencing authentication problems:</p>
-<ol>
-<li>
-<p><strong>Token expiration</strong>: The refresh token may have expired. Delete the <code>.refresh_token</code> file in your kubeconfig directory and try again:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>rm<span class="w"> </span>~/.kube-dc/*-*/scripts/.refresh_token
-</span></code></pre></div></p>
-</li>
-<li>
-<p><strong>Invalid credentials</strong>: Ensure you're using the correct username and password for your Keycloak account.</p>
-</li>
-<li>
-<p><strong>Connection issues</strong>: Verify your network can reach the Keycloak and API servers.</p>
-</li>
-</ol>
-<h3 id="permission-issues">Permission Issues<a class="headerlink" href="#permission-issues" title="Permanent link"> ¶</a></h3>
-<p>If you can authenticate but receive permission errors:</p>
-<ol>
-<li>
-<p><strong>Namespace access</strong>: Ensure you're using the correct namespace in your context. Your namespace should be in the format <code>organization-project</code>.</p>
-</li>
-<li>
-<p><strong>Role assignment</strong>: Contact your organization administrator to verify you have the appropriate roles assigned in Keycloak.</p>
-</li>
-<li>
-<p><strong>Resource-specific permissions</strong>: Check that your role has permissions for the specific resources you're trying to access.</p>
-</li>
-</ol>
-<h2 id="security-considerations">Security Considerations<a class="headerlink" href="#security-considerations" title="Permanent link"> ¶</a></h2>
+<h3 id="session-expired">Session Expired<a class="headerlink" href="#session-expired" title="Permanent link"> ¶</a></h3>
+<p>If you see "session expired", your refresh token has expired (after 30 days of inactivity):</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>kube-dc<span class="w"> </span>login<span class="w"> </span>--domain<span class="w"> </span>&lt;domain&gt;<span class="w"> </span>--org<span class="w"> </span>&lt;org&gt;
+</span></code></pre></div>
+<h3 id="context-not-found">Context Not Found<a class="headerlink" href="#context-not-found" title="Permanent link"> ¶</a></h3>
+<p>If <code>kube-dc ns</code> shows "not a kube-dc context":</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># Check current context</span>
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>kubectl<span class="w"> </span>config<span class="w"> </span>current-context
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>
+</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="c1"># Switch to a kube-dc context</span>
+</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>kube-dc<span class="w"> </span>use<span class="w"> </span>shalb/demo
+</span></code></pre></div>
+<h3 id="clear-all-credentials">Clear All Credentials<a class="headerlink" href="#clear-all-credentials" title="Permanent link"> ¶</a></h3>
+<p>To start fresh:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>kube-dc<span class="w"> </span><span class="nb">logout</span><span class="w"> </span>--all
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>rm<span class="w"> </span>-rf<span class="w"> </span>~/.kube-dc/credentials/
+</span></code></pre></div>
+<h3 id="debug-mode">Debug Mode<a class="headerlink" href="#debug-mode" title="Permanent link"> ¶</a></h3>
+<p>For troubleshooting connection issues:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>kube-dc<span class="w"> </span>login<span class="w"> </span>--domain<span class="w"> </span>kube-dc.cloud<span class="w"> </span>--org<span class="w"> </span>shalb<span class="w"> </span>--debug
+</span></code></pre></div>
+<h2 id="security-best-practices">Security Best Practices<a class="headerlink" href="#security-best-practices" title="Permanent link"> ¶</a></h2>
 <ul>
-<li>Keep your kubeconfig file secure (600 permissions)</li>
-<li>Never share your refresh or access tokens</li>
-<li>Be cautious when using <code>insecure-skip-tls-verify: true</code> in production environments</li>
-<li>If your credentials may be compromised, contact your administrator to revoke your tokens</li>
+<li><strong>Never share</strong> your <code>~/.kube-dc/credentials/</code> directory</li>
+<li>Use <code>--insecure</code> only for development/testing</li>
+<li>Logout when finished: <code>kube-dc logout</code></li>
+<li>Credentials are stored with 600 permissions</li>
 </ul>
+<h2 id="project-console-web-terminal">Project Console (Web Terminal)<a class="headerlink" href="#project-console-web-terminal" title="Permanent link"> ¶</a></h2>
+<p>For quick access without CLI installation, use the <strong>Project Console</strong> from the UI:</p>
+<ol>
+<li>Click your username in the top-right</li>
+<li>Select "Project console"</li>
+<li>A web terminal opens with kubectl pre-configured</li>
+</ol>
+<p>The web console includes:
+- <code>kubectl</code>, <code>helm</code>, <code>k9s</code>, <code>stern</code>, <code>virtctl</code>
+- Shell completions for all tools
+- Common aliases: <code>k</code>, <code>kgp</code>, <code>kgs</code>, <code>kl</code>, etc.</p>
 <h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link"> ¶</a></h2>
 <ul>
 <li><a href="../user-groups/">User and Group Management</a>: Learn about role-based access control</li>
