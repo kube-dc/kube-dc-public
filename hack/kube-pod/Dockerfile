@@ -3,6 +3,7 @@ ARG KUBECTL_VERSION=v1.32.0
 ARG STERN_VERSION=1.32.0
 ARG VIRTCTL_VERSION=v1.6.0
 ARG TTYD_VERSION=1.7.8
+ARG KUBE_DC_VERSION=latest
 
 # Add a named builder stage for cloudshell
 FROM ghcr.io/cloudtty/cloudshell:${CLOUDSHELL_VERSION} AS cloudshell
@@ -37,6 +38,7 @@ ARG KUBECTL_VERSION
 ARG STERN_VERSION
 ARG VIRTCTL_VERSION
 ARG TTYD_VERSION
+ARG KUBE_DC_VERSION
 
 # Create necessary directories
 RUN mkdir -p /usr/local/etc /scripts /root/.kube /usr/lib/ttyd
@@ -57,14 +59,15 @@ RUN set -e && \
     chmod +x /usr/local/bin/virtctl && \
     ttydArch="$(uname -m)" && \
     curl -L -o /usr/local/bin/ttyd https://github.com/cloudtty/ttyd/releases/download/${TTYD_VERSION}/ttyd.${ttydArch} && \
-    chmod +x /usr/local/bin/ttyd
+    chmod +x /usr/local/bin/ttyd && \
+    curl -sL https://github.com/kube-dc/kube-dc-public/releases/${KUBE_DC_VERSION}/download/kube-dc_linux_amd64 -o /usr/local/bin/kube-dc && \
+    chmod +x /usr/local/bin/kube-dc
 
 # Copy index.html from cloudshell image
 COPY --from=cloudshell /usr/lib/ttyd/index.html /usr/lib/ttyd/index.html
 
 # Copy all scripts at once to reduce layers
 COPY ./script/startup.sh  /scripts/
-COPY ./script/refresh_token.sh /scripts/
 COPY ./script/kubens /usr/local/bin/kubens
 COPY ./script/kubeconfig.tmpl /usr/local/etc/kubeconfig.tmpl
 COPY ./script/.bashrc /root/.bashrc

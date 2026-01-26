@@ -1,18 +1,58 @@
 #!/bin/bash
 
-# Save refresh token to a temporary file
-REFRESH_TOKEN_FILE="/tmp/kube_dc_refresh_token"
-echo "${REFRESH_TOKEN}" > "${REFRESH_TOKEN_FILE}"
-chmod 600 "${REFRESH_TOKEN_FILE}"
+# Decode HTML entities in environment variables
+decode_html() {
+    echo "$1" | sed 's/&amp;/\&/g; s/&#x2F;/\//g; s/&lt;/</g; s/&gt;/>/g; s/&quot;/"/g'
+}
 
-SERVER_DOMAIN=$(echo "${SERVER_ENDPOINT}" | sed -E 's/https?:\/\///')
+KEYCLOAK_ENDPOINT=$(decode_html "${KEYCLOAK_ENDPOINT}")
+SERVER_ENDPOINT=$(decode_html "${SERVER_ENDPOINT}")
 
-# Get base64 encoded CA certificate
-export BASE64_ENCODED_CA_CERT=$(echo | openssl s_client -showcerts -connect ${SERVER_DOMAIN} 2>/dev/null | openssl x509 -outform PEM | base64 -w0)
+# Extract domain from SERVER_ENDPOINT (e.g., https://kube-api.kube-dc.cloud:6443 -> kube-dc.cloud)
+DOMAIN=$(echo "${SERVER_ENDPOINT}" | sed -E 's|https?://kube-api\.||; s|:[0-9]+$||')
+
+# Store credentials for kube-dc CLI
+# The CLI stores credentials in ~/.kube-dc/credentials/<hash>.json where hash is SHA256(server)[:8]
+CRED_DIR="${HOME}/.kube-dc/credentials"
+mkdir -p "${CRED_DIR}"
+
+# Calculate SHA256 hash of server URL (first 8 bytes as hex = 16 chars)
+HASH=$(echo -n "${SERVER_ENDPOINT}" | sha256sum | cut -c1-16)
+CRED_FILE="${CRED_DIR}/${HASH}.json"
+
+# Get current timestamp for JSON
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+# Set refresh token expiry to 30 days from now
+REFRESH_EXPIRY=$(date -u -d "+30 days" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u -v+30d +"%Y-%m-%dT%H:%M:%SZ")
+
+# Save credentials in the format expected by kube-dc CLI
+cat > "${CRED_FILE}" << EOF
+{
+  "server": "${SERVER_ENDPOINT}",
+  "keycloak_url": "${KEYCLOAK_ENDPOINT}",
+  "realm": "${ORGANIZATION}",
+  "client_id": "kube-dc",
+  "access_token": "",
+  "refresh_token": "${REFRESH_TOKEN}",
+  "id_token": "",
+  "access_token_expiry": "1970-01-01T00:00:00Z",
+  "refresh_token_expiry": "${REFRESH_EXPIRY}",
+  "user": {
+    "email": "${USER_NAME}",
+    "org": "${ORGANIZATION}",
+    "groups": [],
+    "namespaces": []
+  },
+  "insecure": false,
+  "created_at": "${TIMESTAMP}",
+  "updated_at": "${TIMESTAMP}"
+}
+EOF
+chmod 600 "${CRED_FILE}"
 
 # Use envsubst to replace placeholders and generate kubeconfig
 envsubst < /usr/local/etc/kubeconfig.tmpl > "${KUBECONFIG}"
 
-echo "Kubeconfig initialized"
+echo "Kubeconfig initialized for ${DOMAIN} (org: ${ORGANIZATION})"
 
 /bin/bash
