@@ -1,0 +1,69 @@
+project_name: kube-dc
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: kube-dc
+    main: ./cmd/kube-dc
+    binary: kube-dc
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ .Tag }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+
+release:
+  github:
+    owner: kube-dc
+    name: kube-dc-public
+  prerelease: auto
+  name_template: "kube-dc CLI v{{.Version}}"
+
+brews:
+  - name: kube-dc
+    repository:
+      owner: kube-dc
+      name: homebrew-tap
+    homepage: "https://github.com/kube-dc/kube-dc-public"
+    description: "CLI for Kube-DC Kubernetes authentication"
+    license: "Apache-2.0"
+    install: |
+      bin.install "kube-dc"
+    test: |
+      system "#{bin}/kube-dc", "version"
