@@ -169,6 +169,17 @@ func runLogin(domain, org, caCertFile string, insecure, deviceCode bool) error {
 		return fmt.Errorf("failed to initialize credentials manager: %w", err)
 	}
 
+	// Calculate refresh token expiry
+	// For offline tokens, RefreshExpiresIn is 0 which means "never expires"
+	// We set a reasonable default of 30 days (standard for CLI tools like gcloud)
+	var refreshTokenExpiry time.Time
+	if tokenResponse.RefreshExpiresIn <= 0 {
+		// Offline token - set expiry to 30 days from now
+		refreshTokenExpiry = time.Now().Add(30 * 24 * time.Hour)
+	} else {
+		refreshTokenExpiry = time.Now().Add(time.Duration(tokenResponse.RefreshExpiresIn) * time.Second)
+	}
+
 	creds := &config.Credentials{
 		Server:             server,
 		KeycloakURL:        keycloakURL,
@@ -178,7 +189,7 @@ func runLogin(domain, org, caCertFile string, insecure, deviceCode bool) error {
 		RefreshToken:       tokenResponse.RefreshToken,
 		IDToken:            tokenResponse.IDToken,
 		AccessTokenExpiry:  claims.ExpiryTime(),
-		RefreshTokenExpiry: time.Now().Add(time.Duration(tokenResponse.RefreshExpiresIn) * time.Second),
+		RefreshTokenExpiry: refreshTokenExpiry,
 		User: config.UserInfo{
 			Email:      claims.Email,
 			Org:        claims.Org,
