@@ -4,7 +4,7 @@ set -e
 
 REGISTRY="shalb"
 IMAGE_NAME="kube-dc-kubectl"
-TAG=${KUBE_DC_VERSION:-"v0.6.4"}
+TAG=${KUBE_DC_VERSION:-"v0.6.5"}
 
 # Full image name
 FULL_IMAGE_NAME="${REGISTRY}/${IMAGE_NAME}:${TAG}"

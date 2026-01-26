@@ -26,6 +26,10 @@ rules:
 - apiGroups: [""]
   resources: [events]
   verbs: [get, list, watch]
+# Metrics (kubectl top pods)
+- apiGroups: [metrics.k8s.io]
+  resources: [pods]
+  verbs: [get, list]
 # Apps
 - apiGroups: [apps]
   resources: [deployments]
@@ -141,6 +145,10 @@ rules:
 - apiGroups: [""]
   resources: [events]
   verbs: [get, list, watch]
+# Metrics (kubectl top pods)
+- apiGroups: [metrics.k8s.io]
+  resources: [pods]
+  verbs: [get, list]
 # Apps
 - apiGroups: [apps]
   resources: [deployments, daemonsets, replicasets, statefulsets]
@@ -237,6 +245,10 @@ rules:
 - apiGroups: [""]
   resources: [events]
   verbs: [get, list, watch]
+# Metrics (kubectl top pods)
+- apiGroups: [metrics.k8s.io]
+  resources: [pods]
+  verbs: [get, list]
 # Apps - read only
 - apiGroups: [apps]
   resources: [deployments, daemonsets, replicasets, statefulsets]
@@ -326,6 +338,10 @@ rules:
   verbs: [get]
 - apiGroups: [""]
   resources: [events]
+  verbs: [get, list]
+# Metrics (kubectl top pods)
+- apiGroups: [metrics.k8s.io]
+  resources: [pods]
   verbs: [get, list]
 # Apps - read only
 - apiGroups: [apps]
