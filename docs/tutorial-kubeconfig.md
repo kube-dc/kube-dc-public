@@ -16,10 +16,6 @@ The `kube-dc` CLI provides secure, browser-based authentication for Kubernetes a
 ### macOS
 
 ```bash
-# Using Homebrew
-brew install kube-dc/tap/kube-dc
-
-# Or download directly
 curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_darwin_amd64 -o /usr/local/bin/kube-dc
 chmod +x /usr/local/bin/kube-dc
 ```
