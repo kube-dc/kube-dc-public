@@ -3,11 +3,30 @@
 # for examples
 
 alias k=kubectl
-alias kn=kubens
+alias kn="kube-dc ns"
 alias ka="kubectl apply -f"
 alias kd="kubectl delete -f"
 alias kp="kubectl get pod"
 alias ke="kubectl exec -it"
+
+# Welcome message with available commands
+show_help() {
+  echo ""
+  echo "  🚀 Kube-DC kubectl console"
+  echo ""
+  echo "  Available commands:"
+  echo "    k         - kubectl"
+  echo "    kn        - switch namespace (kube-dc ns)"
+  echo "    kp        - get pods"
+  echo "    ka <file> - apply yaml"
+  echo "    kd <file> - delete yaml"
+  echo "    ke <pod>  - exec into pod"
+  echo ""
+  echo "  Namespace switching:"
+  echo "    kube-dc ns              - list available namespaces"
+  echo "    kube-dc ns <namespace>  - switch to namespace"
+  echo ""
+}
 
 # If not running interactively, don't do anything
 case $- in

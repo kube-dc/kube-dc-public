@@ -60,7 +60,7 @@ RUN set -e && \
     ttydArch="$(uname -m)" && \
     curl -L -o /usr/local/bin/ttyd https://github.com/cloudtty/ttyd/releases/download/${TTYD_VERSION}/ttyd.${ttydArch} && \
     chmod +x /usr/local/bin/ttyd && \
-    curl -sL https://github.com/kube-dc/kube-dc-public/releases/${KUBE_DC_VERSION}/download/kube-dc_linux_amd64 -o /usr/local/bin/kube-dc && \
+    curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_linux_amd64 -o /usr/local/bin/kube-dc && \
     chmod +x /usr/local/bin/kube-dc
 
 # Copy index.html from cloudshell image
@@ -68,14 +68,13 @@ COPY --from=cloudshell /usr/lib/ttyd/index.html /usr/lib/ttyd/index.html
 
 # Copy all scripts at once to reduce layers
 COPY ./script/startup.sh  /scripts/
-COPY ./script/kubens /usr/local/bin/kubens
 COPY ./script/kubeconfig.tmpl /usr/local/etc/kubeconfig.tmpl
 COPY ./script/.bashrc /root/.bashrc
 COPY ./script/kubectl_console /usr/local/bin/kubectl_console    
 COPY ./script/ssh_console /usr/local/bin/ssh_console
 
 # Make scripts executable after they're copied
-RUN chmod +x /scripts/*.sh /usr/local/bin/kubens /usr/local/bin/kubectl_console /usr/local/bin/ssh_console
+RUN chmod +x /scripts/*.sh /usr/local/bin/kubectl_console /usr/local/bin/ssh_console
 
 # Set default environment variables
 ENV KUBECONFIG=/root/.kube/config \
