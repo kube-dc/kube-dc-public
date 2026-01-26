@@ -171,7 +171,7 @@ func (f *OAuthFlow) buildAuthorizationURL(codeChallenge string) string {
 		"client_id":             {f.config.ClientID},
 		"redirect_uri":          {f.config.RedirectURI},
 		"response_type":         {"code"},
-		"scope":                 {"openid"},
+		"scope":                 {"openid offline_access"},
 		"state":                 {f.state},
 		"code_challenge":        {codeChallenge},
 		"code_challenge_method": {"S256"},

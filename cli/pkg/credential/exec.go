@@ -3,12 +3,30 @@ package credential
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/shalb/kube-dc/cli/internal/auth"
 	"github.com/shalb/kube-dc/cli/internal/config"
 	"github.com/shalb/kube-dc/cli/internal/jwt"
 )
+
+// extractDomain extracts the domain from a server URL
+// e.g., https://kube-api.stage.kube-dc.com:6443 -> stage.kube-dc.com
+func extractDomain(server string) string {
+	re := regexp.MustCompile(`https?://kube-api\.([^:/]+)`)
+	matches := re.FindStringSubmatch(server)
+	if len(matches) > 1 {
+		return matches[1]
+	}
+	// Fallback: try to extract domain without kube-api prefix
+	re = regexp.MustCompile(`https?://([^:/]+)`)
+	matches = re.FindStringSubmatch(server)
+	if len(matches) > 1 {
+		return matches[1]
+	}
+	return server
+}
 
 // ExecCredential represents the Kubernetes ExecCredential response
 type ExecCredential struct {
@@ -42,7 +60,8 @@ func NewProvider() (*Provider, error) {
 func (p *Provider) GetCredential(server string) (*ExecCredential, error) {
 	creds, err := p.credMgr.Load(server)
 	if err != nil {
-		return nil, fmt.Errorf("not logged in to %s. Run: kube-dc login --server %s", server, server)
+		domain := extractDomain(server)
+		return nil, fmt.Errorf("not logged in. Run: kube-dc login --domain %s --org <your-org>", domain)
 	}
 
 	// Check if access token is still valid
@@ -51,8 +70,10 @@ func (p *Provider) GetCredential(server string) (*ExecCredential, error) {
 	}
 
 	// Access token expired, try to refresh
-	if !creds.IsRefreshTokenValid() {
-		return nil, fmt.Errorf("session expired. Run: kube-dc login --server %s", server)
+	// Always try to refresh - let Keycloak be the source of truth for token validity
+	if creds.RefreshToken == "" {
+		domain := extractDomain(server)
+		return nil, fmt.Errorf("session expired (no refresh token). Run: kube-dc login --domain %s --org %s", domain, creds.Realm)
 	}
 
 	// Refresh the token
@@ -65,7 +86,9 @@ func (p *Provider) GetCredential(server string) (*ExecCredential, error) {
 		creds.Insecure,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to refresh token: %w. Run: kube-dc login --server %s", err, server)
+		// Refresh failed - session is truly expired
+		domain := extractDomain(server)
+		return nil, fmt.Errorf("session expired. Run: kube-dc login --domain %s --org %s", domain, creds.Realm)
 	}
 
 	// Parse the new access token to get expiry and user info
@@ -78,7 +101,13 @@ func (p *Provider) GetCredential(server string) (*ExecCredential, error) {
 	creds.AccessToken = newTokens.AccessToken
 	creds.RefreshToken = newTokens.RefreshToken
 	creds.AccessTokenExpiry = claims.ExpiryTime()
-	creds.RefreshTokenExpiry = time.Now().Add(time.Duration(newTokens.RefreshExpiresIn) * time.Second)
+	// For offline tokens, RefreshExpiresIn is 0 which means "never expires"
+	// We set a reasonable default of 30 days (standard for CLI tools)
+	if newTokens.RefreshExpiresIn <= 0 {
+		creds.RefreshTokenExpiry = time.Now().Add(30 * 24 * time.Hour)
+	} else {
+		creds.RefreshTokenExpiry = time.Now().Add(time.Duration(newTokens.RefreshExpiresIn) * time.Second)
+	}
 	if newTokens.IDToken != "" {
 		creds.IDToken = newTokens.IDToken
 	}
