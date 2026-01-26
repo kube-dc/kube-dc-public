@@ -1,152 +1,253 @@
-# Obtaining and Using Kubeconfig in Your Local Console
+# Kube-DC CLI - Kubernetes Access
 
-This guide explains how to obtain and configure a kubeconfig file for the kube-dc platform to use in your local development environment.
+This guide explains how to install and use the `kube-dc` CLI tool to access Kubernetes clusters managed by the kube-dc platform.
 
 ## Overview
 
-The kubeconfig file is essential for authenticating with the Kubernetes API server. In kube-dc, authentication is handled through Keycloak, which provides secure token-based access.
+The `kube-dc` CLI provides secure, browser-based authentication for Kubernetes access. It handles:
 
-This tutorial covers:
-- Setting up the authentication script
-- Generating a kubeconfig file
-- Using kubeconfig with kubectl
-- Troubleshooting common issues
+- **Browser-based login** - No passwords in terminal
+- **Automatic token refresh** - 30-day session with seamless refresh
+- **Multi-cluster support** - Manage multiple organizations and projects
+- **Namespace switching** - Easy namespace management based on your permissions
 
-## Prerequisites
+## Installation
 
-Before you begin, ensure you have:
-
-- Access to a kube-dc organization and project
-- Your Keycloak username and password
-- `kubectl` installed on your local machine
-- `curl` and `jq` utilities installed (required for token operations)
-
-## Using the Authentication Helper Script
-
-kube-dc provides a helper script that simplifies the kubeconfig generation process.
-
-### Step 1: Download and Run the Authentication Script
-
-You can download the authentication script directly from the public repository:
+### macOS
 
 ```bash
-# Create a directory for the script
-mkdir -p ~/.kube-dc/bin
+# Using Homebrew
+brew install kube-dc/tap/kube-dc
 
-# Download the script
-curl -o ~/.kube-dc/bin/kdc_get_kubeconfig.sh https://raw.githubusercontent.com/kube-dc/kube-dc-public/main/hack/auth/kdc_get_kubeconfig.sh
-
-# Make it executable
-chmod +x ~/.kube-dc/bin/kdc_get_kubeconfig.sh
-
-# Run the authentication script with your organization and project name
-~/.kube-dc/bin/kdc_get_kubeconfig.sh your-org/your-project
+# Or download directly
+curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_darwin_amd64 -o /usr/local/bin/kube-dc
+chmod +x /usr/local/bin/kube-dc
 ```
 
-Alternatively, if you have the entire repository cloned:
+### Linux
 
 ```bash
-# If you have the repository already cloned
-cd kube-dc
-./hack/auth/kdc_get_kubeconfig.sh your-org/your-project
+curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_linux_amd64 -o /usr/local/bin/kube-dc
+chmod +x /usr/local/bin/kube-dc
 ```
 
-The script will prompt you for the following information:
-- Keycloak endpoint URL (e.g., `https://login.dev.kube-dc.com`)
-- Organization name (your Keycloak realm)
-- Kubernetes API server URL (e.g., `https://kube-api.dev.kube-dc.com:6443`)
-- Cluster name (usually `kube-dc`)
-- User name (your Keycloak username)
-- Context name (usually `kube-dc`)
-- CA certificate (you can provide this as a file, paste it directly, or skip for insecure mode)
+### Windows
 
-### Step 2: Activate the Generated Configuration
+```powershell
+# Download from releases page
+Invoke-WebRequest -Uri "https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_windows_amd64.exe" -OutFile "$env:USERPROFILE\bin\kube-dc.exe"
+```
 
-After the script completes, activate the configuration:
+## Quick Start
+
+### 1. Login to your organization
 
 ```bash
-source ~/.kube-dc/your-org-your-project/activate.sh
+kube-dc login --domain kube-dc.cloud --org shalb
 ```
 
-This will:
+This opens your browser for secure authentication. After login:
+- Your kubeconfig is automatically configured
+- Contexts are created for each project you have access to
+- Tokens are securely cached (~/.kube-dc/credentials/)
 
-1. Set the `KUBECONFIG` environment variable to point to your new configuration
-2. Source the environment variables from the `.env` file
-3. Add the `kn` alias for namespace switching
-4. Display instructions for using kubectl
+### 2. Switch namespace/project
 
-You can now use `kubectl` commands as usual:
+```bash
+# List available namespaces
+kube-dc ns
+
+# Switch to a project
+kube-dc ns shalb-demo
+```
+
+### 3. Use kubectl normally
 
 ```bash
 kubectl get pods
+kubectl top pods
+kubectl logs -f my-pod
 ```
 
-On first use, you'll be prompted to enter your Keycloak username and password. The script will obtain tokens and cache them for subsequent commands.
+## Commands Reference
 
-### Step 3: Test Your Connection
+### `kube-dc login`
 
-Test that your kubeconfig works correctly:
+Authenticate with a kube-dc platform.
 
 ```bash
-kubectl get pods
+kube-dc login --domain <domain> --org <organization>
+
+# Examples
+kube-dc login --domain kube-dc.cloud --org shalb
+kube-dc login --domain stage.kube-dc.com --org mycompany
 ```
 
-On first use, you'll be prompted to enter your Keycloak username and password. The script will obtain tokens and cache them for subsequent commands.
+**Options:**
+- `--domain` - Platform domain (e.g., kube-dc.cloud)
+- `--org` - Organization/realm name
+- `--insecure` - Skip TLS verification (not recommended for production)
 
+### `kube-dc ns`
 
-
-## Using the Namespace Switcher
-
-The `kn` tool is installed automatically during setup and is configured as an alias when you activate the environment. It allows you to easily view and switch between namespaces that your token has permissions to access.
-
-### Features
-
-- **Intelligent Operation**: When used with a kube-dc context, it reads namespace permissions directly from your JWT token
-- **Interactive Selection**: Run `kn` without arguments to see a list of available namespaces
-- **Direct Selection**: Specify a namespace with `kn my-namespace`
-- **Fallback Mode**: If not in a kube-dc context, falls back to `kubens` or basic kubectl namespace commands
-
-### Examples
+Switch between namespaces you have access to.
 
 ```bash
-# List available namespaces and select interactively
-kn
+# List available namespaces (shows * for current)
+kube-dc ns
 
-# Switch directly to a specific namespace
-kn shalb-demo
+# Switch to a namespace
+kube-dc ns shalb-demo
+```
+
+### `kube-dc use`
+
+Switch between kube-dc contexts.
+
+```bash
+# List all kube-dc contexts
+kube-dc use
+
+# Switch to a specific context
+kube-dc use shalb/demo
+```
+
+### `kube-dc logout`
+
+Remove cached credentials.
+
+```bash
+# Logout from current server
+kube-dc logout
+
+# Logout from all servers
+kube-dc logout --all
+```
+
+### `kube-dc config`
+
+View configuration and token status.
+
+```bash
+# Show current configuration
+kube-dc config show
+
+# List all kube-dc contexts
+kube-dc config get-contexts
+```
+
+## How It Works
+
+### Authentication Flow
+
+1. **Login**: Browser opens to Keycloak login page
+2. **OAuth2 PKCE**: Secure token exchange without exposing credentials
+3. **Token Storage**: Encrypted tokens stored in `~/.kube-dc/credentials/`
+4. **kubectl Integration**: Acts as credential plugin for kubectl
+
+### Kubeconfig Integration
+
+After login, your kubeconfig contains entries like:
+
+```yaml
+contexts:
+- name: kube-dc/shalb/demo
+  context:
+    cluster: kube-dc-kube-dc.cloud-shalb
+    user: kube-dc@kube-dc.cloud/shalb
+    namespace: shalb-demo
+
+users:
+- name: kube-dc@kube-dc.cloud/shalb
+  user:
+    exec:
+      apiVersion: client.authentication.k8s.io/v1
+      command: kube-dc
+      args:
+        - credential
+        - --server
+        - https://kube-api.kube-dc.cloud:6443
+```
+
+### Token Lifecycle
+
+- **Access Token**: Short-lived (5 minutes), automatically refreshed
+- **Refresh Token**: 30-day validity with offline_access scope
+- **Auto-refresh**: Tokens refresh transparently when kubectl runs
+
+## Shell Completions
+
+Enable tab completion for your shell:
+
+```bash
+# Bash
+kube-dc completion bash > /etc/bash_completion.d/kube-dc
+
+# Zsh
+kube-dc completion zsh > "${fpath[1]}/_kube-dc"
+
+# Fish
+kube-dc completion fish > ~/.config/fish/completions/kube-dc.fish
 ```
 
 ## Troubleshooting
 
-### Authentication Issues
+### Session Expired
 
-If you're experiencing authentication problems:
+If you see "session expired", your refresh token has expired (after 30 days of inactivity):
 
-1. **Token expiration**: The refresh token may have expired. Delete the `.refresh_token` file in your kubeconfig directory and try again:
-   ```bash
-   rm ~/.kube-dc/*-*/scripts/.refresh_token
-   ```
+```bash
+kube-dc login --domain <domain> --org <org>
+```
 
-2. **Invalid credentials**: Ensure you're using the correct username and password for your Keycloak account.
+### Context Not Found
 
-3. **Connection issues**: Verify your network can reach the Keycloak and API servers.
+If `kube-dc ns` shows "not a kube-dc context":
 
-### Permission Issues
+```bash
+# Check current context
+kubectl config current-context
 
-If you can authenticate but receive permission errors:
+# Switch to a kube-dc context
+kube-dc use shalb/demo
+```
 
-1. **Namespace access**: Ensure you're using the correct namespace in your context. Your namespace should be in the format `organization-project`.
+### Clear All Credentials
 
-2. **Role assignment**: Contact your organization administrator to verify you have the appropriate roles assigned in Keycloak.
+To start fresh:
 
-3. **Resource-specific permissions**: Check that your role has permissions for the specific resources you're trying to access.
+```bash
+kube-dc logout --all
+rm -rf ~/.kube-dc/credentials/
+```
 
-## Security Considerations
+### Debug Mode
 
-- Keep your kubeconfig file secure (600 permissions)
-- Never share your refresh or access tokens
-- Be cautious when using `insecure-skip-tls-verify: true` in production environments
-- If your credentials may be compromised, contact your administrator to revoke your tokens
+For troubleshooting connection issues:
+
+```bash
+kube-dc login --domain kube-dc.cloud --org shalb --debug
+```
+
+## Security Best Practices
+
+- **Never share** your `~/.kube-dc/credentials/` directory
+- Use `--insecure` only for development/testing
+- Logout when finished: `kube-dc logout`
+- Credentials are stored with 600 permissions
+
+## Project Console (Web Terminal)
+
+For quick access without CLI installation, use the **Project Console** from the UI:
+
+1. Click your username in the top-right
+2. Select "Project console"
+3. A web terminal opens with kubectl pre-configured
+
+The web console includes:
+- `kubectl`, `helm`, `k9s`, `stern`, `virtctl`
+- Shell completions for all tools
+- Common aliases: `k`, `kgp`, `kgs`, `kl`, etc.
 
 ## Next Steps
 
