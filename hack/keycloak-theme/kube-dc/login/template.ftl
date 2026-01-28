@@ -20,6 +20,10 @@
 </head>
 
 <body class="login-pf">
+    <#-- Compute console URL from login URL -->
+    <#assign baseUrl = (url.loginAction!'')?keep_after('https://')?keep_before('/')>
+    <#assign consoleUrl = 'https://' + baseUrl?replace('login.', 'console.') + '/'>
+
     <#-- Main content area -->
     <div id="kc-container">
         <div id="kc-content">
@@ -32,6 +36,12 @@
                     <#if message.type = 'info'><span class="${properties.kcFeedbackInfoIcon!}"></span></#if>
                     <span class="kc-feedback-text">${kcSanitize(message.summary)?no_esc}</span>
                 </div>
+                <#-- Add console link for error messages -->
+                <#if message.type = 'error'>
+                    <div style="margin-top: 12px; text-align: center;">
+                        <a href="${consoleUrl}" style="color: #0066cc;">Go to Console</a>
+                    </div>
+                </#if>
             </#if>
 
             <#-- Page header section -->
