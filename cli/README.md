@@ -183,6 +183,44 @@ go test ./...
 ./kube-dc version
 ```
 
+## Release Process
+
+### Creating a New Release
+
+1. Make changes in `shalb/kube-dc` repository
+2. Commit and push to `main` branch
+3. Sync workflow automatically pushes CLI to `kube-dc/kube-dc-public`
+4. Create and push tag on `kube-dc-public`:
+
+```bash
+cd kube-dc-public
+git pull origin main
+git tag v0.2.3  # increment version
+git push origin v0.2.3
+```
+
+5. GoReleaser workflow builds and publishes binaries automatically
+
+### Release Artifacts
+
+Binaries are published to: https://github.com/kube-dc/kube-dc-public/releases
+
+| Platform | Binary |
+|----------|--------|
+| Linux (amd64) | `kube-dc_linux_amd64` |
+| Linux (arm64) | `kube-dc_linux_arm64` |
+| macOS (Intel) | `kube-dc_darwin_amd64` |
+| macOS (Apple Silicon) | `kube-dc_darwin_arm64` |
+| Windows | `kube-dc_windows_amd64.exe` |
+
+### Version History
+
+| Version | Changes |
+|---------|---------|
+| v0.2.2 | Offline access tokens (30-day sessions), fix error messages |
+| v0.2.1 | Raw binary releases |
+| v0.2.0 | Initial release with browser OAuth |
+
 ## See Also
 
 - [PRD: Kube-DC CLI](../docs/prd/kube-dc-cli.md) - Detailed product requirements

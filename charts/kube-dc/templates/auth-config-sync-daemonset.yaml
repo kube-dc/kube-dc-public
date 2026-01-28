@@ -47,7 +47,9 @@ spec:
             if [ -f "$SOURCE" ]; then
               CURRENT_HASH=$(md5sum "$SOURCE" 2>/dev/null | cut -d' ' -f1)
               if [ "$CURRENT_HASH" != "$LAST_HASH" ]; then
-                cp "$SOURCE" "$TARGET"
+                # Use cat > to preserve inode (triggers K8s API server file watcher)
+                # cp creates new inode which breaks file watching
+                cat "$SOURCE" > "$TARGET"
                 chmod 0666 "$TARGET"
                 LAST_HASH="$CURRENT_HASH"
                 echo "$(date): Synced $SOURCE -> $TARGET (hash: $CURRENT_HASH)"
