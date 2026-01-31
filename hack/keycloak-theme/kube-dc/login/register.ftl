@@ -81,14 +81,19 @@
                 </div>
             </#if>
 
-            <#-- Compute console URL from login URL -->
-            <#assign baseUrl = url.loginAction?keep_after('https://')?keep_before('/')>
-            <#assign consoleUrl = 'https://' + baseUrl?replace('login.', 'console.') + '/'>
+            <#-- Compute console URL safely -->
+            <#assign consoleUrl = ''>
+            <#if url?? && url.loginUrl??>
+                <#assign baseUrl = url.loginUrl?keep_after('https://')?keep_before('/')>
+                <#assign consoleUrl = 'https://' + baseUrl?replace('login.', 'console.') + '/'>
+            </#if>
 
             <div class="${properties.kcFormGroupClass!}">
                 <div id="kc-form-options" class="${properties.kcFormOptionsClass!}">
                     <div class="${properties.kcFormOptionsWrapperClass!}">
-                        <span><a href="${url.loginUrl}">${msg("backToLogin")?no_esc}</a></span>
+                        <#if url?? && url.loginUrl?? && url.loginUrl?has_content>
+                            <span><a href="${url.loginUrl}">${msg("backToLogin")?no_esc}</a></span>
+                        </#if>
                     </div>
                 </div>
 

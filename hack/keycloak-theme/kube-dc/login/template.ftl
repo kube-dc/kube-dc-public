@@ -20,9 +20,12 @@
 </head>
 
 <body class="login-pf">
-    <#-- Compute console URL from login URL -->
-    <#assign baseUrl = (url.loginAction!'')?keep_after('https://')?keep_before('/')>
-    <#assign consoleUrl = 'https://' + baseUrl?replace('login.', 'console.') + '/'>
+    <#-- Compute console URL safely - url.loginUrl is available on all pages -->
+    <#assign consoleUrl = ''>
+    <#if url?? && url.loginUrl??>
+        <#assign baseUrl = url.loginUrl?keep_after('https://')?keep_before('/')>
+        <#assign consoleUrl = 'https://' + baseUrl?replace('login.', 'console.') + '/'>
+    </#if>
 
     <#-- Main content area -->
     <div id="kc-container">
@@ -37,7 +40,7 @@
                     <span class="kc-feedback-text">${kcSanitize(message.summary)?no_esc}</span>
                 </div>
                 <#-- Add console link for error messages -->
-                <#if message.type = 'error'>
+                <#if message.type = 'error' && consoleUrl?has_content>
                     <div style="margin-top: 12px; text-align: center;">
                         <a href="${consoleUrl}" style="color: #0066cc;">Go to Console</a>
                     </div>

@@ -93,11 +93,17 @@
             </div>
         </#if>
     <#elseif section = "change-org" >
-        <#assign baseUrl = url.loginAction?keep_after('https://')?keep_before('/')>
-        <#assign consoleUrl = 'https://' + baseUrl?replace('login.', 'console.') + '/'>
-        <div id="kc-change-org">
-            <span>${msg("wrongOrganization")?no_esc} <a tabindex="7" href="${consoleUrl}">${msg("changeOrganization")?no_esc}</a></span>
-        </div>
+        <#-- Compute console URL safely -->
+        <#assign consoleUrl = ''>
+        <#if url?? && url.loginUrl??>
+            <#assign baseUrl = url.loginUrl?keep_after('https://')?keep_before('/')>
+            <#assign consoleUrl = 'https://' + baseUrl?replace('login.', 'console.') + '/'>
+        </#if>
+        <#if consoleUrl?has_content>
+            <div id="kc-change-org">
+                <span>${msg("wrongOrganization")?no_esc} <a tabindex="7" href="${consoleUrl}">${msg("changeOrganization")?no_esc}</a></span>
+            </div>
+        </#if>
     </#if>
 
 </@layout.registrationLayout>

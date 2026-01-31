@@ -29,7 +29,7 @@ then
     exit 1
 fi
 
-KUBE_DC_VERSION=$(kubectl --user default get deployment -n ${NAMESPACE} kube-dc-manager -o jsonpath='{.spec.template.spec.containers[0].image}' | awk -F: '{print $2}')
+KUBE_DC_VERSION=$(kubectl get deployment -n ${NAMESPACE} kube-dc-manager -o jsonpath='{.spec.template.spec.containers[0].image}' | awk -F: '{print $2}')
 # KUBE_DC_VERSION=$(helm get metadata -n ${NAMESPACE} kube-dc | grep APP_VERSION | awk '{print $2}')
 
 if [ -z ${KUBE_DC_VERSION+x} ]; then 
@@ -68,7 +68,7 @@ cd "${rootPath}"
 make
 docker build -f Dockerfile_manager -t ${REGISTRY_REPO}/kube-dc-manager:${new_version} .
 docker push ${REGISTRY_REPO}/kube-dc-manager:${new_version}
-kubectl --user default set image -n ${NAMESPACE} deployment/kube-dc-manager manager=${REGISTRY_REPO}/kube-dc-manager:${new_version}
+kubectl set image -n ${NAMESPACE} deployment/kube-dc-manager manager=${REGISTRY_REPO}/kube-dc-manager:${new_version}
 
 
 
