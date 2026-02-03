@@ -1,0 +1,61 @@
+# Sveltos ClusterProfile for CloudSigma CSI Driver
+# This deploys CloudSigma CSI to CAPI clusters with label: csi=cloudsigma
+# 
+# Prerequisites:
+# - CloudSigma credentials secret must be created in tenant cluster
+#   (see docs/addons/cloudsigma-csi.md)
+---
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: cloudsigma-csi
+spec:
+  # Match CAPI clusters with csi=cloudsigma label
+  clusterSelector:
+    matchLabels:
+      csi: cloudsigma
+  
+  # SyncMode: Continuous ensures updates are applied
+  syncMode: Continuous
+  
+  # Reference the CloudSigma CSI manifests
+  policyRefs:
+  - kind: ConfigMap
+    name: cloudsigma-csi-template
+    namespace: projectsveltos
+    deploymentType: Remote  # Deploy to managed cluster
+  
+  # Enable templating for control plane endpoint
+  templateResourceRefs:
+  - resource:
+      apiVersion: cluster.x-k8s.io/v1beta1
+      kind: Cluster
+    identifier: Cluster
+  
+  # Health validation for CSI controller
+  validateHealths:
+  - name: cloudsigma-csi-controller-health
+    featureID: Resources
+    group: "apps"
+    version: "v1"
+    kind: "Deployment"
+    namespace: cloudsigma-csi
+    labelFilters:
+    - key: app
+      operation: Equal
+      value: csi-controller
+    script: |
+      function evaluate()
+        hs = {}
+        hs.healthy = false
+        hs.message = "waiting for csi-controller deployment"
+        if obj.status ~= nil then
+          if obj.status.readyReplicas ~= nil and obj.status.replicas ~= nil then
+            if obj.status.readyReplicas == obj.status.replicas then
+              hs.healthy = true
+              hs.message = "csi-controller is ready"
+            end
+          end
+        end
+        return hs
+      end

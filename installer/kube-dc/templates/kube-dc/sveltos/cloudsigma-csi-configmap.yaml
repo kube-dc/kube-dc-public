@@ -1,0 +1,308 @@
+# CloudSigma CSI Driver manifests for Sveltos
+# Uses token-based authentication - CCM provisions the cloudsigma-token secret automatically
+#
+# Prerequisites:
+# - CCM must be deployed with CLOUDSIGMA_ENABLE_CSI_TOKEN=true
+# - CCM will create and refresh the cloudsigma-token secret in cloudsigma-csi namespace
+#
+# Legacy mode (deprecated):
+# Create cloudsigma-credentials secret manually:
+#   kubectl create secret generic cloudsigma-credentials -n cloudsigma-csi \
+#     --from-literal=username=<your-username> \
+#     --from-literal=password=<your-password> \
+#     --from-literal=region=<region>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudsigma-csi-template
+  namespace: projectsveltos
+  annotations:
+    projectsveltos.io/template: "ok"
+data:
+  cloudsigma-csi.yaml: |
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: cloudsigma-csi
+    ---
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: csi-controller
+      namespace: cloudsigma-csi
+    ---
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: csi-node
+      namespace: cloudsigma-csi
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: cloudsigma-csi-controller
+    rules:
+    - apiGroups: [""]
+      resources: ["persistentvolumes"]
+      verbs: ["get", "list", "watch", "create", "delete", "patch"]
+    - apiGroups: [""]
+      resources: ["persistentvolumeclaims"]
+      verbs: ["get", "list", "watch", "update", "patch"]
+    - apiGroups: [""]
+      resources: ["persistentvolumeclaims/status"]
+      verbs: ["patch"]
+    - apiGroups: ["storage.k8s.io"]
+      resources: ["storageclasses"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: [""]
+      resources: ["events"]
+      verbs: ["list", "watch", "create", "update", "patch"]
+    - apiGroups: ["storage.k8s.io"]
+      resources: ["csinodes"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: [""]
+      resources: ["nodes"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: ["storage.k8s.io"]
+      resources: ["volumeattachments"]
+      verbs: ["get", "list", "watch", "patch"]
+    - apiGroups: ["storage.k8s.io"]
+      resources: ["volumeattachments/status"]
+      verbs: ["patch"]
+    - apiGroups: [""]
+      resources: ["secrets"]
+      verbs: ["get", "list"]
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: cloudsigma-csi-controller
+    subjects:
+    - kind: ServiceAccount
+      name: csi-controller
+      namespace: cloudsigma-csi
+    roleRef:
+      kind: ClusterRole
+      name: cloudsigma-csi-controller
+      apiGroup: rbac.authorization.k8s.io
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: cloudsigma-csi-node
+    rules:
+    - apiGroups: [""]
+      resources: ["nodes"]
+      verbs: ["get", "list", "watch"]
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: cloudsigma-csi-node
+    subjects:
+    - kind: ServiceAccount
+      name: csi-node
+      namespace: cloudsigma-csi
+    roleRef:
+      kind: ClusterRole
+      name: cloudsigma-csi-node
+      apiGroup: rbac.authorization.k8s.io
+    ---
+    apiVersion: storage.k8s.io/v1
+    kind: CSIDriver
+    metadata:
+      name: csi.cloudsigma.com
+    spec:
+      attachRequired: true
+      podInfoOnMount: false
+      volumeLifecycleModes:
+      - Persistent
+    ---
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: cloudsigma-dssd
+      annotations:
+        storageclass.kubernetes.io/is-default-class: "true"
+    provisioner: csi.cloudsigma.com
+    parameters:
+      storageType: dssd
+    allowVolumeExpansion: true
+    volumeBindingMode: WaitForFirstConsumer
+    reclaimPolicy: Delete
+    ---
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: csi-controller
+      namespace: cloudsigma-csi
+      labels:
+        app: csi-controller
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: csi-controller
+      template:
+        metadata:
+          labels:
+            app: csi-controller
+        spec:
+          serviceAccountName: csi-controller
+          containers:
+          - name: csi-controller
+            image: docker.io/shalb/cloudsigma-csi-controller:latest
+            imagePullPolicy: Always
+            args:
+            - "--endpoint=unix:///csi/csi.sock"
+            - "--token-file=/etc/cloudsigma/access_token"
+            - "--v=4"
+            env:
+            - name: CLOUDSIGMA_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: cloudsigma-token
+                  key: region
+                  optional: true
+            volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+            - name: cloudsigma-token
+              mountPath: /etc/cloudsigma
+              readOnly: true
+            resources:
+              requests:
+                cpu: 10m
+                memory: 64Mi
+              limits:
+                cpu: 500m
+                memory: 256Mi
+          - name: csi-provisioner
+            image: registry.k8s.io/sig-storage/csi-provisioner:v4.0.0
+            args:
+            - "--csi-address=/csi/csi.sock"
+            - "--v=4"
+            env:
+            - name: KUBERNETES_SERVICE_HOST
+              value: "{{ .Cluster.spec.controlPlaneEndpoint.host }}"
+            - name: KUBERNETES_SERVICE_PORT
+              value: "{{ .Cluster.spec.controlPlaneEndpoint.port }}"
+            volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+          - name: csi-attacher
+            image: registry.k8s.io/sig-storage/csi-attacher:v4.5.0
+            args:
+            - "--csi-address=/csi/csi.sock"
+            - "--v=4"
+            env:
+            - name: KUBERNETES_SERVICE_HOST
+              value: "{{ .Cluster.spec.controlPlaneEndpoint.host }}"
+            - name: KUBERNETES_SERVICE_PORT
+              value: "{{ .Cluster.spec.controlPlaneEndpoint.port }}"
+            volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+          - name: csi-resizer
+            image: registry.k8s.io/sig-storage/csi-resizer:v1.10.0
+            args:
+            - "--csi-address=/csi/csi.sock"
+            - "--v=4"
+            env:
+            - name: KUBERNETES_SERVICE_HOST
+              value: "{{ .Cluster.spec.controlPlaneEndpoint.host }}"
+            - name: KUBERNETES_SERVICE_PORT
+              value: "{{ .Cluster.spec.controlPlaneEndpoint.port }}"
+            volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+          volumes:
+          - name: socket-dir
+            emptyDir: {}
+          - name: cloudsigma-token
+            secret:
+              secretName: cloudsigma-token
+              items:
+              - key: access_token
+                path: access_token
+    ---
+    apiVersion: apps/v1
+    kind: DaemonSet
+    metadata:
+      name: csi-node
+      namespace: cloudsigma-csi
+    spec:
+      selector:
+        matchLabels:
+          app: csi-node
+      template:
+        metadata:
+          labels:
+            app: csi-node
+        spec:
+          serviceAccountName: csi-node
+          hostNetwork: true
+          containers:
+          - name: csi-node
+            image: docker.io/shalb/cloudsigma-csi-node:v0.1.0
+            imagePullPolicy: Always
+            args:
+            - "--endpoint=unix:///csi/csi.sock"
+            - "--v=4"
+            env:
+            - name: NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: CLOUDSIGMA_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: cloudsigma-token
+                  key: region
+                  optional: true
+            securityContext:
+              privileged: true
+            volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+            - name: kubelet-dir
+              mountPath: /var/lib/kubelet
+              mountPropagation: Bidirectional
+            - name: device-dir
+              mountPath: /dev
+            resources:
+              requests:
+                cpu: 10m
+                memory: 64Mi
+              limits:
+                cpu: 500m
+                memory: 256Mi
+          - name: csi-node-driver-registrar
+            image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.10.0
+            args:
+            - "--csi-address=/csi/csi.sock"
+            - "--kubelet-registration-path=/var/lib/kubelet/plugins/csi.cloudsigma.com/csi.sock"
+            - "--v=4"
+            volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+            - name: registration-dir
+              mountPath: /registration
+          volumes:
+          - name: socket-dir
+            hostPath:
+              path: /var/lib/kubelet/plugins/csi.cloudsigma.com
+              type: DirectoryOrCreate
+          - name: kubelet-dir
+            hostPath:
+              path: /var/lib/kubelet
+              type: Directory
+          - name: device-dir
+            hostPath:
+              path: /dev
+              type: Directory
+          - name: registration-dir
+            hostPath:
+              path: /var/lib/kubelet/plugins_registry
+              type: Directory
