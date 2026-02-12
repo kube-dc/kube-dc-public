@@ -18,6 +18,7 @@
 {{- $kamajiEtcdChartVersion := (.variables.versions.kamaji_etcd_helm         | default "0.14.0"| quote) -}}
 {{- $kamajiImageTag := (.variables.versions.kamaji_image                     | default "edge-25.11.21-kube-dc" | quote) -}}
 {{- $sveltosVersion := (.variables.versions.sveltos                          | default "v0.57.3"| quote) -}}
+{{- $hncVersion := (.variables.versions.hnc                                  | default "v1.1.0"| quote) -}}
 
 name: cluster
 kind: StackTemplate
@@ -315,6 +316,30 @@ units:
     provider_conf:
       config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
   -
+    name: hnc
+    type: shell
+    depends_on: this.cert-manager-cluster-issuer
+    work_dir: ./hnc/
+    env:
+      KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    apply:
+      commands:
+        - kubectl apply -f ./default.yaml
+        - kubectl rollout status deployment/hnc-controller-manager -n hnc-system --timeout 300s
+        - kubectl apply -f ./hrq.yaml
+        - kubectl rollout status deployment/hnc-controller-manager -n hnc-system --timeout 300s
+    destroy:
+      commands:
+        - kubectl delete -f ./hrq.yaml --ignore-not-found
+        - kubectl delete -f ./default.yaml --ignore-not-found
+  -
+    name: hnc-config
+    type: kubernetes
+    depends_on: this.hnc
+    source: ./hnc/hnc-config.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
     name: tls-certificates
     type: kubernetes
     depends_on:
@@ -406,6 +431,15 @@ units:
     source:
       - ./sveltos/cilium-cni-configmap.yaml
       - ./sveltos/cilium-cni-clusterprofile.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
+    name: sveltos-cloudsigma-csi
+    type: kubernetes
+    depends_on: this.sveltos
+    source:
+      - ./sveltos/cloudsigma-csi-configmap.yaml
+      - ./sveltos/cloudsigma-csi-clusterprofile.yaml
     provider_conf:
       config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
   -
@@ -650,6 +684,7 @@ units:
     type: helm
     depends_on:
       - this.keycloak
+      - this.hnc-config
     source:
       chart: "/home/voa/projects/kube-dc/charts/kube-dc"
     provider_conf:
@@ -696,11 +731,17 @@ units:
 {{- end }}
   -
     name: novnc-namespace
-    type: kubernetes
+    type: shell
     depends_on: this.kube-dc
-    source:  ./novnc/ns.yaml
-    provider_conf:
-      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    work_dir: ./novnc/
+    env:
+      KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    apply:
+      commands:
+        - kubectl apply -f ./ns.yaml
+    destroy:
+      commands:
+        - kubectl delete -f ./ns.yaml --ignore-not-found
   -
     name: novnc-deployment
     type: kubernetes

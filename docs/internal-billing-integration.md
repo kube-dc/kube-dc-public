@@ -1,9 +1,16 @@
 # Internal Billing Integration Documentation
 
 ## Overview
-This document describes the internal architecture and implementation details of the billing API integration within the Kube-DC platform. This integration provides organization-level billing management and project-specific cost analysis through the Kube-DC UI.
+This document describes the internal architecture and implementation details of the billing and quota system within the Kube-DC platform. The system is designed with a **decoupled architecture**: resource quotas work independently, and payment providers (Stripe, WHMCS, etc.) are optional plug-ins controlled by a feature flag.
 
 ## Architecture Overview
+
+### Design Principles
+
+1. **Quotas are a core feature** — HRQ, LimitRange, and EIP enforcement work without any payment provider
+2. **Payment providers are optional** — Controlled by `BILLING_PROVIDER` environment variable (`none` | `stripe` | `whmcs`)
+3. **Plans from ConfigMap** — All plan definitions live in a single `billing-plans` ConfigMap in the `kube-dc` namespace
+4. **Frontend adapts dynamically** — UI fetches `/api/billing/config` and hides payment buttons when no provider is active
 
 ### System Components
 
@@ -11,26 +18,36 @@ This document describes the internal architecture and implementation details of 
 graph TB
     subgraph "Kube-DC Frontend"
         UI[Billing UI Component]
+        Config[Billing Config Fetch]
         Auth[JWT Authentication]
     end
     
     subgraph "Kube-DC Backend"
-        Proxy[Billing Proxy Controller]
-        TokenSvc[Token Service]
-        AuthZ[Authorization Layer]
+        QC[quotaController.js<br/>Always loaded]
+        BC[billingController.js<br/>Always loaded]
+        SP[providers/stripe.js<br/>Loaded when BILLING_PROVIDER=stripe]
     end
     
-    subgraph "Billing Service"
-        API[Billing API]
-        DB[(PostgreSQL)]
+    subgraph "Kubernetes"
+        CM[billing-plans ConfigMap]
+        HRQ[HierarchicalResourceQuota]
+        LR[LimitRange]
+        ORG[Organization Annotations]
+    end
+    
+    subgraph "External - Optional"
+        Stripe[Stripe API]
     end
     
     UI --> Auth
-    Auth --> Proxy
-    Proxy --> TokenSvc
-    TokenSvc --> AuthZ
-    AuthZ --> API
-    API --> DB
+    Config --> QC
+    Auth --> QC
+    Auth --> BC
+    Auth --> SP
+    QC --> CM
+    QC --> ORG
+    QC --> HRQ
+    SP -.-> Stripe
 ```
 
 ### Authentication & Authorization Flow
@@ -40,153 +57,221 @@ sequenceDiagram
     participant User
     participant Frontend
     participant Backend
-    participant BillingAPI
+    participant K8s as Kubernetes API
+    participant Stripe as Stripe (optional)
     
     User->>Frontend: Access Billing Page
-    Frontend->>Backend: GET /api/billing/project/{ns}/overview
-    Note over Frontend,Backend: JWT Token in Authorization header
+    Frontend->>Backend: GET /api/billing/config
+    Backend->>Frontend: { provider, features }
+    Frontend->>Frontend: Gate UI based on features
     
-    Backend->>Backend: Extract & validate JWT token
-    Backend->>Backend: Check namespace permissions
+    Frontend->>Backend: GET /api/billing/organization-subscription
+    Backend->>K8s: Read Organization annotations
+    K8s->>Backend: Plan ID, status, addons
+    Backend->>K8s: Read billing-plans ConfigMap
+    K8s->>Backend: Plan definitions
+    Backend->>Frontend: Subscription + quota data
     
-    alt Valid token & authorized namespace
-        Backend->>BillingAPI: GET /api/project/{ns}/overview
-        BillingAPI->>Backend: Billing data response
-        Backend->>Frontend: Authorized data
-        Frontend->>User: Display billing information
-    else Invalid token or unauthorized
-        Backend->>Frontend: 401/403 Error
-        Frontend->>User: Access denied message
+    alt BILLING_PROVIDER=stripe
+        User->>Frontend: Click Subscribe
+        Frontend->>Backend: POST /api/billing/organization-subscription
+        Backend->>Stripe: Create Checkout Session
+        Stripe->>Backend: Checkout URL
+        Backend->>Frontend: Redirect to Stripe
+    else BILLING_PROVIDER=none
+        Note over Frontend: Subscribe button hidden
+        Note over Frontend: Plans assigned via kubectl
     end
 ```
 
 ## Implementation Details
 
-### Backend Integration
+### Backend Architecture
 
 #### File Structure
 ```
 ui/backend/
 ├── controllers/billing/
-│   └── billingController.js     # Main billing proxy controller
+│   ├── quotaController.js       # Provider-agnostic: plans, addons, HRQ usage, quota endpoints
+│   ├── billingController.js     # Health check, project billing proxy, pricing
+│   └── providers/
+│       └── stripe.js            # Stripe-specific: checkout, webhooks, portal, subscription CRUD
 ├── routes/
-│   └── billing.js              # Billing API routes
-├── utils/
-│   └── logger.js               # Logging utility
-└── app.js                      # Main app with billing routes
+│   └── billing.js               # Route mounting (conditional provider loading)
+└── app.js                       # Express app (conditional raw body skip for webhooks)
 ```
 
 #### Key Components
 
-**Billing Controller** (`controllers/billing/billingController.js`)
-- Proxies requests to internal billing service
-- Implements JWT token validation
-- Enforces namespace-based authorization
-- Handles error responses and logging
+**Quota Controller** (`controllers/billing/quotaController.js`) — *Always loaded*
+- Reads plans and addons from `billing-plans` ConfigMap via Kubernetes API
+- Caches plan data with TTL-based invalidation
+- Reads Organization annotations for subscription state
+- Provides HRQ and EIP usage data
+- Exposes `/api/billing/config` with active provider and feature flags
+- Exports shared functions used by provider modules:
+  - `getServiceAccountToken`, `isOrgAdmin`, `getSubscriptionPlans`
+  - `getTurboAddons`, `getHRQUsage`, `getPublicEIPUsage`
+  - `getOrganizationSubscriptionData`, `updateOrganizationSubscription`
 
-**Authentication Flow**
+**Billing Controller** (`controllers/billing/billingController.js`) — *Always loaded*
+- Health check endpoint
+- Project-level billing data proxy
+- Pricing information
+
+**Stripe Provider** (`controllers/billing/providers/stripe.js`) — *Loaded only when `BILLING_PROVIDER=stripe`*
+- Stripe SDK initialization and customer management
+- Checkout session creation with plan-to-price ID mapping
+- Webhook handling for subscription lifecycle events
+- Customer portal session creation
+- Subscription update and cancellation
+
+#### Feature Flag: `BILLING_PROVIDER`
+
+| Value | Routes Mounted | Behavior |
+|-------|---------------|----------|
+| `none` (default) | quotaController + billingController | Quota-only mode. Plans via ConfigMap, enforcement via HRQ. |
+| `stripe` | + providers/stripe.js | Full Stripe: checkout, webhooks, portal. |
+| `whmcs` | *(future)* | WHMCS webhook integration. |
+
+**Route Mounting** (`routes/billing.js`):
 ```javascript
-// Token extraction
-const token = tokenService.getToken(req);
+const BILLING_PROVIDER = process.env.BILLING_PROVIDER || 'none';
 
-// JWT decoding and validation
-const decodedToken = decodeJWT(token);
-const userNamespaces = decodedToken.namespaces || [];
+// Always mount provider-agnostic quota routes
+router.use('/', quotaRouter);
 
-// Authorization check
-if (!userNamespaces.includes(namespace)) {
-  return sendErrorResponse(res, 403, 'Access denied to namespace');
+// Conditionally mount payment provider routes
+if (BILLING_PROVIDER === 'stripe') {
+    const stripeRouter = require('../controllers/billing/providers/stripe');
+    router.use('/', stripeRouter);
 }
 ```
 
-**Service Communication**
-- Internal service URL: `billing-dashboard-svc.billing.svc.cluster.local:5000`
-- Uses Kubernetes service discovery
-- No external network access required
+**Conditional Webhook Body Parsing** (`app.js`):
+```javascript
+// Only skip JSON parsing for webhook when a provider is active
+if (BILLING_PROVIDER !== 'none' && req.originalUrl === '/api/billing/webhook') {
+    next(); // Raw body for signature verification
+} else {
+    bodyParser.json()(req, res, next);
+}
+```
 
-### Frontend Integration
+### Frontend Architecture
 
 #### File Structure
 ```
 ui/frontend/src/app/ManageOrganization/
 ├── Billing/
-│   └── Billing.tsx             # Main billing component
-├── OrganizationRoutes.tsx      # Route definitions
-├── OrganizationSidebar.tsx     # Navigation sidebar
-└── OrganizationLayout.tsx      # Layout logic
+│   ├── Billing.tsx              # Main billing page
+│   ├── SubscribePlanModal.tsx   # Plan selection and checkout
+│   ├── api.ts                   # Billing API client (includes getBillingConfig)
+│   └── types.ts                 # Provider-agnostic type definitions
+├── OrganizationRoutes.tsx       # Route definitions
+├── OrganizationSidebar.tsx      # Navigation sidebar
+└── OrganizationLayout.tsx       # Layout logic
 ```
 
 #### Key Features
 
-**Billing Component** (`Billing/Billing.tsx`)
+**Provider-Agnostic UI** (`Billing/Billing.tsx`)
+- Fetches `BillingConfig` on mount via `GET /api/billing/config`
+- Gates all payment buttons behind `billingConfig.features.*` flags:
+  - `checkout` → Subscribe, Change Plan, Re-subscribe, Cancel buttons
+  - `portal` → Manage Payment, Update Payment Method buttons
+  - `addons` → Add Resources button
 - Uses PatternFly design system
-- Displays project billing summaries in table format
-- Implements loading states and error handling
-- Follows existing Kube-DC UI patterns
+- Displays quota usage with progress bars and alerts
 
-**Security Implementation**
+**Type Definitions** (`Billing/types.ts`)
 ```typescript
-// Namespace extraction from JWT
-const getUserNamespaces = React.useMemo(() => {
-  if (!token) return [];
-  try {
-    const decodedToken = decodeJWT(token);
-    return decodedToken.namespaces || [];
-  } catch (error) {
-    return [];
-  }
-}, [token]);
+export interface BillingConfig {
+    provider: 'none' | 'stripe' | 'whmcs';
+    features: {
+        quotas: boolean;
+        plans: boolean;
+        checkout: boolean;
+        portal: boolean;
+        webhooks: boolean;
+        addons: boolean;
+    };
+}
 
-// API calls with authentication
-const response = await fetch(`/api/billing/project/${namespace}/overview`, {
-  headers: {
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json'
-  },
-  credentials: 'include'
-});
+export interface OrganizationSubscription {
+    providerSubscriptionId?: string | null;  // was stripeSubscriptionId
+    providerCustomerId?: string | null;      // was stripeCustomerId
+    // ... other fields
+}
 ```
 
 ## API Endpoints
 
-### Available Endpoints
+### Always Available (any `BILLING_PROVIDER` value)
 
 | Method | Endpoint | Description | Authentication |
 |--------|----------|-------------|----------------|
+| GET | `/api/billing/config` | Active provider and feature flags | Required |
 | GET | `/api/billing/health` | Service health check | Required |
-| GET | `/api/billing/projects` | List accessible projects | Required |
+| GET | `/api/billing/plans` | List available subscription plans | Required |
+| GET | `/api/billing/addons` | List available resource add-ons | Required |
+| GET | `/api/billing/organization-subscription` | Current org subscription and quota data | Required (org-admin) |
+| GET | `/api/billing/quota-usage` | HRQ usage across all projects | Required (org-admin) |
+| GET | `/api/billing/quota-status` | Quota enforcement status | Required (org-admin) |
+| GET | `/api/billing/projects` | List accessible projects with billing data | Required |
 | GET | `/api/billing/project/:namespace/overview` | Project billing details | Required + Namespace access |
+
+### Stripe Provider Only (`BILLING_PROVIDER=stripe`)
+
+| Method | Endpoint | Description | Authentication |
+|--------|----------|-------------|----------------|
+| POST | `/api/billing/organization-subscription` | Create subscription (Stripe Checkout) | Required (org-admin) |
+| PUT | `/api/billing/organization-subscription` | Update subscription (plan change) | Required (org-admin) |
+| DELETE | `/api/billing/organization-subscription` | Cancel subscription | Required (org-admin) |
+| GET | `/api/billing/verify-checkout` | Verify Stripe checkout session | Required |
+| POST | `/api/billing/customer-portal` | Open Stripe customer portal | Required (org-admin) |
+| POST | `/api/billing/webhook` | Stripe webhook handler | Stripe signature |
 
 ### Response Format
 
-**Project Overview Response**
+**Billing Config Response** (`GET /api/billing/config`)
+```json
+{
+  "success": true,
+  "config": {
+    "provider": "none",
+    "features": {
+      "quotas": true,
+      "plans": true,
+      "checkout": false,
+      "portal": false,
+      "webhooks": false,
+      "addons": false
+    }
+  }
+}
+```
+
+**Organization Subscription Response**
 ```json
 {
   "success": true,
   "data": {
-    "namespace": "project-name",
-    "billing_summary": {
-      "current_month_total": 1672.31,
-      "last_day_spend": 109.16,
-      "billing_period": "2025-09",
-      "total_cost_per_hour": 2.32
-    },
-    "compute_instances": {
-      "running_pods": 10,
-      "running_vms": 1,
-      "cpu_cores": 2.4,
-      "memory_gib": 8.8,
-      "cost_per_hour": 0.15
-    },
-    "cost_breakdown": {
-      "cpu_cost": 89.45,
-      "memory_cost": 45.23,
-      "storage_cost": 12.67,
-      "network_cost": 0.00,
-      "public_ip_cost": 0.00
+    "organization": "my-org",
+    "planId": "pro-pool",
+    "planName": "Pro Pool",
+    "status": "active",
+    "providerSubscriptionId": "sub_xxx",
+    "providerCustomerId": "cus_xxx",
+    "addons": [{"addonId": "turbo-x1", "quantity": 1}],
+    "resources": { "cpu": 10, "memory": 28, "storage": 180 },
+    "usage": {
+      "cpu": { "used": 4.2, "limit": 10 },
+      "memory": { "used": 12.5, "limit": 28 },
+      "storage": { "used": 45, "limit": 180 },
+      "pods": { "used": 23, "limit": 200 }
     }
-  },
-  "timestamp": "2025-10-01T15:25:00.000Z"
+  }
 }
 ```
 
@@ -224,15 +309,24 @@ const response = await fetch(`/api/billing/project/${namespace}/overview`, {
 
 **Backend Configuration**
 ```bash
-# Billing service endpoint (internal)
-BILLING_API_URL=http://billing-dashboard-svc.billing.svc.cluster.local:5000
+# Billing provider feature flag (required)
+BILLING_PROVIDER=none              # none | stripe | whmcs
 
-# Logging level
+# Stripe-specific (only when BILLING_PROVIDER=stripe)
+STRIPE_SECRET_KEY=sk_xxx           # Stripe API secret key
+STRIPE_WEBHOOK_SECRET=whsec_xxx    # Stripe webhook signing secret
+STRIPE_PRICE_DEV_POOL=price_xxx    # Stripe Price ID for Dev Pool plan
+STRIPE_PRICE_PRO_POOL=price_xxx    # Stripe Price ID for Pro Pool plan
+STRIPE_PRICE_SCALE_POOL=price_xxx  # Stripe Price ID for Scale Pool plan
+STRIPE_PRICE_TURBO_X1=price_xxx    # Stripe Price ID for Turbo x1 addon
+STRIPE_PRICE_TURBO_X2=price_xxx    # Stripe Price ID for Turbo x2 addon
+
+# General
 LOG_LEVEL=info
 ```
 
 **Frontend Configuration**
-Uses existing Kube-DC ConfigMap pattern:
+Uses existing Kube-DC ConfigMap pattern. No billing-specific frontend config needed — the frontend dynamically fetches `/api/billing/config` at runtime.
 ```yaml
 apiVersion: v1
 kind: ConfigMap
@@ -245,29 +339,16 @@ data:
     window.keycloakURL = 'https://login.stage.kube-dc.com';
 ```
 
-### Network Policies
+### Kubernetes Resources
 
-```yaml
-# Internal service communication
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: kube-dc-billing-access
-spec:
-  podSelector:
-    matchLabels:
-      app: kube-dc-backend
-  policyTypes:
-  - Egress
-  egress:
-  - to:
-    - namespaceSelector:
-        matchLabels:
-          name: billing
-    ports:
-    - protocol: TCP
-      port: 5000
-```
+The billing system reads from and writes to:
+
+| Resource | Namespace | Purpose |
+|----------|-----------|--------|
+| ConfigMap `billing-plans` | `kube-dc` | Plan definitions, addons, quotas |
+| Organization annotations | org namespace | Subscription state, plan assignment |
+| HierarchicalResourceQuota `plan-quota` | org namespace | Aggregate resource limits |
+| LimitRange `default-resource-limits` | org namespace | Default container resources |
 
 ## Error Handling
 
@@ -364,22 +445,63 @@ kubectl logs -n kube-dc deployment/kube-dc-backend
 kubectl logs -n billing deployment/billing-dashboard
 ```
 
+## Testing
+
+### E2E Tests
+
+Organization quota reconciliation tests are in `tests/e2e/organization_quota_test.go`:
+
+```bash
+# Run all quota tests
+go test -v ./tests/e2e -ginkgo.focus="Organization Quota Reconciliation" -timeout=15m
+```
+
+| Test | What it verifies |
+|------|------------------|
+| Org with active plan → HRQ + LimitRange | Controller creates quota resources with correct values |
+| Plan change → HRQ update | Changing plan annotation triggers resource update |
+| Suspended org → reduced HRQ | Suspended orgs get minimal quota |
+| Org deletion → cleanup | HRQ and LimitRange removed on deletion |
+| Addons → HRQ includes addon resources | Addon CPU/memory/storage added to base plan |
+| No plan → no HRQ | Orgs without billing annotations get no quota |
+
+### Manual Testing (quota-only mode)
+
+```bash
+# 1. Apply billing-plans ConfigMap
+kubectl apply -f examples/organization/04-billing-plans-configmap.yaml
+
+# 2. Assign a plan to an organization
+kubectl annotate organization/shalb -n shalb \
+  billing.kube-dc.com/plan-id=dev-pool \
+  billing.kube-dc.com/subscription=active --overwrite
+
+# 3. Verify HRQ was created
+kubectl get hrq -n shalb
+
+# 4. Verify LimitRange was created
+kubectl get limitrange -n shalb
+
+# 5. Check quota usage
+kubectl describe hrq plan-quota -n shalb
+```
+
 ## Future Enhancements
 
 ### Planned Features
+- WHMCS billing provider integration
 - Cost trend analysis and forecasting
 - Budget alerts and notifications
+- Per-project quota management UI
 - Resource optimization recommendations
-- Detailed cost attribution reports
-- Integration with cloud provider billing APIs
 
 ### Technical Improvements
-- Response caching for performance
-- Real-time cost updates via WebSocket
-- Advanced filtering and search capabilities
-- Export functionality for billing reports
-- Integration with monitoring systems
+- Plan data caching with ConfigMap watch (replace polling)
+- Real-time quota updates via WebSocket
+- Automated trial-to-paid conversion
+- Multi-currency support
 
 ---
 
-*This document is maintained by the Kube-DC development team. For questions or updates, please contact the platform team.*
+*Last updated: February 2026*
+*This document is maintained by the Kube-DC development team.*

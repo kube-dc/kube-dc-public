@@ -1,0 +1,20 @@
+# HNC Configuration — controls which resource types are propagated
+# from parent (organization) namespaces to child (project) namespaces.
+#
+# This is applied AFTER the HNC controller is running.
+# See: https://github.com/pfnet/hierarchical-namespaces
+apiVersion: hnc.x-k8s.io/v1alpha2
+kind: HNCConfiguration
+metadata:
+  name: config
+spec:
+  resources:
+    # Propagate LimitRange from org namespace to project namespaces
+    # CRITICAL: Required for HRQ enforcement — without LimitRange defaults,
+    # pods without explicit resource requests will be REJECTED by ResourceQuota
+    - resource: limitranges
+      mode: Propagate
+    # Do NOT propagate Kube-DC CRDs (managed by their own controllers)
+    - resource: subnamespaceanchors
+      group: hnc.x-k8s.io
+      mode: Remove

@@ -113,6 +113,14 @@ spec:
                   - type
                   type: object
                 type: array
+              quotaEnforced:
+                description: QuotaEnforced indicates whether a HierarchicalResourceQuota
+                  is active for this organization
+                type: boolean
+              quotaPlanId:
+                description: QuotaPlanId is the billing plan ID currently enforced
+                  via HRQ, empty if no quota
+                type: string
               ready:
                 default: false
                 description: Ready indicates whether the organization is fully configured

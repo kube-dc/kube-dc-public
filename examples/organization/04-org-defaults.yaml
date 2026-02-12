@@ -1,0 +1,86 @@
+# Organization Resource Defaults — LimitRange
+#
+# Standard Kubernetes LimitRange applied to the organization namespace.
+# HNC (Hierarchical Namespace Controller) propagates it to ALL project namespaces.
+#
+# Why this is needed:
+#   When HierarchicalResourceQuota (HRQ) is active, Kubernetes creates internal
+#   ResourceQuota objects in each child namespace. ResourceQuota REJECTS any pod
+#   that doesn't specify cpu/memory requests. LimitRange provides defaults so
+#   pods without explicit requests are still admitted.
+#
+# How it works:
+#   1. Create this LimitRange in the org namespace (e.g., acme-corp)
+#   2. HNC auto-copies it to all project namespaces (acme-corp-demo, acme-corp-dev, etc.)
+#   3. When a pod is created WITHOUT resources.requests/limits, the LimitRange
+#      admission controller applies defaults BEFORE ResourceQuota checks
+#   4. Users cannot modify propagated copies in project namespaces (HNC enforces immutability)
+#
+# Controller auto-management:
+#   The kube-dc Organization controller auto-creates this LimitRange with
+#   plan-based defaults when a billing plan is activated. It labels auto-created
+#   LimitRanges with "billing.kube-dc.com/auto-managed: true".
+#
+#   To customize: create your OWN LimitRange (without the auto-managed label)
+#   in the org namespace. The controller will detect it and back off — it will
+#   NOT overwrite user-created LimitRanges.
+#
+# ---
+# Custom LimitRange (overrides controller auto-defaults)
+# ---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-resource-limits
+  namespace: acme-corp              # ← org namespace, HNC propagates to all projects
+spec:
+  limits:
+    # Container defaults — applied to every container that doesn't set resources
+    - type: Container
+      default:                      # Limits applied if container omits spec.resources.limits
+        cpu: "1"
+        memory: 1Gi
+      defaultRequest:               # Requests applied if container omits spec.resources.requests
+        cpu: 200m
+        memory: 256Mi
+      max:                          # Max per single container (prevents one container eating all quota)
+        cpu: "4"
+        memory: 16Gi
+      min:                          # Min per container (rejects tiny/misconfigured containers)
+        cpu: 50m
+        memory: 64Mi
+
+    # Pod max — caps total resources across ALL containers in a single pod
+    - type: Pod
+      max:
+        cpu: "8"
+        memory: 32Gi
+
+    # PVC constraints — min/max storage per PersistentVolumeClaim
+    - type: PersistentVolumeClaim
+      max:
+        storage: 200Gi
+      min:
+        storage: 1Gi
+---
+# ---
+# HierarchicalResourceQuota (for reference — created automatically by controller
+# when a billing plan is active; do NOT create manually)
+# ---
+# apiVersion: hnc.x-k8s.io/v1alpha2
+# kind: HierarchicalResourceQuota
+# metadata:
+#   name: plan-quota
+#   namespace: acme-corp
+#   labels:
+#     billing.kube-dc.com/auto-managed: "true"
+#     billing.kube-dc.com/plan-id: "pro-pool"
+# spec:
+#   hard:
+#     requests.cpu: "8"
+#     requests.memory: "24Gi"
+#     limits.cpu: "16"
+#     limits.memory: "48Gi"
+#     requests.storage: "160Gi"
+#     pods: "200"
+#     services.loadbalancers: "3"

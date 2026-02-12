@@ -93,14 +93,17 @@
 
 ### Q3 2026: Monetization & Operations
 
-#### 💰 Billing System — *June 2026*
-| Feature | Description |
-|---------|-------------|
-| Resource Metering | CPU, memory, storage, GPU, network |
-| Pricing Models | Custom tiers, pay-per-use |
-| Usage Reports | Detailed analytics, export |
-| Billing API | External system integration |
-| Quota Enforcement | Automatic limit enforcement |
+#### 💰 Billing System — *Quota: Done ✅ | Metering: June 2026*
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Quota Enforcement | ✅ Done | HRQ + LimitRange + EIP + S3 per plan, addons, suspension lifecycle |
+| Billing Provider Decoupling | ✅ Done | `BILLING_PROVIDER` feature flag (none/stripe/whmcs) |
+| Stripe Integration | ✅ Done | Checkout, webhooks, portal, subscription CRUD |
+| Plans from ConfigMap | ✅ Done | Live-reloadable plan definitions, no restart needed |
+| E2E Quota Tests | ✅ Done | 6 tests: create, update, suspend, delete, addons, no-plan |
+| Resource Metering | 🔲 Planned | CPU, memory, storage, GPU, network usage tracking |
+| Usage Reports | 🔲 Planned | Detailed analytics, export, cost attribution |
+| WHMCS Integration | 🔲 Planned | Alternative billing provider support |
 
 #### 🔐 Licensing — *July 2026*
 | Feature | Description |

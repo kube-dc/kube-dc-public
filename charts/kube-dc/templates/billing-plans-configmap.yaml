@@ -1,0 +1,13 @@
+{{- if .Values.billing.plans.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: billing-plans
+  namespace: {{ .Release.Namespace }}
+  labels:
+    helm.sh/chart: {{ include "kube-dc.chart" . }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+data:
+  plans.yaml: |
+{{ .Values.billing.plans.config | indent 4 }}
+{{- end }}

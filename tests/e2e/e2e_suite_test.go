@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	hncv1alpha2 "sigs.k8s.io/hierarchical-namespaces/api/v1alpha2"
 )
 
 var (
@@ -58,6 +59,7 @@ var _ = BeforeSuite(func() {
 	Expect(kubedccomv1.AddToScheme(testScheme)).To(Succeed())
 	Expect(kubeovn.AddToScheme(testScheme)).To(Succeed())
 	Expect(netattachdef.AddToScheme(testScheme)).To(Succeed())
+	Expect(hncv1alpha2.AddToScheme(testScheme)).To(Succeed())
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: testScheme})
 	Expect(err).NotTo(HaveOccurred())

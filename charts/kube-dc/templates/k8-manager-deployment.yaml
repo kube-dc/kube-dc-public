@@ -58,6 +58,8 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
         env:
+        - name: INFRA_API_ENDPOINT
+          value: {{ .Values.k8Manager.infraAPIEndpoint | default "" | quote }}
         - name: KAMAJI_DATASTORE_NAME
           value: {{ .Values.k8Manager.kamajiDatastoreName | default "default" | quote }}
         - name: KAMAJI_DATASTORE_NAMESPACE

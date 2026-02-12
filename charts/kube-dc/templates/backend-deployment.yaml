@@ -81,6 +81,47 @@ spec:
             - name: SMTP_FROM_NAME
               value: "{{ .Values.backend.smtp.fromName }}"
             {{- end }}
+            {{- if ne .Values.billing.provider "none" }}
+            - name: BILLING_PROVIDER
+              value: "{{ .Values.billing.provider }}"
+            {{- end }}
+            {{- if eq .Values.billing.provider "stripe" }}
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.billing.stripe.secretName }}
+                  key: STRIPE_SECRET_KEY
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.billing.stripe.secretName }}
+                  key: STRIPE_WEBHOOK_SECRET
+            - name: STRIPE_PRICE_DEV_POOL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.billing.stripe.secretName }}
+                  key: STRIPE_PRICE_DEV_POOL
+            - name: STRIPE_PRICE_PRO_POOL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.billing.stripe.secretName }}
+                  key: STRIPE_PRICE_PRO_POOL
+            - name: STRIPE_PRICE_SCALE_POOL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.billing.stripe.secretName }}
+                  key: STRIPE_PRICE_SCALE_POOL
+            - name: STRIPE_PRICE_TURBO_X1
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.billing.stripe.secretName }}
+                  key: STRIPE_PRICE_TURBO_X1
+            - name: STRIPE_PRICE_TURBO_X2
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.billing.stripe.secretName }}
+                  key: STRIPE_PRICE_TURBO_X2
+            {{- end }}
           {{- with .Values.backend.extraEnv }}
             {{- toYaml . | nindent 12 }}
           {{- end }}

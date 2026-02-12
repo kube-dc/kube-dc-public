@@ -259,6 +259,11 @@ k8Manager:
     pullPolicy: IfNotPresent
     tag: {{ .variables.versions.k8_manager | default "latest" | quote }}
 
+  # External endpoint for the infrastructure cluster API
+  # Required for CCMs running in VPC-isolated namespaces that cannot reach kubernetes.default.svc
+  # Format: "host:port" (e.g., "kube-api.stage.kube-dc.com:6443")
+  infraAPIEndpoint: {{ .variables.kube_api_endpoint | default "" | quote }}
+
   # Kamaji datastore configuration
   kamajiDatastoreName: "default"
   kamajiDatastoreNamespace: "kamaji-system"

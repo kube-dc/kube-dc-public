@@ -3,9 +3,12 @@ set -e
 
 # Stripe configuration (set these values or use environment variables)
 STRIPE_SECRET_KEY="${STRIPE_SECRET_KEY:-}"
-STRIPE_PRICE_STARTER="${STRIPE_PRICE_STARTER:-}"
-STRIPE_PRICE_PROFESSIONAL="${STRIPE_PRICE_PROFESSIONAL:-}"
-STRIPE_PRICE_ENTERPRISE="${STRIPE_PRICE_ENTERPRISE:-}"
+STRIPE_PRICE_DEV_POOL="${STRIPE_PRICE_DEV_POOL:-}"
+STRIPE_PRICE_PRO_POOL="${STRIPE_PRICE_PRO_POOL:-}"
+STRIPE_PRICE_SCALE_POOL="${STRIPE_PRICE_SCALE_POOL:-}"
+STRIPE_PRICE_TURBO_X1="${STRIPE_PRICE_TURBO_X1:-}"
+STRIPE_PRICE_TURBO_X2="${STRIPE_PRICE_TURBO_X2:-}"
+STRIPE_WEBHOOK_SECRET="${STRIPE_WEBHOOK_SECRET:-}"
 CONSOLE_URL="${CONSOLE_URL:-}"
 
 increment_version() {
@@ -113,9 +116,12 @@ if [[ -n "${STRIPE_SECRET_KEY}" ]]; then
   kubectl create secret generic kube-dc-backend-stripe \
     --namespace ${NAMESPACE} \
     --from-literal=secret-key="${STRIPE_SECRET_KEY}" \
-    --from-literal=price-starter="${STRIPE_PRICE_STARTER}" \
-    --from-literal=price-professional="${STRIPE_PRICE_PROFESSIONAL}" \
-    --from-literal=price-enterprise="${STRIPE_PRICE_ENTERPRISE}" \
+    --from-literal=webhook-secret="${STRIPE_WEBHOOK_SECRET}" \
+    --from-literal=price-dev-pool="${STRIPE_PRICE_DEV_POOL}" \
+    --from-literal=price-pro-pool="${STRIPE_PRICE_PRO_POOL}" \
+    --from-literal=price-scale-pool="${STRIPE_PRICE_SCALE_POOL}" \
+    --from-literal=price-turbo-x1="${STRIPE_PRICE_TURBO_X1}" \
+    --from-literal=price-turbo-x2="${STRIPE_PRICE_TURBO_X2}" \
     --from-literal=console-url="${CONSOLE_URL}" \
     --dry-run=client -o yaml | kubectl apply -f -
   
@@ -124,9 +130,12 @@ if [[ -n "${STRIPE_SECRET_KEY}" ]]; then
     echo "Adding Stripe environment variables to backend deployment..."
     kubectl patch deployment kube-dc-backend -n ${NAMESPACE} --type='json' -p='[
       {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_SECRET_KEY", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "secret-key"}}}},
-      {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_PRICE_STARTER", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "price-starter"}}}},
-      {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_PRICE_PROFESSIONAL", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "price-professional"}}}},
-      {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_PRICE_ENTERPRISE", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "price-enterprise"}}}},
+      {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_WEBHOOK_SECRET", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "webhook-secret"}}}},
+      {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_PRICE_DEV_POOL", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "price-dev-pool"}}}},
+      {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_PRICE_PRO_POOL", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "price-pro-pool"}}}},
+      {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_PRICE_SCALE_POOL", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "price-scale-pool"}}}},
+      {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_PRICE_TURBO_X1", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "price-turbo-x1"}}}},
+      {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "STRIPE_PRICE_TURBO_X2", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "price-turbo-x2"}}}},
       {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name": "CONSOLE_URL", "valueFrom": {"secretKeyRef": {"name": "kube-dc-backend-stripe", "key": "console-url"}}}}
     ]'
   else

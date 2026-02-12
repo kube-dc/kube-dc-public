@@ -89,13 +89,31 @@ This document outlines the current product backlog for the Kube-DC project, orga
   - Node-based licensing model
   - License validation and enforcement
 
-### [Epic] Billing
-**Status**: Planning
+### [Epic] Billing & Quota Management
+**Status**: In Progress
 
-- 💰 **Billing system implementation**
-  - Usage tracking and billing
-  - Integration with licensing system
-  - Cost management features
+- ✅ **Organization quota enforcement (HRQ + LimitRange + EIP)**
+  - Plans defined in `billing-plans` ConfigMap
+  - HierarchicalResourceQuota auto-created per org
+  - LimitRange propagated via HNC to project namespaces
+  - EIP quota per plan, S3 object storage quota via Rook-Ceph
+  - Subscription lifecycle: active → suspended → canceled with grace period
+  - Addons (turbo resource packs) support
+  - E2E tests for all quota scenarios
+
+- ✅ **Billing provider decoupling (`BILLING_PROVIDER` feature flag)**
+  - `none` (default): quota-only, plans assigned via kubectl annotations
+  - `stripe`: full Stripe integration (checkout, webhooks, portal)
+  - Frontend dynamically adapts UI based on `/api/billing/config`
+
+- ✅ **Stripe integration**
+  - Checkout sessions, subscription CRUD, customer portal
+  - Webhook handling for payment events
+  - Isolated in `providers/stripe.js` (not loaded when `BILLING_PROVIDER=none`)
+
+- 🔲 **WHMCS integration** (planned)
+- 🔲 **Per-project quota management UI**
+- 🔲 **Cost trend analysis and budget alerts**
 
 ### [Epic] Observability
 **Status**: Enhancement Phase
@@ -176,10 +194,10 @@ This document outlines the current product backlog for the Kube-DC project, orga
 
 ### Low Priority
 1. Licensing system
-2. Billing implementation
+2. Billing metering and usage reports
 3. Managed services expansion
 4. UI enhancements (VM groups, static IP)
 
 
-**Last Updated**: September 2025
+**Last Updated**: February 2026
 **Document Owner**: Kube-DC Product Team
