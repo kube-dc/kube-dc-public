@@ -1349,10 +1349,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#billing-system-june-2026" class="md-nav__link">
+  <a href="#billing-system-quota-done-metering-june-2026" class="md-nav__link">
     <span class="md-ellipsis">
       
-        💰 Billing System — June 2026
+        💰 Billing System — Quota: Done ✅ | Metering: June 2026
       
     </span>
   </a>
@@ -1763,34 +1763,55 @@ Transform bare-metal servers into a modern cloud with Kubernetes-native orchestr
 </table>
 <hr />
 <h3 id="q3-2026-monetization-operations">Q3 2026: Monetization &amp; Operations<a class="headerlink" href="#q3-2026-monetization-operations" title="Permanent link"> ¶</a></h3>
-<h4 id="billing-system-june-2026">💰 Billing System — <em>June 2026</em><a class="headerlink" href="#billing-system-june-2026" title="Permanent link"> ¶</a></h4>
+<h4 id="billing-system-quota-done-metering-june-2026">💰 Billing System — <em>Quota: Done ✅ | Metering: June 2026</em><a class="headerlink" href="#billing-system-quota-done-metering-june-2026" title="Permanent link"> ¶</a></h4>
 <table>
 <thead>
 <tr>
 <th>Feature</th>
+<th>Status</th>
 <th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Resource Metering</td>
-<td>CPU, memory, storage, GPU, network</td>
+<td>Quota Enforcement</td>
+<td>✅ Done</td>
+<td>HRQ + LimitRange + EIP + S3 per plan, addons, suspension lifecycle</td>
 </tr>
 <tr>
-<td>Pricing Models</td>
-<td>Custom tiers, pay-per-use</td>
+<td>Billing Provider Decoupling</td>
+<td>✅ Done</td>
+<td><code>BILLING_PROVIDER</code> feature flag (none/stripe/whmcs)</td>
+</tr>
+<tr>
+<td>Stripe Integration</td>
+<td>✅ Done</td>
+<td>Checkout, webhooks, portal, subscription CRUD</td>
+</tr>
+<tr>
+<td>Plans from ConfigMap</td>
+<td>✅ Done</td>
+<td>Live-reloadable plan definitions, no restart needed</td>
+</tr>
+<tr>
+<td>E2E Quota Tests</td>
+<td>✅ Done</td>
+<td>6 tests: create, update, suspend, delete, addons, no-plan</td>
+</tr>
+<tr>
+<td>Resource Metering</td>
+<td>🔲 Planned</td>
+<td>CPU, memory, storage, GPU, network usage tracking</td>
 </tr>
 <tr>
 <td>Usage Reports</td>
-<td>Detailed analytics, export</td>
+<td>🔲 Planned</td>
+<td>Detailed analytics, export, cost attribution</td>
 </tr>
 <tr>
-<td>Billing API</td>
-<td>External system integration</td>
-</tr>
-<tr>
-<td>Quota Enforcement</td>
-<td>Automatic limit enforcement</td>
+<td>WHMCS Integration</td>
+<td>🔲 Planned</td>
+<td>Alternative billing provider support</td>
 </tr>
 </tbody>
 </table>

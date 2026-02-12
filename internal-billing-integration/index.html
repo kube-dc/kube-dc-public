@@ -1220,6 +1220,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#design-principles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Design Principles
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#system-components" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1259,15 +1270,15 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#backend-integration" class="md-nav__link">
+  <a href="#backend-architecture" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Backend Integration
+        Backend Architecture
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Backend Integration">
+    <nav class="md-nav" aria-label="Backend Architecture">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1292,21 +1303,32 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#feature-flag-billing_provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Feature Flag: BILLING_PROVIDER
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#frontend-integration" class="md-nav__link">
+  <a href="#frontend-architecture" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Frontend Integration
+        Frontend Architecture
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Frontend Integration">
+    <nav class="md-nav" aria-label="Frontend Architecture">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1354,10 +1376,21 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#available-endpoints" class="md-nav__link">
+  <a href="#always-available-any-billing_provider-value" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Available Endpoints
+        Always Available (any BILLING_PROVIDER value)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stripe-provider-only-billing_providerstripe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stripe Provider Only (BILLING_PROVIDER=stripe)
       
     </span>
   </a>
@@ -1454,10 +1487,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#network-policies" class="md-nav__link">
+  <a href="#kubernetes-resources" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Network Policies
+        Kubernetes Resources
       
     </span>
   </a>
@@ -1637,6 +1670,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#e2e-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        E2E Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#manual-testing-quota-only-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Manual Testing (quota-only mode)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#future-enhancements" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1697,128 +1769,202 @@
 
 <h1 id="internal-billing-integration-documentation">Internal Billing Integration Documentation<a class="headerlink" href="#internal-billing-integration-documentation" title="Permanent link"> ¶</a></h1>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link"> ¶</a></h2>
-<p>This document describes the internal architecture and implementation details of the billing API integration within the Kube-DC platform. This integration provides organization-level billing management and project-specific cost analysis through the Kube-DC UI.</p>
+<p>This document describes the internal architecture and implementation details of the billing and quota system within the Kube-DC platform. The system is designed with a <strong>decoupled architecture</strong>: resource quotas work independently, and payment providers (Stripe, WHMCS, etc.) are optional plug-ins controlled by a feature flag.</p>
 <h2 id="architecture-overview">Architecture Overview<a class="headerlink" href="#architecture-overview" title="Permanent link"> ¶</a></h2>
+<h3 id="design-principles">Design Principles<a class="headerlink" href="#design-principles" title="Permanent link"> ¶</a></h3>
+<ol>
+<li><strong>Quotas are a core feature</strong> — HRQ, LimitRange, and EIP enforcement work without any payment provider</li>
+<li><strong>Payment providers are optional</strong> — Controlled by <code>BILLING_PROVIDER</code> environment variable (<code>none</code> | <code>stripe</code> | <code>whmcs</code>)</li>
+<li><strong>Plans from ConfigMap</strong> — All plan definitions live in a single <code>billing-plans</code> ConfigMap in the <code>kube-dc</code> namespace</li>
+<li><strong>Frontend adapts dynamically</strong> — UI fetches <code>/api/billing/config</code> and hides payment buttons when no provider is active</li>
+</ol>
 <h3 id="system-components">System Components<a class="headerlink" href="#system-components" title="Permanent link"> ¶</a></h3>
 <pre class="mermaid"><code>graph TB
     subgraph "Kube-DC Frontend"
         UI[Billing UI Component]
+        Config[Billing Config Fetch]
         Auth[JWT Authentication]
     end
 
     subgraph "Kube-DC Backend"
-        Proxy[Billing Proxy Controller]
-        TokenSvc[Token Service]
-        AuthZ[Authorization Layer]
+        QC[quotaController.js&lt;br/&gt;Always loaded]
+        BC[billingController.js&lt;br/&gt;Always loaded]
+        SP[providers/stripe.js&lt;br/&gt;Loaded when BILLING_PROVIDER=stripe]
     end
 
-    subgraph "Billing Service"
-        API[Billing API]
-        DB[(PostgreSQL)]
+    subgraph "Kubernetes"
+        CM[billing-plans ConfigMap]
+        HRQ[HierarchicalResourceQuota]
+        LR[LimitRange]
+        ORG[Organization Annotations]
+    end
+
+    subgraph "External - Optional"
+        Stripe[Stripe API]
     end
 
     UI --&gt; Auth
-    Auth --&gt; Proxy
-    Proxy --&gt; TokenSvc
-    TokenSvc --&gt; AuthZ
-    AuthZ --&gt; API
-    API --&gt; DB</code></pre>
+    Config --&gt; QC
+    Auth --&gt; QC
+    Auth --&gt; BC
+    Auth --&gt; SP
+    QC --&gt; CM
+    QC --&gt; ORG
+    QC --&gt; HRQ
+    SP -.-&gt; Stripe</code></pre>
 <h3 id="authentication-authorization-flow">Authentication &amp; Authorization Flow<a class="headerlink" href="#authentication-authorization-flow" title="Permanent link"> ¶</a></h3>
 <pre class="mermaid"><code>sequenceDiagram
     participant User
     participant Frontend
     participant Backend
-    participant BillingAPI
+    participant K8s as Kubernetes API
+    participant Stripe as Stripe (optional)
 
     User-&gt;&gt;Frontend: Access Billing Page
-    Frontend-&gt;&gt;Backend: GET /api/billing/project/{ns}/overview
-    Note over Frontend,Backend: JWT Token in Authorization header
+    Frontend-&gt;&gt;Backend: GET /api/billing/config
+    Backend-&gt;&gt;Frontend: { provider, features }
+    Frontend-&gt;&gt;Frontend: Gate UI based on features
 
-    Backend-&gt;&gt;Backend: Extract &amp; validate JWT token
-    Backend-&gt;&gt;Backend: Check namespace permissions
+    Frontend-&gt;&gt;Backend: GET /api/billing/organization-subscription
+    Backend-&gt;&gt;K8s: Read Organization annotations
+    K8s-&gt;&gt;Backend: Plan ID, status, addons
+    Backend-&gt;&gt;K8s: Read billing-plans ConfigMap
+    K8s-&gt;&gt;Backend: Plan definitions
+    Backend-&gt;&gt;Frontend: Subscription + quota data
 
-    alt Valid token &amp; authorized namespace
-        Backend-&gt;&gt;BillingAPI: GET /api/project/{ns}/overview
-        BillingAPI-&gt;&gt;Backend: Billing data response
-        Backend-&gt;&gt;Frontend: Authorized data
-        Frontend-&gt;&gt;User: Display billing information
-    else Invalid token or unauthorized
-        Backend-&gt;&gt;Frontend: 401/403 Error
-        Frontend-&gt;&gt;User: Access denied message
+    alt BILLING_PROVIDER=stripe
+        User-&gt;&gt;Frontend: Click Subscribe
+        Frontend-&gt;&gt;Backend: POST /api/billing/organization-subscription
+        Backend-&gt;&gt;Stripe: Create Checkout Session
+        Stripe-&gt;&gt;Backend: Checkout URL
+        Backend-&gt;&gt;Frontend: Redirect to Stripe
+    else BILLING_PROVIDER=none
+        Note over Frontend: Subscribe button hidden
+        Note over Frontend: Plans assigned via kubectl
     end</code></pre>
 <h2 id="implementation-details">Implementation Details<a class="headerlink" href="#implementation-details" title="Permanent link"> ¶</a></h2>
-<h3 id="backend-integration">Backend Integration<a class="headerlink" href="#backend-integration" title="Permanent link"> ¶</a></h3>
+<h3 id="backend-architecture">Backend Architecture<a class="headerlink" href="#backend-architecture" title="Permanent link"> ¶</a></h3>
 <h4 id="file-structure">File Structure<a class="headerlink" href="#file-structure" title="Permanent link"> ¶</a></h4>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>ui/backend/
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── controllers/billing/
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>│   └── billingController.js     # Main billing proxy controller
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>├── routes/
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│   └── billing.js              # Billing API routes
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>├── utils/
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│   └── logger.js               # Logging utility
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>└── app.js                      # Main app with billing routes
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>│   ├── quotaController.js       # Provider-agnostic: plans, addons, HRQ usage, quota endpoints
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│   ├── billingController.js     # Health check, project billing proxy, pricing
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│   └── providers/
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│       └── stripe.js            # Stripe-specific: checkout, webhooks, portal, subscription CRUD
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>├── routes/
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│   └── billing.js               # Route mounting (conditional provider loading)
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>└── app.js                       # Express app (conditional raw body skip for webhooks)
 </span></code></pre></div>
 <h4 id="key-components">Key Components<a class="headerlink" href="#key-components" title="Permanent link"> ¶</a></h4>
-<p><strong>Billing Controller</strong> (<code>controllers/billing/billingController.js</code>)
-- Proxies requests to internal billing service
-- Implements JWT token validation
-- Enforces namespace-based authorization
-- Handles error responses and logging</p>
-<p><strong>Authentication Flow</strong>
-<div class="language-javascript highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1">// Token extraction</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kd">const</span><span class="w"> </span><span class="nx">token</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">tokenService</span><span class="p">.</span><span class="nx">getToken</span><span class="p">(</span><span class="nx">req</span><span class="p">);</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1">// JWT decoding and validation</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="kd">const</span><span class="w"> </span><span class="nx">decodedToken</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">decodeJWT</span><span class="p">(</span><span class="nx">token</span><span class="p">);</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="kd">const</span><span class="w"> </span><span class="nx">userNamespaces</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">decodedToken</span><span class="p">.</span><span class="nx">namespaces</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="p">[];</span>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="c1">// Authorization check</span>
-</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">userNamespaces</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="nx">namespace</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nx">sendErrorResponse</span><span class="p">(</span><span class="nx">res</span><span class="p">,</span><span class="w"> </span><span class="mf">403</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;Access denied to namespace&#39;</span><span class="p">);</span>
-</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="p">}</span>
+<p><strong>Quota Controller</strong> (<code>controllers/billing/quotaController.js</code>) — <em>Always loaded</em>
+- Reads plans and addons from <code>billing-plans</code> ConfigMap via Kubernetes API
+- Caches plan data with TTL-based invalidation
+- Reads Organization annotations for subscription state
+- Provides HRQ and EIP usage data
+- Exposes <code>/api/billing/config</code> with active provider and feature flags
+- Exports shared functions used by provider modules:
+  - <code>getServiceAccountToken</code>, <code>isOrgAdmin</code>, <code>getSubscriptionPlans</code>
+  - <code>getTurboAddons</code>, <code>getHRQUsage</code>, <code>getPublicEIPUsage</code>
+  - <code>getOrganizationSubscriptionData</code>, <code>updateOrganizationSubscription</code></p>
+<p><strong>Billing Controller</strong> (<code>controllers/billing/billingController.js</code>) — <em>Always loaded</em>
+- Health check endpoint
+- Project-level billing data proxy
+- Pricing information</p>
+<p><strong>Stripe Provider</strong> (<code>controllers/billing/providers/stripe.js</code>) — <em>Loaded only when <code>BILLING_PROVIDER=stripe</code></em>
+- Stripe SDK initialization and customer management
+- Checkout session creation with plan-to-price ID mapping
+- Webhook handling for subscription lifecycle events
+- Customer portal session creation
+- Subscription update and cancellation</p>
+<h4 id="feature-flag-billing_provider">Feature Flag: <code>BILLING_PROVIDER</code><a class="headerlink" href="#feature-flag-billing_provider" title="Permanent link"> ¶</a></h4>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Routes Mounted</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>none</code> (default)</td>
+<td>quotaController + billingController</td>
+<td>Quota-only mode. Plans via ConfigMap, enforcement via HRQ.</td>
+</tr>
+<tr>
+<td><code>stripe</code></td>
+<td>+ providers/stripe.js</td>
+<td>Full Stripe: checkout, webhooks, portal.</td>
+</tr>
+<tr>
+<td><code>whmcs</code></td>
+<td><em>(future)</em></td>
+<td>WHMCS webhook integration.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Route Mounting</strong> (<code>routes/billing.js</code>):
+<div class="language-javascript highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kd">const</span><span class="w"> </span><span class="nx">BILLING_PROVIDER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">process</span><span class="p">.</span><span class="nx">env</span><span class="p">.</span><span class="nx">BILLING_PROVIDER</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="s1">&#39;none&#39;</span><span class="p">;</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="c1">// Always mount provider-agnostic quota routes</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nx">router</span><span class="p">.</span><span class="nx">use</span><span class="p">(</span><span class="s1">&#39;/&#39;</span><span class="p">,</span><span class="w"> </span><span class="nx">quotaRouter</span><span class="p">);</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="c1">// Conditionally mount payment provider routes</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">BILLING_PROVIDER</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s1">&#39;stripe&#39;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">stripeRouter</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">require</span><span class="p">(</span><span class="s1">&#39;../controllers/billing/providers/stripe&#39;</span><span class="p">);</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="nx">router</span><span class="p">.</span><span class="nx">use</span><span class="p">(</span><span class="s1">&#39;/&#39;</span><span class="p">,</span><span class="w"> </span><span class="nx">stripeRouter</span><span class="p">);</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="p">}</span>
 </span></code></pre></div></p>
-<p><strong>Service Communication</strong>
-- Internal service URL: <code>billing-dashboard-svc.billing.svc.cluster.local:5000</code>
-- Uses Kubernetes service discovery
-- No external network access required</p>
-<h3 id="frontend-integration">Frontend Integration<a class="headerlink" href="#frontend-integration" title="Permanent link"> ¶</a></h3>
+<p><strong>Conditional Webhook Body Parsing</strong> (<code>app.js</code>):
+<div class="language-javascript highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1">// Only skip JSON parsing for webhook when a provider is active</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">BILLING_PROVIDER</span><span class="w"> </span><span class="o">!==</span><span class="w"> </span><span class="s1">&#39;none&#39;</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">req</span><span class="p">.</span><span class="nx">originalUrl</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s1">&#39;/api/billing/webhook&#39;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nx">next</span><span class="p">();</span><span class="w"> </span><span class="c1">// Raw body for signature verification</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="nx">bodyParser</span><span class="p">.</span><span class="nx">json</span><span class="p">()(</span><span class="nx">req</span><span class="p">,</span><span class="w"> </span><span class="nx">res</span><span class="p">,</span><span class="w"> </span><span class="nx">next</span><span class="p">);</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="p">}</span>
+</span></code></pre></div></p>
+<h3 id="frontend-architecture">Frontend Architecture<a class="headerlink" href="#frontend-architecture" title="Permanent link"> ¶</a></h3>
 <h4 id="file-structure_1">File Structure<a class="headerlink" href="#file-structure_1" title="Permanent link"> ¶</a></h4>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>ui/frontend/src/app/ManageOrganization/
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>├── Billing/
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>│   └── Billing.tsx             # Main billing component
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>├── OrganizationRoutes.tsx      # Route definitions
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>├── OrganizationSidebar.tsx     # Navigation sidebar
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>└── OrganizationLayout.tsx      # Layout logic
+<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>ui/frontend/src/app/ManageOrganization/
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>├── Billing/
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>│   ├── Billing.tsx              # Main billing page
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>│   ├── SubscribePlanModal.tsx   # Plan selection and checkout
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>│   ├── api.ts                   # Billing API client (includes getBillingConfig)
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>│   └── types.ts                 # Provider-agnostic type definitions
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>├── OrganizationRoutes.tsx       # Route definitions
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>├── OrganizationSidebar.tsx      # Navigation sidebar
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>└── OrganizationLayout.tsx       # Layout logic
 </span></code></pre></div>
 <h4 id="key-features">Key Features<a class="headerlink" href="#key-features" title="Permanent link"> ¶</a></h4>
-<p><strong>Billing Component</strong> (<code>Billing/Billing.tsx</code>)
+<p><strong>Provider-Agnostic UI</strong> (<code>Billing/Billing.tsx</code>)
+- Fetches <code>BillingConfig</code> on mount via <code>GET /api/billing/config</code>
+- Gates all payment buttons behind <code>billingConfig.features.*</code> flags:
+  - <code>checkout</code> → Subscribe, Change Plan, Re-subscribe, Cancel buttons
+  - <code>portal</code> → Manage Payment, Update Payment Method buttons
+  - <code>addons</code> → Add Resources button
 - Uses PatternFly design system
-- Displays project billing summaries in table format
-- Implements loading states and error handling
-- Follows existing Kube-DC UI patterns</p>
-<p><strong>Security Implementation</strong>
-<div class="language-typescript highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1">// Namespace extraction from JWT</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kd">const</span><span class="w"> </span><span class="nx">getUserNamespaces</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">React</span><span class="p">.</span><span class="nx">useMemo</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">token</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="p">[];</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span><span class="kd">const</span><span class="w"> </span><span class="nx">decodedToken</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">decodeJWT</span><span class="p">(</span><span class="nx">token</span><span class="p">);</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">decodedToken</span><span class="p">.</span><span class="nx">namespaces</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="p">[];</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="nx">error</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">[];</span>
-</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span><span class="p">}</span>
-</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="p">},</span><span class="w"> </span><span class="p">[</span><span class="nx">token</span><span class="p">]);</span>
-</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>
-</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="c1">// API calls with authentication</span>
-</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="kd">const</span><span class="w"> </span><span class="nx">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">fetch</span><span class="p">(</span><span class="sb">`/api/billing/project/</span><span class="si">${</span><span class="nx">namespace</span><span class="si">}</span><span class="sb">/overview`</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="w">  </span><span class="nx">headers</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">    </span><span class="s1">&#39;Authorization&#39;</span><span class="o">:</span><span class="w"> </span><span class="sb">`Bearer </span><span class="si">${</span><span class="nx">token</span><span class="si">}</span><span class="sb">`</span><span class="p">,</span>
-</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">    </span><span class="s1">&#39;Content-Type&#39;</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;application/json&#39;</span>
-</span><span id="__span-3-17"><a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="w">  </span><span class="p">},</span>
-</span><span id="__span-3-18"><a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="w">  </span><span class="nx">credentials</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;include&#39;</span>
-</span><span id="__span-3-19"><a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="p">});</span>
+- Displays quota usage with progress bars and alerts</p>
+<p><strong>Type Definitions</strong> (<code>Billing/types.ts</code>)
+<div class="language-typescript highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">BillingConfig</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">    </span><span class="nx">provider</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;none&#39;</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">&#39;stripe&#39;</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">&#39;whmcs&#39;</span><span class="p">;</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="nx">features</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">        </span><span class="nx">quotas</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">        </span><span class="nx">plans</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">        </span><span class="nx">checkout</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">        </span><span class="nx">portal</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">        </span><span class="nx">webhooks</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">        </span><span class="nx">addons</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="p">};</span>
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="p">}</span>
+</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>
+</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">OrganizationSubscription</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">    </span><span class="nx">providerSubscriptionId?</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w">  </span><span class="c1">// was stripeSubscriptionId</span>
+</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">    </span><span class="nx">providerCustomerId?</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w">      </span><span class="c1">// was stripeCustomerId</span>
+</span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="w">    </span><span class="c1">// ... other fields</span>
+</span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="p">}</span>
 </span></code></pre></div></p>
 <h2 id="api-endpoints">API Endpoints<a class="headerlink" href="#api-endpoints" title="Permanent link"> ¶</a></h2>
-<h3 id="available-endpoints">Available Endpoints<a class="headerlink" href="#available-endpoints" title="Permanent link"> ¶</a></h3>
+<h3 id="always-available-any-billing_provider-value">Always Available (any <code>BILLING_PROVIDER</code> value)<a class="headerlink" href="#always-available-any-billing_provider-value" title="Permanent link"> ¶</a></h3>
 <table>
 <thead>
 <tr>
@@ -1831,14 +1977,50 @@
 <tbody>
 <tr>
 <td>GET</td>
+<td><code>/api/billing/config</code></td>
+<td>Active provider and feature flags</td>
+<td>Required</td>
+</tr>
+<tr>
+<td>GET</td>
 <td><code>/api/billing/health</code></td>
 <td>Service health check</td>
 <td>Required</td>
 </tr>
 <tr>
 <td>GET</td>
+<td><code>/api/billing/plans</code></td>
+<td>List available subscription plans</td>
+<td>Required</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/billing/addons</code></td>
+<td>List available resource add-ons</td>
+<td>Required</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/billing/organization-subscription</code></td>
+<td>Current org subscription and quota data</td>
+<td>Required (org-admin)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/billing/quota-usage</code></td>
+<td>HRQ usage across all projects</td>
+<td>Required (org-admin)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/billing/quota-status</code></td>
+<td>Quota enforcement status</td>
+<td>Required (org-admin)</td>
+</tr>
+<tr>
+<td>GET</td>
 <td><code>/api/billing/projects</code></td>
-<td>List accessible projects</td>
+<td>List accessible projects with billing data</td>
 <td>Required</td>
 </tr>
 <tr>
@@ -1849,45 +2031,102 @@
 </tr>
 </tbody>
 </table>
+<h3 id="stripe-provider-only-billing_providerstripe">Stripe Provider Only (<code>BILLING_PROVIDER=stripe</code>)<a class="headerlink" href="#stripe-provider-only-billing_providerstripe" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Endpoint</th>
+<th>Description</th>
+<th>Authentication</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td><code>/api/billing/organization-subscription</code></td>
+<td>Create subscription (Stripe Checkout)</td>
+<td>Required (org-admin)</td>
+</tr>
+<tr>
+<td>PUT</td>
+<td><code>/api/billing/organization-subscription</code></td>
+<td>Update subscription (plan change)</td>
+<td>Required (org-admin)</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/api/billing/organization-subscription</code></td>
+<td>Cancel subscription</td>
+<td>Required (org-admin)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/billing/verify-checkout</code></td>
+<td>Verify Stripe checkout session</td>
+<td>Required</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/billing/customer-portal</code></td>
+<td>Open Stripe customer portal</td>
+<td>Required (org-admin)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/billing/webhook</code></td>
+<td>Stripe webhook handler</td>
+<td>Stripe signature</td>
+</tr>
+</tbody>
+</table>
 <h3 id="response-format">Response Format<a class="headerlink" href="#response-format" title="Permanent link"> ¶</a></h3>
-<p><strong>Project Overview Response</strong>
-<div class="language-json highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">{</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">&quot;success&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="nt">&quot;namespace&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;project-name&quot;</span><span class="p">,</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="nt">&quot;billing_summary&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">      </span><span class="nt">&quot;current_month_total&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1672.31</span><span class="p">,</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">      </span><span class="nt">&quot;last_day_spend&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">109.16</span><span class="p">,</span>
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">      </span><span class="nt">&quot;billing_period&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2025-09&quot;</span><span class="p">,</span>
-</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">      </span><span class="nt">&quot;total_cost_per_hour&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">2.32</span>
-</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="p">},</span>
-</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">    </span><span class="nt">&quot;compute_instances&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">      </span><span class="nt">&quot;running_pods&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span>
-</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">      </span><span class="nt">&quot;running_vms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
-</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">      </span><span class="nt">&quot;cpu_cores&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">2.4</span><span class="p">,</span>
-</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">      </span><span class="nt">&quot;memory_gib&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">8.8</span><span class="p">,</span>
-</span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="w">      </span><span class="nt">&quot;cost_per_hour&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.15</span>
-</span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="w">    </span><span class="p">},</span>
-</span><span id="__span-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="w">    </span><span class="nt">&quot;cost_breakdown&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-4-19"><a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a><span class="w">      </span><span class="nt">&quot;cpu_cost&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">89.45</span><span class="p">,</span>
-</span><span id="__span-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="w">      </span><span class="nt">&quot;memory_cost&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">45.23</span><span class="p">,</span>
-</span><span id="__span-4-21"><a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="w">      </span><span class="nt">&quot;storage_cost&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">12.67</span><span class="p">,</span>
-</span><span id="__span-4-22"><a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a><span class="w">      </span><span class="nt">&quot;network_cost&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.00</span><span class="p">,</span>
-</span><span id="__span-4-23"><a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a><span class="w">      </span><span class="nt">&quot;public_ip_cost&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.00</span>
-</span><span id="__span-4-24"><a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a><span class="w">    </span><span class="p">}</span>
-</span><span id="__span-4-25"><a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a><span class="w">  </span><span class="p">},</span>
-</span><span id="__span-4-26"><a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a><span class="w">  </span><span class="nt">&quot;timestamp&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2025-10-01T15:25:00.000Z&quot;</span>
-</span><span id="__span-4-27"><a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a><span class="p">}</span>
+<p><strong>Billing Config Response</strong> (<code>GET /api/billing/config</code>)
+<div class="language-json highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">&quot;success&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">&quot;config&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="nt">&quot;provider&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;none&quot;</span><span class="p">,</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="nt">&quot;features&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">      </span><span class="nt">&quot;quotas&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">      </span><span class="nt">&quot;plans&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">      </span><span class="nt">&quot;checkout&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">      </span><span class="nt">&quot;portal&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">      </span><span class="nt">&quot;webhooks&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">      </span><span class="nt">&quot;addons&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">  </span><span class="p">}</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="p">}</span>
+</span></code></pre></div></p>
+<p><strong>Organization Subscription Response</strong>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="p">{</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">&quot;success&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="nt">&quot;organization&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;my-org&quot;</span><span class="p">,</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span><span class="nt">&quot;planId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;pro-pool&quot;</span><span class="p">,</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">    </span><span class="nt">&quot;planName&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Pro Pool&quot;</span><span class="p">,</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">    </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;active&quot;</span><span class="p">,</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">    </span><span class="nt">&quot;providerSubscriptionId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sub_xxx&quot;</span><span class="p">,</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">    </span><span class="nt">&quot;providerCustomerId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cus_xxx&quot;</span><span class="p">,</span>
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">    </span><span class="nt">&quot;addons&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">&quot;addonId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;turbo-x1&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;quantity&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">}],</span>
+</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">    </span><span class="nt">&quot;resources&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;cpu&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;memory&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">28</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;storage&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">180</span><span class="w"> </span><span class="p">},</span>
+</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">    </span><span class="nt">&quot;usage&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="w">      </span><span class="nt">&quot;cpu&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;used&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">4.2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;limit&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="w"> </span><span class="p">},</span>
+</span><span id="__span-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="w">      </span><span class="nt">&quot;memory&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;used&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">12.5</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;limit&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">28</span><span class="w"> </span><span class="p">},</span>
+</span><span id="__span-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="w">      </span><span class="nt">&quot;storage&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;used&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">45</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;limit&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">180</span><span class="w"> </span><span class="p">},</span>
+</span><span id="__span-6-16"><a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="w">      </span><span class="nt">&quot;pods&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;used&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">23</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;limit&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span><span class="w"> </span><span class="p">}</span>
+</span><span id="__span-6-17"><a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-6-18"><a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="w">  </span><span class="p">}</span>
+</span><span id="__span-6-19"><a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="p">}</span>
 </span></code></pre></div></p>
 <h2 id="security-model">Security Model<a class="headerlink" href="#security-model" title="Permanent link"> ¶</a></h2>
 <h3 id="jwt-token-structure">JWT Token Structure<a class="headerlink" href="#jwt-token-structure" title="Permanent link"> ¶</a></h3>
-<div class="language-json highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">&quot;org&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;organization-name&quot;</span><span class="p">,</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">&quot;namespaces&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;project-1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;project-2&quot;</span><span class="p">],</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">&quot;groups&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;org-admin&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;user&quot;</span><span class="p">],</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="nt">&quot;exp&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1696176000</span><span class="p">,</span>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="nt">&quot;iat&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1696089600</span>
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="p">}</span>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="p">{</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">&quot;org&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;organization-name&quot;</span><span class="p">,</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">&quot;namespaces&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;project-1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;project-2&quot;</span><span class="p">],</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">&quot;groups&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;org-admin&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;user&quot;</span><span class="p">],</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="nt">&quot;exp&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1696176000</span><span class="p">,</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="nt">&quot;iat&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1696089600</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="p">}</span>
 </span></code></pre></div>
 <h3 id="authorization-levels">Authorization Levels<a class="headerlink" href="#authorization-levels" title="Permanent link"> ¶</a></h3>
 <table>
@@ -1926,45 +2165,66 @@
 <h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link"> ¶</a></h2>
 <h3 id="environment-variables">Environment Variables<a class="headerlink" href="#environment-variables" title="Permanent link"> ¶</a></h3>
 <p><strong>Backend Configuration</strong>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Billing service endpoint (internal)</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nv">BILLING_API_URL</span><span class="o">=</span>http://billing-dashboard-svc.billing.svc.cluster.local:5000
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># Logging level</span>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="nv">LOG_LEVEL</span><span class="o">=</span>info
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Billing provider feature flag (required)</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nv">BILLING_PROVIDER</span><span class="o">=</span>none<span class="w">              </span><span class="c1"># none | stripe | whmcs</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Stripe-specific (only when BILLING_PROVIDER=stripe)</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="nv">STRIPE_SECRET_KEY</span><span class="o">=</span>sk_xxx<span class="w">           </span><span class="c1"># Stripe API secret key</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="nv">STRIPE_WEBHOOK_SECRET</span><span class="o">=</span>whsec_xxx<span class="w">    </span><span class="c1"># Stripe webhook signing secret</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="nv">STRIPE_PRICE_DEV_POOL</span><span class="o">=</span>price_xxx<span class="w">    </span><span class="c1"># Stripe Price ID for Dev Pool plan</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="nv">STRIPE_PRICE_PRO_POOL</span><span class="o">=</span>price_xxx<span class="w">    </span><span class="c1"># Stripe Price ID for Pro Pool plan</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="nv">STRIPE_PRICE_SCALE_POOL</span><span class="o">=</span>price_xxx<span class="w">  </span><span class="c1"># Stripe Price ID for Scale Pool plan</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="nv">STRIPE_PRICE_TURBO_X1</span><span class="o">=</span>price_xxx<span class="w">    </span><span class="c1"># Stripe Price ID for Turbo x1 addon</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="nv">STRIPE_PRICE_TURBO_X2</span><span class="o">=</span>price_xxx<span class="w">    </span><span class="c1"># Stripe Price ID for Turbo x2 addon</span>
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="c1"># General</span>
+</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="nv">LOG_LEVEL</span><span class="o">=</span>info
 </span></code></pre></div></p>
 <p><strong>Frontend Configuration</strong>
-Uses existing Kube-DC ConfigMap pattern:
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ConfigMap</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc-frontend-config</span>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="nt">data</span><span class="p">:</span>
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="nt">env.js</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
-</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">    </span><span class="no">window.backendURL = &#39;https://backend.stage.kube-dc.com&#39;;</span>
-</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">    </span><span class="no">window.frontendURL = &#39;https://console.stage.kube-dc.com&#39;;</span>
-</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">    </span><span class="no">window.keycloakURL = &#39;https://login.stage.kube-dc.com&#39;;</span>
+Uses existing Kube-DC ConfigMap pattern. No billing-specific frontend config needed — the frontend dynamically fetches <code>/api/billing/config</code> at runtime.
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ConfigMap</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc-frontend-config</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">  </span><span class="nt">env.js</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">    </span><span class="no">window.backendURL = &#39;https://backend.stage.kube-dc.com&#39;;</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">    </span><span class="no">window.frontendURL = &#39;https://console.stage.kube-dc.com&#39;;</span>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">    </span><span class="no">window.keycloakURL = &#39;https://login.stage.kube-dc.com&#39;;</span>
 </span></code></pre></div></p>
-<h3 id="network-policies">Network Policies<a class="headerlink" href="#network-policies" title="Permanent link"> ¶</a></h3>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Internal service communication</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">networking.k8s.io/v1</span>
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NetworkPolicy</span>
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc-billing-access</span>
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">  </span><span class="nt">podSelector</span><span class="p">:</span>
-</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">    </span><span class="nt">matchLabels</span><span class="p">:</span>
-</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">      </span><span class="nt">app</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-dc-backend</span>
-</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="w">  </span><span class="nt">policyTypes</span><span class="p">:</span>
-</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Egress</span>
-</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="w">  </span><span class="nt">egress</span><span class="p">:</span>
-</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">to</span><span class="p">:</span>
-</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">namespaceSelector</span><span class="p">:</span>
-</span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="w">        </span><span class="nt">matchLabels</span><span class="p">:</span>
-</span><span id="__span-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">billing</span>
-</span><span id="__span-8-17"><a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a><span class="w">    </span><span class="nt">ports</span><span class="p">:</span>
-</span><span id="__span-8-18"><a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">protocol</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">TCP</span>
-</span><span id="__span-8-19"><a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a><span class="w">      </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5000</span>
-</span></code></pre></div>
+<h3 id="kubernetes-resources">Kubernetes Resources<a class="headerlink" href="#kubernetes-resources" title="Permanent link"> ¶</a></h3>
+<p>The billing system reads from and writes to:</p>
+<table>
+<thead>
+<tr>
+<th>Resource</th>
+<th>Namespace</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ConfigMap <code>billing-plans</code></td>
+<td><code>kube-dc</code></td>
+<td>Plan definitions, addons, quotas</td>
+</tr>
+<tr>
+<td>Organization annotations</td>
+<td>org namespace</td>
+<td>Subscription state, plan assignment</td>
+</tr>
+<tr>
+<td>HierarchicalResourceQuota <code>plan-quota</code></td>
+<td>org namespace</td>
+<td>Aggregate resource limits</td>
+</tr>
+<tr>
+<td>LimitRange <code>default-resource-limits</code></td>
+<td>org namespace</td>
+<td>Default container resources</td>
+</tr>
+</tbody>
+</table>
 <h2 id="error-handling">Error Handling<a class="headerlink" href="#error-handling" title="Permanent link"> ¶</a></h2>
 <h3 id="http-status-codes">HTTP Status Codes<a class="headerlink" href="#http-status-codes" title="Permanent link"> ¶</a></h3>
 <table>
@@ -2004,15 +2264,15 @@ Uses existing Kube-DC ConfigMap pattern:
 </tbody>
 </table>
 <h3 id="error-response-format">Error Response Format<a class="headerlink" href="#error-response-format" title="Permanent link"> ¶</a></h3>
-<div class="language-json highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="p">{</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">&quot;success&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Access denied to namespace&quot;</span><span class="p">,</span>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">&quot;details&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">    </span><span class="nt">&quot;namespace&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;requested-project&quot;</span><span class="p">,</span>
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">    </span><span class="nt">&quot;availableNamespaces&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;project-1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;project-2&quot;</span><span class="p">]</span>
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">  </span><span class="p">},</span>
-</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">  </span><span class="nt">&quot;timestamp&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2025-10-01T15:25:00.000Z&quot;</span>
-</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="p">}</span>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="p">{</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">&quot;success&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Access denied to namespace&quot;</span><span class="p">,</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">  </span><span class="nt">&quot;details&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">    </span><span class="nt">&quot;namespace&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;requested-project&quot;</span><span class="p">,</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">    </span><span class="nt">&quot;availableNamespaces&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;project-1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;project-2&quot;</span><span class="p">]</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">  </span><span class="p">},</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">  </span><span class="nt">&quot;timestamp&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2025-10-01T15:25:00.000Z&quot;</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="p">}</span>
 </span></code></pre></div>
 <h2 id="monitoring-logging">Monitoring &amp; Logging<a class="headerlink" href="#monitoring-logging" title="Permanent link"> ¶</a></h2>
 <h3 id="log-levels">Log Levels<a class="headerlink" href="#log-levels" title="Permanent link"> ¶</a></h3>
@@ -2068,37 +2328,95 @@ Uses existing Kube-DC ConfigMap pattern:
 - Verify network connectivity
 - Confirm service DNS resolution</p>
 <h3 id="debug-commands">Debug Commands<a class="headerlink" href="#debug-commands" title="Permanent link"> ¶</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Check service status</span>
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>kube-dc
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>billing
-</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>
-</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="c1"># Check service connectivity</span>
-</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-n<span class="w"> </span>kube-dc<span class="w"> </span>deployment/kube-dc-backend<span class="w"> </span>--<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">  </span>curl<span class="w"> </span>-v<span class="w"> </span>http://billing-dashboard-svc.billing.svc.cluster.local:5000/api/health
-</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>
-</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="c1"># Check logs</span>
-</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>kube-dc<span class="w"> </span>deployment/kube-dc-backend
-</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>billing<span class="w"> </span>deployment/billing-dashboard
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># Check service status</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>kube-dc
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>billing
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="c1"># Check service connectivity</span>
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-n<span class="w"> </span>kube-dc<span class="w"> </span>deployment/kube-dc-backend<span class="w"> </span>--<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">  </span>curl<span class="w"> </span>-v<span class="w"> </span>http://billing-dashboard-svc.billing.svc.cluster.local:5000/api/health
+</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>
+</span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="c1"># Check logs</span>
+</span><span id="__span-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>kube-dc<span class="w"> </span>deployment/kube-dc-backend
+</span><span id="__span-11-11"><a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>billing<span class="w"> </span>deployment/billing-dashboard
+</span></code></pre></div>
+<h2 id="testing">Testing<a class="headerlink" href="#testing" title="Permanent link"> ¶</a></h2>
+<h3 id="e2e-tests">E2E Tests<a class="headerlink" href="#e2e-tests" title="Permanent link"> ¶</a></h3>
+<p>Organization quota reconciliation tests are in <code>tests/e2e/organization_quota_test.go</code>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Run all quota tests</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>-v<span class="w"> </span>./tests/e2e<span class="w"> </span>-ginkgo.focus<span class="o">=</span><span class="s2">&quot;Organization Quota Reconciliation&quot;</span><span class="w"> </span>-timeout<span class="o">=</span>15m
+</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Test</th>
+<th>What it verifies</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Org with active plan → HRQ + LimitRange</td>
+<td>Controller creates quota resources with correct values</td>
+</tr>
+<tr>
+<td>Plan change → HRQ update</td>
+<td>Changing plan annotation triggers resource update</td>
+</tr>
+<tr>
+<td>Suspended org → reduced HRQ</td>
+<td>Suspended orgs get minimal quota</td>
+</tr>
+<tr>
+<td>Org deletion → cleanup</td>
+<td>HRQ and LimitRange removed on deletion</td>
+</tr>
+<tr>
+<td>Addons → HRQ includes addon resources</td>
+<td>Addon CPU/memory/storage added to base plan</td>
+</tr>
+<tr>
+<td>No plan → no HRQ</td>
+<td>Orgs without billing annotations get no quota</td>
+</tr>
+</tbody>
+</table>
+<h3 id="manual-testing-quota-only-mode">Manual Testing (quota-only mode)<a class="headerlink" href="#manual-testing-quota-only-mode" title="Permanent link"> ¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># 1. Apply billing-plans ConfigMap</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>examples/organization/04-billing-plans-configmap.yaml
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="c1"># 2. Assign a plan to an organization</span>
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>kubectl<span class="w"> </span>annotate<span class="w"> </span>organization/shalb<span class="w"> </span>-n<span class="w"> </span>shalb<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="w">  </span>billing.kube-dc.com/plan-id<span class="o">=</span>dev-pool<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="w">  </span>billing.kube-dc.com/subscription<span class="o">=</span>active<span class="w"> </span>--overwrite
+</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>
+</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="c1"># 3. Verify HRQ was created</span>
+</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a>kubectl<span class="w"> </span>get<span class="w"> </span>hrq<span class="w"> </span>-n<span class="w"> </span>shalb
+</span><span id="__span-13-11"><a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>
+</span><span id="__span-13-12"><a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a><span class="c1"># 4. Verify LimitRange was created</span>
+</span><span id="__span-13-13"><a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a>kubectl<span class="w"> </span>get<span class="w"> </span>limitrange<span class="w"> </span>-n<span class="w"> </span>shalb
+</span><span id="__span-13-14"><a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a>
+</span><span id="__span-13-15"><a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a><span class="c1"># 5. Check quota usage</span>
+</span><span id="__span-13-16"><a id="__codelineno-13-16" name="__codelineno-13-16" href="#__codelineno-13-16"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>hrq<span class="w"> </span>plan-quota<span class="w"> </span>-n<span class="w"> </span>shalb
 </span></code></pre></div>
 <h2 id="future-enhancements">Future Enhancements<a class="headerlink" href="#future-enhancements" title="Permanent link"> ¶</a></h2>
 <h3 id="planned-features">Planned Features<a class="headerlink" href="#planned-features" title="Permanent link"> ¶</a></h3>
 <ul>
+<li>WHMCS billing provider integration</li>
 <li>Cost trend analysis and forecasting</li>
 <li>Budget alerts and notifications</li>
+<li>Per-project quota management UI</li>
 <li>Resource optimization recommendations</li>
-<li>Detailed cost attribution reports</li>
-<li>Integration with cloud provider billing APIs</li>
 </ul>
 <h3 id="technical-improvements">Technical Improvements<a class="headerlink" href="#technical-improvements" title="Permanent link"> ¶</a></h3>
 <ul>
-<li>Response caching for performance</li>
-<li>Real-time cost updates via WebSocket</li>
-<li>Advanced filtering and search capabilities</li>
-<li>Export functionality for billing reports</li>
-<li>Integration with monitoring systems</li>
+<li>Plan data caching with ConfigMap watch (replace polling)</li>
+<li>Real-time quota updates via WebSocket</li>
+<li>Automated trial-to-paid conversion</li>
+<li>Multi-currency support</li>
 </ul>
 <hr />
-<p><em>This document is maintained by the Kube-DC development team. For questions or updates, please contact the platform team.</em></p>
+<p><em>Last updated: February 2026</em>
+<em>This document is maintained by the Kube-DC development team.</em></p>
 
 
 
