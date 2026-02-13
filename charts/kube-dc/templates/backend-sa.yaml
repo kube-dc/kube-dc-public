@@ -102,6 +102,13 @@ rules:
   - apiGroups: [""]
     resources: ["namespaces"]
     verbs: ["create", "get", "list", "watch"]
+  # Object Storage: CephObjectStoreUser quota + S3 keys from rook-ceph
+  - apiGroups: ["ceph.rook.io"]
+    resources: ["cephobjectstoreusers"]
+    verbs: ["get", "list"]
+  - apiGroups: ["objectbucket.io"]
+    resources: ["objectbucketclaims"]
+    verbs: ["get", "list"]
     
 ---
 apiVersion: rbac.authorization.k8s.io/v1

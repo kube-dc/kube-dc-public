@@ -64,13 +64,54 @@ scale-pool: objectStorage: 500   # 500 GB, 50 buckets
 - `ObjectBucketClaim` examples in `examples/organization/object-storage/`
 - S3 public policy JSON example
 
-### What Does NOT Exist Yet
-- **Rook Ceph deployment** on production cluster
-- **UI for object storage** (no sidebar tab, no views)
-- **Backend API** for bucket CRUD, S3 key management, file operations
-- **S3 endpoint exposure** via Envoy Gateway
-- **Remote Ceph cluster** support
-- **Bucket-level** user operations (create/delete/list buckets, manage files)
+### Implementation Status (2026-02-13)
+
+✅ **Phase 1 — Rook Ceph Deployment & S3 Endpoint**: Complete
+- Rook Operator v1.19.1 deployed via Helm
+- CephCluster: 1 MON + 1 MGR + 1 OSD (500GB loop device, single-node)
+- CephObjectStore `my-store` with RGW gateway
+- StorageClass `ceph-bucket` for OBC provisioning
+- S3 endpoint exposed via Envoy Gateway with TLS (Let's Encrypt)
+- BackendTrafficPolicy for large uploads (no timeout)
+- Deployment doc: [`docs/deploy-rook-ceph-object-storage.md`](../deploy-rook-ceph-object-storage.md)
+
+✅ **Phase 2 — UI Backend API**: Complete
+- File: `ui/backend/controllers/objectStorageModule.js`
+- Bucket CRUD (create/delete/list via ObjectBucketClaim)
+- Bucket details with per-bucket credentials from OBC secrets
+- File browser API (list, upload via presigned URL, download, delete, create folder)
+- S3 key retrieval (org-level credentials from rook-ceph secret)
+- Key management: list all keys, generate new keys, revoke keys (via RGW Admin API)
+- Quota/usage API (RGW Admin API `GET /admin/user?stats=true` + `GET /admin/bucket?stats=true`)
+- Bucket policies: public-read / private toggle via S3 bucket policy
+- CORS auto-configuration for browser uploads
+
+✅ **Phase 3 — UI Frontend**: Complete
+- File: `ui/frontend/src/app/ManageWorkloads/Views/ObjectStorage/ObjectStorageView.tsx`
+- Object Storage sidebar tab with tree view (Overview, Buckets, Access Keys)
+- Overview: quota usage bars, endpoint info, bucket count, storage used
+- Buckets: table with expandable details, access toggle (Public/Private), Edit/Browse/Delete actions
+- File Browser (`BucketFileBrowser.tsx`): breadcrumb navigation, drag-and-drop upload, download, delete, create folder
+- Access Keys: primary credentials with reveal/copy, Key Management card (generate/revoke), CLI examples (AWS CLI, Python boto3, kubectl)
+- Sidebar tree: `ObjectStorageTreeViewImpl.tsx` with per-bucket entries
+- Billing integration: Object Storage usage bars on Billing Overview, Subscription, and Project pages
+
+✅ **Go Controller Enhancements**:
+- `res_s3_quota.go`: CephObjectStoreUser capabilities upgraded to `user=*`, `bucket=*` (enables key management via RGW Admin API)
+- Patch logic also updates capabilities on existing users (not just quotas)
+- Billing quota controller (`quotaController.js`): shared helpers `getOrgS3Context`, `sumBucketUsage`, `buildStorageResult` (DRY)
+- Project-level object storage usage uses org-level quota limits
+
+🔲 **Phase 4 — Remote Ceph Cluster Support**: Not started
+- External CephCluster mode
+- Multi-store configuration
+- Per-org store assignment
+
+🔲 **Not Yet Implemented**:
+- Remote Ceph cluster support
+- Virtual-hosted bucket access (`<bucket>.s3.example.com`)
+- Custom bucket policies (JSON editor — currently only public-read/private toggle)
+- Sub-user creation with restricted permissions (read-only sub-users)
 
 ---
 
@@ -210,13 +251,13 @@ spec:
 - Wildcard `*.s3.kube-dc.cloud` for virtual-hosted bucket access (optional, path-style first)
 
 **Phase 1 Deliverables**:
-- [ ] Rook Ceph operator running
-- [ ] CephCluster healthy (1 MON, 1 MGR, 1 OSD)
-- [ ] CephObjectStore `my-store` with RGW gateway
-- [ ] StorageClass `ceph-bucket` for OBC
-- [ ] S3 endpoint at `s3.kube-dc.cloud`
-- [ ] BackendTrafficPolicy for large file uploads
-- [ ] Existing org reconciler creates `CephObjectStoreUser` automatically
+- [x] Rook Ceph operator running
+- [x] CephCluster healthy (1 MON, 1 MGR, 1 OSD)
+- [x] CephObjectStore `my-store` with RGW gateway
+- [x] StorageClass `ceph-bucket` for OBC
+- [x] S3 endpoint exposed via Envoy Gateway with TLS
+- [x] BackendTrafficPolicy for large file uploads
+- [x] Existing org reconciler creates `CephObjectStoreUser` automatically
 
 ---
 
@@ -352,11 +393,13 @@ const getUploadUrl = async (bucket, key) => {
 ```
 
 **Phase 2 Deliverables**:
-- [ ] Bucket CRUD API (`ObjectBucketClaim` management)
-- [ ] S3 key retrieval API
-- [ ] Quota/usage API
-- [ ] File browser API (list, presigned upload/download, delete)
-- [ ] RBAC: users can only manage buckets in their project namespaces
+- [x] Bucket CRUD API (`ObjectBucketClaim` management)
+- [x] S3 key retrieval API
+- [x] Key management API (list all keys, generate, revoke via RGW Admin API)
+- [x] Quota/usage API (RGW Admin API stats)
+- [x] File browser API (list, presigned upload/download, delete, create folder)
+- [x] Bucket policy API (public-read / private toggle)
+- [x] RBAC: users can only manage buckets in their project namespaces
 
 ---
 
@@ -441,12 +484,13 @@ Tree view under Object Storage tab:
 ```
 
 **Phase 3 Deliverables**:
-- [ ] Object Storage sidebar tab
-- [ ] Overview view with quota usage
-- [ ] Bucket list view with create/delete
-- [ ] File browser with upload/download/delete
-- [ ] Access keys view with CLI examples
-- [ ] Route integration in `MainContainer.tsx`
+- [x] Object Storage sidebar tab (`ObjectStorageTreeViewImpl.tsx`)
+- [x] Overview view with quota usage (RGW Admin API stats, quota bars)
+- [x] Bucket list view with create/delete, expandable details, access toggle
+- [x] File browser with upload/download/delete, folder creation, drag-and-drop
+- [x] Access keys view with CLI examples + Key Management (generate/revoke)
+- [x] Route integration in `MainContainer.tsx`
+- [x] Billing integration: Object Storage usage bars on Billing & Project pages
 
 ---
 
@@ -722,42 +766,44 @@ Ceph RGW enforces quotas natively. When quota is exceeded:
 ## Implementation Priority
 
 ```
-Phase 1 (Week 1-2):  Rook Ceph deployment + S3 endpoint
-Phase 2 (Week 2-3):  Backend API for bucket/key management
-Phase 3 (Week 3-5):  UI frontend (Object Storage tab)
-Phase 4 (Week 6+):   Remote Ceph cluster support
+Phase 1 (Week 1-2):  Rook Ceph deployment + S3 endpoint          ✅ DONE
+Phase 2 (Week 2-3):  Backend API for bucket/key management        ✅ DONE
+Phase 3 (Week 3-5):  UI frontend (Object Storage tab)             ✅ DONE
+Phase 4 (Week 6+):   Remote Ceph cluster support                  🔲 NOT STARTED
 ```
 
-### Quick Wins (can start immediately)
-1. Deploy Rook Ceph on production (Phase 1) — infrastructure only, no code changes
-2. Verify existing Go controller creates `CephObjectStoreUser` for each org
-3. Test manual bucket creation via `ObjectBucketClaim`
+### Remaining Work
+1. Remote Ceph cluster support (Phase 4)
+2. Custom bucket policies (JSON editor for fine-grained access control)
+3. Sub-user creation with restricted permissions (read-only keys)
+4. Virtual-hosted bucket access (`<bucket>.s3.example.com`)
 
 ---
 
 ## Files to Create / Modify
 
-### New Files
+### Files Created
 | File | Purpose |
 |------|---------|
-| `ui/backend/controllers/objectStorageController.js` | Backend API routes |
-| `ui/frontend/src/app/ManageWorkloads/Views/ObjectStorage/ObjectStorageOverview.tsx` | Overview view |
-| `ui/frontend/src/app/ManageWorkloads/Views/ObjectStorage/BucketListView.tsx` | Bucket list |
-| `ui/frontend/src/app/ManageWorkloads/Views/ObjectStorage/BucketFileBrowser.tsx` | File browser |
-| `ui/frontend/src/app/ManageWorkloads/Views/ObjectStorage/AccessKeysView.tsx` | S3 keys view |
-| `ui/frontend/src/app/ManageWorkloads/Modals/CreateBucketModal.tsx` | Bucket creation modal |
-| `ui/frontend/src/app/ManageWorkloads/Sidebar/ObjectStorageTreeView.tsx` | Sidebar tree |
-| `charts/kube-dc/templates/rook-ceph/` | Helm templates for Rook deployment |
-| `installer/kube-dc/templates/kube-dc/rook-ceph/` | Installer templates |
+| `ui/backend/controllers/objectStorageModule.js` | Backend API: buckets, keys, files, quota, policies |
+| `ui/frontend/src/app/ManageWorkloads/Views/ObjectStorage/ObjectStorageView.tsx` | All views: Overview, Buckets, Access Keys (single file) |
+| `ui/frontend/src/app/ManageWorkloads/Views/ObjectStorage/BucketFileBrowser.tsx` | File browser with upload/download/delete/folders |
+| `ui/frontend/src/app/ManageWorkloads/Sidebar/ObjectStorageTreeViewImpl.tsx` | Sidebar tree with per-bucket entries |
+| `docs/deploy-rook-ceph-object-storage.md` | Deployment guide (generic domains) |
 
-### Modified Files
+### Files Modified
 | File | Change |
 |------|--------|
-| `ui/frontend/src/app/ManageWorkloads/MainContainer.tsx` | Add OBJECT_STORAGE view index + routes |
-| `ui/frontend/src/app/ManageWorkloads/Sidebar/Sidebar.tsx` | Add Object Storage tab |
-| `ui/backend/server.js` | Register objectStorage routes |
-| `charts/kube-dc/values.yaml` | Add `objectStorageConfig.endpoint` |
-| `internal/organization/res_s3_quota.go` | Add usage stats retrieval (optional) |
+| `ui/frontend/src/app/ManageWorkloads/MainContainer.tsx` | Added OBJECT_STORAGE view index + routes |
+| `ui/frontend/src/app/ManageWorkloads/Sidebar/Sidebar.tsx` | Added Object Storage tab |
+| `ui/backend/server.js` | Registered objectStorage routes |
+| `ui/backend/controllers/billing/quotaController.js` | Added object storage usage to billing (DRY helpers) |
+| `ui/frontend/src/app/ManageOrganization/Billing/Billing.tsx` | Added Object Storage usage bars |
+| `ui/frontend/src/app/ManageOrganization/Billing/types.ts` | Added `ObjectStorageUsage` interface |
+| `ui/frontend/src/app/ManageWorkloads/Views/Main/MainView.tsx` | Added Object Storage bar to project quotas, removed Pods bar |
+| `internal/organization/res_s3_quota.go` | Upgraded capabilities `user=*`, patch includes capabilities |
+| `charts/kube-dc/templates/backend-sa.yaml` | Added RBAC for CephObjectStoreUser + OBC read |
+| `charts/kube-dc/templates/default-project-admin-role.yaml` | Added OBC permissions to all project roles |
 
 ---
 

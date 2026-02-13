@@ -121,6 +121,10 @@ rules:
 - apiGroups: [gateway.envoyproxy.io]
   resources: [backends]
   verbs: [get, list, watch]
+# Object Storage (Rook-Ceph S3 buckets)
+- apiGroups: [objectbucket.io]
+  resources: [objectbucketclaims]
+  verbs: [create, get, list, watch, delete]
 
 ---
 # Developer Role - Can manage VMs, containers, workloads (no RBAC, no secrets management)
@@ -224,6 +228,10 @@ rules:
 - apiGroups: [gateway.envoyproxy.io]
   resources: [backends]
   verbs: [get, list, watch]
+# Object Storage (Rook-Ceph S3 buckets)
+- apiGroups: [objectbucket.io]
+  resources: [objectbucketclaims]
+  verbs: [create, get, list, watch, delete]
 
 ---
 # Project Manager Role - Can view all resources, manage some settings (no VM/container CRUD)
@@ -324,6 +332,10 @@ rules:
 - apiGroups: [gateway.envoyproxy.io]
   resources: [backends]
   verbs: [get, list, watch]
+# Object Storage - read only
+- apiGroups: [objectbucket.io]
+  resources: [objectbucketclaims]
+  verbs: [get, list, watch]
 
 ---
 # User Role - Read-only access to project resources
@@ -414,4 +426,8 @@ rules:
   verbs: [get, list]
 - apiGroups: [gateway.envoyproxy.io]
   resources: [backends]
+  verbs: [get, list]
+# Object Storage - read only
+- apiGroups: [objectbucket.io]
+  resources: [objectbucketclaims]
   verbs: [get, list]
