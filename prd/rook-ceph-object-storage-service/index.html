@@ -1264,10 +1264,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#what-does-not-exist-yet" class="md-nav__link">
+  <a href="#implementation-status-2026-02-13" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What Does NOT Exist Yet
+        Implementation Status (2026-02-13)
       
     </span>
   </a>
@@ -1892,10 +1892,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#quick-wins-can-start-immediately" class="md-nav__link">
+  <a href="#remaining-work" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Quick Wins (can start immediately)
+        Remaining Work
       
     </span>
   </a>
@@ -1920,10 +1920,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-files" class="md-nav__link">
+  <a href="#files-created" class="md-nav__link">
     <span class="md-ellipsis">
       
-        New Files
+        Files Created
       
     </span>
   </a>
@@ -1931,10 +1931,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#modified-files" class="md-nav__link">
+  <a href="#files-modified" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Modified Files
+        Files Modified
       
     </span>
   </a>
@@ -2034,15 +2034,48 @@
 <li><code>ObjectBucketClaim</code> examples in <code>examples/organization/object-storage/</code></li>
 <li>S3 public policy JSON example</li>
 </ul>
-<h3 id="what-does-not-exist-yet">What Does NOT Exist Yet<a class="headerlink" href="#what-does-not-exist-yet" title="Permanent link"> ¶</a></h3>
-<ul>
-<li><strong>Rook Ceph deployment</strong> on production cluster</li>
-<li><strong>UI for object storage</strong> (no sidebar tab, no views)</li>
-<li><strong>Backend API</strong> for bucket CRUD, S3 key management, file operations</li>
-<li><strong>S3 endpoint exposure</strong> via Envoy Gateway</li>
-<li><strong>Remote Ceph cluster</strong> support</li>
-<li><strong>Bucket-level</strong> user operations (create/delete/list buckets, manage files)</li>
-</ul>
+<h3 id="implementation-status-2026-02-13">Implementation Status (2026-02-13)<a class="headerlink" href="#implementation-status-2026-02-13" title="Permanent link"> ¶</a></h3>
+<p>✅ <strong>Phase 1 — Rook Ceph Deployment &amp; S3 Endpoint</strong>: Complete
+- Rook Operator v1.19.1 deployed via Helm
+- CephCluster: 1 MON + 1 MGR + 1 OSD (500GB loop device, single-node)
+- CephObjectStore <code>my-store</code> with RGW gateway
+- StorageClass <code>ceph-bucket</code> for OBC provisioning
+- S3 endpoint exposed via Envoy Gateway with TLS (Let's Encrypt)
+- BackendTrafficPolicy for large uploads (no timeout)
+- Deployment doc: <a href="../../deploy-rook-ceph-object-storage/"><code>docs/deploy-rook-ceph-object-storage.md</code></a></p>
+<p>✅ <strong>Phase 2 — UI Backend API</strong>: Complete
+- File: <code>ui/backend/controllers/objectStorageModule.js</code>
+- Bucket CRUD (create/delete/list via ObjectBucketClaim)
+- Bucket details with per-bucket credentials from OBC secrets
+- File browser API (list, upload via presigned URL, download, delete, create folder)
+- S3 key retrieval (org-level credentials from rook-ceph secret)
+- Key management: list all keys, generate new keys, revoke keys (via RGW Admin API)
+- Quota/usage API (RGW Admin API <code>GET /admin/user?stats=true</code> + <code>GET /admin/bucket?stats=true</code>)
+- Bucket policies: public-read / private toggle via S3 bucket policy
+- CORS auto-configuration for browser uploads</p>
+<p>✅ <strong>Phase 3 — UI Frontend</strong>: Complete
+- File: <code>ui/frontend/src/app/ManageWorkloads/Views/ObjectStorage/ObjectStorageView.tsx</code>
+- Object Storage sidebar tab with tree view (Overview, Buckets, Access Keys)
+- Overview: quota usage bars, endpoint info, bucket count, storage used
+- Buckets: table with expandable details, access toggle (Public/Private), Edit/Browse/Delete actions
+- File Browser (<code>BucketFileBrowser.tsx</code>): breadcrumb navigation, drag-and-drop upload, download, delete, create folder
+- Access Keys: primary credentials with reveal/copy, Key Management card (generate/revoke), CLI examples (AWS CLI, Python boto3, kubectl)
+- Sidebar tree: <code>ObjectStorageTreeViewImpl.tsx</code> with per-bucket entries
+- Billing integration: Object Storage usage bars on Billing Overview, Subscription, and Project pages</p>
+<p>✅ <strong>Go Controller Enhancements</strong>:
+- <code>res_s3_quota.go</code>: CephObjectStoreUser capabilities upgraded to <code>user=*</code>, <code>bucket=*</code> (enables key management via RGW Admin API)
+- Patch logic also updates capabilities on existing users (not just quotas)
+- Billing quota controller (<code>quotaController.js</code>): shared helpers <code>getOrgS3Context</code>, <code>sumBucketUsage</code>, <code>buildStorageResult</code> (DRY)
+- Project-level object storage usage uses org-level quota limits</p>
+<p>🔲 <strong>Phase 4 — Remote Ceph Cluster Support</strong>: Not started
+- External CephCluster mode
+- Multi-store configuration
+- Per-org store assignment</p>
+<p>🔲 <strong>Not Yet Implemented</strong>:
+- Remote Ceph cluster support
+- Virtual-hosted bucket access (<code>&lt;bucket&gt;.s3.example.com</code>)
+- Custom bucket policies (JSON editor — currently only public-read/private toggle)
+- Sub-user creation with restricted permissions (read-only sub-users)</p>
 <hr />
 <h2 id="phased-implementation">Phased Implementation<a class="headerlink" href="#phased-implementation" title="Permanent link"> ¶</a></h2>
 <h3 id="phase-1-rook-ceph-deployment-s3-endpoint">Phase 1: Rook Ceph Deployment &amp; S3 Endpoint<a class="headerlink" href="#phase-1-rook-ceph-deployment-s3-endpoint" title="Permanent link"> ¶</a></h3>
@@ -2162,13 +2195,13 @@
 <li>Wildcard <code>*.s3.kube-dc.cloud</code> for virtual-hosted bucket access (optional, path-style first)</li>
 </ul>
 <p><strong>Phase 1 Deliverables</strong>:
-- [ ] Rook Ceph operator running
-- [ ] CephCluster healthy (1 MON, 1 MGR, 1 OSD)
-- [ ] CephObjectStore <code>my-store</code> with RGW gateway
-- [ ] StorageClass <code>ceph-bucket</code> for OBC
-- [ ] S3 endpoint at <code>s3.kube-dc.cloud</code>
-- [ ] BackendTrafficPolicy for large file uploads
-- [ ] Existing org reconciler creates <code>CephObjectStoreUser</code> automatically</p>
+- [x] Rook Ceph operator running
+- [x] CephCluster healthy (1 MON, 1 MGR, 1 OSD)
+- [x] CephObjectStore <code>my-store</code> with RGW gateway
+- [x] StorageClass <code>ceph-bucket</code> for OBC
+- [x] S3 endpoint exposed via Envoy Gateway with TLS
+- [x] BackendTrafficPolicy for large file uploads
+- [x] Existing org reconciler creates <code>CephObjectStoreUser</code> automatically</p>
 <hr />
 <h3 id="phase-2-ui-backend-api">Phase 2: UI Backend API<a class="headerlink" href="#phase-2-ui-backend-api" title="Permanent link"> ¶</a></h3>
 <p><strong>Goal</strong>: REST API for bucket and S3 key management.</p>
@@ -2271,11 +2304,13 @@ Users can <code>kubectl get secret my-bucket -o yaml</code> in their own namespa
 </span><span id="__span-12-26"><a id="__codelineno-12-26" name="__codelineno-12-26" href="#__codelineno-12-26"></a><span class="p">};</span>
 </span></code></pre></div>
 <p><strong>Phase 2 Deliverables</strong>:
-- [ ] Bucket CRUD API (<code>ObjectBucketClaim</code> management)
-- [ ] S3 key retrieval API
-- [ ] Quota/usage API
-- [ ] File browser API (list, presigned upload/download, delete)
-- [ ] RBAC: users can only manage buckets in their project namespaces</p>
+- [x] Bucket CRUD API (<code>ObjectBucketClaim</code> management)
+- [x] S3 key retrieval API
+- [x] Key management API (list all keys, generate, revoke via RGW Admin API)
+- [x] Quota/usage API (RGW Admin API stats)
+- [x] File browser API (list, presigned upload/download, delete, create folder)
+- [x] Bucket policy API (public-read / private toggle)
+- [x] RBAC: users can only manage buckets in their project namespaces</p>
 <hr />
 <h3 id="phase-3-ui-frontend">Phase 3: UI Frontend<a class="headerlink" href="#phase-3-ui-frontend" title="Permanent link"> ¶</a></h3>
 <p><strong>Goal</strong>: Object Storage tab in the sidebar with bucket management and file browser.</p>
@@ -2340,12 +2375,13 @@ Users can <code>kubectl get secret my-bucket -o yaml</code> in their own namespa
 </span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>/project/:projectName/object-storage/keys            → Access keys
 </span></code></pre></div>
 <p><strong>Phase 3 Deliverables</strong>:
-- [ ] Object Storage sidebar tab
-- [ ] Overview view with quota usage
-- [ ] Bucket list view with create/delete
-- [ ] File browser with upload/download/delete
-- [ ] Access keys view with CLI examples
-- [ ] Route integration in <code>MainContainer.tsx</code></p>
+- [x] Object Storage sidebar tab (<code>ObjectStorageTreeViewImpl.tsx</code>)
+- [x] Overview view with quota usage (RGW Admin API stats, quota bars)
+- [x] Bucket list view with create/delete, expandable details, access toggle
+- [x] File browser with upload/download/delete, folder creation, drag-and-drop
+- [x] Access keys view with CLI examples + Key Management (generate/revoke)
+- [x] Route integration in <code>MainContainer.tsx</code>
+- [x] Billing integration: Object Storage usage bars on Billing &amp; Project pages</p>
 <hr />
 <h3 id="phase-4-remote-ceph-cluster-support">Phase 4: Remote Ceph Cluster Support<a class="headerlink" href="#phase-4-remote-ceph-cluster-support" title="Permanent link"> ¶</a></h3>
 <p><strong>Goal</strong>: Connect to external Ceph clusters (customer-owned or multi-site).</p>
@@ -2688,20 +2724,21 @@ Users can <code>kubectl get secret my-bucket -o yaml</code> in their own namespa
 </ul>
 <hr />
 <h2 id="implementation-priority">Implementation Priority<a class="headerlink" href="#implementation-priority" title="Permanent link"> ¶</a></h2>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-28-1"><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>Phase 1 (Week 1-2):  Rook Ceph deployment + S3 endpoint
-</span><span id="__span-28-2"><a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>Phase 2 (Week 2-3):  Backend API for bucket/key management
-</span><span id="__span-28-3"><a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a>Phase 3 (Week 3-5):  UI frontend (Object Storage tab)
-</span><span id="__span-28-4"><a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a>Phase 4 (Week 6+):   Remote Ceph cluster support
+<div class="language-text highlight"><pre><span></span><code><span id="__span-28-1"><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>Phase 1 (Week 1-2):  Rook Ceph deployment + S3 endpoint          ✅ DONE
+</span><span id="__span-28-2"><a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>Phase 2 (Week 2-3):  Backend API for bucket/key management        ✅ DONE
+</span><span id="__span-28-3"><a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a>Phase 3 (Week 3-5):  UI frontend (Object Storage tab)             ✅ DONE
+</span><span id="__span-28-4"><a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a>Phase 4 (Week 6+):   Remote Ceph cluster support                  🔲 NOT STARTED
 </span></code></pre></div>
-<h3 id="quick-wins-can-start-immediately">Quick Wins (can start immediately)<a class="headerlink" href="#quick-wins-can-start-immediately" title="Permanent link"> ¶</a></h3>
+<h3 id="remaining-work">Remaining Work<a class="headerlink" href="#remaining-work" title="Permanent link"> ¶</a></h3>
 <ol>
-<li>Deploy Rook Ceph on production (Phase 1) — infrastructure only, no code changes</li>
-<li>Verify existing Go controller creates <code>CephObjectStoreUser</code> for each org</li>
-<li>Test manual bucket creation via <code>ObjectBucketClaim</code></li>
+<li>Remote Ceph cluster support (Phase 4)</li>
+<li>Custom bucket policies (JSON editor for fine-grained access control)</li>
+<li>Sub-user creation with restricted permissions (read-only keys)</li>
+<li>Virtual-hosted bucket access (<code>&lt;bucket&gt;.s3.example.com</code>)</li>
 </ol>
 <hr />
 <h2 id="files-to-create-modify">Files to Create / Modify<a class="headerlink" href="#files-to-create-modify" title="Permanent link"> ¶</a></h2>
-<h3 id="new-files">New Files<a class="headerlink" href="#new-files" title="Permanent link"> ¶</a></h3>
+<h3 id="files-created">Files Created<a class="headerlink" href="#files-created" title="Permanent link"> ¶</a></h3>
 <table>
 <thead>
 <tr>
@@ -2711,44 +2748,28 @@ Users can <code>kubectl get secret my-bucket -o yaml</code> in their own namespa
 </thead>
 <tbody>
 <tr>
-<td><code>ui/backend/controllers/objectStorageController.js</code></td>
-<td>Backend API routes</td>
+<td><code>ui/backend/controllers/objectStorageModule.js</code></td>
+<td>Backend API: buckets, keys, files, quota, policies</td>
 </tr>
 <tr>
-<td><code>ui/frontend/src/app/ManageWorkloads/Views/ObjectStorage/ObjectStorageOverview.tsx</code></td>
-<td>Overview view</td>
-</tr>
-<tr>
-<td><code>ui/frontend/src/app/ManageWorkloads/Views/ObjectStorage/BucketListView.tsx</code></td>
-<td>Bucket list</td>
+<td><code>ui/frontend/src/app/ManageWorkloads/Views/ObjectStorage/ObjectStorageView.tsx</code></td>
+<td>All views: Overview, Buckets, Access Keys (single file)</td>
 </tr>
 <tr>
 <td><code>ui/frontend/src/app/ManageWorkloads/Views/ObjectStorage/BucketFileBrowser.tsx</code></td>
-<td>File browser</td>
+<td>File browser with upload/download/delete/folders</td>
 </tr>
 <tr>
-<td><code>ui/frontend/src/app/ManageWorkloads/Views/ObjectStorage/AccessKeysView.tsx</code></td>
-<td>S3 keys view</td>
+<td><code>ui/frontend/src/app/ManageWorkloads/Sidebar/ObjectStorageTreeViewImpl.tsx</code></td>
+<td>Sidebar tree with per-bucket entries</td>
 </tr>
 <tr>
-<td><code>ui/frontend/src/app/ManageWorkloads/Modals/CreateBucketModal.tsx</code></td>
-<td>Bucket creation modal</td>
-</tr>
-<tr>
-<td><code>ui/frontend/src/app/ManageWorkloads/Sidebar/ObjectStorageTreeView.tsx</code></td>
-<td>Sidebar tree</td>
-</tr>
-<tr>
-<td><code>charts/kube-dc/templates/rook-ceph/</code></td>
-<td>Helm templates for Rook deployment</td>
-</tr>
-<tr>
-<td><code>installer/kube-dc/templates/kube-dc/rook-ceph/</code></td>
-<td>Installer templates</td>
+<td><code>docs/deploy-rook-ceph-object-storage.md</code></td>
+<td>Deployment guide (generic domains)</td>
 </tr>
 </tbody>
 </table>
-<h3 id="modified-files">Modified Files<a class="headerlink" href="#modified-files" title="Permanent link"> ¶</a></h3>
+<h3 id="files-modified">Files Modified<a class="headerlink" href="#files-modified" title="Permanent link"> ¶</a></h3>
 <table>
 <thead>
 <tr>
@@ -2759,23 +2780,43 @@ Users can <code>kubectl get secret my-bucket -o yaml</code> in their own namespa
 <tbody>
 <tr>
 <td><code>ui/frontend/src/app/ManageWorkloads/MainContainer.tsx</code></td>
-<td>Add OBJECT_STORAGE view index + routes</td>
+<td>Added OBJECT_STORAGE view index + routes</td>
 </tr>
 <tr>
 <td><code>ui/frontend/src/app/ManageWorkloads/Sidebar/Sidebar.tsx</code></td>
-<td>Add Object Storage tab</td>
+<td>Added Object Storage tab</td>
 </tr>
 <tr>
 <td><code>ui/backend/server.js</code></td>
-<td>Register objectStorage routes</td>
+<td>Registered objectStorage routes</td>
 </tr>
 <tr>
-<td><code>charts/kube-dc/values.yaml</code></td>
-<td>Add <code>objectStorageConfig.endpoint</code></td>
+<td><code>ui/backend/controllers/billing/quotaController.js</code></td>
+<td>Added object storage usage to billing (DRY helpers)</td>
+</tr>
+<tr>
+<td><code>ui/frontend/src/app/ManageOrganization/Billing/Billing.tsx</code></td>
+<td>Added Object Storage usage bars</td>
+</tr>
+<tr>
+<td><code>ui/frontend/src/app/ManageOrganization/Billing/types.ts</code></td>
+<td>Added <code>ObjectStorageUsage</code> interface</td>
+</tr>
+<tr>
+<td><code>ui/frontend/src/app/ManageWorkloads/Views/Main/MainView.tsx</code></td>
+<td>Added Object Storage bar to project quotas, removed Pods bar</td>
 </tr>
 <tr>
 <td><code>internal/organization/res_s3_quota.go</code></td>
-<td>Add usage stats retrieval (optional)</td>
+<td>Upgraded capabilities <code>user=*</code>, patch includes capabilities</td>
+</tr>
+<tr>
+<td><code>charts/kube-dc/templates/backend-sa.yaml</code></td>
+<td>Added RBAC for CephObjectStoreUser + OBC read</td>
+</tr>
+<tr>
+<td><code>charts/kube-dc/templates/default-project-admin-role.yaml</code></td>
+<td>Added OBC permissions to all project roles</td>
 </tr>
 </tbody>
 </table>
