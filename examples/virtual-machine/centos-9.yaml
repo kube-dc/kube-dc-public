@@ -19,7 +19,7 @@ kind: VirtualMachine
 metadata:
   name: centos-9-base-img
 spec:
-  running: true
+  runStrategy: Always
   template:
     spec:
       accessCredentials:

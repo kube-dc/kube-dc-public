@@ -20,7 +20,7 @@ metadata:
   name: freebsd-base-img
   namespace: demo
 spec:
-  running: true
+  runStrategy: Always
   template:
     spec:
       networks:

@@ -21,7 +21,7 @@ metadata:
   labels:
     ubuntu-mini: ssh
 spec:
-  running: true
+  runStrategy: Always
   template:
     metadata:
       labels:                  # Add this section for VMI labels

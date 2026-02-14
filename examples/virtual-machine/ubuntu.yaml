@@ -21,7 +21,7 @@ metadata:
   name: live-migration
   namespace: shalb-demo
 spec:
-  running: true
+  runStrategy: Always
   template:
     spec:
       networks:

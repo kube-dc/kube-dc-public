@@ -21,7 +21,7 @@ metadata:
   name: fedora-arti1
   namespace: shalb-demo
 spec:
-  running: true
+  runStrategy: Always
   template:
     spec:
       networks:

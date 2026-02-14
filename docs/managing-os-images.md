@@ -78,7 +78,7 @@ data:
 | Field | Description | Options | Notes |
 |-------|-------------|---------|-------|
 | `FIRMWARE_TYPE` | Boot firmware | `"bios"`, `"efi"` | EFI required for Windows 11 |
-| `MACHINE_TYPE` | QEMU machine type | `"q35"`, `"pc-q35-rhel8.6.0"` | Specific types for compatibility |
+| `MACHINE_TYPE` | QEMU machine type | `"q35"` | Generic q35 recommended for all OS types |
 | `FEATURES` | Virtualization features | `"acpi"`, `"hyperv,acpi,apic,smm,tpm"` | Comma-separated list |
 
 ### Supported Features
@@ -127,7 +127,7 @@ data:
   MIN_VCPU: "4"
   MIN_STORAGE: "60G"
   FIRMWARE_TYPE: "efi"
-  MACHINE_TYPE: "pc-q35-rhel8.6.0"
+  MACHINE_TYPE: "q35"
   FEATURES: "hyperv,acpi,apic,smm,tpm"
 ```
 
@@ -350,7 +350,7 @@ For Windows VMs, additional configuration may be needed:
   MIN_VCPU: "2"
   MIN_STORAGE: "80G"
   FIRMWARE_TYPE: "efi"
-  MACHINE_TYPE: "pc-q35-rhel8.6.0"
+  MACHINE_TYPE: "q35"
   FEATURES: "hyperv,acpi,apic,smm,tpm"
   BOOT_ORDER: "cdrom,disk"
   ADDITIONAL_DISKS: "virtio-drivers"

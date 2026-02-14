@@ -97,7 +97,7 @@ spec:
             - name: vpc_net_0
               bridge: {}
         machine:
-          type: pc-q35-rhel8.6.0
+          type: q35
         resources:
           requests:
             memory: 8Gi

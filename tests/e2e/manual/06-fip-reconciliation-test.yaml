@@ -40,7 +40,7 @@ metadata:
   name: cirros-fip-test
   namespace: shalb-dev
 spec:
-  running: true
+  runStrategy: Always
   template:
     metadata:
       labels:

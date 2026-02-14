@@ -20,7 +20,7 @@ metadata:
   name: debian-base-img
   namespace: demo
 spec:
-  running: true
+  runStrategy: Always
   template:
     spec:
       networks:

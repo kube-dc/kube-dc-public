@@ -26,7 +26,7 @@ metadata:
     os: ubuntu
     version: "20.04"
 spec:
-  running: true
+  runStrategy: Always
   template:
     metadata:
       labels:
@@ -103,7 +103,7 @@ metadata:
     os: cirros
     purpose: testing
 spec:
-  running: true
+  runStrategy: Always
   template:
     metadata:
       labels:

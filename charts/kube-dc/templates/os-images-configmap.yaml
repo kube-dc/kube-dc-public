@@ -172,7 +172,7 @@ data:
         MIN_VCPU: "2"
         MIN_STORAGE: "70G"
         FIRMWARE_TYPE: "efi"
-        MACHINE_TYPE: "pc-q35-rhel8.6.0"
+        MACHINE_TYPE: "q35"
         FEATURES: "hyperv,acpi,apic,smm,tpm"
         CLOUD_INIT: |
           # Windows golden image - pre-configured with SSH, RDP, and VirtIO drivers
@@ -184,7 +184,7 @@ data:
         MIN_VCPU: "4"
         MIN_STORAGE: "70G"
         FIRMWARE_TYPE: "efi"
-        MACHINE_TYPE: "pc-q35-rhel8.6.0"
+        MACHINE_TYPE: "q35"
         FEATURES: "hyperv,acpi,apic,smm,tpm"
         BOOT_ORDER: "cdrom,disk"
         ADDITIONAL_DISKS: "virtio-drivers"

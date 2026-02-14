@@ -21,7 +21,7 @@ metadata:
   name: suse-ssh
   namespace: shalb-demo
 spec:
-  running: true
+  runStrategy: Always
   template:
     spec:
       networks:

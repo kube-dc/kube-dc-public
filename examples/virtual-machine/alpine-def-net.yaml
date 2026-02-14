@@ -20,7 +20,7 @@ metadata:
   name: arti-alpine-net
   namespace: shalb-demo
 spec:
-  running: true
+  runStrategy: Always
   template:
     spec:
       networks:

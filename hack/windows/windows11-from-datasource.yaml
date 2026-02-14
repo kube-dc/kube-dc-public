@@ -74,7 +74,7 @@ spec:
             efi:
               secureBoot: false
         machine:
-          type: pc-q35-rhel8.6.0
+          type: q35
         resources:
           requests:
             memory: 8Gi
