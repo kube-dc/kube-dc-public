@@ -287,7 +287,7 @@ data:
           maxCPU: "4"
           maxMemory: "12Gi"
           minCPU: "10m"
-          minMemory: "16Mi"
+          minMemory: "1Mi"
           maxPodCPU: "8"
           maxPodMemory: "24Gi"
           maxPVCStorage: "160Gi"

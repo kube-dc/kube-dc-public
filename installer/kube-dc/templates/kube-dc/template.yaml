@@ -1,7 +1,7 @@
 {{- $kubeDcChartVersion := (.variables.versions.kube_dc                      | default "latest" | quote) -}}
 {{- $terraformVersion := (.variables.versions.terraform                      | default "1.9.4" | quote) -}}
-{{- $kubevirtVersion := (.variables.versions.kubevirt                        | default "v1.6.0" | quote) -}}
-{{- $kubevirtCdiVersion := (.variables.versions.kubevirt_cdi                 | default "v1.59.0" | quote) -}}
+{{- $kubevirtVersion := (.variables.versions.kubevirt                        | default "v1.7.0" | quote) -}}
+{{- $kubevirtCdiVersion := (.variables.versions.kubevirt_cdi                 | default "v1.62.0" | quote) -}}
 {{- $clusterApiVersion := (.variables.versions.cluster_api                   | default "v1.8.1" | quote) -}}
 {{- $capiK3sProviderVersion := (.variables.versions.cluster_api_k3s_provider | default "v1.2.2" | quote) -}}
 {{- $kyvernoVersion := (.variables.versions.kyverno                          | default "v1.15.2" | quote) -}}
