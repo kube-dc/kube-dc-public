@@ -239,6 +239,16 @@ spec:
                         Infrastructure provider for this worker pool
                         Determines which CAPI infrastructure provider to use (kubevirt, aws, azure, etc.)
                       type: string
+                    storageType:
+                      default: datavolume
+                      description: |-
+                        Storage type for KubeVirt workers
+                        - "datavolume": Persistent storage using DataVolume (default, recommended)
+                        - "containerdisk": Ephemeral storage using containerDisk (uses host ephemeral-storage)
+                      enum:
+                      - datavolume
+                      - containerdisk
+                      type: string
                     labels:
                       additionalProperties:
                         type: string
