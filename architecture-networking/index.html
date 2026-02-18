@@ -1203,6 +1203,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#metallb-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MetalLB Integration
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2038,6 +2049,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#metallb-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MetalLB Integration
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2586,6 +2608,27 @@
 </tr>
 </tbody>
 </table>
+<h3 id="metallb-integration">MetalLB Integration<a class="headerlink" href="#metallb-integration" title="Permanent link"> ¶</a></h3>
+<p>In the management cluster, Envoy Gateway uses <strong>MetalLB in L2 mode</strong> to provide a floating IP with automatic failover across control-plane nodes.</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>                         Internet
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>                            │
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>                            ▼
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>                   X.X.X.X (floating IP)
+</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>                            │
+</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>           ┌────────────────┼────────────────┐
+</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>           │                │                │
+</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>      master-0          master-1        master-2
+</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>     (control-plane)   (control-plane)  (control-plane)
+</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>           │                │                │
+</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>           └────────────────┼────────────────┘
+</span><span id="__span-12-12"><a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a>                            │
+</span><span id="__span-12-13"><a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>                   MetalLB L2 (ARP)
+</span><span id="__span-12-14"><a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a>                            │
+</span><span id="__span-12-15"><a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a>                            ▼
+</span><span id="__span-12-16"><a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a>                   Envoy Gateway Pod
+</span></code></pre></div>
+<p>MetalLB speaker runs on all control-plane nodes. One speaker wins the leader election for the floating IP and sends gratuitous ARP to claim it. If that node fails, another speaker takes over automatically. MetalLB is configured with <code>loadBalancerClass: metallb</code> to avoid interfering with the kube-dc LoadBalancer controller that manages project services via EIPs.</p>
+<p>See <a href="../deploy-metallb-ha/">Deploy MetalLB HA</a> for full configuration, deployment steps, and IaC integration.</p>
 <hr />
 <h2 id="related-documentation">Related Documentation<a class="headerlink" href="#related-documentation" title="Permanent link"> ¶</a></h2>
 <ul>
