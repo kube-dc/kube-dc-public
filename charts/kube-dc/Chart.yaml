@@ -4,6 +4,6 @@ description: A Helm chart for kube-dc manager
 
 type: application
 
-version: v0.1.35
+version: v0.2.5
 
-appVersion: v0.1.35
+appVersion: v0.2.5

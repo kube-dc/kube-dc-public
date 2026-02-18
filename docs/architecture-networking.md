@@ -496,6 +496,33 @@ When a service with `expose-route: https` annotation is created:
 | `https` | 443 | Gateway terminates (auto-cert) | Web apps, APIs |
 | `tls-passthrough` | 443 | App terminates | Kubernetes API, end-to-end encryption |
 
+### MetalLB Integration
+
+In the management cluster, Envoy Gateway uses **MetalLB in L2 mode** to provide a floating IP with automatic failover across control-plane nodes.
+
+```
+                         Internet
+                            │
+                            ▼
+                   X.X.X.X (floating IP)
+                            │
+           ┌────────────────┼────────────────┐
+           │                │                │
+      master-0          master-1        master-2
+     (control-plane)   (control-plane)  (control-plane)
+           │                │                │
+           └────────────────┼────────────────┘
+                            │
+                   MetalLB L2 (ARP)
+                            │
+                            ▼
+                   Envoy Gateway Pod
+```
+
+MetalLB speaker runs on all control-plane nodes. One speaker wins the leader election for the floating IP and sends gratuitous ARP to claim it. If that node fails, another speaker takes over automatically. MetalLB is configured with `loadBalancerClass: metallb` to avoid interfering with the kube-dc LoadBalancer controller that manages project services via EIPs.
+
+See [Deploy MetalLB HA](deploy-metallb-ha.md) for full configuration, deployment steps, and IaC integration.
+
 ---
 
 ## Related Documentation
