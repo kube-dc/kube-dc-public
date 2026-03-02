@@ -110,11 +110,27 @@ label,
     display: block;
 }
 
-/* Required asterisk */
+/* Label wrapper container - make label and asterisk inline */
+.pf-c-form__group-label,
+.col-xs-12.col-sm-12.col-md-12.col-lg-12:has(.pf-c-form__label) {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0;
+}
+
+/* Keep label inline */
+.pf-c-form__label {
+    display: inline;
+    margin-right: 4px;
+}
+
+/* Required asterisk - inline with label */
 .required,
 .pf-c-form__label-required {
     color: var(--kube-dc-error);
-    margin-left: 4px;
+    display: inline;
+    font-weight: 400;
 }
 
 /* Input fields - custom border colors */
