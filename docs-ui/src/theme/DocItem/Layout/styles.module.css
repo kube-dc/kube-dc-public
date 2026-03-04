@@ -1,0 +1,22 @@
+.docItemCol {
+  max-width: 75% !important;
+}
+
+.docItemContainer {
+  position: relative;
+  max-width: var(--ifm-container-width);
+  margin: 0 auto;
+  padding: 0 var(--ifm-spacing-horizontal);
+}
+
+@media (min-width: 997px) {
+  .docItemContainer {
+    padding: 0;
+  }
+}
+
+@media (max-width: 996px) {
+  .docItemCol {
+    max-width: 100% !important;
+  }
+}
