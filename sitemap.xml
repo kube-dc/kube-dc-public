@@ -325,6 +325,10 @@
          <lastmod>2026-03-04</lastmod>
     </url>
     <url>
+         <loc>https://docs.kube-dc.com/prd/velero-backup-restore-service/</loc>
+         <lastmod>2026-03-04</lastmod>
+    </url>
+    <url>
          <loc>https://docs.kube-dc.com/prd/vpc-dns-external-routing-fix/</loc>
          <lastmod>2026-03-04</lastmod>
     </url>
