@@ -21,7 +21,7 @@
     
     
       
-        <title>Object Storage (S3 Compatible) - Kube-DC</title>
+        <title>Object Storage (S3) - Kube-DC</title>
       
     
     
@@ -81,7 +81,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#object-storage-s3-compatible" class="md-skip">
+        <a href="#object-storage-s3" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Object Storage (S3 Compatible)
+              Object Storage (S3)
             
           </span>
         </div>
@@ -1197,10 +1197,88 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#buckets" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview
+        Buckets
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Buckets">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#create-a-bucket" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Create a Bucket
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Create a Bucket">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#via-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Via Dashboard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#via-kubectl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Via kubectl
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bucket-access-private-vs-public" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bucket Access: Private vs Public
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delete-a-bucket" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Delete a Bucket
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-browser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File Browser
       
     </span>
   </a>
@@ -1208,35 +1286,102 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#creating-a-bucket" class="md-nav__link">
+  <a href="#access-keys" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Creating a Bucket
+        Access Keys
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Access Keys">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#organization-level-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Organization-Level Keys
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#access-credentials" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#per-bucket-keys" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Access Credentials
+        Per-Bucket Keys
       
     </span>
   </a>
   
 </li>
+        
+      </ul>
+    </nav>
+  
+</li>
       
         <li class="md-nav__item">
-  <a href="#using-your-bucket" class="md-nav__link">
+  <a href="#using-s3-tools" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Using Your Bucket
+        Using S3 Tools
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Using S3 Tools">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#aws-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AWS CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#python-boto3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python (boto3)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#s3cmd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        s3cmd
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#using-credentials-from-kubernetes-secrets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Credentials from Kubernetes Secrets
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1245,6 +1390,17 @@
     <span class="md-ellipsis">
       
         Quotas
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Reference
       
     </span>
   </a>
@@ -1282,22 +1438,272 @@
   
 
 
-<h1 id="object-storage-s3-compatible">Object Storage (S3 Compatible)<a class="headerlink" href="#object-storage-s3-compatible" title="Permanent link"> ¶</a></h1>
-<!-- TODO: Write content for object storage -->
-
-<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link"> ¶</a></h2>
-<p>Kube-DC Cloud provides S3-compatible object storage backed by Rook Ceph RGW, allowing you to store and retrieve unstructured data like files, images, and backups.</p>
-<h2 id="creating-a-bucket">Creating a Bucket<a class="headerlink" href="#creating-a-bucket" title="Permanent link"> ¶</a></h2>
-<p><em>This section will cover creating S3 buckets via UI and kubectl.</em></p>
-<h2 id="access-credentials">Access Credentials<a class="headerlink" href="#access-credentials" title="Permanent link"> ¶</a></h2>
-<p><em>This section will cover obtaining S3 access keys and endpoint URLs.</em></p>
-<h2 id="using-your-bucket">Using Your Bucket<a class="headerlink" href="#using-your-bucket" title="Permanent link"> ¶</a></h2>
-<p><em>This section will cover using standard S3 tools (AWS CLI, s3cmd, etc.) with your bucket.</em></p>
+<h1 id="object-storage-s3">Object Storage (S3)<a class="headerlink" href="#object-storage-s3" title="Permanent link"> ¶</a></h1>
+<p>Kube-DC provides S3-compatible object storage for storing files, images, backups, and any unstructured data. You can manage buckets and files through the dashboard or use standard S3 tools like AWS CLI, s3cmd, and boto3.</p>
+<h2 id="buckets">Buckets<a class="headerlink" href="#buckets" title="Permanent link"> ¶</a></h2>
+<p>A <strong>bucket</strong> is a container for your objects (files). Each bucket has a unique name, its own access credentials, and can be set to <strong>Private</strong> or <strong>Public Read</strong> access.</p>
+<p><img src={require('./images/s3-bucket-view.png').default} alt="Object Storage buckets view" style={{maxWidth: '800px', width: '100%'}} /></p>
+<p>The Object Storage view shows all your buckets with their S3 bucket name, status, access level, credentials availability, and age. The sidebar tree provides quick navigation between <strong>Overview</strong>, <strong>Buckets</strong>, and <strong>Access Keys</strong>.</p>
+<p>Click on a bucket to expand its details:</p>
+<ul>
+<li><strong>General Information</strong> — Name, S3 bucket name, namespace, storage class, status, and creation date</li>
+<li><strong>S3 Connection</strong> — Endpoint URL, region, access toggle (Public/Private), and public URL</li>
+<li><strong>Bucket Credentials</strong> — Per-bucket Access Key ID and Secret Access Key</li>
+<li><strong>Actions</strong> — Browse Files or Delete the bucket</li>
+</ul>
+<h3 id="create-a-bucket">Create a Bucket<a class="headerlink" href="#create-a-bucket" title="Permanent link"> ¶</a></h3>
+<h4 id="via-dashboard">Via Dashboard<a class="headerlink" href="#via-dashboard" title="Permanent link"> ¶</a></h4>
+<ol>
+<li>Navigate to your project → <strong>Object Storage</strong> → <strong>Buckets</strong></li>
+<li>Click <strong>+ Create Bucket</strong></li>
+<li>Enter a bucket name (lowercase, alphanumeric, hyphens allowed)</li>
+<li>Choose access policy: <strong>Private</strong> (default) or <strong>Public Read</strong></li>
+<li>Click <strong>Create</strong></li>
+</ol>
+<p>The bucket name in S3 will be prefixed with your project namespace for uniqueness (e.g., bucket <code>one</code> becomes <code>shalb-jumbolot-one</code>).</p>
+<h4 id="via-kubectl">Via kubectl<a class="headerlink" href="#via-kubectl" title="Permanent link"> ¶</a></h4>
+<p>Create an <code>ObjectBucketClaim</code> in your project namespace:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">objectbucket.io/v1alpha1</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ObjectBucketClaim</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-bucket</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb-jumbolot</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="nt">labels</span><span class="p">:</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">    </span><span class="nt">kube-dc.com/organization</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="nt">bucketName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb-jumbolot-my-bucket</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="nt">storageClassName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ceph-bucket</span>
+</span></code></pre></div>
+<p>When the claim is bound, Rook automatically creates a <strong>Secret</strong> and <strong>ConfigMap</strong> in your namespace with the bucket's S3 credentials:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Check bucket status</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>objectbucketclaim<span class="w"> </span>-n<span class="w"> </span>shalb-jumbolot
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Get per-bucket S3 credentials</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>kubectl<span class="w"> </span>get<span class="w"> </span>secret<span class="w"> </span>my-bucket<span class="w"> </span>-n<span class="w"> </span>shalb-jumbolot<span class="w"> </span>-o<span class="w"> </span>yaml
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="c1"># Get bucket connection info</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>kubectl<span class="w"> </span>get<span class="w"> </span>configmap<span class="w"> </span>my-bucket<span class="w"> </span>-n<span class="w"> </span>shalb-jumbolot<span class="w"> </span>-o<span class="w"> </span>yaml
+</span></code></pre></div>
+<p>The ConfigMap contains:
+- <code>BUCKET_HOST</code> — Internal S3 endpoint
+- <code>BUCKET_NAME</code> — Full bucket name in S3
+- <code>BUCKET_PORT</code> — Service port
+- <code>BUCKET_REGION</code> — Region identifier</p>
+<h3 id="bucket-access-private-vs-public">Bucket Access: Private vs Public<a class="headerlink" href="#bucket-access-private-vs-public" title="Permanent link"> ¶</a></h3>
+<ul>
+<li><strong>Private</strong> (default) — Only accessible with valid S3 credentials</li>
+<li><strong>Public Read</strong> — Anyone with the URL can read objects; writing still requires credentials</li>
+</ul>
+<p>Toggle access from the bucket detail view in the dashboard. The public URL follows the pattern:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>https://s3.kube-dc.cloud/&lt;bucket-name&gt;/&lt;object-key&gt;
+</span></code></pre></div>
+<h3 id="delete-a-bucket">Delete a Bucket<a class="headerlink" href="#delete-a-bucket" title="Permanent link"> ¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>delete<span class="w"> </span>objectbucketclaim<span class="w"> </span>my-bucket<span class="w"> </span>-n<span class="w"> </span>shalb-jumbolot
+</span></code></pre></div>
+<p>:::warning
+Deleting a bucket removes all objects inside it permanently.
+:::</p>
+<h2 id="file-browser">File Browser<a class="headerlink" href="#file-browser" title="Permanent link"> ¶</a></h2>
+<p>The built-in file browser lets you manage objects directly from the dashboard without any external tools.</p>
+<p><img src={require('./images/s3-manage-files.png').default} alt="S3 file browser" style={{maxWidth: '800px', width: '100%'}} /></p>
+<p>From the bucket detail view, click <strong>Browse Files</strong> to open the file browser. You can:</p>
+<ul>
+<li><strong>Upload Files</strong> — Click <strong>Upload Files</strong> or drag-and-drop files into the browser</li>
+<li><strong>Create Folders</strong> — Click <strong>+ Create Folder</strong> to organize objects into prefixes</li>
+<li><strong>Download</strong> — Right-click or use the action menu to download files</li>
+<li><strong>Move</strong> — Move objects to a different folder within the bucket</li>
+<li><strong>Copy Public URL</strong> — Get a direct link for public buckets</li>
+<li><strong>Delete</strong> — Remove individual files or folders</li>
+</ul>
+<p>The file browser shows each object's name, size, last modified date, and type (File or Folder).</p>
+<h2 id="access-keys">Access Keys<a class="headerlink" href="#access-keys" title="Permanent link"> ¶</a></h2>
+<p>Kube-DC provides two types of S3 credentials:</p>
+<h3 id="organization-level-keys">Organization-Level Keys<a class="headerlink" href="#organization-level-keys" title="Permanent link"> ¶</a></h3>
+<p>These keys provide access to <strong>all buckets</strong> across all projects in your organization. Manage them from the <strong>Access Keys</strong> section.</p>
+<p><img src={require('./images/s3-access-keys.png').default} alt="S3 access keys" style={{maxWidth: '600px', width: '100%'}} /></p>
+<p>The Access Keys view shows:</p>
+<ul>
+<li><strong>Credentials</strong> — Your primary Access Key ID, Secret Access Key (click to reveal), S3 endpoint, and region</li>
+<li><strong>Key Management</strong> — Generate additional keys or revoke existing ones</li>
+</ul>
+<p>Use these keys with any S3-compatible tool:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># S3 Endpoint</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>https://s3.kube-dc.cloud
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># Region</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>us-east-1
+</span></code></pre></div>
+<h3 id="per-bucket-keys">Per-Bucket Keys<a class="headerlink" href="#per-bucket-keys" title="Permanent link"> ¶</a></h3>
+<p>Each bucket also has its own credentials, available in the bucket detail view or as Kubernetes Secrets in your project namespace:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Get per-bucket credentials</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>secret<span class="w"> </span>my-bucket<span class="w"> </span>-n<span class="w"> </span>shalb-jumbolot<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.data.AWS_ACCESS_KEY_ID}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>base64<span class="w"> </span>-d
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>kubectl<span class="w"> </span>get<span class="w"> </span>secret<span class="w"> </span>my-bucket<span class="w"> </span>-n<span class="w"> </span>shalb-jumbolot<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.data.AWS_SECRET_ACCESS_KEY}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>base64<span class="w"> </span>-d
+</span></code></pre></div>
+<p>Per-bucket keys are scoped to that specific bucket only.</p>
+<h2 id="using-s3-tools">Using S3 Tools<a class="headerlink" href="#using-s3-tools" title="Permanent link"> ¶</a></h2>
+<h3 id="aws-cli">AWS CLI<a class="headerlink" href="#aws-cli" title="Permanent link"> ¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Configure credentials</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>aws<span class="w"> </span>configure<span class="w"> </span><span class="nb">set</span><span class="w"> </span>aws_access_key_id<span class="w"> </span>YOUR_ACCESS_KEY
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>aws<span class="w"> </span>configure<span class="w"> </span><span class="nb">set</span><span class="w"> </span>aws_secret_access_key<span class="w"> </span>YOUR_SECRET_KEY
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># List buckets</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>aws<span class="w"> </span>--endpoint-url<span class="w"> </span>https://s3.kube-dc.cloud<span class="w"> </span>s3<span class="w"> </span>ls
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="c1"># Upload a file</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>aws<span class="w"> </span>--endpoint-url<span class="w"> </span>https://s3.kube-dc.cloud<span class="w"> </span>s3<span class="w"> </span>cp<span class="w"> </span>myfile.txt<span class="w"> </span>s3://shalb-jumbolot-my-bucket/
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>
+</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="c1"># Download a file</span>
+</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>aws<span class="w"> </span>--endpoint-url<span class="w"> </span>https://s3.kube-dc.cloud<span class="w"> </span>s3<span class="w"> </span>cp<span class="w"> </span>s3://shalb-jumbolot-my-bucket/myfile.txt<span class="w"> </span>./
+</span><span id="__span-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>
+</span><span id="__span-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="c1"># List objects in a bucket</span>
+</span><span id="__span-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>aws<span class="w"> </span>--endpoint-url<span class="w"> </span>https://s3.kube-dc.cloud<span class="w"> </span>s3<span class="w"> </span>ls<span class="w"> </span>s3://shalb-jumbolot-my-bucket/
+</span><span id="__span-6-16"><a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>
+</span><span id="__span-6-17"><a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="c1"># Sync a directory</span>
+</span><span id="__span-6-18"><a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>aws<span class="w"> </span>--endpoint-url<span class="w"> </span>https://s3.kube-dc.cloud<span class="w"> </span>s3<span class="w"> </span>sync<span class="w"> </span>./backups<span class="w"> </span>s3://shalb-jumbolot-my-bucket/backups/
+</span></code></pre></div>
+<h3 id="python-boto3">Python (boto3)<a class="headerlink" href="#python-boto3" title="Permanent link"> ¶</a></h3>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">boto3</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">s3</span> <span class="o">=</span> <span class="n">boto3</span><span class="o">.</span><span class="n">client</span><span class="p">(</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>    <span class="s1">&#39;s3&#39;</span><span class="p">,</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="n">endpoint_url</span><span class="o">=</span><span class="s1">&#39;https://s3.kube-dc.cloud&#39;</span><span class="p">,</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>    <span class="n">aws_access_key_id</span><span class="o">=</span><span class="s1">&#39;YOUR_ACCESS_KEY&#39;</span><span class="p">,</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>    <span class="n">aws_secret_access_key</span><span class="o">=</span><span class="s1">&#39;YOUR_SECRET_KEY&#39;</span><span class="p">,</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="p">)</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="c1"># List buckets</span>
+</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="n">response</span> <span class="o">=</span> <span class="n">s3</span><span class="o">.</span><span class="n">list_buckets</span><span class="p">()</span>
+</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="k">for</span> <span class="n">bucket</span> <span class="ow">in</span> <span class="n">response</span><span class="p">[</span><span class="s1">&#39;Buckets&#39;</span><span class="p">]:</span>
+</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">bucket</span><span class="p">[</span><span class="s1">&#39;Name&#39;</span><span class="p">])</span>
+</span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a>
+</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="c1"># Upload a file</span>
+</span><span id="__span-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="n">s3</span><span class="o">.</span><span class="n">upload_file</span><span class="p">(</span><span class="s1">&#39;myfile.txt&#39;</span><span class="p">,</span> <span class="s1">&#39;shalb-jumbolot-my-bucket&#39;</span><span class="p">,</span> <span class="s1">&#39;myfile.txt&#39;</span><span class="p">)</span>
+</span><span id="__span-7-17"><a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a>
+</span><span id="__span-7-18"><a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="c1"># Download a file</span>
+</span><span id="__span-7-19"><a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a><span class="n">s3</span><span class="o">.</span><span class="n">download_file</span><span class="p">(</span><span class="s1">&#39;shalb-jumbolot-my-bucket&#39;</span><span class="p">,</span> <span class="s1">&#39;myfile.txt&#39;</span><span class="p">,</span> <span class="s1">&#39;downloaded.txt&#39;</span><span class="p">)</span>
+</span></code></pre></div>
+<h3 id="s3cmd">s3cmd<a class="headerlink" href="#s3cmd" title="Permanent link"> ¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Configure</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>s3cmd<span class="w"> </span>--configure<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span>--host<span class="o">=</span>s3.kube-dc.cloud<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span>--host-bucket<span class="o">=</span>s3.kube-dc.cloud<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">  </span>--access_key<span class="o">=</span>YOUR_ACCESS_KEY<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">  </span>--secret_key<span class="o">=</span>YOUR_SECRET_KEY
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="c1"># List buckets</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>s3cmd<span class="w"> </span>ls
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="c1"># Upload</span>
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>s3cmd<span class="w"> </span>put<span class="w"> </span>myfile.txt<span class="w"> </span>s3://shalb-jumbolot-my-bucket/
+</span></code></pre></div>
+<h3 id="using-credentials-from-kubernetes-secrets">Using Credentials from Kubernetes Secrets<a class="headerlink" href="#using-credentials-from-kubernetes-secrets" title="Permanent link"> ¶</a></h3>
+<p>For workloads running inside your project, you can mount the per-bucket credentials directly:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Pod</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3-worker</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb-jumbolot</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">  </span><span class="nt">containers</span><span class="p">:</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">worker</span>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">      </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">amazon/aws-cli</span>
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">      </span><span class="nt">env</span><span class="p">:</span>
+</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AWS_ACCESS_KEY_ID</span>
+</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="w">          </span><span class="nt">valueFrom</span><span class="p">:</span>
+</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="w">            </span><span class="nt">secretKeyRef</span><span class="p">:</span>
+</span><span id="__span-9-14"><a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="w">              </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-bucket</span>
+</span><span id="__span-9-15"><a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a><span class="w">              </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AWS_ACCESS_KEY_ID</span>
+</span><span id="__span-9-16"><a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AWS_SECRET_ACCESS_KEY</span>
+</span><span id="__span-9-17"><a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a><span class="w">          </span><span class="nt">valueFrom</span><span class="p">:</span>
+</span><span id="__span-9-18"><a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a><span class="w">            </span><span class="nt">secretKeyRef</span><span class="p">:</span>
+</span><span id="__span-9-19"><a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a><span class="w">              </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-bucket</span>
+</span><span id="__span-9-20"><a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a><span class="w">              </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AWS_SECRET_ACCESS_KEY</span>
+</span><span id="__span-9-21"><a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BUCKET_HOST</span>
+</span><span id="__span-9-22"><a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a><span class="w">          </span><span class="nt">valueFrom</span><span class="p">:</span>
+</span><span id="__span-9-23"><a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a><span class="w">            </span><span class="nt">configMapKeyRef</span><span class="p">:</span>
+</span><span id="__span-9-24"><a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a><span class="w">              </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-bucket</span>
+</span><span id="__span-9-25"><a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a><span class="w">              </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BUCKET_HOST</span>
+</span><span id="__span-9-26"><a id="__codelineno-9-26" name="__codelineno-9-26" href="#__codelineno-9-26"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BUCKET_NAME</span>
+</span><span id="__span-9-27"><a id="__codelineno-9-27" name="__codelineno-9-27" href="#__codelineno-9-27"></a><span class="w">          </span><span class="nt">valueFrom</span><span class="p">:</span>
+</span><span id="__span-9-28"><a id="__codelineno-9-28" name="__codelineno-9-28" href="#__codelineno-9-28"></a><span class="w">            </span><span class="nt">configMapKeyRef</span><span class="p">:</span>
+</span><span id="__span-9-29"><a id="__codelineno-9-29" name="__codelineno-9-29" href="#__codelineno-9-29"></a><span class="w">              </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-bucket</span>
+</span><span id="__span-9-30"><a id="__codelineno-9-30" name="__codelineno-9-30" href="#__codelineno-9-30"></a><span class="w">              </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BUCKET_NAME</span>
+</span></code></pre></div>
 <h2 id="quotas">Quotas<a class="headerlink" href="#quotas" title="Permanent link"> ¶</a></h2>
-<p><em>This section will cover storage quotas and billing for object storage.</em></p>
+<p>Object storage quotas are set by your organization's billing plan:</p>
+<table>
+<thead>
+<tr>
+<th>Plan</th>
+<th>Storage Limit</th>
+<th>Max Buckets</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Dev</td>
+<td>20 GB</td>
+<td>5</td>
+</tr>
+<tr>
+<td>Pro</td>
+<td>100 GB</td>
+<td>20</td>
+</tr>
+<tr>
+<td>Scale</td>
+<td>500 GB</td>
+<td>50</td>
+</tr>
+</tbody>
+</table>
+<p>Quotas are enforced at the storage level. When the quota is exceeded:
+- New uploads are rejected with an error
+- Existing objects remain accessible
+- The dashboard shows a warning</p>
+<p>Storage usage is visible in the <strong>Object Storage Overview</strong> and on the <strong>Billing</strong> page.</p>
+<h2 id="quick-reference">Quick Reference<a class="headerlink" href="#quick-reference" title="Permanent link"> ¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Command</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>List buckets</td>
+<td><code>kubectl get objectbucketclaims -n my-project</code></td>
+</tr>
+<tr>
+<td>Create bucket</td>
+<td><code>kubectl apply -f bucket.yaml</code></td>
+</tr>
+<tr>
+<td>Delete bucket</td>
+<td><code>kubectl delete objectbucketclaim &lt;name&gt; -n my-project</code></td>
+</tr>
+<tr>
+<td>Get bucket credentials</td>
+<td><code>kubectl get secret &lt;bucket-name&gt; -n my-project</code></td>
+</tr>
+<tr>
+<td>Get bucket config</td>
+<td><code>kubectl get configmap &lt;bucket-name&gt; -n my-project</code></td>
+</tr>
+<tr>
+<td>S3 list (AWS CLI)</td>
+<td><code>aws --endpoint-url https://s3.kube-dc.cloud s3 ls</code></td>
+</tr>
+<tr>
+<td>S3 upload</td>
+<td><code>aws --endpoint-url https://s3.kube-dc.cloud s3 cp file s3://bucket/</code></td>
+</tr>
+</tbody>
+</table>
 <h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link"> ¶</a></h2>
 <ul>
-<li><a href="../block-storage/">Block Storage</a></li>
+<li><a href="../block-storage/">Block Storage</a> — Persistent volumes for VMs and containers</li>
 <li><a href="../backups-snapshots/">Backups &amp; Snapshots</a></li>
 </ul>
 

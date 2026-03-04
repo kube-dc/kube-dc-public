@@ -21,7 +21,7 @@
     
     
       
-        <title>Block Storage (Volumes/PVC) - Kube-DC</title>
+        <title>Block Storage - Kube-DC</title>
       
     
     
@@ -81,7 +81,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#block-storage-volumespvc" class="md-skip">
+        <a href="#block-storage" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Block Storage (Volumes/PVC)
+              Block Storage
             
           </span>
         </div>
@@ -1197,10 +1197,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#volumes-dashboard" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview
+        Volumes Dashboard
       
     </span>
   </a>
@@ -1208,43 +1208,188 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#creating-a-volume" class="md-nav__link">
+  <a href="#understanding-volume-types" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Creating a Volume
+        Understanding Volume Types
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Understanding Volume Types">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#datavolumes-virtual-machines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DataVolumes (Virtual Machines)
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#attaching-to-vms" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#persistentvolumeclaims-containers" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Attaching to VMs
+        PersistentVolumeClaims (Containers)
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#attaching-to-pods" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#datavolume-vs-pvc-when-to-use-which" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Attaching to Pods
+        DataVolume vs PVC — When to Use Which
       
     </span>
   </a>
   
 </li>
+        
+      </ul>
+    </nav>
+  
+</li>
       
         <li class="md-nav__item">
-  <a href="#resizing-volumes" class="md-nav__link">
+  <a href="#storage-classes" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Resizing Volumes
+        Storage Classes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Storage Classes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#current-default-local-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current Default: local-path
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#creating-volumes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Creating Volumes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Creating Volumes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#via-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Via Dashboard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#via-kubectl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Via kubectl
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#managing-volumes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Managing Volumes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Managing Volumes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#check-volume-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Check Volume Status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clone-a-volume" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clone a Volume
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#detach-a-volume" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Detach a Volume
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delete-a-volume" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Delete a Volume
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Reference
       
     </span>
   </a>
@@ -1282,22 +1427,265 @@
   
 
 
-<h1 id="block-storage-volumespvc">Block Storage (Volumes/PVC)<a class="headerlink" href="#block-storage-volumespvc" title="Permanent link"> ¶</a></h1>
-<!-- TODO: Write content for block storage -->
+<h1 id="block-storage">Block Storage<a class="headerlink" href="#block-storage" title="Permanent link"> ¶</a></h1>
+<p>Kube-DC provides persistent block storage through two Kubernetes-native mechanisms: <strong>DataVolumes</strong> for virtual machines and <strong>PersistentVolumeClaims (PVCs)</strong> for containers. Both are managed through the Volumes view in the dashboard or via kubectl.</p>
+<h2 id="volumes-dashboard">Volumes Dashboard<a class="headerlink" href="#volumes-dashboard" title="Permanent link"> ¶</a></h2>
+<div style={{width: '100%', maxWidth: 'none'}}>
+<img src={require('./images/volume-view.png').default} alt="Volumes dashboard" style={{width: '100%', display: 'block'}} />
+</div>
 
-<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link"> ¶</a></h2>
-<p>Kube-DC Cloud provides persistent block storage backed by the platform's storage layer. Volumes are managed as standard Kubernetes PersistentVolumeClaims (PVCs).</p>
-<h2 id="creating-a-volume">Creating a Volume<a class="headerlink" href="#creating-a-volume" title="Permanent link"> ¶</a></h2>
-<p><em>This section will cover creating persistent volumes via UI and kubectl.</em></p>
-<h2 id="attaching-to-vms">Attaching to VMs<a class="headerlink" href="#attaching-to-vms" title="Permanent link"> ¶</a></h2>
-<p><em>This section will cover attaching block storage to virtual machines.</em></p>
-<h2 id="attaching-to-pods">Attaching to Pods<a class="headerlink" href="#attaching-to-pods" title="Permanent link"> ¶</a></h2>
-<p><em>This section will cover using PVCs in containerized workloads.</em></p>
-<h2 id="resizing-volumes">Resizing Volumes<a class="headerlink" href="#resizing-volumes" title="Permanent link"> ¶</a></h2>
-<p><em>This section will cover expanding volume size.</em></p>
+<p>The Volumes view shows all persistent storage in your project. Volumes are organized by <strong>Storage Class</strong> in the left sidebar. Each volume shows its name, attachment status, capacity, storage class, type (DataVolume or PVC), age, and which VM or pod it is attached to.</p>
+<p>Click on any volume to expand its details:</p>
+<p><img src={require('./images/volumes-view.png').default} alt="Volume detail view" style={{maxWidth: '800px', width: '100%'}} /></p>
+<p>The detail panel shows:
+- <strong>Volume Information</strong> — Name, type, capacity, and storage class
+- <strong>Status</strong> — Attachment status and which VM/pod the volume is attached to
+- <strong>Actions</strong> — Detach, Clone, or View YAML</p>
+<h2 id="understanding-volume-types">Understanding Volume Types<a class="headerlink" href="#understanding-volume-types" title="Permanent link"> ¶</a></h2>
+<h3 id="datavolumes-virtual-machines">DataVolumes (Virtual Machines)<a class="headerlink" href="#datavolumes-virtual-machines" title="Permanent link"> ¶</a></h3>
+<p>A <strong>DataVolume</strong> is a KubeVirt resource provided by the <a href="https://kubevirt.io/user-guide/storage/containerized_data_importer/">Containerized Data Importer (CDI)</a>. It automates creating a PVC and populating it with data from a source — typically an OS image for a VM root disk.</p>
+<p>When you create a VM, the platform automatically creates a DataVolume as the root disk. DataVolumes can import data from:</p>
+<ul>
+<li><strong>HTTP/HTTPS URL</strong> — Download a cloud image (e.g., Debian, Ubuntu)</li>
+<li><strong>Container Registry</strong> — Pull a disk image from a container registry</li>
+<li><strong>Blank</strong> — Create an empty disk for additional storage</li>
+</ul>
+<p><strong>Example: VM root disk DataVolume</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cdi.kubevirt.io/v1beta1</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">DataVolume</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">debian-root</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb-jumbolot</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">    </span><span class="nt">http</span><span class="p">:</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">      </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="nt">pvc</span><span class="p">:</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">    </span><span class="nt">accessModes</span><span class="p">:</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ReadWriteOnce</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">    </span><span class="nt">resources</span><span class="p">:</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">      </span><span class="nt">requests</span><span class="p">:</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">        </span><span class="nt">storage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20G</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">    </span><span class="nt">storageClassName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">local-path</span>
+</span></code></pre></div>
+<p>Once the import completes (Phase: <code>Succeeded</code>), the DataVolume is ready and can be attached to a VM.</p>
+<p><strong>Example: Blank data disk</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cdi.kubevirt.io/v1beta1</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">DataVolume</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">data-disk</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb-jumbolot</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="nt">blank</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="nt">pvc</span><span class="p">:</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="nt">accessModes</span><span class="p">:</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ReadWriteOnce</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="nt">resources</span><span class="p">:</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">      </span><span class="nt">requests</span><span class="p">:</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">        </span><span class="nt">storage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50G</span>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">    </span><span class="nt">storageClassName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">local-path</span>
+</span></code></pre></div>
+<h3 id="persistentvolumeclaims-containers">PersistentVolumeClaims (Containers)<a class="headerlink" href="#persistentvolumeclaims-containers" title="Permanent link"> ¶</a></h3>
+<p>A <strong>PVC</strong> is a standard Kubernetes resource for requesting persistent storage. Use PVCs when your containerized workloads (Deployments, StatefulSets, Pods) need data that persists across restarts.</p>
+<p><strong>Example: PVC for a database</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PersistentVolumeClaim</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">postgres-data</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb-jumbolot</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">accessModes</span><span class="p">:</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ReadWriteOnce</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="nt">resources</span><span class="p">:</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="nt">requests</span><span class="p">:</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">      </span><span class="nt">storage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10Gi</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span><span class="nt">storageClassName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">local-path</span>
+</span></code></pre></div>
+<p>Mount it in a Pod:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Pod</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">postgres</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">shalb-jumbolot</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">containers</span><span class="p">:</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">postgres</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">      </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">postgres:16</span>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">      </span><span class="nt">volumeMounts</span><span class="p">:</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">data</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">          </span><span class="nt">mountPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/var/lib/postgresql/data</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">  </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">data</span>
+</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">      </span><span class="nt">persistentVolumeClaim</span><span class="p">:</span>
+</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">        </span><span class="nt">claimName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">postgres-data</span>
+</span></code></pre></div>
+<h3 id="datavolume-vs-pvc-when-to-use-which">DataVolume vs PVC — When to Use Which<a class="headerlink" href="#datavolume-vs-pvc-when-to-use-which" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>DataVolume</th>
+<th>PVC</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Primary use</strong></td>
+<td>VM root and data disks</td>
+<td>Container storage</td>
+</tr>
+<tr>
+<td><strong>Data import</strong></td>
+<td>Automatic (HTTP, registry, blank)</td>
+<td>Manual (empty on creation)</td>
+</tr>
+<tr>
+<td><strong>Created by</strong></td>
+<td>VM provisioning or manually</td>
+<td>Directly by user</td>
+</tr>
+<tr>
+<td><strong>Backed by</strong></td>
+<td>Creates a PVC internally</td>
+<td>Directly binds to a PersistentVolume</td>
+</tr>
+<tr>
+<td><strong>Visible in UI</strong></td>
+<td>Yes (Volumes tab, type: DataVolume)</td>
+<td>Yes (Volumes tab, type: PVC)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="storage-classes">Storage Classes<a class="headerlink" href="#storage-classes" title="Permanent link"> ¶</a></h2>
+<p>A <strong>StorageClass</strong> defines what type of storage backs your volumes. The available storage classes depend on the infrastructure provider.</p>
+<h3 id="current-default-local-path">Current Default: <code>local-path</code><a class="headerlink" href="#current-default-local-path" title="Permanent link"> ¶</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>$ kubectl get storageclass
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>NAME                   PROVISIONER             RECLAIMPOLICY   VOLUMEBINDINGMODE
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>local-path (default)   rancher.io/local-path   Delete          WaitForFirstConsumer
+</span></code></pre></div>
+<p>The <code>local-path</code> storage class provisions storage on the local disk of the node where the workload runs. Key characteristics:</p>
+<ul>
+<li><strong>Fast</strong> — Direct local disk I/O, no network overhead</li>
+<li><strong>Node-bound</strong> — Data is stored on a specific node; the workload must run on the same node</li>
+<li><strong>Delete reclaim policy</strong> — When a PVC is deleted, the underlying data is removed</li>
+</ul>
+<p>:::info Provider-Dependent Storage Classes
+Storage classes vary by infrastructure provider. Some platforms may offer:</p>
+<ul>
+<li><strong>Network-attached storage</strong> (e.g., Ceph RBD, Longhorn) — Data accessible from any node, supports live migration</li>
+<li><strong>SSD-backed classes</strong> — Higher IOPS for database workloads</li>
+<li><strong>HDD-backed classes</strong> — Cost-effective for large datasets</li>
+</ul>
+<p>Check your available storage classes with <code>kubectl get storageclass</code>. Always specify the <code>storageClassName</code> in your PVC or DataVolume to ensure you get the expected storage type.
+:::</p>
+<h2 id="creating-volumes">Creating Volumes<a class="headerlink" href="#creating-volumes" title="Permanent link"> ¶</a></h2>
+<h3 id="via-dashboard">Via Dashboard<a class="headerlink" href="#via-dashboard" title="Permanent link"> ¶</a></h3>
+<ol>
+<li>Navigate to your project → <strong>Volumes</strong> tab</li>
+<li>Click <strong>+ Create Volume</strong></li>
+<li>Choose the volume type, size, and storage class</li>
+<li>Click <strong>Create</strong></li>
+</ol>
+<h3 id="via-kubectl">Via kubectl<a class="headerlink" href="#via-kubectl" title="Permanent link"> ¶</a></h3>
+<p><strong>Create a DataVolume (for VMs):</strong></p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;EOF</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="s">apiVersion: cdi.kubevirt.io/v1beta1</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="s">kind: DataVolume</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="s">metadata:</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="s">  name: my-data-disk</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="s">  namespace: shalb-jumbolot</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="s">spec:</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="s">  source:</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="s">    blank: {}</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="s">  pvc:</span>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="s">    accessModes:</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="s">      - ReadWriteOnce</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="s">    resources:</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="s">      requests:</span>
+</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="s">        storage: 30G</span>
+</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="s">    storageClassName: local-path</span>
+</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="s">EOF</span>
+</span></code></pre></div>
+<p><strong>Create a PVC (for containers):</strong></p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;EOF</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="s">apiVersion: v1</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="s">kind: PersistentVolumeClaim</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="s">metadata:</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="s">  name: my-pvc</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="s">  namespace: shalb-jumbolot</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="s">spec:</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="s">  accessModes:</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="s">    - ReadWriteOnce</span>
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="s">  resources:</span>
+</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="s">    requests:</span>
+</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="s">      storage: 10Gi</span>
+</span><span id="__span-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="s">  storageClassName: local-path</span>
+</span><span id="__span-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="s">EOF</span>
+</span></code></pre></div>
+<h2 id="managing-volumes">Managing Volumes<a class="headerlink" href="#managing-volumes" title="Permanent link"> ¶</a></h2>
+<h3 id="check-volume-status">Check Volume Status<a class="headerlink" href="#check-volume-status" title="Permanent link"> ¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># List all PVCs</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pvc<span class="w"> </span>-n<span class="w"> </span>shalb-jumbolot
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># List all DataVolumes</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>kubectl<span class="w"> </span>get<span class="w"> </span>datavolumes<span class="w"> </span>-n<span class="w"> </span>shalb-jumbolot
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="c1"># Get volume details</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>pvc<span class="w"> </span>debian-root<span class="w"> </span>-n<span class="w"> </span>shalb-jumbolot
+</span></code></pre></div>
+<h3 id="clone-a-volume">Clone a Volume<a class="headerlink" href="#clone-a-volume" title="Permanent link"> ¶</a></h3>
+<p>From the Volumes dashboard, expand a volume and click <strong>Clone</strong> to create an identical copy. This is useful for creating backups or testing with production data.</p>
+<h3 id="detach-a-volume">Detach a Volume<a class="headerlink" href="#detach-a-volume" title="Permanent link"> ¶</a></h3>
+<p>Click <strong>Detach</strong> to disconnect a volume from its VM or pod without deleting the data. The volume can be reattached later.</p>
+<h3 id="delete-a-volume">Delete a Volume<a class="headerlink" href="#delete-a-volume" title="Permanent link"> ¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Delete a DataVolume (also deletes the underlying PVC)</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>kubectl<span class="w"> </span>delete<span class="w"> </span>datavolume<span class="w"> </span>my-data-disk<span class="w"> </span>-n<span class="w"> </span>shalb-jumbolot
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Delete a PVC directly</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>kubectl<span class="w"> </span>delete<span class="w"> </span>pvc<span class="w"> </span>my-pvc<span class="w"> </span>-n<span class="w"> </span>shalb-jumbolot
+</span></code></pre></div>
+<p>:::warning
+Deleting a volume permanently removes the data. With the <code>Delete</code> reclaim policy (default), there is no recovery after deletion.
+:::</p>
+<h2 id="quick-reference">Quick Reference<a class="headerlink" href="#quick-reference" title="Permanent link"> ¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Command</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>List PVCs</td>
+<td><code>kubectl get pvc -n my-project</code></td>
+</tr>
+<tr>
+<td>List DataVolumes</td>
+<td><code>kubectl get datavolumes -n my-project</code></td>
+</tr>
+<tr>
+<td>List StorageClasses</td>
+<td><code>kubectl get storageclass</code></td>
+</tr>
+<tr>
+<td>Describe volume</td>
+<td><code>kubectl describe pvc &lt;name&gt; -n my-project</code></td>
+</tr>
+<tr>
+<td>Delete DataVolume</td>
+<td><code>kubectl delete datavolume &lt;name&gt; -n my-project</code></td>
+</tr>
+<tr>
+<td>Delete PVC</td>
+<td><code>kubectl delete pvc &lt;name&gt; -n my-project</code></td>
+</tr>
+</tbody>
+</table>
 <h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link"> ¶</a></h2>
 <ul>
-<li><a href="../object-storage/">Object Storage</a></li>
+<li><a href="../object-storage/">Object Storage</a> — S3-compatible storage for files and backups</li>
 <li><a href="../backups-snapshots/">Backups &amp; Snapshots</a></li>
 </ul>
 
