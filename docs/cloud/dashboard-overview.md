@@ -111,9 +111,7 @@ The tabs from left to right are:
 
 From the Projects page, click the **Kube-DC** logo in the top-left corner to access the organization management view.
 
-<div style={{width: '100%', maxWidth: 'none'}}>
-<img src={require('./images/kube-dc-manage-org-view.png').default} alt="Organization management view" style={{width: '100%', display: 'block'}} />
-</div>
+<img src={require('./images/kube-dc-manage-org-view.png').default} alt="Organization management view" style={{maxWidth: '800px', width: '100%'}} />
 
 The left sidebar provides access to:
 
