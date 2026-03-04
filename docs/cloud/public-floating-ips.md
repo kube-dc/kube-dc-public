@@ -11,7 +11,7 @@ Kube-DC provides two types of external IP addresses for connecting your resource
 
 The **Networking** section in the Console UI shows all IP resources in your project:
 
-<img src={require('./network-mgmt.png').default} alt="Network Management" style={{maxWidth: '900px', width: '100%'}} />
+<img src={require('./images/network-mgmt.png').default} alt="Network Management" style={{maxWidth: '900px', width: '100%'}} />
 
 From here you can:
 
