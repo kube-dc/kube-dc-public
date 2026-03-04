@@ -125,6 +125,13 @@ rules:
 - apiGroups: [objectbucket.io]
   resources: [objectbucketclaims]
   verbs: [create, get, list, watch, delete]
+# Velero (Backup & Restore)
+- apiGroups: [velero.io]
+  resources: [backups, restores, schedules, backupstoragelocations]
+  verbs: [create, get, list, watch, delete, update, patch]
+- apiGroups: [velero.io]
+  resources: [backups/status, restores/status]
+  verbs: [get, list, watch]
 
 ---
 # Developer Role - Can manage VMs, containers, workloads (no RBAC, no secrets management)
@@ -232,6 +239,13 @@ rules:
 - apiGroups: [objectbucket.io]
   resources: [objectbucketclaims]
   verbs: [create, get, list, watch, delete]
+# Velero (Backup & Restore)
+- apiGroups: [velero.io]
+  resources: [backups, restores, schedules, backupstoragelocations]
+  verbs: [create, get, list, watch, delete, update, patch]
+- apiGroups: [velero.io]
+  resources: [backups/status, restores/status]
+  verbs: [get, list, watch]
 
 ---
 # Project Manager Role - Can view all resources, manage some settings (no VM/container CRUD)
@@ -336,6 +350,13 @@ rules:
 - apiGroups: [objectbucket.io]
   resources: [objectbucketclaims]
   verbs: [get, list, watch]
+# Velero - read only
+- apiGroups: [velero.io]
+  resources: [backups, restores, schedules, backupstoragelocations]
+  verbs: [get, list, watch]
+- apiGroups: [velero.io]
+  resources: [backups/status, restores/status]
+  verbs: [get, list, watch]
 
 ---
 # User Role - Read-only access to project resources
@@ -430,4 +451,11 @@ rules:
 # Object Storage - read only
 - apiGroups: [objectbucket.io]
   resources: [objectbucketclaims]
+  verbs: [get, list]
+# Velero - read only
+- apiGroups: [velero.io]
+  resources: [backups, restores, schedules, backupstoragelocations]
+  verbs: [get, list]
+- apiGroups: [velero.io]
+  resources: [backups/status, restores/status]
   verbs: [get, list]
