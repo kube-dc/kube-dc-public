@@ -46,9 +46,11 @@ export default function DocItemLayout({ children }: Props): ReactNode {
         <ContentVisibility metadata={metadata} />
         <DocVersionBanner />
         <div className={styles.docItemContainer}>
-          <CopyPageButton />
           <article>
-            <DocBreadcrumbs />
+            <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+              <DocBreadcrumbs />
+              <CopyPageButton />
+            </div>
             <DocVersionBadge />
             {docTOC.mobile}
             <DocItemContent>{children}</DocItemContent>

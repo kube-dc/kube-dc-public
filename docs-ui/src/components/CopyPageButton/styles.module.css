@@ -1,8 +1,7 @@
 .copyPageContainer {
-  position: absolute;
-  top: var(--ifm-spacing-horizontal);
-  right: var(--ifm-spacing-horizontal);
+  position: relative;
   z-index: 100;
+  flex-shrink: 0;
 }
 
 @media (max-width: 996px) {
@@ -144,11 +143,6 @@
 }
 
 @media (max-width: 996px) {
-  .copyPageContainer {
-    top: 60px;
-    right: 10px;
-  }
-
   .copyPageButton {
     padding: 6px 12px;
     font-size: 13px;

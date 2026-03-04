@@ -1,3 +1,6 @@
+/* Import Red Hat fonts - PatternFly */
+@import url('https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@400;500;700&family=Red+Hat+Text:wght@400;500&display=swap');
+
 /**
  * Kube-DC Dashboard theme for documentation
  * Matches the main dashboard UI styling
@@ -23,8 +26,9 @@
   --ifm-background-color: #fafafa;
   --ifm-background-surface-color: #ffffff;
 
-  /* Font */
-  --ifm-font-family-base: 'RedHatDisplay', 'Overpass', -apple-system, BlinkMacSystemFont, sans-serif;
+  /* Font - PatternFly uses Red Hat Text for body, Red Hat Display for headings */
+  --ifm-font-family-base: 'Red Hat Text', 'RedHatText', -apple-system, BlinkMacSystemFont, sans-serif;
+  --ifm-heading-font-family: 'Red Hat Display', 'RedHatDisplay', -apple-system, BlinkMacSystemFont, sans-serif;
   --ifm-code-font-size: 90%;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
 
@@ -66,57 +70,121 @@ code {
   border-color: #404040;
 }
 
-/* Sidebar styling - matching dashboard */
+/* ============================================
+   Sidebar - PatternFly v5 Navigation style
+   https://v5-archive.patternfly.org/components/navigation/#mixed
+   ============================================ */
+
+/* Base sidebar link */
 .menu__link {
-  padding: 0.75rem 1rem !important;
-  border-radius: 0 !important;
-  font-size: 1rem !important;
+  font-family: 'Red Hat Text', 'RedHatText', sans-serif !important;
+  font-size: 16px !important;
   font-weight: 400 !important;
-  border-left: 4px solid transparent !important;
-  transition: all 0.2s ease !important;
+  line-height: 1.5 !important;
+  color: #151515 !important;
+  padding: 10px 16px 10px 16px !important;
+  border-radius: 0 !important;
+  border-left: none !important;
+  transition: background-color 0.15s ease !important;
 }
 
-/* Active sidebar item - light blue background like dashboard */
+[data-theme='dark'] .menu__link {
+  color: #e0e0e0 !important;
+}
+
+/* Category headers (collapsible) — slightly bolder, with separator */
+.menu__list-item-collapsible {
+  border-top: 1px solid #d2d2d2 !important;
+  margin-bottom: 0 !important;
+}
+
+.menu__list-item-collapsible:first-child {
+  border-top: none !important;
+}
+
+[data-theme='dark'] .menu__list-item-collapsible {
+  border-top-color: #3d3d3d !important;
+}
+
+.menu__list-item-collapsible > .menu__link {
+  font-family: 'Red Hat Display', 'RedHatDisplay', sans-serif !important;
+  font-size: 16px !important;
+  font-weight: 400 !important;
+  padding: 14px 16px !important;
+  color: #151515 !important;
+}
+
+[data-theme='dark'] .menu__list-item-collapsible > .menu__link {
+  color: #e0e0e0 !important;
+}
+
+/* Expanded category header — light background */
+.menu__list-item-collapsible:has(+ .menu__list) .menu__link,
+.menu__list-item--collapsed .menu__link {
+  background-color: transparent !important;
+}
+
+/* Hover state */
+.menu__link:hover {
+  background-color: #f0f0f0 !important;
+  color: #151515 !important;
+}
+
+[data-theme='dark'] .menu__link:hover {
+  background-color: rgba(255, 255, 255, 0.07) !important;
+  color: #ffffff !important;
+}
+
+/* Active sidebar item — light blue background */
 .menu__link--active {
   background-color: #d7e9f7 !important;
   color: #151515 !important;
-  border-left: 4px solid #0066cc !important;
   font-weight: 500 !important;
+  border-left: none !important;
+}
+
+.menu__link--active:not(.menu__list-item-collapsible > .menu__link) {
+  position: relative;
+}
+
+.menu__link--active:not(.menu__list-item-collapsible > .menu__link)::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  background-color: #0066cc;
+  border-radius: 0 3px 3px 0;
 }
 
 [data-theme='dark'] .menu__link--active {
   background-color: rgba(74, 144, 226, 0.2) !important;
   color: #fff !important;
-  border-left: 4px solid #4a90e2 !important;
 }
 
-.menu__link:hover {
-  background-color: #e8f4fd !important;
+[data-theme='dark'] .menu__link--active::before {
+  background-color: #4a90e2;
 }
 
-[data-theme='dark'] .menu__link:hover {
-  background-color: rgba(74, 144, 226, 0.1) !important;
-}
-
-/* Sidebar categories */
-.menu__list-item-collapsible {
-  margin-bottom: 0.5rem !important;
-}
-
-.menu__list-item-collapsible .menu__link {
-  font-weight: 500 !important;
-  text-transform: none !important;
-}
-
-/* Nested items */
+/* Nested items (sub-nav) */
 .menu__list .menu__list {
   margin-left: 0 !important;
-  padding-left: 1rem !important;
+  padding-left: 0 !important;
 }
 
 .menu__list .menu__list .menu__link {
-  font-size: 0.95rem !important;
-  padding-left: 2rem !important;
+  font-size: 14px !important;
+  padding: 8px 16px 8px 40px !important;
+}
+
+/* Category toggle arrow */
+.menu__caret {
+  padding: 0 !important;
+}
+
+.menu__caret::before {
+  transition: transform 0.2s ease !important;
 }
 
 /* Navbar - matching dashboard masthead */
@@ -372,4 +440,34 @@ button[class*='toggleButton'] svg {
 
 .DocSearch-Button:hover {
   background-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+/* Documentation images - limit max width for better readability */
+article img {
+  max-width: 450px;
+  height: auto;
+  display: block;
+  margin: 1rem 0;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Larger images for dashboard screenshots and diagrams */
+article img[alt*="dashboard"],
+article img[alt*="Subscription"],
+article img[alt*="plans"],
+article img[alt*="Hierarchy"],
+article img[alt*="diagram"],
+article img[alt*="architecture"],
+article img[alt*="new project"],
+article img[alt*="ready"],
+article img[alt*="list"] {
+  max-width: 800px;
+}
+
+/* Full-width images for UI screenshots */
+article img[alt*="workloads view"],
+article img[alt*="organization view"],
+article img[alt*="full-width"] {
+  max-width: 100%;
 }
