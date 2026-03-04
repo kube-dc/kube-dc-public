@@ -21,7 +21,7 @@
     
     
       
-        <title>Provisioning a Cluster - Kube-DC</title>
+        <title>Provisioning a Managed Kubernetes Cluster - Kube-DC</title>
       
     
     
@@ -81,7 +81,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#provisioning-a-cluster" class="md-skip">
+        <a href="#provisioning-a-managed-kubernetes-cluster" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Provisioning a Cluster
+              Provisioning a Managed Kubernetes Cluster
             
           </span>
         </div>
@@ -1197,10 +1197,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#how-it-works" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview
+        How It Works
       
     </span>
   </a>
@@ -1219,13 +1219,85 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#create-a-cluster-via-ui" class="md-nav__link">
+  <a href="#managed-kubernetes-clusters-view" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Create a Cluster via UI
+        Managed Kubernetes Clusters View
       
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#create-a-cluster-via-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Create a Cluster via Dashboard
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Create a Cluster via Dashboard">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-1-basic-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Basic Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2-datastore-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Datastore Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-3-network-addons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Network &amp; Addons
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-4-worker-pools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4: Worker Pools
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-5-review-and-create" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5: Review and Create
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1238,6 +1310,45 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Create a Cluster via kubectl">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#spec-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spec Reference
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#annotations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Annotations
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#monitor-cluster-creation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Monitor Cluster Creation
+      
+    </span>
+  </a>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1245,6 +1356,45 @@
     <span class="md-ellipsis">
       
         Access Your Cluster
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Access Your Cluster">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#via-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Via Dashboard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#via-kubectl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Via kubectl
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-gets-created" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Gets Created
       
     </span>
   </a>
@@ -1282,25 +1432,400 @@
   
 
 
-<h1 id="provisioning-a-cluster">Provisioning a Cluster<a class="headerlink" href="#provisioning-a-cluster" title="Permanent link"> ¶</a></h1>
-<!-- TODO: Write content for managed Kubernetes cluster provisioning -->
-
-<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link"> ¶</a></h2>
-<p>Kube-DC Cloud supports provisioning managed Kubernetes clusters (nested clusters) within your project using Kamaji.</p>
+<h1 id="provisioning-a-managed-kubernetes-cluster">Provisioning a Managed Kubernetes Cluster<a class="headerlink" href="#provisioning-a-managed-kubernetes-cluster" title="Permanent link"> ¶</a></h1>
+<p>Kube-DC provides fully managed Kubernetes clusters that run inside your project namespace. Each cluster is an isolated, production-grade Kubernetes environment with its own control plane, worker nodes, and networking — provisioned in minutes.</p>
+<h2 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link"> ¶</a></h2>
+<p>When you create a cluster, Kube-DC orchestrates several components:</p>
+<ul>
+<li><strong>Control Plane</strong> — Managed by <a href="https://kamaji.clastix.io/">Kamaji</a>. The API server, scheduler, and controller manager run as pods in your project namespace — no VMs needed for the control plane.</li>
+<li><strong>Worker Nodes</strong> — Provisioned as KubeVirt virtual machines via <a href="https://cluster-api.sigs.k8s.io/">Cluster API</a>. Each worker is a real VM running kubelet.</li>
+<li><strong>etcd DataStore</strong> — A dedicated or shared etcd cluster stores your Kubernetes state, managed automatically with TLS certificates and persistent storage.</li>
+<li><strong>Cloud Controller Manager (CCM)</strong> — Bridges your tenant cluster with the infrastructure, enabling LoadBalancer services and node lifecycle management.</li>
+<li><strong>Cluster Addons</strong> — Cilium CNI, CoreDNS, and optionally KubeVirt CSI are deployed automatically via <a href="https://projectsveltos.github.io/sveltos/">Sveltos</a>.</li>
+</ul>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>┌───────────────────── Management Cluster ───────────────────────────┐
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>│                                                                    │
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>│  ┌─────────── Project Namespace (e.g. shalb-jumbolot) ───────────┐ │
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│  │                                                               │ │
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│  │  KdcCluster &quot;dev&quot;                                             │ │
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│  │    ├── Service: dev-cp (LoadBalancer → API server)            │ │
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│  │    ├── TenantControlPlane: dev-cp (Kamaji)                    │ │
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│  │    │     └── Pods: api-server, scheduler, controller-manager  │ │
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>│  │    ├── KdcClusterDatastore: dev-etcd                          │ │
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>│  │    │     └── StatefulSet: dev-etcd-etcd (etcd cluster)        │ │
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│  │    ├── MachineDeployment: dev-workers                         │ │
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│  │    │     └── VMs: dev-workers-xxxxx (KubeVirt)                │ │
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│  │    └── CCM Deployment: kccm-dev                               │ │
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│  │                                                               │ │
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>│  └───────────────────────────────────────────────────────────────┘ │
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>└────────────────────────────────────────────────────────────────────┘
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>                              │
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>                              ▼
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>┌────────────────── Tenant Cluster &quot;dev&quot; ───────────────────────────┐
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>│  Nodes: worker-1, worker-2, worker-3                              │
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>│  Your workloads: Deployments, Services, PVCs                      │
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>└───────────────────────────────────────────────────────────────────┘
+</span></code></pre></div>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link"> ¶</a></h2>
 <ul>
-<li>A Kube-DC Cloud <a href="../first-project/">project</a></li>
-<li>Sufficient quota for the cluster resources</li>
+<li>A Kube-DC Cloud <a href="../first-project/">project</a> with sufficient resource quota</li>
+<li>For kubectl access: <a href="../cli-kubeconfig/">kubeconfig configured</a> for the management cluster</li>
 </ul>
-<h2 id="create-a-cluster-via-ui">Create a Cluster via UI<a class="headerlink" href="#create-a-cluster-via-ui" title="Permanent link"> ¶</a></h2>
-<p><em>This section will cover creating a managed Kubernetes cluster through the web interface.</em></p>
+<h2 id="managed-kubernetes-clusters-view">Managed Kubernetes Clusters View<a class="headerlink" href="#managed-kubernetes-clusters-view" title="Permanent link"> ¶</a></h2>
+<p>Navigate to <strong>Kubernetes</strong> in your project to view all managed clusters:</p>
+<div style={{width: '100%', maxWidth: 'none'}}>
+<img src={require('./images/k8s-screen.png').default} alt="Managed Kubernetes clusters view" style={{width: '100%', display: 'block'}} />
+</div>
+
+<p>The clusters view shows all your managed Kubernetes clusters with their version, phase (status), API endpoint, datastore backend, and age. From here you can create new clusters, view cluster details, download kubeconfig files, or delete clusters.</p>
+<h2 id="create-a-cluster-via-dashboard">Create a Cluster via Dashboard<a class="headerlink" href="#create-a-cluster-via-dashboard" title="Permanent link"> ¶</a></h2>
+<p>The dashboard provides a guided 5-step wizard.</p>
+<h3 id="step-1-basic-configuration">Step 1: Basic Configuration<a class="headerlink" href="#step-1-basic-configuration" title="Permanent link"> ¶</a></h3>
+<p><img src={require('./images/k8s-create-cluster.png').default} alt="Create Cluster - Basic Config" style={{maxWidth: '600px', width: '100%'}} /></p>
+<ul>
+<li><strong>Cluster Name</strong> — Unique within your project (3–12 chars, lowercase, hyphens allowed).</li>
+<li><strong>Kubernetes Version</strong> — Select the desired version (e.g., <code>v1.34.0</code>).</li>
+<li><strong>Control Plane Replicas</strong>:</li>
+<li><code>1</code> — Development</li>
+<li><code>2</code> (High Availability) — Recommended for production</li>
+<li><code>3</code> — Maximum redundancy</li>
+<li><strong>External IP Network Type</strong>:</li>
+<li><strong>Cloud</strong> (recommended) — API accessible via shared gateway using TLS passthrough. No dedicated public IP consumed.</li>
+<li><strong>Public</strong> — Dedicated public IP exposed directly to the internet. Use only when direct IP access is required.</li>
+<li><strong>Expose API endpoint externally (via TLSRoute)</strong> — Check this to make the API reachable from outside the cluster network (e.g., <code>https://dev-cp-shalb-jumbolot.kube-dc.cloud:443</code>).</li>
+</ul>
+<h3 id="step-2-datastore-configuration">Step 2: Datastore Configuration<a class="headerlink" href="#step-2-datastore-configuration" title="Permanent link"> ¶</a></h3>
+<p><img src={require('./images/k8s-datastore.png').default} alt="Create Cluster - Datastore" style={{maxWidth: '600px', width: '100%'}} /></p>
+<p>Choose how your cluster's etcd state is stored:</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Description</th>
+<th>Best For</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Shared Datastore</strong> (cost-effective)</td>
+<td>Multiple clusters share one etcd, each on a different port</td>
+<td>Development, staging</td>
+</tr>
+<tr>
+<td><strong>Dedicated Datastore</strong> (isolated)</td>
+<td>Your cluster gets its own etcd</td>
+<td>Production workloads</td>
+</tr>
+</tbody>
+</table>
+<p>For dedicated datastores:</p>
+<ul>
+<li><strong>etcd Replicas</strong> — <code>1</code> for dev, <code>3</code> for production HA, <code>5</code> for maximum redundancy.</li>
+<li><strong>Service Port</strong> — A unique port on the shared EIP. The UI shows ports already in use to avoid conflicts.</li>
+</ul>
+<h3 id="step-3-network-addons">Step 3: Network &amp; Addons<a class="headerlink" href="#step-3-network-addons" title="Permanent link"> ¶</a></h3>
+<p><img src={require('./images/k8s-network-addons.png').default} alt="Create Cluster - Network" style={{maxWidth: '600px', width: '100%'}} /></p>
+<ul>
+<li><strong>Service CIDR</strong> — IP range for Kubernetes Services (default: <code>10.96.0.0/16</code>). Each cluster has isolated networking.</li>
+<li><strong>Pod CIDR</strong> — IP range for Pods (default: <code>10.244.0.0/16</code>).</li>
+</ul>
+<p><strong>Cluster Addons</strong> deployed automatically:</p>
+<table>
+<thead>
+<tr>
+<th>Addon</th>
+<th>Description</th>
+<th>Recommended</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cilium CNI</strong></td>
+<td>Pod networking and network policy</td>
+<td>Yes (required)</td>
+</tr>
+<tr>
+<td><strong>CoreDNS</strong></td>
+<td>Cluster DNS (<code>cluster.local</code>)</td>
+<td>Yes (required)</td>
+</tr>
+<tr>
+<td><strong>KubeVirt CSI</strong></td>
+<td>Persistent storage via hotplug DataVolumes</td>
+<td>Enable for stateful workloads</td>
+</tr>
+</tbody>
+</table>
+<h3 id="step-4-worker-pools">Step 4: Worker Pools<a class="headerlink" href="#step-4-worker-pools" title="Permanent link"> ¶</a></h3>
+<p><img src={require('./images/k8s-workers.png').default} alt="Create Cluster - Workers" style={{maxWidth: '600px', width: '100%'}} /></p>
+<p>Define one or more worker pools — each a group of identically configured VMs:</p>
+<ul>
+<li><strong>Pool Name</strong> — Identifier (e.g., <code>workers</code>).</li>
+<li><strong>Replicas</strong> — Number of worker VMs.</li>
+<li><strong>CPU Cores</strong> / <strong>Memory (GB)</strong> — Resources per worker.</li>
+<li><strong>Worker Type</strong> — <code>DataVolume (Persistent)</code> provides root disks that survive VM restarts.</li>
+<li><strong>Container Image</strong> — OS image for worker VMs (e.g., <code>Ubuntu 24.04 + K8s v1.34.1</code>).</li>
+</ul>
+<p>Click <strong>+ Add Pool</strong> to add pools with different configurations (e.g., a general pool and a high-memory pool).</p>
+<h3 id="step-5-review-and-create">Step 5: Review and Create<a class="headerlink" href="#step-5-review-and-create" title="Permanent link"> ¶</a></h3>
+<p><img src={require('./images/k8s-review.png').default} alt="Create Cluster - Review" style={{maxWidth: '600px', width: '100%'}} /></p>
+<p>The Review step shows the exact YAML manifests that will be applied. Inspect both the <strong>KdcCluster</strong> and <strong>Datastore</strong> tabs to verify the configuration.</p>
+<p>Click <strong>Create Cluster</strong> to start provisioning.</p>
 <h2 id="create-a-cluster-via-kubectl">Create a Cluster via kubectl<a class="headerlink" href="#create-a-cluster-via-kubectl" title="Permanent link"> ¶</a></h2>
-<p><em>This section will cover creating a cluster using kubectl and YAML manifests.</em></p>
+<p>Apply a <code>KdcCluster</code> resource to your project namespace:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">k8s.kube-dc.com/v1alpha1</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">KdcCluster</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dev</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-project</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="nt">k8s.kube-dc.com/expose-route</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1.34.0</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">  </span><span class="nt">controlPlane</span><span class="p">:</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="nt">replicas</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">  </span><span class="nt">dataStore</span><span class="p">:</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span><span class="nt">dedicated</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">    </span><span class="nt">eipName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default-gw</span>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">    </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">32381</span>
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">  </span><span class="nt">network</span><span class="p">:</span>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">    </span><span class="nt">serviceCIDR</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.96.0.0/16</span>
+</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">    </span><span class="nt">podCIDR</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.244.0.0/16</span>
+</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">  </span><span class="nt">eip</span><span class="p">:</span>
+</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">    </span><span class="nt">create</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">    </span><span class="nt">externalNetworkType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cloud</span>
+</span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">  </span><span class="nt">enableClusterAPI</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="w">  </span><span class="nt">workers</span><span class="p">:</span>
+</span><span id="__span-1-24"><a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">workers</span>
+</span><span id="__span-1-25"><a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="w">      </span><span class="nt">replicas</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-1-26"><a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="w">      </span><span class="nt">cpuCores</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+</span><span id="__span-1-27"><a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="w">      </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8Gi</span>
+</span><span id="__span-1-28"><a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="w">      </span><span class="nt">diskSize</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30Gi</span>
+</span><span id="__span-1-29"><a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="w">      </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">quay.io/capk/ubuntu-2404-container-disk:v1.34.1</span>
+</span><span id="__span-1-30"><a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="w">      </span><span class="nt">architecture</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">amd64</span>
+</span><span id="__span-1-31"><a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="w">      </span><span class="nt">infrastructureProvider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kubevirt</span>
+</span><span id="__span-1-32"><a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="w">      </span><span class="nt">storageType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">datavolume</span>
+</span></code></pre></div>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>cluster.yaml
+</span></code></pre></div>
+<h3 id="spec-reference">Spec Reference<a class="headerlink" href="#spec-reference" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>spec.version</code></td>
+<td>Kubernetes version</td>
+<td>Required</td>
+</tr>
+<tr>
+<td><code>spec.controlPlane.replicas</code></td>
+<td>API server replicas (1–5)</td>
+<td><code>2</code></td>
+</tr>
+<tr>
+<td><code>spec.dataStore.dedicated</code></td>
+<td>Create dedicated etcd</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>spec.dataStore.eipName</code></td>
+<td>EIP for datastore LoadBalancer</td>
+<td><code>default-gw</code></td>
+</tr>
+<tr>
+<td><code>spec.dataStore.port</code></td>
+<td>Port on shared EIP (must be unique per cluster)</td>
+<td><code>2379</code></td>
+</tr>
+<tr>
+<td><code>spec.network.serviceCIDR</code></td>
+<td>Kubernetes service CIDR</td>
+<td><code>10.96.0.0/12</code></td>
+</tr>
+<tr>
+<td><code>spec.network.podCIDR</code></td>
+<td>Pod network CIDR</td>
+<td><code>10.244.0.0/16</code></td>
+</tr>
+<tr>
+<td><code>spec.eip.create</code></td>
+<td>Auto-create EIP for API server</td>
+<td><code>true</code></td>
+</tr>
+<tr>
+<td><code>spec.eip.externalNetworkType</code></td>
+<td><code>cloud</code> or <code>public</code></td>
+<td><code>cloud</code></td>
+</tr>
+<tr>
+<td><code>spec.enableClusterAPI</code></td>
+<td>Enable worker node management</td>
+<td><code>true</code></td>
+</tr>
+<tr>
+<td><code>spec.workers[].name</code></td>
+<td>Worker pool name (unique)</td>
+<td>Required</td>
+</tr>
+<tr>
+<td><code>spec.workers[].replicas</code></td>
+<td>Number of workers in pool</td>
+<td>Required</td>
+</tr>
+<tr>
+<td><code>spec.workers[].cpuCores</code></td>
+<td>CPU cores per worker</td>
+<td>Required</td>
+</tr>
+<tr>
+<td><code>spec.workers[].memory</code></td>
+<td>Memory per worker (e.g., <code>4Gi</code>)</td>
+<td>Required</td>
+</tr>
+<tr>
+<td><code>spec.workers[].image</code></td>
+<td>Container disk image for workers</td>
+<td>Required</td>
+</tr>
+<tr>
+<td><code>spec.workers[].storageType</code></td>
+<td><code>datavolume</code> (persistent) or empty (ephemeral)</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>spec.workers[].infrastructureProvider</code></td>
+<td><code>kubevirt</code> or <code>cloudsigma</code></td>
+<td><code>kubevirt</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="annotations">Annotations<a class="headerlink" href="#annotations" title="Permanent link"> ¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Annotation</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>k8s.kube-dc.com/expose-route: "true"</code></td>
+<td>Expose API endpoint externally via TLSRoute (recommended for cloud network type)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="monitor-cluster-creation">Monitor Cluster Creation<a class="headerlink" href="#monitor-cluster-creation" title="Permanent link"> ¶</a></h2>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Watch cluster status</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>kdccluster<span class="w"> </span>-n<span class="w"> </span>my-project<span class="w"> </span>-w
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Example output:</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1"># NAME   VERSION   PHASE   ENDPOINT                                        DATASTORE   AGE</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="c1"># dev    v1.34.0   Ready   https://dev-cp-my-project.kube-dc.cloud:443     dev-etcd    5m</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="c1"># Check datastore status</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>kubectl<span class="w"> </span>get<span class="w"> </span>kdcclusterdatastores<span class="w"> </span>-n<span class="w"> </span>my-project
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="c1"># Example output:</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="c1"># NAME       READY   DEDICATED   DATASTORE   AGE</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="c1"># dev-etcd   Ready   true        dev-etcd    5m</span>
+</span></code></pre></div>
+<p>Provisioning typically takes 3–5 minutes. The cluster goes through phases: <code>Pending</code> → <code>WaitingForService</code> → <code>Provisioning</code> → <code>Ready</code>.</p>
 <h2 id="access-your-cluster">Access Your Cluster<a class="headerlink" href="#access-your-cluster" title="Permanent link"> ¶</a></h2>
-<p><em>This section will cover obtaining kubeconfig and connecting to your nested cluster.</em></p>
+<h3 id="via-dashboard">Via Dashboard<a class="headerlink" href="#via-dashboard" title="Permanent link"> ¶</a></h3>
+<p>Once the cluster is <code>Ready</code>, click the <strong>Kubeconfig</strong> button on the cluster detail page to download the kubeconfig file.</p>
+<p><img src={require('./images/k8s-cluster-view.png').default} alt="Cluster View" style={{maxWidth: '600px', width: '100%'}} /></p>
+<p>The cluster detail page shows:</p>
+<ul>
+<li><strong>Phase</strong> — Current state (Ready)</li>
+<li><strong>Control Plane</strong> — Replicas and health status</li>
+<li><strong>API Endpoint</strong> — The external URL (e.g., <code>https://dev-cp-shalb-jumbolot.kube-dc.cloud:443</code>)</li>
+<li><strong>DataStore</strong> — etcd name and type (Shared/Dedicated)</li>
+<li><strong>Worker Pools</strong> — Number of pools and total workers</li>
+<li>Tabs for <strong>Summary</strong>, <strong>Workers</strong>, <strong>Network</strong>, and <strong>YAML</strong> views</li>
+</ul>
+<h3 id="via-kubectl">Via kubectl<a class="headerlink" href="#via-kubectl" title="Permanent link"> ¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Extract kubeconfig from the admin secret</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>secret<span class="w"> </span>dev-cp-admin-kubeconfig<span class="w"> </span>-n<span class="w"> </span>my-project<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.data.super-admin\.svc}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>base64<span class="w"> </span>-d<span class="w"> </span>&gt;<span class="w"> </span>/tmp/dev-kubeconfig
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="c1"># Verify access to the tenant cluster</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>kubectl<span class="w"> </span>--kubeconfig<span class="o">=</span>/tmp/dev-kubeconfig<span class="w"> </span>get<span class="w"> </span>nodes
+</span></code></pre></div>
+<h2 id="what-gets-created">What Gets Created<a class="headerlink" href="#what-gets-created" title="Permanent link"> ¶</a></h2>
+<p>When you create a <code>KdcCluster</code>, the following resources are provisioned automatically in your project namespace:</p>
+<table>
+<thead>
+<tr>
+<th>Resource</th>
+<th>Name Pattern</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Service</code> (LoadBalancer)</td>
+<td><code>{cluster}-cp</code></td>
+<td>API server endpoint</td>
+</tr>
+<tr>
+<td><code>Service</code> (ClusterIP)</td>
+<td><code>{cluster}-cp-ext</code></td>
+<td>External DNS endpoint</td>
+</tr>
+<tr>
+<td><code>TenantControlPlane</code></td>
+<td><code>{cluster}-cp</code></td>
+<td>Kamaji control plane pods</td>
+</tr>
+<tr>
+<td><code>KdcClusterDatastore</code></td>
+<td><code>{cluster}-etcd</code></td>
+<td>etcd (if dedicated)</td>
+</tr>
+<tr>
+<td><code>StatefulSet</code></td>
+<td><code>{cluster}-etcd-etcd</code></td>
+<td>etcd pods</td>
+</tr>
+<tr>
+<td><code>Service</code> (LoadBalancer)</td>
+<td><code>{cluster}-etcd-etcd-lb</code></td>
+<td>etcd external access</td>
+</tr>
+<tr>
+<td><code>Cluster</code> (CAPI)</td>
+<td><code>{cluster}</code></td>
+<td>Cluster API cluster object</td>
+</tr>
+<tr>
+<td><code>MachineDeployment</code></td>
+<td><code>{cluster}-{pool}</code></td>
+<td>Worker pool VMs</td>
+</tr>
+<tr>
+<td><code>Deployment</code></td>
+<td><code>kccm-{cluster}</code></td>
+<td>Cloud Controller Manager</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example</strong> — Services created for a cluster named <code>dev</code> in namespace <code>shalb-jumbolot</code>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>$ kubectl get svc -n shalb-jumbolot | grep dev
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>dev-cp                  LoadBalancer   10.101.79.219    100.65.0.148   6443/TCP    18d
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>dev-cp-ext              ClusterIP      None             &lt;none&gt;         6443/TCP    18d
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>dev-etcd-etcd           ClusterIP      None             &lt;none&gt;         2379/TCP    18d
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>dev-etcd-etcd-lb        LoadBalancer   10.101.20.207    100.65.0.115   32382/TCP   18d
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>dev-etcd-etcd-lb-ext    ClusterIP      None             &lt;none&gt;         32382/TCP   18d
+</span></code></pre></div>
 <h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link"> ¶</a></h2>
 <ul>
-<li><a href="../cluster-management/">Cluster Management</a></li>
+<li><a href="../cluster-management/">Cluster Management</a> — Exposing services, persistent storage, scaling, and operations</li>
 <li><a href="../cli-kubeconfig/">CLI &amp; Kubeconfig Access</a></li>
 </ul>
 
