@@ -234,6 +234,15 @@ article {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
+/* Mobile: article fills edge-to-edge, remove card-like border effect */
+@media screen and (max-width: 996px) {
+  article {
+    border-radius: 0;
+    box-shadow: none;
+    padding: 1rem;
+  }
+}
+
 /* Footer styling */
 .footer {
   background-color: var(--ifm-navbar-background-color);
@@ -258,6 +267,13 @@ article {
 
 [data-theme='dark'] .theme-doc-sidebar-container {
   border-right-color: #3d3d3d;
+}
+
+/* Mobile: sidebar is an overlay, hide the right border to avoid stray line */
+@media screen and (max-width: 996px) {
+  .theme-doc-sidebar-container {
+    border-right: none;
+  }
 }
 
 /* Table styling - matching dashboard tables */
