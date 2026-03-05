@@ -12,7 +12,7 @@ Verify your setup:
 
 ```bash
 # Confirm you're connected to the right project
-kubectl get ns
+kube-dc ns
 ```
 
 ---
