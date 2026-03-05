@@ -95,6 +95,9 @@ const config: Config = {
   themeConfig: {
     // Replace with your project's social card
     image: 'img/kube-dc-social-card.jpg',
+    metadata: [
+      {property: 'og:site_name', content: 'Kube-DC'},
+    ],
     colorMode: {
       defaultMode: 'light',
       respectPrefersColorScheme: false,
