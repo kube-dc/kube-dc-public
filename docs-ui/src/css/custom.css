@@ -234,6 +234,13 @@ article {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
+@media screen and (max-width: 996px) {
+  article {
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
 /* Footer styling */
 .footer {
   background-color: var(--ifm-navbar-background-color);
