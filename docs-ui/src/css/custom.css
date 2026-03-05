@@ -234,15 +234,6 @@ article {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-/* Mobile: article fills edge-to-edge, remove card-like border effect */
-@media screen and (max-width: 996px) {
-  article {
-    border-radius: 0;
-    box-shadow: none;
-    padding: 1rem;
-  }
-}
-
 /* Footer styling */
 .footer {
   background-color: var(--ifm-navbar-background-color);
@@ -267,13 +258,6 @@ article {
 
 [data-theme='dark'] .theme-doc-sidebar-container {
   border-right-color: #3d3d3d;
-}
-
-/* Mobile: sidebar is an overlay, hide the right border to avoid stray line */
-@media screen and (max-width: 996px) {
-  .theme-doc-sidebar-container {
-    border-right: none;
-  }
 }
 
 /* Table styling - matching dashboard tables */
@@ -446,6 +430,20 @@ button[class*='toggleButton'] svg {
   color: #ffffff !important;
   width: 20px !important;
   height: 20px !important;
+}
+
+/* Mobile sidebar drawer - use surface background so it respects light/dark theme,
+   not the dark navbar color */
+.navbar-sidebar {
+  background-color: var(--ifm-background-surface-color) !important;
+}
+
+.navbar-sidebar__brand {
+  background-color: var(--ifm-navbar-background-color) !important;
+}
+
+.navbar-sidebar__items {
+  background-color: var(--ifm-background-surface-color) !important;
 }
 
 /* Search bar styling */
