@@ -226,6 +226,18 @@ main {
   background-color: var(--ifm-background-color);
 }
 
+/* Mobile: match main background to article surface color so there is no
+   color-contrast "border" around the content card */
+@media screen and (max-width: 996px) {
+  main {
+    background-color: var(--ifm-background-surface-color);
+  }
+
+  [data-theme='dark'] main {
+    background-color: var(--ifm-background-color);
+  }
+}
+
 /* Article/doc container - white background */
 article {
   background-color: var(--ifm-background-surface-color);
@@ -238,6 +250,7 @@ article {
   article {
     border-radius: 0;
     box-shadow: none;
+    background-color: transparent;
   }
 }
 
