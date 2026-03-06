@@ -66,6 +66,7 @@ variables:
 
   versions:
     kube_dc: "v0.1.35" # release version
+    kamaji_image: "edge-26.02.11-kube-dc"
     kubevirt: "v1.7.0"
     kubevirt_cdi: "v1.62.0"
     # cluster_api: "v1.8.1"

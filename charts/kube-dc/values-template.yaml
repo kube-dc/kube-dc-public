@@ -50,7 +50,7 @@ manager:
 
 
 frontend:
-  replicaCount: 1
+  replicaCount: 2
   # Extra environment variables for the container
   extraEnv: []
     # - name: EXAMPLE_VAR
@@ -154,7 +154,7 @@ frontend:
 
 backend:
   keycloakUrl: ""
-  replicaCount: 1
+  replicaCount: 2
   extraEnv: []
       # - name: PROM_URL
       #   value: "http://prometheus:9090"

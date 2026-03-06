@@ -172,7 +172,7 @@ env:
 ```
 
 **Expected Impact:**
-- ✅ Reduce disconnections by **80-90%** (from 17K/day to <2K/day)
+- ✅ Reduce disconnections by **80-90%** (from 17K/day to less than 2K/day)
 - ✅ Prevent transient network issues from causing mass reconnections
 - ✅ Reduce OVN database CPU during connection churn
 - ✅ More tolerance for GC pauses and temporary load spikes

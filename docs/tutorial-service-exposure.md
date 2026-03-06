@@ -107,7 +107,21 @@ For projects with `egressNetworkType: cloud`, use Gateway Routes to expose servi
 
 ## Gateway Route Annotations (Details)
 
-Add these annotations to your `LoadBalancer` Service:
+Add these annotations to your `LoadBalancer` Service.
+
+### Multi-Port Services
+
+When using `expose-route`, the gateway routes traffic to a **single port** on your service — by default, the first port listed in `spec.ports`. This means services that define multiple ports (e.g., both HTTP on 80 and HTTPS on 443) work correctly out of the box — only the intended port receives gateway traffic.
+
+If your application listens on a non-standard port, use the `route-port` annotation to specify which port the gateway should target:
+
+```yaml
+annotations:
+  service.nlb.kube-dc.com/expose-route: "https"
+  service.nlb.kube-dc.com/route-port: "8080"
+```
+
+> **Note**: This applies to all route types (`http`, `https`, `tls-passthrough`). The gateway terminates TLS (for `https`) or passes it through (for `tls-passthrough`), then forwards traffic to the selected port on your service.
 
 ### Route Type Comparison
 

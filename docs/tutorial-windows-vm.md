@@ -492,7 +492,6 @@ Once deployed, the following resources are available:
 ## Security Considerations
 
 - **SSH Keys**: Use KubeVirt accessCredentials for secure key injection
-{{ ... }}
 - **Network Policies**: Implement Kubernetes network policies for VM isolation
 - **Sysprep**: Run before creating golden images to avoid SID conflicts
 - **Firewall**: Script configures Windows Firewall appropriately for SSH, RDP, and ICMP

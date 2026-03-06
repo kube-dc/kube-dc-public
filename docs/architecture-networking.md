@@ -123,7 +123,7 @@ Kube-DC supports two external network types:
 | `ext-cloud` | ovn-cluster | 100.65.0.0/16 | Cloud LB VIPs, EIPs |
 | `ext-public` | ovn-cluster | 168.119.17.48/28 | Public LB VIPs, EIPs |
 | `join` | ovn-cluster | 172.30.0.0/22 | Node-to-OVN connectivity |
-| `{project}-default` | {project} | 10.x.x.x/24 | Customer pods/VMs |
+| `{project}-default` | `{project}` | 10.x.x.x/24 | Customer pods/VMs |
 
 ### Policy Routing for Secondary External Networks
 

@@ -21,8 +21,26 @@ resources:
     cpu: 100m
     memory: 128Mi
   limits:
-    cpu: 500m
-    memory: 2Gi
+    cpu: 200m
+    memory: 512Mi
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: healthcheck
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 8
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: healthcheck
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 5
 
 # Enable telemetry
 telemetry:

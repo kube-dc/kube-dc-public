@@ -297,7 +297,7 @@ New users can sign up and create their own organization:
 For self-registered users, membership is automatic when they create an organization. For joining existing organizations:
 
 1. Log in to Keycloak admin console (`/admin/sso/console`)
-2. Navigate to **Groups → orgs → <org-slug>**
+2. Navigate to **Groups → orgs → `<org-slug>`**
 3. Add user to the group
 
 Or via API:
