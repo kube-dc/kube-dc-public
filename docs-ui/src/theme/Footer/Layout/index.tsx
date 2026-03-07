@@ -24,7 +24,7 @@ export default function FooterLayout({
         {links}
         {copyright && (
           <div className={styles.footerBottom}>
-            <div className={styles.copyright} dangerouslySetInnerHTML={{ __html: String(copyright) }} />
+            <div className={styles.copyright}>{copyright}</div>
             <div className={styles.socialLinks}>
               <a
                 href="https://github.com/shalb/kube-dc"
