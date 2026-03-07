@@ -205,7 +205,7 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Kube-DC Project. Built with ❤️ by <a href="https://shalb.com" target="_blank" rel="noopener noreferrer">Shalb</a>.`,
+      copyright: `Copyright © ${new Date().getFullYear()} Kube-DC Project. Made with ❤️ in Kyiv.`,
     },
     prism: {
       theme: prismThemes.github,
