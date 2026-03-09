@@ -16,7 +16,7 @@
 {{- $alloyChartVersion := (.variables.versions.alloy_helm                    | default "0.10.1"| quote) -}}
 {{- $kamajiChartVersion := (.variables.versions.kamaji_helm                  | default "1.0.0"| quote) -}}
 {{- $kamajiEtcdChartVersion := (.variables.versions.kamaji_etcd_helm         | default "0.14.0"| quote) -}}
-{{- $kamajiImageTag := (.variables.versions.kamaji_image                     | default "edge-25.11.21-kube-dc" | quote) -}}
+{{- $kamajiImageTag := (.variables.versions.kamaji_image                     | default "edge-26.02.11-v3-kube-dc" | quote) -}}
 {{- $sveltosVersion := (.variables.versions.sveltos                          | default "v0.57.3"| quote) -}}
 {{- $hncVersion := (.variables.versions.hnc                                  | default "v1.1.0"| quote) -}}
 
@@ -483,6 +483,28 @@ units:
       namespace: "kamaji-system"
       create_namespace: true
       wait: true
+  -
+    name: kamaji-rbac-gateway
+    type: kubernetes
+    depends_on: this.kamaji
+    source: ./kamaji/kamaji-rbac-gateway.yaml
+    provider_conf:
+      config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
+  -
+    name: kamaji-patch
+    type: shell
+    depends_on: this.kamaji
+    env:
+      KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
+    apply:
+      commands:
+        - |
+          # The upstream Kamaji Helm chart hardcodes command: ["/kamaji"] but our
+          # custom build (shalb/kamaji) has the binary as /manager. Remove the
+          # command override so the image ENTRYPOINT is used instead.
+          kubectl patch deploy kamaji -n kamaji-system --type json \
+            -p '[{"op": "remove", "path": "/spec/template/spec/containers/0/command"}]' 2>/dev/null || true
+          kubectl rollout status deploy/kamaji -n kamaji-system --timeout=120s
   -
     name: kyverno
     type: shell

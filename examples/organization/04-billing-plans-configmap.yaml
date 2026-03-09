@@ -41,7 +41,7 @@ data:
           maxPodCPU: "4"
           maxPodMemory: "8Gi"
           maxPVCStorage: "60Gi"
-          minPVCStorage: "1Gi"
+          minPVCStorage: "10Mi"
       pro-pool:
         displayName: "Pro Pool"
         description: "Best for: Production / Teams"
@@ -77,7 +77,7 @@ data:
           maxPodCPU: "8"
           maxPodMemory: "24Gi"
           maxPVCStorage: "160Gi"
-          minPVCStorage: "1Gi"
+          minPVCStorage: "10Mi"
       scale-pool:
         displayName: "Scale Pool"
         description: "Best for: High Load / VDC"
@@ -113,7 +113,7 @@ data:
           maxPodCPU: "16"
           maxPodMemory: "56Gi"
           maxPVCStorage: "320Gi"
-          minPVCStorage: "1Gi"
+          minPVCStorage: "10Mi"
     suspendedPlan:
       cpu: "500m"
       memory: "1Gi"

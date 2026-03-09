@@ -1,6 +1,6 @@
 # Kamaji values
 # Custom kube-dc build with additional features
-{{- $kamajiImageTag := (.variables.versions.kamaji_image | default "edge-25.11.21-kube-dc") -}}
+{{- $kamajiImageTag := (.variables.versions.kamaji_image | default "edge-26.02.11-v3-kube-dc") -}}
 
 image:
   repository: shalb/kamaji
