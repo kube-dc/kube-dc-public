@@ -95,7 +95,7 @@ spec:
       - name: vpc_net_0
         multus:
           default: true
-          networkName: default
+          networkName: your-namespace/default  # Replace 'your-namespace' with your actual project namespace
       domain:
         cpu:
           cores: 1
@@ -153,6 +153,49 @@ kubectl apply -f ubuntu-vm.yaml
 The `accessCredentials` section injects your SSH public key from the `authorized-keys-default` secret into the VM via the QEMU guest agent. The `users` field must match the default user for the OS image (`ubuntu` for Ubuntu, `debian` for Debian).
 :::
 
+### Accessing VMs via SSH
+
+Once the VM is running, you can SSH into it using the private key stored in your project's `ssh-keypair-default` secret.
+
+#### Step 1: Extract the SSH Private Key
+
+```bash
+# Extract the private key from the secret
+kubectl get secret ssh-keypair-default -n <your-namespace> -o jsonpath='{.data.id_rsa}' | base64 -d > /tmp/vm_ssh_key
+chmod 600 /tmp/vm_ssh_key
+```
+
+#### Step 2: Get the VM's IP Address
+
+For VMs with a Floating IP (FIP):
+```bash
+# Get the external IP from the FIP resource
+kubectl get fip -n <your-namespace>
+```
+
+For VMs without FIP (internal access only):
+```bash
+# Get the internal IP from the VMI
+kubectl get vmi <vm-name> -n <your-namespace> -o jsonpath='{.status.interfaces[0].ipAddress}'
+```
+
+#### Step 3: Connect via SSH
+
+```bash
+# SSH using the extracted private key
+ssh -i /tmp/vm_ssh_key <username>@<ip-address>
+
+# Examples:
+# Ubuntu VM: ssh -i /tmp/vm_ssh_key ubuntu@91.224.11.9
+# Debian VM: ssh -i /tmp/vm_ssh_key debian@10.0.0.131
+```
+
+:::info Default Users
+- **Ubuntu**: `ubuntu`
+- **Debian**: `debian`
+- **Windows**: `kube-dc`
+:::
+
 ### Debian 12
 
 <details>
@@ -187,7 +230,7 @@ spec:
       - name: vpc_net_0
         multus:
           default: true
-          networkName: default
+          networkName: your-namespace/default  # Replace 'your-namespace' with your actual project namespace
       domain:
         cpu:
           cores: 1
@@ -273,7 +316,7 @@ spec:
       - name: vpc_net_0
         multus:
           default: true
-          networkName: default
+          networkName: your-namespace/default  # Replace 'your-namespace' with your actual project namespace
       domain:
         cpu:
           cores: 2
