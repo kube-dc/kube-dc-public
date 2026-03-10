@@ -2,11 +2,11 @@
 
 ## 1. Overview
 
-This document describes the integration of [WHMCS](https://www.whmcs.com/) as a billing provider for Kube-DC, enabling hosting providers and resellers to sell Kube-DC plans through WHMCS — the industry-standard web hosting billing and automation platform.
+This document describes the integration of [WHMCS](https://www.whmcs.com/) as a billing provider for Kube-DC. Kube-DC is a multi-tenant Kubernetes platform that provides organizations with isolated namespaces, virtual machines (KubeVirt), managed Kubernetes clusters, and resource quotas. This integration enables hosting providers and resellers to sell Kube-DC organization plans through WHMCS — the industry-standard web hosting billing and automation platform.
 
 ### 1.1 Goal
 
-Enable WHMCS to manage the full subscription lifecycle (order, payment, suspension, termination, upgrade/downgrade) for Kube-DC organizations, while keeping kube-dc as a **standalone service** — no Plesk, cPanel, or VM-level integrations.
+Enable WHMCS to manage the full subscription lifecycle (order, payment, suspension, termination, upgrade/downgrade) for Kube-DC **organizations** — the top-level tenant unit that owns projects, namespaces, VMs, and resource quotas. Kube-DC remains a **standalone platform** — no Plesk, cPanel, or individual VM/server-level integrations. WHMCS bills for the organization plan; kube-dc handles all provisioning (namespace creation, quota enforcement, VM management) internally.
 
 ### 1.2 Design Principles
 
@@ -22,7 +22,7 @@ Understanding the existing WHMCS integration pattern with Plesk and cPanel clari
 | Component | Plesk/cPanel | Kube-DC (Ours) |
 |-----------|-------------|----------------|
 | **Provisioning Module** | PHP file in `/modules/servers/plesk/` | PHP file in `/modules/servers/kubedc/` |
-| **Server Config** | WHMCS admin → Servers → Plesk hostname + credentials | WHMCS admin → Servers → kube-dc API URL + API key |
+| **Server Config** | WHMCS admin → Servers → Plesk hostname + credentials | WHMCS admin → Servers → kube-dc management cluster API URL + webhook secret |
 | **Products** | WHMCS Products mapped to hosting plans | WHMCS Products mapped to billing plans (dev-pool, pro-pool, scale-pool) |
 | **CreateAccount** | Calls Plesk XML API to create subscription | Calls kube-dc webhook API to activate plan on Organization |
 | **SuspendAccount** | Calls Plesk API to suspend subscription | Calls kube-dc webhook API to suspend Organization |
@@ -165,7 +165,7 @@ integration/whmcs/
 │           └── logo.png                # Module logo for WHMCS admin
 ├── setup/
 │   ├── configure-products.php          # CLI script: create WHMCS products from plans
-│   ├── configure-server.php            # CLI script: register kube-dc server
+│   ├── configure-cluster.php           # CLI script: register kube-dc management cluster in WHMCS
 │   └── configure-addons.php            # CLI script: create configurable options for turbo addons
 └── docs/
     ├── installation.md                 # Step-by-step WHMCS setup
@@ -180,7 +180,7 @@ The core PHP file implementing WHMCS provisioning module functions:
 |----------|-----------|-------------|
 | `kubedc_MetaData()` | Module registration | Returns module display name, version, author |
 | `kubedc_ConfigOptions()` | Product setup | Defines per-product settings (plan ID, organization field name) |
-| `kubedc_TestConnection()` | Server setup | Tests connectivity to kube-dc webhook API |
+| `kubedc_TestConnection()` | Cluster registration | Tests connectivity to kube-dc management cluster API |
 | `kubedc_CreateAccount($params)` | Order paid / admin action | POST webhook `action: activate` with plan and org |
 | `kubedc_SuspendAccount($params)` | Invoice overdue / admin action | POST webhook `action: suspend` |
 | `kubedc_UnsuspendAccount($params)` | Overdue invoice paid / admin action | POST webhook `action: unsuspend` (restores plan) |
@@ -192,8 +192,8 @@ The core PHP file implementing WHMCS provisioning module functions:
 | `kubedc_UsageUpdate($params)` | Daily cron | Fetches resource usage from kube-dc API for WHMCS display |
 
 **Module Parameters Available** (passed by WHMCS to every function):
-- `$params['serverip']` — kube-dc API hostname (from Server config)
-- `$params['serveraccesshash']` — WHMCS webhook secret (from Server config)
+- `$params['serverip']` — kube-dc management cluster API hostname (from WHMCS "Server" config — represents the cluster endpoint)
+- `$params['serveraccesshash']` — WHMCS webhook secret (from WHMCS "Server" config)
 - `$params['configoption1']` — Plan ID (e.g., "pro-pool")
 - `$params['customfields']['Organization']` — Organization name in kube-dc
 - `$params['serviceid']` — WHMCS service ID (used as providerSubscriptionId)
@@ -235,9 +235,9 @@ add_hook('ClientAreaPageProductDetails', 1, function($vars) { /* fetch usage */ 
 
 CLI scripts run once during initial setup, using WHMCS Internal API:
 
-**`configure-server.php`** — Registers kube-dc as a server in WHMCS:
+**`configure-cluster.php`** — Registers kube-dc management cluster in WHMCS (WHMCS calls this a "Server" in its UI, but it represents the entire kube-dc cluster):
 ```
-php configure-server.php \
+php configure-cluster.php \
   --api-url=https://console.kube-dc.com/api/billing \
   --api-secret=<shared-hmac-secret> \
   --name="Kube-DC Cloud"
@@ -417,16 +417,20 @@ Reject if:
 
 ## 5. WHMCS Product Configuration
 
-### 5.1 Server Setup
+### 5.1 Cluster Registration (WHMCS "Server" Config)
 
-| Field | Value |
-|-------|-------|
-| Name | Kube-DC Cloud |
-| Module | kubedc |
-| Hostname | `console.kube-dc.com` |
-| IP Address | (optional) |
-| Access Hash | `<WHMCS_WEBHOOK_SECRET>` — shared HMAC secret |
-| Secure | ✅ (HTTPS) |
+WHMCS uses the term "Server" in its admin UI for any external system a provisioning module connects to. For kube-dc, this represents the **management cluster** — the Kubernetes cluster running kube-dc that manages organizations, namespaces, VMs (KubeVirt), and resource quotas.
+
+| WHMCS Field | Value | Meaning |
+|-------------|-------|---------|
+| Name | Kube-DC Cloud | Display name for this cluster |
+| Module | kubedc | Selects the kube-dc provisioning module |
+| Hostname | `console.kube-dc.com` | Management cluster API endpoint |
+| IP Address | (optional) | |
+| Access Hash | `<WHMCS_WEBHOOK_SECRET>` | Shared HMAC secret for webhook signing |
+| Secure | ✅ (HTTPS) | TLS required |
+
+> **Note:** Unlike Plesk/cPanel where a "server" is a single machine, here the "server" entry points to the kube-dc management cluster API. Kube-DC is a multi-tenant Kubernetes platform that provisions Organizations (each with their own namespaces, resource quotas, VMs, and services). The provisioning module manages billing for these Organizations — not individual servers or VMs.
 
 ### 5.2 Product Mapping
 
@@ -463,7 +467,7 @@ Each product needs one custom field:
 
 ### 6.2 Network
 
-- WHMCS server must be able to reach kube-dc API endpoint (HTTPS)
+- WHMCS server must be able to reach kube-dc management cluster API endpoint (HTTPS)
 - kube-dc webhook endpoint should be IP-restricted to WHMCS server IP(s) if possible
 - TLS required for all communication
 
@@ -472,7 +476,7 @@ Each product needs one custom field:
 | Secret | Location | Purpose |
 |--------|----------|---------|
 | `WHMCS_WEBHOOK_SECRET` | kube-dc backend env | Verify incoming webhook signatures |
-| Server Access Hash | WHMCS server config | WHMCS module uses this to sign requests |
+| Access Hash | WHMCS "Server" config (cluster entry) | WHMCS module uses this to sign requests to kube-dc cluster |
 | WHMCS API Credentials | kube-dc env (optional) | Call WHMCS API for usage sync |
 
 ---
@@ -505,7 +509,7 @@ Each product needs one custom field:
 
 | Step | Task | Where | Effort |
 |------|------|-------|--------|
-| 3.1 | Register kube-dc server in WHMCS admin | WHMCS Admin → Servers | 15m |
+| 3.1 | Register kube-dc management cluster in WHMCS admin ("Server" config) | WHMCS Admin → Servers | 15m |
 | 3.2 | Create products (dev, pro, scale) | WHMCS Admin → Products | 30m |
 | 3.3 | Configure custom fields | WHMCS Admin → Product Custom Fields | 15m |
 | 3.4 | Create API credentials for kube-dc | WHMCS Admin → API Credentials | 15m |
@@ -559,12 +563,12 @@ WHMCS_WEBHOOK_SECRET: "<shared-hmac-secret>"
 WHMCS_CLIENT_AREA_URL: "https://billing.example.com/clientarea.php"  # optional
 ```
 
-### WHMCS Server
+### WHMCS Configuration
 
 ```
-Module location: /var/www/html/whmcs/modules/servers/kubedc/
-Server config:   WHMCS Admin → System Settings → Servers
-Products:        WHMCS Admin → System Settings → Products/Services
+Module location:    /var/www/html/whmcs/modules/servers/kubedc/
+Cluster config:     WHMCS Admin → System Settings → Servers  (registers kube-dc management cluster)
+Products:           WHMCS Admin → System Settings → Products/Services
 ```
 
 ---
