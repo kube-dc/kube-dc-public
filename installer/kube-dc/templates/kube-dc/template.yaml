@@ -500,7 +500,7 @@ units:
       commands:
         - |
           # The upstream Kamaji Helm chart hardcodes command: ["/kamaji"] but our
-          # custom build (shalb/kamaji) has the binary as /manager. Remove the
+          # custom build (shalb/kamaji) has the binary at /ko-app/kamaji. Remove the
           # command override so the image ENTRYPOINT is used instead.
           kubectl patch deploy kamaji -n kamaji-system --type json \
             -p '[{"op": "remove", "path": "/spec/template/spec/containers/0/command"}]' 2>/dev/null || true

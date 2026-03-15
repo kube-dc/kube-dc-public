@@ -231,7 +231,7 @@ spec:
                       description: |-
                         Container disk image for KubeVirt workers only
                         For CloudSigma, use cloudsigma.imageUUID instead
-                        Default for KubeVirt: quay.io/capk/ubuntu-2404-container-disk:v1.34.1
+                        Default for KubeVirt: docker.io/shalb/ubuntu-2404-container-disk:v1.35.2
                       type: string
                     infrastructureProvider:
                       default: kubevirt

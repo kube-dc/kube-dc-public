@@ -157,7 +157,7 @@ spec:
       cpuCores: 2
       memory: 8Gi
       diskSize: 30Gi
-      image: quay.io/capk/ubuntu-2404-container-disk:v1.34.1
+      image: docker.io/shalb/ubuntu-2404-container-disk:v1.35.2
       architecture: amd64
       infrastructureProvider: kubevirt
       storageType: datavolume

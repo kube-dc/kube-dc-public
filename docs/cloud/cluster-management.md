@@ -171,7 +171,7 @@ kubectl patch kdccluster dev -n my-project --type merge -p '{
         "replicas": 3,
         "cpuCores": 2,
         "memory": "8Gi",
-        "image": "quay.io/capk/ubuntu-2404-container-disk:v1.34.1",
+        "image": "docker.io/shalb/ubuntu-2404-container-disk:v1.35.2",
         "infrastructureProvider": "kubevirt",
         "storageType": "datavolume"
       },
@@ -180,7 +180,7 @@ kubectl patch kdccluster dev -n my-project --type merge -p '{
         "replicas": 2,
         "cpuCores": 4,
         "memory": "16Gi",
-        "image": "quay.io/capk/ubuntu-2404-container-disk:v1.34.1",
+        "image": "docker.io/shalb/ubuntu-2404-container-disk:v1.35.2",
         "infrastructureProvider": "kubevirt",
         "storageType": "datavolume"
       }
@@ -202,14 +202,96 @@ The control plane continues running and the cluster remains accessible via `kube
 
 ## Upgrading Kubernetes Version
 
-Update the `spec.version` field to upgrade the cluster:
+You can upgrade your cluster's Kubernetes version with a single command. The upgrade is fully automated — control plane is updated first, then worker nodes are replaced one by one with zero downtime.
+
+### Available Versions
+
+| Version | Worker Image | Status |
+|---------|-------------|--------|
+| v1.35.0 | `docker.io/shalb/ubuntu-2404-container-disk:v1.35.2` | Latest |
+| v1.34.0 | `quay.io/capk/ubuntu-2404-container-disk:v1.34.1` | Supported |
+
+### Via Dashboard
+
+When an upgrade is available, the cluster detail page shows an **Upgrade to vX.Y.Z** button in the header and a version badge in the Summary tab.
+
+![Kubernetes Upgrade via Dashboard](images/k8s-upgrade.png)
+
+1. Open the cluster detail page in the dashboard
+2. Click the **Upgrade to vX.Y.Z** button next to the version badge
+3. Review the confirmation dialog — it shows the target version and worker image
+4. Click **Upgrade** to start the rolling upgrade
+
+The upgrade progress is visible in the cluster status. The phase will change during the upgrade and return to **Ready** once complete.
+
+### Via kubectl
+
+**Step 1: Check current version**
 
 ```bash
-kubectl patch kdccluster dev -n my-project \
-  --type merge -p '{"spec":{"version":"v1.35.0"}}'
+kubectl get kdccluster dev -n my-project
+# NAME   VERSION   PHASE   ENDPOINT   DATASTORE   AGE
+# dev    v1.34.0   Ready   ...        dev-etcd    29d
 ```
 
-The upgrade is performed as a rolling update — control plane components are updated first, then worker nodes are replaced one by one.
+**Step 2: Upgrade version and worker image**
+
+Patch both `spec.version` and the worker image in a single command:
+
+```bash
+kubectl patch kdccluster dev -n my-project --type=json -p '[
+  {"op":"replace","path":"/spec/version","value":"v1.35.0"},
+  {"op":"replace","path":"/spec/workers/0/image","value":"docker.io/shalb/ubuntu-2404-container-disk:v1.35.2"}
+]'
+```
+
+For clusters with multiple worker pools, update each pool's image:
+
+```bash
+kubectl patch kdccluster dev -n my-project --type=json -p '[
+  {"op":"replace","path":"/spec/version","value":"v1.35.0"},
+  {"op":"replace","path":"/spec/workers/0/image","value":"docker.io/shalb/ubuntu-2404-container-disk:v1.35.2"},
+  {"op":"replace","path":"/spec/workers/1/image","value":"docker.io/shalb/ubuntu-2404-container-disk:v1.35.2"}
+]'
+```
+
+**Step 3: Monitor the upgrade**
+
+The upgrade happens in two phases:
+
+1. **Control plane** (~2-5 min) — API server, scheduler, and controller-manager are updated
+2. **Worker rollout** (~3-10 min per node) — New workers are created before old ones are removed
+
+```bash
+# Watch cluster status
+kubectl get kdccluster dev -n my-project -w
+
+# Watch worker machine rollout
+kubectl get machines -n my-project -l cluster.x-k8s.io/cluster-name=dev -w
+```
+
+During the worker rollout, you will see both old and new machines running simultaneously. The new worker joins the cluster and becomes Ready before the old worker is drained and removed. Your workloads continue running without interruption.
+
+**Step 4: Verify the upgrade**
+
+```bash
+# Check cluster version
+kubectl get kdccluster dev -n my-project
+# NAME   VERSION   PHASE   ...
+# dev    v1.35.0   Ready   ...
+
+# Check node versions inside the tenant cluster
+kubectl --kubeconfig=/tmp/dev-kubeconfig get nodes -o wide
+# NAME                    STATUS   VERSION   CONTAINER-RUNTIME
+# dev-workers-xxx-yyy     Ready    v1.35.2   containerd://2.2.2
+```
+
+### Important Notes
+
+- **Sequential minor versions only** — You must upgrade one minor version at a time (e.g., v1.34 → v1.35). Skipping versions is not supported.
+- **No downgrades** — Kubernetes version downgrades are not supported. The system will reject any attempt to lower the version.
+- **Zero downtime** — Workers are replaced using a rolling update strategy (`maxSurge=1`). A new worker is created and becomes Ready before the old one is removed, so your workloads are never interrupted.
+- **Image must match version** — Always update the worker image alongside the version. The image contains the matching kubelet and kubeadm binaries.
 
 ## Deleting a Cluster
 

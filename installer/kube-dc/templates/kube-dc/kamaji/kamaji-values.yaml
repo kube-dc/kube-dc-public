@@ -7,22 +7,22 @@ image:
   tag: {{ $kamajiImageTag }}
   pullPolicy: IfNotPresent
 
-# Default datastore configuration
+# Use external kamaji-etcd datastore (deployed separately)
+# Do not deploy built-in etcd subchart
+etcd:
+  deploy: false
+
 datastore:
-  enabled: true
-  driver: etcd
-  endpoints:
-    - kamaji-etcd-0.kamaji-etcd.kamaji-system.svc.cluster.local:2379
-    - kamaji-etcd-1.kamaji-etcd.kamaji-system.svc.cluster.local:2379
-    - kamaji-etcd-2.kamaji-etcd.kamaji-system.svc.cluster.local:2379
+  enabled: false
+  nameOverride: kamaji-etcd
 
 resources:
   requests:
     cpu: 100m
-    memory: 128Mi
-  limits:
-    cpu: 200m
     memory: 512Mi
+  limits:
+    cpu: 500m
+    memory: 4Gi
 
 livenessProbe:
   httpGet:

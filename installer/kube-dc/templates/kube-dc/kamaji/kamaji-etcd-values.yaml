@@ -1,15 +1,15 @@
 # Kamaji etcd values
 # Multi-tenant etcd cluster for Kamaji tenant control planes
 
-replicas: 3
+replicas: 1
 
 persistence:
-  size: 10Gi
+  size: 2Gi
 
 resources:
   requests:
-    cpu: 100m
-    memory: 256Mi
+    cpu: 50m
+    memory: 128Mi
   limits:
-    cpu: 500m
-    memory: 512Mi
+    cpu: 200m
+    memory: 256Mi
