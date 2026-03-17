@@ -1,0 +1,94 @@
+# =============================================================================
+# ValidatingAdmissionPolicy: Restrict dangerous pod specs in project namespaces
+# Blocks hostPath, privileged, hostNetwork, hostPID, hostIPC for user-created pods.
+# System controllers (kubevirt, kamaji, kube-dc, capi, etc.) are exempted via matchConditions.
+# =============================================================================
+
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: restrict-pod-security-in-projects
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  matchConditions:
+    # Skip system controllers — they create pods in project namespaces
+    - name: exclude-system-service-accounts
+      expression: >-
+        !(['system:serviceaccount:kube-dc:',
+           'system:serviceaccount:kubevirt:',
+           'system:serviceaccount:kamaji-system:',
+           'system:serviceaccount:capi-system:',
+           'system:serviceaccount:capk-system:',
+           'system:serviceaccount:capcs-system:',
+           'system:serviceaccount:capi-k3s-bootstrap-system:',
+           'system:serviceaccount:capi-k3s-control-plane-system:',
+           'system:serviceaccount:capi-kubeadm-bootstrap-system:',
+           'system:serviceaccount:kube-system:'].exists(prefix,
+             request.userInfo.username.startsWith(prefix)))
+    # Skip cluster-admin and node users
+    - name: exclude-cluster-admins
+      expression: >-
+        !('system:masters' in request.userInfo.groups)
+    - name: exclude-node-users
+      expression: >-
+        !('system:nodes' in request.userInfo.groups)
+  validations:
+    # Block hostPath volumes
+    - expression: >-
+        !has(object.spec.volumes) ||
+        object.spec.volumes.all(v, !has(v.hostPath))
+      message: "hostPath volumes are not allowed in project namespaces. Mount only PVCs, configMaps, secrets, or emptyDir."
+
+    # Block privileged containers
+    - expression: >-
+        object.spec.containers.all(c,
+          !has(c.securityContext) ||
+          !has(c.securityContext.privileged) ||
+          c.securityContext.privileged == false)
+      message: "Privileged containers are not allowed in project namespaces."
+
+    # Block privileged init containers
+    - expression: >-
+        !has(object.spec.initContainers) ||
+        object.spec.initContainers.all(c,
+          !has(c.securityContext) ||
+          !has(c.securityContext.privileged) ||
+          c.securityContext.privileged == false)
+      message: "Privileged init containers are not allowed in project namespaces."
+
+    # Block hostNetwork
+    - expression: >-
+        !has(object.spec.hostNetwork) ||
+        object.spec.hostNetwork == false
+      message: "hostNetwork is not allowed in project namespaces."
+
+    # Block hostPID
+    - expression: >-
+        !has(object.spec.hostPID) ||
+        object.spec.hostPID == false
+      message: "hostPID is not allowed in project namespaces."
+
+    # Block hostIPC
+    - expression: >-
+        !has(object.spec.hostIPC) ||
+        object.spec.hostIPC == false
+      message: "hostIPC is not allowed in project namespaces."
+
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: restrict-pod-security-in-projects
+spec:
+  policyName: restrict-pod-security-in-projects
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
