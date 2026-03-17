@@ -21,7 +21,6 @@ const sidebars: SidebarsConfig = {
         'architecture-networking',
         'architecture-multi-tenancy',
         'architecture-virtualization',
-        'controller-diagram',
       ],
     },
     {
@@ -29,7 +28,7 @@ const sidebars: SidebarsConfig = {
       label: 'Operations',
       collapsed: false,
       items: [
-        'billing-plans-configuration',
+        'security-model',
         'internal-billing-integration',
         'managing-os-images',
         'project-resources',

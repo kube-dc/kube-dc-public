@@ -1,0 +1,41 @@
+# =============================================================================
+# ValidatingAdmissionPolicy: Protect annotations on Project and Organization resources
+# Prevents org-admin users from modifying annotations on these resources.
+# System controllers (kube-dc namespace SAs) are exempted via matchConditions.
+# Users can still create/delete projects and update spec fields — only annotations are protected.
+# =============================================================================
+
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: protect-kube-dc-resource-annotations
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["kube-dc.com"]
+        apiVersions: ["*"]
+        operations: ["UPDATE"]
+        resources: ["projects", "organizations", "organizationgroups"]
+  matchConditions:
+    # Only enforce for non-system users
+    - name: exclude-system-service-accounts
+      expression: >-
+        !request.userInfo.username.startsWith('system:serviceaccount:kube-dc:')
+    - name: exclude-cluster-admins
+      expression: >-
+        !('system:masters' in request.userInfo.groups)
+  validations:
+    - expression: >-
+        (has(object.metadata.annotations) ? object.metadata.annotations : {}) ==
+        (has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {})
+      message: "Modifying annotations on this resource is not allowed. Only system controllers can change annotations."
+
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: protect-kube-dc-resource-annotations
+spec:
+  policyName: protect-kube-dc-resource-annotations
+  validationActions: [Deny]

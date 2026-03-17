@@ -15,6 +15,15 @@ manager:
     # - "100.65.0.200"
     # - "10.8.0.0/24"
 
+  # Ingress network isolation: blocks inbound traffic from shared external VLANs to project VPCs.
+  # When enabled, project VPCs get deny rules for external subnets and allow rules for whitelisted source IPs.
+  # Management VPC (ovn-cluster) is never affected. Disabled by default (opt-in).
+  ingressNetworkIsolation: false
+  # Global allowlist of source IPs/CIDRs allowed to reach ALL project VPCs when ingress isolation is enabled.
+  # Use for shared infrastructure (NAT GW VMs, monitoring, bastion hosts, etc.).
+  ingressGlobalAllowlist: []
+    # - "100.64.200.1"
+
   extraEnv: []
     # - name: EXAMPLE_VAR
     #   value: "example-value"

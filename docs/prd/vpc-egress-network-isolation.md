@@ -306,9 +306,9 @@ Allow rules are collected from three sources, merged with deduplication:
 |--------|-------|-------------|----------|
 | **Auto-collected EIPs** | Per-project | Controller (automatic) | All `EIp.Status.IpAddress` in project namespace |
 | **Global allowlist** | All projects | Cluster admin only | `master-config` Secret: `egress_global_allowlist` |
-| **Per-project annotation** | Single project | Cluster admin (Kyverno-protected) | `network.kube-dc.com/egress-allowlist` on Project |
+| **Per-project annotation** | Single project | Cluster admin (VAP-protected) | `network.kube-dc.com/egress-allowlist` on Project |
 
-**Security design:** The per-project allowlist is intentionally NOT a CRD spec field. If it were on `ProjectSpec`, org admins could whitelist any EIP address (including other projects' EIPs), defeating the isolation. Instead, it is an **annotation** protected by a Kyverno `ClusterPolicy` that blocks all users except the kube-dc controller ServiceAccount from modifying it.
+**Security design:** The per-project allowlist is intentionally NOT a CRD spec field. If it were on `ProjectSpec`, org admins could whitelist any EIP address (including other projects' EIPs), defeating the isolation. Instead, it is an **annotation** protected by a native Kubernetes `ValidatingAdmissionPolicy` (VAP) that blocks all users except the kube-dc controller ServiceAccount from modifying any annotations on Project resources.
 
 **Annotation format** (comma-separated IPs/CIDRs):
 ```yaml
@@ -326,38 +326,40 @@ metadata:
 EgressAllowlistAnnotation = "network.kube-dc.com/egress-allowlist"
 ```
 
-### 4.3 Kyverno Policy for Annotation Protection
+### 4.3 ValidatingAdmissionPolicy for Annotation Protection
 
-The following `ClusterPolicy` ensures only the kube-dc controller ServiceAccount can set or modify the `network.kube-dc.com/egress-allowlist` annotation on Project resources:
+**Implemented 2026-03-17.** Instead of Kyverno, a native Kubernetes `ValidatingAdmissionPolicy` (VAP) protects all annotations on Project, Organization, and OrganizationGroup resources. VAP runs in-process in the API server — no external webhook dependency.
+
+The policy is deployed via Helm chart template `charts/kube-dc/templates/vap-protect-annotations.yaml`:
 
 ```yaml
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
 metadata:
-  name: protect-egress-allowlist
+  name: protect-kube-dc-resource-annotations
 spec:
-  validationFailureAction: Enforce
-  rules:
-    - name: block-egress-allowlist-annotation
-      match:
-        any:
-          - resources:
-              kinds: ["kube-dc.com/v1/Project"]
-      exclude:
-        any:
-          - subjects:
-              - kind: ServiceAccount
-                name: kube-dc-controller
-                namespace: kube-dc
-      preconditions:
-        all:
-          - key: "{{request.object.metadata.annotations.\"network.kube-dc.com/egress-allowlist\" || ''}}"
-            operator: NotEquals
-            value: "{{request.oldObject.metadata.annotations.\"network.kube-dc.com/egress-allowlist\" || ''}}"
-      validate:
-        message: "Only the kube-dc controller can modify the egress-allowlist annotation"
-        deny: {}
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["kube-dc.com"]
+        apiVersions: ["*"]
+        operations: ["UPDATE"]
+        resources: ["projects", "organizations", "organizationgroups"]
+  matchConditions:
+    - name: exclude-system-service-accounts
+      expression: >-
+        !request.userInfo.username.startsWith('system:serviceaccount:kube-dc:')
+    - name: exclude-cluster-admins
+      expression: >-
+        !('system:masters' in request.userInfo.groups)
+  validations:
+    - expression: >-
+        (has(object.metadata.annotations) ? object.metadata.annotations : {}) ==
+        (has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {})
+      message: "Modifying annotations on this resource is not allowed. Only system controllers can change annotations."
 ```
+
+This covers the `network.kube-dc.com/egress-allowlist` annotation along with all other annotations (billing, reconcile triggers, etc.). Users can still create/delete projects and update spec fields — only annotation modifications are blocked.
 
 ### 4.4 New File: `internal/utils/egress_firewall.go`
 
@@ -596,7 +598,7 @@ This correctly handles:
 }
 ```
 
-**Per-project allowlist** — set annotation on the Project resource (cluster admin only, Kyverno-protected):
+**Per-project allowlist** — set annotation on the Project resource (cluster admin only, VAP-protected):
 
 ```bash
 kubectl annotate project my-project -n my-org \
@@ -880,7 +882,7 @@ Give each project its own VLAN/external subnet.
 
 1. ~~**Should the feature be opt-in or opt-out?**~~ **RESOLVED:** Enabled by default (`true`) in both Helm chart and installer chart. Can be disabled by setting `egressNetworkIsolation: false`.
 
-2. ~~**Should isolation be configurable per-project?**~~ **RESOLVED:** No per-project toggle. Isolation is global (all projects or none). Per-project **exceptions** are handled via the `network.kube-dc.com/egress-allowlist` annotation (Kyverno-protected, cluster admin only).
+2. ~~**Should isolation be configurable per-project?**~~ **RESOLVED:** No per-project toggle. Isolation is global (all projects or none). Per-project **exceptions** are handled via the `network.kube-dc.com/egress-allowlist` annotation (VAP-protected, cluster admin only).
 
 3. ~~**How to handle public EIPs on ext-public?**~~ **RESOLVED:** `ListAllExternalSubnets()` discovers all subnets labeled `cloud` or `public`. Deny rules are generated for each. Allow rules work with any IP/CIDR regardless of which external network it's on.
 

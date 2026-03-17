@@ -55,6 +55,15 @@ manager:
     {{- end }}
   {{- end }}
 
+  # Ingress network isolation: blocks inbound traffic from shared external VLANs to project VPCs (disabled by default)
+  ingressNetworkIsolation: {{ .variables.cluster_config.ingress_network_isolation | default false }}
+  {{- if .variables.cluster_config.ingress_global_allowlist }}
+  ingressGlobalAllowlist:
+    {{- range .variables.cluster_config.ingress_global_allowlist }}
+    - {{ . | quote }}
+    {{- end }}
+  {{- end }}
+
 frontend:
   image:
     pullPolicy: Always

@@ -78,6 +78,7 @@ const sidebars: SidebarsConfig = {
       label: 'Advanced Topics',
       collapsed: true,
       items: [
+        'security-restrictions',
         'ai-ide-integration',
         'gitops',
       ],
