@@ -4,6 +4,17 @@ manager:
   logLevel: 1 # 5 - Debug
   keycloakDebug: false
   ovnDbIps: "" # Required, example: "tcp:192.168.0.1:6641"
+
+  # Egress network isolation: blocks cross-project traffic on external subnets.
+  # When enabled, project VPCs get deny rules for external subnets and allow rules for own EIPs.
+  # Management VPC (ovn-cluster) is never affected.
+  egressNetworkIsolation: true
+  # Global allowlist of IPs/CIDRs that ALL projects can reach even with isolation enabled.
+  # Use for shared infrastructure (monitoring, logging, shared databases, etc.).
+  egressGlobalAllowlist: []
+    # - "100.65.0.200"
+    # - "10.8.0.0/24"
+
   extraEnv: []
     # - name: EXAMPLE_VAR
     #   value: "example-value"

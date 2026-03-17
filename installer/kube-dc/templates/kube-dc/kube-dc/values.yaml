@@ -46,6 +46,15 @@ manager:
   # Base domain for auto-generated service hostnames (e.g., {service}-{namespace}.{base_domain})
   baseDomain: {{ .variables.domain }}
 
+  # Egress network isolation: blocks cross-project traffic on external subnets (enabled by default)
+  egressNetworkIsolation: {{ .variables.cluster_config.egress_network_isolation | default true }}
+  {{- if .variables.cluster_config.egress_global_allowlist }}
+  egressGlobalAllowlist:
+    {{- range .variables.cluster_config.egress_global_allowlist }}
+    - {{ . | quote }}
+    {{- end }}
+  {{- end }}
+
 frontend:
   image:
     pullPolicy: Always
