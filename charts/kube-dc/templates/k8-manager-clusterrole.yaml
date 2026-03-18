@@ -176,6 +176,16 @@ rules:
   - list
   - watch
 - apiGroups:
+  - ipam.cluster.x-k8s.io
+  resources:
+  - ipaddressclaims
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - delete
+- apiGroups:
   - kube-dc.com
   resources:
   - projects

@@ -21,6 +21,13 @@ variables:
     SVC_CIDR: "10.101.0.0/16"
     JOIN_CIDR: "172.30.0.0/22"
     cluster_dns: "10.101.0.11"
+    # Ingress network isolation: blocks inbound traffic from shared external VLANs to project VPCs
+    # Enable only when workers share a cloud VLAN (e.g., CloudSigma private-link clusters)
+    # ingress_network_isolation: true
+    # ingress_global_allowlist:
+    #   - "ovn-cluster-lrp-ip"  # REQUIRED: ovn-cluster LRP on ext-cloud (management VPC)
+    #                           # Get it: kubectl get ovn-eip ovn-cluster-ext-cloud -o jsonpath='{.status.v4Ip}'
+
     default_external_network:
       type: cloud
       nodes_list:

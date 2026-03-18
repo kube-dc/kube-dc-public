@@ -56,6 +56,9 @@ manager:
   {{- end }}
 
   # Ingress network isolation: blocks inbound traffic from shared external VLANs to project VPCs (disabled by default)
+  # When enabled, you MUST include the ovn-cluster LRP IP (management VPC) in the global allowlist,
+  # otherwise Kamaji cannot reach etcd LB EIPs to provision new tenant control planes.
+  # Find the LRP IP: kubectl get ovn-eip ovn-cluster-ext-cloud -o jsonpath='{.status.v4Ip}'
   ingressNetworkIsolation: {{ .variables.cluster_config.ingress_network_isolation | default false }}
   {{- if .variables.cluster_config.ingress_global_allowlist }}
   ingressGlobalAllowlist:
