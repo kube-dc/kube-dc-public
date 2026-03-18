@@ -193,19 +193,50 @@ spec:
                         nics:
                           description: Network interface configurations
                           items:
-                            description: CloudSigmaNICSpec defines a CloudSigma network
-                              interface configuration
+                            description: |-
+                              CloudSigmaNICSpec defines a CloudSigma network interface configuration
+                              All clusters run inside VLANs; public NAT is auto-assigned when no NICs are specified.
                             properties:
-                              ipv4Conf:
-                                description: IP v4 configuration mode (dhcp, manual,
-                                  or empty for auto)
-                                type: string
+                              ipPoolRef:
+                                description: |-
+                                  IPPoolRef references an InClusterIPPool or GlobalInClusterIPPool for static IP allocation.
+                                  Required for cloud VLAN (first NIC) on private clusters (expose-route=false).
+                                  Optional for customer VLANs — omit if customer provides their own DHCP.
+                                properties:
+                                  apiGroup:
+                                    default: ipam.cluster.x-k8s.io
+                                    description: APIGroup is the API group of the
+                                      pool resource
+                                    type: string
+                                  kind:
+                                    default: InClusterIPPool
+                                    description: Kind is the kind of the pool resource
+                                    enum:
+                                    - InClusterIPPool
+                                    - GlobalInClusterIPPool
+                                    type: string
+                                  name:
+                                    description: Name is the name of the pool resource
+                                    type: string
+                                required:
+                                - name
+                                type: object
                               vlan:
-                                description: VLAN UUID (optional, omit for public
-                                  NAT IP)
+                                description: VLAN UUID for the network interface
                                 type: string
+                            required:
+                            - vlan
                             type: object
                           type: array
+                        privateApiEndpointIP:
+                          description: |-
+                            PrivateAPIEndpointIP is a static IP from the customer VLAN subnet
+                            for exposing the Kubernetes API via MetalLB LoadBalancer on the private VLAN.
+                            Must be outside the DHCP range and within the customer VLAN subnet.
+                            When set, a LoadBalancer Service is created for kube-api-proxy
+                            and a token-based private kubeconfig is generated as a Secret.
+                            Only the first pool's value is used (one endpoint per cluster).
+                          type: string
                         region:
                           description: CloudSigma region (zrh, lvs, sjc, tyo, or "next"
                             for testing)
@@ -227,6 +258,12 @@ spec:
                       format: int32
                       minimum: 1
                       type: integer
+                    diskSize:
+                      default: 20Gi
+                      description: |-
+                        Disk size for KubeVirt workers (e.g., "20Gi", "40Gi", "60Gi")
+                        Only used when storageType=datavolume
+                      type: string
                     image:
                       description: |-
                         Container disk image for KubeVirt workers only
@@ -238,16 +275,6 @@ spec:
                       description: |-
                         Infrastructure provider for this worker pool
                         Determines which CAPI infrastructure provider to use (kubevirt, aws, azure, etc.)
-                      type: string
-                    storageType:
-                      default: datavolume
-                      description: |-
-                        Storage type for KubeVirt workers
-                        - "datavolume": Persistent storage using DataVolume (default, recommended)
-                        - "containerdisk": Ephemeral storage using containerDisk (uses host ephemeral-storage)
-                      enum:
-                      - datavolume
-                      - containerdisk
                       type: string
                     labels:
                       additionalProperties:
@@ -270,6 +297,16 @@ spec:
                       format: int32
                       minimum: 0
                       type: integer
+                    storageType:
+                      default: datavolume
+                      description: |-
+                        Storage type for KubeVirt workers
+                        - "datavolume": Persistent storage using DataVolume (default, recommended)
+                        - "containerdisk": Ephemeral storage using containerDisk (uses host ephemeral-storage)
+                      enum:
+                      - datavolume
+                      - containerdisk
+                      type: string
                     taints:
                       description: Node taints to apply to workers in this pool
                       items:
