@@ -20,6 +20,7 @@ spec:
     # Skip system controllers — they create pods in project namespaces
     - name: exclude-system-service-accounts
       expression: >-
+        !has(request.userInfo) || !has(request.userInfo.username) ||
         !(['system:serviceaccount:kube-dc:',
            'system:serviceaccount:kubevirt:',
            'system:serviceaccount:kamaji-system:',
@@ -34,9 +35,11 @@ spec:
     # Skip cluster-admin and node users
     - name: exclude-cluster-admins
       expression: >-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
         !('system:masters' in request.userInfo.groups)
     - name: exclude-node-users
       expression: >-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
         !('system:nodes' in request.userInfo.groups)
   validations:
     # Block hostPath volumes
