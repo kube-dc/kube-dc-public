@@ -1,0 +1,21 @@
+{
+    "files.exclude": {
+        "**/node_modules": true,
+        "**/.git": true,
+        "**/bin": true,
+        "**/dist": true,
+        "**/vendor": true
+    },
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/bin": true,
+        "**/dist": true,
+        "**/vendor": true
+    },
+    "files.watcherExclude": {
+        "**/node_modules/**": true,
+        "**/bin/**": true,
+        "**/dist/**": true,
+        "**/vendor/**": true
+    }
+}
