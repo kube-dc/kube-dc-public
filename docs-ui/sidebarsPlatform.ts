@@ -29,7 +29,6 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'security-model',
-        'internal-billing-integration',
         'managing-os-images',
         'project-resources',
         'windows-vm-setup',
