@@ -78,7 +78,7 @@ backendPath=$(cd -- "${path}/../ui/backend" &> /dev/null && pwd)
 # Generate build info file for frontend
 echo "Generating build info file..."
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-LAST_COMMITS=$(git log -5 --pretty=format:'    "%h - %s (%an, %ar)"' | sed 's/$/,/' | sed '$ s/,$//')
+LAST_COMMITS=$(git log -5 --pretty=format:'%h - %s (%an, %ar)' | sed 's/"/\\"/g' | sed 's/^/    "/' | sed 's/$/"/' | sed 's/$/,/' | sed '$ s/,$//')
 cat > "${frontendPath}/src/build-info.js" << EOF
 // Auto-generated build information
 // Generated on: $(date -u +"%Y-%m-%dT%H:%M:%SZ")

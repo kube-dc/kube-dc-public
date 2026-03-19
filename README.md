@@ -1,7 +1,7 @@
 # Kube-DC
 
 <p align="center">
-  <img src="docs/images/logo-readme.png" alt="Kube-DC Logo" width="300">
+  <img src="docs/cloud/images/logo-readme.png" alt="Kube-DC Logo" width="300">
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@ Kube-DC bridges the gap between traditional virtualization and modern container 
 
 Kube-DC provides organizations with a unified management interface for all their infrastructure needs, from multi-tenancy and virtualization to networking and billing.
 
-![Kube-DC Architecture Overview](docs/images/arch-overview.png)
+![Kube-DC Architecture Overview](docs/cloud/images/arch-overview.png)
 
 ## Key Features
 
