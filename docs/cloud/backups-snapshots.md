@@ -3,7 +3,7 @@
 :::caution Work in Progress
 Backup functionality is currently in **testing and validation phase**. Current implementation backs up VM and workload **metadata only** (configurations, definitions) but not actual disk data due to storage backend limitations.
 
-**For full VM data protection**, migration to snapshot-capable storage (Ceph RBD, Longhorn) is required. See [implementation status](../prd/velero-backup-restore-service.md#testing-results--validation) for details.
+**For full VM data protection**, migration to snapshot-capable storage (Ceph RBD, Longhorn) is required.
 :::
 
 Kube-DC provides backup and restore capabilities for virtual machines, containers, and persistent data using Velero. Backups are stored in S3-compatible object storage (Rook Ceph RGW) at `https://s3.kube-dc.cloud`.
@@ -76,7 +76,7 @@ Currently, backup storage configuration requires administrator assistance. Conta
 
 The administrator will configure a BackupStorageLocation that allows you to create backups referencing your bucket.
 
-**Automated setup via controller is planned** — see [Velero Backup & Restore PRD](../prd/velero-backup-restore-service.md) for implementation details.
+**Automated setup via controller is planned.**
 :::
 
 **What the administrator does**:
@@ -511,4 +511,3 @@ Backups are automatically deleted when their TTL expires.
 
 - [Block Storage](block-storage.md) — Understand persistent volumes
 - [Object Storage](object-storage.md) — Manage S3 buckets
-- [Velero Backup & Restore PRD](../prd/velero-backup-restore-service.md) — Technical implementation details
