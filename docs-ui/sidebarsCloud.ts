@@ -56,6 +56,14 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Managed Databases',
+      collapsed: true,
+      items: [
+        'managed-databases',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Storage & Data',
       collapsed: true,
       items: [
