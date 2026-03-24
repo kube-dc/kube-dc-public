@@ -125,6 +125,17 @@ rules:
 - apiGroups: [objectbucket.io]
   resources: [objectbucketclaims]
   verbs: [create, get, list, watch, delete]
+# Database Service (db-manager)
+- apiGroups: [db.kube-dc.com]
+  resources: [kdcdatabases]
+  verbs: [create, get, list, watch, delete, patch, update]
+# Database Engine Resources (CNPG + MariaDB operator)
+- apiGroups: [postgresql.cnpg.io]
+  resources: [backups, scheduledbackups]
+  verbs: [create, get, list, watch, delete]
+- apiGroups: [k8s.mariadb.com]
+  resources: [physicalbackups]
+  verbs: [create, get, list, watch, delete]
 # Velero (Backup & Restore)
 - apiGroups: [velero.io]
   resources: [backups, restores, schedules, backupstoragelocations]
@@ -239,6 +250,17 @@ rules:
 - apiGroups: [objectbucket.io]
   resources: [objectbucketclaims]
   verbs: [create, get, list, watch, delete]
+# Database Service (db-manager)
+- apiGroups: [db.kube-dc.com]
+  resources: [kdcdatabases]
+  verbs: [create, get, list, watch, delete, patch, update]
+# Database Engine Resources (CNPG + MariaDB operator)
+- apiGroups: [postgresql.cnpg.io]
+  resources: [backups, scheduledbackups]
+  verbs: [create, get, list, watch, delete]
+- apiGroups: [k8s.mariadb.com]
+  resources: [physicalbackups]
+  verbs: [create, get, list, watch, delete]
 # Velero (Backup & Restore)
 - apiGroups: [velero.io]
   resources: [backups, restores, schedules, backupstoragelocations]
@@ -350,6 +372,17 @@ rules:
 - apiGroups: [objectbucket.io]
   resources: [objectbucketclaims]
   verbs: [get, list, watch]
+# Database Service - read only
+- apiGroups: [db.kube-dc.com]
+  resources: [kdcdatabases]
+  verbs: [get, list, watch]
+# Database Engine Resources - read only
+- apiGroups: [postgresql.cnpg.io]
+  resources: [backups, scheduledbackups]
+  verbs: [get, list, watch]
+- apiGroups: [k8s.mariadb.com]
+  resources: [physicalbackups]
+  verbs: [get, list, watch]
 # Velero - read only
 - apiGroups: [velero.io]
   resources: [backups, restores, schedules, backupstoragelocations]
@@ -451,6 +484,17 @@ rules:
 # Object Storage - read only
 - apiGroups: [objectbucket.io]
   resources: [objectbucketclaims]
+  verbs: [get, list]
+# Database Service - read only
+- apiGroups: [db.kube-dc.com]
+  resources: [kdcdatabases]
+  verbs: [get, list]
+# Database Engine Resources - read only
+- apiGroups: [postgresql.cnpg.io]
+  resources: [backups, scheduledbackups]
+  verbs: [get, list]
+- apiGroups: [k8s.mariadb.com]
+  resources: [physicalbackups]
   verbs: [get, list]
 # Velero - read only
 - apiGroups: [velero.io]
