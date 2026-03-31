@@ -9,8 +9,10 @@ extraEnvVars:
     value: "xforwarded"
   - name: KC_HTTP_ENABLED
     value: "true"
+  - name: KC_HOSTNAME
+    value: "https://{{ .variables.cluster_config.keycloak_hostname | default ( printf "login.%s" .variables.domain ) }}"
   - name: KC_HOSTNAME_STRICT
-    value: "false"
+    value: "true"
 
 image:
   registry: docker.io
