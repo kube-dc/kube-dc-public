@@ -84,6 +84,48 @@ const config: Config = {
     ],
   ],
 
+  headTags: [
+    {
+      tagName: 'script',
+      attributes: {
+        type: 'application/ld+json',
+      },
+      innerHTML: JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'SoftwareApplication',
+        name: 'Kube-DC',
+        applicationCategory: 'Cloud Infrastructure',
+        operatingSystem: 'Kubernetes',
+        description: 'An open-source platform that transforms Kubernetes into a full-featured data center with multi-tenancy, virtual machines, managed Kubernetes clusters, networking, storage, and billing.',
+        url: 'https://docs.kube-dc.com',
+        offers: {
+          '@type': 'Offer',
+          price: '0',
+          priceCurrency: 'USD',
+        },
+        featureList: [
+          'Multi-tenant organization management',
+          'Virtual machine lifecycle management via KubeVirt',
+          'Managed Kubernetes clusters (Kamaji + Cluster API)',
+          'Managed databases (PostgreSQL, MariaDB)',
+          'Public and floating IP management (OVN)',
+          'S3-compatible object storage (Rook Ceph)',
+          'Block storage with persistent volumes',
+          'Backup and restore via Velero',
+          'SSO integration (Keycloak OIDC)',
+          'Hierarchical RBAC with project isolation',
+          'Billing plans and resource quotas',
+          'Web console and CLI access',
+        ],
+        sourceOrganization: {
+          '@type': 'Organization',
+          name: 'Shalb',
+          url: 'https://shalb.com',
+        },
+      }),
+    },
+  ],
+
   plugins: [
     [
       '@docusaurus/plugin-content-docs',
@@ -94,6 +136,37 @@ const config: Config = {
         sidebarPath: './sidebarsPlatform.ts',
       },
     ],
+    function llmsPlugin() {
+      return {
+        name: 'docusaurus-plugin-llms-txt',
+        async postBuild({outDir}) {
+          const fs = require('fs');
+          const path = require('path');
+          const cloudDir = path.resolve(__dirname, '../docs/cloud');
+          const platformDir = path.resolve(__dirname, '../docs/platform');
+
+          const sections: string[] = [];
+          sections.push('# Kube-DC Documentation\n');
+          sections.push('> Kube-DC is an open-source Kubernetes Data Center platform. It provides multi-tenancy, virtual machines (KubeVirt), managed Kubernetes clusters (Kamaji + Cluster API), managed databases, OVN networking with public/floating IPs, S3 object storage, block storage, backups, SSO, RBAC, and billing.\n');
+
+          for (const [label, dir, routeBase] of [['Cloud Guide', cloudDir, '/cloud'], ['Platform Docs', platformDir, '/platform']] as const) {
+            sections.push(`\n## ${label}\n`);
+            const files = fs.readdirSync(dir).filter((f: string) => f.endsWith('.md')).sort();
+            for (const file of files) {
+              const content = fs.readFileSync(path.join(dir, file), 'utf-8');
+              const cleaned = content
+                .replace(/^import\s.*;\s*$/gm, '')
+                .replace(/<img\s[^>]*\/?\s*>/g, '[image]')
+                .trim();
+              sections.push(`\n---\n\n### ${routeBase}/${file.replace('.md', '')}\n\n${cleaned}\n`);
+            }
+          }
+
+          fs.writeFileSync(path.join(outDir, 'llms-full.txt'), sections.join('\n'));
+          console.log('[llms-txt] Generated llms-full.txt');
+        },
+      };
+    },
   ],
 
   themeConfig: {
@@ -101,6 +174,10 @@ const config: Config = {
     image: 'img/kube-dc-social-card.jpg',
     metadata: [
       {property: 'og:site_name', content: 'Kube-DC'},
+      {name: 'description', content: 'Kube-DC documentation — an open-source Kubernetes Data Center platform with multi-tenancy, virtual machines, managed Kubernetes, networking, storage, and billing.'},
+      {name: 'keywords', content: 'Kube-DC, Kubernetes, data center, multi-tenancy, KubeVirt, virtual machines, managed Kubernetes, Kamaji, Cluster API, OVN, networking, object storage, billing, RBAC, SSO'},
+      {property: 'og:type', content: 'website'},
+      {property: 'og:description', content: 'Documentation for Kube-DC — transform Kubernetes into a comprehensive Data Center with VMs, managed K8s, networking, storage, and billing.'},
     ],
     colorMode: {
       defaultMode: 'light',
