@@ -144,26 +144,51 @@ const config: Config = {
           const path = require('path');
           const cloudDir = path.resolve(__dirname, '../docs/cloud');
           const platformDir = path.resolve(__dirname, '../docs/platform');
+          const siteUrl = 'https://docs.kube-dc.com';
+          const description = 'Kube-DC is an open-source Kubernetes Data Center platform. It provides multi-tenancy, virtual machines (KubeVirt), managed Kubernetes clusters (Kamaji + Cluster API), managed databases, OVN networking with public/floating IPs, S3 object storage, block storage, backups, SSO, RBAC, and billing.';
 
-          const sections: string[] = [];
-          sections.push('# Kube-DC Documentation\n');
-          sections.push('> Kube-DC is an open-source Kubernetes Data Center platform. It provides multi-tenancy, virtual machines (KubeVirt), managed Kubernetes clusters (Kamaji + Cluster API), managed databases, OVN networking with public/floating IPs, S3 object storage, block storage, backups, SSO, RBAC, and billing.\n');
+          const header = `# Kube-DC Documentation\n\n> ${description}\n`;
+          const indexLines: string[] = [header, `For the complete documentation in a single file, see: ${siteUrl}/llms-full.txt\n`];
+          const fullSections: string[] = [header];
+
+          function extractTitle(content: string): string {
+            const match = content.match(/^#\s+(.+)$/m);
+            return match ? match[1].trim() : '';
+          }
+          function extractDescription(content: string): string {
+            const lines = content.split('\n');
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith(':::') || trimmed.startsWith('import ') || trimmed.startsWith('<') || trimmed.startsWith('---') || trimmed.startsWith('![') || trimmed.startsWith('|')) continue;
+              return trimmed.length > 160 ? trimmed.slice(0, 157) + '...' : trimmed;
+            }
+            return '';
+          }
 
           for (const [label, dir, routeBase] of [['Cloud Guide', cloudDir, '/cloud'], ['Platform Docs', platformDir, '/platform']] as const) {
-            sections.push(`\n## ${label}\n`);
+            indexLines.push(`\n## ${label}\n`);
+            fullSections.push(`\n## ${label}\n`);
+
             const files = fs.readdirSync(dir).filter((f: string) => f.endsWith('.md')).sort();
             for (const file of files) {
               const content = fs.readFileSync(path.join(dir, file), 'utf-8');
+              const slug = file.replace('.md', '');
+              const url = `${siteUrl}${routeBase}/${slug === 'index' ? '' : slug}`;
+              const title = extractTitle(content) || slug;
+              const desc = extractDescription(content);
+              indexLines.push(`- [${title}](${url})${desc ? ': ' + desc : ''}`);
+
               const cleaned = content
                 .replace(/^import\s.*;\s*$/gm, '')
                 .replace(/<img\s[^>]*\/?\s*>/g, '[image]')
                 .trim();
-              sections.push(`\n---\n\n### ${routeBase}/${file.replace('.md', '')}\n\n${cleaned}\n`);
+              fullSections.push(`\n---\n\n### ${routeBase}/${slug}\n\n${cleaned}\n`);
             }
           }
 
-          fs.writeFileSync(path.join(outDir, 'llms-full.txt'), sections.join('\n'));
-          console.log('[llms-txt] Generated llms-full.txt');
+          fs.writeFileSync(path.join(outDir, 'llms.txt'), indexLines.join('\n') + '\n');
+          fs.writeFileSync(path.join(outDir, 'llms-full.txt'), fullSections.join('\n'));
+          console.log(`[llms-txt] Generated llms.txt and llms-full.txt`);
         },
       };
     },
