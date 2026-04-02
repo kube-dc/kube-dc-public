@@ -112,7 +112,7 @@ Per-project allowlist annotations are protected — only cluster administrators 
 
 ## RBAC Model
 
-Kube-DC uses a hierarchical RBAC model with organization-level and project-level roles. See [User and Group Management](../cloud/team-management.md) for the full RBAC reference.
+Kube-DC uses a hierarchical RBAC model with organization-level and project-level roles. See [User and Group Management](/cloud/team-management) for the full RBAC reference.
 
 ### Key Security Properties
 

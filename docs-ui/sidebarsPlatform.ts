@@ -42,6 +42,7 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       items: [
         'deploy-metallb-ha',
+        'deploy-metal3-bare-metal-workers',
         'deploy-rook-ceph-object-storage',
       ],
     },

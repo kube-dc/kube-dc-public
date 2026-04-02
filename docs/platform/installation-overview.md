@@ -157,7 +157,7 @@ After the base installation:
 
 - **Rook Ceph** — S3-compatible object storage
 - **SSO** — Google OAuth or other identity provider via Keycloak
-- **Metal3** — Bare-metal provisioning for automated worker node scaling
+- **Metal3** — [Bare-metal provisioning](deploy-metal3-bare-metal-workers.md) for automated worker node scaling
 - **Billing** — Stripe integration for usage-based billing
 
 ---

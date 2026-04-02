@@ -381,7 +381,24 @@ variables:
 | `node_external_ip` | Public IP of `master-1` for initial wildcard DNS |
 | `versions.kube_dc` | Target Kube-DC release |
 
-### 3.4 Deploy
+### 3.4 Configure DNS
+
+Before deploying, configure a **wildcard DNS record** pointing to the public IP of `master-1` (the `node_external_ip` value in `stack.yaml`). Cert-Manager needs resolvable domains to issue Let's Encrypt certificates during deployment.
+
+```
+*.example.com  →  203.0.113.10  (A record, pointing to master-1 public IP)
+```
+
+This enables HTTPS for:
+- `console.example.com` — Kube-DC web console
+- `login.example.com` — Keycloak SSO
+- `grafana.example.com` — Grafana dashboards
+
+:::tip
+After deploying MetalLB in [Phase 4.1](#41-deploy-metallb-for-ha-ingress), update this DNS record to point to the MetalLB **floating IP** for high availability.
+:::
+
+### 3.5 Deploy
 
 ```bash
 cd ~/kube-dc-install
@@ -616,19 +633,15 @@ kubectl get provider-networks ext-cloud -o jsonpath='{.status.vlans}'
 # Expected: ["vlan200","vlan300"]
 ```
 
-### 4.4 Configure DNS
+### 4.4 Update DNS to MetalLB Floating IP
 
-Point a wildcard DNS record to the MetalLB floating IP:
+Now that MetalLB is running, update the wildcard DNS record (initially set in [Phase 3.4](#34-configure-dns)) to point to the **floating IP** instead of the single-node IP:
 
 ```
-*.example.com  →  203.0.113.20  (A record)
+*.example.com  →  203.0.113.20  (A record, MetalLB floating IP)
 ```
 
-This enables automatic HTTPS routing for:
-- `console.example.com` — Kube-DC web console
-- `login.example.com` — Keycloak SSO
-- `grafana.example.com` — Grafana dashboards
-- `*.example.com` — Tenant cluster API endpoints
+This ensures high availability — if any node goes down, MetalLB migrates the IP to a healthy node and all services remain reachable.
 
 ---
 
@@ -716,9 +729,7 @@ sudo systemctl start rke2-agent.service
 - Automatic Kubernetes node joining
 - Lifecycle management (scale up/down, OS upgrades)
 
-:::note
-Metal3 integration documentation is coming soon. For early access, contact [community support](/cloud/community-support).
-:::
+For the complete guide, see [Metal3 Bare-Metal Worker Nodes](deploy-metal3-bare-metal-workers.md).
 
 ---
 
