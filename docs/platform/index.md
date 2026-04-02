@@ -9,7 +9,7 @@ Kube-DC extends Kubernetes with multi-tenancy, virtualization (KubeVirt), advanc
 ## Quick Links
 
 - **Install Kube-DC** — Start with the [Installation Overview](installation-overview.md)
-- **Hetzner Deployment** — Step-by-step [Hetzner Setup Guide](installation-hetzner.md)
+- **Step-by-Step Deployment** — Follow the [Installation Guide](installation-guide.md)
 - **Architecture** — Understand the [Architecture Overview](architecture-overview.md)
 - **Networking** — Deep dive into [Networking Architecture](architecture-networking.md)
 

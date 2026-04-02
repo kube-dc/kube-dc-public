@@ -9,7 +9,7 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'installation-overview',
-        'installation-hetzner',
+        'installation-guide',
       ],
     },
     {
