@@ -1,0 +1,6 @@
+interface:
+  display_name: Expose Service
+  short_description: Expose via Gateway Route (HTTPS) or Direct EIP (TCP/UDP)
+  brand_color: '#DC2626'
+policy:
+  allow_implicit_invocation: true

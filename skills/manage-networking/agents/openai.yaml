@@ -1,0 +1,6 @@
+interface:
+  display_name: Manage Networking
+  short_description: Create External IPs, Floating IPs, and manage VPC networking
+  brand_color: '#0891B2'
+policy:
+  allow_implicit_invocation: true

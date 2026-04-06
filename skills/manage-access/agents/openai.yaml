@@ -1,0 +1,6 @@
+interface:
+  display_name: Manage Access & RBAC
+  short_description: Create OrganizationGroups to map users to project roles
+  brand_color: '#9333EA'
+policy:
+  allow_implicit_invocation: true

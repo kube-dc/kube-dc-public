@@ -1,0 +1,6 @@
+interface:
+  display_name: Manage Storage
+  short_description: Create S3 buckets, DataVolumes, and PersistentVolumeClaims
+  brand_color: '#4F46E5'
+policy:
+  allow_implicit_invocation: true

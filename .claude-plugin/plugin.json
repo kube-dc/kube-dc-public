@@ -1,0 +1,21 @@
+{
+  "name": "kube-dc",
+  "version": "1.0.0",
+  "description": "Kube-DC — Kubernetes-native data center platform skills for managing projects, VMs, databases, clusters, networking, storage, and RBAC.",
+  "author": {
+    "name": "Shalb",
+    "url": "https://github.com/kube-dc"
+  },
+  "homepage": "https://docs.kube-dc.com",
+  "repository": "https://github.com/kube-dc/kube-dc-public",
+  "license": "Apache-2.0",
+  "keywords": [
+    "kubernetes",
+    "infrastructure",
+    "virtual-machines",
+    "databases",
+    "networking",
+    "kubevirt",
+    "multi-tenancy"
+  ]
+}

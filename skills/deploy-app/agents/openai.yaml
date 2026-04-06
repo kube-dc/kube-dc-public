@@ -1,0 +1,6 @@
+interface:
+  display_name: Deploy Application
+  short_description: Deploy a containerized app with optional HTTPS and database
+  brand_color: '#D97706'
+policy:
+  allow_implicit_invocation: true

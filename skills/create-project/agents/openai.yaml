@@ -1,0 +1,6 @@
+interface:
+  display_name: Create Kube-DC Project
+  short_description: Create a new project with isolated VPC networking
+  brand_color: '#2563EB'
+policy:
+  allow_implicit_invocation: true

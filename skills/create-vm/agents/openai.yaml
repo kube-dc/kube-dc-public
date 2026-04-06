@@ -1,0 +1,6 @@
+interface:
+  display_name: Create Virtual Machine
+  short_description: Deploy a VM with SSH access and cloud-init
+  brand_color: '#7C3AED'
+policy:
+  allow_implicit_invocation: true

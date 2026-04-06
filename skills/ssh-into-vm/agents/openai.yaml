@@ -1,0 +1,6 @@
+interface:
+  display_name: SSH into VM
+  short_description: SSH into a VM using the project auto-generated keypair
+  brand_color: '#475569'
+policy:
+  allow_implicit_invocation: true

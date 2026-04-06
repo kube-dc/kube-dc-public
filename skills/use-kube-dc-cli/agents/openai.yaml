@@ -1,0 +1,6 @@
+interface:
+  display_name: Kube-DC CLI
+  short_description: Authentication, context switching, and namespace management
+  brand_color: '#1D4ED8'
+policy:
+  allow_implicit_invocation: true
