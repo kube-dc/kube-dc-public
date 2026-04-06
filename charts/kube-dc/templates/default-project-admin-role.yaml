@@ -134,7 +134,7 @@ rules:
   resources: [backups, scheduledbackups]
   verbs: [create, get, list, watch, delete]
 - apiGroups: [k8s.mariadb.com]
-  resources: [physicalbackups]
+  resources: [physicalbackups, databases, users, grants]
   verbs: [create, get, list, watch, delete]
 # Velero (Backup & Restore)
 - apiGroups: [velero.io]
@@ -259,7 +259,7 @@ rules:
   resources: [backups, scheduledbackups]
   verbs: [create, get, list, watch, delete]
 - apiGroups: [k8s.mariadb.com]
-  resources: [physicalbackups]
+  resources: [physicalbackups, databases, users, grants]
   verbs: [create, get, list, watch, delete]
 # Velero (Backup & Restore)
 - apiGroups: [velero.io]
@@ -381,7 +381,7 @@ rules:
   resources: [backups, scheduledbackups]
   verbs: [get, list, watch]
 - apiGroups: [k8s.mariadb.com]
-  resources: [physicalbackups]
+  resources: [physicalbackups, databases, users, grants]
   verbs: [get, list, watch]
 # Velero - read only
 - apiGroups: [velero.io]
@@ -494,7 +494,7 @@ rules:
   resources: [backups, scheduledbackups]
   verbs: [get, list]
 - apiGroups: [k8s.mariadb.com]
-  resources: [physicalbackups]
+  resources: [physicalbackups, databases, users, grants]
   verbs: [get, list]
 # Velero - read only
 - apiGroups: [velero.io]
