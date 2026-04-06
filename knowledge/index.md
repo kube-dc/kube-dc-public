@@ -31,6 +31,7 @@ Master catalog for AI agents. Read this first, then dive into specific files as 
 | `manage-storage` | S3 buckets (OBC), DataVolumes, PVCs | SKILL.md, obc-template.yaml, datavolume-template.yaml |
 | `manage-access` | OrganizationGroup RBAC, user management (UI-only) | SKILL.md, org-group-template.yaml, rbac-roles.md |
 | `ssh-into-vm` | SSH into VM using project keypair | SKILL.md |
+| `use-kube-dc-cli` | Authentication, context switching, namespace management | SKILL.md |
 
 Skills location: `skills/{skill-name}/SKILL.md`
 

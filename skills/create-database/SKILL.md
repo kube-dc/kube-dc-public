@@ -32,7 +32,7 @@ spec:
   cpu: "1"
   memory: 2Gi
   storage: 10Gi
-  database: {database-name}
+  databaseName: {database-name}
   username: app
 ```
 

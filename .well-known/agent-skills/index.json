@@ -70,6 +70,13 @@
       "description": "SSH into a Kube-DC virtual machine using the project's auto-generated SSH keypair. Covers extracting keys, finding VM IP, and connecting via internal IP or external FIP/EIP.",
       "url": "/skills/ssh-into-vm/SKILL.md",
       "digest": "sha256:placeholder"
+    },
+    {
+      "name": "use-kube-dc-cli",
+      "type": "skill-md",
+      "description": "Use the kube-dc CLI for authentication, context switching, and namespace management. Covers login, use, ns, config, and kubectl integration.",
+      "url": "/skills/use-kube-dc-cli/SKILL.md",
+      "digest": "sha256:placeholder"
     }
   ]
 }
