@@ -1,7 +1,7 @@
 # AI IDE Integration
 
-:::caution Work in Progress
-This page is actively being expanded. Current content covers MCP server setup and core workflows. Sections on advanced multi-cluster setups and Windsurf-specific features are still being written.
+:::tip New: Agent Skills
+Kube-DC now ships **Agent Skills** — structured knowledge packages that teach AI assistants how to generate correct Kube-DC manifests. Skills work alongside MCP servers and are supported by Claude Code, Cursor, and Windsurf. See [Agent Skills Setup](#agent-skills-setup) below.
 :::
 
 Modern AI coding assistants — Claude Code, Cursor, Windsurf, and VS Code with Copilot — can connect directly to your Kube-DC cluster via the **Model Context Protocol (MCP)**. Once connected, you can manage workloads, debug pods, apply manifests, and inspect logs entirely through natural language, without leaving your editor.
@@ -25,6 +25,185 @@ Kube-DC Cluster (via kubeconfig)
 ```
 
 The AI can then answer questions like *"Why is my deployment not scaling?"* or execute commands like *"Scale the nginx deployment to 3 replicas in project acme-dev"* with full awareness of your cluster state.
+
+---
+
+## Agent Skills Setup
+
+Generic Kubernetes MCP servers let AI assistants run `kubectl` — but they don't know about Kube-DC CRDs, annotations, naming conventions, or multi-tenant constraints. **Agent Skills** bridge this gap by providing structured, Kube-DC-specific knowledge that AI assistants load automatically.
+
+### What Skills Provide
+
+| Without Skills | With Skills |
+|----------------|-------------|
+| Agent guesses CRD schemas | Agent knows exact `apiVersion`, fields, and defaults |
+| Wrong annotations | Correct `service.nlb.kube-dc.com/*` annotations |
+| Missing `qemu-guest-agent` in VMs | Always included (safety rule) |
+| Wrong namespace patterns | Correct `{org}-{project}` naming |
+| No awareness of exposure paths | Knows Gateway Route vs Direct EIP decision |
+| Generic kubectl advice | Kube-DC-specific templates and workflows |
+
+### Available Skills
+
+| Skill | What It Does |
+|-------|-------------|
+| `create-project` | Create a project with VPC networking and correct network type |
+| `deploy-app` | Deploy a containerized app with optional database and HTTPS |
+| `create-vm` | Provision a VM with SSH access, cloud-init, and guest agent |
+| `create-database` | Create managed PostgreSQL/MariaDB with connection patterns |
+| `expose-service` | Expose via Gateway Route (HTTPS) or Direct EIP (TCP/UDP) |
+| `manage-cluster` | Scale workers, upgrade K8s version, access kubeconfig |
+| `manage-networking` | Create EIPs, FIPs, understand VPC networking |
+| `manage-storage` | S3 buckets (OBC), DataVolumes, PVCs |
+| `manage-access` | OrganizationGroup RBAC and role management |
+| `ssh-into-vm` | SSH into a VM using the project's auto-generated keypair |
+
+### Install Skills
+
+There are three ways to add Kube-DC skills to your IDE, depending on your setup:
+
+#### Option A: `npx skills add` (Recommended)
+
+The standard way to install agent skills — one command installs to the right directory for your IDE. Skills are available in **any project** you open.
+
+```bash
+# Install all Kube-DC skills globally (available in every workspace)
+npx skills add kube-dc/kube-dc-public -g
+
+# Or install specific skills only
+npx skills add kube-dc/kube-dc-public --skill create-vm --skill deploy-app -g
+
+# Or install to current workspace only (without -g)
+npx skills add kube-dc/kube-dc-public
+```
+
+The CLI auto-detects your installed IDEs (Claude Code, Cursor, Windsurf, Codex, Copilot, and [40+ more](https://github.com/vercel-labs/skills#supported-agents)) and installs skills to the correct directory:
+
+| IDE | Global Path | Workspace Path |
+|-----|------------|---------------|
+| Claude Code | `~/.claude/skills/` | `.claude/skills/` |
+| Cursor | `~/.cursor/skills/` | `.agents/skills/` |
+| Windsurf | `~/.codeium/windsurf/skills/` | `.windsurf/skills/` |
+| Codex | `~/.codex/skills/` | `.agents/skills/` |
+| Copilot | `~/.copilot/skills/` | `.agents/skills/` |
+
+Each skill's `name` and `description` appear in the agent's context at startup (~100 tokens per skill). The full SKILL.md and supporting templates are loaded on demand when the agent detects a matching task.
+
+:::tip
+Use `npx skills add kube-dc/kube-dc-public --list` to see all available skills before installing.
+:::
+
+#### Option B: System Prompt / IDE Settings (Lightweight)
+
+If you can't install skills globally, you can paste the Kube-DC context into your IDE's system prompt settings. Copy the content of `_agent-instructions.md` (or `AGENTS.md`):
+
+| IDE | Where to Paste |
+|-----|---------------|
+| **Claude Code** | Settings → Custom Instructions (or use `CLAUDE.md` in any project) |
+| **Cursor** | Settings → Rules for AI → User Rules |
+| **Windsurf** | Settings → AI Rules → Global Rules |
+| **VS Code + Copilot** | Settings → GitHub Copilot → Instructions |
+| **Codex** | Workspace `AGENTS.md` (no global setting) |
+
+The `_agent-instructions.md` file (~150 lines) contains CRD tables, naming conventions, safety rules, and service exposure patterns — compact enough to fit in any system prompt field.
+
+:::note Limitations
+The system prompt provides **awareness** (correct namespaces, annotations, safety rules) but not the detailed step-by-step procedures and YAML templates that skills include. For full manifest generation capability, use **Option A** (global skills install).
+
+| Capability | Option A (Skills) | Option B (System Prompt) |
+|-----------|:-----------------:|:------------------------:|
+| CRD reference & naming | ✅ | ✅ |
+| Safety rules & constraints | ✅ | ✅ |
+| Service exposure decision guide | ✅ | ✅ |
+| Step-by-step procedures | ✅ | ❌ |
+| Ready-to-use YAML templates | ✅ | ❌ |
+| DB connection patterns | ✅ | ❌ |
+| Cluster scaling/upgrade guides | ✅ | ❌ |
+| Windsurf workflows (`/deploy-wordpress`) | ✅ | ❌ |
+:::
+
+#### Option C: Workspace Install
+
+If you want the full package (skills + docs + examples + workflows) in a specific project:
+
+```bash
+git clone https://github.com/kube-dc/kube-dc-public.git
+cd kube-dc-public
+# Open this folder in your IDE
+```
+
+Or add it as a submodule in your own repo:
+
+```bash
+cd my-project
+git submodule add https://github.com/kube-dc/kube-dc-public.git .kube-dc
+```
+
+### Repository Structure
+
+```
+kube-dc-public/
+├── AGENTS.md                          # Universal instructions (all IDEs)
+├── CLAUDE.md                          # Claude Code instructions
+├── _agent-instructions.md             # Canonical source (edit here)
+├── skills/                            # 10 workflow-grouped skills (npx skills discovers this)
+│   ├── create-project/
+│   ├── deploy-app/
+│   ├── create-vm/
+│   ├── create-database/
+│   ├── expose-service/
+│   ├── manage-cluster/
+│   ├── manage-networking/
+│   ├── manage-storage/
+│   ├── manage-access/
+│   └── ssh-into-vm/
+├── knowledge/
+│   └── index.md                       # Master catalog of CRDs, skills, docs
+├── .windsurf/
+│   ├── rules/kube-dc-conventions.md   # Always-on safety rules
+│   ├── skills/ → skills/              # Symlink
+│   └── workflows/                     # /deploy-wordpress, /setup-project
+├── .claude/
+│   └── skills/ → skills/              # Symlink
+├── .cursor/
+│   └── rules/kube-dc-conventions/     # Always-on safety rules
+├── docs/                              # Full documentation
+└── examples/                          # Ready-to-use YAML manifests
+```
+
+### What Each IDE Discovers
+
+| IDE | Install via `npx skills` | Workspace Discovery | System Prompt |
+|-----|:------------------------:|:-------------------:|:-------------:|
+| **Claude Code** | ✅ `~/.claude/skills/` | `CLAUDE.md` + `.claude/skills/` | Settings → Custom Instructions |
+| **Cursor** | ✅ `~/.cursor/skills/` | `AGENTS.md` + `.cursor/rules/` | Settings → Rules for AI |
+| **Windsurf** | ✅ `~/.codeium/windsurf/skills/` | `AGENTS.md` + `.windsurf/skills/` | Settings → Global Rules |
+| **Codex** | ✅ `~/.codex/skills/` | `AGENTS.md` | — |
+| **Copilot** | ✅ `~/.copilot/skills/` | `AGENTS.md` | Settings → Instructions |
+
+### Test the Skills
+
+Open any project in your IDE (with skills installed globally or via system prompt) and try:
+
+```
+Create a new project called "demo" in organization "myorg" with cloud networking.
+```
+
+```
+Deploy a PostgreSQL HA database called "app-db" in project shalb-demo.
+Show me how to connect my app to it.
+```
+
+```
+Create an Ubuntu VM with SSH access in namespace shalb-demo.
+How do I SSH into it?
+```
+
+```
+Expose my nginx service via HTTPS with auto TLS in namespace shalb-demo.
+```
+
+The agent should generate correct Kube-DC manifests with proper CRD schemas, annotations, and namespace patterns — without any manual correction.
 
 ---
 
@@ -77,6 +256,15 @@ Once connected, use natural language in the Claude Code terminal:
 
 Claude Code can chain multiple kubectl operations automatically — for example, if a pod is crashing, it will fetch events, logs, and describe the pod in a single response.
 
+### Use Kube-DC Agent Skills
+
+Open the `kube-dc-public` repo in Claude Code. It contains:
+
+- `CLAUDE.md` — loaded automatically, references `@_agent-instructions.md` and `@knowledge/index.md`
+- `.claude/skills/` — 10 workflow-grouped skills (symlink to `.agents/skills/`)
+
+With both MCP and skills, Claude Code can generate correct Kube-DC manifests **and** apply them directly. See [Agent Skills Setup](#agent-skills-setup) above.
+
 ### Non-destructive mode
 
 For production clusters, run the MCP server in read-only mode to prevent accidental changes:
@@ -122,18 +310,14 @@ Open the Cursor chat (`Cmd+L` / `Ctrl+L`) and ask questions about your cluster:
 
 Cursor can also generate and apply manifests directly from the chat, editing files and running `kubectl apply` in sequence.
 
-### Tip: Add a `.cursorrules` file
+### Tip: Use Kube-DC Agent Skills
 
-Add a `.cursorrules` file to your project to give Cursor context about your Kube-DC environment:
+Instead of a generic `.cursorrules` file, open the `kube-dc-public` repo in Cursor. It contains:
 
-```
-This project deploys to Kube-DC Cloud (kube-dc.com).
-Organization: acme-corp
-Projects are deployed in namespaces following the pattern: {org}-{project}
-Example namespaces: acme-corp-dev, acme-corp-staging, acme-corp-prod
-Resource quotas are enforced at the organization level.
-Use the kubeconfig at ~/.kube/config for all kubectl operations.
-```
+- `AGENTS.md` — Cursor reads this automatically for Kube-DC context
+- `.cursor/rules/kube-dc-conventions/RULE.md` — always-on rules for namespace patterns, CRD naming, and safety constraints
+
+This gives Cursor full awareness of Kube-DC CRDs, annotations, and naming conventions — far more comprehensive than a hand-written rules file. See [Agent Skills Setup](#agent-skills-setup) above.
 
 ---
 
@@ -170,18 +354,18 @@ Check if all pods in acme-corp-prod are healthy and summarize any issues.
 
 Cascade can chain file edits, terminal commands, and MCP tool calls in a single flow — writing the Deployment YAML, applying it, and monitoring rollout status.
 
-### Tip: Add a `WINDSURF.md` file
+### Tip: Use Kube-DC Agent Skills + Workflows
 
-Create a `WINDSURF.md` in your project root with cluster-specific context Cascade should always be aware of:
+Instead of a generic `WINDSURF.md` file, open the `kube-dc-public` repo in Windsurf. It contains:
 
-```markdown
-## Kube-DC Cluster Context
-- Cluster: kube-dc.cloud (kubeconfig at ~/.kube/config)
-- Org namespace pattern: {org}-{project}
-- Storage class: local-path
-- External IP annotation: service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"
-- Default image registry: registry.kube-dc.cloud
-```
+- `AGENTS.md` — loaded automatically for Kube-DC context
+- `.windsurf/rules/kube-dc-conventions.md` — always-on safety rules
+- `.windsurf/skills/` — 10 workflow-grouped skills (symlink to `.agents/skills/`)
+- `.windsurf/workflows/` — slash commands:
+  - `/deploy-wordpress` — Deploy WordPress with managed PostgreSQL, HTTPS, and auto TLS
+  - `/setup-project` — Create a new project with organization verification and optional resources
+
+This gives Cascade full awareness of Kube-DC CRDs, annotations, naming conventions, and step-by-step procedures. See [Agent Skills Setup](#agent-skills-setup) above.
 
 ---
 
@@ -277,38 +461,58 @@ All Kubernetes MCP servers expose a common set of operations that AI tools can c
 
 ## Practical Kube-DC Workflows
 
-### Deploying an application
+### Deploy WordPress with managed database
 
 ```
-Deploy a Nginx deployment with 2 replicas to namespace acme-corp-demo.
-Use resource requests of 100m CPU and 128Mi memory to stay within quota.
-Expose it via a ClusterIP service on port 80.
+Deploy WordPress with a managed HA PostgreSQL database in project shalb-demo.
+Expose it via HTTPS with auto TLS.
 ```
 
-### Debugging a failing deployment
+With Agent Skills loaded, the agent will: create a KdcDatabase, wait for it, deploy WordPress with correct `secretKeyRef` for the DB password, create a LoadBalancer service with `expose-route: https`, and report the auto-generated hostname.
+
+### Create a VM with SSH access
 
 ```
-The deployment my-api in namespace acme-corp-prod is not ready.
+Create an Ubuntu 24.04 VM called "dev-box" with 4 CPU cores and 8GB RAM
+in namespace shalb-demo. I need to SSH into it from outside the cluster.
+```
+
+The agent will: create a DataVolume + VirtualMachine with `qemu-guest-agent`, create an EIP + LoadBalancer service for SSH, extract the SSH private key, and provide the connection command.
+
+### Scale a managed Kubernetes cluster
+
+```
+Scale the "production" cluster's workers pool to 5 replicas in project shalb-prod.
+Also show me how to access the cluster's kubeconfig.
+```
+
+The agent will: use `kubectl patch kdccluster` with `--type merge` (including all pools), extract the kubeconfig from the `{cluster}-cp-admin-kubeconfig` secret, and write it to a temp file.
+
+### Expose a gRPC service
+
+```
+I have a gRPC service running on port 50051 in namespace shalb-demo.
+Expose it externally with auto TLS.
+```
+
+The agent will use the correct Gateway Route annotations: `expose-route: https` + `route-port: "50051"`.
+
+### Debug a failing deployment
+
+```
+The deployment my-api in namespace shalb-prod is not ready.
 Check the pod events, describe the deployment, get the last 100 lines of logs,
 and tell me what is wrong and how to fix it.
 ```
 
-### Quota-aware manifest generation
+### Create an S3 bucket and connect it to an app
 
 ```
-Generate a Kubernetes Deployment for a Node.js app.
-The organization is on the Pro Pool plan (8 vCPU / 24 GB total).
-I want to allocate 2 vCPU and 4 GB to this service.
-Include appropriate resource requests and limits.
+Create an S3 bucket called "uploads" in project shalb-demo.
+Show me how to mount the credentials in my deployment.
 ```
 
-### Checking organization resource usage
-
-```
-Show me the current resource quota usage for namespace acme-corp.
-Which projects are consuming the most CPU and memory?
-Is there headroom to deploy another 2-replica deployment?
-```
+The agent will: create an ObjectBucketClaim with the required `kube-dc.com/organization` label, and show the `envFrom` pattern for mounting the auto-created Secret and ConfigMap.
 
 ---
 
