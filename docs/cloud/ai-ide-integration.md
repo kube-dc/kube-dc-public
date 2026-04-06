@@ -68,13 +68,13 @@ The standard way to install agent skills — one command installs to the right d
 
 ```bash
 # Install all Kube-DC skills globally (available in every workspace)
-npx skills add kube-dc/kube-dc-public -g
+npx skills add kube-dc/kube-dc-public -g -y
 
 # Or install specific skills only
 npx skills add kube-dc/kube-dc-public --skill create-vm --skill deploy-app -g
 
 # Or install to current workspace only (without -g)
-npx skills add kube-dc/kube-dc-public
+npx skills add kube-dc/kube-dc-public -y
 ```
 
 The CLI auto-detects your installed IDEs (Claude Code, Cursor, Windsurf, Codex, Copilot, and [40+ more](https://github.com/vercel-labs/skills#supported-agents)) and installs skills to the correct directory:
