@@ -88,7 +88,7 @@ Skills location: `skills/{skill-name}/SKILL.md`
 | DB endpoint (Maria) | `{name}.{ns}.svc:3306` | `my-mariadb.shalb-docs.svc:3306` |
 | DB secret (Maria) | `{name}-password` | `my-mariadb-password` |
 | SSH keypair | `ssh-keypair-default` | per project |
-| Cluster kubeconfig | `{cluster}-cp-admin-kubeconfig` | data key: `super-admin.svc` |
+| Cluster kubeconfig | `{cluster}-cp-admin-kubeconfig` | data key: `admin.conf` (external URL) |
 | VM network | `{ns}/default` | `shalb-docs/default` |
 | S3 bucket | `{ns}-{name}` | `shalb-docs-my-bucket` |
 

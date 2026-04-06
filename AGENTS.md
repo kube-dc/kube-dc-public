@@ -55,7 +55,7 @@ Kube-DC is an open-source Kubernetes-native data center platform providing multi
 | DB gateway endpoint | `{name}-db-{ns}.kube-dc.cloud:{port}` | `docs-pg-db-shalb-docs.kube-dc.cloud:5432` |
 | SSH keypair secret | `ssh-keypair-default` | per project namespace |
 | SSH auth keys secret | `authorized-keys-default` | per project namespace |
-| Cluster kubeconfig | `{cluster}-cp-admin-kubeconfig` | data key: `super-admin.svc` |
+| Cluster kubeconfig | `{cluster}-cp-admin-kubeconfig` | data key: `admin.conf` (external URL) |
 | Cluster API endpoint | `https://{cluster}-cp-{ns}.{domain}:443` | `https://dev-cp-shalb-docs.kube-dc.cloud:443` |
 
 ## Service Exposure — Two Distinct Paths

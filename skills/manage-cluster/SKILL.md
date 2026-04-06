@@ -7,27 +7,49 @@ description: Manage Kube-DC managed Kubernetes clusters — scale worker pools, 
 - KdcCluster must exist and be Ready
 - Project namespace: `{org}-{project}`
 
+## Worker Pool Defaults
+
+All KdcCluster workers use **DataVolume storage** by default. Key fields per pool:
+
+| Field | Default / Required | Description |
+|-------|-------------------|-------------|
+| `name` | **required** | Pool name (e.g. `workers`) |
+| `replicas` | 1 | Number of worker nodes |
+| `cpuCores` | 1 | vCPUs per worker |
+| `memory` | 3Gi | RAM per worker |
+| `diskSize` | 20Gi | Root disk size |
+| `image` | **required** | Container disk image matching K8s version |
+| `storageType` | `datavolume` | **Always use `datavolume`** (default) |
+| `infrastructureProvider` | `kubevirt` | Infrastructure backend |
+
+Current image: `docker.io/shalb/ubuntu-2404-container-disk:v1.35.2`
+
 ## Common Operations
 
-### Scale Worker Pool
+### Scale Worker Pool (JSON Patch — Recommended)
+
+Use `--type=json` to patch specific fields without affecting others:
 
 ```bash
-# Scale 'workers' pool to 5 replicas (--type merge replaces entire workers array)
-kubectl patch kdccluster {cluster} -n {namespace} \
-  --type merge -p '{"spec":{"workers":[{"name":"workers","replicas":5}]}}'
+# Scale pool at index 0 to 5 replicas
+kubectl patch kdccluster {cluster} -n {namespace} --type=json \
+  -p '[{"op":"replace","path":"/spec/workers/0/replicas","value":5}]'
 ```
 
-**Important**: `--type merge` replaces the entire `workers` array. You MUST include ALL pools in the patch, not just the one you're scaling.
+### Scale Worker Pool (Merge Patch)
 
-Multi-pool example:
+**Warning**: `--type merge` replaces the **entire** `workers` array. You MUST include ALL pools with ALL fields.
+
 ```bash
 kubectl patch kdccluster {cluster} -n {namespace} --type merge -p '{
   "spec": {
     "workers": [
       {"name": "workers", "replicas": 5, "cpuCores": 2, "memory": "8Gi",
+       "diskSize": "20Gi",
        "image": "docker.io/shalb/ubuntu-2404-container-disk:v1.35.2",
        "infrastructureProvider": "kubevirt", "storageType": "datavolume"},
       {"name": "highmem", "replicas": 2, "cpuCores": 4, "memory": "16Gi",
+       "diskSize": "40Gi",
        "image": "docker.io/shalb/ubuntu-2404-container-disk:v1.35.2",
        "infrastructureProvider": "kubevirt", "storageType": "datavolume"}
     ]
@@ -38,8 +60,8 @@ kubectl patch kdccluster {cluster} -n {namespace} --type merge -p '{
 ### Scale to Zero (Pause Workers)
 
 ```bash
-kubectl patch kdccluster {cluster} -n {namespace} \
-  --type merge -p '{"spec":{"workers":[{"name":"workers","replicas":0}]}}'
+kubectl patch kdccluster {cluster} -n {namespace} --type=json \
+  -p '[{"op":"replace","path":"/spec/workers/0/replicas","value":0}]'
 ```
 
 Control plane keeps running; only workers are removed.
@@ -57,10 +79,19 @@ See @upgrade-version.md for constraints and procedures.
 
 ### Access Kubeconfig
 
+The kubeconfig secret contains multiple keys for different access methods:
+
+| Key | Endpoint | Use |
+|-----|---------|-----|
+| `admin.conf` | `https://{cluster}-cp-{ns}.kube-dc.cloud:443` | **External public URL** (recommended) |
+| `super-admin.conf` | `https://{internal-ip}:6443` | Internal VPC IP |
+| `super-admin.svc` | `https://{cluster}-cp.{ns}.svc:6443` | Internal Service (mgmt cluster only) |
+
 ```bash
-# Extract super-admin kubeconfig
+# Extract kubeconfig with external public endpoint (recommended)
 kubectl get secret {cluster}-cp-admin-kubeconfig -n {namespace} \
-  -o jsonpath='{.data.super-admin\.svc}' | base64 -d > /tmp/{cluster}-kubeconfig
+  -o jsonpath='{.data.admin\.conf}' | base64 -d > /tmp/{cluster}-kubeconfig
+chmod 600 /tmp/{cluster}-kubeconfig
 
 # Use it
 kubectl --kubeconfig=/tmp/{cluster}-kubeconfig get nodes
@@ -114,11 +145,14 @@ kubectl get kdccluster {cluster} -n {namespace} -o jsonpath='{.status.phase}'
 
 **Success**: Node count matches, all nodes Ready, version updated.
 **Failure**: `kubectl describe kdccluster {cluster} -n {namespace}` — check conditions and events.
+
 ## Safety
 - Sequential minor version upgrades only (v1.34 → v1.35, no skipping)
 - No downgrades supported
 - Worker image MUST match the Kubernetes version
+- **Always use `storageType: datavolume`** — this is the production default
 - Rolling update: new worker Ready before old one removed (zero downtime)
+- Prefer `--type=json` patch over merge patch to avoid dropping fields
 - Never expose kubeconfig contents in chat output
 - Write kubeconfig to temp file with `chmod 600`
 - Clean up temporary kubeconfig files after use
