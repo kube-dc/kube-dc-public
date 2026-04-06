@@ -46,9 +46,7 @@ When you create a cluster, Kube-DC orchestrates several components:
 
 Navigate to **Kubernetes** in your project to view all managed clusters:
 
-<div style={{width: '100%', maxWidth: 'none'}}>
-<img src={require('./images/k8s-screen.png').default} alt="Managed Kubernetes clusters view" style={{width: '100%', display: 'block'}} />
-</div>
+<img src={require('./images/k8s-screen.png').default} alt="Managed Kubernetes clusters view" style={{maxWidth: '900px', width: '100%'}} />
 
 The clusters view shows all your managed Kubernetes clusters with their version, phase (status), API endpoint, datastore backend, and age. From here you can create new clusters, view cluster details, download kubeconfig files, or delete clusters.
 

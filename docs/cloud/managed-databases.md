@@ -4,9 +4,7 @@ Kube-DC provides fully managed **PostgreSQL** and **MariaDB** databases as a bui
 
 ## Databases Overview
 
-<div style={{width: '100%', maxWidth: 'none'}}>
-<img src={require('./images/db-manager-overview.png').default} alt="Managed Databases overview" style={{width: '100%', display: 'block'}} />
-</div>
+<img src={require('./images/db-manager-overview.png').default} alt="Managed Databases overview" style={{maxWidth: '900px', width: '100%'}} />
 
 The Databases view shows all databases in your project. The left sidebar organizes databases by engine type (**PostgreSQL** and **MariaDB**). Each database shows its name, engine, version, status, replica count, and age.
 
