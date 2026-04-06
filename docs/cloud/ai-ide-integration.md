@@ -219,7 +219,7 @@ All integrations below require a valid kubeconfig pointing at your Kube-DC clust
 Your kubeconfig will be saved at `~/.kube/config` by default. Verify it works:
 
 ```bash
-kubectl get namespaces
+kube-dc ns
 ```
 
 See [CLI & Kubeconfig](cli-kubeconfig.md) for full setup instructions.
