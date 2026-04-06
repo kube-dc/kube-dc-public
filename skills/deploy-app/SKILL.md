@@ -137,18 +137,6 @@ env:
     value: "postgresql://app:$(DB_PASSWORD)@$(DB_HOST):5432/{database}"
 ```
 
-### 5. Verify Deployment
-
-```bash
-kubectl get deployment {app-name} -n {project-namespace}
-kubectl get pods -l app={app-name} -n {project-namespace}
-kubectl get svc {app-name} -n {project-namespace}
-
-# For Gateway Route — check hostname
-kubectl get svc {app-name} -n {project-namespace} \
-  -o jsonpath='{.metadata.annotations.service\.nlb\.kube-dc\.com/route-hostname-status}'
-```
-
 ### Helm Deployment Alternative
 
 For Helm-based apps:
@@ -160,6 +148,38 @@ helm install {release-name} {chart} \
   --set service.annotations."service\.nlb\.kube-dc\.com/expose-route"=https
 ```
 
+## Verification
+
+After deploying, run these checks:
+
+```bash
+# 1. Check deployment rollout
+kubectl rollout status deployment/{app-name} -n {project-namespace}
+# Expected: "successfully rolled out"
+
+# 2. Verify pods are Running
+kubectl get pods -l app={app-name} -n {project-namespace}
+# Expected: All pods STATUS=Running, READY=1/1
+
+# 3. Check service has endpoint
+kubectl get endpoints {app-name} -n {project-namespace}
+# Expected: Shows pod IPs in ENDPOINTS column (not <none>)
+
+# 4. For Gateway Route — verify hostname assigned
+kubectl get svc {app-name} -n {project-namespace} -o jsonpath='{.metadata.annotations.service\.nlb\.kube-dc\.com/route-hostname-status}'
+# Expected: {app-name}-{project-namespace}.kube-dc.cloud
+
+# 5. Test HTTP endpoint (if exposed via Gateway)
+curl -s -o /dev/null -w "%{http_code}" https://\{app-name\}-\{project-namespace\}.kube-dc.cloud
+# Expected: 200 (may take 1-2 min for TLS cert provisioning)
+```
+
+**Success**: Pods running, endpoints assigned, hostname active, HTTP 200.
+**Failure**:
+- Pods not starting: `kubectl describe pod -l app={app-name} -n {project-namespace}`
+- No endpoints: selector doesn't match pod labels
+- No hostname: Issuer may be missing — check `kubectl get issuer -n {project-namespace}`
+- 503/404: App may not be listening on the expected port
 ## Safety
 - Always set resource requests/limits on containers
 - Default to Gateway Route (`expose-route: https`) for web apps

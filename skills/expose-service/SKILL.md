@@ -141,18 +141,6 @@ spec:
 
 See @eip-loadbalancer-examples.yaml for SSH, game server, and multi-port examples.
 
-## Verify Exposure
-
-```bash
-# Gateway Route — check assigned hostname
-kubectl get svc {service-name} -n {project-namespace} \
-  -o jsonpath='{.metadata.annotations.service\.nlb\.kube-dc\.com/route-hostname-status}'
-
-# Direct EIP — check allocated IP
-kubectl get eip {eip-name} -n {project-namespace}
-kubectl get svc {service-name} -n {project-namespace} -o wide
-```
-
 ## Annotations Quick Reference
 
 | Annotation | Values | Effect |
@@ -165,6 +153,45 @@ kubectl get svc {service-name} -n {project-namespace} -o wide
 | `service.nlb.kube-dc.com/bind-on-eip` | EIP name | Bind LB to specific EIP |
 | `service.nlb.kube-dc.com/autodelete` | `"true"` | Auto-delete EIP when service deleted |
 
+## Verification
+
+After exposing the service, run these checks:
+
+### Gateway Route
+```bash
+# 1. Check hostname was assigned
+kubectl get svc {service-name} -n {project-namespace} -o jsonpath='{.metadata.annotations.service\.nlb\.kube-dc\.com/route-hostname-status}'
+# Expected: {service-name}-{project-namespace}.kube-dc.cloud
+
+# 2. Check TLS certificate is issued (for HTTPS)
+kubectl get certificate -n {project-namespace}
+# Expected: READY=True
+
+# 3. Test endpoint
+curl -s -o /dev/null -w "%{http_code}" https://\{service-name\}-\{project-namespace\}.kube-dc.cloud
+# Expected: HTTP status from your app (200, 301, etc.)
+```
+
+### Direct EIP
+```bash
+# 1. Check EIP has allocated IP
+kubectl get eip {eip-name} -n {project-namespace} -o jsonpath='{.status.ipAddress}'
+# Expected: public IP address
+
+# 2. Check service has external IP
+kubectl get svc {service-name} -n {project-namespace} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+# Expected: same IP as EIP
+
+# 3. Test connectivity
+nc -zv {external-ip} {port}
+# Expected: Connection succeeded
+```
+
+**Success**: Hostname assigned (Gateway) or external IP allocated (EIP), endpoint reachable.
+**Failure**:
+- No hostname: check Issuer exists, service type is LoadBalancer
+- No EIP IP: `kubectl describe eip {eip-name} -n {project-namespace}`
+- Connection refused: verify selector matches pods, targetPort is correct
 ## Safety
 - Never mix Gateway Route and Direct EIP on the same service
 - FIP and LoadBalancer on the same target are mutually exclusive

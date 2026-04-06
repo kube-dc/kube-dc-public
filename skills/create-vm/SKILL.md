@@ -115,6 +115,33 @@ spec:
 | Ubuntu 24.04 | `docker.io/shalb/ubuntu-2404-container-disk:v1.4.2` | `ubuntu` |
 | Debian 12 | `docker.io/shalb/debian-12-container-disk:v1.4.2` | `debian` |
 
+## Verification
+
+After creating the VM, run these checks:
+
+```bash
+# 1. Check VM is running
+kubectl get vm {vm-name} -n {project-namespace} -o jsonpath='{.status.printableStatus}'
+# Expected: Running
+
+# 2. Check VMI exists and has IP
+kubectl get vmi {vm-name} -n {project-namespace} -o jsonpath='{.status.interfaces[0].ipAddress}'
+# Expected: 10.x.x.x (VPC internal IP)
+
+# 3. Check guest agent is reporting (readiness probe)
+kubectl get vmi {vm-name} -n {project-namespace} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+# Expected: True
+
+# 4. Check DataVolume import completed
+kubectl get dv {vm-name}-disk -n {project-namespace} -o jsonpath='{.status.phase}'
+# Expected: Succeeded
+```
+
+**Success**: VM status is `Running`, VMI has an IP, Ready condition is `True`.
+**Failure**: If status is `Provisioning` or `Stopped`:
+- Check DataVolume: `kubectl describe dv {vm-name}-disk -n {project-namespace}`
+- Check VM events: `kubectl describe vm {vm-name} -n {project-namespace}`
+- If no IP: guest agent may not be installed — verify cloud-init includes `qemu-guest-agent`
 ## Safety
 - ALWAYS include `qemu-guest-agent` in cloud-init — without it, IP reporting and SSH key injection won't work
 - ALWAYS use `networkName: {namespace}/default` — other networks don't exist in the VPC

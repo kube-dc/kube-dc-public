@@ -121,6 +121,38 @@ kubectl get secret {db-name}-password -n {project-namespace} \
   -o jsonpath='{.data.password}' | base64 -d
 ```
 
+## Verification
+
+After creating the database, run these checks:
+
+```bash
+# 1. Check database phase (expect: Ready)
+kubectl get kdcdb {db-name} -n {project-namespace} -o jsonpath='{.status.phase}'
+
+# 2. Check endpoint is assigned
+kubectl get kdcdb {db-name} -n {project-namespace} -o jsonpath='{.status.endpoint}'
+# PostgreSQL: {db-name}-rw.{project-namespace}.svc:5432
+# MariaDB: {db-name}.{project-namespace}.svc:3306
+
+# 3. Verify credential secret exists
+# PostgreSQL:
+kubectl get secret {db-name}-app -n {project-namespace}
+# MariaDB:
+kubectl get secret {db-name}-password -n {project-namespace}
+
+# 4. Test connectivity (from a temporary pod)
+# PostgreSQL:
+kubectl run pg-test --rm -it --restart=Never --image=postgres:16 -n {project-namespace} -- \
+  pg_isready -h {db-name}-rw.{project-namespace}.svc -p 5432
+# MariaDB:
+kubectl run mysql-test --rm -it --restart=Never --image=mysql:8.0 -n {project-namespace} -- \
+  mysqladmin ping -h {db-name}.{project-namespace}.svc --ssl-mode=DISABLED
+```
+
+**Success**: Phase is `Ready`, endpoint assigned, secret exists, connectivity test passes.
+**Failure**: If phase is `Provisioning`, wait and recheck. If `Failed`:
+- `kubectl describe kdcdb {db-name} -n {project-namespace}` — check conditions and events
+- **Known issue**: MariaDB does not create the `databaseName` database or `username` user (db-manager bug). Only root access works for MariaDB currently.
 ## Safety
 - Never log database passwords in chat output
 - Default to `internal` exposure unless user explicitly requests external

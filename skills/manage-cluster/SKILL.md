@@ -82,6 +82,38 @@ kubectl --kubeconfig=/tmp/{cluster}-kubeconfig get nodes
 kubectl describe kdccluster {cluster} -n {namespace}
 ```
 
+## Verification
+
+After cluster operations, verify:
+
+### After Scale
+```bash
+# 1. Check worker count matches desired
+kubectl get kdccluster {cluster} -n {namespace} -o jsonpath='{.spec.workers[0].replicas}'
+kubectl --kubeconfig=/tmp/{cluster}-kubeconfig get nodes
+# Expected: Node count matches total replicas across all pools
+
+# 2. All nodes Ready
+kubectl --kubeconfig=/tmp/{cluster}-kubeconfig get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}'
+# Expected: All True
+```
+
+### After Upgrade
+```bash
+# 1. Check cluster version updated
+kubectl get kdccluster {cluster} -n {namespace} -o jsonpath='{.spec.version}'
+
+# 2. Verify nodes are running new version
+kubectl --kubeconfig=/tmp/{cluster}-kubeconfig get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.nodeInfo.kubeletVersion}{"\n"}{end}'
+# Expected: All nodes on new version
+
+# 3. Check cluster phase
+kubectl get kdccluster {cluster} -n {namespace} -o jsonpath='{.status.phase}'
+# Expected: Ready
+```
+
+**Success**: Node count matches, all nodes Ready, version updated.
+**Failure**: `kubectl describe kdccluster {cluster} -n {namespace}` — check conditions and events.
 ## Safety
 - Sequential minor version upgrades only (v1.34 → v1.35, no skipping)
 - No downgrades supported

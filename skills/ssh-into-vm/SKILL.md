@@ -74,6 +74,33 @@ kubectl edit secret authorized-keys-default -n {project-namespace}
 
 Or override `accessCredentials` in the VM manifest to point to a custom secret.
 
+## Verification
+
+After SSH connection:
+
+```bash
+# 1. Verify SSH key was extracted (before connecting)
+test -f /tmp/vm_ssh_key && echo "Key exists" || echo "Key missing"
+ls -la /tmp/vm_ssh_key
+# Expected: -rw------- (600 permissions)
+
+# 2. Verify VM has IP and guest agent is running
+kubectl get vmi {vm-name} -n {project-namespace} -o jsonpath='{.status.interfaces[0].ipAddress}'
+# Expected: non-empty IP address
+
+kubectl get vmi {vm-name} -n {project-namespace} -o jsonpath='{.status.conditions[?(@.type=="AgentConnected")].status}'
+# Expected: True
+
+# 3. Test SSH connectivity (non-interactive)
+ssh -i /tmp/vm_ssh_key -o StrictHostKeyChecking=no -o ConnectTimeout=5 {os-user}@{ip} echo "SSH OK"
+# Expected: "SSH OK"
+```
+
+**Success**: Key extracted, VM has IP, AgentConnected=True, SSH returns output.
+**Failure**:
+- "Permission denied": wrong OS user or key not injected yet (wait for guest agent)
+- "Connection timed out": VM IP not reachable (internal IP only reachable from cluster)
+- No IP reported: guest agent not installed — check cloud-init
 ## Safety
 - Never expose the private key contents in chat output
 - Use temporary files with `chmod 600`

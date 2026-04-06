@@ -8,4 +8,3 @@ spec:
   # cloud = shared NAT gateway, more secure, lower cost
   # public = dedicated public IP on gateway
   egressNetworkType: cloud
-  description: "{description}"

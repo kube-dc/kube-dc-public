@@ -79,6 +79,28 @@ Users are managed via the Kube-DC console:
 
 Agents CANNOT create, delete, or modify users via kubectl.
 
+## Verification
+
+After creating an OrganizationGroup:
+
+```bash
+# 1. Check group was created
+kubectl get organizationgroup {group-name} -n {org}
+# Expected: resource exists
+
+# 2. Check RoleBindings were created in project namespaces
+kubectl get rolebinding -n {org}-{project-1} | grep {group-name}
+# Expected: RoleBinding for each project-role pair
+
+# 3. Check group status/conditions
+kubectl describe organizationgroup {group-name} -n {org}
+# Expected: no error events, conditions show reconciled
+```
+
+**Success**: OrganizationGroup exists, RoleBindings present in target project namespaces.
+**Failure**:
+- RoleBindings missing: check referenced projects exist
+- Events show errors: referenced role may not exist in the project namespace
 ## Safety
 - OrganizationGroups MUST be in the organization namespace, not a project namespace
 - Never attempt to create or manage users via kubectl — direct to UI

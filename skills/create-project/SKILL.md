@@ -37,7 +37,6 @@ metadata:
   namespace: {org-name}
 spec:
   egressNetworkType: cloud    # or: public
-  description: "{description}"
 ```
 
 See @project-template.yaml for the full template.
@@ -61,6 +60,27 @@ kubectl get project {project-name} -n {org-name}
 kubectl get secret ssh-keypair-default -n {org-name}-{project-name}
 kubectl get eip -n {org-name}-{project-name}
 ```
+
+## Verification
+
+After applying, run these checks to confirm the project was created successfully:
+
+```bash
+# 1. Check project phase (expect: Ready)
+kubectl get project {project-name} -n {org-name} -o jsonpath='{.status.phase}'
+
+# 2. Verify project namespace was created
+kubectl get ns {org-name}-{project-name}
+
+# 3. Verify SSH keypair exists in project namespace
+kubectl get secret ssh-keypair-default -n {org-name}-{project-name}
+
+# 4. Verify default gateway EIP was created
+kubectl get eip -n {org-name}-{project-name}
+```
+
+**Success**: Phase is `Ready`, namespace exists, SSH keypair and EIP present.
+**Failure**: If phase is `Pending` or `Failed`, check events: `kubectl describe project {project-name} -n {org-name}`
 
 ## Safety
 - Always verify org exists before creating project

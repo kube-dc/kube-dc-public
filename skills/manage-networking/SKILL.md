@@ -82,6 +82,38 @@ kubectl get fip -n {project-namespace}
 kubectl get svc -n {project-namespace}
 ```
 
+## Verification
+
+After creating networking resources:
+
+### EIp
+```bash
+# 1. Check EIP has allocated IP
+kubectl get eip {eip-name} -n {project-namespace} -o jsonpath='{.status.ipAddress}'
+# Expected: allocated IP address
+
+# 2. Check EIP phase
+kubectl get eip {eip-name} -n {project-namespace} -o jsonpath='{.status.phase}'
+# Expected: Active
+```
+
+### FIp
+```bash
+# 1. Check FIP has allocated IP
+kubectl get fip {fip-name} -n {project-namespace} -o jsonpath='{.status.ipAddress}'
+# Expected: allocated public IP
+
+# 2. Check FIP is bound to target
+kubectl get fip {fip-name} -n {project-namespace} -o jsonpath='{.status.phase}'
+# Expected: Active
+
+# 3. Test connectivity to VM via FIP
+ping -c 3 {fip-external-ip}
+ssh -i /tmp/vm_ssh_key {os-user}@{fip-external-ip}
+```
+
+**Success**: IP allocated, phase Active.
+**Failure**: `kubectl describe eip|fip {name} -n {project-namespace}` — check events.
 ## Safety
 - **FIP + LoadBalancer conflict**: A VM CANNOT simultaneously be a FIP target AND a cloud-network LoadBalancer backend
 - FIPs with `externalNetworkType: public` auto-create an EIP — don't manually create both

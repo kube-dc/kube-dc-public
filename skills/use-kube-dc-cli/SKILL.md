@@ -116,6 +116,44 @@ kubectx kube-dc/shalb/demo        # Switch to Kube-DC context
 | `~/.kube-dc/config.yaml` | CLI configuration |
 | `~/.kube-dc/credentials/` | Cached OAuth tokens (0600 permissions) |
 
+## Verification
+
+After CLI operations:
+
+### After Login
+```bash
+# 1. Check credentials are cached
+kube-dc config show
+# Expected: shows server, user, org, valid access/refresh tokens
+
+# 2. Verify kubectl works
+kubectl get ns
+# Expected: lists namespaces you have access to
+```
+
+### After Context Switch
+```bash
+# 1. Verify active context
+kubectl config current-context
+# Expected: kube-dc/{domain}/{org}/{project}
+
+# 2. Verify namespace
+kubectl config view --minify -o jsonpath='{.contexts[0].context.namespace}'
+# Expected: {org}-{project}
+```
+
+### After Namespace Switch
+```bash
+# 1. Verify namespace changed
+kube-dc ns
+# Expected: asterisk (*) next to the active namespace
+```
+
+**Success**: Config shows valid tokens, kubectl commands return data.
+**Failure**:
+- "not logged in": run `kube-dc login --domain {domain} --org {org}`
+- "session expired": refresh token expired (~30 days), re-run login
+- "Forbidden": user doesn't have access to the requested namespace/resource
 ## Safety
 - The CLI never stores passwords — only OAuth tokens with auto-refresh
 - Tokens are cached with 0600 permissions (owner-read-only)

@@ -138,6 +138,45 @@ spec:
       storage: {size}
 ```
 
+## Verification
+
+After creating storage resources:
+
+### ObjectBucketClaim (S3)
+```bash
+# 1. Check OBC is Bound
+kubectl get obc {bucket-name} -n {project-namespace} -o jsonpath='{.status.phase}'
+# Expected: Bound
+
+# 2. Verify credential secret was created
+kubectl get secret {bucket-name} -n {project-namespace} -o jsonpath='{.data.AWS_ACCESS_KEY_ID}' | base64 -d
+# Expected: non-empty access key
+
+# 3. Verify ConfigMap was created
+kubectl get configmap {bucket-name} -n {project-namespace} -o jsonpath='{.data.BUCKET_NAME}'
+# Expected: {project-namespace}-{bucket-name}
+```
+
+### DataVolume
+```bash
+# 1. Check import completed
+kubectl get dv {disk-name} -n {project-namespace} -o jsonpath='{.status.phase}'
+# Expected: Succeeded
+
+# 2. Check PVC was created
+kubectl get pvc {disk-name} -n {project-namespace}
+# Expected: STATUS=Bound
+```
+
+### PVC
+```bash
+# 1. Check PVC is Bound
+kubectl get pvc {pvc-name} -n {project-namespace} -o jsonpath='{.status.phase}'
+# Expected: Bound
+```
+
+**Success**: Phase is `Bound` (OBC/PVC) or `Succeeded` (DataVolume), credentials exist.
+**Failure**: If `Pending`, check `kubectl describe obc|dv|pvc {name} -n {project-namespace}` for events.
 ## Safety
 - OBC MUST have `kube-dc.com/organization: {org}` label
 - S3 endpoint: `https://s3.kube-dc.cloud`, region: `us-east-1`
