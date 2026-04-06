@@ -31,7 +31,7 @@ type CardProps = {
 
 function DocCard({title, description, link, buttonLabel, items}: CardProps) {
   return (
-    <div className={clsx('col col--6')}>
+    <div className={clsx('col col--4')}>
       <div className={styles.card}>
         <Heading as="h2">{title}</Heading>
         <p>{description}</p>
@@ -81,6 +81,18 @@ export default function Home(): ReactNode {
               'Operations & Configuration',
               'Infrastructure Add-ons',
               'Billing & Quota Management',
+            ]}
+          />
+          <DocCard
+            title="AI IDE Integration"
+            description="Use AI assistants to manage your Kube-DC infrastructure with natural language — directly from your IDE."
+            link="/cloud/ai-ide-integration"
+            buttonLabel="Setup AI Skills"
+            items={[
+              'Claude Code, Cursor, Windsurf, Codex',
+              'Agent Skills with YAML Templates',
+              'Kubernetes MCP Server Setup',
+              'Natural Language Workflows',
             ]}
           />
         </div>
