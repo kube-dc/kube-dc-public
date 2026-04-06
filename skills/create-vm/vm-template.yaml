@@ -6,7 +6,7 @@ metadata:
 spec:
   source:
     http:
-      url: "docker.io/shalb/ubuntu-2404-container-disk:v1.4.2"
+      url: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
   storage:
     accessModes:
       - ReadWriteOnce
@@ -38,7 +38,7 @@ spec:
             propagationMethod:
               qemuGuestAgent:
                 users:
-                  - ubuntu    # Match OS default user: ubuntu, debian, or kube-dc
+                  - ubuntu    # Match OS default user: ubuntu, debian, centos, fedora, etc.
       domain:
         cpu:
           cores: 2

@@ -1,6 +1,6 @@
 ---
 name: create-vm
-description: Deploy a virtual machine in a Kube-DC project with SSH access, cloud-init configuration, and optional external IP exposure. Supports Ubuntu, Debian, and Windows images.
+description: Deploy a virtual machine in a Kube-DC project with SSH access, cloud-init configuration, and optional external IP exposure. Supports Ubuntu, Debian, CentOS, Fedora, Alpine, openSUSE, Gentoo, and Windows images.
 ---
 
 ## Prerequisites
@@ -10,7 +10,20 @@ description: Deploy a virtual machine in a Kube-DC project with SSH access, clou
 
 ## Steps
 
-### 1. Create DataVolume (Boot Disk)
+### 1. Look Up Available Images
+
+The platform provides a catalog of OS images in the `images-configmap` ConfigMap (namespace `kube-dc`).
+If you have access, retrieve the live catalog:
+
+```bash
+kubectl get configmap images-configmap -n kube-dc -o jsonpath='{.data.images\.yaml}'
+```
+
+Otherwise, use the reference table below.
+
+### 2. Create DataVolume (Boot Disk)
+
+VMs use DataVolumes to import cloud images via HTTP. The DataVolume downloads the image and creates a PVC.
 
 ```yaml
 apiVersion: cdi.kubevirt.io/v1beta1
@@ -21,32 +34,33 @@ metadata:
 spec:
   source:
     http:
-      url: "{image-url}"
+      url: "{os-image-url}"    # From Available Images table
   storage:
     accessModes: [ReadWriteOnce]
     resources:
       requests:
-        storage: {disk-size}    # e.g. 20Gi
+        storage: {disk-size}    # Must be >= MIN_STORAGE for the OS
     storageClassName: local-path
 ```
 
 See @vm-template.yaml for the complete VM + DataVolume manifest.
 
-### 2. Create VirtualMachine
+### 3. Create VirtualMachine
 
 Key requirements:
 - **Network**: MUST use `networkName: {namespace}/default` with Multus bridge
-- **Guest agent**: MUST install `qemu-guest-agent` in cloud-init
+- **Guest agent**: MUST install `qemu-guest-agent` in cloud-init (use the OS-specific cloud-init from the images table)
 - **SSH keys**: Reference `authorized-keys-default` via `accessCredentials`
+- **Firmware**: Use the correct `firmware` and `machine` type for the OS (see table)
 
-### 3. Wait for VM Ready
+### 4. Wait for VM Ready
 
 ```bash
 kubectl get vm {vm-name} -n {project-namespace} -w
 kubectl get vmi {vm-name} -n {project-namespace} -o jsonpath='{.status.interfaces[0].ipAddress}'
 ```
 
-### 4. SSH Access
+### 5. SSH Access
 
 ```bash
 # Extract project SSH private key
@@ -59,12 +73,10 @@ VM_IP=$(kubectl get vmi {vm-name} -n {project-namespace} \
   -o jsonpath='{.status.interfaces[0].ipAddress}')
 
 # SSH in
-ssh -i /tmp/vm_ssh_key {os-user}@$VM_IP
+ssh -i /tmp/vm_ssh_key {cloud-user}@$VM_IP
 ```
 
-**Default OS users**: `ubuntu` (Ubuntu), `debian` (Debian), `kube-dc` (Windows)
-
-### 5. External Access (Optional)
+### 6. External Access (Optional)
 
 For SSH from outside the cluster, use Direct EIP + LoadBalancer:
 
@@ -110,10 +122,66 @@ spec:
 
 ## Available Images
 
-| OS | Image URL | Default User |
-|----|-----------|--------------|
-| Ubuntu 24.04 | `docker.io/shalb/ubuntu-2404-container-disk:v1.4.2` | `ubuntu` |
-| Debian 12 | `docker.io/shalb/debian-12-container-disk:v1.4.2` | `debian` |
+Source: `images-configmap` ConfigMap in `kube-dc` namespace.
+
+| OS | Cloud User | Image URL | Min RAM | Min CPU | Min Disk | Firmware |
+|----|-----------|-----------|---------|---------|----------|----------|
+| Ubuntu 24.04 | `ubuntu` | `https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img` | 1G | 1 | 20G | bios |
+| Debian 12 LTS | `debian` | `https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2` | 1G | 1 | 20G | bios |
+| CentOS Stream 9 | `centos` | `https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2` | 2G | 1 | 20G | bios |
+| Fedora 41 | `fedora` | `https://dl.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2` | 2G | 1 | 25G | bios |
+| Alpine Linux 3.19 | `alpine` | `https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/cloud/nocloud_alpine-3.19.1-x86_64-bios-cloudinit-r0.qcow2` | 512M | 1 | 10G | bios |
+| openSUSE Leap 15.3 | `opensuse` | `https://download.opensuse.org/distribution/leap/15.3/appliances/openSUSE-Leap-15.3-JeOS.x86_64-OpenStack-Cloud.qcow2` | 2G | 1 | 20G | bios |
+| Gentoo Linux | `gentoo` | `https://distfiles.gentoo.org/releases/amd64/autobuilds/20250928T160345Z/di-amd64-cloudinit-20250928T160345Z.qcow2` | 2G | 1 | 25G | efi |
+| CirrOS (test) | `cirros` | `http://download.cirros-cloud.net/0.5.2/cirros-0.5.2-x86_64-disk.img` | 512M | 1 | 5G | bios |
+| Windows 11 (Golden) | `kube-dc` | `https://iso.stage.kube-dc.com/windows11-x64-golden.qcow2` | 8G | 2 | 70G | efi |
+| Windows 11 (Fresh) | `Administrator` | `https://iso.stage.kube-dc.com/win11-x64.iso` | 8G | 4 | 70G | efi |
+
+### OS-Specific Cloud-Init
+
+Each OS requires specific cloud-init to install and enable the QEMU guest agent. See @os-cloud-init.yaml for the full cloud-init per OS.
+
+**Linux (Ubuntu, Debian, openSUSE)** — simple:
+```yaml
+#cloud-config
+package_update: true
+package_upgrade: true
+packages:
+  - qemu-guest-agent
+runcmd:
+  - systemctl enable --now qemu-guest-agent
+```
+
+**CentOS/Fedora** — needs SELinux config:
+```yaml
+#cloud-config
+package_update: true
+package_upgrade: true
+packages:
+  - qemu-guest-agent
+  - policycoreutils-python-utils
+runcmd:
+  - setenforce 0
+  - sed -i 's/SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
+  - setsebool -P virt_qemu_ga_manage_ssh 1
+  - setsebool -P virt_qemu_ga_exec 1
+  - setsebool -P virt_qemu_ga_file_transfer 1
+  - restorecon -R /usr/bin/qemu-ga
+  - systemctl enable --now qemu-guest-agent
+```
+
+**Alpine** — uses rc-service:
+```yaml
+#cloud-config
+package_update: true
+packages:
+  - qemu-guest-agent
+runcmd:
+  - rc-service qemu-guest-agent restart
+  - rc-update add qemu-guest-agent default
+```
+
+**Windows (Golden Image)** — no cloud-init needed (pre-configured with QEMU Guest Agent).
 
 ## Verification
 
@@ -142,8 +210,11 @@ kubectl get dv {vm-name}-disk -n {project-namespace} -o jsonpath='{.status.phase
 - Check DataVolume: `kubectl describe dv {vm-name}-disk -n {project-namespace}`
 - Check VM events: `kubectl describe vm {vm-name} -n {project-namespace}`
 - If no IP: guest agent may not be installed — verify cloud-init includes `qemu-guest-agent`
+
 ## Safety
 - ALWAYS include `qemu-guest-agent` in cloud-init — without it, IP reporting and SSH key injection won't work
 - ALWAYS use `networkName: {namespace}/default` — other networks don't exist in the VPC
 - Use `storageClassName: local-path` for DataVolumes
 - FIP and LoadBalancer on the same VM are mutually exclusive
+- Use the correct firmware type: `bios` for most Linux, `efi` for Gentoo and Windows
+- Windows VMs need machine type `pc-q35-rhel8.6.0` and HyperV features
