@@ -57,6 +57,7 @@ Generic Kubernetes MCP servers let AI assistants run `kubectl` — but they don'
 | `manage-storage` | S3 buckets (OBC), DataVolumes, PVCs |
 | `manage-access` | OrganizationGroup RBAC and role management |
 | `ssh-into-vm` | SSH into a VM using the project's auto-generated keypair |
+| `use-kube-dc-cli` | Authentication, context switching, and namespace management via kube-dc CLI |
 
 ### Install Skills
 
