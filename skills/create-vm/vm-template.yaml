@@ -1,0 +1,81 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: {vm-name}-disk
+  namespace: {project-namespace}
+spec:
+  source:
+    http:
+      url: "docker.io/shalb/ubuntu-2404-container-disk:v1.4.2"
+  storage:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 20Gi
+    storageClassName: local-path
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: {vm-name}
+  namespace: {project-namespace}
+  labels:
+    app: {vm-name}
+spec:
+  running: true
+  template:
+    metadata:
+      labels:
+        kubevirt.io/domain: {vm-name}
+        app: {vm-name}
+    spec:
+      accessCredentials:
+        - sshPublicKey:
+            source:
+              secret:
+                secretName: authorized-keys-default
+            propagationMethod:
+              qemuGuestAgent:
+                users:
+                  - ubuntu    # Match OS default user: ubuntu, debian, or kube-dc
+      domain:
+        cpu:
+          cores: 2
+        memory:
+          guest: 4Gi
+        devices:
+          disks:
+            - name: disk0
+              disk:
+                bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              bridge: {}
+        resources:
+          requests:
+            memory: 4Gi
+      networks:
+        - name: default
+          multus:
+            networkName: {project-namespace}/default
+      readinessProbe:
+        guestAgentPing: {}
+        initialDelaySeconds: 30
+        periodSeconds: 10
+      volumes:
+        - name: disk0
+          dataVolume:
+            name: {vm-name}-disk
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              package_update: true
+              packages:
+                - qemu-guest-agent
+              runcmd:
+                - systemctl enable --now qemu-guest-agent

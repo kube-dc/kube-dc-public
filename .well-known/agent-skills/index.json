@@ -1,0 +1,75 @@
+{
+  "$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json",
+  "skills": [
+    {
+      "name": "create-project",
+      "type": "archive",
+      "description": "Create a new Kube-DC project with isolated VPC networking inside an existing organization. Handles network type selection (cloud vs public), organization verification, and project manifest generation.",
+      "url": "/skills/create-project/",
+      "digest": "sha256:placeholder"
+    },
+    {
+      "name": "deploy-app",
+      "type": "skill-md",
+      "description": "Deploy a containerized application to a Kube-DC project with optional database, service exposure (HTTPS via Gateway or direct EIP), and persistent storage. Covers Helm deployments and raw manifests.",
+      "url": "/skills/deploy-app/SKILL.md",
+      "digest": "sha256:placeholder"
+    },
+    {
+      "name": "create-vm",
+      "type": "archive",
+      "description": "Deploy a virtual machine in a Kube-DC project with SSH access, cloud-init configuration, and optional external IP exposure. Supports Ubuntu, Debian, and Windows images.",
+      "url": "/skills/create-vm/",
+      "digest": "sha256:placeholder"
+    },
+    {
+      "name": "create-database",
+      "type": "archive",
+      "description": "Create a managed PostgreSQL or MariaDB database in a Kube-DC project, configure access for workloads via environment variables and secrets, and optionally expose externally via Gateway or LoadBalancer.",
+      "url": "/skills/create-database/",
+      "digest": "sha256:placeholder"
+    },
+    {
+      "name": "expose-service",
+      "type": "archive",
+      "description": "Expose a Kube-DC service externally via Gateway Route (HTTP/HTTPS/gRPC with auto TLS) or Direct EIP + LoadBalancer (any TCP/UDP). Includes decision guide for choosing the right exposure method.",
+      "url": "/skills/expose-service/",
+      "digest": "sha256:placeholder"
+    },
+    {
+      "name": "manage-cluster",
+      "type": "archive",
+      "description": "Manage Kube-DC managed Kubernetes clusters — scale worker pools, upgrade versions, access kubeconfig, and monitor status. Covers day-2 operations via kubectl patch.",
+      "url": "/skills/manage-cluster/",
+      "digest": "sha256:placeholder"
+    },
+    {
+      "name": "manage-networking",
+      "type": "archive",
+      "description": "Manage Kube-DC networking resources — create External IPs (EIp), Floating IPs (FIp), and understand VPC networking. Includes decision guide for choosing between EIP and FIP.",
+      "url": "/skills/manage-networking/",
+      "digest": "sha256:placeholder"
+    },
+    {
+      "name": "manage-storage",
+      "type": "archive",
+      "description": "Manage Kube-DC storage resources — create S3 buckets (ObjectBucketClaim), DataVolumes for VMs, and PersistentVolumeClaims for containers.",
+      "url": "/skills/manage-storage/",
+      "digest": "sha256:placeholder"
+    },
+    {
+      "name": "manage-access",
+      "type": "archive",
+      "description": "Manage Kube-DC organization groups and RBAC — create OrganizationGroup resources to map user groups to Kubernetes roles per project. Note that user management is UI-only (Keycloak).",
+      "url": "/skills/manage-access/",
+      "digest": "sha256:placeholder"
+    },
+    {
+      "name": "ssh-into-vm",
+      "type": "skill-md",
+      "description": "SSH into a Kube-DC virtual machine using the project's auto-generated SSH keypair. Covers extracting keys, finding VM IP, and connecting via internal IP or external FIP/EIP.",
+      "url": "/skills/ssh-into-vm/SKILL.md",
+      "digest": "sha256:placeholder"
+    }
+  ]
+}

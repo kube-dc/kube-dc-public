@@ -1,0 +1,10 @@
+apiVersion: objectbucket.io/v1alpha1
+kind: ObjectBucketClaim
+metadata:
+  name: {bucket-name}
+  namespace: {project-namespace}
+  labels:
+    kube-dc.com/organization: {org}    # REQUIRED
+spec:
+  bucketName: {project-namespace}-{bucket-name}
+  storageClassName: ceph-bucket

@@ -1,0 +1,16 @@
+apiVersion: db.kube-dc.com/v1alpha1
+kind: KdcDatabase
+metadata:
+  name: {db-name}
+  namespace: {project-namespace}
+spec:
+  engine: postgresql
+  version: "16"
+  replicas: 2             # 2+ for HA with automatic failover
+  cpu: "1"
+  memory: 2Gi
+  storage: 10Gi
+  database: {database-name}
+  username: app
+  expose:
+    type: internal          # internal | gateway | loadbalancer

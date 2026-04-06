@@ -1,0 +1,11 @@
+apiVersion: kube-dc.com/v1
+kind: Project
+metadata:
+  name: {project-name}
+  namespace: {org-name}
+spec:
+  # Network type: "cloud" (recommended) or "public"
+  # cloud = shared NAT gateway, more secure, lower cost
+  # public = dedicated public IP on gateway
+  egressNetworkType: cloud
+  description: "{description}"

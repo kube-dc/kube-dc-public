@@ -1,0 +1,9 @@
+apiVersion: kube-dc.com/v1
+kind: EIp
+metadata:
+  name: {eip-name}
+  namespace: {project-namespace}
+spec:
+  # public = internet-routable IP from ext-public pool
+  # cloud = NAT pool IP from ext-cloud pool
+  externalNetworkType: public

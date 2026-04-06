@@ -1,0 +1,32 @@
+# DataVolume — import from URL (for VM boot disk)
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: {disk-name}
+  namespace: {project-namespace}
+spec:
+  source:
+    http:
+      url: "{image-url}"
+  storage:
+    accessModes: [ReadWriteOnce]
+    resources:
+      requests:
+        storage: 20Gi
+    storageClassName: local-path
+---
+# DataVolume — blank disk (for additional data)
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: {disk-name}-data
+  namespace: {project-namespace}
+spec:
+  source:
+    blank: {}
+  storage:
+    accessModes: [ReadWriteOnce]
+    resources:
+      requests:
+        storage: 50Gi
+    storageClassName: local-path

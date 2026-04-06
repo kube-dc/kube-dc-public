@@ -1,0 +1,16 @@
+apiVersion: db.kube-dc.com/v1alpha1
+kind: KdcDatabase
+metadata:
+  name: {db-name}
+  namespace: {project-namespace}
+spec:
+  engine: mariadb
+  version: "11.4"
+  replicas: 1
+  cpu: "1"
+  memory: 2Gi
+  storage: 10Gi
+  database: {database-name}
+  username: app
+  expose:
+    type: internal          # internal | gateway | loadbalancer

@@ -1,0 +1,66 @@
+# Public EIP for direct access
+apiVersion: kube-dc.com/v1
+kind: EIp
+metadata:
+  name: {eip-name}
+  namespace: {project-namespace}
+spec:
+  externalNetworkType: public
+---
+# SSH service bound to EIP
+apiVersion: v1
+kind: Service
+metadata:
+  name: {vm-name}-ssh
+  namespace: {project-namespace}
+  annotations:
+    service.nlb.kube-dc.com/bind-on-eip: "{eip-name}"
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 22
+      targetPort: 22
+  selector:
+    kubevirt.io/domain: {vm-name}
+---
+# Game server (UDP) bound to EIP
+apiVersion: v1
+kind: Service
+metadata:
+  name: gameserver
+  namespace: {project-namespace}
+  annotations:
+    service.nlb.kube-dc.com/bind-on-eip: "{eip-name}"
+spec:
+  type: LoadBalancer
+  ports:
+    - name: game
+      port: 27015
+      targetPort: 27015
+      protocol: UDP
+    - name: rcon
+      port: 27016
+      targetPort: 27016
+      protocol: TCP
+  selector:
+    app: gameserver
+---
+# Multi-port TCP service
+apiVersion: v1
+kind: Service
+metadata:
+  name: custom-tcp
+  namespace: {project-namespace}
+  annotations:
+    service.nlb.kube-dc.com/bind-on-eip: "{eip-name}"
+spec:
+  type: LoadBalancer
+  ports:
+    - name: primary
+      port: 5000
+      targetPort: 5000
+    - name: secondary
+      port: 5001
+      targetPort: 5001
+  selector:
+    app: custom-app

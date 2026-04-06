@@ -1,0 +1,83 @@
+# Issuer (required once per namespace for HTTPS)
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: letsencrypt
+  namespace: {project-namespace}
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: {email}
+    privateKeySecretRef:
+      name: letsencrypt-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: envoy
+---
+# HTTPS Service (auto TLS + auto hostname)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {service-name}
+  namespace: {project-namespace}
+  annotations:
+    service.nlb.kube-dc.com/expose-route: "https"
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 80
+      targetPort: 8080
+  selector:
+    app: {app-name}
+# → hostname: {service-name}-{project-namespace}.kube-dc.cloud
+---
+# HTTPS with custom hostname
+apiVersion: v1
+kind: Service
+metadata:
+  name: {service-name}-custom
+  namespace: {project-namespace}
+  annotations:
+    service.nlb.kube-dc.com/expose-route: "https"
+    service.nlb.kube-dc.com/route-hostname: "myapp.example.com"
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 80
+      targetPort: 8080
+  selector:
+    app: {app-name}
+---
+# gRPC service
+apiVersion: v1
+kind: Service
+metadata:
+  name: {service-name}-grpc
+  namespace: {project-namespace}
+  annotations:
+    service.nlb.kube-dc.com/expose-route: "https"
+    service.nlb.kube-dc.com/route-port: "50051"
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 50051
+      targetPort: 50051
+  selector:
+    app: {app-name}
+---
+# TLS passthrough (app handles TLS)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {service-name}-tls
+  namespace: {project-namespace}
+  annotations:
+    service.nlb.kube-dc.com/expose-route: "tls-passthrough"
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 443
+      targetPort: 8443
+  selector:
+    app: {app-name}
