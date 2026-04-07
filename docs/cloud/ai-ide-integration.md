@@ -57,6 +57,7 @@ Generic Kubernetes MCP servers let AI assistants run `kubectl` — but they don'
 | `manage-storage` | S3 buckets (OBC), DataVolumes, PVCs |
 | `manage-access` | OrganizationGroup RBAC and role management |
 | `ssh-into-vm` | SSH into a VM using the project's auto-generated keypair |
+| `use-kube-dc-cli` | Authentication, context switching, and namespace management via kube-dc CLI |
 
 ### Install Skills
 
@@ -218,7 +219,7 @@ All integrations below require a valid kubeconfig pointing at your Kube-DC clust
 Your kubeconfig will be saved at `~/.kube/config` by default. Verify it works:
 
 ```bash
-kubectl get namespaces
+kube-dc ns
 ```
 
 See [CLI & Kubeconfig](cli-kubeconfig.md) for full setup instructions.

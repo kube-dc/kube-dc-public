@@ -14,6 +14,7 @@ const sidebars: SidebarsConfig = {
         'core-concepts',
         'first-project',
         'cli-kubeconfig',
+        'ai-ide-integration',
       ],
     },
     {
@@ -87,7 +88,6 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       items: [
         'security-restrictions',
-        'ai-ide-integration',
         'gitops',
       ],
     },
