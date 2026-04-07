@@ -152,3 +152,18 @@ Best for: SSH, game servers, databases, custom TCP/UDP protocols.
 - **Skills**: See `skills/` — step-by-step procedures with templates
 - **Knowledge**: See `knowledge/` — compiled CRD references and patterns
 - **Full docs dump**: See https://docs.kube-dc.com/llms-full.txt
+
+## Quota Awareness (Important)
+
+Before deploying any resource-consuming workload (VM, cluster, database, app, public EIP), always check available quota using the `check-quota` skill (`skills/check-quota/SKILL.md`).
+
+Quick check:
+```bash
+# Org-level: CPU, memory, storage, pods, publicIPv4, objectStorage
+kubectl get organization {org} -n {org} -o jsonpath='{.status.quotaUsage}' | jq .
+
+# Project-level: per-namespace breakdown
+kubectl get project {project} -n {org} -o jsonpath='{.status.quotaUsage}' | jq .
+```
+
+`publicIPv4` is a hard limit with no burst — always check before allocating `externalNetworkType: public` EIPs.

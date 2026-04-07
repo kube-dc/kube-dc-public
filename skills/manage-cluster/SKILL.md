@@ -6,6 +6,7 @@ description: Manage Kube-DC managed Kubernetes clusters — scale worker pools, 
 ## Prerequisites
 - KdcCluster must exist and be Ready
 - Project namespace: `{org}-{project}`
+- **Quota**: when scaling up worker pools, verify CPU, memory, and storage capacity first — use the `check-quota` skill (each worker node consumes its full `cpuCores`, `memory`, and `diskSize`)
 
 ## Worker Pool Defaults
 

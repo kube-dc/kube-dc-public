@@ -6,6 +6,7 @@ description: Manage Kube-DC networking resources — create External IPs (EIp), 
 ## Prerequisites
 - Target project must exist and be Ready
 - Project namespace: `{org}-{project}`
+- **Quota**: when creating `externalNetworkType: public` EIPs, check `publicIPv4` quota first — use the `check-quota` skill (no burst; hard limit per plan)
 
 ## Concepts
 

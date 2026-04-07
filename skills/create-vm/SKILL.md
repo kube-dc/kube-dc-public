@@ -7,6 +7,7 @@ description: Deploy a virtual machine in a Kube-DC project with SSH access, clou
 - Target project must exist and be Ready
 - Project namespace: `{org}-{project}`
 - SSH keypair secrets auto-exist in project namespace
+- **Quota**: verify sufficient CPU, memory, storage, and (if external IP needed) publicIPv4 capacity — use the `check-quota` skill
 
 ## Steps
 

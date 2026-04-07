@@ -6,6 +6,7 @@ description: Manage Kube-DC storage resources — create S3 buckets (ObjectBucke
 ## Prerequisites
 - Target project must exist and be Ready
 - Project namespace: `{org}-{project}`
+- **Quota**: verify sufficient storage capacity before creating large DataVolumes or PVCs — use the `check-quota` skill
 
 ## S3 Object Storage (ObjectBucketClaim)
 

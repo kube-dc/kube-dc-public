@@ -7,6 +7,7 @@ description: Deploy a containerized application to a Kube-DC project with option
 - Target project must exist and be Ready
 - Project namespace: `{org}-{project}`
 - For HTTPS exposure: cert-manager `Issuer` must exist (or will be created)
+- **Quota**: verify sufficient CPU, memory, and pod capacity before deploying — use the `check-quota` skill
 
 ## Steps
 

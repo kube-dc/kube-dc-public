@@ -21,6 +21,7 @@ Master catalog for AI agents. Read this first, then dive into specific files as 
 
 | Skill | Description | Key Files |
 |-------|-------------|-----------|
+| `check-quota` | Check org/project quota usage before deploying; troubleshoot exceeded-quota errors | SKILL.md |
 | `create-project` | Create project with VPC networking | SKILL.md, project-template.yaml, network-types.md |
 | `deploy-app` | Deploy containerized app with optional DB + HTTPS | SKILL.md |
 | `create-vm` | Provision VM with SSH access and cloud-init | SKILL.md, vm-template.yaml |
@@ -34,6 +35,8 @@ Master catalog for AI agents. Read this first, then dive into specific files as 
 | `use-kube-dc-cli` | Authentication, context switching, namespace management | SKILL.md |
 
 Skills location: `skills/{skill-name}/SKILL.md`
+
+> **Best practice**: Run `check-quota` before creating VMs, clusters, databases, or public EIPs to avoid quota-exceeded failures mid-deployment.
 
 ## Docs (Human-Readable, Also Useful for Agents)
 

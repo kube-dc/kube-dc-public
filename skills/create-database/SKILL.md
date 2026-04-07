@@ -6,6 +6,7 @@ description: Create a managed PostgreSQL or MariaDB database in a Kube-DC projec
 ## Prerequisites
 - Target project must exist and be Ready
 - Project namespace: `{org}-{project}`
+- **Quota**: verify sufficient storage and pod capacity — use the `check-quota` skill
 
 ## Steps
 
