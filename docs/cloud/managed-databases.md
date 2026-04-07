@@ -54,7 +54,7 @@ metadata:
 spec:
   engine: postgresql
   version: "16"
-  database: myapp
+  databaseName: myapp
   username: app
   cpu: "1"
   memory: 2Gi
@@ -118,9 +118,146 @@ The password is auto-generated and stored in a Kubernetes Secret. You can view i
 kubectl get secret my-postgres-app -n my-project -o jsonpath='{.data.password}' | base64 -d
 
 # MariaDB
-kubectl get secret my-mariadb-password-app -n my-project -o jsonpath='{.data.password}' | base64 -d
+kubectl get secret my-mariadb-password -n my-project -o jsonpath='{.data.password}' | base64 -d
 ```
 :::
+
+### Connecting from Application Workloads
+
+The most common pattern is mounting the database password from the auto-created Kubernetes Secret and setting connection details as environment variables in your Deployment:
+
+**PostgreSQL:**
+
+```yaml
+env:
+  - name: DB_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: my-postgres-app      # Secret: {db-name}-app
+        key: password
+  - name: DB_HOST
+    value: "my-postgres-rw.my-project.svc"
+  - name: DB_PORT
+    value: "5432"
+  - name: DB_USER
+    value: "app"
+  - name: DB_NAME
+    value: "myapp"
+  - name: DATABASE_URL             # Connection string (many frameworks use this)
+    value: "postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)"
+```
+
+**MariaDB:**
+
+```yaml
+env:
+  - name: DB_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: my-mariadb-password   # Secret: {db-name}-password
+        key: password
+  - name: DB_HOST
+    value: "my-mariadb.my-project.svc"
+  - name: DB_PORT
+    value: "3306"
+  - name: DB_USER
+    value: "app"
+  - name: DB_NAME
+    value: "myapp"
+```
+
+:::info Secret Naming Convention
+- **PostgreSQL**: `{db-name}-app` (key: `password`)
+- **MariaDB**: `{db-name}-password` (key: `password`)
+
+These secrets are auto-created by the database controller and updated if the password is rotated.
+:::
+
+### External Access
+
+By default, databases are only accessible within the cluster (ClusterIP). There are three ways to access a database externally:
+
+#### Option 1: Gateway (TLS Passthrough) — Recommended for Production
+
+Expose the database via Envoy Gateway with TLS passthrough. This provides a public hostname with TLS encryption handled by the database engine (PostgreSQL/MariaDB native TLS).
+
+Set `spec.expose.type: gateway` when creating the database:
+
+```yaml
+apiVersion: db.kube-dc.com/v1alpha1
+kind: KdcDatabase
+metadata:
+  name: my-postgres
+  namespace: my-project
+spec:
+  engine: postgresql
+  version: "16"
+  databaseName: myapp
+  username: app
+  cpu: "1"
+  memory: 2Gi
+  storage: 20Gi
+  replicas: 2
+  expose:
+    type: gateway
+```
+
+Once ready, the external endpoint appears in the status and on the **Connection** tab:
+
+```
+my-postgres-db-my-project.kube-dc.cloud:5432
+```
+
+Connect using TLS:
+
+```bash
+psql "host=my-postgres-db-my-project.kube-dc.cloud port=5432 dbname=myapp user=app sslmode=require"
+```
+
+You can also select **Gateway (TLS Passthrough)** in the creation wizard UI.
+
+#### Option 2: LoadBalancer + EIP — Direct IP Access
+
+Expose the database via a dedicated LoadBalancer service with an External IP. This gives you a direct IP:port for the database.
+
+Set `spec.expose.type: loadbalancer`:
+
+```yaml
+spec:
+  expose:
+    type: loadbalancer
+```
+
+Once an EIP is allocated, the external endpoint appears in the status:
+
+```bash
+# Check the external endpoint
+kubectl get kdcdatabase my-postgres -n my-project -o jsonpath='{.status.externalEndpoint}'
+# Example: 100.65.0.42:5432
+```
+
+#### Option 3: Port-Forward — Development / Ad-Hoc Access
+
+For quick local access without exposing the database externally:
+
+```bash
+# PostgreSQL
+kubectl port-forward svc/my-postgres-rw 5432:5432 -n my-project
+PGPASSWORD=$(kubectl get secret my-postgres-app -n my-project -o jsonpath='{.data.password}' | base64 -d) \
+  psql -h 127.0.0.1 -p 5432 -U app -d myapp
+
+# MariaDB
+kubectl port-forward svc/my-mariadb 3306:3306 -n my-project
+mysql -h 127.0.0.1 -P 3306 -u app -p myapp
+```
+
+This is ideal for connecting from a local IDE, database GUI tool, or one-off queries.
+
+| Method | Use Case | Requires | Persistent |
+|--------|----------|----------|------------|
+| **Gateway** | Production external access | `spec.expose.type: gateway` | Yes |
+| **LoadBalancer** | Direct IP access | `spec.expose.type: loadbalancer` | Yes |
+| **Port-forward** | Dev / ad-hoc queries | `kubectl` access | No (session-only) |
 
 ### Backups
 

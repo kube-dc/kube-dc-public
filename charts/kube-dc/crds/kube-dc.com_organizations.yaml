@@ -121,6 +121,113 @@ spec:
                 description: QuotaPlanId is the billing plan ID currently enforced
                   via HRQ, empty if no quota
                 type: string
+              quotaUsage:
+                description: |-
+                  QuotaUsage holds aggregated resource usage across all dimensions (CPU, memory, storage,
+                  pods, public IPs, object storage). Updated periodically by the organization controller.
+                  Read by the UI using the user's JWT token — no SA token required for quota display.
+                properties:
+                  cpu:
+                    description: CPU usage across all project namespaces (requests.cpu
+                      from HRQ)
+                    properties:
+                      hard:
+                        description: Hard is the maximum allowed amount from the active
+                          quota
+                        type: string
+                      used:
+                        description: Used is the currently consumed amount (e.g. "2500m",
+                          "7Gi", "3")
+                        type: string
+                    required:
+                    - hard
+                    - used
+                    type: object
+                  lastUpdated:
+                    description: LastUpdated is the timestamp when this usage was
+                      last refreshed
+                    format: date-time
+                    type: string
+                  memory:
+                    description: Memory usage across all project namespaces (requests.memory
+                      from HRQ)
+                    properties:
+                      hard:
+                        description: Hard is the maximum allowed amount from the active
+                          quota
+                        type: string
+                      used:
+                        description: Used is the currently consumed amount (e.g. "2500m",
+                          "7Gi", "3")
+                        type: string
+                    required:
+                    - hard
+                    - used
+                    type: object
+                  objectStorage:
+                    description: ObjectStorage is total S3 usage across all project
+                      buckets (in bytes)
+                    properties:
+                      hard:
+                        description: Hard is the maximum allowed amount from the active
+                          quota
+                        type: string
+                      used:
+                        description: Used is the currently consumed amount (e.g. "2500m",
+                          "7Gi", "3")
+                        type: string
+                    required:
+                    - hard
+                    - used
+                    type: object
+                  pods:
+                    description: Pods count across all project namespaces
+                    properties:
+                      hard:
+                        description: Hard is the maximum allowed amount from the active
+                          quota
+                        type: string
+                      used:
+                        description: Used is the currently consumed amount (e.g. "2500m",
+                          "7Gi", "3")
+                        type: string
+                    required:
+                    - hard
+                    - used
+                    type: object
+                  publicIPv4:
+                    description: PublicIPv4 is the count of public EIPs across all
+                      project namespaces
+                    properties:
+                      hard:
+                        description: Hard is the maximum allowed amount from the active
+                          quota
+                        type: string
+                      used:
+                        description: Used is the currently consumed amount (e.g. "2500m",
+                          "7Gi", "3")
+                        type: string
+                    required:
+                    - hard
+                    - used
+                    type: object
+                  storage:
+                    description: Storage usage across all project namespaces (requests.storage
+                      from HRQ)
+                    properties:
+                      hard:
+                        description: Hard is the maximum allowed amount from the active
+                          quota
+                        type: string
+                      used:
+                        description: Used is the currently consumed amount (e.g. "2500m",
+                          "7Gi", "3")
+                        type: string
+                    required:
+                    - hard
+                    - used
+                    type: object
+                type: object
               ready:
                 default: false
                 description: Ready indicates whether the organization is fully configured

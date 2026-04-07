@@ -242,7 +242,18 @@ The Stripe portal opens in the same tab. Click **Return** in the portal to come 
 
 By default, all projects share the organization quota with no individual caps. Organization administrators can optionally cap individual projects to prevent a single project from consuming the entire budget.
 
-To set a per-project limit using `kubectl`:
+### Setting Limits in the UI
+
+1. Navigate to **Manage Organization → Projects**
+2. Click the project you want to limit
+3. Open the **Resource Quotas** panel and click **Set Per-Project Quota**
+4. Enter values for CPU, Memory, Storage, and/or Pods and click **Save Quota**
+
+The panel shows the organization's total quota alongside the per-project fields so you can see what is available.
+
+### Setting Limits with kubectl
+
+Create (or update) a `ResourceQuota` named `project-quota` in the project namespace:
 
 ```bash
 kubectl apply -f - <<EOF
@@ -251,29 +262,118 @@ kind: ResourceQuota
 metadata:
   name: project-quota
   namespace: myorg-dev          # Project namespace: {org}-{project}
+  labels:
+    billing.kube-dc.com/per-project: "true"
 spec:
   hard:
     requests.cpu: "2"
     requests.memory: "4Gi"
-    limits.cpu: "4"
-    limits.memory: "8Gi"
     requests.storage: "20Gi"
     pods: "50"
 EOF
 ```
 
-The effective limit for any resource is the lower of the per-project cap and the organization's remaining quota. Removing this quota (via `kubectl delete resourcequota project-quota -n myorg-dev`) returns the project to the shared pool with no individual cap.
+The effective limit for any resource is the **lower** of the per-project cap and the organization's remaining quota. To remove a per-project limit and return the project to the shared pool:
 
-:::info
-Per-project quota management in the UI is planned for a future release. For now, `kubectl` is the supported method.
-:::
+```bash
+kubectl delete resourcequota project-quota -n myorg-dev
+```
+
+---
+
+## Tracking Usage with kubectl
+
+The platform exposes resource usage directly on the `Organization` and `Project` custom resources so you can query quota state from the command line without logging into the UI. Values are refreshed every 5–7 minutes by the platform controller.
+
+### Organization-level usage
+
+```bash
+# Full quota summary (human-readable)
+kubectl get organization <org> -n <org> -o jsonpath='{.status.quotaUsage}' | jq .
+```
+
+Example output:
+
+```json
+{
+  "cpu":           { "used": "18.975", "hard": "26" },
+  "memory":        { "used": "63.6Gi", "hard": "70Gi" },
+  "storage":       { "used": "443.2Gi", "hard": "460Gi" },
+  "pods":          { "used": "33",     "hard": "500" },
+  "publicIPv4":    { "used": "3",      "hard": "3" },
+  "objectStorage": { "used": "",       "hard": "500Gi" },
+  "lastUpdated":   "2026-04-07T20:55:42Z"
+}
+```
+
+- **cpu** — cores used / available (decimal, e.g. `18.975` = 18,975 millicores)
+- **memory / storage** — GiB consumed vs plan limit
+- **publicIPv4** — count of public External IPs in use across all projects
+- **objectStorage** — hard limit from plan; `used` is populated asynchronously from object storage stats
+- **lastUpdated** — timestamp of last controller refresh
+
+Check a single field:
+
+```bash
+kubectl get organization <org> -n <org> -o jsonpath='{.status.quotaUsage.cpu}' | jq .
+# → { "hard": "26", "used": "18.975" }
+```
+
+### Project-level usage
+
+Each project reports its own namespace usage:
+
+```bash
+kubectl get project <project> -n <org> -o jsonpath='{.status.quotaUsage}' | jq .
+```
+
+Example output:
+
+```json
+{
+  "cpu":               { "used": "6.72",    "hard": "26" },
+  "memory":            { "used": "16.824Gi","hard": "70Gi" },
+  "storage":           { "used": "147.4Gi", "hard": "460Gi" },
+  "pods":              { "used": "12",      "hard": "500" },
+  "perProjectQuotaSet": false,
+  "lastUpdated":       "2026-04-07T20:55:00Z"
+}
+```
+
+- **hard** shows the organization limit when no per-project cap is set (`perProjectQuotaSet: false`), or the per-project cap when one is configured
+- **perProjectQuotaSet** — `true` if an admin has applied an explicit per-project `ResourceQuota`
+
+### All projects at a glance
+
+```bash
+# Print project name + CPU used/hard for all projects in an org
+kubectl get projects -n <org> \
+  -o custom-columns='PROJECT:.metadata.name,CPU_USED:.status.quotaUsage.cpu.used,CPU_HARD:.status.quotaUsage.cpu.hard,MEM_USED:.status.quotaUsage.memory.used'
+```
+
+### Raw ResourceQuota (live Kubernetes enforcement)
+
+The `quotaUsage` status is a controller summary refreshed every few minutes. For real-time enforcement state, query the underlying `ResourceQuota` objects directly:
+
+```bash
+# All quotas in a project namespace
+kubectl get resourcequota -n myorg-dev
+
+# Detailed usage breakdown
+kubectl describe resourcequota -n myorg-dev
+```
+
+The `hrq.hnc.x-k8s.io` quota is the organization-wide HNC propagated limit. The `project-quota` quota (if present) is the per-project cap set by an admin.
 
 ---
 
 ## Troubleshooting
 
 **New pods or VMs fail to start with "exceeded quota"**
-- Check the Overview dashboard for which resource is at its limit
+- Check the Overview dashboard for which resource is at its limit, or run:
+  ```bash
+  kubectl get organization <org> -n <org> -o jsonpath='{.status.quotaUsage}' | jq .
+  ```
 - Delete unused workloads to free capacity, or add a Turbo Add-on
 
 **Pods fail to start with "must specify resource limits"**
