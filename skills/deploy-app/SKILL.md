@@ -124,17 +124,32 @@ spec:
 If the app needs a database, use the `create-database` skill to provision one, then
 add the secret references to the deployment:
 
+**PostgreSQL:**
 ```yaml
 env:
   - name: DB_PASSWORD
     valueFrom:
       secretKeyRef:
-        name: {db-name}-app      # PostgreSQL: {db-name}-app, MariaDB: {db-name}-password
+        name: {db-name}-app           # Secret: {db-name}-app
         key: password
   - name: DB_HOST
     value: "{db-name}-rw.{project-namespace}.svc"
   - name: DATABASE_URL
     value: "postgresql://app:$(DB_PASSWORD)@$(DB_HOST):5432/{database}"
+```
+
+**MariaDB:**
+```yaml
+env:
+  - name: DB_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: {db-name}-password      # Secret: {db-name}-password
+        key: password
+  - name: DB_HOST
+    value: "{db-name}.{project-namespace}.svc"
+  - name: DATABASE_URL
+    value: "mysql://app:$(DB_PASSWORD)@$(DB_HOST):3306/{database}"
 ```
 
 ### Helm Deployment Alternative

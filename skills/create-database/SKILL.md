@@ -152,7 +152,7 @@ kubectl run mysql-test --rm -it --restart=Never --image=mysql:8.0 -n {project-na
 **Success**: Phase is `Ready`, endpoint assigned, secret exists, connectivity test passes.
 **Failure**: If phase is `Provisioning`, wait and recheck. If `Failed`:
 - `kubectl describe kdcdb {db-name} -n {project-namespace}` — check conditions and events
-- **Known issue**: MariaDB does not create the `databaseName` database or `username` user (db-manager bug). Only root access works for MariaDB currently.
+
 ## Safety
 - Never log database passwords in chat output
 - Default to `internal` exposure unless user explicitly requests external
