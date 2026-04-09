@@ -35,7 +35,7 @@ WordPress performance on Kubernetes is driven by **PHP-FPM worker density** and 
 | **Best For** | High-traffic blogs, SMEs | Large communities, WooCommerce | Enterprise news, Viral portals |
 
 :::tip Optimization Tip
-Use the **Scale Pool's** 56GB RAM to allocate a large Redis cache. This allows WordPress to serve "Hot" data from memory, reducing database latency to <10ms.
+Use the **Scale Pool's** 56GB RAM to allocate a large Redis cache. This allows WordPress to serve "Hot" data from memory, reducing database latency to &lt;10ms.
 :::
 
 ---
