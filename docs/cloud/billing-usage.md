@@ -49,6 +49,13 @@ Kube-DC offers three subscription plans. All resources are provisioned across yo
 
 All plans include Nested Kubernetes clusters (KubeVirt), unlimited bandwidth, and full platform access with no feature restrictions.
 
+:::tip Estimate Performance for Your Workload
+Not sure which plan fits your needs? See the [Scaling & Performance Guide](scaling-performance.md) for detailed estimates:
+- **WordPress**: Concurrent users, DAU, MAU by plan
+- **SaaS apps**: Requests/sec capacity and recommended workload splits
+- **Scaling mechanics**: How HPA and Envoy handle traffic spikes
+:::
+
 ---
 
 ## Understanding Resource Quotas
