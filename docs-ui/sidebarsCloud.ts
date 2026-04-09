@@ -80,6 +80,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'team-management',
         'billing-usage',
+        'scaling-performance',
       ],
     },
     {
