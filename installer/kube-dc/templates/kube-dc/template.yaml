@@ -404,6 +404,8 @@ units:
               type: "ControlPlaneProvider"
         - file: capk-webhook-cert.yaml
           content: {{ insertYAML (readFile "./cluster-api/capk-webhook-cert.yaml") }}
+        - file: capi-webhook-certs.yaml
+          content: {{ insertYAML (readFile "./cluster-api/capi-webhook-certs.yaml") }}
     apply:
       commands:
         - bash install_capi.sh

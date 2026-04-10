@@ -1,0 +1,116 @@
+# cert-manager Issuers and Certificates for CAPI provider webhooks.
+# clusterctl init creates self-signed certs that expire in 90 days
+# without auto-renewal. These Certificate resources ensure cert-manager
+# keeps them renewed automatically.
+---
+# === capi-system (core CAPI provider) ===
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: capi-selfsigned-issuer
+  namespace: capi-system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: capi-serving-cert
+  namespace: capi-system
+spec:
+  dnsNames:
+  - capi-webhook-service.capi-system.svc
+  - capi-webhook-service.capi-system.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: capi-selfsigned-issuer
+  secretName: capi-webhook-service-cert
+  subject:
+    organizations:
+    - k8s-sig-cluster-lifecycle
+  duration: 8760h  # 1 year
+  renewBefore: 720h  # 30 days before expiry
+---
+# === capi-kubeadm-bootstrap-system ===
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: capi-kubeadm-bootstrap-selfsigned-issuer
+  namespace: capi-kubeadm-bootstrap-system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: capi-kubeadm-bootstrap-serving-cert
+  namespace: capi-kubeadm-bootstrap-system
+spec:
+  dnsNames:
+  - capi-kubeadm-bootstrap-webhook-service.capi-kubeadm-bootstrap-system.svc
+  - capi-kubeadm-bootstrap-webhook-service.capi-kubeadm-bootstrap-system.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: capi-kubeadm-bootstrap-selfsigned-issuer
+  secretName: capi-kubeadm-bootstrap-webhook-service-cert
+  subject:
+    organizations:
+    - k8s-sig-cluster-lifecycle
+  duration: 8760h
+  renewBefore: 720h
+---
+# === capi-k3s-bootstrap-system ===
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: capi-k3s-bootstrap-selfsigned-issuer
+  namespace: capi-k3s-bootstrap-system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: capi-k3s-bootstrap-serving-cert
+  namespace: capi-k3s-bootstrap-system
+spec:
+  dnsNames:
+  - capi-k3s-bootstrap-webhook-service.capi-k3s-bootstrap-system.svc
+  - capi-k3s-bootstrap-webhook-service.capi-k3s-bootstrap-system.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: capi-k3s-bootstrap-selfsigned-issuer
+  secretName: capi-k3s-bootstrap-webhook-service-cert
+  subject:
+    organizations:
+    - k8s-sig-cluster-lifecycle
+  duration: 8760h
+  renewBefore: 720h
+---
+# === capi-k3s-control-plane-system ===
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: capi-k3s-control-plane-selfsigned-issuer
+  namespace: capi-k3s-control-plane-system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: capi-k3s-control-plane-serving-cert
+  namespace: capi-k3s-control-plane-system
+spec:
+  dnsNames:
+  - capi-k3s-control-plane-webhook-service.capi-k3s-control-plane-system.svc
+  - capi-k3s-control-plane-webhook-service.capi-k3s-control-plane-system.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: capi-k3s-control-plane-selfsigned-issuer
+  secretName: capi-k3s-control-plane-webhook-service-cert
+  subject:
+    organizations:
+    - k8s-sig-cluster-lifecycle
+  duration: 8760h
+  renewBefore: 720h
