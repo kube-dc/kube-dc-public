@@ -4,7 +4,7 @@ kind: Stack
 backend: default
 variables:
   debug: "true"
-  kubeconfig: /home/voa/.kube/config
+  kubeconfig: /home/voa/.kube/stage_config
 
   monitoring:
     prom_storage: 20Gi
@@ -21,6 +21,7 @@ variables:
     SVC_CIDR: "10.101.0.0/16"
     JOIN_CIDR: "172.30.0.0/22"
     cluster_dns: "10.101.0.11"
+    K8S_SERVICE_IP: "10.101.0.1"
     # Ingress network isolation: blocks inbound traffic from shared external VLANs to project VPCs
     # Enable only when workers share a cloud VLAN (e.g., CloudSigma private-link clusters)
     # ingress_network_isolation: true
@@ -74,17 +75,27 @@ variables:
   versions:
     kube_dc: "v0.1.35" # release version
     kamaji_image: "edge-26.02.11-v3-kube-dc"
-    kubevirt: "v1.7.0"
-    kubevirt_cdi: "v1.62.0"
+    kubevirt: "v1.7.2"
+    kubevirt_cdi: "v1.65.0"
     # cluster_api: "v1.8.1"
+    sveltos: "v1.7.0"
     # cluster_api_k3s_provider:  "v1.2.2"
-    # kyverno: "v1.10.0"
+    kyverno: "v1.17.1"
     # terraform: "1.9.4"
-    kube_ovn: "v1.14.4"
+    kube_ovn: "v1.15.10"
     multus_helm: "2.2.19"
+    envoy_gateway_helm: "v1.7.1"
     # ingress_nginx_helm: "4.11.1"
     keycloak_helm: "24.3.0"
-    prom_operator_helm: "67.4.0"
-    # cert_manager_helm: "v1.14.4"
+    prom_operator_helm: "83.4.0"
+    cert_manager_helm: "v1.20.1"
+    loki_helm: "6.55.0"
+    alloy_helm: "1.7.0"
+    multus_helm_version: "v4.2.4"
+    local_path_version: "v0.0.35"
+    cnpg_chart: "0.28.0"
+    mariadb_operator: "26.3.0"
+    db_manager_enabled: false
+    db_manager_image: "v0.1.0-dev24"
 
     

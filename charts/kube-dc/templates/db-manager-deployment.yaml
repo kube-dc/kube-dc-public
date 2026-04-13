@@ -1,0 +1,92 @@
+{{- if .Values.dbManager.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kube-dc.dbmanager.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.dbmanager.labels" . | nindent 4 }}
+    control-plane: db-manager
+spec:
+  replicas: {{ .Values.dbManager.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "kube-dc.dbmanager.selectorLabels" . | nindent 6 }}
+      control-plane: db-manager
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        {{- include "kube-dc.dbmanager.labels" . | nindent 8 }}
+        control-plane: db-manager
+    spec:
+      serviceAccountName: {{ include "kube-dc.dbmanager.fullname" . }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 10
+      {{- with .Values.dbManager.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dbManager.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dbManager.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: manager
+        image: "{{ .Values.dbManager.image.repository }}:{{ .Values.dbManager.image.tag }}"
+        imagePullPolicy: {{ .Values.dbManager.image.pullPolicy | default "IfNotPresent" }}
+        command:
+        - /manager
+        args:
+        - --leader-elect
+        - --health-probe-bind-address=:8081
+        {{- if .Values.dbManager.metricsEnabled }}
+        - --metrics-bind-address=:8443
+        - --metrics-secure=true
+        {{- else }}
+        - --metrics-bind-address=0
+        {{- end }}
+        env:
+        - name: INFRA_API_ENDPOINT
+          value: {{ .Values.dbManager.infraAPIEndpoint | default "" | quote }}
+        {{- with .Values.dbManager.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        ports:
+        - containerPort: 8081
+          name: health
+          protocol: TCP
+        {{- if .Values.dbManager.metricsEnabled }}
+        - containerPort: 8443
+          name: metrics
+          protocol: TCP
+        {{- end }}
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.dbManager.resources | nindent 10 }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+{{- end }}

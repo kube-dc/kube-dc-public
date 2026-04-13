@@ -474,6 +474,32 @@ billing:
         pro-pool: 1
         scale-pool: 3
 
+dbManager:
+  enabled: false
+  replicaCount: 1
+  metricsEnabled: true
+
+  infraAPIEndpoint: "" # Required when enabled, e.g. "kube-api.stage.kube-dc.com:6443"
+
+  image:
+    repository: shalb/db-manager
+    pullPolicy: IfNotPresent
+    tag: "v0.1.0-dev24"
+
+  extraEnv: []
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
 # Auth Config Sync DaemonSet - syncs auth config from ConfigMap to control-plane nodes
 # This ensures OIDC authentication config is available on all API server nodes
 authConfigSync:

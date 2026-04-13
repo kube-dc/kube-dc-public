@@ -1,24 +1,28 @@
 {{- $kubeDcChartVersion := (.variables.versions.kube_dc                      | default "latest" | quote) -}}
 {{- $terraformVersion := (.variables.versions.terraform                      | default "1.9.4" | quote) -}}
 {{- $kubevirtVersion := (.variables.versions.kubevirt                        | default "v1.7.0" | quote) -}}
-{{- $kubevirtCdiVersion := (.variables.versions.kubevirt_cdi                 | default "v1.62.0" | quote) -}}
+{{- $kubevirtCdiVersion := (.variables.versions.kubevirt_cdi                 | default "v1.65.0" | quote) -}}
 {{- $clusterApiVersion := (.variables.versions.cluster_api                   | default "v1.8.1" | quote) -}}
 {{- $capiK3sProviderVersion := (.variables.versions.cluster_api_k3s_provider | default "v1.2.2" | quote) -}}
-{{- $kyvernoVersion := (.variables.versions.kyverno                          | default "v1.15.2" | quote) -}}
-{{- $kubeOvnChartVersion := (.variables.versions.kube_ovn                    | default "v1.14.10" | quote) -}}
+{{- $kyvernoVersion := (.variables.versions.kyverno                          | default "v1.17.1" | quote) -}}
+{{- $kubeOvnChartVersion := (.variables.versions.kube_ovn                    | default "v1.15.10" | quote) -}}
 {{- $multusChartVersion := (.variables.versions.multus_helm                  | default "2.2.9" | quote) -}}
 {{- $ingressNginxChartVersion := (.variables.versions.ingress_nginx_helm     | default "4.11.1" | quote) -}}
-{{- $envoyGatewayChartVersion := (.variables.versions.envoy_gateway_helm    | default "v1.2.6" | quote) -}}
+{{- $envoyGatewayChartVersion := (.variables.versions.envoy_gateway_helm    | default "v1.7.1" | quote) -}}
 {{- $keycloakChartVersion := (.variables.versions.keycloak_helm              | default "24.3.0" | quote) -}}
-{{- $certManagerChartVersion := (.variables.versions.cert_manager_helm       | default "v1.14.4"| quote) -}}
-{{- $promChartVersion := (.variables.versions.prom_operator_helm             | default "67.4.0"| quote) -}}
-{{- $lokiChartVersion := (.variables.versions.loki_helm                      | default "6.11.0"| quote) -}}
-{{- $alloyChartVersion := (.variables.versions.alloy_helm                    | default "0.10.1"| quote) -}}
+{{- $certManagerChartVersion := (.variables.versions.cert_manager_helm       | default "v1.20.1"| quote) -}}
+{{- $promChartVersion := (.variables.versions.prom_operator_helm             | default "83.4.0"| quote) -}}
+{{- $lokiChartVersion := (.variables.versions.loki_helm                      | default "6.55.0"| quote) -}}
+{{- $alloyChartVersion := (.variables.versions.alloy_helm                    | default "1.7.0"| quote) -}}
 {{- $kamajiChartVersion := (.variables.versions.kamaji_helm                  | default "1.0.0"| quote) -}}
 {{- $kamajiEtcdChartVersion := (.variables.versions.kamaji_etcd_helm         | default "0.14.0"| quote) -}}
 {{- $kamajiImageTag := (.variables.versions.kamaji_image                     | default "edge-26.02.11-v3-kube-dc" | quote) -}}
 {{- $sveltosVersion := (.variables.versions.sveltos                          | default "v0.57.3"| quote) -}}
 {{- $hncVersion := (.variables.versions.hnc                                  | default "v1.1.0"| quote) -}}
+{{- $multusVersion := (.variables.versions.multus_helm_version               | default "v4.2.4" | quote) -}}
+{{- $localPathVersion := (.variables.versions.local_path_version             | default "v0.0.35" | quote) -}}
+{{- $cnpgChartVersion := (.variables.versions.cnpg_chart                     | default "0.28.0" | quote) -}}
+{{- $mariadbOperatorVersion := (.variables.versions.mariadb_operator         | default "26.3.0" | quote) -}}
 
 name: cluster
 kind: StackTemplate
@@ -158,7 +162,7 @@ units:
       KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
     apply:
       commands:
-        - kubectl apply -f https://raw.githubusercontent.com/k8snetworkplumbingwg/multus-cni/v4.1.0/deployments/multus-daemonset-thick.yml
+        - kubectl apply -f https://raw.githubusercontent.com/k8snetworkplumbingwg/multus-cni/{{ $multusVersion }}/deployments/multus-daemonset-thick.yml
         - |
           kubectl patch daemonset kube-multus-ds -n kube-system --type=json -p='[
             {
@@ -287,7 +291,7 @@ units:
       KUBECONFIG: {{ .variables.kubeconfig | default "~/.kube/config" }}
     apply:
       commands:
-        - kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.31/deploy/local-path-storage.yaml
+        - kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/{{ $localPathVersion }}/deploy/local-path-storage.yaml
         - |
          kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
 
@@ -430,18 +434,14 @@ units:
     name: sveltos-cilium-cni
     type: kubernetes
     depends_on: this.sveltos
-    source:
-      - ./sveltos/cilium-cni-configmap.yaml
-      - ./sveltos/cilium-cni-clusterprofile.yaml
+    source: ./sveltos/cilium-cni/
     provider_conf:
       config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
   -
     name: sveltos-cloudsigma-csi
     type: kubernetes
     depends_on: this.sveltos
-    source:
-      - ./sveltos/cloudsigma-csi-configmap.yaml
-      - ./sveltos/cloudsigma-csi-clusterprofile.yaml
+    source: ./sveltos/cloudsigma-csi/
     provider_conf:
       config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
   -

@@ -290,3 +290,23 @@ k8Manager:
   tolerations: []
 
   affinity: {}
+
+dbManager:
+  enabled: {{ .variables.versions.db_manager_enabled | default false }}
+
+  image:
+    repository: shalb/db-manager
+    pullPolicy: IfNotPresent
+    tag: {{ .variables.versions.db_manager_image | default "v0.1.0-dev24" | quote }}
+
+  infraAPIEndpoint: {{ .variables.kubeApiExternalUrl | default "" | replace "https://" "" | quote }}
+
+  metricsEnabled: true
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi

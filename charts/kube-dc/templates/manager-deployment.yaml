@@ -58,7 +58,6 @@ spec:
             add:
             - "ALL"
           privileged: true
-          fsGroup: 0
         livenessProbe:
           httpGet:
             path: /healthz

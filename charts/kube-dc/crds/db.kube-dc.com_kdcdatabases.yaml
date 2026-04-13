@@ -1,0 +1,303 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: kdcdatabases.db.kube-dc.com
+spec:
+  group: db.kube-dc.com
+  names:
+    kind: KdcDatabase
+    listKind: KdcDatabaseList
+    plural: kdcdatabases
+    shortNames:
+    - kdcdb
+    singular: kdcdatabase
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.engine
+      name: Engine
+      type: string
+    - jsonPath: .spec.version
+      name: Version
+      type: string
+    - jsonPath: .spec.replicas
+      name: Replicas
+      type: integer
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.endpoint
+      name: Endpoint
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: KdcDatabase is the Schema for the kdcdatabases API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: KdcDatabaseSpec defines the desired state of KdcDatabase
+            properties:
+              backup:
+                description: Backup configuration
+                properties:
+                  destinationPath:
+                    description: |-
+                      Full S3 destination path for backups (e.g., "s3://my-bucket/my-path/")
+                      Default: s3://<namespace>-db-backups/databases/<db-name>/
+                      The controller auto-creates the bucket via ObjectBucketClaim if using the default.
+                    type: string
+                  enabled:
+                    default: true
+                    description: Enable scheduled backups
+                    type: boolean
+                  retentionDays:
+                    default: 7
+                    description: Number of days to retain backups
+                    format: int32
+                    maximum: 365
+                    minimum: 1
+                    type: integer
+                  s3CredentialSecret:
+                    description: |-
+                      Name of the Kubernetes Secret containing S3 credentials
+                      The secret must have keys: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+                      Default: auto-created from shared ObjectBucketClaim "db-backups"
+                    type: string
+                  s3Endpoint:
+                    description: |-
+                      S3 endpoint URL for backup storage
+                      Default: https://s3.kube-dc.cloud
+                    type: string
+                  schedule:
+                    default: 0 2 * * *
+                    description: Cron schedule for backups (e.g., "0 2 * * *" = daily
+                      at 2am)
+                    type: string
+                required:
+                - enabled
+                type: object
+              cpu:
+                anyOf:
+                - type: integer
+                - type: string
+                default: "1"
+                description: |-
+                  CPU limit per instance (e.g., "500m", "1", "2", "4")
+                  Both requests and limits are set to this value (Guaranteed QoS)
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
+              databaseName:
+                default: app
+                description: Database name to create
+                type: string
+              engine:
+                default: postgresql
+                description: 'Engine type: postgresql (CloudNativePG) or mariadb (mariadb-operator)'
+                enum:
+                - postgresql
+                - mariadb
+                type: string
+              expose:
+                description: External exposure configuration
+                properties:
+                  type:
+                    default: internal
+                    description: |-
+                      Exposure type:
+                      - "internal": ClusterIP only (default)
+                      - "loadbalancer": LoadBalancer Service with EIP (direct TCP:5432)
+                      - "gateway": TLS passthrough via Envoy Gateway
+                    enum:
+                    - internal
+                    - loadbalancer
+                    - gateway
+                    type: string
+                required:
+                - type
+                type: object
+              memory:
+                anyOf:
+                - type: integer
+                - type: string
+                default: 2Gi
+                description: |-
+                  Memory limit per instance (e.g., "1Gi", "2Gi", "8Gi")
+                  Both requests and limits are set to this value (Guaranteed QoS)
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
+              parameters:
+                additionalProperties:
+                  type: string
+                description: PostgreSQL configuration parameter overrides
+                type: object
+              replicas:
+                default: 2
+                description: Number of PostgreSQL instances (1 = standalone, 2+ =
+                  HA with streaming replication)
+                format: int32
+                maximum: 9
+                minimum: 1
+                type: integer
+              storage:
+                anyOf:
+                - type: integer
+                - type: string
+                default: 20Gi
+                description: |-
+                  Persistent storage size per instance
+                  Can only be increased, not decreased (PVC resize)
+                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                x-kubernetes-int-or-string: true
+              storageClassName:
+                description: Storage class (optional, defaults to cluster default)
+                type: string
+              username:
+                default: app
+                description: Application username (owner of the database)
+                type: string
+              version:
+                default: "16"
+                description: |-
+                  Database engine major version
+                  PostgreSQL: "14", "15", "16", "17"
+                  MariaDB: "10.11", "11.4"
+                type: string
+            required:
+            - cpu
+            - engine
+            - memory
+            - storage
+            - version
+            type: object
+          status:
+            description: KdcDatabaseStatus defines the observed state of KdcDatabase
+            properties:
+              backupDestinationPath:
+                description: Resolved S3 destination path for backups
+                type: string
+              conditions:
+                description: Conditions represent the latest available observations
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              endpoint:
+                description: Internal endpoint (ClusterIP service)
+                type: string
+              externalEndpoint:
+                description: External endpoint (set when expose != internal)
+                type: string
+              instances:
+                description: Total number of PostgreSQL instances
+                format: int32
+                type: integer
+              latestBackup:
+                description: Timestamp of the latest successful backup
+                format: date-time
+                type: string
+              observedGeneration:
+                description: Observed generation
+                format: int64
+                type: integer
+              phase:
+                description: Phase represents the current lifecycle phase
+                enum:
+                - Pending
+                - Provisioning
+                - Ready
+                - Upgrading
+                - Failed
+                type: string
+              readyInstances:
+                description: Number of ready instances
+                format: int32
+                type: integer
+              storageUsed:
+                description: Current storage usage
+                type: string
+              version:
+                description: Actual running PostgreSQL version (e.g., "16.4")
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
