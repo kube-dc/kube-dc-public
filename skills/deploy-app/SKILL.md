@@ -90,7 +90,12 @@ spec:
     app: {app-name}
 ```
 
-→ Auto hostname: `{app-name}-{project-namespace}.kube-dc.cloud`
+→ Auto hostname: `{service-name}-{project-namespace}.kube-dc.cloud`
+   The hostname is derived from the **Service** name, not the Deployment or
+   Helm release name. For Helm charts that use `{release}-{chart}` as the
+   default name (e.g. release `wp` + chart `wordpress` → Service `wp-wordpress`),
+   the hostname becomes `wp-wordpress-{project-namespace}.kube-dc.cloud`. If
+   you want a shorter hostname, set `fullnameOverride` in the chart values.
 → Auto TLS certificate via Let's Encrypt
 
 **For TCP/UDP apps (Direct EIP):**
@@ -123,7 +128,46 @@ spec:
 ### 4. Add Database (Optional)
 
 If the app needs a database, use the `create-database` skill to provision one, then
-add the secret references to the deployment:
+add the secret references to the deployment.
+
+**Pick the engine the app actually supports — don't default to PostgreSQL for
+everything.** Many off-the-shelf charts and apps are MySQL-only:
+
+| Engine | Apps that REQUIRE this engine |
+|--------|------------------------------|
+| `mariadb` (or `mysql`) | WordPress, Joomla, Drupal (MySQL by default), Magento, Matomo, MediaWiki, phpBB, Moodle, Mautic, Roundcube, Bitnami's `*-mariadb` charts |
+| `postgresql` | Discourse, Mastodon, GitLab, Gitea, Sentry, Keycloak, Harbor, Outline, Plausible, Metabase, NextCloud (recommended), most modern Node/Go/Rust apps |
+| Either, app-configurable | Drupal, NextCloud, Redmine, Zabbix, Jira, Confluence — verify the chart's `externalDatabase.type` / `database.type` parameter |
+
+Picking the wrong engine produces a tight CrashLoop with confusing log lines —
+e.g. WordPress against PostgreSQL boots, sets `MARIADB_HOST`, then hangs on
+`/wp-login.php` because there's no Postgres driver in WP core.
+
+**Bridging KdcDatabase secrets to chart-expected key names.** The
+`KdcDatabase` auto-secret stores the password under key `password`. Many
+Helm charts hard-code a different key name:
+
+| Chart | Expected secret key | Workaround |
+|-------|--------------------|-----------|
+| Bitnami WordPress | `mariadb-password` | Bridge Secret (below) |
+| Bitnami Discourse, Bitnami Joomla | `db-password` | Bridge Secret |
+| Most modern charts | configurable via `existingSecretPasswordKey` | Set the parameter |
+
+When the chart has no `existingSecretPasswordKey` parameter, create a
+small bridge Secret aliasing the password to the chart's expected key name:
+
+```bash
+PASSWORD=$(kubectl get secret {db-name}-password -n {project-namespace} \
+  -o jsonpath='{.data.password}' | base64 -d)
+kubectl create secret generic {app-name}-db-bridge \
+  --namespace {project-namespace} \
+  --from-literal={chart-expected-key}="$PASSWORD" \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Then reference `existingSecret: {app-name}-db-bridge` in the chart values.
+
+**PostgreSQL:**
 
 **PostgreSQL:**
 ```yaml

@@ -85,6 +85,38 @@ env:
 
 See @db-connection-patterns.md for full connection string examples.
 
+#### Bridging the auto-secret to a Helm chart's expected key name
+
+The auto-secret stores the password under key `password`. Many off-the-shelf
+Helm charts hard-code a different key name for their `existingSecret`
+parameter and offer no override. When that's the case, create a small bridge
+Secret aliasing the password to the chart's expected key name, and pass that
+bridge as `existingSecret`:
+
+```bash
+PASSWORD=$(kubectl get secret {db-name}-password -n {project-namespace} \
+  -o jsonpath='{.data.password}' | base64 -d)
+kubectl create secret generic {app}-db-bridge \
+  --namespace {project-namespace} \
+  --from-literal={chart-expected-key}="$PASSWORD" \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Known chart key requirements:
+
+| Chart | Expected key in `existingSecret` |
+|-------|---------------------------------|
+| Bitnami WordPress | `mariadb-password` |
+| Bitnami Discourse, Bitnami Joomla | `db-password` |
+| Bitnami NextCloud | `mariadb-password` (when `mariadb.enabled=false`) |
+
+Modern charts often expose `externalDatabase.existingSecretPasswordKey` (or a
+similar parameter) — check `helm show values {chart}` for that field before
+falling back to the bridge-Secret pattern. PostgreSQL `KdcDatabase` also
+auto-creates `{db-name}-app` with key `password`; the same bridge pattern
+applies for charts (e.g. some Discourse images) that expect a key like
+`postgresql-password`.
+
 ### 4. External Access (Optional)
 
 **Gateway** (recommended for production external access):
