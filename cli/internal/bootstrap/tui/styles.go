@@ -13,7 +13,12 @@ import "github.com/charmbracelet/lipgloss"
 var (
 	colorBg        = lipgloss.Color("#181B1F")
 	colorSurface   = lipgloss.Color("#22252B")
-	colorBorder    = lipgloss.Color("#2E3137")
+	// colorBorder is the idle pane border. Earlier value (#2E3137) was
+	// only ~5% off the bg and rendered as visually-invisible on most
+	// terminals — the unfocused pane looked like it had no border at
+	// all next to the focused one (#7E5CAD bright purple). Bumped so
+	// idle panes are clearly bounded but still distinct from focused.
+	colorBorder    = lipgloss.Color("#4A5060")
 	colorBorderHi  = lipgloss.Color("#7E5CAD")
 	colorText      = lipgloss.Color("#E6E9EF")
 	colorMuted     = lipgloss.Color("#8B92A5")

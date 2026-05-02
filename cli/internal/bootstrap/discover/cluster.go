@@ -197,7 +197,14 @@ func (p *ClusterProbe) Run(ctx context.Context) ProbeResult {
 
 	// Mint an OIDC bearer token. If the operator hasn't `kube-dc login`'d
 	// to this cluster, surface that with the right command to copy/paste.
-	cred, err := p.provider.GetCredential(p.apiURL)
+	// Pin to the master realm — the fleet view is a platform-operator
+	// tool whose canonical identity is `kube-dc login --admin`. Without
+	// this pin, GetCredential falls back to the legacy single-file
+	// path or the first realm-suffixed file it finds, which on a system
+	// with both a tenant and an admin cached returns the (wrong)
+	// tenant token and the apiserver answers 401. (See installer-prd
+	// §16.5 — admin = master realm, tenant = per-org realm.)
+	cred, err := p.provider.GetCredentialForRealm(p.apiURL, "master")
 	if err != nil {
 		hint, action := hintLogin(p.apiURL)
 		return ProbeResult{
