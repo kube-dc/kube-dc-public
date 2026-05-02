@@ -89,12 +89,21 @@ Add it to your shell rc (`.zshrc`, `.bashrc`, …) so every new terminal session
 
 ## What's in the CLI
 
-The chapters that follow cover each surface in detail.
+`kube-dc bootstrap` is a single integrated TUI with a top tab bar — every interactive screen is reachable as a named tab. Press `]` / `[` to cycle tabs, or `1` / `2` / … to jump directly. The cobra subcommand you run only decides which tab is active on launch:
 
-| Chapter | Command | Purpose |
+| Subcommand | Opens on tab |
+|---|---|
+| `kube-dc bootstrap` | Fleet |
+| `kube-dc bootstrap context` | Contexts |
+
+Inside any tab, `Tab` and `Shift+Tab` cycle focus between the panes of that screen (cluster list ↔ details ↔ drill-down). Top-tab and pane-focus navigation are intentionally distinct keys so they never collide.
+
+The chapters that follow cover each tab in detail, plus the non-TUI subcommands (`break-glass`, `kubeconfig`, `login`).
+
+| Chapter | Surface | Purpose |
 |---|---|---|
-| [Fleet Management](cluster-cli-fleet.md) | `kube-dc bootstrap`, `kube-dc bootstrap kubeconfig` | Browse the fleet TUI; materialise a kubeconfig for a named cluster |
+| [Fleet Management](cluster-cli-fleet.md) | Fleet tab + `kube-dc bootstrap kubeconfig` | Browse the fleet; materialise a kubeconfig for a named cluster |
 | [Platform Admin Login](cluster-cli-admin-login.md) | `kube-dc login --admin` | OIDC against the master Keycloak realm; `cluster-admin` via `platform:admin` group |
-| [Context Manager](cluster-cli-context-manager.md) | `kube-dc bootstrap context` | kubectx-aware TUI for `~/.kube/config` |
+| [Context Manager](cluster-cli-context-manager.md) | Contexts tab | kubectx-aware view of `~/.kube/config` with identity tagging |
 | [Break-Glass Recovery](cluster-cli-break-glass.md) | `kube-dc bootstrap break-glass …` | SOPS-encrypted static-token kubeconfig for OIDC-down recovery |
 | [Common Checks & Troubleshooting](cluster-cli-troubleshooting.md) | – | Health checks, JWT debugging, common errors |

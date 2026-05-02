@@ -1,10 +1,10 @@
 # Fleet Management
 
-This chapter covers the two subcommands that every operator runs daily: the fleet view (`kube-dc bootstrap`) and the kubeconfig writer (`kube-dc bootstrap kubeconfig`).
+This chapter covers the **Fleet** tab of `kube-dc bootstrap` and the kubeconfig writer (`kube-dc bootstrap kubeconfig`).
 
 ## Browse the fleet (`kube-dc bootstrap`)
 
-The no-arg form is the **fleet view** — your single dashboard for every cluster the team operates.
+The no-arg form opens the integrated bootstrap TUI on the **Fleet** tab — your single dashboard for every cluster the team operates. From there `]` / `[` cycle to other tabs (e.g. **Contexts**), and `Tab` cycles pane focus *within* the Fleet view.
 
 ```bash
 kube-dc bootstrap

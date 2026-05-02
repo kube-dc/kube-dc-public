@@ -24,6 +24,13 @@ type KeyMap struct {
 	Help     key.Binding
 	Quit     key.Binding
 
+	// Top-level tab navigation (§9.9.5). Distinct from Tab/ShiftTab,
+	// which mean in-screen pane focus.
+	TopTabNext key.Binding // ]
+	TopTabPrev key.Binding // [
+	TopTab1    key.Binding // 1
+	TopTab2    key.Binding // 2
+
 	// Fleet-landing actions. The v2 actions (NewInstall, Adopt, Status,
 	// Config, Discover) live in the keymap but are filtered out of the
 	// fleet screen's help until those slices ship — see installer-prd
@@ -89,5 +96,10 @@ func DefaultKeyMap() KeyMap {
 		LoginOrg:   key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "tenant login")),
 		TestAuth:   key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "test auth")),
 		Delete:     key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
+
+		TopTabNext: key.NewBinding(key.WithKeys("]"), key.WithHelp("]", "next tab")),
+		TopTabPrev: key.NewBinding(key.WithKeys("["), key.WithHelp("[", "prev tab")),
+		TopTab1:    key.NewBinding(key.WithKeys("1"), key.WithHelp("1", "fleet")),
+		TopTab2:    key.NewBinding(key.WithKeys("2"), key.WithHelp("2", "contexts")),
 	}
 }

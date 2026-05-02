@@ -1,9 +1,13 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
+	bttui "github.com/shalb/kube-dc/cli/internal/bootstrap/tui"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/tui/screens"
 )
 
@@ -36,13 +40,31 @@ setting current-context. To delete an external context, use
 		Example: `  # Open the context manager
   kube-dc bootstrap context`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			model, err := screens.NewContextModel()
-			if err != nil {
-				return err
-			}
-			p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
-			_, err = p.Run()
-			return err
+			// `bootstrap context` opens the integrated TUI on the
+			// Contexts tab; once inside, `]` cycles to Fleet. We pass a
+			// best-effort fleet repo path so the Fleet tab is usable
+			// from the same session, but we don't error out when it
+			// can't be resolved — the user explicitly asked for the
+			// context manager.
+			repo := bestEffortFleetRepo()
+			return bttui.RunRoot(func() tea.Model {
+				return screens.NewRootModel(repo, screens.RootTabContext)
+			})
 		},
 	}
 }
+
+// bestEffortFleetRepo returns a fleet repo path for the Fleet tab when
+// the user didn't pass --repo / $KUBE_DC_FLEET. The Fleet tab will
+// render a "no clusters" state for an empty / missing repo, which is
+// fine for the contexts-first flow.
+func bestEffortFleetRepo() string {
+	if env := os.Getenv("KUBE_DC_FLEET"); env != "" {
+		return env
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".kube-dc", "fleet")
+	}
+	return ""
+}
+

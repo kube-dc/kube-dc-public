@@ -1,10 +1,16 @@
 # Context Manager
 
-`kube-dc bootstrap context` is a kubectx-aware TUI that lists every kubeconfig context, tags each with its identity, shows you who you actually are on the selected cluster, and lets you switch / delete contexts safely.
+The **Contexts** tab of the integrated bootstrap TUI is a kubectx-aware view that lists every kubeconfig context, tags each with its identity, shows you who you actually are on the selected cluster, and lets you switch / delete contexts safely.
 
 ```bash
+# Open the integrated TUI directly on the Contexts tab
 kube-dc bootstrap context
+
+# Or open on Fleet first and press ] to cycle to Contexts
+kube-dc bootstrap
 ```
+
+Press `]` / `[` to cycle to other tabs (e.g. **Fleet**), or `1` / `2` to jump directly. Top-tab keys are deliberately distinct from `Tab` / `Shift+Tab`, which mean pane focus *inside* the Contexts view.
 
 ## Identity badges
 

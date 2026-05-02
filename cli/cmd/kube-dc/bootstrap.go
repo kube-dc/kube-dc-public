@@ -43,8 +43,9 @@ KUBE_DC_FLEET environment variable.`,
 			if err != nil {
 				return err
 			}
-			model := screens.NewFleetModel(repo)
-			return bttui.RunFleet(repo, func(string) tea.Model { return model })
+			return bttui.RunRoot(func() tea.Model {
+				return screens.NewRootModel(repo, screens.RootTabFleet)
+			})
 		},
 	}
 
