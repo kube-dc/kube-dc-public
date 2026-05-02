@@ -33,9 +33,37 @@ type ProbeResult struct {
 	Status      ClusterStatus
 	Detail      string             // one-line summary for the right pane
 	FixHint     string             // optional next step the operator can take
+	FixAction   *FixAction         // structured form of FixHint — TUI dispatches Enter on this row to it
 	Reconcilers []ReconcilerStatus // per-Kustomization breakdown
 	Drifts      []ImageDrift       // per-Deployment image-tag drift, empty when in-sync
 }
+
+// FixAction is the machine-readable counterpart of FixHint. When the
+// fleet TUI surfaces a row whose status text suggests a next command,
+// pressing Enter on that row dispatches the corresponding action
+// without copy-paste — see installer-prd §9.9.3 "Actionable status hints".
+//
+// Add new Kind values here as new fix types appear; the TUI's row-Enter
+// handler grows a switch arm per Kind so unknown actions degrade
+// gracefully (Enter no-ops with a footer hint instead of crashing).
+type FixAction struct {
+	Kind   FixActionKind
+	Domain string // for AdminLogin / TenantLogin
+	Org    string // for TenantLogin only — empty until org-prompt lands
+}
+
+// FixActionKind enumerates the actions the TUI knows how to dispatch.
+type FixActionKind string
+
+const (
+	// FixActionAdminLogin: run `kube-dc login --domain <Domain> --admin`.
+	// Used when the cluster's Detail says "not logged in" or "auth failed"
+	// and the fleet view's canonical identity is platform-admin.
+	FixActionAdminLogin FixActionKind = "admin-login"
+	// FixActionTenantLogin: run `kube-dc login --domain <Domain> --org <Org>`.
+	// Reserved for the per-org tenant flow; not yet wired in v1.
+	FixActionTenantLogin FixActionKind = "tenant-login"
+)
 
 // ReconcilerStatus is one row in the per-cluster Discover detail view.
 // (Unused by the fleet landing screen itself; populated for future
@@ -154,10 +182,12 @@ func (p *ClusterProbe) Run(ctx context.Context) ProbeResult {
 	// to this cluster, surface that with the right command to copy/paste.
 	cred, err := p.provider.GetCredential(p.apiURL)
 	if err != nil {
+		hint, action := hintLogin(p.apiURL)
 		return ProbeResult{
-			Status:  StatusUnreachable,
-			Detail:  err.Error(),
-			FixHint: hintLogin(p.apiURL),
+			Status:    StatusUnreachable,
+			Detail:    err.Error(),
+			FixHint:   hint,
+			FixAction: action,
 		}
 	}
 
@@ -193,10 +223,12 @@ func (p *ClusterProbe) Run(ctx context.Context) ProbeResult {
 			FixHint: "run `kube-dc bootstrap install` (greenfield) or `adopt` (existing)",
 		}
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+		hint, action := hintLogin(p.apiURL)
 		return ProbeResult{
-			Status:  StatusUnreachable,
-			Detail:  fmt.Sprintf("auth failed (%d)", resp.StatusCode),
-			FixHint: hintLogin(p.apiURL),
+			Status:    StatusUnreachable,
+			Detail:    fmt.Sprintf("auth failed (%d)", resp.StatusCode),
+			FixHint:   hint,
+			FixAction: action,
 		}
 	case resp.StatusCode >= 500:
 		return ProbeResult{
@@ -500,7 +532,10 @@ func buildTLSConfig(ctx context.Context, apiURL string, dialTimeout time.Duratio
 // row in the fleet view. The fleet view is a platform-operator tool —
 // the canonical "I need to manage this cluster" identity is admin, so
 // we lead with --admin and list --org as the tenant alternative.
-func hintLogin(apiURL string) string {
+//
+// Returns both the human-readable hint (for the row's detail line) and
+// the structured FixAction (for Enter-on-row dispatch in the TUI).
+func hintLogin(apiURL string) (string, *FixAction) {
 	domain := apiURL
 	if strings.HasPrefix(domain, "https://kube-api.") {
 		rest := strings.TrimPrefix(domain, "https://kube-api.")
@@ -509,7 +544,8 @@ func hintLogin(apiURL string) string {
 		}
 		domain = rest
 	}
-	return fmt.Sprintf("run `kube-dc login --domain %s --admin`  (or --org <your-org> for tenant)", domain)
+	hint := fmt.Sprintf("run `kube-dc login --domain %s --admin`  (or --org <your-org> for tenant)", domain)
+	return hint, &FixAction{Kind: FixActionAdminLogin, Domain: domain}
 }
 
 func shortenErr(err error) string {
