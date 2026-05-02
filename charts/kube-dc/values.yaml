@@ -67,7 +67,12 @@ manager:
   image:
     repository: shalb/kube-dc-manager
     pullPolicy: IfNotPresent
-    tag: "v0.1.35"
+    # Empty string falls back to .Chart.AppVersion in the deployment
+    # template — keeps the chart's default tag in lock-step with its
+    # version. Per-cluster overrides come from the fleet's HelmRelease
+    # (KUBE_DC_MANAGER_TAG in cluster-config.env), which lets ops pin
+    # to a specific dev image without re-cutting the chart.
+    tag: ""
 
   imagePullSecrets: []
   nameOverride: ""
@@ -110,7 +115,8 @@ frontend:
   image:
     repository: shalb/kube-dc-ui-frontend
     pullPolicy: IfNotPresent
-    tag: "v0.1.35"
+    # Empty → fall back to .Chart.AppVersion (see manager.image.tag).
+    tag: ""
 
   imagePullSecrets: []
   nameOverride: ""
@@ -213,7 +219,8 @@ backend:
   image:
     repository: shalb/kube-dc-ui-backend
     pullPolicy: IfNotPresent
-    tag: "v0.1.35"
+    # Empty → fall back to .Chart.AppVersion (see manager.image.tag).
+    tag: ""
 
   imagePullSecrets: []
   nameOverride: ""

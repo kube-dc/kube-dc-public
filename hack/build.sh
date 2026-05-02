@@ -39,11 +39,15 @@ cd "${kubePodPath}"
 docker build -t ${REGISTRY_REPO}/kube-dc-kubectl:${KUBE_DC_VERSION} --push .
 
 cd "${chartPath}"
-envsubst < ./kube-dc/Chart-template.yaml > kube-dc/Chart.yaml
-envsubst < ./kube-dc/values-template.yaml > kube-dc/values.yaml
-helm package  --version "${KUBE_DC_VERSION}" --app-version "${KUBE_DC_VERSION}" kube-dc
+# Chart.yaml + values.yaml are the source of truth — committed and
+# edited directly. The earlier Chart-template.yaml + values-template.yaml
+# + envsubst indirection only existed to inject ${KUBE_DC_VERSION} into
+# the image tag on three Deployments; the deployment templates now handle
+# this via `.Values.<comp>.image.tag | default .Chart.AppVersion`, and
+# `helm package --version/--app-version` keep both in sync with the
+# release tag.
+helm package --version "${KUBE_DC_VERSION}" --app-version "${KUBE_DC_VERSION}" kube-dc
 helm push kube-dc-"${KUBE_DC_VERSION}".tgz oci://"${REGISTRY_URL}"/"${REGISTRY_REPO}"
-# rm kube-dc/Chart.yaml kube-dc/values.yaml
 
 
 
