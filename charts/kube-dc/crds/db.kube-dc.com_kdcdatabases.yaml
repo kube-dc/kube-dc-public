@@ -88,8 +88,12 @@ spec:
                     type: string
                   s3Endpoint:
                     description: |-
-                      S3 endpoint URL for backup storage
-                      Default: https://s3.kube-dc.cloud
+                      S3 endpoint URL for backup storage. No default —
+                      kube-dc ships to many environments and a single-
+                      domain default would silently route customer
+                      backups to the wrong host. Set per-resource OR
+                      let db-manager auto-derive from the cluster's
+                      configured object-storage endpoint.
                     type: string
                   schedule:
                     default: 0 2 * * *

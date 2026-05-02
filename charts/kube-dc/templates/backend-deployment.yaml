@@ -61,6 +61,15 @@ spec:
             - name: S3_ENDPOINT
               value: "{{ .Values.s3Endpoint }}"
             {{- end }}
+            # Public Grafana hostname for the "Open Grafana" SSO
+            # redirect. Same per-cluster pattern as s3Endpoint —
+            # backend has no hardcoded fallback so the launch endpoint
+            # returns 503 when this is unset, rather than silently
+            # sending users to a domain they don't own.
+            {{- if .Values.grafanaUrl }}
+            - name: GRAFANA_URL
+              value: "{{ .Values.grafanaUrl }}"
+            {{- end }}
             - name: KEYCLOAK_URL
               valueFrom:
                 secretKeyRef:

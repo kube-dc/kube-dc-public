@@ -1,15 +1,24 @@
 kubeApiExternalUrl: "" # Required, example: "kube-api.stage.kube-dc.com:6443"
 
-# Per-cluster S3 endpoint exposed to the UI backend (kube-dc-backend
-# Deployment) as the S3_ENDPOINT env var. The JS controllers (object
-# storage, billing/quota, database) read it to produce correct S3 URLs
-# in API responses.
+# Per-cluster S3 endpoint. Threaded into:
+#   - kube-dc-backend (S3_ENDPOINT env): UI object-storage views,
+#     KdcDatabase endpoint hints, billing/quota responses.
+#   - db-manager (S3_ENDPOINT env): default S3 endpoint for
+#     KdcDatabase backups when `spec.backup.s3Endpoint` is not set
+#     per-resource.
 #
-# Earlier versions hardcoded `https://s3.kube-dc.cloud` in the JS as a
-# fallback — the fallback is still present in code, but if you set
-# this value the env var overrides it for every non-cloud cluster.
-# Empty = use code fallback (cloud only).
+# REQUIRED for any cluster that wants S3-backed object storage (Rook
+# Ceph, external Ceph, AWS S3, MinIO, …). No hardcoded fallback by
+# design — kube-dc ships to many environments, and a default like
+# `https://s3.kube-dc.cloud` would silently route customer S3 traffic
+# (object storage, database backups) to a domain those clusters don't
+# own.
 s3Endpoint: ""  # example: "https://s3.stage.kube-dc.com"
+
+# Per-cluster public Grafana URL. Threaded into kube-dc-backend
+# (GRAFANA_URL env) for the "Open Grafana" SSO launch redirect. Same
+# rationale as s3Endpoint — no fallback, must be set per-cluster.
+grafanaUrl: ""  # example: "https://grafana.stage.kube-dc.com"
 
 manager:
   logLevel: 1 # 5 - Debug

@@ -57,6 +57,15 @@ spec:
         env:
         - name: INFRA_API_ENDPOINT
           value: {{ .Values.dbManager.infraAPIEndpoint | default "" | quote }}
+        # Cluster-level S3 endpoint, used by KdcDatabase backups when
+        # `spec.backup.s3Endpoint` is not set per-resource. db-manager
+        # has no hardcoded fallback — empty value means backups
+        # without an explicit s3Endpoint will fail loudly rather than
+        # silently route to a wrong domain.
+        {{- if .Values.s3Endpoint }}
+        - name: S3_ENDPOINT
+          value: "{{ .Values.s3Endpoint }}"
+        {{- end }}
         {{- with .Values.dbManager.extraEnv }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
