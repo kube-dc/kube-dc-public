@@ -56,6 +56,10 @@ type ContextEntry struct {
 // ContextModel is the `kube-dc bootstrap context` screen — kubectx-like
 // list/switch UX with kube-dc identity badges and JWT introspection
 // for the selected row. See installer-prd §16.6.
+//
+// Layout shares the fleet view's vocabulary (§9.9.1): top list pane,
+// bottom details pane, Tab cycles focus, arrows scope to the focused
+// pane, focused pane border switches to the active style.
 type ContextModel struct {
 	mgr *kubeconfig.Manager
 
@@ -68,6 +72,10 @@ type ContextModel struct {
 	// authTest is the latest /readyz probe result for the selected
 	// row (cleared when selection moves). Populated by the `t` key.
 	authTest *bttui.AuthTestDoneMsg
+
+	// Pane focus — same enum as fleet.go (paneFocusList / paneFocusDetails).
+	// The drill-down value is never used here.
+	focus fleetPaneFocus
 
 	details viewport.Model
 	help    help.Model
@@ -258,6 +266,13 @@ func (m *ContextModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
+	// Forward viewport messages (mouse wheel etc.) to the details
+	// viewport when it has focus — matches FleetModel.
+	if m.focus == paneFocusDetails {
+		var cmd tea.Cmd
+		m.details, cmd = m.details.Update(msg)
+		return m, cmd
+	}
 	return m, nil
 }
 
@@ -265,18 +280,45 @@ func (m *ContextModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
+	case key.Matches(msg, m.keys.Tab):
+		// Toggle focus list ↔ details — same primitive as fleet.go (§9.9.1).
+		if m.focus == paneFocusList {
+			m.focus = paneFocusDetails
+		} else {
+			m.focus = paneFocusList
+		}
+		m.refreshDetails()
+		return m, nil
+	case key.Matches(msg, m.keys.ShiftTab):
+		// Two-pane screen: shift-tab is the same toggle.
+		if m.focus == paneFocusList {
+			m.focus = paneFocusDetails
+		} else {
+			m.focus = paneFocusList
+		}
+		m.refreshDetails()
+		return m, nil
+	case key.Matches(msg, m.keys.Esc):
+		// Esc returns focus to the list (mirrors fleet.go).
+		if m.focus != paneFocusList {
+			m.focus = paneFocusList
+			m.refreshDetails()
+		}
+		return m, nil
 	case key.Matches(msg, m.keys.Up):
-		if m.selected > 0 {
-			m.selected--
-			m.authTest = nil // stale for the new selection
-			m.refreshDetails()
-		}
+		return m.handleArrow(-1)
 	case key.Matches(msg, m.keys.Down):
-		if m.selected < len(m.entries)-1 {
-			m.selected++
-			m.authTest = nil
-			m.refreshDetails()
+		return m.handleArrow(+1)
+	case key.Matches(msg, m.keys.PageUp), key.Matches(msg, m.keys.PageDown),
+		key.Matches(msg, m.keys.Home), key.Matches(msg, m.keys.End):
+		// Page/Home/End forward to the details viewport when focused;
+		// on the list pane they currently no-op (the list fits one page).
+		if m.focus == paneFocusDetails {
+			var cmd tea.Cmd
+			m.details, cmd = m.details.Update(msg)
+			return m, cmd
 		}
+		return m, nil
 	case key.Matches(msg, m.keys.Refresh):
 		if err := m.load(); err != nil {
 			m.err = err
@@ -302,6 +344,29 @@ func (m *ContextModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(msg, m.keys.Delete):
 		m.deleteSelected()
+	}
+	return m, nil
+}
+
+// handleArrow routes Up/Down to whichever pane has focus — same shape
+// as FleetModel.handleArrow.
+func (m *ContextModel) handleArrow(delta int) (tea.Model, tea.Cmd) {
+	switch m.focus {
+	case paneFocusList:
+		next := m.selected + delta
+		if next >= 0 && next < len(m.entries) {
+			m.selected = next
+			m.authTest = nil // stale for the new selection
+			m.refreshDetails()
+		}
+	case paneFocusDetails:
+		// No selectable sub-rows in the details pane today (no drill-down
+		// in the contexts screen), so arrows just scroll the viewport.
+		if delta < 0 {
+			m.details.LineUp(1)
+		} else {
+			m.details.LineDown(1)
+		}
 	}
 	return m, nil
 }
@@ -497,22 +562,32 @@ func (m *ContextModel) deleteSelected() {
 	}
 }
 
-// View renders the screen.
+// View renders the screen — same chrome as FleetModel.View() so the
+// two screens look like siblings (§9.9.1 + §9.9.2).
 func (m *ContextModel) View() string {
 	if m.width == 0 || m.height == 0 {
 		return "Initializing…"
 	}
-	w, h := m.width-2, m.height-2
+	// AppStyle padding is 0 vertical, 1 horizontal — full m.height is
+	// ours for the body stack; subtracting from height was a leftover
+	// that left dead rows below the help bar (matches fleet.go fix).
+	w := m.width - 2
+	h := m.height
 
-	// Header
-	var noticeStyle = bttui.Muted
+	// Header row mirrors fleet.go: title pill + path on the left, the
+	// transient notice on the right. Notice uses Muted so it doesn't
+	// fight with badges — the eye snaps to changes in the list, not
+	// to a wall of green.
 	titleRow := joinSpaced(w,
 		bttui.Title.Render(" Kube-DC Contexts ")+"  "+bttui.Muted.Render(m.mgr.Path()),
-		noticeStyle.Render(m.notice))
+		bttui.Muted.Render(m.notice))
 
-	// Body — horizontal split, same shape as the fleet view (top list,
-	// bottom details, both full width).
-	bodyH := h - 4
+	// Reserve exactly: 1 title + 1 help bar + 1 error row when present.
+	chrome := 2
+	if m.err != nil {
+		chrome++
+	}
+	bodyH := h - chrome
 	if bodyH < 8 {
 		bodyH = 8
 	}
@@ -523,36 +598,120 @@ func (m *ContextModel) View() string {
 	if listH > bodyH/2 {
 		listH = bodyH / 2
 	}
-	detailsH := bodyH - listH - 1
+	detailsH := bodyH - listH
 
-	top := bttui.ListPaneFocused.
+	// Focus-aware borders: focused pane uses the *Focused style; the
+	// other pane drops back to its idle border so there's a single
+	// visual cursor on screen at any time.
+	topStyle := bttui.ListPaneFocused
+	if m.focus != paneFocusList {
+		topStyle = bttui.ListPane
+	}
+	top := topStyle.
 		Width(w - 2).
 		Height(listH - 2).
 		Render(m.renderList(w - 6))
 
 	m.details.Width = w - 4
 	m.details.Height = detailsH - 2
-	bottom := bttui.DetailsPane.
+	detailsStyle := bttui.DetailsPane
+	if m.focus == paneFocusDetails {
+		detailsStyle = bttui.DetailsPaneFocused
+	}
+	bottom := detailsStyle.
 		Width(w - 2).
 		Height(detailsH - 2).
 		Render(m.details.View())
 
 	body := lipgloss.JoinVertical(lipgloss.Left, top, bottom)
 
-	// Footer
+	// Footer: error + active-only help. Mirrors fleet.go's pattern so
+	// the help bar shrinks to keys the operator can actually press
+	// right now (§9.9.2).
 	var footer []string
 	if m.err != nil {
 		footer = append(footer, bttui.ErrorBox.Width(w).Render("error: "+m.err.Error()))
 	}
 	if m.help.ShowAll {
-		footer = append(footer, bttui.HelpBar.Render(m.help.FullHelpView(m.keys.FullHelp())))
+		footer = append(footer, bttui.HelpBar.Render(m.help.FullHelpView(m.activeFullHelp())))
 	} else {
-		footer = append(footer, bttui.HelpBar.Render(
-			"↑/k up · ↓/j down · ↵ activate · L admin login · l tenant login · t test auth · d delete · r refresh · ? help · q quit"))
+		footer = append(footer, bttui.HelpBar.Render(m.help.ShortHelpView(m.activeShortHelp())))
 	}
 
 	parts := append([]string{titleRow, body}, footer...)
 	return bttui.AppStyle.Render(lipgloss.JoinVertical(lipgloss.Left, parts...))
+}
+
+// activeShortHelp / activeFullHelp implement the active-only help rule
+// (§9.9.2). Tenant-login (`l`) and test-auth (`t`) only render when the
+// selected row supports them; admin-login (`L`) only when the row's
+// server gives us a domain to log in to.
+func (m *ContextModel) activeShortHelp() []key.Binding {
+	keys := []key.Binding{m.keys.Up, m.keys.Down, m.keys.Tab, m.keys.Enter}
+	if m.canAdminLogin() {
+		keys = append(keys, m.keys.LoginAdmin)
+	}
+	if m.canTenantLogin() {
+		keys = append(keys, m.keys.LoginOrg)
+	}
+	if m.canTestAuth() {
+		keys = append(keys, m.keys.TestAuth)
+	}
+	if len(m.entries) > 0 {
+		keys = append(keys, m.keys.Delete)
+	}
+	keys = append(keys, m.keys.Refresh, m.keys.Help, m.keys.Quit)
+	return keys
+}
+
+func (m *ContextModel) activeFullHelp() [][]key.Binding {
+	rows := [][]key.Binding{
+		{m.keys.Up, m.keys.Down, m.keys.PageUp, m.keys.PageDown, m.keys.Home, m.keys.End},
+		{m.keys.Tab, m.keys.ShiftTab, m.keys.Enter, m.keys.Esc},
+	}
+	actions := []key.Binding{}
+	if m.canAdminLogin() {
+		actions = append(actions, m.keys.LoginAdmin)
+	}
+	if m.canTenantLogin() {
+		actions = append(actions, m.keys.LoginOrg)
+	}
+	if m.canTestAuth() {
+		actions = append(actions, m.keys.TestAuth)
+	}
+	if len(m.entries) > 0 {
+		actions = append(actions, m.keys.Delete)
+	}
+	if len(actions) > 0 {
+		rows = append(rows, actions)
+	}
+	rows = append(rows, []key.Binding{m.keys.Refresh, m.keys.Help, m.keys.Quit})
+	return rows
+}
+
+func (m *ContextModel) canAdminLogin() bool {
+	if len(m.entries) == 0 {
+		return false
+	}
+	return domainFromAPI(m.entries[m.selected].Server) != ""
+}
+
+func (m *ContextModel) canTenantLogin() bool {
+	if len(m.entries) == 0 {
+		return false
+	}
+	e := m.entries[m.selected]
+	return e.Identity == IdentityTenant && e.Realm != ""
+}
+
+func (m *ContextModel) canTestAuth() bool {
+	if len(m.entries) == 0 {
+		return false
+	}
+	e := m.entries[m.selected]
+	// Auth-test only meaningful when there's an exec plugin or a static
+	// token to actually test — EXTERNAL contexts opt out.
+	return e.Identity != IdentityExternal
 }
 
 func (m *ContextModel) renderList(maxW int) string {
@@ -577,9 +736,17 @@ func (m *ContextModel) renderList(maxW int) string {
 
 	var b strings.Builder
 	for i, e := range m.entries {
+		// Marker shows which row Enter/L/l/d would act on. Highlighted
+		// only when the list pane has focus — same visual cue as fleet.go,
+		// so the operator can tell at a glance which pane "owns" the
+		// arrows right now (§9.9.1).
 		marker := "  "
 		if i == m.selected {
-			marker = bttui.KeyLabel.Render("▸ ")
+			if m.focus == paneFocusList {
+				marker = bttui.KeyLabel.Render("▸ ")
+			} else {
+				marker = bttui.Muted.Render("▸ ")
+			}
 		}
 		current := "  "
 		if e.IsCurrent {
