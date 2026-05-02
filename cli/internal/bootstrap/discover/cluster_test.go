@@ -153,7 +153,9 @@ func cond(t, status, reason, msg string) condition {
 }
 
 func statusWith(cs ...condition) (s struct {
-	Conditions []condition `json:"conditions"`
+	Conditions            []condition `json:"conditions"`
+	LastAppliedRevision   string      `json:"lastAppliedRevision"`
+	LastAttemptedRevision string      `json:"lastAttemptedRevision"`
 }) {
 	s.Conditions = cs
 	return

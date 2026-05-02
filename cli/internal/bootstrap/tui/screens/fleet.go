@@ -487,38 +487,98 @@ func (m *FleetModel) focusPrev() {
 	}
 }
 
-// openDrillDown shows the full Reason/Message for the given Kustomization
-// row in the right-side panel and shifts focus to it (§9.9.4).
+// openDrillDown shows the full Kustomization status in the right-side
+// panel and shifts focus to it (§9.9.4). Layout (top → bottom):
+//
+//   - Title pill with the resource name.
+//   - Headline (state + suspend flag) in the same colour as the row glyph.
+//   - All conditions with status + reason + message.
+//   - Flux revisions: lastAttempted vs lastApplied — non-empty pair tells
+//     you "the controller has tried X but only Y is reconciled".
+//   - Copy-paste hints with the canonical kubectl + flux commands.
 func (m *FleetModel) openDrillDown(rec discover.ReconcilerStatus) {
 	var b strings.Builder
 	b.WriteString(bttui.Title.Render(" " + rec.Name + " "))
 	b.WriteString("\n\n")
 
+	// Headline: state + suspend.
 	stateGlyph := "✓ ready"
 	if !rec.Ready {
 		stateGlyph = "✗ not ready"
 	}
-	b.WriteString(bttui.Text.Render("state:    "))
+	b.WriteString(bttui.Text.Render("state:     "))
 	b.WriteString(bttui.Muted.Render(stateGlyph))
-	b.WriteString("\n")
+	if rec.Suspended {
+		b.WriteString("  ")
+		b.WriteString(lipgloss.NewStyle().Foreground(colorWarnFG()).Render("⏸ suspended"))
+	}
+	b.WriteString("\n\n")
 
-	if rec.Reason != "" {
-		b.WriteString(bttui.Text.Render("reason:   "))
-		b.WriteString(bttui.Muted.Render(rec.Reason))
-		b.WriteString("\n")
-	}
-	if rec.Message != "" {
-		b.WriteString(bttui.Text.Render("message:"))
-		b.WriteString("\n")
-		// Indent the message body for readability when it's multi-line.
-		for _, line := range strings.Split(rec.Message, "\n") {
-			b.WriteString("  " + line + "\n")
+	// Conditions block — all of them, not just Ready, so the operator
+	// can see Healthy / Reconciling / Stalled / etc. side by side.
+	if len(rec.Conditions) > 0 {
+		b.WriteString(bttui.Muted.Render("─ conditions ─") + "\n")
+		for _, c := range rec.Conditions {
+			glyph := "✓"
+			if c.Status != "True" {
+				glyph = "✗"
+			}
+			b.WriteString(bttui.Text.Render(glyph + " " + c.Type))
+			if c.Reason != "" && c.Reason != c.Type {
+				b.WriteString(bttui.Muted.Render("  " + c.Reason))
+			}
+			b.WriteString("\n")
+			if c.Message != "" {
+				for _, line := range strings.Split(c.Message, "\n") {
+					b.WriteString(bttui.Muted.Render("    " + line))
+					b.WriteString("\n")
+				}
+			}
 		}
+		b.WriteString("\n")
+	} else if rec.Reason != "" || rec.Message != "" {
+		// No raw conditions list (NoReadyCondition synthetic case) —
+		// fall back to the synthesised reason + message that aggregate()
+		// wrote in cluster.go for that path.
+		b.WriteString(bttui.Muted.Render("─ summary ─") + "\n")
+		if rec.Reason != "" {
+			b.WriteString(bttui.Text.Render("reason:    "))
+			b.WriteString(bttui.Muted.Render(rec.Reason))
+			b.WriteString("\n")
+		}
+		if rec.Message != "" {
+			for _, line := range strings.Split(rec.Message, "\n") {
+				b.WriteString(bttui.Muted.Render(line))
+				b.WriteString("\n")
+			}
+		}
+		b.WriteString("\n")
 	}
-	b.WriteString("\n")
-	b.WriteString(bttui.Muted.Render("─ kubectl ─") + "\n")
-	b.WriteString(bttui.Text.Render("kubectl describe kustomization -n flux-system " + rec.Name) + "\n")
-	b.WriteString(bttui.Text.Render("flux logs --kind=Kustomization --name=" + rec.Name + " -n flux-system") + "\n")
+
+	// Flux revisions — only show when at least one is set, since for
+	// a never-reconciled Kustomization both are empty and an empty
+	// "revisions" block is just noise.
+	if rec.LastAttemptedRevision != "" || rec.LastAppliedRevision != "" {
+		b.WriteString(bttui.Muted.Render("─ revisions ─") + "\n")
+		if rec.LastAttemptedRevision != "" {
+			b.WriteString(bttui.Text.Render("attempted: "))
+			b.WriteString(bttui.Muted.Render(rec.LastAttemptedRevision))
+			b.WriteString("\n")
+		}
+		if rec.LastAppliedRevision != "" {
+			b.WriteString(bttui.Text.Render("applied:   "))
+			b.WriteString(bttui.Muted.Render(rec.LastAppliedRevision))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+
+	// Copy-paste hints. Use the short kubectl/flux forms so they fit
+	// in a 40%-wide pane on a typical terminal.
+	b.WriteString(bttui.Muted.Render("─ investigate ─") + "\n")
+	b.WriteString(bttui.Text.Render("kubectl describe ks/" + rec.Name + " -n flux-system") + "\n")
+	b.WriteString(bttui.Text.Render("flux logs ks/" + rec.Name + " -n flux-system") + "\n")
+	b.WriteString(bttui.Text.Render("flux reconcile kustomization " + rec.Name + " -n flux-system") + "\n")
 
 	m.drillDown.SetContent(b.String())
 	m.drillDown.GotoTop()
@@ -569,7 +629,13 @@ func (m *FleetModel) View() string {
 	if m.width == 0 || m.height == 0 {
 		return "Initializing…"
 	}
-	w, h := m.width-2, m.height-2
+	// AppStyle adds horizontal padding (left/right 1 each) only — no
+	// vertical padding — so we own the full m.height for the body
+	// stack. Keeping w = m.width-2 matches AppStyle's actual horizontal
+	// budget. Older code subtracted 2 from height too, which left ~2
+	// rows of blank space below the help bar.
+	w := m.width - 2
+	h := m.height
 
 	right := bttui.Muted.Render("not yet loaded")
 	if !m.lastLoadedAt.IsZero() {
@@ -582,7 +648,14 @@ func (m *FleetModel) View() string {
 	titleRow := joinSpaced(w, bttui.Title.Render(" Kube-DC Fleet ")+"  "+
 		bttui.Muted.Render(m.repoRoot), right)
 
-	bodyH := h - 4
+	// Reserve exactly: 1 title + 1 help bar + 1 error row when present.
+	// No additional slack — the panes themselves carry borders, so any
+	// extra here just renders as visible empty space at the bottom.
+	chrome := 2
+	if m.err != nil {
+		chrome++
+	}
+	bodyH := h - chrome
 	if bodyH < 8 {
 		bodyH = 8
 	}
@@ -594,7 +667,7 @@ func (m *FleetModel) View() string {
 	if listH > bodyH/2 {
 		listH = bodyH / 2
 	}
-	detailsH := bodyH - listH - 1
+	detailsH := bodyH - listH
 
 	// Top: cluster list, full width. Border colour reflects focus.
 	topStyle := bttui.ListPaneFocused

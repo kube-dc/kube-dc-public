@@ -66,11 +66,28 @@ const (
 )
 
 // ReconcilerStatus is one row in the per-cluster Discover detail view.
-// (Unused by the fleet landing screen itself; populated for future
-// detail rendering.)
+// Reason / Message are the Ready condition's reason / message (the
+// canonical "what's wrong"); Conditions carries every condition the
+// Kustomization reports so the TUI's drill-down (§9.9.4) can show the
+// full picture, not just Ready=False.
 type ReconcilerStatus struct {
-	Name    string
-	Ready   bool
+	Name                   string
+	Ready                  bool
+	Reason                 string
+	Message                string
+	Suspended              bool        // .spec.suspend
+	LastAppliedRevision    string      // last revision that successfully reconciled
+	LastAttemptedRevision  string      // revision the controller is currently trying
+	Conditions             []Condition // every status.condition entry, verbatim
+}
+
+// Condition is the fleet-probe-side view of a Kubernetes condition. We
+// duplicate the (private) `condition` JSON struct here as a public type
+// so the TUI's drill-down panel can render the full list without
+// reaching into discover-internal fields.
+type Condition struct {
+	Type    string
+	Status  string // "True" | "False" | "Unknown"
 	Reason  string
 	Message string
 }
@@ -355,8 +372,13 @@ type kustomization struct {
 	Metadata struct {
 		Name string `json:"name"`
 	} `json:"metadata"`
+	Spec struct {
+		Suspend bool `json:"suspend"`
+	} `json:"spec"`
 	Status struct {
-		Conditions []condition `json:"conditions"`
+		Conditions            []condition `json:"conditions"`
+		LastAppliedRevision   string      `json:"lastAppliedRevision"`
+		LastAttemptedRevision string      `json:"lastAttemptedRevision"`
 	} `json:"status"`
 }
 
@@ -451,8 +473,10 @@ func aggregate(ks []kustomization) ProbeResult {
 	for _, k := range ks {
 		var readyCond *condition
 		var reconCond *condition
+		conds := make([]Condition, 0, len(k.Status.Conditions))
 		for i := range k.Status.Conditions {
 			c := &k.Status.Conditions[i]
+			conds = append(conds, Condition{Type: c.Type, Status: c.Status, Reason: c.Reason, Message: c.Message})
 			switch c.Type {
 			case "Ready":
 				readyCond = c
@@ -461,15 +485,23 @@ func aggregate(ks []kustomization) ProbeResult {
 			}
 		}
 
-		rs := ReconcilerStatus{Name: k.Metadata.Name}
+		rs := ReconcilerStatus{
+			Name:                  k.Metadata.Name,
+			Suspended:             k.Spec.Suspend,
+			LastAppliedRevision:   k.Status.LastAppliedRevision,
+			LastAttemptedRevision: k.Status.LastAttemptedRevision,
+			Conditions:            conds,
+		}
 		switch {
 		case readyCond == nil:
 			rs.Ready = false
 			rs.Reason = "NoReadyCondition"
+			rs.Message = "Kustomization has no Ready condition yet — Flux either hasn't observed it or hasn't attempted reconciliation. Try `flux reconcile kustomization " + k.Metadata.Name + " -n flux-system`."
 			unknownReady++
 		case readyCond.Status == "True":
 			rs.Ready = true
 			rs.Reason = readyCond.Reason
+			rs.Message = readyCond.Message
 			readyTrue++
 		case readyCond.Status == "False":
 			rs.Ready = false
@@ -487,6 +519,7 @@ func aggregate(ks []kustomization) ProbeResult {
 		default: // "Unknown" or empty
 			rs.Ready = false
 			rs.Reason = readyCond.Reason
+			rs.Message = readyCond.Message
 			unknownReady++
 		}
 		out.Reconcilers = append(out.Reconcilers, rs)
