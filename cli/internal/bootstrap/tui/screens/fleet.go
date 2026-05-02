@@ -972,7 +972,25 @@ func (m *FleetModel) refreshDetails() {
 			fmt.Sprintf("%d keys in cluster-config.env", len(c.Env.Keys()))))
 	}
 
-	m.details.SetContent(b.String())
+	// Indent every rendered line by 2 chars so the details content
+	// left-aligns with the cluster-list rows above (which carry a
+	// 2-char marker placeholder). Without this the bottom pane content
+	// sits flush with the pane's inner padding while the top pane
+	// content sits indented — visually misaligned.
+	m.details.SetContent(indentLines(b.String(), "  "))
+}
+
+// indentLines prepends prefix to every non-empty line in s. Empty lines
+// stay empty so the visual rhythm of section breaks is preserved.
+func indentLines(s, prefix string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		if line == "" {
+			continue
+		}
+		lines[i] = prefix + line
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m *FleetModel) relayout() {

@@ -248,9 +248,22 @@ func (p *ClusterProbe) Run(ctx context.Context) ProbeResult {
 		}
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
 		hint, action := hintLogin(p.apiURL)
+		// Surface the apiserver's response body so the operator can
+		// distinguish "token rejected (401)" from "RBAC denied (403)" —
+		// they look the same to the probe but mean very different
+		// things. Apiserver sends a Status JSON like
+		//   {"status":"Failure","message":"Unauthorized",...}
+		// or
+		//   {"status":"Failure","message":"forbidden: User \"X\" cannot list resource ..."}
+		// Trim to the "message" field when we can decode it.
+		extra := apiserverFailureMessage(body)
+		detail := fmt.Sprintf("auth failed (%d)", resp.StatusCode)
+		if extra != "" {
+			detail = fmt.Sprintf("auth failed (%d): %s", resp.StatusCode, extra)
+		}
 		return ProbeResult{
 			Status:    StatusUnreachable,
-			Detail:    fmt.Sprintf("auth failed (%d)", resp.StatusCode),
+			Detail:    detail,
 			FixHint:   hint,
 			FixAction: action,
 		}
@@ -586,6 +599,32 @@ func hintLogin(apiURL string) (string, *FixAction) {
 	}
 	hint := fmt.Sprintf("run `kube-dc login --domain %s --admin`  (or --org <your-org> for tenant)", domain)
 	return hint, &FixAction{Kind: FixActionAdminLogin, Domain: domain}
+}
+
+// apiserverFailureMessage extracts the .message field from a
+// k8s-apiserver Failure status response. Returns "" if the body isn't
+// the canonical Status JSON (some versions return text/plain on 401).
+// Truncates aggressively so the row's detail line stays terse.
+func apiserverFailureMessage(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	var s struct {
+		Kind    string `json:"kind"`
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(body, &s); err != nil {
+		return ""
+	}
+	msg := strings.TrimSpace(s.Message)
+	if msg == "" {
+		return ""
+	}
+	if len(msg) > 100 {
+		msg = msg[:97] + "…"
+	}
+	return msg
 }
 
 func shortenErr(err error) string {
