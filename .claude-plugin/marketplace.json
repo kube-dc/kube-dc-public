@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "kube-dc",
-      "source": ".",
+      "source": "./",
       "description": "Kube-DC skills for Kubernetes-native data center management — 11 workflow skills covering the full platform lifecycle.",
       "version": "1.0.0",
       "author": {
