@@ -1,5 +1,16 @@
 kubeApiExternalUrl: "" # Required, example: "kube-api.stage.kube-dc.com:6443"
 
+# Per-cluster S3 endpoint exposed to the UI backend (kube-dc-backend
+# Deployment) as the S3_ENDPOINT env var. The JS controllers (object
+# storage, billing/quota, database) read it to produce correct S3 URLs
+# in API responses.
+#
+# Earlier versions hardcoded `https://s3.kube-dc.cloud` in the JS as a
+# fallback — the fallback is still present in code, but if you set
+# this value the env var overrides it for every non-cloud cluster.
+# Empty = use code fallback (cloud only).
+s3Endpoint: ""  # example: "https://s3.stage.kube-dc.com"
+
 manager:
   logLevel: 1 # 5 - Debug
   keycloakDebug: false

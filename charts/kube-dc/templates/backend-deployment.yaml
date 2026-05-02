@@ -45,6 +45,22 @@ spec:
               value: "{{ .Values.backend.prometheusUrl | default "http://prom-operator-prometheus.monitoring:9090" }}"
             - name: PROJECT_SHELL_API_URL
               value: "{{ .Values.kubeApiExternalUrl }}"
+            # S3 endpoint for tenant Object Storage views, KdcDatabase
+            # backup wiring, and quota lookups. Per-cluster value —
+            # earlier versions of the JS controllers fell back to a
+            # hardcoded `https://s3.kube-dc.cloud` when the env var
+            # wasn't set, which made every non-cloud cluster's UI
+            # render the wrong S3 hostname. The fall-back is still
+            # there in code (`process.env.S3_ENDPOINT || 'https://s3.kube-dc.cloud'`)
+            # but with this chart change, the env is always set when
+            # `s3Endpoint` is provided in values, so the fallback path
+            # never runs in production. Leave the value empty in
+            # values.yaml if you want the fallback (single-cluster
+            # cloud-only deployment).
+            {{- if .Values.s3Endpoint }}
+            - name: S3_ENDPOINT
+              value: "{{ .Values.s3Endpoint }}"
+            {{- end }}
             - name: KEYCLOAK_URL
               valueFrom:
                 secretKeyRef:
