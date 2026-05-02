@@ -1,4 +1,21 @@
 {{- if .Values.authConfigSync.enabled }}
+{{- /*
+  The ConfigMap data is owned by kube-dc-manager at runtime — each Organization
+  reconcile writes JWT issuer entries into this ConfigMap so that the auth-config-sync
+  DaemonSet can distribute /etc/rancher/auth-conf.yaml to every control-plane node.
+  If this template unconditionally re-renders `jwt: []` on every `helm upgrade`,
+  Flux reconcile (every ~30m) wipes all JWT entries, kube-apiserver reloads with
+  no OIDC issuers, and ALL user tokens start returning 401 until the manager
+  re-populates them on the next org reconcile (which can take minutes).
+  We use `lookup` to detect an existing ConfigMap and preserve its data on upgrade;
+  only the first install (or manual delete) initialises with empty jwt list.
+*/ -}}
+{{- $filename := .Values.manager.kubernetesAuthConfig.filename -}}
+{{- $existing := lookup "v1" "ConfigMap" .Release.Namespace "kube-dc-auth-config" -}}
+{{- $existingData := "" -}}
+{{- if and $existing $existing.data (index $existing.data $filename) -}}
+{{- $existingData = index $existing.data $filename -}}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -13,8 +30,12 @@ metadata:
   annotations:
     helm.sh/resource-policy: keep
 data:
-  {{ .Values.manager.kubernetesAuthConfig.filename }}: |
+  {{ $filename }}: |
+{{- if $existingData }}
+{{ $existingData | indent 4 }}
+{{- else }}
     apiVersion: apiserver.config.k8s.io/v1beta1
     kind: AuthenticationConfiguration
     jwt: []
+{{- end }}
 {{- end }}

@@ -1,23 +1,41 @@
+# WordPress against an external KdcDatabase MariaDB.
+# Companion to deploy.sh in this directory.
+#
+# Service auto-hostname: wp-wordpress-<project-namespace>.kube-dc.cloud
+# (Helm release "wp" + chart "wordpress" produce Service "wp-wordpress")
+
+mariadb:
+  enabled: false
+
+externalDatabase:
+  host: wp-mariadb.PROJECT_NAMESPACE.svc
+  port: 3306
+  user: app
+  database: wordpress
+  # Bitnami's chart hard-codes the secret key to "mariadb-password" and offers
+  # no override at v30.x. The KdcDatabase auto-secret <db>-password stores the
+  # password under key "password", so deploy.sh creates a small bridge Secret
+  # named wp-db-bridge with the chart's expected key name.
+  existingSecret: wp-db-bridge
+
+# Envoy Gateway + cert-manager auto-TLS via Service annotation.
+# No Ingress, HTTPRoute, or Gateway resource is needed — the platform's
+# Service controller creates them on the operator's behalf.
 service:
-  type: ClusterIP
-
-ingress:
-  enabled: true
-  hostname: wordpress-stage.kube-dc.com
+  type: LoadBalancer
   annotations:
-    cert-manager.io/issuer: letsencrypt-http
-  tls: true
-
-extraEnvVars:
-  - name: WORDPRESS_SITE_URL
-    value: "https://wordpress-stage.kube-dc.com"
-  - name: WORDPRESS_BLOG_NAME
-    value: "My Blog"
-
+    service.nlb.kube-dc.com/expose-route: "https"
 
 networkPolicy:
   enabled: false
 
-mariadb:
-  networkPolicy:
-    enabled: false
+podDisruptionBudget:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi

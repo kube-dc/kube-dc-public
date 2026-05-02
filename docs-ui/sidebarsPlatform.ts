@@ -38,6 +38,19 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Cluster Operator CLI',
+      collapsed: false,
+      items: [
+        'cluster-cli-overview',
+        'cluster-cli-fleet',
+        'cluster-cli-admin-login',
+        'cluster-cli-context-manager',
+        'cluster-cli-break-glass',
+        'cluster-cli-troubleshooting',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Infrastructure Add-ons',
       collapsed: true,
       items: [

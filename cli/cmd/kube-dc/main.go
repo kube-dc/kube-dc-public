@@ -3,11 +3,15 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/shalb/kube-dc/cli/internal/alerts"
+	alertstui "github.com/shalb/kube-dc/cli/internal/alerts/tui"
 	"github.com/shalb/kube-dc/cli/internal/auth"
 	"github.com/shalb/kube-dc/cli/internal/config"
 	"github.com/shalb/kube-dc/cli/internal/jwt"
@@ -36,6 +40,8 @@ It follows the same patterns as AWS CLI, GCloud, and other cloud provider CLIs:
 	rootCmd.AddCommand(nsCmd())
 	rootCmd.AddCommand(configCmd())
 	rootCmd.AddCommand(credentialCmd())
+	rootCmd.AddCommand(alertsCmd())
+	rootCmd.AddCommand(bootstrapCmd())
 	rootCmd.AddCommand(versionCmd())
 
 	if err := rootCmd.Execute(); err != nil {
@@ -47,6 +53,7 @@ It follows the same patterns as AWS CLI, GCloud, and other cloud provider CLIs:
 func loginCmd() *cobra.Command {
 	var domain string
 	var org string
+	var admin bool
 	var deviceCode bool
 	var caCertFile string
 	var insecure bool
@@ -61,22 +68,39 @@ your credentials are cached and kubectl is configured automatically.
 
 The domain is used to derive the API and login URLs:
   - API Server: https://kube-api.{domain}:6443
-  - Keycloak:   https://login.{domain}`,
-		Example: `  # Login to staging
+  - Keycloak:   https://login.{domain}
+
+Two identity modes:
+  --org <name>   Tenant login against the per-org realm. Writes contexts
+                 named kube-dc/<domain>/<org>/<project>, one per namespace
+                 the user has access to. RBAC is namespace-scoped.
+
+  --admin        Platform-admin login against the master realm and the
+                 'kube-dc-admin' OIDC client. Writes a single context
+                 named kube-dc/<domain>/admin with cluster-wide RBAC
+                 (via the platform:kube-dc-admin group claim).`,
+		Example: `  # Tenant login (existing behavior)
   kube-dc login --domain stage.kube-dc.com --org shalb
 
-  # Login to production
-  kube-dc login --domain kube-dc.cloud --org myorg
+  # Platform-admin login (new)
+  kube-dc login --domain kube-dc.cloud --admin
 
   # With CA certificate (for self-hosted)
   kube-dc login --domain internal.example.com --org myorg --ca-cert /path/to/ca.crt`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if admin && org != "" {
+				return fmt.Errorf("--admin and --org are mutually exclusive (admin always uses the master realm)")
+			}
+			if admin {
+				return runAdminLogin(domain, caCertFile, insecure, deviceCode)
+			}
 			return runLogin(domain, org, caCertFile, insecure, deviceCode)
 		},
 	}
 
 	cmd.Flags().StringVar(&domain, "domain", "", "Kube-DC domain (e.g., stage.kube-dc.com)")
-	cmd.Flags().StringVar(&org, "org", "", "Organization (Keycloak realm)")
+	cmd.Flags().StringVar(&org, "org", "", "Organization (Keycloak realm). Mutually exclusive with --admin.")
+	cmd.Flags().BoolVar(&admin, "admin", false, "Login as a platform admin against the master realm (cluster-wide RBAC)")
 	cmd.Flags().StringVar(&caCertFile, "ca-cert", "", "Path to CA certificate file")
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "Skip TLS verification (not recommended)")
 	cmd.Flags().BoolVar(&deviceCode, "device-code", false, "Use device code flow for headless environments")
@@ -204,6 +228,15 @@ func runLogin(domain, org, caCertFile string, insecure, deviceCode bool) error {
 		return fmt.Errorf("failed to save credentials: %w", err)
 	}
 	fmt.Println("  Credentials cached to ~/.kube-dc/credentials/")
+
+	// Footgun guard: if $KUBECONFIG points at a non-default file, the
+	// new contexts land THERE — not in ~/.kube/config — and tools like
+	// kubectx that read ~/.kube/config by default won't see them.
+	// Surfacing the destination + asking for confirmation prevents the
+	// "I logged in but kubectx shows nothing" trap.
+	if err := warnIfNonDefaultKubeconfig(); err != nil {
+		return err
+	}
 
 	// Update kubeconfig
 	kubeMgr, err := kubeconfig.NewManager()
@@ -677,6 +710,7 @@ func runConfigShow() error {
 
 func credentialCmd() *cobra.Command {
 	var server string
+	var realm string
 
 	cmd := &cobra.Command{
 		Use:    "credential",
@@ -693,7 +727,11 @@ func credentialCmd() *cobra.Command {
 				return err
 			}
 
-			cred, err := provider.GetCredential(server)
+			// Realm-aware lookup when the kubeconfig context provides
+			// it (admin contexts always do). Tenant kubeconfigs that
+			// pre-date this change call without --realm and hit the
+			// legacy single-file fallback in credentials.Manager.
+			cred, err := provider.GetCredentialForRealm(server, realm)
 			if err != nil {
 				return err
 			}
@@ -703,6 +741,7 @@ func credentialCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&server, "server", "", "Kube-DC API server URL")
+	cmd.Flags().StringVar(&realm, "realm", "", "Keycloak realm (admin: master; tenant: org name). Optional; legacy kubeconfigs omit this.")
 	cmd.MarkFlagRequired("server")
 
 	return cmd
@@ -716,4 +755,169 @@ func versionCmd() *cobra.Command {
 			fmt.Printf("kube-dc CLI %s\n", version)
 		},
 	}
+}
+
+func alertsCmd() *cobra.Command {
+	var severity string
+	var source string
+	var namespace string
+	var output string
+	var refresh int
+	var alertmanagerURL string
+	var portForward bool
+	var cluster string
+
+	cmd := &cobra.Command{
+		Use:   "alerts",
+		Short: "View and manage Alertmanager alerts",
+		Long: `View and manage Alertmanager alerts in Kube-DC clusters.
+
+Provides a terminal-based interface to browse, filter, and sort alerts
+from Alertmanager. Uses an admin kubeconfig to reach Alertmanager via
+kubectl port-forward by default. Mimir tenant auth will be added later.`,
+		Example: `  # View alerts in TUI mode (auto port-forward)
+  kube-dc alerts
+
+  # Filter by severity
+  kube-dc alerts --severity critical
+
+  # Use an existing Alertmanager URL
+  kube-dc alerts --alertmanager-url http://localhost:9093
+
+  # Output as JSON
+  kube-dc alerts --output json`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAlerts(runAlertsOpts{
+				Severity:        severity,
+				Source:          source,
+				Namespace:       namespace,
+				Output:          output,
+				Refresh:         refresh,
+				AlertmanagerURL: alertmanagerURL,
+				PortForward:     portForward,
+				Cluster:         cluster,
+			})
+		},
+	}
+
+	cmd.Flags().StringVar(&severity, "severity", "", "Filter by severity (critical, warning, info, none)")
+	cmd.Flags().StringVar(&source, "source", "", "Filter by source/component")
+	cmd.Flags().StringVar(&namespace, "namespace", "", "Filter by namespace")
+	cmd.Flags().StringVar(&output, "output", "tui", "Output format: tui (default), json, table")
+	cmd.Flags().IntVar(&refresh, "refresh", 30, "Refresh interval in seconds")
+	cmd.Flags().StringVar(&alertmanagerURL, "alertmanager-url", "", "Alertmanager URL (overrides ALERTMANAGER_URL env; disables port-forward)")
+	cmd.Flags().BoolVar(&portForward, "port-forward", true, "Auto-start kubectl port-forward to Alertmanager when no URL is provided")
+	cmd.Flags().StringVar(&cluster, "cluster", "", "Cluster name (shown in the TUI header)")
+
+	return cmd
+}
+
+type runAlertsOpts struct {
+	Severity        string
+	Source          string
+	Namespace       string
+	Output          string
+	Refresh         int
+	AlertmanagerURL string
+	PortForward     bool
+	Cluster         string
+}
+
+func runAlerts(opts runAlertsOpts) error {
+	// Resolve Alertmanager endpoint.
+	url := opts.AlertmanagerURL
+	if url == "" {
+		url = os.Getenv("ALERTMANAGER_URL")
+	}
+
+	var pf *alerts.PortForward
+	if url == "" && opts.PortForward {
+		pf = alerts.NewAlertmanagerPortForward()
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := pf.Start(ctx); err != nil {
+			return fmt.Errorf("port-forward to alertmanager failed: %w\n\nHint: set --alertmanager-url or pre-run\n  kubectl port-forward -n monitoring svc/prom-operator-alertmanager 9093:9093", err)
+		}
+		defer pf.Stop()
+		url = pf.URL()
+	}
+	if url == "" {
+		url = "http://localhost:9093"
+	}
+
+	client := alerts.NewAlertmanagerClient(url)
+
+	// Non-interactive output formats: fetch, filter, print.
+	if opts.Output == "json" || opts.Output == "table" || opts.Output == "list" {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		alertList, err := client.GetAlerts(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to fetch alerts: %w", err)
+		}
+		filtered := alerts.ApplyFilter(alertList, alerts.FilterSpec{
+			Severity:  opts.Severity,
+			Source:    opts.Source,
+			Namespace: opts.Namespace,
+		})
+		alerts.SortAlerts(filtered)
+		if opts.Output == "json" {
+			return outputJSON(filtered)
+		}
+		return outputTable(filtered)
+	}
+
+	// TUI mode.
+	model := alertstui.NewModel(client, opts.Cluster, pf)
+	if opts.Severity != "" {
+		model.SetSeverity(opts.Severity)
+	}
+	if opts.Namespace != "" {
+		model.SetNamespace(opts.Namespace)
+	}
+	if opts.Source != "" {
+		model.SetSource(opts.Source)
+	}
+
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	if _, err := p.Run(); err != nil {
+		return fmt.Errorf("failed to run TUI: %w", err)
+	}
+	return nil
+}
+
+func outputJSON(alertList []alerts.Alert) error {
+	data, err := json.MarshalIndent(alertList, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal alerts: %w", err)
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
+func outputTable(alertList []alerts.Alert) error {
+	if len(alertList) == 0 {
+		fmt.Println("No alerts found")
+		return nil
+	}
+
+	// Print header
+	fmt.Printf("%-40s %-10s %-20s %-10s\n", "Alert Name", "Severity", "Source", "Age")
+	fmt.Println(strings.Repeat("-", 80))
+
+	// Print alerts
+	for _, a := range alertList {
+		source := a.Labels["job"]
+		if source == "" {
+			source = a.Labels["namespace"]
+		}
+		if source == "" {
+			source = a.AlertName
+		}
+		age := time.Since(a.StartsAt).Round(time.Minute)
+		fmt.Printf("%-40s %-10s %-20s %-10s\n", a.AlertName, a.Severity, source, age)
+	}
+
+	fmt.Printf("\nTotal: %d alerts\n", len(alertList))
+	return nil
 }

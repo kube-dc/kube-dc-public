@@ -91,6 +91,11 @@ func NewManager() (*Manager, error) {
 	return &Manager{path: path}, nil
 }
 
+// Path returns the kubeconfig file path the manager will read from /
+// write to. Useful for surfacing in the TUI ("Kube-DC Contexts —
+// /home/voa/.kube/config").
+func (m *Manager) Path() string { return m.path }
+
 // Load loads the kubeconfig file
 func (m *Manager) Load() (*Config, error) {
 	data, err := os.ReadFile(m.path)
@@ -183,7 +188,7 @@ func (m *Manager) AddKubeDCContext(params AddContextParams) error {
 				Exec: &ExecConfig{
 					APIVersion:      "client.authentication.k8s.io/v1",
 					Command:         "kube-dc",
-					Args:            []string{"credential", "--server", params.Server},
+					Args:            execArgs(params),
 					InteractiveMode: "IfAvailable",
 				},
 			}
@@ -198,7 +203,7 @@ func (m *Manager) AddKubeDCContext(params AddContextParams) error {
 				Exec: &ExecConfig{
 					APIVersion:      "client.authentication.k8s.io/v1",
 					Command:         "kube-dc",
-					Args:            []string{"credential", "--server", params.Server},
+					Args:            execArgs(params),
 					InteractiveMode: "IfAvailable",
 				},
 			},
@@ -247,6 +252,113 @@ type AddContextParams struct {
 	CACert      string // PEM-encoded CA certificate
 	Insecure    bool   // Skip TLS verification
 	SetCurrent  bool
+
+	// Realm, when non-empty, is passed to the exec plugin so it can
+	// pick the right cached credentials when more than one identity
+	// is logged in to the same cluster (tenant + admin). Tenant logins
+	// have historically omitted this — those kubeconfigs continue to
+	// work via the legacy single-file lookup in credentials.Manager.
+	Realm string
+}
+
+// execArgs builds the args slice for the kubeconfig user's exec plugin.
+// Layout: ["credential", "--server", <url>, "--realm", <realm>?].
+// Tenant logins have historically omitted --realm; those kubeconfigs
+// keep working via credentials.Manager's legacy fallback.
+func execArgs(p AddContextParams) []string {
+	args := []string{"credential", "--server", p.Server}
+	if p.Realm != "" {
+		args = append(args, "--realm", p.Realm)
+	}
+	return args
+}
+
+// RemoveContext deletes a single named context from the kubeconfig and
+// also drops the cluster and user entries it referenced **only if** no
+// other surviving context still uses them. This is the surgical
+// counterpart to RemoveKubeDCContexts, matching what an operator
+// expects from `kx -d`: hit one row, lose one row.
+//
+// If the deleted context was current-context, current-context is
+// cleared (operator can switch with `kube-dc bootstrap context` or
+// `kx`).
+//
+// Returns nil if the context didn't exist (idempotent).
+func (m *Manager) RemoveContext(name string) error {
+	config, err := m.Load()
+	if err != nil {
+		return err
+	}
+
+	// Find the doomed context and remember which cluster + user it
+	// pointed at so we can decide whether they're now orphaned.
+	var (
+		victim       Context
+		victimFound  bool
+		newContexts  = make([]NamedContext, 0, len(config.Contexts))
+	)
+	for _, c := range config.Contexts {
+		if c.Name == name {
+			victim = c.Context
+			victimFound = true
+			continue
+		}
+		newContexts = append(newContexts, c)
+	}
+	if !victimFound {
+		return nil // already gone
+	}
+	config.Contexts = newContexts
+
+	// Cluster GC: keep it iff some surviving context still points at it.
+	if victim.Cluster != "" && !clusterStillReferenced(victim.Cluster, config.Contexts) {
+		filtered := make([]NamedCluster, 0, len(config.Clusters))
+		for _, cl := range config.Clusters {
+			if cl.Name != victim.Cluster {
+				filtered = append(filtered, cl)
+			}
+		}
+		config.Clusters = filtered
+	}
+
+	// User GC: same rule.
+	if victim.User != "" && !userStillReferenced(victim.User, config.Contexts) {
+		filtered := make([]NamedUser, 0, len(config.Users))
+		for _, u := range config.Users {
+			if u.Name != victim.User {
+				filtered = append(filtered, u)
+			}
+		}
+		config.Users = filtered
+	}
+
+	// If we just deleted the current context, clear it. Picking a
+	// "next" context automatically would surprise the operator;
+	// silence is a safer default and `kube-dc bootstrap context`
+	// makes switching trivial.
+	if config.CurrentContext == name {
+		config.CurrentContext = ""
+	}
+
+	return m.Save(config)
+}
+
+func clusterStillReferenced(cluster string, contexts []NamedContext) bool {
+	for _, c := range contexts {
+		if c.Context.Cluster == cluster {
+			return true
+		}
+	}
+	return false
+}
+
+func userStillReferenced(user string, contexts []NamedContext) bool {
+	for _, c := range contexts {
+		if c.Context.User == user {
+			return true
+		}
+	}
+	return false
 }
 
 // RemoveKubeDCContexts removes all Kube-DC contexts for a server

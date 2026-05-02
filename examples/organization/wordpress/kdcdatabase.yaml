@@ -1,0 +1,17 @@
+apiVersion: db.kube-dc.com/v1alpha1
+kind: KdcDatabase
+metadata:
+  name: wp-mariadb
+  # Replace PROJECT_NAMESPACE with {org}-{project}, e.g. shalb-docs.
+  namespace: PROJECT_NAMESPACE
+spec:
+  engine: mariadb
+  version: "11.4"
+  replicas: 1
+  cpu: "1"
+  memory: 2Gi
+  storage: 10Gi
+  databaseName: wordpress
+  username: app
+  expose:
+    type: internal

@@ -29,6 +29,9 @@ spec:
     - jsonPath: .status.dataStoreName
       name: DataStore
       type: string
+    - jsonPath: .status.controlPlane.autoscalingMode
+      name: VPA
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -60,6 +63,37 @@ spec:
               controlPlane:
                 description: Control plane configuration
                 properties:
+                  autoscaling:
+                    description: |-
+                      Autoscaling configuration for control plane containers.
+                      When omitted, a VerticalPodAutoscaler is created in "Off"
+                      (recommendation-only) mode so observed usage is surfaced via
+                      status.controlPlane.recommendations without affecting runtime.
+                      See docs/prd/control-plane-vpa-autoscaling.md for the full design.
+                    properties:
+                      minReplicas:
+                        description: |-
+                          MinReplicas is the minimum number of CP replicas the VPA updater will
+                          leave running during eviction. When unset, defaults to ControlPlane.Replicas
+                          so VPA never reduces the CP below its desired replica count.
+                          Only honored in Recreate / InPlaceOrRecreate modes.
+                        format: int32
+                        type: integer
+                      mode:
+                        default: "Off"
+                        description: |-
+                          Mode selects how VPA applies recommendations.
+                            Off               : recommendations only (default; safe everywhere)
+                            Initial           : inject at pod creation, never evict to resize
+                            Recreate          : evict pods to apply new sizes (disruptive)
+                            InPlaceOrRecreate : K8s 1.33+ in-place resize, fallback to eviction
+                        enum:
+                        - "Off"
+                        - Initial
+                        - Recreate
+                        - InPlaceOrRecreate
+                        type: string
+                    type: object
                   replicas:
                     default: 2
                     description: Number of control plane replicas
@@ -405,6 +439,76 @@ spec:
                   - type
                   type: object
                 type: array
+              controlPlane:
+                description: |-
+                  ControlPlane carries observed VPA state and per-container recommendations
+                  for the tenant control plane Deployment.
+                properties:
+                  autoscalingMode:
+                    description: AutoscalingMode reflects the active VPA updateMode.
+                    type: string
+                  lastRecommendationUpdate:
+                    description: |-
+                      LastRecommendationUpdate is the controller-side timestamp at which the
+                      recommendations field was last refreshed from the upstream VPA object.
+                    format: date-time
+                    type: string
+                  recommendations:
+                    description: |-
+                      Recommendations lists per-container resource recommendations from the
+                      VPA recommender. Empty until the recommender has collected enough
+                      metrics-server samples (typically 10-30 minutes after first reconcile).
+                    items:
+                      description: |-
+                        ContainerRecommendation mirrors a single entry from
+                        VPA.status.recommendation.containerRecommendations.
+                      properties:
+                        containerName:
+                          description: ContainerName the recommendation applies to.
+                          type: string
+                        lowerBound:
+                          additionalProperties:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          description: LowerBound is the minimum recommended size.
+                          type: object
+                        target:
+                          additionalProperties:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          description: Target is the resource recommendation VPA would
+                            apply.
+                          type: object
+                        uncappedTarget:
+                          additionalProperties:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          description: UncappedTarget is the recommendation before
+                            applying min/max bounds.
+                          type: object
+                        upperBound:
+                          additionalProperties:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          description: UpperBound is the maximum recommended size.
+                          type: object
+                      required:
+                      - containerName
+                      type: object
+                    type: array
+                type: object
               controlPlaneReady:
                 description: ControlPlaneReady indicates if control plane is ready
                 type: boolean

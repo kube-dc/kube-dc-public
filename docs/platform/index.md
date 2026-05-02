@@ -20,6 +20,7 @@ Kube-DC extends Kubernetes with multi-tenancy, virtualization (KubeVirt), advanc
 - **Networking** — Kube-OVN with VPC-per-project, EIPs, FIPs, and LoadBalancers
 - **Billing** — Configurable billing plans with resource quotas
 - **Storage** — Block storage (PVC) and S3-compatible object storage (Rook Ceph)
+- **Observability** — [Multi-tenant metrics, logs, and alerting](observability.md)
 
 ## Community
 

@@ -11,6 +11,27 @@ import (
 	"github.com/shalb/kube-dc/cli/internal/jwt"
 )
 
+// reloginCmd returns a copy-pasteable login command for the given
+// server + realm pair. master realm → admin login; everything else →
+// tenant login. Used in error messages so the operator's next move is
+// always the right one for the identity that just expired.
+func reloginCmd(server, realm string) string {
+	domain := extractDomain(server)
+	if realm == "master" {
+		return fmt.Sprintf("kube-dc login --domain %s --admin", domain)
+	}
+	if realm != "" {
+		return fmt.Sprintf("kube-dc login --domain %s --org %s", domain, realm)
+	}
+	return fmt.Sprintf("kube-dc login --domain %s --org <your-org>", domain)
+}
+
+// notLoggedInErr is the consistent "no creds for this (server, realm)"
+// surface every Load path bubbles up.
+func notLoggedInErr(server, realm string) error {
+	return fmt.Errorf("not logged in. Run: %s", reloginCmd(server, realm))
+}
+
 // extractDomain extracts the domain from a server URL
 // e.g., https://kube-api.stage.kube-dc.com:6443 -> stage.kube-dc.com
 func extractDomain(server string) string {
@@ -55,13 +76,25 @@ func NewProvider() (*Provider, error) {
 	return &Provider{credMgr: credMgr}, nil
 }
 
-// GetCredential returns a valid access token for the given server
-// It handles token refresh automatically
+// GetCredential returns a valid access token for the given server. It
+// finds whichever realm is cached for that server (legacy single-file
+// path or any realm-suffixed file). New code that knows the realm
+// should call GetCredentialForRealm so multiple identities cached for
+// the same cluster (tenant + admin) don't collide.
 func (p *Provider) GetCredential(server string) (*ExecCredential, error) {
-	creds, err := p.credMgr.Load(server)
+	return p.getCredential(server, "")
+}
+
+// GetCredentialForRealm is the realm-aware variant invoked by exec
+// plugins whose kubeconfig context includes `--realm <name>` in args.
+func (p *Provider) GetCredentialForRealm(server, realm string) (*ExecCredential, error) {
+	return p.getCredential(server, realm)
+}
+
+func (p *Provider) getCredential(server, realm string) (*ExecCredential, error) {
+	creds, err := p.credMgr.LoadForRealm(server, realm)
 	if err != nil {
-		domain := extractDomain(server)
-		return nil, fmt.Errorf("not logged in. Run: kube-dc login --domain %s --org <your-org>", domain)
+		return nil, notLoggedInErr(server, realm)
 	}
 
 	// Check if access token is still valid
@@ -72,8 +105,7 @@ func (p *Provider) GetCredential(server string) (*ExecCredential, error) {
 	// Access token expired, try to refresh
 	// Always try to refresh - let Keycloak be the source of truth for token validity
 	if creds.RefreshToken == "" {
-		domain := extractDomain(server)
-		return nil, fmt.Errorf("session expired (no refresh token). Run: kube-dc login --domain %s --org %s", domain, creds.Realm)
+		return nil, fmt.Errorf("session expired (no refresh token). Run: %s", reloginCmd(server, creds.Realm))
 	}
 
 	// Refresh the token
@@ -86,9 +118,7 @@ func (p *Provider) GetCredential(server string) (*ExecCredential, error) {
 		creds.Insecure,
 	)
 	if err != nil {
-		// Refresh failed - session is truly expired
-		domain := extractDomain(server)
-		return nil, fmt.Errorf("session expired. Run: kube-dc login --domain %s --org %s", domain, creds.Realm)
+		return nil, fmt.Errorf("session expired. Run: %s", reloginCmd(server, creds.Realm))
 	}
 
 	// Parse the new access token to get expiry and user info

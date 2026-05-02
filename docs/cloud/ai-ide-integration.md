@@ -78,15 +78,19 @@ npx skills add kube-dc/kube-dc-public --skill create-vm --skill deploy-app -g
 npx skills add kube-dc/kube-dc-public -y
 ```
 
-The CLI auto-detects your installed IDEs (Claude Code, Cursor, Windsurf, Codex, Copilot, and [40+ more](https://github.com/vercel-labs/skills#supported-agents)) and installs skills to the correct directory:
+The CLI auto-detects your installed IDEs (Claude Code, Cursor, Windsurf, Codex, Copilot, and [40+ more](https://github.com/vercel-labs/skills#supported-agents)) and installs skills to the correct directory.
 
-| IDE | Global Path | Workspace Path |
-|-----|------------|---------------|
-| Claude Code | `~/.claude/skills/` | `.claude/skills/` |
-| Cursor | `~/.cursor/skills/` | `.agents/skills/` |
-| Windsurf | `~/.codeium/windsurf/skills/` | `.windsurf/skills/` |
-| Codex | `~/.codex/skills/` | `.agents/skills/` |
-| Copilot | `~/.copilot/skills/` | `.agents/skills/` |
+With `-g` (global), skills are physically stored once under `~/.agents/skills/` and the installer creates per-IDE symlinks so each tool finds them at its expected location:
+
+| IDE | Per-IDE path (symlink) | Workspace install path |
+|-----|------------------------|------------------------|
+| Claude Code | `~/.claude/skills/<name>` → `~/.agents/skills/<name>` | `.claude/skills/` |
+| Cursor | `~/.cursor/skills/<name>` → `~/.agents/skills/<name>` | `.agents/skills/` |
+| Windsurf | `~/.codeium/windsurf/skills/<name>` → `~/.agents/skills/<name>` | `.windsurf/skills/` |
+| Codex | `~/.codex/skills/<name>` → `~/.agents/skills/<name>` | `.agents/skills/` |
+| Copilot | `~/.copilot/skills/<name>` → `~/.agents/skills/<name>` | `.agents/skills/` |
+
+To list installed skills or inspect a SKILL.md, walk through the symlink in either direction — `ls -L ~/.claude/skills/` and `ls ~/.agents/skills/` both show the same set. Workspace installs (omit `-g`) drop real files into the workspace path, no symlinks.
 
 Each skill's `name` and `description` appear in the agent's context at startup (~100 tokens per skill). The full SKILL.md and supporting templates are loaded on demand when the agent detects a matching task.
 
@@ -174,8 +178,10 @@ kube-dc-public/
 
 ### What Each IDE Discovers
 
-| IDE | Install via `npx skills` | Workspace Discovery | System Prompt |
-|-----|:------------------------:|:-------------------:|:-------------:|
+All `npx skills add -g` installs land in `~/.agents/skills/`, with per-IDE symlinks at the paths below.
+
+| IDE | Install via `npx skills` (symlink target) | Workspace Discovery | System Prompt |
+|-----|:-----------------------------------------:|:-------------------:|:-------------:|
 | **Claude Code** | ✅ `~/.claude/skills/` | `CLAUDE.md` + `.claude/skills/` | Settings → Custom Instructions |
 | **Cursor** | ✅ `~/.cursor/skills/` | `AGENTS.md` + `.cursor/rules/` | Settings → Rules for AI |
 | **Windsurf** | ✅ `~/.codeium/windsurf/skills/` | `AGENTS.md` + `.windsurf/skills/` | Settings → Global Rules |
@@ -363,7 +369,7 @@ Instead of a generic `WINDSURF.md` file, open the `kube-dc-public` repo in Winds
 - `.windsurf/rules/kube-dc-conventions.md` — always-on safety rules
 - `.windsurf/skills/` — 10 workflow-grouped skills (symlink to `.agents/skills/`)
 - `.windsurf/workflows/` — slash commands:
-  - `/deploy-wordpress` — Deploy WordPress with managed PostgreSQL, HTTPS, and auto TLS
+  - `/deploy-wordpress` — Deploy WordPress with managed MariaDB, HTTPS, and auto TLS
   - `/setup-project` — Create a new project with organization verification and optional resources
 
 This gives Cascade full awareness of Kube-DC CRDs, annotations, naming conventions, and step-by-step procedures. See [Agent Skills Setup](#agent-skills-setup) above.
@@ -465,11 +471,11 @@ All Kubernetes MCP servers expose a common set of operations that AI tools can c
 ### Deploy WordPress with managed database
 
 ```
-Deploy WordPress with a managed HA PostgreSQL database in project shalb-demo.
+Deploy WordPress with a managed HA MariaDB database in project shalb-demo.
 Expose it via HTTPS with auto TLS.
 ```
 
-With Agent Skills loaded, the agent will: create a KdcDatabase, wait for it, deploy WordPress with correct `secretKeyRef` for the DB password, create a LoadBalancer service with `expose-route: https`, and report the auto-generated hostname.
+With Agent Skills loaded, the agent will: create a `KdcDatabase` with `engine: mariadb` (WordPress core has no PostgreSQL driver — `engine: postgresql` produces a tight CrashLoop), wait for it to become Ready, build a small bridge Secret aliasing the auto-generated password to the chart's expected key (`mariadb-password`), deploy WordPress via `helm install` with `externalDatabase.existingSecret` pointing at the bridge, expose with `service.type=LoadBalancer` plus `service.nlb.kube-dc.com/expose-route: https`, and report the auto-generated hostname.
 
 ### Create a VM with SSH access
 
