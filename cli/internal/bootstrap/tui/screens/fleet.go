@@ -679,11 +679,17 @@ func (m *FleetModel) View() string {
 		Height(listH - 2).
 		Render(m.renderList(w - 6))
 
-	// Bottom: details + (when open) drill-down side-by-side.
+	// Bottom: details + (when open) drill-down side-by-side. The pane's
+	// outer Width must match the top pane's Width(w-2) so the left/right
+	// borders line up — earlier code used Width(bottomW-2) here, which
+	// rendered 2 chars narrower than the top pane and visually offset
+	// the two panes (visible in screenshots as a notched bottom pane).
 	bottomW := w - 2
 	var bottom string
 	if m.drillDownOpen {
-		// 60/40 split: details left, drill-down right.
+		// 60/40 split: details left, drill-down right. detailsW + drillW
+		// must equal bottomW so the joined horizontal row fills the same
+		// width as a single non-split bottom pane.
 		drillW := bottomW * 4 / 10
 		if drillW < 30 {
 			drillW = 30
@@ -693,6 +699,10 @@ func (m *FleetModel) View() string {
 		}
 		detailsW := bottomW - drillW
 
+		// Viewport's renderable width is the pane's content area
+		// (outer - 2 border - 2 padding = outer - 4). Heights mirror the
+		// existing top-pane convention (outer height set to listH-2,
+		// viewport height to detailsH-2).
 		m.details.Width = detailsW - 4
 		m.details.Height = detailsH - 2
 
@@ -709,11 +719,11 @@ func (m *FleetModel) View() string {
 		}
 
 		left := detailsStyle.
-			Width(detailsW - 2).
+			Width(detailsW).
 			Height(detailsH - 2).
 			Render(m.details.View())
 		right := drillStyle.
-			Width(drillW - 2).
+			Width(drillW).
 			Height(detailsH - 2).
 			Render(m.drillDown.View())
 		bottom = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
@@ -725,7 +735,7 @@ func (m *FleetModel) View() string {
 			detailsStyle = bttui.DetailsPaneFocused
 		}
 		bottom = detailsStyle.
-			Width(bottomW - 2).
+			Width(bottomW).
 			Height(detailsH - 2).
 			Render(m.details.View())
 	}

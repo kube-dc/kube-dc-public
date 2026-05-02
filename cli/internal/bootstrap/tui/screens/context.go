@@ -612,7 +612,12 @@ func (m *ContextModel) View() string {
 		Height(listH - 2).
 		Render(m.renderList(w - 6))
 
-	m.details.Width = w - 4
+	// Viewport's renderable width is the pane's content area (outer
+	// width - 2 border - 2 padding). Earlier code used w-4 here which
+	// is wider than the pane's content area (w-6) and made lipgloss
+	// expand the pane beyond Width(w-2), visually offsetting the bottom
+	// pane from the top one.
+	m.details.Width = w - 6
 	m.details.Height = detailsH - 2
 	detailsStyle := bttui.DetailsPane
 	if m.focus == paneFocusDetails {
