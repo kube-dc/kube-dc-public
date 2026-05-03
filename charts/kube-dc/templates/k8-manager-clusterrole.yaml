@@ -73,6 +73,22 @@ rules:
   - patch
   - update
   - watch
+# Read-only access to cert-manager Issuer and ClusterIssuer resources.
+# Required by reconcileCertificateCARotation in the KdcClusterDatastore
+# controller so it can resolve the Issuer's CA secret and compare the
+# upstream CA Subject Key Identifier against the SKI embedded in
+# leaf cert Secrets it manages. Without this, the drift detector logs
+# "CA rotation: could not resolve Issuer CA, skipping drift check" on
+# every reconcile and never forces leaf re-issuance after a CA rotation.
+- apiGroups:
+  - cert-manager.io
+  resources:
+  - issuers
+  - clusterissuers
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - cluster.x-k8s.io
   resources:
