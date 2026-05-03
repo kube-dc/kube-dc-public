@@ -66,9 +66,10 @@ spec:
                   autoscaling:
                     description: |-
                       Autoscaling configuration for control plane containers.
-                      When omitted, a VerticalPodAutoscaler is created in "Off"
-                      (recommendation-only) mode so observed usage is surfaced via
-                      status.controlPlane.recommendations without affecting runtime.
+                      When omitted, a VerticalPodAutoscaler is created in
+                      "InPlaceOrRecreate" mode so requests/limits are right-sized
+                      from observed usage. To disable autoscaling and keep static
+                      resources, set Mode=Off and optionally provide Resources.
                       See docs/prd/control-plane-vpa-autoscaling.md for the full design.
                     properties:
                       minReplicas:
@@ -80,13 +81,14 @@ spec:
                         format: int32
                         type: integer
                       mode:
-                        default: "Off"
+                        default: InPlaceOrRecreate
                         description: |-
                           Mode selects how VPA applies recommendations.
-                            Off               : recommendations only (default; safe everywhere)
+                            Off               : recommendations only (no automatic adjustments)
                             Initial           : inject at pod creation, never evict to resize
                             Recreate          : evict pods to apply new sizes (disruptive)
                             InPlaceOrRecreate : K8s 1.33+ in-place resize, fallback to eviction
+                                                (default; CPU resize is restart-free)
                         enum:
                         - "Off"
                         - Initial
@@ -99,6 +101,100 @@ spec:
                     description: Number of control plane replicas
                     format: int32
                     type: integer
+                  resources:
+                    description: |-
+                      Resources optionally pins static requests/limits for the tenant
+                      control plane containers (apiServer, controllerManager, scheduler).
+                      When set, the controller writes these values to the underlying
+                      TenantControlPlane on every reconcile. Use this to opt out of
+                      VPA-driven sizing for specific clusters that need fixed capacity
+                      (e.g. multi-tenant production CPs with strict SLOs).
+
+                      Behavior matrix:
+                        Resources unset, Autoscaling.Mode != Off:
+                          baseline 1:1.2 ratio set ONCE on TCP creation; VPA owns
+                          subsequent updates in-place.
+                        Resources unset, Autoscaling.Mode == Off:
+                          baseline 1:1.2 ratio reconciled to the TCP every loop.
+                        Resources set:
+                          supplied values reconciled to the TCP every loop, regardless
+                          of Autoscaling.Mode. VPA recommendations still surface in
+                          status.controlPlane.recommendations as a sizing hint.
+                    properties:
+                      apiServer:
+                        description: APIServer overrides resources for the kube-apiserver
+                          container.
+                        properties:
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: Limits describes the maximum amount of compute
+                              resources allowed.
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: Requests describes the minimum amount of
+                              compute resources required.
+                            type: object
+                        type: object
+                      controllerManager:
+                        description: ControllerManager overrides resources for kube-controller-manager.
+                        properties:
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: Limits describes the maximum amount of compute
+                              resources allowed.
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: Requests describes the minimum amount of
+                              compute resources required.
+                            type: object
+                        type: object
+                      scheduler:
+                        description: Scheduler overrides resources for kube-scheduler.
+                        properties:
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: Limits describes the maximum amount of compute
+                              resources allowed.
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: Requests describes the minimum amount of
+                              compute resources required.
+                            type: object
+                        type: object
+                    type: object
                 type: object
               dataStore:
                 description: DataStore reference
