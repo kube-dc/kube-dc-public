@@ -39,6 +39,7 @@ spec:
           - --config-secret-namespace=$(NAMESPACE)
           - --zap-log-level={{ .Values.manager.logLevel | default "1" }}
           - --keycloak-debug={{ .Values.manager.keycloakDebug | default "false" }}
+          - --grafana-tenant-mode={{ .Values.manager.grafanaTenantMode | default "org" }}
         env:
           - name: NAMESPACE
             valueFrom:

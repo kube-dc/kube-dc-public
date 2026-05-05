@@ -25,6 +25,27 @@ manager:
   keycloakDebug: false
   ovnDbIps: "" # Required, example: "tcp:192.168.0.1:6641"
 
+  # grafanaTenantMode selects how the Organization controller shapes
+  # per-tenant Grafana Orgs and the matching grafana-jwt-org-mapping
+  # ConfigMap entries.
+  #
+  #   "org" (DEFAULT — every cloud + non-CS install) — one Grafana Org
+  #     per kube-dc Organization, federated tenantList covering the
+  #     org-level namespace + all project namespaces. JWT auth maps
+  #     each realm to its single Grafana Org.
+  #
+  #   "project" — single-Org clusters with multiple Projects (today only
+  #     cs/zrh). Manager creates the org-level admin Org as before AND
+  #     one Grafana Org per Project, named after the Project's
+  #     namespace, with a single-tenant datasource scoped to that
+  #     namespace. JWT auth maps each user's namespaces[0] claim to
+  #     the matching per-Project Grafana Org so a user with one
+  #     OrganizationGroup grant only sees their own Project's logs.
+  #
+  # Leave at "org" unless you're deploying onto a cs/zrh-style
+  # management plane.
+  grafanaTenantMode: org
+
   # Egress network isolation: blocks cross-project traffic on external subnets.
   # When enabled, project VPCs get deny rules for external subnets and allow rules for own EIPs.
   # Management VPC (ovn-cluster) is never affected.
