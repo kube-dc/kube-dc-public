@@ -93,6 +93,14 @@ rules:
   - apiGroups: ["kube-dc.com"]
     resources: ["organizations"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Read-only on Projects so the observability launch endpoint can
+  # resolve the per-Project Grafana Org id annotation as the backend
+  # SA (the user's bearer token can't be used here on prefix-style
+  # structured-authn clusters — see resolveProjectGrafanaOrgId in
+  # ui/backend/controllers/observabilityModule.js for why).
+  - apiGroups: ["kube-dc.com"]
+    resources: ["projects"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["kube-dc.com"]
     resources: ["eips"]
     verbs: ["get", "list"]
