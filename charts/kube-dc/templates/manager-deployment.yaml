@@ -45,8 +45,6 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
-          - name: KUBE_AUTH_CONFIG_PATH
-            value: "{{ .Values.manager.kubernetesAuthConfig.path }}/{{ .Values.manager.kubernetesAuthConfig.filename }}"
           {{- with .Values.manager.extraEnv }}
           {{- toYaml . | nindent 10 }}
           {{- end }}
@@ -77,15 +75,8 @@ spec:
           failureThreshold: 3
         resources:
           {{- toYaml .Values.manager.resources | nindent 12 }}
-        volumeMounts:
-        - mountPath: "{{ .Values.manager.kubernetesAuthConfig.path }}"
-          name: auth-config
       serviceAccountName: {{ include "kube-dc.manager.serviceAccountName" . }}
       terminationGracePeriodSeconds: 10
-      volumes:
-      - name: auth-config
-        hostPath:
-          path: {{ .Values.manager.kubernetesAuthConfig.path }}
       {{- with .Values.manager.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
