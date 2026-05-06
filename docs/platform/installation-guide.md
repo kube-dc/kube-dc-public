@@ -119,7 +119,24 @@ curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stabl
 chmod +x kubectl && sudo mv kubectl /usr/local/bin/
 ```
 
-Create the RKE2 server configuration:
+Create the RKE2 server configuration. The kubelet `system-reserved` /
+`kube-reserved` / `eviction-hard` block protects kubelet, containerd,
+and etcd from kernel OOM under sudden memory pressure (without it,
+the kernel picks any victim, which has caused a 4-hour control-plane
+recovery on production). Pick the tier that matches your node memory:
+
+| Node memory | `system-reserved` | `kube-reserved` | `eviction-hard` |
+|---|---|---|---|
+| **<32 GiB** | `cpu=200m,memory=1Gi` | `cpu=200m,memory=1Gi` | `memory.available<500Mi,nodefs.available<10%` |
+| **32–64 GiB** | `cpu=300m,memory=2Gi` | `cpu=300m,memory=2Gi` | `memory.available<1Gi,nodefs.available<10%` |
+| **≥64 GiB** | `cpu=500m,memory=4Gi` | `cpu=500m,memory=4Gi` | `memory.available<2Gi,nodefs.available<10%` |
+
+Each tier reserves ≈10–15% of total memory — generous enough to
+protect system services even under burst, slim enough to leave the
+bulk of the box for tenant workloads. The fleet bootstrap script
+(`kube-dc-fleet/bootstrap/rke2/install-server.sh`) selects the right
+tier automatically from `/proc/meminfo`. The example below uses the
+**≥64 GiB tier** since production Kube-DC nodes are typically large.
 
 ```bash
 sudo mkdir -p /etc/rancher/rke2/
@@ -139,11 +156,12 @@ node-label:
 # oidc-webhook-authenticator DaemonSet is up). Do not pre-set
 # --authentication-config or --authentication-token-webhook-config-file
 # here — RKE2 boots cert-only, then the operator adds the webhook flag
-# per node. Memory reservation protects kubelet/etcd from kernel OOM.
+# per node. Pick the kubelet-arg block matching your node memory (see
+# table above).
 kubelet-arg:
-  - system-reserved=cpu=200m,memory=1Gi
-  - kube-reserved=cpu=200m,memory=1Gi
-  - eviction-hard=memory.available<500Mi,nodefs.available<10%
+  - system-reserved=cpu=500m,memory=4Gi
+  - kube-reserved=cpu=500m,memory=4Gi
+  - eviction-hard=memory.available<2Gi,nodefs.available<10%
 node-ip: 192.168.0.1                     # Management network IP
 advertise-address: 192.168.0.1
 tls-san:
@@ -217,9 +235,9 @@ node-label:
   - kube-dc-manager=true
   - kube-ovn/role=master
 kubelet-arg:
-  - system-reserved=cpu=200m,memory=1Gi
-  - kube-reserved=cpu=200m,memory=1Gi
-  - eviction-hard=memory.available<500Mi,nodefs.available<10%
+  - system-reserved=cpu=500m,memory=4Gi   # tier matching this node — see table above
+  - kube-reserved=cpu=500m,memory=4Gi
+  - eviction-hard=memory.available<2Gi,nodefs.available<10%
 node-ip: 192.168.0.2                     # This node's management IP
 advertise-address: 192.168.0.2
 tls-san:

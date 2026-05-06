@@ -9,13 +9,17 @@ node-label:
   - kube-dc-manager=true
   - kube-ovn/role=master
 # DEPRECATED — kept for legacy bootstrap reference. New clusters use
-# kube-dc-fleet/bootstrap/rke2/install-server.sh, which omits the
+# kube-dc-fleet/bootstrap/rke2/install-server.sh, which auto-sizes the
+# kubelet reservations from /proc/meminfo and omits the
 # --authentication-config flag (gardener oidc-webhook-authenticator
 # is the auth path post-kube-dc v0.3.0).
+#
+# Stage host has 62 GiB → medium tier (2Gi each, <1Gi eviction).
+# For other node sizes see docs/platform/installation-guide.md.
 kubelet-arg:
-  - system-reserved=cpu=200m,memory=1Gi
-  - kube-reserved=cpu=200m,memory=1Gi
-  - eviction-hard=memory.available<500Mi,nodefs.available<10%
+  - system-reserved=cpu=300m,memory=2Gi
+  - kube-reserved=cpu=300m,memory=2Gi
+  - eviction-hard=memory.available<1Gi,nodefs.available<10%
 debug: true
 node-external-ip: 88.99.29.250 # Main IP provided by Hetzner for server
 tls-san:
