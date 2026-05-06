@@ -64,6 +64,14 @@ spec:
           value: {{ .Values.k8Manager.kamajiDatastoreName | default "default" | quote }}
         - name: KAMAJI_DATASTORE_NAMESPACE
           value: {{ .Values.k8Manager.kamajiDatastoreNamespace | default "kamaji-system" | quote }}
+        # Cluster-wide S3 endpoint, used by KdcCluster etcd-backup CronJobs
+        # as a fallback when KdcCluster.spec.backup.s3Endpoint is not set
+        # AND the per-Project OBC ConfigMap doesn't expose a routable host.
+        # Same pattern as db-manager and kube-dc-backend.
+        {{- if .Values.s3Endpoint }}
+        - name: S3_ENDPOINT
+          value: "{{ .Values.s3Endpoint }}"
+        {{- end }}
         {{- with .Values.k8Manager.extraEnv }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
