@@ -141,9 +141,9 @@ node-label:
 # here — RKE2 boots cert-only, then the operator adds the webhook flag
 # per node. Memory reservation protects kubelet/etcd from kernel OOM.
 kubelet-arg:
-  - system-reserved=cpu=500m,memory=4Gi
-  - kube-reserved=cpu=500m,memory=4Gi
-  - eviction-hard=memory.available<2Gi,nodefs.available<10%
+  - system-reserved=cpu=200m,memory=1Gi
+  - kube-reserved=cpu=200m,memory=1Gi
+  - eviction-hard=memory.available<500Mi,nodefs.available<10%
 node-ip: 192.168.0.1                     # Management network IP
 advertise-address: 192.168.0.1
 tls-san:
@@ -217,9 +217,9 @@ node-label:
   - kube-dc-manager=true
   - kube-ovn/role=master
 kubelet-arg:
-  - system-reserved=cpu=500m,memory=4Gi
-  - kube-reserved=cpu=500m,memory=4Gi
-  - eviction-hard=memory.available<2Gi,nodefs.available<10%
+  - system-reserved=cpu=200m,memory=1Gi
+  - kube-reserved=cpu=200m,memory=1Gi
+  - eviction-hard=memory.available<500Mi,nodefs.available<10%
 node-ip: 192.168.0.2                     # This node's management IP
 advertise-address: 192.168.0.2
 tls-san:

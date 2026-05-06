@@ -13,9 +13,9 @@ node-label:
 # --authentication-config flag (gardener oidc-webhook-authenticator
 # is the auth path post-kube-dc v0.3.0).
 kubelet-arg:
-  - system-reserved=cpu=500m,memory=4Gi
-  - kube-reserved=cpu=500m,memory=4Gi
-  - eviction-hard=memory.available<2Gi,nodefs.available<10%
+  - system-reserved=cpu=200m,memory=1Gi
+  - kube-reserved=cpu=200m,memory=1Gi
+  - eviction-hard=memory.available<500Mi,nodefs.available<10%
 debug: true
 node-external-ip: 88.99.29.250 # Main IP provided by Hetzner for server
 tls-san:
