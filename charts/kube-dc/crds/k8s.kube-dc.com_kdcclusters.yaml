@@ -114,6 +114,34 @@ spec:
                       resources, set Mode=Off and optionally provide Resources.
                       See docs/prd/control-plane-vpa-autoscaling.md for the full design.
                     properties:
+                      maxAllowed:
+                        additionalProperties:
+                          additionalProperties:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          description: ResourceList is a set of (resource name, quantity)
+                            pairs.
+                          type: object
+                        description: |-
+                          MaxAllowed overrides the per-container upper bound the VPA recommender
+                          is allowed to recommend for this cluster's control plane. When unset,
+                          global defaults apply (kube-apiserver: 2000m / 2Gi; kube-controller-manager
+                          and kube-scheduler: 500m / 512Mi).
+
+                          Use to lift the cap on genuinely heavy tenant clusters whose
+                          kube-apiserver working set legitimately exceeds 2 GiB (large CRD
+                          surface, bursty list-watch traffic). The default is intentionally
+                          tight to bound the cluster-wide request bookkeeping — uncapped VPA
+                          recommendations can pin master nodes at 99% memory requested while
+                          real usage is far lower, blocking other pods from scheduling.
+
+                          Only the kube-apiserver entry is consulted; KCM and scheduler caps
+                          stay at their conservative global values. Map keys must match
+                          container names (currently only "kube-apiserver" is honored).
+                        type: object
                       minReplicas:
                         description: |-
                           MinReplicas is the minimum number of CP replicas the VPA updater will
