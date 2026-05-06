@@ -273,4 +273,29 @@ rules:
   - patch
   - update
   - watch
+# Per-cluster etcd snapshot CronJobs created by reconcileBackup.
+# See docs/prd/managed-k8s-etcd-backups.md
+- apiGroups:
+  - batch
+  resources:
+  - cronjobs
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+# Read-only access to ObjectBucketClaims for backup-bucket discovery
+# (the bucket itself is provisioned by the kube-dc Project controller).
+- apiGroups:
+  - objectbucket.io
+  resources:
+  - objectbucketclaims
+  verbs:
+  - get
+  - list
+  - watch
 {{- end }}

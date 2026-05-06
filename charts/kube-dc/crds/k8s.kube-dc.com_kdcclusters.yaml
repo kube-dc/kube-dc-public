@@ -60,6 +60,48 @@ spec:
           spec:
             description: KdcClusterSpec defines the desired state of KdcCluster
             properties:
+              backup:
+                description: |-
+                  Backup configures scheduled etcd snapshots for this cluster's control
+                  plane. When omitted, snapshots are enabled automatically if the Project
+                  has a managed-k8s-backups S3 bucket (auto-provisioned when Rook-Ceph
+                  is available). Set Enabled=false to opt out explicitly.
+                properties:
+                  destinationPath:
+                    description: |-
+                      DestinationPath overrides the default S3 URI for snapshot uploads.
+                      Default: s3://<projectNamespace>-managed-k8s-backups/<clusterName>/
+                    type: string
+                  enabled:
+                    default: true
+                    description: Enabled controls whether the backup CronJob is created.
+                    type: boolean
+                  retentionDays:
+                    default: 7
+                    description: |-
+                      RetentionDays is the number of days to retain snapshots. Enforced
+                      via S3 object lifecycle policy on the bucket; controller-driven GC
+                      is the fallback for backends that do not support lifecycle rules.
+                    format: int32
+                    maximum: 365
+                    minimum: 1
+                    type: integer
+                  s3CredentialSecret:
+                    description: |-
+                      S3CredentialSecret overrides the Secret carrying S3 credentials.
+                      Default: managed-k8s-backups (auto-managed via the Project OBC).
+                    type: string
+                  s3Endpoint:
+                    description: |-
+                      S3Endpoint overrides the S3 endpoint URL. Default: discovered from
+                      the OBC-generated ConfigMap (BUCKET_HOST + BUCKET_PORT).
+                    type: string
+                  schedule:
+                    default: 0 2 * * *
+                    description: Schedule is a 5-field cron expression for the snapshot
+                      CronJob.
+                    type: string
+                type: object
               controlPlane:
                 description: Control plane configuration
                 properties:
@@ -533,6 +575,15 @@ spec:
           status:
             description: KdcClusterStatus defines the observed state of KdcCluster
             properties:
+              backupBucket:
+                description: BackupBucket is the resolved S3 bucket name used for
+                  etcd snapshots.
+                type: string
+              backupDestinationPath:
+                description: |-
+                  BackupDestinationPath is the resolved S3 URI prefix for etcd snapshots,
+                  e.g. s3://<bucket>/<clusterName>/
+                type: string
               conditions:
                 description: Conditions represent the latest available observations
                 items:
@@ -679,6 +730,15 @@ spec:
                 type: string
               endpoint:
                 description: Endpoint is the API server endpoint
+                type: string
+              latestBackupKey:
+                description: LatestBackupKey is the S3 object key of the most recent
+                  successful snapshot.
+                type: string
+              latestBackupTime:
+                description: LatestBackupTime is the timestamp of the last successful
+                  snapshot upload.
+                format: date-time
                 type: string
               phase:
                 description: Phase represents the current phase of the cluster
