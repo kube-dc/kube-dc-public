@@ -421,6 +421,22 @@ spec:
                         Used to generate MachineDeployment name: {cluster-name}-{pool-name}
                       pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                       type: string
+                    nodeDrainTimeoutSeconds:
+                      description: |-
+                        NodeDrainTimeoutSeconds is forwarded to CAPI Machine.spec.nodeDrainTimeout
+                        for every Machine in this pool. Controls how long CAPI waits for
+                        voluntary eviction before force-deleting a node during rollout or
+                        scale-down. Default (when unset): CAPI default of 0 (no timeout).
+                      format: int32
+                      minimum: 0
+                      type: integer
+                    paused:
+                      description: |-
+                        Paused freezes this pool's MachineDeployment rollout. Maps to
+                        CAPI MachineDeployment.spec.paused. Spec changes (version, image,
+                        labels) are applied to the template but no Machines are replaced
+                        until paused=false. Use to plan an exact maintenance window.
+                      type: boolean
                     replicas:
                       default: 2
                       description: Number of worker replicas in this pool
@@ -437,6 +453,33 @@ spec:
                       - datavolume
                       - containerdisk
                       type: string
+                    strategy:
+                      description: |-
+                        Strategy overrides the MachineDeployment rolling-update strategy.
+                        When nil, the controller keeps the current default
+                        (maxSurge=1, maxUnavailable=0) and reconciles drift back. When set,
+                        the controller writes the supplied values and stops reconciling
+                        the strategy block, letting users hand-tune mid-flight.
+                      properties:
+                        maxSurge:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            MaxSurge is the maximum number of Machines that can be created
+                            above the desired number of replicas during an update.
+                            Defaults to 1 when WorkerPoolStrategy is set but MaxSurge is omitted.
+                          x-kubernetes-int-or-string: true
+                        maxUnavailable:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            MaxUnavailable is the maximum number of Machines that can be
+                            unavailable during an update.
+                            Defaults to 0 when WorkerPoolStrategy is set but MaxUnavailable is omitted.
+                          x-kubernetes-int-or-string: true
+                      type: object
                     taints:
                       description: Node taints to apply to workers in this pool
                       items:
@@ -468,6 +511,18 @@ spec:
                         - key
                         type: object
                       type: array
+                    version:
+                      description: |-
+                        Version pins this pool's Kubernetes version. When unset, the pool
+                        tracks KdcClusterSpec.Version. Set this to the current version
+                        BEFORE bumping spec.version to perform a control-plane-only
+                        upgrade; clear (or raise) it later to roll the pool.
+
+                        Must satisfy the kubeadm version-skew rule: pool.version MAY be
+                        up to two minors behind cluster.version but MUST NOT exceed it.
+                        See docs/prd/staged-cluster-upgrades.md.
+                      pattern: ^v\d+\.\d+\.\d+$
+                      type: string
                   required:
                   - name
                   type: object
@@ -604,6 +659,14 @@ spec:
                       - containerName
                       type: object
                     type: array
+                  version:
+                    description: |-
+                      Version is the currently-observed Kamaji control plane version,
+                      read from KamajiControlPlane.status.kubernetesVersion (falling
+                      back to spec.version when the KCP status field is empty, e.g.
+                      pre-first-rollout). May lag spec.version briefly during a CP
+                      upgrade.
+                    type: string
                 type: object
               controlPlaneReady:
                 description: ControlPlaneReady indicates if control plane is ready
@@ -629,6 +692,17 @@ spec:
                     name:
                       description: Name of the worker pool
                       type: string
+                    observedVersion:
+                      description: |-
+                        ObservedVersion is the version currently running on the pool's
+                        Machines, derived from MachineDeployment.status.version (or the
+                        minimum Machine.spec.version when MD status is empty). May differ
+                        from Version while a rollout is in progress.
+                      type: string
+                    paused:
+                      description: Paused reflects whether the underlying MachineDeployment
+                        is paused.
+                      type: boolean
                     phase:
                       description: Phase of the worker pool (Provisioning, Ready,
                         Failed)
@@ -641,6 +715,17 @@ spec:
                       description: Replicas is the current number of replicas
                       format: int32
                       type: integer
+                    updatedReplicas:
+                      description: |-
+                        UpdatedReplicas is the number of Machines already at Version.
+                        Read from MachineDeployment.status.updatedReplicas.
+                      format: int32
+                      type: integer
+                    version:
+                      description: |-
+                        Version is the desired Kubernetes version for this pool
+                        (pool.Version if set, else cluster.Spec.Version).
+                      type: string
                   required:
                   - name
                   - readyReplicas
