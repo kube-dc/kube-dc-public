@@ -8,8 +8,14 @@ cluster-dns: "10.101.0.11"
 node-label:
   - kube-dc-manager=true
   - kube-ovn/role=master
-kube-apiserver-arg: 
-  - authentication-config=/etc/rancher/auth-conf.yaml
+# DEPRECATED — kept for legacy bootstrap reference. New clusters use
+# kube-dc-fleet/bootstrap/rke2/install-server.sh, which omits the
+# --authentication-config flag (gardener oidc-webhook-authenticator
+# is the auth path post-kube-dc v0.3.0).
+kubelet-arg:
+  - system-reserved=cpu=500m,memory=4Gi
+  - kube-reserved=cpu=500m,memory=4Gi
+  - eviction-hard=memory.available<2Gi,nodefs.available<10%
 debug: true
 node-external-ip: 88.99.29.250 # Main IP provided by Hetzner for server
 tls-san:
