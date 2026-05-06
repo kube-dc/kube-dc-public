@@ -125,18 +125,22 @@ and etcd from kernel OOM under sudden memory pressure (without it,
 the kernel picks any victim, which has caused a 4-hour control-plane
 recovery on production). Pick the tier that matches your node memory:
 
-| Node memory | `system-reserved` | `kube-reserved` | `eviction-hard` |
-|---|---|---|---|
-| **<32 GiB** | `cpu=200m,memory=1Gi` | `cpu=200m,memory=1Gi` | `memory.available<500Mi,nodefs.available<10%` |
-| **32–64 GiB** | `cpu=300m,memory=2Gi` | `cpu=300m,memory=2Gi` | `memory.available<1Gi,nodefs.available<10%` |
-| **≥64 GiB** | `cpu=500m,memory=4Gi` | `cpu=500m,memory=4Gi` | `memory.available<2Gi,nodefs.available<10%` |
+| Node memory | `system-reserved` | `kube-reserved` | `eviction-hard` | `max-pods` |
+|---|---|---|---|---|
+| **<32 GiB** | `cpu=200m,memory=1Gi` | `cpu=200m,memory=1Gi` | `memory.available<500Mi,nodefs.available<10%` | `110` |
+| **32–64 GiB** | `cpu=300m,memory=2Gi` | `cpu=300m,memory=2Gi` | `memory.available<1Gi,nodefs.available<10%` | `180` |
+| **≥64 GiB** | `cpu=500m,memory=4Gi` | `cpu=500m,memory=4Gi` | `memory.available<2Gi,nodefs.available<10%` | `250` |
 
 Each tier reserves ≈10–15% of total memory — generous enough to
 protect system services even under burst, slim enough to leave the
-bulk of the box for tenant workloads. The fleet bootstrap script
-(`kube-dc-fleet/bootstrap/rke2/install-server.sh`) selects the right
-tier automatically from `/proc/meminfo`. The example below uses the
-**≥64 GiB tier** since production Kube-DC nodes are typically large.
+bulk of the box for tenant workloads. `max-pods` overrides Kubernetes'
+upstream 110-pods-per-node default; on a 125 GiB node the default
+hits the pod-count cap before memory does (≈ 1 GiB/pod budget),
+blocking new schedules even when memory is plentiful. The fleet
+bootstrap script (`kube-dc-fleet/bootstrap/rke2/install-server.sh`)
+selects the right tier automatically from `/proc/meminfo`. The
+example below uses the **≥64 GiB tier** since production Kube-DC
+nodes are typically large.
 
 ```bash
 sudo mkdir -p /etc/rancher/rke2/
@@ -162,6 +166,7 @@ kubelet-arg:
   - system-reserved=cpu=500m,memory=4Gi
   - kube-reserved=cpu=500m,memory=4Gi
   - eviction-hard=memory.available<2Gi,nodefs.available<10%
+  - max-pods=250
 node-ip: 192.168.0.1                     # Management network IP
 advertise-address: 192.168.0.1
 tls-san:

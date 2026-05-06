@@ -20,6 +20,7 @@ kubelet-arg:
   - system-reserved=cpu=300m,memory=2Gi
   - kube-reserved=cpu=300m,memory=2Gi
   - eviction-hard=memory.available<1Gi,nodefs.available<10%
+  - max-pods=180
 debug: true
 node-external-ip: 88.99.29.250 # Main IP provided by Hetzner for server
 tls-san:
