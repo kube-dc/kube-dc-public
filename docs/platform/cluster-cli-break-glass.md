@@ -1,6 +1,6 @@
 # Break-Glass Recovery
 
-**When to reach for this:** OIDC is broken — Keycloak is down, `auth-config-sync` is wedged on the apiserver, the master realm is unreachable, or `kube-dc login --admin` fails with "user is authenticated but NOT in the 'admin' group" and you need to fix the cluster *right now*.
+**When to reach for this:** OIDC is broken — Keycloak is down, the gardener oidc-webhook-authenticator pod is unreachable, the master realm is unreachable, or `kube-dc login --admin` fails with "user is authenticated but NOT in the 'admin' group" and you need to fix the cluster *right now*.
 
 For everyday admin work use [`kube-dc login --admin`](cluster-cli-admin-login.md) instead — it gives a per-engineer audit trail. Break-glass logs as `system:serviceaccount:kube-system:break-glass` (a shared identity).
 

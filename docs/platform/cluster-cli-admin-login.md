@@ -104,7 +104,7 @@ The CLI side works against any cluster, but a fresh cluster needs **four** piece
 2. **Two protocol mappers on that client**:
    - `groups` (`oidc-group-membership-mapper`, `full.path: false`) → JWT carries `groups: ["admin"]`
    - `audience` (`oidc-audience-mapper`, `included.client.audience: kube-dc-admin`) → JWT carries `aud: [..., "kube-dc-admin", ...]`. **Without this the apiserver rejects every token with 401** even though group + claim mapping look correct — the audience-validation path is silent in apiserver logs and easy to miss.
-3. **The master-realm JWT issuer in `auth-conf.yaml`** (the kube-dc-manager controller adds this on startup).
+3. **The `master` `OpenIDConnect.authentication.gardener.cloud/v1alpha1` CR** (kube-dc-manager creates this on startup with `audiences: [kube-dc-admin]` + `usernamePrefix: "platform:"`).
 4. **The `platform-admin` `ClusterRoleBinding`** (`Group: platform:admin → cluster-admin`).
 
 Install them like this:
@@ -121,26 +121,19 @@ kubectl apply -f infrastructure/platform-admin/clusterrolebinding-platform-admin
 # 3. Create the kube-dc-admin client + both protocol mappers in Keycloak (idempotent)
 bash bootstrap/setup-keycloak-oidc.sh <cluster>
 
-# 4. Roll the kube-dc-manager so its updated ReconcileAll runs and adds the
-#    master-realm issuer to auth-conf.yaml. If the running manager image is
-#    behind the version in your tree, push a new image first.
+# 4. Make sure kube-dc-manager (v0.3.0+) is running so its OIDCRegistry
+#    ReconcileAll creates the master OpenIDConnect CR. Roll if behind:
 kubectl rollout restart deployment/kube-dc-manager -n kube-dc
 ```
 
-After step 4, watch for the auth-startup-sync line (~30s after restart, post-leader-election):
+Verify the master CR landed with the right shape:
 
 ```bash
-kubectl logs deployment/kube-dc-manager -n kube-dc --tail=50 | grep auth-startup-sync
-# expect: auth startup sync complete   {"orgs": N, "added": 1, "removed": 0}
-# "added: 1" means the master-realm entry was newly inserted on this run.
+kubectl get openidconnect master -o yaml | grep -A1 "audiences:\|usernamePrefix:"
+# expect:
+#   audiences:
+#   - kube-dc-admin
+#   usernamePrefix: 'platform:'
 ```
 
-Verify the entry is there:
-
-```bash
-kubectl get configmap kube-dc-auth-config -n kube-dc \
-  -o jsonpath='{.data.auth-conf\.yaml}' | grep -A4 "realms/master"
-# expect: an entry with audiences: [kube-dc-admin] and claim prefix "platform:"
-```
-
-The `auth-config-sync` DaemonSet pushes the ConfigMap to `/etc/rancher/auth-conf.yaml` on every control-plane node within ~2 s; kube-apiserver picks up the change via fsnotify (no restart needed).
+The gardener oidc-webhook-authenticator picks the CR up via informer within seconds and registers it in its in-memory issuer→authenticator map. No apiserver restart, no file sync — `kube-dc login --admin` resolves on the next attempt.

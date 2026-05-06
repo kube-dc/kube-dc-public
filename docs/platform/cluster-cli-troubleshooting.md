@@ -35,8 +35,9 @@ kubectl auth whoami
 ### "Is my admin login wired up correctly?"
 
 ```bash
-# 1. JWT issuer present in auth-conf?
-kubectl get configmap kube-dc-auth-config -n kube-dc -o yaml | grep -A1 "realms/master"
+# 1. master OpenIDConnect CR exists with correct audience + prefix?
+kubectl get openidconnect master -o jsonpath='{.spec.audiences}{"  "}{.spec.usernamePrefix}{"\n"}'
+# expect: ["kube-dc-admin"]  platform:
 
 # 2. ClusterRoleBinding present?
 kubectl get clusterrolebinding platform-admin -o yaml | grep -A3 subjects
@@ -44,6 +45,9 @@ kubectl get clusterrolebinding platform-admin -o yaml | grep -A3 subjects
 # 3. The kube-dc-admin OIDC client exists?
 KEYCLOAK_URL=https://login.<domain>
 # Manual: open ${KEYCLOAK_URL}/admin → master → Clients → kube-dc-admin
+
+# 4. The gardener oidc-webhook-authenticator pod is Ready on each CP node?
+kubectl -n oidc-webhook-authenticator get pods -o wide
 ```
 
 ### "What contexts has the CLI written?"

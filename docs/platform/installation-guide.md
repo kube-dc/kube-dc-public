@@ -135,8 +135,15 @@ cluster-dns: "10.101.0.11"
 node-label:
   - kube-dc-manager=true
   - kube-ovn/role=master
-kube-apiserver-arg:
-  - authentication-config=/etc/rancher/auth-conf.yaml
+# OIDC authn is wired in a post-install step (after the gardener
+# oidc-webhook-authenticator DaemonSet is up). Do not pre-set
+# --authentication-config or --authentication-token-webhook-config-file
+# here — RKE2 boots cert-only, then the operator adds the webhook flag
+# per node. Memory reservation protects kubelet/etcd from kernel OOM.
+kubelet-arg:
+  - system-reserved=cpu=500m,memory=4Gi
+  - kube-reserved=cpu=500m,memory=4Gi
+  - eviction-hard=memory.available<2Gi,nodefs.available<10%
 node-ip: 192.168.0.1                     # Management network IP
 advertise-address: 192.168.0.1
 tls-san:
@@ -145,17 +152,6 @@ tls-san:
   - 192.168.0.2
   - 192.168.0.3
 EOF
-```
-
-Create the authentication configuration placeholder (Kube-DC will configure OIDC later):
-
-```bash
-cat <<EOF | sudo tee /etc/rancher/auth-conf.yaml
-apiVersion: apiserver.config.k8s.io/v1beta1
-kind: AuthenticationConfiguration
-jwt: []
-EOF
-sudo chmod 666 /etc/rancher/auth-conf.yaml
 ```
 
 Install and start RKE2:
@@ -220,8 +216,10 @@ cni: none
 node-label:
   - kube-dc-manager=true
   - kube-ovn/role=master
-kube-apiserver-arg:
-  - authentication-config=/etc/rancher/auth-conf.yaml
+kubelet-arg:
+  - system-reserved=cpu=500m,memory=4Gi
+  - kube-reserved=cpu=500m,memory=4Gi
+  - eviction-hard=memory.available<2Gi,nodefs.available<10%
 node-ip: 192.168.0.2                     # This node's management IP
 advertise-address: 192.168.0.2
 tls-san:
@@ -230,14 +228,6 @@ tls-san:
   - 192.168.0.2
   - 192.168.0.3
 EOF
-
-# Create auth config placeholder
-cat <<EOF | sudo tee /etc/rancher/auth-conf.yaml
-apiVersion: apiserver.config.k8s.io/v1beta1
-kind: AuthenticationConfiguration
-jwt: []
-EOF
-sudo chmod 666 /etc/rancher/auth-conf.yaml
 
 # Install and start
 export INSTALL_RKE2_VERSION="v1.35.0+rke2r1"
