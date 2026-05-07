@@ -394,14 +394,25 @@ spec:
                           description: Network interface configurations
                           items:
                             description: |-
-                              CloudSigmaNICSpec defines a CloudSigma network interface configuration
-                              All clusters run inside VLANs; public NAT is auto-assigned when no NICs are specified.
+                              CloudSigmaNICSpec defines a CloudSigma network interface configuration.
+
+                              Exactly one of VLAN or Public must be set:
+                                - VLAN attaches the NIC to a CloudSigma VLAN. Combine with IPPoolRef
+                                  for static IPAM (cloud VLAN); omit for VLAN DHCP (customer-managed).
+                                - Public attaches a CloudSigma public IP via DHCP. Use this together
+                                  with a cloud-VLAN NIC to give workers internal control-plane /
+                                  konnectivity reachability AND a per-worker public IP for egress
+                                  and LoadBalancer, without a separate NAT-GW VM.
+
+                              When the whole NICs slice is empty, CAPCS falls back to a single
+                              public DHCP NIC (legacy behaviour).
                             properties:
                               ipPoolRef:
                                 description: |-
                                   IPPoolRef references an InClusterIPPool or GlobalInClusterIPPool for static IP allocation.
                                   Required for cloud VLAN (first NIC) on private clusters (expose-route=false).
                                   Optional for customer VLANs — omit if customer provides their own DHCP.
+                                  Only meaningful for VLAN NICs.
                                 properties:
                                   apiGroup:
                                     default: ipam.cluster.x-k8s.io
@@ -421,11 +432,17 @@ spec:
                                 required:
                                 - name
                                 type: object
+                              public:
+                                description: |-
+                                  Public, when true, attaches a CloudSigma public IP to this NIC via
+                                  DHCP. Mutually exclusive with VLAN. Typical use: a second NIC
+                                  alongside a cloud-VLAN NIC to give workers their own public IP for
+                                  egress / LoadBalancer without a NAT-GW VM.
+                                type: boolean
                               vlan:
-                                description: VLAN UUID for the network interface
+                                description: VLAN UUID for the network interface.
+                                  Mutually exclusive with Public.
                                 type: string
-                            required:
-                            - vlan
                             type: object
                           type: array
                         privateApiEndpointIP:
