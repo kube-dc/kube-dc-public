@@ -127,7 +127,7 @@ recovery on production). Pick the tier that matches your node memory:
 
 | Node memory | `system-reserved` | `kube-reserved` | `eviction-hard` | `max-pods` |
 |---|---|---|---|---|
-| **<32 GiB** | `cpu=200m,memory=1Gi` | `cpu=200m,memory=1Gi` | `memory.available<500Mi,nodefs.available<10%` | `110` |
+| **\<32 GiB** | `cpu=200m,memory=1Gi` | `cpu=200m,memory=1Gi` | `memory.available<500Mi,nodefs.available<10%` | `110` |
 | **32–64 GiB** | `cpu=300m,memory=2Gi` | `cpu=300m,memory=2Gi` | `memory.available<1Gi,nodefs.available<10%` | `180` |
 | **≥64 GiB** | `cpu=500m,memory=4Gi` | `cpu=500m,memory=4Gi` | `memory.available<2Gi,nodefs.available<10%` | `250` |
 

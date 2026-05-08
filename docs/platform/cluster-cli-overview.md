@@ -2,7 +2,7 @@
 
 The `kube-dc` CLI ships two surfaces:
 
-- **Tenant-facing** — `kube-dc login`, `kube-dc use`, `kube-dc ns`. Browser-based OIDC for tenants of a Kube-DC cluster. Documented in the user guide under [CLI – Console & IDE Access](../cloud/cli-kubeconfig.md).
+- **Tenant-facing** — `kube-dc login`, `kube-dc use`, `kube-dc ns`. Browser-based OIDC for tenants of a Kube-DC cluster. Documented in the user guide under [CLI – Console & IDE Access](/cloud/cli-kubeconfig).
 - **Operator-facing** (this section) — `kube-dc bootstrap …`. Bubble Tea TUIs and subcommands for cluster operators: browse a fleet of clusters, log in as a platform admin, manage kubeconfig contexts safely, recover via break-glass when OIDC is broken.
 
 This chapter set is a hands-on guide to the operator surface. Skim the headings; run the commands you need.
