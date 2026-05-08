@@ -1,6 +1,6 @@
 # What is Kube-DC?
 
-Kube-DC Cloud is the Kubernetes-based Cloud!
+Kube-DC Cloud is a fully managed cloud platform built on [Kube-DC](https://kube-dc.com), an open-source Kubernetes-native data center solution.
 
 ![Kube-DC workloads view](images/kube-dc-workloads-view.png)
 
