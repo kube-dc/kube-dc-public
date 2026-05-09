@@ -335,6 +335,229 @@ Click **+ Add parameter** to add entries, then **Update** to apply changes.
 
 The YAML tab shows the raw `KdcDatabase` resource definition. You can use this to inspect the full configuration or as a template for creating similar databases via kubectl.
 
+## Backup and Restore via kubectl
+
+The dashboard wraps the same primitives that you can drive directly with `kubectl`. Both engines store backups in your project's S3 bucket (`<namespace>-db-backups`, auto-created on first use). Recovery uses the engines' native bootstrap-time mechanisms — CNPG's `bootstrap.recovery` and mariadb-operator's `bootstrapFrom` — wired through Kube-DC's `KdcDatabase` so you don't manage them by hand.
+
+### Configure scheduled backups
+
+Backup schedule and retention live on `spec.backup` of the `KdcDatabase`. The `s3Endpoint` and credentials are derived from your project's bucket if you don't override them.
+
+```yaml
+apiVersion: db.kube-dc.com/v1alpha1
+kind: KdcDatabase
+metadata:
+  name: my-postgres
+  namespace: my-project
+spec:
+  engine: postgresql
+  version: "16"
+  databaseName: myapp
+  username: app
+  cpu: "1"
+  memory: 2Gi
+  storage: 20Gi
+  replicas: 2
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"   # daily at 02:00
+    retentionDays: 7
+```
+
+Apply, then verify the backup pipeline is healthy:
+
+```bash
+kubectl apply -f my-postgres.yaml
+
+# PostgreSQL: scheduled CNPG ScheduledBackup + the recoverability window
+kubectl get scheduledbackup -n my-project
+kubectl get cluster.postgresql.cnpg.io my-postgres -n my-project \
+  -o jsonpath='{.status.firstRecoverabilityPoint}{"\n"}'
+
+# MariaDB: scheduled PhysicalBackup
+kubectl get physicalbackup -n my-project
+```
+
+### Take an on-demand backup
+
+A scheduled backup runs on its cron, but you can take a snapshot any time by creating a one-off CR alongside the `KdcDatabase`. These are the same CRs the **Take snapshot now** button creates.
+
+**PostgreSQL** — create a `cnpg.io/Backup`:
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Backup
+metadata:
+  name: my-postgres-snap-$(date +%s)
+  namespace: my-project
+  labels:
+    kube-dc.com/database: my-postgres
+    kube-dc.com/backup-type: manual
+spec:
+  cluster:
+    name: my-postgres
+  method: barmanObjectStore
+```
+
+**MariaDB** — create a `k8s.mariadb.com/PhysicalBackup`:
+
+```yaml
+apiVersion: k8s.mariadb.com/v1alpha1
+kind: PhysicalBackup
+metadata:
+  name: my-mariadb-snap-$(date +%s)
+  namespace: my-project
+  labels:
+    kube-dc.com/database: my-mariadb
+    kube-dc.com/backup-type: manual
+spec:
+  mariaDbRef:
+    name: my-mariadb
+  target: PreferReplica   # falls back to primary when no replica is promoted
+  backoffLimit: 3
+  storage:
+    s3:
+      bucket: my-project-db-backups
+      prefix: databases/my-mariadb
+      endpoint: s3.kube-dc.cloud
+      tls:
+        enabled: true
+      accessKeyIdSecretKeyRef:
+        name: db-backups
+        key: AWS_ACCESS_KEY_ID
+      secretAccessKeySecretKeyRef:
+        name: db-backups
+        key: AWS_SECRET_ACCESS_KEY
+```
+
+:::tip
+Always set `target: PreferReplica` on a MariaDB `PhysicalBackup`. The mariadb-operator's default is strict `Replica`, which loops forever waiting for a replica-labeled pod when replication has not converged.
+:::
+
+### List backups available for restore
+
+```bash
+# PostgreSQL — completed barman backups (the names you reference for recovery)
+kubectl get backup.postgresql.cnpg.io -n my-project \
+  -l '!cnpg.io/scheduled-backup' -o custom-columns=\
+NAME:.metadata.name,PHASE:.status.phase,BEGIN:.status.beginWal,END:.status.endWal,STOPPED:.status.stoppedAt
+
+# MariaDB — physical backups
+kubectl get physicalbackup -n my-project \
+  -o custom-columns=\
+NAME:.metadata.name,COMPLETE:.status.conditions[0].status,LAST_RUN:.status.lastScheduleTime
+```
+
+### Choose a restore path
+
+| Path | When | Engine handle |
+|------|------|---------------|
+| **New-name (recommended)** | Verify the recovery first, swap apps over once you're sure | `KdcDatabase.spec.restoreFrom` on a fresh resource |
+| **In-place (destructive)** | You're sure; want to keep the same name and connection details | `kube-dc.com/restore-from` annotation on the existing `KdcDatabase` |
+
+Both paths target the same engine primitives — only the wrapper-level decision differs.
+
+### New-name restore (safe path)
+
+Create a sibling `KdcDatabase` whose engine cluster bootstraps from a chosen backup. The original keeps running until you cut over.
+
+```yaml
+apiVersion: db.kube-dc.com/v1alpha1
+kind: KdcDatabase
+metadata:
+  name: my-postgres-restored
+  namespace: my-project
+spec:
+  engine: postgresql
+  version: "16"
+  databaseName: myapp
+  username: app
+  cpu: "1"
+  memory: 2Gi
+  storage: 20Gi
+  replicas: 2
+  restoreFrom:
+    backupName: my-postgres-snap-1778356023118   # cnpg.io/Backup CR name
+    sourceDatabaseName: my-postgres              # audit/UI display
+    # Optional PostgreSQL PITR — replay WAL up to this RFC 3339 instant.
+    # MariaDB targetTime is honored by the API but needs continuous binlog
+    # archival, which is not yet wired in Kube-DC v0.3.x.
+    # targetTime: "2026-05-09T19:30:00Z"
+```
+
+```bash
+kubectl apply -f my-postgres-restored.yaml
+kubectl get kdcdatabase my-postgres-restored -n my-project -w
+```
+
+The new database goes through `Pending` → `Provisioning` → `Ready`. Once Ready, point your app at `my-postgres-restored-rw.my-project.svc` and delete the original whenever you're satisfied.
+
+For MariaDB the shape is the same:
+
+```yaml
+spec:
+  engine: mariadb
+  # … sizing identical to the source …
+  restoreFrom:
+    backupName: my-mariadb-snap-1778356023118   # k8s.mariadb.com/PhysicalBackup name
+    sourceDatabaseName: my-mariadb
+```
+
+### In-place restore (destructive)
+
+Set the trigger annotation on the existing `KdcDatabase`. db-manager will delete the underlying engine cluster + PVCs and re-bootstrap from the chosen backup. Live data is gone for the duration — the database is unavailable until restore completes (typically a few minutes).
+
+```bash
+# PostgreSQL: restore my-postgres in place from a known-good backup
+kubectl annotate kdcdatabase my-postgres -n my-project \
+  kube-dc.com/restore-from=my-postgres-snap-1778356023118 --overwrite
+
+# Optional PostgreSQL PITR — same annotation set, plus a target time
+kubectl annotate kdcdatabase my-postgres -n my-project \
+  kube-dc.com/restore-from=my-postgres-snap-1778356023118 \
+  kube-dc.com/restore-target-time=2026-05-09T19:30:00Z --overwrite
+```
+
+The controller clears both annotations once `status.restore.phase` reaches `Succeeded`.
+
+### Monitor a restore
+
+```bash
+# Phase + last message — set by db-manager
+kubectl get kdcdatabase my-postgres -n my-project \
+  -o jsonpath='{.status.restore.phase} — {.status.restore.message}{"\n"}'
+
+# RestoreReady condition — True when finished, False with a reason while running
+kubectl get kdcdatabase my-postgres -n my-project \
+  -o jsonpath='{.status.conditions[?(@.type=="RestoreReady")].status}{"  "}{.status.conditions[?(@.type=="RestoreReady")].message}{"\n"}'
+
+# Engine-side progress — CNPG/MariaDB conditions
+kubectl get cluster.postgresql.cnpg.io my-postgres -n my-project \
+  -o jsonpath='{range .status.conditions[*]}{.type}={.status} ({.message}){"\n"}{end}'
+```
+
+Phases you'll see while the in-place flow runs: an empty `restore` becomes `InProgress` (engine teardown → engine recreation → recovery), then transitions to `Succeeded` (annotation cleared, condition `True`) or `Failed` (annotation kept so you can retry).
+
+### PostgreSQL point-in-time recovery
+
+CNPG ships continuous WAL archives alongside base backups. Read the recoverable window straight off the `Cluster`:
+
+```bash
+kubectl get cluster.postgresql.cnpg.io my-postgres -n my-project \
+  -o jsonpath='floor: {.status.firstRecoverabilityPoint}{"\n"}last: {.status.lastSuccessfulBackup}{"\n"}'
+# floor: 2026-05-02T02:00:08Z
+# last: 2026-05-09T02:00:10Z
+```
+
+Any RFC 3339 timestamp between the floor and **now** is a valid `targetTime` while the `ContinuousArchiving` condition is `True`. If continuous archiving is unhealthy, the safe ceiling drops back to `lastSuccessfulBackup`.
+
+```bash
+# Verify continuous archiving is healthy before you rely on PITR
+kubectl get cluster.postgresql.cnpg.io my-postgres -n my-project \
+  -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")].status}{"\n"}'
+# True
+```
+
 ## High Availability
 
 When running with **2 or more replicas**, your database operates in high-availability mode:
