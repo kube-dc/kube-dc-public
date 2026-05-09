@@ -298,4 +298,40 @@ rules:
   - get
   - list
   - watch
+# Permissions delegated to the per-cluster kubevirt-csi-controller
+# Role that reconcileKubevirtCSI creates. RBAC's "no privilege
+# escalation" rule means the manager can only grant what it itself
+# holds — listing them here lets the manager create the per-tenant
+# Role + RoleBinding without 403 from the apiserver.
+# See shalb/kube-dc docs/prd/tenant-cluster-teardown-gc.md §D1.
+- apiGroups:
+  - cdi.kubevirt.io
+  resources:
+  - datavolumes
+  verbs:
+  - create
+  - delete
+  - get
+- apiGroups:
+  - subresources.kubevirt.io
+  resources:
+  - virtualmachines/addvolume
+  - virtualmachines/removevolume
+  verbs:
+  - update
+- apiGroups:
+  - snapshot.storage.k8s.io
+  resources:
+  - volumesnapshots
+  verbs:
+  - create
+  - delete
+  - get
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumeclaims
+  verbs:
+  - get
+  - patch
 {{- end }}
