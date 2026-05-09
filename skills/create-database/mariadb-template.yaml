@@ -14,3 +14,10 @@ spec:
   username: app
   expose:
     type: internal          # internal | gateway | loadbalancer
+  # Scheduled physical backups land in the project's auto-provisioned S3
+  # bucket (`{project-namespace}-db-backups`). Manual backups must use
+  # `target: PreferReplica` — see backup-restore-patterns.md.
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"   # daily at 02:00
+    retentionDays: 7

@@ -1,6 +1,6 @@
 ---
 name: create-database
-description: Create a managed PostgreSQL or MariaDB database in a Kube-DC project, configure access for workloads via environment variables and secrets, and optionally expose externally via Gateway or LoadBalancer.
+description: Create a managed PostgreSQL or MariaDB database in a Kube-DC project, configure access for workloads via environment variables and secrets, optionally expose externally via Gateway or LoadBalancer, and back up / restore via kubectl.
 ---
 
 ## Prerequisites
@@ -142,7 +142,24 @@ spec:
 ```
 → Check `status.externalEndpoint` for the allocated IP
 
-### 5. Retrieve Password
+### 5. Configure Backups (Optional, Recommended for Production)
+
+Scheduled backups are off by default. Add `spec.backup` to enable a daily backup
+to the project's auto-provisioned S3 bucket (`{project-namespace}-db-backups`):
+
+```yaml
+spec:
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"   # daily at 02:00
+    retentionDays: 7
+```
+
+PostgreSQL also enables continuous WAL archiving when `backup.enabled: true`,
+which is what powers PITR. See @backup-restore-patterns.md for on-demand backups,
+restore (new-name and in-place flows), and PostgreSQL point-in-time recovery.
+
+### 6. Retrieve Password
 
 ```bash
 # PostgreSQL
@@ -186,8 +203,47 @@ kubectl run mysql-test --rm -it --restart=Never --image=mysql:8.0 -n {project-na
 **Failure**: If phase is `Provisioning`, wait and recheck. If `Failed`:
 - `kubectl describe kdcdb {db-name} -n {project-namespace}` — check conditions and events
 
+## Backup & Restore
+
+For day-2 backup operations — on-demand backups, restoring (new-name and
+in-place flows), and PostgreSQL point-in-time recovery — see
+@backup-restore-patterns.md.
+
+Quick reference:
+
+```bash
+# List restore-eligible backups
+kubectl get backup.postgresql.cnpg.io -n {project-namespace}        # PostgreSQL
+kubectl get physicalbackup -n {project-namespace}                   # MariaDB
+
+# In-place restore (destructive — deletes engine PVCs and re-bootstraps)
+kubectl annotate kdcdb {db-name} -n {project-namespace} \
+  kube-dc.com/restore-from={backup-name} --overwrite
+
+# PostgreSQL PITR — add target time alongside
+kubectl annotate kdcdb {db-name} -n {project-namespace} \
+  kube-dc.com/restore-from={backup-name} \
+  kube-dc.com/restore-target-time={rfc3339-instant} --overwrite
+
+# Watch restore progress (annotation clears when phase=Succeeded)
+kubectl get kdcdb {db-name} -n {project-namespace} \
+  -o jsonpath='{.status.restore.phase} — {.status.restore.message}{"\n"}'
+```
+
+For non-destructive restore, create a new `KdcDatabase` with `spec.restoreFrom`
+instead of using the annotation — see @backup-restore-patterns.md for the full
+recipe.
+
 ## Safety
 - Never log database passwords in chat output
 - Default to `internal` exposure unless user explicitly requests external
 - Recommend 2+ replicas for production workloads
 - PostgreSQL endpoint uses `-rw` suffix; MariaDB does not
+- **In-place restore is destructive** — engine PVCs are deleted and recreated
+  from the chosen backup. Live data is gone for the duration of the restore.
+  Prefer the new-name path (`spec.restoreFrom` on a fresh `KdcDatabase`) for
+  production-critical data; verify and swap apps over once you're sure.
+- For MariaDB on-demand `PhysicalBackup` always set `target: PreferReplica` —
+  the default `Replica` strict mode loops forever when replication has not
+  converged. Backups created via the dashboard or `spec.backup` are already
+  configured correctly.

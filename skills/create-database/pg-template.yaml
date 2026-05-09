@@ -14,3 +14,10 @@ spec:
   username: app
   expose:
     type: internal          # internal | gateway | loadbalancer
+  # Scheduled backups land in the project's auto-provisioned S3 bucket
+  # (`{project-namespace}-db-backups`). Continuous WAL archiving is enabled
+  # whenever `backup.enabled: true`, which is what powers PITR.
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"   # daily at 02:00
+    retentionDays: 7
