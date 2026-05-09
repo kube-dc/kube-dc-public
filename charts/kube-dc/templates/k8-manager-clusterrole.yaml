@@ -332,6 +332,9 @@ rules:
   resources:
   - persistentvolumeclaims
   verbs:
+  - delete
   - get
+  - list
   - patch
+  - watch
 {{- end }}
