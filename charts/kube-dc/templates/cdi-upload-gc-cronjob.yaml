@@ -1,0 +1,159 @@
+{{- if .Values.cdiUploadGc.enabled }}
+# =============================================================================
+# CDI worker-pod GC CronJob
+#
+# When a CDI DataVolume gets stuck (canonical example: clone scheduled but
+# the source-PVC controller never produces a TLS Secret for the upload
+# server, so cdi-upload-<dv> stays in ContainerCreating forever), CDI
+# itself does NOT garbage-collect after the DEADLINE annotation passes.
+# Live evidence on cloud: bogdan-test2/cdi-upload-froma20-root was stuck
+# in ContainerCreating for 51 days, firing 6 KubeContainerWaiting + 1
+# KubePodNotReady alerts (collapsed to 2 after C1 per-pod aggregation).
+#
+# This CronJob audits CDI worker pods (cdi-upload-*, cdi-importer-*,
+# cdi-clone-*) that are non-terminal for >7 days, looks up their parent
+# DataVolume, and (if .Values.cdiUploadGc.delete=true) deletes the DV.
+# Default is audit-only — operator enables deletion explicitly.
+#
+# Targeting `Pending|ContainerCreating` pods means we don't touch DVs
+# whose worker is healthy and progressing; they cycle to Succeeded
+# within minutes for normal uploads. The 7-day floor protects very
+# slow legitimate uploads.
+#
+# PRD: docs/prd/alerts-noise-cleanup.md §4.F (F1/F2).
+# =============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cdi-upload-gc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "kube-dc.manager.fullname" . }}-cdi-upload-gc
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+rules:
+  # Read pods cluster-wide to find stuck CDI workers.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  # Read + delete DataVolumes when audit confirms the parent is stuck.
+  - apiGroups: ["cdi.kubevirt.io"]
+    resources: ["datavolumes"]
+    verbs: ["get", "list", "watch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "kube-dc.manager.fullname" . }}-cdi-upload-gc
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "kube-dc.manager.fullname" . }}-cdi-upload-gc
+subjects:
+  - kind: ServiceAccount
+    name: cdi-upload-gc
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cdi-upload-gc-script
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+data:
+  gc.sh: |
+    #!/bin/sh
+    # GC stuck CDI worker pods + parent DataVolumes.
+    # Audit-only unless GC_DELETE=true.
+    set -eu
+
+    GC_STALE_DAYS="${GC_STALE_DAYS:-7}"
+    GC_DELETE="${GC_DELETE:-false}"
+    NOW=$(date -u +%s)
+    THRESHOLD=$((NOW - GC_STALE_DAYS * 86400))
+
+    echo "cdi-upload-gc: stale-threshold=${GC_STALE_DAYS}d delete=${GC_DELETE}"
+
+    # Find non-terminal CDI worker pods older than the threshold.
+    # `cdi-(upload|importer|clone)-<dv-name>` is CDI's pod naming
+    # convention. The DV name is what's left after the prefix strip.
+    kubectl get pods -A -o json \
+      | jq -r --argjson threshold "$THRESHOLD" '
+          .items[]
+          | select(.metadata.name | test("^cdi-(upload|importer|clone)-"))
+          | select(.status.phase | test("^(Pending|Unknown)$"))
+          | select((.metadata.creationTimestamp | fromdateiso8601) < $threshold)
+          | "\(.metadata.namespace) \(.metadata.name)"' \
+      | while read -r ns pod; do
+          dv="${pod#cdi-upload-}"
+          dv="${dv#cdi-importer-}"
+          dv="${dv#cdi-clone-}"
+          if ! kubectl get datavolume -n "$ns" "$dv" >/dev/null 2>&1; then
+            echo "[skip] no DataVolume $ns/$dv found for stuck pod $pod"
+            continue
+          fi
+          if [ "$GC_DELETE" = "true" ]; then
+            echo "[delete] DV $ns/$dv (parent of stuck pod $pod, age >${GC_STALE_DAYS}d)"
+            kubectl delete datavolume -n "$ns" "$dv" --wait=false
+          else
+            echo "[audit] would delete DV $ns/$dv (parent of stuck pod $pod, age >${GC_STALE_DAYS}d)"
+          fi
+        done
+
+    echo "cdi-upload-gc: done"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cdi-upload-gc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.cdiUploadGc.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400 # 1d
+      template:
+        spec:
+          serviceAccountName: cdi-upload-gc
+          restartPolicy: OnFailure
+          containers:
+            - name: gc
+              image: {{ .Values.cdiUploadGc.image | quote }}
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "/scripts/gc.sh"]
+              env:
+                - name: GC_STALE_DAYS
+                  value: {{ .Values.cdiUploadGc.staleDays | quote }}
+                - name: GC_DELETE
+                  value: {{ .Values.cdiUploadGc.delete | quote }}
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 128Mi
+          volumes:
+            - name: scripts
+              configMap:
+                name: cdi-upload-gc-script
+                defaultMode: 0755
+{{- end }}

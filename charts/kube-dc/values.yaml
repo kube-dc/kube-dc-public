@@ -543,3 +543,25 @@ dbManager:
   nodeSelector: {}
   tolerations: []
   affinity: {}
+
+# CDI worker-pod GC CronJob. CDI doesn't garbage-collect upload /
+# importer / clone pods after their DEADLINE passes; we've seen
+# tenants stuck for 51+ days when CDI couldn't produce the upload
+# server's TLS Secret. This CronJob audits stuck pods and (if
+# `delete: true`) deletes their parent DataVolumes.
+# See docs/prd/alerts-noise-cleanup.md §4.F (F1/F2).
+cdiUploadGc:
+  enabled: true
+  # Pods in Pending/Unknown for longer than this many days are
+  # considered abandoned. 7d is a conservative default — legitimate
+  # large uploads complete within hours.
+  staleDays: 7
+  # When false (default), only logs which DataVolumes WOULD be
+  # deleted ("[audit] would delete..."). Set to true to enable
+  # actual deletion. Recommend running in audit mode for the first
+  # cycle to verify the audit list matches operator expectations.
+  delete: false
+  # Cron schedule. Default: every 6h.
+  schedule: "0 */6 * * *"
+  # Image needs only `kubectl` and `jq`. bitnami/kubectl ships both.
+  image: "bitnami/kubectl:1.33"
