@@ -98,6 +98,12 @@ rules:
 - apiGroups: [batch]
   resources: [jobs]
   verbs: [create, get, list, watch, delete]
+# CronJobs read — the Danger Zone "Take snapshot now" reads the daily
+# <cluster>-etcd-backup CronJob's jobTemplate so it can create a one-off
+# manual Job from the same spec. Read-only is enough.
+- apiGroups: [batch]
+  resources: [cronjobs]
+  verbs: [get, list, watch]
 # Kube-DC resources
 - apiGroups: [kube-dc.com]
   resources: [eips, fips]
@@ -229,6 +235,10 @@ rules:
 - apiGroups: [batch]
   resources: [jobs]
   verbs: [create, get, list, watch, delete]
+# CronJobs read — see admin role above.
+- apiGroups: [batch]
+  resources: [cronjobs]
+  verbs: [get, list, watch]
 # Kube-DC resources
 - apiGroups: [kube-dc.com]
   resources: [eips, fips]
@@ -349,7 +359,7 @@ rules:
   verbs: [get, list, watch]
 # Batch - read only
 - apiGroups: [batch]
-  resources: [jobs]
+  resources: [jobs, cronjobs]
   verbs: [get, list, watch]
 # Kube-DC resources - read only
 - apiGroups: [kube-dc.com]
