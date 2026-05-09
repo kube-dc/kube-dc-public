@@ -785,6 +785,16 @@ spec:
                   snapshot upload.
                 format: date-time
                 type: string
+              latestRestoreKey:
+                description: |-
+                  LatestRestoreKey is the S3 object key of the snapshot used for the last
+                  successful restore.
+                type: string
+              latestRestoreTime:
+                description: LatestRestoreTime is the timestamp of the last successful
+                  restore.
+                format: date-time
+                type: string
               phase:
                 description: Phase represents the current phase of the cluster
                 type: string
