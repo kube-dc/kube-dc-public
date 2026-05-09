@@ -165,6 +165,40 @@ spec:
                 maximum: 9
                 minimum: 1
                 type: integer
+              restoreFrom:
+                description: |-
+                  Bootstrap-time recovery configuration. Only honored when the underlying
+                  engine cluster (CNPG Cluster / MariaDB) does not yet exist. Set this on
+                  a freshly created KdcDatabase to provision it from an existing backup —
+                  the safe "restore into a new database" path recommended by both engines.
+
+                  To trigger a destructive in-place restore on an existing KdcDatabase,
+                  use the annotation `kube-dc.com/restore-from: <backupName>` instead;
+                  the controller will delete the engine CR + PVCs and re-bootstrap from
+                  the chosen backup, then clear the annotation.
+                properties:
+                  backupName:
+                    description: |-
+                      BackupName is the in-namespace `cnpg.io/Backup` (PostgreSQL) or
+                      `k8s.mariadb.com/PhysicalBackup` (MariaDB) CR to recover from.
+                      Required.
+                    type: string
+                  sourceDatabaseName:
+                    description: |-
+                      SourceDatabaseName is the name of the original KdcDatabase the backup
+                      belongs to. Set this when restoring into a NEW KdcDatabase whose name
+                      differs from the source (the recommended safe path). Used purely for
+                      auditing/UI display; the engine recovery uses BackupName.
+                    type: string
+                  targetTime:
+                    description: |-
+                      TargetTime requests point-in-time recovery to the given RFC 3339
+                      timestamp. PostgreSQL only — replays the WAL archive up to this point
+                      (CNPG `recoveryTarget.targetTime`). Ignored for MariaDB in v1.
+                    type: string
+                required:
+                - backupName
+                type: object
               storage:
                 anyOf:
                 - type: integer
@@ -293,6 +327,53 @@ spec:
                 description: Number of ready instances
                 format: int32
                 type: integer
+              restore:
+                description: |-
+                  Restore tracks the most recent restore operation (in-place via the
+                  `kube-dc.com/restore-from` annotation, or initial bootstrap from
+                  `spec.restoreFrom`). The controller writes this once the engine cluster
+                  reports Ready after a recovery so the UI can surface the source backup
+                  and target time used.
+                properties:
+                  backupName:
+                    description: |-
+                      BackupName that was used as the recovery source (cnpg.io/Backup or
+                      k8s.mariadb.com/PhysicalBackup).
+                    type: string
+                  completedAt:
+                    description: CompletedAt records when the restore reached a terminal
+                      phase.
+                    format: date-time
+                    type: string
+                  message:
+                    description: Message is a human-readable explanation of the current/last
+                      phase.
+                    type: string
+                  phase:
+                    description: Phase is one of "InProgress", "Succeeded", "Failed".
+                    enum:
+                    - InProgress
+                    - Succeeded
+                    - Failed
+                    type: string
+                  sourceDatabaseName:
+                    description: |-
+                      SourceDatabaseName is the original KdcDatabase the backup belonged to.
+                      Empty for in-place restores where source == target.
+                    type: string
+                  startedAt:
+                    description: StartedAt records when the restore began.
+                    format: date-time
+                    type: string
+                  targetTime:
+                    description: |-
+                      TargetTime is the RFC 3339 timestamp the recovery aimed for (PG PITR).
+                      Empty when the restore recovers to the latest available point.
+                    type: string
+                required:
+                - backupName
+                - phase
+                type: object
               storageUsed:
                 description: Current storage usage
                 type: string

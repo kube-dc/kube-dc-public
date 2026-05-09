@@ -15,6 +15,13 @@ rules:
 - apiGroups: [""]
   resources: [pods]
   verbs: [get, list, patch, watch]
+# PVC delete is required by the in-place restore flow: db-manager removes
+# the engine cluster's PVCs after deleting the engine CR so the new
+# Cluster/MariaDB bootstraps onto fresh volumes (CNPG/mariadb-operator
+# both refuse to reuse PVCs for a recovery bootstrap).
+- apiGroups: [""]
+  resources: [persistentvolumeclaims]
+  verbs: [delete, get, list, watch]
 - apiGroups: [""]
   resources: [secrets]
   verbs: [create, get, list, update, watch]
@@ -45,6 +52,12 @@ rules:
 - apiGroups: [k8s.mariadb.com]
   resources: [mariadbs/status]
   verbs: [get]
+# `backups` (logical) is read by the UI snapshot listing path and is
+# reserved for a future logical-restore mode. CRUD here lets the
+# operator manage it later without another RBAC bump.
+- apiGroups: [k8s.mariadb.com]
+  resources: [backups]
+  verbs: [create, delete, get, list, watch]
 - apiGroups: [kube-dc.com]
   resources: [eips]
   verbs: [create, delete, get, list, patch, update, watch]
@@ -60,4 +73,11 @@ rules:
 - apiGroups: [postgresql.cnpg.io]
   resources: [clusters/status]
   verbs: [get]
+# `backups` (the cnpg.io/Backup CR) is the source-of-truth for restore:
+# `bootstrap.recovery.backup.name` references it. The operator must be
+# able to create on-demand Backup CRs (UI "snapshot now") and delete
+# stale ones during teardown.
+- apiGroups: [postgresql.cnpg.io]
+  resources: [backups]
+  verbs: [create, delete, get, list, watch]
 {{- end }}

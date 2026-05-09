@@ -139,12 +139,20 @@ rules:
   resources: [kdcdatabases]
   verbs: [create, get, list, watch, delete, patch, update]
 # Database Engine Resources (CNPG + MariaDB operator)
+# `clusters` and `mariadbs` reads let the UI surface engine-side recovery
+# progress (status.bootstrap, status.conditions) during a restore.
 - apiGroups: [postgresql.cnpg.io]
   resources: [backups, scheduledbackups]
   verbs: [create, get, list, watch, delete]
+- apiGroups: [postgresql.cnpg.io]
+  resources: [clusters]
+  verbs: [get, list, watch]
 - apiGroups: [k8s.mariadb.com]
-  resources: [physicalbackups, databases, users, grants]
+  resources: [physicalbackups, backups, databases, users, grants]
   verbs: [create, get, list, watch, delete]
+- apiGroups: [k8s.mariadb.com]
+  resources: [mariadbs]
+  verbs: [get, list, watch]
 # Velero (Backup & Restore)
 - apiGroups: [velero.io]
   resources: [backups, restores, schedules, backupstoragelocations]
@@ -271,12 +279,20 @@ rules:
   resources: [kdcdatabases]
   verbs: [create, get, list, watch, delete, patch, update]
 # Database Engine Resources (CNPG + MariaDB operator)
+# `clusters` and `mariadbs` reads let the UI surface engine-side recovery
+# progress (status.bootstrap, status.conditions) during a restore.
 - apiGroups: [postgresql.cnpg.io]
   resources: [backups, scheduledbackups]
   verbs: [create, get, list, watch, delete]
+- apiGroups: [postgresql.cnpg.io]
+  resources: [clusters]
+  verbs: [get, list, watch]
 - apiGroups: [k8s.mariadb.com]
-  resources: [physicalbackups, databases, users, grants]
+  resources: [physicalbackups, backups, databases, users, grants]
   verbs: [create, get, list, watch, delete]
+- apiGroups: [k8s.mariadb.com]
+  resources: [mariadbs]
+  verbs: [get, list, watch]
 # Velero (Backup & Restore)
 - apiGroups: [velero.io]
   resources: [backups, restores, schedules, backupstoragelocations]
@@ -397,10 +413,10 @@ rules:
   verbs: [get, list, watch]
 # Database Engine Resources - read only
 - apiGroups: [postgresql.cnpg.io]
-  resources: [backups, scheduledbackups]
+  resources: [backups, scheduledbackups, clusters]
   verbs: [get, list, watch]
 - apiGroups: [k8s.mariadb.com]
-  resources: [physicalbackups, databases, users, grants]
+  resources: [physicalbackups, backups, databases, users, grants, mariadbs]
   verbs: [get, list, watch]
 # Velero - read only
 - apiGroups: [velero.io]
@@ -513,10 +529,10 @@ rules:
   verbs: [get, list]
 # Database Engine Resources - read only
 - apiGroups: [postgresql.cnpg.io]
-  resources: [backups, scheduledbackups]
+  resources: [backups, scheduledbackups, clusters]
   verbs: [get, list]
 - apiGroups: [k8s.mariadb.com]
-  resources: [physicalbackups, databases, users, grants]
+  resources: [physicalbackups, backups, databases, users, grants, mariadbs]
   verbs: [get, list]
 # Velero - read only
 - apiGroups: [velero.io]
