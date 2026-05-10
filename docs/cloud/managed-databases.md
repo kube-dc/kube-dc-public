@@ -554,7 +554,11 @@ kubectl get cluster.postgresql.cnpg.io my-postgres -n my-project \
 # last: 2026-05-09T02:00:10Z
 ```
 
-Any RFC 3339 timestamp between the floor and **now** is a valid `targetTime` while the `ContinuousArchiving` condition is `True`. If continuous archiving is unhealthy, the safe ceiling drops back to `lastSuccessfulBackup`.
+Any RFC 3339 timestamp between the floor and **now** is a valid `targetTime` while the `ContinuousArchiving` condition is `True` *and* enough WAL has actually been archived. If continuous archiving is unhealthy, the safe ceiling drops back to `lastSuccessfulBackup`.
+
+:::tip Idle clusters and PITR granularity
+Kube-DC sets `archive_timeout=5min` on every PostgreSQL cluster by default, which forces WAL switch + S3 upload every 5 minutes regardless of activity. On a database with no traffic, that's the limit of how fine-grained PITR can be — recovery to a target time inside a 5-minute window where no WAL boundary fell will fail with *"recovery ended before configured recovery target was reached"*. Override `archive_timeout` in `spec.parameters` if you need finer recovery on quiet clusters. Active databases generate WAL constantly and get sub-second PITR granularity for free.
+:::
 
 ```bash
 # Verify continuous archiving is healthy before you rely on PITR
