@@ -382,13 +382,16 @@ kubectl get physicalbackup -n my-project
 
 A scheduled backup runs on its cron, but you can take a snapshot any time by creating a one-off CR alongside the `KdcDatabase`. These are the same CRs the **Take snapshot now** button creates.
 
+Names must be unique within the namespace; the recipes below pipe the timestamp through `envsubst` so each invocation gets a fresh name.
+
 **PostgreSQL** — create a `cnpg.io/Backup`:
 
-```yaml
+```bash
+TS=$(date +%s) envsubst <<'YAML' | kubectl apply -f -
 apiVersion: postgresql.cnpg.io/v1
 kind: Backup
 metadata:
-  name: my-postgres-snap-$(date +%s)
+  name: my-postgres-snap-${TS}
   namespace: my-project
   labels:
     kube-dc.com/database: my-postgres
@@ -397,15 +400,17 @@ spec:
   cluster:
     name: my-postgres
   method: barmanObjectStore
+YAML
 ```
 
 **MariaDB** — create a `k8s.mariadb.com/PhysicalBackup`:
 
-```yaml
+```bash
+TS=$(date +%s) envsubst <<'YAML' | kubectl apply -f -
 apiVersion: k8s.mariadb.com/v1alpha1
 kind: PhysicalBackup
 metadata:
-  name: my-mariadb-snap-$(date +%s)
+  name: my-mariadb-snap-${TS}
   namespace: my-project
   labels:
     kube-dc.com/database: my-mariadb
@@ -428,6 +433,7 @@ spec:
       secretAccessKeySecretKeyRef:
         name: db-backups
         key: AWS_SECRET_ACCESS_KEY
+YAML
 ```
 
 :::tip
@@ -439,13 +445,12 @@ Always set `target: PreferReplica` on a MariaDB `PhysicalBackup`. The mariadb-op
 ```bash
 # PostgreSQL — completed barman backups (the names you reference for recovery)
 kubectl get backup.postgresql.cnpg.io -n my-project \
-  -l '!cnpg.io/scheduled-backup' -o custom-columns=\
-NAME:.metadata.name,PHASE:.status.phase,BEGIN:.status.beginWal,END:.status.endWal,STOPPED:.status.stoppedAt
+  -l '!cnpg.io/scheduled-backup' \
+  -o 'custom-columns=NAME:.metadata.name,PHASE:.status.phase,BEGIN:.status.beginWal,END:.status.endWal,STOPPED:.status.stoppedAt'
 
 # MariaDB — physical backups
 kubectl get physicalbackup -n my-project \
-  -o custom-columns=\
-NAME:.metadata.name,COMPLETE:.status.conditions[0].status,LAST_RUN:.status.lastScheduleTime
+  -o 'custom-columns=NAME:.metadata.name,COMPLETE:.status.conditions[0].status,LAST_RUN:.status.lastScheduleTime'
 ```
 
 ### Choose a restore path
