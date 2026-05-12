@@ -571,8 +571,12 @@ cdiUploadGc:
   delete: false
   # Cron schedule. Default: every 6h.
   schedule: "0 */6 * * *"
-  # Image needs only `kubectl` and `jq`. bitnami/kubectl ships both.
-  image: "bitnami/kubectl:1.33"
+  # Image needs only `kubectl` and `jq`. We ship our own minimal
+  # Alpine + official-kubectl + jq image (~70 MiB) so we don't depend
+  # on the deprecated bitnami/ namespace (404'd in 2026) or its
+  # bitnamilegacy/ archive. See kube-dc/images/kubectl-jq/README.md
+  # for the provenance and Dockerfile.
+  image: "shalb/kubectl-jq:v1.35.4"
 
 # ─────────────────────────────────────────────────────────────────────────
 # OS-image catalog. The UI's "Create VM" page reads this catalog through
