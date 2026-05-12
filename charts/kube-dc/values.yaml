@@ -620,10 +620,28 @@ osImages:
   # to flip the whole catalog over to the local mirror.
   mirrorBaseURL: ""
   catalog:
-    - osName: "Ubuntu 24.04"
+    - osName: "Ubuntu 24.04 LTS"
       cloudUser: ubuntu
       upstreamURL: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
       mirrorPath: "ubuntu/noble/latest/noble-server-cloudimg-amd64.img"
+      minMemory: "1G"
+      minVCPU: "1"
+      minStorage: "20G"
+      firmwareType: "bios"
+      machineType: "q35"
+      features: "acpi"
+      cloudInit: |
+        #cloud-config
+        package_update: true
+        package_upgrade: true
+        packages:
+          - qemu-guest-agent
+        runcmd:
+          - systemctl enable --now qemu-guest-agent
+    - osName: "Ubuntu 22.04 LTS"
+      cloudUser: ubuntu
+      upstreamURL: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+      mirrorPath: "ubuntu/jammy/latest/jammy-server-cloudimg-amd64.img"
       minMemory: "1G"
       minVCPU: "1"
       minStorage: "20G"
@@ -698,10 +716,14 @@ osImages:
           - qemu-guest-agent
         runcmd:
           - systemctl enable --now qemu-guest-agent
-    - osName: "Fedora 41"
+    - osName: "Fedora 42"
+      # Was Fedora 41 (Fedora-Cloud-Base-Generic-41-1.4) until 2026-05-12;
+      # upstream rotated the -1.4 point release and 41 has no
+      # current-stable cloud-init qcow2 anymore. F42 is the current
+      # mainline Fedora release.
       cloudUser: fedora
-      upstreamURL: "https://dl.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2"
-      mirrorPath: "fedora/41/Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2"
+      upstreamURL: "https://dl.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-42-1.1.x86_64.qcow2"
+      mirrorPath: "fedora/42/latest/Fedora-Cloud-Base-Generic-42-1.1.x86_64.qcow2"
       minMemory: "2G"
       minVCPU: "1"
       minStorage: "25G"
@@ -724,10 +746,13 @@ osImages:
           - restorecon -R /usr/bin/qemu-ga
           - systemctl enable --now qemu-guest-agent
           - systemctl restart qemu-guest-agent
-    - osName: "openSUSE Leap 15.3"
+    - osName: "openSUSE Leap 15.6"
+      # Bumped from 15.3 -> 15.6 on 2026-05-12. 15.3 went EOL in
+      # December 2022; 15.6 is current. The image flavor also shifted
+      # from "JeOS-OpenStack-Cloud" to "Minimal-VM-Cloud" upstream.
       cloudUser: opensuse
-      upstreamURL: "https://download.opensuse.org/distribution/leap/15.3/appliances/openSUSE-Leap-15.3-JeOS.x86_64-OpenStack-Cloud.qcow2"
-      mirrorPath: "opensuse/leap-15.3/openSUSE-Leap-15.3-JeOS.x86_64-OpenStack-Cloud.qcow2"
+      upstreamURL: "https://download.opensuse.org/distribution/leap/15.6/appliances/openSUSE-Leap-15.6-Minimal-VM.x86_64-Cloud.qcow2"
+      mirrorPath: "opensuse-leap/15.6/latest/openSUSE-Leap-15.6-Minimal-VM.x86_64-Cloud.qcow2"
       minMemory: "2G"
       minVCPU: "1"
       minStorage: "20G"
@@ -742,10 +767,14 @@ osImages:
           - qemu-guest-agent
         runcmd:
           - systemctl enable --now qemu-guest-agent
-    - osName: "Alpine Linux 3.19"
+    - osName: "Alpine Linux 3.21"
+      # Bumped from 3.19.1 -> 3.21.0 on 2026-05-12. 3.19 still works
+      # but 3.21 is the current stable. We follow the .0 release for
+      # consistency; refresh-job picks up later point releases when we
+      # bump the upstreamURL.
       cloudUser: alpine
-      upstreamURL: "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/cloud/nocloud_alpine-3.19.1-x86_64-bios-cloudinit-r0.qcow2"
-      mirrorPath: "alpine/3.19/nocloud_alpine-3.19.1-x86_64-bios-cloudinit-r0.qcow2"
+      upstreamURL: "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/cloud/nocloud_alpine-3.21.0-x86_64-bios-cloudinit-r0.qcow2"
+      mirrorPath: "alpine/3.21/latest/nocloud_alpine-3.21.0-x86_64-bios-cloudinit-r0.qcow2"
       minMemory: "512M"
       minVCPU: "1"
       minStorage: "10G"
