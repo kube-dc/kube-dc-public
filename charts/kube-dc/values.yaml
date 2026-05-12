@@ -556,6 +556,14 @@ cdiUploadGc:
   # considered abandoned. 7d is a conservative default — legitimate
   # large uploads complete within hours.
   staleDays: 7
+  # DataVolumes in phase Failed for longer than this many hours are
+  # considered terminally broken. CDI itself does not give up on a
+  # failing import — live evidence 2026-05-11: 2,838 importer restarts
+  # over 10 days for one DV whose source URL had rotated out upstream.
+  # 6h is well above the budget of any legitimate import we ship in the
+  # default catalog (~700 MB qcow2 at the worst observed WAN
+  # throughput). See docs/prd/cdi-acceleration.md §5.1.
+  failedHours: 6
   # When false (default), only logs which DataVolumes WOULD be
   # deleted ("[audit] would delete..."). Set to true to enable
   # actual deletion. Recommend running in audit mode for the first
@@ -565,3 +573,219 @@ cdiUploadGc:
   schedule: "0 */6 * * *"
   # Image needs only `kubectl` and `jq`. bitnami/kubectl ships both.
   image: "bitnami/kubectl:1.33"
+
+# ─────────────────────────────────────────────────────────────────────────
+# OS-image catalog. The UI's "Create VM" page reads this catalog through
+# the backend's /create-vm/{ns}/os-images endpoint (30 s ConfigMap cache).
+# Each entry's CLOUD_INIT block is presented to the tenant as the default
+# user-data and merged with their per-VM customizations.
+#
+# Per-entry fields:
+#   osName           : human-readable name shown in the UI.
+#   cloudUser        : default cloud-init user (image-specific).
+#   upstreamURL      : canonical URL on the upstream OS vendor's mirror.
+#                      Used as the effective OS_IMAGE_URL unless a
+#                      per-cluster mirror is configured (see below).
+#   mirrorPath       : (optional) path-suffix on the cluster S3 mirror.
+#                      When osImages.mirrorBaseURL is set, the effective
+#                      URL becomes "<mirrorBaseURL>/<mirrorPath>" instead
+#                      of upstreamURL.
+#   sha256           : (optional) expected SHA-256 of the upstream image.
+#                      Refresh CronJob verifies before uploading; UI
+#                      does not consume it.
+#   minMemory/minVCPU/minStorage : minimum VM sizing.
+#   firmwareType, machineType, features, bootOrder, additionalDisks :
+#                      KubeVirt-side knobs that get rendered into the VM
+#                      template (see kube-dc-public/skills/create-vm).
+#   cloudInit        : default user-data block (block scalar).
+#
+# Per-cluster S3 mirror:
+#   Setting `osImages.mirrorBaseURL` (e.g. via HelmRelease values in
+#   kube-dc-fleet) rewrites every entry's OS_IMAGE_URL to point at that
+#   prefix. Entries without a mirrorPath stay on the upstream URL even
+#   when mirrorBaseURL is set, so partial mirrors are allowed.
+#
+#   The fleet's mirror-refresh CronJob
+#   (kube-dc-fleet/platform/cdi-os-mirror/refresh-cronjob.yaml) reads
+#   the rendered ConfigMap, pulls each upstreamURL, verifies sha256, and
+#   uploads to <mirrorBaseURL>/<mirrorPath> on the configured RGW
+#   bucket. See docs/prd/cdi-acceleration.md for the full design.
+osImages:
+  # Empty by default — chart ships upstream URLs out of the box.
+  # Override per cluster (e.g. "https://s3.kube-dc.cloud/cdi-os-images")
+  # to flip the whole catalog over to the local mirror.
+  mirrorBaseURL: ""
+  catalog:
+    - osName: "Ubuntu 24.04"
+      cloudUser: ubuntu
+      upstreamURL: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+      mirrorPath: "ubuntu/noble/latest/noble-server-cloudimg-amd64.img"
+      minMemory: "1G"
+      minVCPU: "1"
+      minStorage: "20G"
+      firmwareType: "bios"
+      machineType: "q35"
+      features: "acpi"
+      cloudInit: |
+        #cloud-config
+        package_update: true
+        package_upgrade: true
+        packages:
+          - qemu-guest-agent
+        runcmd:
+          - systemctl enable --now qemu-guest-agent
+    - osName: "CentOS Stream 9"
+      cloudUser: centos
+      upstreamURL: "https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2"
+      mirrorPath: "centos/9-stream/latest/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2"
+      minMemory: "2G"
+      minVCPU: "1"
+      minStorage: "20G"
+      firmwareType: "bios"
+      machineType: "q35"
+      features: "acpi"
+      cloudInit: |
+        #cloud-config
+        package_update: true
+        package_upgrade: true
+        users:
+        - name: centos
+          groups: wheel
+          sudo: ALL=(ALL) NOPASSWD:ALL
+          shell: /bin/bash
+          lock_passwd: false
+        packages:
+          - qemu-guest-agent
+          - lrzsz
+          - policycoreutils-python-utils
+        runcmd:
+          - setenforce 0
+          - sed -i 's/SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
+          - setsebool -P virt_qemu_ga_manage_ssh 1
+          - setsebool -P virt_qemu_ga_exec 1
+          - setsebool -P virt_qemu_ga_file_transfer 1
+          - restorecon -R /usr/bin/qemu-ga
+          - semanage fcontext -a -t virt_qemu_ga_exec_t '/usr/bin/qemu-ga' || true
+          - restorecon /usr/bin/qemu-ga
+          - systemctl enable --now qemu-guest-agent
+          - systemctl restart qemu-guest-agent
+    - osName: "CirrOS (test)"
+      cloudUser: cirros
+      upstreamURL: "http://download.cirros-cloud.net/0.5.2/cirros-0.5.2-x86_64-disk.img"
+      mirrorPath: "cirros/0.5.2/cirros-0.5.2-x86_64-disk.img"
+      minMemory: "512M"
+      minVCPU: "1"
+      minStorage: "5G"
+      firmwareType: "bios"
+    - osName: "Debian 12 LTS"
+      cloudUser: debian
+      upstreamURL: "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
+      mirrorPath: "debian/bookworm/latest/debian-12-generic-amd64.qcow2"
+      minMemory: "1G"
+      minVCPU: "1"
+      minStorage: "20G"
+      firmwareType: "bios"
+      machineType: "q35"
+      cloudInit: |
+        #cloud-config
+        package_update: true
+        package_upgrade: true
+        packages:
+          - qemu-guest-agent
+        runcmd:
+          - systemctl enable --now qemu-guest-agent
+    - osName: "Fedora 41"
+      cloudUser: fedora
+      upstreamURL: "https://dl.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2"
+      mirrorPath: "fedora/41/Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2"
+      minMemory: "2G"
+      minVCPU: "1"
+      minStorage: "25G"
+      firmwareType: "bios"
+      machineType: "q35"
+      features: "acpi"
+      cloudInit: |
+        #cloud-config
+        package_update: true
+        package_upgrade: true
+        packages:
+          - qemu-guest-agent
+          - policycoreutils-python-utils
+        runcmd:
+          - setenforce 0
+          - sed -i 's/SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
+          - setsebool -P virt_qemu_ga_manage_ssh 1
+          - setsebool -P virt_qemu_ga_exec 1
+          - setsebool -P virt_qemu_ga_file_transfer 1
+          - restorecon -R /usr/bin/qemu-ga
+          - systemctl enable --now qemu-guest-agent
+          - systemctl restart qemu-guest-agent
+    - osName: "openSUSE Leap 15.3"
+      cloudUser: opensuse
+      upstreamURL: "https://download.opensuse.org/distribution/leap/15.3/appliances/openSUSE-Leap-15.3-JeOS.x86_64-OpenStack-Cloud.qcow2"
+      mirrorPath: "opensuse/leap-15.3/openSUSE-Leap-15.3-JeOS.x86_64-OpenStack-Cloud.qcow2"
+      minMemory: "2G"
+      minVCPU: "1"
+      minStorage: "20G"
+      firmwareType: "bios"
+      machineType: "q35"
+      features: "acpi"
+      cloudInit: |
+        #cloud-config
+        package_update: true
+        package_upgrade: true
+        packages:
+          - qemu-guest-agent
+        runcmd:
+          - systemctl enable --now qemu-guest-agent
+    - osName: "Alpine Linux 3.19"
+      cloudUser: alpine
+      upstreamURL: "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/cloud/nocloud_alpine-3.19.1-x86_64-bios-cloudinit-r0.qcow2"
+      mirrorPath: "alpine/3.19/nocloud_alpine-3.19.1-x86_64-bios-cloudinit-r0.qcow2"
+      minMemory: "512M"
+      minVCPU: "1"
+      minStorage: "10G"
+      firmwareType: "bios"
+      machineType: "q35"
+      features: "acpi"
+      cloudInit: |
+        #cloud-config
+        package_update: true
+        package_upgrade: true
+        packages:
+          - qemu-guest-agent
+        runcmd:
+          - rc-service qemu-guest-agent restart
+          - rc-update add qemu-guest-agent default
+    # Gentoo removed 2026-05-11. The dated autobuild URL (20250928T...)
+    # was rotated out upstream and Gentoo no longer publishes cloudinit
+    # qcow2 builds at any stable path. See docs/prd/cdi-acceleration.md
+    # §5.1.3. Re-add only after we mirror a known-good build to S3.
+    - osName: "Windows 11 Enterprise (Golden Image)"
+      cloudUser: kube-dc
+      upstreamURL: "https://iso.stage.kube-dc.com/windows11-x64-golden.qcow2"
+      mirrorPath: "windows/11/windows11-x64-golden.qcow2"
+      minMemory: "8G"
+      minVCPU: "2"
+      minStorage: "70G"
+      firmwareType: "efi"
+      machineType: "q35"
+      features: "hyperv,acpi,apic,smm,tpm"
+      cloudInit: |
+        # Windows golden image - pre-configured with SSH, RDP, and VirtIO drivers
+        # No cloud-init needed - uses QEMU Guest Agent for SSH key injection
+    - osName: "Windows 11 Enterprise (Fresh Install)"
+      cloudUser: Administrator
+      upstreamURL: "https://iso.stage.kube-dc.com/win11-x64.iso"
+      mirrorPath: "windows/11/win11-x64.iso"
+      minMemory: "8G"
+      minVCPU: "4"
+      minStorage: "70G"
+      firmwareType: "efi"
+      machineType: "q35"
+      features: "hyperv,acpi,apic,smm,tpm"
+      bootOrder: "cdrom,disk"
+      additionalDisks: "virtio-drivers"
+      cloudInit: |
+        # Fresh Windows installation with VirtIO drivers
+        # Requires manual setup via VNC console

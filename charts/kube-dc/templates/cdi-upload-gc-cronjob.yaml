@@ -72,16 +72,28 @@ data:
   gc.sh: |
     #!/bin/sh
     # GC stuck CDI worker pods + parent DataVolumes.
+    # Two passes:
+    #   1. Pending|Unknown worker pods older than GC_STALE_DAYS (default 7d):
+    #      catches the "upload/clone scheduled but never landed" class.
+    #   2. DataVolumes in phase Failed older than GC_FAILED_HOURS (default
+    #      6h): catches the "importer is in CrashLoopBackOff against a
+    #      404 URL" class. Live evidence: shalb-jumbolot/new-vm-root
+    #      ran the importer 2,838 times over 10 days because the Gentoo
+    #      catalog URL had rotated out (incident 2026-05-11). 6h is well
+    #      above the wall-clock budget of any legitimate import.
     # Audit-only unless GC_DELETE=true.
     set -eu
 
     GC_STALE_DAYS="${GC_STALE_DAYS:-7}"
+    GC_FAILED_HOURS="${GC_FAILED_HOURS:-6}"
     GC_DELETE="${GC_DELETE:-false}"
     NOW=$(date -u +%s)
     THRESHOLD=$((NOW - GC_STALE_DAYS * 86400))
+    FAILED_THRESHOLD=$((NOW - GC_FAILED_HOURS * 3600))
 
-    echo "cdi-upload-gc: stale-threshold=${GC_STALE_DAYS}d delete=${GC_DELETE}"
+    echo "cdi-upload-gc: stale-threshold=${GC_STALE_DAYS}d failed-threshold=${GC_FAILED_HOURS}h delete=${GC_DELETE}"
 
+    # Pass 1: stuck worker pods.
     # Find non-terminal CDI worker pods older than the threshold.
     # `cdi-(upload|importer|clone)-<dv-name>` is CDI's pod naming
     # convention. The DV name is what's left after the prefix strip.
@@ -105,6 +117,24 @@ data:
             kubectl delete datavolume -n "$ns" "$dv" --wait=false
           else
             echo "[audit] would delete DV $ns/$dv (parent of stuck pod $pod, age >${GC_STALE_DAYS}d)"
+          fi
+        done
+
+    # Pass 2: DataVolumes in phase Failed for more than GC_FAILED_HOURS.
+    # CDI never gives up on its own; without this pass the importer
+    # crashloops indefinitely against an unreachable source URL.
+    kubectl get datavolume -A -o json \
+      | jq -r --argjson threshold "$FAILED_THRESHOLD" '
+          .items[]
+          | select(.status.phase == "Failed")
+          | select(((.metadata.creationTimestamp // "1970-01-01T00:00:00Z") | fromdateiso8601) < $threshold)
+          | "\(.metadata.namespace) \(.metadata.name) \(.metadata.creationTimestamp)"' \
+      | while read -r ns dv created; do
+          if [ "$GC_DELETE" = "true" ]; then
+            echo "[delete] failed DV $ns/$dv (created $created, >${GC_FAILED_HOURS}h)"
+            kubectl delete datavolume -n "$ns" "$dv" --wait=false
+          else
+            echo "[audit] would delete failed DV $ns/$dv (created $created, >${GC_FAILED_HOURS}h)"
           fi
         done
 
@@ -139,6 +169,8 @@ spec:
               env:
                 - name: GC_STALE_DAYS
                   value: {{ .Values.cdiUploadGc.staleDays | quote }}
+                - name: GC_FAILED_HOURS
+                  value: {{ .Values.cdiUploadGc.failedHours | quote }}
                 - name: GC_DELETE
                   value: {{ .Values.cdiUploadGc.delete | quote }}
               volumeMounts:

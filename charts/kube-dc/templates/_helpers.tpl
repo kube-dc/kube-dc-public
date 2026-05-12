@@ -171,3 +171,24 @@ app.kubernetes.io/name: {{ include "kube-dc.dbmanager.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
+
+{{/*
+Effective URL for a single OS-image catalog entry.
+
+Inputs:
+  .entry - one catalog entry from .Values.osImages.catalog
+  .root  - the chart context ($), so we can read .root.Values.osImages.mirrorBaseURL
+
+If a cluster-level mirror is configured (`osImages.mirrorBaseURL` is
+non-empty) AND the entry has a `mirrorPath`, render the URL as
+`<mirrorBaseURL>/<mirrorPath>` with one slash between. Otherwise fall
+back to the entry's `upstreamURL`.
+*/}}
+{{- define "kube-dc.osImageURL" -}}
+{{- $mirror := default "" .root.Values.osImages.mirrorBaseURL -}}
+{{- if and $mirror .entry.mirrorPath -}}
+{{ printf "%s/%s" (trimSuffix "/" $mirror) (trimPrefix "/" .entry.mirrorPath) }}
+{{- else -}}
+{{ .entry.upstreamURL }}
+{{- end -}}
+{{- end -}}
