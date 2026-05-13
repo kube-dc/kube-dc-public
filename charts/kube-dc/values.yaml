@@ -620,6 +620,28 @@ osImages:
   # to flip the whole catalog over to the local mirror.
   mirrorBaseURL: ""
   catalog:
+    - osName: "Ubuntu 26.04 LTS"
+      # Released 2026-04-21 (codename "resolute"). Verified upstream
+      # via the canonical streams JSON
+      # (com.ubuntu.cloud:server:26.04:amd64). Listed first so the UI
+      # picker shows the most recent LTS at the top.
+      cloudUser: ubuntu
+      upstreamURL: "https://cloud-images.ubuntu.com/resolute/current/resolute-server-cloudimg-amd64.img"
+      mirrorPath: "ubuntu/26.04/latest/resolute-server-cloudimg-amd64.img"
+      minMemory: "1G"
+      minVCPU: "1"
+      minStorage: "20G"
+      firmwareType: "bios"
+      machineType: "q35"
+      features: "acpi"
+      cloudInit: |
+        #cloud-config
+        package_update: true
+        package_upgrade: true
+        packages:
+          - qemu-guest-agent
+        runcmd:
+          - systemctl enable --now qemu-guest-agent
     - osName: "Ubuntu 24.04 LTS"
       cloudUser: ubuntu
       upstreamURL: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
