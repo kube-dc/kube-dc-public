@@ -64,4 +64,7 @@ data:
         OS_IMAGE_DISCOVERY:
 {{ .discovery | toYaml | indent 10 }}
   {{- end }}
+  {{- if .familyId }}
+        OS_FAMILY_ID: {{ .familyId | quote }}
+  {{- end }}
 {{- end }}

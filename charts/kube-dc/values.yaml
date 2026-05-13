@@ -831,6 +831,7 @@ osImages:
     # qcow2 builds at any stable path. See docs/prd/cdi-acceleration.md
     # §5.1.3. Re-add only after we mirror a known-good build to S3.
     - osName: "Windows 11 Enterprise (Golden Image)"
+      familyId: "windows-11-golden"
       cloudUser: kube-dc
       upstreamURL: "https://iso.stage.kube-dc.com/windows11-x64-golden.qcow2"
       mirrorPath: "windows/11/latest/windows11-x64-golden.qcow2"
@@ -844,6 +845,7 @@ osImages:
         # Windows golden image - pre-configured with SSH, RDP, and VirtIO drivers
         # No cloud-init needed - uses QEMU Guest Agent for SSH key injection
     - osName: "Windows 11 Enterprise (Fresh Install)"
+      familyId: "windows-11-iso"
       cloudUser: Administrator
       upstreamURL: "https://iso.stage.kube-dc.com/win11-x64.iso"
       mirrorPath: "windows/11/latest/win11-x64.iso"
