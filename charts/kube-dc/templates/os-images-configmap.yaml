@@ -60,4 +60,8 @@ data:
         CLOUD_INIT: |
 {{ .cloudInit | indent 10 }}
   {{- end }}
+  {{- if .discovery }}
+        OS_IMAGE_DISCOVERY:
+{{ .discovery | toYaml | indent 10 }}
+  {{- end }}
 {{- end }}

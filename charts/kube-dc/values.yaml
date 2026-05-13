@@ -646,6 +646,15 @@ osImages:
       cloudUser: ubuntu
       upstreamURL: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
       mirrorPath: "ubuntu/24.04/latest/noble-server-cloudimg-amd64.img"
+      # Phase 2.2 multi-version discovery via Ubuntu's canonical
+      # streams JSON. Lists every dated build; refresh.py picks the
+      # newest RETENTION_KEEP and writes one versioned dir per build
+      # alongside the /latest/ alias.
+      discovery:
+        type: ubuntu-streams
+        streamsURL: "https://cloud-images.ubuntu.com/releases/streams/v1/com.ubuntu.cloud:released:download.json"
+        productID: "com.ubuntu.cloud:server:24.04:amd64"
+        ftype: "disk1.img"
       minMemory: "1G"
       minVCPU: "1"
       minStorage: "20G"
@@ -664,6 +673,11 @@ osImages:
       cloudUser: ubuntu
       upstreamURL: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
       mirrorPath: "ubuntu/22.04/latest/jammy-server-cloudimg-amd64.img"
+      discovery:
+        type: ubuntu-streams
+        streamsURL: "https://cloud-images.ubuntu.com/releases/streams/v1/com.ubuntu.cloud:released:download.json"
+        productID: "com.ubuntu.cloud:server:22.04:amd64"
+        ftype: "disk1.img"
       minMemory: "1G"
       minVCPU: "1"
       minStorage: "20G"
