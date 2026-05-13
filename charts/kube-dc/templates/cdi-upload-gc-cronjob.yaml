@@ -82,7 +82,18 @@ data:
     #      catalog URL had rotated out (incident 2026-05-11). 6h is well
     #      above the wall-clock budget of any legitimate import.
     # Audit-only unless GC_DELETE=true.
-    set -eu
+    #
+    # pipefail is critical here: every pass is `kubectl ... | jq ...`,
+    # and `set -e` alone does NOT catch a failed kubectl in a pipe.
+    # Without this, a misconfigured kubectl (e.g. when --request-timeout
+    # broke in-cluster auto-config in v0.3.16 / kubectl v1.35.4) feeds
+    # empty input to jq and the while-loop silently no-ops — script
+    # exits 0 having done nothing. Live evidence: cdi-upload-gc has been
+    # running for months thinking everything is clean while leaving
+    # 51-day-stuck DVs in place (bogdan-test2/cdi-upload-froma20-root).
+    # With pipefail, that same failure mode exits non-zero immediately
+    # and trips KubeJobFailed so we see it.
+    set -euo pipefail
 
     GC_STALE_DAYS="${GC_STALE_DAYS:-7}"
     GC_FAILED_HOURS="${GC_FAILED_HOURS:-6}"
@@ -97,13 +108,7 @@ data:
     # Find non-terminal CDI worker pods older than the threshold.
     # `cdi-(upload|importer|clone)-<dv-name>` is CDI's pod naming
     # convention. The DV name is what's left after the prefix strip.
-    #
-    # --request-timeout=60s bounds the apiserver call so a transient
-    # apiserver/kube-ovn slowdown can't make the pod hang for hours
-    # (live incident 2026-05-13: two consecutive runs hung 98m/146m
-    # before being marked Failed). Job-level activeDeadlineSeconds
-    # below is the belt-and-suspenders second guard.
-    kubectl --request-timeout=60s get pods -A -o json \
+    kubectl get pods -A -o json \
       | jq -r --argjson threshold "$THRESHOLD" '
           .items[]
           | select(.metadata.name | test("^cdi-(upload|importer|clone)-"))
@@ -114,13 +119,13 @@ data:
           dv="${pod#cdi-upload-}"
           dv="${dv#cdi-importer-}"
           dv="${dv#cdi-clone-}"
-          if ! kubectl --request-timeout=30s get datavolume -n "$ns" "$dv" >/dev/null 2>&1; then
+          if ! kubectl get datavolume -n "$ns" "$dv" >/dev/null 2>&1; then
             echo "[skip] no DataVolume $ns/$dv found for stuck pod $pod"
             continue
           fi
           if [ "$GC_DELETE" = "true" ]; then
             echo "[delete] DV $ns/$dv (parent of stuck pod $pod, age >${GC_STALE_DAYS}d)"
-            kubectl --request-timeout=30s delete datavolume -n "$ns" "$dv" --wait=false
+            kubectl delete datavolume -n "$ns" "$dv" --wait=false
           else
             echo "[audit] would delete DV $ns/$dv (parent of stuck pod $pod, age >${GC_STALE_DAYS}d)"
           fi
@@ -129,7 +134,7 @@ data:
     # Pass 2: DataVolumes in phase Failed for more than GC_FAILED_HOURS.
     # CDI never gives up on its own; without this pass the importer
     # crashloops indefinitely against an unreachable source URL.
-    kubectl --request-timeout=60s get datavolume -A -o json \
+    kubectl get datavolume -A -o json \
       | jq -r --argjson threshold "$FAILED_THRESHOLD" '
           .items[]
           | select(.status.phase == "Failed")
@@ -138,7 +143,7 @@ data:
       | while read -r ns dv created; do
           if [ "$GC_DELETE" = "true" ]; then
             echo "[delete] failed DV $ns/$dv (created $created, >${GC_FAILED_HOURS}h)"
-            kubectl --request-timeout=30s delete datavolume -n "$ns" "$dv" --wait=false
+            kubectl delete datavolume -n "$ns" "$dv" --wait=false
           else
             echo "[audit] would delete failed DV $ns/$dv (created $created, >${GC_FAILED_HOURS}h)"
           fi
