@@ -623,7 +623,7 @@ osImages:
     - osName: "Ubuntu 24.04 LTS"
       cloudUser: ubuntu
       upstreamURL: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
-      mirrorPath: "ubuntu/noble/latest/noble-server-cloudimg-amd64.img"
+      mirrorPath: "ubuntu/24.04/latest/noble-server-cloudimg-amd64.img"
       minMemory: "1G"
       minVCPU: "1"
       minStorage: "20G"
@@ -641,7 +641,7 @@ osImages:
     - osName: "Ubuntu 22.04 LTS"
       cloudUser: ubuntu
       upstreamURL: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
-      mirrorPath: "ubuntu/jammy/latest/jammy-server-cloudimg-amd64.img"
+      mirrorPath: "ubuntu/22.04/latest/jammy-server-cloudimg-amd64.img"
       minMemory: "1G"
       minVCPU: "1"
       minStorage: "20G"
@@ -659,7 +659,7 @@ osImages:
     - osName: "CentOS Stream 9"
       cloudUser: centos
       upstreamURL: "https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2"
-      mirrorPath: "centos/9-stream/latest/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2"
+      mirrorPath: "centos-stream/9/latest/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2"
       minMemory: "2G"
       minVCPU: "1"
       minStorage: "20G"
@@ -694,7 +694,7 @@ osImages:
     - osName: "CirrOS (test)"
       cloudUser: cirros
       upstreamURL: "http://download.cirros-cloud.net/0.5.2/cirros-0.5.2-x86_64-disk.img"
-      mirrorPath: "cirros/0.5.2/cirros-0.5.2-x86_64-disk.img"
+      mirrorPath: "cirros/0.5.2/latest/cirros-0.5.2-x86_64-disk.img"
       minMemory: "512M"
       minVCPU: "1"
       minStorage: "5G"
@@ -702,7 +702,7 @@ osImages:
     - osName: "Debian 12 LTS"
       cloudUser: debian
       upstreamURL: "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
-      mirrorPath: "debian/bookworm/latest/debian-12-generic-amd64.qcow2"
+      mirrorPath: "debian/12/latest/debian-12-generic-amd64.qcow2"
       minMemory: "1G"
       minVCPU: "1"
       minStorage: "20G"
@@ -797,7 +797,7 @@ osImages:
     - osName: "Windows 11 Enterprise (Golden Image)"
       cloudUser: kube-dc
       upstreamURL: "https://iso.stage.kube-dc.com/windows11-x64-golden.qcow2"
-      mirrorPath: "windows/11/windows11-x64-golden.qcow2"
+      mirrorPath: "windows/11/latest/windows11-x64-golden.qcow2"
       minMemory: "8G"
       minVCPU: "2"
       minStorage: "70G"
@@ -810,7 +810,7 @@ osImages:
     - osName: "Windows 11 Enterprise (Fresh Install)"
       cloudUser: Administrator
       upstreamURL: "https://iso.stage.kube-dc.com/win11-x64.iso"
-      mirrorPath: "windows/11/win11-x64.iso"
+      mirrorPath: "windows/11/latest/win11-x64.iso"
       minMemory: "8G"
       minVCPU: "4"
       minStorage: "70G"
