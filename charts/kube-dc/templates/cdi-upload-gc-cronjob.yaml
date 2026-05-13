@@ -97,7 +97,13 @@ data:
     # Find non-terminal CDI worker pods older than the threshold.
     # `cdi-(upload|importer|clone)-<dv-name>` is CDI's pod naming
     # convention. The DV name is what's left after the prefix strip.
-    kubectl get pods -A -o json \
+    #
+    # --request-timeout=60s bounds the apiserver call so a transient
+    # apiserver/kube-ovn slowdown can't make the pod hang for hours
+    # (live incident 2026-05-13: two consecutive runs hung 98m/146m
+    # before being marked Failed). Job-level activeDeadlineSeconds
+    # below is the belt-and-suspenders second guard.
+    kubectl --request-timeout=60s get pods -A -o json \
       | jq -r --argjson threshold "$THRESHOLD" '
           .items[]
           | select(.metadata.name | test("^cdi-(upload|importer|clone)-"))
@@ -108,13 +114,13 @@ data:
           dv="${pod#cdi-upload-}"
           dv="${dv#cdi-importer-}"
           dv="${dv#cdi-clone-}"
-          if ! kubectl get datavolume -n "$ns" "$dv" >/dev/null 2>&1; then
+          if ! kubectl --request-timeout=30s get datavolume -n "$ns" "$dv" >/dev/null 2>&1; then
             echo "[skip] no DataVolume $ns/$dv found for stuck pod $pod"
             continue
           fi
           if [ "$GC_DELETE" = "true" ]; then
             echo "[delete] DV $ns/$dv (parent of stuck pod $pod, age >${GC_STALE_DAYS}d)"
-            kubectl delete datavolume -n "$ns" "$dv" --wait=false
+            kubectl --request-timeout=30s delete datavolume -n "$ns" "$dv" --wait=false
           else
             echo "[audit] would delete DV $ns/$dv (parent of stuck pod $pod, age >${GC_STALE_DAYS}d)"
           fi
@@ -123,7 +129,7 @@ data:
     # Pass 2: DataVolumes in phase Failed for more than GC_FAILED_HOURS.
     # CDI never gives up on its own; without this pass the importer
     # crashloops indefinitely against an unreachable source URL.
-    kubectl get datavolume -A -o json \
+    kubectl --request-timeout=60s get datavolume -A -o json \
       | jq -r --argjson threshold "$FAILED_THRESHOLD" '
           .items[]
           | select(.status.phase == "Failed")
@@ -132,7 +138,7 @@ data:
       | while read -r ns dv created; do
           if [ "$GC_DELETE" = "true" ]; then
             echo "[delete] failed DV $ns/$dv (created $created, >${GC_FAILED_HOURS}h)"
-            kubectl delete datavolume -n "$ns" "$dv" --wait=false
+            kubectl --request-timeout=30s delete datavolume -n "$ns" "$dv" --wait=false
           else
             echo "[audit] would delete failed DV $ns/$dv (created $created, >${GC_FAILED_HOURS}h)"
           fi
@@ -157,6 +163,12 @@ spec:
     spec:
       backoffLimit: 1
       ttlSecondsAfterFinished: 86400 # 1d
+      # 5 min hard cap. The deterministic gc.sh work (two kubectl
+      # list calls + jq + per-match delete) completes in seconds on
+      # a healthy cluster; if a single run exceeds this, something
+      # is wrong with apiserver/network and burning the next 5 hours
+      # of pod time on it won't help.
+      activeDeadlineSeconds: 300
       template:
         spec:
           serviceAccountName: cdi-upload-gc
