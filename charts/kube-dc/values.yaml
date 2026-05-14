@@ -365,10 +365,10 @@ k8Manager:
 
 # Billing configuration
 billing:
-  # Billing provider: "none" (quota-only), "stripe", or "whmcs"
-  provider: "none"
+  # Billing provider: "none" (quota-only), "stripe", "whmcs", or "dual"
+  provider: "dual"
 
-  # Stripe-specific settings (only used when provider=stripe)
+  # Stripe-specific settings (only used when provider=stripe or dual)
   stripe:
     # Name of the K8s Secret created by hack/bootstrap-stripe.sh
     # Contains STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, and STRIPE_PRICE_* keys
@@ -377,7 +377,7 @@ billing:
   # billing-plans ConfigMap — deployed when enabled
   # Required by both the Go controller (organization quotas) and the UI backend (plan display)
   plans:
-    enabled: false
+    enabled: true
     config: |
       plans:
         dev-pool:
@@ -403,55 +403,55 @@ billing:
           pods: 100
           servicesLB: 100
           burstRatio: 2.0
-            limitRange:
-              defaultCPU: "500m"
-              defaultMemory: "512Mi"
-              defaultRequestCPU: "100m"
-              defaultRequestMem: "128Mi"
-              maxCPU: "4"
-              maxMemory: "8Gi"
-              minCPU: "1m"
-              minMemory: "1Mi"
-              maxPodCPU: "4"
-              maxPodMemory: "8Gi"
-              maxPVCStorage: "60Gi"
-              minPVCStorage: "10Mi"
-          pro-pool:
-            displayName: "Pro Pool"
-            description: "Best for: Production / Teams"
-            price: 49
-            currency: "EUR"
-            recommended: true
-            objectStorage: 100
-            ipv4: 1
-            features:
-              - "8 vCPU"
-              - "24 GB RAM"
-              - "160 GB NVMe Storage"
-              - "100 GB Object Storage included"
-              - "1 Dedicated IPv4"
-              - "Nested Clusters (KubeVirt)"
-              - "Unlimited 1Gbit/s Bandwidth"
-            requests:
-              cpu: "6"
-              memory: "18Gi"
-              storage: "160Gi"
-            pods: 200
-            servicesLB: 100
-            burstRatio: 1.34
-            limitRange:
-              defaultCPU: "500m"
-              defaultMemory: "512Mi"
-              defaultRequestCPU: "250m"
-              defaultRequestMem: "256Mi"
-              maxCPU: "8"
-              maxMemory: "24Gi"
-              minCPU: "1m"
-              minMemory: "1Mi"
-              maxPodCPU: "8"
-              maxPodMemory: "24Gi"
-              maxPVCStorage: "160Gi"
-              minPVCStorage: "10Mi"
+          limitRange:
+            defaultCPU: "500m"
+            defaultMemory: "512Mi"
+            defaultRequestCPU: "100m"
+            defaultRequestMem: "128Mi"
+            maxCPU: "4"
+            maxMemory: "8Gi"
+            minCPU: "1m"
+            minMemory: "1Mi"
+            maxPodCPU: "4"
+            maxPodMemory: "8Gi"
+            maxPVCStorage: "60Gi"
+            minPVCStorage: "10Mi"
+        pro-pool:
+          displayName: "Pro Pool"
+          description: "Best for: Production / Teams"
+          price: 49
+          currency: "EUR"
+          recommended: true
+          objectStorage: 100
+          ipv4: 1
+          features:
+            - "8 vCPU"
+            - "24 GB RAM"
+            - "160 GB NVMe Storage"
+            - "100 GB Object Storage included"
+            - "1 Dedicated IPv4"
+            - "Nested Clusters (KubeVirt)"
+            - "Unlimited 1Gbit/s Bandwidth"
+          requests:
+            cpu: "6"
+            memory: "18Gi"
+            storage: "160Gi"
+          pods: 200
+          servicesLB: 100
+          burstRatio: 1.34
+          limitRange:
+            defaultCPU: "500m"
+            defaultMemory: "512Mi"
+            defaultRequestCPU: "250m"
+            defaultRequestMem: "256Mi"
+            maxCPU: "8"
+            maxMemory: "24Gi"
+            minCPU: "1m"
+            minMemory: "1Mi"
+            maxPodCPU: "8"
+            maxPodMemory: "24Gi"
+            maxPVCStorage: "160Gi"
+            minPVCStorage: "10Mi"
         scale-pool:
           displayName: "Scale Pool"
           description: "Best for: High Load / VDC"

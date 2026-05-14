@@ -147,6 +147,13 @@ spec:
                   name: {{ .Values.billing.stripe.secretName }}
                   key: STRIPE_PRICE_TURBO_X2
             {{- end }}
+            {{- if or (eq .Values.billing.provider "whmcs") (eq .Values.billing.provider "dual") }}
+            - name: WHMCS_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: whmcs-credentials
+                  key: webhook-secret
+            {{- end }}
           {{- with .Values.backend.extraEnv }}
             {{- toYaml . | nindent 12 }}
           {{- end }}

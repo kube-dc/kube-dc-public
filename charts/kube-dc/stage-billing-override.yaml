@@ -1,0 +1,4 @@
+billing:
+  provider: "dual"
+  plans:
+    enabled: true
