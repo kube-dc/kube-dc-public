@@ -145,17 +145,12 @@ func (f *OAuthFlow) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send success response
-	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprint(w, `<!DOCTYPE html>
-<html>
-<head><title>Kube-DC Login Successful</title></head>
-<body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
-<h1>✓ Authentication Successful</h1>
-<p>You can close this window and return to your terminal.</p>
-<script>setTimeout(function() { window.close(); }, 3000);</script>
-</body>
-</html>`)
+	// Send success response.
+	// charset=utf-8 is critical: without it browsers on Cyrillic-locale
+	// systems decoded the UTF-8 SVG/text as Windows-1251 and rendered
+	// garbage like "вњ"" instead of "✓".
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, successPageHTML)
 
 	f.resultCh <- token
 
@@ -298,3 +293,108 @@ func generateState() string {
 	rand.Read(b)
 	return base64.RawURLEncoding.EncodeToString(b)
 }
+
+// successPageHTML is rendered to the user's browser after the CLI's
+// OAuth callback successfully exchanges the authorization code for a
+// token. Styled to match the kube-dc console (#0066CC primary).
+// The check mark is an inline SVG so it can't be misrendered by
+// browsers that ignore the charset header.
+const successPageHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kube-DC — Authentication Successful</title>
+<style>
+  :root { --kube-dc-primary: #0066CC; --kube-dc-success: #3E8635; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: "RedHatText", -apple-system, BlinkMacSystemFont, "Segoe UI",
+                 Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #f0f3f7;
+    color: #151515;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    background: #ffffff;
+    max-width: 460px;
+    width: 100%;
+    padding: 40px 32px 32px;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    text-align: center;
+    border-top: 4px solid var(--kube-dc-primary);
+  }
+  .check-circle {
+    width: 72px; height: 72px;
+    border-radius: 50%;
+    background: var(--kube-dc-success);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 24px;
+  }
+  h1 {
+    font-size: 24px;
+    margin: 0 0 12px;
+    font-weight: 600;
+    color: #151515;
+  }
+  p {
+    margin: 0 0 8px;
+    color: #6a6e73;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .countdown {
+    margin-top: 24px;
+    font-size: 13px;
+    color: #6a6e73;
+  }
+  .brand {
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid #f0f0f0;
+    font-size: 12px;
+    color: #6a6e73;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .brand strong { color: var(--kube-dc-primary); font-weight: 700; }
+</style>
+</head>
+<body>
+  <main class="card" role="status" aria-live="polite">
+    <div class="check-circle" aria-hidden="true">
+      <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="20 6 9 17 4 12"></polyline>
+      </svg>
+    </div>
+    <h1>Authentication successful</h1>
+    <p>You're signed in to Kube-DC.</p>
+    <p>You can close this window and return to your terminal.</p>
+    <p class="countdown" id="countdown">This window will close automatically in 3 seconds…</p>
+    <div class="brand"><strong>Kube-DC</strong> CLI</div>
+  </main>
+<script>
+  (function () {
+    var seconds = 3;
+    var el = document.getElementById('countdown');
+    var t = setInterval(function () {
+      seconds -= 1;
+      if (seconds <= 0) {
+        clearInterval(t);
+        window.close();
+        if (el) el.textContent = 'You can close this window now.';
+      } else if (el) {
+        el.textContent = 'This window will close automatically in ' + seconds + ' second' + (seconds === 1 ? '' : 's') + '…';
+      }
+    }, 1000);
+  })();
+</script>
+</body>
+</html>`
