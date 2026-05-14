@@ -117,7 +117,7 @@ func (f *OAuthFlow) handleCallback(w http.ResponseWriter, r *http.Request) {
 	state := r.URL.Query().Get("state")
 	if state != f.state {
 		f.errCh <- fmt.Errorf("state mismatch")
-		http.Error(w, "State mismatch", http.StatusBadRequest)
+		writeErrorPage(w, http.StatusBadRequest, "State mismatch", "The OAuth state parameter did not match. This usually means the login flow was interrupted or replayed. Please retry from your terminal.")
 		return
 	}
 
@@ -125,7 +125,7 @@ func (f *OAuthFlow) handleCallback(w http.ResponseWriter, r *http.Request) {
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
 		errDesc := r.URL.Query().Get("error_description")
 		f.errCh <- fmt.Errorf("oauth error: %s - %s", errParam, errDesc)
-		http.Error(w, fmt.Sprintf("Authentication error: %s", errDesc), http.StatusBadRequest)
+		writeErrorPage(w, http.StatusBadRequest, "Authentication error", errDesc)
 		return
 	}
 
@@ -133,7 +133,7 @@ func (f *OAuthFlow) handleCallback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		f.errCh <- fmt.Errorf("no authorization code received")
-		http.Error(w, "No authorization code", http.StatusBadRequest)
+		writeErrorPage(w, http.StatusBadRequest, "No authorization code", "Keycloak did not return an authorization code. Please retry from your terminal.")
 		return
 	}
 
@@ -141,7 +141,7 @@ func (f *OAuthFlow) handleCallback(w http.ResponseWriter, r *http.Request) {
 	token, err := f.exchangeCode(code)
 	if err != nil {
 		f.errCh <- fmt.Errorf("token exchange failed: %w", err)
-		http.Error(w, "Token exchange failed", http.StatusInternalServerError)
+		writeErrorPage(w, http.StatusInternalServerError, "Token exchange failed", err.Error())
 		return
 	}
 
@@ -294,6 +294,32 @@ func generateState() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
+// writeErrorPage renders a styled error page matching the success page
+// (utf-8, kube-dc card styling). Replaces http.Error which produces
+// bare "text/plain" output that doesn't tell the user what to do next.
+// title is the short headline, detail is the underlying error message
+// (HTML-escaped before render).
+func writeErrorPage(w http.ResponseWriter, status int, title, detail string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	page := strings.NewReplacer(
+		"{{title}}", htmlEscape(title),
+		"{{detail}}", htmlEscape(detail),
+	).Replace(errorPageHTML)
+	fmt.Fprint(w, page)
+}
+
+func htmlEscape(s string) string {
+	r := strings.NewReplacer(
+		"&", "&amp;",
+		"<", "&lt;",
+		">", "&gt;",
+		`"`, "&quot;",
+		"'", "&#39;",
+	)
+	return r.Replace(s)
+}
+
 // successPageHTML is rendered to the user's browser after the CLI's
 // OAuth callback successfully exchanges the authorization code for a
 // token. Styled to match the kube-dc console (#0066CC primary).
@@ -396,5 +422,100 @@ const successPageHTML = `<!DOCTYPE html>
     }, 1000);
   })();
 </script>
+</body>
+</html>`
+
+// errorPageHTML is rendered when the OAuth callback fails. Shares the
+// success-page styling (utf-8, kube-dc card) but with a red accent and
+// no auto-close — the user needs to read the message and retry from
+// the terminal. {{title}} and {{detail}} are replaced before serving.
+const errorPageHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kube-DC — Authentication failed</title>
+<style>
+  :root { --kube-dc-primary: #0066CC; --kube-dc-danger: #C9190B; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: "RedHatText", -apple-system, BlinkMacSystemFont, "Segoe UI",
+                 Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #f0f3f7;
+    color: #151515;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    background: #ffffff;
+    max-width: 520px;
+    width: 100%;
+    padding: 40px 32px 32px;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    text-align: center;
+    border-top: 4px solid var(--kube-dc-danger);
+  }
+  .x-circle {
+    width: 72px; height: 72px;
+    border-radius: 50%;
+    background: var(--kube-dc-danger);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 24px;
+  }
+  h1 {
+    font-size: 22px;
+    margin: 0 0 12px;
+    font-weight: 600;
+    color: #151515;
+  }
+  p {
+    margin: 0 0 12px;
+    color: #6a6e73;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .detail {
+    margin-top: 20px;
+    padding: 12px 16px;
+    background: #faf2f2;
+    border-left: 3px solid var(--kube-dc-danger);
+    border-radius: 4px;
+    text-align: left;
+    font-family: "RedHatMono", "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 13px;
+    color: #3c0000;
+    word-break: break-word;
+  }
+  .brand {
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid #f0f0f0;
+    font-size: 12px;
+    color: #6a6e73;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .brand strong { color: var(--kube-dc-primary); font-weight: 700; }
+</style>
+</head>
+<body>
+  <main class="card" role="alert" aria-live="assertive">
+    <div class="x-circle" aria-hidden="true">
+      <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </div>
+    <h1>{{title}}</h1>
+    <p>You can close this window and retry the login from your terminal.</p>
+    <div class="detail">{{detail}}</div>
+    <div class="brand"><strong>Kube-DC</strong> CLI</div>
+  </main>
 </body>
 </html>`
