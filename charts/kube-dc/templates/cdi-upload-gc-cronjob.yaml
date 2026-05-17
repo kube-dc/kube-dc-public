@@ -125,7 +125,17 @@ data:
           fi
           if [ "$GC_DELETE" = "true" ]; then
             echo "[delete] DV $ns/$dv (parent of stuck pod $pod, age >${GC_STALE_DAYS}d)"
-            kubectl delete datavolume -n "$ns" "$dv" --wait=false
+            # `|| true` swallows races (DV was already deleted by the CDI
+            # controller between the `get` above and this `delete`; or the
+            # namespace is terminating). Under `set -o pipefail` an
+            # un-guarded non-zero from inside this while-body propagates
+            # all the way out of the pipeline and fails the script — which
+            # is the v0.3.17 alert noise we saw on cloud (Job
+            # cdi-upload-gc-29650680 exited non-zero in 84s on a transient
+            # race). Real apiserver outages still fail the outer
+            # `kubectl get` and trip KubeJobFailed.
+            kubectl delete datavolume -n "$ns" "$dv" --wait=false \
+              || echo "[warn] delete failed for $ns/$dv (likely race; will retry next cycle)"
           else
             echo "[audit] would delete DV $ns/$dv (parent of stuck pod $pod, age >${GC_STALE_DAYS}d)"
           fi
@@ -143,7 +153,8 @@ data:
       | while read -r ns dv created; do
           if [ "$GC_DELETE" = "true" ]; then
             echo "[delete] failed DV $ns/$dv (created $created, >${GC_FAILED_HOURS}h)"
-            kubectl delete datavolume -n "$ns" "$dv" --wait=false
+            kubectl delete datavolume -n "$ns" "$dv" --wait=false \
+              || echo "[warn] delete failed for $ns/$dv (likely race; will retry next cycle)"
           else
             echo "[audit] would delete failed DV $ns/$dv (created $created, >${GC_FAILED_HOURS}h)"
           fi
