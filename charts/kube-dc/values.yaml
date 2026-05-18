@@ -848,10 +848,42 @@ osImages:
         runcmd:
           - rc-service qemu-guest-agent restart
           - rc-update add qemu-guest-agent default
-    # Gentoo removed 2026-05-11. The dated autobuild URL (20250928T...)
-    # was rotated out upstream and Gentoo no longer publishes cloudinit
-    # qcow2 builds at any stable path. See docs/prd/cdi-acceleration.md
-    # §5.1.3. Re-add only after we mirror a known-good build to S3.
+    # Gentoo: re-added 2026-05-18 (was removed 2026-05-11). The original
+    # incident was that the chart pinned a specific dated autobuild URL
+    # which upstream rotated out. Gentoo's mirror garbage-collects old
+    # qcow2 bytes but keeps the .asc signatures around, so any pinned
+    # date eventually 404s. GentooHTMLAdapter walks the current-di-*
+    # listing each cycle and picks the basename that still has a real
+    # `.qcow2` (not just `.qcow2.asc`). Catalog cycles forward
+    # automatically; bucket retention keeps the last N for the version
+    # dropdown.
+    - osName: "Gentoo Linux (cloudinit)"
+      cloudUser: gentoo
+      upstreamURL: "https://distfiles.gentoo.org/releases/amd64/autobuilds/current-di-amd64-cloudinit/di-amd64-cloudinit-latest.qcow2"
+      mirrorPath: "gentoo/amd64/latest/gentoo-cloudinit-amd64.qcow2"
+      discovery:
+        type: "gentoo-html"
+        indexURL: "https://distfiles.gentoo.org/releases/amd64/autobuilds/current-di-amd64-cloudinit/"
+        arch: "amd64"
+      minMemory: "2G"
+      minVCPU: "1"
+      minStorage: "20G"
+      firmwareType: "bios"
+      machineType: "q35"
+      features: "acpi"
+      cloudInit: |
+        #cloud-config
+        package_update: false
+        package_upgrade: false
+        # Gentoo cloudinit images ship with qemu-guest-agent already
+        # installed and the service unit enabled. Don't run portage
+        # (`emerge --sync && emerge ...`) on first boot — a sync alone
+        # is heavy and would slow first-boot by minutes. Tenant can
+        # `emerge --sync` manually whenever they want a current Portage
+        # tree.
+        runcmd:
+          - rc-service qemu-guest-agent restart
+          - rc-update add qemu-guest-agent default
     - osName: "Windows 11 Enterprise (Golden Image)"
       familyId: "windows-11-golden"
       cloudUser: kube-dc
