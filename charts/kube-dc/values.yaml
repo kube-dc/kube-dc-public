@@ -696,6 +696,10 @@ osImages:
       cloudUser: centos
       upstreamURL: "https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2"
       mirrorPath: "centos-stream/9/latest/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2"
+      discovery:
+        type: "centos-stream-html"
+        indexURL: "https://cloud.centos.org/centos/9-stream/x86_64/images/"
+        release: "9"
       minMemory: "2G"
       minVCPU: "1"
       minStorage: "20G"
@@ -739,6 +743,12 @@ osImages:
       cloudUser: debian
       upstreamURL: "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
       mirrorPath: "debian/12/latest/debian-12-generic-amd64.qcow2"
+      discovery:
+        type: "debian-html"
+        indexURL: "https://cloud.debian.org/images/cloud/bookworm/"
+        release: "12"
+        vendor: "generic"
+        arch: "amd64"
       minMemory: "1G"
       minVCPU: "1"
       minStorage: "20G"
@@ -760,6 +770,10 @@ osImages:
       cloudUser: fedora
       upstreamURL: "https://dl.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-42-1.1.x86_64.qcow2"
       mirrorPath: "fedora/42/latest/Fedora-Cloud-Base-Generic-42-1.1.x86_64.qcow2"
+      discovery:
+        type: "fedora-releases"
+        release: "42"
+        subvariant: "Cloud_Base"
       minMemory: "2G"
       minVCPU: "1"
       minStorage: "25G"
@@ -789,6 +803,10 @@ osImages:
       cloudUser: opensuse
       upstreamURL: "https://download.opensuse.org/distribution/leap/15.6/appliances/openSUSE-Leap-15.6-Minimal-VM.x86_64-Cloud.qcow2"
       mirrorPath: "opensuse-leap/15.6/latest/openSUSE-Leap-15.6-Minimal-VM.x86_64-Cloud.qcow2"
+      discovery:
+        type: "opensuse-leap-html"
+        indexURL: "https://download.opensuse.org/distribution/leap/15.6/appliances/"
+        release: "15.6"
       minMemory: "2G"
       minVCPU: "1"
       minStorage: "20G"
@@ -811,6 +829,10 @@ osImages:
       cloudUser: alpine
       upstreamURL: "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/cloud/nocloud_alpine-3.21.0-x86_64-bios-cloudinit-r0.qcow2"
       mirrorPath: "alpine/3.21/latest/nocloud_alpine-3.21.0-x86_64-bios-cloudinit-r0.qcow2"
+      discovery:
+        type: "alpine-html"
+        indexURL: "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/cloud/"
+        flavor: "bios-cloudinit"
       minMemory: "512M"
       minVCPU: "1"
       minStorage: "10G"
