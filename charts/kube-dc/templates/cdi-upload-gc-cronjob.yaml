@@ -205,12 +205,21 @@ spec:
                 - name: scripts
                   mountPath: /scripts
               resources:
+                # 128Mi was OOMKilling the pod on busy clusters
+                # (cloud, 346 pods → ~7 MiB JSON output from
+                # `kubectl get pods -A -o json` → kubectl+jq peak
+                # working set >128Mi). exit code 137 within ~1s of
+                # container start; pipefail caught nothing because
+                # the kill happened mid-pipeline. Bumped limit to
+                # 384Mi which is comfortably above what kubectl+jq
+                # need to parse the entire cluster's pod list with
+                # headroom for larger clusters in the future.
                 requests:
                   cpu: 10m
-                  memory: 32Mi
+                  memory: 64Mi
                 limits:
-                  cpu: 100m
-                  memory: 128Mi
+                  cpu: 200m
+                  memory: 384Mi
           volumes:
             - name: scripts
               configMap:
