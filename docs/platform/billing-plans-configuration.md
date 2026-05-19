@@ -242,14 +242,14 @@ data:
           storage: "60Gi"
         pods: 100
         servicesLB: 100
-        burstRatio: 3.0
+        burstRatio: 1.0
         limitRange:
           defaultCPU: "500m"
           defaultMemory: "512Mi"
           defaultRequestCPU: "100m"
           defaultRequestMem: "128Mi"
-          maxCPU: "2"
-          maxMemory: "4Gi"
+          maxCPU: "4"
+          maxMemory: "8Gi"
           minCPU: "10m"
           minMemory: "16Mi"
           maxPodCPU: "4"
@@ -403,11 +403,13 @@ The burst ratio determines how much `limits` exceed `requests`:
 
 | Plan | Burst Ratio | Reasoning |
 |------|-------------|-----------|
-| Dev Pool | 3× | Dev workloads are bursty, low overcommit risk |
-| Pro Pool | 2× | Balanced burst for general workloads |
-| Scale Pool | 1.5× | Production workloads need predictability |
+| Dev Pool | 1.0× | Fully guaranteed — entry tier must deliver the advertised vCPU/RAM to KubeVirt VMs (KdcCluster workers) which reserve their full request |
+| Pro Pool | 1.34× | Modest burst for production-typical container workloads while keeping VM headroom |
+| Scale Pool | 1.34× | Same ratio as Pro; Scale buys raw guaranteed capacity, not burst |
 
 Burst applies only to CPU and memory limits. Storage, pods, and LB quotas are not burst-multiplied.
+
+**Why Dev Pool is 1.0×.** KubeVirt VMs (used by `KdcCluster` worker pools, raw VMs, and `KdcDatabase` Postgres/MariaDB instances) set `resources.requests.cpu == limits.cpu` for Guaranteed QoS — live migration, kernel scheduler stability, and tenant control-plane reliability all depend on it. A burst plan caps VM customers at `requests / burstRatio` (e.g. 2 vCPU on a "4 vCPU" Dev Pool with 2× burst), which doesn't match the advertised plan. For container-only workloads burst is real value; on the entry tier where users typically deploy a small cluster first, fully-guaranteed sizing matches expectations.
 
 ### LimitRange Behavior
 

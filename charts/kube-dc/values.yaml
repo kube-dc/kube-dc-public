@@ -396,13 +396,21 @@ billing:
             - "1 Dedicated IPv4"
             - "Nested Clusters (KubeVirt)"
             - "Unlimited 1Gbit/s Bandwidth"
+          # Dev Pool: fully guaranteed (burstRatio=1.0). The advertised
+          # 4 vCPU / 8 GB are the requests *and* the limits. KubeVirt VMs
+          # (used by KdcCluster workers) consume the full requests quota
+          # for their reservation, so a burst-quota dev plan would cap
+          # cluster workers at requests/burstRatio (= 2 vCPU before this
+          # change) despite the "4 vCPU" plan tier. Keeping Dev Pool at
+          # 1.0× makes the entry tier do exactly what it says. Burst
+          # economics remain on Pro/Scale where customers opt in.
           requests:
-            cpu: "2"
-            memory: "4Gi"
+            cpu: "4"
+            memory: "8Gi"
             storage: "60Gi"
           pods: 100
           servicesLB: 100
-          burstRatio: 2.0
+          burstRatio: 1.0
           limitRange:
             defaultCPU: "500m"
             defaultMemory: "512Mi"
