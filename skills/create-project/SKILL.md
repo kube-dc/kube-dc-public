@@ -36,8 +36,13 @@ metadata:
   name: {project-name}
   namespace: {org-name}
 spec:
-  egressNetworkType: cloud    # or: public
+  cidrBlock: 10.0.0.0/16        # required — internal VPC subnet for this project
+  egressNetworkType: cloud      # or: public
 ```
+
+`cidrBlock` is **required** (CRD validation enforces it). Use `10.0.0.0/16` unless
+you have a specific reason to overlap with another network — each project gets
+its own VPC, so the same CIDR can be reused across projects.
 
 See @project-template.yaml for the full template.
 
