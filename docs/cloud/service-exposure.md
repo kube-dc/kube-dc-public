@@ -209,14 +209,17 @@ spec:
 ```bash
 # Check assigned hostname
 kubectl get svc my-app -n my-project -o jsonpath='{.metadata.annotations.service\.nlb\.kube-dc\.com/route-hostname-status}'
-# Output: my-app-my-project.stage.kube-dc.com
+# Output: my-app-my-project.kube-dc.cloud
 
 # Check certificate status
 kubectl get certificate -n my-project
+kubectl get challenge -n my-project
 
 # Test access
-curl https://my-app-my-project.stage.kube-dc.com
+curl https://my-app-my-project.kube-dc.cloud
 ```
+
+For HTTPS routes, hostname status is set after the certificate and route are ready. This can take a few minutes. If the command returns an empty value, check the certificate and ACME challenge status first.
 
 ### Example: Plain HTTP
 
@@ -239,7 +242,7 @@ spec:
     targetPort: 80
 ```
 
-Access via: `http://my-app-my-project.stage.kube-dc.com`
+Access via: `http://my-app-my-project.kube-dc.cloud`
 
 ### Example: TLS Passthrough (Kubernetes API)
 
@@ -262,7 +265,7 @@ spec:
     targetPort: 6443
 ```
 
-Access via: `https://cluster-api-my-project.stage.kube-dc.com:6443`
+Access via: `https://cluster-api-my-project.kube-dc.cloud:6443`
 
 ### Example: Custom Hostname
 
@@ -670,7 +673,8 @@ kubectl describe svc my-lb -n my-project
 | Issue | Cause | Solution |
 |-------|-------|----------|
 | No hostname assigned | Missing `expose-route` annotation | Add annotation |
-| Certificate not ready | Issuer not created | Create Issuer first |
+| Hostname status empty for HTTPS | Certificate is still pending | Check `kubectl get certificate,challenge -n my-project` |
+| Certificate not ready | Issuer not created, ACME challenge pending, or quota prevents solver pod creation | Create Issuer first and make sure the project has free CPU/memory for cert-manager HTTP-01 solver pods |
 | 503 error | Backend not ready | Check pod status |
 | EIP pending | No available IPs | Check subnet capacity |
 | Connection timeout | DNS not configured | Point DNS to Gateway/EIP |
