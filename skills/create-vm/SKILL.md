@@ -123,20 +123,54 @@ spec:
 
 ## Available Images
 
-Source: `images-configmap` ConfigMap in `kube-dc` namespace.
+Source: `cdi-os-catalog` ConfigMap in `kube-dc` namespace (multi-version,
+schema v2). The cluster mirrors every OS onto its own S3 bucket
+(`https://s3.<DOMAIN>/cdi-os-images/`); tenants always pull from that
+mirror, not from upstream CDNs. The `/latest/` URL alias is what the
+chart publishes; specific tag URLs are available for version pinning.
 
-| OS | Cloud User | Image URL | Min RAM | Min CPU | Min Disk | Firmware |
-|----|-----------|-----------|---------|---------|----------|----------|
-| Ubuntu 24.04 | `ubuntu` | `https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img` | 1G | 1 | 20G | bios |
-| Debian 12 LTS | `debian` | `https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2` | 1G | 1 | 20G | bios |
-| CentOS Stream 9 | `centos` | `https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2` | 2G | 1 | 20G | bios |
-| Fedora 41 | `fedora` | `https://dl.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2` | 2G | 1 | 25G | bios |
-| Alpine Linux 3.19 | `alpine` | `https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/cloud/nocloud_alpine-3.19.1-x86_64-bios-cloudinit-r0.qcow2` | 512M | 1 | 10G | bios |
-| openSUSE Leap 15.3 | `opensuse` | `https://download.opensuse.org/distribution/leap/15.3/appliances/openSUSE-Leap-15.3-JeOS.x86_64-OpenStack-Cloud.qcow2` | 2G | 1 | 20G | bios |
-| Gentoo Linux | `gentoo` | `https://distfiles.gentoo.org/releases/amd64/autobuilds/20250928T160345Z/di-amd64-cloudinit-20250928T160345Z.qcow2` | 2G | 1 | 25G | efi |
-| CirrOS (test) | `cirros` | `http://download.cirros-cloud.net/0.5.2/cirros-0.5.2-x86_64-disk.img` | 512M | 1 | 5G | bios |
-| Windows 11 (Golden) | `kube-dc` | `https://iso.stage.kube-dc.com/windows11-x64-golden.qcow2` | 8G | 2 | 70G | efi |
-| Windows 11 (Fresh) | `Administrator` | `https://iso.stage.kube-dc.com/win11-x64.iso` | 8G | 4 | 70G | efi |
+URLs below show the `/latest/` form for a cloud cluster at
+`s3.kube-dc.cloud` — substitute your cluster's S3 hostname.
+
+| OS | Cloud User | `/latest/` Image URL | Min RAM | Min CPU | Min Disk | Firmware |
+|----|-----------|----------------------|---------|---------|----------|----------|
+| Ubuntu 26.04 LTS | `ubuntu` | `https://s3.kube-dc.cloud/cdi-os-images/ubuntu/26.04/latest/resolute-server-cloudimg-amd64.img` | 1G | 1 | 20G | bios |
+| Ubuntu 24.04 LTS | `ubuntu` | `https://s3.kube-dc.cloud/cdi-os-images/ubuntu/24.04/latest/noble-server-cloudimg-amd64.img` | 1G | 1 | 20G | bios |
+| Ubuntu 22.04 LTS | `ubuntu` | `https://s3.kube-dc.cloud/cdi-os-images/ubuntu/22.04/latest/jammy-server-cloudimg-amd64.img` | 1G | 1 | 20G | bios |
+| Debian 12 LTS | `debian` | `https://s3.kube-dc.cloud/cdi-os-images/debian/12/latest/debian-12-generic-amd64.qcow2` | 1G | 1 | 20G | bios |
+| CentOS Stream 9 | `centos` | `https://s3.kube-dc.cloud/cdi-os-images/centos-stream/9/latest/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2` | 2G | 1 | 20G | bios |
+| Fedora 42 | `fedora` | `https://s3.kube-dc.cloud/cdi-os-images/fedora/42/latest/Fedora-Cloud-Base-Generic-42-1.1.x86_64.qcow2` | 2G | 1 | 25G | bios |
+| Alpine Linux 3.21 | `alpine` | `https://s3.kube-dc.cloud/cdi-os-images/alpine/3.21/latest/nocloud_alpine-3.21.0-x86_64-bios-cloudinit-r0.qcow2` | 512M | 1 | 10G | bios |
+| openSUSE Leap 15.6 | `opensuse` | `https://s3.kube-dc.cloud/cdi-os-images/opensuse-leap/15.6/latest/openSUSE-Leap-15.6-Minimal-VM.x86_64-Cloud.qcow2` | 2G | 1 | 20G | bios |
+| Gentoo Linux | `gentoo` | `https://s3.kube-dc.cloud/cdi-os-images/gentoo/amd64/latest/gentoo-cloudinit-amd64.qcow2` | 2G | 1 | 20G | bios |
+| CirrOS (test) | `cirros` | `https://s3.kube-dc.cloud/cdi-os-images/cirros/0.5.2/latest/cirros-0.5.2-x86_64-disk.img` | 512M | 1 | 5G | bios |
+| Windows 11 (Golden) | `kube-dc` | `https://s3.kube-dc.cloud/cdi-os-images/windows/11/latest/windows11-x64-golden.qcow2` | 8G | 2 | 70G | efi |
+| Windows 11 (Fresh ISO) | `Administrator` | `https://s3.kube-dc.cloud/cdi-os-images/windows/11/latest/win11-x64.iso` | 8G | 4 | 70G | efi |
+
+### Multi-version selection (advanced)
+
+Most Linux families now mirror up to 4 historical versions. Take
+**`/latest/`** by default — the cluster repoints it weekly. Pin a
+specific version only when you need reproducibility against a known
+build (e.g. troubleshooting a regression, locking a test fleet to a
+specific kernel).
+
+Versioned URLs follow this shape:
+- Ubuntu (streams): `.../ubuntu/24.04/<YYYYMMDD>/<file>` (e.g. `20260321`)
+- Debian: `.../debian/12/<YYYYMMDD-buildN>/<file>` (e.g. `20260518-2482`)
+- CentOS Stream: `.../centos-stream/9/<YYYYMMDD.N>/<file>` (e.g. `20260513.0`)
+- Alpine: `.../alpine/3.21/<X.Y.Z-rN>/<file>` (e.g. `3.21.7-r0`)
+- openSUSE Leap: `.../opensuse-leap/15.6/<release-BuildN.M>/<file>` (e.g. `15.6.0-19.146`)
+- Fedora: `.../fedora/42/<release-minor>/<file>` (e.g. `42-1.1`)
+- Gentoo: `.../gentoo/amd64/<YYYYMMDDTHHMMSSZ>/<file>` (e.g. `20260517T170110Z`)
+- CirrOS / Ubuntu 26.04 / Windows: `.../<family>/<release>/<YYYY-MM-DD-sha8>/<file>`
+
+To see the full version list a cluster has on hand, query:
+
+```bash
+kubectl -n kube-dc get cm cdi-os-catalog -o jsonpath='{.data.catalog\.json}' \
+  | jq '.families[] | {id, versions: [.versions[].tag]}'
+```
 
 ### OS-Specific Cloud-Init
 
@@ -217,5 +251,6 @@ kubectl get dv {vm-name}-disk -n {project-namespace} -o jsonpath='{.status.phase
 - ALWAYS use `networkName: {namespace}/default` — other networks don't exist in the VPC
 - Use `storageClassName: local-path` for DataVolumes
 - FIP and LoadBalancer on the same VM are mutually exclusive
-- Use the correct firmware type: `bios` for most Linux, `efi` for Gentoo and Windows
+- Use the correct firmware type: `bios` for most Linux and Gentoo; `efi` only for Windows
 - Windows VMs need machine type `pc-q35-rhel8.6.0` and HyperV features
+- Prefer `/latest/` URLs from the cluster S3 mirror over upstream CDN URLs — survives upstream rotations and is the only source the refresh CronJob keeps fresh
