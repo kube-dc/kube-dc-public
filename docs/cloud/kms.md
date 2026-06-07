@@ -46,11 +46,16 @@ generate-data-key.
 |---|---|---|---|---|---|---|
 | Project Manager | full | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Developer | read | ✅ | ✅ | — | — | — |
-| Viewer | read | — | ✅ | — | — | — |
+| Viewer | read | ✅ | — | — | — | — |
 
-The developer role's policy ships with `transit/encrypt/*` +
-`transit/decrypt/*` paths so application code can encrypt and decrypt
+The developer role's policy ships with `transit/encrypt/+` +
+`transit/decrypt/+` paths so application code can encrypt AND decrypt
 without needing project-manager credentials.
+
+Viewer is **encrypt-only** on purpose: a viewer can produce ciphertext
+(e.g. a frontend that needs to seal a field before handing it off to
+a developer-owned service) but cannot read plaintext back. If you need
+decryption, the caller needs at least the developer role.
 
 ## Create a key
 
@@ -60,11 +65,11 @@ without needing project-manager credentials.
 # Default: purpose=application, algorithm=aes256-gcm96, no rotation
 kube-dc kms keys create app-secrets
 
-# With scheduled rotation
-kube-dc kms keys create app-secrets \
-  --rotation-interval=90d
+# With scheduled rotation (--rotation takes the interval directly;
+# setting it also enables rotation)
+kube-dc kms keys create app-secrets --rotation=90d
 
-# A backup-purpose key with the schedule deletion policy preview
+# A backup-purpose key with the schedule deletion policy
 kube-dc kms keys create archive-2026 \
   --purpose=backup \
   --deletion-policy=schedule
@@ -106,7 +111,7 @@ kube-dc kms keys describe app-secrets
 # app-secrets  application  aes256-gcm96   3         enabled (90d)
 #
 # Status:
-#   KeyId:                kv-my-project/transit/keys/my-org-my-project-app-secrets
+#   KeyId:                transit/keys/my-org-my-project-app-secrets
 #   Current version:      3
 #   Min decryption ver:   1
 #   Last rotated:         2026-04-15T02:00:11Z
@@ -160,7 +165,6 @@ a self-contained example:
 package main
 
 import (
-    "context"
     "encoding/base64"
     "fmt"
     "log"
@@ -171,11 +175,14 @@ import (
 
 const (
     addr      = "https://bao.kube-dc.cloud"
-    namespace = "my-org"            // your Org
-    transit   = "kv-my-project/transit"
-    keyName   = "my-org-my-project-app-secrets"
-    role      = "developer-my-org"  // bound to your SA via the
-                                    // OrganizationGroup policy
+    namespace = "my-org"            // your Org (matches the first
+                                    // segment of kube-dc.com/project)
+    // Transit mount is at the root of the Org namespace.
+    // Key name follows the kube-dc kmskey_controller convention:
+    //   "<org>-<project>-<KMSKey name>"
+    keyName = "my-org-my-project-app-secrets"
+    role    = "developer-my-org"    // OrganizationGroup developer
+                                    // role bound to your SA
 )
 
 func main() {
@@ -195,9 +202,9 @@ func main() {
     if err != nil { log.Fatal(err) }
     cli.SetToken(secret.Auth.ClientToken)
 
-    // Encrypt
+    // Encrypt — transit/encrypt/<key> under the Org namespace
     plain := []byte("hunter2")
-    resp, err := cli.Logical().Write(fmt.Sprintf("%s/encrypt/%s", transit, keyName), map[string]interface{}{
+    resp, err := cli.Logical().Write(fmt.Sprintf("transit/encrypt/%s", keyName), map[string]interface{}{
         "plaintext": base64.StdEncoding.EncodeToString(plain),
     })
     if err != nil { log.Fatal(err) }
@@ -205,8 +212,8 @@ func main() {
     fmt.Println("ciphertext:", ct)
     // → vault:v3:hQH7+t9xZ...
 
-    // Decrypt
-    resp, err = cli.Logical().Write(fmt.Sprintf("%s/decrypt/%s", transit, keyName), map[string]interface{}{
+    // Decrypt — transit/decrypt/<key>
+    resp, err = cli.Logical().Write(fmt.Sprintf("transit/decrypt/%s", keyName), map[string]interface{}{
         "ciphertext": ct,
     })
     if err != nil { log.Fatal(err) }
@@ -246,12 +253,12 @@ since the Vault API is wire-compatible):
 # hvac>=2.1.0
 
 import base64
-import os
 import hvac
 
 ADDR      = "https://bao.kube-dc.cloud"
 NAMESPACE = "my-org"
-TRANSIT   = "kv-my-project/transit"
+# Transit mount is at the root of the Org namespace.
+# Key name follows "<org>-<project>-<KMSKey name>".
 KEY_NAME  = "my-org-my-project-app-secrets"
 ROLE      = "developer-my-org"
 
@@ -266,14 +273,14 @@ cli.auth.kubernetes.login(role=ROLE, jwt=jwt, mount_point="k8s-host")
 # Encrypt
 plain = b"hunter2"
 resp = cli.write(
-    f"{TRANSIT}/encrypt/{KEY_NAME}",
+    f"transit/encrypt/{KEY_NAME}",
     plaintext=base64.b64encode(plain).decode(),
 )
 ct = resp["data"]["ciphertext"]
 print("ciphertext:", ct)
 
 # Decrypt
-resp = cli.write(f"{TRANSIT}/decrypt/{KEY_NAME}", ciphertext=ct)
+resp = cli.write(f"transit/decrypt/{KEY_NAME}", ciphertext=ct)
 plain = base64.b64decode(resp["data"]["plaintext"])
 print("plaintext:", plain.decode())
 ```
@@ -300,7 +307,6 @@ NONCE (12B) || CIPHERTEXT || GCM_TAG (16B)
 package main
 
 import (
-    "context"
     "crypto/aes"
     "crypto/cipher"
     "crypto/rand"
@@ -316,9 +322,10 @@ import (
 const (
     addr      = "https://bao.kube-dc.cloud"
     namespace = "my-org"
-    transit   = "kv-my-project/transit"
-    keyName   = "my-org-my-project-app-secrets"
-    role      = "developer-my-org"
+    // Transit mount is at the root of the Org namespace.
+    // Key name follows "<org>-<project>-<KMSKey name>".
+    keyName = "my-org-my-project-app-secrets"
+    role    = "developer-my-org"
 )
 
 func auth(cli *bao.Client) error {
@@ -342,7 +349,7 @@ func encryptEnvelope(plaintext []byte) (ciphertext []byte, wrappedDek string, er
     if _, err = rand.Read(dek); err != nil { return }
 
     // 2. Wrap the DEK with the KMSKey via Transit
-    resp, err := cli.Logical().Write(fmt.Sprintf("%s/encrypt/%s", transit, keyName), map[string]interface{}{
+    resp, err := cli.Logical().Write(fmt.Sprintf("transit/encrypt/%s", keyName), map[string]interface{}{
         "plaintext": base64.StdEncoding.EncodeToString(dek),
     })
     if err != nil { return }
@@ -365,7 +372,7 @@ func decryptEnvelope(ciphertext []byte, wrappedDek string) ([]byte, error) {
     if err := auth(cli); err != nil { return nil, err }
 
     // 1. Unwrap the DEK via Transit
-    resp, err := cli.Logical().Write(fmt.Sprintf("%s/decrypt/%s", transit, keyName), map[string]interface{}{
+    resp, err := cli.Logical().Write(fmt.Sprintf("transit/decrypt/%s", keyName), map[string]interface{}{
         "ciphertext": wrappedDek,
     })
     if err != nil { return nil, err }
@@ -404,7 +411,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 ADDR      = "https://bao.kube-dc.cloud"
 NAMESPACE = "my-org"
-TRANSIT   = "kv-my-project/transit"
+# Transit mount is at the root of the Org namespace.
+# Key name follows "<org>-<project>-<KMSKey name>".
 KEY_NAME  = "my-org-my-project-app-secrets"
 ROLE      = "developer-my-org"
 
@@ -418,7 +426,7 @@ def encrypt_envelope(plaintext: bytes) -> tuple[bytes, str]:
     cli = _client()
     dek = os.urandom(32)
     wrapped = cli.write(
-        f"{TRANSIT}/encrypt/{KEY_NAME}",
+        f"transit/encrypt/{KEY_NAME}",
         plaintext=base64.b64encode(dek).decode(),
     )["data"]["ciphertext"]
     nonce = os.urandom(12)
@@ -428,7 +436,7 @@ def encrypt_envelope(plaintext: bytes) -> tuple[bytes, str]:
 def decrypt_envelope(blob: bytes, wrapped: str) -> bytes:
     cli = _client()
     dek = base64.b64decode(
-        cli.write(f"{TRANSIT}/decrypt/{KEY_NAME}", ciphertext=wrapped)["data"]["plaintext"]
+        cli.write(f"transit/decrypt/{KEY_NAME}", ciphertext=wrapped)["data"]["plaintext"]
     )
     return AESGCM(dek).decrypt(blob[:12], blob[12:], None)
 
@@ -479,8 +487,10 @@ kube-dc kms keys set-min-decryption-version app-secrets 2
 ```
 
 This is **irreversible**. Anything still wrapped with version 1 stops
-decrypting forever. The CLI walks you through a confirmation prompt;
-make sure you've re-wrapped or aged out everything that mattered first.
+decrypting forever. The CLI runs the operation immediately — there's
+no interactive prompt — so be certain you've re-wrapped or aged out
+everything wrapped with the about-to-be-prohibited versions before
+invoking. Project-manager role required.
 
 ## Delete a key
 
@@ -521,5 +531,5 @@ operation, and the key version touched.
 - [Secrets Manager](secrets-manager.md) — for storing whole secrets
   the platform projects into a Kubernetes `Secret` (not raw encrypt /
   decrypt of opaque payloads)
-- OpenBao Transit reference: <https://openbao.org/docs/secrets/transit/>
-- OpenBao Kubernetes auth: <https://openbao.org/docs/auth/kubernetes/>
+- OpenBao Transit reference: [openbao.org/docs/secrets/transit/](https://openbao.org/docs/secrets/transit/)
+- OpenBao Kubernetes auth: [openbao.org/docs/auth/kubernetes/](https://openbao.org/docs/auth/kubernetes/)

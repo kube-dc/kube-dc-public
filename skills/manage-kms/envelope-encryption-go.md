@@ -61,13 +61,13 @@ import (
     bao "github.com/openbao/openbao/api/v2"
 )
 
-// Wiring — fill these in from your config. The transit and keyName
-// fields follow the Kube-DC convention "<org>-<project>-<keyref>".
+// Wiring — fill these in from your config. The Transit mount lives at
+// the root of the Org's OpenBao namespace; only the key name varies.
+// KeyName follows the Kube-DC convention "<org>-<project>-<KMSKey>".
 type KMSConfig struct {
     Addr      string   // e.g. https://bao.kube-dc.cloud
     Namespace string   // your Org name (matches the kube-dc.com/project annotation's first half)
-    Transit   string   // <project-namespace> + "/transit", e.g. "shalb-docs/transit"
-    KeyName   string   // "<org>-<project>-<keyref>", e.g. "shalb-docs-app-secrets"
+    KeyName   string   // "<org>-<project>-<KMSKey>", e.g. "shalb-docs-app-secrets"
     Role      string   // OpenBao K8s-auth role, e.g. "developer-shalb"
     TokenFile string   // default "/var/run/secrets/openbao/token"
 }
@@ -110,7 +110,7 @@ func EncryptEnvelope(c KMSConfig, plaintext []byte) (ciphertext []byte, wrappedD
     if _, err = rand.Read(dek); err != nil { return }
 
     // 2. Wrap the DEK with the KMSKey via Transit
-    resp, err := cli.Logical().Write(fmt.Sprintf("%s/encrypt/%s", c.Transit, c.KeyName), map[string]interface{}{
+    resp, err := cli.Logical().Write(fmt.Sprintf("transit/encrypt/%s", c.KeyName), map[string]interface{}{
         "plaintext": base64.StdEncoding.EncodeToString(dek),
     })
     if err != nil { return }
@@ -134,7 +134,7 @@ func DecryptEnvelope(c KMSConfig, ciphertext []byte, wrappedDek string) ([]byte,
     if err != nil { return nil, err }
 
     // 1. Unwrap the DEK via Transit
-    resp, err := cli.Logical().Write(fmt.Sprintf("%s/decrypt/%s", c.Transit, c.KeyName), map[string]interface{}{
+    resp, err := cli.Logical().Write(fmt.Sprintf("transit/decrypt/%s", c.KeyName), map[string]interface{}{
         "ciphertext": wrappedDek,
     })
     if err != nil { return nil, fmt.Errorf("transit decrypt: %w", err) }
@@ -168,7 +168,6 @@ func main() {
     cfg := envelope.KMSConfig{
         Addr:      "https://bao.kube-dc.cloud",
         Namespace: "my-org",
-        Transit:   "kv-my-project/transit",
         KeyName:   "my-org-my-project-app-secrets",
         Role:      "developer-my-org",
     }

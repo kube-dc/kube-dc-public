@@ -52,7 +52,7 @@ See @kmskey-template.yaml for a fully-annotated template.
 kube-dc kms keys create {key-name}
 
 # With scheduled rotation
-kube-dc kms keys create {key-name} --rotation-interval=90d
+kube-dc kms keys create {key-name} --rotation=90d
 
 # Backup-purpose with schedule-delete enabled
 kube-dc kms keys create archive-2026 \

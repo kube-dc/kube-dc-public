@@ -54,8 +54,9 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 class KMSConfig:
     addr: str                # https://bao.kube-dc.cloud
     namespace: str           # your Org name
-    transit: str             # "<project-namespace>/transit"
-    key_name: str            # "<org>-<project>-<keyref>"
+    # Transit mount is at the root of the Org namespace; only the key
+    # name varies. Convention: "<org>-<project>-<KMSKey>".
+    key_name: str            # e.g. "my-org-my-project-app-secrets"
     role: str                # OpenBao K8s-auth role, e.g. "developer-<org>"
     token_file: str = "/var/run/secrets/openbao/token"
 
@@ -80,7 +81,7 @@ def encrypt_envelope(cfg: KMSConfig, plaintext: bytes) -> tuple[bytes, str]:
 
     # 2. Wrap via Transit
     wrap_resp = cli.write(
-        f"{cfg.transit}/encrypt/{cfg.key_name}",
+        f"transit/encrypt/{cfg.key_name}",
         plaintext=base64.b64encode(dek).decode(),
     )
     wrapped = wrap_resp["data"]["ciphertext"]
@@ -98,7 +99,7 @@ def decrypt_envelope(cfg: KMSConfig, blob: bytes, wrapped_dek: str) -> bytes:
 
     # 1. Unwrap the DEK
     unwrap_resp = cli.write(
-        f"{cfg.transit}/decrypt/{cfg.key_name}",
+        f"transit/decrypt/{cfg.key_name}",
         ciphertext=wrapped_dek,
     )
     dek = base64.b64decode(unwrap_resp["data"]["plaintext"])
@@ -116,7 +117,6 @@ from envelope import KMSConfig, encrypt_envelope, decrypt_envelope
 cfg = KMSConfig(
     addr="https://bao.kube-dc.cloud",
     namespace="my-org",
-    transit="kv-my-project/transit",
     key_name="my-org-my-project-app-secrets",
     role="developer-my-org",
 )

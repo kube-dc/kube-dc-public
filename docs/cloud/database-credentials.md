@@ -58,9 +58,10 @@ Key fields:
   keeps the DBA in control). Defaults to `app`.
 - **rotation.interval** — how often the password rotates (e.g. `30d`,
   `7d`).
-- **rotation.strategy** — `rolling` (write new password, keep old
-  valid for `gracePeriod` so deploys overlap) or `immediate`
-  (atomic swap; clients must reconnect right away).
+- **rotation.strategy** — `rolling` (write the new password, the
+  underlying OpenBao role keeps the previous one accepted briefly so
+  in-flight deploys overlap) or `immediate` (atomic swap; clients
+  must reconnect right away).
 - **sync.enabled** — projects the username + password into a
   Kubernetes `Secret` your pods can mount. The Secret is rewritten
   in place on every rotation.
@@ -78,11 +79,15 @@ The platform-side OpenBao policy that backs each project grants
 to the developer tier, so application code can read and force a
 rotation without project-manager credentials.
 
-> **NOTE — `rotate-root` is forbidden by design.** Kube-DC does NOT
-> expose the OpenBao `database/rotate-root` endpoint. Rotating the
-> root user would leave the platform with a password no human knows;
-> recovery would require manual DB-side intervention. Use a dedicated
-> Kube-DC-managed user (`username: app` or similar), not the root user.
+> **NOTE — rotating the engine-root password is project-admin only.**
+> The CLI exposes `kube-dc db credentials rotate <name> --root`, which
+> calls OpenBao's `database/rotate-root` against the configured
+> connection. This is destructive: the platform retains the new root
+> password but the human who set up the database no longer knows it.
+> Use it only when you need to invalidate the original bootstrap
+> password (e.g. it leaked into git). For day-to-day operations,
+> manage a dedicated user (`username: app` or similar) instead — its
+> rotation is non-destructive and the standard recipe below.
 
 ## Prerequisites
 
@@ -111,15 +116,14 @@ kube-dc db credentials create api-app \
   --database=api-db \
   --mode=static-rotated \
   --username=app \
-  --rotation-interval=30d
+  --rotate=30d
 
 # With rolling strategy (overlapping passwords during deploy)
 kube-dc db credentials create batch-app \
   --database=api-db \
   --username=batch \
-  --rotation-interval=7d \
-  --rotation-strategy=rolling \
-  --grace-period=10m
+  --rotate=7d \
+  --rotate-strategy=rolling
 ```
 
 ### Via kubectl
@@ -137,8 +141,7 @@ spec:
   username: app
   rotation:
     interval: 30d
-    strategy: rolling
-    gracePeriod: 10m
+    strategy: rolling                # rolling | immediate
   sync:
     enabled: true
     targetSecretName: api-app-creds
@@ -192,8 +195,8 @@ two strategies:
 1. **Reconnect on auth error** — your client code catches an auth
    failure, re-reads the Secret, reconnects. Works with rotation
    strategy `immediate`.
-2. **Use `rolling` strategy** — old password remains valid for
-   `gracePeriod` after the new one is written. A standard rolling
+2. **Use `rolling` strategy** — OpenBao briefly accepts both the old
+   and new passwords during the changeover, so a standard rolling
    Deployment can churn pods in that window without anyone seeing an
    auth failure. Long-running pods reload the Secret via the kubelet
    inotify path (~1 min lag) and pick up the new password naturally.
@@ -203,13 +206,16 @@ two strategies:
 ```bash
 kube-dc db credentials get api-app
 # Username: app
-# Password: ******** (use --reveal to print)
+# Password: ******** (use --show-password to print)
 # Host:     api-db-rw.my-project.svc.cluster.local
 # Port:     5432
 # DB:       mydb
 
 # Print the password (useful for ad-hoc psql)
-kube-dc db credentials get api-app --reveal
+kube-dc db credentials get api-app --show-password
+
+# Or as shell-eval-able env vars (requires --show-password)
+eval "$(kube-dc db credentials get api-app -o env --show-password)"
 ```
 
 The `get` reads from OpenBao directly, not from the synced Kubernetes
@@ -224,8 +230,9 @@ kube-dc db credentials rotate api-app
 
 This calls OpenBao's `database/rotate-role/<role>` endpoint, which
 generates a new password, updates the database, then writes it back
-to the synced Secret. With `strategy: rolling`, the old password is
-preserved as a valid second credential until `gracePeriod` elapses.
+to the synced Secret. With `strategy: rolling`, OpenBao briefly keeps
+the previous password accepted alongside the new one so in-flight
+clients can finish reconnecting.
 
 ## Inspect
 
@@ -247,10 +254,11 @@ kubectl describe dbcp api-app
 ## Delete
 
 ```bash
-kube-dc db credentials delete api-app
+kube-dc db credentials delete api-app --yes
 ```
 
-Deleting the DBCP:
+(`--yes` is required — the CLI refuses to delete without explicit
+confirmation.) Deleting the DBCP:
 
 - Stops further rotation.
 - Removes the projected Kubernetes Secret.
@@ -333,4 +341,4 @@ clusters are all static-rotated.
   aren't database credentials
 - [KMS](kms.md) — application-level encryption keys
 - OpenBao Database engine reference:
-  <https://openbao.org/docs/secrets/databases/>
+  [openbao.org/docs/secrets/databases/](https://openbao.org/docs/secrets/databases/)

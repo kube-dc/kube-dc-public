@@ -77,22 +77,23 @@ manager credentials.
 ### Via the CLI
 
 ```bash
-# Public server cert (default purpose=server, duration=90d, renewBefore=15d)
+# Public server cert (default purpose=server, duration=90d, renewBefore=15d).
+# Repeat --dns to add multiple SANs.
 kube-dc certificates request api-tls \
   --type=public \
-  --dns-name=api.my-project.example.com
+  --dns=api.my-project.example.com
 
 # Private mTLS cert for an internal service
 kube-dc certificates request worker-mtls \
   --type=private \
   --purpose=mtls \
-  --dns-name=worker.internal \
-  --dns-name=worker.my-project.svc.cluster.local
+  --dns=worker.internal \
+  --dns=worker.my-project.svc.cluster.local
 
 # Custom duration / renewBefore
 kube-dc certificates request short-cert \
   --type=private \
-  --dns-name=batch-job.internal \
+  --dns=batch-job.internal \
   --duration=30d --renew-before=5d
 ```
 
@@ -198,8 +199,11 @@ automatically).
 ## Delete
 
 ```bash
-kube-dc certificates delete api-tls
+kube-dc certificates delete api-tls --yes
 ```
+
+(`--yes` is required — the CLI refuses to delete without explicit
+confirmation.)
 
 The CRD, the owned `cert-manager` `Certificate`, AND the
 `targetSecretName` Secret are all deleted. Pods currently mounting
@@ -256,4 +260,4 @@ issuing CA path.
 - [KMS](kms.md) — encryption keys (separate from x509)
 - [Secrets Manager](secrets-manager.md) — storing the cert + key pair
   yourself if needed
-- cert-manager docs: <https://cert-manager.io/docs/>
+- cert-manager docs: [cert-manager.io/docs/](https://cert-manager.io/docs/)

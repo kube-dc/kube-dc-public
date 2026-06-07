@@ -55,23 +55,23 @@ See @managed-certificate-template.yaml for a fully-annotated template.
 # Public server cert for an HTTPS endpoint
 kube-dc certificates request {api-name} \
   --type=public \
-  --dns-name={api.your-domain.com}
+  --dns={api.your-domain.com}
 
 # Private mTLS cert for an internal service
 kube-dc certificates request {svc-name} \
   --type=private --purpose=mtls \
-  --dns-name={svc.internal} \
-  --dns-name={svc.{project-namespace}.svc.cluster.local}
+  --dns={svc.internal} \
+  --dns={svc.{project-namespace}.svc.cluster.local}
 
 # Private client cert (handed to a partner / off-cluster client)
 kube-dc certificates request {partner-name} \
   --type=private --purpose=client \
-  --dns-name={partner-name}.partners.internal
+  --dns={partner-name}.partners.internal
 
 # Short-lived cert for a batch job
 kube-dc certificates request {batch-name} \
   --type=private \
-  --dns-name={batch-job.internal} \
+  --dns={batch-job.internal} \
   --duration=30d --renew-before=5d
 ```
 
@@ -118,7 +118,8 @@ kube-dc certificates get {cert-name}
 kube-dc certificates renew {cert-name}
 
 # Delete CRD + cert-manager Certificate + Kubernetes Secret
-kube-dc certificates delete {cert-name}
+# (--yes is required; the CLI refuses without it)
+kube-dc certificates delete {cert-name} --yes
 ```
 
 `kubectl` short name is `mcert`:

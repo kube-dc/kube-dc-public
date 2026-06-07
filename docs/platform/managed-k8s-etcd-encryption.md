@@ -6,7 +6,7 @@ platform, and how rotation + backup interplay.
 
 This page is for **operators and SREs running a Kube-DC cluster**. For
 the tenant-facing toggle (`spec.encryption.etcd.enabled: true` on a
-`KdcCluster`), see [Provisioning a Cluster](../cloud/provisioning-cluster.md).
+`KdcCluster`), see [Provisioning a Cluster](/cloud/provisioning-cluster).
 For the engineer-level walkthrough of every reconciler step and every
 failure mode, see [docs/internal/managed-k8s-encryption-runbook.md](https://github.com/shalb/kube-dc/blob/main/docs/internal/managed-k8s-encryption-runbook.md).
 
@@ -212,7 +212,7 @@ Validation bounds (rejected at reconcile time with a clear
    Bulk re-wrap is deferred to phase 6 (`kube-dc cluster rewrap-etcd`).
 4. **`min_decryption_version` is NEVER advanced by automation.** Old
    DEKs and old backups remain decryptable indefinitely. See §
-   "Advancing `min_decryption_version`" below — that's a manual + 
+   "Advancing `min_decryption_version`" below — that's a manual +
    irreversible operator gesture.
 
 ### Tenant-side observability
@@ -354,7 +354,7 @@ annotation is audit-flagged on every reconcile.
 
 ## Cross-references
 
-- [Provisioning a Cluster](../cloud/provisioning-cluster.md) — tenant-facing toggle
+- [Provisioning a Cluster](/cloud/provisioning-cluster) — tenant-facing toggle
 - [Managed Kubernetes etcd Backup & Restore](managed-k8s-etcd-backup-restore.md) — backup envelope encryption companion
 - [docs/internal/managed-k8s-encryption-runbook.md](https://github.com/shalb/kube-dc/blob/main/docs/internal/managed-k8s-encryption-runbook.md) — engineer-level walkthrough, every condition + recovery
 - [docs/internal/managed-k8s-encryption-design.md](https://github.com/shalb/kube-dc/blob/main/docs/internal/managed-k8s-encryption-design.md) — design rationale, threat model, KMS v2 details

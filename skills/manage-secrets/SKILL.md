@@ -45,7 +45,7 @@ kube-dc secrets create {secret-name} \
 # From a .env file
 kube-dc secrets create {secret-name} --from-env-file=./app.env
 
-# No sync — values readable only via `kube-dc secrets get --reveal`
+# No sync — values readable only via `kube-dc secrets get --value`
 kube-dc secrets create {secret-name} --sync-disabled
 ```
 
@@ -56,7 +56,7 @@ kube-dc secrets create {secret-name} --sync-disabled
 kube-dc secrets list
 
 # Reveal current values
-kube-dc secrets get {secret-name} --reveal
+kube-dc secrets get {secret-name} --value
 
 # Update a key (writes a new version atomically)
 kube-dc secrets put {secret-name} --from-literal=API_KEY={new-value}
