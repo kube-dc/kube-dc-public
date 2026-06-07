@@ -110,8 +110,6 @@ stringData:
 
 Once the controller picks up the change, it propagates SMTP settings to **every organization's Keycloak realm** automatically — both new realms created after the change and existing ones (the controller detects SMTP config drift and applies updates). Users in any org can immediately use "Forgot password", admins can invite members, etc.
 
-The architecture is documented in [docs/prd/keycloak-smtp-configuration.md](../prd/keycloak-smtp-configuration.md) (internal).
-
 ## Rotating, revoking, or replacing the password
 
 App Passwords are revocable per-token. To rotate:

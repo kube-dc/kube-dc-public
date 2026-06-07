@@ -177,7 +177,7 @@ env:
 - **PostgreSQL**: `{db-name}-app` (key: `password`)
 - **MariaDB**: `{db-name}-password` (key: `password`)
 
-These engine Secrets are created at provisioning time. **They are NOT updated when a credential policy rotates the password**: once a `DatabaseCredentialPolicy` manages the user, the projected Secret named on the **Credentials** tab is the source of truth for the current password. Use the engine Secret only when no policy manages the user, or for break-glass scenarios documented in `docs/internal/database-credentials-runbook.md`.
+These engine Secrets are created at provisioning time. **They are NOT updated when a credential policy rotates the password**: once a `DatabaseCredentialPolicy` manages the user, the projected Secret named on the **Credentials** tab is the source of truth for the current password. Use the engine Secret only when no policy manages the user, or for break-glass scenarios — contact your cluster operator if you need help recovering from a state where neither the policy Secret nor the engine Secret has a working password.
 :::
 
 ### External Access
@@ -382,7 +382,7 @@ kube-dc db credentials delete my-postgres-app-rotated --yes
 | `static-rotated` | OpenBao rotates the password of an EXISTING user on a fixed schedule | Default, fully supported (UI + CLI + kubectl) |
 | `dynamic` | OpenBao mints a short-lived TTL'd user per `issue` call | CLI/API only; UI shows `Ready=False/DynamicModeDeferred` until the dynamic-issue surface ships |
 
-For operator-level concerns (break-glass superuser, OpenBao policy refresh, troubleshooting 28P01 errors), see the internal runbook at `docs/internal/database-credentials-runbook.md`.
+Operator-level concerns (break-glass superuser, OpenBao policy refresh, troubleshooting `28P01` authentication errors) are handled by your cluster operator. If your project hits one of these states — typically symptoms like every pod failing to connect with `password authentication failed for user "app"` after a rotation — open a support ticket with the cluster operator rather than trying to recover by hand from the engine Secret.
 
 ### Backups
 

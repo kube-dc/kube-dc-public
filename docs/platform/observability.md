@@ -1,8 +1,7 @@
 # Observability — Platform Operator Guide
 
 **Audience:** Cluster operators and platform engineers  
-**Scope:** Day-2 operations for the shared observability stack  
-**Related internal doc:** `docs/internal/observability-architecture.md` (implementation detail)
+**Scope:** Day-2 operations for the shared observability stack
 
 ---
 
@@ -519,6 +518,3 @@ KUBECONFIG=<cluster-kubeconfig> ./scripts/bootstrap-keycloak.sh
 | Grafana / Prometheus (kube-prom-stack) | `platform/monitoring/prom-operator/` |
 | Dashboard JSON sources | `platform/monitoring/dashboards/` |
 | Per-cluster version pins | `clusters/cloud/cluster-config.env` |
-| Internal architecture (implementation detail) | `docs/internal/observability-architecture.md` |
-| Observability multi-tenancy PRD | `docs/prd/observability-multi-tenancy.md` |
-| Grafana multi-tenancy PRD | `docs/prd/grafana-multi-tenant.md` |

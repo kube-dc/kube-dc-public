@@ -7,8 +7,6 @@ platform, and how rotation + backup interplay.
 This page is for **operators and SREs running a Kube-DC cluster**. For
 the tenant-facing toggle (`spec.encryption.etcd.enabled: true` on a
 `KdcCluster`), see [Provisioning a Cluster](/cloud/provisioning-cluster).
-For the engineer-level walkthrough of every reconciler step and every
-failure mode, see [docs/internal/managed-k8s-encryption-runbook.md](https://github.com/shalb/kube-dc/blob/main/docs/internal/managed-k8s-encryption-runbook.md).
 
 ---
 
@@ -48,8 +46,9 @@ OpenBao.
 - **Kubernetes resources outside the encrypted list.** Phase-1 default
   is `[secrets]`; tenants can opt into `[secrets, configmaps]`. Other
   resources (`leases`, `events`, `endpoints`, `pods`) remain in
-  plaintext for the high-write-rate / low-sensitivity reasons documented
-  in the [design](https://github.com/shalb/kube-dc/blob/main/docs/internal/managed-k8s-encryption-design.md) §16.6.
+  plaintext — they have high write rates and low sensitivity, so
+  encrypting them would multiply apiserver and KMS load without a
+  proportional security gain.
 
 ---
 
@@ -163,12 +162,12 @@ spec:
 | sidecar logged in to OpenBao | `kubectl -n <ns> logs <pod> -c kms-plugin \| grep "OpenBao login ok"` | a recent line |
 | Sidecar is listening | `kubectl -n <ns> logs <pod> -c kms-plugin \| grep "kms-plugin listening"` | a recent line |
 
-If everything is green the cluster is encrypted. To prove it bit-for-bit
-in raw etcd (the `k8s:enc:kms:v2:bao:` row prefix), see the
-[acceptance checklist §1](https://github.com/shalb/kube-dc/blob/main/docs/internal/managed-k8s-encryption-acceptance.md) — that procedure requires platform-admin etcdctl
-access because the cluster's `restrict-pod-exec-in-projects`
-ValidatingAdmissionPolicy blocks tenant exec into the Kamaji DataStore
-pod.
+If everything is green the cluster is encrypted. To prove it
+bit-for-bit, an operator with platform-admin etcdctl access can read
+a fresh row from the Kamaji DataStore — every encrypted value carries
+the `k8s:enc:kms:v2:bao:` wire prefix. Tenant exec into the etcd pod
+is blocked by the cluster's `restrict-pod-exec-in-projects`
+ValidatingAdmissionPolicy, so this verification is operator-only.
 
 ---
 
@@ -269,8 +268,26 @@ backups.
   been re-wrapped via the deferred `kube-dc cluster rewrap-backups` CLI
 
 **Never use as a routine operation.** No automation does this; the
-controllers explicitly refuse. See
-[the runbook §11.6](https://github.com/shalb/kube-dc/blob/main/docs/internal/managed-k8s-encryption-runbook.md) for the manual dry-run + safety-check procedure.
+controllers explicitly refuse. Pre-flight checklist for the manual
+operator action:
+
+1. Inventory every S3 backup under `s3://<projectNS>-managed-k8s-backups/`
+   and parse each `metadata.json` for its `transitKeyVersion`. Refuse
+   to advance if any version is below the target.
+2. Confirm every workload using this KEK has either re-wrapped or
+   aged out of the affected version.
+3. Confirm OpenBao audit traceability — every advance lands in the
+   audit log.
+4. Issue the advance against OpenBao:
+
+   ```bash
+   bao write -namespace=<org> \
+     transit/keys/<projectNS>-<projectName>-<keyName>/config \
+     min_decryption_version=N
+   ```
+
+5. File the incident regardless of outcome — even successful advances
+   are unusual enough to warrant an operator note.
 
 ---
 
@@ -356,6 +373,3 @@ annotation is audit-flagged on every reconcile.
 
 - [Provisioning a Cluster](/cloud/provisioning-cluster) — tenant-facing toggle
 - [Managed Kubernetes etcd Backup & Restore](managed-k8s-etcd-backup-restore.md) — backup envelope encryption companion
-- [docs/internal/managed-k8s-encryption-runbook.md](https://github.com/shalb/kube-dc/blob/main/docs/internal/managed-k8s-encryption-runbook.md) — engineer-level walkthrough, every condition + recovery
-- [docs/internal/managed-k8s-encryption-design.md](https://github.com/shalb/kube-dc/blob/main/docs/internal/managed-k8s-encryption-design.md) — design rationale, threat model, KMS v2 details
-- [docs/internal/managed-k8s-encryption-acceptance.md](https://github.com/shalb/kube-dc/blob/main/docs/internal/managed-k8s-encryption-acceptance.md) — Phase-5 acceptance checklist

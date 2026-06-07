@@ -7,7 +7,7 @@ and what to look at when things break.
 
 For the **tenant-facing** view of the same pipeline (UI version
 dropdown, choosing OS+version when creating a VM), see
-[docs/cloud/creating-vm.md](../cloud/creating-vm.md).
+[Creating a VM](/cloud/creating-vm).
 
 ## TL;DR
 
@@ -382,8 +382,6 @@ first refresh).
 
 ## References
 
-- PRD: [docs/prd/cdi-acceleration.md](../prd/cdi-acceleration.md)
-- PRD: [docs/prd/cdi-os-image-registry.md](../prd/cdi-os-image-registry.md)
 - Refresh tool: `kube-dc/images/cdi-os-mirror/refresh.py`
 - Refresh CronJob (fleet): `kube-dc-fleet/platform/cdi-os-mirror/refresh-cronjob.yaml`
 - Chart template (gc + alerts): `charts/kube-dc/templates/cdi-upload-gc-cronjob.yaml`, `cdi-mirror-alerts-prometheusrule.yaml`

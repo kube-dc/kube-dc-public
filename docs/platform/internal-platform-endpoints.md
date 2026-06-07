@@ -14,9 +14,9 @@ This page tells you whether your installation needs the feature, how to decide, 
 | [Troubleshooting](#troubleshooting) | What goes wrong and how to diagnose |
 | [Configuration reference](#configuration-reference) | Full chart surface |
 
-> **Engineering record**: [`docs/prd/internal-platform-endpoints-implementation.md`](../prd/internal-platform-endpoints-implementation.md) (private).
-> **Engineer-side rollout runbook**: [`docs/internal/internal-platform-endpoints-runbook.md`](../internal/internal-platform-endpoints-runbook.md) (private).
-> This page is the operator-facing reference and is mirrored to the public docs site.
+> This page is the operator-facing reference. Kube-DC engineering
+> records and rollout runbooks for this feature are maintained
+> internally.
 
 ---
 
@@ -418,7 +418,9 @@ If a cluster was misclassified as Class A and you want to turn the feature off, 
 | EndpointSlice has only one backend even though 3 CP nodes exist | Envoy is running single-replica (typically pinned to one node). Probes for other CP IPs correctly fail because there's no Envoy bound there. | Ship Envoy data-plane HA: `replicas=3` + pod anti-affinity + PDB `minAvailable=2`. See the chart's `platformEndpoints` reference. |
 | Single-replica controller restarts cause data-plane config drift | xDS controller is single-replica. | Set `envoy-gateway` chart `deployment.replicas=2` with leader election. PDB `minAvailable=1`. |
 
-For deeper debugging, see the engineer-side runbook at [`docs/internal/internal-platform-endpoints-runbook.md`](../internal/internal-platform-endpoints-runbook.md).
+For deeper debugging beyond the operator surface above, contact
+Kube-DC support with the relevant `kubectl -n kube-dc logs` output
+and the result of `kube-dc bootstrap doctor anchors`.
 
 ---
 
@@ -524,5 +526,3 @@ EXT_NET_ANCHOR_IPS=srv1=100.64.0.11,srv2=100.64.0.12,srv3=100.64.0.13
 - [`docs/platform/networking-external.md`](networking-external.md) — adding additional external networks (`ext-public` etc).
 - [`docs/platform/deploy-metallb-ha.md`](deploy-metallb-ha.md) — MetalLB HA install.
 - [`docs/platform/cluster-cli-fleet.md`](cluster-cli-fleet.md) — Fleet CLI workflow including `bootstrap anchors`.
-- [`docs/internal/internal-platform-endpoints-runbook.md`](../internal/internal-platform-endpoints-runbook.md) — engineer-side operational runbook (private).
-- [`docs/prd/internal-platform-endpoints-implementation.md`](../prd/internal-platform-endpoints-implementation.md) — engineering record / decision log (private).
