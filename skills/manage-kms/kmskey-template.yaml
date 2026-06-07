@@ -1,0 +1,40 @@
+apiVersion: security.kube-dc.com/v1alpha1
+kind: KMSKey
+metadata:
+  name: {key-name}
+  namespace: {project-namespace}        # {org}-{project}
+spec:
+  # Tag for UX filtering + lifecycle policy. Pick `application` unless
+  # the key is for one of the platform-internal uses:
+  #   application — your code
+  #   etcd        — managed-K8s etcd encryption (auto-managed by the
+  #                 cluster controller; tenants don't create these
+  #                 directly)
+  #   backup      — snapshot wrapping
+  purpose: application
+
+  # Symmetric AEAD algorithm. aes256-gcm96 is the default; both options
+  # are equivalent for typical workloads.
+  algorithm: aes256-gcm96               # aes256-gcm96 | chacha20-poly1305
+
+  # Lifecycle policy.
+  #   retain   — Transit key survives even when the CRD is deleted
+  #              (so backup envelopes wrapping old DEKs remain
+  #              decryptable). Default.
+  #   schedule — Flips the controller into a 30-day countdown that
+  #              cancellable until expiry. Use when you genuinely
+  #              want to destroy the key.
+  deletionPolicy: retain
+
+  # Opt-in scheduled rotation. The controller calls Transit rotate on
+  # each interval boundary, producing a new key version. New encrypt
+  # calls use the latest version; old versions stay alive for
+  # decryption until min_decryption_version is manually advanced.
+  rotation:
+    enabled: true                       # default: false
+    interval: 90d                       # units: d|h|m|s (NO w).
+                                        # Bounded to [7d, 730d].
+
+  # Phase-1 enforces this to false via webhook. Field exists for
+  # future use.
+  exportable: false

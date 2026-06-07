@@ -49,7 +49,8 @@ Rook-Ceph is available on the platform), the controller creates a
 | Schedule: `0 2 * * *` (02:00 UTC daily) | `KdcCluster.spec.backup.schedule` |
 | Retention: 7 days (S3 lifecycle policy) | `KdcCluster.spec.backup.retentionDays` |
 | Bucket: `<projectNamespace>-managed-k8s-backups` | `KdcCluster.spec.backup.destinationPath` |
-| Object key: `<cluster>/<cluster>-<ts>.db` | (not configurable) |
+| Object key (plaintext): `<cluster>/<cluster>-<ts>.db` | (not configurable) |
+| Object key (envelope-encrypted): `<cluster>/<cluster>-<ts>/` (directory of 3 objects — see Encrypted backups below) | (not configurable) |
 | S3 endpoint: `S3_ENDPOINT` controller env (e.g. `https://s3.stage.kube-dc.com`) | `KdcCluster.spec.backup.s3Endpoint` |
 
 A snapshot is roughly **20 MB per cluster** (etcd 3.5, default
@@ -58,6 +59,47 @@ inside the management cluster. The CronJob is gated on the OBC being
 `Bound` and on `KdcCluster.status.dataStoreName` being set, so newly
 provisioned clusters don't try to take backups before their etcd
 exists.
+
+### Encrypted backups (envelope mode)
+
+When the owning `KdcCluster` has
+[etcd-at-rest encryption](managed-k8s-etcd-encryption.md) enabled
+(`spec.encryption.etcd.enabled: true`), the backup CronJob switches
+into **envelope mode**: it wraps the snapshot before upload using the
+same per-cluster KEK that the kms-plugin sidecar uses for live etcd.
+Plaintext mode is unchanged for clusters that don't opt in — both
+modes coexist on the same platform.
+
+For each snapshot under envelope mode, three sibling objects land in
+S3 instead of one:
+
+```
+s3://<projectNS>-managed-k8s-backups/<cluster>/<cluster>-<ts>/
+  ├── snapshot.db.enc      NONCE(12B) || CIPHERTEXT || GCM_TAG(16B)
+  ├── dek.wrapped          vault:vN:... — the OpenBao-wrapped DEK
+  └── metadata.json        schemaVersion + transitKey + transitKeyVersion +
+                           algorithm + nonce + wrappedDek + createdAt +
+                           source + etcdSnapshotSha256
+```
+
+The wire format is locked at `schemaVersion=1` and `algorithm=AES-256-GCM`.
+The `wrappedDek` is duplicated inside `metadata.json` for operators who
+prefer file-side recovery; `metadata.json` alone is enough to restore
+because it includes the SHA-256 of the original snapshot for post-decrypt
+verification.
+
+**Anyone with bucket-level read access cannot decrypt** — the wrapped
+DEK is useless without the OpenBao Transit key, and that key never
+leaves OpenBao in plaintext. This is the data-at-rest companion to the
+etcd-at-rest layer documented in
+[managed-k8s-etcd-encryption.md](managed-k8s-etcd-encryption.md).
+
+The restore controller auto-detects layout from the snapshot key
+shape: a trailing slash signals envelope mode and triggers the
+unwrap + decrypt path; a plain `.db` key signals the legacy plaintext
+path. Operators normally don't pass these keys by hand — the
+`kube-dc.com/restore-from` annotation flow (see "Performing a restore"
+below) handles both layouts transparently.
 
 ### Quick checks
 

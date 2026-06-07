@@ -10,13 +10,13 @@
     {
       "name": "kube-dc",
       "source": "./",
-      "description": "Kube-DC skills for Kubernetes-native data center management — 11 workflow skills covering the full platform lifecycle.",
-      "version": "1.0.0",
+      "description": "Kube-DC skills for Kubernetes-native data center management — 15 workflow skills covering the full platform lifecycle, including OpenBao-backed secrets / KMS / certificates.",
+      "version": "1.1.0",
       "author": {
         "name": "Shalb"
       },
       "category": "infrastructure",
-      "tags": ["kubernetes", "infrastructure", "devops", "virtual-machines", "databases"]
+      "tags": ["kubernetes", "infrastructure", "devops", "virtual-machines", "databases", "secrets", "kms", "tls"]
     }
   ]
 }

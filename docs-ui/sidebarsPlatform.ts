@@ -21,6 +21,8 @@ const sidebars: SidebarsConfig = {
         'architecture-networking',
         'architecture-multi-tenancy',
         'architecture-virtualization',
+        'internal-platform-endpoints',
+        'controller-diagram',
       ],
     },
     {
@@ -34,6 +36,18 @@ const sidebars: SidebarsConfig = {
         'windows-vm-setup',
         'sso-google-auth',
         'networking-external',
+        'observability',
+        'billing-plans-configuration',
+        'smtp-gmail-app-password',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Managed Kubernetes',
+      collapsed: true,
+      items: [
+        'managed-k8s-etcd-backup-restore',
+        'managed-k8s-etcd-encryption',
       ],
     },
     {

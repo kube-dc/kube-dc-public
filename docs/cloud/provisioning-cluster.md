@@ -186,12 +186,110 @@ kubectl apply -f cluster.yaml
 | `spec.workers[].image` | Container disk image for workers | Required |
 | `spec.workers[].storageType` | `datavolume` (persistent) or empty (ephemeral) | — |
 | `spec.workers[].infrastructureProvider` | `kubevirt` or `cloudsigma` | `kubevirt` |
+| `spec.encryption.etcd.enabled` | Encrypt Secret + ConfigMap values at rest in the cluster's etcd (KMS v2 envelope via OpenBao Transit) — see [Encryption at Rest](#encryption-at-rest) | `false` |
+| `spec.encryption.etcd.kekRotation.enabled` | Auto-rotate the Key Encryption Key on a schedule | `false` |
+| `spec.encryption.etcd.kekRotation.interval` | Duration between rotations (units: `d`, `h`, `m`, `s` — `w` is not accepted). Must be ≥ 7d and ≥ `spec.backup.retentionDays`. | — |
 
 ### Annotations
 
 | Annotation | Description |
 |------------|-------------|
 | `k8s.kube-dc.com/expose-route: "true"` | Expose API endpoint externally via TLSRoute (recommended for cloud network type) |
+| `kube-dc.com/restore-from` | S3 key of a prior backup to restore on first boot. Plaintext `.db` keys and envelope directories (trailing slash) are both auto-detected. See [Backups & Snapshots](backups-snapshots.md). |
+
+## Encryption at Rest
+
+Your cluster's `etcd` stores everything `kubectl` returns — Secrets,
+ConfigMaps, CRDs, ServiceAccount tokens. By default these are written
+to disk in plaintext. Flipping a single field encrypts them with
+**KMS v2 envelope encryption**: each row gets a fresh AES-256-GCM data
+key (DEK), and the DEK is wrapped by a per-cluster Key Encryption Key
+(KEK) that lives in Kube-DC's OpenBao Transit engine and never leaves
+in plaintext.
+
+```yaml
+spec:
+  encryption:
+    etcd:
+      enabled: true
+```
+
+That single toggle gets you the §10.1 "simple default" flow: a
+per-cluster `KMSKey` is auto-created, the apiserver starts with a KMS
+plugin sidecar, and every new Secret you create from that point on is
+stored encrypted. **Existing Secrets re-encrypt on next write** — to
+force them all to re-encrypt immediately, do `kubectl get secret -A -o
+yaml | kubectl replace --force -f -`.
+
+To check it took effect:
+
+```bash
+kubectl get kdccluster <name> -o jsonpath='{.status.encryption}'
+```
+
+You should see a `resolvedKeyRef` (the name of the auto-created KMSKey)
+and `kekRotation.currentVersion: 1`.
+
+### Rotating the KEK
+
+Encryption-at-rest by itself doesn't rotate the wrapping key —
+schedule that explicitly:
+
+```yaml
+spec:
+  encryption:
+    etcd:
+      enabled: true
+      kekRotation:
+        enabled: true
+        interval: 90d
+```
+
+Rules:
+
+- Units are `d`, `h`, `m`, `s` (no `w`).
+- Minimum 7 days, maximum 730 days.
+- Interval must be ≥ `spec.backup.retentionDays * 24h`. The rationale:
+  rotating faster than backups age out leaves historic backups bound
+  to key versions you'd have to manage by hand.
+
+Rotation creates a new Transit key version. Old key versions stay
+alive — historic Secrets and backups remain decryptable indefinitely.
+Bulk re-wrap of existing rows is not done automatically (each row
+re-wraps on next Update); a CLI-driven sweep is planned for a future
+release.
+
+Status:
+
+```bash
+kubectl get kdccluster <name> -o jsonpath='{.status.encryption.kekRotation}'
+# {"currentVersion":2,"enabled":true,"lastRotatedTime":"...","minDecryptionVersion":1,"nextRotationTime":"..."}
+```
+
+### Backups stay encrypted too
+
+When `encryption.etcd.enabled: true` AND `spec.backup.enabled: true`
+(the latter is the default), the per-cluster snapshot CronJob writes
+envelope-encrypted snapshots to S3 — three sibling objects per
+snapshot instead of one. The detail lives in
+[Backups & Snapshots](backups-snapshots.md); the short version is that
+restoring from an encrypted backup needs OpenBao access just like the
+live cluster does, so anyone reading the S3 bucket cannot decrypt.
+
+### Limits
+
+- **What's encrypted:** `Secret` values by default. Opt into
+  `ConfigMap` too via `spec.encryption.etcd.resources: ["secrets",
+  "configmaps"]`. Other resources (`leases`, `events`, `endpoints`,
+  `pods`) stay plaintext for the high-write-rate / low-sensitivity
+  reasons — see the design doc on the public site.
+- **What's NOT encrypted:** application data on PVCs. Use a workload-
+  side mechanism (LUKS-backed StorageClass, application encryption,
+  Velero with restic) for that.
+- **Disabling:** flipping `enabled: false` on a cluster that was
+  previously encrypted is intentionally blocked — the apiserver would
+  fail to read existing rows. Contact your cluster admin for the
+  documented two-step migration.
 
 ## Monitor Cluster Creation
 

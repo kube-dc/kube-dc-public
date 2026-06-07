@@ -1,0 +1,41 @@
+apiVersion: security.kube-dc.com/v1alpha1
+kind: ManagedCertificate
+metadata:
+  name: {cert-name}
+  namespace: {project-namespace}        # {org}-{project}
+spec:
+  # Trust root:
+  #   private — Organization's intermediate CA (mTLS, internal services,
+  #             code signing). Trusted inside Kube-DC; NOT trusted on the
+  #             public internet. Fast (< 10s issuance).
+  #   public  — ACME (Let's Encrypt by default). Trusted by browsers.
+  #             Subject to ACME rate limits.
+  type: private                         # private | public
+
+  # Key usage bundle:
+  #   server        — TLS server auth (HTTPS endpoint)
+  #   client        — TLS client auth (mTLS clients)
+  #   mtls          — both server + client
+  #   code-signing  — code-signing EKU (image / OCI artifact signing)
+  purpose: server
+
+  # Subject Alternative Names. ≥ 1 required. The admission webhook
+  # validates each entry against the Organization's allowed-domains list.
+  dnsNames:
+    - {hostname-1}
+    - {hostname-2}
+
+  # Optional IP SANs (rare; only for clients that pin by IP).
+  # ipAddresses:
+  #   - 10.0.0.5
+
+  # Validity period. Default 90d. Use 30d for short-lived workloads.
+  duration: 90d
+
+  # Renew this far ahead of expiry. The controller fires a renewal
+  # automatically — no tenant action required.
+  renewBefore: 15d
+
+  # Kubernetes Secret the issued cert lands in (type kubernetes.io/tls).
+  # Defaults to the ManagedCertificate name.
+  targetSecretName: {cert-name}

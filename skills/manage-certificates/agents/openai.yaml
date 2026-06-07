@@ -1,0 +1,6 @@
+interface:
+  display_name: Manage Project Certificates
+  short_description: Request and renew x509 certificates (private CA + public ACME)
+  brand_color: '#0ea5e9'
+policy:
+  allow_implicit_invocation: true

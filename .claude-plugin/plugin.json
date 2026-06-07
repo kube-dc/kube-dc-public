@@ -1,7 +1,7 @@
 {
   "name": "kube-dc",
-  "version": "1.0.0",
-  "description": "Kube-DC — Kubernetes-native data center platform skills for managing projects, VMs, databases, clusters, networking, storage, and RBAC.",
+  "version": "1.1.0",
+  "description": "Kube-DC — Kubernetes-native data center platform skills for managing projects, VMs, databases, clusters, networking, storage, RBAC, secrets, KMS, and certificates.",
   "author": {
     "name": "Shalb",
     "url": "https://github.com/kube-dc"
@@ -16,6 +16,9 @@
     "databases",
     "networking",
     "kubevirt",
-    "multi-tenancy"
+    "multi-tenancy",
+    "secrets",
+    "kms",
+    "tls"
   ]
 }

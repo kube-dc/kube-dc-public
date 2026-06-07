@@ -32,6 +32,29 @@ For full data backup, snapshot-capable storage is required (planned upgrade to C
 
 Backups are created in the `velero` namespace but target project resources using `includedNamespaces`. Each project can only back up resources within its own namespace, providing complete isolation.
 
+### Managed Kubernetes Control-Plane Backups
+
+If you provisioned a [managed Kubernetes cluster](provisioning-cluster.md)
+in your project, Kube-DC also runs an **automatic daily backup** of
+that cluster's control-plane `etcd`. This is independent of the
+Velero workload backups described in this page — it's handled by the
+managed-K8s controller and aimed at disaster recovery of the cluster
+itself, not the workloads running on it.
+
+| | Velero workload backups | Managed-K8s etcd backup |
+|---|---|---|
+| What it captures | VM / workload definitions and metadata in your project namespace | Control-plane etcd of a `KdcCluster` (everything `kubectl` returns on the tenant cluster) |
+| Frequency | On demand or scheduled (you control it) | Daily 02:00 UTC by default (`spec.backup.schedule`) |
+| Retention | Backup spec / lifecycle policy | 7 days default (`spec.backup.retentionDays`) |
+| Encryption at rest | Bucket-level only | **Envelope-encrypted** when [encryption.etcd.enabled](provisioning-cluster.md#encryption-at-rest) is on — uses the same KEK as the live cluster, anyone with bucket read access can't decrypt |
+| Restore mechanism | Velero Restore CR | `kube-dc.com/restore-from` annotation on a fresh `KdcCluster` |
+| Storage location | Bucket you create + register with Velero | Per-project `managed-k8s-backups` OBC (auto-provisioned) |
+
+You don't configure managed-K8s etcd backups separately — they ship
+with every `KdcCluster`. See [Provisioning a Cluster](provisioning-cluster.md)
+for the spec fields (`spec.backup.*` + `spec.encryption.etcd.*`) and
+[the restore annotation](provisioning-cluster.md#annotations).
+
 ## Prerequisites
 
 ### Step 1: Create a Backup Bucket

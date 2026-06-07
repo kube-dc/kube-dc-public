@@ -12,6 +12,7 @@ const sidebars: SidebarsConfig = {
         'sign-up-login',
         'dashboard-overview',
         'core-concepts',
+        'core-features',
         'first-project',
         'cli-kubeconfig',
         'ai-ide-integration',
@@ -71,6 +72,17 @@ const sidebars: SidebarsConfig = {
         'block-storage',
         'object-storage',
         'backups-snapshots',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Security & Identity',
+      collapsed: true,
+      items: [
+        'secrets-manager',
+        'kms',
+        'certificate-manager',
+        'database-credentials',
       ],
     },
     {

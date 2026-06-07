@@ -20,6 +20,10 @@ Kube-DC is an open-source Kubernetes-native data center platform providing multi
 | `FIp` | `kube-dc.com` | `v1` | — | Yes | Floating IP (1:1 NAT to VM/pod) |
 | `KdcCluster` | `k8s.kube-dc.com` | `v1alpha1` | `kdc-cl` | Yes | Managed Kubernetes cluster |
 | `KdcDatabase` | `db.kube-dc.com` | `v1alpha1` | `kdcdb` | Yes | Managed PostgreSQL / MariaDB |
+| `ManagedSecret` | `security.kube-dc.com` | `v1alpha1` | — | Yes | Project secret backed by OpenBao + ESO projection |
+| `ManagedCertificate` | `security.kube-dc.com` | `v1alpha1` | `mcert` | Yes | x509 cert from Org private CA or public ACME |
+| `KMSKey` | `security.kube-dc.com` | `v1alpha1` | — | Yes | Per-project encryption key (OpenBao Transit) |
+| `DatabaseCredentialPolicy` | `security.kube-dc.com` | `v1alpha1` | `dbcp` | Yes | DB user credentials (static-rotated or dynamic) |
 | `VirtualMachine` | `kubevirt.io` | `v1` | `vm` | Yes | KubeVirt VM definition |
 | `DataVolume` | `cdi.kubevirt.io` | `v1beta1` | `dv` | Yes | VM disk (import/blank) |
 | `ObjectBucketClaim` | `objectbucket.io` | `v1alpha1` | `obc` | Yes | S3 bucket claim |

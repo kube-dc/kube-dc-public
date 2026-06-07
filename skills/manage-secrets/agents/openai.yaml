@@ -1,0 +1,6 @@
+interface:
+  display_name: Manage Project Secrets
+  short_description: Store, sync, and rotate project secrets backed by OpenBao
+  brand_color: '#7c3aed'
+policy:
+  allow_implicit_invocation: true

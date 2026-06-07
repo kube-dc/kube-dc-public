@@ -12,6 +12,7 @@ Kube-DC extends Kubernetes with multi-tenancy, virtualization (KubeVirt), advanc
 - **Step-by-Step Deployment** — Follow the [Installation Guide](installation-guide.md)
 - **Architecture** — Understand the [Architecture Overview](architecture-overview.md)
 - **Networking** — Deep dive into [Networking Architecture](architecture-networking.md)
+- **Internal Platform Endpoints** — Optional feature for clusters where tenant pods can't reach the platform's own public hostnames; see [Internal Platform Endpoints](internal-platform-endpoints.md) for the topology decision rule and enablement steps.
 
 ## Key Components
 

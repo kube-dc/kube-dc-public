@@ -1,0 +1,6 @@
+interface:
+  display_name: Manage Project KMS Keys
+  short_description: Per-project encryption keys + envelope encryption helpers
+  brand_color: '#059669'
+policy:
+  allow_implicit_invocation: true

@@ -31,9 +31,10 @@ Kube-DC virtualization is powered by [KubeVirt](https://kubevirt.io/) and uses t
 ### Step 2: Configure the VM
 
 1. **VM Name** — choose a name (e.g., `ubuntu`)
-2. **Operating System** — select from available images (e.g., Ubuntu 24.04, Debian 12, Windows 11)
-3. **vCPUs** and **RAM** — set resources based on your workload
-4. **Root Storage Size** — set disk size (e.g., 12 GB for Linux, 70 GB for Windows)
+2. **Operating System** — select from available images (Ubuntu 22.04 / 24.04 / 26.04, Debian 12, CentOS Stream 9, Fedora 42, openSUSE Leap 15.6, Alpine 3.21, Gentoo, Windows 11)
+3. **Version** *(optional, advanced)* — most Linux families now expose multiple maintained versions (e.g., Ubuntu 24.04 currently keeps `20260321`, `20260225`, `20260209`, `20260131`). Leave the dropdown on **Latest** to take the newest mirrored bytes — Kube-DC keeps `/latest/` pointing at the freshest version per family, refreshed weekly. Pin a specific version only if you need reproducibility against a known build.
+4. **vCPUs** and **RAM** — set resources based on your workload
+5. **Root Storage Size** — set disk size (e.g., 12 GB for Linux, 70 GB for Windows)
 
 <img src={require('./images/vm-creation-step1.png').default} alt="VM Creation" style={{maxWidth: '700px', width: '100%'}} />
 
