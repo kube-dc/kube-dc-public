@@ -1,0 +1,6 @@
+interface:
+  display_name: Manage Database Credentials
+  short_description: Rotate database passwords on a schedule, projected into a Kubernetes Secret your workloads mount
+  brand_color: '#1d4ed8'
+policy:
+  allow_implicit_invocation: true

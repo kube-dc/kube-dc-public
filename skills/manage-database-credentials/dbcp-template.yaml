@@ -1,0 +1,47 @@
+apiVersion: security.kube-dc.com/v1alpha1
+kind: DatabaseCredentialPolicy
+metadata:
+  name: {dbcp-name}
+  namespace: {project-namespace}          # {org}-{project}
+spec:
+  # The KdcDatabase this policy rotates credentials on. Must exist in
+  # the same namespace; cross-namespace refs are rejected by API shape.
+  # Create the database first via the create-database skill.
+  databaseRef:
+    name: {kdcdatabase-name}
+
+  # static-rotated = long-lived credentials, password rotates on
+  # schedule, same username throughout (Phase 1, supported).
+  # dynamic       = short-lived per-lease (Phase 2 preview; controller
+  #                 returns DeferredFeature until phase 2 ships).
+  mode: static-rotated
+
+  # The database user the policy will manage. MUST already exist in the
+  # database — the platform does NOT create users in static-rotated
+  # mode (DBA owns identity; platform owns credentials).
+  #
+  # RESERVED (admission webhook rejects): kdc_rotator, postgres (PG),
+  # root (MariaDB). Use a dedicated application user, never the
+  # platform-internal rotator or break-glass identity.
+  username: app
+
+  rotation:
+    # KubeDC duration (e.g. 1h, 12h, 7d, 30d). Minutes for testing,
+    # days for production — short intervals pound the DB with
+    # ALTER USER calls.
+    interval: 30d
+
+    # rolling   = OpenBao briefly accepts both old and new passwords
+    #             during changeover. Safe for rolling Deployments.
+    # immediate = atomic swap; clients must reconnect on auth-error.
+    strategy: rolling
+
+  sync:
+    # When true, the platform projects username/password/host/port/
+    # dbname/uri into a regular Kubernetes Secret your workloads mount.
+    # The Secret is rewritten in place on every rotation.
+    enabled: true
+
+    # Kubernetes Secret name. Defaults to the DBCP name. Override when
+    # an existing workload expects a specific secretRef.
+    targetSecretName: {target-secret-name}
