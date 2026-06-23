@@ -39,6 +39,7 @@ const sidebars: SidebarsConfig = {
         'observability',
         'billing-plans-configuration',
         'smtp-gmail-app-password',
+        'upgrading-management-cluster',
       ],
     },
     {

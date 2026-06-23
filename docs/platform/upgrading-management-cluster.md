@@ -27,7 +27,7 @@ each node in a controlled, serialized order. This replaces error-prone manual
 
 > **Picking a target.** Use the RKE2 **`stable`** channel, not `latest`
 > (which is bleeding edge). Check current versions at
-> <https://update.rke2.io/v1-release/channels>.
+> [update.rke2.io/v1-release/channels](https://update.rke2.io/v1-release/channels).
 
 ## Pre-flight checklist
 

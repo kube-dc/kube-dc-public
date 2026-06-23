@@ -152,7 +152,7 @@ Anchors are seeded by `kube-dc bootstrap anchors apply` and verified by `kube-dc
 >   ovn-nbctl --columns=name,networks list logical_router_port | grep '<your EXT_NET_CIDR>'
 > ```
 >
-> Most critically: do not collide with the `ovn-cluster-ext-cloud` LRP — that's the management-VPC pod-egress SNAT IP, and a collision there manifests as ~80-min recurring outages of every controller's reach to tenant EIPs. The rule is: **anchors must come from a subset of `EXT_NET_EXCLUDE_IPS` that is disjoint from existing OVN LRP IPs**, not literally "always `.11/.12/.13`". An empty-OVN cluster can use any anchors; on a cluster with existing tenant VPCs / LRPs, audit first. See the [migration procedure in the internal runbook](../internal/internal-platform-endpoints-runbook.md) for live-fix steps on an affected cluster (requires `promote_secondaries=1` + ADD-new-before-DEL-old + per-node `ovs-ovn` restart).
+> Most critically: do not collide with the `ovn-cluster-ext-cloud` LRP — that's the management-VPC pod-egress SNAT IP, and a collision there manifests as ~80-min recurring outages of every controller's reach to tenant EIPs. The rule is: **anchors must come from a subset of `EXT_NET_EXCLUDE_IPS` that is disjoint from existing OVN LRP IPs**, not literally "always `.11/.12/.13`". An empty-OVN cluster can use any anchors; on a cluster with existing tenant VPCs / LRPs, audit first. Live-fix of a collided cluster requires `promote_secondaries=1` + ADD-new-before-DEL-old + per-node `ovs-ovn` restart — coordinate with the platform team before attempting.
 
 ### The `kubeAPI` endpoint
 
