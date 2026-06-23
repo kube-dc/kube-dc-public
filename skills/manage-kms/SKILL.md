@@ -24,7 +24,7 @@ description: Create and operate per-project encryption keys (KMSKey) backed by O
 | Encrypt a large file or message-queue payload before storing | **KMS envelope encryption** (Go / Python helpers below) |
 | Store a credential the platform syncs into a K8s Secret | `manage-secrets` |
 | TLS server / mTLS / code-signing certs | `manage-certificates` |
-| Database username + password with rotation | `create-database` |
+| Database username + password with rotation | `manage-database-credentials` (parent `KdcDatabase` from `create-database`) |
 
 ## Create a Key
 

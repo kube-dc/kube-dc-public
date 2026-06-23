@@ -37,8 +37,12 @@ spec:
     strategy: rolling
 
   sync:
-    # When true, the platform projects username/password/host/port/
-    # dbname/uri into a regular Kubernetes Secret your workloads mount.
+    # When true, the platform projects credentials into a regular
+    # Kubernetes Secret (type: Opaque) your workloads mount. The Secret
+    # carries these keys verbatim (matches the controller's secretData()):
+    #   username password host port database engine dsn
+    # `dsn` is a ready-to-use connection string. `engine` is
+    # 'postgresql' or 'mariadb' so engine-aware clients can branch.
     # The Secret is rewritten in place on every rotation.
     enabled: true
 

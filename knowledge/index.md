@@ -30,6 +30,7 @@ Master catalog for AI agents. Read this first, then dive into specific files as 
 | `deploy-app` | Deploy containerized app with optional DB + HTTPS | SKILL.md |
 | `create-vm` | Provision VM with SSH access and cloud-init | SKILL.md, vm-template.yaml |
 | `create-database` | Create managed PostgreSQL/MariaDB with access patterns + backup/restore | SKILL.md, pg-template.yaml, mariadb-template.yaml, db-connection-patterns.md, backup-restore-patterns.md |
+| `manage-database-credentials` | Create `DatabaseCredentialPolicy` CRs that rotate DB user passwords on a schedule, projected into a K8s Secret. Pair with `create-database`. | SKILL.md, dbcp-template.yaml |
 | `expose-service` | Expose service via Gateway Route or Direct EIP | SKILL.md, envoy-gateway-examples.yaml, eip-loadbalancer-examples.yaml |
 | `manage-cluster` | Scale workers, upgrade K8s version, access kubeconfig | SKILL.md, scale-workers.md, upgrade-version.md, kubeconfig-access.md |
 | `manage-networking` | Create EIPs, FIPs, understand VPC networking | SKILL.md, eip-template.yaml, fip-template.yaml, decision-guide.md |

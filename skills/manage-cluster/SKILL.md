@@ -147,6 +147,69 @@ kubectl get kdccluster {cluster} -n {namespace} -o jsonpath='{.status.phase}'
 **Success**: Node count matches, all nodes Ready, version updated.
 **Failure**: `kubectl describe kdccluster {cluster} -n {namespace}` — check conditions and events.
 
+## Etcd encryption-at-rest + KEK rotation
+
+When a managed K8s cluster opts into etcd encryption-at-rest, the
+platform auto-creates a `<cluster>-etcd` `KMSKey` (purpose=etcd) in
+the project namespace and attaches a sidecar to the cluster's
+control-plane pods that wraps every etcd Secret with that KEK via
+OpenBao Transit.
+
+### Enable encryption + KEK rotation at create time
+
+```yaml
+apiVersion: k8s.kube-dc.com/v1alpha1
+kind: KdcCluster
+metadata:
+  name: {cluster-name}
+  namespace: {project-namespace}
+spec:
+  # ... usual fields ...
+  encryption:
+    etcd:
+      enabled: true
+      kekRotation:
+        enabled: true
+        interval: 90d                # 7d..730d; reconciler rejects intervals < backup retention
+```
+
+The platform mirrors `kekRotation` onto the auto-managed
+`<cluster>-etcd` `KMSKey`'s `spec.rotation` block. The M3 KMSKey
+controller schedules the rotations; old key versions remain alive
+for decryption indefinitely (advancing `min_decryption_version` is
+manual + irreversible — never do it casually).
+
+### Change the rotation schedule on an existing cluster
+
+```bash
+kubectl patch kdccluster {cluster} -n {project-namespace} --type=merge -p '{
+  "spec": {
+    "encryption": {
+      "etcd": {
+        "kekRotation": {
+          "enabled": true,
+          "interval": "180d"
+        }
+      }
+    }
+  }
+}'
+```
+
+### Inspect rotation state
+
+```bash
+kubectl get kdccluster {cluster} -n {project-namespace} \
+  -o jsonpath='{.status.encryption.kekRotation}{"\n"}'
+# Expected: {enabled, currentVersion, lastRotatedTime, nextRotationTime, minDecryptionVersion}
+```
+
+### What NOT to do
+
+- **Don't patch the `<cluster>-etcd` `KMSKey` directly.** The platform reconciles its `spec.rotation` from the `KdcCluster` every pass; direct edits get reverted. Set the policy on the `KdcCluster`.
+- **Don't delete or schedule-deletion of the auto-managed `<cluster>-etcd` `KMSKey`.** Every etcd row + every encrypted backup envelope wraps a DEK with this key. The KMSKey is provisioned with `deletionPolicy: retain` for this reason.
+- **Don't advance `min_decryption_version`.** It's irreversible — anything below the new floor becomes unrecoverable, including older backups still wrapped with that version.
+
 ## Safety
 - Sequential minor version upgrades only (v1.34 → v1.35, no skipping)
 - No downgrades supported
@@ -157,3 +220,4 @@ kubectl get kdccluster {cluster} -n {namespace} -o jsonpath='{.status.phase}'
 - Never expose kubeconfig contents in chat output
 - Write kubeconfig to temp file with `chmod 600`
 - Clean up temporary kubeconfig files after use
+- For etcd encryption-at-rest: never patch / delete / advance min_decryption_version on the `<cluster>-etcd` KMSKey directly — manage policy via `KdcCluster.spec.encryption.etcd.kekRotation`

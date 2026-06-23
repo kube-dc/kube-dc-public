@@ -476,6 +476,14 @@ After rotation:
   decrypt with the old wrapped DEK, encrypt with the new one. Often
   worth doing only when you advance `min_decryption_version`.
 
+> **For managed-K8s etcd encryption** — when a `KMSKey` is the KEK
+> backing a `KdcCluster` (`spec.encryption.etcd`), tenants typically
+> set the rotation schedule on the `KdcCluster` itself via
+> `spec.encryption.etcd.kekRotation.{enabled,interval}` rather than
+> patching the `KMSKey` directly. The platform mirrors the cluster-
+> side spec onto the auto-managed `KMSKey`'s `spec.rotation` block.
+> See [Cluster provisioning — encryption-at-rest](provisioning-cluster.md#encryption-at-rest).
+
 ## Advance `min_decryption_version`
 
 Rotating the key doesn't disable old versions — they remain

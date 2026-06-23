@@ -38,7 +38,7 @@ It probes the current kubeconfig's cluster for four signals (Fork E Services alr
 PROBE              DETAIL                                                                  CLASS HINT  CONFIDENCE
 Fork E Services    neither platform-endpoint Service present                               —           high
 cloud-provider     no providerID on any node                                               —           high
-Envoy externalIPs  externalIPs=[213.111.154.233] (svc type=LoadBalancer lb-class=metallb)  B           high
+Envoy externalIPs  externalIPs=[203.0.113.10] (svc type=LoadBalancer lb-class=metallb)    B           high
 Envoy hostNetwork  false or unset (standard pod networking)                                —           —
 
 Classification: Class B  (confidence: high)
@@ -145,6 +145,15 @@ MetalLB's L2 (layer-2) mode announces a VIP via GARP from one elected "speaker" 
 
 Anchors are seeded by `kube-dc bootstrap anchors apply` and verified by `kube-dc bootstrap doctor anchors`. See [`docs/platform/cluster-cli-fleet.md`](cluster-cli-fleet.md) for the CLI workflow.
 
+> ⚠️ **Anchor IPs must NOT collide with OVN logical-router-port IPs.** The kernel and OVN both ARP-respond for the same IP on the cloud VLAN; the cloud router's cache flips between host MAC and OVN LRP MAC and silently black-holes SNAT'd egress reply traffic. Before picking anchor IPs on any cluster, enumerate currently-allocated OVN LRP IPs and pick anchors disjoint from that set:
+>
+> ```bash
+> kubectl -n kube-system exec deploy/ovn-central -c ovn-central -- \
+>   ovn-nbctl --columns=name,networks list logical_router_port | grep '<your EXT_NET_CIDR>'
+> ```
+>
+> Most critically: do not collide with the `ovn-cluster-ext-cloud` LRP — that's the management-VPC pod-egress SNAT IP, and a collision there manifests as ~80-min recurring outages of every controller's reach to tenant EIPs. The rule is: **anchors must come from a subset of `EXT_NET_EXCLUDE_IPS` that is disjoint from existing OVN LRP IPs**, not literally "always `.11/.12/.13`". An empty-OVN cluster can use any anchors; on a cluster with existing tenant VPCs / LRPs, audit first. See the [migration procedure in the internal runbook](../internal/internal-platform-endpoints-runbook.md) for live-fix steps on an affected cluster (requires `promote_secondaries=1` + ADD-new-before-DEL-old + per-node `ovs-ovn` restart).
+
 ### The `kubeAPI` endpoint
 
 | Field | Value |
@@ -182,10 +191,12 @@ The tenant-side resolver (`vpc-dns-<project>` Deployment) is configured per-clus
 ```corefile
 hosts {
     ${KUBE_API_INTERNAL_VIP} kube-api.${DOMAIN}
-    ${ENVOY_GATEWAY_INTERNAL_VIP} login.${DOMAIN} backend.${DOMAIN} console.${DOMAIN} billing.${DOMAIN}
+    ${ENVOY_GATEWAY_INTERNAL_VIP} login.${DOMAIN} backend.${DOMAIN} console.${DOMAIN} billing.${DOMAIN} s3.${DOMAIN}
     fallthrough
 }
 ```
+
+`s3.${DOMAIN}` (the cluster's Rook-Ceph RGW front-door) sits in the same list because per-tenant managed-K8s etcd-backup CronJobs upload snapshots there — without an internal-DNS override they hit the public IP and hairpin-fail on Class A topologies.
 
 External resolution (laptop `kubectl`, browser hitting `console.<DOMAIN>`) is unaffected — public DNS still points at the cluster's public IP, the public path keeps working for non-tenant clients.
 
@@ -256,7 +267,7 @@ Add the platform hostnames to the per-cluster Corefile (typically a per-cluster 
 ```corefile
 hosts {
     100.64.0.30 kube-api.example.com
-    100.64.0.31 login.example.com backend.example.com console.example.com billing.example.com
+    100.64.0.31 login.example.com backend.example.com console.example.com billing.example.com s3.example.com
     fallthrough
 }
 ```
@@ -378,7 +389,7 @@ If a cluster was misclassified as Class A and you want to turn the feature off, 
    ```diff
     hosts {
    -    100.64.0.30 kube-api.example.com
-   -    100.64.0.31 login.example.com backend.example.com console.example.com billing.example.com
+   -    100.64.0.31 login.example.com backend.example.com console.example.com billing.example.com s3.example.com
         fallthrough
     }
    ```

@@ -1,6 +1,6 @@
 ---
 name: manage-secrets
-description: Create and manage Kube-DC ManagedSecrets — project-scoped secrets backed by OpenBao, optionally projected into a Kubernetes Secret via External Secrets Operator. Use this for storing API tokens, OAuth client secrets, signing keys, third-party credentials. For database passwords use create-database. For encryption keys use manage-kms. For TLS certificates use manage-certificates.
+description: Create and manage Kube-DC ManagedSecrets — project-scoped secrets backed by OpenBao, optionally projected into a Kubernetes Secret via External Secrets Operator. Use this for storing API tokens, OAuth client secrets, signing keys, third-party credentials. For rotated database passwords use manage-database-credentials (the parent KdcDatabase comes from create-database). For encryption keys use manage-kms. For TLS certificates use manage-certificates.
 ---
 
 ## Prerequisites
@@ -142,5 +142,5 @@ kube-dc secrets delete {name} --destroy
 - Don't `kubectl edit` the synced Kubernetes Secret directly. The next ESO reconcile (~`refreshInterval`) will overwrite your edits.
 - Before deleting with `--destroy`, run `kube-dc secrets consumers {name}` to list every workload mounting the synced Secret. Their pods will fail to restart after destruction.
 - For TLS certificates use the `manage-certificates` skill instead — it owns renewal lifecycle.
-- For database passwords use the `create-database` skill — it sets up rotation tied to the actual DB user.
+- For rotated database passwords use the `manage-database-credentials` skill — it sets up `DatabaseCredentialPolicy` CRs that rotate the DB user's password on a schedule and project credentials into a K8s Secret. (Create the underlying `KdcDatabase` first via `create-database`.)
 - For encryption keys (encrypt/decrypt opaque payloads, envelope encryption) use the `manage-kms` skill — those are NOT secrets-to-store.

@@ -85,7 +85,26 @@ spec:
         name: {target-secret}            # the targetSecretName from the DBCP
 ```
 
-The Secret carries `username / password / host / port / dbname / uri`. Mount it as env vars, file volumes, whatever your app expects. The Secret is rewritten in place on every rotation; long-running pods see the new password within ~60s via the kubelet inotify path.
+The Secret is `type: Opaque` and carries these keys (verbatim from the controller's `secretData()`):
+
+| Key | Value |
+|---|---|
+| `username` | the username `spec.username` from the DBCP |
+| `password` | the current rotated password |
+| `host` | engine's RW Service hostname (e.g. `api-db-rw.my-project.svc`) |
+| `port` | engine port (`5432` PG, `3306` MariaDB) |
+| `database` | the database name from the parent `KdcDatabase.spec.databaseName` |
+| `engine` | `postgresql` or `mariadb` (handy for engine-aware connection clients) |
+| `dsn` | ready-to-use connection string (e.g. `postgres://user:pass@host:5432/db?sslmode=require`) |
+
+Mount as env vars, file volumes, whatever your app expects. The Secret is rewritten in place on each rotation.
+
+**Staleness has two hops, not one**:
+
+1. **OpenBao → Kubernetes Secret** — the DBCP controller reconciles on a tightened schedule when rotation is imminent (rotation-aware requeue, ~15s for short intervals) and otherwise on the 5-minute ceiling. So a server-side rotation typically lands in the K8s Secret within 15s on short intervals, or up to 5m on long ones.
+2. **Kubernetes Secret → pod volume** — kubelet propagates Secret-mount changes within ~60s via inotify (env vars require a Pod restart).
+
+For workloads holding connections open across rotations, use the `rolling` strategy or reconnect on auth-error.
 
 ### Via the CLI (for ad-hoc operator use)
 
@@ -128,10 +147,39 @@ Deleting the DBCP stops rotation and removes the synced Kubernetes Secret. It do
 
 ## Restore semantics
 
-If the parent KdcDatabase is restored (in-place via `kube-dc.com/restore-from` annotation, or new-name via a fresh KdcDatabase with `spec.restoreFrom`), DBCPs pointing at the database continue to work:
+If the parent KdcDatabase is restored, DBCPs pointing at it stay valid as CRDs — but **the projected Secret can hold the wrong password for a window after restore**, and there's a manual step to converge it. Read this carefully.
 
-- **In-place restore**: the platform's `<db>-rotator` Secret survives the restore cycle bit-identical (PITR-safety invariant). OpenBao reconnects with the same management identity it had before; the DBCP's projected Secret re-syncs to the restored DB's current password automatically. Existing client connections must reconnect — the projected Secret may briefly hold a stale password until the next rotation tick (≤ `rotation.interval`).
-- **New-name restore**: the original DBCPs point at the original KdcDatabase, which keeps running. If you want DBCPs against the restored copy, create new DBCPs referencing the new database name.
+### What survives the destroy + rebuild cycle
+
+- **`<db>-rotator` Secret** (PG): bit-identical (PITR-safety invariant). OpenBao reconnects with the same management identity it had before.
+- **`DatabaseCredentialPolicy` CRs**: untouched. They still reference the same DB.
+- **OpenBao static-creds entry**: still there.
+
+### What goes out of sync (and why you need a manual step)
+
+After an **in-place restore**, the underlying database role's password is whatever the backup captured — but **OpenBao's static-creds entry may still hold the post-backup, pre-restore password** because OpenBao didn't witness the restore. The DBCP controller does NOT watch `KdcDatabase` restore completion; it only re-reads OpenBao on its periodic reconcile (rotation-aware tick or 5-minute ceiling). So:
+
+- The projected K8s Secret will keep holding the pre-restore password until either (a) the next rotation tick fires and forces a re-sync via `rotate-role`, or (b) you force one manually.
+- During that window, application auth against the restored DB will fail with `password authentication failed` because the DB has the backup's password and the Secret has the pre-restore one.
+
+**The reliable post-restore step** is to manually rotate every affected DBCP once the KdcDatabase reaches Ready:
+
+```bash
+# For each DBCP pointing at the restored DB
+kube-dc db credentials rotate {dbcp-name}
+
+# Then verify app auth using the projected Secret
+PASS=$(kubectl -n {ns} get secret {target-secret} -o jsonpath='{.data.password}' | base64 -d)
+kubectl -n {ns} run probe-{rand} --rm -i --restart=Never \
+  --image=postgres:16-alpine --env=PGPASSWORD="$PASS" --command -- \
+  psql -h {db}-rw.{ns}.svc -U {dbcp-username} -d {database} -tAc "SELECT 'ok'"
+```
+
+`kube-dc db credentials rotate` calls OpenBao's `database/rotate-role/<role>`. OpenBao generates a fresh password, writes it to the database role via the rotator identity (which is now the restored DB's rotator, same password as before the restore — that's the PITR-safety invariant in action), and persists the new password. The DBCP controller then projects it into the K8s Secret on the next reconcile.
+
+### New-name restore (`spec.restoreFrom` on a fresh KdcDatabase)
+
+The original DBCPs continue pointing at the original KdcDatabase, which keeps running. If you want DBCPs against the restored copy, create new DBCPs referencing the new database name. No manual rotate needed on the original side; the source DB is untouched.
 
 See the [Database Credentials docs](https://docs.kube-dc.com/cloud/database-credentials/) for the full restore + break-glass story.
 
@@ -147,7 +195,7 @@ kubectl get dbcp {dbcp-name} -n {project-namespace} \
 
 # 2. Projected Kubernetes Secret exists
 kubectl get secret {target-secret} -n {project-namespace}
-# Expected: type=kubernetes.io/basic-auth, with username/password/host/port/dbname/uri keys
+# Expected: type=Opaque, with username/password/host/port/database/engine/dsn keys
 
 # 3. Database user authenticates with the projected password
 PASS=$(kubectl -n {project-namespace} get secret {target-secret} \
@@ -160,12 +208,14 @@ kubectl -n {project-namespace} run probe-{rand} --rm -i --restart=Never \
 
 **Success**: DBCP Ready, Secret present with valid credentials, PG/MariaDB authenticates as the target user with the projected password.
 
-**Common failure modes**:
+**Common failure modes** (reasons match controller constants in `security.kube-dc.com/v1alpha1`):
 
-- **Stuck `Ready=False / Reason=EngineSecretNotReady`** — the platform's rotator Secret (`<db>-rotator` for PostgreSQL) hasn't been provisioned yet. Wait for the parent KdcDatabase to reach Ready; the rotator Secret is created during that bootstrap. If the database is Ready but the rotator Secret is missing, the db-manager controller is wedged; check `kubectl -n kube-dc logs deploy/kube-dc-db-manager` for the reconcile error.
-- **Stuck `Ready=False / Reason=ReservedUser`** — admission webhook rejected the DBCP because `spec.username` is one of `kdc_rotator` / `postgres` / `root`. Change to a dedicated application user.
-- **Stuck `Ready=False / Reason=UserNotFound`** — the username doesn't exist in the database yet. Create it via your DBA path (see "Prepare the user" above).
-- **`status.lastRotatedTime` never advances and OpenBao logs show `SQLSTATE 28P01`** — pre-v0.1.5 self-rotation deadlock. Verify db-manager image is `v0.1.5` or later; older releases are known broken and the fix landed 2026-06-22.
+- **`Ready=False / Reason=DatabaseEngineUnconfigured`** — `db-manager` hasn't yet stamped `KdcDatabase.status.openBaoEngineConfigured=true`. Wait for the parent `KdcDatabase` to reach Ready; the engine config is written during that bootstrap. If the database is Ready but the condition stays false, the `db-manager` controller is wedged — check `kubectl -n kube-dc logs deploy/kube-dc-db-manager` for the reconcile error.
+- **`Ready=False / Reason=DatabaseNotFound`** — `spec.databaseRef.name` doesn't resolve in the project namespace. The admission webhook normally rejects this on create; this reason covers the rare race where the `KdcDatabase` is deleted while a DBCP still references it. Fix the ref or delete the DBCP.
+- **Admission rejection at create — `spec.username: <reserved>` is reserved** — webhook rejects DBCPs targeting `kdc_rotator` (PG, platform rotator), `postgres` (PG break-glass), or `root` (MariaDB break-glass). Change to a dedicated application user.
+- **`Ready=False / Reason=RoleProvisioning`** — OpenBao's `database/static-role` write succeeded but the first read of credentials hasn't returned a password yet. Usually transient; clears within a reconcile or two. If it persists for more than a minute, the OpenBao rotator identity probably can't reach the database — check `kubectl -n openbao logs <leader-pod>` for `ALTER USER` errors and the `connection_url` config.
+- **`Ready=False / Reason=TargetSecretConflict`** — the `sync.targetSecretName` already exists and is owned by another controller. Pick a different name or delete the conflicting Secret.
+- **`status.lastRotatedTime` never advances AND OpenBao logs show `SQLSTATE 28P01 password authentication failed`** — pre-v0.1.5 self-rotation deadlock. Verify `db-manager` image is `v0.1.5` or later; older releases are known broken and the fix landed 2026-06-22.
 
 ## Audit
 
