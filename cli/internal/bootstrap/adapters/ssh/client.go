@@ -26,11 +26,13 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kevinburke/ssh_config"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+	"golang.org/x/crypto/ssh/knownhosts"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
@@ -60,6 +62,21 @@ type Client struct {
 	// dummy signer when the host has no ssh-agent / IdentityFile —
 	// production reads ssh-agent + IdentityFile per B-004.
 	loadAuth func(identityFile string) ([]ssh.AuthMethod, error)
+
+	// khMu guards the cached host-key callback. The known_hosts
+	// file is parsed once per Client + reused for every Run/Fetch/
+	// Put call; mutex covers concurrent access from multiple
+	// goroutines using the same Client.
+	khMu sync.Mutex
+	// khCallback is the cached ssh.HostKeyCallback. See
+	// hostKeyCallback() for construction semantics.
+	khCallback ssh.HostKeyCallback
+
+	// hostKeyCallbackForTest lets test code inject a callback that
+	// bypasses known_hosts (e.g. accept a canned test key). When
+	// non-nil, hostKeyCallback() returns this instead of the real
+	// known_hosts-backed callback. Production paths never set this.
+	hostKeyCallbackForTest ssh.HostKeyCallback
 }
 
 // New returns a Client using the operator's `~/.ssh/config`.
@@ -201,6 +218,18 @@ func (c *Client) dialSession(ctx context.Context, host ports.SSHHost) (*ssh.Sess
 	if err != nil {
 		return nil, nil, err
 	}
+	// M4-T06 reviewer P2 (security): host-key verification via
+	// ~/.ssh/known_hosts. Pre-P2 used ssh.InsecureIgnoreHostKey(),
+	// which is a MITM opening — an attacker on the path could
+	// deliver a mangled kubeconfig that `fetch-kubeconfig` would
+	// happily merge as cluster-admin creds. Now we resolve the
+	// operator's known_hosts and refuse connects to unknown or
+	// mismatched fingerprints with an actionable ssh-keyscan
+	// remedy in the wrapped error.
+	hostKeyCallback, err := c.hostKeyCallback()
+	if err != nil {
+		return nil, nil, fmt.Errorf("ssh: host-key verification setup: %w", err)
+	}
 	clientCfg := &ssh.ClientConfig{
 		User: hostCfg.User,
 		Auth: authMethods,
@@ -208,7 +237,7 @@ func (c *Client) dialSession(ctx context.Context, host ports.SSHHost) (*ssh.Sess
 		// doesn't park us indefinitely. ctx cancel still wins via
 		// the watcher goroutine below.
 		Timeout:         30 * time.Second,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // M4-T06 trusts the operator's ssh_config + agent — TOFU is acceptable for bootstrap; v2 plugs in ~/.ssh/known_hosts
+		HostKeyCallback: hostKeyCallback,
 	}
 
 	addr := net.JoinHostPort(hostCfg.Hostname, strconv.Itoa(hostCfg.Port))
@@ -256,6 +285,103 @@ type hostConfig struct {
 	User         string
 	Port         int
 	IdentityFile string
+}
+
+// hostKeyCallback returns the ssh.HostKeyCallback used for
+// verifying the remote's host key. Reads `~/.ssh/known_hosts` (or
+// `$SSH_KNOWN_HOSTS` when the operator overrides). Fails closed —
+// an unknown host or a mismatch refuses the connection with a
+// specific, actionable error containing an ssh-keyscan recipe.
+//
+// **Security contract** (M4-T06 reviewer P2): the prior
+// `InsecureIgnoreHostKey` accepted any host key, opening the flow
+// to MITM. Because `fetch-kubeconfig` persists cluster-admin
+// credentials from the remote, MITM there is a total takeover;
+// this callback closes that gap.
+//
+// **First-connect UX** (documented in the error): an operator who
+// has never SSH'd to the target from this machine has no
+// known_hosts entry. Rather than silently accept + trust (TOFU —
+// which was the pre-P2 default), we refuse and print
+// `ssh-keyscan -H <host> >> ~/.ssh/known_hosts` so the operator
+// makes an EXPLICIT trust decision. Same as OpenSSH's
+// `StrictHostKeyChecking=yes` posture.
+//
+// Cached on first call (khCallback field), so subsequent Run/Fetch/
+// Put calls don't reparse the file.
+func (c *Client) hostKeyCallback() (ssh.HostKeyCallback, error) {
+	c.khMu.Lock()
+	defer c.khMu.Unlock()
+	// Test seam — non-nil override bypasses the real known_hosts
+	// path. Production never sets this.
+	if c.hostKeyCallbackForTest != nil {
+		return c.hostKeyCallbackForTest, nil
+	}
+	if c.khCallback != nil {
+		return c.khCallback, nil
+	}
+
+	path, err := resolveKnownHostsPath()
+	if err != nil {
+		return nil, err
+	}
+	base, err := knownhosts.New(path)
+	if err != nil {
+		// The file doesn't exist / is unreadable → operator hasn't
+		// SSH'd to anything from this machine, or filesystem trouble.
+		// Refuse loudly with the ssh-keyscan recipe.
+		return nil, fmt.Errorf("known_hosts %s unavailable: %w\n\t(run `ssh-keyscan -H <host> >> %s` after verifying the host key out-of-band)",
+			path, err, path)
+	}
+
+	// Wrap `base` so unknown-host + mismatch errors carry the
+	// operator-actionable ssh-keyscan recipe. base's returned
+	// *knownhosts.KeyError distinguishes the two cases (Want empty
+	// → unknown; Want non-empty → mismatch = potential MITM).
+	c.khCallback = func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		err := base(hostname, remote, key)
+		if err == nil {
+			return nil
+		}
+		var ke *knownhosts.KeyError
+		if errors.As(err, &ke) {
+			if len(ke.Want) == 0 {
+				return fmt.Errorf("ssh host %s (%s) NOT in %s — refusing connection.\n\tRun the following AFTER verifying the host key out-of-band (e.g. via console access to the RKE2 master):\n\t\tssh-keyscan -H %s >> %s",
+					hostname, remote, path,
+					splitHostForKeyscan(hostname), path)
+			}
+			return fmt.Errorf("ssh host %s (%s) key MISMATCH against %s — refusing connection (possible MITM).\n\tIf the host was legitimately re-installed / re-keyed, remove the stale entry via:\n\t\tssh-keygen -R %s\n\tthen re-add via ssh-keyscan.",
+				hostname, remote, path,
+				splitHostForKeyscan(hostname))
+		}
+		return err
+	}
+	return c.khCallback, nil
+}
+
+// resolveKnownHostsPath honours `$SSH_KNOWN_HOSTS` (some operators
+// use non-default paths) before falling back to `~/.ssh/known_hosts`.
+func resolveKnownHostsPath() (string, error) {
+	if p := os.Getenv("SSH_KNOWN_HOSTS"); p != "" {
+		return p, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home dir: %w", err)
+	}
+	return filepath.Join(home, ".ssh", "known_hosts"), nil
+}
+
+// splitHostForKeyscan strips the port from `hostname:port` so the
+// generated `ssh-keyscan -H <host>` recipe uses the bare hostname
+// (ssh-keyscan takes a hostname, not a hostport). Some go-ssh
+// versions pass the hostname bare, others include the port — cover
+// both without depending on the version.
+func splitHostForKeyscan(hostname string) string {
+	if h, _, err := net.SplitHostPort(hostname); err == nil {
+		return h
+	}
+	return hostname
 }
 
 func (c *Client) resolveHostConfig(h ports.SSHHost) (hostConfig, error) {

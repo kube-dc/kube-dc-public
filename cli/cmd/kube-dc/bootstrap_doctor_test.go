@@ -78,8 +78,14 @@ func TestBootstrapDoctorCmd_NoDomain_NoDNSSection(t *testing.T) {
 	_ = cmd.Execute()
 
 	body := out.String()
-	if strings.Contains(body, "CLI verifies + suggests:") {
-		t.Errorf("DNS section should be absent without --domain\nOUTPUT:\n%s", body)
+	// Without --domain, the DNS-specific probe rows must be absent.
+	// M5-T07 added openbao-policy-generation to the CLI-verifies-
+	// suggests category, so the SECTION HEADER may still render;
+	// assert on the DNS-row names instead of the section header.
+	for _, forbidden := range []string{"wildcard-dns", "explicit-fqdn-dns"} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("DNS probe %q should be absent without --domain\nOUTPUT:\n%s", forbidden, body)
+		}
 	}
 }
 
@@ -184,6 +190,59 @@ func TestBootstrapDoctorCmd_NoKubeconfig_NFDSkipped(t *testing.T) {
 	// existing TestBootstrapDoctorCmd_NoKubeconfig_DNSStillRuns
 	// shape).
 	mustContain(t, body, "Physical world:")
+}
+
+// M5-T07: PolicyGenerationProbe surfaces in the doctor's
+// verifies+suggests section. Cloud scenario has no policy-generation
+// annotation (pre-M5-T07 legacy install), so the probe reports
+// StatusMissing with the refresh-policy FixHint.
+func TestBootstrapDoctorCmd_PolicyGenerationInVerifiesSuggests(t *testing.T) {
+	t.Setenv("KUBE_DC_MOCK", "cloud")
+	t.Setenv("NO_COLOR", "1")
+
+	var out bytes.Buffer
+	fleetRepo := ""
+	cmd := bootstrapDoctorCmd(&fleetRepo)
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--no-tty"})
+	_ = cmd.Execute()
+
+	body := out.String()
+	// Row appears + description names the legacy case + FixHint
+	// carries the refresh-policy recipe.
+	for _, want := range []string{
+		"openbao-policy-generation",
+		"legacy install",
+		"kube-dc bootstrap openbao setup-controller-auth",
+		"--refresh-policy",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q in doctor output\nOUTPUT:\n%s", want, body)
+		}
+	}
+
+	// Section placement — row lands under CLI verifies + suggests,
+	// not Physical or Auto-handled. Walk output to prove it.
+	lines := strings.Split(body, "\n")
+	var section string
+	for _, line := range lines {
+		switch strings.TrimSpace(line) {
+		case "Physical world:":
+			section = "Physical world"
+		case "Auto-handled by CLI:":
+			section = "Auto-handled by CLI"
+		case "CLI verifies + suggests:":
+			section = "CLI verifies + suggests"
+		}
+		if strings.Contains(line, " openbao-policy-generation ") && section != "" {
+			if section != "CLI verifies + suggests" {
+				t.Errorf("openbao-policy-generation landed under %q, want CLI verifies + suggests\nOUTPUT:\n%s", section, body)
+			}
+			return
+		}
+	}
+	t.Errorf("openbao-policy-generation row not found in output\nOUTPUT:\n%s", body)
 }
 
 // DNS must run without a kubeconfig-backed session — the system

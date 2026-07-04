@@ -319,9 +319,14 @@ func TestSetupControllerAuth_RefreshFull_ProperPathsAndNames(t *testing.T) {
 	if bao.roleCalls[1].params["bound_service_account_names"] != DBManagerSAName {
 		t.Errorf("db-manager role SA name wrong: %v", bao.roleCalls[1].params)
 	}
-	// Annotation
+	// Annotations — Full mode stamps both:
+	//   - AnnotationControllerAuthInstalled (RFC3339 timestamp)
+	//   - AnnotationPolicyGeneration (M5-T07 compile-time int)
 	if _, ok := bao.annotateCalls[0][AnnotationControllerAuthInstalled]; !ok {
 		t.Errorf("controller-auth-installed annotation not stamped: %v", bao.annotateCalls[0])
+	}
+	if _, ok := bao.annotateCalls[0][AnnotationPolicyGeneration]; !ok {
+		t.Errorf("policy-generation annotation not stamped: %v", bao.annotateCalls[0])
 	}
 }
 
@@ -339,8 +344,20 @@ func TestSetupControllerAuth_RefreshPolicy_SkipsEnableConfigureAnnotate(t *testi
 	if len(bao.configureCalls) != 0 {
 		t.Errorf("RefreshPolicy must skip ConfigureKubernetesAuth; got %d calls", len(bao.configureCalls))
 	}
-	if len(bao.annotateCalls) != 0 {
-		t.Errorf("RefreshPolicy must NOT re-stamp annotation; got %d calls", len(bao.annotateCalls))
+	// M5-T07: RefreshPolicy DOES stamp AnnotationPolicyGeneration
+	// (closing drift is Refresh's whole purpose) but MUST NOT touch
+	// AnnotationControllerAuthInstalled (that timestamp represents
+	// the WHEN of the last Full install; Refresh doesn't re-run
+	// auth-enable/-configure so the timestamp meaning is unchanged).
+	if len(bao.annotateCalls) != 1 {
+		t.Fatalf("RefreshPolicy must stamp exactly 1 annotate batch; got %d", len(bao.annotateCalls))
+	}
+	kv := bao.annotateCalls[0]
+	if _, ok := kv[AnnotationPolicyGeneration]; !ok {
+		t.Errorf("RefreshPolicy must stamp %s; batch=%v", AnnotationPolicyGeneration, kv)
+	}
+	if _, ok := kv[AnnotationControllerAuthInstalled]; ok {
+		t.Errorf("RefreshPolicy must NOT stamp %s (Full-only); batch=%v", AnnotationControllerAuthInstalled, kv)
 	}
 	// Policies + roles ARE rewritten.
 	if len(bao.policyCalls) != 2 {

@@ -120,11 +120,22 @@ type InitOptions struct {
 	Email          string
 
 	// --- Fleet ---
-	FleetMode      FleetMode
-	Repo           string
-	GitHubOwner    string
-	GitHubRepo     string
-	GitHubToken    string // never logged
+	FleetMode FleetMode
+	Repo      string
+	// Provider selects the remote-repo hosting service for M4-T05
+	// auto-create + push. Empty defaults to GitHub for backward
+	// compatibility with pre-multi-provider callers; explicit
+	// values are "github" or "gitlab" (see clusterinit.Provider).
+	// The GitHubOwner/GitHubRepo/GitHubToken field names are kept
+	// as-is for backward compat — they hold the owner/name/token
+	// for the SELECTED provider, not necessarily GitHub. A future
+	// slice may rename them to Owner/Name/Token; today they're
+	// spelled github-* at the CLI surface because that's what
+	// existing operators muscle-memory.
+	Provider    Provider
+	GitHubOwner string
+	GitHubRepo  string
+	GitHubToken string // never logged
 
 	// --- Overrides (repeatable flags) ---
 	// Sets stores `--set KEY=VALUE` deltas applied on top of the
@@ -184,10 +195,18 @@ var ErrValidation = errors.New("init: invalid options")
 // cobra layer can surface the three options as a help block.
 var ErrApplyGate = errors.New("init: --no-tty requires --yes, --apply-plan, or --dry-run")
 
-// ErrFleetModeNewRepo is returned when --fleet-mode=new-repo is set
-// without --github-owner + --github-repo. The error message lists
+// ErrFleetModeNewRepo is returned when an apply-path fleet-mode
+// (new-repo OR existing-fleet without `--no-push`) is set without
+// --github-owner + --github-repo. The error message lists
 // the two missing flags.
-var ErrFleetModeNewRepo = errors.New("init: --fleet-mode=new-repo requires --github-owner and --github-repo")
+var ErrFleetModeNewRepo = errors.New("init: apply-path fleet modes require --github-owner and --github-repo (used by flux-install.sh to point Flux at the right remote)")
+
+// ErrUnknownProvider is returned when --provider is set to a value
+// other than "github" or "gitlab". Empty is valid (defaults to
+// GitHub); anything else is a typo or a future provider the
+// operator's binary doesn't know about.
+var ErrUnknownProvider = errors.New("init: --provider must be `github` or `gitlab`")
+
 
 // ErrFleetModeExistingRepo is returned when --fleet-mode=existing-fleet
 // is set without a resolvable --repo. Empty repo in existing-fleet
@@ -274,8 +293,29 @@ func (o *InitOptions) Validate() error {
 		return ErrModeAutoNotImplemented
 	}
 
-	// --fleet-mode=new-repo needs --github-owner + --github-repo.
-	if o.FleetMode == FleetNewRepo {
+	// --github-owner + --github-repo are required for ANY fleet
+	// mode that will eventually reach `flux-install.sh` — the
+	// script needs them to point Flux at the right remote.
+	// `--no-push` skips flux-install entirely (Flux can't
+	// reconcile from a non-pushed commit), so those paths
+	// tolerate missing owner/repo. Dry-run also enforces the
+	// requirement so a plan preview surfaces the operator's
+	// missing-arg mistake BEFORE they discover it at apply time.
+	//
+	// Reviewer M4-T05 P2 close (revisited): previously we only
+	// required these on `--fleet-mode=new-repo`, so an
+	// existing-fleet OR existing-repo + --provider=gitlab operator
+	// could omit them and `flux-install.sh` would silently default
+	// to `kube-dc/kube-dc-fleet` (a GitHub org — wrong remote
+	// entirely, wrong provider, wrong URL scheme).
+	//
+	// All three fleet modes reach `runFluxInstall` when --no-push
+	// is unset (see `Apply` — flux-install fires whenever the
+	// commit was pushed to a remote), so all three need owner/repo.
+	needsFluxInstall := o.FleetMode == FleetNewRepo ||
+		o.FleetMode == FleetExistingFleet ||
+		o.FleetMode == FleetExistingRepo
+	if needsFluxInstall && !o.NoPush {
 		missing := []string{}
 		if o.GitHubOwner == "" {
 			missing = append(missing, "--github-owner")
@@ -286,6 +326,19 @@ func (o *InitOptions) Validate() error {
 		if len(missing) > 0 {
 			return fmt.Errorf("%w (missing %s)", ErrFleetModeNewRepo, strings.Join(missing, " + "))
 		}
+	}
+
+	// --provider validation. Empty defaults to GitHub at the engine
+	// layer for backward compat; non-empty must be one of the known
+	// providers so a typo doesn't silently route to the wrong
+	// remote-repo host.
+	switch o.Provider {
+	case "", ProviderGitHub, ProviderGitLab:
+		// OK
+	default:
+		return fmt.Errorf("%w: got %q (want %q or %q)",
+			ErrUnknownProvider, string(o.Provider),
+			string(ProviderGitHub), string(ProviderGitLab))
 	}
 
 	// --fleet-mode=existing-fleet needs --repo so the engine knows

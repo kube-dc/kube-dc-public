@@ -20,9 +20,14 @@ func validBase() InitOptions {
 		// Required for existing-fleet (review-pass — P2/P3 rule):
 		// pointing at an existing path so Validate accepts it. Tests
 		// that exercise the "missing repo" path mutate this to "".
-		Repo:     "/tmp",
-		RookMode: RookCephMultiNode,
-		Yes:      true, // satisfies CI apply gate when NoTTY is set; harmless otherwise
+		Repo: "/tmp",
+		// Required for any apply-path fleet mode (M4-T05 P2 close):
+		// flux-install.sh needs to know which remote to point Flux at.
+		// Tests exercising "missing owner/repo" mutate these to "".
+		GitHubOwner: "kube-dc",
+		GitHubRepo:  "kube-dc-fleet",
+		RookMode:    RookCephMultiNode,
+		Yes:         true, // satisfies CI apply gate when NoTTY is set; harmless otherwise
 	}
 }
 
@@ -197,6 +202,42 @@ func TestValidate_NodeNICs(t *testing.T) {
 	}
 }
 
+// TestValidate_Provider_TruthTable — M4-T05 multi-provider: empty
+// defaults to github (backward compat); "github" and "gitlab"
+// pass; anything else fails with ErrUnknownProvider so typos
+// don't silently route to the wrong remote.
+func TestValidate_Provider_TruthTable(t *testing.T) {
+	cases := []struct {
+		name     string
+		provider Provider
+		wantErr  error
+	}{
+		{"empty-defaults-to-github", "", nil},
+		{"github-explicit", ProviderGitHub, nil},
+		{"gitlab-explicit", ProviderGitLab, nil},
+		{"typo-gitub", Provider("gitub"), ErrUnknownProvider},
+		{"typo-Gitlab-case-sensitive", Provider("Gitlab"), ErrUnknownProvider},
+		{"bitbucket-not-supported", Provider("bitbucket"), ErrUnknownProvider},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			o := validBase()
+			o.Provider = tc.provider
+			err := o.Validate()
+			if tc.wantErr == nil {
+				if err != nil {
+					t.Fatalf("expected ok, got %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("expected %v, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
 func TestValidate_FleetModeNewRepo_NeedsGitHub(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -286,6 +327,63 @@ func TestValidate_ExistingFleetRequiresRepo(t *testing.T) {
 			}
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("expected %v, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+// TestValidate_ApplyPathModes_RequireOwnerRepo — reviewer P2
+// (revisited): every fleet mode that reaches `flux-install.sh`
+// MUST require --github-owner + --github-repo. The prior fix
+// covered new-repo + existing-fleet but missed existing-repo
+// — this table locks all three.
+func TestValidate_ApplyPathModes_RequireOwnerRepo(t *testing.T) {
+	cases := []struct {
+		name      string
+		fleetMode FleetMode
+		wantErr   error
+	}{
+		{"new-repo missing owner/repo", FleetNewRepo, ErrFleetModeNewRepo},
+		{"existing-fleet missing owner/repo", FleetExistingFleet, ErrFleetModeNewRepo},
+		{"existing-repo missing owner/repo", FleetExistingRepo, ErrFleetModeNewRepo},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			o := validBase()
+			o.FleetMode = tc.fleetMode
+			o.GitHubOwner = ""
+			o.GitHubRepo = ""
+			if tc.fleetMode == FleetExistingRepo {
+				// existing-repo doesn't require --repo, but validBase
+				// sets it; clear so we're testing owner/repo purely.
+				o.Repo = ""
+			}
+			err := o.Validate()
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("expected %v, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+// TestValidate_ApplyPathModes_NoPushBypasses — `--no-push` skips
+// flux-install entirely (no push → no reconcile), so the owner/repo
+// requirement is relaxed on those paths.
+func TestValidate_ApplyPathModes_NoPushBypasses(t *testing.T) {
+	for _, mode := range []FleetMode{FleetNewRepo, FleetExistingFleet, FleetExistingRepo} {
+		mode := mode
+		t.Run(string(mode), func(t *testing.T) {
+			o := validBase()
+			o.FleetMode = mode
+			o.GitHubOwner = ""
+			o.GitHubRepo = ""
+			o.NoPush = true
+			if mode == FleetExistingRepo {
+				o.Repo = ""
+			}
+			if err := o.Validate(); err != nil {
+				t.Errorf("--no-push should bypass owner/repo requirement for %s, got %v", mode, err)
 			}
 		})
 	}

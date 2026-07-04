@@ -49,6 +49,18 @@ type Factory interface {
 	// cluster — CPU capability, GPU presence, kernel-module state).
 	Cluster(k8s ports.K8sClient) []ports.Probe
 
+	// ClusterOpenBao returns probes that read OpenBao cluster state
+	// through the OpenBaoClient (svc/openbao annotations, pod state,
+	// etc.). Currently just the M5-T07 PolicyGenerationProbe. Empty
+	// when `bao` is nil so the cobra layer can call this without
+	// pre-checking session shape — mirrors Cluster()'s nil-safe
+	// contract.
+	//
+	// Category on the doctor side is `CategoryVerifiesSuggests`
+	// (drift is a soft signal the CLI verifies + points at a fix
+	// via the operator's discretion; it never blocks).
+	ClusterOpenBao(bao ports.OpenBaoClient) []ports.Probe
+
 	// StatusRows returns one StatusRow per cluster overlay in the
 	// fleet — drives `kube-dc bootstrap status` list-all mode.
 	// Real factory walks `fleetRepo` (clusters/*/cluster-config.env)
@@ -115,6 +127,16 @@ func (RealFactory) Cluster(k8s ports.K8sClient) []ports.Probe {
 		return nil
 	}
 	return []ports.Probe{NewNFDProbe(k8s)}
+}
+
+// ClusterOpenBao returns the openbao-scope probes (currently just
+// the M5-T07 policy-generation drift probe). Empty when `bao` is
+// nil — same nil-safe convention as Cluster().
+func (RealFactory) ClusterOpenBao(bao ports.OpenBaoClient) []ports.Probe {
+	if bao == nil {
+		return nil
+	}
+	return []ports.Probe{NewPolicyGenerationProbe(bao)}
 }
 
 // StatusRows walks `fleetRepo` for clusters/*/cluster-config.env,

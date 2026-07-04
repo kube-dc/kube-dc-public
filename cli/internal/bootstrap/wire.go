@@ -142,3 +142,42 @@ func NewSOPSOnly() (ports.SOPSClient, error) {
 	}
 	return sops.New(), nil
 }
+
+// NewSSHOnly constructs just the SSH port. Isolated from NewSession
+// so subcommands whose canonical first-contact flow HAS no
+// kubeconfig yet (M4-T06 fetch-kubeconfig — the whole point of the
+// command is to CREATE the operator's local kubeconfig) can proceed
+// without k8s.New() failing.
+//
+// Same nil-safety + KUBE_DC_MOCK honouring as NewSOPSOnly. Never
+// touches kubeconfig / apiserver / any other adapter.
+func NewSSHOnly() (ports.SSHClient, error) {
+	if scenario := os.Getenv("KUBE_DC_MOCK"); scenario != "" {
+		s, err := mock.Load(scenario)
+		if err != nil {
+			return nil, fmt.Errorf("bootstrap: load mock scenario %q: %w", scenario, err)
+		}
+		return mock.NewSSHClient(s), nil
+	}
+	return ssh.New(), nil
+}
+
+// NewScriptOnly constructs just the ScriptRunner port. Isolated
+// from NewSession so subcommands that only shell out to fleet-repo
+// scripts (M4-T07 install-prereqs; any future script-only ceremony)
+// can proceed on a bare laptop with no kubeconfig. The runner needs
+// the fleet-repo path so it can resolve script names to on-disk
+// paths — pass `fleetRepo` from the operator's --repo flag.
+//
+// Same nil-safety + KUBE_DC_MOCK honouring as NewSOPSOnly. Never
+// touches kubeconfig / apiserver / any other adapter.
+func NewScriptOnly(fleetRepo string) (ports.ScriptRunner, error) {
+	if scenario := os.Getenv("KUBE_DC_MOCK"); scenario != "" {
+		s, err := mock.Load(scenario)
+		if err != nil {
+			return nil, fmt.Errorf("bootstrap: load mock scenario %q: %w", scenario, err)
+		}
+		return mock.NewScriptRunner(s, nil), nil
+	}
+	return script.New(fleetRepo, os.Getenv("KUBE_DC_REPO"), nil), nil
+}

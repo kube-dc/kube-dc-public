@@ -24,10 +24,11 @@ import (
 //      The CLI deliberately doesn't auto-enroll — security boundary,
 //      needs an existing keyholder's authority.
 //
-// This file owns the pure functions for branches 2 and 3. The
-// greenfield-generate path (branch 1) is M4-T05 territory and is
-// gated by `ErrAgeKeyGenerateNotImplemented` for now — cloudacropolis
-// joins an existing fleet so this branch isn't on the install path.
+// This file owns the pure functions for branches 2 and 3. Branch
+// 1 (greenfield-generate) landed at SHA `1ace3c9d` and lives in
+// `bootstrap_init_agekey.go`'s `autoGenerateAgeKey` — it auto-runs
+// `bootstrap/generate-age-key.sh` via ScriptRunner when
+// `--fleet-mode=new-repo` and no `<fleet>/age.key` exists.
 //
 // Cobra wiring in `bootstrap_init_agekey.go` reads the operator's
 // pubkey via the sops adapter's `DerivePubKey` and the recipients
@@ -68,11 +69,14 @@ var ErrAgeKeyNotEnrolled = errors.New("init: operator's age pubkey is not in the
 // lists every path checked so the operator knows where to look.
 var ErrAgeKeyNotFound = errors.New("init: no age key file found")
 
-// ErrAgeKeyGenerateNotImplemented gates the greenfield "auto-run
-// generate-age-key.sh" branch (M4-T05). Cobra surfaces this with a
-// clear "for v1, run `bootstrap/generate-age-key.sh` manually then
-// re-run init" message until the engine slice ships.
-var ErrAgeKeyGenerateNotImplemented = errors.New("init: greenfield age-key generation not yet implemented; run bootstrap/generate-age-key.sh manually then re-run init")
+// ErrAgeKeyDryRunSkip signals that the greenfield-generate branch
+// was reached under `--dry-run` and refused to mutate the fleet.
+// Dry-run must be side-effect-free; running the generate script
+// would create `age.key` + `.sops.yaml` on disk. The cobra RunE
+// downgrades this to a `[sops] WARNING:` line and lets the plan
+// render — apply-time re-runs will hit the auto-generate path
+// unimpeded.
+var ErrAgeKeyDryRunSkip = errors.New("init: dry-run skipped age-key auto-generation (would create <fleet>/age.key); re-run without --dry-run to generate + enroll")
 
 // ErrSOPSConfigMissing is returned when `.sops.yaml` doesn't exist
 // at the fleet repo root. Indicates a malformed fleet repo (every

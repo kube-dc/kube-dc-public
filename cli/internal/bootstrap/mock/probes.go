@@ -110,6 +110,21 @@ func (f *Factory) Cluster(k8s ports.K8sClient) []ports.Probe {
 	return []ports.Probe{discover.NewNFDProbe(k8s)}
 }
 
+// ClusterOpenBao mirrors the Cluster() shape but for the M5-T07
+// PolicyGenerationProbe. Wraps the real discover probe against the
+// mock OpenBaoClient (whose GetAnnotation returns scenario-declared
+// annotations from `openbao.controllerAuthAnnotation` +
+// `openbao.bootstrapFinalizedAnnotation` — the same map used by the
+// M5-T04 status renderer). Scenarios that pre-date M5-T07 (no
+// policy-generation stamp) surface as StatusMissing/absent, which
+// is the correct signal for legacy installs.
+func (f *Factory) ClusterOpenBao(bao ports.OpenBaoClient) []ports.Probe {
+	if bao == nil {
+		return nil
+	}
+	return []ports.Probe{discover.NewPolicyGenerationProbe(bao)}
+}
+
 // StatusRows builds per-cluster rows from the scenario's
 // `fleet.statuses` fixture. When `Statuses` is empty, falls back
 // to one Unknown row per `fleet.clusterDirs` entry so the cobra

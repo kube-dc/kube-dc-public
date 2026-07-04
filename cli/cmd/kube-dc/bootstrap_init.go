@@ -139,6 +139,21 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 				return err
 			}
 
+			// M4-T05 GitLab fail-closed boundary RETIRED (properly
+			// this time): the coordinated `kube-dc-fleet` PR
+			// landing alongside this slice made `flux-install.sh`
+			// provider-aware via `KUBE_DC_PROVIDER` env — dispatches
+			// `flux bootstrap github` vs `flux bootstrap gitlab`
+			// with matching token env-var handling. `add-cluster.sh`
+			// was already provider-agnostic (writes Flux
+			// Kustomizations that reference the auto-generated
+			// `GitRepository name: flux-system` — Flux stores the
+			// remote URL there). `runFluxInstall` now passes
+			// `KUBE_DC_PROVIDER` + owner/repo/token env through
+			// ApplyOptions. The sentinel becomes a deprecated
+			// no-op; retained one release for backward-compat
+			// `errors.Is` checks.
+
 			// Preset's required-key check runs after structural
 			// Validate so the operator sees one error per pre-flight
 			// concern (structural typos first, then preset-shape
@@ -161,9 +176,17 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 			// disk — operators can still dry-run a plan without being
 			// a keyholder yet; apply paths will refuse the engine
 			// when M5-T01 needs the key.
-			if err := validateAgeKeyEnrollment(cmd.OutOrStdout(), o); err != nil {
+			//
+			// **Dry-run must NOT mutate** — the age-key auto-generate
+			// path (M4-T09 greenfield-generate close) runs
+			// `bootstrap/generate-age-key.sh` which creates `age.key`
+			// on disk. Pass `mutationsAllowed=!o.DryRun` into the
+			// gate so plan previews stay side-effect-free. Also pass
+			// `cmd.Context()` so operator Ctrl-C cancellation
+			// interrupts a long-running generate script.
+			if err := validateAgeKeyEnrollment(cmd.Context(), cmd.OutOrStdout(), o, !o.DryRun); err != nil {
 				if o.DryRun && (errors.Is(err, clusterinit.ErrAgeKeyNotFound) ||
-					errors.Is(err, clusterinit.ErrAgeKeyGenerateNotImplemented)) {
+					errors.Is(err, clusterinit.ErrAgeKeyDryRunSkip)) {
 					fmt.Fprintf(cmd.OutOrStdout(), "[sops] WARNING: %v\n", err)
 				} else {
 					return err
@@ -191,12 +214,14 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 	// --- Fleet ---
 	cmd.Flags().StringVar((*string)(&o.FleetMode), "fleet-mode", "",
 		fmt.Sprintf("Fleet-repo relation (one of %s; required)", joinFleetModes(clusterinit.AllFleetModes)))
+	cmd.Flags().StringVar((*string)(&o.Provider), "provider", "",
+		"Remote-repo hosting provider for --fleet-mode=new-repo (`github` or `gitlab`; default github)")
 	cmd.Flags().StringVar(&o.GitHubOwner, "github-owner", "",
-		"GitHub owner for --fleet-mode=new-repo (required in that mode)")
+		"Owner/group for --fleet-mode=new-repo (required in that mode; holds the GitLab group when --provider=gitlab)")
 	cmd.Flags().StringVar(&o.GitHubRepo, "github-repo", "",
-		"GitHub repo name for --fleet-mode=new-repo (required in that mode)")
+		"Repo name for --fleet-mode=new-repo (required in that mode)")
 	cmd.Flags().StringVar(&o.GitHubToken, "github-token", "",
-		"GitHub token; leave unset to source via `gh auth token` at engine time (never logged)")
+		"Provider PAT; leave unset to source via `gh auth token` / `glab auth login` state (never logged)")
 
 	// --- Overrides ---
 	cmd.Flags().StringSliceVar(&setFlags, "set", nil,
@@ -437,6 +462,11 @@ func runInitDefaultApply(ctx context.Context, out io.Writer, o *clusterinit.Init
 // GitHub token if --github-token wasn't passed, then calls
 // `clusterinit.Apply`.
 func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, plan *clusterinit.Plan) error {
+	// GitLab fail-closed guard retired — the coordinated
+	// `kube-dc-fleet` PR made `flux-install.sh` provider-aware.
+	// Provider info now flows through `ApplyOptions` (see
+	// `runFluxInstall`).
+
 	session, err := bootstrap.NewSession(bootstrap.Options{
 		FleetRepoPath: o.Repo,
 	})
@@ -453,12 +483,39 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		defer session.Close()
 	}
 
+	// M4-T07 auto-install prereqs. Runs FIRST — before DNS / NFD /
+	// create-repo / Apply — so a missing binary surfaces before we
+	// commit + push. Gated on `!--no-install-prereqs`. Consent
+	// piggybacks on `--yes` (interactive prompt in the middle of a
+	// long apply flow would be a UX regression; if tools are
+	// missing, the operator either passed --yes (auto-install) or
+	// gets a clean error telling them to run `bootstrap
+	// install-prereqs` first). No-op contract preserved — 0
+	// missing → no ScriptRunner call, cheap.
+	if !o.NoInstallPrereqs {
+		if _, err := clusterinit.InstallPrereqs(ctx, clusterinit.InstallPrereqsOptions{
+			Runner: session.Scripts,
+			Assume: o.Yes,
+			Out:    out,
+		}); err != nil {
+			// Consent-required maps to a helpful message rather than
+			// a bare error. Structural failures bubble as-is.
+			if errors.Is(err, clusterinit.ErrInstallPrereqsConsentRequired) {
+				return fmt.Errorf("apply: %w; re-run with --yes to auto-install OR pre-install via `kube-dc bootstrap install-prereqs`", err)
+			}
+			return fmt.Errorf("apply: %w", err)
+		}
+	}
+
 	// M4-T08: DNS verification gate. Runs BEFORE the token
 	// resolution / Apply so a failure surfaces as fast as possible,
 	// before any disk-mutating step or `gh auth token` subshell.
-	// Reads the same DNSClient the doctor probes use; skipped only
-	// when --allow-dns-not-ready is explicitly set (operator opts
-	// in to a "certs land Pending" install shape). See
+	// Reads the same DNSClient the doctor probes use. The gate
+	// ALWAYS runs; `--allow-dns-not-ready` doesn't skip it — it
+	// DOWNGRADES a failed probe to a warning (with the record-set
+	// still printed so the operator can wire the records later)
+	// and lets Apply proceed. Success (probes report Installed)
+	// takes precedence over the flag either way. See
 	// clusterinit/dnsgate.go for the wildcard + explicit-FQDN
 	// fallback + record-set printer.
 	if err := clusterinit.CheckDNSReady(ctx, clusterinit.DNSGateOptions{
@@ -495,7 +552,31 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	if !o.NoPush {
 		token = resolveGitHubToken(o, out)
 	}
-	return clusterinit.Apply(ctx, clusterinit.ApplyOptions{
+
+	// M4-T05: auto-create the remote GitHub repo when the operator
+	// opted into new-repo mode. Runs BEFORE Apply so the remote
+	// exists by the time the commit+push phase fires. Idempotent
+	// (422 "already exists" is success), so re-running after a
+	// downstream failure doesn't create a mess. `--no-create-repo`
+	// is the escape hatch — operators whose org manages repo
+	// creation externally skip this step entirely.
+	//
+	// Skipped on `--no-push` too: without a push, there's no reason
+	// to have created the remote in the first place, and the token
+	// isn't resolved on that path.
+	if plan.FleetMode == clusterinit.FleetNewRepo && !o.NoCreateRepo && !o.NoPush {
+		if err := clusterinit.CreateRemoteRepo(ctx, clusterinit.CreateRepoOptions{
+			Provider: o.Provider,
+			Owner:    o.GitHubOwner,
+			Name:     o.GitHubRepo,
+			Token:    token,
+			Out:      out,
+		}); err != nil {
+			return err
+		}
+	}
+
+	if err := clusterinit.Apply(ctx, clusterinit.ApplyOptions{
 		Plan:           plan,
 		FleetRepo:      o.Repo,
 		NodeExternalIP: o.NodeExternalIP,
@@ -504,41 +585,174 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		Runner:         session.Scripts,
 		Git:            session.Git,
 		GitHubToken:    token,
+		Provider:       o.Provider,
+		GitHubOwner:    o.GitHubOwner,
+		GitHubRepo:     o.GitHubRepo,
 		NoPush:         o.NoPush,
 		Out:            out,
-	})
+	}); err != nil {
+		return err
+	}
+
+	// M4-T06 auto-fetch kubeconfig. Runs LAST — after flux-install
+	// has succeeded — so the operator's kubeconfig points at a
+	// cluster that's actually reconciling. Gated on `--ssh-host !=
+	// "" && !--no-ssh` (the presence of --ssh-host is the operator's
+	// explicit opt-in to the SSH auto-pull; --no-ssh is the escape
+	// hatch for operators managing kubeconfig externally). Uses an
+	// SSH-only session so a fresh laptop with no prior kubeconfig
+	// works — the whole point of this step is to CREATE that
+	// kubeconfig. Failure here is a WARNING not a hard error — the
+	// cluster is up + reconciling; the operator can re-run
+	// `bootstrap fetch-kubeconfig` manually if the auto-pull
+	// couldn't reach the master.
+	if o.SSHHost != "" && !o.NoSSH {
+		if err := autoFetchKubeconfig(ctx, out, o); err != nil {
+			fmt.Fprintf(out, "[apply] WARNING: auto-fetch kubeconfig failed: %v\n", err)
+			fmt.Fprintf(out, "[apply]          re-run: kube-dc bootstrap fetch-kubeconfig %s --ssh-host %s --domain %s\n",
+				o.Name, o.SSHHost, o.Domain)
+		}
+	}
+	return nil
 }
 
-// resolveGitHubToken returns the operator's GitHub PAT for the
-// CommitAndPush step. Precedence:
+// autoFetchKubeconfig is the init-side wiring of the M4-T06
+// engine. Kept as a small helper so the main runApplyEngine flow
+// stays readable. Uses `bootstrap.NewSSHOnly()` (not the session's
+// SSH port) so the SSH adapter is constructed even when the
+// session had no kubeconfig at build time — matches the standalone
+// `bootstrap fetch-kubeconfig` subcommand's shape.
+func autoFetchKubeconfig(ctx context.Context, out io.Writer, o *clusterinit.InitOptions) error {
+	sshClient, err := bootstrap.NewSSHOnly()
+	if err != nil {
+		return fmt.Errorf("build ssh adapter: %w", err)
+	}
+	cfg, err := clusterinit.FetchKubeconfig(ctx, clusterinit.FetchKubeconfigOptions{
+		SSH:         sshClient,
+		Host:        parseSSHHostArg(o.SSHHost),
+		ClusterName: o.Name,
+		Domain:      o.Domain,
+		Out:         out,
+	})
+	if err != nil {
+		return err
+	}
+	// Merge into the operator's local kubeconfig; setCurrent=true
+	// on a fresh install so `kubectl` after `bootstrap init`
+	// immediately targets the new cluster. Existing operators
+	// re-running init would already have their context set;
+	// setCurrent=true refreshes it, matching the "you just
+	// installed this cluster" mental model.
+	dest := clusterinit.DefaultKubeconfigPath()
+	if err := clusterinit.MergeKubeconfig(dest, cfg, true); err != nil {
+		return fmt.Errorf("merge kubeconfig into %s: %w", dest, err)
+	}
+	fmt.Fprintf(out, "[apply] kubeconfig merged into %s (current-context=%s)\n", dest, o.Name)
+	return nil
+}
+
+// resolveGitHubToken returns the operator's PAT for the
+// CommitAndPush step. Provider-aware (M4-T05 GitLab retire):
+// dispatches to `gh auth token` for github, `glab auth status --show-token`
+// for gitlab.
+//
+// Precedence (per provider):
 //
 //  1. `--github-token` flag value (explicit operator override).
-//  2. `gh auth token` subshell — picks up the operator's existing
-//     `gh auth login` session.
+//  2. Provider-specific CLI-auth subshell — picks up the operator's
+//     existing `gh auth login` / `glab auth login` session.
 //  3. Empty string — caller (Apply) surfaces the push-auth error
 //     from the git adapter if a token was actually needed.
 //
 // Never logged. The fallback subshell output is captured into a
 // local variable and trimmed; not echoed to the operator log.
+//
+// **Naming note**: the function is still `resolveGitHubToken` for
+// backward-compat with the rest of the flow; the `--github-token`
+// flag likewise. Both carry the token for the SELECTED provider,
+// not necessarily GitHub. A future rename to `resolveRepoToken` /
+// `--repo-token` may land in a bigger UX pass.
 func resolveGitHubToken(o *clusterinit.InitOptions, out io.Writer) string {
+	return resolveGitHubTokenWithExec(o, out, defaultTokenExec)
+}
+
+// tokenExecFn is the test seam over the provider CLI subshell.
+// Production wires defaultTokenExec (exec.Command); tests inject a
+// fake that returns canned stdout/err without forking.
+type tokenExecFn func(binary string, args ...string) (stdout []byte, err error)
+
+// defaultTokenExec runs the provider CLI + captures stdout;
+// stderr is discarded (tokens must never appear in the operator's
+// log; per-command messages come from the caller instead).
+func defaultTokenExec(binary string, args ...string) ([]byte, error) {
+	cmd := exec.Command(binary, args...)
+	cmd.Stderr = io.Discard
+	return cmd.Output()
+}
+
+// resolveGitHubTokenWithExec is the testable form of
+// resolveGitHubToken — same logic, but the CLI subshell is
+// invoked through `execFn` so tests can seed responses.
+func resolveGitHubTokenWithExec(o *clusterinit.InitOptions, out io.Writer, execFn tokenExecFn) string {
 	if o.GitHubToken != "" {
 		fmt.Fprintln(out, "[apply] using --github-token flag value")
 		return o.GitHubToken
 	}
-	cmd := exec.Command("gh", "auth", "token")
-	cmd.Stderr = io.Discard
-	stdout, err := cmd.Output()
+
+	// Provider dispatch. Default (empty) → github.
+	provider := o.Provider
+	if provider == "" {
+		provider = clusterinit.ProviderGitHub
+	}
+	var (
+		binary string
+		args   []string
+		label  string
+	)
+	switch provider {
+	case clusterinit.ProviderGitLab:
+		binary, args, label = "glab", []string{"auth", "status", "--show-token"}, "glab auth status --show-token"
+	default:
+		binary, args, label = "gh", []string{"auth", "token"}, "gh auth token"
+	}
+
+	stdout, err := execFn(binary, args...)
 	if err != nil {
-		fmt.Fprintln(out, "[apply] no GitHub token resolved (gh auth token failed; push may fail if remote requires auth)")
+		fmt.Fprintf(out, "[apply] no token resolved (%s failed; push may fail if remote requires auth)\n", label)
 		return ""
 	}
 	token := strings.TrimSpace(string(stdout))
+	// glab's `--show-token` prints "Token: <value>" whereas gh's
+	// `auth token` prints just the value. Extract the trailing
+	// token portion when the shape matches "Token: xxx".
+	if provider == clusterinit.ProviderGitLab {
+		token = extractGlabToken(token)
+	}
 	if token == "" {
-		fmt.Fprintln(out, "[apply] no GitHub token resolved (gh auth token returned empty)")
+		fmt.Fprintf(out, "[apply] no token resolved (%s returned empty)\n", label)
 		return ""
 	}
-	fmt.Fprintln(out, "[apply] resolved GitHub token via gh auth token")
+	fmt.Fprintf(out, "[apply] resolved token via %s\n", label)
 	return token
+}
+
+// extractGlabToken parses glab's `auth status --show-token` output
+// to isolate the token value. glab emits a multi-line status block
+// with the token on a `Token: <value>` line; this helper walks the
+// lines and returns the token, or empty when not found.
+func extractGlabToken(body string) string {
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Token:") {
+			return strings.TrimSpace(strings.TrimPrefix(trimmed, "Token:"))
+		}
+	}
+	// Fallback: if the whole body looks like a bare token (glab
+	// versions have varied), return as-is.
+	if !strings.Contains(body, "\n") && body != "" {
+		return body
+	}
+	return ""
 }
 
 // discoverFleetState returns a best-effort snapshot of the fleet repo
@@ -661,7 +875,12 @@ func writeOptionsSummary(out io.Writer, o *clusterinit.InitOptions) {
 	fmt.Fprintf(out, "Email:        %s\n", o.Email)
 	fmt.Fprintf(out, "Fleet:        mode=%s repo=%s\n", o.FleetMode, o.Repo)
 	if o.FleetMode == clusterinit.FleetNewRepo {
-		fmt.Fprintf(out, "GitHub:       owner=%s repo=%s token=%s\n", o.GitHubOwner, o.GitHubRepo, tok)
+		provider := string(o.Provider)
+		if provider == "" {
+			provider = "github (default)"
+		}
+		fmt.Fprintf(out, "Remote:       provider=%s owner=%s repo=%s token=%s\n",
+			provider, o.GitHubOwner, o.GitHubRepo, tok)
 	}
 	fmt.Fprintf(out, "Rook:         mode=%s osd-node=%s osd-size=%dGB\n", o.RookMode, o.RookOSDNode, o.RookOSDSizeGB)
 	if len(o.Addons) > 0 {
@@ -738,7 +957,7 @@ func joinStringers[T ~string](in []T) string {
 func assertRequiredFlagsRegistered(fs *pflag.FlagSet) error {
 	required := []string{
 		"preset", "mode", "name", "domain", "node-external-ip", "email",
-		"fleet-mode", "github-owner", "github-repo", "github-token",
+		"fleet-mode", "provider", "github-owner", "github-repo", "github-token",
 		"set", "node-nic",
 		"rook-mode", "rook-osd-node", "rook-osd-size-gb",
 		"addon",

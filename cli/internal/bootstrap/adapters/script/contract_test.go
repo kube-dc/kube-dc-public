@@ -72,12 +72,17 @@ func TestValidateContract_RequiredEnv_HostEnvSatisfies(t *testing.T) {
 
 // Required-env validation: missing key surfaces ErrMissingRequiredEnv
 // with the key name in the message + actionable remediation hint.
+// M4-T05 GitLab close: flux-install's requiredEnv shrunk to just
+// KUBECONFIG (token env is provider-conditional and enforced by
+// the fleet script itself). Use ScriptOpenBaoSetupControllerAuth
+// which requires CLUSTER + DOMAIN + KUBECONFIG — 3-key required
+// set exercises the missing + alphabetical-listing paths cleanly.
 func TestValidateContract_RequiredEnv_Missing(t *testing.T) {
 	t.Setenv("KUBECONFIG", "")
 	err := validateContract(
-		ports.ScriptFluxInstall,
-		map[string]string{"KUBECONFIG": "/k"}, // GITHUB_TOKEN missing
-		[]string{"cluster-a"},
+		ports.ScriptOpenBaoSetupControllerAuth,
+		map[string]string{"KUBECONFIG": "/k", "CLUSTER": "acme"}, // DOMAIN missing
+		nil,
 	)
 	if err == nil {
 		t.Fatal("expected ErrMissingRequiredEnv")
@@ -85,8 +90,8 @@ func TestValidateContract_RequiredEnv_Missing(t *testing.T) {
 	if !errors.Is(err, ports.ErrMissingRequiredEnv) {
 		t.Errorf("err not ErrMissingRequiredEnv: %v", err)
 	}
-	if !strings.Contains(err.Error(), "GITHUB_TOKEN") {
-		t.Errorf("error should name missing key (GITHUB_TOKEN): %v", err)
+	if !strings.Contains(err.Error(), "DOMAIN") {
+		t.Errorf("error should name missing key (DOMAIN): %v", err)
 	}
 	if !strings.Contains(err.Error(), "--set KEY=VALUE") {
 		t.Errorf("error should include remediation hint: %v", err)
@@ -99,15 +104,15 @@ func TestValidateContract_RequiredEnv_Missing(t *testing.T) {
 func TestValidateContract_RequiredEnv_MissingListedAlphabetically(t *testing.T) {
 	t.Setenv("KUBECONFIG", "")
 	err := validateContract(
-		ports.ScriptFluxInstall,
+		ports.ScriptOpenBaoSetupControllerAuth,
 		nil,
-		[]string{"cluster-a"},
+		nil,
 	)
 	if err == nil {
 		t.Fatal("expected ErrMissingRequiredEnv")
 	}
-	// fail with "GITHUB_TOKEN, KUBECONFIG" — alphabetical.
-	if !strings.Contains(err.Error(), "GITHUB_TOKEN, KUBECONFIG") {
+	// fail with "CLUSTER, DOMAIN, KUBECONFIG" — alphabetical.
+	if !strings.Contains(err.Error(), "CLUSTER, DOMAIN, KUBECONFIG") {
 		t.Errorf("missing keys should be alphabetical: %v", err)
 	}
 }
@@ -196,9 +201,20 @@ func TestResolve_HappyPath(t *testing.T) {
 	if !sort.StringsAreSorted(info.OptionalEnv) {
 		t.Errorf("OptionalEnv not sorted: %v", info.OptionalEnv)
 	}
-	wantReq := []string{"GITHUB_TOKEN", "KUBECONFIG"}
+	// M4-T05 GitLab close: requiredEnv shrunk to KUBECONFIG-only.
+	// Token env (GITHUB_TOKEN / GITLAB_TOKEN) is provider-
+	// conditional and enforced by the fleet script itself.
+	wantReq := []string{"KUBECONFIG"}
 	if !equalSlices(info.RequiredEnv, wantReq) {
 		t.Errorf("RequiredEnv=%v want %v", info.RequiredEnv, wantReq)
+	}
+	// New optional-env keys include the multi-provider extensions.
+	wantOptional := map[string]bool{"KUBE_DC_PROVIDER": true, "GITLAB_TOKEN": true}
+	for _, opt := range info.OptionalEnv {
+		delete(wantOptional, opt)
+	}
+	if len(wantOptional) > 0 {
+		t.Errorf("OptionalEnv missing provider keys: %v (full: %v)", wantOptional, info.OptionalEnv)
 	}
 }
 
@@ -266,16 +282,23 @@ func TestDefaultCmdFactory_ContractValidationFires(t *testing.T) {
 // or `[ -n "${KEY:-}" ]`, NOT key presence — letting a `KEY=""` env
 // satisfy validateContract leaves the typed-preflight guarantee
 // useless because the script still fails at runtime.
+//
+// M4-T05 GitLab-close: flux-install requiredEnv is now
+// KUBECONFIG-only (token env is provider-conditional). Test moved
+// to `ScriptOpenBaoSetupControllerAuth` (requires CLUSTER, DOMAIN,
+// KUBECONFIG) so the empty-value case still exercises the
+// invariant.
 func TestValidateContract_RequiredEnv_EmptyValueCountsAsMissing(t *testing.T) {
-	t.Setenv("KUBECONFIG", "") // forbid host-env from satisfying
+	t.Setenv("KUBECONFIG", "")
 
 	err := validateContract(
-		ports.ScriptFluxInstall,
+		ports.ScriptOpenBaoSetupControllerAuth,
 		map[string]string{
-			"GITHUB_TOKEN": "", // explicit empty — should NOT satisfy
-			"KUBECONFIG":   "/k",
+			"KUBECONFIG": "/k",
+			"CLUSTER":    "acme",
+			"DOMAIN":     "", // explicit empty — should NOT satisfy
 		},
-		[]string{"cluster-a"},
+		nil,
 	)
 	if err == nil {
 		t.Fatal("expected ErrMissingRequiredEnv for explicit empty value")
@@ -283,7 +306,7 @@ func TestValidateContract_RequiredEnv_EmptyValueCountsAsMissing(t *testing.T) {
 	if !errors.Is(err, ports.ErrMissingRequiredEnv) {
 		t.Errorf("err not ErrMissingRequiredEnv: %v", err)
 	}
-	if !strings.Contains(err.Error(), "GITHUB_TOKEN") {
+	if !strings.Contains(err.Error(), "DOMAIN") {
 		t.Errorf("error should still name the empty-valued key: %v", err)
 	}
 }

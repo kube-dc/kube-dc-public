@@ -235,6 +235,33 @@ func TestBootstrapOpenBaoStatus_RequiresClusterName(t *testing.T) {
 	}
 }
 
+// M5-T07: `bootstrap openbao status` renders the policy-generation
+// line. Cloud scenario has no annotation → drift signal + refresh
+// hint; the drift line is INFORMATIVE (soft) and does NOT change
+// FullyReady / exit code.
+func TestBootstrapOpenBaoStatus_MockCloud_RendersPolicyGenerationDrift(t *testing.T) {
+	t.Setenv("KUBE_DC_MOCK", "cloud")
+	t.Setenv("NO_COLOR", "1")
+
+	body, err := runOpenBaoCmd(t, "", []string{"status", "cloud"})
+	if err != nil {
+		t.Fatalf("mock cloud status should exit 0 despite drift (soft signal), got %v; output:\n%s", err, body)
+	}
+	for _, want := range []string{
+		"policy-generation:",
+		"1 expected",
+		"<absent> installed",
+		"DRIFT",
+		// P3 fix: drift command MUST include the cluster name —
+		// setup-controller-auth requires it as a positional arg.
+		"kube-dc bootstrap openbao setup-controller-auth cloud --refresh-policy",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("policy-generation drift render missing %q\nBODY:\n%s", want, body)
+		}
+	}
+}
+
 // TestRenderOpenBaoStatus_TriageDecisions — the reviewer's P2 gap:
 // engine tests cover the STATES (AnySealed / AnyUninitialized /
 // missing markers) but not the rendered `Next:` decision for each

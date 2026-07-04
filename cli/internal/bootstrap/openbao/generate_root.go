@@ -231,11 +231,18 @@ func GenerateRoot(ctx context.Context, opts GenerateRootOptions) error {
 				"[openbao] WARNING: RevokeSelf failed (%v) — token may still be live; run: bao token revoke <OPENBAO_ROOT_TOKEN> (using the token printed on stdout above)\n",
 				err); werr != nil {
 				// Audit failed on top of revoke failure. Compose
-				// both errors so the operator sees both problems —
-				// the revoke failure IS the more actionable signal
-				// (they need to manually revoke) so it stays as
-				// the wrap target.
-				return fmt.Errorf("openbao generate-root: revoke: %w; audit trailer also failed: %v", err, werr)
+				// BOTH sentinel-carrying errors via errors.Join so
+				// sentinel-based recovery (errors.Is against either
+				// the revoke error OR ErrGenerateRootStatusAuditFailed)
+				// sees BOTH signals — reviewer P2: the prior single-
+				// %w wrap lost the status-audit sentinel in exactly
+				// this "token is on stdout, trailer was not written"
+				// case. Revoke error is listed first so the operator
+				// sees it as the primary signal (more actionable).
+				return errors.Join(
+					fmt.Errorf("openbao generate-root: revoke: %w", err),
+					fmt.Errorf("%w: warning banner: %v", ErrGenerateRootStatusAuditFailed, werr),
+				)
 			}
 			return fmt.Errorf("openbao generate-root: revoke: %w", err)
 		}

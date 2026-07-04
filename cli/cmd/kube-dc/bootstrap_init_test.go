@@ -32,6 +32,12 @@ func validCloudacropolisArgs() []string {
 		"--node-external-ip=217.117.26.52",
 		"--email=ops@acropolis.example.com",
 		"--fleet-mode=existing-fleet",
+		// M4-T05 P2 close: owner/repo required for any apply-path
+		// fleet mode (Validate check catches missing values when
+		// dry-run is filtered off — tests that assert the missing
+		// case filter these back out).
+		"--github-owner=kube-dc",
+		"--github-repo=kube-dc-fleet",
 		"--rook-mode=rook-ceph-multi-node",
 		// cloud+public-vlan preset required keys.
 		"--set=EXT_NET_VLAN_ID=1103",
@@ -300,7 +306,166 @@ func TestBootstrapInit_AllowNoKubevirtEligibleFlagRegistered(t *testing.T) {
 	}
 }
 
+// Reviewer P1 regression guard (dry-run mutation): `--dry-run`
+// promises "no mutations", but the M4-T09 greenfield-generate
+// auto-run WAS running `bootstrap/generate-age-key.sh` before the
+// dry-run dispatch — creating `<fleet>/age.key` on disk during a
+// plan preview. This test uses a fleet WITH the generate script
+// available (so the auto-run WOULD fire without the guard) and
+// asserts `age.key` does NOT appear post-dry-run.
+func TestBootstrapInit_DryRun_NewRepo_DoesNotGenerateAgeKey(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+	// Fresh fleet with a NO age.key + a script that WOULD create
+	// one if the auto-run fired. We stub the script by dropping a
+	// no-op shell into bootstrap/generate-age-key.sh; if the
+	// auto-run mistakenly runs, the script would touch `age.key`.
+	// Since our dry-run guard fires FIRST, the script never runs
+	// and age.key never appears.
+	repo := t.TempDir()
+	if err := os.MkdirAll(repo+"/bootstrap", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Write a real (executable) shell script that WOULD create
+	// age.key + .sops.yaml. If the dry-run guard is broken, this
+	// gets invoked and the assertion below fails.
+	script := "#!/bin/sh\ntouch age.key\n"
+	if err := os.WriteFile(repo+"/bootstrap/generate-age-key.sh", []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	args := []string{
+		"--preset=internal-only",
+		"--mode=install",
+		"--name=fresh",
+		"--domain=fresh.example.com",
+		"--node-external-ip=1.2.3.4",
+		"--email=ops@fresh",
+		"--fleet-mode=new-repo",
+		"--github-owner=acme",
+		"--github-repo=fleet",
+		"--rook-mode=rook-ceph-multi-node",
+		"--set=EXT_NET_VLAN_ID=1",
+		"--set=EXT_NET_INTERFACE=e",
+		"--dry-run",
+		"--no-tty",
+	}
+	_, err := runInitCmdWithRepo(t, repo, args)
+	// Dry-run may still error out (age-key gate returns
+	// ErrAgeKeyDryRunSkip → RunE downgrades to WARNING → but
+	// downstream may fail on preset OR the plan may render — the
+	// test's point is NOT to assert exit code, only mutation).
+	_ = err
+
+	// **Critical invariant**: `<fleet>/age.key` MUST NOT exist
+	// after a dry-run. If the guard is broken, the shell script
+	// above would have created it.
+	if _, statErr := os.Stat(repo + "/age.key"); !os.IsNotExist(statErr) {
+		t.Errorf("dry-run created <fleet>/age.key — mutation regression (P1)")
+	}
+}
+
+// M4-T05 GitLab boundary RETIRED (properly this time): the
+// coordinated `kube-dc-fleet` PR made `flux-install.sh`
+// provider-aware, so the CLI-side fail-closed is no longer
+// needed. This test guards the OPPOSITE contract: --provider=gitlab
+// with --yes should NOT trip the retired sentinel.
+//
+// Downstream still fails in a test env (no real cluster / fleet
+// scripts), but the failure must be structural, not the retired
+// sentinel. A regression back to fail-closed would trip this
+// test's `errors.Is` guard.
+func TestBootstrapInit_DefaultApply_GitLab_Proceeds(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("GH_TOKEN", "irrelevant")
+
+	args := []string{
+		"--preset=cloud+public-vlan",
+		"--mode=install",
+		"--name=gl-test",
+		"--domain=gl.example.com",
+		"--node-external-ip=1.2.3.4",
+		"--email=ops@gl.example.com",
+		"--fleet-mode=new-repo",
+		"--provider=gitlab",
+		"--github-owner=acme-group",
+		"--github-repo=kdc-fleet",
+		"--github-token=irrelevant",
+		"--rook-mode=rook-ceph-multi-node",
+		"--set=EXT_NET_VLAN_ID=1103",
+		"--set=EXT_NET_INTERFACE=bond0",
+		"--set=EXT_PUBLIC_VLAN_ID=1100",
+		"--set=EXT_PUBLIC_CIDR=217.117.26.48/29",
+		"--set=EXT_PUBLIC_GATEWAY=217.117.26.49",
+		"--yes",
+		"--no-tty",
+		"--allow-dns-not-ready",
+	}
+	_, err := runInitCmd(t, args)
+	// A downstream error is expected (test env has no real cluster
+	// / fleet); we care only that the pre-retire fail-closed text
+	// isn't surfacing (that would mean the boundary got reinstated
+	// somewhere). Text-level guard because the ErrGitLabApplyNotImplemented
+	// sentinel is deleted — assert on the pre-fix message shape.
+	if err != nil && strings.Contains(err.Error(), "not yet supported on the apply path") {
+		t.Fatalf("GitLab boundary retired but still firing (regression): %v", err)
+	}
+}
+
+// M4-T05 dry-run stays unaffected by the GitLab boundary — the
+// operator can preview a GitLab-shaped plan without triggering
+// the fail-closed sentinel (no side effects → no boundary).
+func TestBootstrapInit_DryRun_GitLab_Allowed(t *testing.T) {
+	args := []string{
+		"--preset=cloud+public-vlan",
+		"--mode=install",
+		"--name=gl-preview",
+		"--domain=gl.example.com",
+		"--node-external-ip=1.2.3.4",
+		"--email=ops@gl.example.com",
+		"--fleet-mode=new-repo",
+		"--provider=gitlab",
+		"--github-owner=acme-group",
+		"--github-repo=kdc-fleet",
+		"--rook-mode=rook-ceph-multi-node",
+		"--set=EXT_NET_VLAN_ID=1103",
+		"--set=EXT_NET_INTERFACE=bond0",
+		"--set=EXT_PUBLIC_VLAN_ID=1100",
+		"--set=EXT_PUBLIC_CIDR=217.117.26.48/29",
+		"--set=EXT_PUBLIC_GATEWAY=217.117.26.49",
+		"--dry-run",
+		"--no-tty",
+	}
+	body, err := runInitCmd(t, args)
+	if err != nil {
+		// The M4-T09 age-key gate downgrades to a WARNING on
+		// dry-run for new-repo, so we should get a clean plan back.
+		t.Fatalf("dry-run + gitlab should succeed, got %v; output:\n%s", err, body)
+	}
+	// The GitLab boundary MUST NOT fire on dry-run.
+	if strings.Contains(body, "not yet supported on the apply path") {
+		t.Errorf("dry-run should skip the gitlab boundary; output:\n%s", body)
+	}
+	// A dry-run plan render happened.
+	if !strings.Contains(body, "DRY RUN") {
+		t.Errorf("expected dry-run banner; output:\n%s", body)
+	}
+}
+
+// NOTE (M4-T05): the greenfield age-key gate now auto-runs
+// `bootstrap/generate-age-key.sh` on new-repo mode (M4-T09 close,
+// SHA `1ace3c9d`), so runApplyEngine IS reachable in a test env
+// that seeds the fleet-starter shape. Full end-to-end coverage
+// (create-repo → scaffold → commit+push → flux-install with a
+// stubbed ScriptRunner) is a nice-to-have but out of scope; the
+// CreateGitHubRepo engine already has thorough unit coverage in
+// create_repo_test.go (happy path / already-exists / auth
+// failure / token scrub / missing-deps).
+
 func TestBootstrapInit_ApplyPlan_RefusesOnInputDrift(t *testing.T) {
+	// Same --repo across both runs — only the substantive inputs
+	// drift (the test's intent).
 	// Same --repo across both runs — only the substantive inputs
 	// drift (the test's intent).
 	repo := setupValidFleet(t)
@@ -432,7 +597,15 @@ func TestBootstrapInit_FlagConflicts(t *testing.T) {
 		},
 		{
 			name: "fleet-mode=new-repo without github-owner",
-			args: replaceFlag(filterFlag(validCloudacropolisArgs(), "--fleet-mode=existing-fleet"),
+			// Filter out the baseline's --github-owner + --github-repo
+			// (added by validCloudacropolisArgs post the M4-T05 P2
+			// close) so we reach the actual "missing owner" case.
+			args: replaceFlag(
+				filterFlag(
+					filterFlag(
+						filterFlag(validCloudacropolisArgs(), "--fleet-mode=existing-fleet"),
+						"--github-owner=kube-dc"),
+					"--github-repo=kube-dc-fleet"),
 				"", "--fleet-mode=new-repo"),
 			wantSub: "github-owner",
 			wantErr: clusterinit.ErrFleetModeNewRepo,
@@ -558,9 +731,10 @@ func TestBootstrapInit_GitHubTokenNeverInOutput(t *testing.T) {
 	})
 
 	t.Run("new-repo dry-run path", func(t *testing.T) {
-		// Even with new-repo (which currently returns
-		// ErrAgeKeyGenerateNotImplemented at apply-time), the
-		// dry-run path downgrades that to a warning so the plan
+		// new-repo dry-run: the greenfield age-key gate's
+		// mutations-allowed=false branch (M4-T09 close) surfaces
+		// ErrAgeKeyDryRunSkip when `<fleet>/age.key` is missing,
+		// which RunE downgrades to a WARNING so the plan
 		// renders. The token must not appear anywhere in the
 		// resulting output.
 		args := append(filterFlag(validCloudacropolisArgs(), "--fleet-mode=existing-fleet"),

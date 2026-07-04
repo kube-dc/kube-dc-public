@@ -73,6 +73,19 @@ type StatusResult struct {
 	// that Phase C hasn't been run (init bailed after B, or the
 	// cluster is a pre-M5-T08 legacy install).
 	ControllerAuthInstalled string
+
+	// PolicyGenerationInstalled is the value of the M5-T07
+	// kube-dc.com/openbao-policy-generation annotation. Zero when
+	// the annotation is absent — either a legacy install pre-M5-T07
+	// or setup-controller-auth has never run. Compare against
+	// PolicyGenerationExpected via HasPolicyGenerationDrift.
+	PolicyGenerationInstalled int
+
+	// PolicyGenerationExpected is the compile-time PolicyGeneration
+	// constant this binary knows how to install. Snapshotted at
+	// Status() call time so consumers rendering the result don't
+	// have to import the openbao package to compare.
+	PolicyGenerationExpected int
 }
 
 // AnySealed returns true when at least one pod reports Sealed=true.
@@ -126,6 +139,13 @@ func (r StatusResult) AllUninitialized() bool {
 // FullyReady returns true iff every pod is Initialized + unsealed
 // AND both annotation markers are present. The canonical "green"
 // state the cobra layer maps to exit 0.
+//
+// **Policy-generation drift is NOT included in FullyReady** — the
+// M5-T07 plan says the CLI never blocks on drift; the operator
+// decides when to run refresh-policy. So a cluster with drift but
+// otherwise green stays exit 0; the drift shows up as an
+// operator-visible advisory line in the status renderer + doctor
+// probe, but doesn't change the CI gate contract.
 func (r StatusResult) FullyReady() bool {
 	if len(r.Pods) == 0 {
 		return false
@@ -134,6 +154,17 @@ func (r StatusResult) FullyReady() bool {
 		return false
 	}
 	return r.BootstrapFinalized != "" && r.ControllerAuthInstalled != ""
+}
+
+// HasPolicyGenerationDrift returns true iff the compile-time
+// PolicyGeneration is ahead of the annotation-stamped value —
+// signals the operator should run `openbao setup-controller-auth
+// --refresh-policy` to close the gap. Zero installed with expected
+// >= 1 counts as drift (legacy install pre-M5-T07); the render + doctor
+// probe describe that case with slightly different language than
+// the "you're on N-1" case but both take the same recovery action.
+func (r StatusResult) HasPolicyGenerationDrift() bool {
+	return r.PolicyGenerationExpected > r.PolicyGenerationInstalled
 }
 
 // --- Errors ---
@@ -205,6 +236,20 @@ func Status(ctx context.Context, opts StatusOptions) (StatusResult, error) {
 		return StatusResult{}, fmt.Errorf("openbao status: read %s: %w", AnnotationControllerAuthInstalled, err)
 	}
 	res.ControllerAuthInstalled = cai
+
+	// M5-T07 policy-generation drift signal. Adapter/parse errors
+	// surface (same posture as the other annotations — a hard read
+	// failure would make the drift-vs-current comparison misleading);
+	// a MISSING annotation returns (0, nil) from
+	// ReadPolicyGenerationInstalled, which correctly represents
+	// "legacy install / never stamped" and lets the render display
+	// drift against expected >= 1.
+	installed, err := ReadPolicyGenerationInstalled(ctx, opts.OpenBao)
+	if err != nil {
+		return StatusResult{}, fmt.Errorf("openbao status: %w", err)
+	}
+	res.PolicyGenerationInstalled = installed
+	res.PolicyGenerationExpected = PolicyGeneration
 
 	return res, nil
 }

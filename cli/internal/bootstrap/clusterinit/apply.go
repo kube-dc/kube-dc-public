@@ -84,10 +84,26 @@ type ApplyOptions struct {
 	// Git is the GitClient for the atomic commit + push transaction.
 	Git ports.GitClient
 
-	// GitHubToken is the PAT used by CommitAndPush. Empty for
-	// --no-push paths or genuinely-public repos (rare in this
-	// product). Never logged.
+	// GitHubToken is the PAT used by CommitAndPush + flux-install.sh.
+	// Empty for --no-push paths or genuinely-public repos (rare in
+	// this product). Never logged. Despite the name, carries the
+	// token for the SELECTED Provider — see Provider field below.
 	GitHubToken string
+
+	// Provider selects the remote-repo hosting service for the
+	// flux-install.sh dispatch. Empty defaults to GitHub. Feeds the
+	// `KUBE_DC_PROVIDER` env var passed to the fleet script (which
+	// dispatches `flux bootstrap github` vs `flux bootstrap gitlab`
+	// accordingly).
+	Provider Provider
+
+	// GitHubOwner / GitHubRepo are the fleet-repo coordinates on
+	// the selected provider — piped through as `GITHUB_OWNER` /
+	// `GITHUB_REPO` env vars to `flux-install.sh` (env var names
+	// kept for backward compat; the fleet script reads them
+	// regardless of provider).
+	GitHubOwner string
+	GitHubRepo  string
 
 	// NoPush skips the push step. The local commit still lands;
 	// flux-install is also skipped because Flux can't reconcile
@@ -270,12 +286,44 @@ func pushedSuffix(noPush bool) string {
 }
 
 // runFluxInstall executes bootstrap/flux-install.sh via the
-// supplied ScriptRunner. Args: `<cluster-name> --new-cluster`. No
-// secret-redaction step (flux-install doesn't echo passwords;
-// add-cluster.sh's redactor is specific to that script's output).
+// supplied ScriptRunner. Args: `<cluster-name> --new-cluster`.
+// Passes provider + owner/repo/token via env — the fleet script
+// dispatches `flux bootstrap github` vs `flux bootstrap gitlab`
+// based on `KUBE_DC_PROVIDER`. No secret-redaction step
+// (flux-install doesn't echo passwords; add-cluster.sh's redactor
+// is specific to that script's output).
 func runFluxInstall(ctx context.Context, opts ApplyOptions, out io.Writer) error {
 	fmt.Fprintln(out, "[apply] running flux-install.sh")
-	lines, err := opts.Runner.Run(ctx, ports.ScriptFluxInstall, nil, opts.Plan.ClusterName, "--new-cluster")
+
+	// Provider dispatch — default (empty) → github for backward
+	// compat with pre-multi-provider callers. The env var name is
+	// `KUBE_DC_PROVIDER`; matches the fleet script's expectation.
+	provider := opts.Provider
+	if provider == "" {
+		provider = ProviderGitHub
+	}
+	env := map[string]string{
+		"KUBE_DC_PROVIDER": string(provider),
+	}
+	if opts.GitHubOwner != "" {
+		env["GITHUB_OWNER"] = opts.GitHubOwner
+	}
+	if opts.GitHubRepo != "" {
+		env["GITHUB_REPO"] = opts.GitHubRepo
+	}
+	// Token env var name differs per provider. Set the appropriate
+	// one so the fleet script's auth branch reads it directly; the
+	// script also has a CLI-auth fallback (`gh`/`glab`) but env is
+	// authoritative when we resolved a token upstream.
+	if opts.GitHubToken != "" {
+		if provider == ProviderGitLab {
+			env["GITLAB_TOKEN"] = opts.GitHubToken
+		} else {
+			env["GITHUB_TOKEN"] = opts.GitHubToken
+		}
+	}
+
+	lines, err := opts.Runner.Run(ctx, ports.ScriptFluxInstall, env, opts.Plan.ClusterName, "--new-cluster")
 	if err != nil {
 		return fmt.Errorf("start flux-install.sh: %w", err)
 	}

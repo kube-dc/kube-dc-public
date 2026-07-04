@@ -259,6 +259,7 @@ type inputsForHash struct {
 	Email            string            `json:"email"`
 	FleetMode        FleetMode         `json:"fleetMode"`
 	Repo             string            `json:"repo"`
+	Provider         Provider          `json:"provider,omitempty"`
 	GitHubOwner      string            `json:"githubOwner"`
 	GitHubRepo       string            `json:"githubRepo"`
 	Sets             map[string]string `json:"sets,omitempty"`
@@ -278,6 +279,17 @@ type inputsForHash struct {
 	OpenBaoSharesOut string            `json:"openbaoSharesOut"`
 }
 
+// normalizeProviderForHash collapses explicit `github` to the
+// default empty form so the input hash treats them as equivalent.
+// GitLab surfaces verbatim (non-default → must participate in
+// the hash so gitlab-plan / github-apply drift IS caught).
+func normalizeProviderForHash(p Provider) Provider {
+	if p == ProviderGitHub {
+		return ""
+	}
+	return p
+}
+
 func (o *InitOptions) inputsForHash() inputsForHash {
 	return inputsForHash{
 		Preset:           o.Preset,
@@ -288,6 +300,15 @@ func (o *InitOptions) inputsForHash() inputsForHash {
 		Email:            o.Email,
 		FleetMode:        o.FleetMode,
 		Repo:             o.Repo,
+		// P3: normalize explicit `github` → empty so the default
+		// (empty) and the explicit form hash IDENTICALLY. Without
+		// this, an operator who dry-runs against the implicit
+		// default and then passes --provider=github at apply time
+		// (or vice versa) would trip ErrPlanInputDrift with no
+		// semantic change. Only non-default providers surface in
+		// the hash. Combined with `json:"provider,omitempty"` the
+		// canonical JSON omits the field for the default case.
+		Provider:         normalizeProviderForHash(o.Provider),
 		GitHubOwner:      o.GitHubOwner,
 		GitHubRepo:       o.GitHubRepo,
 		Sets:             o.Sets,

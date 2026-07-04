@@ -74,12 +74,13 @@ type scriptContract struct {
 //   - generate-age-key.sh / add-cluster.sh / add-engineer.sh /
 //     install-prerequisites.sh / dump-cluster-state.sh: their
 //     own `Usage:` headers + body env lookups.
-//   - flux-install.sh: header "Requires: KUBECONFIG, GITHUB_TOKEN".
-//     `gh auth token` is honoured as a GITHUB_TOKEN fallback inside
-//     the script, but we require the env key because the script's
-//     own `if [[ -z $GITHUB_TOKEN ]]` exits non-zero when neither
-//     is available — the validation should match that contract,
-//     not the looser `gh auth token` path.
+//   - flux-install.sh: header "Requires: KUBECONFIG, provider PAT".
+//     KUBECONFIG is universally required; the token env var is
+//     provider-conditional (GITHUB_TOKEN for github, GITLAB_TOKEN
+//     for gitlab). Both are OPTIONAL in the contract table so a
+//     KUBE_DC_PROVIDER=gitlab preflight isn't refused for missing
+//     GITHUB_TOKEN; the fleet script's own auth branch enforces
+//     the right one is present based on KUBE_DC_PROVIDER.
 //   - openbao-init.sh: needs KUBECONFIG to exec into the openbao
 //     pod; NAMESPACE/POD/KEY_SHARES/KEY_THRESHOLD are knobs with
 //     sensible defaults.
@@ -116,8 +117,15 @@ var scriptContracts = map[ports.ScriptKind]scriptContract{
 		argDesc: "<name> <domain> <node-external-ip> [<kubeconfig-path>]",
 	},
 	ports.ScriptFluxInstall: {
-		requiredEnv: []string{"GITHUB_TOKEN", "KUBECONFIG"},
-		optionalEnv: []string{"GITHUB_OWNER", "GITHUB_REPO"},
+		// Only KUBECONFIG is universally required. Token env is
+		// provider-conditional (GITHUB_TOKEN for github, GITLAB_TOKEN
+		// for gitlab); the fleet script's own auth branch enforces
+		// the right one is set based on KUBE_DC_PROVIDER. Keeping
+		// both as OPTIONAL here so a preflight against a
+		// KUBE_DC_PROVIDER=gitlab run doesn't spuriously refuse for
+		// missing GITHUB_TOKEN.
+		requiredEnv: []string{"KUBECONFIG"},
+		optionalEnv: []string{"GITHUB_TOKEN", "GITLAB_TOKEN", "KUBE_DC_PROVIDER", "GITHUB_OWNER", "GITHUB_REPO"},
 		minArgs:     1,
 		maxArgs:     2,
 		argDesc:     "<cluster-name> [--new-cluster]",

@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
@@ -45,6 +46,12 @@ func ExtractThresholdShares(decrypted []byte) ([][]byte, error) {
 // change across chart upgrades). The policies + roles ARE rewritten
 // even on Refresh because chart upgrades may extend HCL paths or
 // rotate role params (SA names, TTLs, namespaces).
+//
+// M5-T07: The AnnotationPolicyGeneration stamp is written on BOTH
+// modes — the whole point of Refresh is to close policy-generation
+// drift, so it MUST bump the installed marker. Pre-M5-T07 the
+// stamp was Full-only; that meant `refresh-policy` runs left the
+// stamp untouched and drift never cleared. See policy_generation.go.
 type RefreshMode int
 
 const (
@@ -146,15 +153,31 @@ func SetupControllerAuth(ctx context.Context, opts SetupControllerAuthOptions) e
 		return fmt.Errorf("write role %s: %w", DBManagerRoleName, err)
 	}
 
+	// Step 7 — annotation stamps. Two markers:
+	//
+	//   - AnnotationControllerAuthInstalled (RFC3339 timestamp of last
+	//     Full run) — Full mode only. Refresh runs preserve the
+	//     original timestamp (Refresh doesn't re-run auth-enable /
+	//     -configure, so the "when did controller-auth become
+	//     truthfully installed" answer is unchanged).
+	//
+	//   - AnnotationPolicyGeneration (M5-T07 compile-time generation
+	//     integer) — BOTH modes. Refresh's whole purpose is to close
+	//     policy-generation drift; skipping the stamp on Refresh
+	//     would leave drift persistent even after a successful
+	//     refresh-policy run. Full mode also stamps so the initial
+	//     install-time annotation is present.
+	stamps := map[string]string{
+		AnnotationPolicyGeneration: strconv.Itoa(PolicyGeneration),
+	}
 	if opts.RefreshMode == RefreshFull {
-		// Step 7
 		stamp := time.Now().UTC().Format(time.RFC3339)
+		stamps[AnnotationControllerAuthInstalled] = stamp
 		fmt.Fprintf(out, "[openbao] stamping %s=%s on svc/openbao\n", AnnotationControllerAuthInstalled, stamp)
-		if err := opts.OpenBao.SetAnnotations(ctx, "openbao", map[string]string{
-			AnnotationControllerAuthInstalled: stamp,
-		}); err != nil {
-			return fmt.Errorf("annotate svc/openbao: %w", err)
-		}
+	}
+	fmt.Fprintf(out, "[openbao] stamping %s=%d on svc/openbao\n", AnnotationPolicyGeneration, PolicyGeneration)
+	if err := opts.OpenBao.SetAnnotations(ctx, "openbao", stamps); err != nil {
+		return fmt.Errorf("annotate svc/openbao: %w", err)
 	}
 
 	fmt.Fprintln(out, "[openbao] controller-auth setup complete")

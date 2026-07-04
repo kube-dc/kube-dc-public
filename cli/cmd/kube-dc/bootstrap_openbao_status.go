@@ -122,6 +122,25 @@ func renderOpenBaoStatus(out io.Writer, r openbao.StatusResult) {
 	fmt.Fprintln(out, "Service annotations (svc/openbao):")
 	fmt.Fprintf(out, "  bootstrap-finalized:       %s\n", displayAnnotation(r.BootstrapFinalized))
 	fmt.Fprintf(out, "  controller-auth-installed: %s\n", displayAnnotation(r.ControllerAuthInstalled))
+	// M5-T07 policy-generation display. `installed=0` renders as
+	// `<absent>` so operators eyeballing the line see the drift
+	// unmistakably; non-zero renders the number so drift shows as a
+	// simple lower value.
+	installedStr := "<absent>"
+	if r.PolicyGenerationInstalled > 0 {
+		installedStr = fmt.Sprintf("%d", r.PolicyGenerationInstalled)
+	}
+	if r.HasPolicyGenerationDrift() {
+		// Include the cluster name — `setup-controller-auth` requires
+		// it as a positional arg, so a bare `setup-controller-auth
+		// --refresh-policy` would fail cobra.ExactArgs and leave the
+		// operator hunting for the missing bit.
+		fmt.Fprintf(out, "  policy-generation:         %d expected / %s installed  ── DRIFT: run `kube-dc bootstrap openbao setup-controller-auth %s --refresh-policy`\n",
+			r.PolicyGenerationExpected, installedStr, r.ClusterName)
+	} else {
+		fmt.Fprintf(out, "  policy-generation:         %d expected / %s installed  ── up to date\n",
+			r.PolicyGenerationExpected, installedStr)
+	}
 
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Pods:")

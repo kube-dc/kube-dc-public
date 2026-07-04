@@ -53,6 +53,8 @@ KUBE_DC_FLEET environment variable.`,
 		"Path to a local kube-dc-fleet checkout (defaults to $KUBE_DC_FLEET, then ~/.kube-dc/fleet)")
 
 	cmd.AddCommand(bootstrapKubeconfigCmd(&fleetRepo))
+	cmd.AddCommand(bootstrapFetchKubeconfigCmd(&fleetRepo))
+	cmd.AddCommand(bootstrapInstallPrereqsCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapContextCmd())
 	cmd.AddCommand(bootstrapBreakGlassCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapDoctorCmd(&fleetRepo))

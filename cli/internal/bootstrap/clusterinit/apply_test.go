@@ -178,6 +178,92 @@ func cloudacropolisApplyOpts(t *testing.T, repo string, runner ports.ScriptRunne
 	}
 }
 
+// M4-T05 GitLab close: runFluxInstall MUST propagate provider +
+// owner/repo/token env to the fleet script so `flux-install.sh`
+// can dispatch `flux bootstrap gitlab` vs `flux bootstrap github`.
+// Default (empty Provider) → KUBE_DC_PROVIDER=github + GITHUB_TOKEN.
+func TestApply_FluxInstall_GitHubEnv_Propagated(t *testing.T) {
+	repo := applyFleet(t)
+	runner := applyRunner(t, repo)
+	git := &fakeGit{preSHA: "abc123"}
+	opts := cloudacropolisApplyOpts(t, repo, runner, git)
+	opts.Provider = "" // default → github
+	opts.GitHubOwner = "acme"
+	opts.GitHubRepo = "fleet"
+	opts.GitHubToken = "ghp_TEST123"
+	if err := Apply(context.Background(), opts); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	// Find the flux-install call in the runner's log — it's the
+	// call to ScriptFluxInstall.
+	var fluxCall *fakeScriptCall
+	for i := range runner.calls {
+		if runner.calls[i].Kind == ports.ScriptFluxInstall {
+			fluxCall = &runner.calls[i]
+			break
+		}
+	}
+	if fluxCall == nil {
+		t.Fatalf("no flux-install call in runner log")
+	}
+	if got := fluxCall.Env["KUBE_DC_PROVIDER"]; got != "github" {
+		t.Errorf("KUBE_DC_PROVIDER = %q, want github", got)
+	}
+	if got := fluxCall.Env["GITHUB_OWNER"]; got != "acme" {
+		t.Errorf("GITHUB_OWNER = %q, want acme", got)
+	}
+	if got := fluxCall.Env["GITHUB_REPO"]; got != "fleet" {
+		t.Errorf("GITHUB_REPO = %q, want fleet", got)
+	}
+	if got := fluxCall.Env["GITHUB_TOKEN"]; got != "ghp_TEST123" {
+		t.Errorf("GITHUB_TOKEN = %q, want ghp_TEST123", got)
+	}
+	if _, gitlab := fluxCall.Env["GITLAB_TOKEN"]; gitlab {
+		t.Errorf("GITLAB_TOKEN should NOT be set on github provider; env=%v", fluxCall.Env)
+	}
+}
+
+// GitLab provider path: KUBE_DC_PROVIDER=gitlab + GITLAB_TOKEN (not
+// GITHUB_TOKEN). Same owner/repo env-var names (github-* naming is
+// carried as-is for backward compat).
+func TestApply_FluxInstall_GitLabEnv_Propagated(t *testing.T) {
+	repo := applyFleet(t)
+	runner := applyRunner(t, repo)
+	git := &fakeGit{preSHA: "abc123"}
+	opts := cloudacropolisApplyOpts(t, repo, runner, git)
+	opts.Provider = ProviderGitLab
+	opts.GitHubOwner = "acme-group"
+	opts.GitHubRepo = "fleet"
+	opts.GitHubToken = "glpat_TEST456"
+	if err := Apply(context.Background(), opts); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	var fluxCall *fakeScriptCall
+	for i := range runner.calls {
+		if runner.calls[i].Kind == ports.ScriptFluxInstall {
+			fluxCall = &runner.calls[i]
+			break
+		}
+	}
+	if fluxCall == nil {
+		t.Fatalf("no flux-install call in runner log")
+	}
+	if got := fluxCall.Env["KUBE_DC_PROVIDER"]; got != "gitlab" {
+		t.Errorf("KUBE_DC_PROVIDER = %q, want gitlab", got)
+	}
+	if got := fluxCall.Env["GITLAB_TOKEN"]; got != "glpat_TEST456" {
+		t.Errorf("GITLAB_TOKEN = %q, want glpat_TEST456", got)
+	}
+	if _, gh := fluxCall.Env["GITHUB_TOKEN"]; gh {
+		t.Errorf("GITHUB_TOKEN should NOT be set on gitlab provider; env=%v", fluxCall.Env)
+	}
+	if got := fluxCall.Env["GITHUB_OWNER"]; got != "acme-group" {
+		t.Errorf("GITHUB_OWNER = %q, want acme-group (backward-compat naming)", got)
+	}
+}
+
 func TestApply_HappyPath(t *testing.T) {
 	repo := applyFleet(t)
 	runner := applyRunner(t, repo)

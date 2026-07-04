@@ -396,6 +396,17 @@ func TestGenerateRoot_RevokeFail_AuditFail_ComposesErrors(t *testing.T) {
 	if !strings.Contains(err.Error(), "warning banner blocked") {
 		t.Errorf("expected audit error surfaced in composed error, got %v", err)
 	}
+	// Reviewer P2: BOTH sentinels must survive errors.Is checks.
+	// The prior single-%w wrap lost the status-audit sentinel in
+	// this "token is on stdout, warning banner was not written"
+	// case; recovery code doing `errors.Is(err,
+	// ErrGenerateRootStatusAuditFailed)` returned false and the
+	// operator couldn't dispatch on it.
+	if !errors.Is(err, ErrGenerateRootStatusAuditFailed) {
+		t.Errorf("composed error must carry ErrGenerateRootStatusAuditFailed sentinel (token is on stdout, trailer failed) — got %v", err)
+	}
+	// The revoke error itself doesn't have a public sentinel; assert
+	// via .Error() substring instead (already covered above).
 }
 
 // TestGenerateRoot_AuditWriteFails_RefusesToEmitToken — same

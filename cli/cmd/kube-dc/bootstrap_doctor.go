@@ -184,6 +184,18 @@ func assembleProbes(session *bootstrap.Session, hostProbesOn bool, domain, nodeI
 		}
 	}
 
+	// M5-T07: openbao-scope probes (currently just the policy-
+	// generation drift probe). Category is VerifiesSuggests — drift
+	// is a soft signal the CLI verifies + points at a fix
+	// (setup-controller-auth --refresh-policy); the operator decides
+	// when to run it. Nil-safe: skipped silently when no
+	// OpenBaoClient (no kubeconfig / no session).
+	if bao := openBaoFromSession(session); bao != nil {
+		for _, p := range factory.ClusterOpenBao(bao) {
+			out = append(out, doctor.CategorizedProbe{Category: doctor.CategoryVerifiesSuggests, Probe: p})
+		}
+	}
+
 	// DNS probes don't need a kubeconfig-backed session — they use
 	// the system resolver. If the session has a DNSClient (mock or
 	// real), prefer it (mock scenarios resolve against fixture
@@ -208,6 +220,16 @@ func k8sFromSession(session *bootstrap.Session) ports.K8sClient {
 		return nil
 	}
 	return session.K8s
+}
+
+// openBaoFromSession returns the session's OpenBaoClient or nil.
+// Same nil-safe convention as k8sFromSession — openbao cluster
+// probes are meaningless without a live adapter.
+func openBaoFromSession(session *bootstrap.Session) ports.OpenBaoClient {
+	if session == nil {
+		return nil
+	}
+	return session.OpenBao
 }
 
 // factoryFromSession returns the session's probe factory or a real

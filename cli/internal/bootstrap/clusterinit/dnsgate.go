@@ -36,6 +36,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/discover"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
@@ -97,6 +98,14 @@ func CheckDNSReady(ctx context.Context, opts DNSGateOptions) error {
 		return fmt.Errorf("%w: Domain and NodeExternalIP must be set", ErrDNSGateBlocked)
 	}
 
+	// M4-T08-fu1 polish: bound the two DNS probes so a misconfigured
+	// resolver / slow SERVFAIL loop can't hang the whole `bootstrap
+	// init` invocation. 10s covers a normal recursive lookup + one
+	// retry on both the wildcard + explicit-FQDN probes. Caller ctx
+	// still wins when it has a shorter deadline.
+	dnsCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
 	fmt.Fprintf(out, "[apply] DNS gate: probing *.%s → %s\n", opts.Domain, opts.NodeExternalIP)
 
 	// Primary probe: wildcard A record. The M1-T03 randomised
@@ -107,7 +116,7 @@ func CheckDNSReady(ctx context.Context, opts DNSGateOptions) error {
 	if opts.SubLabel != "" {
 		wp.SetSubLabel(opts.SubLabel)
 	}
-	r := wp.Run(ctx)
+	r := wp.Run(dnsCtx)
 	if r.Status == ports.StatusInstalled {
 		fmt.Fprintf(out, "[apply] DNS gate: PASS (wildcard) — %s\n", r.Detail)
 		return nil
@@ -119,7 +128,7 @@ func CheckDNSReady(ctx context.Context, opts DNSGateOptions) error {
 	// StatusInstalled here means ALL 5 canonical subdomains resolve
 	// and match the node IP.
 	ep := discover.NewExplicitFQDNDNSProbe(opts.Domain, opts.NodeExternalIP, opts.DNS)
-	rExplicit := ep.Run(ctx)
+	rExplicit := ep.Run(dnsCtx)
 	if rExplicit.Status == ports.StatusInstalled {
 		fmt.Fprintf(out, "[apply] DNS gate: PASS (explicit FQDNs) — %s\n", rExplicit.Detail)
 		return nil
