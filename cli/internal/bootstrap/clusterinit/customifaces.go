@@ -40,10 +40,10 @@ import (
 //	        value:
 //	          - interface: enp8s0f0
 //	            nodes:
-//	              - ams1-blade58-2
+//	              - node-d4
 //	          - interface: eno1
 //	            nodes:
-//	              - ams1-blade187-2
+//	              - node-a1
 //
 // Nodes sharing an interface are grouped (single `interface:` entry
 // with multiple `nodes:`). The output is sorted deterministically so

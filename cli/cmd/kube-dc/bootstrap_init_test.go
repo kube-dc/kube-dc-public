@@ -11,26 +11,26 @@ import (
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 )
 
-// validCloudacropolisArgs returns the canonical CLI flags for the
-// cloudacropolis bootstrap shape (M4-T01 acceptance). Used as the
+// validAtlantisArgs returns the canonical CLI flags for the
+// atlantis bootstrap shape (M4-T01 acceptance). Used as the
 // table baseline so each test case mutates one arg at a time.
 //
 // The 5 --set values are the cloud+public-vlan preset's required
-// keys (M4-T04) populated from the cloudacropolis README's CGNAT +
+// keys (M4-T04) populated from the atlantis README's CGNAT +
 // public-IP topology. Tests that exercise "missing required key"
 // paths filter --set entries out as needed.
 //
 // Note: --repo is a persistent flag on the parent `bootstrap`
 // command, not on `init` — `runInitCmd` injects it via the helper's
 // fleetRepo pointer rather than via the args slice.
-func validCloudacropolisArgs() []string {
+func validAtlantisArgs() []string {
 	return []string{
 		"--preset=cloud+public-vlan",
 		"--mode=install",
-		"--name=cloudacropolis",
-		"--domain=kdc.acropolis.example.com",
-		"--node-external-ip=217.117.26.52",
-		"--email=ops@acropolis.example.com",
+		"--name=atlantis",
+		"--domain=kdc.atlantis.example.com",
+		"--node-external-ip=203.0.113.52",
+		"--email=ops@atlantis.example.com",
 		"--fleet-mode=existing-fleet",
 		// M4-T05 P2 close: owner/repo required for any apply-path
 		// fleet mode (Validate check catches missing values when
@@ -38,13 +38,16 @@ func validCloudacropolisArgs() []string {
 		// case filter these back out).
 		"--github-owner=kube-dc",
 		"--github-repo=kube-dc-fleet",
-		"--rook-mode=rook-ceph-multi-node",
+		// Mode is required with no default (OS-1). Baseline stays
+		// `disabled` (no companion flags needed); rook-* modes are
+		// live (OS-2) — mode-specific tests override explicitly.
+		"--object-storage-mode=disabled",
 		// cloud+public-vlan preset required keys.
 		"--set=EXT_NET_VLAN_ID=1103",
 		"--set=EXT_NET_INTERFACE=bond0",
 		"--set=EXT_PUBLIC_VLAN_ID=1100",
-		"--set=EXT_PUBLIC_CIDR=217.117.26.48/29",
-		"--set=EXT_PUBLIC_GATEWAY=217.117.26.49",
+		"--set=EXT_PUBLIC_CIDR=203.0.113.48/29",
+		"--set=EXT_PUBLIC_GATEWAY=203.0.113.49",
 		"--dry-run",
 		"--no-tty",
 	}
@@ -53,7 +56,7 @@ func validCloudacropolisArgs() []string {
 // runInitCmd executes `bootstrap init` with a fresh tmpdir fleet
 // pre-provisioned: `.sops.yaml` with a known recipient + a matching
 // age key file. This is the canonical happy-path shape for the
-// cloudacropolis-style tests; M4-T09 agekey enrollment check passes
+// atlantis-style tests; M4-T09 agekey enrollment check passes
 // against it.
 //
 // Tests that need a different repo shape (no `.sops.yaml`, no key,
@@ -111,7 +114,7 @@ AGE-SECRET-KEY-1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 //   - `age.key` at the repo root with the matching secret + pubkey
 //
 // Returns the tmpdir path. Used by runInitCmd as the default --repo
-// value for the cloudacropolis-style happy-path tests.
+// value for the atlantis-style happy-path tests.
 func setupValidFleet(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -140,7 +143,7 @@ func setupValidFleet(t *testing.T) string {
 }
 
 func TestBootstrapInit_DryRun_HappyPath(t *testing.T) {
-	body, err := runInitCmd(t, validCloudacropolisArgs())
+	body, err := runInitCmd(t, validAtlantisArgs())
 	if err != nil {
 		t.Fatalf("dry-run with valid args should succeed, got %v\nout:\n%s", err, body)
 	}
@@ -149,9 +152,9 @@ func TestBootstrapInit_DryRun_HappyPath(t *testing.T) {
 	// that are stable across T04/T10/T13 refinements.
 	for _, want := range []string{
 		"DRY RUN",
-		"cloudacropolis",
+		"atlantis",
 		"Files to write",
-		"clusters/cloudacropolis/cluster-config.env",
+		"clusters/atlantis/cluster-config.env",
 		"Scripts to run",
 		"bootstrap/flux-install.sh",
 		"Cluster mutations",
@@ -168,7 +171,7 @@ func TestBootstrapInit_DryRun_HappyPath(t *testing.T) {
 func TestBootstrapInit_DryRun_PlanFileWritten(t *testing.T) {
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.json")
-	args := append(validCloudacropolisArgs(), "--plan-file="+planPath)
+	args := append(validAtlantisArgs(), "--plan-file="+planPath)
 	body, err := runInitCmd(t, args)
 	if err != nil {
 		t.Fatalf("dry-run with --plan-file should succeed, got %v\nout:\n%s", err, body)
@@ -184,8 +187,8 @@ func TestBootstrapInit_DryRun_PlanFileWritten(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadPlan: %v", err)
 	}
-	if loaded.ClusterName != "cloudacropolis" {
-		t.Errorf("loaded ClusterName = %q, want cloudacropolis", loaded.ClusterName)
+	if loaded.ClusterName != "atlantis" {
+		t.Errorf("loaded ClusterName = %q, want atlantis", loaded.ClusterName)
 	}
 }
 
@@ -206,13 +209,13 @@ func TestBootstrapInit_ApplyPlan_ReachesEngineAfterVerify(t *testing.T) {
 	// the DNS gate works (that's dnsgate_test.go). The gate itself
 	// is bypassed by the flag; the apply engine then fails at the
 	// git step since the tmpdir isn't a real repo.
-	if _, err := runInitCmdWithRepo(t, repo, append(validCloudacropolisArgs(), "--plan-file="+planPath, "--allow-dns-not-ready")); err != nil {
+	if _, err := runInitCmdWithRepo(t, repo, append(validAtlantisArgs(), "--plan-file="+planPath, "--allow-dns-not-ready")); err != nil {
 		t.Fatalf("dry-run prep: %v", err)
 	}
 
 	// Same substantive flag set (including --allow-dns-not-ready) so
 	// the InputHash matches.
-	args := filterFlag(validCloudacropolisArgs(), "--dry-run")
+	args := filterFlag(validAtlantisArgs(), "--dry-run")
 	args = append(args, "--apply-plan="+planPath, "--yes", "--allow-dns-not-ready")
 	body, err := runInitCmdWithRepo(t, repo, args)
 	if err == nil {
@@ -239,19 +242,19 @@ func TestBootstrapInit_ApplyPlan_ReachesEngineAfterVerify(t *testing.T) {
 func TestBootstrapInit_ApplyPlan_DriftBlocksEngine(t *testing.T) {
 	// Reviewer's T12-P2 carry-forward: prove that input drift
 	// prevents the engine (Scaffold/Apply) from running. The flow:
-	//   1. Dry-run with cloudacropolis flags → write plan
+	//   1. Dry-run with atlantis flags → write plan
 	//   2. Apply-plan with a DIFFERENT --set value
 	//   3. VerifyApplyPlanInput must reject before runApplyEngine
 	//      is called (engine markers should NOT appear in output)
 	repo := setupValidFleet(t)
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.json")
-	if _, err := runInitCmdWithRepo(t, repo, append(validCloudacropolisArgs(), "--plan-file="+planPath)); err != nil {
+	if _, err := runInitCmdWithRepo(t, repo, append(validAtlantisArgs(), "--plan-file="+planPath)); err != nil {
 		t.Fatalf("dry-run prep: %v", err)
 	}
 
 	// Drift: bump the EXT_NET_VLAN_ID from 1103 to 999.
-	args := filterFlag(validCloudacropolisArgs(), "--dry-run")
+	args := filterFlag(validAtlantisArgs(), "--dry-run")
 	args = filterFlag(args, "--set=EXT_NET_VLAN_ID=1103")
 	args = append(args, "--set=EXT_NET_VLAN_ID=999", "--apply-plan="+planPath, "--yes")
 	body, err := runInitCmdWithRepo(t, repo, args)
@@ -280,12 +283,12 @@ func TestBootstrapInit_ApplyPlan_RefusesOnAllowNoKubevirtEligibleDrift(t *testin
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.json")
 	// Dry-run with the flag set.
-	prep := append(validCloudacropolisArgs(), "--plan-file="+planPath, "--allow-no-kubevirt-eligible")
+	prep := append(validAtlantisArgs(), "--plan-file="+planPath, "--allow-no-kubevirt-eligible")
 	if _, err := runInitCmdWithRepo(t, repo, prep); err != nil {
 		t.Fatalf("dry-run prep: %v", err)
 	}
 	// Apply the plan WITHOUT the flag — should surface ErrPlanInputDrift.
-	args := filterFlag(validCloudacropolisArgs(), "--dry-run")
+	args := filterFlag(validAtlantisArgs(), "--dry-run")
 	args = append(args, "--apply-plan="+planPath, "--yes", "--allow-dns-not-ready")
 	_, err := runInitCmdWithRepo(t, repo, args)
 	if err == nil {
@@ -396,8 +399,8 @@ func TestBootstrapInit_DefaultApply_GitLab_Proceeds(t *testing.T) {
 		"--set=EXT_NET_VLAN_ID=1103",
 		"--set=EXT_NET_INTERFACE=bond0",
 		"--set=EXT_PUBLIC_VLAN_ID=1100",
-		"--set=EXT_PUBLIC_CIDR=217.117.26.48/29",
-		"--set=EXT_PUBLIC_GATEWAY=217.117.26.49",
+		"--set=EXT_PUBLIC_CIDR=203.0.113.48/29",
+		"--set=EXT_PUBLIC_GATEWAY=203.0.113.49",
 		"--yes",
 		"--no-tty",
 		"--allow-dns-not-ready",
@@ -428,12 +431,12 @@ func TestBootstrapInit_DryRun_GitLab_Allowed(t *testing.T) {
 		"--provider=gitlab",
 		"--github-owner=acme-group",
 		"--github-repo=kdc-fleet",
-		"--rook-mode=rook-ceph-multi-node",
+		"--object-storage-mode=disabled", // baseline: no companions needed; rook modes live (OS-2)
 		"--set=EXT_NET_VLAN_ID=1103",
 		"--set=EXT_NET_INTERFACE=bond0",
 		"--set=EXT_PUBLIC_VLAN_ID=1100",
-		"--set=EXT_PUBLIC_CIDR=217.117.26.48/29",
-		"--set=EXT_PUBLIC_GATEWAY=217.117.26.49",
+		"--set=EXT_PUBLIC_CIDR=203.0.113.48/29",
+		"--set=EXT_PUBLIC_GATEWAY=203.0.113.49",
 		"--dry-run",
 		"--no-tty",
 	}
@@ -471,15 +474,15 @@ func TestBootstrapInit_ApplyPlan_RefusesOnInputDrift(t *testing.T) {
 	repo := setupValidFleet(t)
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.json")
-	if _, err := runInitCmdWithRepo(t, repo, append(validCloudacropolisArgs(), "--plan-file="+planPath)); err != nil {
+	if _, err := runInitCmdWithRepo(t, repo, append(validAtlantisArgs(), "--plan-file="+planPath)); err != nil {
 		t.Fatalf("dry-run prep: %v", err)
 	}
 	// Mutate the inputs between dry-run and apply — different
 	// --node-external-ip. VerifyApplyPlanInput must catch this and
 	// surface ErrPlanInputDrift.
-	args := filterFlag(validCloudacropolisArgs(), "--dry-run")
-	args = filterFlag(args, "--node-external-ip=217.117.26.52")
-	args = append(args, "--node-external-ip=217.117.26.53", "--apply-plan="+planPath, "--yes")
+	args := filterFlag(validAtlantisArgs(), "--dry-run")
+	args = filterFlag(args, "--node-external-ip=203.0.113.52")
+	args = append(args, "--node-external-ip=203.0.113.53", "--apply-plan="+planPath, "--yes")
 	_, err := runInitCmdWithRepo(t, repo, args)
 	if err == nil {
 		t.Fatal("input drift must be rejected, got nil err")
@@ -498,10 +501,10 @@ func TestBootstrapInit_DefaultApply_ReachesEngine(t *testing.T) {
 	// not to test Apply itself (that's covered by the engine-
 	// level fakeGit tests). --allow-dns-not-ready bypasses the
 	// M4-T08 DNS gate so the test isn't dependent on real DNS
-	// resolution of the placeholder cloudacropolis domain. The
+	// resolution of the placeholder atlantis domain. The
 	// M6-T05 NFD gate soft-skips on nil K8sClient (test env has
 	// no kubeconfig) so it never fires here.
-	args := validCloudacropolisArgs()
+	args := validAtlantisArgs()
 	args = append(filterFlag(args, "--dry-run"), "--yes", "--allow-dns-not-ready")
 	body, err := runInitCmd(t, args)
 	if err == nil {
@@ -529,7 +532,7 @@ func TestBootstrapInit_DefaultApply_ReachesEngine(t *testing.T) {
 // fails with ErrDNSGateBlocked BEFORE reaching the apply engine.
 // Complementary regression to the "reaches engine" test above.
 func TestBootstrapInit_DefaultApply_DNSGateBlocksWithoutOptOut(t *testing.T) {
-	args := validCloudacropolisArgs()
+	args := validAtlantisArgs()
 	args = append(filterFlag(args, "--dry-run"), "--yes")
 	// Deliberately NO --allow-dns-not-ready — the gate should fire.
 	body, err := runInitCmd(t, args)
@@ -566,7 +569,7 @@ func TestBootstrapInit_DefaultApply_DNSGateBlocksWithoutOptOut(t *testing.T) {
 func TestBootstrapInit_ApplyPlan_NotImplemented(t *testing.T) {
 	// Apply-plan with a non-existent file errors at LoadPlan time;
 	// the error chain mentions load failure, not the engine.
-	args := validCloudacropolisArgs()
+	args := validAtlantisArgs()
 	args = filterFlag(args, "--dry-run")
 	args = append(args, "--apply-plan=/tmp/does-not-exist-fake-plan.json")
 	body, err := runInitCmd(t, args)
@@ -590,7 +593,7 @@ func TestBootstrapInit_FlagConflicts(t *testing.T) {
 	}{
 		{
 			name: "dry-run + apply-plan rejected",
-			args: append(validCloudacropolisArgs(), "--apply-plan=/tmp/p.json"),
+			args: append(validAtlantisArgs(), "--apply-plan=/tmp/p.json"),
 			// Validate's "mutually exclusive" error wraps ErrValidation.
 			wantSub: "mutually exclusive",
 			wantErr: clusterinit.ErrValidation,
@@ -598,12 +601,12 @@ func TestBootstrapInit_FlagConflicts(t *testing.T) {
 		{
 			name: "fleet-mode=new-repo without github-owner",
 			// Filter out the baseline's --github-owner + --github-repo
-			// (added by validCloudacropolisArgs post the M4-T05 P2
+			// (added by validAtlantisArgs post the M4-T05 P2
 			// close) so we reach the actual "missing owner" case.
 			args: replaceFlag(
 				filterFlag(
 					filterFlag(
-						filterFlag(validCloudacropolisArgs(), "--fleet-mode=existing-fleet"),
+						filterFlag(validAtlantisArgs(), "--fleet-mode=existing-fleet"),
 						"--github-owner=kube-dc"),
 					"--github-repo=kube-dc-fleet"),
 				"", "--fleet-mode=new-repo"),
@@ -612,44 +615,44 @@ func TestBootstrapInit_FlagConflicts(t *testing.T) {
 		},
 		{
 			name: "no-tty without --yes/--apply-plan/--dry-run",
-			args: replaceFlag(filterFlag(validCloudacropolisArgs(), "--dry-run"), "", ""),
+			args: replaceFlag(filterFlag(validAtlantisArgs(), "--dry-run"), "", ""),
 			// Just --no-tty and no satisfier — Validate refuses.
 			wantSub: "--no-tty requires",
 			wantErr: clusterinit.ErrApplyGate,
 		},
 		{
 			name:    "bad preset",
-			args:    replaceFlag(validCloudacropolisArgs(), "--preset=cloud+public-vlan", "--preset=bogus"),
+			args:    replaceFlag(validAtlantisArgs(), "--preset=cloud+public-vlan", "--preset=bogus"),
 			wantSub: "--preset",
 			wantErr: clusterinit.ErrValidation,
 		},
 		{
 			name:    "bad mode",
-			args:    replaceFlag(validCloudacropolisArgs(), "--mode=install", "--mode=upgrade"),
+			args:    replaceFlag(validAtlantisArgs(), "--mode=install", "--mode=upgrade"),
 			wantSub: "--mode",
 			wantErr: clusterinit.ErrValidation,
 		},
 		{
 			name:    "bad domain",
-			args:    replaceFlag(validCloudacropolisArgs(), "--domain=kdc.acropolis.example.com", "--domain=localhost"),
+			args:    replaceFlag(validAtlantisArgs(), "--domain=kdc.atlantis.example.com", "--domain=localhost"),
 			wantSub: "--domain",
 			wantErr: clusterinit.ErrValidation,
 		},
 		{
 			name:    "bad IP",
-			args:    replaceFlag(validCloudacropolisArgs(), "--node-external-ip=217.117.26.52", "--node-external-ip=not-an-ip"),
+			args:    replaceFlag(validAtlantisArgs(), "--node-external-ip=203.0.113.52", "--node-external-ip=not-an-ip"),
 			wantSub: "not a valid IP",
 			wantErr: clusterinit.ErrValidation,
 		},
 		{
 			name:    "lowercase set rejected",
-			args:    append(validCloudacropolisArgs(), "--set=domain=foo.example.com"),
+			args:    append(validAtlantisArgs(), "--set=domain=foo.example.com"),
 			wantSub: "SCREAMING_SNAKE_CASE",
 			wantErr: clusterinit.ErrValidation,
 		},
 		{
 			name:    "unknown addon rejected",
-			args:    append(validCloudacropolisArgs(), "--addon=cilium"),
+			args:    append(validAtlantisArgs(), "--addon=cilium"),
 			wantSub: "not in registry",
 			wantErr: clusterinit.ErrValidation,
 		},
@@ -679,11 +682,11 @@ func TestBootstrapInit_RepeatableFlags(t *testing.T) {
 	// it now fails closed (see TestBootstrapInit_Addon_FailsClosed);
 	// its repeatable-parsing is covered by the unknown-addon case in
 	// FlagConflicts.
-	args := append(validCloudacropolisArgs(),
+	args := append(validAtlantisArgs(),
 		"--set=PROM_STORAGE=50Gi",
 		"--set=PROM_RETENTION=730d",
-		"--node-nic=SRV5-Kub1=enp1s0",
-		"--node-nic=SRV6-Kub1=enp1s0",
+		"--node-nic=HOST5-A=enp1s0",
+		"--node-nic=HOST6-A=enp1s0",
 	)
 	body, err := runInitCmd(t, args)
 	if err != nil {
@@ -724,7 +727,7 @@ func TestBootstrapInit_Addon_FailsClosed(t *testing.T) {
 	// operator gets the actionable manual-path message. This fires even
 	// under --dry-run (a plan preview with phantom addons would be the
 	// same lie).
-	args := append(validCloudacropolisArgs(), "--addon=metallb")
+	args := append(validAtlantisArgs(), "--addon=metallb")
 	_, err := runInitCmd(t, args)
 	if err == nil {
 		t.Fatal("expected --addon to fail closed, got nil")
@@ -734,6 +737,168 @@ func TestBootstrapInit_Addon_FailsClosed(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "addons.yaml") {
 		t.Errorf("error should point at the manual addons.yaml path, got %q", err.Error())
+	}
+}
+
+// --- OS-1 object-storage mode surface -------------------------------
+
+// filterArgs drops any arg with the given prefix from a copy of args.
+func filterArgs(args []string, prefix string) []string {
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		if strings.HasPrefix(a, prefix) {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+func TestBootstrapInit_ObjectStorageMode_Required(t *testing.T) {
+	// No mode at all → typed required error. No sibling in the
+	// default fixture fleet → no hint suffix.
+	args := filterArgs(validAtlantisArgs(), "--object-storage-mode")
+	_, err := runInitCmd(t, args)
+	if !errors.Is(err, clusterinit.ErrObjectStorageModeRequired) {
+		t.Fatalf("expected ErrObjectStorageModeRequired, got %v", err)
+	}
+	if strings.Contains(err.Error(), "template sibling") {
+		t.Errorf("no-sibling fleet should not produce a hint, got %q", err.Error())
+	}
+}
+
+func TestBootstrapInit_ObjectStorageMode_RequiredWithSiblingHint(t *testing.T) {
+	// Existing-fleet with a template sibling running rook-ceph-pvc →
+	// the required error carries the hint (design call 2026-07-04:
+	// hint, never inherit).
+	repo := setupValidFleet(t)
+	sib := filepath.Join(repo, "clusters", "eudc1")
+	if err := os.MkdirAll(filepath.Join(sib, "object-storage"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sib, "cluster-config.env"),
+		[]byte("CLUSTER_NAME=eudc1\nDOMAIN=kdc.eu-dc1.example.com\nKUBE_DC_VERSION=v0.3.90\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	overlay := "apiVersion: kustomize.config.k8s.io/v1beta1\n" +
+		"kind: Kustomization\n" +
+		"resources:\n" +
+		"  - ../../../infrastructure/object-storage/modes/rook-ceph-pvc\n" +
+		"  - ../../../infrastructure/object-storage/bucket-provisioning\n"
+	if err := os.WriteFile(filepath.Join(sib, "object-storage", "kustomization.yaml"),
+		[]byte(overlay), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	args := filterArgs(validAtlantisArgs(), "--object-storage-mode")
+	_, err := runInitCmdWithRepo(t, repo, args)
+	if !errors.Is(err, clusterinit.ErrObjectStorageModeRequired) {
+		t.Fatalf("expected ErrObjectStorageModeRequired, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "template sibling eudc1 uses rook-ceph-pvc") {
+		t.Errorf("expected sibling hint in error, got %q", err.Error())
+	}
+}
+
+func TestBootstrapInit_ObjectStorageMode_DeprecatedAliasWorks(t *testing.T) {
+	// --rook-mode still binds for one release (pflag prints the
+	// deprecation notice); disabled via the alias must behave exactly
+	// like the canonical flag.
+	args := append(filterArgs(validAtlantisArgs(), "--object-storage-mode"),
+		"--rook-mode=disabled")
+	body, err := runInitCmd(t, args)
+	if err != nil {
+		t.Fatalf("alias should work, got %v\nout:\n%s", err, body)
+	}
+	if !strings.Contains(body, "DRY RUN") {
+		t.Errorf("expected plan render via alias\nFULL:\n%s", body)
+	}
+}
+
+func TestBootstrapInit_ObjectStorageMode_AliasConflict(t *testing.T) {
+	// Both flags with DIFFERENT values → hard error (silently
+	// preferring either would surprise).
+	args := append(validAtlantisArgs(), "--rook-mode=rook-ceph-local")
+	_, err := runInitCmd(t, args)
+	if err == nil || !strings.Contains(err.Error(), "conflicts") {
+		t.Fatalf("expected conflict error, got %v", err)
+	}
+}
+
+func TestBootstrapInit_ObjectStorageMode_RookDryRunRendersWiring(t *testing.T) {
+	// OS-2: a complete rook-ceph-local config passes Validate and the
+	// dry-run plan predicts the full object-storage wiring — the
+	// overlay + Flux layer files, the extended platform/kustomization
+	// descriptions, and the in-process writer step. (Replaces the
+	// OS-1 FailsClosedUntilOS2 test — the scaffold writer shipped.)
+	args := append(filterArgs(validAtlantisArgs(), "--object-storage-mode"),
+		"--object-storage-mode=rook-ceph-local",
+		"--rook-osd-node=host6-a",
+		"--rook-osd-size-gb=500",
+	)
+	body, err := runInitCmd(t, args)
+	if err != nil {
+		t.Fatalf("rook-ceph-local dry-run should succeed post-OS-2, got %v\nout:\n%s", err, body)
+	}
+	for _, want := range []string{
+		"object-storage/kustomization.yaml",
+		"infra-object-storage.yaml",
+		"modes/rook-ceph-local + bucket-provisioning + exposure",
+		"healthCheck: CephCluster Ready",
+		"dependsOn: infra-core + infra-object-storage",
+		"wire object-storage (mode=rook-ceph-local)",
+		"object-storage keys",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("rook dry-run render missing %q\nFULL:\n%s", want, body)
+		}
+	}
+	// No warnings at all for a real mode.
+	if strings.Contains(body, "== WARNINGS ==") {
+		t.Errorf("rook mode should not carry any warning block\nFULL:\n%s", body)
+	}
+}
+
+func TestBootstrapInit_ObjectStorageMode_NoExposureRendered(t *testing.T) {
+	// --no-s3-exposure drops the exposure layer from the predicted
+	// overlay composition.
+	args := append(filterArgs(validAtlantisArgs(), "--object-storage-mode"),
+		"--object-storage-mode=rook-ceph-pvc",
+		"--ceph-storage-class=fast-ssd",
+		"--no-s3-exposure",
+	)
+	body, err := runInitCmd(t, args)
+	if err != nil {
+		t.Fatalf("pvc dry-run should succeed, got %v", err)
+	}
+	if !strings.Contains(body, "modes/rook-ceph-pvc + bucket-provisioning") {
+		t.Errorf("overlay composition missing\nFULL:\n%s", body)
+	}
+	if strings.Contains(body, "+ exposure") {
+		t.Errorf("--no-s3-exposure must drop the exposure layer\nFULL:\n%s", body)
+	}
+}
+
+func TestBootstrapInit_ObjectStorageMode_StubFailsClosed(t *testing.T) {
+	args := append(filterArgs(validAtlantisArgs(), "--object-storage-mode"),
+		"--object-storage-mode=external-s3")
+	_, err := runInitCmd(t, args)
+	if !errors.Is(err, clusterinit.ErrObjectStorageModeStub) {
+		t.Fatalf("expected ErrObjectStorageModeStub, got %v", err)
+	}
+}
+
+func TestBootstrapInit_ObjectStorageMode_DisabledWarnsInPlan(t *testing.T) {
+	// The baseline args carry --object-storage-mode=disabled; the
+	// dry-run plan MUST state the consequence prominently.
+	body, err := runInitCmd(t, validAtlantisArgs())
+	if err != nil {
+		t.Fatalf("disabled dry-run should succeed, got %v", err)
+	}
+	for _, want := range []string{"== WARNINGS ==", "Mimir + Loki are SUSPENDED", "UNPROTECTED"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("disabled plan render missing %q\nFULL:\n%s", want, body)
+		}
 	}
 }
 
@@ -755,7 +920,7 @@ func TestBootstrapInit_GitHubTokenNeverInOutput(t *testing.T) {
 	const fakeToken = "ghp_FAKE_TOKEN_DO_NOT_LEAK_AAAAAA"
 
 	t.Run("dry-run path (existing-fleet)", func(t *testing.T) {
-		args := append(validCloudacropolisArgs(), "--github-token="+fakeToken)
+		args := append(validAtlantisArgs(), "--github-token="+fakeToken)
 		body, err := runInitCmd(t, args)
 		if err != nil {
 			t.Fatalf("dry-run should pass, got %v\nout:\n%s", err, body)
@@ -772,7 +937,7 @@ func TestBootstrapInit_GitHubTokenNeverInOutput(t *testing.T) {
 		// which RunE downgrades to a WARNING so the plan
 		// renders. The token must not appear anywhere in the
 		// resulting output.
-		args := append(filterFlag(validCloudacropolisArgs(), "--fleet-mode=existing-fleet"),
+		args := append(filterFlag(validAtlantisArgs(), "--fleet-mode=existing-fleet"),
 			"--fleet-mode=new-repo",
 			"--github-owner=kube-dc",
 			"--github-repo=kube-dc-fleet",
@@ -785,42 +950,61 @@ func TestBootstrapInit_GitHubTokenNeverInOutput(t *testing.T) {
 	})
 }
 
+// setupFleetWithSibling extends setupValidFleet with one synthetic
+// sibling cluster carrying a cluster-config.env. Hermetic replacement
+// for the former live-fleet-dependent tests (2026-07-04 sweep: no
+// operator paths or real cluster values in this package).
+func setupFleetWithSibling(t *testing.T, sibling, envBody string) string {
+	t.Helper()
+	repo := setupValidFleet(t)
+	dir := filepath.Join(repo, "clusters", sibling)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cluster-config.env"), []byte(envBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return repo
+}
+
 func TestBootstrapInit_DomainCollision_Rejected(t *testing.T) {
 	// M4-T13: --domain matching an existing sibling must fail
 	// loudly with ErrDomainCollision. The cobra wiring runs the
-	// check before BuildPlan so the error surfaces clean.
-	//
-	// The live ~/projects/kube-dc-fleet has cloud at kube-dc.cloud
-	// — reusing that domain must be rejected.
-	args := replaceFlag(validCloudacropolisArgs(),
-		"--domain=kdc.acropolis.example.com",
-		"--domain=kube-dc.cloud") // collides with cluster cloud
-	_, err := runInitCmdWithRepo(t, "/home/voa/projects/kube-dc-fleet", args)
+	// check before BuildPlan so the error surfaces clean. Hermetic:
+	// synthetic sibling "prod1" owns the domain we try to reuse.
+	repo := setupFleetWithSibling(t, "prod1",
+		"CLUSTER_NAME=prod1\nDOMAIN=prod1.example.com\nKUBE_DC_VERSION=v0.0.1\n")
+	args := replaceFlag(validAtlantisArgs(),
+		"--domain=kdc.atlantis.example.com",
+		"--domain=prod1.example.com") // collides with sibling prod1
+	_, err := runInitCmdWithRepo(t, repo, args)
 	if err == nil {
 		t.Fatal("expected ErrDomainCollision when --domain reuses a sibling's value")
 	}
 	if !errors.Is(err, clusterinit.ErrDomainCollision) {
 		t.Fatalf("expected ErrDomainCollision, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "cloud") {
+	if !strings.Contains(err.Error(), "prod1") {
 		t.Errorf("error should name the colliding sibling: %v", err)
 	}
 }
 
 func TestBootstrapInit_InheritsFromFleetSiblings(t *testing.T) {
-	// M4-T13: an existing-fleet dry-run against the live fleet must
-	// surface the InheritedDefaults block in the plan render. We
-	// assert on the SHAPE (presence of version-suffix keys) rather
-	// than exact values so the test stays robust as the live cloud
-	// cluster's pins drift.
-	body, err := runInitCmdWithRepo(t, "/home/voa/projects/kube-dc-fleet", validCloudacropolisArgs())
+	// M4-T13: an existing-fleet dry-run must surface the
+	// InheritedDefaults block in the plan render. Hermetic: a
+	// synthetic sibling carries the version pin we expect to see
+	// inherited (formerly ran against the operator's live fleet —
+	// same coverage, no local-checkout dependency).
+	repo := setupFleetWithSibling(t, "prod1",
+		"CLUSTER_NAME=prod1\nDOMAIN=prod1.example.com\nKUBE_DC_VERSION=v9.9.9\n")
+	body, err := runInitCmdWithRepo(t, repo, validAtlantisArgs())
 	if err != nil {
 		t.Fatalf("dry-run should succeed; got %v\nout:\n%s", err, body)
 	}
 	for _, want := range []string{
-		"Template (most-recently-modified sibling):",
+		"Template (most-recently-modified sibling): prod1",
 		"Inherited defaults",
-		"KUBE_DC_VERSION=",
+		"KUBE_DC_VERSION=v9.9.9",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("inheritance render missing %q\nFULL:\n%s", want, body)
@@ -879,7 +1063,7 @@ func TestBootstrapInit_AgeKey_EnrolledPasses(t *testing.T) {
 	// pubkey in .sops.yaml and a matching age.key at the repo
 	// root. The dry-run prints "[sops] enrolled (pubkey=… via …)"
 	// and proceeds to the plan.
-	body, err := runInitCmd(t, validCloudacropolisArgs())
+	body, err := runInitCmd(t, validAtlantisArgs())
 	if err != nil {
 		t.Fatalf("enrolled dry-run should succeed, got %v\nout:\n%s", err, body)
 	}
@@ -914,7 +1098,7 @@ func TestBootstrapInit_AgeKey_NotEnrolled_Refuses(t *testing.T) {
 
 	// Strip --dry-run so the agekey gate fires as a hard error
 	// (dry-run downgrades it to a warning).
-	args := filterFlag(validCloudacropolisArgs(), "--dry-run")
+	args := filterFlag(validAtlantisArgs(), "--dry-run")
 	args = append(args, "--yes")
 	_, err := runInitCmdWithRepo(t, dir, args)
 	if err == nil {
@@ -952,7 +1136,7 @@ func TestBootstrapInit_AgeKey_DryRunDowngradesMissingKey(t *testing.T) {
 		t.Fatalf("mkdir clusters: %v", err)
 	}
 
-	body, err := runInitCmdWithRepo(t, dir, validCloudacropolisArgs())
+	body, err := runInitCmdWithRepo(t, dir, validAtlantisArgs())
 	if err != nil {
 		t.Fatalf("dry-run with missing key should warn not error, got %v\nout:\n%s", err, body)
 	}
@@ -978,7 +1162,7 @@ func TestBootstrapInit_AgeKey_FleetKeyPermissionError_Surfaces(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(keyPath, 0o600) })
 
-	args := filterFlag(validCloudacropolisArgs(), "--dry-run")
+	args := filterFlag(validAtlantisArgs(), "--dry-run")
 	args = append(args, "--yes")
 	_, err := runInitCmdWithRepo(t, dir, args)
 	if err == nil {
@@ -997,7 +1181,7 @@ func TestBootstrapInit_PresetEmptyRequiredValue_Rejected(t *testing.T) {
 	// the cobra layer via --set=KEY= (key present, value empty).
 	// ValidatePresetValues must surface ErrPresetInvalidValue so
 	// T10 doesn't write the empty value to cluster-config.env.
-	args := append(filterFlag(validCloudacropolisArgs(), "--set=EXT_PUBLIC_CIDR=217.117.26.48/29"),
+	args := append(filterFlag(validAtlantisArgs(), "--set=EXT_PUBLIC_CIDR=203.0.113.48/29"),
 		"--set=EXT_PUBLIC_CIDR=")
 	_, err := runInitCmd(t, args)
 	if err == nil {
@@ -1016,8 +1200,8 @@ func TestBootstrapInit_NodeNICValidation_RejectsShellMetachar(t *testing.T) {
 	// ProviderNetwork patch on disk via M4-T11. They must pass the
 	// same NIC-name sanity check as EXT_NET_INTERFACE. Cobra
 	// surface relays the typed validation error.
-	args := append(validCloudacropolisArgs(),
-		"--node-nic=SRV5-Kub1=enp1s0;rm")
+	args := append(validAtlantisArgs(),
+		"--node-nic=HOST5-A=enp1s0;rm")
 	_, err := runInitCmd(t, args)
 	if err == nil {
 		t.Fatal("--node-nic with shell metachar must be rejected")
@@ -1038,7 +1222,7 @@ func TestBootstrapInit_PresetSemanticValidation_BadVLAN(t *testing.T) {
 	// networks where the carrier NIC IS the VLAN), so the
 	// error-message check uses "0..4094" — the current accepted
 	// range documented by validateVLANID.
-	args := append(filterFlag(validCloudacropolisArgs(), "--set=EXT_NET_VLAN_ID=1103"),
+	args := append(filterFlag(validAtlantisArgs(), "--set=EXT_NET_VLAN_ID=1103"),
 		"--set=EXT_NET_VLAN_ID=9999")
 	_, err := runInitCmd(t, args)
 	if err == nil {
@@ -1057,7 +1241,7 @@ func TestBootstrapInit_PresetMissingRequiredKey(t *testing.T) {
 	// required --set entry for the chosen preset must surface
 	// ErrPresetMissingRequired with the missing key name + the
 	// preset name in the error message.
-	args := filterFlag(validCloudacropolisArgs(), "--set=EXT_PUBLIC_VLAN_ID=1100")
+	args := filterFlag(validAtlantisArgs(), "--set=EXT_PUBLIC_VLAN_ID=1100")
 	_, err := runInitCmd(t, args)
 	if err == nil {
 		t.Fatal("expected ErrPresetMissingRequired when --set=EXT_PUBLIC_VLAN_ID dropped")
@@ -1088,7 +1272,7 @@ func TestBootstrapInit_ModeAuto_NoKubeconfigErrorsClearly(t *testing.T) {
 	// --kubeconfig=unset, ~/.kube/config under tmpdir HOME).
 	bogus := filepath.Join(t.TempDir(), "absolutely-not-a-real-kubeconfig")
 	t.Setenv("KUBECONFIG", bogus)
-	args := replaceFlag(validCloudacropolisArgs(), "--mode=install", "--mode=auto")
+	args := replaceFlag(validAtlantisArgs(), "--mode=install", "--mode=auto")
 	_, err := runInitCmd(t, args)
 	if err == nil {
 		t.Fatal("--mode=auto without kubeconfig should error")
@@ -1127,7 +1311,7 @@ func TestBootstrapInit_ExistingFleetRequiresRepo(t *testing.T) {
 	// Review-pass — P2/P3: existing-fleet without --repo would
 	// produce a misleading plan with no priors. Refuse at Validate
 	// time so the cobra layer surfaces a clean error.
-	_, err := runInitCmdWithRepo(t, "", validCloudacropolisArgs())
+	_, err := runInitCmdWithRepo(t, "", validAtlantisArgs())
 	if err == nil {
 		t.Fatal("existing-fleet without --repo should be rejected")
 	}

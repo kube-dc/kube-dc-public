@@ -17,7 +17,7 @@ import (
 
 // M4-T09 cobra wiring — resolves the operator's age key path, derives
 // the pubkey, parses the fleet's `.sops.yaml` recipients, and runs
-// the enrollment check. For cloudacropolis (existing-fleet) this
+// the enrollment check. For atlantis (existing-fleet) this
 // surfaces silent-pass when enrolled or a clean keyholder-action
 // message when not.
 //

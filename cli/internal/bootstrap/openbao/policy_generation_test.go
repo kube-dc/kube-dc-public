@@ -213,7 +213,7 @@ func TestStatus_PopulatesPolicyGenerationFields(t *testing.T) {
 	bao.annotations[AnnotationPolicyGeneration] = strconv.Itoa(PolicyGeneration)
 
 	r, err := Status(context.Background(), StatusOptions{
-		ClusterName: "cs/zrh",
+		ClusterName: "eu/dc1",
 		OpenBao:     bao,
 	})
 	if err != nil {
@@ -240,7 +240,7 @@ func TestStatus_LegacyPolicyGeneration_ReportsDrift(t *testing.T) {
 	bao := canonicalReadyBao()
 	// annotation absent
 	r, err := Status(context.Background(), StatusOptions{
-		ClusterName: "cs/zrh",
+		ClusterName: "eu/dc1",
 		OpenBao:     bao,
 	})
 	if err != nil {

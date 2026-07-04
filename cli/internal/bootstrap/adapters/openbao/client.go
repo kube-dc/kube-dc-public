@@ -99,7 +99,7 @@ func (c *Client) Status(ctx context.Context, pod string) (ports.BaoStatus, error
 // success. Used to distinguish "WS drop, command never ran" (out is
 // empty or doesn't contain the sentinel) from "WS delivered, command
 // succeeded" (out contains the sentinel). This is necessary because
-// the WebSocket exec on cs/zrh kube-apiserver 2026-06-08 returns
+// the WebSocket exec on eu/dc1 kube-apiserver 2026-06-08 returns
 // `err=nil, out=""` ~30% of the time when stdin drops — which is
 // indistinguishable from a genuine empty-output success without an
 // in-wrapper signal.
@@ -121,7 +121,7 @@ const writeSentinel = "KUBE_DC_WRITE_OK"
 // for EnableAuthPath — those don't emit the sentinel because bao
 // exited non-zero, but we still treat them as success).
 //
-// Empirical WS reliability for sh-c-with-stdin against cs/zrh:
+// Empirical WS reliability for sh-c-with-stdin against eu/dc1:
 // ~65% per attempt. 6 attempts → all-fail probability ~0.18%.
 //
 // On all-WS-attempts-exhausted (still no sentinel, no real-error
@@ -295,7 +295,7 @@ func (c *Client) PodList(ctx context.Context) ([]string, error) {
 // `wget --post-file=-`, which reads the JSON body from stdin. Argv
 // stays clean of secret material.
 //
-// **Why not `bao operator unseal -`** (cloudacropolis bring-up
+// **Why not `bao operator unseal -`** (atlantis bring-up
 // 2026-05-26): OpenBao 2.5.3 does NOT honor `-` as a stdin marker
 // the way HashiCorp Vault does — bao treats `-` as a literal key
 // value and rejects it as "must be a valid hex or base64 string".
@@ -1100,7 +1100,7 @@ func (c *Client) activePodCached(ctx context.Context) (string, error) {
 // parseStatus consumes `bao status -format=json` output and fills st.
 //
 // **Tolerance**: the K8sClient combines stdout+stderr into one
-// buffer, and in practice (cloudacropolis bring-up 2026-05-26 + cs/zrh
+// buffer, and in practice (atlantis bring-up 2026-05-26 + eu/dc1
 // 2026-06-08 on WebSocket exec) the apiserver remotecommand stream
 // can prepend or append a stray byte from the error channel —
 // enough to make json.Unmarshal reject the whole payload. Locate
@@ -1161,7 +1161,7 @@ func isPodNotFound(err error) bool {
 // a node yet. For StatefulSet enumeration this is functionally the same
 // as a 404: we should skip past it and treat the cluster as ending at
 // the previous pod. The exact phrase comes from the apiserver's
-// streaming-attach handler — observed verbatim during the cs/zrh
+// streaming-attach handler — observed verbatim during the eu/dc1
 // bring-up where openbao-1 was created mid-Init.
 func isPodNotScheduled(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "does not have a host assigned")

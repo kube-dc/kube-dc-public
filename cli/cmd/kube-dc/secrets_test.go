@@ -212,7 +212,7 @@ func TestRealmFromContext(t *testing.T) {
 	for ctx, want := range map[string]string{
 		"kube-dc/kube-dc.cloud/admin":             "master",
 		"kube-dc/kube-dc.cloud/shalb/envoy":       "shalb",
-		"kube-dc/kdc.zrh.cloudsigma.com/cs/demo":      "cs",
+		"kube-dc/kdc.eu-dc1.example.net/cs/demo":      "cs",
 		"kube-dc/cluster.example/org/proj-with-hyph":  "org",
 		"my-non-kubedc-context":                       "",
 		"kube-dc/only-one-level":                      "",

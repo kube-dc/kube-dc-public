@@ -143,9 +143,9 @@ func TestRedact_Layer1_FieldName(t *testing.T) {
 // Layer 1 — non-matching keys are not touched.
 func TestRedact_Layer1_NonMatching(t *testing.T) {
 	lg, _, path := newTestLogger(t, Options{})
-	lg.Info("benign", "node_name", "ams1-blade179-8", "namespace", "openbao")
+	lg.Info("benign", "node_name", "node-c3", "namespace", "openbao")
 	records := readLogLines(t, path)
-	if got := records[0]["node_name"]; got != "ams1-blade179-8" {
+	if got := records[0]["node_name"]; got != "node-c3" {
 		t.Errorf("node_name redacted unexpectedly: %v", got)
 	}
 	if got := records[0]["namespace"]; got != "openbao" {
@@ -174,9 +174,9 @@ func TestRedact_Layer2_AdjacentKeyValue(t *testing.T) {
 // is left untouched.
 func TestRedact_Layer2_BenignKeyValue(t *testing.T) {
 	lg, _, path := newTestLogger(t, Options{})
-	lg.Info("benign-kv", "key", "node_name", "value", "ams1-blade179-8")
+	lg.Info("benign-kv", "key", "node_name", "value", "node-c3")
 	records := readLogLines(t, path)
-	if got := records[0]["value"]; got != "ams1-blade179-8" {
+	if got := records[0]["value"]; got != "node-c3" {
 		t.Errorf("benign value got redacted: %v", got)
 	}
 }
@@ -224,13 +224,13 @@ func TestRedact_Layer2_ContextInheritsThroughChain(t *testing.T) {
 	parent, _, path := newTestLogger(t, Options{})
 	chain := parent.
 		With("key", "OPENBAO_UNSEAL_KEY_3").
-		With("node", "ams1-blade179-8") // benign extension
+		With("node", "node-c3") // benign extension
 	chain.Info("chained", "value", "still-secret")
 	records := readLogLines(t, path)
 	if got := records[0]["value"]; got != RedactedMarker {
 		t.Errorf("inherited context did not redact value: got %v want %q", got, RedactedMarker)
 	}
-	if got := records[0]["node"]; got != "ams1-blade179-8" {
+	if got := records[0]["node"]; got != "node-c3" {
 		t.Errorf("benign attr got redacted by inheritance: %v", got)
 	}
 }
@@ -245,7 +245,7 @@ func TestRedact_Layer2_ContextDoesNotBleedToSiblings(t *testing.T) {
 	tainted.Info("tainted", "value", "secret-x")
 
 	// Parent itself logs a benign value=.
-	parent.Info("parent-log", "key", "node_name", "value", "ams1-blade184-5")
+	parent.Info("parent-log", "key", "node_name", "value", "node-b2")
 
 	records := readLogLines(t, path)
 	if len(records) < 2 {
@@ -254,7 +254,7 @@ func TestRedact_Layer2_ContextDoesNotBleedToSiblings(t *testing.T) {
 	if records[0]["value"] != RedactedMarker {
 		t.Errorf("tainted child did not redact: %v", records[0]["value"])
 	}
-	if records[1]["value"] != "ams1-blade184-5" {
+	if records[1]["value"] != "node-b2" {
 		t.Errorf("parent value got redacted via sibling bleed: %v", records[1]["value"])
 	}
 }
@@ -612,7 +612,7 @@ func TestRedactNestedMap_AnyMap(t *testing.T) {
 	payload := map[string]any{
 		"meta": map[string]any{
 			"token":     "secret-token",
-			"node_name": "ams1-blade179-8",
+			"node_name": "node-c3",
 		},
 	}
 	lg.Info("nested", "payload", payload)
@@ -623,7 +623,7 @@ func TestRedactNestedMap_AnyMap(t *testing.T) {
 	if meta["token"] != RedactedMarker {
 		t.Errorf("nested token not redacted: %v", meta["token"])
 	}
-	if meta["node_name"] != "ams1-blade179-8" {
+	if meta["node_name"] != "node-c3" {
 		t.Errorf("nested benign mangled: %v", meta["node_name"])
 	}
 }

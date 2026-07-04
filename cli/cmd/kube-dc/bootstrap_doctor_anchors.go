@@ -43,9 +43,9 @@ func bootstrapDoctorAnchorsCmd(fleetRepo *string) *cobra.Command {
 		Args:          cobra.ExactArgs(1),
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		Example: `  kube-dc bootstrap doctor anchors cloudacropolis --repo ~/projects/kube-dc-fleet
-  kube-dc bootstrap doctor anchors cs/zrh
-  kube-dc bootstrap doctor anchors acme --ssh-host-map srv5-kub1=10.0.0.5`,
+		Example: `  kube-dc bootstrap doctor anchors atlantis --repo ~/projects/kube-dc-fleet
+  kube-dc bootstrap doctor anchors eu/dc1
+  kube-dc bootstrap doctor anchors acme --ssh-host-map host5-a=10.0.0.5`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clusterName := args[0]
 
@@ -109,7 +109,7 @@ func bootstrapDoctorAnchorsCmd(fleetRepo *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringSliceVar(&sshHostMapFlag, "ssh-host-map", nil,
-		"Override SSH target for a node: --ssh-host-map srv5-kub1=10.0.0.5 (repeatable). "+
+		"Override SSH target for a node: --ssh-host-map host5-a=10.0.0.5 (repeatable). "+
 			"Wins over EXT_NET_ANCHOR_SSH_HOSTS from cluster-config.env. "+
 			"Falls back to ~/.ssh/config alias when no mapping is supplied.")
 	return cmd

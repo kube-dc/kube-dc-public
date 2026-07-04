@@ -72,7 +72,7 @@ func TestGenerateRoot_HappyPath_NoRevoke(t *testing.T) {
 	bao := &fakeGRBao{tokenToReturn: []byte("hvs.CAESIP-CANARY-TOKEN-VALUE-01234")}
 	var stdout, stderr bytes.Buffer
 	err := GenerateRoot(context.Background(), GenerateRootOptions{
-		ClusterName:  "cs/zrh",
+		ClusterName:  "eu/dc1",
 		FleetRepo:    "/tmp/fake",
 		SOPS:         newFakeRevealSOPS(canonicalDecryptedForReveal),
 		OpenBao:      bao,
@@ -92,7 +92,7 @@ func TestGenerateRoot_HappyPath_NoRevoke(t *testing.T) {
 	// Audit + LIVE-token hint on stderr.
 	for _, want := range []string{
 		"GENERATE-ROOT:",
-		"cs/zrh",
+		"eu/dc1",
 		"2026-07-03T15:04:05Z",
 		"operator voa",
 		"token is LIVE",
@@ -127,7 +127,7 @@ func TestGenerateRoot_HappyPath_RevokeImmediately(t *testing.T) {
 	bao := &fakeGRBao{tokenToReturn: []byte("hvs.HEALTHCHECK-TOKEN")}
 	var stdout, stderr bytes.Buffer
 	err := GenerateRoot(context.Background(), GenerateRootOptions{
-		ClusterName:       "cs/zrh",
+		ClusterName:       "eu/dc1",
 		FleetRepo:         "/tmp/fake",
 		SOPS:              newFakeRevealSOPS(canonicalDecryptedForReveal),
 		OpenBao:           bao,
@@ -164,7 +164,7 @@ func TestGenerateRoot_HappyPath_RevokeImmediately(t *testing.T) {
 func TestGenerateRoot_NoConsent_Refuses(t *testing.T) {
 	bao := &fakeGRBao{}
 	err := GenerateRoot(context.Background(), GenerateRootOptions{
-		ClusterName: "cs/zrh",
+		ClusterName: "eu/dc1",
 		FleetRepo:   "/tmp/fake",
 		SOPS:        newFakeRevealSOPS(canonicalDecryptedForReveal),
 		OpenBao:     bao,
@@ -187,7 +187,7 @@ func TestGenerateRoot_MissingShares_Refuses(t *testing.T) {
 		"", 1)
 	bao := &fakeGRBao{}
 	err := GenerateRoot(context.Background(), GenerateRootOptions{
-		ClusterName: "cs/zrh",
+		ClusterName: "eu/dc1",
 		FleetRepo:   "/tmp/fake",
 		SOPS:        newFakeRevealSOPS(trimmed),
 		OpenBao:     bao,
@@ -208,7 +208,7 @@ func TestGenerateRoot_CeremonyError_Propagates(t *testing.T) {
 	bao := &fakeGRBao{generateErr: errors.New("pod not ready")}
 	var stderr bytes.Buffer
 	err := GenerateRoot(context.Background(), GenerateRootOptions{
-		ClusterName: "cs/zrh",
+		ClusterName: "eu/dc1",
 		FleetRepo:   "/tmp/fake",
 		SOPS:        newFakeRevealSOPS(canonicalDecryptedForReveal),
 		OpenBao:     bao,
@@ -245,7 +245,7 @@ func TestGenerateRoot_RevokeFailure_Surfaces(t *testing.T) {
 	}
 	var stdout, stderr bytes.Buffer
 	err := GenerateRoot(context.Background(), GenerateRootOptions{
-		ClusterName:       "cs/zrh",
+		ClusterName:       "eu/dc1",
 		FleetRepo:         "/tmp/fake",
 		SOPS:              newFakeRevealSOPS(canonicalDecryptedForReveal),
 		OpenBao:           bao,
@@ -294,7 +294,7 @@ func TestGenerateRoot_PostEmitAuditFail_UsesStatusSentinel(t *testing.T) {
 	// (call 2 — the LIVE-token hint line).
 	audit := &failingWriter{successBeforeErr: 1, err: errors.New("audit trailer closed")}
 	err := GenerateRoot(context.Background(), GenerateRootOptions{
-		ClusterName:  "cs/zrh",
+		ClusterName:  "eu/dc1",
 		FleetRepo:    "/tmp/fake",
 		SOPS:         newFakeRevealSOPS(canonicalDecryptedForReveal),
 		OpenBao:      bao,
@@ -336,7 +336,7 @@ func TestGenerateRoot_RevokeSuccessAuditFail_UsesStatusSentinel(t *testing.T) {
 	// revoked" trailer (call 2).
 	audit := &failingWriter{successBeforeErr: 1, err: errors.New("stderr closed after emit")}
 	err := GenerateRoot(context.Background(), GenerateRootOptions{
-		ClusterName:       "cs/zrh",
+		ClusterName:       "eu/dc1",
 		FleetRepo:         "/tmp/fake",
 		SOPS:              newFakeRevealSOPS(canonicalDecryptedForReveal),
 		OpenBao:           bao,
@@ -375,7 +375,7 @@ func TestGenerateRoot_RevokeFail_AuditFail_ComposesErrors(t *testing.T) {
 	// write that follows revoke failure (call 2).
 	audit := &failingWriter{successBeforeErr: 1, err: errors.New("warning banner blocked")}
 	err := GenerateRoot(context.Background(), GenerateRootOptions{
-		ClusterName:       "cs/zrh",
+		ClusterName:       "eu/dc1",
 		FleetRepo:         "/tmp/fake",
 		SOPS:              newFakeRevealSOPS(canonicalDecryptedForReveal),
 		OpenBao:           bao,
@@ -418,7 +418,7 @@ func TestGenerateRoot_AuditWriteFails_RefusesToEmitToken(t *testing.T) {
 	var stdout bytes.Buffer
 	audit := &failingWriter{successBeforeErr: 0, err: errors.New("stderr closed")}
 	err := GenerateRoot(context.Background(), GenerateRootOptions{
-		ClusterName:  "cs/zrh",
+		ClusterName:  "eu/dc1",
 		FleetRepo:    "/tmp/fake",
 		SOPS:         newFakeRevealSOPS(canonicalDecryptedForReveal),
 		OpenBao:      bao,
@@ -448,7 +448,7 @@ func TestGenerateRoot_OutputWriteFails_ReturnsStructuralError(t *testing.T) {
 	var audit bytes.Buffer
 	out := &failingWriter{successBeforeErr: 0, err: errors.New("broken pipe")}
 	err := GenerateRoot(context.Background(), GenerateRootOptions{
-		ClusterName: "cs/zrh",
+		ClusterName: "eu/dc1",
 		FleetRepo:   "/tmp/fake",
 		SOPS:        newFakeRevealSOPS(canonicalDecryptedForReveal),
 		OpenBao:     bao,

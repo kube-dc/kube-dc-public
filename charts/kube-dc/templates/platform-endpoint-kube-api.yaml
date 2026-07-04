@@ -3,7 +3,7 @@ Platform endpoint: internal cluster-local kube-api VIP (Fork E2).
 
 Tenant pods reach the apiserver through a MetalLB-announced VIP
 (`spec.loadBalancerIP`) instead of the cluster's external Envoy/MetalLB
-path that breaks on cloudacropolis-class NAT topologies. kube-proxy
+path that breaks on 1:1-NAT-class NAT topologies. kube-proxy
 on the elected MetalLB speaker DNATs to one of the live control-plane
 host IPs.
 

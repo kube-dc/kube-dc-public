@@ -20,10 +20,10 @@ cluster:
   apiEndpoint: https://kube-api.kube-dc.cloud:6443
   k8sVersion: v1.32.1+rke2r1
   nodes:
-    - { name: ams1-blade179-8, status: Ready, nics: [enp94s0f0np0] }
-    - { name: ams1-blade184-5, status: Ready, nics: [enp94s0f0np0] }
-    - { name: ams1-blade58-2,  status: Ready, nics: [enp8s0f0] }
-    - { name: ams1-blade187-2, status: Ready, nics: [eno1] }
+    - { name: node-c3, status: Ready, nics: [enp94s0f0np0] }
+    - { name: node-b2, status: Ready, nics: [enp94s0f0np0] }
+    - { name: node-d4,  status: Ready, nics: [enp8s0f0] }
+    - { name: node-a1, status: Ready, nics: [eno1] }
   fluxInstalled: true
   kustomizations:
     - { name: infra-cni,             namespace: flux-system, ready: true, revision: "main@abc123", path: ./infrastructure/cni }
@@ -47,22 +47,22 @@ cluster:
       kube-dc-k8-manager:     shalb/kube-dc-k8-manager:v0.1.35-dev60
       kube-dc-db-manager:     shalb/db-manager:v0.1.0-dev24
   nodeLabels:
-    ams1-blade179-8:
+    node-c3:
       "feature.node.kubernetes.io/cpu-cpuid.AVX512F": "true"
       "feature.node.kubernetes.io/cpu-iommu.enabled": "true"
       "feature.node.kubernetes.io/kernel-loadedmodule.kvm_intel": "true"
       "kube-dc.com/kubevirt-eligible": "true"
-    ams1-blade184-5:
+    node-b2:
       "feature.node.kubernetes.io/cpu-cpuid.AVX512F": "true"
       "feature.node.kubernetes.io/cpu-iommu.enabled": "true"
       "feature.node.kubernetes.io/kernel-loadedmodule.kvm_intel": "true"
       "kube-dc.com/kubevirt-eligible": "true"
-    ams1-blade58-2:
+    node-d4:
       "feature.node.kubernetes.io/cpu-cpuid.AVX2": "true"
       "feature.node.kubernetes.io/cpu-iommu.enabled": "true"
       "feature.node.kubernetes.io/kernel-loadedmodule.kvm_intel": "true"
       "kube-dc.com/kubevirt-eligible": "true"
-    ams1-blade187-2:
+    node-a1:
       "feature.node.kubernetes.io/cpu-cpuid.AVX2": "true"
       "feature.node.kubernetes.io/pci-10de.present": "true"   # Nvidia GPU node
       "kube-dc.com/gpu.nvidia": "true"
@@ -88,7 +88,7 @@ openbao:
 fleet:
   cloned: true
   path: /home/operator/projects/kube-dc-fleet
-  clusterDirs: [cloud, stage, "cs/zrh"]
+  clusterDirs: [cloud, stage, "eu/dc1"]
   ageRecipients:
     - age10mskwx065akee5mw4txeqtnn90t724phdzx9k4jxnrgcp9cces6sqfkwvu
     - age1fugkeh0yhf56d6t2qm8gwqdl3kx7963wv2qq5jax2kewldsfeqgq6p67pm
@@ -115,11 +115,11 @@ fleet:
       detail: "5/5 Kustomizations ready"
       domain: stage.kube-dc.com
       apiURL: https://kube-api.stage.kube-dc.com:6443
-    - name: cs/zrh
+    - name: eu/dc1
       status: Ready
       detail: "5/5 Kustomizations ready"
-      domain: kdc.zrh.cloudsigma.com
-      apiURL: https://kube-api.kdc.zrh.cloudsigma.com:6443
+      domain: kdc.eu-dc1.example.net
+      apiURL: https://kube-api.kdc.eu-dc1.example.net:6443
 
 dns:
   "*.kube-dc.cloud": [213.111.154.233]

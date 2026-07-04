@@ -92,7 +92,7 @@ func TestCheckAgeKeyEnrollment_NotEnrolled(t *testing.T) {
 		"age10mskwx065akee5mw4txeqtnn90t724phdzx9k4jxnrgcp9cces6sqfkwvu",
 		"age1fugkeh0yhf56d6t2qm8gwqdl3kx7963wv2qq5jax2kewldsfeqgq6p67pm",
 	}
-	err := CheckAgeKeyEnrollment(pubkey, "vtsap", recipients)
+	err := CheckAgeKeyEnrollment(pubkey, "alice", recipients)
 	if !errors.Is(err, ErrAgeKeyNotEnrolled) {
 		t.Fatalf("expected ErrAgeKeyNotEnrolled, got %v", err)
 	}
@@ -101,7 +101,7 @@ func TestCheckAgeKeyEnrollment_NotEnrolled(t *testing.T) {
 	// name pre-filled.
 	for _, want := range []string{
 		"age1notenrolled",
-		"bootstrap/add-engineer.sh vtsap age1notenrolled",
+		"bootstrap/add-engineer.sh alice age1notenrolled",
 		"--reencrypt",
 		"git push",
 	} {

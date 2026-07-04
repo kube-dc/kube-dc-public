@@ -2,7 +2,7 @@
 # This issuer uses the shared Envoy Gateway for ACME HTTP-01 validation
 #
 # Prerequisites:
-# - DNS record pointing your domain to the Gateway IP (88.99.29.250)
+# - DNS record pointing your domain to the Gateway IP (203.0.113.250)
 # - Project with cloud networking (egressNetworkType: cloud)
 #
 # Usage:

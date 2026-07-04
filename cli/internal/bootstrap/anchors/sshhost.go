@@ -69,7 +69,7 @@ func ParseSSHHostMap(raw string) (map[string]string, error) {
 		}
 		node, host, ok := strings.Cut(pair, "=")
 		if !ok {
-			return nil, fmt.Errorf("%q missing '=' (expected node=host, e.g. srv5-kub1=10.0.0.5)", pair)
+			return nil, fmt.Errorf("%q missing '=' (expected node=host, e.g. host5-a=10.0.0.5)", pair)
 		}
 		node = strings.TrimSpace(node)
 		host = strings.TrimSpace(host)

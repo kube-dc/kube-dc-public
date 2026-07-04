@@ -93,7 +93,7 @@ spec:
         - --v=5
         env:
         - name: KUBERNETES_SERVICE_HOST 
-          value: "88.99.29.250"
+          value: "203.0.113.250"
         - name: KUBERNETES_SERVICE_PORT
           value: "6443"
         - name: CSI_ENDPOINT
@@ -308,7 +308,7 @@ spec:
         name: kubevirt-cloud-controller-manager
         env:
         - name: KUBERNETES_SERVICE_HOST 
-          value: "88.99.29.250"
+          value: "203.0.113.250"
         - name: KUBERNETES_SERVICE_PORT
           value: "6443"
         resources:

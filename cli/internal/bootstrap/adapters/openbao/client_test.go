@@ -126,7 +126,7 @@ func TestStatus_ParsesSealedPodOutputDespiteExitError(t *testing.T) {
 // --post-file=-`. This is the M0-T06 batch-2 review's P1 fix
 // (argv exposure of OpenBao shares is unacceptable), updated for
 // OpenBao 2.5.3 which doesn't support `bao operator unseal -`
-// as a stdin form (cloudacropolis bring-up 2026-05-26 — bao treats
+// as a stdin form (atlantis bring-up 2026-05-26 — bao treats
 // `-` as a literal key and rejects it).
 func TestUnseal_FeedsShareViaStdinNotArgv(t *testing.T) {
 	var capturedArgv []string
@@ -284,7 +284,7 @@ func TestGenerateRoot_DecodeIsLocal_NoInPodCall(t *testing.T) {
 	// ASCII whose byte length matches the decoded encoded_token.
 	const (
 		otp        = "B64otpVALUE-OPENBAO-2-5-3-LIVE-OK"     // 33 bytes
-		finalToken = "s.LiveDecodeVerifiedAgainstZRH123"     // 33 bytes (same length)
+		finalToken = "s.LiveDecodeVerifiedAgainstDC1123"     // 33 bytes (same length)
 	)
 
 	// Compute the encoded form the mock should return — base64 of
@@ -370,7 +370,7 @@ func TestGenerateRoot_DecodeIsLocal_NoInPodCall(t *testing.T) {
 
 // TestDecodeRootToken_RoundTrip verifies the local decode function
 // against synthetic inputs across multiple lengths + encodings. The
-// adapter's decode is verified against live bao on cs/zrh in
+// adapter's decode is verified against live bao on eu/dc1 in
 // docs/internal/openbao-runbook.md.
 func TestDecodeRootToken_RoundTrip(t *testing.T) {
 	cases := []struct {

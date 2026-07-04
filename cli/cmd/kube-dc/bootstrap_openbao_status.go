@@ -50,8 +50,8 @@ Exit code:
   kube-dc bootstrap openbao status cloud --repo ~/projects/kube-dc-fleet
 
   # CI gate: exit 1 signals "run unseal / setup-controller-auth"
-  kube-dc bootstrap openbao status cs/zrh --repo ./fleet || case $? in
-    1) echo "run: kube-dc bootstrap openbao unseal cs/zrh";;
+  kube-dc bootstrap openbao status eu/dc1 --repo ./fleet || case $? in
+    1) echo "run: kube-dc bootstrap openbao unseal eu/dc1";;
     2) echo "cluster unreachable";;
   esac`,
 		Args:          cobra.ExactArgs(1),

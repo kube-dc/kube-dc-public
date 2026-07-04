@@ -39,7 +39,7 @@ When you're done the page shows **"2-Step Verification is on"**. You can close t
 ## Step 2 — Generate the App Password
 
 1. Open **[myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)** (if the link redirects you back to Security, 2SV isn't fully enabled yet — go back to Step 1).
-2. Under **App name**, enter something descriptive, e.g. **`Kube-DC SMTP - cloudacropolis`**. Use the cluster name so you can revoke this specific token later without affecting other clusters.
+2. Under **App name**, enter something descriptive, e.g. **`Kube-DC SMTP - prod-1`**. Use the cluster name so you can revoke this specific token later without affecting other clusters.
 3. Click **Create**.
 4. Google shows a **16-character password** in a yellow box, formatted like `abcd efgh ijkl mnop`.
 
@@ -115,7 +115,7 @@ Once the controller picks up the change, it propagates SMTP settings to **every 
 App Passwords are revocable per-token. To rotate:
 
 1. Open **[myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)**.
-2. Find the entry you created (e.g. `Kube-DC SMTP - cloudacropolis`).
+2. Find the entry you created (e.g. `Kube-DC SMTP - prod-1`).
 3. Click the trash icon to delete it.
 4. Create a new one with the same naming convention.
 5. Send the new value to your administrator; they re-update the `master-config` Secret. The controller picks up the change on the next reconcile (≤ 30s).

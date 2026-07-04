@@ -9,17 +9,22 @@ import (
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/discover"
 )
 
-// TestClusterProbe_LiveFleet runs the probe against every cluster in the
-// developer's local kube-dc-fleet checkout. Skipped in CI. The test
-// exercises the full Run() path including OIDC token minting; if the
-// operator hasn't `kube-dc login`'d to a cluster, that probe surfaces
-// Unreachable with a login hint, which is also a valid PASS for this
-// smoke test (we're checking that the probe behaves sensibly, not that
-// every cluster is reachable from the dev box).
+// TestClusterProbe_LiveFleet is an opt-in smoke test: it runs the
+// probe against every cluster in a real fleet checkout ONLY when the
+// operator points at one via KUBE_DC_FLEET_SMOKE (skipped otherwise —
+// CI, fresh clones; no operator paths hardcoded, 2026-07-04 sweep).
+// The test exercises the full Run() path including OIDC token minting;
+// if the operator hasn't `kube-dc login`'d to a cluster, that probe
+// surfaces Unreachable with a login hint, which is also a valid PASS
+// for this smoke test (we're checking that the probe behaves sensibly,
+// not that every cluster is reachable from the dev box).
 func TestClusterProbe_LiveFleet(t *testing.T) {
-	const liveFleet = "/home/voa/projects/kube-dc-fleet"
+	liveFleet := os.Getenv("KUBE_DC_FLEET_SMOKE")
+	if liveFleet == "" {
+		t.Skip("KUBE_DC_FLEET_SMOKE not set — skipping live-fleet smoke")
+	}
 	if _, err := os.Stat(liveFleet); err != nil {
-		t.Skipf("live fleet not present at %s — skipping", liveFleet)
+		t.Skipf("fleet not present at %s — skipping", liveFleet)
 	}
 
 	clusters, err := discover.ListClusters(liveFleet)

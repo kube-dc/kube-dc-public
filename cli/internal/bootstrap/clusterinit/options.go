@@ -71,7 +71,7 @@ const (
 	// greenfield day-1 path).
 	FleetNewRepo FleetMode = "new-repo"
 	// FleetExistingFleet adds a cluster to an existing fleet repo with
-	// sibling clusters already enrolled (cloudacropolis's path).
+	// sibling clusters already enrolled (atlantis's path).
 	FleetExistingFleet FleetMode = "existing-fleet"
 	// FleetExistingRepo adopts an existing repo that doesn't yet have
 	// kube-dc-fleet structure (greenfield-ish; rare).
@@ -80,21 +80,36 @@ const (
 
 var AllFleetModes = []FleetMode{FleetExistingFleet, FleetExistingRepo, FleetNewRepo}
 
-// RookMode selects the storage backend strategy. See installer-prd §6
-// for the matrix; external-ceph + external-s3 deliberately disable
-// the bundled Rook chart.
+// RookMode selects the object-storage backend strategy. The canonical
+// CLI surface is `--object-storage-mode` (OS-1; `--rook-mode` is a
+// deprecated alias for one release) — the Go type keeps its legacy
+// name to avoid a rename ripple until OS-2.
+//
+// The six values mirror `kube-dc-fleet/infrastructure/object-storage/
+// modes/` one-to-one (see docs/prd/installer-object-storage-scaffold.md
+// §1.1). Disposition: the three rook-* modes are LIVE — the OS-2
+// scaffold writer (objectstorage.go) wires the overlay + Flux layer +
+// platform dependsOn + env keys at apply; external-ceph + external-s3
+// are stub modes fleet-side (README-only kustomizations) and fail
+// closed; `disabled` is allowed with a loud plan warning (platform
+// monitoring cannot converge without the system S3 buckets — OS-4
+// tracks the fleet-side disable mechanism).
 type RookMode string
 
 const (
-	RookDisabled       RookMode = "disabled"
-	RookCephLocal      RookMode = "rook-ceph-local"
-	RookCephMultiNode  RookMode = "rook-ceph-multi-node"
-	RookExternalCeph   RookMode = "external-ceph"
-	RookExternalS3     RookMode = "external-s3"
+	RookDisabled      RookMode = "disabled"
+	RookCephLocal     RookMode = "rook-ceph-local"
+	RookCephMultiNode RookMode = "rook-ceph-multi-node"
+	// RookCephPVC backs OSDs with PVCs from an existing StorageClass —
+	// the CSI-cloud shape (eu/dc1 + eu/dc2 run this in production).
+	// Was missing from the enum until the 2026-07-04 provenance pass.
+	RookCephPVC      RookMode = "rook-ceph-pvc"
+	RookExternalCeph RookMode = "external-ceph"
+	RookExternalS3   RookMode = "external-s3"
 )
 
 var AllRookModes = []RookMode{
-	RookCephLocal, RookCephMultiNode, RookDisabled, RookExternalCeph, RookExternalS3,
+	RookCephLocal, RookCephMultiNode, RookCephPVC, RookDisabled, RookExternalCeph, RookExternalS3,
 }
 
 // InitOptions is the typed payload the engine (M4-T03..T13) consumes.
@@ -102,8 +117,10 @@ var AllRookModes = []RookMode{
 //
 // Zero-value safety: every field has a sensible zero (empty slice, "",
 // 0, false). The cobra binding fills in defaults that differ from
-// zero (e.g. RookMode defaults to Disabled, FleetMode defaults to
-// ExistingFleet for cloudacropolis-shape installs).
+// zero (e.g. FleetMode defaults to ExistingFleet for
+// atlantis-shape installs). RookMode deliberately has NO
+// default (OS-1) — empty fails Validate with
+// ErrObjectStorageModeRequired.
 //
 // Secret material: GitHubToken is the only sensitive field. It is
 // NEVER logged. The cobra surface accepts it as a flag for CI
@@ -143,13 +160,35 @@ type InitOptions struct {
 	// allow-list at apply time.
 	Sets map[string]string
 	// NodeNICs maps cluster node name → primary NIC iface for the
-	// customInterfaces patch (M4-T11). `--node-nic SRV5-Kub1=enp1s0`.
+	// customInterfaces patch (M4-T11). `--node-nic host5-a=enp1s0`.
 	NodeNICs map[string]string
 
-	// --- Rook ---
-	RookMode      RookMode
+	// --- Object storage (OS-1; canonical flag --object-storage-mode) ---
+	// RookMode is REQUIRED — no default. The old silent
+	// default-to-disabled produced clusters whose monitoring layer
+	// could never converge (Mimir/Loki hard-require the system S3
+	// buckets); `disabled` must now be an explicit operator decision.
+	RookMode RookMode
+	// rook-ceph-local companions → CEPH_LOCAL_OSD_{NODE,SIZE_GB,DEVICE}.
 	RookOSDNode   string
 	RookOSDSizeGB int
+	RookOSDDevice string // optional; fleet template defaults to loop0
+	// CephNodes maps node name → OSD device for rook-ceph-multi-node
+	// (`--ceph-node host6-a=sdb`, exactly 3 in v1 — the fleet
+	// mode template is 3-slot; 2-host topologies hand-patch slot 3,
+	// see clusters/atlantis/object-storage/). Sorted keys map
+	// to CEPH_NODE_{1..3} deterministically.
+	CephNodes map[string]string
+	// rook-ceph-pvc companions → CEPH_OSD_{STORAGE_CLASS,COUNT,
+	// VOLUME_SIZE_GB}. Count/size 0 = fleet template defaults (2/200).
+	CephStorageClass    string
+	CephOSDCount        int
+	CephOSDVolumeSizeGB int
+	// Shared by every non-disabled mode. Empty S3Hostname = the
+	// fleet convention s3.<domain>; NoS3Exposure omits the exposure/
+	// layer (Certificate + HTTPRoute) — the eu/dc2 pattern.
+	S3Hostname   string
+	NoS3Exposure bool
 
 	// --- Addons ---
 	// Addons is the de-duplicated list of `--addon` values.
@@ -253,18 +292,47 @@ var ErrModeAutoNotImplemented = ErrModeAutoUnresolved
 // Validate refuses any non-empty --addon until the addon engine slice
 // ships. The message points at the manual path so operators aren't
 // stuck: hand-author `clusters/<name>/addons.yaml` (see the live
-// siblings, e.g. clusters/cloudacropolis/addons.yaml, for the
+// siblings, e.g. clusters/atlantis/addons.yaml, for the
 // Kustomization shape).
 //
 // When the addon slice lands, delete this sentinel + the guard in
 // Validate and wire the rendering hook — the registry + hash plumbing
 // is deliberately kept so that's the only change needed.
-var ErrAddonsNotImplemented = errors.New("init: --addon is not yet wired into apply (the flag validates but scaffolds nothing); omit it and hand-author clusters/<name>/addons.yaml post-install — see clusters/cloudacropolis/addons.yaml for the shape")
+var ErrAddonsNotImplemented = errors.New("init: --addon is not yet wired into apply (the flag validates but scaffolds nothing); omit it and hand-author clusters/<name>/addons.yaml post-install — see clusters/atlantis/addons.yaml for the shape")
+
+// ErrObjectStorageModeRequired fires when --object-storage-mode is
+// unset. There is deliberately NO default: object storage is
+// load-bearing for the platform layer (Mimir + Loki HelmReleases
+// hard-consume the system OBC ConfigMap/Secret pairs via valuesFrom,
+// no optional:true), so the old silent default-to-disabled shipped
+// clusters whose monitoring could never converge. `disabled` is still
+// available — but only as an explicit choice. The cobra layer enriches
+// this error with the template sibling's mode as a hint in
+// existing-fleet runs (design call 2026-07-04: hint, never inherit).
+var ErrObjectStorageModeRequired = errors.New("init: --object-storage-mode is required (one of rook-ceph-local|rook-ceph-multi-node|rook-ceph-pvc|disabled; object storage is load-bearing — Mimir/Loki/Velero and tenant buckets depend on it)")
+
+// ErrObjectStorageModeStub fails the two external modes closed.
+// Their fleet-side kustomizations are README-only stubs
+// (infrastructure/object-storage/modes/external-{ceph,s3}/) —
+// scaffolding them would produce an infra-object-storage layer that
+// "reconciles" while providing nothing, leaving Mimir/Loki dead with
+// no error anywhere. Unlike the rook-* modes this is not an OS-2
+// wiring gap: it stays closed until the fleet manifests are authored
+// against a real upstream (see the per-mode README fleet-side).
+var ErrObjectStorageModeStub = errors.New("init: this object-storage mode is a fleet-side stub (no manifests exist yet); provide S3 out-of-band and hand-author clusters/<name>/object-storage/ — see infrastructure/object-storage/modes/<mode>/README.md")
+
+// NOTE (OS-2): the former ErrObjectStorageScaffoldNotImplemented
+// fail-closed sentinel for the rook-* modes was deleted when the
+// scaffold writer shipped (objectstorage.go) — the three rook modes
+// now write the full wiring (overlay + Flux layer + platform
+// dependsOn + env keys) during apply. It never appeared in a released
+// binary (OS-1 and OS-2 shipped in the same cycle), so no deprecation
+// alias is kept.
 
 // --- Validation ---
 
 // clusterNameRegex permits the same shape `add-cluster.sh` accepts —
-// lowercase + digits + `-` + `/` (the cs/zrh nested overlay pattern).
+// lowercase + digits + `-` + `/` (the eu/dc1 nested overlay pattern).
 // Refuses leading/trailing `/` and `--`.
 var clusterNameRegex = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$`)
 
@@ -292,7 +360,7 @@ func (o *InitOptions) Validate() error {
 	errs = append(errs, validatePreset(o.Preset)...)
 	errs = append(errs, validateMode(o.Mode)...)
 	errs = append(errs, validateFleetMode(o.FleetMode)...)
-	errs = append(errs, validateRookMode(o.RookMode, o.RookOSDSizeGB)...)
+	errs = append(errs, validateObjectStorage(o)...)
 	errs = append(errs, validateAddons(o.Addons)...)
 	errs = append(errs, validateNodeNICs(o.NodeNICs)...)
 	errs = append(errs, validateSets(o.Sets)...)
@@ -317,6 +385,21 @@ func (o *InitOptions) Validate() error {
 	// must not silently no-op through apply. (E2E shakedown 2026-07-04.)
 	if len(o.Addons) > 0 {
 		return ErrAddonsNotImplemented
+	}
+
+	// Object-storage mode gates (OS-1/OS-2). Structural companions
+	// were validated above; here the mode itself is dispositioned:
+	//   unset      → required (typed; cobra adds the sibling hint)
+	//   external-* → permanent stub fail-closed (no fleet manifests)
+	//   rook-*     → allowed — the OS-2 scaffold writer wires the
+	//                overlay + Flux layer + platform dependsOn at apply
+	//   disabled   → allowed; the explicit mode IS the consent
+	//                (plan render carries the monitoring warning)
+	switch o.RookMode {
+	case "":
+		return ErrObjectStorageModeRequired
+	case RookExternalCeph, RookExternalS3:
+		return fmt.Errorf("%w (mode=%s)", ErrObjectStorageModeStub, o.RookMode)
 	}
 
 	// --github-owner + --github-repo are required for ANY fleet
@@ -409,7 +492,7 @@ func validateName(name string) []string {
 		return []string{"--name is required"}
 	}
 	if !clusterNameRegex.MatchString(name) {
-		return []string{fmt.Sprintf("--name %q must be lowercase letters/digits/dashes (optionally nested with /, e.g. cs/zrh)", name)}
+		return []string{fmt.Sprintf("--name %q must be lowercase letters/digits/dashes (optionally nested with /, e.g. eu/dc1)", name)}
 	}
 	return nil
 }
@@ -419,7 +502,7 @@ func validateDomain(domain string) []string {
 		return []string{"--domain is required"}
 	}
 	if !domainRegex.MatchString(strings.ToLower(domain)) {
-		return []string{fmt.Sprintf("--domain %q must be a FQDN (e.g. acropolis.example.com)", domain)}
+		return []string{fmt.Sprintf("--domain %q must be a FQDN (e.g. atlantis.example.com)", domain)}
 	}
 	return nil
 }
@@ -484,30 +567,115 @@ func validateFleetMode(f FleetMode) []string {
 	return []string{fmt.Sprintf("--fleet-mode %q not recognised (want one of %s)", f, joinFleetModes(AllFleetModes))}
 }
 
-func validateRookMode(r RookMode, osdSizeGB int) []string {
-	// Empty rolls up to Disabled at flag-bind time, but if it slipped
-	// through (programmatic construction), reject loudly.
-	if r == "" {
-		return []string{"--rook-mode unset (use --rook-mode=disabled to skip storage)"}
+// validateObjectStorage is the structural half of the OS-1 mode
+// contract: enum membership + per-mode companion flags (the
+// M4-T04 preset-required-keys pattern) + SEMANTIC value validation.
+// The REQUIRED check itself lives in Validate's cross-flag pass
+// (typed sentinel so the cobra layer can attach the sibling-mode
+// hint), so empty mode is skipped here.
+//
+// Semantic validation matters because every companion value lands
+// verbatim as a `KEY=value` line in cluster-config.env (OS-2 writer +
+// config.Env.Set store raw, unquoted values — reviewer P2 2026-07-04):
+// a newline would inject extra env keys, and an invalid node/device/
+// storage-class/hostname string would commit cleanly and only fail
+// minutes later inside Flux/Rook with a much worse error. The regexes
+// are anchored whole-string with restricted character classes, so
+// control chars, whitespace, `=`, and `$` (Flux postBuild substitution
+// trigger) are all structurally impossible in accepted values.
+func validateObjectStorage(o *InitOptions) []string {
+	if o.RookMode == "" {
+		return nil // cross-flag pass returns ErrObjectStorageModeRequired
 	}
 	known := false
 	for _, ok := range AllRookModes {
-		if r == ok {
+		if o.RookMode == ok {
 			known = true
 			break
 		}
 	}
 	if !known {
-		return []string{fmt.Sprintf("--rook-mode %q not recognised (want one of %s)", r, joinRookModes(AllRookModes))}
+		return []string{fmt.Sprintf("--object-storage-mode %q not recognised (want one of %s)", o.RookMode, joinRookModes(AllRookModes))}
 	}
-	// rook-ceph-local requires --rook-osd-size-gb > 0; the other modes
-	// don't (multi-node sizes per-node from cluster.yaml, external
-	// modes don't manage OSDs at all).
-	if r == RookCephLocal && osdSizeGB <= 0 {
-		return []string{"--rook-mode=rook-ceph-local requires --rook-osd-size-gb > 0"}
+
+	var errs []string
+
+	// Shared: S3 hostname (→ S3_HOSTNAME) must be a bare FQDN, same
+	// contract as --domain. Empty = default s3.<domain> (validated
+	// via --domain already).
+	if o.S3Hostname != "" && !domainRegex.MatchString(o.S3Hostname) {
+		errs = append(errs, fmt.Sprintf("--s3-hostname %q is not a valid FQDN (bare hostname, e.g. s3.example.com — no scheme, no path)", o.S3Hostname))
 	}
-	return nil
+
+	switch o.RookMode {
+	case RookCephLocal:
+		// → CEPH_LOCAL_OSD_NODE + CEPH_LOCAL_OSD_SIZE_GB (device
+		// defaults to loop0 fleet-side).
+		switch {
+		case o.RookOSDNode == "":
+			errs = append(errs, "--object-storage-mode=rook-ceph-local requires --rook-osd-node")
+		case !k8sNodeNameRegex.MatchString(o.RookOSDNode):
+			errs = append(errs, fmt.Sprintf("--rook-osd-node %q is not a valid Kubernetes node name (lowercase RFC 1123: a-z, 0-9, '-', '.')", o.RookOSDNode))
+		}
+		if o.RookOSDSizeGB <= 0 {
+			errs = append(errs, "--object-storage-mode=rook-ceph-local requires --rook-osd-size-gb > 0")
+		}
+		if o.RookOSDDevice != "" && !deviceNameRegex.MatchString(o.RookOSDDevice) {
+			errs = append(errs, fmt.Sprintf("--rook-osd-device %q is not a valid device name (e.g. sdb, nvme0n1, loop0)", o.RookOSDDevice))
+		}
+	case RookCephMultiNode:
+		// → CEPH_NODE_{1..3} + devices. Exactly 3 in v1: the fleet
+		// mode template is 3-slot (design call 2026-07-04 — don't
+		// parameterise until the fleet mode itself supports N slots;
+		// 2-host topologies hand-patch slot 3 in their overlay).
+		if len(o.CephNodes) != 3 {
+			errs = append(errs, fmt.Sprintf("--object-storage-mode=rook-ceph-multi-node requires exactly 3 --ceph-node NODE=DEVICE entries (got %d; the fleet mode template is 3-slot — 2-host topologies hand-patch slot 3 in their object-storage overlay)", len(o.CephNodes)))
+		}
+		// Deterministic error order: sorted node names.
+		nodes := make([]string, 0, len(o.CephNodes))
+		for n := range o.CephNodes {
+			nodes = append(nodes, n)
+		}
+		sort.Strings(nodes)
+		for _, node := range nodes {
+			dev := o.CephNodes[node]
+			if !k8sNodeNameRegex.MatchString(node) {
+				errs = append(errs, fmt.Sprintf("--ceph-node node %q is not a valid Kubernetes node name (lowercase RFC 1123: a-z, 0-9, '-', '.')", node))
+			}
+			if !deviceNameRegex.MatchString(dev) {
+				errs = append(errs, fmt.Sprintf("--ceph-node device %q (node %s) is not a valid device name (e.g. sdb, nvme0n1)", dev, node))
+			}
+		}
+	case RookCephPVC:
+		// → CEPH_OSD_STORAGE_CLASS (count/size have fleet defaults).
+		switch {
+		case o.CephStorageClass == "":
+			errs = append(errs, "--object-storage-mode=rook-ceph-pvc requires --ceph-storage-class")
+		case !k8sNodeNameRegex.MatchString(o.CephStorageClass):
+			// StorageClass names share the RFC 1123 subdomain shape.
+			errs = append(errs, fmt.Sprintf("--ceph-storage-class %q is not a valid StorageClass name (lowercase RFC 1123: a-z, 0-9, '-', '.')", o.CephStorageClass))
+		}
+		if o.CephOSDCount < 0 {
+			errs = append(errs, "--ceph-osd-count must be >= 0 (0 = fleet default)")
+		}
+		if o.CephOSDVolumeSizeGB < 0 {
+			errs = append(errs, "--ceph-osd-volume-size-gb must be >= 0 (0 = fleet default)")
+		}
+	}
+	return errs
 }
+
+// k8sNodeNameRegex is the RFC 1123 subdomain shape Kubernetes uses
+// for node + StorageClass (and most object) names: lowercase
+// alphanumerics, '-', '.', must start/end alphanumeric. Anchored
+// whole-string, so newlines / '=' / '$' / spaces are structurally
+// excluded — these values land verbatim in cluster-config.env.
+var k8sNodeNameRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$`)
+
+// deviceNameRegex accepts Linux block-device identifiers as Rook
+// consumes them: short names (sdb, nvme0n1, loop0) and by-path/by-id
+// style relative paths. Same env-safety anchoring as above.
+var deviceNameRegex = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9/_.-]*$`)
 
 // allowedAddons is the v1 addon registry. Adding an addon means
 // adding both the validator entry here and the rendering hook in M4

@@ -38,7 +38,7 @@ Auto-scrubs every share buffer on return (success or error). The
 decrypted secrets.enc.yaml blob is zeroed in-memory before unseal
 returns.`,
 		Example: `  # Standard flow after openbao init or on pod restart
-  kube-dc bootstrap openbao unseal cloudacropolis --repo ~/projects/kube-dc-fleet`,
+  kube-dc bootstrap openbao unseal atlantis --repo ~/projects/kube-dc-fleet`,
 		Args:          cobra.ExactArgs(1),
 		SilenceErrors: true,
 		SilenceUsage:  true,

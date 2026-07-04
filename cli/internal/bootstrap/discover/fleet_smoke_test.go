@@ -7,63 +7,51 @@ import (
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/discover"
 )
 
-// TestListClusters_LiveFleet runs against the developer's local checkout
-// at /home/voa/projects/kube-dc-fleet when present. Skipped in CI where
-// the path won't exist. This is a smoke test, not a unit test — its job
-// is to prove the enumerator finds all three real clusters with their
-// real cluster-config.env values.
+// TestListClusters_LiveFleet is an opt-in smoke test: it runs against
+// a real fleet checkout ONLY when the operator points at one via the
+// KUBE_DC_FLEET_SMOKE env var (skipped otherwise — CI, fresh clones).
+//
+//	KUBE_DC_FLEET_SMOKE=~/projects/my-fleet go test ./internal/bootstrap/discover/ -run LiveFleet -v
+//
+// Assertions are STRUCTURAL only — at least one cluster enumerates,
+// every cluster's cluster-config.env parses with keys, and the fleet
+// convention (no kubeconfigs in tree) holds. It deliberately does NOT
+// assert specific cluster names/domains: this package ships to the
+// public mirror, and real infrastructure identifiers must never be
+// hardcoded here (2026-07-04 sweep).
 func TestListClusters_LiveFleet(t *testing.T) {
-	const liveFleet = "/home/voa/projects/kube-dc-fleet"
+	liveFleet := os.Getenv("KUBE_DC_FLEET_SMOKE")
+	if liveFleet == "" {
+		t.Skip("KUBE_DC_FLEET_SMOKE not set — skipping live-fleet smoke")
+	}
 	if _, err := os.Stat(liveFleet); err != nil {
-		t.Skipf("live fleet not present at %s — skipping", liveFleet)
+		t.Skipf("fleet not present at %s — skipping", liveFleet)
 	}
 
 	clusters, err := discover.ListClusters(liveFleet)
 	if err != nil {
 		t.Fatalf("ListClusters: %v", err)
 	}
-
-	want := map[string]struct {
-		domain string
-		extNet string
-	}{
-		"cloud":  {domain: "kube-dc.cloud", extNet: "ext-cloud"},
-		"stage":  {},
-		"cs/zrh": {},
+	if len(clusters) == 0 {
+		t.Fatal("expected at least one cluster in the live fleet")
 	}
 
-	got := map[string]discover.Cluster{}
 	for _, c := range clusters {
-		got[c.Name] = c
-	}
-
-	for name, w := range want {
-		c, ok := got[name]
-		if !ok {
-			t.Errorf("expected cluster %q in fleet, not found. Got: %v", name, names(clusters))
-			continue
-		}
-		if w.domain != "" && c.Domain != w.domain {
-			t.Errorf("cluster %s: DOMAIN = %q, want %q", name, c.Domain, w.domain)
-		}
-		if w.extNet != "" && c.ExtNetName != w.extNet {
-			t.Errorf("cluster %s: EXT_NET_NAME = %q, want %q", name, c.ExtNetName, w.extNet)
+		if c.Name == "" {
+			t.Error("cluster with empty name enumerated")
 		}
 		if c.Env == nil {
-			t.Errorf("cluster %s: Env not parsed", name)
+			t.Errorf("cluster %s: Env not parsed", c.Name)
 		} else if len(c.Env.Keys()) == 0 {
-			t.Errorf("cluster %s: zero keys parsed from cluster-config.env", name)
+			t.Errorf("cluster %s: zero keys parsed from cluster-config.env", c.Name)
 		}
 		// Fleet convention: no kubeconfigs in tree.
 		if c.HasInTreeKubeconfig {
-			t.Errorf("cluster %s: HasInTreeKubeconfig=true (kubeconfig leaked into Git)", name)
+			t.Errorf("cluster %s: HasInTreeKubeconfig=true (kubeconfig leaked into Git)", c.Name)
 		}
 	}
 
 	t.Logf("found %d clusters: %v", len(clusters), names(clusters))
-	for _, c := range clusters {
-		t.Logf("  %-12s domain=%-25s api=%-35s ext=%s", c.Name, c.Domain, c.KubeAPIURL, c.ExtNetName)
-	}
 }
 
 func names(cs []discover.Cluster) []string {

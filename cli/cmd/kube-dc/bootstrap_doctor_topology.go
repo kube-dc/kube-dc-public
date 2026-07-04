@@ -38,7 +38,7 @@ Endpoints feature should be enabled.
 
 Classes:
 
-  A — 1:1-NAT hairpin (cloudacropolis-class)          → REQUIRES the feature
+  A — 1:1-NAT hairpin (atlantis-class)          → REQUIRES the feature
   B — Flat-L2 with per-node externalIPs (cloud-class) → does NOT need it
   C — Cloud-provider LoadBalancer (AWS/GCP/Azure)     → does NOT need it
 
@@ -57,7 +57,7 @@ Probes run against the current kubeconfig. Use KUBECONFIG env var or
   kube-dc bootstrap doctor topology
 
   # Target a specific cluster
-  KUBECONFIG=/path/to/cloudacropolis_config kube-dc bootstrap doctor topology
+  KUBECONFIG=/path/to/atlantis_config kube-dc bootstrap doctor topology
 
   # Or via flag
   kube-dc bootstrap doctor topology --kubeconfig /path/to/cluster_config`,

@@ -109,7 +109,7 @@ type AdoptOpts struct {
 	FleetRoot string
 
 	// ClusterName is the cluster directory under fleet/clusters/.
-	// E.g. "cloud", "stage", "cs/zrh".
+	// E.g. "cloud", "stage", "eu/dc1".
 	ClusterName string
 
 	// KubectlContext is the kubectl context that has admin access to

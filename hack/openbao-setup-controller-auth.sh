@@ -119,7 +119,7 @@ set -euo pipefail
 
 # ----- inputs ----------------------------------------------------------------
 
-CLUSTER=${CLUSTER:?CLUSTER=stage|cloud|cs-zrh required}
+CLUSTER=${CLUSTER:?CLUSTER=<cluster-name> required (a clusters/<name> entry in your fleet repo)}
 DOMAIN=${DOMAIN:?DOMAIN=<cluster domain> required (e.g. stage.kube-dc.com)}
 KUBE_DC_NS=${KUBE_DC_NS:-kube-dc}
 MANAGER_SA=${MANAGER_SA:-kube-dc-manager}

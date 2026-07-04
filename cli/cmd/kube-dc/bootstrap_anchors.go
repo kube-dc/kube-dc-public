@@ -76,9 +76,9 @@ func bootstrapAnchorsApplyCmd(fleetRepo *string) *cobra.Command {
 		Args:          cobra.ExactArgs(1),
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		Example: `  kube-dc bootstrap anchors apply cloudacropolis --repo ~/projects/kube-dc-fleet
-  kube-dc bootstrap anchors apply cs/zrh --dry-run
-  kube-dc bootstrap anchors apply acme --ssh-host-map srv5-kub1=10.0.0.5 --ssh-host-map srv6-kub1=10.0.0.6`,
+		Example: `  kube-dc bootstrap anchors apply atlantis --repo ~/projects/kube-dc-fleet
+  kube-dc bootstrap anchors apply eu/dc1 --dry-run
+  kube-dc bootstrap anchors apply acme --ssh-host-map host5-a=10.0.0.5 --ssh-host-map host6-a=10.0.0.6`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clusterName := args[0]
 
@@ -167,7 +167,7 @@ func bootstrapAnchorsApplyCmd(fleetRepo *string) *cobra.Command {
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false,
 		"Print the would-write actions without touching any node")
 	cmd.Flags().StringSliceVar(&sshHostMapFlag, "ssh-host-map", nil,
-		"Override SSH target for a node: --ssh-host-map srv5-kub1=10.0.0.5 (repeatable). "+
+		"Override SSH target for a node: --ssh-host-map host5-a=10.0.0.5 (repeatable). "+
 			"Wins over EXT_NET_ANCHOR_SSH_HOSTS from cluster-config.env. "+
 			"Falls back to ~/.ssh/config alias when no mapping is supplied.")
 	return cmd
@@ -204,7 +204,7 @@ func loadAnchorCluster(repoRoot, name string) (discover.Cluster, error) {
 		}
 	}
 	// Help the operator by listing what IS available — typos +
-	// path/slash confusion (cs/zrh vs cs-zrh) are the common modes.
+	// path/slash confusion (eu/dc1 vs eu-dc1) are the common modes.
 	var names []string
 	for _, c := range clusters {
 		names = append(names, c.Name)

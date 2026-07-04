@@ -101,7 +101,7 @@ func TestDetectMode_TruthTable(t *testing.T) {
 
 func TestResolveMode_ExplicitOverride_NoProbe(t *testing.T) {
 	// When --mode is explicit, ResolveMode must skip the prober
-	// entirely — including when prober is nil. This is the cloudacropolis
+	// entirely — including when prober is nil. This is the atlantis
 	// path (operator passes --mode=install).
 	cases := []Mode{ModeInstall, ModeAdopt, ModeResume}
 	for _, m := range cases {

@@ -72,7 +72,7 @@ import (
 // NFDResult is the structured payload consumers use. Node lists (not
 // just counts) so error messages can name the specific nodes — e.g.
 // "cloud-vlan preset requires ≥3 kubevirt-eligible nodes; found 2:
-// [srv1-kub1, srv2-kub1]".
+// [host1-a, host2-a]".
 type NFDResult struct {
 	// NFDInstalled is true iff at least one Node carries any
 	// feature.node.kubernetes.io/* label. Absence is a strong signal

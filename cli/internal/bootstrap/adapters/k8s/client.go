@@ -231,7 +231,7 @@ func (c *Client) PodExecViaKubectl(ctx context.Context, ns, pod string, cmd []st
 // difference from realExecStreamer: kubectl is a separate
 // implementation of the apiserver exec protocol that, in practice,
 // is more reliable than client-go's WebSocket exec against the
-// cs/zrh kube-apiserver 2026-06-08-class flake.
+// eu/dc1 kube-apiserver 2026-06-08-class flake.
 //
 // Kubeconfig pass-through:
 //   - if c.kubeconfigPath is non-empty, we pass it via the
@@ -337,7 +337,7 @@ func (c *Client) realExecStreamer(ctx context.Context, ns, pod string, cmd []str
 	// (NewSPDYExecutor) has a long-standing stream-demuxer flake that
 	// occasionally returns the stdout channel as 0 bytes against
 	// busy apiserver targets — observed deterministically against
-	// cs/zrh kube-apiserver 2026-06-08 against the active OpenBao
+	// eu/dc1 kube-apiserver 2026-06-08 against the active OpenBao
 	// Raft node (under heavier concurrent stream multiplexing than
 	// standbys). Symptom: parseStatus reports "no JSON object in
 	// bao-status output" against a healthy cluster while `kubectl
@@ -357,7 +357,7 @@ func (c *Client) realExecStreamer(ctx context.Context, ns, pod string, cmd []str
 	//
 	// NewFallbackExecutor (WS-first + SPDY-fallback) was considered
 	// and rejected — empirically the fallback never triggered on
-	// the cs/zrh failure case (WS succeeded but data path silently
+	// the eu/dc1 failure case (WS succeeded but data path silently
 	// returned 0 bytes), but the predicate matched on a transient
 	// error and dropped us into SPDY mid-stream where the flake
 	// reproduces. WebSocket-only is the simpler + more reliable

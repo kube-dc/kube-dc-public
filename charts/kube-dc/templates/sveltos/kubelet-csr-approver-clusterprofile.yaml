@@ -24,7 +24,7 @@ dev / CI on a fresh cluster where Sveltos is being added later.
 # managed-K8s is a kube-dc feature available on every kube-dc cluster
 # (KubeVirt-based or CloudSigma-based). Tying the approver to the
 # CloudSigma-only chart (cluster-api-provider-cloudsigma) would silently
-# skip cloud / cloudacropolis / future non-CloudSigma installs.
+# skip non-CloudSigma installs.
 #
 # Provisioning chain:
 #   kube-dc Helm chart  ->  Sveltos ClusterProfile (this file)  ->  Sveltos

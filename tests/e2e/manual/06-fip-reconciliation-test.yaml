@@ -79,7 +79,7 @@ spec:
             chpasswd: { expire: False }
             ssh_pwauth: True
             ssh_authorized_keys:
-              - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMFQBgrVz2kDCEWP+5LEnRf4SzZJP6wBVTYFrJa6kzw8 voa@kube-dc-bastion
+              - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5REPLACEWITHYOUROWNPUBLICKEY0000000000000000 user@example.com # replace with your SSH public key
 
 ---
 apiVersion: kube-dc.com/v1

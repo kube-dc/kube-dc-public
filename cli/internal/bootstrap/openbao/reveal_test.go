@@ -44,7 +44,7 @@ func newFakeRevealSOPS(body string) *fakeSOPSDecryptOnly {
 func TestRevealShares_HappyPath(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := RevealShares(context.Background(), RevealOptions{
-		ClusterName:  "cs/zrh",
+		ClusterName:  "eu/dc1",
 		FleetRepo:    "/tmp/fake",
 		SOPS:         newFakeRevealSOPS(canonicalDecryptedForReveal),
 		Consent:      true,
@@ -86,7 +86,7 @@ func TestRevealShares_HappyPath(t *testing.T) {
 	// Audit line on stderr — operator + cluster + timestamp.
 	for _, want := range []string{
 		"REVEAL:",
-		"cs/zrh",
+		"eu/dc1",
 		"2026-07-03T15:04:05Z",
 		"operator voa",
 	} {
@@ -111,7 +111,7 @@ func TestRevealShares_HappyPath(t *testing.T) {
 func TestRevealShares_NoConsent_Refuses(t *testing.T) {
 	sops := newFakeRevealSOPS(canonicalDecryptedForReveal)
 	err := RevealShares(context.Background(), RevealOptions{
-		ClusterName: "cs/zrh",
+		ClusterName: "eu/dc1",
 		FleetRepo:   "/tmp/fake",
 		SOPS:        sops,
 		Consent:     false,
@@ -140,7 +140,7 @@ func TestRevealShares_MissingShare_Refuses(t *testing.T) {
 		"", 1)
 	var stdout, stderr bytes.Buffer
 	err := RevealShares(context.Background(), RevealOptions{
-		ClusterName: "cs/zrh",
+		ClusterName: "eu/dc1",
 		FleetRepo:   "/tmp/fake",
 		SOPS:        newFakeRevealSOPS(trimmed),
 		Consent:     true,
@@ -167,7 +167,7 @@ func TestRevealShares_MissingShare_Refuses(t *testing.T) {
 func TestRevealShares_SOPSDecryptError_Propagates(t *testing.T) {
 	sops := &fakeSOPSDecryptOnly{err: errors.New("age key not enrolled")}
 	err := RevealShares(context.Background(), RevealOptions{
-		ClusterName: "cs/zrh",
+		ClusterName: "eu/dc1",
 		FleetRepo:   "/tmp/fake",
 		SOPS:        sops,
 		Consent:     true,
@@ -178,7 +178,7 @@ func TestRevealShares_SOPSDecryptError_Propagates(t *testing.T) {
 	if !strings.Contains(err.Error(), "age key not enrolled") {
 		t.Errorf("expected propagated adapter error, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "cs/zrh") {
+	if !strings.Contains(err.Error(), "eu/dc1") {
 		t.Errorf("error should include cluster context, got %v", err)
 	}
 }
@@ -190,7 +190,7 @@ func TestRevealShares_SOPSDecryptError_Propagates(t *testing.T) {
 func TestRevealShares_EmptyOperator_FallsBackToUnknown(t *testing.T) {
 	var stderr bytes.Buffer
 	err := RevealShares(context.Background(), RevealOptions{
-		ClusterName:  "cs/zrh",
+		ClusterName:  "eu/dc1",
 		FleetRepo:    "/tmp/fake",
 		SOPS:         newFakeRevealSOPS(canonicalDecryptedForReveal),
 		Consent:      true,
@@ -237,7 +237,7 @@ func TestRevealShares_MissingDependency_Refuses(t *testing.T) {
 // just wants to verify consent + successful decrypt).
 func TestRevealShares_NilOut_NoCrash(t *testing.T) {
 	err := RevealShares(context.Background(), RevealOptions{
-		ClusterName: "cs/zrh",
+		ClusterName: "eu/dc1",
 		FleetRepo:   "/tmp/fake",
 		SOPS:        newFakeRevealSOPS(canonicalDecryptedForReveal),
 		Consent:     true,
@@ -280,7 +280,7 @@ func TestRevealShares_AuditWriteFails_RefusesToEmitShares(t *testing.T) {
 	var stdout bytes.Buffer
 	audit := &failingWriter{successBeforeErr: 0, err: errors.New("simulated stderr closed")}
 	err := RevealShares(context.Background(), RevealOptions{
-		ClusterName:  "cs/zrh",
+		ClusterName:  "eu/dc1",
 		FleetRepo:    "/tmp/fake",
 		SOPS:         newFakeRevealSOPS(canonicalDecryptedForReveal),
 		Consent:      true,
@@ -321,7 +321,7 @@ func TestRevealShares_OutputWriteFails_ReturnsStructuralError(t *testing.T) {
 	// already landed but stdout broke partway.
 	out := &failingWriter{successBeforeErr: 2, err: errors.New("simulated broken pipe")}
 	err := RevealShares(context.Background(), RevealOptions{
-		ClusterName:  "cs/zrh",
+		ClusterName:  "eu/dc1",
 		FleetRepo:    "/tmp/fake",
 		SOPS:         newFakeRevealSOPS(canonicalDecryptedForReveal),
 		Consent:      true,

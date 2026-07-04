@@ -31,8 +31,8 @@ func (f *fakeNodeLabels) NodeLabels(_ context.Context) (map[string]map[string]st
 // report NFDInstalled=false and empty capability lists.
 func TestNFDDetect_NoNFDInstalled(t *testing.T) {
 	src := &fakeNodeLabels{labels: map[string]map[string]string{
-		"srv1-kub1": {"kubernetes.io/hostname": "srv1-kub1"},
-		"srv2-kub1": {"kubernetes.io/hostname": "srv2-kub1"},
+		"host1-a": {"kubernetes.io/hostname": "host1-a"},
+		"host2-a": {"kubernetes.io/hostname": "host2-a"},
 	}}
 	r, err := NFDDetect(context.Background(), src)
 	if err != nil {
@@ -227,14 +227,14 @@ func TestNFDDetect_CompositesInstalled_PreferredOverRaw(t *testing.T) {
 // kubevirt-eligible, 1 with GPU. Composites installed.
 func TestNFDDetect_MixedCluster(t *testing.T) {
 	src := &fakeNodeLabels{labels: map[string]map[string]string{
-		"srv5-kub1": {
+		"host5-a": {
 			"kube-dc.com/kubevirt-eligible": "true",
 		},
-		"srv6-kub1": {
+		"host6-a": {
 			"kube-dc.com/kubevirt-eligible": "true",
 			"kube-dc.com/gpu.nvidia":        "true",
 		},
-		"srv7-kub1": {
+		"host7-a": {
 			// Not kubevirt-eligible (arm64 or container-only node)
 			"kube-dc.com/kubevirt-eligible": "false",
 		},
@@ -246,10 +246,10 @@ func TestNFDDetect_MixedCluster(t *testing.T) {
 	if r.TotalNodes != 3 {
 		t.Errorf("TotalNodes = %d, want 3", r.TotalNodes)
 	}
-	if !equalStringsNFD(r.KubeVirtEligibleNodes, []string{"srv5-kub1", "srv6-kub1"}) {
+	if !equalStringsNFD(r.KubeVirtEligibleNodes, []string{"host5-a", "host6-a"}) {
 		t.Errorf("KubeVirtEligibleNodes = %v", r.KubeVirtEligibleNodes)
 	}
-	if !equalStringsNFD(r.NvidiaGPUNodes, []string{"srv6-kub1"}) {
+	if !equalStringsNFD(r.NvidiaGPUNodes, []string{"host6-a"}) {
 		t.Errorf("NvidiaGPUNodes = %v", r.NvidiaGPUNodes)
 	}
 	if r.AMDGPUCount() != 0 {

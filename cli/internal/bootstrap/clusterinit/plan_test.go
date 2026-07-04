@@ -24,12 +24,12 @@ func withConsentDir(t *testing.T) string {
 	return dir
 }
 
-func cloudacropolisOpts() *InitOptions {
+func atlantisOpts() *InitOptions {
 	o := validBase()
 	o.NodeNICs = map[string]string{
-		"SRV5-Kub1": "enp1s0",
-		"SRV6-Kub1": "enp1s0",
-		"SRV7-Kub1": "enp1s0",
+		"HOST5-A": "enp1s0",
+		"HOST6-A": "enp1s0",
+		"HOST7-A": "enp1s0",
 	}
 	o.Sets = map[string]string{
 		"EXT_NET_VLAN_ID":   "1103",
@@ -38,9 +38,9 @@ func cloudacropolisOpts() *InitOptions {
 	return &o
 }
 
-func cloudacropolisFleet() FleetState {
+func atlantisFleet() FleetState {
 	return FleetState{
-		PriorClusters:   []string{"cloud", "stage", "cs/zrh"},
+		PriorClusters:   []string{"cloud", "stage", "eu/dc1"},
 		SOPSRecipients:  3,
 		PlatformVersion: "v0.4.0",
 	}
@@ -49,8 +49,8 @@ func cloudacropolisFleet() FleetState {
 // determinism + hash equality -----------------------------------
 
 func TestBuildPlan_Deterministic(t *testing.T) {
-	o := cloudacropolisOpts()
-	fleet := cloudacropolisFleet()
+	o := atlantisOpts()
+	fleet := atlantisFleet()
 
 	p1, err := BuildPlan(o, fleet)
 	if err != nil {
@@ -86,15 +86,15 @@ func TestComputeInputHash_StableAcrossEquivalentOptions(t *testing.T) {
 	// this should hold automatically — this test guards against a
 	// regression where some future change uses a non-marshalled
 	// representation.
-	o1 := cloudacropolisOpts()
-	o2 := cloudacropolisOpts()
+	o1 := atlantisOpts()
+	o2 := atlantisOpts()
 	// Re-shuffle by rebuilding the maps in a different declaration
 	// order. Go's map literal is order-irrelevant but this still
 	// exercises the marshalling path.
 	o2.NodeNICs = map[string]string{
-		"SRV7-Kub1": "enp1s0",
-		"SRV5-Kub1": "enp1s0",
-		"SRV6-Kub1": "enp1s0",
+		"HOST7-A": "enp1s0",
+		"HOST5-A": "enp1s0",
+		"HOST6-A": "enp1s0",
 	}
 	h1, _ := ComputeInputHash(o1)
 	h2, _ := ComputeInputHash(o2)
@@ -105,7 +105,7 @@ func TestComputeInputHash_StableAcrossEquivalentOptions(t *testing.T) {
 
 func TestComputeInputHash_SensitiveToChange(t *testing.T) {
 	// Changing any meaningful field must change the hash.
-	o := cloudacropolisOpts()
+	o := atlantisOpts()
 	base, _ := ComputeInputHash(o)
 
 	cases := []struct {
@@ -125,11 +125,18 @@ func TestComputeInputHash_SensitiveToChange(t *testing.T) {
 		// commit+push+flux-install run that the operator reviewed
 		// as a local-only preview (or vice versa).
 		{"toggle no-push", func(o *InitOptions) { o.NoPush = true }},
+		// OS-1: the object-storage mode + companions select which
+		// fleet manifests get scaffolded — all substantive.
+		{"object-storage mode", func(o *InitOptions) { o.RookMode = RookCephLocal }},
+		{"ceph node added", func(o *InitOptions) { o.CephNodes = map[string]string{"srv6": "sdb"} }},
+		{"ceph storage class", func(o *InitOptions) { o.CephStorageClass = "fast-ssd" }},
+		{"s3 hostname", func(o *InitOptions) { o.S3Hostname = "s3.other.example.com" }},
+		{"toggle no-s3-exposure", func(o *InitOptions) { o.NoS3Exposure = true }},
 	}
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			mod := *cloudacropolisOpts()
+			mod := *atlantisOpts()
 			// deep-copy the maps so the parent's case-by-case
 			// mutation doesn't leak through to the next iteration.
 			mod.Sets = copyMap(mod.Sets)
@@ -163,7 +170,7 @@ func TestComputeInputHash_ExcludesApplyFlowFlags(t *testing.T) {
 	// behavior (skips push + flux-install) so a dry-run/apply
 	// mismatch there IS a real drift. See the "toggle no-push"
 	// case in TestComputeInputHash_SensitiveToChange.
-	base := cloudacropolisOpts()
+	base := atlantisOpts()
 	baseHash, _ := ComputeInputHash(base)
 
 	cases := []struct {
@@ -181,7 +188,7 @@ func TestComputeInputHash_ExcludesApplyFlowFlags(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			o := *cloudacropolisOpts()
+			o := *atlantisOpts()
 			o.Sets = copyMap(o.Sets)
 			o.NodeNICs = copyMap(o.NodeNICs)
 			tc.mutate(&o)
@@ -201,11 +208,11 @@ func TestBuildPlan_InheritedDefaults_DefensiveCopy(t *testing.T) {
 	// map after BuildPlan returns can't silently corrupt the
 	// plan's contents (which would also bypass PlanHash detection
 	// since the hash was computed before the mutation).
-	fleet := cloudacropolisFleet()
+	fleet := atlantisFleet()
 	fleet.InheritedDefaults = map[string]string{
 		"KUBE_DC_VERSION": "v0.3.63",
 	}
-	p, err := BuildPlan(cloudacropolisOpts(), fleet)
+	p, err := BuildPlan(atlantisOpts(), fleet)
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -228,15 +235,15 @@ func TestPlan_PlanHashExcludesGeneratedAt(t *testing.T) {
 	// produced different PlanHash values — a silent determinism
 	// bug. Force two different timestamps and assert identical
 	// hashes.
-	o := cloudacropolisOpts()
-	p1, err := BuildPlan(o, cloudacropolisFleet())
+	o := atlantisOpts()
+	p1, err := BuildPlan(o, atlantisFleet())
 	if err != nil {
 		t.Fatalf("first BuildPlan: %v", err)
 	}
 	// Build the second plan, then forcibly drift GeneratedAt by 12
 	// hours and recompute its PlanHash. The recomputed hash must
 	// match the first plan's.
-	p2, err := BuildPlan(o, cloudacropolisFleet())
+	p2, err := BuildPlan(o, atlantisFleet())
 	if err != nil {
 		t.Fatalf("second BuildPlan: %v", err)
 	}
@@ -261,7 +268,7 @@ func TestPlan_PlanHashExcludesGeneratedAt(t *testing.T) {
 }
 
 func TestPlan_PlanHashExcludesItself(t *testing.T) {
-	p, err := BuildPlan(cloudacropolisOpts(), cloudacropolisFleet())
+	p, err := BuildPlan(atlantisOpts(), atlantisFleet())
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -285,7 +292,7 @@ func TestPlan_PlanHashExcludesItself(t *testing.T) {
 // File I/O round-trip + atomic write ---------------------------
 
 func TestWritePlanFile_AtomicAndLoadable(t *testing.T) {
-	p, err := BuildPlan(cloudacropolisOpts(), cloudacropolisFleet())
+	p, err := BuildPlan(atlantisOpts(), atlantisFleet())
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -322,7 +329,7 @@ func TestWritePlanFile_AtomicAndLoadable(t *testing.T) {
 }
 
 func TestLoadPlan_RejectsTamperedFile(t *testing.T) {
-	p, err := BuildPlan(cloudacropolisOpts(), cloudacropolisFleet())
+	p, err := BuildPlan(atlantisOpts(), atlantisFleet())
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -350,7 +357,7 @@ func TestLoadPlan_RejectsTamperedFile(t *testing.T) {
 }
 
 func TestLoadPlan_RejectsWrongSchemaVersion(t *testing.T) {
-	p, err := BuildPlan(cloudacropolisOpts(), cloudacropolisFleet())
+	p, err := BuildPlan(atlantisOpts(), atlantisFleet())
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -371,8 +378,8 @@ func TestLoadPlan_RejectsWrongSchemaVersion(t *testing.T) {
 // VerifyApplyPlanInput ------------------------------------------
 
 func TestVerifyApplyPlanInput(t *testing.T) {
-	o := cloudacropolisOpts()
-	p, err := BuildPlan(o, cloudacropolisFleet())
+	o := atlantisOpts()
+	p, err := BuildPlan(o, atlantisFleet())
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -383,7 +390,7 @@ func TestVerifyApplyPlanInput(t *testing.T) {
 	}
 
 	// Mutate any meaningful field — verify fails with ErrPlanInputDrift.
-	o2 := *cloudacropolisOpts()
+	o2 := *atlantisOpts()
 	o2.Sets = copyMap(o2.Sets)
 	o2.Sets["EXT_NET_VLAN_ID"] = "9999"
 	if err := VerifyApplyPlanInput(p, &o2); !errors.Is(err, ErrPlanInputDrift) {
@@ -394,7 +401,7 @@ func TestVerifyApplyPlanInput(t *testing.T) {
 // Render output --------------------------------------------------
 
 func TestRender_GreenfieldShape(t *testing.T) {
-	o := cloudacropolisOpts()
+	o := atlantisOpts()
 	o.FleetMode = FleetNewRepo
 	o.GitHubOwner = "shalb"
 	o.GitHubRepo = "kube-dc-fleet"
@@ -410,8 +417,8 @@ func TestRender_GreenfieldShape(t *testing.T) {
 		"cluster-config.env",
 		"secrets.enc.yaml",
 		"Scripts to run",
-		"bootstrap/add-cluster.sh cloudacropolis",
-		"bootstrap/flux-install.sh cloudacropolis --new-cluster",
+		"bootstrap/add-cluster.sh atlantis",
+		"bootstrap/flux-install.sh atlantis --new-cluster",
 		"deferred until HelmRelease/openbao Ready",
 		"Cluster mutations",
 		"Confirmations required",
@@ -430,6 +437,43 @@ func TestRender_GreenfieldShape(t *testing.T) {
 	}
 }
 
+// TestRender_ObjectStorageOS1Shape — OS-1 render contract:
+// (1) the vaporware "(in-process) apply Rook CephObjectStore + system
+// OBCs" deferred step is GONE — it was never implemented and
+// contradicted the GitOps model (Flux applies the data plane via the
+// infra-object-storage Kustomization; the CLI only generates files);
+// (2) an explicit --object-storage-mode=disabled surfaces the
+// monitoring-will-not-converge warning prominently in the render AND
+// in the hashed plan (a reviewed warning can't vanish between dry-run
+// and apply).
+func TestRender_ObjectStorageOS1Shape(t *testing.T) {
+	o := atlantisOpts() // baseline is explicit disabled
+	p, err := BuildPlan(o, atlantisFleet())
+	if err != nil {
+		t.Fatalf("BuildPlan: %v", err)
+	}
+	var buf bytes.Buffer
+	p.Render(&buf)
+	body := buf.String()
+
+	if strings.Contains(body, "CephObjectStore") {
+		t.Errorf("render leaked the deleted vaporware CephObjectStore step:\n%s", body)
+	}
+	for _, want := range []string{
+		"== WARNINGS ==",
+		"object storage disabled",
+		"Mimir + Loki are SUSPENDED",
+		"UNPROTECTED",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("disabled-mode render missing %q\nFULL:\n%s", want, body)
+		}
+	}
+	if len(p.Warnings) != 1 {
+		t.Errorf("plan should carry exactly 1 warning, got %v", p.Warnings)
+	}
+}
+
 // TestRender_NoPushShape — C4 reviewer P1: the render must match
 // what apply.go actually does under --no-push. Two invariants:
 // (1) the commit line reflects local-only (no "+ push"), and (2)
@@ -439,7 +483,7 @@ func TestRender_GreenfieldShape(t *testing.T) {
 // --no-push, so an operator dry-run+reviewed a preview that didn't
 // match the apply behavior.
 func TestRender_NoPushShape(t *testing.T) {
-	o := cloudacropolisOpts()
+	o := atlantisOpts()
 	o.NoPush = true
 	o.FleetMode = FleetNewRepo
 	o.GitHubOwner = "kube-dc"
@@ -472,7 +516,7 @@ func TestRender_NoPushShape(t *testing.T) {
 }
 
 func TestRender_ExistingFleetShape(t *testing.T) {
-	p, err := BuildPlan(cloudacropolisOpts(), cloudacropolisFleet())
+	p, err := BuildPlan(atlantisOpts(), atlantisFleet())
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -481,11 +525,11 @@ func TestRender_ExistingFleetShape(t *testing.T) {
 	body := buf.String()
 	for _, want := range []string{
 		"== Detected: existing-fleet ==",
-		"Prior clusters: cloud, cs/zrh, stage",
+		"Prior clusters: cloud, eu/dc1, stage",
 		"KUBE_DC_PLATFORM_VERSION=v0.4.0",
 		"Files NOT touched",
 		"clusters/cloud/ (untouched)",
-		"clusters/cs/zrh/ (untouched)",
+		"clusters/eu/dc1/ (untouched)",
 		"(in-process) scaffold from sibling templates",
 		"(in-process) render customInterfaces into infrastructure.yaml",
 		"3 --node-nic mapping",
@@ -508,7 +552,7 @@ func TestRender_PreservesScriptExecutionOrder(t *testing.T) {
 	// The script list is order-sensitive (T10 scaffold must run
 	// before T12 commit which must run before flux-install). Verify
 	// the Render output reflects the BuildPlan order verbatim.
-	p, err := BuildPlan(cloudacropolisOpts(), cloudacropolisFleet())
+	p, err := BuildPlan(atlantisOpts(), atlantisFleet())
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -520,10 +564,10 @@ func TestRender_PreservesScriptExecutionOrder(t *testing.T) {
 		"(in-process) scaffold from sibling templates",
 		"(in-process) apply form deltas to cluster-config.env",
 		"(in-process) render customInterfaces into infrastructure.yaml",
-		"(in-process) sops encrypt clusters/cloudacropolis/secrets.enc.yaml",
+		"(in-process) sops encrypt clusters/atlantis/secrets.enc.yaml",
 		"(in-process) git add + commit + push",
-		"bootstrap/flux-install.sh cloudacropolis --new-cluster",
-		"kube-dc bootstrap openbao init cloudacropolis",
+		"bootstrap/flux-install.sh atlantis --new-cluster",
+		"kube-dc bootstrap openbao init atlantis",
 	}
 	last := -1
 	for _, s := range steps {
@@ -543,7 +587,7 @@ func TestRender_PreservesScriptExecutionOrder(t *testing.T) {
 func TestConsentMarker_WriteAndLookup(t *testing.T) {
 	_ = withConsentDir(t)
 
-	p, err := BuildPlan(cloudacropolisOpts(), cloudacropolisFleet())
+	p, err := BuildPlan(atlantisOpts(), atlantisFleet())
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -582,9 +626,9 @@ func TestConsentMarker_WriteAndLookup(t *testing.T) {
 
 func TestConsentMarker_FlattensNestedClusterName(t *testing.T) {
 	dir := withConsentDir(t)
-	// cs/zrh-shape cluster name — the marker path must flatten the
+	// eu/dc1-shape cluster name — the marker path must flatten the
 	// slash so it's one path component.
-	p := &Plan{ClusterName: "cs/zrh", PlanHash: "abc123"}
+	p := &Plan{ClusterName: "eu/dc1", PlanHash: "abc123"}
 	if err := WriteConsentMarker(p); err != nil {
 		t.Fatalf("WriteConsentMarker: %v", err)
 	}
@@ -592,7 +636,7 @@ func TestConsentMarker_FlattensNestedClusterName(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 file, got %d", len(entries))
 	}
-	if name := entries[0].Name(); !strings.Contains(name, "cs_zrh") {
-		t.Errorf("marker filename should flatten cs/zrh -> cs_zrh, got %q", name)
+	if name := entries[0].Name(); !strings.Contains(name, "eu_dc1") {
+		t.Errorf("marker filename should flatten eu/dc1 -> eu_dc1, got %q", name)
 	}
 }

@@ -11,8 +11,8 @@ import (
 func TestApply_HappyPath(t *testing.T) {
 	ssh := mock.NewSSHClient(nil)
 	anchors := []Entry{
-		{Host: "srv5-kub1", CIDR: "100.64.0.11/16"},
-		{Host: "srv6-kub1", CIDR: "100.64.0.12/16"},
+		{Host: "host5-a", CIDR: "100.64.0.11/16"},
+		{Host: "host6-a", CIDR: "100.64.0.12/16"},
 	}
 	res, err := Apply(context.Background(), ssh, ApplyOptions{
 		Anchors: anchors,
@@ -78,7 +78,7 @@ func TestApply_HappyPath(t *testing.T) {
 func TestApply_DryRun_NoSideEffects(t *testing.T) {
 	ssh := mock.NewSSHClient(nil)
 	res, err := Apply(context.Background(), ssh, ApplyOptions{
-		Anchors: []Entry{{Host: "srv5-kub1", CIDR: "100.64.0.11/16"}},
+		Anchors: []Entry{{Host: "host5-a", CIDR: "100.64.0.11/16"}},
 		Iface:   "br-ext-cloud",
 		DryRun:  true,
 	})
@@ -88,7 +88,7 @@ func TestApply_DryRun_NoSideEffects(t *testing.T) {
 	if res.Failed != 0 {
 		t.Errorf("dry-run shouldn't fail; res=%+v", res)
 	}
-	if got := ssh.PutCapture("srv5-kub1", RemoteScriptPath); got != nil {
+	if got := ssh.PutCapture("host5-a", RemoteScriptPath); got != nil {
 		t.Errorf("dry-run wrote script (len=%d)", len(got))
 	}
 	if got := ssh.RunCaptures(); len(got) != 0 {

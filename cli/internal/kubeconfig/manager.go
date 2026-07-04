@@ -93,7 +93,7 @@ func NewManager() (*Manager, error) {
 
 // Path returns the kubeconfig file path the manager will read from /
 // write to. Useful for surfacing in the TUI ("Kube-DC Contexts —
-// /home/voa/.kube/config").
+// ~/.kube/config").
 func (m *Manager) Path() string { return m.path }
 
 // Load loads the kubeconfig file

@@ -4,7 +4,7 @@ kind: Stack
 backend: default
 variables:
   debug: "true"
-  kubeconfig: /home/voa/.kube/stage_config
+  kubeconfig: ~/.kube/config # set to your cluster kubeconfig
 
   monitoring:
     prom_storage: 20Gi
@@ -43,7 +43,7 @@ variables:
       exclude_ips: 
       - "100.65.0.1..100.65.0.100"
     
-  node_external_ip: 88.99.29.250
+  node_external_ip: 203.0.113.250
 
   email: "noreply@kube-dc.com"
   domain: "stage.kube-dc.com"

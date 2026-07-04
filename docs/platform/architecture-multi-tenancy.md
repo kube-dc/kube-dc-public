@@ -47,7 +47,7 @@ metadata:
   namespace: shalb
 spec: 
   description: "Shalb organization"
-  email: "arti@shalb.com"
+  email: "alice@example.com"
 ```
 
 **Mapping:**

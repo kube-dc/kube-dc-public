@@ -123,7 +123,7 @@ This allows safe cleanup without affecting other resources.
 
 ### 1. Test All OS Images
 ```bash
-cd /home/voa/projects/kube-dc/tests/iso-images
+cd tests/iso-images  # from the repo root
 
 # Create all test VMs from ConfigMap
 python3 generate-os-test-vms.py shalb-dev create

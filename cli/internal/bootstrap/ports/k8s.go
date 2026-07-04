@@ -79,7 +79,7 @@ type K8sClient interface {
 	// shape as PodExec.
 	//
 	// **Why a separate method**: client-go's WebSocket exec drops
-	// ~30% of stdin/stdout calls against some apiservers (cs/zrh
+	// ~30% of stdin/stdout calls against some apiservers (eu/dc1
 	// 2026-06-08), while the kubectl binary's stream handling
 	// works reliably on the same cluster — different protocol
 	// implementation despite hitting the same exec subresource.

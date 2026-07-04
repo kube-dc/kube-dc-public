@@ -532,7 +532,7 @@ func TestBuildPlan_ProviderHashStability(t *testing.T) {
 			FleetMode:      FleetNewRepo,
 			GitHubOwner:    "acme",
 			GitHubRepo:     "fleet",
-			RookMode:       RookCephMultiNode,
+			RookMode:       RookDisabled, // baseline: no companion flags needed
 			Sets: map[string]string{
 				"EXT_NET_VLAN_ID":  "1",
 				"EXT_NET_INTERFACE": "e",

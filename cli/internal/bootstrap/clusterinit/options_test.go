@@ -12,10 +12,10 @@ func validBase() InitOptions {
 	return InitOptions{
 		Preset:         PresetCloudPublicVLAN,
 		Mode:           ModeInstall,
-		Name:           "cloudacropolis",
-		Domain:         "kdc.acropolis.example.com",
-		NodeExternalIP: "217.117.26.52",
-		Email:          "ops@acropolis.example.com",
+		Name:           "atlantis",
+		Domain:         "kdc.atlantis.example.com",
+		NodeExternalIP: "203.0.113.52",
+		Email:          "ops@atlantis.example.com",
 		FleetMode:      FleetExistingFleet,
 		// Required for existing-fleet (review-pass — P2/P3 rule):
 		// pointing at an existing path so Validate accepts it. Tests
@@ -26,8 +26,12 @@ func validBase() InitOptions {
 		// Tests exercising "missing owner/repo" mutate these to "".
 		GitHubOwner: "kube-dc",
 		GitHubRepo:  "kube-dc-fleet",
-		RookMode:    RookCephMultiNode,
-		Yes:         true, // satisfies CI apply gate when NoTTY is set; harmless otherwise
+		// Mode is REQUIRED with no default (OS-1). Baseline stays
+		// `disabled` because it needs no companion flags; rook-*
+		// modes are live (OS-2) — tests exercising them set the
+		// mode + companions explicitly.
+		RookMode: RookDisabled,
+		Yes:      true, // satisfies CI apply gate when NoTTY is set; harmless otherwise
 	}
 }
 
@@ -47,7 +51,7 @@ func TestValidate_Structural(t *testing.T) {
 		{"missing name", func(o *InitOptions) { o.Name = "" }, "--name is required"},
 		{"bad name uppercase", func(o *InitOptions) { o.Name = "Cloud" }, "--name"},
 		{"bad name leading dash", func(o *InitOptions) { o.Name = "-cloud" }, "--name"},
-		{"nested name OK", func(o *InitOptions) { o.Name = "cs/zrh" }, ""},
+		{"nested name OK", func(o *InitOptions) { o.Name = "eu/dc1" }, ""},
 		{"missing domain", func(o *InitOptions) { o.Domain = "" }, "--domain is required"},
 		{"bad domain URL", func(o *InitOptions) { o.Domain = "https://foo.example" }, "--domain"},
 		{"bad domain no dot", func(o *InitOptions) { o.Domain = "localhost" }, "--domain"},
@@ -62,10 +66,64 @@ func TestValidate_Structural(t *testing.T) {
 		{"bad mode", func(o *InitOptions) { o.Mode = Mode("upgrade") }, "--mode"},
 		{"missing fleet-mode", func(o *InitOptions) { o.FleetMode = "" }, "--fleet-mode is required"},
 		{"bad fleet-mode", func(o *InitOptions) { o.FleetMode = FleetMode("bare-metal-fleet") }, "--fleet-mode"},
-		{"missing rook-mode", func(o *InitOptions) { o.RookMode = "" }, "--rook-mode unset"},
-		{"bad rook-mode", func(o *InitOptions) { o.RookMode = RookMode("hyperconverged") }, "--rook-mode"},
-		{"rook-ceph-local needs osd-size", func(o *InitOptions) { o.RookMode = RookCephLocal; o.RookOSDSizeGB = 0 }, "rook-osd-size-gb"},
-		{"rook-ceph-local with osd-size OK", func(o *InitOptions) { o.RookMode = RookCephLocal; o.RookOSDSizeGB = 500 }, ""},
+		// Structural object-storage cases only — enum membership +
+		// per-mode companions surface as ErrValidation. The REQUIRED
+		// check and the fail-closed gates are typed sentinels (NOT
+		// ErrValidation) and live in TestValidate_ObjectStorageMode.
+		{"bad object-storage-mode", func(o *InitOptions) { o.RookMode = RookMode("hyperconverged") }, "--object-storage-mode"},
+		{"rook-ceph-local needs osd-size", func(o *InitOptions) {
+			o.RookMode = RookCephLocal
+			o.RookOSDNode = "srv6"
+			o.RookOSDSizeGB = 0
+		}, "rook-osd-size-gb"},
+		{"rook-ceph-local needs osd-node", func(o *InitOptions) {
+			o.RookMode = RookCephLocal
+			o.RookOSDNode = ""
+			o.RookOSDSizeGB = 500
+		}, "rook-osd-node"},
+		{"multi-node needs exactly 3 ceph-nodes", func(o *InitOptions) {
+			o.RookMode = RookCephMultiNode
+			o.CephNodes = map[string]string{"srv6": "sdb", "srv7": "sdb"}
+		}, "exactly 3"},
+		{"pvc needs storage-class", func(o *InitOptions) { o.RookMode = RookCephPVC }, "ceph-storage-class"},
+		// Semantic value validation (reviewer P2 2026-07-04): every
+		// companion value lands verbatim in cluster-config.env, so
+		// hostnames/node names/devices/storage classes are validated
+		// for shape AND env-safety (newline/=/$ structurally excluded
+		// by the anchored regexes).
+		{"bad s3 hostname (scheme)", func(o *InitOptions) {
+			o.RookMode = RookCephPVC
+			o.CephStorageClass = "fast-ssd"
+			o.S3Hostname = "https://s3.example.com"
+		}, "--s3-hostname"},
+		{"s3 hostname newline injection", func(o *InitOptions) {
+			o.RookMode = RookCephPVC
+			o.CephStorageClass = "fast-ssd"
+			o.S3Hostname = "s3.example.com\nINJECTED_KEY=evil"
+		}, "--s3-hostname"},
+		{"uppercase osd node rejected", func(o *InitOptions) {
+			o.RookMode = RookCephLocal
+			o.RookOSDNode = "HOST6-A" // k8s node names are lowercase RFC 1123
+			o.RookOSDSizeGB = 500
+		}, "not a valid Kubernetes node name"},
+		{"osd device with space rejected", func(o *InitOptions) {
+			o.RookMode = RookCephLocal
+			o.RookOSDNode = "host6-a"
+			o.RookOSDSizeGB = 500
+			o.RookOSDDevice = "sdb extra"
+		}, "--rook-osd-device"},
+		{"ceph-node bad node name", func(o *InitOptions) {
+			o.RookMode = RookCephMultiNode
+			o.CephNodes = map[string]string{"host5-a": "sdb", "host6-a": "sdb", "BAD_NODE": "sdb"}
+		}, "not a valid Kubernetes node name"},
+		{"ceph-node newline device injection", func(o *InitOptions) {
+			o.RookMode = RookCephMultiNode
+			o.CephNodes = map[string]string{"host5-a": "sdb", "host6-a": "sdb", "host7-a": "sdb\nEVIL=1"}
+		}, "not a valid device name"},
+		{"bad storage class rejected", func(o *InitOptions) {
+			o.RookMode = RookCephPVC
+			o.CephStorageClass = "Fast_SSD"
+		}, "not a valid StorageClass name"},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -146,6 +204,71 @@ func TestValidate_Addons_FailsClosedWithSentinel(t *testing.T) {
 	}
 }
 
+// TestValidate_ObjectStorageMode — OS-1/OS-2 disposition matrix.
+// Structural companions are covered in TestValidate_Structural; this
+// table checks the cross-flag gates: required / stub fail-closed /
+// rook-* allowed (OS-2 scaffold writer wires them at apply) /
+// disabled allowed. Each expected error is asserted via errors.Is so
+// cobra-layer special-casing (sibling hint on Required) keeps working.
+func TestValidate_ObjectStorageMode(t *testing.T) {
+	threeNodes := map[string]string{"host5-a": "sdc", "host6-a": "sdb", "host7-a": "sdb"}
+	cases := []struct {
+		name    string
+		mutate  func(*InitOptions)
+		wantErr error // nil = expect Validate() == nil
+	}{
+		{"unset mode → required", func(o *InitOptions) { o.RookMode = "" }, ErrObjectStorageModeRequired},
+		{"disabled explicit → OK", func(o *InitOptions) { o.RookMode = RookDisabled }, nil},
+		{"external-ceph → stub fail-closed", func(o *InitOptions) { o.RookMode = RookExternalCeph }, ErrObjectStorageModeStub},
+		{"external-s3 → stub fail-closed", func(o *InitOptions) { o.RookMode = RookExternalS3 }, ErrObjectStorageModeStub},
+		{"local complete → OK (OS-2 wired)", func(o *InitOptions) {
+			o.RookMode = RookCephLocal
+			o.RookOSDNode = "host6-a"
+			o.RookOSDSizeGB = 500
+		}, nil},
+		{"multi-node complete → OK (OS-2 wired)", func(o *InitOptions) {
+			o.RookMode = RookCephMultiNode
+			o.CephNodes = threeNodes
+		}, nil},
+		{"pvc complete → OK (OS-2 wired)", func(o *InitOptions) {
+			o.RookMode = RookCephPVC
+			o.CephStorageClass = "fast-ssd"
+		}, nil},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			o := validBase()
+			tc.mutate(&o)
+			err := o.Validate()
+			if tc.wantErr == nil {
+				if err != nil {
+					t.Fatalf("expected ok, got %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("expected %v, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+// TestValidate_ObjectStorageMode_CompanionsStillEnforced — OS-2
+// removed the rook-* fail-closed gate, but the structural companion
+// requirements stay: an incomplete multi-node config must keep
+// erroring with the specific "exactly 3" message, never slip through
+// to a scaffold that would write CEPH_NODE_3= (empty) into
+// cluster-config.env.
+func TestValidate_ObjectStorageMode_CompanionsStillEnforced(t *testing.T) {
+	o := validBase()
+	o.RookMode = RookCephMultiNode // no CephNodes
+	err := o.Validate()
+	if !errors.Is(err, ErrValidation) || !strings.Contains(err.Error(), "exactly 3") {
+		t.Fatalf("expected structural 'exactly 3' error, got %v", err)
+	}
+}
+
 func TestValidate_Sets(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -191,18 +314,18 @@ func TestValidate_NodeNICs(t *testing.T) {
 	}{
 		// Happy paths.
 		{"empty ok", nil, ""},
-		{"single ok", map[string]string{"SRV5-Kub1": "enp1s0"}, ""},
+		{"single ok", map[string]string{"HOST5-A": "enp1s0"}, ""},
 		{"multi ok", map[string]string{
-			"SRV5-Kub1": "enp1s0",
-			"SRV6-Kub1": "bond0",
-			"SRV7-Kub1": "eno2",
+			"HOST5-A": "enp1s0",
+			"HOST6-A": "bond0",
+			"HOST7-A": "eno2",
 		}, ""},
-		{"with dot", map[string]string{"SRV5-Kub1": "eth0.100"}, ""},
+		{"with dot", map[string]string{"HOST5-A": "eth0.100"}, ""},
 		// Failure paths.
-		{"empty iface rejected", map[string]string{"SRV5-Kub1": ""}, "empty iface"},
-		{"shell metachar rejected", map[string]string{"SRV5-Kub1": "enp1s0;rm"}, "unsupported character"},
-		{"whitespace rejected", map[string]string{"SRV5-Kub1": "enp 1s0"}, "unsupported character"},
-		{"too long rejected", map[string]string{"SRV5-Kub1": "this-interface-name-is-too-long"}, "IFNAMSIZ"},
+		{"empty iface rejected", map[string]string{"HOST5-A": ""}, "empty iface"},
+		{"shell metachar rejected", map[string]string{"HOST5-A": "enp1s0;rm"}, "unsupported character"},
+		{"whitespace rejected", map[string]string{"HOST5-A": "enp 1s0"}, "unsupported character"},
+		{"too long rejected", map[string]string{"HOST5-A": "this-interface-name-is-too-long"}, "IFNAMSIZ"},
 	}
 	for _, tc := range cases {
 		tc := tc

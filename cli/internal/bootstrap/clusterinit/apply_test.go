@@ -106,7 +106,7 @@ func applyFleet(t *testing.T) string {
 // step has something to consume.
 func applyRunner(t *testing.T, repo string) *fakeScriptRunner {
 	t.Helper()
-	envBody := "CLUSTER_NAME=cloudacropolis\nDOMAIN=kdc.acropolis.example.com\n"
+	envBody := "CLUSTER_NAME=atlantis\nDOMAIN=kdc.atlantis.example.com\n"
 	infraBody := `apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -154,16 +154,16 @@ sops:
 	}
 }
 
-func cloudacropolisApplyOpts(t *testing.T, repo string, runner ports.ScriptRunner, git ports.GitClient) ApplyOptions {
+func atlantisApplyOpts(t *testing.T, repo string, runner ports.ScriptRunner, git ports.GitClient) ApplyOptions {
 	t.Helper()
 	return ApplyOptions{
 		Plan: &Plan{
-			ClusterName: "cloudacropolis",
-			Domain:      "kdc.acropolis.example.com",
+			ClusterName: "atlantis",
+			Domain:      "kdc.atlantis.example.com",
 			Preset:      PresetCloudPublicVLAN,
 		},
 		FleetRepo:      repo,
-		NodeExternalIP: "217.117.26.52",
+		NodeExternalIP: "203.0.113.52",
 		Sets: map[string]string{
 			"EXT_NET_VLAN_ID":    "1103",
 			"EXT_NET_INTERFACE":  "bond0",
@@ -171,7 +171,7 @@ func cloudacropolisApplyOpts(t *testing.T, repo string, runner ports.ScriptRunne
 			"EXT_PUBLIC_CIDR":    "10.0.0.0/24",
 			"EXT_PUBLIC_GATEWAY": "10.0.0.1",
 		},
-		NodeNICs:    map[string]string{"SRV5-Kub1": "enp1s0"},
+		NodeNICs:    map[string]string{"HOST5-A": "enp1s0"},
 		Runner:      runner,
 		Git:         git,
 		GitHubToken: "fake-token",
@@ -186,7 +186,7 @@ func TestApply_FluxInstall_GitHubEnv_Propagated(t *testing.T) {
 	repo := applyFleet(t)
 	runner := applyRunner(t, repo)
 	git := &fakeGit{preSHA: "abc123"}
-	opts := cloudacropolisApplyOpts(t, repo, runner, git)
+	opts := atlantisApplyOpts(t, repo, runner, git)
 	opts.Provider = "" // default → github
 	opts.GitHubOwner = "acme"
 	opts.GitHubRepo = "fleet"
@@ -231,7 +231,7 @@ func TestApply_FluxInstall_GitLabEnv_Propagated(t *testing.T) {
 	repo := applyFleet(t)
 	runner := applyRunner(t, repo)
 	git := &fakeGit{preSHA: "abc123"}
-	opts := cloudacropolisApplyOpts(t, repo, runner, git)
+	opts := atlantisApplyOpts(t, repo, runner, git)
 	opts.Provider = ProviderGitLab
 	opts.GitHubOwner = "acme-group"
 	opts.GitHubRepo = "fleet"
@@ -273,7 +273,7 @@ func TestApply_HappyPath(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	opts := cloudacropolisApplyOpts(t, repo, runner, git)
+	opts := atlantisApplyOpts(t, repo, runner, git)
 	opts.Out = &out
 	if err := Apply(context.Background(), opts); err != nil {
 		t.Fatalf("Apply: %v\nout:\n%s", err, out.String())
@@ -300,14 +300,14 @@ func TestApply_HappyPath(t *testing.T) {
 		t.Errorf("second script = %v, want ScriptFluxInstall", runner.calls[1].Kind)
 	}
 	// flux-install args.
-	wantFlux := []string{"cloudacropolis", "--new-cluster"}
+	wantFlux := []string{"atlantis", "--new-cluster"}
 	if len(runner.calls[1].Args) != len(wantFlux) {
 		t.Errorf("flux-install args = %v, want %v", runner.calls[1].Args, wantFlux)
 	}
 	// Operator-facing log mentions commit + completion.
 	for _, want := range []string{
 		"commit=def456",
-		"complete — Flux is reconciling cluster \"cloudacropolis\"",
+		"complete — Flux is reconciling cluster \"atlantis\"",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())
@@ -330,7 +330,7 @@ func TestApply_PushFailure_RollsBackToPreSHA(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	opts := cloudacropolisApplyOpts(t, repo, runner, git)
+	opts := atlantisApplyOpts(t, repo, runner, git)
 	opts.Out = &out
 	err := Apply(context.Background(), opts)
 	if err == nil {
@@ -372,7 +372,7 @@ func TestApply_PushAndRollbackBothFail_Wraps(t *testing.T) {
 		pushErr:   pushErr,
 		resetErr:  resetErr,
 	}
-	opts := cloudacropolisApplyOpts(t, repo, runner, git)
+	opts := atlantisApplyOpts(t, repo, runner, git)
 	err := Apply(context.Background(), opts)
 	if err == nil {
 		t.Fatal("expected error")
@@ -398,7 +398,7 @@ func TestApply_DirtyTree_Refused(t *testing.T) {
 			},
 		},
 	}
-	opts := cloudacropolisApplyOpts(t, repo, runner, git)
+	opts := atlantisApplyOpts(t, repo, runner, git)
 	err := Apply(context.Background(), opts)
 	if !errors.Is(err, ErrDirtyWorkingTree) {
 		t.Fatalf("expected ErrDirtyWorkingTree, got %v", err)
@@ -429,7 +429,7 @@ func TestApply_NoPush_SkipsFluxInstall(t *testing.T) {
 		commitSHA: "def",
 	}
 	var out bytes.Buffer
-	opts := cloudacropolisApplyOpts(t, repo, runner, git)
+	opts := atlantisApplyOpts(t, repo, runner, git)
 	opts.NoPush = true
 	opts.Out = &out
 	if err := Apply(context.Background(), opts); err != nil {
@@ -506,7 +506,7 @@ sops:
 	git := &fakeGit{preSHA: "pre", commitSHA: "post"}
 
 	var out bytes.Buffer
-	opts := cloudacropolisApplyOpts(t, repo, wrappedRunner, git)
+	opts := atlantisApplyOpts(t, repo, wrappedRunner, git)
 	opts.Runner = wrappedRunner
 	opts.Out = &out
 	err := Apply(context.Background(), opts)
@@ -555,7 +555,7 @@ stringData:
 	}
 	git := &fakeGit{preSHA: "pre", commitSHA: "post"}
 	var out bytes.Buffer
-	opts := cloudacropolisApplyOpts(t, repo, runner, git)
+	opts := atlantisApplyOpts(t, repo, runner, git)
 	opts.Out = &out
 
 	err := Apply(context.Background(), opts)
@@ -589,7 +589,7 @@ func TestApply_MissingDependencies_Errors(t *testing.T) {
 	repo := applyFleet(t)
 	runner := applyRunner(t, repo)
 	git := &fakeGit{preSHA: "x", commitSHA: "y"}
-	base := cloudacropolisApplyOpts(t, repo, runner, git)
+	base := atlantisApplyOpts(t, repo, runner, git)
 
 	cases := []struct {
 		name   string

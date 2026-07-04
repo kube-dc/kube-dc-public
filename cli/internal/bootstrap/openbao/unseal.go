@@ -115,7 +115,7 @@ func Unseal(ctx context.Context, opts UnsealOptions) error {
 	// their local storage yet. They must be joined to the leader's
 	// Raft cluster first, then unsealed with the leader's shares.
 	// This is the M5-T02 follow-up that handles the OrderedReady
-	// race observed during cs/zrh bring-up: the StatefulSet creates
+	// race observed during eu/dc1 bring-up: the StatefulSet creates
 	// openbao-1/2 only AFTER openbao-0 becomes Ready, so the first
 	// time `unseal` runs against a fresh HA install, openbao-1/2
 	// come up with empty storage and need the join before the

@@ -128,7 +128,7 @@ func TestBootstrapOpenBaoInit_RequiresRepo(t *testing.T) {
 	// "no repo" error before constructing a Session.
 	t.Setenv("KUBE_DC_FLEET", "")
 	t.Setenv("HOME", t.TempDir())
-	_, err := runOpenBaoCmd(t, "", []string{"init", "cloudacropolis"})
+	_, err := runOpenBaoCmd(t, "", []string{"init", "atlantis"})
 	if err == nil {
 		t.Fatal("expected error when no fleet repo is configured")
 	}
@@ -140,7 +140,7 @@ func TestBootstrapOpenBaoInit_RequiresRepo(t *testing.T) {
 func TestBootstrapOpenBaoUnseal_RequiresRepo(t *testing.T) {
 	t.Setenv("KUBE_DC_FLEET", "")
 	t.Setenv("HOME", t.TempDir())
-	_, err := runOpenBaoCmd(t, "", []string{"unseal", "cloudacropolis"})
+	_, err := runOpenBaoCmd(t, "", []string{"unseal", "atlantis"})
 	if err == nil {
 		t.Fatal("expected error when no fleet repo is configured")
 	}
@@ -274,7 +274,7 @@ func TestRenderOpenBaoStatus_TriageDecisions(t *testing.T) {
 	// decision branch.
 	baseline := func() openbao.StatusResult {
 		return openbao.StatusResult{
-			ClusterName: "cs/zrh",
+			ClusterName: "eu/dc1",
 			Pods: []ports.BaoStatus{
 				{Pod: "openbao-0", Initialized: true, Sealed: false, Version: "2.5.3", HAMode: "active"},
 				{Pod: "openbao-1", Initialized: true, Sealed: false, Version: "2.5.3", HAMode: "standby"},
@@ -306,7 +306,7 @@ func TestRenderOpenBaoStatus_TriageDecisions(t *testing.T) {
 				r.ControllerAuthInstalled = ""
 			},
 			wantContain: []string{
-				"Next: kube-dc bootstrap openbao init cs/zrh",
+				"Next: kube-dc bootstrap openbao init eu/dc1",
 				"never been initialised",
 			},
 			notContain: []string{
@@ -328,7 +328,7 @@ func TestRenderOpenBaoStatus_TriageDecisions(t *testing.T) {
 				r.Pods[2].Sealed = true
 			},
 			wantContain: []string{
-				"Next: kube-dc bootstrap openbao unseal cs/zrh",
+				"Next: kube-dc bootstrap openbao unseal eu/dc1",
 			},
 			notContain: []string{
 				"openbao init",
@@ -345,7 +345,7 @@ func TestRenderOpenBaoStatus_TriageDecisions(t *testing.T) {
 				}
 			},
 			wantContain: []string{
-				"Next: kube-dc bootstrap openbao unseal cs/zrh",
+				"Next: kube-dc bootstrap openbao unseal eu/dc1",
 			},
 			notContain: []string{
 				"init",
@@ -366,7 +366,7 @@ func TestRenderOpenBaoStatus_TriageDecisions(t *testing.T) {
 				r.ControllerAuthInstalled = ""
 			},
 			wantContain: []string{
-				"Next: kube-dc bootstrap openbao setup-controller-auth cs/zrh",
+				"Next: kube-dc bootstrap openbao setup-controller-auth eu/dc1",
 				"both markers absent",
 			},
 			notContain: []string{
@@ -383,7 +383,7 @@ func TestRenderOpenBaoStatus_TriageDecisions(t *testing.T) {
 				r.ControllerAuthInstalled = ""
 			},
 			wantContain: []string{
-				"Next: kube-dc bootstrap openbao setup-controller-auth cs/zrh",
+				"Next: kube-dc bootstrap openbao setup-controller-auth eu/dc1",
 				"controller-auth-installed marker absent",
 			},
 			notContain: []string{
@@ -399,7 +399,7 @@ func TestRenderOpenBaoStatus_TriageDecisions(t *testing.T) {
 				r.BootstrapFinalized = ""
 			},
 			wantContain: []string{
-				"Next: kube-dc bootstrap openbao setup-controller-auth cs/zrh",
+				"Next: kube-dc bootstrap openbao setup-controller-auth eu/dc1",
 				"bootstrap-finalized marker absent",
 				"re-stamps both",
 			},
@@ -451,7 +451,7 @@ func TestRenderOpenBaoStatus_TriageDecisions(t *testing.T) {
 // hit this before any file is touched.
 func TestBootstrapOpenBaoReveal_RequiresConsent(t *testing.T) {
 	t.Setenv("REVEAL", "") // defensive: clear any env inherited from CI
-	body, err := runOpenBaoCmd(t, "/tmp/some-fleet", []string{"reveal-shares", "cs/zrh"})
+	body, err := runOpenBaoCmd(t, "/tmp/some-fleet", []string{"reveal-shares", "eu/dc1"})
 	if err == nil {
 		t.Fatalf("expected consent-gate refusal; output:\n%s", body)
 	}
@@ -479,7 +479,7 @@ func TestBootstrapOpenBaoReveal_RequiresConsent(t *testing.T) {
 // the consent gate was cleared (exit code is 2, not 1).
 func TestBootstrapOpenBaoReveal_RevealEnvGrantsConsent(t *testing.T) {
 	t.Setenv("REVEAL", "true")
-	body, err := runOpenBaoCmd(t, "/tmp/nonexistent-fleet-reveal-env", []string{"reveal-shares", "cs/zrh"})
+	body, err := runOpenBaoCmd(t, "/tmp/nonexistent-fleet-reveal-env", []string{"reveal-shares", "eu/dc1"})
 	if err == nil {
 		t.Fatalf("expected decrypt failure with nonexistent fleet; output:\n%s", body)
 	}
@@ -506,7 +506,7 @@ func TestBootstrapOpenBaoReveal_RevealEnvGrantsConsent(t *testing.T) {
 func TestBootstrapOpenBaoReveal_FlagGrantsConsent(t *testing.T) {
 	t.Setenv("REVEAL", "") // defensive
 	body, err := runOpenBaoCmd(t, "/tmp/nonexistent-fleet-reveal-flag",
-		[]string{"reveal-shares", "cs/zrh", "--i-understand-the-risk"})
+		[]string{"reveal-shares", "eu/dc1", "--i-understand-the-risk"})
 	if err == nil {
 		t.Fatalf("expected decrypt failure with nonexistent fleet; output:\n%s", body)
 	}
@@ -540,14 +540,14 @@ func TestBootstrapOpenBaoReveal_NoKubeconfig_Proceeds(t *testing.T) {
 	// bug lived. Any SOPS-layer error is fine; what we're asserting
 	// is that the command didn't die at session build.
 	repo := t.TempDir()
-	dir := repo + "/clusters/cs/zrh"
+	dir := repo + "/clusters/eu/dc1"
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(dir+"/secrets.enc.yaml", []byte("stub-not-real-sops"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	body, err := runOpenBaoCmd(t, repo, []string{"reveal-shares", "cs/zrh"})
+	body, err := runOpenBaoCmd(t, repo, []string{"reveal-shares", "eu/dc1"})
 	if err == nil {
 		t.Fatalf("expected SOPS decrypt failure on stub file; output:\n%s", body)
 	}
@@ -577,7 +577,7 @@ func TestBootstrapOpenBaoReveal_RequiresRepo(t *testing.T) {
 	t.Setenv("KUBE_DC_FLEET", "")
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("REVEAL", "true") // ensure it's not the consent gate firing
-	_, err := runOpenBaoCmd(t, "", []string{"reveal-shares", "cs/zrh"})
+	_, err := runOpenBaoCmd(t, "", []string{"reveal-shares", "eu/dc1"})
 	if err == nil {
 		t.Fatal("expected error when no fleet repo is configured")
 	}
@@ -629,7 +629,7 @@ func TestBootstrapOpenBaoReveal_LongHelp_DocumentsExitContract(t *testing.T) {
 // any session build / decrypt happens.
 func TestBootstrapOpenBaoGenerateRoot_RequiresConsent(t *testing.T) {
 	t.Setenv("REVEAL", "")
-	body, err := runOpenBaoCmd(t, "/tmp/some-fleet", []string{"generate-root", "cs/zrh"})
+	body, err := runOpenBaoCmd(t, "/tmp/some-fleet", []string{"generate-root", "eu/dc1"})
 	if err == nil {
 		t.Fatalf("expected consent-gate refusal; output:\n%s", body)
 	}
@@ -654,7 +654,7 @@ func TestBootstrapOpenBaoGenerateRoot_RequiresConsent(t *testing.T) {
 func TestBootstrapOpenBaoGenerateRoot_RevealEnvGrantsConsent(t *testing.T) {
 	t.Setenv("REVEAL", "true")
 	body, err := runOpenBaoCmd(t, "/tmp/nonexistent-fleet-genroot-env",
-		[]string{"generate-root", "cs/zrh"})
+		[]string{"generate-root", "eu/dc1"})
 	if err == nil {
 		t.Fatalf("expected structural failure with nonexistent fleet; output:\n%s", body)
 	}
@@ -675,7 +675,7 @@ func TestBootstrapOpenBaoGenerateRoot_RevealEnvGrantsConsent(t *testing.T) {
 func TestBootstrapOpenBaoGenerateRoot_FlagGrantsConsent(t *testing.T) {
 	t.Setenv("REVEAL", "")
 	body, err := runOpenBaoCmd(t, "/tmp/nonexistent-fleet-genroot-flag",
-		[]string{"generate-root", "cs/zrh", "--i-understand-the-risk"})
+		[]string{"generate-root", "eu/dc1", "--i-understand-the-risk"})
 	if err == nil {
 		t.Fatalf("expected structural failure; output:\n%s", body)
 	}
@@ -696,7 +696,7 @@ func TestBootstrapOpenBaoGenerateRoot_RequiresRepo(t *testing.T) {
 	t.Setenv("KUBE_DC_FLEET", "")
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("REVEAL", "true")
-	_, err := runOpenBaoCmd(t, "", []string{"generate-root", "cs/zrh"})
+	_, err := runOpenBaoCmd(t, "", []string{"generate-root", "eu/dc1"})
 	if err == nil {
 		t.Fatal("expected error when no fleet repo is configured")
 	}
@@ -740,14 +740,14 @@ func TestBootstrapOpenBaoGenerateRoot_SessionBuildFails_ExitTwo(t *testing.T) {
 	// passes and execution reaches session build — where the P2 bug
 	// lived.
 	repo := t.TempDir()
-	dir := repo + "/clusters/cs/zrh"
+	dir := repo + "/clusters/eu/dc1"
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(dir+"/secrets.enc.yaml", []byte("stub"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	body, err := runOpenBaoCmd(t, repo, []string{"generate-root", "cs/zrh"})
+	body, err := runOpenBaoCmd(t, repo, []string{"generate-root", "eu/dc1"})
 	if err == nil {
 		t.Fatalf("expected session-build failure with nonexistent kubeconfig; output:\n%s", body)
 	}

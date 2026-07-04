@@ -16,7 +16,7 @@ import "context"
 //
 // Host config (User, Port, ProxyJump, …) is taken from `~/.ssh/config`
 // when present. The adapter respects standard ssh_config semantics so
-// `kube-dc bootstrap init --ssh-host ams1-blade179-8` works against
+// `kube-dc bootstrap init --ssh-host node-c3` works against
 // the operator's existing host aliases.
 type SSHClient interface {
 	// Run executes `cmd` on the host and returns combined stdout+stderr.
@@ -56,7 +56,7 @@ type SSHClient interface {
 // adapter requires at least Hostname (+ defaults User="root", Port=22).
 type SSHHost struct {
 	// Alias is a name from the operator's `~/.ssh/config` Host block
-	// (e.g. "ams1-blade179-8" or "bastion"). Optional.
+	// (e.g. "node-c3" or "bastion"). Optional.
 	Alias string
 
 	// Hostname is the explicit hostname / IP. Required when Alias is

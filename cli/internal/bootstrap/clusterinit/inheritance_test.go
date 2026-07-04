@@ -225,7 +225,7 @@ func TestCheckDomainCollision(t *testing.T) {
 	siblings := []SiblingCluster{
 		{Name: "cloud", Domain: "kube-dc.cloud"},
 		{Name: "stage", Domain: "stage.kube-dc.com"},
-		{Name: "cs/zrh", Domain: "kdc.zrh.cloudsigma.com"},
+		{Name: "eu/dc1", Domain: "kdc.eu-dc1.example.net"},
 	}
 	cases := []struct {
 		name      string
@@ -233,10 +233,10 @@ func TestCheckDomainCollision(t *testing.T) {
 		wantErr   bool
 		wantSub   string
 	}{
-		{"unique domain ok", "kdc.acropolis.example.com", false, ""},
+		{"unique domain ok", "kdc.atlantis.example.com", false, ""},
 		{"exact collision rejected", "kube-dc.cloud", true, "cloud"},
 		{"case-insensitive collision", "KUBE-DC.CLOUD", true, "cloud"},
-		{"nested-cluster collision", "kdc.zrh.cloudsigma.com", true, "cs/zrh"},
+		{"nested-cluster collision", "kdc.eu-dc1.example.net", true, "eu/dc1"},
 		{"empty newDomain ignored", "", false, ""},
 	}
 	for _, tc := range cases {

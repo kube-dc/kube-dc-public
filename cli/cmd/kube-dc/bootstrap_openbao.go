@@ -68,7 +68,7 @@ Day-2 operations:
     (no live token left when the command returns).
 
 All commands take the cluster name as a positional arg (use slash
-form 'cs/zrh' for clusters nested under a region subdir) + --repo
+form 'eu/dc1' for clusters nested under a region subdir) + --repo
 from the parent bootstrap command.`,
 	}
 	cmd.AddCommand(bootstrapOpenBaoInitCmd(fleetRepo))

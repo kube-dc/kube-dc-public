@@ -162,7 +162,7 @@ Kube-DC provides multiple ways to expose services:
 │   ┌─────────────────────────────────────────────────────────────────────────┐   │
 │   │                      1. Gateway Routes (Recommended)                    │   │
 │   │                                                                         │   │
-│   │   Internet → Envoy Gateway (88.99.29.250:443) → HTTPRoute → Service     │   │
+│   │   Internet → Envoy Gateway (203.0.113.250:443) → HTTPRoute → Service     │   │
 │   │                                                                         │   │
 │   │   -  Automatic TLS certificates                                         │   │
 │   │   -  Auto-generated hostnames                                           │   │
@@ -435,7 +435,7 @@ Envoy Gateway provides HTTP/HTTPS/gRPC routing with automatic TLS management.
 │   └───────────────────────────────────────────────────────────────────────┘  │
 │                                                                              │
 │                                        │                                     │
-│                                        │ externalIPs: 88.99.29.250           │
+│                                        │ externalIPs: 203.0.113.250           │
 │                                        ▼                                     │
 │   ┌───────────────────────────────────────────────────────────────────────┐  │
 │   │                         TRAFFIC FLOW                                  │  │
@@ -443,7 +443,7 @@ Envoy Gateway provides HTTP/HTTPS/gRPC routing with automatic TLS management.
 │   │   Client (https://my-app.stage.kube-dc.com)                           │  │
 │   │         │                                                             │  │
 │   │         ▼                                                             │  │
-│   │   DNS → 88.99.29.250 (Gateway external IP)                            │  │
+│   │   DNS → 203.0.113.250 (Gateway external IP)                            │  │
 │   │         │                                                             │  │
 │   │         ▼                                                             │  │
 │   │   Envoy Gateway (TLS termination with auto-cert)                      │  │

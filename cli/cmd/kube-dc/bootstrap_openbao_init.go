@@ -52,14 +52,14 @@ Per installer-prd §12.3: never writes plaintext shares to disk on
 its own; the optional shares-out file is the operator's explicit
 choice for off-fleet backup.`,
 		Example: `  # Standard install flow against an existing fleet repo
-  kube-dc bootstrap openbao init cloudacropolis --repo ~/projects/kube-dc-fleet
+  kube-dc bootstrap openbao init atlantis --repo ~/projects/kube-dc-fleet
 
   # Off-fleet plaintext backup (operator-managed)
-  kube-dc bootstrap openbao init cloudacropolis --repo ~/projects/kube-dc-fleet \
-    --openbao-shares-out=/secure/usb/cloudacropolis-shares.yaml
+  kube-dc bootstrap openbao init atlantis --repo ~/projects/kube-dc-fleet \
+    --openbao-shares-out=/secure/usb/atlantis-shares.yaml
 
   # Local-only commit (for testing the share-encryption path)
-  kube-dc bootstrap openbao init cloudacropolis --repo ~/projects/kube-dc-fleet --no-push`,
+  kube-dc bootstrap openbao init atlantis --repo ~/projects/kube-dc-fleet --no-push`,
 		Args:          cobra.ExactArgs(1),
 		SilenceErrors: true,
 		SilenceUsage:  true,

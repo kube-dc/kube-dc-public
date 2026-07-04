@@ -68,7 +68,7 @@ annotations:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│              Shared Envoy Gateway (88.99.29.250)                    │
+│              Shared Envoy Gateway (203.0.113.250)                    │
 ├─────────────────────────────────────────────────────────────────────┤
 │  HTTP :80       │  HTTPS :443 (terminate)  │  TLS :443 (passthrough)│
 │  HTTPRoute      │  HTTPRoute + Cert        │  TLSRoute (SNI-based)  │

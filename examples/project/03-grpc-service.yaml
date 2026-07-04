@@ -3,7 +3,7 @@
 #
 # Prerequisites:
 # - Apply 00-issuer.yaml first
-# - DNS record: grpc-api.example.com -> Gateway IP (88.99.29.250)
+# - DNS record: grpc-api.example.com -> Gateway IP (203.0.113.250)
 # - Project with cloud networking
 #
 # Usage:

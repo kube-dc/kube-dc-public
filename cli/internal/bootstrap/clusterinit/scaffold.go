@@ -83,6 +83,11 @@ type ScaffoldOptions struct {
 	// fleets don't need the patch).
 	NodeNICs map[string]string
 
+	// ObjectStorage carries the OS-1 mode + companions. Rook modes
+	// trigger the OS-2 writer (step 7: overlay + Flux layer +
+	// platform dependsOn + env keys); disabled writes nothing.
+	ObjectStorage ObjectStorageSpec
+
 	// Runner is the ports.ScriptRunner the engine calls. Real flow
 	// uses the script adapter; tests use a fake.
 	Runner ports.ScriptRunner
@@ -142,7 +147,7 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// overlay before running bootstrap (e.g. topology notes). The
 	// canonical "this overlay was already scaffolded" signal is the
 	// presence of cluster-config.env.
-	// Cluster name can contain a slash (cs/zrh shape) — filepath.Join
+	// Cluster name can contain a slash (eu/dc1 shape) — filepath.Join
 	// handles that correctly without escaping the fleet root.
 	clusterDir := filepath.Join(opts.FleetRepo, "clusters", opts.Plan.ClusterName)
 	marker := filepath.Join(clusterDir, "cluster-config.env")
@@ -200,6 +205,13 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 			return fmt.Errorf("scaffold: customInterfaces patch: %w", err)
 		}
 		fmt.Fprintf(out, "[scaffold] customInterfaces patch applied (%d nodes)\n", len(opts.NodeNICs))
+	}
+
+	// (7) OS-2 object-storage wiring — overlay + Flux layer +
+	// platform dependsOn + kustomization resources + env keys.
+	// No-op for disabled mode.
+	if err := WriteObjectStorage(opts.FleetRepo, opts.Plan.ClusterName, opts.Plan.Domain, opts.ObjectStorage, out); err != nil {
+		return fmt.Errorf("scaffold: %w", err)
 	}
 
 	fmt.Fprintf(out, "[scaffold] cluster overlay created at %s\n", clusterDir)

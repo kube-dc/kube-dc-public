@@ -65,13 +65,13 @@ Use:
     rotates SA bindings (rewrites policies AND roles, skips
     auth-enable + auth-configure).`,
 		Example: `  # First-time setup on a cluster already initialised by the legacy shell script
-  kube-dc bootstrap openbao setup-controller-auth cs/zrh --repo ~/projects/kube-dc-fleet
+  kube-dc bootstrap openbao setup-controller-auth eu/dc1 --repo ~/projects/kube-dc-fleet
 
   # Refresh policies + roles after a chart upgrade
-  kube-dc bootstrap openbao setup-controller-auth cs/zrh --repo ~/projects/kube-dc-fleet --refresh-policy
+  kube-dc bootstrap openbao setup-controller-auth eu/dc1 --repo ~/projects/kube-dc-fleet --refresh-policy
 
   # Recovery after init's Phase C bailed (recovery message points here)
-  kube-dc bootstrap openbao setup-controller-auth cs/zrh --repo ~/projects/kube-dc-fleet`,
+  kube-dc bootstrap openbao setup-controller-auth eu/dc1 --repo ~/projects/kube-dc-fleet`,
 		Args:          cobra.ExactArgs(1),
 		SilenceErrors: true,
 		SilenceUsage:  true,

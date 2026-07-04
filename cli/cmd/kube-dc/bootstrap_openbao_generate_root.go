@@ -92,11 +92,11 @@ After use, revoke:
 or scrub the terminal (clear + scrollback erase) so the token
 doesn't survive the shell session.`,
 		Example: `  # Emergency: get a working root token
-  kube-dc bootstrap openbao generate-root cs/zrh \
+  kube-dc bootstrap openbao generate-root eu/dc1 \
     --repo ~/projects/kube-dc-fleet --i-understand-the-risk
 
   # CI smoke: prove generate-root still works, no live token left
-  REVEAL=true kube-dc bootstrap openbao generate-root cs/zrh \
+  REVEAL=true kube-dc bootstrap openbao generate-root eu/dc1 \
     --repo ./fleet --revoke-immediately`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

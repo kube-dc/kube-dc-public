@@ -9,7 +9,7 @@
 # upstream virt-operator v1.8.x is *supposed* to create the SM
 # automatically when its CR has `spec.monitorNamespace` set, but the
 # create path silently skips on at least one shape of install
-# (cloudacropolis 2026-05-26 — log says "servicemonitor is defined" +
+# (observed on a production 1:1-NAT cluster, 2026-05-26 — log says "servicemonitor is defined" +
 # starts the informer, then never calls Create on the SM CRD, with
 # no skip-reason log line). We chased the gate for an hour and
 # couldn't reproduce the cloud-cluster's working path on a fresh
@@ -33,7 +33,7 @@
 #     → routed into that tenant's Mimir org → visible in their
 #     per-tenant Grafana dashboards.
 #
-# Single-tenant prom-direct clusters (e.g. cloudacropolis on the
+# Single-tenant prom-direct clusters (e.g. a single-tenant cluster on the
 # legacy prom-operator-prometheus stack) just pick the SM up via
 # the same empty `serviceMonitorSelector: {}` setup. All series
 # land in the single Prometheus.

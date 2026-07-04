@@ -60,7 +60,7 @@ After this completes, run:
 The deployments need to re-read their env-from Secret references —
 they don't pick up Secret rotations without a restart.`,
 		Example: `  # After keycloak HelmRelease goes Ready
-  kube-dc bootstrap keycloak init cloudacropolis --repo ~/projects/kube-dc-fleet`,
+  kube-dc bootstrap keycloak init atlantis --repo ~/projects/kube-dc-fleet`,
 		Args:          cobra.ExactArgs(1),
 		SilenceErrors: true,
 		SilenceUsage:  true,

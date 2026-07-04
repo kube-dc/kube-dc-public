@@ -65,11 +65,11 @@ Exit code:
 After use, clear your terminal + scrollback:
   clear && printf '\\033[3J'`,
 		Example: `  # Emergency recovery — flag opt-in
-  kube-dc bootstrap openbao reveal-shares cs/zrh \
+  kube-dc bootstrap openbao reveal-shares eu/dc1 \
     --repo ~/projects/kube-dc-fleet --i-understand-the-risk > shares.txt
 
   # CI runbook opt-in via env
-  REVEAL=true kube-dc bootstrap openbao reveal-shares cs/zrh \
+  REVEAL=true kube-dc bootstrap openbao reveal-shares eu/dc1 \
     --repo ./fleet > shares.txt`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -27,9 +27,9 @@ func TestBuildCustomInterfacesPatch_GroupsByInterface(t *testing.T) {
 	// Three nodes, two share an iface — must produce two groups
 	// (not three) with the shared-iface group listing both nodes.
 	nics := map[string]string{
-		"SRV5-Kub1": "enp1s0",
-		"SRV6-Kub1": "enp1s0",
-		"SRV7-Kub1": "eno2",
+		"HOST5-A": "enp1s0",
+		"HOST6-A": "enp1s0",
+		"HOST7-A": "eno2",
 	}
 	got, err := BuildCustomInterfacesPatch(nics)
 	if err != nil {
@@ -45,14 +45,14 @@ func TestBuildCustomInterfacesPatch_GroupsByInterface(t *testing.T) {
 	// Shared interface lists both nodes.
 	idx := strings.Index(got, "interface: enp1s0")
 	groupTail := got[idx:]
-	if !strings.Contains(groupTail, "SRV5-Kub1") || !strings.Contains(groupTail, "SRV6-Kub1") {
-		t.Errorf("enp1s0 group should list both SRV5-Kub1 and SRV6-Kub1:\n%s", got)
+	if !strings.Contains(groupTail, "HOST5-A") || !strings.Contains(groupTail, "HOST6-A") {
+		t.Errorf("enp1s0 group should list both HOST5-A and HOST6-A:\n%s", got)
 	}
 	// Sole-node group lists just that node.
 	idx = strings.Index(got, "interface: eno2")
 	groupTail = got[idx:]
-	if !strings.Contains(groupTail, "SRV7-Kub1") {
-		t.Errorf("eno2 group should list SRV7-Kub1:\n%s", got)
+	if !strings.Contains(groupTail, "HOST7-A") {
+		t.Errorf("eno2 group should list HOST7-A:\n%s", got)
 	}
 }
 
@@ -134,9 +134,9 @@ spec:
 		t.Fatal(err)
 	}
 	if err := WriteCustomInterfacesPatch(path, map[string]string{
-		"SRV5-Kub1": "enp1s0",
-		"SRV6-Kub1": "enp1s0",
-		"SRV7-Kub1": "eno2",
+		"HOST5-A": "enp1s0",
+		"HOST6-A": "enp1s0",
+		"HOST7-A": "eno2",
 	}); err != nil {
 		t.Fatalf("WriteCustomInterfacesPatch: %v", err)
 	}
@@ -171,9 +171,9 @@ spec:
 	for _, want := range []string{
 		"customInterfaces",
 		"op: add",
-		"SRV5-Kub1",
-		"SRV6-Kub1",
-		"SRV7-Kub1",
+		"HOST5-A",
+		"HOST6-A",
+		"HOST7-A",
 		"enp1s0",
 		"eno2",
 	} {
@@ -369,7 +369,7 @@ sops:
 		FleetRepo:      repo,
 		NodeExternalIP: "1.2.3.4",
 		Sets:           sets,
-		NodeNICs:       map[string]string{"SRV5-Kub1": "enp1s0", "SRV6-Kub1": "enp1s0"},
+		NodeNICs:       map[string]string{"HOST5-A": "enp1s0", "HOST6-A": "enp1s0"},
 		Runner:         runner,
 		Out:            &out,
 	})

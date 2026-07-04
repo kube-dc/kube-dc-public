@@ -77,6 +77,10 @@ type ApplyOptions struct {
 	Sets     map[string]string
 	NodeNICs map[string]string
 
+	// ObjectStorage carries the OS-1 mode + companions for the OS-2
+	// scaffold writer (Scaffold step 7).
+	ObjectStorage ObjectStorageSpec
+
 	// Runner executes scripts (add-cluster.sh, flux-install.sh).
 	// Real flow uses the script adapter; tests use a fake.
 	Runner ports.ScriptRunner
@@ -182,7 +186,7 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 	// for the operator to `git clean -fd` is a footgun. Instead
 	// we remove the cluster dir wholesale on Scaffold failure.
 	//
-	// EXCEPTION (cloudacropolis bug 2026-05-26): if Scaffold's own
+	// EXCEPTION (atlantis bug 2026-05-26): if Scaffold's own
 	// preflight refused (ErrScaffoldTargetExists), the cluster dir
 	// pre-existed this Apply call — operators sometimes pre-place a
 	// `docs/` README there. Removing it would destroy the operator's
@@ -194,6 +198,7 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 		NodeExternalIP: opts.NodeExternalIP,
 		Sets:           opts.Sets,
 		NodeNICs:       opts.NodeNICs,
+		ObjectStorage:  opts.ObjectStorage,
 		Runner:         opts.Runner,
 		Out:            out,
 	}); err != nil {

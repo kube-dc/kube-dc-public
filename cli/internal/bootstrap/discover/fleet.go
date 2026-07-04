@@ -17,7 +17,7 @@ import (
 // (one row in the fleet landing screen).
 type Cluster struct {
 	// Name is the directory path relative to clusters/, e.g. "cloud",
-	// "stage", or "cs/zrh". Round-trips through git commit messages and
+	// "stage", or "eu/dc1". Round-trips through git commit messages and
 	// the `kube-dc bootstrap status <name>` argument.
 	Name string
 
@@ -47,7 +47,7 @@ type Cluster struct {
 // ListClusters walks the fleet repo at repoRoot and returns every cluster
 // overlay it finds. A cluster overlay is any directory under clusters/
 // that contains a cluster-config.env file. Subpaths with slashes (e.g.
-// clusters/cs/zrh) are supported up to two levels deep.
+// clusters/eu/dc1) are supported up to two levels deep.
 //
 // repoRoot must be an absolute path; if empty, ListClusters returns an
 // error rather than guessing.
@@ -74,7 +74,7 @@ func ListClusters(repoRoot string) ([]Cluster, error) {
 
 	// Walk two levels deep — clusters/<name>/cluster-config.env or
 	// clusters/<group>/<name>/cluster-config.env. The double walk is
-	// mandatory: cs/zrh is a real cluster path with a slash.
+	// mandatory: eu/dc1 is a real cluster path with a slash.
 	var envFiles []string
 	level1, err := os.ReadDir(clustersDir)
 	if err != nil {
@@ -151,7 +151,7 @@ func loadCluster(clustersDir, envPath string) (Cluster, error) {
 	return c, nil
 }
 
-// relName converts /repo/clusters/cs/zrh → "cs/zrh".
+// relName converts /repo/clusters/eu/dc1 → "eu/dc1".
 func relName(clustersDir, dir string) string {
 	rel, err := filepath.Rel(clustersDir, dir)
 	if err != nil {

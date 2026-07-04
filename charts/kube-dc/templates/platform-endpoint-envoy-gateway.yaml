@@ -21,9 +21,9 @@ controller creates `<svc-name>-mgr` on first reconcile with an
 OwnerReference back to the Service so K8s garbage-collects the slice
 when the Service is deleted.
 
-Why this exists: cloudacropolis 2026-06-02 — kube-dc CLI in the
+Why this exists: a production 1:1-NAT cluster, 2026-06-02 — kube-dc CLI in the
 project console pod failed to refresh its OIDC token because tenant
-pods could not reach login.cloudacropolis.lt (resolves to the
+pods could not reach login.<cluster-domain> (resolves to the
 cluster's public IP, which hairpin-fails on 1:1-NAT setups). Adding
 the envoyGateway platform endpoint + a vpc-dns Corefile entry pointing
 login.<DOMAIN> at this VIP closes the gap for every Envoy-routed

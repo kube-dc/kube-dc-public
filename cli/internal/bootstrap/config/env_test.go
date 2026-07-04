@@ -21,8 +21,8 @@ func TestSet_ReplacesExistingValueInPlace(t *testing.T) {
 	// M4-T10's post-process step depends on Set updating an
 	// existing key without disturbing surrounding comments / blank
 	// lines / key order.
-	path := writeFixture(t, `# Cluster: cloudacropolis
-CLUSTER_NAME=cloudacropolis
+	path := writeFixture(t, `# Cluster: atlantis
+CLUSTER_NAME=atlantis
 
 # Network
 EXT_NET_VLAN_ID=CHANGEME
@@ -42,8 +42,8 @@ POD_CIDR=10.100.0.0/16
 	body, _ := os.ReadFile(path)
 	lines := strings.Split(strings.TrimRight(string(body), "\n"), "\n")
 	want := []string{
-		"# Cluster: cloudacropolis",
-		"CLUSTER_NAME=cloudacropolis",
+		"# Cluster: atlantis",
+		"CLUSTER_NAME=atlantis",
 		"",
 		"# Network",
 		"EXT_NET_VLAN_ID=1103",
@@ -61,7 +61,7 @@ POD_CIDR=10.100.0.0/16
 }
 
 func TestSet_AppendsNewKey(t *testing.T) {
-	path := writeFixture(t, `CLUSTER_NAME=cloudacropolis
+	path := writeFixture(t, `CLUSTER_NAME=atlantis
 POD_CIDR=10.100.0.0/16
 `)
 	env, _ := LoadEnv(path)
@@ -74,7 +74,7 @@ POD_CIDR=10.100.0.0/16
 		t.Errorf("new key missing:\n%s", body)
 	}
 	// Existing keys preserved.
-	if !strings.Contains(string(body), "CLUSTER_NAME=cloudacropolis") {
+	if !strings.Contains(string(body), "CLUSTER_NAME=atlantis") {
 		t.Errorf("existing key wiped:\n%s", body)
 	}
 	if !strings.Contains(string(body), "POD_CIDR=10.100.0.0/16") {
@@ -87,12 +87,12 @@ func TestSet_RoundTripStable(t *testing.T) {
 	// produce byte-identical output (no churn). This is the
 	// determinism guarantee operators rely on for clean diff
 	// reviews.
-	original := `CLUSTER_NAME=cloudacropolis
+	original := `CLUSTER_NAME=atlantis
 POD_CIDR=10.100.0.0/16
 `
 	path := writeFixture(t, original)
 	env, _ := LoadEnv(path)
-	env.Set("CLUSTER_NAME", "cloudacropolis") // no-op value change
+	env.Set("CLUSTER_NAME", "atlantis") // no-op value change
 	if err := env.Write(""); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -104,7 +104,7 @@ POD_CIDR=10.100.0.0/16
 
 func TestWrite_AtomicViaUniqueTemp(t *testing.T) {
 	// Atomic-write contract: no `.tmp` residue after success.
-	path := writeFixture(t, "CLUSTER_NAME=cloudacropolis\n")
+	path := writeFixture(t, "CLUSTER_NAME=atlantis\n")
 	env, _ := LoadEnv(path)
 	env.Set("CLUSTER_NAME", "renamed")
 	if err := env.Write(""); err != nil {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -49,7 +50,12 @@ import (
 func bootstrapInitCmd(fleetRepo *string) *cobra.Command {
 	o := &clusterinit.InitOptions{}
 	var (
-		setFlags, nodeNICFlags, addonFlags []string
+		setFlags, nodeNICFlags, addonFlags, cephNodeFlags []string
+		// --object-storage-mode is canonical (OS-1); --rook-mode is a
+		// deprecated alias for one release. Bound to separate vars so
+		// RunE can detect a conflicting double-set instead of silently
+		// letting parse order win.
+		objectStorageModeFlag, rookModeAliasFlag string
 	)
 
 	cmd := &cobra.Command{
@@ -74,26 +80,29 @@ mutate without an explicit operator vouch.
 The flag surface mirrors cluster-config.env; --set KEY=VALUE applies
 deltas on top of the preset's defaults (--set keys must be
 SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
-		Example: `  # Dry-run an existing-fleet add (cloudacropolis-shape):
+		Example: `  # Dry-run an existing-fleet add (atlantis-shape):
   kube-dc bootstrap init \
     --preset=cloud+public-vlan \
     --mode=install \
-    --name=cloudacropolis \
-    --domain=kdc.acropolis.example.com \
-    --node-external-ip=217.117.26.52 \
-    --email=ops@acropolis.example.com \
+    --name=atlantis \
+    --domain=kdc.atlantis.example.com \
+    --node-external-ip=203.0.113.52 \
+    --email=ops@atlantis.example.com \
     --fleet-mode=existing-fleet \
     --repo=~/projects/kube-dc-fleet \
-    --rook-mode=rook-ceph-multi-node \
-    --node-nic=SRV5-Kub1=enp1s0 \
-    --node-nic=SRV6-Kub1=enp1s0 \
-    --node-nic=SRV7-Kub1=enp1s0 \
+    --object-storage-mode=rook-ceph-multi-node \
+    --ceph-node=host5-a=sdb \
+    --ceph-node=host6-a=sdb \
+    --ceph-node=host7-a=sdb \
+    --node-nic=host5-a=enp1s0 \
+    --node-nic=host6-a=enp1s0 \
+    --node-nic=host7-a=enp1s0 \
     --set=EXT_NET_VLAN_ID=1103 \
     --set=EXT_NET_INTERFACE=bond0 \
     --dry-run
 
   # CI apply:
-  kube-dc bootstrap init --apply-plan=/tmp/cloudacropolis-plan.json --no-tty`,
+  kube-dc bootstrap init --apply-plan=/tmp/atlantis-plan.json --no-tty`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Parse repeatable flags into the typed map shape before
 			// validation runs. Surface parse errors with the flag name
@@ -108,7 +117,28 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 			} else {
 				o.NodeNICs = pairs
 			}
+			if pairs, err := clusterinit.ParseSetPairs(cephNodeFlags); err != nil {
+				return fmt.Errorf("--ceph-node: %w", err)
+			} else if len(pairs) > 0 {
+				o.CephNodes = pairs
+			}
 			o.Addons = addonFlags
+
+			// Resolve the canonical/alias mode pair (OS-1).
+			// --object-storage-mode wins; --rook-mode is honoured only
+			// when the canonical flag is absent (pflag already printed
+			// its deprecation notice). A conflicting double-set is an
+			// error — silently preferring either would surprise.
+			switch {
+			case objectStorageModeFlag != "" && rookModeAliasFlag != "" &&
+				objectStorageModeFlag != rookModeAliasFlag:
+				return fmt.Errorf("init: --object-storage-mode=%s conflicts with --rook-mode=%s (drop the deprecated --rook-mode)",
+					objectStorageModeFlag, rookModeAliasFlag)
+			case objectStorageModeFlag != "":
+				o.RookMode = clusterinit.RookMode(objectStorageModeFlag)
+			case rookModeAliasFlag != "":
+				o.RookMode = clusterinit.RookMode(rookModeAliasFlag)
+			}
 
 			// --repo is the persistent flag from the parent bootstrap
 			// command; reflect it into options so the engine doesn't
@@ -137,6 +167,15 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 			}
 
 			if err := o.Validate(); err != nil {
+				// OS-1 design call: never inherit the mode, but when a
+				// template sibling exists its mode is the best hint an
+				// operator could get. Enrich the typed required error;
+				// any sniff failure degrades to the plain error.
+				if errors.Is(err, clusterinit.ErrObjectStorageModeRequired) {
+					if hint := siblingObjectStorageModeHint(o); hint != "" {
+						return fmt.Errorf("%w; %s", err, hint)
+					}
+				}
 				return err
 			}
 
@@ -206,7 +245,7 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 	cmd.Flags().StringVar(&o.Name, "name", "",
 		"Cluster name (lowercase, dashes, optionally nested with /; required)")
 	cmd.Flags().StringVar(&o.Domain, "domain", "",
-		"Cluster FQDN (e.g. kdc.acropolis.example.com; required)")
+		"Cluster FQDN (e.g. kdc.atlantis.example.com; required)")
 	cmd.Flags().StringVar(&o.NodeExternalIP, "node-external-ip", "",
 		"External IP of the cluster's wildcard target (one of the public IPs of any node; required)")
 	cmd.Flags().StringVar(&o.Email, "email", "",
@@ -230,13 +269,33 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 	cmd.Flags().StringSliceVar(&nodeNICFlags, "node-nic", nil,
 		"Per-node primary NIC (repeatable; NODE=IFACE; drives the customInterfaces patch)")
 
-	// --- Rook ---
-	cmd.Flags().StringVar((*string)(&o.RookMode), "rook-mode", string(clusterinit.RookDisabled),
-		fmt.Sprintf("Storage strategy (one of %s)", joinRookModes(clusterinit.AllRookModes)))
+	// --- Object storage (OS-1) ---
+	// REQUIRED, no default: the old silent default-to-disabled shipped
+	// clusters whose monitoring layer could never converge. `disabled`
+	// stays available as an explicit choice (loud plan warning).
+	cmd.Flags().StringVar(&objectStorageModeFlag, "object-storage-mode", "",
+		fmt.Sprintf("Object storage mode (REQUIRED; one of %s; external-* recognised but fail closed — fleet stubs)", joinRookModes(clusterinit.AllRookModes)))
+	cmd.Flags().StringVar(&rookModeAliasFlag, "rook-mode", "",
+		"Deprecated alias for --object-storage-mode")
+	_ = cmd.Flags().MarkDeprecated("rook-mode", "use --object-storage-mode")
 	cmd.Flags().StringVar(&o.RookOSDNode, "rook-osd-node", "",
-		"Node hosting the OSD for --rook-mode=rook-ceph-local")
+		"Node hosting the OSD for --object-storage-mode=rook-ceph-local")
 	cmd.Flags().IntVar(&o.RookOSDSizeGB, "rook-osd-size-gb", 0,
-		"OSD size in GB for --rook-mode=rook-ceph-local")
+		"OSD size in GB for --object-storage-mode=rook-ceph-local")
+	cmd.Flags().StringVar(&o.RookOSDDevice, "rook-osd-device", "",
+		"OSD device for --object-storage-mode=rook-ceph-local (default: fleet template's loop0)")
+	cmd.Flags().StringSliceVar(&cephNodeFlags, "ceph-node", nil,
+		"OSD node for --object-storage-mode=rook-ceph-multi-node (repeatable; NODE=DEVICE; exactly 3)")
+	cmd.Flags().StringVar(&o.CephStorageClass, "ceph-storage-class", "",
+		"StorageClass backing OSD PVCs for --object-storage-mode=rook-ceph-pvc")
+	cmd.Flags().IntVar(&o.CephOSDCount, "ceph-osd-count", 0,
+		"OSD PVC count for --object-storage-mode=rook-ceph-pvc (0 = fleet default 2)")
+	cmd.Flags().IntVar(&o.CephOSDVolumeSizeGB, "ceph-osd-volume-size-gb", 0,
+		"OSD PVC size in GB for --object-storage-mode=rook-ceph-pvc (0 = fleet default 200)")
+	cmd.Flags().StringVar(&o.S3Hostname, "s3-hostname", "",
+		"S3 endpoint hostname for the exposure layer (default: s3.<domain>)")
+	cmd.Flags().BoolVar(&o.NoS3Exposure, "no-s3-exposure", false,
+		"Skip the S3 exposure layer (Certificate + HTTPRoute) — cluster-internal S3 only")
 
 	// --- Addons ---
 	// NOTE: not yet wired into apply — passing --addon currently fails
@@ -586,6 +645,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		NodeExternalIP: o.NodeExternalIP,
 		Sets:           o.Sets,
 		NodeNICs:       o.NodeNICs,
+		ObjectStorage:  o.ObjectStorage(),
 		Runner:         session.Scripts,
 		Git:            session.Git,
 		GitHubToken:    token,
@@ -764,7 +824,7 @@ func extractGlabToken(body string) string {
 // inheritance + domain-collision check.
 //
 // **Two-level walk**: `discover.ListClusters` handles the nested
-// `clusters/cs/zrh/` shape (CloudSigma's multi-region grouping) so
+// `clusters/eu/dc1/` shape (CloudSigma's multi-region grouping) so
 // prior clusters list correctly without re-rolling the walker.
 //
 // **Inheritance (M4-T13)**: for each non-self sibling, load
@@ -844,6 +904,39 @@ func discoverFleetState(o *clusterinit.InitOptions) clusterinit.FleetState {
 	return st
 }
 
+// siblingObjectStorageModeHint returns a one-line hint naming the
+// template sibling's object-storage mode, or "" when it can't be
+// determined (greenfield, no repo, no template, no overlay, unreadable
+// file — all silent: the hint is best-effort sugar on the typed
+// ErrObjectStorageModeRequired, never a second failure mode).
+//
+// Design call (2026-07-04): existing-fleet runs never INHERIT the
+// mode — an explicit operator decision is forced — but the error
+// should say what the fleet already runs, e.g.
+// "template sibling eu/dc1 uses rook-ceph-pvc".
+func siblingObjectStorageModeHint(o *clusterinit.InitOptions) string {
+	if o.FleetMode != clusterinit.FleetExistingFleet || o.Repo == "" {
+		return ""
+	}
+	fleet := discoverFleetState(o)
+	if fleet.InheritanceTemplate == "" {
+		return ""
+	}
+	body, err := os.ReadFile(filepath.Join(o.Repo, "clusters", fleet.InheritanceTemplate, "object-storage", "kustomization.yaml"))
+	if err != nil {
+		return ""
+	}
+	m := objectStorageModeRefRegex.FindSubmatch(body)
+	if m == nil {
+		return ""
+	}
+	return fmt.Sprintf("template sibling %s uses %s", fleet.InheritanceTemplate, string(m[1]))
+}
+
+// objectStorageModeRefRegex extracts the mode name from an overlay's
+// resource line, e.g. `- ../../../infrastructure/object-storage/modes/rook-ceph-pvc`.
+var objectStorageModeRefRegex = regexp.MustCompile(`object-storage/modes/([a-z0-9-]+)`)
+
 // checkDomainCollision runs the M4-T13 domain-collision check
 // before BuildPlan. Returns the typed ErrDomainCollision wrapped
 // with the sibling list so the cobra layer can surface a clean
@@ -899,7 +992,7 @@ func writeOptionsSummary(out io.Writer, o *clusterinit.InitOptions) {
 		fmt.Fprintf(out, "Remote:       provider=%s owner=%s repo=%s token=%s\n",
 			provider, o.GitHubOwner, o.GitHubRepo, tok)
 	}
-	fmt.Fprintf(out, "Rook:         mode=%s osd-node=%s osd-size=%dGB\n", o.RookMode, o.RookOSDNode, o.RookOSDSizeGB)
+	fmt.Fprintf(out, "Object store: mode=%s osd-node=%s osd-size=%dGB\n", o.RookMode, o.RookOSDNode, o.RookOSDSizeGB)
 	if len(o.Addons) > 0 {
 		fmt.Fprintf(out, "Addons:       %v\n", o.Addons)
 	}
@@ -976,7 +1069,10 @@ func assertRequiredFlagsRegistered(fs *pflag.FlagSet) error {
 		"preset", "mode", "name", "domain", "node-external-ip", "email",
 		"fleet-mode", "provider", "github-owner", "github-repo", "github-token",
 		"set", "node-nic",
-		"rook-mode", "rook-osd-node", "rook-osd-size-gb",
+		"object-storage-mode", "rook-mode", // rook-mode = deprecated alias, one release
+		"rook-osd-node", "rook-osd-size-gb", "rook-osd-device",
+		"ceph-node", "ceph-storage-class", "ceph-osd-count", "ceph-osd-volume-size-gb",
+		"s3-hostname", "no-s3-exposure",
 		"addon",
 		"allow-dns-not-ready", "ssh-host", "no-ssh", "no-install-prereqs", "no-create-repo",
 		"mirror-registry", "bundle-pull-secret", "openbao-shares-out",

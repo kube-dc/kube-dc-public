@@ -52,26 +52,26 @@ func TestEnvMapFor_InternalOnly(t *testing.T) {
 	}
 }
 
-func TestEnvMapFor_CloudPublicVLAN_Cloudacropolis(t *testing.T) {
-	// The actual cloudacropolis flag set: --preset=cloud+public-vlan
+func TestEnvMapFor_CloudPublicVLAN_Atlantis(t *testing.T) {
+	// The actual atlantis flag set: --preset=cloud+public-vlan
 	// + the 5 required --set values mapped from the README's CGNAT
 	// + public-IP topology.
 	got, err := EnvMapFor(PresetCloudPublicVLAN, map[string]string{
 		"EXT_NET_VLAN_ID":    "1103",
 		"EXT_NET_INTERFACE":  "bond0",
 		"EXT_PUBLIC_VLAN_ID": "1100", // private VLAN per README
-		"EXT_PUBLIC_CIDR":    "217.117.26.0/29",
-		"EXT_PUBLIC_GATEWAY": "217.117.26.49",
+		"EXT_PUBLIC_CIDR":    "203.0.113.0/29",
+		"EXT_PUBLIC_GATEWAY": "203.0.113.49",
 	})
 	if err != nil {
-		t.Fatalf("cloudacropolis env should validate, got %v", err)
+		t.Fatalf("atlantis env should validate, got %v", err)
 	}
 	// All EXT_* + DEFAULT_* + universal keys present.
 	for k, want := range map[string]string{
 		"EXT_NET_NAME":                "ext-cloud",
 		"EXT_NET_VLAN_ID":             "1103",
 		"EXT_PUBLIC_VLAN_ID":          "1100",
-		"EXT_PUBLIC_CIDR":             "217.117.26.0/29",
+		"EXT_PUBLIC_CIDR":             "203.0.113.0/29",
 		"DEFAULT_EIP_NETWORK_TYPE":    "public",
 		"DEFAULT_FIP_NETWORK_TYPE":    "public",
 		"DEFAULT_SVC_LB_NETWORK_TYPE": "public",
@@ -153,8 +153,8 @@ func TestEnvMapFor_SetOverridesDefaults(t *testing.T) {
 		"EXT_NET_VLAN_ID":    "1103",
 		"EXT_NET_INTERFACE":  "bond0",
 		"EXT_PUBLIC_VLAN_ID": "1100",
-		"EXT_PUBLIC_CIDR":    "217.117.26.0/29",
-		"EXT_PUBLIC_GATEWAY": "217.117.26.49",
+		"EXT_PUBLIC_CIDR":    "203.0.113.0/29",
+		"EXT_PUBLIC_GATEWAY": "203.0.113.49",
 		// Override the default CIDR.
 		"EXT_NET_CIDR": "10.0.0.0/16",
 	})
@@ -176,8 +176,8 @@ func TestEnvMapFor_SetCanIntroduceNewKey(t *testing.T) {
 		"EXT_NET_VLAN_ID":    "1103",
 		"EXT_NET_INTERFACE":  "bond0",
 		"EXT_PUBLIC_VLAN_ID": "1100",
-		"EXT_PUBLIC_CIDR":    "217.117.26.0/29",
-		"EXT_PUBLIC_GATEWAY": "217.117.26.49",
+		"EXT_PUBLIC_CIDR":    "203.0.113.0/29",
+		"EXT_PUBLIC_GATEWAY": "203.0.113.49",
 		"CUSTOM_TUNABLE":     "yes",
 	})
 	if got["CUSTOM_TUNABLE"] != "yes" {
@@ -274,7 +274,7 @@ func TestValidatePresetValues_EmptyRequiredValue_Rejected(t *testing.T) {
 				"EXT_NET_INTERFACE":  "bond0",
 				"EXT_PUBLIC_VLAN_ID": "1100",
 				"EXT_PUBLIC_CIDR":    tc.value,
-				"EXT_PUBLIC_GATEWAY": "217.117.26.49",
+				"EXT_PUBLIC_GATEWAY": "203.0.113.49",
 			}
 			envMap, err := EnvMapFor(PresetCloudPublicVLAN, sets)
 			if err != nil {
@@ -300,8 +300,8 @@ func TestValidatePresetValues_VLANID(t *testing.T) {
 			"EXT_NET_VLAN_ID":    extVLAN,
 			"EXT_NET_INTERFACE":  "bond0",
 			"EXT_PUBLIC_VLAN_ID": "1100",
-			"EXT_PUBLIC_CIDR":    "217.117.26.48/29",
-			"EXT_PUBLIC_GATEWAY": "217.117.26.49",
+			"EXT_PUBLIC_CIDR":    "203.0.113.48/29",
+			"EXT_PUBLIC_GATEWAY": "203.0.113.49",
 		}
 	}
 	cases := []struct {
@@ -315,7 +315,7 @@ func TestValidatePresetValues_VLANID(t *testing.T) {
 		{"valid high edge", "4094", false, ""},
 		// VLAN 0 accepted as "untagged": kube-ovn provider networks
 		// whose carrier interface is itself the VLAN (e.g. CloudSigma
-		// cs/zrh uses ens5 with EXT_NET_VLAN_ID=0 — the L2 segment is
+		// eu/dc1 uses ens5 with EXT_NET_VLAN_ID=0 — the L2 segment is
 		// a CloudSigma VLAN by UUID, not an 802.1Q tag inside the VM).
 		// Prior test asserted rejection; widened alongside the
 		// validateVLANID range change in preset.go.
@@ -362,10 +362,10 @@ func TestValidatePresetValues_CIDR(t *testing.T) {
 		wantErr   bool
 		wantSub   string
 	}{
-		{"valid pair", "217.117.26.48/29", "217.117.26.49", false, ""},
+		{"valid pair", "203.0.113.48/29", "203.0.113.49", false, ""},
 		{"valid /24", "10.0.0.0/24", "10.0.0.1", false, ""},
 		{"valid ipv6", "2a0c:d880:1100::/64", "2a0c:d880:1100::1", false, ""},
-		{"malformed CIDR", "217.117.26.48", "217.117.26.49", true, "not a valid CIDR"},
+		{"malformed CIDR", "203.0.113.48", "203.0.113.49", true, "not a valid CIDR"},
 		{"bad CIDR mask", "10.0.0.0/99", "10.0.0.1", true, "not a valid CIDR"},
 		{"gateway outside CIDR", "10.0.0.0/24", "10.0.1.1", true, "outside CIDR"},
 		{"gateway not an IP", "10.0.0.0/24", "not-an-ip", true, "not a valid IP"},
@@ -397,8 +397,8 @@ func TestValidatePresetValues_NICName(t *testing.T) {
 			"EXT_NET_VLAN_ID":    "1103",
 			"EXT_NET_INTERFACE":  iface,
 			"EXT_PUBLIC_VLAN_ID": "1100",
-			"EXT_PUBLIC_CIDR":    "217.117.26.48/29",
-			"EXT_PUBLIC_GATEWAY": "217.117.26.49",
+			"EXT_PUBLIC_CIDR":    "203.0.113.48/29",
+			"EXT_PUBLIC_GATEWAY": "203.0.113.49",
 		}
 	}
 	cases := []struct {
@@ -519,8 +519,8 @@ func TestEnvMapFor_PlatformEndpointDefaults_AllPresets(t *testing.T) {
 					"EXT_NET_VLAN_ID":    "1103",
 					"EXT_NET_INTERFACE":  "bond0",
 					"EXT_PUBLIC_VLAN_ID": "1100",
-					"EXT_PUBLIC_CIDR":    "217.117.26.0/29",
-					"EXT_PUBLIC_GATEWAY": "217.117.26.49",
+					"EXT_PUBLIC_CIDR":    "203.0.113.0/29",
+					"EXT_PUBLIC_GATEWAY": "203.0.113.49",
 				}
 			},
 		},
@@ -557,8 +557,8 @@ func TestEnvMapFor_PlatformEndpoint_SetOverridesDefaults(t *testing.T) {
 		"EXT_NET_VLAN_ID":                    "1103",
 		"EXT_NET_INTERFACE":                  "bond0",
 		"EXT_PUBLIC_VLAN_ID":                 "1100",
-		"EXT_PUBLIC_CIDR":                    "217.117.26.0/29",
-		"EXT_PUBLIC_GATEWAY":                 "217.117.26.49",
+		"EXT_PUBLIC_CIDR":                    "203.0.113.0/29",
+		"EXT_PUBLIC_GATEWAY":                 "203.0.113.49",
 		"KUBE_API_INTERNAL_VIP":              "100.64.0.30",
 		"PLATFORM_ENDPOINT_KUBE_API_ENABLED": "true",
 	})
@@ -633,8 +633,8 @@ func TestEnvMapFor_AnchorDefaults_AllPresets(t *testing.T) {
 					"EXT_NET_VLAN_ID":    "1103",
 					"EXT_NET_INTERFACE":  "bond0",
 					"EXT_PUBLIC_VLAN_ID": "1100",
-					"EXT_PUBLIC_CIDR":    "217.117.26.0/29",
-					"EXT_PUBLIC_GATEWAY": "217.117.26.49",
+					"EXT_PUBLIC_CIDR":    "203.0.113.0/29",
+					"EXT_PUBLIC_GATEWAY": "203.0.113.49",
 				}
 			},
 		},
@@ -687,8 +687,8 @@ func TestValidatePresetValues_AnchorIPs(t *testing.T) {
 			"EXT_NET_VLAN_ID":    "1103",
 			"EXT_NET_INTERFACE":  "bond0",
 			"EXT_PUBLIC_VLAN_ID": "1100",
-			"EXT_PUBLIC_CIDR":    "217.117.26.48/29",
-			"EXT_PUBLIC_GATEWAY": "217.117.26.49",
+			"EXT_PUBLIC_CIDR":    "203.0.113.48/29",
+			"EXT_PUBLIC_GATEWAY": "203.0.113.49",
 			"KUBE_OVN_GW_NODES":  gwNodes,
 		}
 		if anchors != "" {
@@ -713,98 +713,98 @@ func TestValidatePresetValues_AnchorIPs(t *testing.T) {
 		// fail with a spurious "outside EXT_NET_CIDR" error.
 		{
 			"empty anchors ok",
-			"srv5-kub1,srv6-kub1", "", "false",
+			"host5-a,host6-a", "", "false",
 			false, "",
 		},
 		{
 			"REQUIRED=true full coverage passes",
-			"srv5-kub1,srv6-kub1,srv7-kub1",
-			"srv5-kub1=100.65.0.11/16,srv6-kub1=100.65.0.12/16,srv7-kub1=100.65.0.13/16",
+			"host5-a,host6-a,host7-a",
+			"host5-a=100.65.0.11/16,host6-a=100.65.0.12/16,host7-a=100.65.0.13/16",
 			"true",
 			false, "",
 		},
 		{
 			"REQUIRED=false partial coverage allowed",
-			"srv5-kub1,srv6-kub1,srv7-kub1",
-			"srv5-kub1=100.65.0.11/16",
+			"host5-a,host6-a,host7-a",
+			"host5-a=100.65.0.11/16",
 			"false",
 			false, "",
 		},
 		{
 			"REQUIRED=true missing coverage on one gw node",
-			"srv5-kub1,srv6-kub1,srv7-kub1",
-			"srv5-kub1=100.65.0.11/16,srv6-kub1=100.65.0.12/16",
+			"host5-a,host6-a,host7-a",
+			"host5-a=100.65.0.11/16,host6-a=100.65.0.12/16",
 			"true",
-			true, "gateway node(s) srv7-kub1 have no anchor IP",
+			true, "gateway node(s) host7-a have no anchor IP",
 		},
 		{
 			"REQUIRED=true missing coverage on multiple gw nodes — sorted",
-			"srv5-kub1,srv6-kub1,srv7-kub1",
-			"srv5-kub1=100.65.0.11/16",
+			"host5-a,host6-a,host7-a",
+			"host5-a=100.65.0.11/16",
 			"true",
-			true, "srv6-kub1, srv7-kub1",
+			true, "host6-a, host7-a",
 		},
 		{
 			"host not in gw nodes",
-			"srv5-kub1,srv6-kub1", "srv9-kub1=100.65.0.99/16", "false",
+			"host5-a,host6-a", "host9-x=100.65.0.99/16", "false",
 			true, "not in KUBE_OVN_GW_NODES",
 		},
 		{
 			"bad CIDR — missing mask",
-			"srv5-kub1", "srv5-kub1=100.65.0.11", "false",
+			"host5-a", "host5-a=100.65.0.11", "false",
 			true, "invalid CIDR",
 		},
 		{
 			"missing equals",
-			"srv5-kub1", "srv5-kub1-100.65.0.11/16", "false",
+			"host5-a", "host5-a-100.65.0.11/16", "false",
 			true, "missing '='",
 		},
 		{
 			"required without anchors",
-			"srv5-kub1", "", "true",
+			"host5-a", "", "true",
 			true, "REQUIRED=true but EXT_NET_ANCHOR_IPS empty",
 		},
 		{
 			"gw nodes empty with anchors",
-			"", "srv5-kub1=100.65.0.11/16", "false",
+			"", "host5-a=100.65.0.11/16", "false",
 			true, "KUBE_OVN_GW_NODES empty",
 		},
 		{
 			"duplicate host",
-			"srv5-kub1,srv6-kub1",
-			"srv5-kub1=100.65.0.11/16,srv5-kub1=100.65.0.12/16",
+			"host5-a,host6-a",
+			"host5-a=100.65.0.11/16,host5-a=100.65.0.12/16",
 			"false",
 			true, "listed more than once",
 		},
 		{
 			"empty host in pair",
-			"srv5-kub1", "=100.65.0.11/16", "false",
+			"host5-a", "=100.65.0.11/16", "false",
 			true, "empty host",
 		},
 		{
 			"duplicate IP across hosts",
-			"srv5-kub1,srv6-kub1",
-			"srv5-kub1=100.65.0.11/16,srv6-kub1=100.65.0.11/16",
+			"host5-a,host6-a",
+			"host5-a=100.65.0.11/16,host6-a=100.65.0.11/16",
 			"false",
 			true, "claimed by both",
 		},
 		{
 			"anchor outside EXT_NET_CIDR",
-			"srv5-kub1",
-			"srv5-kub1=10.0.0.11/16",
+			"host5-a",
+			"host5-a=10.0.0.11/16",
 			"false",
 			true, "outside EXT_NET_CIDR",
 		},
 		{
 			"anchor prefix mismatch",
-			"srv5-kub1",
-			"srv5-kub1=100.65.0.11/24",
+			"host5-a",
+			"host5-a=100.65.0.11/24",
 			"false",
 			true, "anchor mask must match",
 		},
 		{
 			"whitespace-only KUBE_OVN_GW_NODES with anchors",
-			" , , ", "srv5-kub1=100.65.0.11/16", "false",
+			" , , ", "host5-a=100.65.0.11/16", "false",
 			true, "no usable hosts",
 		},
 	}
@@ -841,8 +841,8 @@ func TestValidatePresetValues_AnchorInterface(t *testing.T) {
 			"EXT_NET_VLAN_ID":    "1103",
 			"EXT_NET_INTERFACE":  "bond0",
 			"EXT_PUBLIC_VLAN_ID": "1100",
-			"EXT_PUBLIC_CIDR":    "217.117.26.48/29",
-			"EXT_PUBLIC_GATEWAY": "217.117.26.49",
+			"EXT_PUBLIC_CIDR":    "203.0.113.48/29",
+			"EXT_PUBLIC_GATEWAY": "203.0.113.49",
 		}
 		if iface != "" {
 			m["EXT_NET_ANCHOR_INTERFACE"] = iface
@@ -895,8 +895,8 @@ func TestValidatePresetValues_AnchorSSHHosts(t *testing.T) {
 			"EXT_NET_VLAN_ID":    "1103",
 			"EXT_NET_INTERFACE":  "bond0",
 			"EXT_PUBLIC_VLAN_ID": "1100",
-			"EXT_PUBLIC_CIDR":    "217.117.26.48/29",
-			"EXT_PUBLIC_GATEWAY": "217.117.26.49",
+			"EXT_PUBLIC_CIDR":    "203.0.113.48/29",
+			"EXT_PUBLIC_GATEWAY": "203.0.113.49",
 			"KUBE_OVN_GW_NODES":  gwNodes,
 		}
 		if sshHosts != "" {
@@ -908,20 +908,20 @@ func TestValidatePresetValues_AnchorSSHHosts(t *testing.T) {
 		name, gwNodes, sshHosts, wantSub string
 		wantErr                          bool
 	}{
-		{"empty ok", "srv5-kub1,srv6-kub1", "", "", false},
+		{"empty ok", "host5-a,host6-a", "", "", false},
 		{
-			"valid cloudacropolis-style",
-			"srv5-kub1,srv6-kub1,srv7-kub1",
-			"srv5-kub1=217.117.26.52,srv6-kub1=217.117.26.53,srv7-kub1=217.117.26.54",
+			"valid atlantis-style",
+			"host5-a,host6-a,host7-a",
+			"host5-a=203.0.113.52,host6-a=203.0.113.53,host7-a=203.0.113.54",
 			"", false,
 		},
-		{"missing equals", "srv5-kub1", "srv5-kub1", "missing '='", true},
-		{"empty node", "srv5-kub1", "=217.117.26.52", "empty node", true},
-		{"empty host", "srv5-kub1", "srv5-kub1=", "empty host", true},
-		{"duplicate node", "srv5-kub1,srv6-kub1", "srv5-kub1=1.1.1.1,srv5-kub1=2.2.2.2", "listed more than once", true},
-		{"node not in gw", "srv5-kub1", "srv9-kub1=1.1.1.1", "not in KUBE_OVN_GW_NODES", true},
-		{"whitespace in host", "srv5-kub1", "srv5-kub1=foo bar", "contains whitespace or '='", true},
-		{"FQDN host accepted", "srv5-kub1", "srv5-kub1=srv5.cs.shalb.com", "", false},
+		{"missing equals", "host5-a", "host5-a", "missing '='", true},
+		{"empty node", "host5-a", "=203.0.113.52", "empty node", true},
+		{"empty host", "host5-a", "host5-a=", "empty host", true},
+		{"duplicate node", "host5-a,host6-a", "host5-a=1.1.1.1,host5-a=2.2.2.2", "listed more than once", true},
+		{"node not in gw", "host5-a", "host9-x=1.1.1.1", "not in KUBE_OVN_GW_NODES", true},
+		{"whitespace in host", "host5-a", "host5-a=foo bar", "contains whitespace or '='", true},
+		{"FQDN host accepted", "host5-a", "host5-a=host5.bastion.example.com", "", false},
 	}
 	for _, tc := range cases {
 		tc := tc

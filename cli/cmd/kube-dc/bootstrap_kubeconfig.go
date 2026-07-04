@@ -48,7 +48,7 @@ their own identity at runtime — no shared credentials, no kubeconfig
 files committed to Git.
 
 The cluster name matches the path under clusters/ in the fleet repo
-(e.g. "cloud", "stage", "cs/zrh").
+(e.g. "cloud", "stage", "eu/dc1").
 
 Identity:
   By default the kubeconfig is wired for the master-realm 'admin'
@@ -77,7 +77,7 @@ handshake unless the chain is already publicly-trusted.`,
   kube-dc bootstrap kubeconfig stage --commit
 
   # Bring your own CA file
-  kube-dc bootstrap kubeconfig cs/zrh --ca-cert /path/to/ca.crt
+  kube-dc bootstrap kubeconfig eu/dc1 --ca-cert /path/to/ca.crt
 
   # Show what would be written, don't touch ~/.kube/config
   kube-dc bootstrap kubeconfig cloud --dry-run`,

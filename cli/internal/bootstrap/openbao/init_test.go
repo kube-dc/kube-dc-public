@@ -308,7 +308,7 @@ const canonicalShareJSON = `{
 func setupFleet(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	clusterDir := filepath.Join(dir, "clusters", "cloudacropolis")
+	clusterDir := filepath.Join(dir, "clusters", "atlantis")
 	if err := os.MkdirAll(clusterDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -323,7 +323,7 @@ func setupFleet(t *testing.T) string {
 func baseInitOpts(t *testing.T, repo string, runner *fakeRunner, sops *fakeSOPS, git *fakeGit) InitOptions {
 	t.Helper()
 	return InitOptions{
-		ClusterName: "cloudacropolis",
+		ClusterName: "atlantis",
 		FleetRepo:   repo,
 		Runner:      runner,
 		SOPS:        sops,
@@ -758,7 +758,7 @@ func TestInit_PostCommitUnsealFailure_NoRollback(t *testing.T) {
 		t.Errorf("expected 1 commit call, got %d", git.commitCalls)
 	}
 	// Recovery message + suggestion to re-run unseal.
-	if !strings.Contains(out.String(), "openbao unseal cloudacropolis") {
+	if !strings.Contains(out.String(), "openbao unseal atlantis") {
 		t.Errorf("output should suggest the recovery command:\n%s", out.String())
 	}
 }

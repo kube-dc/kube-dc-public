@@ -725,7 +725,7 @@ its sections are restored.**
 Per-cluster status as of 2026-06-25:
 
 - **stage** — was stripped; **restored** + fixed images deployed.
-- **cloudacropolis** — **verified healthy** (all sections present, `LoadPlanConfig`
+- **prod-1** (production reference cluster) — **verified healthy** (all sections present, `LoadPlanConfig`
   succeeds, HRQs enforced). Still runs pre-fix images, so apply the image
   rollout below before anyone edits plans via the console there.
 - **cloud (production)** — **not verified** (not reachable from the dev bastion).

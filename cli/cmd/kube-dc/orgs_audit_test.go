@@ -66,7 +66,7 @@ func TestAuditQuery_QueryString_OmitsZeroFields(t *testing.T) {
 func TestAuditQuery_QueryString_AllFields(t *testing.T) {
 	q := backend.AuditQuery{
 		Service: "secrets",
-		Actor:   "voa@shalb.com",
+		Actor:   "ops@example.com",
 		Result:  "denied",
 		Since:   "2026-05-21T13:00:00Z",
 		Until:   "2026-05-21T14:00:00Z",
@@ -80,7 +80,7 @@ func TestAuditQuery_QueryString_AllFields(t *testing.T) {
 	// but that's an implementation detail. Assert each pair is present.
 	for _, want := range []string{
 		"service=secrets",
-		"actor=voa%40shalb.com",
+		"actor=ops%40example.com",
 		"result=denied",
 		"since=2026-05-21T13%3A00%3A00Z",
 		"until=2026-05-21T14%3A00%3A00Z",

@@ -40,7 +40,7 @@ Read-only: this subcommand never decrypts anything, so it can
 run without your SOPS age key. Reveal commands (sops -d, kube-dc
 bootstrap openbao reveal-shares) are printed for the operator to
 copy-paste when they need the actual values.`,
-		Example: `  kube-dc bootstrap access cloudacropolis --repo ~/projects/kube-dc-fleet`,
+		Example: `  kube-dc bootstrap access atlantis --repo ~/projects/kube-dc-fleet`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clusterName := args[0]

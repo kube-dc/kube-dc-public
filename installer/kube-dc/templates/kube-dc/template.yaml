@@ -710,7 +710,7 @@ units:
       - this.keycloak
       - this.hnc-config
     source:
-      chart: "/home/voa/projects/kube-dc/charts/kube-dc"
+      chart: "/path/to/kube-dc/charts/kube-dc" # set to your local checkout of the kube-dc chart
     provider_conf:
       config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
     values:

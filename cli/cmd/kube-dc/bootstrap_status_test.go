@@ -59,7 +59,7 @@ func TestBootstrapStatusCmd_ListAllClusters(t *testing.T) {
 	repo := writeFleetFixture(t, map[string]string{
 		"cloud":  minimalEnv,
 		"stage":  missingAPIEnv,
-		"cs/zrh": missingAPIEnv,
+		"eu/dc1": missingAPIEnv,
 	})
 	t.Setenv("NO_COLOR", "1")
 
@@ -73,7 +73,7 @@ func TestBootstrapStatusCmd_ListAllClusters(t *testing.T) {
 	_ = cmd.Execute() // exit code may be non-zero — driven by probe outcomes; we just check shape
 
 	body := out.String()
-	mustContainAll_status(t, body, "cloud", "stage", "cs/zrh")
+	mustContainAll_status(t, body, "cloud", "stage", "eu/dc1")
 }
 
 func TestBootstrapStatusCmd_EmptyFleet_NoError(t *testing.T) {
@@ -288,7 +288,7 @@ func TestBootstrapStatusCmd_MockCloud_ExitZero(t *testing.T) {
 		t.Fatalf("KUBE_DC_MOCK=cloud should exit 0, got err=%v; output:\n%s", err, out.String())
 	}
 	body := out.String()
-	mustContainAll_status(t, body, "cloud", "stage", "cs/zrh", "Ready")
+	mustContainAll_status(t, body, "cloud", "stage", "eu/dc1", "Ready")
 }
 
 func TestBootstrapStatusCmd_MockOpenBaoSealed_ExitOne(t *testing.T) {
@@ -389,11 +389,11 @@ func TestBootstrapStatusCmd_MockCloudDeepView_PrintsNodesSection(t *testing.T) {
 		"Nodes:",
 		"Total:             4",
 		"KubeVirt-eligible: 3",
-		"ams1-blade179-8",
-		"ams1-blade184-5",
-		"ams1-blade58-2",
+		"node-c3",
+		"node-b2",
+		"node-d4",
 		"NVIDIA GPU:        1",
-		"ams1-blade187-2",
+		"node-a1",
 		"AMD GPU:           0",
 		"Source:            M6-T02 composites",
 	)

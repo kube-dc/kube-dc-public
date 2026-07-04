@@ -64,14 +64,14 @@ manager:
   #     each realm to its single Grafana Org.
   #
   #   "project" — single-Org clusters with multiple Projects (today only
-  #     cs/zrh). Manager creates the org-level admin Org as before AND
+  #     marketplace-partner management planes). Manager creates the org-level admin Org as before AND
   #     one Grafana Org per Project, named after the Project's
   #     namespace, with a single-tenant datasource scoped to that
   #     namespace. JWT auth maps each user's namespaces[0] claim to
   #     the matching per-Project Grafana Org so a user with one
   #     OrganizationGroup grant only sees their own Project's logs.
   #
-  # Leave at "org" unless you're deploying onto a cs/zrh-style
+  # Leave at "org" unless you're deploying onto a marketplace-partner-style
   # management plane.
   grafanaTenantMode: org
 
@@ -265,7 +265,7 @@ frontend:
 # The admin SPA (shalb/kube-dc-admin-frontend). Served at admin.<domain> via the
 # Gateway's `https-admin` listener (defined on the Gateway, not here). The image
 # generates env.js at runtime from the env vars below, so no env.js ConfigMap mount
-# is needed. Disable on clusters that don't run the console (e.g. cs/zrh).
+# is needed. Disable on clusters that don't run the console (e.g. marketplace-partner clusters).
 adminFrontend:
   # Default OFF so the chart renders without admin-specific values (gateway.hostname
   # is required when enabled). Clusters that run the console set
@@ -1183,7 +1183,7 @@ platformEndpoints:
     l2AdvNodeSelectors: []      # Constrain MetalLB speaker election to
                                 # nodes matching these label selectors.
                                 # Empty list = any speaker is eligible
-                                # (correct for cloudacropolis-class
+                                # (correct for 1:1-NAT-class
                                 # clusters where every node is CP+gw).
                                 # For multi-CP/heterogeneous-worker
                                 # clusters where some nodes don't have
@@ -1192,7 +1192,7 @@ platformEndpoints:
                                 #       node-role.kubernetes.io/control-plane: "true"
                                 # so MetalLB only picks anchored CP nodes.
     loadBalancerClass: metallb  # MUST match the MetalLB controller's
-                                # --lb-class flag. cloudacropolis runs
+                                # --lb-class flag. 1:1-NAT clusters run
                                 # the upstream default "metallb"; an
                                 # operator running a different MetalLB
                                 # build can override.
@@ -1240,9 +1240,9 @@ platformEndpoints:
   # to the right backend (keycloak Service, kube-dc-backend Service,
   # etc).
   #
-  # Why this is needed: cloudacropolis 2026-06-02 — kube-dc CLI in
+  # Why this is needed: a production 1:1-NAT cluster, 2026-06-02 — kube-dc CLI in
   # the project console pod failed to refresh its OIDC token because
-  # tenant pods could not reach login.cloudacropolis.lt (resolves to
+  # tenant pods could not reach login.<cluster-domain> (resolves to
   # the cluster's public IP which hairpin-fails on 1:1-NAT setups).
   # The kubeAPI platform endpoint had already fixed the same gap for
   # kube-api; this generalizes the fix to every Envoy-routed
@@ -1337,7 +1337,7 @@ kubeletCsrApprover:
   # than no approver — these keep the node-identity binding strict.
   #
   # bypassDnsResolution=true is REQUIRED for kube-dc managed clusters and is
-  # the validated default. VERIFIED 2026-06-24 on cs/zrh (workload-cl-01):
+  # the validated default. VERIFIED 2026-06-24 on a CloudSigma production tenant cluster:
   # CloudSigma names nodes by UUID (system:node:<uuid>) which has NO in-tenant
   # DNS record, so with bypassDnsResolution=false the approver cannot resolve
   # the node name to validate the CSR's IP SAN and DENIES every legitimate

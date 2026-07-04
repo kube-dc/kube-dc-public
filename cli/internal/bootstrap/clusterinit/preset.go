@@ -123,7 +123,7 @@ var universalPlatformEndpointDefaults = map[string]string{
 // GARP announcements on br-ext-cloud; without one bound to a host
 // interface on every gateway node, MetalLB silently degrades to a
 // single-speaker-on-the-anchor-host topology (the load-bearing
-// failure mode that bit cloudacropolis on 2026-05-30 — Phase-0's
+// failure mode that bit atlantis on 2026-05-30 — Phase-0's
 // hand-bound .11 turned out to be MetalLB's only viable speaker).
 //
 // EXT_NET_ANCHOR_IPS is a comma-separated `host=CIDR` map; hostnames
@@ -149,7 +149,7 @@ var universalAnchorDefaults = map[string]string{
 	// the operator's ~/.ssh/config does NOT alias the Kubernetes node
 	// names. Empty default preserves the legacy ssh_config path.
 	// Per-node override: `kube-dc bootstrap anchors apply --ssh-host-map
-	// srv5-kub1=10.0.0.5` (precedence: flag > fleet > ssh_config).
+	// host5-a=10.0.0.5` (precedence: flag > fleet > ssh_config).
 	"EXT_NET_ANCHOR_SSH_HOSTS": "",
 }
 
@@ -243,7 +243,7 @@ var cloudVLANPreset = func() PresetSpec {
 // cloudPublicVLANPreset — production default. Both `EXT_NET_*`
 // (cloud NAT pool for internal egress) and `EXT_PUBLIC_*` (public
 // VLAN for routable EIPs) blocks. Used by kube-dc.cloud, stage, and
-// (per the cloudacropolis sprint) cloudacropolis once the operator
+// (per the atlantis sprint) atlantis once the operator
 // supplies the per-rack VLAN IDs.
 var cloudPublicVLANPreset = func() PresetSpec {
 	defaults := map[string]string{
@@ -397,7 +397,7 @@ func ValidatePresetRequiredKeys(o *InitOptions) error {
 //   - `EXT_NET_VLAN_ID`, `EXT_PUBLIC_VLAN_ID`: integer in [0, 4094].
 //     1..4094 are the IEEE 802.1Q usable tags; 0 means "untagged"
 //     (used by kube-ovn provider networks whose carrier NIC IS the
-//     VLAN — e.g. CloudSigma cs/zrh where the L2 segment is a
+//     VLAN — e.g. CloudSigma eu/dc1 where the L2 segment is a
 //     CloudSigma VLAN by UUID, not an 802.1Q tag inside the VM).
 //     4095 remains reserved.
 //   - `EXT_PUBLIC_CIDR`: parseable IPv4/IPv6 CIDR.
@@ -546,7 +546,7 @@ func parseCIDRIfPresent(envMap map[string]string, key string, errs *[]string) (*
 	}
 	_, cidr, err := net.ParseCIDR(strings.TrimSpace(v))
 	if err != nil {
-		*errs = append(*errs, fmt.Sprintf("%s: %q is not a valid CIDR (e.g. 217.117.26.48/29)", key, v))
+		*errs = append(*errs, fmt.Sprintf("%s: %q is not a valid CIDR (e.g. 203.0.113.48/29)", key, v))
 		return nil, false
 	}
 	return cidr, true
@@ -649,7 +649,7 @@ func validateAnchorIPs(envMap map[string]string, extCIDR *net.IPNet, extCIDROK b
 		host, cidrStr, ok := strings.Cut(pair, "=")
 		if !ok {
 			*errs = append(*errs, fmt.Sprintf(
-				"EXT_NET_ANCHOR_IPS: %q missing '=' (expected host=CIDR, e.g. srv5-kub1=100.64.0.11/16)",
+				"EXT_NET_ANCHOR_IPS: %q missing '=' (expected host=CIDR, e.g. host5-a=100.64.0.11/16)",
 				pair))
 			continue
 		}
@@ -763,7 +763,7 @@ func validateAnchorSSHHosts(envMap map[string]string, errs *[]string) {
 		node, host, ok := strings.Cut(pair, "=")
 		if !ok {
 			*errs = append(*errs, fmt.Sprintf(
-				"EXT_NET_ANCHOR_SSH_HOSTS: %q missing '=' (expected node=host, e.g. srv5-kub1=217.117.26.52)", pair))
+				"EXT_NET_ANCHOR_SSH_HOSTS: %q missing '=' (expected node=host, e.g. host5-a=203.0.113.52)", pair))
 			continue
 		}
 		node = strings.TrimSpace(node)

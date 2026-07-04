@@ -12,7 +12,7 @@
 // it. Speakers on nodes without an anchor IP silently become
 // elect-only-other-speakers-can-take-this-VIP placeholders.
 //
-// The 2026-05-30 cloudacropolis Phase-0 incident proved this:
+// The 2026-05-30 atlantis Phase-0 incident proved this:
 // removing the hand-bound .11 on srv5 (assumed vestigial) broke
 // tenant→VIP traffic in <1s because srv5 was the only speaker
 // announcing. Failover recovered after .11 was rebound.
