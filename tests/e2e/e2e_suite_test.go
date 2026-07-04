@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	kubedccomv1 "github.com/shalb/kube-dc/api/kube-dc.com/v1"
+	securityv1alpha1 "github.com/shalb/kube-dc/api/security.kube-dc.com/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -57,6 +58,7 @@ var _ = BeforeSuite(func() {
 	// Register the CRD scheme
 	Expect(scheme.AddToScheme(testScheme)).To(Succeed())
 	Expect(kubedccomv1.AddToScheme(testScheme)).To(Succeed())
+	Expect(securityv1alpha1.AddToScheme(testScheme)).To(Succeed())
 	Expect(kubeovn.AddToScheme(testScheme)).To(Succeed())
 	Expect(netattachdef.AddToScheme(testScheme)).To(Succeed())
 	Expect(hncv1alpha2.AddToScheme(testScheme)).To(Succeed())
@@ -65,4 +67,14 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
+	// M1-T12b tenant fixture (Keycloak test users + JWTs). Lives in a
+	// separate file so the Organization/Project/Workload suites stay
+	// unaffected; the setup function records its own Skip reason so
+	// the global BeforeSuite never fails because of a missing
+	// realm-access secret on a fresh cluster.
+	setupT12bTenant()
+})
+
+var _ = AfterSuite(func() {
+	teardownT12bTenant()
 })

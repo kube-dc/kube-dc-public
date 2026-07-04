@@ -13,10 +13,17 @@ spec:
       {{- include "kube-dc.backend.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.backend.podAnnotations }}
       annotations:
+        # Rolls the backend Pod whenever the master-config Secret content
+        # changes. The Secret is rendered from chart values (SMTP, OpenBao,
+        # ALLOW_PUBLIC_PROJECTS, …). Without this checksum, env vars sourced
+        # via secretKeyRef stay stale on running Pods after a Helm upgrade
+        # that only changed the Secret. See
+        # kube-dc/docs/prd/public-projects-gate.md (F2 review fix).
+        checksum/master-config: {{ include (print $.Template.BasePath "/manager-secret.yaml") . | sha256sum }}
+        {{- with .Values.backend.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
       labels:
         {{- include "kube-dc.backend.labels" . | nindent 8 }}
         {{- with .Values.backend.podLabels }}
@@ -153,6 +160,51 @@ spec:
                 secretKeyRef:
                   name: whmcs-credentials
                   key: webhook-secret
+            {{- end }}
+            # Public-projects gate (see kube-dc/docs/prd/public-projects-gate.md).
+            # The backend uses this to gate the egressNetworkType=public
+            # option in the project-create form. The manager-side
+            # ValidatingWebhook also reads `allow_public_projects` directly
+            # from the master-config Secret it loads via ConfigGlobal —
+            # this env is purely the UI's view of the same source of truth.
+            #
+            # NOT gated on .Values.manager.openBao.enabled — every cluster
+            # needs the UI feature flag whether or not OpenBao is in use.
+            # `optional: true` covers the bootstrap window before the
+            # chart re-renders the master-config Secret to include the
+            # new key.
+            - name: ALLOW_PUBLIC_PROJECTS
+              valueFrom:
+                secretKeyRef:
+                  name: master-config
+                  key: allow_public_projects
+                  optional: true
+            {{- if and .Values.manager.openBao .Values.manager.openBao.enabled }}
+            # M1-T04: backend exchanges users' Keycloak JWTs against
+            # the per-Org auth/oidc-keycloak OpenBao mount. Same URL
+            # the manager reads from master-config; surfaced as env so
+            # the Node.js Vault client doesn't need the secret mount.
+            - name: OPENBAO_URL
+              valueFrom:
+                secretKeyRef:
+                  name: master-config
+                  key: openbao_url
+            # M1-T05: structured audit events for every /api/secrets/*
+            # call ship to this Loki push endpoint under the configured
+            # tenant (X-Scope-OrgID), per dev-scope §5. Default points
+            # at the in-cluster loki-gateway; leave empty (or unset
+            # backend.audit.lokiPushUrl) to disable audit emission
+            # without breaking the rest of the secrets API.
+            - name: LOKI_PUSH_URL
+              value: "{{ .Values.backend.audit.lokiPushUrl | default "http://loki-gateway.monitoring.svc:80" }}"
+            # M1-T05b: audit query endpoints (/api/audit/*) read from
+            # this URL. Defaults to the push URL when not separately
+            # set so push and query stay in lock-step when an operator
+            # customises one of them.
+            - name: LOKI_QUERY_URL
+              value: "{{ .Values.backend.audit.lokiQueryUrl | default .Values.backend.audit.lokiPushUrl | default "http://loki-gateway.monitoring.svc:80" }}"
+            - name: LOKI_AUDIT_TENANT
+              value: "{{ .Values.backend.audit.tenant | default "system" }}"
             {{- end }}
           {{- with .Values.backend.extraEnv }}
             {{- toYaml . | nindent 12 }}

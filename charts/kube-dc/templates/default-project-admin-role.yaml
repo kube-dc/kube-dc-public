@@ -30,6 +30,9 @@ rules:
   resources: [pods/log]
   verbs: [get, list]
 - apiGroups: [""]
+  resources: [pods/exec]
+  verbs: [create]
+- apiGroups: [""]
   resources: [events]
   verbs: [get, list, watch]
 # Metrics (kubectl top pods)
@@ -115,6 +118,9 @@ rules:
 - apiGroups: [cert-manager.io]
   resources: [issuers, certificates]
   verbs: [create, get, list, watch, delete]
+- apiGroups: [acme.cert-manager.io]
+  resources: [challenges]
+  verbs: [get, list, watch, delete]
 # Policy
 - apiGroups: [policy]
   resources: [poddisruptionbudgets]
@@ -160,9 +166,20 @@ rules:
 - apiGroups: [velero.io]
   resources: [backups/status, restores/status]
   verbs: [get, list, watch]
+# Kube-DC Security Manager (M1+) — admin gets full CRUD on every
+# security CRD in the project namespace. UI/CLI surface lives in
+# the backend; the backend re-uses the user's JWT against the K8s
+# API so these RBAC rules govern what tenants can do without the
+# OpenBao policy layer (defence in depth).
+- apiGroups: [security.kube-dc.com]
+  resources: [managedsecrets, managedcertificates, kmskeys, databasecredentialpolicies]
+  verbs: ["*"]
+- apiGroups: [security.kube-dc.com]
+  resources: [managedsecrets/status, managedcertificates/status, kmskeys/status, databasecredentialpolicies/status]
+  verbs: [get, list, watch]
 
 ---
-# Developer Role - Can manage VMs, containers, workloads (no RBAC, no secrets management)
+# Developer Role - Can manage VMs, containers, workloads + project secrets (no RBAC)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -190,6 +207,9 @@ rules:
 - apiGroups: [""]
   resources: [pods/log]
   verbs: [get, list]
+- apiGroups: [""]
+  resources: [pods/exec]
+  verbs: [create]
 - apiGroups: [""]
   resources: [events]
   verbs: [get, list, watch]
@@ -255,6 +275,9 @@ rules:
 - apiGroups: [cert-manager.io]
   resources: [issuers, certificates]
   verbs: [create, get, list, watch, delete]
+- apiGroups: [acme.cert-manager.io]
+  resources: [challenges]
+  verbs: [get, list, watch, delete]
 # Policy
 - apiGroups: [policy]
   resources: [poddisruptionbudgets]
@@ -299,6 +322,23 @@ rules:
   verbs: [create, get, list, watch, delete, update, patch]
 - apiGroups: [velero.io]
   resources: [backups/status, restores/status]
+  verbs: [get, list, watch]
+# Kube-DC Security Manager — developer gets full CRUD on
+# secrets/certs/DB-creds. KMS is locked down to read-only at the
+# CR plane (per M3 review): create/rotate/min-DV/schedule/cancel
+# are project-manager+ via OpenBao policy + backend SSAR. encrypt
+# and decrypt go through the backend's data-plane endpoints which
+# only need `get kmskeys` (loadKMSKey for the keyName lookup).
+# Hard destroy (?destroy=true on secrets) is gated at the backend;
+# K8s API just sees soft-delete semantics on the CR.
+- apiGroups: [security.kube-dc.com]
+  resources: [managedsecrets, managedcertificates, databasecredentialpolicies]
+  verbs: [create, get, list, watch, update, patch, delete]
+- apiGroups: [security.kube-dc.com]
+  resources: [kmskeys]
+  verbs: [get, list, watch]
+- apiGroups: [security.kube-dc.com]
+  resources: [managedsecrets/status, managedcertificates/status, kmskeys/status, databasecredentialpolicies/status]
   verbs: [get, list, watch]
 
 ---
@@ -388,6 +428,9 @@ rules:
 - apiGroups: [cert-manager.io]
   resources: [issuers, certificates]
   verbs: [get, list, watch]
+- apiGroups: [acme.cert-manager.io]
+  resources: [challenges]
+  verbs: [get, list, watch]
 # Policy - read only
 - apiGroups: [policy]
   resources: [poddisruptionbudgets]
@@ -424,6 +467,25 @@ rules:
   verbs: [get, list, watch]
 - apiGroups: [velero.io]
   resources: [backups/status, restores/status]
+  verbs: [get, list, watch]
+# Kube-DC Security Manager — project-manager reads everything and
+# toggles sync configuration on secrets/certs/DB-creds; cannot
+# create new secrets/certs (per dev-scope §6, that's developer-and-
+# above). On KMS the design inverts: kmskeys create + rotate +
+# min-decryption-version are project-manager+ (UX PRD §4.3), so PM
+# gets create + patch on kmskeys. Schedule/cancel-delete are
+# admin-only and gated by a backend SSAR check (M3-T02 review-pass);
+# PM's `patch` capability covers the refresh-annotation patch the
+# backend writes after rotate / min-DV mutations to wake the
+# reconciler for status mirroring.
+- apiGroups: [security.kube-dc.com]
+  resources: [managedsecrets, managedcertificates, databasecredentialpolicies]
+  verbs: [get, list, watch, update, patch]
+- apiGroups: [security.kube-dc.com]
+  resources: [kmskeys]
+  verbs: [get, list, watch, create, update, patch]
+- apiGroups: [security.kube-dc.com]
+  resources: [managedsecrets/status, managedcertificates/status, kmskeys/status, databasecredentialpolicies/status]
   verbs: [get, list, watch]
 
 ---
@@ -489,9 +551,13 @@ rules:
 - apiGroups: [cluster.x-k8s.io]
   resources: [clusters, machinedeployments]
   verbs: [get, list]
-# Batch - read only
+# Batch - read only. cronjobs added in M1-T11 review pass: the
+# /api/secrets/{name}/consumers scanner lists CronJobs alongside
+# the other workload kinds, and the dev-scope §6 matrix puts that
+# endpoint at `user` minimum role — without `cronjobs` list here
+# the scan returned a partial 403 on every user-role call.
 - apiGroups: [batch]
-  resources: [jobs]
+  resources: [jobs, cronjobs]
   verbs: [get, list]
 # Kube-DC resources - read only
 - apiGroups: [kube-dc.com]
@@ -503,6 +569,9 @@ rules:
 # Cert-manager - read only
 - apiGroups: [cert-manager.io]
   resources: [issuers, certificates]
+  verbs: [get, list]
+- apiGroups: [acme.cert-manager.io]
+  resources: [challenges]
   verbs: [get, list]
 # Policy - read only
 - apiGroups: [policy]
@@ -541,3 +610,13 @@ rules:
 - apiGroups: [velero.io]
   resources: [backups/status, restores/status]
   verbs: [get, list]
+# Kube-DC Security Manager (M1+) — user role gets metadata-only reads.
+# Values are gated by OpenBao policy (project-<p>-user only has
+# metadata read, not data), but K8s RBAC still controls whether the
+# user can even see the CR list.
+- apiGroups: [security.kube-dc.com]
+  resources: [managedsecrets, managedcertificates, kmskeys, databasecredentialpolicies]
+  verbs: [get, list, watch]
+- apiGroups: [security.kube-dc.com]
+  resources: [managedsecrets/status, managedcertificates/status, kmskeys/status, databasecredentialpolicies/status]
+  verbs: [get, list, watch]

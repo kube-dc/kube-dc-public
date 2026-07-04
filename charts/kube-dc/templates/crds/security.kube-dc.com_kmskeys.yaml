@@ -1,0 +1,193 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.4
+    helm.sh/resource-policy: keep
+  name: kmskeys.security.kube-dc.com
+spec:
+  group: security.kube-dc.com
+  names:
+    kind: KMSKey
+    listKind: KMSKeyList
+    plural: kmskeys
+    shortNames:
+      - kkey
+    singular: kmskey
+  scope: Namespaced
+  versions:
+    - additionalPrinterColumns:
+        - jsonPath: .spec.purpose
+          name: Purpose
+          type: string
+        - jsonPath: .spec.algorithm
+          name: Algorithm
+          type: string
+        - jsonPath: .status.currentVersion
+          name: Version
+          type: integer
+        - jsonPath: .metadata.creationTimestamp
+          name: Age
+          type: date
+      name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: |-
+            KMSKey is the user-facing object for a project encryption key. Material
+            is never returned to users; encrypt/decrypt go through the Kube-DC API.
+          properties:
+            apiVersion:
+              description: |-
+                APIVersion defines the versioned schema of this representation of an object.
+                Servers should convert recognized schemas to the latest internal value, and
+                may reject unrecognized values.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+              type: string
+            kind:
+              description: |-
+                Kind is a string value representing the REST resource this object represents.
+                Servers may infer this from the endpoint the client submits requests to.
+                Cannot be updated.
+                In CamelCase.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: |-
+                KMSKeySpec declares a project-scoped encryption key backed by OpenBao
+                Transit.
+              properties:
+                algorithm:
+                  default: aes256-gcm96
+                  description: 'Algorithm selects the cipher. Phase 1: symmetric only.'
+                  enum:
+                    - aes256-gcm96
+                    - chacha20-poly1305
+                  type: string
+                deletionPolicy:
+                  default: retain
+                  description: |-
+                    DeletionPolicy: retain keeps the key indefinitely; schedule starts a
+                    30-day countdown that can be cancelled before expiry.
+                  enum:
+                    - retain
+                    - schedule
+                  type: string
+                exportable:
+                  default: false
+                  description: |-
+                    Exportable: Phase 1 enforces this to false via webhook. Field exists
+                    for future use.
+                  type: boolean
+                purpose:
+                  default: application
+                  description: Purpose tags the key for filtering and lifecycle policy.
+                  enum:
+                    - application
+                    - backup
+                    - etcd
+                  type: string
+                rotation:
+                  description: Rotation controls automatic key-version rotation.
+                  properties:
+                    enabled:
+                      description: Enabled toggles scheduled rotation.
+                      type: boolean
+                    interval:
+                      description: Interval between rotations. Required when Enabled.
+                      pattern: ^[1-9][0-9]*(d|h|m|s|ms|us|ns)([1-9][0-9]*(d|h|m|s|ms|us|ns))*$
+                      type: string
+                  type: object
+              type: object
+            status:
+              description: KMSKeyStatus reflects observed state.
+              properties:
+                conditions:
+                  description: 'Conditions: Ready, RotationScheduled, OpenBaoMounted.'
+                  items:
+                    description: Condition contains details for one aspect of the current state of this API Resource.
+                    properties:
+                      lastTransitionTime:
+                        description: |-
+                          lastTransitionTime is the last time the condition transitioned from one status to another.
+                          This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                        format: date-time
+                        type: string
+                      message:
+                        description: |-
+                          message is a human readable message indicating details about the transition.
+                          This may be an empty string.
+                        maxLength: 32768
+                        type: string
+                      observedGeneration:
+                        description: |-
+                          observedGeneration represents the .metadata.generation that the condition was set based upon.
+                          For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                          with respect to the current state of the instance.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      reason:
+                        description: |-
+                          reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                          Producers of specific condition types may define expected values and meanings for this field,
+                          and whether the values are considered a guaranteed API.
+                          The value should be a CamelCase string.
+                          This field may not be empty.
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                        type: string
+                      status:
+                        description: status of the condition, one of True, False, Unknown.
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                        type: string
+                      type:
+                        description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        type: string
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    type: object
+                  type: array
+                currentVersion:
+                  description: CurrentVersion is the most recent key version used for encryption.
+                  type: integer
+                keyId:
+                  description: KeyId is the internal identifier (path) used for audit and API calls.
+                  type: string
+                lastRotatedTime:
+                  description: LastRotatedTime is the most recent successful rotation.
+                  format: date-time
+                  type: string
+                minDecryptionVersion:
+                  description: |-
+                    MinDecryptionVersion is the lowest version still allowed to decrypt
+                    (write-restricted to project-manager+).
+                  type: integer
+                nextRotationTime:
+                  description: NextRotationTime is the next scheduled rotation.
+                  format: date-time
+                  type: string
+                scheduledDeletion:
+                  description: |-
+                    ScheduledDeletion is set when deletionPolicy=schedule has been
+                    invoked. Cancellable until this time.
+                  format: date-time
+                  type: string
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}

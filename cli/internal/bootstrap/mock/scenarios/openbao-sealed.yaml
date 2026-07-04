@@ -1,0 +1,122 @@
+name: openbao-sealed
+description: |
+  Cluster healthy, but every OpenBao pod is sealed (post-restart scenario,
+  e.g. nodes rebooted overnight). M1 doctor exits 0 here because seal
+  state is observed by cluster probes (M2 / future cluster-probe slice),
+  NOT by the tool/host/DNS probes M1 ships — `bao` binary is installed,
+  every other tool is installed, host probes are off-mode. Once
+  cluster probes land, the sealed pods will surface as Blocker severity
+  and doctor will exit 2; until then this scenario primarily exercises
+  the M5-T02 unseal flow (consumes scenario.openbao.unsealKeys to flip
+  pods sealed=false) and the F4 OpenBao TUI tab.
+
+tools:
+  kubectl: { installed: true, version: v1.32.1 }
+  flux:    { installed: true, version: v2.4.0 }
+  sops:    { installed: true, version: v3.10.2 }
+  age:     { installed: true, version: v1.2.1 }
+  git:     { installed: true, version: v2.43.0 }
+  gh:      { installed: true, version: v2.51.0, scopes: [repo, workflow] }
+  ssh:     { installed: true, version: OpenSSH_9.6p1 }
+  bao:     { installed: true, version: v2.5.3 }
+
+cluster:
+  apiEndpoint: https://kube-api.kube-dc.cloud:6443
+  k8sVersion: v1.32.1+rke2r1
+  nodes:
+    - { name: ams1-blade179-8, status: Ready }
+    - { name: ams1-blade184-5, status: Ready }
+    - { name: ams1-blade58-2,  status: Ready }
+    - { name: ams1-blade187-2, status: Ready }
+  fluxInstalled: true
+  # Kustomization status reflects the seal cascade: kube-dc Helm release
+  # will eventually fail readiness because manager can't login to
+  # OpenBao, but at the moment doctor probes the cluster, only OpenBao
+  # is observably wrong.
+  kustomizations:
+    - { name: infra-cni,             namespace: flux-system, ready: true,  revision: "main@abc123" }
+    - { name: infra-core,            namespace: flux-system, ready: true,  revision: "main@abc123" }
+    - { name: infra-object-storage,  namespace: flux-system, ready: true,  revision: "main@abc123" }
+    - { name: platform,              namespace: flux-system, ready: false, reconciling: true, reason: ReconciliationFailed, message: "HelmRelease/openbao not ready: 3/3 sealed", revision: "main@abc123" }
+    - { name: addons,                namespace: flux-system, ready: false, reason: DependencyNotReady, message: "waiting on platform", revision: "main@abc123" }
+  sopsAgeRecipient: age10mskwx065akee5mw4txeqtnn90t724phdzx9k4jxnrgcp9cces6sqfkwvu
+  clusterSecretsPresent: true
+  # M6-T03: NFD is deployed as part of infra-core (M6-T01) so any
+  # scenario representing a reconciled infra-core layer needs the
+  # composite labels — otherwise the NFDProbe in the doctor's
+  # Physical section would report Warn ("NFD not installed") and
+  # bump the scenario's exit code. openbao-sealed represents a
+  # cluster where infra-core is Ready but platform is stuck on the
+  # openbao seal cascade, so NFD IS installed with our composites
+  # applied. Kubevirt-eligible on 3 of 4 nodes; the fourth is the
+  # NVIDIA GPU node.
+  nodeLabels:
+    ams1-blade179-8:
+      "feature.node.kubernetes.io/kernel-loadedmodule.kvm": "true"
+      "kube-dc.com/kubevirt-eligible": "true"
+    ams1-blade184-5:
+      "feature.node.kubernetes.io/kernel-loadedmodule.kvm": "true"
+      "kube-dc.com/kubevirt-eligible": "true"
+    ams1-blade58-2:
+      "feature.node.kubernetes.io/kernel-loadedmodule.kvm": "true"
+      "kube-dc.com/kubevirt-eligible": "true"
+    ams1-blade187-2:
+      "feature.node.kubernetes.io/pci-0300_10de.present": "true"
+      "kube-dc.com/gpu.nvidia": "true"
+
+openbao:
+  initialized: true
+  bootstrapFinalizedAnnotation: "2026-04-20T10:00:00Z"
+  controllerAuthAnnotation: "2026-04-20T10:05:00Z"
+  pods:
+    - { name: openbao-0, sealed: true, version: 2.5.3 }
+    - { name: openbao-1, sealed: true, version: 2.5.3 }
+    - { name: openbao-2, sealed: true, version: 2.5.3 }
+  unsealKeys:
+    - mock-share-sealed-1
+    - mock-share-sealed-2
+    - mock-share-sealed-3
+    - mock-share-sealed-4
+    - mock-share-sealed-5
+  rootToken: ""   # init was performed long ago; root revoked; mock has no token to hand out via GenerateRoot until the ceremony runs
+
+fleet:
+  cloned: true
+  path: /home/operator/projects/kube-dc-fleet
+  clusterDirs: [cloud]
+  ageRecipients:
+    - age10mskwx065akee5mw4txeqtnn90t724phdzx9k4jxnrgcp9cces6sqfkwvu
+  operatorEnrolled: true
+
+  # Sealed-OpenBao cascade surfaces through Flux: the platform
+  # Kustomization can't reconcile because HelmRelease/openbao isn't
+  # Ready (3/3 sealed). `bootstrap status` therefore exits 1
+  # (Reconciling — not a Failed state until init explicitly
+  # records the cluster as Failed; the operator is expected to
+  # `bootstrap openbao unseal` and reconcile resumes).
+  statuses:
+    - name: cloud
+      status: Reconciling
+      detail: "platform not Ready: HelmRelease/openbao not ready (3/3 sealed)"
+      domain: kube-dc.cloud
+      apiURL: https://kube-api.kube-dc.cloud:6443
+      fixHint: "kube-dc bootstrap openbao unseal cloud"
+      reconcilers:
+        - { name: infra-cni,            ready: true,  message: "Applied revision: main@abc123" }
+        - { name: infra-core,           ready: true,  message: "Applied revision: main@abc123" }
+        - { name: infra-object-storage, ready: true,  message: "Applied revision: main@abc123" }
+        - { name: platform,             ready: false, message: "HelmRelease/openbao not ready: 3/3 sealed" }
+        - { name: addons,               ready: false, message: "waiting on platform" }
+
+dns:
+  "*.kube-dc.cloud": [213.111.154.233]
+
+scripts:
+  # Unseal-flow scenarios rarely drive scripts — the M5-T02 unseal path
+  # uses OpenBaoClient.Unseal directly. Keep an empty fixture for the
+  # canonical setup-controller-auth path so refresh-policy scenarios
+  # built on top of this one don't have to redeclare it.
+  "openbao-setup-controller-auth.sh":
+    lines:
+      - { after: 0s, text: "[INFO] would refresh controller-auth policy" }
+    exitCode: 0

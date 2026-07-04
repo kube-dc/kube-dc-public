@@ -6,6 +6,18 @@ metadata:
   labels:
     {{- include "kube-dc.k8manager.labels" . | nindent 4 }}
 rules:
+# BOC #2: read the KamajiControlPlane CRD schema to detect whether the
+# kube-dc-forked control-plane provider is installed (kube-proxy JSON-patch
+# capability gate). Without this the gate fails closed and #2 is silently
+# never written. See kdccluster_kubelet_kubeproxy.go::kcpSupportsKubeProxyJSONPatches.
+- apiGroups:
+  - apiextensions.k8s.io
+  resources:
+  - customresourcedefinitions
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - ""
   resources:
@@ -102,6 +114,27 @@ rules:
   - patch
   - update
   - watch
+# machinesets needs patch for the MS status-drift self-heal annotation
+# (pokeMachineSetIfStatusDrift). machines (read-only) is the ground-truth
+# the self-heal counts to compare against MS.status.readyReplicas.
+- apiGroups:
+  - cluster.x-k8s.io
+  resources:
+  - machinesets
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cluster.x-k8s.io
+  resources:
+  - machines
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - controlplane.cluster.x-k8s.io
   resources:
@@ -129,6 +162,31 @@ rules:
   - patch
   - update
   - watch
+# kubevirtmachines + cloudsigmamachines: needed by reapOrphanInfraMachineFinalizers
+# in kdccluster_controller.reconcileDelete to strip the infra-provider's own
+# stuck finalizer after CAPI Cluster is gone (cloud incident 2026-06-03 —
+# anup-test had a 1.5-month-old stuck kubevirtmachine blocking ns Terminating).
+# Read+update only; we never create/delete the CRs themselves — CAPI owns
+# their lifecycle. The /finalizers subresource grant covers the finalizer
+# update path on apiservers that gate it separately.
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - cloudsigmamachines
+  - kubevirtmachines
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - cloudsigmamachines/finalizers
+  - kubevirtmachines/finalizers
+  verbs:
+  - update
 - apiGroups:
   - k8s.kube-dc.com
   resources:
@@ -158,6 +216,18 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - security.kube-dc.com
+  resources:
+  - kmskeys
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - kamaji.clastix.io
   resources:

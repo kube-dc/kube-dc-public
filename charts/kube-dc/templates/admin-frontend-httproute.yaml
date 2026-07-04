@@ -1,0 +1,31 @@
+{{- if and .Values.adminFrontend.enabled .Values.adminFrontend.gateway.enabled }}
+{{- $fullName := include "kube-dc.adminFrontend.fullname" . -}}
+{{- $svcPort := .Values.adminFrontend.service.port -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "kube-dc.adminFrontend.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+  - name: {{ .Values.adminFrontend.gateway.parentRef.name | default "eg" }}
+    namespace: {{ .Values.adminFrontend.gateway.parentRef.namespace | default "envoy-gateway-system" }}
+    sectionName: {{ .Values.adminFrontend.gateway.parentRef.sectionName | default "https-admin" }}
+  hostnames:
+  - {{ required "adminFrontend.gateway.hostname is required (e.g. admin.<domain>)" .Values.adminFrontend.gateway.hostname }}
+  rules:
+  # Admin SPA: nginx serves static assets; the browser calls BACKEND_URL
+  # (backend.<domain>) directly, so a single catch-all route is enough.
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: {{ $fullName }}
+      port: {{ $svcPort }}
+{{- end }}
+{{- /* NOTE: the allow-gateway-to-kube-dc-secrets ReferenceGrant is defined once by
+       frontend-httproute.yaml — do NOT redefine it here (name collision). The
+       https-admin listener + kube-dc-admin-frontend-tls cert live on the Gateway
+       (fleet gateway-config / installer), not in this chart. */}}

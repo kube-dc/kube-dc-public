@@ -1,0 +1,76 @@
+{{- if .Values.adminFrontend.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kube-dc.adminFrontend.fullname" . }}
+  labels:
+    {{- include "kube-dc.adminFrontend.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.adminFrontend.autoscaling.enabled }}
+  replicas: {{ .Values.adminFrontend.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "kube-dc.adminFrontend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.adminFrontend.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "kube-dc.adminFrontend.labels" . | nindent 8 }}
+    spec:
+      {{- with .Values.adminFrontend.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "kube-dc.adminFrontend.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.adminFrontend.podSecurityContext | nindent 8 }}
+      containers:
+        # container name is "frontend" to match the existing deployment + the
+        # dev-build/release set-image tooling (CTR[admin]=frontend).
+        - name: frontend
+          securityContext:
+            {{- toYaml .Values.adminFrontend.securityContext | nindent 12 }}
+          image: "{{ .Values.adminFrontend.image.repository }}:{{ .Values.adminFrontend.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.adminFrontend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          # The admin image's docker-entrypoint generates /usr/share/nginx/html/env.js
+          # from these env vars at startup (window._env_), so no env.js ConfigMap mount
+          # is needed (it would be overwritten anyway).
+          env:
+            - name: BACKEND_URL
+              value: "https://{{ required "adminFrontend needs backend.gateway.hostname" .Values.backend.gateway.hostname }}"
+            - name: KEYCLOAK_URL
+              value: "{{ .Values.adminFrontend.keycloakUrl | default .Values.manager.keycloakSecret.url }}"
+            - name: KEYCLOAK_REALM
+              value: {{ .Values.adminFrontend.keycloakRealm | default "master" | quote }}
+            - name: KEYCLOAK_CLIENT_ID
+              value: {{ .Values.adminFrontend.keycloakClientId | default "kube-dc-admin-console" | quote }}
+            {{- with .Values.adminFrontend.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.adminFrontend.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.adminFrontend.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.adminFrontend.resources | nindent 12 }}
+      {{- with .Values.adminFrontend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.adminFrontend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.adminFrontend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

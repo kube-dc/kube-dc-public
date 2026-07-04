@@ -37,9 +37,9 @@ const sidebars: SidebarsConfig = {
         'sso-google-auth',
         'networking-external',
         'observability',
+        'upgrading-management-cluster',
         'billing-plans-configuration',
         'smtp-gmail-app-password',
-        'upgrading-management-cluster',
       ],
     },
     {

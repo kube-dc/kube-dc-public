@@ -39,8 +39,17 @@ build_smtp_config() {
         smtp_json+=',"port":"'"${SMTP_PORT:-587}"'"'
         smtp_json+=',"from":"'"${SMTP_FROM:-noreply@kube-dc.com}"'"'
         smtp_json+=',"fromDisplayName":"'"${SMTP_FROM_NAME:-Kube-DC}"'"'
-        smtp_json+=',"starttls":"true"'
-        smtp_json+=',"ssl":"false"'
+        # SMTP_SECURE=true → TLS-on-connect (port 465, RFC 8314 default).
+        # SMTP_SECURE=false (default) → STARTTLS (port 587).
+        # Keycloak's smtpServer accepts two mutually-exclusive booleans:
+        #   ssl=true, starttls=false  → TLS-on-connect
+        #   ssl=false, starttls=true  → STARTTLS
+        # Matches the same SMTP_SECURE semantic used by kube-dc-backend.
+        if [ "${SMTP_SECURE:-false}" = "true" ]; then
+            smtp_json+=',"starttls":"false","ssl":"true"'
+        else
+            smtp_json+=',"starttls":"true","ssl":"false"'
+        fi
         if [ -n "$SMTP_USER" ]; then
             smtp_json+=',"auth":"true"'
             smtp_json+=',"user":"'"$SMTP_USER"'"'

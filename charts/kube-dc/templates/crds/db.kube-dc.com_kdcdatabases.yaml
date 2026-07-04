@@ -1,0 +1,575 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+    helm.sh/resource-policy: keep
+  name: kdcdatabases.db.kube-dc.com
+spec:
+  group: db.kube-dc.com
+  names:
+    kind: KdcDatabase
+    listKind: KdcDatabaseList
+    plural: kdcdatabases
+    shortNames:
+      - kdcdb
+    singular: kdcdatabase
+  scope: Namespaced
+  versions:
+    - additionalPrinterColumns:
+        - jsonPath: .spec.engine
+          name: Engine
+          type: string
+        - jsonPath: .spec.version
+          name: Version
+          type: string
+        - jsonPath: .spec.replicas
+          name: Replicas
+          type: integer
+        - jsonPath: .status.phase
+          name: Phase
+          type: string
+        - jsonPath: .status.endpoint
+          name: Endpoint
+          type: string
+        - jsonPath: .metadata.creationTimestamp
+          name: Age
+          type: date
+      name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: KdcDatabase is the Schema for the kdcdatabases API
+          properties:
+            apiVersion:
+              description: |-
+                APIVersion defines the versioned schema of this representation of an object.
+                Servers should convert recognized schemas to the latest internal value, and
+                may reject unrecognized values.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+              type: string
+            kind:
+              description: |-
+                Kind is a string value representing the REST resource this object represents.
+                Servers may infer this from the endpoint the client submits requests to.
+                Cannot be updated.
+                In CamelCase.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: KdcDatabaseSpec defines the desired state of KdcDatabase
+              properties:
+                backup:
+                  description: Backup configuration
+                  properties:
+                    destinationPath:
+                      description: |-
+                        Full S3 destination path for backups (e.g., "s3://my-bucket/my-path/")
+                        Default: s3://<namespace>-db-backups/databases/<db-name>/
+                        The controller auto-creates the bucket via ObjectBucketClaim if using the default.
+                      type: string
+                    enabled:
+                      default: true
+                      description: Enable scheduled backups
+                      type: boolean
+                    encryption:
+                      description: |-
+                        Encryption opts the database backup into envelope encryption
+                        using a kube-dc KMSKey (dev-scope §9, M3-T05). When enabled the
+                        controller generates a per-database 32-byte AES-256 data
+                        encryption key (DEK), wraps it via OpenBao Transit using the
+                        referenced KMSKey, and stores both the wrapped form (canonical)
+                        and the plaintext form (for backup-Job consumption) in a
+                        per-database Kubernetes Secret. Engine-side wiring (mariadb
+                        --encrypt-key-file / CNPG post-process Job) follows as
+                        M3-T05 FU1; this first cut delivers the DEK lifecycle and
+                        status surface so operators can configure the intent today and
+                        the engine wiring lands without further API churn.
+                      properties:
+                        enabled:
+                          default: false
+                          description: |-
+                            Enabled toggles envelope encryption. Defaults to false so
+                            existing KdcDatabases keep their pre-M3-T05 backup shape.
+                          type: boolean
+                        kmsKeyName:
+                          description: |-
+                            KMSKeyName references a kube-dc KMSKey (security.kube-dc.com/
+                            v1alpha1) in the SAME namespace as this KdcDatabase. The
+                            controller resolves the key's Transit name from the KMSKey's
+                            status.keyId and wraps the DEK against that key.
+
+                            Cross-namespace refs are forbidden by design — backups + keys
+                            live in the same project trust boundary. The KMSKey's
+                            status.scheduledDeletion timestamp is honoured: if the key is
+                            in countdown, the controller refuses to provision a fresh DEK
+                            (audit-emit + status condition) until the deletion is cancelled.
+                          minLength: 1
+                          pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                          type: string
+                        postProcess:
+                          description: |-
+                            PostProcess opts the database backup into the M3-T05 FU1
+                            engine-side encryption pipeline. When enabled the controller
+                            renders a per-database CronJob that runs the operator-supplied
+                            wrapper image against the latest engine backup. The wrapper
+                            image contract: read the DEK from a mounted Secret volume,
+                            pull the newest backup from S3, encrypt with AES-256-GCM (or
+                            equivalent AEAD), upload `<original>.enc` plus a sidecar
+                            manifest JSON, optionally delete the original. Both engines
+                            (CNPG + mariadb-operator) lack a CRD-native customer-supplied
+                            key flow, so the post-process path is the universal
+                            integration point.
+
+                            The wrapper image itself is NOT shipped in this kube-dc
+                            release — tracked as M3-T05 FU1-PR-2. Operators can substitute
+                            their own image until then by overriding PostProcess.Image.
+                          properties:
+                            enabled:
+                              default: false
+                              description: |-
+                                Enabled toggles the post-process CronJob. Defaults to false so
+                                the API surface stays invisible for DEK-only deployments.
+                              type: boolean
+                            image:
+                              default: shalb/db-backup-encryptor:v0.1.0-placeholder
+                              description: |-
+                                Image is the wrapper container image. Defaults to the
+                                kube-dc-shipping image once it lands (M3-T05 FU1-PR-2);
+                                operators can override with a custom image today by setting
+                                this explicitly.
+
+                                Image contract (env passed by the controller):
+                                  DB_NAME          KdcDatabase name
+                                  ENGINE           "postgresql" | "mariadb"
+                                  S3_ENDPOINT      cluster-level S3 endpoint
+                                  S3_PATH          per-DB destination path (s3://...)
+                                  KMSKEY_NAME      the KMSKey CR name
+                                  KMSKEY_ID        "<org>/transit/keys/<name>"
+                                  WRAPPED_DEK_VERSION transit key version (from status)
+                                  DEK_DIR          mount point for the wrapped-DEK Secret
+                                  S3_CREDS_DIR     mount point for the S3 creds Secret
+                              type: string
+                            imagePullSecrets:
+                              description: |-
+                                ImagePullSecrets is forwarded onto the CronJob's pod spec for
+                                private wrapper images.
+                              items:
+                                description: |-
+                                  LocalObjectReference contains enough information to let you locate the
+                                  referenced object inside the same namespace.
+                                properties:
+                                  name:
+                                    default: ""
+                                    description: |-
+                                      Name of the referent.
+                                      This field is effectively required, but due to backwards compatibility is
+                                      allowed to be empty. Instances of this type with an empty value here are
+                                      almost certainly wrong.
+                                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                    type: string
+                                type: object
+                                x-kubernetes-map-type: atomic
+                              type: array
+                            schedule:
+                              default: 30 2 * * *
+                              description: |-
+                                Schedule is the cron expression for the post-process Job.
+                                Defaults to "30 2 * * *" (30 minutes after the standard
+                                daily-2am backup schedule) so the engine backup has time to
+                                complete + flush to S3 before the wrapper attempts to read it.
+                                Operators with a custom spec.backup.schedule should set this
+                                to ~30min after their own backup window.
+                              type: string
+                          required:
+                            - enabled
+                          type: object
+                        wrappedDEKSecretName:
+                          description: |-
+                            WrappedDEKSecretName overrides the generated K8s Secret name
+                            (default: "<kdcdatabase-name>-backup-dek"). The Secret carries
+                            two opaque entries:
+                              - "dek.bin"   — 32-byte plaintext DEK (mariadb encrypt-key file)
+                              - "dek.wrap"  — OpenBao Transit ciphertext (vault:v<n>:...)
+                            Both are written on a single reconcile; on key rotation the
+                            .wrap field updates and .bin stays stable so backup Jobs
+                            don't see in-flight changes mid-run.
+                          type: string
+                      required:
+                        - enabled
+                        - kmsKeyName
+                      type: object
+                    retentionDays:
+                      default: 7
+                      description: Number of days to retain backups
+                      format: int32
+                      maximum: 365
+                      minimum: 1
+                      type: integer
+                    s3CredentialSecret:
+                      description: |-
+                        Name of the Kubernetes Secret containing S3 credentials
+                        The secret must have keys: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+                        Default: auto-created from shared ObjectBucketClaim "db-backups"
+                      type: string
+                    s3Endpoint:
+                      description: |-
+                        S3 endpoint URL for backup storage. No default —
+                        kube-dc ships to many environments and a single-
+                        domain default would silently route customer
+                        backups to the wrong host. Set per-resource OR
+                        let db-manager auto-derive from the cluster's
+                        configured object-storage endpoint.
+                      type: string
+                    schedule:
+                      default: 0 2 * * *
+                      description: Cron schedule for backups (e.g., "0 2 * * *" = daily at 2am)
+                      type: string
+                  required:
+                    - enabled
+                  type: object
+                cpu:
+                  anyOf:
+                    - type: integer
+                    - type: string
+                  default: "1"
+                  description: |-
+                    CPU limit per instance (e.g., "500m", "1", "2", "4")
+                    Both requests and limits are set to this value (Guaranteed QoS)
+                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                  x-kubernetes-int-or-string: true
+                databaseName:
+                  default: app
+                  description: Database name to create
+                  type: string
+                engine:
+                  default: postgresql
+                  description: 'Engine type: postgresql (CloudNativePG) or mariadb (mariadb-operator)'
+                  enum:
+                    - postgresql
+                    - mariadb
+                  type: string
+                expose:
+                  description: External exposure configuration
+                  properties:
+                    type:
+                      default: internal
+                      description: |-
+                        Exposure type:
+                        - "internal": ClusterIP only (default)
+                        - "loadbalancer": LoadBalancer Service with EIP (direct TCP:5432)
+                        - "gateway": TLS passthrough via Envoy Gateway
+                      enum:
+                        - internal
+                        - loadbalancer
+                        - gateway
+                      type: string
+                  required:
+                    - type
+                  type: object
+                memory:
+                  anyOf:
+                    - type: integer
+                    - type: string
+                  default: 2Gi
+                  description: |-
+                    Memory limit per instance (e.g., "1Gi", "2Gi", "8Gi")
+                    Both requests and limits are set to this value (Guaranteed QoS)
+                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                  x-kubernetes-int-or-string: true
+                parameters:
+                  additionalProperties:
+                    type: string
+                  description: PostgreSQL configuration parameter overrides
+                  type: object
+                replicas:
+                  default: 2
+                  description: Number of PostgreSQL instances (1 = standalone, 2+ = HA with streaming replication)
+                  format: int32
+                  maximum: 9
+                  minimum: 1
+                  type: integer
+                restoreFrom:
+                  description: |-
+                    Bootstrap-time recovery configuration. Only honored when the underlying
+                    engine cluster (CNPG Cluster / MariaDB) does not yet exist. Set this on
+                    a freshly created KdcDatabase to provision it from an existing backup —
+                    the safe "restore into a new database" path recommended by both engines.
+
+                    To trigger a destructive in-place restore on an existing KdcDatabase,
+                    use the annotation `kube-dc.com/restore-from: <backupName>` instead;
+                    the controller will delete the engine CR + PVCs and re-bootstrap from
+                    the chosen backup, then clear the annotation.
+                  properties:
+                    backupName:
+                      description: |-
+                        BackupName is the in-namespace `cnpg.io/Backup` (PostgreSQL) or
+                        `k8s.mariadb.com/PhysicalBackup` (MariaDB) CR to recover from.
+                        Required.
+                      type: string
+                    sourceDatabaseName:
+                      description: |-
+                        SourceDatabaseName is the name of the original KdcDatabase the backup
+                        belongs to. Set this when restoring into a NEW KdcDatabase whose name
+                        differs from the source (the recommended safe path). Used purely for
+                        auditing/UI display; the engine recovery uses BackupName.
+                      type: string
+                    targetTime:
+                      description: |-
+                        TargetTime requests point-in-time recovery to the given RFC 3339
+                        timestamp. PostgreSQL only — replays the WAL archive up to this point
+                        (CNPG `recoveryTarget.targetTime`). Ignored for MariaDB in v1.
+                      type: string
+                  required:
+                    - backupName
+                  type: object
+                storage:
+                  anyOf:
+                    - type: integer
+                    - type: string
+                  default: 20Gi
+                  description: |-
+                    Persistent storage size per instance
+                    Can only be increased, not decreased (PVC resize)
+                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                  x-kubernetes-int-or-string: true
+                storageClassName:
+                  description: Storage class (optional, defaults to cluster default)
+                  type: string
+                username:
+                  default: app
+                  description: Application username (owner of the database)
+                  type: string
+                version:
+                  default: "16"
+                  description: |-
+                    Database engine major version
+                    PostgreSQL: "14", "15", "16", "17"
+                    MariaDB: "10.11", "11.4"
+                  type: string
+              required:
+                - cpu
+                - engine
+                - memory
+                - storage
+                - version
+              type: object
+            status:
+              description: KdcDatabaseStatus defines the observed state of KdcDatabase
+              properties:
+                backupDestinationPath:
+                  description: Resolved S3 destination path for backups
+                  type: string
+                backupEncryption:
+                  description: |-
+                    BackupEncryption mirrors the observed state of the envelope-
+                    encryption pipeline (M3-T05). Empty when
+                    spec.backup.encryption is nil or .enabled=false. Populated
+                    after the controller provisions the wrapped DEK Secret.
+                  properties:
+                    kmsKeyId:
+                      description: |-
+                        KMSKeyId is the OpenBao Transit key identifier
+                        "<org>/transit/keys/<name>" copied from the KMSKey CR's
+                        status.keyId at the time of the last wrap. Stored so a
+                        subsequent KMSKey rename / re-creation is auditable without
+                        re-reading the KMSKey CR.
+                      type: string
+                    kmsKeyName:
+                      description: |-
+                        KMSKeyName is the KMSKey actually used for the wrapped DEK
+                        (echoes spec.backup.encryption.kmsKeyName once the key has
+                        been resolved + the DEK wrapped successfully).
+                      type: string
+                    lastWrappedAt:
+                      description: |-
+                        LastWrappedAt is when the DEK was last (re-)wrapped against
+                        the KMSKey. Updated on spec change, key rotation, and on the
+                        initial DEK provisioning.
+                      format: date-time
+                      type: string
+                    postProcessCronJobName:
+                      description: |-
+                        PostProcessCronJobName is the name of the CronJob the
+                        controller renders when spec.backup.encryption.postProcess
+                        .enabled=true. Empty when post-processing isn't requested.
+                      type: string
+                    wrappedDEKSecretName:
+                      description: |-
+                        WrappedDEKSecretName is the K8s Secret holding the DEK
+                        (dek.bin + dek.wrap). Mirrors spec when overridden,
+                        otherwise reflects the default "<db>-backup-dek" name.
+                      type: string
+                    wrappedDEKVersion:
+                      description: |-
+                        WrappedDEKVersion is the OpenBao Transit key version that
+                        wrapped the current dek.wrap value. Parsed from the
+                        "vault:v<n>:..." ciphertext prefix at wrap time. When the
+                        KMSKey rotates, the controller re-wraps and bumps this.
+                      type: integer
+                  type: object
+                conditions:
+                  description: Conditions represent the latest available observations
+                  items:
+                    description: Condition contains details for one aspect of the current state of this API Resource.
+                    properties:
+                      lastTransitionTime:
+                        description: |-
+                          lastTransitionTime is the last time the condition transitioned from one status to another.
+                          This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                        format: date-time
+                        type: string
+                      message:
+                        description: |-
+                          message is a human readable message indicating details about the transition.
+                          This may be an empty string.
+                        maxLength: 32768
+                        type: string
+                      observedGeneration:
+                        description: |-
+                          observedGeneration represents the .metadata.generation that the condition was set based upon.
+                          For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                          with respect to the current state of the instance.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      reason:
+                        description: |-
+                          reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                          Producers of specific condition types may define expected values and meanings for this field,
+                          and whether the values are considered a guaranteed API.
+                          The value should be a CamelCase string.
+                          This field may not be empty.
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                        type: string
+                      status:
+                        description: status of the condition, one of True, False, Unknown.
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                        type: string
+                      type:
+                        description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        type: string
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    type: object
+                  type: array
+                  x-kubernetes-list-map-keys:
+                    - type
+                  x-kubernetes-list-type: map
+                endpoint:
+                  description: Internal endpoint (ClusterIP service)
+                  type: string
+                externalEndpoint:
+                  description: External endpoint (set when expose != internal)
+                  type: string
+                instances:
+                  description: Total number of PostgreSQL instances
+                  format: int32
+                  type: integer
+                latestBackup:
+                  description: Timestamp of the latest successful backup
+                  format: date-time
+                  type: string
+                observedGeneration:
+                  description: Observed generation
+                  format: int64
+                  type: integer
+                openBaoEngineConfigured:
+                  description: |-
+                    OpenBaoEngineConfigured reports whether db-manager has
+                    registered this database with the per-Org OpenBao Database
+                    secrets engine (M4-T01, dev-scope §8). When true, the
+                    Kube-DC manager can safely reconcile DatabaseCredentialPolicy
+                    CRs that reference this KdcDatabase — it'll be able to write
+                    roles under <org>/database/roles/<dbname>-<rolename> and
+                    (for dynamic mode) issue leases. When false / missing,
+                    DatabaseCredentialPolicy reconciles stall with
+                    Ready=False/Reason=DatabaseEngineUnconfigured.
+
+                    Set only when manager.openBao.enabled=true on the cluster.
+                    On feature-off clusters this stays nil and downstream
+                    security CRDs don't reconcile anyway.
+                  type: boolean
+                phase:
+                  description: Phase represents the current lifecycle phase
+                  enum:
+                    - Pending
+                    - Provisioning
+                    - Ready
+                    - Upgrading
+                    - Failed
+                  type: string
+                readyInstances:
+                  description: Number of ready instances
+                  format: int32
+                  type: integer
+                restore:
+                  description: |-
+                    Restore tracks the most recent restore operation (in-place via the
+                    `kube-dc.com/restore-from` annotation, or initial bootstrap from
+                    `spec.restoreFrom`). The controller writes this once the engine cluster
+                    reports Ready after a recovery so the UI can surface the source backup
+                    and target time used.
+                  properties:
+                    backupName:
+                      description: |-
+                        BackupName that was used as the recovery source (cnpg.io/Backup or
+                        k8s.mariadb.com/PhysicalBackup).
+                      type: string
+                    completedAt:
+                      description: CompletedAt records when the restore reached a terminal phase.
+                      format: date-time
+                      type: string
+                    message:
+                      description: Message is a human-readable explanation of the current/last phase.
+                      type: string
+                    phase:
+                      description: Phase is one of "InProgress", "Succeeded", "Failed".
+                      enum:
+                        - InProgress
+                        - Succeeded
+                        - Failed
+                      type: string
+                    sourceDatabaseName:
+                      description: |-
+                        SourceDatabaseName is the original KdcDatabase the backup belonged to.
+                        Empty for in-place restores where source == target.
+                      type: string
+                    startedAt:
+                      description: StartedAt records when the restore began.
+                      format: date-time
+                      type: string
+                    targetTime:
+                      description: |-
+                        TargetTime is the RFC 3339 timestamp the recovery aimed for (PG PITR).
+                        Empty when the restore recovers to the latest available point.
+                      type: string
+                  required:
+                    - backupName
+                    - phase
+                  type: object
+                storageUsed:
+                  description: Current storage usage
+                  type: string
+                version:
+                  description: Actual running PostgreSQL version (e.g., "16.4")
+                  type: string
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}

@@ -36,6 +36,10 @@ rules:
   - apiGroups: [""]
     resources: ["persistentvolumeclaims", "persistentvolumes", "services", "secrets", "serviceaccounts", "configmaps"]
     verbs: ["*"]
+  # Admin Workloads page force-deletes pods (controllers/admin/organizationController.js deletePod)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["*"]
@@ -93,6 +97,11 @@ rules:
   - apiGroups: ["kube-dc.com"]
     resources: ["organizations"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Admin console group management (controllers/admin/groupsController.js)
+  # creates/deletes OrganizationGroup CRs in the org namespace.
+  - apiGroups: ["kube-dc.com"]
+    resources: ["organizationgroups"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Read-only on Projects so the observability launch endpoint can
   # resolve the per-Project Grafana Org id annotation as the backend
   # SA (the user's bearer token can't be used here on prefix-style
@@ -101,9 +110,21 @@ rules:
   - apiGroups: ["kube-dc.com"]
     resources: ["projects"]
     verbs: ["get", "list", "watch"]
+  # Admin Networking page lists and deletes EIp/FIp CRs
+  # (controllers/admin/organizationController.js deleteEIP/deleteFIP).
   - apiGroups: ["kube-dc.com"]
-    resources: ["eips"]
-    verbs: ["get", "list"]
+    resources: ["eips", "fips"]
+    verbs: ["get", "list", "delete"]
+  # Admin Workloads page lists and deletes tenant databases (KdcDatabase)
+  # (controllers/admin/organizationController.js deleteDatabase).
+  - apiGroups: ["db.kube-dc.com"]
+    resources: ["kdcdatabases"]
+    verbs: ["get", "list", "delete"]
+  # Admin Clusters page lists and deletes managed clusters (KdcCluster)
+  # (controllers/admin/organizationController.js getClusters/deleteCluster).
+  - apiGroups: ["k8s.kube-dc.com"]
+    resources: ["kdcclusters"]
+    verbs: ["get", "list", "delete"]
   - apiGroups: ["hnc.x-k8s.io"]
     resources: ["hierarchicalresourcequotas", "hierarchicalresourcequotas/status"]
     verbs: ["get", "list", "watch"]
@@ -117,7 +138,17 @@ rules:
   - apiGroups: ["objectbucket.io"]
     resources: ["objectbucketclaims"]
     verbs: ["get", "list"]
-    
+  # Flux reconciliation (Reconciliation admin page): get/list for the read view;
+  # patch for the admin actions — force-sync (reconcile.fluxcd.io/requestedAt
+  # annotation) and suspend/resume (spec.suspend). See
+  # controllers/admin/reconciliationController.js.
+  - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+    resources: ["kustomizations"]
+    verbs: ["get", "list", "patch"]
+  - apiGroups: ["helm.toolkit.fluxcd.io"]
+    resources: ["helmreleases"]
+    verbs: ["get", "list", "patch"]
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

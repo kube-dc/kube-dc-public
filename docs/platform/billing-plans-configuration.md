@@ -703,3 +703,68 @@ Per-project quotas use standard Kubernetes `ResourceQuota` objects. They coexist
 | Workloads scaled to zero | Organization in `canceled` state | Re-subscribe to restore workloads |
 | S3 uploads rejected (403) | Object storage quota exceeded or org suspended | Upgrade plan or re-subscribe |
 | Subscription stuck in `suspended` | Grace period not expired yet (7 days) | Wait for grace period or re-subscribe |
+| **No HRQ/LimitRange on ANY org** (quota enforcement silently off cluster-wide) | `billing-plans` ConfigMap is missing the required top-level `suspendedPlan` / `systemOverhead` / `eipQuota` sections, so `LoadPlanConfig` fails and the reconcile skips the whole quota block for every org | Restore the missing sections (see below). Confirm the fix: the manager logs `Loaded billing plans from ConfigMap (... plans: N)`. If `LoadPlanConfig` is failing it now logs at **ERROR** (`billing-plans ConfigMap not loaded — HRQ/LimitRange/quota enforcement is DISABLED ...`). |
+
+### Known issue: console plan-save dropped the operator-only sections (2026-06-25)
+
+The admin console's "save plan" path used to serialize **only** the `plans`
+map back to the `billing-plans` ConfigMap, dropping the operator-only
+top-level keys `suspendedPlan`, `systemOverhead`, and `eipQuota`. Because the
+chart's ConfigMap is **seed-once** (it preserves the live `plans.yaml` so
+runtime edits to plans/add-ons/promo codes survive Flux), Flux then kept the
+broken version. With those sections gone, `LoadPlanConfig` errored, `planConfig`
+went nil, and the Organization reconcile skipped HRQ/LimitRange/S3/EIP-quota
+for **every** org — quota enforcement was silently off (the failure was logged
+at V(5), invisible at the default log level).
+
+The backend save path is fixed (it now round-trips the full document and
+preserves every top-level key), and `LoadPlanConfig` failures now log at ERROR.
+**But any cluster whose `billing-plans` was already stripped stays broken until
+its sections are restored.**
+
+Per-cluster status as of 2026-06-25:
+
+- **stage** — was stripped; **restored** + fixed images deployed.
+- **cloudacropolis** — **verified healthy** (all sections present, `LoadPlanConfig`
+  succeeds, HRQs enforced). Still runs pre-fix images, so apply the image
+  rollout below before anyone edits plans via the console there.
+- **cloud (production)** — **not verified** (not reachable from the dev bastion).
+  Check it explicitly before assuming either way (see step 0).
+
+**Remediation (per cluster — verify first, only restore if actually stripped):**
+
+0. Verify whether the cluster is affected:
+   ```bash
+   kubectl -n kube-dc get cm billing-plans -o jsonpath='{.data.plans\.yaml}' \
+     | grep -E '^(suspendedPlan|systemOverhead|eipQuota):' || echo "MISSING — affected"
+   ```
+   If all three are present, the cluster is fine — only do the image rollout (1).
+1. Roll out the fixed images (the manager carries the org-admin OpenBao role +
+   project KV-mount requeue + loud `LoadPlanConfig` failure; the backend carries
+   the plan-save preserve fix). Until the fixed backend is deployed, a future
+   plan edit via the console could re-strip the sections.
+2. If step 0 showed the sections MISSING, restore them in the live ConfigMap
+   (merge — do **not** overwrite `plans`/`promoCodes`). Chart-default values:
+
+   ```yaml
+   suspendedPlan:
+     cpu: 500m
+     memory: 1Gi
+     pods: 10
+     servicesLB: 0
+   systemOverhead:
+     cpuPerProject: 0
+     memPerProject: 0
+   eipQuota:
+     dev-pool: 1
+     pro-pool: 1
+     scale-pool: 3
+   ```
+
+   > ⚠️ This **re-enables quota enforcement on running orgs** that have been
+   > quota-free — pods/PVCs that exceed the plan's HRQ/LimitRange can start
+   > getting rejected. Do it in a maintenance window and sanity-check current
+   > usage vs. plan limits first (`kubectl get hrq -A`).
+
+3. Verify: the manager logs `Loaded billing plans from ConfigMap (... plans: N)`
+   and `kubectl get hrq,limitrange -n <org-ns>` shows the plan-derived objects.

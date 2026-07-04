@@ -1,0 +1,124 @@
+{{- /*
+Platform endpoint: internal cluster-local Envoy gateway VIP (Phase D.7).
+
+Generalizes the kubeAPI Fork E2 pattern to cover every public-hostname'd
+service tenant pods need to reach (Keycloak login, kube-dc-backend,
+kube-dc-console, billing, …). Tenant pods resolve those hostnames via
+vpc-dns Corefile, the hostnames rewrite to this VIP, traffic arrives
+at the MetalLB-elected speaker's br-ext-cloud, kube-proxy DNATs to one
+of the Envoy gateway hostNetwork CP node IPs, Envoy matches the Host
+header against its HTTPRoutes and forwards to the right backend.
+
+Renders three resources when `.Values.platformEndpoints.envoyGateway.enabled`:
+  1. metallb.io/v1beta1 IPAddressPool   (in metallb-system)
+  2. metallb.io/v1beta1 L2Advertisement (in metallb-system)
+  3. v1 Service                         (in `.namespace`, selectorless,
+                                         type=LoadBalancer, annotated for
+                                         the platform-endpoint controller)
+
+Does NOT render an EndpointSlice. kube-dc-manager's platform-endpoint
+controller creates `<svc-name>-mgr` on first reconcile with an
+OwnerReference back to the Service so K8s garbage-collects the slice
+when the Service is deleted.
+
+Why this exists: cloudacropolis 2026-06-02 — kube-dc CLI in the
+project console pod failed to refresh its OIDC token because tenant
+pods could not reach login.cloudacropolis.lt (resolves to the
+cluster's public IP, which hairpin-fails on 1:1-NAT setups). Adding
+the envoyGateway platform endpoint + a vpc-dns Corefile entry pointing
+login.<DOMAIN> at this VIP closes the gap for every Envoy-routed
+hostname, not just kube-api.
+
+See:
+  docs/prd/internal-platform-endpoints-implementation.md (design)
+  docs/internal/internal-platform-endpoints-runbook.md   (operator)
+*/}}
+
+{{- $cfg := .Values.platformEndpoints.envoyGateway -}}
+{{- if $cfg.enabled -}}
+{{- if not $cfg.vip -}}
+{{- fail "platformEndpoints.envoyGateway.enabled=true but .vip is empty — VIP must be reserved in the ext-cloud Subnet.excludeIps AND added to both INGRESS_GLOBAL_ALLOWLIST and EGRESS_GLOBAL_ALLOWLIST before enabling" -}}
+{{- end -}}
+{{- if not $cfg.loadBalancerClass -}}
+{{- fail "platformEndpoints.envoyGateway.enabled=true but .loadBalancerClass is empty — must match the MetalLB controller's --lb-class flag" -}}
+{{- end -}}
+---
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: {{ $cfg.pool | quote }}
+  namespace: metallb-system
+  labels:
+    app.kubernetes.io/managed-by: kube-dc
+    app.kubernetes.io/component: platform-endpoint
+spec:
+  # /32 — exactly the VIP, never auto-allocated to anything else.
+  addresses:
+    - {{ printf "%s/32" $cfg.vip | quote }}
+  autoAssign: false
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: {{ $cfg.pool | quote }}
+  namespace: metallb-system
+  labels:
+    app.kubernetes.io/managed-by: kube-dc
+    app.kubernetes.io/component: platform-endpoint
+spec:
+  ipAddressPools:
+    - {{ $cfg.pool | quote }}
+  interfaces:
+    - {{ $cfg.interface | quote }}
+  {{- with $cfg.l2AdvNodeSelectors }}
+  # Constrain MetalLB speaker election to nodes matching these label
+  # selectors. Needed on heterogeneous clusters where only some nodes
+  # have the anchor bridge (e.g. separate CP + workers, mixed NIC
+  # layouts). When empty, any node running metallb-speaker is eligible.
+  nodeSelectors:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $cfg.name | quote }}
+  namespace: {{ $cfg.namespace | quote }}
+  labels:
+    app.kubernetes.io/managed-by: kube-dc
+    app.kubernetes.io/component: platform-endpoint
+  annotations:
+    metallb.universe.tf/address-pool: {{ $cfg.pool | quote }}
+    kube-dc.com/backend-source: {{ $cfg.backend.mode | quote }}
+    {{- $parts := list }}
+    {{- range $k, $v := $cfg.backend.nodeSelector }}
+    {{- $parts = append $parts (printf "%s=%s" $k $v) }}
+    {{- end }}
+    kube-dc.com/backend-node-selector: {{ join "," $parts | quote }}
+    kube-dc.com/backend-address-type: {{ $cfg.backend.addressType | quote }}
+    kube-dc.com/health-scheme: {{ $cfg.backend.health.scheme | quote }}
+    kube-dc.com/health-path: {{ $cfg.backend.health.path | quote }}
+    kube-dc.com/health-port: {{ $cfg.backend.health.port | quote }}
+    kube-dc.com/health-interval-seconds: {{ $cfg.backend.health.intervalSeconds | quote }}
+    kube-dc.com/health-timeout-seconds: {{ $cfg.backend.health.timeoutSeconds | quote }}
+    kube-dc.com/health-failure-threshold: {{ $cfg.backend.health.failureThreshold | quote }}
+    kube-dc.com/health-success-threshold: {{ $cfg.backend.health.successThreshold | quote }}
+    kube-dc.com/health-insecure-skip-verify: {{ $cfg.backend.health.insecureSkipVerify | quote }}
+    kube-dc.com/health-status-max: {{ $cfg.backend.health.statusMax | quote }}
+    kube-dc.com/health-host: {{ $cfg.backend.health.host | quote }}
+spec:
+  type: LoadBalancer
+  loadBalancerClass: {{ $cfg.loadBalancerClass | quote }}
+  loadBalancerIP: {{ $cfg.vip | quote }}
+  externalTrafficPolicy: Local
+  ipFamilyPolicy: SingleStack
+  {{- with $cfg.sessionAffinity }}
+  sessionAffinity: {{ . | quote }}
+  {{- end }}
+  ports:
+    - name: https
+      port: {{ $cfg.port }}
+      targetPort: {{ $cfg.port }}
+      protocol: TCP
+  # Selectorless — kube-dc-manager populates <name>-mgr EndpointSlice.
+{{- end }}

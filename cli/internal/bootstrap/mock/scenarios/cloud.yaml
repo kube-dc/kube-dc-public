@@ -1,0 +1,141 @@
+name: cloud
+description: |
+  Mirrors the live kube-dc.cloud production cluster shape (the canonical
+  reference from installer-ux-prd §5). Four nodes, heterogeneous NICs,
+  all six Flux Kustomizations Ready, OpenBao 3-replica HA all unsealed,
+  all four addons enabled, controller-auth installed at the current
+  policy generation. Used as the v1 happy-path snapshot.
+
+tools:
+  kubectl: { installed: true, version: v1.32.1 }
+  flux:    { installed: true, version: v2.4.0 }
+  sops:    { installed: true, version: v3.10.2 }
+  age:     { installed: true, version: v1.2.1 }
+  git:     { installed: true, version: v2.43.0 }
+  gh:      { installed: true, version: v2.51.0, scopes: [repo, workflow] }
+  ssh:     { installed: true, version: OpenSSH_9.6p1 }
+  bao:     { installed: true, version: v2.5.3 }
+
+cluster:
+  apiEndpoint: https://kube-api.kube-dc.cloud:6443
+  k8sVersion: v1.32.1+rke2r1
+  nodes:
+    - { name: ams1-blade179-8, status: Ready, nics: [enp94s0f0np0] }
+    - { name: ams1-blade184-5, status: Ready, nics: [enp94s0f0np0] }
+    - { name: ams1-blade58-2,  status: Ready, nics: [enp8s0f0] }
+    - { name: ams1-blade187-2, status: Ready, nics: [eno1] }
+  fluxInstalled: true
+  kustomizations:
+    - { name: infra-cni,             namespace: flux-system, ready: true, revision: "main@abc123", path: ./infrastructure/cni }
+    - { name: infra-core,            namespace: flux-system, ready: true, revision: "main@abc123", path: ./infrastructure/core,            dependsOn: [infra-cni] }
+    - { name: infra-public-network,  namespace: flux-system, ready: true, revision: "main@abc123", path: ./infrastructure/kube-ovn-network-public, dependsOn: [infra-cni] }
+    - { name: infra-object-storage,  namespace: flux-system, ready: true, revision: "main@abc123", path: ./clusters/cloud/object-storage,  dependsOn: [infra-core] }
+    - { name: platform,              namespace: flux-system, ready: true, revision: "main@abc123", path: ./clusters/cloud/platform,        dependsOn: [infra-core, infra-object-storage] }
+    - { name: addons,                namespace: flux-system, ready: true, revision: "main@abc123", path: ./clusters/cloud/addons,          dependsOn: [platform] }
+  helmReleases:
+    - { name: cert-manager,     namespace: cert-manager,           ready: true, chartName: cert-manager,           chartVersion: v1.20.1 }
+    - { name: kube-ovn,         namespace: kube-system,            ready: true, chartName: kube-ovn,               chartVersion: v1.15.10 }
+    - { name: envoy-gateway,    namespace: envoy-gateway-system,   ready: true, chartName: gateway-helm,           chartVersion: v1.7.1 }
+    - { name: openbao,          namespace: openbao,                ready: true, chartName: openbao,                chartVersion: 0.28.2 }
+    - { name: keycloak,         namespace: keycloak,               ready: true, chartName: keycloak,               chartVersion: 24.3.0 }
+    - { name: kube-dc,          namespace: kube-dc,                ready: true, chartName: kube-dc,                chartVersion: v0.3.62 }
+  deploymentImages:
+    kube-dc:
+      kube-dc-manager:        shalb/kube-dc-manager:v0.1.34-dev112
+      kube-dc-backend:        shalb/kube-dc-ui-backend:v0.1.34-dev300
+      kube-dc-frontend:       shalb/kube-dc-ui-frontend:v0.1.34-dev300
+      kube-dc-k8-manager:     shalb/kube-dc-k8-manager:v0.1.35-dev60
+      kube-dc-db-manager:     shalb/db-manager:v0.1.0-dev24
+  nodeLabels:
+    ams1-blade179-8:
+      "feature.node.kubernetes.io/cpu-cpuid.AVX512F": "true"
+      "feature.node.kubernetes.io/cpu-iommu.enabled": "true"
+      "feature.node.kubernetes.io/kernel-loadedmodule.kvm_intel": "true"
+      "kube-dc.com/kubevirt-eligible": "true"
+    ams1-blade184-5:
+      "feature.node.kubernetes.io/cpu-cpuid.AVX512F": "true"
+      "feature.node.kubernetes.io/cpu-iommu.enabled": "true"
+      "feature.node.kubernetes.io/kernel-loadedmodule.kvm_intel": "true"
+      "kube-dc.com/kubevirt-eligible": "true"
+    ams1-blade58-2:
+      "feature.node.kubernetes.io/cpu-cpuid.AVX2": "true"
+      "feature.node.kubernetes.io/cpu-iommu.enabled": "true"
+      "feature.node.kubernetes.io/kernel-loadedmodule.kvm_intel": "true"
+      "kube-dc.com/kubevirt-eligible": "true"
+    ams1-blade187-2:
+      "feature.node.kubernetes.io/cpu-cpuid.AVX2": "true"
+      "feature.node.kubernetes.io/pci-10de.present": "true"   # Nvidia GPU node
+      "kube-dc.com/gpu.nvidia": "true"
+  sopsAgeRecipient: age10mskwx065akee5mw4txeqtnn90t724phdzx9k4jxnrgcp9cces6sqfkwvu
+  clusterSecretsPresent: true
+
+openbao:
+  initialized: true
+  bootstrapFinalizedAnnotation: "2026-04-20T10:00:00Z"
+  controllerAuthAnnotation: "2026-04-20T10:05:00Z"
+  pods:
+    - { name: openbao-0, sealed: false, version: 2.5.3, haMode: standby, raftIndex: 14720 }
+    - { name: openbao-1, sealed: false, version: 2.5.3, haMode: standby, raftIndex: 14720 }
+    - { name: openbao-2, sealed: false, version: 2.5.3, haMode: active,  raftIndex: 14721 }
+  unsealKeys:
+    - mock-share-cloud-1
+    - mock-share-cloud-2
+    - mock-share-cloud-3
+    - mock-share-cloud-4
+    - mock-share-cloud-5
+  rootToken: mock-root-cloud
+
+fleet:
+  cloned: true
+  path: /home/operator/projects/kube-dc-fleet
+  clusterDirs: [cloud, stage, "cs/zrh"]
+  ageRecipients:
+    - age10mskwx065akee5mw4txeqtnn90t724phdzx9k4jxnrgcp9cces6sqfkwvu
+    - age1fugkeh0yhf56d6t2qm8gwqdl3kx7963wv2qq5jax2kewldsfeqgq6p67pm
+    - age16nk3t6chcrjntd76s3an32hx3p2y5cup7vnkywny0uy9gn0tkcuqxzav8s
+  operatorEnrolled: true
+
+  # All three production clusters reconcile cleanly in the canonical
+  # cloud scenario — `bootstrap status` exits 0.
+  statuses:
+    - name: cloud
+      status: Ready
+      detail: "6/6 Kustomizations ready"
+      domain: kube-dc.cloud
+      apiURL: https://kube-api.kube-dc.cloud:6443
+      reconcilers:
+        - { name: infra-cni,            ready: true, message: "Applied revision: main@abc123" }
+        - { name: infra-core,           ready: true, message: "Applied revision: main@abc123" }
+        - { name: infra-public-network, ready: true, message: "Applied revision: main@abc123" }
+        - { name: infra-object-storage, ready: true, message: "Applied revision: main@abc123" }
+        - { name: platform,             ready: true, message: "Applied revision: main@abc123" }
+        - { name: addons,               ready: true, message: "Applied revision: main@abc123" }
+    - name: stage
+      status: Ready
+      detail: "5/5 Kustomizations ready"
+      domain: stage.kube-dc.com
+      apiURL: https://kube-api.stage.kube-dc.com:6443
+    - name: cs/zrh
+      status: Ready
+      detail: "5/5 Kustomizations ready"
+      domain: kdc.zrh.cloudsigma.com
+      apiURL: https://kube-api.kdc.zrh.cloudsigma.com:6443
+
+dns:
+  "*.kube-dc.cloud": [213.111.154.233]
+
+scripts:
+  "rke2/install-server.sh":
+    lines: []
+    exitCode: 0
+  "add-cluster.sh":
+    lines: []
+    exitCode: 0
+  "flux-install.sh":
+    lines:
+      - { after: 0s, text: "[INFO] adoption mode — flux-system already present" }
+    exitCode: 0
+  "openbao-setup-controller-auth.sh":
+    lines:
+      - { after: 0s, text: "[INFO] REFRESH_POLICY=true — rewriting policies in place" }
+    exitCode: 0

@@ -1,0 +1,107 @@
+name: fresh
+description: |
+  Bare node, no kube-dc, no fleet repo, no kubeconfig. The "operator
+  just downloaded the CLI for the first time" scenario. M1 doctor
+  exits 2 because `bao` is not installed (Blocker per the severity
+  model — missing required tool fails the gate); every other tool
+  row is Installed/Info. M4 init's first step is the prereq-install
+  script that brings `bao` in; running doctor again after that
+  exits 0.
+
+tools:
+  kubectl: { installed: true, version: v1.32.1 }
+  flux:    { installed: true, version: v2.4.0 }
+  sops:    { installed: true, version: v3.10.2 }
+  age:     { installed: true, version: v1.2.1 }
+  git:     { installed: true, version: v2.43.0 }
+  gh:      { installed: true, version: v2.51.0, scopes: [repo, workflow] }
+  ssh:     { installed: true, version: OpenSSH_9.6p1 }
+  bao:     { installed: false }   # not needed pre-init
+
+host:
+  rke2Active: true
+  rke2Version: v1.32.1+rke2r1
+  nics: [enp0s31f6]
+  kernelModules: [nf_conntrack, br_netfilter]
+  ipv6Enabled: false
+  freeDiskGB: 200
+  freeRAMGB: 32
+  netplanFiles: [/etc/netplan/01-netcfg.yaml]
+
+cluster:
+  apiEndpoint: https://kube-api.fresh.example:6443
+  k8sVersion: v1.32.1+rke2r1
+  nodes:
+    - name: fresh-node
+      status: Ready
+      nics: [enp0s31f6]
+  fluxInstalled: false
+  kustomizations: []
+  helmReleases: []
+  deploymentImages: {}
+  nodeLabels: {}
+  sopsAgeRecipient: ""
+  clusterSecretsPresent: false
+
+# No openbao installed on a fresh node (init Phase 5 brings it up via
+# the platform Kustomization).
+openbao: null
+
+# No fleet repo yet either — operator will create one via M4 init
+# with --fleet-mode=new-repo.
+fleet: null
+
+dns:
+  # Wildcard correctly wired ahead of install (the canonical happy
+  # path — operator wires DNS first, then runs init).
+  "*.fresh.example": [192.168.1.10]
+
+scripts:
+  # Minimum coverage: install-server.sh (already RKE2-up so init's
+  # Phase 2 will skip), generate-age-key.sh + add-cluster.sh +
+  # flux-install.sh for the M4 dry-run path, openbao-init.sh +
+  # openbao-setup-controller-auth.sh for Phase 6.
+  "rke2/install-server.sh":
+    lines: []
+    exitCode: 0
+  "generate-age-key.sh":
+    lines:
+      - { after: 0s,   text: "[INFO] generating age key" }
+      - { after: 100ms, text: "[INFO] writing age.key (mode 0600)" }
+      - { after: 200ms, text: "[INFO] appending recipient to .sops.yaml" }
+    exitCode: 0
+  "add-cluster.sh":
+    lines:
+      - { after: 0s,   text: "[INFO] scaffolding clusters/fresh/" }
+      - { after: 50ms, text: "[INFO] wrote cluster-config.env (template)" }
+    exitCode: 0
+  "flux-install.sh":
+    lines:
+      - { after: 0s,    text: "[INFO] flux bootstrap github --new-cluster" }
+      - { after: 500ms, text: "[INFO] flux-system namespace created" }
+      - { after: 1500ms, text: "[INFO] gotk-sync.yaml committed and pushed" }
+    exitCode: 0
+  "openbao-init.sh":
+    lines:
+      - { after: 0s,    text: "[INFO] waiting for openbao-0 pod Ready" }
+      - { after: 1s,    text: "[INFO] running bao operator init" }
+    sentinel:
+      after: 1500ms
+      marker: KUBE_DC_INIT_JSON
+      payload: |
+        {"unseal_keys_b64":["mock-share-1","mock-share-2","mock-share-3","mock-share-4","mock-share-5"],"root_token":"mock-root-token-fresh"}
+    exitCode: 0
+  "openbao-setup-controller-auth.sh":
+    lines:
+      - { after: 0s,    text: "[INFO] generate-root ceremony begin" }
+      - { after: 500ms, text: "[INFO] auth/k8s-host enabled" }
+      - { after: 800ms, text: "[INFO] kube-dc-controller-manager policy written" }
+    exitCode: 0
+  "setup-keycloak-oidc.sh":
+    lines:
+      - { after: 0s, text: "[INFO] creating master-realm OIDC client kube-dc-admin" }
+    exitCode: 0
+  "install-prerequisites.sh":
+    lines:
+      - { after: 0s, text: "[INFO] nothing to do (tools already present)" }
+    exitCode: 0

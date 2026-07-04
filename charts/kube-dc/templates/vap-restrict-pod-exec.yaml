@@ -1,0 +1,83 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: restrict-pod-exec-in-projects
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CONNECT"]
+        resources: ["pods/exec"]
+  matchConditions:
+    - name: exclude-system-service-accounts
+      expression: >-
+        !has(request.userInfo) || !has(request.userInfo.username) ||
+        !(['system:serviceaccount:kube-dc:',
+           'system:serviceaccount:kubevirt:',
+           'system:serviceaccount:kamaji-system:',
+           'system:serviceaccount:capi-system:',
+           'system:serviceaccount:capk-system:',
+           'system:serviceaccount:capcs-system:',
+           'system:serviceaccount:capi-k3s-bootstrap-system:',
+           'system:serviceaccount:capi-k3s-control-plane-system:',
+           'system:serviceaccount:capi-kubeadm-bootstrap-system:',
+           'system:serviceaccount:cnpg-system:',
+           'system:serviceaccount:mariadb-system:',
+           'system:serviceaccount:kube-system:'].exists(prefix,
+             request.userInfo.username.startsWith(prefix)))
+    - name: exclude-cluster-admins
+      expression: >-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !('system:masters' in request.userInfo.groups)
+    - name: exclude-node-users
+      expression: >-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !('system:nodes' in request.userInfo.groups)
+  validations:
+    - expression: >-
+        oldObject != null &&
+        (!has(oldObject.spec.volumes) ||
+        oldObject.spec.volumes.all(v, !has(v.hostPath)))
+      message: "Exec into pods with hostPath volumes is not allowed in project namespaces."
+    - expression: >-
+        oldObject != null &&
+        (!has(oldObject.spec.hostNetwork) ||
+        oldObject.spec.hostNetwork == false)
+      message: "Exec into hostNetwork pods is not allowed in project namespaces."
+    - expression: >-
+        oldObject != null &&
+        oldObject.spec.containers.all(c,
+          !has(c.securityContext) ||
+          !has(c.securityContext.privileged) ||
+          c.securityContext.privileged == false)
+      message: "Exec into pods with privileged containers is not allowed in project namespaces."
+    - expression: >-
+        oldObject != null &&
+        (!has(oldObject.spec.initContainers) ||
+        oldObject.spec.initContainers.all(c,
+          !has(c.securityContext) ||
+          !has(c.securityContext.privileged) ||
+          c.securityContext.privileged == false))
+      message: "Exec into pods with privileged init containers is not allowed in project namespaces."
+    - expression: >-
+        oldObject != null &&
+        (!has(oldObject.spec.ephemeralContainers) ||
+        oldObject.spec.ephemeralContainers.all(c,
+          !has(c.securityContext) ||
+          !has(c.securityContext.privileged) ||
+          c.securityContext.privileged == false))
+      message: "Exec into pods with privileged ephemeral containers is not allowed in project namespaces."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: restrict-pod-exec-in-projects
+spec:
+  policyName: restrict-pod-exec-in-projects
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""

@@ -12,6 +12,16 @@ rules:
 - apiGroups: [""]
   resources: [events]
   verbs: [create, patch]
+# M4-T01: db-manager resolves a KdcDatabase's owning Org by reading
+# the project namespace's `hnc.x-k8s.io/subnamespace-of` annotation.
+# Needs list+watch (not just get) because controller-runtime's cached
+# client always sets up an informer per Kind it reads — a get-only
+# binding produces a "Failed to watch *v1.Namespace: forbidden" log
+# spam loop. Permissions are still narrow: read-only against namespace
+# metadata, no edits.
+- apiGroups: [""]
+  resources: [namespaces]
+  verbs: [get, list, watch]
 - apiGroups: [""]
   resources: [pods]
   verbs: [get, list, patch, watch]
@@ -31,6 +41,13 @@ rules:
 - apiGroups: [batch]
   resources: [jobs]
   verbs: [create, delete, get, list, watch]
+# M3-T05 FU1: db-manager renders per-database post-process CronJobs
+# that run an operator-supplied wrapper image to encrypt backups
+# at rest. Owned by the KdcDatabase; CRUD here so the controller
+# can render + reconcile + clean up.
+- apiGroups: [batch]
+  resources: [cronjobs]
+  verbs: [create, delete, get, list, patch, update, watch]
 - apiGroups: [db.kube-dc.com]
   resources: [kdcdatabases]
   verbs: [create, delete, get, list, patch, update, watch]
@@ -80,4 +97,11 @@ rules:
 - apiGroups: [postgresql.cnpg.io]
   resources: [backups]
   verbs: [create, delete, get, list, watch]
+# M3-T05 envelope encryption: db-manager reads the kube-dc KMSKey CR
+# (security.kube-dc.com/v1alpha1) to pull status.keyId for the
+# OpenBao Transit wrap path. Read-only; the KMSKey lifecycle stays
+# on the kube-dc-manager side.
+- apiGroups: [security.kube-dc.com]
+  resources: [kmskeys]
+  verbs: [get, list, watch]
 {{- end }}

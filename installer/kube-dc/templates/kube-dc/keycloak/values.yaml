@@ -13,6 +13,15 @@ extraEnvVars:
     value: "https://{{ .variables.cluster_config.keycloak_hostname | default ( printf "login.%s" .variables.domain ) }}"
   - name: KC_HOSTNAME_STRICT
     value: "true"
+  # Whitelabel: read by the kube-dc login theme (theme.properties). Logo points
+  # at the backend public branding endpoint so a superadmin logo change shows on
+  # the next login render; empty/stock falls back to the bundled asset.
+  - name: KUBEDC_BRAND_NAME
+    value: "{{ .variables.cluster_config.brand_name | default "Kube-DC" }}"
+  - name: KUBEDC_LOGO_URL
+    value: "https://{{ printf "backend.%s" .variables.domain }}/api/public/branding/login-logo.png"
+  - name: KUBEDC_FAVICON_URL
+    value: "https://{{ printf "backend.%s" .variables.domain }}/api/public/branding/favicon.png"
 
 image:
   registry: docker.io

@@ -1,0 +1,140 @@
+{{- /*
+The CRD-presence guard (.Capabilities.APIVersions.Has) makes `helm install`
+a no-op on clusters that don't have Sveltos installed yet (rather than
+hard-failing with "no matches for kind ClusterProfile"). On every
+Flux-managed kube-dc cluster the platform layer (platform/sveltos) installs
+the Sveltos CRDs strictly before the kube-dc HelmRelease, so this guard is
+defence-in-depth — primarily it covers `helm install` / `helm template` in
+dev / CI on a fresh cluster where Sveltos is being added later.
+*/ -}}
+{{- if and .Values.kubeletCsrApprover.enabled (.Capabilities.APIVersions.Has "config.projectsveltos.io/v1beta1/ClusterProfile") }}
+# kubelet-csr-approver ClusterProfile (Sveltos)
+#
+# Auto-approves kubelet-serving CSRs (signer kubernetes.io/kubelet-serving)
+# inside every managed-K8s tenant cluster. Paired with the k8-manager
+# default that enables `serverTLSBootstrap=true` on the kubelet via the
+# KamajiControlPlane.spec.kubelet.configurationJSONPatches list (see
+# kube-dc-k8-manager: internal/controller/kdccluster_kubelet_kubeproxy.go).
+# Without this controller running in the tenant, the kubelet's serving
+# CSRs sit Pending forever and metrics-server / Prometheus can only scrape
+# kubelet metrics with `--kubelet-insecure-tls` — defeating the BOC
+# observability ask. See docs/prd/boc-tenant-kubelet-kubeproxy-observability.md.
+#
+# Why this lives in the platform chart, not the CloudSigma chart:
+# managed-K8s is a kube-dc feature available on every kube-dc cluster
+# (KubeVirt-based or CloudSigma-based). Tying the approver to the
+# CloudSigma-only chart (cluster-api-provider-cloudsigma) would silently
+# skip cloud / cloudacropolis / future non-CloudSigma installs.
+#
+# Provisioning chain:
+#   kube-dc Helm chart  ->  Sveltos ClusterProfile (this file)  ->  Sveltos
+#   helmCharts directive pulls postfinance/kubelet-csr-approver into every
+#   matching tenant cluster.
+#
+# Tenant selection: any CAPI Cluster (label kubelet-csr-approver != "disabled").
+# Opt-out per-cluster with `kubectl label cluster <name> kubelet-csr-approver=disabled`.
+#
+# Strict policy — keep these together as a unit; a permissive csr-approver
+# is worse than no approver (a forged `system:node:<x>` CN could obtain
+# serving certs for arbitrary SANs, breaking the whole point of
+# serverTLSBootstrap):
+#
+#   - signer is hardcoded by the controller to
+#     `kubernetes.io/kubelet-serving`; other signers (kubelet-client,
+#     cluster-signing) are NEVER touched.
+#   - bypassDnsResolution=false -> resolve the Node's hostname in-cluster
+#     and require the CSR's IP/DNS SANs to be a subset of the Node's
+#     .status.addresses + the DNS-resolved IPs.
+#   - ignoreNonSystemNodeCsr=true -> leave non-`system:node:*` CSRs
+#     untouched (they stay Pending — effectively rejected for the
+#     kubelet-serving signer — but no Denied verdict, so the controller
+#     does not interfere with non-kubelet workflows that might also
+#     watch this signer).
+#   - providerRegex constrains the accepted kubelet node-name charset
+#     (a-z 0-9 -, RFC-1123 single label up to 63 chars).
+#   - bypassHostnameCheck=false -> the Node's hostname MUST be DNS-resolvable.
+#   - maxExpirationSeconds caps the cert lifetime; longer-lived CSR requests
+#     are silently denied.
+#
+# Acceptance test (on the management cluster, against a tenant):
+#   TENANT_KUBECONFIG=...
+#   kubectl --kubeconfig "$TENANT_KUBECONFIG" get csr -o wide
+#   # All kubelet-serving CSRs flip Approved,Issued within ~10s of the
+#   # approver Deployment becoming Ready in the tenant. A hand-crafted CSR
+#   # with a mismatched IP SAN MUST stay Pending.
+#
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: kubelet-csr-approver
+  labels:
+    app.kubernetes.io/name: kube-dc
+    app.kubernetes.io/component: kubelet-csr-approver
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ include "kube-dc.chart" . }}
+spec:
+  # Default-on for every CAPI Cluster; opt-out by setting label
+  # `kubelet-csr-approver=disabled` on the Cluster object.
+  clusterSelector:
+    matchExpressions:
+    - key: kubelet-csr-approver
+      operator: NotIn
+      values: ["disabled"]
+
+  syncMode: Continuous
+
+  helmCharts:
+  - repositoryURL:    {{ .Values.kubeletCsrApprover.repositoryURL | quote }}
+    repositoryName:   {{ .Values.kubeletCsrApprover.repositoryName | quote }}
+    chartName:        {{ .Values.kubeletCsrApprover.chartName | quote }}
+    chartVersion:     {{ .Values.kubeletCsrApprover.chartVersion | quote }}
+    releaseName:      {{ .Values.kubeletCsrApprover.releaseName | quote }}
+    releaseNamespace: {{ .Values.kubeletCsrApprover.releaseNamespace | quote }}
+    helmChartAction:  Install
+    # Policy knobs are surfaced in values.yaml (kubeletCsrApprover.policy) so
+    # they can be tuned per-cluster WITHOUT editing this template — in
+    # particular bypassDnsResolution may need to be relaxed if a cluster's
+    # node hostnames are not resolvable in-tenant (see the DNS smoke-test
+    # gate in values.yaml and the PRD). Keep the defaults strict.
+    values: |
+      providerRegex: {{ .Values.kubeletCsrApprover.policy.providerRegex | quote }}
+      bypassDnsResolution: {{ .Values.kubeletCsrApprover.policy.bypassDnsResolution }}
+      ignoreNonSystemNodeCsr: {{ .Values.kubeletCsrApprover.policy.ignoreNonSystemNodeCsr }}
+      bypassHostnameCheck: {{ .Values.kubeletCsrApprover.policy.bypassHostnameCheck }}
+      maxExpirationSeconds: {{ printf "%d" (.Values.kubeletCsrApprover.policy.maxExpirationSeconds | int64) }}
+
+  # Sveltos health gate: don't report this profile Provisioned until the
+  # kubelet-csr-approver Deployment is actually Ready in the tenant. Without
+  # this, Sveltos marks the Helm release deployed even if the pod is
+  # CrashLooping, masking a broken approver (and silently leaving serving
+  # CSRs Pending).
+  validateHealths:
+  - name: kubelet-csr-approver-health
+    featureID: Helm
+    group: apps
+    version: v1
+    kind: Deployment
+    namespace: {{ .Values.kubeletCsrApprover.releaseNamespace | quote }}
+    script: |
+      function evaluate()
+        hs = {}
+        hs.healthy = false
+        hs.message = "waiting for kubelet-csr-approver deployment"
+        if obj.metadata.name == "{{ .Values.kubeletCsrApprover.releaseName }}" then
+          if obj.status ~= nil and obj.status.readyReplicas ~= nil and obj.status.readyReplicas >= 1 then
+            hs.healthy = true
+            hs.message = "kubelet-csr-approver has " .. obj.status.readyReplicas .. " ready replica(s)"
+          end
+        else
+          -- not our deployment; treat as healthy so it doesn't gate the profile
+          hs.healthy = true
+          hs.message = "ignored: " .. obj.metadata.name
+        end
+        return hs
+      end
+
+  # Deploy late in the addon ordering so CNI + CoreDNS + kube-api-proxy
+  # are already up (the approver itself watches the apiserver via the
+  # tenant's kubernetes.default Service).
+  tier: {{ .Values.kubeletCsrApprover.tier | default 50 }}
+{{- end }}

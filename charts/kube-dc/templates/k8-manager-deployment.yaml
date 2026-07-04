@@ -64,6 +64,18 @@ spec:
           value: {{ .Values.k8Manager.kamajiDatastoreName | default "default" | quote }}
         - name: KAMAJI_DATASTORE_NAMESPACE
           value: {{ .Values.k8Manager.kamajiDatastoreNamespace | default "kamaji-system" | quote }}
+        # M5-T04 managed-K8s etcd encryption-at-rest. Both vars are
+        # optional — when empty the encryption reconciler returns a
+        # clear error refusing to provision the sidecar. See
+        # docs/internal/managed-k8s-encryption-runbook.md.
+        {{- if .Values.k8Manager.kmsPluginImage }}
+        - name: KMS_PLUGIN_IMAGE
+          value: {{ .Values.k8Manager.kmsPluginImage | quote }}
+        {{- end }}
+        {{- if .Values.k8Manager.openBaoUrl }}
+        - name: OPENBAO_URL
+          value: {{ .Values.k8Manager.openBaoUrl | quote }}
+        {{- end }}
         # Cluster-wide S3 endpoint, used by KdcCluster etcd-backup CronJobs
         # as a fallback when KdcCluster.spec.backup.s3Endpoint is not set
         # AND the per-Project OBC ConfigMap doesn't expose a routable host.

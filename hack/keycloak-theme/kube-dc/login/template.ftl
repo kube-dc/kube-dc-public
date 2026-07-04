@@ -6,7 +6,11 @@
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${msg("loginTitle",(realm.displayName!''))}</title>
-    <link rel="icon" type="image/png" href="${url.resourcesPath}/img/favicon.png" />
+    <#if properties.brandFaviconUrl?has_content>
+        <link rel="icon" href="${properties.brandFaviconUrl}" />
+    <#else>
+        <link rel="icon" type="image/png" href="${url.resourcesPath}/img/favicon.png" />
+    </#if>
     <#if properties.stylesCommon?has_content>
         <#list properties.stylesCommon?split(' ') as style>
             <link href="${url.resourcesCommonPath}/${style}" rel="stylesheet" />
@@ -16,6 +20,12 @@
         <#list properties.styles?split(' ') as style>
             <link href="${url.resourcesPath}/${style}" rel="stylesheet" />
         </#list>
+    </#if>
+    <#-- Whitelabel: override the bundled login logo with the operator's, when set. -->
+    <#if properties.brandLogoUrl?has_content>
+        <style>
+            body.login-pf { background-image: url("${properties.brandLogoUrl}") !important; }
+        </style>
     </#if>
 </head>
 

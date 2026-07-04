@@ -58,6 +58,19 @@ spec:
     allowedRoutes:
       namespaces:
         from: All
+  - name: https-admin
+    protocol: HTTPS
+    port: 443
+    hostname: admin.{{ $domain }}
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: kube-dc-admin-frontend-tls
+        namespace: kube-dc
+    allowedRoutes:
+      namespaces:
+        from: All
   - name: https-grafana
     protocol: HTTPS
     port: 443

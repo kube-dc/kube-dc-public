@@ -1,0 +1,1244 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: kdcclusters.k8s.kube-dc.com
+spec:
+  group: k8s.kube-dc.com
+  names:
+    kind: KdcCluster
+    listKind: KdcClusterList
+    plural: kdcclusters
+    shortNames:
+    - kdc-cl
+    singular: kdccluster
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.version
+      name: Version
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.endpoint
+      name: Endpoint
+      type: string
+    - jsonPath: .status.dataStoreName
+      name: DataStore
+      type: string
+    - jsonPath: .status.controlPlane.autoscalingMode
+      name: VPA
+      type: string
+    - jsonPath: .status.encryption.resolvedKeyRef
+      name: Encryption
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: KdcCluster is the Schema for the kdcclusters API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: KdcClusterSpec defines the desired state of KdcCluster
+            properties:
+              backup:
+                description: |-
+                  Backup configures scheduled etcd snapshots for this cluster's control
+                  plane. When omitted, snapshots are enabled automatically if the Project
+                  has a managed-k8s-backups S3 bucket (auto-provisioned when Rook-Ceph
+                  is available). Set Enabled=false to opt out explicitly.
+                properties:
+                  destinationPath:
+                    description: |-
+                      DestinationPath overrides the default S3 URI for snapshot uploads.
+                      Default: s3://<projectNamespace>-managed-k8s-backups/<clusterName>/
+                    type: string
+                  enabled:
+                    default: true
+                    description: Enabled controls whether the backup CronJob is created.
+                    type: boolean
+                  retentionDays:
+                    default: 7
+                    description: |-
+                      RetentionDays is the number of days to retain snapshots. Enforced
+                      via S3 object lifecycle policy on the bucket; controller-driven GC
+                      is the fallback for backends that do not support lifecycle rules.
+                    format: int32
+                    maximum: 365
+                    minimum: 1
+                    type: integer
+                  s3CredentialSecret:
+                    description: |-
+                      S3CredentialSecret overrides the Secret carrying S3 credentials.
+                      Default: managed-k8s-backups (auto-managed via the Project OBC).
+                    type: string
+                  s3Endpoint:
+                    description: |-
+                      S3Endpoint overrides the S3 endpoint URL. Default: discovered from
+                      the OBC-generated ConfigMap (BUCKET_HOST + BUCKET_PORT).
+                    type: string
+                  schedule:
+                    default: 0 2 * * *
+                    description: Schedule is a 5-field cron expression for the snapshot
+                      CronJob.
+                    type: string
+                type: object
+              controlPlane:
+                description: Control plane configuration
+                properties:
+                  autoscaling:
+                    description: |-
+                      Autoscaling configuration for control plane containers.
+                      When omitted, a VerticalPodAutoscaler is created in
+                      "InPlaceOrRecreate" mode so requests/limits are right-sized
+                      from observed usage. To disable autoscaling and keep static
+                      resources, set Mode=Off and optionally provide Resources.
+                      See docs/prd/control-plane-vpa-autoscaling.md for the full design.
+                    properties:
+                      maxAllowed:
+                        additionalProperties:
+                          additionalProperties:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          description: ResourceList is a set of (resource name, quantity)
+                            pairs.
+                          type: object
+                        description: |-
+                          MaxAllowed overrides the per-container upper bound the VPA recommender
+                          is allowed to recommend for this cluster's control plane. When unset,
+                          global defaults apply (kube-apiserver: 2000m / 2Gi; kube-controller-manager
+                          and kube-scheduler: 500m / 512Mi).
+
+                          Use to lift the cap on genuinely heavy tenant clusters whose
+                          kube-apiserver working set legitimately exceeds 2 GiB (large CRD
+                          surface, bursty list-watch traffic). The default is intentionally
+                          tight to bound the cluster-wide request bookkeeping — uncapped VPA
+                          recommendations can pin master nodes at 99% memory requested while
+                          real usage is far lower, blocking other pods from scheduling.
+
+                          Only the kube-apiserver entry is consulted; KCM and scheduler caps
+                          stay at their conservative global values. Map keys must match
+                          container names (currently only "kube-apiserver" is honored).
+                        type: object
+                      minReplicas:
+                        description: |-
+                          MinReplicas is the minimum number of CP replicas the VPA updater will
+                          leave running during eviction. When unset, defaults to ControlPlane.Replicas
+                          so VPA never reduces the CP below its desired replica count.
+                          Only honored in Recreate / InPlaceOrRecreate modes.
+                        format: int32
+                        type: integer
+                      mode:
+                        default: InPlaceOrRecreate
+                        description: |-
+                          Mode selects how VPA applies recommendations.
+                            Off               : recommendations only (no automatic adjustments)
+                            Initial           : inject at pod creation, never evict to resize
+                            Recreate          : evict pods to apply new sizes (disruptive)
+                            InPlaceOrRecreate : K8s 1.33+ in-place resize, fallback to eviction
+                                                (default; CPU resize is restart-free)
+                        enum:
+                        - "Off"
+                        - Initial
+                        - Recreate
+                        - InPlaceOrRecreate
+                        type: string
+                    type: object
+                  replicas:
+                    default: 2
+                    description: Number of control plane replicas
+                    format: int32
+                    type: integer
+                  resources:
+                    description: |-
+                      Resources optionally pins static requests/limits for the tenant
+                      control plane containers (apiServer, controllerManager, scheduler).
+                      When set, the controller writes these values to the underlying
+                      TenantControlPlane on every reconcile. Use this to opt out of
+                      VPA-driven sizing for specific clusters that need fixed capacity
+                      (e.g. multi-tenant production CPs with strict SLOs).
+
+                      Behavior matrix:
+                        Resources unset, Autoscaling.Mode != Off:
+                          baseline 1:1.2 ratio set ONCE on TCP creation; VPA owns
+                          subsequent updates in-place.
+                        Resources unset, Autoscaling.Mode == Off:
+                          baseline 1:1.2 ratio reconciled to the TCP every loop.
+                        Resources set:
+                          supplied values reconciled to the TCP every loop, regardless
+                          of Autoscaling.Mode. VPA recommendations still surface in
+                          status.controlPlane.recommendations as a sizing hint.
+                    properties:
+                      apiServer:
+                        description: APIServer overrides resources for the kube-apiserver
+                          container.
+                        properties:
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: Limits describes the maximum amount of compute
+                              resources allowed.
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: Requests describes the minimum amount of
+                              compute resources required.
+                            type: object
+                        type: object
+                      controllerManager:
+                        description: ControllerManager overrides resources for kube-controller-manager.
+                        properties:
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: Limits describes the maximum amount of compute
+                              resources allowed.
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: Requests describes the minimum amount of
+                              compute resources required.
+                            type: object
+                        type: object
+                      scheduler:
+                        description: Scheduler overrides resources for kube-scheduler.
+                        properties:
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: Limits describes the maximum amount of compute
+                              resources allowed.
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: Requests describes the minimum amount of
+                              compute resources required.
+                            type: object
+                        type: object
+                    type: object
+                type: object
+              dataStore:
+                description: DataStore reference
+                properties:
+                  dedicated:
+                    default: false
+                    description: |-
+                      Create a dedicated DataStore for this cluster
+                      When true, creates a dedicated etcd DataStore that will be deleted with the cluster
+                      When false (default), uses an existing shared DataStore
+                    type: boolean
+                  eipName:
+                    description: |-
+                      EIP name to use for the dedicated DataStore LoadBalancer service
+                      Defaults to "default-gw" if not specified
+                    type: string
+                  name:
+                    description: |-
+                      Name of the KdcClusterDatastore to use
+                      If not specified, will auto-discover in same namespace
+                    type: string
+                  namespace:
+                    description: Namespace of the DataStore (defaults to cluster namespace)
+                    type: string
+                  port:
+                    description: |-
+                      Port to expose the dedicated DataStore on the shared EIP
+                      Must be unique per EIP to avoid conflicts
+                      Defaults to 2379 if not specified
+                    format: int32
+                    maximum: 65535
+                    minimum: 1024
+                    type: integer
+                type: object
+              eip:
+                description: External IP configuration for API server
+                properties:
+                  create:
+                    default: true
+                    description: Create a new EIP or use existing
+                    type: boolean
+                  externalNetworkType:
+                    default: public
+                    description: External network type (public/cloud)
+                    type: string
+                  name:
+                    description: Name of existing EIP to use (if create=false)
+                    type: string
+                type: object
+              enableClusterAPI:
+                default: false
+                description: |-
+                  Enable Cluster API integration
+                  When enabled, creates CAPI Cluster and KamajiControlPlane resources
+                type: boolean
+              encryption:
+                description: |-
+                  Encryption configures cluster-level encryption-at-rest. When omitted,
+                  the cluster runs with plaintext etcd contents (matching the historic
+                  behaviour). See docs/internal/managed-k8s-encryption-design.md for
+                  the M5 design.
+                properties:
+                  etcd:
+                    description: |-
+                      Etcd opts the cluster into etcd-at-rest encryption via a sidecar KMS
+                      plugin backed by an OpenBao Transit KEK. See the design doc for the
+                      envelope model: the kube-apiserver owns object encryption; the plugin
+                      only wraps/unwraps per-object DEKs.
+                    properties:
+                      backup:
+                        description: |-
+                          Backup configures the snapshot-file wrapper (Layer 2). When omitted,
+                          the same KMSKey as KeyRef is reused — simpler restore, single key
+                          to protect. See design doc §9.2 for the rationale.
+                        properties:
+                          keyRef:
+                            description: |-
+                              KeyRef names a KMSKey for the backup snapshot wrapper. Defaults to
+                              EtcdEncryptionSpec.KeyRef. Must have purpose=etcd or purpose=backup.
+                              Same validation rules as EtcdEncryptionSpec.KeyRef.
+                            type: string
+                        type: object
+                      disableRequested:
+                        description: |-
+                          DisableRequested drives the two-step disable migration. Setting
+                          DisableRequested=true while Enabled=true is the documented path to
+                          turn encryption off without orphaning encrypted etcd rows:
+
+                            1. Tenant sets DisableRequested=true.
+                            2. Controller walks `Resources` and PUTs every object so the
+                               apiserver re-encrypts each row with the identity provider
+                               (i.e. plaintext) under the still-active KMS provider.
+                            3. Controller verifies no rows carry the `k8s:enc:kms:v2:`
+                               prefix.
+                            4. Controller detaches the KMS provider from
+                               EncryptionConfiguration.
+                            5. Tenant may now flip Enabled=false.
+
+                          Progress surfaces via status.encryption.disableMigrationProgress.
+                        type: boolean
+                      enabled:
+                        default: false
+                        description: |-
+                          Enabled toggles the feature on.
+
+                          The disable path is NOT a simple flip — once an encrypted write has
+                          landed, the controller requires the two-step DisableRequested flow
+                          (see field below) so encrypted rows are rewrapped to identity before
+                          the KMS provider is detached. A break-glass admin annotation
+                          `security.kube-dc.com/encryption-force-disable-confirmed=<RFC3339>`
+                          bypasses the migration for incident response.
+                        type: boolean
+                      kekRotation:
+                        description: |-
+                          KEKRotation configures automatic rotation of the per-cluster Key
+                          Encryption Key (KEK) — the OpenBao Transit key that wraps every
+                          etcd DEK and every backup-snapshot DEK. M5-T06 plumbing; the actual
+                          rotation scheduler lives in the M3 KMSKey reconciler
+                          (kube-dc-manager). When omitted or Enabled=false, the auto-
+                          provisioned KMSKey runs with rotation disabled; existing encrypted
+                          etcd rows and existing backup envelopes remain decryptable with
+                          the original key version indefinitely.
+
+                          When the tenant supplied an explicit KeyRef above (operator-owned
+                          KMSKey), the controller WILL NOT mutate that KMSKey's rotation
+                          policy. Instead it surfaces a KEKRotationManagedExternally warning
+                          condition so the runbook flags the discrepancy.
+
+                          See docs/prd/managed-k8s-kek-rotation.md for the full design.
+                        properties:
+                          enabled:
+                            default: false
+                            description: |-
+                              Enabled toggles scheduled rotation. Default: false. Even when
+                              encryption is on, rotation must be opted in explicitly.
+                            type: boolean
+                          interval:
+                            description: |-
+                              Interval between rotations. Required when Enabled. KubeDC duration
+                              string (e.g. "90d", "2160h"). Units are d, h, m, s — matching the
+                              kube-dc KMSKey-side parser. "w" (weeks) is NOT accepted.
+
+                              Bounded at reconcile-time to [7d, 730d]; values below the bound
+                              are refused because OpenBao Transit's own min_rotation_interval
+                              guardrail would refuse them anyway, and values above the bound
+                              are effectively "never" (operators who want that should set
+                              Enabled=false).
+
+                              When backups are enabled, the reconciler also refuses intervals
+                              lower than `spec.backup.retentionDays` to keep on-disk snapshots
+                              restorable under the still-active key versions.
+
+                              NOTE on validation timing: there is no admission webhook for
+                              KdcCluster yet; refusal happens during the next reconcile and
+                              surfaces as an EncryptionConfigError condition. Invalid specs
+                              are accepted by the apiserver but never produce side effects.
+                            type: string
+                        type: object
+                      keyRef:
+                        description: |-
+                          KeyRef names a KMSKey CR in the same namespace whose OpenBao Transit
+                          key acts as the KEK for etcd-row encryption (Layer 1).
+
+                          Optional: when omitted and Enabled=true, the controller auto-
+                          provisions `<cluster>-etcd` with purpose=etcd and
+                          deletionPolicy=retain. The auto-created KMSKey is associated to
+                          the KdcCluster via labels — NOT a Kubernetes OwnerReference — so
+                          Kubernetes garbage collection cannot delete the key while retained
+                          etcd backups still reference it. Lifecycle is governed by a
+                          platform-managed finalizer that releases the key only after
+                          retained backups have expired (see design doc §12.2).
+
+                          Labels set on the auto-provisioned KMSKey:
+                            k8s.kube-dc.com/kdccluster: <cluster>
+                            security.kube-dc.com/managed-by: kdccluster
+
+                          When provided, the KMSKey must be (a) Ready, (b) in the same
+                          namespace, (c) spec.purpose=etcd, (d) not scheduled for deletion,
+                          (e) not already referenced by another KdcCluster unless the
+                          shared-key opt-in annotation `security.kube-dc.com/allow-shared-etcd-key`
+                          is set on this KdcCluster.
+                        type: string
+                      resources:
+                        default:
+                        - secrets
+                        description: |-
+                          Resources is the K8s EncryptionConfiguration resources list.
+                          Enum-constrained in M5 to avoid foot-guns (high-churn resources
+                          like `events` would multiply apiserver/KMS load; bootstrap-time
+                          resources can't be reached until KMS is ready).
+
+                          Defaults to ["secrets"] when omitted. Must contain at least one
+                          entry (empty lists are rejected at admission to prevent the
+                          confusing "enabled but encrypts nothing" shape).
+                        items:
+                          enum:
+                          - secrets
+                          - configmaps
+                          type: string
+                        maxItems: 2
+                        minItems: 1
+                        type: array
+                        x-kubernetes-list-type: set
+                    required:
+                    - enabled
+                    type: object
+                type: object
+              kubelet:
+                description: |-
+                  Kubelet exposes a curated subset of kubelet configuration applied to
+                  ALL worker nodes of this cluster (node-level resource reservations,
+                  eviction thresholds, and the per-node pod cap). It is translated into
+                  RFC-6902 JSON patches on the kubelet configuration the control plane
+                  ships to nodes (KamajiControlPlane.spec.kubelet.configurationJSONPatches).
+
+                  NOTE: kubelet config takes effect per node when the node reads its
+                  /var/lib/kubelet/config.yaml — i.e. immediately for NEW nodes, and for
+                  existing nodes only after a reboot/replace (or `kubeadm upgrade node`).
+                  Changing these values does not live-reconfigure already-running kubelets.
+                properties:
+                  evictionHard:
+                    additionalProperties:
+                      description: |-
+                        EvictionThreshold is a kubelet hard-eviction value: a quantity ("500Mi") or
+                        a percentage ("10%"). Validated via OpenAPI Pattern/MaxLength (NOT CEL).
+                      maxLength: 32
+                      pattern: ^[0-9]+(\.[0-9]+)?(%|m|k|Ki|M|Mi|G|Gi|T|Ti|P|Pi)?$
+                      type: string
+                    description: |-
+                      EvictionHard sets hard eviction thresholds: the node reclaims resources
+                      (and evicts Pods) with no grace period once a signal crosses the
+                      threshold. Allowed keys (signals): "memory.available",
+                      "nodefs.available", "nodefs.inodesFree", "imagefs.available",
+                      "imagefs.inodesFree", "pid.available". Values are quantities (e.g.
+                      "500Mi") or percentages (e.g. "10%").
+
+                      Mis-set eviction thresholds can make a node unschedulable or flap, so
+                      keys are enum-validated (CEL) and values format-validated (Pattern). The
+                      controller also emits mergeDefaultEvictionSettings=true so a partial map
+                      does not zero the kubelet's omitted default signals.
+                    maxProperties: 6
+                    type: object
+                    x-kubernetes-validations:
+                    - message: evictionHard keys must be valid kubelet eviction signals
+                        (memory.available, nodefs.available, nodefs.inodesFree, imagefs.available,
+                        imagefs.inodesFree, pid.available)
+                      rule: self.all(k, k in ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available'])
+                  kubeReserved:
+                    additionalProperties:
+                      description: |-
+                        ReservedQuantity is a kubelet resource-reservation value, e.g. "500m", "1Gi".
+                        Format + length are validated via OpenAPI Pattern/MaxLength (NOT CEL) so the
+                        per-value check stays off the CRD's CEL cost budget. The accepted set is a
+                        curated subset of the Kubernetes quantity grammar.
+                      maxLength: 32
+                      pattern: ^[0-9]+(\.[0-9]+)?(m|k|Ki|M|Mi|G|Gi|T|Ti|P|Pi)?$
+                      type: string
+                    description: |-
+                      KubeReserved reserves compute resources for Kubernetes node components
+                      (the kubelet, the container runtime). Allowed keys: "cpu", "memory",
+                      "ephemeral-storage". Values are quantities (e.g. "500m", "1Gi").
+                    maxProperties: 3
+                    type: object
+                    x-kubernetes-validations:
+                    - message: 'kubeReserved keys must be one of: cpu, memory, ephemeral-storage'
+                      rule: self.all(k, k in ['cpu','memory','ephemeral-storage'])
+                  maxPods:
+                    description: |-
+                      MaxPods is the maximum number of Pods that can run on a single node.
+                      The kubelet default is 110. Raise it for high-density nodes (ensure the
+                      pod CIDR per node and the CNI can accommodate it).
+                    format: int32
+                    maximum: 2500
+                    minimum: 10
+                    type: integer
+                  systemReserved:
+                    additionalProperties:
+                      description: |-
+                        ReservedQuantity is a kubelet resource-reservation value, e.g. "500m", "1Gi".
+                        Format + length are validated via OpenAPI Pattern/MaxLength (NOT CEL) so the
+                        per-value check stays off the CRD's CEL cost budget. The accepted set is a
+                        curated subset of the Kubernetes quantity grammar.
+                      maxLength: 32
+                      pattern: ^[0-9]+(\.[0-9]+)?(m|k|Ki|M|Mi|G|Gi|T|Ti|P|Pi)?$
+                      type: string
+                    description: |-
+                      SystemReserved reserves compute resources for OS system daemons (sshd,
+                      udev, the kernel). Allowed keys: "cpu", "memory", "ephemeral-storage".
+                      Values are quantities.
+                    maxProperties: 3
+                    type: object
+                    x-kubernetes-validations:
+                    - message: 'systemReserved keys must be one of: cpu, memory, ephemeral-storage'
+                      rule: self.all(k, k in ['cpu','memory','ephemeral-storage'])
+                type: object
+              network:
+                description: Network configuration
+                properties:
+                  podCIDR:
+                    default: 10.244.0.0/16
+                    description: Pod CIDR
+                    type: string
+                  serviceCIDR:
+                    default: 10.96.0.0/12
+                    description: Service CIDR
+                    type: string
+                type: object
+              publicApiEndpoint:
+                default: false
+                description: |-
+                  PublicAPIEndpoint, when true on a private-link cluster (one whose
+                  workers have CloudSigma.PrivateAPIEndpointIP set), creates an Envoy
+                  Gateway TLSRoute that exposes the kube-apiserver publicly via the
+                  shared management-cluster Gateway. The private MetalLB VIP remains
+                  the primary path; this is a break-glass fallback for when the
+                  customer VLAN is unavailable.
+
+                  On non-private-link clusters this field is a no-op (those clusters
+                  expose publicly via the existing expose-route annotation regardless
+                  of this field).
+
+                  Disabling this field removes the TLSRoute and reverts the admin
+                  kubeconfig's server: URL to the non-exposed form. Cert SANs keep the
+                  private VIP entry, so the private kubeconfig is unaffected.
+
+                  See docs/prd/private-link-public-breakglass.md for the security
+                  implications and rollout plan.
+                type: boolean
+              version:
+                description: Kubernetes version for the control plane
+                type: string
+              workers:
+                description: |-
+                  Worker node pools configuration (requires enableClusterAPI=true)
+                  Supports multiple pools with different configurations
+                items:
+                  description: |-
+                    WorkerPoolSpec defines a worker node pool configuration for CAPI + KubeVirt
+                    Supports multiple pools with different CPU, memory, and architecture profiles
+                  properties:
+                    architecture:
+                      default: amd64
+                      description: |-
+                        Architecture for this worker pool (amd64, arm64, etc.)
+                        Used for node selection and image variants
+                      type: string
+                    cloudsigma:
+                      description: CloudSigma-specific configuration (used when infrastructureProvider=cloudsigma)
+                      properties:
+                        ccmImage:
+                          default: docker.io/shalb/cloudsigma-ccm:latest
+                          description: Cloud Controller Manager image
+                          type: string
+                        cpuMHz:
+                          description: |-
+                            CPU in MHz (overrides calculation from cpuCores)
+                            If not specified, CPU is calculated as: cpuCores * mhzPerCore (default: 2000 MHz per core)
+                            Example: 2000 = 2 GHz (1 core), 4000 = 4 GHz (2 cores with 2 GHz each)
+                          format: int32
+                          minimum: 1000
+                          type: integer
+                        diskSizeGB:
+                          description: |-
+                            Disk size in GB (overrides default calculation from memory)
+                            If not specified, disk size is calculated based on memory (e.g., 2x memory)
+                          format: int32
+                          type: integer
+                        imageUUID:
+                          description: |-
+                            CloudSigma image UUID (boot disk/image)
+                            This is the VM template/image UUID from CloudSigma
+                          type: string
+                        meta:
+                          additionalProperties:
+                            type: string
+                          description: CloudSigma server metadata (key-value pairs)
+                          type: object
+                        mhzPerCore:
+                          default: 2000
+                          description: |-
+                            MHz per core (used when converting cpuCores to MHz)
+                            Default: 2000 MHz per core (CloudSigma default)
+                            Example: mhzPerCore=3000 with cpuCores=2 gives 6000 MHz total
+                          format: int32
+                          minimum: 1000
+                          type: integer
+                        nics:
+                          description: Network interface configurations
+                          items:
+                            description: |-
+                              CloudSigmaNICSpec defines a CloudSigma network interface configuration.
+
+                              Exactly one of VLAN or Public must be set:
+                                - VLAN attaches the NIC to a CloudSigma VLAN. Combine with IPPoolRef
+                                  for static IPAM (cloud VLAN); omit for VLAN DHCP (customer-managed).
+                                - Public attaches a CloudSigma public IP via DHCP. Use this together
+                                  with a cloud-VLAN NIC to give workers internal control-plane /
+                                  konnectivity reachability AND a per-worker public IP for egress
+                                  and LoadBalancer, without a separate NAT-GW VM.
+
+                              When the whole NICs slice is empty, CAPCS falls back to a single
+                              public DHCP NIC (legacy behaviour).
+                            properties:
+                              ipPoolRef:
+                                description: |-
+                                  IPPoolRef references an InClusterIPPool or GlobalInClusterIPPool for static IP allocation.
+                                  Required for cloud VLAN (first NIC) on private clusters (expose-route=false).
+                                  Optional for customer VLANs — omit if customer provides their own DHCP.
+                                  Only meaningful for VLAN NICs.
+                                properties:
+                                  apiGroup:
+                                    default: ipam.cluster.x-k8s.io
+                                    description: APIGroup is the API group of the
+                                      pool resource
+                                    type: string
+                                  kind:
+                                    default: InClusterIPPool
+                                    description: Kind is the kind of the pool resource
+                                    enum:
+                                    - InClusterIPPool
+                                    - GlobalInClusterIPPool
+                                    type: string
+                                  name:
+                                    description: Name is the name of the pool resource
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              public:
+                                description: |-
+                                  Public, when true, attaches a CloudSigma public IP to this NIC via
+                                  DHCP. Mutually exclusive with VLAN. Typical use: a second NIC
+                                  alongside a cloud-VLAN NIC to give workers their own public IP for
+                                  egress / LoadBalancer without a NAT-GW VM.
+                                type: boolean
+                              vlan:
+                                description: VLAN UUID for the network interface.
+                                  Mutually exclusive with Public.
+                                type: string
+                            type: object
+                          type: array
+                        privateApiEndpointIP:
+                          description: |-
+                            PrivateAPIEndpointIP is a static IP from the customer VLAN subnet
+                            for exposing the Kubernetes API via MetalLB LoadBalancer on the private VLAN.
+                            Must be outside the DHCP range and within the customer VLAN subnet.
+                            When set, a LoadBalancer Service is created for kube-api-proxy
+                            and a token-based private kubeconfig is generated as a Secret.
+                            Only the first pool's value is used (one endpoint per cluster).
+                          type: string
+                        region:
+                          description: CloudSigma region (zrh, lvs, sjc, tyo, or "next"
+                            for testing)
+                          type: string
+                        tags:
+                          description: CloudSigma server tags
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - imageUUID
+                      type: object
+                    cpuCores:
+                      default: 1
+                      description: |-
+                        CPU cores per worker
+                        For KubeVirt: Supports whole numbers (1, 2, 4, etc.)
+                        For other providers: Check provider documentation
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    diskSize:
+                      default: 10Gi
+                      description: |-
+                        Disk size for KubeVirt workers (e.g., "10Gi", "20Gi", "40Gi").
+                        Only used when storageType=datavolume.
+
+                        Note on plan storage budget: each worker DataVolume needs ~2× this
+                        size of namespace storage quota (the target PVC plus a CDI scratch
+                        PVC during import). Combined with dedicated etcd's 10Gi-per-replica
+                        requirement, a Dev Pool's 60 GB storage allows roughly:
+                          1-replica etcd + 1 worker @ 10Gi disk: 10 + 2×10 = 30 GB
+                          3-replica etcd + 1 worker @ 10Gi disk: 30 + 2×10 = 50 GB
+                        Default kept conservative so a fresh dedicated-datastore cluster on
+                        the entry tier provisions without hitting the storage quota.
+                      type: string
+                    image:
+                      description: |-
+                        Container disk image for KubeVirt workers only
+                        For CloudSigma, use cloudsigma.imageUUID instead
+                        Default for KubeVirt: docker.io/shalb/ubuntu-2404-container-disk:v1.35.2
+                      type: string
+                    infrastructureProvider:
+                      default: kubevirt
+                      description: |-
+                        Infrastructure provider for this worker pool
+                        Determines which CAPI infrastructure provider to use (kubevirt, aws, azure, etc.)
+                      type: string
+                    labels:
+                      additionalProperties:
+                        type: string
+                      description: Node labels to apply to workers in this pool
+                      type: object
+                    memory:
+                      default: 2Gi
+                      description: Memory per worker (e.g., "2Gi", "4Gi", "8Gi")
+                      type: string
+                    name:
+                      description: |-
+                        Name of the worker pool (must be unique within cluster)
+                        Used to generate MachineDeployment name: {cluster-name}-{pool-name}
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                    nodeDrainTimeoutSeconds:
+                      description: |-
+                        NodeDrainTimeoutSeconds is forwarded to CAPI Machine.spec.nodeDrainTimeout
+                        for every Machine in this pool. Controls how long CAPI waits for
+                        voluntary eviction before force-deleting a node during rollout or
+                        scale-down. Default (when unset): CAPI default of 0 (no timeout).
+                      format: int32
+                      minimum: 0
+                      type: integer
+                    paused:
+                      description: |-
+                        Paused freezes this pool's MachineDeployment rollout. Maps to
+                        CAPI MachineDeployment.spec.paused. Spec changes (version, image,
+                        labels) are applied to the template but no Machines are replaced
+                        until paused=false. Use to plan an exact maintenance window.
+                      type: boolean
+                    replicas:
+                      default: 2
+                      description: Number of worker replicas in this pool
+                      format: int32
+                      minimum: 0
+                      type: integer
+                    storageType:
+                      default: datavolume
+                      description: |-
+                        Storage type for KubeVirt workers
+                        - "datavolume": Persistent storage using DataVolume (default, recommended)
+                        - "containerdisk": Ephemeral storage using containerDisk (uses host ephemeral-storage)
+                      enum:
+                      - datavolume
+                      - containerdisk
+                      type: string
+                    strategy:
+                      description: |-
+                        Strategy overrides the MachineDeployment rolling-update strategy.
+                        When nil, the controller keeps the current default
+                        (maxSurge=1, maxUnavailable=0) and reconciles drift back. When set,
+                        the controller writes the supplied values and stops reconciling
+                        the strategy block, letting users hand-tune mid-flight.
+                      properties:
+                        maxSurge:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            MaxSurge is the maximum number of Machines that can be created
+                            above the desired number of replicas during an update.
+                            Defaults to 1 when WorkerPoolStrategy is set but MaxSurge is omitted.
+                          x-kubernetes-int-or-string: true
+                        maxUnavailable:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            MaxUnavailable is the maximum number of Machines that can be
+                            unavailable during an update.
+                            Defaults to 0 when WorkerPoolStrategy is set but MaxUnavailable is omitted.
+                          x-kubernetes-int-or-string: true
+                      type: object
+                    taints:
+                      description: Node taints to apply to workers in this pool
+                      items:
+                        description: |-
+                          The node this Taint is attached to has the "effect" on
+                          any pod that does not tolerate the Taint.
+                        properties:
+                          effect:
+                            description: |-
+                              Required. The effect of the taint on pods
+                              that do not tolerate the taint.
+                              Valid effects are NoSchedule, PreferNoSchedule and NoExecute.
+                            type: string
+                          key:
+                            description: Required. The taint key to be applied to
+                              a node.
+                            type: string
+                          timeAdded:
+                            description: TimeAdded represents the time at which the
+                              taint was added.
+                            format: date-time
+                            type: string
+                          value:
+                            description: The taint value corresponding to the taint
+                              key.
+                            type: string
+                        required:
+                        - effect
+                        - key
+                        type: object
+                      type: array
+                    version:
+                      description: |-
+                        Version pins this pool's Kubernetes version. When unset, the pool
+                        tracks KdcClusterSpec.Version. Set this to the current version
+                        BEFORE bumping spec.version to perform a control-plane-only
+                        upgrade; clear (or raise) it later to roll the pool.
+
+                        Must satisfy the kubeadm version-skew rule: pool.version MAY be
+                        up to two minors behind cluster.version but MUST NOT exceed it.
+                        See docs/prd/staged-cluster-upgrades.md.
+                      pattern: ^v\d+\.\d+\.\d+$
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+            required:
+            - version
+            type: object
+          status:
+            description: KdcClusterStatus defines the observed state of KdcCluster
+            properties:
+              backupBucket:
+                description: BackupBucket is the resolved S3 bucket name used for
+                  etcd snapshots.
+                type: string
+              backupDestinationPath:
+                description: |-
+                  BackupDestinationPath is the resolved S3 URI prefix for etcd snapshots,
+                  e.g. s3://<bucket>/<clusterName>/
+                type: string
+              conditions:
+                description: Conditions represent the latest available observations
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              controlPlane:
+                description: |-
+                  ControlPlane carries observed VPA state and per-container recommendations
+                  for the tenant control plane Deployment.
+                properties:
+                  autoscalingMode:
+                    description: AutoscalingMode reflects the active VPA updateMode.
+                    type: string
+                  lastRecommendationUpdate:
+                    description: |-
+                      LastRecommendationUpdate is the controller-side timestamp at which the
+                      recommendations field was last refreshed from the upstream VPA object.
+                    format: date-time
+                    type: string
+                  recommendations:
+                    description: |-
+                      Recommendations lists per-container resource recommendations from the
+                      VPA recommender. Empty until the recommender has collected enough
+                      metrics-server samples (typically 10-30 minutes after first reconcile).
+                    items:
+                      description: |-
+                        ContainerRecommendation mirrors a single entry from
+                        VPA.status.recommendation.containerRecommendations.
+                      properties:
+                        containerName:
+                          description: ContainerName the recommendation applies to.
+                          type: string
+                        lowerBound:
+                          additionalProperties:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          description: LowerBound is the minimum recommended size.
+                          type: object
+                        target:
+                          additionalProperties:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          description: Target is the resource recommendation VPA would
+                            apply.
+                          type: object
+                        uncappedTarget:
+                          additionalProperties:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          description: UncappedTarget is the recommendation before
+                            applying min/max bounds.
+                          type: object
+                        upperBound:
+                          additionalProperties:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          description: UpperBound is the maximum recommended size.
+                          type: object
+                      required:
+                      - containerName
+                      type: object
+                    type: array
+                  version:
+                    description: |-
+                      Version is the currently-observed Kamaji control plane version,
+                      read from KamajiControlPlane.status.kubernetesVersion (falling
+                      back to spec.version when the KCP status field is empty, e.g.
+                      pre-first-rollout). May lag spec.version briefly during a CP
+                      upgrade.
+                    type: string
+                type: object
+              controlPlaneReady:
+                description: ControlPlaneReady indicates if control plane is ready
+                type: boolean
+              dataStoreName:
+                description: DataStoreName is the name of the referenced DataStore
+                type: string
+              eipName:
+                description: EIPName is the name of the created or referenced EIP
+                type: string
+              encryption:
+                description: |-
+                  Encryption mirrors the runtime state of etcd-at-rest encryption.
+                  Set only when spec.encryption.etcd is configured.
+                properties:
+                  currentKeyVersion:
+                    description: |-
+                      CurrentKeyVersion is the OpenBao Transit `latest_version` for the L1
+                      KEK as last observed by the plugin's Status probe. Used by the
+                      rotation runbook to decide when a bulk rewrap has converged.
+                    format: int32
+                    type: integer
+                  disableMigrationProgress:
+                    description: |-
+                      DisableMigrationProgress reports the percent of selected resources
+                      that have been re-encrypted with the identity provider during a
+                      two-step disable migration (spec.encryption.etcd.disableRequested).
+
+                      Pointer so the controller can distinguish:
+                        nil    : no migration in flight (clean / never started)
+                        *0     : migration started, no rows touched yet
+                        *1..99 : in progress
+                        *100   : migration finished; controller clears the field on the
+                                 next reconcile after detaching the KMS provider.
+                    format: int32
+                    maximum: 100
+                    minimum: 0
+                    type: integer
+                  kekRotation:
+                    description: |-
+                      KEKRotation mirrors the rotation state of the underlying KMSKey, so
+                      tenants can see when their KEK last rotated without needing read
+                      access to the KMSKey CR. Refreshed each reconcile by reading the
+                      resolved KMSKey's status. M5-T06.
+                    properties:
+                      currentVersion:
+                        description: |-
+                          CurrentVersion is the most recent Transit key version. The next
+                          encrypt operation (DEK wrap) uses this version; older DEKs and
+                          backup envelopes remain decryptable via their captured version
+                          until MinDecryptionVersion advances past them.
+                        format: int32
+                        type: integer
+                      enabled:
+                        description: |-
+                          Enabled mirrors KMSKey.spec.rotation.enabled. When false (and the
+                          tenant did not opt in via spec.encryption.etcd.kekRotation.enabled),
+                          no rotation is scheduled; CurrentVersion stays at 1 indefinitely.
+                        type: boolean
+                      lastRotatedTime:
+                        description: |-
+                          LastRotatedTime mirrors KMSKey.status.lastRotatedTime — the wall-
+                          clock timestamp of the most recent successful rotation. Nil when
+                          the KEK has never rotated (CurrentVersion == 1 from initial
+                          EnsureKey).
+                        format: date-time
+                        type: string
+                      minDecryptionVersion:
+                        description: |-
+                          MinDecryptionVersion is the lowest version still allowed to decrypt.
+                          When this advances past a backup envelope's recorded
+                          transitKeyVersion, that backup becomes unrestorable. Operator-
+                          controlled only; the controllers never advance it.
+                        format: int32
+                        type: integer
+                      nextRotationTime:
+                        description: |-
+                          NextRotationTime mirrors KMSKey.status.nextRotationTime — when the
+                          scheduler will next call transit/keys/<key>/rotate. Nil when
+                          rotation is disabled or the policy is malformed.
+                        format: date-time
+                        type: string
+                    type: object
+                  kmsPluginReady:
+                    description: |-
+                      KMSPluginReady is True once the sidecar has authenticated to OpenBao
+                      and reported KMS Status to the apiserver. Mirrored into the top-level
+                      EncryptionAvailable condition and gates webhook protections (e.g.
+                      keyRef immutability becomes active once this transitions to true).
+                    type: boolean
+                  lastRewrapCompleted:
+                    description: |-
+                      LastRewrapCompleted timestamps the last operator-initiated bulk
+                      rewrap pass (M5-T06).
+                    format: date-time
+                    type: string
+                  resolvedBackupKeyRef:
+                    description: ResolvedBackupKeyRef mirrors the L2 backup-wrapper
+                      KMSKey.
+                    type: string
+                  resolvedKeyRef:
+                    description: |-
+                      ResolvedKeyRef mirrors whichever KMSKey backs L1, after any auto-
+                      provisioning. Set even when spec.encryption.etcd.keyRef was omitted,
+                      so tenants can read the auto-created KMSKey name.
+                    type: string
+                  rewrapInProgress:
+                    description: |-
+                      RewrapInProgress is True while a bulk rewrap or a disable migration
+                      is running.
+                    type: boolean
+                type: object
+              endpoint:
+                description: Endpoint is the API server endpoint
+                type: string
+              latestBackupKey:
+                description: LatestBackupKey is the S3 object key of the most recent
+                  successful snapshot.
+                type: string
+              latestBackupTime:
+                description: LatestBackupTime is the timestamp of the last successful
+                  snapshot upload.
+                format: date-time
+                type: string
+              latestRestoreKey:
+                description: |-
+                  LatestRestoreKey is the S3 object key of the snapshot used for the last
+                  successful restore.
+                type: string
+              latestRestoreTime:
+                description: LatestRestoreTime is the timestamp of the last successful
+                  restore.
+                format: date-time
+                type: string
+              phase:
+                description: Phase represents the current phase of the cluster
+                type: string
+              publicApiEndpoint:
+                description: |-
+                  PublicAPIEndpoint is the publicly resolvable URL of the break-glass
+                  kube-apiserver endpoint. Populated once spec.publicApiEndpoint is
+                  true AND the underlying Envoy Gateway TLSRoute has been assigned a
+                  hostname by the svc-lb controller. Empty when the feature is off
+                  or not yet reconciled.
+
+                  Marketplace UI uses this as the "ready" signal — show the public
+                  hostname + download external kubeconfig button only when non-empty;
+                  show "Provisioning..." while empty after the spec field was toggled
+                  to true.
+                type: string
+              workerPools:
+                description: WorkerPools status for each worker pool
+                items:
+                  description: WorkerPoolStatus defines the observed state of a worker
+                    pool
+                  properties:
+                    name:
+                      description: Name of the worker pool
+                      type: string
+                    observedVersion:
+                      description: |-
+                        ObservedVersion is the version currently running on the pool's
+                        Machines, derived from MachineDeployment.status.version (or the
+                        minimum Machine.spec.version when MD status is empty). May differ
+                        from Version while a rollout is in progress.
+                      type: string
+                    paused:
+                      description: Paused reflects whether the underlying MachineDeployment
+                        is paused.
+                      type: boolean
+                    phase:
+                      description: Phase of the worker pool (Provisioning, Ready,
+                        Failed)
+                      type: string
+                    readyReplicas:
+                      description: ReadyReplicas is the number of ready replicas
+                      format: int32
+                      type: integer
+                    replicas:
+                      description: Replicas is the current number of replicas
+                      format: int32
+                      type: integer
+                    updatedReplicas:
+                      description: |-
+                        UpdatedReplicas is the number of Machines already at Version.
+                        Read from MachineDeployment.status.updatedReplicas.
+                      format: int32
+                      type: integer
+                    version:
+                      description: |-
+                        Version is the desired Kubernetes version for this pool
+                        (pool.Version if set, else cluster.Spec.Version).
+                      type: string
+                  required:
+                  - name
+                  - readyReplicas
+                  - replicas
+                  type: object
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

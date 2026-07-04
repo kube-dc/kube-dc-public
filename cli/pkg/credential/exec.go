@@ -91,6 +91,66 @@ func (p *Provider) GetCredentialForRealm(server, realm string) (*ExecCredential,
 	return p.getCredential(server, realm)
 }
 
+// LoadAndRefresh returns the cached *config.Credentials for
+// (server, realm), refreshing the access token first when expired.
+// Public callers that need more than just the bearer token — e.g.
+// CACert + Insecure for in-process HTTPS clients — use this instead
+// of GetCredential/GetCredentialForRealm (which return the kubectl
+// exec-plugin ExecCredential shape). Pass realm="" for the legacy
+// any-realm load path; new callers should pass the realm parsed from
+// the kubeconfig context name.
+func (p *Provider) LoadAndRefresh(server, realm string) (*config.Credentials, error) {
+	return p.loadAndRefresh(server, realm)
+}
+
+func (p *Provider) loadAndRefresh(server, realm string) (*config.Credentials, error) {
+	creds, err := p.credMgr.LoadForRealm(server, realm)
+	if err != nil {
+		return nil, notLoggedInErr(server, realm)
+	}
+	if creds.IsAccessTokenValid() {
+		return creds, nil
+	}
+	if creds.RefreshToken == "" {
+		return nil, fmt.Errorf("session expired (no refresh token). Run: %s", reloginCmd(server, creds.Realm))
+	}
+	newTokens, err := auth.RefreshToken(
+		creds.KeycloakURL,
+		creds.Realm,
+		creds.ClientID,
+		creds.RefreshToken,
+		creds.CACert,
+		creds.Insecure,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("session expired. Run: %s", reloginCmd(server, creds.Realm))
+	}
+	claims, err := jwt.ParseToken(newTokens.AccessToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse token: %w", err)
+	}
+	creds.AccessToken = newTokens.AccessToken
+	creds.RefreshToken = newTokens.RefreshToken
+	creds.AccessTokenExpiry = claims.ExpiryTime()
+	if newTokens.RefreshExpiresIn <= 0 {
+		creds.RefreshTokenExpiry = time.Now().Add(30 * 24 * time.Hour)
+	} else {
+		creds.RefreshTokenExpiry = time.Now().Add(time.Duration(newTokens.RefreshExpiresIn) * time.Second)
+	}
+	if newTokens.IDToken != "" {
+		creds.IDToken = newTokens.IDToken
+	}
+	creds.User.Email = claims.Email
+	creds.User.Org = claims.Org
+	creds.User.Groups = claims.Groups
+	creds.User.Namespaces = claims.Namespaces
+	if err := p.credMgr.Save(creds); err != nil {
+		// Log + continue: we still have a valid token in memory.
+		fmt.Printf("Warning: failed to cache refreshed credentials: %v\n", err)
+	}
+	return creds, nil
+}
+
 func (p *Provider) getCredential(server, realm string) (*ExecCredential, error) {
 	creds, err := p.credMgr.LoadForRealm(server, realm)
 	if err != nil {

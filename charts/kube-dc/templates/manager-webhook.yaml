@@ -1,0 +1,209 @@
+{{- if .Values.manager.webhook.enabled -}}
+# Admission webhooks for security.kube-dc.com/v1alpha1 (M0-T03 / B-004).
+# Comprises:
+#   - a self-signed cert-manager Issuer + Certificate (TLS for the
+#     webhook listener),
+#   - a Service fronting the manager pod's :9443 webhook port,
+#   - MutatingWebhookConfiguration + ValidatingWebhookConfiguration
+#     covering all four security CRDs.
+#
+# CA bundles are injected by cert-manager via the
+# `cert-manager.io/inject-ca-from` annotation, so we don't have to bake
+# the CA into the chart.
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "kube-dc.manager.fullname" . }}-webhook-selfsigned
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "kube-dc.manager.fullname" . }}-webhook-serving-cert
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "kube-dc.manager.fullname" . }}-webhook-serving-cert
+  duration: 8760h   # 1 year
+  renewBefore: 720h # 30 days
+  dnsNames:
+    - {{ include "kube-dc.manager.fullname" . }}-webhook.{{ .Release.Namespace }}.svc
+    - {{ include "kube-dc.manager.fullname" . }}-webhook.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: {{ include "kube-dc.manager.fullname" . }}-webhook-selfsigned
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kube-dc.manager.fullname" . }}-webhook
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: https
+      port: 443
+      protocol: TCP
+      targetPort: webhook-server
+  selector:
+    {{- include "kube-dc.manager.selectorLabels" . | nindent 4 }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: {{ include "kube-dc.manager.fullname" . }}-mutating
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "kube-dc.manager.fullname" . }}-webhook-serving-cert
+webhooks:
+  - name: mmanagedsecret.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-security-kube-dc-com-v1alpha1-managedsecret
+    rules:
+      - apiGroups: ["security.kube-dc.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["managedsecrets"]
+  - name: mmanagedcertificate.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-security-kube-dc-com-v1alpha1-managedcertificate
+    rules:
+      - apiGroups: ["security.kube-dc.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["managedcertificates"]
+  - name: mkmskey.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-security-kube-dc-com-v1alpha1-kmskey
+    rules:
+      - apiGroups: ["security.kube-dc.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["kmskeys"]
+  - name: mdbcredentialpolicy.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-security-kube-dc-com-v1alpha1-databasecredentialpolicy
+    rules:
+      - apiGroups: ["security.kube-dc.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["databasecredentialpolicies"]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "kube-dc.manager.fullname" . }}-validating
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "kube-dc.manager.fullname" . }}-webhook-serving-cert
+webhooks:
+  - name: vmanagedsecret.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-security-kube-dc-com-v1alpha1-managedsecret
+    rules:
+      - apiGroups: ["security.kube-dc.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["managedsecrets"]
+  - name: vmanagedcertificate.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-security-kube-dc-com-v1alpha1-managedcertificate
+    rules:
+      - apiGroups: ["security.kube-dc.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["managedcertificates"]
+  - name: vkmskey.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-security-kube-dc-com-v1alpha1-kmskey
+    rules:
+      - apiGroups: ["security.kube-dc.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["kmskeys"]
+  - name: vdbcredentialpolicy.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-security-kube-dc-com-v1alpha1-databasecredentialpolicy
+    rules:
+      - apiGroups: ["security.kube-dc.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["databasecredentialpolicies"]
+  # Project gate — rejects spec.egressNetworkType=public on CREATE when
+  # master-config `allow_public_projects: false`. See
+  # docs/prd/public-projects-gate.md. CREATE-only because the CRD's
+  # CEL marks egressNetworkType immutable already; UPDATE/DELETE have
+  # no policy to enforce.
+  - name: vproject.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-kube-dc-com-v1-project
+    rules:
+      - apiGroups: ["kube-dc.com"]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["projects"]
+{{- end }}

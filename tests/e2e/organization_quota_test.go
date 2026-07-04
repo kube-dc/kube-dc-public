@@ -235,7 +235,7 @@ func createQuotaTestOrg(orgName, planID, subscriptionStatus string) *kubedccomv1
 	return org
 }
 
-var _ = Describe("Organization Quota Reconciliation", func() {
+var _ = Describe("Organization Quota Reconciliation", Ordered, func() {
 
 	BeforeAll(func() {
 		By("Saving original billing-plans ConfigMap")

@@ -1,0 +1,88 @@
+{{- if .Values.kubevirtServiceMonitor.enabled }}
+# Scrape target for kubevirt's per-component metrics exporters
+# (virt-handler, virt-controller, virt-api, virt-operator). Without
+# this, Prometheus / Alloy-metrics see no `kubevirt_vmi_*` series,
+# Grafana's VM dashboards stay empty, and the kube-dc UI's VM-detail
+# metrics panels render blank.
+#
+# Why the chart ships this (and not the kubevirt operator itself):
+# upstream virt-operator v1.8.x is *supposed* to create the SM
+# automatically when its CR has `spec.monitorNamespace` set, but the
+# create path silently skips on at least one shape of install
+# (cloudacropolis 2026-05-26 — log says "servicemonitor is defined" +
+# starts the informer, then never calls Create on the SM CRD, with
+# no skip-reason log line). We chased the gate for an hour and
+# couldn't reproduce the cloud-cluster's working path on a fresh
+# install. Shipping the SM declaratively from the chart sidesteps
+# the operator's flaky create path entirely.
+#
+# When virt-operator DOES create one (e.g. after a future upgrade
+# rolls out a fix), the names match and Server-Side Apply merges
+# cleanly — both managers describe the same target shape.
+#
+# Multi-tenant routing (cloud-class clusters running Alloy-metrics
+# + cortex-tenant + Mimir): Alloy-metrics auto-discovers
+# cluster-wide SMs (empty `prometheus.operator.servicemonitors`
+# selector in alloy-metrics-values), reads each scraped sample's
+# `namespace` label, and maps it to `__tenant_id__` per the relabel
+# rules in fleet's alloy-metrics config:
+#   - virt-handler operational metrics carry `namespace=kubevirt`
+#     → `__tenant_id__=system` (allowlisted as a platform ns)
+#   - per-VM metrics (kubevirt_vmi_*) carry the VMI's own
+#     namespace (e.g. `bogdan-test2`) → `__tenant_id__=bogdan-test2`
+#     → routed into that tenant's Mimir org → visible in their
+#     per-tenant Grafana dashboards.
+#
+# Single-tenant prom-direct clusters (e.g. cloudacropolis on the
+# legacy prom-operator-prometheus stack) just pick the SM up via
+# the same empty `serviceMonitorSelector: {}` setup. All series
+# land in the single Prometheus.
+#
+# Disabling: set kubevirtServiceMonitor.enabled=false on clusters
+# without the prometheus-operator CRDs installed (the SM CR will
+# fail apiserver validation otherwise) — bare-bones edge installs,
+# kind clusters for chart smoke-testing, etc.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Values.kubevirtServiceMonitor.name }}
+  namespace: {{ .Values.kubevirtServiceMonitor.namespace }}
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+    k8s-app: kubevirt
+    prometheus.kubevirt.io: "true"
+    # Match the existing prom-operator releaseLabel so a future
+    # tighten-down on prometheus.spec.serviceMonitorSelector still
+    # picks this SM up. With the empty `{}` selector that's the
+    # current default it's a no-op label; with a release-pinned
+    # selector it's load-bearing.
+    release: prom-operator
+spec:
+  # Selects pods labelled by the kubevirt operator with
+  # `prometheus.kubevirt.io: "true"` — covers virt-handler (every
+  # node, DaemonSet), virt-controller, virt-api, virt-operator.
+  selector:
+    matchLabels:
+      prometheus.kubevirt.io: "true"
+  # Restrict discovery to the kubevirt namespace. The headless
+  # `kubevirt-prometheus-metrics` Service forwards Service.port=443
+  # to the pod's `metrics` named container port (containerPort=8443
+  # by default).
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.kubevirtServiceMonitor.namespace }}
+  endpoints:
+    - port: metrics
+      scheme: https
+      honorLabels: true
+      # kubevirt's metrics endpoint serves a self-signed cert by
+      # default — flipping insecureSkipVerify=false requires
+      # plumbing the kubevirt-ca CA bundle as a Secret reference,
+      # which adds chart surface area for a self-issued cert no
+      # one validates anyway. Match upstream's own SM defaults.
+      tlsConfig:
+        ca: {}
+        cert: {}
+        insecureSkipVerify: true
+{{- end }}

@@ -1,0 +1,56 @@
+{{/*
+M2-T03 follow-up — cert-manager-controller needs `serviceaccounts/token`
+create permission on the per-Project `kube-dc-pki-issuer` ServiceAccount
+to swap a projected-token bound to that SA at the OpenBao `auth/k8s-host`
+mount and back-issue private certs.
+
+Without this binding, every namespaced `kube-dc-pki` Issuer (created
+lazily by the ManagedCertificate reconciler) reports NotReady with the
+canonical cert-manager message:
+
+  authentication failed: not authorized to create tokens for ServiceAccount
+
+The scope is intentionally tight:
+
+  - `resourceNames: ["kube-dc-pki-issuer"]` — cert-manager can NOT
+    create tokens for any other SA. Even a compromised cert-manager
+    controller can't escalate into project-default or other SAs.
+  - `apiGroups: [""]` + `resources: ["serviceaccounts/token"]` only —
+    no read/list of ServiceAccount objects themselves.
+  - Subject is the cert-manager-controller SA (chart default name
+    `cert-manager` in namespace `cert-manager`). Override the names
+    in values.yaml if the operator's cert-manager install diverges.
+
+Templated so a cluster that bundles cert-manager elsewhere (or runs it
+under a non-default SA / namespace) can rewire without forking the
+chart. Disable the whole block via `certManagerPkiBinding.enabled=false`
+when private certs are out of scope for the cluster.
+*/}}
+{{- if .Values.certManagerPkiBinding.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-dc-cert-manager-pki-issuer-tokenrequester
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+rules:
+- apiGroups: [""]
+  resources: ["serviceaccounts/token"]
+  resourceNames: ["kube-dc-pki-issuer"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-dc-cert-manager-pki-issuer-tokenrequester
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-dc-cert-manager-pki-issuer-tokenrequester
+subjects:
+- kind: ServiceAccount
+  name: {{ .Values.certManagerPkiBinding.serviceAccountName | default "cert-manager" }}
+  namespace: {{ .Values.certManagerPkiBinding.serviceAccountNamespace | default "cert-manager" }}
+{{- end }}

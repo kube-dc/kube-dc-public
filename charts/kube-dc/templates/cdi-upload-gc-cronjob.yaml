@@ -97,12 +97,14 @@ data:
 
     GC_STALE_DAYS="${GC_STALE_DAYS:-7}"
     GC_FAILED_HOURS="${GC_FAILED_HOURS:-6}"
+    GC_IMPORT_DEADLINE_MINUTES="${GC_IMPORT_DEADLINE_MINUTES:-30}"
     GC_DELETE="${GC_DELETE:-false}"
     NOW=$(date -u +%s)
     THRESHOLD=$((NOW - GC_STALE_DAYS * 86400))
     FAILED_THRESHOLD=$((NOW - GC_FAILED_HOURS * 3600))
+    IMPORT_THRESHOLD=$((NOW - GC_IMPORT_DEADLINE_MINUTES * 60))
 
-    echo "cdi-upload-gc: stale-threshold=${GC_STALE_DAYS}d failed-threshold=${GC_FAILED_HOURS}h delete=${GC_DELETE}"
+    echo "cdi-upload-gc: stale-threshold=${GC_STALE_DAYS}d failed-threshold=${GC_FAILED_HOURS}h import-deadline=${GC_IMPORT_DEADLINE_MINUTES}m delete=${GC_DELETE}"
 
     # Pass 1: stuck worker pods.
     # Find non-terminal CDI worker pods older than the threshold.
@@ -160,6 +162,39 @@ data:
           fi
         done
 
+    # Pass 3: DataVolumes still in ImportInProgress / ImportScheduled
+    # past the deadline. Implements PRD §5.1.1 ("time-bound importer
+    # retries") without a separate Go controller — CDI offers no
+    # native equivalent of `spec.source.http.failureRetryLimit`.
+    # 30 min default is well above the wall-clock budget of any image
+    # we ship in the default catalog at the worst observed WAN
+    # throughput (Windows golden 21 GiB ~ 10 min over LAN; a 30-min
+    # importer is broken, not slow). The Failed-DV pass (6h) is the
+    # safety net for any importer that *does* eventually fail on its
+    # own; this pass catches the 2,838-restart class where CDI
+    # crashloops indefinitely against an unreachable source URL.
+    #
+    # We delete the DataVolume rather than just the importer Pod —
+    # CDI would just respawn the pod against the same DV. The tenant
+    # sees their VM creation surface a "DataVolume not found" error
+    # at next reconcile, which is the correct signal: their image
+    # URL is broken; they should pick a different one.
+    kubectl get datavolume -A -o json \
+      | jq -r --argjson threshold "$IMPORT_THRESHOLD" '
+          .items[]
+          | select((.status.phase // "") | test("^(ImportInProgress|ImportScheduled)$"))
+          | select(((.metadata.creationTimestamp // "1970-01-01T00:00:00Z") | fromdateiso8601) < $threshold)
+          | "\(.metadata.namespace) \(.metadata.name) \(.metadata.creationTimestamp) \(.status.phase)"' \
+      | while read -r ns dv created phase; do
+          if [ "$GC_DELETE" = "true" ]; then
+            echo "[delete] importing DV $ns/$dv (phase=$phase, created $created, >${GC_IMPORT_DEADLINE_MINUTES}m)"
+            kubectl delete datavolume -n "$ns" "$dv" --wait=false \
+              || echo "[warn] delete failed for $ns/$dv (likely race; will retry next cycle)"
+          else
+            echo "[audit] would delete importing DV $ns/$dv (phase=$phase, created $created, >${GC_IMPORT_DEADLINE_MINUTES}m)"
+          fi
+        done
+
     echo "cdi-upload-gc: done"
 ---
 apiVersion: batch/v1
@@ -199,6 +234,8 @@ spec:
                   value: {{ .Values.cdiUploadGc.staleDays | quote }}
                 - name: GC_FAILED_HOURS
                   value: {{ .Values.cdiUploadGc.failedHours | quote }}
+                - name: GC_IMPORT_DEADLINE_MINUTES
+                  value: {{ .Values.cdiUploadGc.importDeadlineMinutes | quote }}
                 - name: GC_DELETE
                   value: {{ .Values.cdiUploadGc.delete | quote }}
               volumeMounts:

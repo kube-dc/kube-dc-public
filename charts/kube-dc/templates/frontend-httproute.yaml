@@ -14,6 +14,22 @@ spec:
   hostnames:
   - {{ .Values.frontend.gateway.hostname }}
   rules:
+  # ttyd-backed cloud-shell WebSocket goes through console.<DOMAIN>/api/cloud-shell/...
+  # (nginx inside the frontend pod proxies to the backend). Envoy's default
+  # 15s route timeout closes the WebSocket mid-session and the browser sees
+  # "upstream request timeout". Match this prefix first with a long timeout
+  # so terminal sessions stay open. Gateway API rule matching prefers more
+  # specific PathPrefix, so this rule fires before the `/` catch-all.
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/cloud-shell
+    timeouts:
+      request: {{ .Values.frontend.gateway.longLivedTimeout | default "1h" | quote }}
+      backendRequest: {{ .Values.frontend.gateway.longLivedTimeout | default "1h" | quote }}
+    backendRefs:
+    - name: {{ $fullName }}
+      port: {{ $svcPort }}
   - matches:
     - path:
         type: PathPrefix

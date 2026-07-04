@@ -1,0 +1,392 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.4
+    helm.sh/resource-policy: keep
+  name: organizations.kube-dc.com
+spec:
+  group: kube-dc.com
+  names:
+    kind: Organization
+    listKind: OrganizationList
+    plural: organizations
+    singular: organization
+  scope: Namespaced
+  versions:
+    - name: v1
+      schema:
+        openAPIV3Schema:
+          description: Organization is the Schema for the organizations API.
+          properties:
+            apiVersion:
+              description: |-
+                APIVersion defines the versioned schema of this representation of an object.
+                Servers should convert recognized schemas to the latest internal value, and
+                may reject unrecognized values.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+              type: string
+            kind:
+              description: |-
+                Kind is a string value representing the REST resource this object represents.
+                Servers may infer this from the endpoint the client submits requests to.
+                Cannot be updated.
+                In CamelCase.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: OrganizationSpec defines the desired state of Organization.
+              properties:
+                description:
+                  description: Description is a brief description of the organization
+                  maxLength: 128
+                  pattern: ^[a-zA-Z0-9\s.,\-']+$
+                  type: string
+                email:
+                  description: Email is a organization contact email address
+                  maxLength: 256
+                  minLength: 5
+                  type: string
+                security:
+                  description: |-
+                    Security holds Organization-level security policy declarations.
+                    Added in M2: scopes ManagedCertificate SAN issuance per Project.
+                    See docs/prd/openbao-integration.md §7.3 +
+                    docs/prd/openbao-integration-development-scope.md §7.
+                  properties:
+                    certificateDomains:
+                      description: |-
+                        CertificateDomains scopes the DNS names tenants may put in their
+                        ManagedCertificate spec.dnsNames per Project. The list is consulted
+                        by the ManagedCertificate validating webhook at admission time and
+                        copied to the per-Project OpenBao PKI role (allowed_domains) at
+                        signing time — defence in depth. Resolution semantics are locked
+                        in dev-scope §7 (resolveAllowedZones algorithm); critically, a nil
+                        privateDnsNames falls back to the project's *.<project>.internal
+                        defaults, while an explicit empty slice ([]) means "no zones
+                        allowed for that cert type" (Org admin opted out).
+
+                        listType=map + listMapKey=project makes duplicate Project entries
+                        a server-side reject at the apiserver — no need to teach
+                        LookupProject which one wins.
+                      items:
+                        description: |-
+                          ProjectCertificateDomainPolicy declares the DNS zones allowed for one
+                          Project under this Organization. Project entries are matched by name
+                          against the project namespace's kube-dc.com/project=<org>/<project>
+                          annotation; a Project absent from the list inherits defaults.
+                        properties:
+                          privateDnsNames:
+                            description: |-
+                              PrivateDnsNames lists DNS names that ManagedCertificate type=private
+                              in this Project may request. Single-label wildcard prefix allowed
+                              (e.g. "*.docs.internal"); "**" and mid/suffix wildcards rejected.
+
+                              nil    → project inherits the default
+                                       [ "<project>.internal", "*.<project>.internal" ].
+                              []     → Org admin opted the project out; no private certs allowed.
+                              [...]  → explicit allowlist (replaces the default).
+                            items:
+                              maxLength: 253
+                              pattern: ^(\*\.)?[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                              type: string
+                            type: array
+                          project:
+                            description: |-
+                              Project is the bare Project name (no org prefix). Must be a
+                              DNS-1123 label.
+                            maxLength: 63
+                            minLength: 1
+                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                            type: string
+                          publicDnsNames:
+                            description: |-
+                              PublicDnsNames lists DNS names that ManagedCertificate type=public
+                              in this Project may request. Same nil-vs-empty semantics as
+                              PrivateDnsNames, except the DEFAULT is empty: public certs always
+                              require an explicit Org-admin allowlist.
+
+                              nil    → project inherits the default ([] — no public certs).
+                              []     → same as nil for public.
+                              [...]  → explicit allowlist.
+                            items:
+                              maxLength: 253
+                              pattern: ^(\*\.)?[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                              type: string
+                            type: array
+                        required:
+                          - project
+                        type: object
+                      type: array
+                      x-kubernetes-list-map-keys:
+                        - project
+                      x-kubernetes-list-type: map
+                  type: object
+              required:
+                - email
+              type: object
+            status:
+              description: OrganizationStatus defines the observed state of Organization.
+              properties:
+                conditions:
+                  description: Conditions represents the latest available observations of the organization's current state
+                  items:
+                    description: Condition contains details for one aspect of the current state of this API Resource.
+                    properties:
+                      lastTransitionTime:
+                        description: |-
+                          lastTransitionTime is the last time the condition transitioned from one status to another.
+                          This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                        format: date-time
+                        type: string
+                      message:
+                        description: |-
+                          message is a human readable message indicating details about the transition.
+                          This may be an empty string.
+                        maxLength: 32768
+                        type: string
+                      observedGeneration:
+                        description: |-
+                          observedGeneration represents the .metadata.generation that the condition was set based upon.
+                          For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                          with respect to the current state of the instance.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      reason:
+                        description: |-
+                          reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                          Producers of specific condition types may define expected values and meanings for this field,
+                          and whether the values are considered a guaranteed API.
+                          The value should be a CamelCase string.
+                          This field may not be empty.
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                        type: string
+                      status:
+                        description: status of the condition, one of True, False, Unknown.
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                        type: string
+                      type:
+                        description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        type: string
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    type: object
+                  type: array
+                quotaEnforced:
+                  description: QuotaEnforced indicates whether a HierarchicalResourceQuota is active for this organization
+                  type: boolean
+                quotaPlanId:
+                  description: QuotaPlanId is the billing plan ID currently enforced via HRQ, empty if no quota
+                  type: string
+                quotaUsage:
+                  description: |-
+                    QuotaUsage holds aggregated resource usage across all dimensions (CPU, memory, storage,
+                    pods, public IPs, object storage). Updated periodically by the organization controller.
+                    Read by the UI using the user's JWT token — no SA token required for quota display.
+                  properties:
+                    cpu:
+                      description: CPU usage across all project namespaces (requests.cpu from HRQ)
+                      properties:
+                        hard:
+                          description: Hard is the maximum allowed amount from the active quota
+                          type: string
+                        used:
+                          description: Used is the currently consumed amount (e.g. "2500m", "7Gi", "3")
+                          type: string
+                      required:
+                        - hard
+                        - used
+                      type: object
+                    lastUpdated:
+                      description: LastUpdated is the timestamp when this usage was last refreshed
+                      format: date-time
+                      type: string
+                    memory:
+                      description: Memory usage across all project namespaces (requests.memory from HRQ)
+                      properties:
+                        hard:
+                          description: Hard is the maximum allowed amount from the active quota
+                          type: string
+                        used:
+                          description: Used is the currently consumed amount (e.g. "2500m", "7Gi", "3")
+                          type: string
+                      required:
+                        - hard
+                        - used
+                      type: object
+                    objectStorage:
+                      description: ObjectStorage is total S3 usage across all project buckets (in bytes)
+                      properties:
+                        hard:
+                          description: Hard is the maximum allowed amount from the active quota
+                          type: string
+                        used:
+                          description: Used is the currently consumed amount (e.g. "2500m", "7Gi", "3")
+                          type: string
+                      required:
+                        - hard
+                        - used
+                      type: object
+                    pods:
+                      description: Pods count across all project namespaces
+                      properties:
+                        hard:
+                          description: Hard is the maximum allowed amount from the active quota
+                          type: string
+                        used:
+                          description: Used is the currently consumed amount (e.g. "2500m", "7Gi", "3")
+                          type: string
+                      required:
+                        - hard
+                        - used
+                      type: object
+                    publicIPv4:
+                      description: PublicIPv4 is the count of public EIPs across all project namespaces
+                      properties:
+                        hard:
+                          description: Hard is the maximum allowed amount from the active quota
+                          type: string
+                        used:
+                          description: Used is the currently consumed amount (e.g. "2500m", "7Gi", "3")
+                          type: string
+                      required:
+                        - hard
+                        - used
+                      type: object
+                    storage:
+                      description: Storage usage across all project namespaces (requests.storage from HRQ)
+                      properties:
+                        hard:
+                          description: Hard is the maximum allowed amount from the active quota
+                          type: string
+                        used:
+                          description: Used is the currently consumed amount (e.g. "2500m", "7Gi", "3")
+                          type: string
+                      required:
+                        - hard
+                        - used
+                      type: object
+                  type: object
+                ready:
+                  default: false
+                  description: Ready indicates whether the organization is fully configured and operational
+                  type: boolean
+                security:
+                  description: |-
+                    Security holds the OpenBao integration state for this Organization
+                    (namespace mount, OIDC auth accessor, intermediate CA expiry, etc).
+                    Written by internal/organization/res_openbao_*.go reconcilers during
+                    Organization Sync. See ProjectSecurityStatus for the per-Project view
+                    and development-scope §1.6 for the aggregator/per-CRD write model.
+                  properties:
+                    authAccessor:
+                      description: |-
+                        AuthAccessor is the stable accessor ID of the auth/k8s-host mount
+                        inside the Organization namespace. Stored on status so policy
+                        templates can reference it without re-reading on every reconcile
+                        (parent PRD §9.5).
+                      type: string
+                    conditions:
+                      description: |-
+                        Conditions: OpenBaoNamespaceReady, OpenBaoKubernetesAuthReady,
+                        OpenBaoOIDCAuthReady, OpenBaoPoliciesReady. See parent PRD §9.5.
+                      items:
+                        description: Condition contains details for one aspect of the current state of this API Resource.
+                        properties:
+                          lastTransitionTime:
+                            description: |-
+                              lastTransitionTime is the last time the condition transitioned from one status to another.
+                              This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                            format: date-time
+                            type: string
+                          message:
+                            description: |-
+                              message is a human readable message indicating details about the transition.
+                              This may be an empty string.
+                            maxLength: 32768
+                            type: string
+                          observedGeneration:
+                            description: |-
+                              observedGeneration represents the .metadata.generation that the condition was set based upon.
+                              For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                              with respect to the current state of the instance.
+                            format: int64
+                            minimum: 0
+                            type: integer
+                          reason:
+                            description: |-
+                              reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                              Producers of specific condition types may define expected values and meanings for this field,
+                              and whether the values are considered a guaranteed API.
+                              The value should be a CamelCase string.
+                              This field may not be empty.
+                            maxLength: 1024
+                            minLength: 1
+                            pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                            type: string
+                          status:
+                            description: status of the condition, one of True, False, Unknown.
+                            enum:
+                              - "True"
+                              - "False"
+                              - Unknown
+                            type: string
+                          type:
+                            description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                            maxLength: 316
+                            pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                            type: string
+                        required:
+                          - lastTransitionTime
+                          - message
+                          - reason
+                          - status
+                          - type
+                        type: object
+                      type: array
+                    lastSnapshot:
+                      description: |-
+                        LastSnapshot is the most recent successful OpenBao Raft snapshot
+                        timestamp reported by the snapshot CronJob (best-effort).
+                      format: date-time
+                      type: string
+                    namespace:
+                      description: |-
+                        Namespace is the OpenBao Namespace path created for this
+                        Organization (typically equals metadata.name, e.g. "shalb/").
+                      type: string
+                    oidcAccessor:
+                      description: |-
+                        OIDCAccessor is the stable accessor ID of the auth/oidc-keycloak
+                        mount inside the Organization namespace (M1+ when OIDC ships).
+                      type: string
+                    pkiExpiry:
+                      description: |-
+                        PKIExpiry is the not-after of the Organization intermediate CA
+                        (M2). Empty until the PKI reconciler runs.
+                      format: date-time
+                      type: string
+                  type: object
+              required:
+                - ready
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}

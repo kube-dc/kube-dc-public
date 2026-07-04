@@ -66,6 +66,27 @@ spec:
         - name: S3_ENDPOINT
           value: "{{ .Values.s3Endpoint }}"
         {{- end }}
+        {{- if and .Values.manager.openBao .Values.manager.openBao.enabled }}
+        # M3-T05 envelope encryption for KdcDatabase backups. db-manager
+        # wraps a per-database DEK against per-Org Transit keys via the
+        # auth/k8s-host `db-manager` role provisioned by
+        # hack/openbao-setup-controller-auth.sh. Same OPENBAO_URL +
+        # CA bundle the manager + backend already share via master-config.
+        # OPENBAO_AUTH_ROLE defaults to "db-manager" in the controller —
+        # left unset here so an operator can override per-cluster via
+        # dbManager.extraEnv without bypassing the master-config wiring.
+        - name: OPENBAO_URL
+          valueFrom:
+            secretKeyRef:
+              name: master-config
+              key: openbao_url
+        - name: OPENBAO_CA_BUNDLE
+          valueFrom:
+            secretKeyRef:
+              name: master-config
+              key: openbao_ca_bundle
+              optional: true
+        {{- end }}
         {{- with .Values.dbManager.extraEnv }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

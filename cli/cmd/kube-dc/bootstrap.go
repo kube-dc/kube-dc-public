@@ -55,6 +55,13 @@ KUBE_DC_FLEET environment variable.`,
 	cmd.AddCommand(bootstrapKubeconfigCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapContextCmd())
 	cmd.AddCommand(bootstrapBreakGlassCmd(&fleetRepo))
+	cmd.AddCommand(bootstrapDoctorCmd(&fleetRepo))
+	cmd.AddCommand(bootstrapStatusCmd(&fleetRepo))
+	cmd.AddCommand(bootstrapInitCmd(&fleetRepo))
+	cmd.AddCommand(bootstrapOpenBaoCmd(&fleetRepo))
+	cmd.AddCommand(bootstrapKeycloakCmd(&fleetRepo))
+	cmd.AddCommand(bootstrapAccessCmd(&fleetRepo))
+	cmd.AddCommand(bootstrapAnchorsCmd(&fleetRepo))
 
 	return cmd
 }

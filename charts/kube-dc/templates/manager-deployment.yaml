@@ -11,10 +11,18 @@ spec:
   replicas: 1
   template:
     metadata:
-      {{- with .Values.manager.podAnnotations }}
       annotations:
+        # Rolls the manager Pod whenever the master-config Secret content
+        # changes. The Secret is rendered from chart values
+        # (manager.allowPublicProjects, network-isolation flags, etc.) —
+        # flipping any of those means the in-memory ConfigGlobal.MasterConfig
+        # cache in the running manager is stale until restart. The checksum
+        # here forces Helm to roll the Deployment on Secret change.
+        # See kube-dc/docs/prd/public-projects-gate.md (F2 review fix).
+        checksum/master-config: {{ include (print $.Template.BasePath "/manager-secret.yaml") . | sha256sum }}
+        {{- with .Values.manager.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
       labels:
         {{- include "kube-dc.manager.labels" . | nindent 8 }}
         {{- with .Values.manager.podLabels }}
@@ -57,6 +65,16 @@ spec:
             add:
             - "ALL"
           privileged: true
+        {{- if .Values.manager.webhook.enabled }}
+        ports:
+          - name: webhook-server
+            containerPort: 9443
+            protocol: TCP
+        volumeMounts:
+          - name: webhook-cert
+            mountPath: /tmp/k8s-webhook-server/serving-certs
+            readOnly: true
+        {{- end }}
         livenessProbe:
           httpGet:
             path: /healthz
@@ -77,6 +95,13 @@ spec:
           {{- toYaml .Values.manager.resources | nindent 12 }}
       serviceAccountName: {{ include "kube-dc.manager.serviceAccountName" . }}
       terminationGracePeriodSeconds: 10
+      {{- if .Values.manager.webhook.enabled }}
+      volumes:
+        - name: webhook-cert
+          secret:
+            secretName: {{ include "kube-dc.manager.fullname" . }}-webhook-serving-cert
+            defaultMode: 420
+      {{- end }}
       {{- with .Values.manager.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

@@ -1,0 +1,165 @@
+{{- if .Values.cdiMirrorAlerts.enabled }}
+# Mirror & importer health alerts. Sources from kube-state-metrics
+# only — no need for a custom Prometheus textfile collector inside
+# the refresh job. PRD: docs/prd/cdi-acceleration.md §6.1 and
+# docs/prd/cdi-os-image-registry.md §9.1.
+#
+# Three alert groups:
+#   - kube-dc.cdi-os-mirror  : weekly refresh CronJob health
+#   - kube-dc.cdi-upload-gc  : every-6h gc CronJob health
+#   - kube-dc.cdi-importer   : per-DataVolume importer pathology
+#
+# What's NOT here (and why):
+#   - KubeDCImageDiscoveryStale  — semantically the same signal as
+#     MirrorStale (the refresh job is what writes cdi-os-catalog).
+#   - KubeDCImageEOLApproaching  — requires a custom metric exporter
+#     that reads each family's discovery output and emits days-until-EOL.
+#     Defer to a follow-on PR once we wire a textfile-collector sidecar.
+#   - KubeDCImageBucketSizeHigh  — depends on radosgw bucket-usage
+#     metrics that are not yet scraped. The bucket-policy CronJob's
+#     last refresh quota check is the manual signal for now.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kube-dc-cdi-mirror
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+    release: prom-operator
+spec:
+  groups:
+    - name: kube-dc.cdi-os-mirror
+      rules:
+        - alert: KubeDCImageMirrorRefreshFailed
+          # The weekly refresh CronJob's most recent Job failed.
+          # kube_job_failed{namespace,job_name} is set per-Job by
+          # kube-state-metrics; we filter on the cronjob owner via the
+          # job_name regex (cron-generated Jobs are <cronjob>-<unix-time>).
+          expr: |
+            kube_job_failed{namespace="{{ .Release.Namespace }}", job_name=~"cdi-os-mirror-refresh-.*"} > 0
+          for: 10m
+          labels:
+            severity: warning
+            kube-dc.com/runbook: cdi-acceleration.md
+          annotations:
+            summary: "OS-image mirror refresh job failed"
+            description: |
+              cdi-os-mirror-refresh Job {{ "{{ $labels.job_name }}" }} in
+              namespace {{ "{{ $labels.namespace }}" }} failed. The catalog
+              still serves last week's bytes from /latest/, but version
+              discovery is paused until this clears.
+              kubectl -n {{ .Release.Namespace }} logs -l job-name={{ "{{ $labels.job_name }}" }} --tail=200
+
+        - alert: KubeDCImageMirrorStale
+          # No successful weekly refresh in over 14d. Either the
+          # CronJob is misconfigured (suspended, timezone drift) or
+          # every run has been failing — the latter is also covered
+          # by KubeDCImageMirrorRefreshFailed but with a 10m fire,
+          # this catches the "many failed runs over weeks" silent case.
+          expr: |
+            time() - kube_cronjob_status_last_successful_time{namespace="{{ .Release.Namespace }}", cronjob="cdi-os-mirror-refresh"} > 14 * 86400
+          for: 1h
+          labels:
+            severity: warning
+            kube-dc.com/runbook: cdi-acceleration.md
+          annotations:
+            summary: "OS-image mirror has not refreshed successfully in >14 days"
+            description: |
+              cdi-os-mirror-refresh last successful run was more than 14
+              days ago. /latest/ keeps serving the last good bytes, but
+              point releases and security updates are not flowing through.
+              kubectl -n {{ .Release.Namespace }} get cronjob cdi-os-mirror-refresh
+
+    - name: kube-dc.cdi-upload-gc
+      rules:
+        - alert: KubeDCCdiGcJobFailed
+          # gc cron runs every 6h; consecutive failures across multiple
+          # cycles are the signal worth waking on. Same metric pattern
+          # as the mirror alert above.
+          expr: |
+            kube_job_failed{namespace="{{ .Release.Namespace }}", job_name=~"cdi-upload-gc-.*"} > 0
+          for: 30m
+          labels:
+            severity: warning
+            kube-dc.com/runbook: cdi-acceleration.md
+          annotations:
+            summary: "cdi-upload-gc Job failed"
+            description: |
+              cdi-upload-gc {{ "{{ $labels.job_name }}" }} failed.
+              Common causes:
+                - OOMKill (peak working set > resource limit; v0.3.21 raised
+                  the limit to 384Mi which covers ~1000-pod clusters)
+                - kubectl mis-config breaking in-cluster auth
+                - real apiserver outage (likely correlates with other paging alerts)
+              First capture pod state BEFORE deleting:
+                kubectl -n {{ .Release.Namespace }} describe pod -l job-name={{ "{{ $labels.job_name }}" }}
+
+        - alert: KubeDCCdiGcStale
+          # Belt-and-suspenders for "last cron run succeeded, but the
+          # CronJob hasn't actually fired in 24h" (suspended, schedule
+          # mis-edit, controller wedge).
+          expr: |
+            time() - kube_cronjob_status_last_successful_time{namespace="{{ .Release.Namespace }}", cronjob="cdi-upload-gc"} > 24 * 3600
+          for: 1h
+          labels:
+            severity: info
+            kube-dc.com/runbook: cdi-acceleration.md
+          annotations:
+            summary: "cdi-upload-gc has not run successfully in >24h"
+            description: |
+              The 6-hourly cdi-upload-gc CronJob has not produced a
+              successful Job in the last 24h. Stuck CDI worker pods +
+              terminally-Failed DVs will accumulate.
+
+    - name: kube-dc.cdi-importer
+      rules:
+        - alert: CDIImporterRetryStorm
+          # The Gentoo-2026-05-11 incident: importer pod restarted
+          # 2,838 times over 10 days against a 404'd source URL.
+          # Catches CrashLoopBackOff loops on importer containers
+          # before they drown the catalog. 0.1 restarts/sec is one
+          # restart every ~10s sustained over 10m — a healthy importer
+          # never restarts.
+          expr: |
+            rate(kube_pod_container_status_restarts_total{container="importer"}[10m]) > 0.1
+          for: 10m
+          labels:
+            severity: warning
+            kube-dc.com/runbook: cdi-acceleration.md
+          annotations:
+            summary: "CDI importer in {{ "{{ $labels.namespace }}/{{ $labels.pod }}" }} is restart-looping"
+            description: |
+              CDI importer pod {{ "{{ $labels.namespace }}/{{ $labels.pod }}" }}
+              is restarting > 0.1/sec over the last 10m. The cdi-upload-gc
+              CronJob's importDeadlineMinutes pass (default 30m) will
+              clean the parent DataVolume up automatically; this alert
+              fires earlier so on-call can confirm the source URL or
+              cancel the tenant's create-VM if it's a known-bad image.
+
+        - alert: CDIImporterImportInProgressStale
+          # DataVolume has been in ImportInProgress / ImportScheduled
+          # for longer than the gc's importDeadlineMinutes. This means
+          # gc isn't catching it (either cdiUploadGc.delete=false, or
+          # the gc is wedged) — surfaces the failure mode before the
+          # tenant notices their VM is stuck.
+          #
+          # kube-state-metrics doesn't natively expose DataVolume
+          # phases; this alert depends on a textfile-collector sidecar
+          # or the kube-dc manager exposing the metric. Until that
+          # lands, the alert is defined-but-inert (the metric simply
+          # won't exist and PromQL evaluates to nothing).
+          expr: |
+            kube_dc_cdi_datavolume_import_age_seconds > {{ mul .Values.cdiUploadGc.importDeadlineMinutes 60 }}
+          for: 5m
+          labels:
+            severity: info
+            kube-dc.com/runbook: cdi-acceleration.md
+          annotations:
+            summary: "DataVolume {{ "{{ $labels.namespace }}/{{ $labels.datavolume }}" }} stuck importing"
+            description: |
+              DataVolume {{ "{{ $labels.namespace }}/{{ $labels.datavolume }}" }}
+              has been in ImportInProgress / ImportScheduled for longer
+              than the configured importDeadlineMinutes. cdi-upload-gc
+              should clean this up automatically on its next 6h cycle.
+{{- end }}

@@ -1,0 +1,43 @@
+{{- /*
+M1-T06-FU1: source-IP consistent-hash routing for kube-dc-backend.
+
+The org-admin elevation flow (util/elevation.js) keeps an in-memory
+session store per pod. With backend.replicas > 1, a POST /elevate can
+land on pod-A while the subsequent value-read lands on pod-B, so the
+elevation lookup misses and `elevation_id` is never stamped on the
+audit event. This BackendTrafficPolicy tells Envoy Gateway to hash
+on source IP, pinning each client to a single backend pod for the
+life of that pod. Same-NAT users share a pod; the elevation store is
+keyed by actor, so per-actor lookup remains correct.
+
+Limitations (acceptable for phase 1):
+  - Pod restart re-shards the consistent-hash ring; in-flight
+    elevations on that pod are lost. The TTL is 15m and re-elevating
+    is one CLI/UI call away. A Redis-backed store would survive pod
+    restart; defer until tenant scale demands it.
+  - Hashing happens at the Envoy Gateway, not kube-proxy. Direct
+    Service-port traffic (in-cluster non-gateway clients) is not
+    sticky. The /api/secrets surface only goes through the gateway
+    in production so this is fine.
+
+Disable by setting backend.consistentHash.enabled=false. Useful for
+clusters running a single backend replica, where the BTP is just
+noise.
+*/ -}}
+{{- if .Values.backend.consistentHash.enabled }}
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: {{ include "kube-dc.backend.fullname" . }}-sticky
+  labels:
+    {{- include "kube-dc.backend.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: {{ include "kube-dc.backend.fullname" . }}
+  loadBalancer:
+    type: ConsistentHash
+    consistentHash:
+      type: SourceIP
+{{- end }}

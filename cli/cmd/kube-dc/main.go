@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -42,9 +43,23 @@ It follows the same patterns as AWS CLI, GCloud, and other cloud provider CLIs:
 	rootCmd.AddCommand(credentialCmd())
 	rootCmd.AddCommand(alertsCmd())
 	rootCmd.AddCommand(bootstrapCmd())
+	rootCmd.AddCommand(secretsCmd())
+	rootCmd.AddCommand(certificatesCmd())
+	rootCmd.AddCommand(kmsCmd())
+	rootCmd.AddCommand(dbCmd())
+	rootCmd.AddCommand(orgsCmd())
+	rootCmd.AddCommand(auditCmd())
 	rootCmd.AddCommand(versionCmd())
 
 	if err := rootCmd.Execute(); err != nil {
+		// doctorExitCodeErr carries the doctor's max-severity exit
+		// code (1/2/3); the printer has already rendered its full
+		// report so we exit silently with the code rather than
+		// re-printing the error.
+		var de interface{ ExitCode() int }
+		if errors.As(err, &de) {
+			os.Exit(de.ExitCode())
+		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

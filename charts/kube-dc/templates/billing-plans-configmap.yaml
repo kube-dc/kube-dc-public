@@ -1,4 +1,22 @@
 {{- if .Values.billing.plans.enabled }}
+{{- /*
+  Seed-once ConfigMap. On a fresh install we render the default catalog from
+  .Values.billing.plans.config. On upgrades, if the ConfigMap already exists we
+  PRESERVE its live `plans.yaml` instead of overwriting it — plans, add-ons, and
+  promo codes are all edited at runtime via the admin console and all live in
+  this single key, so without this they'd be reverted on every Flux/Helm
+  reconcile. To re-seed from chart defaults, delete the ConfigMap and let the
+  next reconcile recreate it. (lookup is empty during `helm template`/dry-run and
+  on first install, so the default is used then — exactly what we want.)
+*/}}
+{{- $config := .Values.billing.plans.config }}
+{{- $existing := lookup "v1" "ConfigMap" .Release.Namespace "billing-plans" }}
+{{- if $existing }}
+{{-   $existingData := $existing.data | default dict }}
+{{-   if index $existingData "plans.yaml" }}
+{{-     $config = index $existingData "plans.yaml" }}
+{{-   end }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -9,5 +27,5 @@ metadata:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
 data:
   plans.yaml: |
-{{ .Values.billing.plans.config | indent 4 }}
+{{ $config | indent 4 }}
 {{- end }}
