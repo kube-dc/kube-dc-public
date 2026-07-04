@@ -270,6 +270,13 @@ type inputsForHash struct {
 	Addons           []string          `json:"addons,omitempty"`
 	AllowDNSNotReady        bool `json:"allowDnsNotReady"`
 	AllowNoKubevirtEligible bool `json:"allowNoKubevirtEligible"`
+	// NoPush IS substantive — it changes apply-time behavior
+	// (skips `git push` + `flux-install.sh` — the cluster overlay
+	// stays local-only). Dry-run + apply MUST agree on this flag
+	// or an operator can review a local-only preview and
+	// accidentally apply a real commit+push+flux-install run (or
+	// vice versa). C4 reviewer P1 catch on 48d57b8f.
+	NoPush           bool              `json:"noPush"`
 	SSHHost          string            `json:"sshHost"`
 	NoSSH            bool              `json:"noSsh"`
 	NoInstallPrereqs bool              `json:"noInstallPrereqs"`
@@ -277,6 +284,42 @@ type inputsForHash struct {
 	MirrorRegistry   string            `json:"mirrorRegistry"`
 	BundlePullSecret string            `json:"bundlePullSecret"`
 	OpenBaoSharesOut string            `json:"openbaoSharesOut"`
+}
+
+// hashExcludedFields is the registry of `InitOptions` fields that
+// are DELIBERATELY not part of the plan input hash. These fall
+// into two buckets:
+//
+//   - Apply-flow flags that SHOULD differ between dry-run and
+//     `--apply-plan` runs (an operator dry-runs, reviews the plan,
+//     then applies without `--dry-run`; the plan hash MUST
+//     collapse those two invocations to the same value).
+//   - Secrets / env-derived / transient fields not committed to
+//     the on-disk plan.
+//
+// **Contract** (enforced by `TestPlanHashCoverage_AllInitOptionsFieldsAccountedFor`,
+// aka C4 re-entrance lint): every field on `InitOptions` MUST
+// appear either here OR in `inputsForHash` — never both. Adding a
+// new field means picking a bucket at introduction time; the
+// choice becomes reviewer-visible via the required entry here.
+//
+// The map's value is the per-field rationale — kept next to the
+// key so a grep for a field name lands on the "why" immediately.
+var hashExcludedFields = map[string]string{
+	// Apply-flow flags — MUST differ between dry-run + --apply-plan.
+	// NOTE: `NoPush` is NOT in this bucket even though it looks
+	// flag-shaped — it changes apply-time behavior (skips push +
+	// flux-install), so dry-run and apply MUST agree on it or an
+	// operator can review a local-only preview and accidentally
+	// commit-push-flux to production. It lives in `inputsForHash`.
+	"DryRun":    "apply-flow flag: dry-run → apply must not trigger plan-hash drift",
+	"ApplyPlan": "apply-flow flag: path to a prior plan file, per-invocation",
+	"PlanFile":  "apply-flow flag: path to write plan.json, per-invocation",
+	"NoTTY":     "apply-flow flag: output formatting only, no semantic effect",
+	"Yes":       "apply-flow flag: consent for automation (CI); no semantic effect",
+
+	// Secrets / env — deliberately excluded from the on-disk plan.
+	"GitHubToken": "secret material; MUST never touch the plan file even in-memory",
 }
 
 // normalizeProviderForHash collapses explicit `github` to the
@@ -319,6 +362,7 @@ func (o *InitOptions) inputsForHash() inputsForHash {
 		Addons:           o.Addons,
 		AllowDNSNotReady:        o.AllowDNSNotReady,
 		AllowNoKubevirtEligible: o.AllowNoKubevirtEligible,
+		NoPush:           o.NoPush,
 		SSHHost:          o.SSHHost,
 		NoSSH:            o.NoSSH,
 		NoInstallPrereqs: o.NoInstallPrereqs,
@@ -514,31 +558,34 @@ func filesForOptions(o *InitOptions, fleet FleetState) []PlanFile {
 		infraDesc = fmt.Sprintf("infrastructure.yaml (%s)", strings.Join(infraLayers, " + "))
 	}
 
+	// This MUST mirror exactly what `bootstrap/add-cluster.sh` writes
+	// into clusters/<name>/ during the scaffold step — the dry-run's
+	// value is "review what apply will do", so a prediction that lists
+	// files apply won't create (or omits ones it will) breaks trust.
+	// add-cluster.sh writes these six, in this order (E2E shakedown
+	// 2026-07-04 verified against the live script):
+	//   cluster-config.env, secrets.enc.yaml, patches/versions.yaml,
+	//   infrastructure.yaml, platform.yaml, kustomization.yaml
+	//
+	// NOT scaffolded here (previously over-predicted): the
+	// infra-object-storage.yaml Kustomization + object-storage/ Rook
+	// overlay + addons.yaml. Rook object storage is applied in-cluster
+	// by the deferred "apply Rook CephObjectStore + system OBCs" step
+	// (see scriptsForOptions), NOT written as a fleet file by the
+	// scaffold; addons ride the shared addons/ base, not a per-cluster
+	// file. Listing them here made the plan promise files that never
+	// appeared.
 	files := []PlanFile{
 		{Path: "clusters/" + base + "cluster-config.env", Description: envDesc, Action: "+"},
 		{Path: "clusters/" + base + "secrets.enc.yaml", Description: "secrets.enc.yaml (SOPS-encrypted)", Action: "+"},
-		{Path: "clusters/" + base + "kustomization.yaml", Description: "kustomization.yaml (Flux entry)", Action: "+"},
+		{Path: "clusters/" + base + "patches/versions.yaml", Description: "patches/versions.yaml (version pins)", Action: "+"},
 		{Path: "clusters/" + base + "infrastructure.yaml", Description: infraDesc, Action: "+"},
-		{Path: "clusters/" + base + "infra-object-storage.yaml", Description: "infra-object-storage Kustomization", Action: "+"},
 		{Path: "clusters/" + base + "platform.yaml", Description: "platform Kustomization", Action: "+"},
-		{Path: "clusters/" + base + "addons.yaml", Description: "addons Kustomization", Action: "+"},
+		{Path: "clusters/" + base + "kustomization.yaml", Description: "kustomization.yaml (Flux entry)", Action: "+"},
 	}
-	if o.RookMode != RookDisabled {
-		files = append(files, PlanFile{
-			Path:        "clusters/" + base + "object-storage/",
-			Description: "object-storage overlay (Rook " + string(o.RookMode) + ")",
-			Action:      "+",
-		})
-	}
-	if len(o.Addons) > 0 {
-		files = append(files, PlanFile{
-			Path:        "clusters/" + base + "addons/",
-			Description: "addons overlay (" + strings.Join(o.Addons, ", ") + ")",
-			Action:      "+",
-		})
-	}
-	// Stable order — Files-to-Write preserves the §5.3 reading order
-	// (config → secrets → flux entries → overlays); no need to sort.
+	// Stable order — Files-to-Write mirrors add-cluster.sh's write
+	// order (config → secrets → version pins → infra → platform →
+	// flux entry); no need to sort.
 	return files
 }
 
@@ -607,17 +654,27 @@ func scriptsForOptions(o *InitOptions, fleet FleetState) []ScriptInvocation {
 		Kind: "(in-process) sops encrypt clusters/" + o.Name + "/secrets.enc.yaml",
 		Note: sopsRecipientsNote(fleet),
 	})
-	if !o.NoPush {
+	if o.NoPush {
+		// C4 reviewer P1: the render mirrors what apply.go actually
+		// runs. With --no-push, apply skips both `git push` and
+		// `flux-install.sh` (Flux needs a pushed commit to
+		// reconcile) — the operator gets a local commit only, and
+		// the plan MUST say so.
+		add(ScriptInvocation{
+			Kind: "(in-process) git add + commit",
+			Note: "--no-push set; push + flux-install skipped (local-only apply)",
+		})
+	} else {
 		add(ScriptInvocation{
 			Kind: "(in-process) git add + commit + push",
 			Note: "atomic — push failure rolls back the commit",
 		})
+		add(ScriptInvocation{
+			Kind: "bootstrap/flux-install.sh",
+			Args: []string{o.Name, "--new-cluster"},
+			Note: "wires Flux + applies the new cluster Kustomization",
+		})
 	}
-	add(ScriptInvocation{
-		Kind: "bootstrap/flux-install.sh",
-		Args: []string{o.Name, "--new-cluster"},
-		Note: "wires Flux + applies the new cluster Kustomization",
-	})
 
 	// Deferred steps after Flux brings up the components.
 	add(ScriptInvocation{

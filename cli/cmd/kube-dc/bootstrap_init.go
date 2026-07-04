@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -238,8 +239,11 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"OSD size in GB for --rook-mode=rook-ceph-local")
 
 	// --- Addons ---
+	// NOTE: not yet wired into apply — passing --addon currently fails
+	// closed (ErrAddonsNotImplemented). Flag + registry retained so the
+	// surface is stable for when the addon engine slice ships.
 	cmd.Flags().StringSliceVar(&addonFlags, "addon", nil,
-		"Enable an addon (repeatable; one of: metallb, sso-google, stripe-billing, velero)")
+		"Enable an addon (RESERVED — not yet implemented; repeatable; one of: metallb, sso-google, stripe-billing, velero)")
 
 	// --- Behaviour gates ---
 	cmd.Flags().BoolVar(&o.AllowDNSNotReady, "allow-dns-not-ready", false,
@@ -824,6 +828,19 @@ func discoverFleetState(o *clusterinit.InitOptions) clusterinit.FleetState {
 	inheritance := clusterinit.InheritFromSiblings(siblings)
 	st.InheritedDefaults = inheritance.Defaults
 	st.InheritanceTemplate = inheritance.TemplateName
+
+	// SOPS recipient count for the plan's "sops encrypt" step note.
+	// Best-effort: a missing/unreadable/recipient-less .sops.yaml
+	// leaves SOPSRecipients at 0, which `sopsRecipientsNote` renders
+	// as the safe "single recipient (operator's local age key)"
+	// default. When the fleet DOES carry the canonical multi-recipient
+	// `age: 'k1,k2,k3'` block, the plan now reports the real count so
+	// the operator sees the secret will be readable by every enrolled
+	// keyholder — not just themselves. (E2E shakedown 2026-07-04: this
+	// was silently 0 because discoverFleetState never read .sops.yaml.)
+	if body, rerr := os.ReadFile(filepath.Join(o.Repo, ".sops.yaml")); rerr == nil {
+		st.SOPSRecipients = len(clusterinit.ParseSOPSConfigRecipients(body))
+	}
 	return st
 }
 

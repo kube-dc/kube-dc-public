@@ -118,6 +118,13 @@ func TestComputeInputHash_SensitiveToChange(t *testing.T) {
 		{"add nic", func(o *InitOptions) { o.NodeNICs["SRV8"] = "eno1" }},
 		{"toggle allow-dns-not-ready", func(o *InitOptions) { o.AllowDNSNotReady = true }},
 		{"change rook-osd-size", func(o *InitOptions) { o.RookOSDSizeGB = 750 }},
+		// C4 reviewer P1 (48d57b8f follow-up): NoPush changes
+		// apply-time behavior (skips push + flux-install), so a
+		// dry-run/apply-plan flag mismatch MUST fire
+		// ErrPlanInputDrift instead of silently applying a
+		// commit+push+flux-install run that the operator reviewed
+		// as a local-only preview (or vice versa).
+		{"toggle no-push", func(o *InitOptions) { o.NoPush = true }},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -146,11 +153,16 @@ func copyMap(in map[string]string) map[string]string {
 
 func TestComputeInputHash_ExcludesApplyFlowFlags(t *testing.T) {
 	// Apply-flow flags (--dry-run / --apply-plan / --plan-file /
-	// --yes / --no-tty / --no-push) MUST NOT affect InputHash —
-	// otherwise the canonical flow ("dry-run, then apply-plan with
-	// --yes") would always fail with ErrPlanInputDrift. Plus
-	// --github-token (review-pass — P2): rotating credentials
-	// between dry-run and apply must not invalidate the plan.
+	// --yes / --no-tty) MUST NOT affect InputHash — otherwise the
+	// canonical flow ("dry-run, then apply-plan with --yes") would
+	// always fail with ErrPlanInputDrift. Plus --github-token
+	// (review-pass — P2): rotating credentials between dry-run and
+	// apply must not invalidate the plan.
+	//
+	// NOTE: --no-push is NOT excluded — it changes apply-time
+	// behavior (skips push + flux-install) so a dry-run/apply
+	// mismatch there IS a real drift. See the "toggle no-push"
+	// case in TestComputeInputHash_SensitiveToChange.
 	base := cloudacropolisOpts()
 	baseHash, _ := ComputeInputHash(base)
 
@@ -163,7 +175,6 @@ func TestComputeInputHash_ExcludesApplyFlowFlags(t *testing.T) {
 		{"PlanFile set", func(o *InitOptions) { o.PlanFile = "/tmp/p.json" }},
 		{"Yes on", func(o *InitOptions) { o.Yes = true }},
 		{"NoTTY on", func(o *InitOptions) { o.NoTTY = true }},
-		{"NoPush on", func(o *InitOptions) { o.NoPush = true }},
 		{"GitHubToken set", func(o *InitOptions) { o.GitHubToken = "ghp_TEST_TOKEN_NEW" }},
 		{"GitHubToken rotated", func(o *InitOptions) { o.GitHubToken = "ghp_TEST_TOKEN_ROTATED" }},
 	}
@@ -416,6 +427,47 @@ func TestRender_GreenfieldShape(t *testing.T) {
 	// header.
 	if strings.Contains(body, "== Detected: existing-fleet ==") {
 		t.Errorf("greenfield render leaked existing-fleet header")
+	}
+}
+
+// TestRender_NoPushShape — C4 reviewer P1: the render must match
+// what apply.go actually does under --no-push. Two invariants:
+// (1) the commit line reflects local-only (no "+ push"), and (2)
+// flux-install.sh is absent from the script list (Flux needs a
+// pushed commit to reconcile; apply skips the script). Before this
+// slice the render showed "+ push" AND flux-install even under
+// --no-push, so an operator dry-run+reviewed a preview that didn't
+// match the apply behavior.
+func TestRender_NoPushShape(t *testing.T) {
+	o := cloudacropolisOpts()
+	o.NoPush = true
+	o.FleetMode = FleetNewRepo
+	o.GitHubOwner = "kube-dc"
+	o.GitHubRepo = "kube-dc-fleet"
+	p, err := BuildPlan(o, FleetState{})
+	if err != nil {
+		t.Fatalf("BuildPlan: %v", err)
+	}
+	var buf bytes.Buffer
+	p.Render(&buf)
+	body := buf.String()
+
+	// (1) commit line is local-only + explicitly labels the skipped
+	// downstream steps. Must NOT include "+ push".
+	if !strings.Contains(body, "(in-process) git add + commit") {
+		t.Errorf("--no-push render missing local commit step:\n%s", body)
+	}
+	if strings.Contains(body, "git add + commit + push") {
+		t.Errorf("--no-push render leaked '+ push' step:\n%s", body)
+	}
+	if !strings.Contains(body, "--no-push set; push + flux-install skipped") {
+		t.Errorf("--no-push render missing skip explanation:\n%s", body)
+	}
+
+	// (2) flux-install.sh must NOT appear — apply.go skips it under
+	// --no-push (see TestApply_NoPush_SkipsFluxInstall).
+	if strings.Contains(body, "bootstrap/flux-install.sh") {
+		t.Errorf("--no-push render leaked flux-install.sh (apply.go skips it):\n%s", body)
 	}
 }
 

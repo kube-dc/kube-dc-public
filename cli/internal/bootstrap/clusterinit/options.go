@@ -243,6 +243,24 @@ var ErrModeAutoUnresolved = errors.New("init: ModeAuto reached Validate unresolv
 // Deprecated: use ErrModeAutoUnresolved.
 var ErrModeAutoNotImplemented = ErrModeAutoUnresolved
 
+// ErrAddonsNotImplemented fails `--addon` closed. The flag, the
+// `allowedAddons` registry, `validateAddons`, and the `inputsForHash`
+// participation are all in place, but NOTHING in the apply path
+// consumes `o.Addons` yet — `bootstrap/add-cluster.sh` scaffolds no
+// addon files and no deferred step applies them. Rather than accept a
+// flag that validates + hashes + renders but does nothing (a
+// truth-in-advertising bug surfaced by the 2026-07-04 E2E shakedown),
+// Validate refuses any non-empty --addon until the addon engine slice
+// ships. The message points at the manual path so operators aren't
+// stuck: hand-author `clusters/<name>/addons.yaml` (see the live
+// siblings, e.g. clusters/cloudacropolis/addons.yaml, for the
+// Kustomization shape).
+//
+// When the addon slice lands, delete this sentinel + the guard in
+// Validate and wire the rendering hook — the registry + hash plumbing
+// is deliberately kept so that's the only change needed.
+var ErrAddonsNotImplemented = errors.New("init: --addon is not yet wired into apply (the flag validates but scaffolds nothing); omit it and hand-author clusters/<name>/addons.yaml post-install — see clusters/cloudacropolis/addons.yaml for the shape")
+
 // --- Validation ---
 
 // clusterNameRegex permits the same shape `add-cluster.sh` accepts —
@@ -291,6 +309,14 @@ func (o *InitOptions) Validate() error {
 	// mode. (M4-T01+T02 review-pass — P1/P2.)
 	if o.Mode == ModeAuto {
 		return ErrModeAutoNotImplemented
+	}
+
+	// --addon fails closed until the addon engine slice ships — the
+	// flag is validated structurally above (registry + dedup) so a
+	// typo still gets the registry error first, but a *valid* addon
+	// must not silently no-op through apply. (E2E shakedown 2026-07-04.)
+	if len(o.Addons) > 0 {
+		return ErrAddonsNotImplemented
 	}
 
 	// --github-owner + --github-repo are required for ANY fleet

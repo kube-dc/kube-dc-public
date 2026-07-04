@@ -93,18 +93,25 @@ func TestValidate_Structural(t *testing.T) {
 }
 
 func TestValidate_Addons(t *testing.T) {
+	// --addon fails closed (ErrAddonsNotImplemented) until the addon
+	// engine slice ships — see the sentinel's godoc. Structural
+	// validation (registry + dedup) still runs FIRST (structural pass
+	// precedes the cross-flag fail-closed), so a bad value gets its
+	// specific structural error rather than the generic not-wired one.
 	cases := []struct {
 		name    string
 		addons  []string
-		wantErr bool
-		wantSub string
+		wantSub string // "" means expect no error
 	}{
-		{"empty ok", nil, false, ""},
-		{"single ok", []string{"metallb"}, false, ""},
-		{"all known ok", []string{"metallb", "sso-google", "stripe-billing", "velero"}, false, ""},
-		{"unknown rejected", []string{"foo-addon"}, true, "not in registry"},
-		{"duplicate rejected", []string{"metallb", "metallb"}, true, "specified more than once"},
-		{"mixed unknown + known", []string{"metallb", "foo-addon"}, true, "not in registry"},
+		{"empty ok", nil, ""},
+		// Valid addons now fail closed — the flag validates but
+		// scaffolds nothing, so accepting it would be a no-op lie.
+		{"single valid fails closed", []string{"metallb"}, "not yet wired"},
+		{"all known fail closed", []string{"metallb", "sso-google", "stripe-billing", "velero"}, "not yet wired"},
+		// Structural errors still win (they run before the fail-closed).
+		{"unknown rejected", []string{"foo-addon"}, "not in registry"},
+		{"duplicate rejected", []string{"metallb", "metallb"}, "specified more than once"},
+		{"mixed unknown + known", []string{"metallb", "foo-addon"}, "not in registry"},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -112,16 +119,30 @@ func TestValidate_Addons(t *testing.T) {
 			o := validBase()
 			o.Addons = tc.addons
 			err := o.Validate()
-			if tc.wantErr && err == nil {
-				t.Fatalf("expected error containing %q", tc.wantSub)
+			if tc.wantSub == "" {
+				if err != nil {
+					t.Fatalf("expected ok, got %v", err)
+				}
+				return
 			}
-			if !tc.wantErr && err != nil {
-				t.Fatalf("expected ok, got %v", err)
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tc.wantSub)
 			}
-			if tc.wantErr && !strings.Contains(err.Error(), tc.wantSub) {
+			if !strings.Contains(err.Error(), tc.wantSub) {
 				t.Fatalf("error %q missing substring %q", err.Error(), tc.wantSub)
 			}
 		})
+	}
+}
+
+func TestValidate_Addons_FailsClosedWithSentinel(t *testing.T) {
+	// A valid --addon must surface the typed ErrAddonsNotImplemented
+	// so cobra/ downstream errors.Is checks can special-case it.
+	o := validBase()
+	o.Addons = []string{"metallb"}
+	err := o.Validate()
+	if !errors.Is(err, ErrAddonsNotImplemented) {
+		t.Fatalf("expected ErrAddonsNotImplemented, got %v", err)
 	}
 }
 

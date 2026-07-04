@@ -674,31 +674,66 @@ func TestBootstrapInit_FlagConflicts(t *testing.T) {
 func TestBootstrapInit_RepeatableFlags(t *testing.T) {
 	// Baseline already carries the 5 --set required keys for
 	// cloud+public-vlan (M4-T04). This test layers additional
-	// non-required --set + --node-nic + --addon entries to
-	// exercise the repeatable-flag handling.
+	// non-required --set + --node-nic entries to exercise the
+	// repeatable-flag handling. NOTE: --addon is deliberately absent —
+	// it now fails closed (see TestBootstrapInit_Addon_FailsClosed);
+	// its repeatable-parsing is covered by the unknown-addon case in
+	// FlagConflicts.
 	args := append(validCloudacropolisArgs(),
 		"--set=PROM_STORAGE=50Gi",
 		"--set=PROM_RETENTION=730d",
 		"--node-nic=SRV5-Kub1=enp1s0",
 		"--node-nic=SRV6-Kub1=enp1s0",
-		"--addon=metallb",
-		"--addon=velero",
 	)
 	body, err := runInitCmd(t, args)
 	if err != nil {
 		t.Fatalf("repeatable flags should validate, got %v\nout:\n%s", err, body)
 	}
-	// The plan render shows customInterfaces-rendering step when
-	// --node-nic is set, addons in the file list, and the count of
-	// nic mappings.
+	// The plan render shows the customInterfaces-rendering step + the
+	// count of nic mappings when --node-nic is repeated. NOTE: the
+	// plan no longer claims an "addons overlay" file — add-cluster.sh
+	// scaffolds no addon files and nothing in the apply path consumes
+	// o.Addons, so listing an addons file was a dry-run fidelity lie
+	// (E2E shakedown 2026-07-04).
 	for _, want := range []string{
 		"2 --node-nic mapping",
-		"addons overlay (metallb, velero)",
 		"customInterfaces",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("plan render missing %q\nFULL:\n%s", want, body)
 		}
+	}
+	// Guard the fix: the plan must NOT resurrect the phantom overlay
+	// files the scaffold never writes.
+	for _, absent := range []string{
+		"addons overlay",
+		"infra-object-storage",
+		"object-storage overlay",
+	} {
+		if strings.Contains(body, absent) {
+			t.Errorf("plan render leaked phantom file %q (add-cluster.sh does not scaffold it)\nFULL:\n%s", absent, body)
+		}
+	}
+}
+
+func TestBootstrapInit_Addon_FailsClosed(t *testing.T) {
+	// E2E shakedown 2026-07-04: --addon validated + hashed + rendered
+	// but scaffolded nothing (a no-op). It now fails closed. A VALID
+	// addon must reach the cobra surface as ErrAddonsNotImplemented
+	// (wrapped by nothing — returned directly from Validate) so the
+	// operator gets the actionable manual-path message. This fires even
+	// under --dry-run (a plan preview with phantom addons would be the
+	// same lie).
+	args := append(validCloudacropolisArgs(), "--addon=metallb")
+	_, err := runInitCmd(t, args)
+	if err == nil {
+		t.Fatal("expected --addon to fail closed, got nil")
+	}
+	if !errors.Is(err, clusterinit.ErrAddonsNotImplemented) {
+		t.Fatalf("expected ErrAddonsNotImplemented, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "addons.yaml") {
+		t.Errorf("error should point at the manual addons.yaml path, got %q", err.Error())
 	}
 }
 
@@ -790,6 +825,52 @@ func TestBootstrapInit_InheritsFromFleetSiblings(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("inheritance render missing %q\nFULL:\n%s", want, body)
 		}
+	}
+}
+
+func TestDiscoverFleetState_PopulatesSOPSRecipients(t *testing.T) {
+	// E2E shakedown 2026-07-04 regression: discoverFleetState walked
+	// siblings + inherited version pins but never read <repo>/.sops.yaml,
+	// so FleetState.SOPSRecipients stayed 0 and the plan's "sops encrypt"
+	// step always rendered the misleading "single recipient (operator's
+	// local age key)" note even when the fleet had a multi-recipient
+	// block. Assert the count now reflects reality.
+	threeRecipients := "creation_rules:\n" +
+		"  - path_regex: '\\.enc\\.yaml$'\n" +
+		"    age: 'age10mskwx065akee5mw4txeqtnn90t724phdzx9k4jxnrgcp9cces6sqfkwvu," +
+		"age1fugkeh0yhf56d6t2qm8gwqdl3kx7963wv2qq5jax2kewldsfeqgq6p67pm," +
+		"age16nk3t6chcrjntd76s3an32hx3p2y5cup7vnkywny0uy9gn0tkcuqxzav8s'\n"
+
+	cases := []struct {
+		name  string
+		sops  string // .sops.yaml body; "" means don't write the file
+		want  int
+	}{
+		{"three recipients", threeRecipients, 3},
+		{"no sops file", "", 0},
+		{"recipient-less sops", "creation_rules: []\n", 0},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			// A sibling cluster so ListClusters is non-empty and the
+			// existing-fleet path runs end-to-end.
+			repo := writeFleetFixture(t, map[string]string{"cloud": "KUBE_DC_VERSION=v0.3.90\n"})
+			if tc.sops != "" {
+				if err := os.WriteFile(filepath.Join(repo, ".sops.yaml"), []byte(tc.sops), 0o644); err != nil {
+					t.Fatalf("write .sops.yaml: %v", err)
+				}
+			}
+			o := &clusterinit.InitOptions{
+				FleetMode: clusterinit.FleetExistingFleet,
+				Repo:      repo,
+				Name:      "new-cluster",
+			}
+			st := discoverFleetState(o)
+			if st.SOPSRecipients != tc.want {
+				t.Errorf("SOPSRecipients = %d, want %d", st.SOPSRecipients, tc.want)
+			}
+		})
 	}
 }
 
