@@ -153,6 +153,14 @@ strictly; for unattended runs add `--ssh-accept-new-host-keys` (records +
 trusts an **unknown** host key — a key **mismatch** is still refused as a
 possible MITM).
 
+> The jump covers the **SSH-driven** steps only (`connect` / `install` /
+> `fetch-kubeconfig`). Phase 3's `bootstrap init` reaches the cluster's
+> **apiserver over HTTPS** (via `kube-api.<domain>` → the node's public
+> IP), not over SSH — so the node still needs its API endpoint reachable
+> from wherever you run `init` (a public FIP + the wildcard DNS from
+> §3.2). A node with *no* public endpoint would need the apiserver
+> tunnelled separately; `--ssh-jump` does not do that.
+
 **Pre-flight (optional):** `kube-dc bootstrap connect root@203.0.113.10`
 checks a node is reachable + drivable before you install — SSH reach/auth,
 passwordless `sudo -n` (install needs it), and the internal IP that would
@@ -284,7 +292,7 @@ node-token and internal IP are read over SSH, and the worker's RKE2 agent
 is installed and joined:
 
 ```bash
-# --ssh-host    the new worker (must be directly reachable)
+# --ssh-host    the new worker
 # --join-server any existing control-plane node (token + internal IP read over SSH)
 # --dry-run     review the plan first, then drop it to apply
 kube-dc bootstrap install worker-1 \
@@ -299,9 +307,10 @@ the server it joins. The agent dials the control-plane's **internal** IP
 (auto-detected, never a NAT/floating IP). The worker registers and shows
 up in `kubectl get nodes` (NotReady until kube-ovn schedules onto it). If
 you already have the token, pass `--join-token` + `--cp-host` to skip the
-control-plane SSH. Note: v1 has no ProxyJump — run from a host that can
-reach the worker directly (a bastion on the network, or the control-plane
-node itself).
+control-plane SSH. To reach the worker (and the `--join-server`
+control-plane) through a bastion, add `--ssh-jump user@bastion` — see the
+[reachability note](#20-one-command-kube-dc-bootstrap-install-recommended)
+in §2.0.
 
 > This flow is validated end-to-end (a worker VM joining a live cluster).
 

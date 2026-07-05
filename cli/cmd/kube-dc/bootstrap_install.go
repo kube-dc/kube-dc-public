@@ -77,9 +77,8 @@ directly). Two roles:
                            (etcd quorum); it writes its own config so it
                            still needs --domain + --preset, same as the
                            first server.
-The control-plane node's SSH endpoint must be directly reachable (no
-multi-hop/ProxyJump in v1); run from a bastion that can reach it, or from
-the control-plane node itself.
+The new node and the --join-server control-plane can be reached through a
+bastion — see "Reaching nodes" below (--ssh-jump / ~/.ssh/config ProxyJump).
 
 Required flags:
   --ssh-host <endpoint>  Node SSH endpoint: user@host or a ~/.ssh/config alias.
