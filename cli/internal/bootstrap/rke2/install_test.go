@@ -14,6 +14,8 @@ import (
 type fakeSSH struct {
 	runs     map[string]string // cmd substring -> stdout
 	runErr   map[string]error
+	fetch    map[string]string // remotePath -> contents
+	fetchErr map[string]error
 	putPath  string
 	putBody  []byte
 	putMode  uint32
@@ -30,7 +32,13 @@ func (f *fakeSSH) Run(_ context.Context, _ ports.SSHHost, cmd string) ([]byte, e
 	}
 	return nil, nil
 }
-func (f *fakeSSH) Fetch(_ context.Context, _ ports.SSHHost, _ string) ([]byte, error) {
+func (f *fakeSSH) Fetch(_ context.Context, _ ports.SSHHost, remotePath string) ([]byte, error) {
+	if err := f.fetchErr[remotePath]; err != nil {
+		return nil, err
+	}
+	if v, ok := f.fetch[remotePath]; ok {
+		return []byte(v), nil
+	}
 	return nil, nil
 }
 func (f *fakeSSH) Put(_ context.Context, _ ports.SSHHost, remotePath string, body []byte, mode uint32) error {

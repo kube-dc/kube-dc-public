@@ -164,20 +164,21 @@ recovery on production). Pick the tier that matches your node memory:
 
 | Node memory | `system-reserved` | `kube-reserved` | `eviction-hard` | `max-pods` |
 |---|---|---|---|---|
-| **\<32 GiB** | `cpu=200m,memory=1Gi` | `cpu=200m,memory=1Gi` | `memory.available<500Mi,nodefs.available<10%` | `110` |
-| **32–64 GiB** | `cpu=300m,memory=2Gi` | `cpu=300m,memory=2Gi` | `memory.available<1Gi,nodefs.available<10%` | `180` |
+| **\<32 GiB** | `cpu=200m,memory=1Gi` | `cpu=200m,memory=1Gi` | `memory.available<500Mi,nodefs.available<10%` | `200` |
+| **32–64 GiB** | `cpu=300m,memory=2Gi` | `cpu=300m,memory=2Gi` | `memory.available<1Gi,nodefs.available<10%` | `220` |
 | **≥64 GiB** | `cpu=500m,memory=4Gi` | `cpu=500m,memory=4Gi` | `memory.available<2Gi,nodefs.available<10%` | `250` |
 
 Each tier reserves ≈10–15% of total memory — generous enough to
 protect system services even under burst, slim enough to leave the
 bulk of the box for tenant workloads. `max-pods` overrides Kubernetes'
-upstream 110-pods-per-node default; on a 125 GiB node the default
-hits the pod-count cap before memory does (≈ 1 GiB/pod budget),
-blocking new schedules even when memory is plentiful. The fleet
-bootstrap script (`kube-dc-fleet/bootstrap/rke2/install-server.sh`)
-selects the right tier automatically from `/proc/meminfo`. The
-example below uses the **≥64 GiB tier** since production Kube-DC
-nodes are typically large.
+upstream 110-pods-per-node default — kube-dc is pod-dense (an all-in-one
+node runs the whole platform and exceeds 110 during reconcile), so the
+floor is **200** even on the smallest tier; larger nodes get more
+headroom. The fleet bootstrap script
+(`kube-dc-fleet/bootstrap/rke2/install-server.sh`) — the same one
+`kube-dc bootstrap install` embeds — selects the right tier
+automatically from `/proc/meminfo`. The example below uses the
+**≥64 GiB tier** since production Kube-DC nodes are typically large.
 
 ```bash
 sudo mkdir -p /etc/rancher/rke2/
@@ -259,7 +260,38 @@ sudo cat /var/lib/rancher/rke2/server/node-token
 
 Save this token — you need it for `master-2` and `master-3`.
 
-### 2.3 Join master-2 and master-3
+### 2.3 Add worker nodes with `kube-dc bootstrap install --join-server`
+
+To add a **worker** (rke2-agent) to the cluster, point the same
+`bootstrap install` command at an existing control-plane node — its
+node-token and internal IP are read over SSH, and the worker's RKE2 agent
+is installed and joined:
+
+```bash
+# --ssh-host    the new worker (must be directly reachable)
+# --join-server any existing control-plane node (token + internal IP read over SSH)
+# --dry-run     review the plan first, then drop it to apply
+kube-dc bootstrap install worker-1 \
+  --ssh-host root@203.0.113.20 \
+  --name worker-1 \
+  --join-server root@203.0.113.10 \
+  --dry-run
+```
+
+No `--domain`/`--preset` needed — a worker inherits cluster config from
+the server it joins. The agent dials the control-plane's **internal** IP
+(auto-detected, never a NAT/floating IP). The worker registers and shows
+up in `kubectl get nodes` (NotReady until kube-ovn schedules onto it). If
+you already have the token, pass `--join-token` + `--cp-host` to skip the
+control-plane SSH. Note: v1 has no ProxyJump — run from a host that can
+reach the worker directly (a bastion on the network, or the control-plane
+node itself).
+
+> This flow is validated end-to-end (a worker VM joining a live cluster).
+> HA control-plane join (additional `server` nodes for etcd quorum) is not
+> yet wrapped by the CLI — use the manual steps below for `master-2/3`.
+
+### 2.3.1 Join master-2 and master-3 (manual — additional control-plane nodes)
 
 On **each additional node** (`master-2`, `master-3`), create the RKE2 config and join:
 

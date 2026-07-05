@@ -287,12 +287,10 @@ func parseRouteSrc(out []byte) (string, error) {
 }
 
 // rke2Active reports whether rke2-server.service is active on the node.
+// (`is-active` exits non-zero when inactive; the `|| true` keeps a clean
+// "not active" rather than an error — see serviceActive in join.go.)
 func rke2Active(ctx context.Context, ssh ports.SSHClient, host ports.SSHHost) (bool, error) {
-	// `is-active` exits non-zero when inactive; the SSH adapter returns
-	// that as an error, so treat a clean "active" stdout as the only
-	// positive and swallow the non-zero-exit case as "not active".
-	out, _ := ssh.Run(ctx, host, "systemctl is-active rke2-server.service 2>/dev/null || true")
-	return strings.TrimSpace(string(out)) == "active", nil
+	return serviceActive(ctx, ssh, host, "rke2-server"), nil
 }
 
 // remoteInstallCmd builds the `sudo -n env K=V ... bash <script>` line.

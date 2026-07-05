@@ -68,6 +68,53 @@ func TestResolveInstallCIDRs_Errors(t *testing.T) {
 	}
 }
 
+func TestIsWorkerJoinMode(t *testing.T) {
+	cases := []struct {
+		joinServer, joinToken, cpHost string
+		want                          bool
+	}{
+		{"ubuntu@cp", "", "", true},   // --join-server
+		{"", "tok", "10.0.0.3", true}, // token + cp-host
+		{"", "tok", "", false},        // token alone → first-server
+		{"", "", "10.0.0.3", false},   // cp-host alone → first-server
+		{"", "", "", false},           // greenfield first-server
+		{"ubuntu@cp", "tok", "10.0.0.3", true},
+	}
+	for _, c := range cases {
+		if got := isWorkerJoinMode(c.joinServer, c.joinToken, c.cpHost); got != c.want {
+			t.Errorf("isWorkerJoinMode(%q,%q,%q) = %v, want %v", c.joinServer, c.joinToken, c.cpHost, got, c.want)
+		}
+	}
+}
+
+func TestBootstrapInstall_PartialJoinFlagsFailClosed(t *testing.T) {
+	// A join-only flag with an INCOMPLETE join shape must error — even
+	// with --domain present — rather than silently fall into a first-server
+	// install on the intended worker. All cases fail before any SSH.
+	cases := [][]string{
+		{"--ssh-host", "root@192.0.2.20", "--name", "worker-1", "--join-token", "tok"},
+		{"--ssh-host", "root@192.0.2.20", "--name", "worker-1", "--cp-host", "10.0.0.3"},
+		{"--ssh-host", "root@192.0.2.20", "--name", "worker-1", "--cp-port", "9345"},
+		// The dangerous one: a stray --domain would otherwise pass the
+		// first-server gate and install a new server on the worker.
+		{"--ssh-host", "root@192.0.2.20", "--name", "worker-1", "--join-token", "tok", "--domain", "example.com"},
+	}
+	for _, args := range cases {
+		var buf bytes.Buffer
+		repo := ""
+		cmd := bootstrapInstallCmd(&repo)
+		cmd.SetOut(&buf)
+		cmd.SetErr(&buf)
+		cmd.SetArgs(args)
+		err := cmd.Execute()
+		if err == nil {
+			t.Errorf("args %v should fail closed", args)
+		} else if !strings.Contains(err.Error(), "incomplete worker-join") {
+			t.Errorf("args %v: want an incomplete-worker-join error, got %v", args, err)
+		}
+	}
+}
+
 func TestBootstrapInstall_RejectsBadDomainAndName(t *testing.T) {
 	// Field validation must fire before any SSH.
 	cases := [][]string{

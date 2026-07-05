@@ -37,6 +37,11 @@ func bootstrapInstallCmd(fleetRepo *string) *cobra.Command {
 		rke2Version string
 		force       bool
 		dryRun      bool
+		// Worker-join mode (--join-server routes to rke2.JoinWorker).
+		joinServer string
+		joinToken  string
+		cpHost     string
+		cpPort     int
 	)
 	cmd := &cobra.Command{
 		Use:           "install <cluster-node>",
@@ -55,16 +60,25 @@ SSH, with the canonical config:
 The node comes up NotReady (no CNI yet) — that is expected. Finish the
 install with 'bootstrap fetch-kubeconfig' then 'bootstrap init'.
 
+Worker join: pass --join-server <control-plane-ssh> to add a WORKER
+(rke2-agent) to an existing cluster instead of installing a first server.
+The node-token and the control-plane's INTERNAL IP are read over SSH (or
+supply --join-token + --cp-host directly); --domain/--preset are not
+needed — a worker inherits cluster config from the server it joins. The
+control-plane node's SSH endpoint must be directly reachable (no
+multi-hop/ProxyJump in v1); run from a bastion that can reach it, or from
+the control-plane node itself.
+
 Required flags:
   --ssh-host <endpoint>  Node SSH endpoint: user@host or a ~/.ssh/config alias.
-  --domain <fqdn>        Cluster public FQDN (drives tls-san).
+  --domain <fqdn>        Cluster public FQDN (first-server only; drives tls-san).
   --name <node-name>     RKE2 node-name; use the SAME name in 'init'
                          (--rook-osd-node, KUBE_OVN_MASTER_NODES).
 
 SSH auth: ssh-agent first, then ~/.ssh/config IdentityFile (never a
 --ssh-key flag). Passwordless sudo (or a root login) is required on the
 node — the installer runs 'sudo -n'.`,
-		Example: `  # Review first, then run
+		Example: `  # First control-plane node — review first, then run
   kube-dc bootstrap install dc1 --ssh-host root@203.0.113.10 \
     --domain acme.com --name dc1 --preset cloud+public-vlan --dry-run
   kube-dc bootstrap install dc1 --ssh-host root@203.0.113.10 \
@@ -72,7 +86,11 @@ node — the installer runs 'sudo -n'.`,
 
   # Lab single node
   kube-dc bootstrap install lab --ssh-host ubuntu@192.0.2.10 \
-    --domain lab.example.com --name lab --preset internal-only`,
+    --domain lab.example.com --name lab --preset internal-only
+
+  # Add a WORKER to an existing cluster (token + CP internal IP read over SSH)
+  kube-dc bootstrap install worker-1 --ssh-host root@203.0.113.20 \
+    --name worker-1 --join-server root@203.0.113.10`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// The positional arg is a convenience label for --name.
@@ -82,19 +100,8 @@ node — the installer runs 'sudo -n'.`,
 			if sshHost == "" {
 				return fmt.Errorf("bootstrap install: --ssh-host is required (user@host or a ~/.ssh/config alias)")
 			}
-			if domain == "" {
-				return fmt.Errorf("bootstrap install: --domain is required")
-			}
 			if nodeName == "" {
 				return fmt.Errorf("bootstrap install: --name (node name) is required")
-			}
-
-			// Validate the fields that get written into the RKE2 config,
-			// reusing init's field validators so both commands agree on
-			// what a valid domain/name/IP is (a typo here would otherwise
-			// land in /etc/rancher/rke2/config.yaml on the node).
-			if err := clusterinit.ValidateDomainField(domain); err != nil {
-				return fmt.Errorf("bootstrap install: --domain: %w", err)
 			}
 			if err := clusterinit.ValidateK8sNodeNameField(nodeName); err != nil {
 				return fmt.Errorf("bootstrap install: --name: %w", err)
@@ -103,6 +110,58 @@ node — the installer runs 'sudo -n'.`,
 				if err := clusterinit.ValidateNodeIPField(nodeIP); err != nil {
 					return fmt.Errorf("bootstrap install: --node-ip: %w", err)
 				}
+			}
+
+			// Fail CLOSED on a partial join shape. Any join-only flag
+			// signals worker-join intent; an incomplete shape must error
+			// rather than silently fall into a first-server install on the
+			// intended worker (which a stray --domain would otherwise let
+			// through — installing a brand-new RKE2 server on the worker).
+			joinIntent := joinServer != "" || joinToken != "" || cpHost != "" || cpPort != 0
+			if joinIntent && !isWorkerJoinMode(joinServer, joinToken, cpHost) {
+				return fmt.Errorf("bootstrap install: incomplete worker-join flags — pass --join-server <control-plane>, or both --join-token and --cp-host")
+			}
+
+			// Worker-join mode: either --join-server points at an existing
+			// control-plane node (SSH endpoint) whose node-token + internal
+			// IP we read, OR the operator supplies both --join-token and
+			// --cp-host directly (no control-plane SSH needed). The worker
+			// (--ssh-host) gets an rke2-agent. No --domain / --preset needed
+			// — a worker inherits cluster config from the server it joins.
+			if isWorkerJoinMode(joinServer, joinToken, cpHost) {
+				sshClient, err := bootstrap.NewSSHOnly()
+				if err != nil {
+					return fmt.Errorf("bootstrap install: build ssh adapter: %w", err)
+				}
+				if cpHost != "" {
+					if err := clusterinit.ValidateNodeIPField(cpHost); err != nil {
+						return fmt.Errorf("bootstrap install: --cp-host: %w", err)
+					}
+				}
+				return rke2.JoinWorker(cmd.Context(), rke2.JoinWorkerOptions{
+					SSH:          sshClient,
+					Worker:       parseSSHHostArg(sshHost),
+					WorkerName:   nodeName,
+					WorkerIP:     nodeIP,
+					ControlPlane: parseSSHHostArg(joinServer),
+					JoinToken:    joinToken,
+					CPHost:       cpHost,
+					CPPort:       cpPort,
+					RKE2Version:  rke2Version,
+					Force:        force,
+					DryRun:       dryRun,
+					Out:          cmd.OutOrStdout(),
+				})
+			}
+
+			// First-server (greenfield) mode requires --domain (drives
+			// tls-san). Name + node-ip were validated above; validate the
+			// remaining first-server-only fields here.
+			if domain == "" {
+				return fmt.Errorf("bootstrap install: --domain is required (first-server install); for a worker use --join-server")
+			}
+			if err := clusterinit.ValidateDomainField(domain); err != nil {
+				return fmt.Errorf("bootstrap install: --domain: %w", err)
 			}
 			if externalIP != "" {
 				if err := clusterinit.ValidateNodeIPField(externalIP); err != nil {
@@ -139,17 +198,33 @@ node — the installer runs 'sudo -n'.`,
 		},
 	}
 	cmd.Flags().StringVar(&sshHost, "ssh-host", "", "Node SSH endpoint — `user@host` or a ~/.ssh/config alias (required)")
-	cmd.Flags().StringVar(&domain, "domain", "", "Cluster public FQDN — drives tls-san (required)")
+	cmd.Flags().StringVar(&domain, "domain", "", "Cluster public FQDN — drives tls-san (required for a first-server install)")
 	cmd.Flags().StringVar(&nodeName, "name", "", "RKE2 node-name (required; or pass as the positional arg)")
-	cmd.Flags().StringVar(&preset, "preset", "internal-only", "Network preset for CIDR defaults: internal-only|cloud-vlan|cloud+public-vlan|custom")
+	cmd.Flags().StringVar(&preset, "preset", "internal-only", "Network preset for CIDR defaults: internal-only|cloud-vlan|cloud+public-vlan|custom (first-server only)")
 	cmd.Flags().StringArrayVar(&sets, "set", nil, "Override a preset value, e.g. --set POD_CIDR=10.100.0.0/16 (repeatable)")
-	cmd.Flags().StringVar(&nodeIP, "node-ip", "", "Node internal IP + apiserver advertise-address (default: auto-detected over SSH)")
-	cmd.Flags().StringVar(&externalIP, "external-ip", "", "RKE2 node-external-ip (default: same as --node-ip)")
+	cmd.Flags().StringVar(&nodeIP, "node-ip", "", "Node internal IP (default: auto-detected over SSH). First-server: also the apiserver advertise-address")
+	cmd.Flags().StringVar(&externalIP, "external-ip", "", "RKE2 node-external-ip (default: same as --node-ip; first-server only)")
 	cmd.Flags().StringVar(&rke2Version, "rke2-version", "", "RKE2 version (default: the pinned kube-dc default)")
-	cmd.Flags().BoolVar(&force, "force", false, "Re-run even if rke2-server is already active on the node")
+	cmd.Flags().BoolVar(&force, "force", false, "Re-run even if rke2 is already active on the node (restarts to apply config)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Resolve + print the plan (incl. read-only SSH probes); change nothing")
+	// Worker-join mode.
+	cmd.Flags().StringVar(&joinServer, "join-server", "", "Join a WORKER instead of installing a first server: SSH endpoint of an existing control-plane node (its node-token + internal IP are read over SSH)")
+	cmd.Flags().StringVar(&joinToken, "join-token", "", "Worker join: node-token (default: read from the --join-server node)")
+	cmd.Flags().StringVar(&cpHost, "cp-host", "", "Worker join: control-plane INTERNAL IP the agent dials (default: detected from --join-server)")
+	cmd.Flags().IntVar(&cpPort, "cp-port", 0, "Worker join: control-plane supervisor port (default: 9345)")
 	_ = fleetRepo // install is fleet-independent (self-contained embedded installer); flag accepted for parity
 	return cmd
+}
+
+// isWorkerJoinMode reports whether the flags describe a COMPLETE
+// worker-join shape: either --join-server (SSH to a control-plane to
+// read the token + internal IP) or both --join-token and --cp-host
+// supplied directly (no control-plane SSH needed). A lone --join-token
+// or --cp-host is NOT a complete shape; the caller treats any join-only
+// flag with an incomplete shape as an error (fail closed) rather than
+// silently falling into a first-server install on the worker.
+func isWorkerJoinMode(joinServer, joinToken, cpHost string) bool {
+	return joinServer != "" || (joinToken != "" && cpHost != "")
 }
 
 // resolveInstallCIDRs pulls POD_CIDR / SERVICE_CIDR / CLUSTER_DNS from
