@@ -1,9 +1,0 @@
-apiVersion: kube-dc.com/v1
-kind: Project
-metadata:
-  name: {{ .variables.create_default.project.name }}
-  namespace: {{ .variables.create_default.organization.name }}
-spec:
-  cidrBlock: {{ .variables.create_default.project.cidr_block }}
-  egressNetworkType: {{ .variables.create_default.project.egress_network_type | default "cloud" }}
-

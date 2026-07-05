@@ -1,9 +1,0 @@
-ingressShim:
-  defaultIssuerKind: "ClusterIssuer"
-  defaultIssuerName: "letsencrypt-prod"
-securityContext:
-  enabled: false
-serviceAccount:
-  create: false
-crds:
-  enabled: true
