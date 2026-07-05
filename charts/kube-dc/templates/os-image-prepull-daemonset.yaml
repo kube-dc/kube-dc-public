@@ -1,0 +1,97 @@
+{{- if .Values.osImagePrepull.enabled }}
+# OS-image pre-pull (vm-startup-acceleration M1-T05, default off).
+#
+# Keeps every node's containerd cache warm with the catalog's containerdisk
+# images so first-VM-on-a-cold-node skips the origin pull, and upgrades the
+# spegel cold-burst guarantee from "once per cold node" to "once per cluster"
+# (PRD §6-A). Reads digest-pinned refs from the cdi-os-catalog ConfigMap
+# (families[].registryURL — only present for families with a containerdisk).
+#
+# WARM LATENCY: the mirror-refresh job publishes new digests into the mounted
+# cdi-os-catalog ConfigMap; kubelet propagates the change to the volume within
+# its sync period. This DaemonSet POLLS the mounted catalog every pollMinutes
+# and pulls any digest-pinned ref NOT currently present in this node's
+# containerd store, so a freshly published digest is warmed within pollMinutes
+# on every node — with NO coupling to the refresh job's lifecycle. This is why
+# it's a poll loop, not a weekly CronJob.
+#
+# GC-AWARE: the skip check is a live `crictl inspecti` (local containerd query,
+# no registry round-trip) — NOT an in-pod remembered set. If kubelet/containerd
+# image GC later evicts a warmed image, the next poll sees it absent and
+# re-pulls it, so the "keep warm" contract survives GC. A failed pull is simply
+# retried next poll (self-healing).
+#
+# Runs as a DaemonSet because the pull must happen ON every node (containerd
+# socket is node-local). Uses the host's own crictl binary (statically linked,
+# shipped by RKE2) against the RKE2 containerd socket — no extra tooling image
+# needed beyond kubectl-jq (for jq).
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: os-image-prepull
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: os-image-prepull
+spec:
+  selector:
+    matchLabels:
+      app: os-image-prepull
+  template:
+    metadata:
+      labels:
+        app: os-image-prepull
+    spec:
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: prepull
+          image: {{ .Values.osImagePrepull.image }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -u
+              CRICTL="/host-bin/crictl --runtime-endpoint unix:///host-run/containerd.sock"
+              while true; do
+                if [ -f /catalog/catalog.json ]; then
+                  refs=$(jq -r '.families[].registryURL // empty' /catalog/catalog.json | sed 's|^docker://||' | sort -u)
+                  for ref in $refs; do
+                    # Rollout gate: require an EXACT digest pin (sha256 + 64 hex,
+                    # anchored) — same shape the backend/frontend enforce. A
+                    # malformed ref is skipped, not pull-retried forever.
+                    if ! printf '%s' "$ref" | grep -qE '@sha256:[0-9a-f]{64}$'; then
+                      echo "[warn] skipping non-digest/malformed ref (rollout gate): $ref"; continue
+                    fi
+                    # GC-aware idempotence: skip only if the image is STILL in
+                    # containerd (local query, no registry round-trip). After GC
+                    # evicts it, this falls through and re-pulls.
+                    if $CRICTL inspecti "$ref" >/dev/null 2>&1; then continue; fi
+                    echo "[prepull] $ref"
+                    $CRICTL pull "$ref" || echo "[warn] pull failed (retry next poll): $ref"
+                  done
+                else
+                  echo "[warn] cdi-os-catalog not mounted/populated yet"
+                fi
+                sleep {{ mul .Values.osImagePrepull.pollMinutes 60 }}
+              done
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          volumeMounts:
+            - { name: containerd-sock, mountPath: /host-run/containerd.sock, readOnly: false }
+            - { name: host-bin, mountPath: /host-bin, readOnly: true }
+            - { name: catalog, mountPath: /catalog, readOnly: true }
+      volumes:
+        - name: containerd-sock
+          hostPath:
+            path: {{ .Values.osImagePrepull.containerdSocket }}
+            type: Socket
+        - name: host-bin
+          hostPath:
+            path: {{ .Values.osImagePrepull.hostBinDir }}
+            type: Directory
+        - name: catalog
+          configMap:
+            name: cdi-os-catalog
+            optional: true
+{{- end }}

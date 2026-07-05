@@ -144,6 +144,22 @@ same name in `init`), `--node-ip` / `--external-ip` (override auto-detection),
 changes), `--set POD_CIDR=…` (override a preset CIDR). Requires passwordless
 sudo (or a root login) on the node.
 
+**Reaching nodes through a bastion.** `install`, the joins, `fetch-kubeconfig`,
+`remove-node`, and `connect` all honour an SSH jump host from `~/.ssh/config`
+(`ProxyJump`) or via `--ssh-jump user@bastion` — so you can run from your
+laptop against nodes' **internal** IPs, tunnelling through a bastion (the jump
+also covers the `--join-server` control-plane). Host keys are verified
+strictly; for unattended runs add `--ssh-accept-new-host-keys` (records +
+trusts an **unknown** host key — a key **mismatch** is still refused as a
+possible MITM).
+
+**Pre-flight (optional):** `kube-dc bootstrap connect root@203.0.113.10`
+checks a node is reachable + drivable before you install — SSH reach/auth,
+passwordless `sudo -n` (install needs it), and the internal IP that would
+become the apiserver advertise-address. It takes the same `--ssh-jump` /
+`--ssh-accept-new-host-keys` and exits non-zero if the node isn't ready, so
+it works as a CI gate.
+
 Then skip to [§2.4 Verify](#24-verify-the-ha-cluster) (single node) or use §2.3
 to join additional control-plane nodes, and continue to Phase 3.
 
@@ -377,6 +393,31 @@ kubectl get nodes
 ```
 
 All three nodes should appear with the `control-plane,etcd,master` roles. `NotReady` status is expected until the CNI is deployed in Phase 3.
+
+### 2.5 Remove a node with `kube-dc bootstrap remove-node`
+
+To take a node out of the cluster safely, use `remove-node` — it performs
+the steps in the order that protects etcd quorum:
+
+```bash
+# Preview first (prints the plan, changes nothing); then add --yes to apply
+kube-dc bootstrap remove-node worker-3 --ssh-host root@203.0.113.23
+kube-dc bootstrap remove-node worker-3 --ssh-host root@203.0.113.23 --yes
+```
+
+It (1) for a control-plane/etcd node, removes the etcd member **first**
+(while it's still healthy), then (2) cordons + drains, (3) deletes the node
+object, and (4) tears down `rke2` on the host over SSH (`rke2-killall.sh`, or
+`rke2-uninstall.sh` with `--uninstall`). Cluster access uses your `kubectl`
+(`KUBECONFIG` / `--kubeconfig`); the node-side teardown needs `--ssh-host`
+(omit it to skip and run the script yourself). It **refuses to remove the last
+control-plane/etcd node**.
+
+> **etcd quorum:** this ordering matters — deleting a control-plane node/VM
+> *without* removing its etcd member first strands the member and, on a
+> 2-member cluster, breaks quorum the moment the node stops. `remove-node`
+> handles it for you. `remove-node` does **not** delete the VM/host — that's
+> your infrastructure to remove afterwards.
 
 ---
 

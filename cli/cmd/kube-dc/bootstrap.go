@@ -64,6 +64,8 @@ KUBE_DC_FLEET environment variable.`,
 
 	cmd.AddCommand(bootstrapKubeconfigCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapInstallCmd(&fleetRepo))
+	cmd.AddCommand(bootstrapRemoveNodeCmd(&fleetRepo))
+	cmd.AddCommand(bootstrapConnectCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapFetchKubeconfigCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapInstallPrereqsCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapContextCmd())

@@ -825,6 +825,21 @@ kubevirtServiceMonitor:
 #   sha256           : (optional) expected SHA-256 of the upstream image.
 #                      Refresh CronJob verifies before uploading; UI
 #                      does not consume it.
+#   containerdiskRepo: (optional) upstream kubevirt containerdisk
+#                      repository (e.g. "quay.io/containerdisks/ubuntu").
+#                      Only for families with a maintained upstream
+#                      containerdisk. The mirror-refresh CronJob resolves
+#                      containerdiskTag to its current manifest digest
+#                      every cycle and publishes a digest-pinned
+#                      `registryURL` + `registryDigest` pair into the
+#                      cdi-os-catalog ConfigMap for the
+#                      `source.registry` + `pullMethod: node` DV path
+#                      (docs/prd/vm-startup-implementation-plan.md
+#                      M1-T03 — interim quay refs until the Phase B
+#                      local registry depot). Families without one
+#                      (alpine, gentoo, windows) stay http-only.
+#   containerdiskTag : (optional) floating minor tag to pin each cycle
+#                      (e.g. "24.04"). Required with containerdiskRepo.
 #   minMemory/minVCPU/minStorage : minimum VM sizing.
 #   firmwareType, machineType, features, bootOrder, additionalDisks :
 #                      KubeVirt-side knobs that get rendered into the VM
@@ -874,6 +889,11 @@ osImages:
       cloudUser: ubuntu
       upstreamURL: "https://cloud-images.ubuntu.com/resolute/current/resolute-server-cloudimg-amd64.img"
       mirrorPath: "ubuntu/26.04/latest/resolute-server-cloudimg-amd64.img"
+      # No containerdiskRepo/-Tag yet: quay.io/containerdisks/ubuntu
+      # publishes 20.04/22.04/24.04/25.04 only (checked 2026-07-05).
+      # Add `containerdiskRepo` + `containerdiskTag: "26.04"` once the
+      # upstream containerdisk appears; until then this family stays
+      # http-only in cdi-os-catalog.
       minMemory: "1G"
       minVCPU: "1"
       minStorage: "20G"
@@ -892,6 +912,12 @@ osImages:
       cloudUser: ubuntu
       upstreamURL: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
       mirrorPath: "ubuntu/24.04/latest/noble-server-cloudimg-amd64.img"
+      # Upstream kubevirt containerdisk — the mirror-refresh CronJob
+      # digest-pins this floating tag into the catalog every cycle
+      # (registryURL/registryDigest; vm-startup PRD M1-T03 interim
+      # quay refs, superseded by the Phase B local depot).
+      containerdiskRepo: "quay.io/containerdisks/ubuntu"
+      containerdiskTag: "24.04"
       # Phase 2.2 multi-version discovery via Ubuntu's canonical
       # streams JSON. Lists every dated build; refresh.py picks the
       # newest RETENTION_KEEP and writes one versioned dir per build
@@ -923,6 +949,8 @@ osImages:
       cloudUser: centos
       upstreamURL: "https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2"
       mirrorPath: "centos-stream/9/latest/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2"
+      containerdiskRepo: "quay.io/containerdisks/centos-stream"
+      containerdiskTag: "9"
       discovery:
         type: "centos-stream-html"
         indexURL: "https://cloud.centos.org/centos/9-stream/x86_64/images/"
@@ -977,6 +1005,8 @@ osImages:
       cloudUser: debian
       upstreamURL: "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
       mirrorPath: "debian/12/latest/debian-12-generic-amd64.qcow2"
+      containerdiskRepo: "quay.io/containerdisks/debian"
+      containerdiskTag: "12"
       discovery:
         type: "debian-html"
         indexURL: "https://cloud.debian.org/images/cloud/bookworm/"
@@ -1004,6 +1034,8 @@ osImages:
       cloudUser: fedora
       upstreamURL: "https://dl.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-42-1.1.x86_64.qcow2"
       mirrorPath: "fedora/42/latest/Fedora-Cloud-Base-Generic-42-1.1.x86_64.qcow2"
+      containerdiskRepo: "quay.io/containerdisks/fedora"
+      containerdiskTag: "42"
       discovery:
         type: "fedora-releases"
         release: "42"
@@ -1037,6 +1069,8 @@ osImages:
       cloudUser: opensuse
       upstreamURL: "https://download.opensuse.org/distribution/leap/15.6/appliances/openSUSE-Leap-15.6-Minimal-VM.x86_64-Cloud.qcow2"
       mirrorPath: "opensuse-leap/15.6/latest/openSUSE-Leap-15.6-Minimal-VM.x86_64-Cloud.qcow2"
+      containerdiskRepo: "quay.io/containerdisks/opensuse-leap"
+      containerdiskTag: "15.6"
       discovery:
         type: "opensuse-leap-html"
         indexURL: "https://download.opensuse.org/distribution/leap/15.6/appliances/"
@@ -1364,3 +1398,22 @@ kubeletCsrApprover:
     bypassHostnameCheck: false
     # Cap cert lifetime at ~366 days (kubelet rotates well before this).
     maxExpirationSeconds: 31622400
+
+# OS-image pre-pull DaemonSet (vm-startup-acceleration M1-T05).
+# Warms every node's containerd cache with the catalog's digest-pinned
+# containerdisk images (families[].registryURL in cdi-os-catalog). Default OFF
+# until the Phase B in-cluster registry makes pulls LAN-local; enabling it is
+# what upgrades the spegel cold-burst guarantee to "once per cluster".
+osImagePrepull:
+  enabled: false
+  # Catalog poll interval. Each poll pulls any digest-pinned ref not currently
+  # present in this node's containerd store (checked live via crictl inspecti,
+  # so a GC-evicted image is re-warmed), skipping those already present. A fresh
+  # digest from the mirror is warmed within pollMinutes; bounds the per-node
+  # "new image cold->warm" latency.
+  pollMinutes: 15
+  # Util image with jq (same image the cdi-upload-gc cron uses).
+  image: docker.io/shalb/kubectl-jq:v1.35.4
+  # RKE2 paths; override for other distros.
+  containerdSocket: /run/k3s/containerd/containerd.sock
+  hostBinDir: /var/lib/rancher/rke2/bin

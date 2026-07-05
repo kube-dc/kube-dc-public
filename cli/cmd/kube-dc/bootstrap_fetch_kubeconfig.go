@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap"
+	sshadapter "github.com/shalb/kube-dc/cli/internal/bootstrap/adapters/ssh"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
@@ -31,11 +32,13 @@ import (
 // `kubeconfig` + `kube-dc login` for day-2 operations.
 func bootstrapFetchKubeconfigCmd(fleetRepo *string) *cobra.Command {
 	var (
-		sshHost    string
-		domain     string
-		remotePath string
-		destPath   string
-		setCurrent bool
+		sshHost      string
+		domain       string
+		remotePath   string
+		destPath     string
+		setCurrent   bool
+		sshJump      string
+		sshAcceptNew bool
 	)
 	cmd := &cobra.Command{
 		Use:           "fetch-kubeconfig <cluster>",
@@ -101,7 +104,11 @@ accepts a --ssh-key flag — operators put keys in their ssh config.`,
 			// command is to CREATE it). NewSession's k8s.New()
 			// would fail on that path; NewSSHOnly skips k8s
 			// entirely. See wire.go for the factory.
-			sshClient, err := bootstrap.NewSSHOnly()
+			var sshOpts []sshadapter.Option
+			if sshAcceptNew {
+				sshOpts = append(sshOpts, sshadapter.WithAcceptNewHostKeys())
+			}
+			sshClient, err := bootstrap.NewSSHOnly(sshOpts...)
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "bootstrap fetch-kubeconfig: build ssh adapter: %v\n", err)
 				return &doctorExitCodeErr{code: 2}
@@ -110,8 +117,12 @@ accepts a --ssh-key flag — operators put keys in their ssh config.`,
 			// Resolve SSH host. The --ssh-host arg accepts either a
 			// bare alias ("master") or a user@host form
 			// ("operator@10.0.0.1"). Split the two shapes so the
-			// port adapter sees clean fields.
+			// port adapter sees clean fields. --ssh-jump tunnels through
+			// a bastion (empty honours ~/.ssh/config ProxyJump).
 			host := parseSSHHostArg(sshHost)
+			if sshJump != "" {
+				host.ProxyJump = sshJump
+			}
 
 			// Resolve destination path.
 			target := destPath
@@ -156,6 +167,10 @@ accepts a --ssh-key flag — operators put keys in their ssh config.`,
 		"Destination kubeconfig path (default: $KUBECONFIG first entry, else ~/.kube/config)")
 	cmd.Flags().BoolVar(&setCurrent, "set-current", false,
 		"Set current-context to <cluster> after merging (default: preserve existing)")
+	cmd.Flags().StringVar(&sshJump, "ssh-jump", "",
+		"SSH jump chain to reach the master: `[user@]host[:port][,...]` (like ssh -J). Empty honours ~/.ssh/config ProxyJump")
+	cmd.Flags().BoolVar(&sshAcceptNew, "ssh-accept-new-host-keys", false,
+		"Trust-on-first-use for the master's SSH host key (a MISMATCH is still refused)")
 	return cmd
 }
 

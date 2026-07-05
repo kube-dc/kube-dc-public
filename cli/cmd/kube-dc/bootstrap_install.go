@@ -8,7 +8,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap"
+	sshadapter "github.com/shalb/kube-dc/cli/internal/bootstrap/adapters/ssh"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/rke2"
 )
 
@@ -44,6 +46,9 @@ func bootstrapInstallCmd(fleetRepo *string) *cobra.Command {
 		cpHost     string
 		cpPort     int
 		role       string
+		// SSH reachability.
+		sshJump      string
+		sshAcceptNew bool
 	)
 	cmd := &cobra.Command{
 		Use:           "install <cluster-node>",
@@ -84,7 +89,14 @@ Required flags:
 
 SSH auth: ssh-agent first, then ~/.ssh/config IdentityFile (never a
 --ssh-key flag). Passwordless sudo (or a root login) is required on the
-node — the installer runs 'sudo -n'.`,
+node — the installer runs 'sudo -n'.
+
+Reaching nodes: an SSH jump/bastion is honoured from ~/.ssh/config
+(ProxyJump) or via --ssh-jump user@bastion — so 'install' works from a
+laptop against internal node IPs (the jump also covers the
+--join-server control-plane). Host keys are verified strictly; for
+unattended runs pass --ssh-accept-new-host-keys (records + trusts an
+UNKNOWN key; a MISMATCH is still refused).`,
 		Example: `  # First control-plane node — review first, then run
   kube-dc bootstrap install dc1 --ssh-host root@203.0.113.10 \
     --domain acme.com --name dc1 --preset cloud+public-vlan --dry-run
@@ -159,12 +171,29 @@ node — the installer runs 'sudo -n'.`,
 				return fmt.Errorf("bootstrap install: --cp-port %d out of range (1-65535)", cpPort)
 			}
 
+			// SSH reachability, shared by every branch: --ssh-accept-new-
+			// host-keys → adapter option; --ssh-jump → ProxyJump on every
+			// host we build (target node AND control-plane), so a laptop can
+			// reach internal IPs through a bastion. Empty jump still honours
+			// ~/.ssh/config ProxyJump.
+			var sshOpts []sshadapter.Option
+			if sshAcceptNew {
+				sshOpts = append(sshOpts, sshadapter.WithAcceptNewHostKeys())
+			}
+			hostFor := func(raw string) ports.SSHHost {
+				h := parseSSHHostArg(raw)
+				if sshJump != "" {
+					h.ProxyJump = sshJump
+				}
+				return h
+			}
+
 			// WORKER join (default role): the node gets an rke2-agent and
 			// inherits cluster config from the server it joins — no --domain
 			// / --preset. --role server routes past this to the
 			// install-server.sh path below.
 			if joinComplete && role != "server" {
-				sshClient, err := bootstrap.NewSSHOnly()
+				sshClient, err := bootstrap.NewSSHOnly(sshOpts...)
 				if err != nil {
 					return fmt.Errorf("bootstrap install: build ssh adapter: %w", err)
 				}
@@ -175,10 +204,10 @@ node — the installer runs 'sudo -n'.`,
 				}
 				return rke2.JoinWorker(cmd.Context(), rke2.JoinWorkerOptions{
 					SSH:          sshClient,
-					Worker:       parseSSHHostArg(sshHost),
+					Worker:       hostFor(sshHost),
 					WorkerName:   nodeName,
 					WorkerIP:     nodeIP,
-					ControlPlane: parseSSHHostArg(joinServer),
+					ControlPlane: hostFor(joinServer),
 					JoinToken:    joinToken,
 					CPHost:       cpHost,
 					CPPort:       cpPort,
@@ -216,7 +245,7 @@ node — the installer runs 'sudo -n'.`,
 				return fmt.Errorf("bootstrap install: %w", err)
 			}
 
-			sshClient, err := bootstrap.NewSSHOnly()
+			sshClient, err := bootstrap.NewSSHOnly(sshOpts...)
 			if err != nil {
 				return fmt.Errorf("bootstrap install: build ssh adapter: %w", err)
 			}
@@ -224,7 +253,7 @@ node — the installer runs 'sudo -n'.`,
 			out := cmd.OutOrStdout()
 			opts := rke2.InstallOptions{
 				SSH:         sshClient,
-				Host:        parseSSHHostArg(sshHost),
+				Host:        hostFor(sshHost),
 				NodeName:    nodeName,
 				Domain:      domain,
 				PodCIDR:     podCIDR,
@@ -241,7 +270,7 @@ node — the installer runs 'sudo -n'.`,
 			// existing CP's internal IP (over SSH unless supplied), then
 			// drive install-server.sh with its join positional args.
 			if joinComplete { // role == "server" here
-				token, cpIP, rerr := rke2.ResolveJoinCredentials(cmd.Context(), sshClient, parseSSHHostArg(joinServer), joinToken, cpHost, out)
+				token, cpIP, rerr := rke2.ResolveJoinCredentials(cmd.Context(), sshClient, hostFor(joinServer), joinToken, cpHost, out)
 				if rerr != nil {
 					return rerr
 				}
@@ -268,6 +297,9 @@ node — the installer runs 'sudo -n'.`,
 	cmd.Flags().StringVar(&joinToken, "join-token", "", "Join: node-token (default: read from the --join-server node)")
 	cmd.Flags().StringVar(&cpHost, "cp-host", "", "Join: control-plane INTERNAL IP to dial (default: detected from --join-server)")
 	cmd.Flags().IntVar(&cpPort, "cp-port", 0, "Join: control-plane supervisor port (default: 9345)")
+	// SSH reachability (run from a laptop through a bastion, unattended).
+	cmd.Flags().StringVar(&sshJump, "ssh-jump", "", "SSH jump chain to reach the node(s): `[user@]host[:port][,...]` (like ssh -J). Empty honours ~/.ssh/config ProxyJump")
+	cmd.Flags().BoolVar(&sshAcceptNew, "ssh-accept-new-host-keys", false, "Trust-on-first-use: record + accept an UNKNOWN host key instead of refusing (a key MISMATCH is still refused). For unattended installs")
 	_ = fleetRepo // install is fleet-independent (self-contained embedded installer); flag accepted for parity
 	return cmd
 }

@@ -15,6 +15,12 @@ and `OS_IMAGE_SHA256` to every entry so the fleet's mirror-refresh
 CronJob (kube-dc-fleet/platform/cdi-os-mirror) has the full provenance
 trio without needing to read the chart values separately.
 
+Entries with `containerdiskRepo`/`containerdiskTag` additionally render
+`OS_CONTAINERDISK_REPO`/`OS_CONTAINERDISK_TAG`: the refresh CronJob
+resolves that floating tag to its manifest digest each cycle and
+publishes digest-pinned `registryURL`/`registryDigest` fields into
+cdi-os-catalog (docs/prd/vm-startup-implementation-plan.md M1-T03).
+
 See docs/prd/cdi-acceleration.md.
 */ -}}
 apiVersion: v1
@@ -37,6 +43,12 @@ data:
   {{- end }}
   {{- if .sha256 }}
         OS_IMAGE_SHA256: {{ .sha256 | quote }}
+  {{- end }}
+  {{- if .containerdiskRepo }}
+        OS_CONTAINERDISK_REPO: {{ .containerdiskRepo | quote }}
+  {{- end }}
+  {{- if .containerdiskTag }}
+        OS_CONTAINERDISK_TAG: {{ .containerdiskTag | quote }}
   {{- end }}
         MIN_MEMORY: {{ .minMemory | quote }}
         MIN_VCPU: {{ .minVCPU | quote }}

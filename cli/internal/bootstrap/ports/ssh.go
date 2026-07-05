@@ -68,4 +68,14 @@ type SSHHost struct {
 
 	// Port defaults to 22 when zero.
 	Port int
+
+	// ProxyJump is an optional SSH jump chain (like OpenSSH -J /
+	// ProxyJump): a comma-separated list of `[user@]host[:port]` hops
+	// the adapter tunnels through to reach this host, left-to-right
+	// (connect to the first directly, each subsequent through the
+	// previous, then the target through the last). Empty → direct
+	// connect. When empty, the adapter also honours a ProxyJump set in
+	// the operator's `~/.ssh/config` for this host/alias; a value here
+	// overrides the config.
+	ProxyJump string
 }

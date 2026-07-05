@@ -151,7 +151,10 @@ func NewSOPSOnly() (ports.SOPSClient, error) {
 //
 // Same nil-safety + KUBE_DC_MOCK honouring as NewSOPSOnly. Never
 // touches kubeconfig / apiserver / any other adapter.
-func NewSSHOnly() (ports.SSHClient, error) {
+//
+// opts configure the real SSH adapter (e.g. ssh.WithAcceptNewHostKeys
+// for unattended installs). They are ignored in mock mode.
+func NewSSHOnly(opts ...ssh.Option) (ports.SSHClient, error) {
 	if scenario := os.Getenv("KUBE_DC_MOCK"); scenario != "" {
 		s, err := mock.Load(scenario)
 		if err != nil {
@@ -159,7 +162,7 @@ func NewSSHOnly() (ports.SSHClient, error) {
 		}
 		return mock.NewSSHClient(s), nil
 	}
-	return ssh.New(), nil
+	return ssh.New(opts...), nil
 }
 
 // NewScriptOnly constructs just the ScriptRunner port. Isolated
