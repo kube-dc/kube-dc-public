@@ -141,7 +141,7 @@ func TestNoRealInfraReferences(t *testing.T) {
 
 	// Preferred enumeration: `git ls-files` over the surface — TRACKED
 	// files are exactly what the CI checkout rsyncs to the mirror, so
-	// untracked local state (.cluster.dev/ terraform cache, captured
+	// untracked local state (gitignored terraform/tool caches, captured
 	// e2e debug logs, editor litter) can't false-positive. Falls back
 	// to a filesystem walk for git-less checkouts (release tarballs).
 	files := gitTrackedFiles(repoRoot, mirrorSurface)
@@ -177,7 +177,7 @@ func TestNoRealInfraReferences(t *testing.T) {
 // entries that would reach the mirror: tracked PLUS untracked-but-
 // not-gitignored (`--others --exclude-standard`), so a leak in a
 // freshly-written file fails the suite BEFORE it's ever committed,
-// while gitignored local state (.cluster.dev/ cache, captured e2e
+// while gitignored local state (tool caches, captured e2e
 // debug logs) stays excluded. Returns nil when git is unavailable
 // (caller falls back to a filesystem walk).
 func gitTrackedFiles(repoRoot string, surface []string) []string {
