@@ -288,10 +288,43 @@ reach the worker directly (a bastion on the network, or the control-plane
 node itself).
 
 > This flow is validated end-to-end (a worker VM joining a live cluster).
-> HA control-plane join (additional `server` nodes for etcd quorum) is not
-> yet wrapped by the CLI — use the manual steps below for `master-2/3`.
 
-### 2.3.1 Join master-2 and master-3 (manual — additional control-plane nodes)
+### 2.3.1 Join master-2 and master-3 with `--role server`
+
+Additional control-plane nodes (for etcd quorum — run 3 for HA) use the
+**same command with `--role server`**. Unlike a worker, an additional
+server writes its own config, so it still needs `--domain` + `--preset`
+(use the SAME values as the first server):
+
+```bash
+# --role server      makes this an ADDITIONAL control-plane, not a worker
+# --join-server       any existing control-plane node (token + internal IP read over SSH)
+# --domain/--preset   MUST match the first server (an additional server writes its own config)
+kube-dc bootstrap install master-2 \
+  --ssh-host root@203.0.113.11 \
+  --name master-2 \
+  --join-server root@203.0.113.10 \
+  --role server \
+  --domain acme.com \
+  --preset cloud+public-vlan \
+  --dry-run
+```
+
+Review the plan (it announces "control-plane JOIN", the dialled
+`<cp>:9345` supervisor, and the redacted token), then drop `--dry-run`.
+Repeat for `master-3`. Each node registers with the `control-plane,etcd`
+roles and its etcd joins the quorum. The join token is read over SSH and
+**never printed**. This flow is validated end-to-end (a VM joining a live
+cluster as a second `control-plane,etcd` node + etcd member).
+
+> **etcd quorum:** run an ODD number of control-plane nodes (1 or 3, not
+> 2). With exactly 2 members, losing either breaks quorum. To *remove* a
+> control-plane node later, remove its etcd member first
+> (`etcdctl member remove`) — deleting the node/VM alone strands the
+> member and can break quorum.
+
+<details>
+<summary>Manual fallback (no CLI) — write the RKE2 join config by hand</summary>
 
 On **each additional node** (`master-2`, `master-3`), create the RKE2 config and join:
 
@@ -328,6 +361,8 @@ curl -sfL https://get.rke2.io | sh -
 sudo systemctl enable rke2-server.service
 sudo systemctl start rke2-server.service
 ```
+
+</details>
 
 ### 2.4 Verify the HA Cluster
 

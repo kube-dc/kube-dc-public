@@ -23,7 +23,9 @@ import (
 	"io"
 	"net"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	_ "embed"
 
@@ -73,6 +75,24 @@ type InstallOptions struct {
 	// RKE2Version overrides defaultRKE2Version.
 	RKE2Version string
 
+	// JoinToken + JoinServer turn a first-server install into an
+	// ADDITIONAL control-plane (server) join for HA/etcd-quorum.
+	// JoinServer is the EXISTING control-plane's INTERNAL IP (the :9345
+	// supervisor endpoint — never a NAT/floating public IP, same rule as
+	// advertise-address). JoinToken is the cluster node-token (SECRET —
+	// never printed; redacted from all output and errors). Both empty →
+	// first-server install. install-server.sh branches on these as its
+	// two positional args (<token> <server-ip>); an additional server
+	// still needs Domain + the same CIDRs as the first server (it writes
+	// its own tls-san / advertise-address), which is why this rides on
+	// InstallOptions rather than the (config-inheriting) worker path.
+	JoinToken  string
+	JoinServer string
+	// CPPort overrides the control-plane supervisor port the joining
+	// server dials (join mode only; 0 → 9345). Passed to the installer
+	// via CP_PORT env.
+	CPPort int
+
 	// Force re-runs the installer even when rke2-server is already
 	// active on the node.
 	Force bool
@@ -102,7 +122,7 @@ func buildInstallEnv(o InstallOptions) map[string]string {
 	if ver == "" {
 		ver = defaultRKE2Version
 	}
-	return map[string]string{
+	env := map[string]string{
 		"RKE2_VERSION": ver,
 		"NODE_NAME":    o.NodeName,
 		"NODE_IP":      o.NodeIP,
@@ -112,6 +132,13 @@ func buildInstallEnv(o InstallOptions) map[string]string {
 		"SERVICE_CIDR": o.ServiceCIDR,
 		"CLUSTER_DNS":  o.ClusterDNS,
 	}
+	// A non-default supervisor port only applies to a control-plane join;
+	// otherwise let the script's own 9345 default stand (mirrors the
+	// worker path, which sets CP_PORT only when non-default).
+	if o.isJoin() && o.CPPort != 0 && o.CPPort != defaultSupervisorPort {
+		env["CP_PORT"] = strconv.Itoa(o.CPPort)
+	}
+	return env
 }
 
 // validate checks the caller-supplied (pre-detection) options. Beyond
@@ -147,6 +174,18 @@ func (o InstallOptions) validate() error {
 	if o.ExternalIP != "" && net.ParseIP(o.ExternalIP) == nil {
 		return fmt.Errorf("%w: ExternalIP %q is not an IP", ErrInvalidOption, o.ExternalIP)
 	}
+	// Server-join consistency: both or neither, and JoinServer (the
+	// existing CP's supervisor IP) must be an IP — it goes verbatim into
+	// the join config's `server:` URL and tls-san.
+	if (o.JoinToken == "") != (o.JoinServer == "") {
+		return fmt.Errorf("%w: a control-plane join needs BOTH JoinToken and JoinServer", ErrInvalidOption)
+	}
+	if o.JoinServer != "" && net.ParseIP(o.JoinServer) == nil {
+		return fmt.Errorf("%w: JoinServer %q is not an IP", ErrInvalidOption, o.JoinServer)
+	}
+	if o.CPPort != 0 && (o.CPPort < 1 || o.CPPort > 65535) {
+		return fmt.Errorf("%w: CPPort %d out of range (1-65535)", ErrInvalidOption, o.CPPort)
+	}
 	// Domain + NodeName go verbatim into YAML (tls-san / node-name) —
 	// reject anything that could break the document or inject a line.
 	for _, f := range []struct{ name, val string }{{"Domain", o.Domain}, {"NodeName", o.NodeName}} {
@@ -157,8 +196,15 @@ func (o InstallOptions) validate() error {
 	return nil
 }
 
+// isJoin reports whether these options describe an additional
+// control-plane (server) join rather than a first-server install.
+func (o InstallOptions) isJoin() bool { return o.JoinToken != "" && o.JoinServer != "" }
+
 // Install runs the full host-side flow: resolve node IP, idempotency
 // check, (dry-run) plan, push the script, run it, verify the node.
+// With JoinToken+JoinServer set it joins the node as an ADDITIONAL
+// control-plane instead (same embedded install-server.sh, driven with
+// its two join positional args).
 func Install(ctx context.Context, o InstallOptions) error {
 	out := o.Out
 	if out == nil {
@@ -206,15 +252,27 @@ func Install(ctx context.Context, o InstallOptions) error {
 	}
 
 	// Run it. Buffered (the SSH port returns combined output on
-	// completion); warn the operator it takes a few minutes.
-	fmt.Fprintln(out, "[install] running RKE2 installer (writes config, installs + starts rke2-server — ~2-4 min)...")
+	// completion); warn the operator it takes a few minutes. For a
+	// control-plane join the token rides as a positional arg — build the
+	// command here but NEVER print it, and run both the remote output and
+	// any error through redactToken (the SSH adapter embeds the full
+	// command, token included, in errors). redactToken is a no-op for a
+	// first-server install (empty token).
+	if o.isJoin() {
+		fmt.Fprintln(out, "[install] running RKE2 installer (writes join config, installs + joins as an additional control-plane — ~2-4 min)...")
+	} else {
+		fmt.Fprintln(out, "[install] running RKE2 installer (writes config, installs + starts rke2-server — ~2-4 min)...")
+	}
 	cmd := remoteInstallCmd(env, remoteScriptPath)
+	if o.isJoin() {
+		cmd += " " + shellQuote(o.JoinToken) + " " + shellQuote(o.JoinServer)
+	}
 	res, err := o.SSH.Run(ctx, o.Host, cmd)
 	if len(res) > 0 {
-		fmt.Fprintln(out, indent(string(res), "    | "))
+		fmt.Fprintln(out, indent(redactToken(string(res), o.JoinToken), "    | "))
 	}
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInstallFailed, err)
+		return fmt.Errorf("%w: %s", ErrInstallFailed, redactToken(err.Error(), o.JoinToken))
 	}
 
 	// --force over an ALREADY-RUNNING node: the installer's
@@ -230,6 +288,13 @@ func Install(ctx context.Context, o InstallOptions) error {
 		}
 	}
 
+	if o.isJoin() {
+		fmt.Fprintf(out, "[install] additional control-plane up on %s — it joins the existing cluster's etcd quorum (NotReady until kube-ovn schedules onto it)\n", o.NodeName)
+		fmt.Fprintln(out, "[install] verify: kubectl get nodes            (expect the new node, control-plane role)")
+		fmt.Fprintln(out, "[install]         kubectl -n kube-system get pods -l component=etcd -o wide   (a new etcd member)")
+		fmt.Fprintln(out, "[install] reminder: run the OIDC-webhook per-node cutover on this node too (see the installer output banner)")
+		return nil
+	}
 	fmt.Fprintf(out, "[install] RKE2 server up on %s (node will be NotReady until a CNI is installed — that's expected)\n", o.NodeName)
 	fmt.Fprintf(out, "[install] next: kube-dc bootstrap fetch-kubeconfig %s --ssh-host %s --domain %s\n",
 		o.NodeName, sshHostArg(o.Host), o.Domain)
@@ -238,14 +303,44 @@ func Install(ctx context.Context, o InstallOptions) error {
 	return nil
 }
 
+// detectNodeIPAttempts / detectNodeIPDelay bound the just-booted-node
+// retry below. On a VM seconds after SSH comes up BOTH the default route
+// AND `hostname -I` can transiently return nothing (netplan/DHCP still
+// settling), so a single probe pass can spuriously fail. Vars (not
+// consts) so tests can zero the delay.
+var (
+	detectNodeIPAttempts = 3
+	detectNodeIPDelay    = 2 * time.Second
+)
+
 // DetectNodeIP returns the node's primary internal IPv4. It prefers the
 // route-source IP (what the kernel uses to reach the internet) and falls
 // back to `hostname -I`'s first address — the same default the installer
-// script uses. The fallback matters on a just-booted node where the
-// default route hasn't settled yet and `ip route get` returns empty
-// (observed on a fresh VM seconds after SSH came up). Exported so the
-// cobra layer can surface it in error text.
+// script uses. Each pass tries both; the whole pass is retried a few
+// times (see detectNodeIP*) to ride out a just-booted node whose
+// networking hasn't settled. Exported so the cobra layer can surface it
+// in error text. Honors ctx cancellation between retries.
 func DetectNodeIP(ctx context.Context, ssh ports.SSHClient, host ports.SSHHost) (string, error) {
+	var lastErr error
+	for attempt := 0; attempt < detectNodeIPAttempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(detectNodeIPDelay):
+			}
+		}
+		ip, err := detectNodeIPOnce(ctx, ssh, host)
+		if err == nil {
+			return ip, nil
+		}
+		lastErr = err
+	}
+	return "", lastErr
+}
+
+// detectNodeIPOnce runs a single route-then-hostname-I probe pass.
+func detectNodeIPOnce(ctx context.Context, ssh ports.SSHClient, host ports.SSHHost) (string, error) {
 	if out, err := ssh.Run(ctx, host, "ip -4 route get 1.1.1.1"); err == nil {
 		if ip, perr := parseRouteSrc(out); perr == nil {
 			return ip, nil
@@ -340,7 +435,17 @@ func indent(s, prefix string) string {
 
 // renderPlan prints the resolved install plan (dry-run and real runs).
 func renderPlan(out io.Writer, o InstallOptions, env map[string]string) {
-	fmt.Fprintf(out, "== RKE2 install plan — node %q (%s) ==\n", o.NodeName, sshHostArg(o.Host))
+	if o.isJoin() {
+		port := o.CPPort
+		if port == 0 {
+			port = defaultSupervisorPort
+		}
+		fmt.Fprintf(out, "== RKE2 control-plane JOIN plan — node %q (%s) ==\n", o.NodeName, sshHostArg(o.Host))
+		fmt.Fprintf(out, "  mode:              additional control-plane (server), joins %s:%d\n", o.JoinServer, port)
+		fmt.Fprintln(out, "  join token:        (from control-plane, redacted)")
+	} else {
+		fmt.Fprintf(out, "== RKE2 install plan — node %q (%s) ==\n", o.NodeName, sshHostArg(o.Host))
+	}
 	fmt.Fprintf(out, "  RKE2 version:      %s\n", env["RKE2_VERSION"])
 	fmt.Fprintf(out, "  node-ip / advertise-address: %s\n", env["NODE_IP"])
 	fmt.Fprintf(out, "  node-external-ip:  %s\n", env["EXTERNAL_IP"])

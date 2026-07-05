@@ -86,18 +86,14 @@ func JoinWorker(ctx context.Context, o JoinWorkerOptions) error {
 		return fmt.Errorf("%w: --cp-port %d out of range (1-65535)", ErrInvalidOption, o.CPPort)
 	}
 
-	// Resolve the control-plane internal IP (the supervisor endpoint).
-	if o.CPHost == "" {
-		ip, err := DetectNodeIP(ctx, o.SSH, o.ControlPlane)
-		if err != nil {
-			return fmt.Errorf("rke2 join: resolve control-plane internal IP (pass --cp-host): %w", err)
-		}
-		o.CPHost = ip
-		fmt.Fprintf(out, "[join] control-plane internal IP: %s:%d\n", o.CPHost, o.CPPort)
+	// Resolve the control-plane endpoint IP + join token (over SSH from
+	// the control-plane unless the operator supplied them). Shared with
+	// the control-plane-join path.
+	tok, cpIP, err := ResolveJoinCredentials(ctx, o.SSH, o.ControlPlane, o.JoinToken, o.CPHost, out)
+	if err != nil {
+		return err
 	}
-	if net.ParseIP(o.CPHost) == nil {
-		return fmt.Errorf("%w: control-plane host %q is not an IP", ErrInvalidOption, o.CPHost)
-	}
+	o.JoinToken, o.CPHost = tok, cpIP
 
 	// Resolve the worker's internal IP.
 	if o.WorkerIP == "" {
@@ -110,20 +106,6 @@ func JoinWorker(ctx context.Context, o JoinWorkerOptions) error {
 	}
 	if net.ParseIP(o.WorkerIP) == nil {
 		return fmt.Errorf("%w: worker IP %q is not an IP", ErrInvalidOption, o.WorkerIP)
-	}
-
-	// Fetch the join token from the control-plane if not supplied. SECRET
-	// — held locally, used as a positional arg, never printed.
-	if o.JoinToken == "" {
-		tok, err := o.SSH.Fetch(ctx, o.ControlPlane, nodeTokenPath)
-		if err != nil {
-			return fmt.Errorf("rke2 join: read node-token from control-plane %s (pass --join-token): %w", nodeTokenPath, err)
-		}
-		o.JoinToken = strings.TrimSpace(string(tok))
-		if o.JoinToken == "" {
-			return fmt.Errorf("rke2 join: control-plane node-token at %s is empty", nodeTokenPath)
-		}
-		fmt.Fprintln(out, "[join] fetched join token from control-plane (redacted)")
 	}
 
 	renderJoinPlan(out, o)
@@ -183,6 +165,46 @@ func JoinWorker(ctx context.Context, o JoinWorkerOptions) error {
 func remoteAgentCmd(env map[string]string, scriptPath, token, cpHost, nodeIP string) string {
 	base := remoteInstallCmd(env, scriptPath) // "sudo -n env ... bash <script>"
 	return base + " " + shellQuote(token) + " " + shellQuote(cpHost) + " " + shellQuote(nodeIP)
+}
+
+// ResolveJoinCredentials reads the cluster node-token + the existing
+// control-plane's INTERNAL IP (the :9345 supervisor endpoint) from a
+// control-plane node over SSH, unless the caller already supplied them
+// (token / cpHost). Shared by the worker join (rke2-agent) and the
+// control-plane join (additional server) so the token-fetch + CP-IP
+// detection — and their redaction discipline — live in one place. The
+// returned token is SECRET: callers must never surface it unredacted
+// (see redactToken). Progress lines go to out (never the token).
+func ResolveJoinCredentials(ctx context.Context, ssh ports.SSHClient, cp ports.SSHHost, token, cpHost string, out io.Writer) (string, string, error) {
+	if out == nil {
+		out = io.Discard
+	}
+	// Resolve the control-plane internal IP (the supervisor endpoint).
+	if cpHost == "" {
+		ip, err := DetectNodeIP(ctx, ssh, cp)
+		if err != nil {
+			return "", "", fmt.Errorf("rke2 join: resolve control-plane internal IP (pass --cp-host): %w", err)
+		}
+		cpHost = ip
+		fmt.Fprintf(out, "[join] control-plane internal IP: %s\n", cpHost)
+	}
+	if net.ParseIP(cpHost) == nil {
+		return "", "", fmt.Errorf("%w: control-plane host %q is not an IP", ErrInvalidOption, cpHost)
+	}
+	// Fetch the join token if not supplied. SECRET — held locally, used
+	// as a positional arg, never printed.
+	if token == "" {
+		raw, err := ssh.Fetch(ctx, cp, nodeTokenPath)
+		if err != nil {
+			return "", "", fmt.Errorf("rke2 join: read node-token from control-plane %s (pass --join-token): %w", nodeTokenPath, err)
+		}
+		token = strings.TrimSpace(string(raw))
+		if token == "" {
+			return "", "", fmt.Errorf("rke2 join: control-plane node-token at %s is empty", nodeTokenPath)
+		}
+		fmt.Fprintln(out, "[join] fetched join token from control-plane (redacted)")
+	}
+	return token, cpHost, nil
 }
 
 // redactToken strips the join token out of any string bound for the user

@@ -30,6 +30,8 @@
 #   POD_CIDR         - Pod network CIDR (default: 10.100.0.0/16)
 #   SERVICE_CIDR     - Service network CIDR (default: 10.101.0.0/16)
 #   CLUSTER_DNS      - Cluster DNS IP (default: 10.101.0.11)
+#   CP_PORT          - Supervisor port of the server being joined
+#                       (join mode only; default: 9345)
 #
 
 set -euo pipefail
@@ -72,6 +74,7 @@ CLUSTER_DNS="${CLUSTER_DNS:-10.101.0.11}"
 # Join parameters (optional)
 JOIN_TOKEN="${1:-}"
 JOIN_SERVER="${2:-}"
+CP_PORT="${CP_PORT:-9345}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RANCHER_DIR="/etc/rancher/rke2"
@@ -193,7 +196,7 @@ if [[ -n "${JOIN_TOKEN}" && -n "${JOIN_SERVER}" ]]; then
     log_info "Mode: Joining existing cluster at ${JOIN_SERVER}"
 
     cat > "${RANCHER_DIR}/config.yaml" <<EOF
-server: https://${JOIN_SERVER}:9345
+server: https://${JOIN_SERVER}:${CP_PORT}
 token: ${JOIN_TOKEN}
 node-name: ${NODE_NAME}
 node-ip: ${NODE_IP}

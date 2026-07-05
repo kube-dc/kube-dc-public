@@ -109,9 +109,89 @@ func TestBootstrapInstall_PartialJoinFlagsFailClosed(t *testing.T) {
 		err := cmd.Execute()
 		if err == nil {
 			t.Errorf("args %v should fail closed", args)
-		} else if !strings.Contains(err.Error(), "incomplete worker-join") {
-			t.Errorf("args %v: want an incomplete-worker-join error, got %v", args, err)
+		} else if !strings.Contains(err.Error(), "incomplete join") {
+			t.Errorf("args %v: want an incomplete-join error, got %v", args, err)
 		}
+	}
+}
+
+func TestBootstrapInstall_RoleValidationAndServerJoinShape(t *testing.T) {
+	// --role must be worker|server; --role server without a join shape
+	// must fail closed (never silently init a new cluster); a bad --role
+	// is rejected before any SSH.
+	cases := []struct {
+		name    string
+		args    []string
+		wantSub string
+	}{
+		{
+			name:    "bad role",
+			args:    []string{"--ssh-host", "root@192.0.2.30", "--name", "m2", "--role", "bogus"},
+			wantSub: "--role must be worker or server",
+		},
+		{
+			name:    "role server without join shape",
+			args:    []string{"--ssh-host", "root@192.0.2.30", "--name", "m2", "--role", "server", "--domain", "example.com"},
+			wantSub: "--role server joins an ADDITIONAL control-plane",
+		},
+	}
+	for _, c := range cases {
+		var buf bytes.Buffer
+		repo := ""
+		cmd := bootstrapInstallCmd(&repo)
+		cmd.SetOut(&buf)
+		cmd.SetErr(&buf)
+		cmd.SetArgs(c.args)
+		err := cmd.Execute()
+		if err == nil {
+			t.Errorf("%s: expected an error", c.name)
+		} else if !strings.Contains(err.Error(), c.wantSub) {
+			t.Errorf("%s: want %q, got %v", c.name, c.wantSub, err)
+		}
+	}
+}
+
+func TestBootstrapInstall_InvalidCPPortFailsPreSSH(t *testing.T) {
+	// --cp-port is a purely-local flag: an out-of-range value must be
+	// rejected before any SSH (so it can't fetch the node-token first),
+	// on BOTH the worker and server join paths. These have complete join
+	// shapes, so only the cp-port check can be the failure.
+	cases := [][]string{
+		// worker join + bad cp-port
+		{"--ssh-host", "root@192.0.2.20", "--name", "worker-1", "--join-server", "root@192.0.2.10", "--cp-port", "70000"},
+		// server join + bad cp-port (has --domain/--preset so it would
+		// otherwise reach ResolveJoinCredentials and SSH the control plane)
+		{"--ssh-host", "root@192.0.2.30", "--name", "m2", "--join-server", "root@192.0.2.10", "--role", "server", "--domain", "example.com", "--preset", "internal-only", "--cp-port", "70000"},
+	}
+	for _, args := range cases {
+		var buf bytes.Buffer
+		repo := ""
+		cmd := bootstrapInstallCmd(&repo)
+		cmd.SetOut(&buf)
+		cmd.SetErr(&buf)
+		cmd.SetArgs(args)
+		err := cmd.Execute()
+		if err == nil {
+			t.Errorf("args %v: expected an error", args)
+		} else if !strings.Contains(err.Error(), "cp-port") || !strings.Contains(err.Error(), "out of range") {
+			t.Errorf("args %v: want a cp-port out-of-range error, got %v", args, err)
+		}
+	}
+}
+
+func TestBootstrapInstall_ServerJoinRequiresDomain(t *testing.T) {
+	// A complete join shape + --role server but no --domain must error
+	// (an additional control-plane writes its own tls-san, unlike a
+	// worker). Fails before any SSH.
+	var buf bytes.Buffer
+	repo := ""
+	cmd := bootstrapInstallCmd(&repo)
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"--ssh-host", "root@192.0.2.30", "--name", "m2", "--join-server", "root@192.0.2.10", "--role", "server"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--domain is required") {
+		t.Errorf("server join without --domain: want a --domain error, got %v", err)
 	}
 }
 

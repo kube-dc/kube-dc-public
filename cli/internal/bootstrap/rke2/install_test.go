@@ -1,9 +1,12 @@
 package rke2
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
@@ -261,6 +264,180 @@ func TestInstall_ForceReinstallsEvenIfActive(t *testing.T) {
 	// --force over a running node must restart to apply the rewritten config.
 	if !ssh.ranAny("systemctl restart rke2-server") {
 		t.Error("--force over an active node must restart rke2-server to apply config")
+	}
+}
+
+// ---- control-plane (server) join ----
+
+func serverJoinOpts(ssh ports.SSHClient) InstallOptions {
+	o := baseOpts(ssh)
+	o.JoinToken = testToken // defined in join_test.go (same package)
+	o.JoinServer = "203.0.113.10"
+	return o
+}
+
+func TestInstall_ServerJoin_HappyPath(t *testing.T) {
+	ssh := &fakeSSH{runs: map[string]string{
+		"ip -4 route get":                 "1.1.1.1 dev eth0 src 198.51.100.5",
+		"systemctl is-active rke2-server": "inactive",
+		"bash " + remoteScriptPath:        "joined",
+	}}
+	o := serverJoinOpts(ssh)
+	var out bytes.Buffer
+	o.Out = &out
+	if err := Install(context.Background(), o); err != nil {
+		t.Fatalf("server join: %v", err)
+	}
+	if ssh.putCalls != 1 || ssh.putPath != remoteScriptPath {
+		t.Errorf("installer not pushed: calls=%d path=%s", ssh.putCalls, ssh.putPath)
+	}
+	// The join token + server IP must be appended as positional args...
+	if !ssh.ranAny("bash " + remoteScriptPath + " '" + testToken + "' '203.0.113.10'") {
+		t.Errorf("join positional args missing: %v", ssh.ranCmds)
+	}
+	// ...but the token must never appear in operator output.
+	if strings.Contains(out.String(), testToken) {
+		t.Errorf("token leaked into output:\n%s", out.String())
+	}
+	// Plan must announce join mode.
+	if !strings.Contains(out.String(), "control-plane JOIN plan") {
+		t.Error("plan should announce a control-plane join")
+	}
+}
+
+func TestInstall_ServerJoin_DryRunRedactsTokenNoMutation(t *testing.T) {
+	ssh := &fakeSSH{runs: map[string]string{"ip -4 route get": "1.1.1.1 dev eth0 src 198.51.100.5"}}
+	o := serverJoinOpts(ssh)
+	o.DryRun = true
+	var out bytes.Buffer
+	o.Out = &out
+	if err := Install(context.Background(), o); err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	if ssh.putCalls != 0 || ssh.ranAny("bash "+remoteScriptPath) {
+		t.Error("dry-run must not push/run the installer")
+	}
+	if strings.Contains(out.String(), testToken) {
+		t.Errorf("token leaked into dry-run output:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "redacted") {
+		t.Error("dry-run plan should say the token is redacted")
+	}
+}
+
+// The SSH adapter embeds the whole command (token included) in a failed
+// Run's error; a server-join failure must not leak the token.
+func TestInstall_ServerJoin_FailureRedactsToken(t *testing.T) {
+	leaked := "sudo -n env ... bash " + remoteScriptPath + " '" + testToken + "' '203.0.113.10'"
+	ssh := &fakeSSH{
+		runs: map[string]string{
+			"ip -4 route get":                 "1.1.1.1 dev eth0 src 198.51.100.5",
+			"systemctl is-active rke2-server": "inactive",
+			// present so the runErr entry (keyed by the same sub) matches.
+			"bash " + remoteScriptPath: "install output",
+		},
+		runErr: map[string]error{
+			"bash " + remoteScriptPath: fmt.Errorf("ssh: run %q: exit status 1", leaked),
+		},
+	}
+	err := Install(context.Background(), serverJoinOpts(ssh))
+	if err == nil {
+		t.Fatal("expected install failure")
+	}
+	if strings.Contains(err.Error(), testToken) {
+		t.Errorf("token leaked into error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "<redacted>") {
+		t.Errorf("error should show <redacted>: %v", err)
+	}
+}
+
+func TestInstall_ServerJoin_Validation(t *testing.T) {
+	mut := map[string]func(*InstallOptions){
+		"token without server": func(o *InstallOptions) { o.JoinToken = testToken; o.JoinServer = "" },
+		"server without token": func(o *InstallOptions) { o.JoinServer = "203.0.113.10"; o.JoinToken = "" },
+		"bad JoinServer IP":    func(o *InstallOptions) { o.JoinToken = testToken; o.JoinServer = "not-an-ip" },
+		"CPPort out of range":  func(o *InstallOptions) { o.JoinToken = testToken; o.JoinServer = "203.0.113.10"; o.CPPort = 70000 },
+	}
+	for name, m := range mut {
+		o := baseOpts(&fakeSSH{})
+		m(&o)
+		if err := o.validate(); err == nil {
+			t.Errorf("%s: validate should have rejected it", name)
+		}
+	}
+}
+
+func TestBuildInstallEnv_CPPortJoinOnly(t *testing.T) {
+	// First-server must never carry CP_PORT even if CPPort is set.
+	if _, ok := buildInstallEnv(InstallOptions{NodeIP: "198.51.100.5", CPPort: 9999})["CP_PORT"]; ok {
+		t.Error("first-server env must not carry CP_PORT")
+	}
+	// Server join, non-default port → CP_PORT present.
+	join := InstallOptions{NodeIP: "198.51.100.5", JoinToken: testToken, JoinServer: "203.0.113.10"}
+	join.CPPort = 9999
+	if got := buildInstallEnv(join)["CP_PORT"]; got != "9999" {
+		t.Errorf("join CP_PORT = %q, want 9999", got)
+	}
+	// Server join, default port → omitted (script defaults it).
+	join.CPPort = defaultSupervisorPort
+	if _, ok := buildInstallEnv(join)["CP_PORT"]; ok {
+		t.Error("default CP_PORT must be omitted")
+	}
+}
+
+// flakyIPSSH returns empty for the first probe pass (route + hostname),
+// then a valid route src — models a just-booted node.
+type flakyIPSSH struct{ calls int }
+
+func (f *flakyIPSSH) Run(_ context.Context, _ ports.SSHHost, cmd string) ([]byte, error) {
+	f.calls++
+	if f.calls <= 2 { // first pass: route empty, hostname empty
+		return []byte(""), nil
+	}
+	if strings.Contains(cmd, "ip -4 route get") {
+		return []byte("1.1.1.1 dev eth0 src 198.51.100.5"), nil
+	}
+	return []byte("198.51.100.5"), nil
+}
+func (f *flakyIPSSH) Fetch(context.Context, ports.SSHHost, string) ([]byte, error) { return nil, nil }
+func (f *flakyIPSSH) Put(context.Context, ports.SSHHost, string, []byte, uint32) error {
+	return nil
+}
+
+func TestDetectNodeIP_RetriesThenSucceeds(t *testing.T) {
+	old := detectNodeIPDelay
+	detectNodeIPDelay = 0
+	defer func() { detectNodeIPDelay = old }()
+	ssh := &flakyIPSSH{}
+	ip, err := DetectNodeIP(context.Background(), ssh, ports.SSHHost{})
+	if err != nil || ip != "198.51.100.5" {
+		t.Errorf("retry: got %q,%v want 198.51.100.5", ip, err)
+	}
+	if ssh.calls < 3 {
+		t.Errorf("expected a retry (>=3 Run calls), got %d", ssh.calls)
+	}
+}
+
+func TestDetectNodeIP_ExhaustsRetriesThenErrors(t *testing.T) {
+	old := detectNodeIPDelay
+	detectNodeIPDelay = 0
+	defer func() { detectNodeIPDelay = old }()
+	ssh := &fakeSSH{runs: map[string]string{"ip -4 route get": "", "hostname -I": "   "}}
+	if _, err := DetectNodeIP(context.Background(), ssh, ports.SSHHost{}); err == nil {
+		t.Error("all-empty must error after retries are exhausted")
+	}
+}
+
+func TestDetectNodeIP_ContextCancelAbortsRetries(t *testing.T) {
+	old := detectNodeIPDelay
+	detectNodeIPDelay = time.Hour // force the inter-retry wait to block on ctx
+	defer func() { detectNodeIPDelay = old }()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	ssh := &fakeSSH{runs: map[string]string{"ip -4 route get": "", "hostname -I": ""}}
+	if _, err := DetectNodeIP(ctx, ssh, ports.SSHHost{}); err == nil {
+		t.Error("a cancelled ctx must abort the retry wait")
 	}
 }
 
