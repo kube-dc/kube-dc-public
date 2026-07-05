@@ -1124,6 +1124,13 @@ func parseStatus(pod string, out []byte, st *ports.BaoStatus) error {
 		// against OpenBao 2.5+.
 		ActiveTime string `json:"active_time"`
 		IsSelf     bool   `json:"is_self"`
+
+		// Gate for the active_time shim (E2E finding 23): on a
+		// single-node file-storage deployment ha_enabled=false and
+		// active_time is ALWAYS the zero value — deriving "standby"
+		// from it marked the only (unsealed, working) pod as
+		// standby and activePodCached found no active pod at all.
+		HAEnabled bool `json:"ha_enabled"`
 	}
 	start := bytes.IndexByte(out, '{')
 	if start < 0 {
@@ -1142,11 +1149,19 @@ func parseStatus(pod string, out []byte, st *ports.BaoStatus) error {
 	// OpenBao 2.5+ compatibility: derive HAMode from active_time
 	// when the legacy ha_mode field is absent. active_time is the
 	// zero RFC3339 value ("0001-01-01T00:00:00Z") for standbys; any
-	// other timestamp means this pod is the active leader.
-	if st.HAMode == "" && raw.ActiveTime != "" && raw.ActiveTime != "0001-01-01T00:00:00Z" {
-		st.HAMode = "active"
-	} else if st.HAMode == "" && raw.ActiveTime == "0001-01-01T00:00:00Z" {
-		st.HAMode = "standby"
+	// other timestamp means this pod is the active leader. ONLY
+	// meaningful when HA is enabled — a single-node file-storage
+	// deployment (ha_enabled=false) always reports the zero
+	// active_time, and synthesizing "standby" there hid the only
+	// working pod from activePodCached (E2E finding 23). With HA
+	// disabled we leave HAMode "" so the single-node arm
+	// (!Sealed && HAMode == "") matches.
+	if st.HAMode == "" && raw.HAEnabled {
+		if raw.ActiveTime != "" && raw.ActiveTime != "0001-01-01T00:00:00Z" {
+			st.HAMode = "active"
+		} else if raw.ActiveTime == "0001-01-01T00:00:00Z" {
+			st.HAMode = "standby"
+		}
 	}
 	return nil
 }

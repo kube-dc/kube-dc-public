@@ -88,6 +88,14 @@ type ScaffoldOptions struct {
 	// platform dependsOn + env keys); disabled writes nothing.
 	ObjectStorage ObjectStorageSpec
 
+	// SingleIPNAT triggers the findings-17/17b wiring (step 8): the
+	// node sits behind a 1:1 NAT with only one IP, so the scaffolded
+	// platform.yaml gets a patches entry removing the Gateway's 6443
+	// passthrough listener. Set by the cobra layer from
+	// DetectArrivingIP; NodeExternalIP already carries the ARRIVING
+	// (internal) IP when this is true.
+	SingleIPNAT bool
+
 	// Runner is the ports.ScriptRunner the engine calls. Real flow
 	// uses the script adapter; tests use a fake.
 	Runner ports.ScriptRunner
@@ -212,6 +220,19 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// No-op for disabled mode.
 	if err := WriteObjectStorage(opts.FleetRepo, opts.Plan.ClusterName, opts.Plan.Domain, opts.ObjectStorage, out); err != nil {
 		return fmt.Errorf("scaffold: %w", err)
+	}
+
+	// (8) Single-IP NAT wiring (findings 17/17b) — drop the 6443
+	// passthrough listener via a platform.yaml spec.patches entry.
+	// MUST stay after step 7: the OS-4 disabled writer refuses any
+	// pre-existing patches: key, including ours; this writer composes
+	// with the OS-4 block when both fire. Apply-time detected (SSH
+	// probe), so dry-run plans don't list it — the substitution +
+	// patch are logged at apply.
+	if opts.SingleIPNAT {
+		if err := WriteSingleIPNATPatch(opts.FleetRepo, opts.Plan.ClusterName, out); err != nil {
+			return fmt.Errorf("scaffold: %w", err)
+		}
 	}
 
 	fmt.Fprintf(out, "[scaffold] cluster overlay created at %s\n", clusterDir)

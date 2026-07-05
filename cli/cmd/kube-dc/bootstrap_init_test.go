@@ -3,10 +3,14 @@ package main
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 )
@@ -1026,9 +1030,9 @@ func TestDiscoverFleetState_PopulatesSOPSRecipients(t *testing.T) {
 		"age16nk3t6chcrjntd76s3an32hx3p2y5cup7vnkywny0uy9gn0tkcuqxzav8s'\n"
 
 	cases := []struct {
-		name  string
-		sops  string // .sops.yaml body; "" means don't write the file
-		want  int
+		name string
+		sops string // .sops.yaml body; "" means don't write the file
+		want int
 	}{
 		{"three recipients", threeRecipients, 3},
 		{"no sops file", "", 0},
@@ -1454,4 +1458,157 @@ func replaceFlag(args []string, from, to string) []string {
 		}
 	}
 	return append(out, to)
+}
+
+// Reviewer P2 (T6): the wizard fires ONLY on a truly bare invocation —
+// any init-local flag (a partial CLI attempt) must fall through to
+// flag validation instead of a form that would overwrite the given
+// flags. The parent's --repo is context, not an init flag, and stays
+// exempt.
+func TestBareInitInvocation_Gate(t *testing.T) {
+	build := func(args []string) *cobra.Command {
+		repo := ""
+		parent := &cobra.Command{Use: "bootstrap"}
+		parent.PersistentFlags().StringVar(&repo, "repo", "", "")
+		c := bootstrapInitCmd(&repo)
+		parent.AddCommand(c)
+		parent.SetArgs(append([]string{"init"}, args...))
+		parent.SetOut(io.Discard)
+		parent.SetErr(io.Discard)
+		_ = parent.Execute() // errors fine — we only inspect flag state
+		return c
+	}
+	if !bareInitInvocation(build(nil)) {
+		t.Error("no flags → bare")
+	}
+	if !bareInitInvocation(build([]string{"--repo=/tmp"})) {
+		t.Error("--repo only → still bare (context flag)")
+	}
+	if bareInitInvocation(build([]string{"--provider=gitlab", "--fleet-mode=new-repo", "--no-tty", "--dry-run"})) {
+		t.Error("partial invocation must NOT be bare")
+	}
+	if bareInitInvocation(build([]string{"--name=x", "--no-tty", "--dry-run"})) {
+		t.Error("--name set must NOT be bare")
+	}
+}
+
+// Review P1 (E2E finding 5 follow-up): origin must be ENSURED for every
+// new-repo apply — added when missing, CORRECTED when pointing at a
+// stale template remote, untouched when already canonical.
+func TestEnsureOriginRemote(t *testing.T) {
+	mk := func(t *testing.T) string {
+		d := t.TempDir()
+		if out, err := execGit(t, d, "init", "-q"); err != nil {
+			t.Fatalf("git init: %v %s", err, out)
+		}
+		return d
+	}
+	var buf bytes.Buffer
+
+	// missing → added
+	repo := mk(t)
+	if err := ensureOriginRemote(t.Context(), &buf, repo, "", "kube-dc", "e2e-fleet"); err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := execGit(t, repo, "remote", "get-url", "origin"); !strings.Contains(out, "github.com/kube-dc/e2e-fleet.git") {
+		t.Errorf("origin not added: %s", out)
+	}
+
+	// wrong → corrected
+	repo = mk(t)
+	if _, err := execGit(t, repo, "remote", "add", "origin", "https://github.com/other/starter.git"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureOriginRemote(t.Context(), &buf, repo, "gitlab", "acme", "fleet"); err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := execGit(t, repo, "remote", "get-url", "origin"); !strings.Contains(out, "gitlab.com/acme/fleet.git") {
+		t.Errorf("stale origin not corrected: %s", out)
+	}
+	if !strings.Contains(buf.String(), "CORRECTED") {
+		t.Error("correction must be visible in output")
+	}
+
+	// matching (incl. token-decorated via insteadOf shapes) → no-op
+	repo = mk(t)
+	if _, err := execGit(t, repo, "remote", "add", "origin", "https://x-token@github.com/kube-dc/e2e-fleet.git"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureOriginRemote(t.Context(), &buf, repo, "", "kube-dc", "e2e-fleet"); err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := execGit(t, repo, "remote", "get-url", "origin"); !strings.Contains(out, "x-token@") {
+		t.Errorf("matching decorated origin must be left alone: %s", out)
+	}
+
+	// Review P1 (2026-07-05): a github.com remote for the SAME owner/repo
+	// must NOT satisfy a gitlab-provider apply — the old substring check
+	// ignored the host and left the push aimed at GitHub.
+	repo = mk(t)
+	if _, err := execGit(t, repo, "remote", "add", "origin", "https://github.com/acme/fleet.git"); err != nil {
+		t.Fatal(err)
+	}
+	buf.Reset()
+	if err := ensureOriginRemote(t.Context(), &buf, repo, "gitlab", "acme", "fleet"); err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := execGit(t, repo, "remote", "get-url", "origin"); !strings.Contains(out, "gitlab.com/acme/fleet.git") {
+		t.Errorf("wrong-HOST origin (github vs gitlab) not corrected: %s", out)
+	}
+
+	// Review P1: a path PREFIX must not false-positive — `/acme/fleet`
+	// is a different repo from `/acme/fleet-starter`.
+	repo = mk(t)
+	if _, err := execGit(t, repo, "remote", "add", "origin", "https://github.com/acme/fleet-starter.git"); err != nil {
+		t.Fatal(err)
+	}
+	buf.Reset()
+	if err := ensureOriginRemote(t.Context(), &buf, repo, "", "acme", "fleet"); err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := execGit(t, repo, "remote", "get-url", "origin"); !strings.Contains(out, "github.com/acme/fleet.git") || strings.Contains(out, "fleet-starter") {
+		t.Errorf("prefix false-positive: fleet-starter not corrected to fleet: %s", out)
+	}
+}
+
+func TestRemoteIdentity(t *testing.T) {
+	cases := []struct {
+		raw, host, path string
+		ok              bool
+	}{
+		{"https://github.com/acme/fleet.git", "github.com", "acme/fleet", true},
+		{"https://x-access-token:TOKEN@github.com/acme/fleet.git", "github.com", "acme/fleet", true},
+		{"https://gitlab.example.com:8443/acme/fleet.git", "gitlab.example.com", "acme/fleet", true},
+		{"git@github.com:acme/fleet.git", "github.com", "acme/fleet", true},
+		{"ssh://git@github.com/acme/fleet.git", "github.com", "acme/fleet", true},
+		{"https://github.com/acme/fleet-starter", "github.com", "acme/fleet-starter", true},
+		{"gitlab.com:group/sub/repo.git", "gitlab.com", "group/sub/repo", true},
+		{"", "", "", false},
+		{"not-a-url", "", "", false},
+	}
+	for _, c := range cases {
+		h, p, ok := remoteIdentity(c.raw)
+		if ok != c.ok || h != c.host || p != c.path {
+			t.Errorf("remoteIdentity(%q) = (%q,%q,%v), want (%q,%q,%v)",
+				c.raw, h, p, ok, c.host, c.path, c.ok)
+		}
+	}
+
+	// remoteMatches is host-exact + path-exact, host case-insensitive.
+	if !remoteMatches("https://GitHub.com/acme/fleet.git", "github.com", "acme", "fleet") {
+		t.Error("host comparison must be case-insensitive")
+	}
+	if remoteMatches("https://github.com/acme/fleet-starter.git", "github.com", "acme", "fleet") {
+		t.Error("path prefix must not match")
+	}
+	if remoteMatches("https://github.com/acme/fleet.git", "gitlab.com", "acme", "fleet") {
+		t.Error("cross-host must not match")
+	}
+}
+
+func execGit(t *testing.T, dir string, args ...string) (string, error) {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
 }

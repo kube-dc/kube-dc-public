@@ -66,8 +66,14 @@ type ApplyOptions struct {
 	FleetRepo string
 
 	// NodeExternalIP is forwarded to Scaffold for the
-	// add-cluster.sh positional arg.
+	// add-cluster.sh positional arg. When SingleIPNAT is true this
+	// already carries the ARRIVING (internal) IP resolved by
+	// DetectArrivingIP, not the operator-declared public IP.
 	NodeExternalIP string
+
+	// SingleIPNAT forwards the findings-17/17b topology detection to
+	// Scaffold (step 8: 6443-listener removal patch).
+	SingleIPNAT bool
 
 	// Sets + NodeNICs are the operator's resolved --set / --node-nic
 	// maps. They must match what was in the plan when it was built
@@ -199,6 +205,7 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 		Sets:           opts.Sets,
 		NodeNICs:       opts.NodeNICs,
 		ObjectStorage:  opts.ObjectStorage,
+		SingleIPNAT:    opts.SingleIPNAT,
 		Runner:         opts.Runner,
 		Out:            out,
 	}); err != nil {

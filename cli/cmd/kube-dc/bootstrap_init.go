@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,12 +14,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/discover"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/tui/screens/initform"
 )
 
 // bootstrapInitCmd registers `kube-dc bootstrap init`. M4-T01 of the
@@ -156,6 +159,27 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 				o.NoTTY = true
 			}
 
+			// T6 wizard: `kube-dc bootstrap init` launched bare in a
+			// TTY (no --name, no plan flags) runs the huh form to
+			// populate the SAME InitOptions the flags would — then
+			// the normal Validate → plan → confirm path continues
+			// unchanged (thin-generator contract, OS-5 §7.1). A
+			// cancelled form aborts cleanly with options untouched.
+			wizardFlags := ""
+			if bareInitInvocation(cmd) && !o.NoTTY {
+				// Sibling-mode hint (OS-5 §7.3): computed against a
+				// copy forced to existing-fleet — at this point the
+				// operator hasn't picked a fleet mode yet, and the
+				// hint helper soft-fails to "" on any miss.
+				hintOpts := *o
+				hintOpts.FleetMode = clusterinit.FleetExistingFleet
+				eq, err := initform.Run(o, siblingObjectStorageModeHint(&hintOpts))
+				if err != nil {
+					return fmt.Errorf("init wizard: %w", err)
+				}
+				wizardFlags = eq
+			}
+
 			// Resolve --mode=auto BEFORE Validate so the substituted
 			// Mode reaches both Validate (which still refuses
 			// ModeAuto as a safety net) and BuildPlan. Pass-through
@@ -230,6 +254,29 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 					fmt.Fprintf(cmd.OutOrStdout(), "[sops] WARNING: %v\n", err)
 				} else {
 					return err
+				}
+			}
+
+			// T6 wizard tail: render the plan for review, ask for an
+			// explicit apply consent (the flag path's --yes
+			// equivalent), and always print the equivalent flag
+			// invocation so the interactive run is scriptable.
+			if wizardFlags != "" {
+				out := cmd.OutOrStdout()
+				if err := runInitDryRun(out, o); err != nil {
+					return err
+				}
+				fmt.Fprintf(out, "\nEquivalent non-interactive invocation:\n\n%s\n\n", wizardFlags)
+				applyNow := false
+				if err := huh.NewConfirm().
+					Title("Apply this plan now?").
+					Description("scaffold + commit + push + flux-install against the fleet repo").
+					Affirmative("Apply").Negative("No — just print the plan").
+					Value(&applyNow).Run(); err != nil {
+					return fmt.Errorf("init wizard: %w", err)
+				}
+				if !applyNow {
+					return nil
 				}
 			}
 
@@ -607,6 +654,36 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		return err
 	}
 
+	// Findings 17/17b (single-IP NAT): resolve the IP with which
+	// external traffic actually ARRIVES at the node. Behind a 1:1
+	// NAT (kube-dc FIP, EC2 elastic IP, floating IPs) the public IP
+	// is never a local address — NODE_EXTERNAL_IP must be the node's
+	// primary IP or the whole 80/443 front door silently RSTs, and
+	// the 6443 passthrough listener must be dropped (see natgate.go).
+	// Runs AFTER the DNS gate (which correctly probes the PUBLIC IP)
+	// and before Apply (which scaffolds the arriving IP). Detection
+	// failure fails OPEN with a warning — behavior without --ssh-host
+	// is unchanged.
+	applyNodeIP := o.NodeExternalIP
+	singleIPNAT := false
+	if o.SSHHost != "" && !o.NoSSH {
+		if sshClient, err := bootstrap.NewSSHOnly(); err != nil {
+			fmt.Fprintf(out, "[apply] WARNING: NAT-topology probe skipped (ssh adapter: %v)\n", err)
+		} else if arriving, nat, err := clusterinit.DetectArrivingIP(ctx, clusterinit.ArrivingIPOptions{
+			SSH:      sshClient,
+			Host:     parseSSHHostArg(o.SSHHost),
+			PublicIP: o.NodeExternalIP,
+			Out:      out,
+		}); err != nil {
+			fmt.Fprintf(out, "[apply] WARNING: NAT-topology probe failed (%v) — keeping NODE_EXTERNAL_IP=%s\n", err, o.NodeExternalIP)
+		} else if nat {
+			applyNodeIP = arriving
+			singleIPNAT = true
+			fmt.Fprintf(out, "[apply] single-IP NAT detected: %s is not bound on the node; NODE_EXTERNAL_IP=%s (arriving IP), 6443 passthrough listener will be dropped\n",
+				o.NodeExternalIP, arriving)
+		}
+	}
+
 	// --no-push uses Git.Commit (no push), so a GitHub token would
 	// be ignored. Skip the resolution entirely to avoid an
 	// unnecessary `gh auth token` subshell + log noise (M4-T12
@@ -639,10 +716,25 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		}
 	}
 
+	// E2E finding 5 + review P1 (2026-07-04): ensure `origin` points at
+	// the canonical remote for EVERY new-repo apply — including
+	// --no-create-repo (org pre-created the repo), which previously
+	// skipped this entirely and died in commit-push with "remote not
+	// found". A pre-existing origin pointing elsewhere (fleet-starter
+	// template remote) is corrected with set-url, never silently kept:
+	// pushing the bootstrap commit to the wrong remote is worse than
+	// failing.
+	if plan.FleetMode == clusterinit.FleetNewRepo && !o.NoPush {
+		if err := ensureOriginRemote(ctx, out, o.Repo, o.Provider, o.GitHubOwner, o.GitHubRepo); err != nil {
+			return err
+		}
+	}
+
 	if err := clusterinit.Apply(ctx, clusterinit.ApplyOptions{
 		Plan:           plan,
 		FleetRepo:      o.Repo,
-		NodeExternalIP: o.NodeExternalIP,
+		NodeExternalIP: applyNodeIP,
+		SingleIPNAT:    singleIPNAT,
 		Sets:           o.Sets,
 		NodeNICs:       o.NodeNICs,
 		ObjectStorage:  o.ObjectStorage(),
@@ -904,6 +996,28 @@ func discoverFleetState(o *clusterinit.InitOptions) clusterinit.FleetState {
 	return st
 }
 
+// bareInitInvocation reports whether `init` was launched with no
+// init-local flags at all — the ONLY shape that enters the T6 wizard
+// (reviewer P2: gating on "missing --name" let partial invocations
+// like `init --provider=gitlab --fleet-mode=new-repo` enter the form,
+// which then OVERWROTE the flags the operator had already passed —
+// the wizard preseeds from defaults, not from every InitOptions
+// field). Partial invocations fall through to flag validation, whose
+// errors name exactly what's missing.
+//
+// The parent's persistent `--repo` is deliberately exempt: it's
+// fleet-repo CONTEXT (same role as the KUBE_DC_FLEET env var, which
+// can't be detected as a flag anyway) and the wizard preseeds it.
+func bareInitInvocation(cmd *cobra.Command) bool {
+	bare := true
+	cmd.Flags().Visit(func(f *pflag.Flag) {
+		if f.Name != "repo" {
+			bare = false
+		}
+	})
+	return bare
+}
+
 // siblingObjectStorageModeHint returns a one-line hint naming the
 // template sibling's object-storage mode, or "" when it can't be
 // determined (greenfield, no repo, no template, no overlay, unreadable
@@ -1086,3 +1200,100 @@ func assertRequiredFlagsRegistered(fs *pflag.FlagSet) error {
 	return nil
 }
 
+// ensureOriginRemote points the fleet repo's `origin` at the canonical
+// provider URL. Missing → added; present but DIFFERENT → set-url with a
+// visible notice (a stale fleet-starter/template remote must never
+// receive the bootstrap push); matching → no-op. Kept independent of
+// the create-repo step (review P1): --no-create-repo skips repo
+// creation but still needs a correct origin before CommitAndPush.
+func ensureOriginRemote(ctx context.Context, out io.Writer, repo string, provider clusterinit.Provider, owner, name string) error {
+	host := "github.com"
+	if provider == clusterinit.ProviderGitLab {
+		host = "gitlab.com"
+	}
+	want := fmt.Sprintf("https://%s/%s/%s.git", host, owner, name)
+
+	get := exec.CommandContext(ctx, "git", "-C", repo, "remote", "get-url", "origin")
+	cur, err := get.Output()
+	switch {
+	case err != nil: // no origin configured
+		add := exec.CommandContext(ctx, "git", "-C", repo, "remote", "add", "origin", want)
+		if outB, aerr := add.CombinedOutput(); aerr != nil {
+			return fmt.Errorf("init: add origin remote: %w (%s)", aerr, strings.TrimSpace(string(outB)))
+		}
+		fmt.Fprintf(out, "[apply] origin remote set to %s\n", want)
+	case strings.TrimSpace(string(cur)) != want:
+		// A global insteadOf rewrite or an embedded credential can
+		// decorate what git reports, so don't compare raw strings —
+		// compare the provider HOST plus the EXACT owner/repo path
+		// (credentials + port + a trailing .git stripped). Review P1
+		// (2026-07-05): the old `strings.Contains(cur, "/"+owner+"/"+name)`
+		// ignored the host (a github.com remote satisfied a gitlab
+		// apply) and false-positived on path prefixes (`/acme/fleet`
+		// matched `/acme/fleet-starter`). Only a genuine host-or-repo
+		// mismatch corrects; pushing the bootstrap commit to the wrong
+		// remote is worse than failing.
+		if remoteMatches(strings.TrimSpace(string(cur)), host, owner, name) {
+			return nil
+		}
+		set := exec.CommandContext(ctx, "git", "-C", repo, "remote", "set-url", "origin", want)
+		if outB, serr := set.CombinedOutput(); serr != nil {
+			return fmt.Errorf("init: correct origin remote: %w (%s)", serr, strings.TrimSpace(string(outB)))
+		}
+		fmt.Fprintf(out, "[apply] origin remote CORRECTED %s → %s\n", strings.TrimSpace(string(cur)), want)
+	}
+	return nil
+}
+
+// remoteMatches reports whether git remote URL `raw` already points at
+// host/owner/name — used by ensureOriginRemote to decide a decorated
+// but-equivalent remote is a no-op. Host comparison is case-insensitive
+// (hostnames are); path is compared exactly to owner/name.
+func remoteMatches(raw, host, owner, name string) bool {
+	rHost, rPath, ok := remoteIdentity(raw)
+	if !ok {
+		return false
+	}
+	return strings.EqualFold(rHost, host) && rPath == owner+"/"+name
+}
+
+// remoteIdentity extracts (host, "owner/repo") from a git remote URL,
+// stripping embedded credentials, port, and a trailing ".git". Handles
+// both the URL form (`scheme://[user[:pass]@]host[:port]/path`) and the
+// scp-like SSH shorthand (`[user@]host:path`). ok=false when the URL
+// can't be parsed into a host plus a non-empty path — callers treat
+// that as "not a match" and correct the remote.
+func remoteIdentity(raw string) (host, path string, ok bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", "", false
+	}
+	if strings.Contains(raw, "://") {
+		u, err := url.Parse(raw)
+		if err != nil || u.Hostname() == "" {
+			return "", "", false
+		}
+		host = u.Hostname() // drops userinfo + port
+		path = u.Path
+	} else {
+		// scp-like: [user@]host:owner/repo(.git) — the first colon
+		// separates host from path (git scp paths carry no colon).
+		colon := strings.Index(raw, ":")
+		if colon < 0 {
+			return "", "", false
+		}
+		hostAndUser := raw[:colon]
+		path = raw[colon+1:]
+		if at := strings.LastIndex(hostAndUser, "@"); at >= 0 {
+			host = hostAndUser[at+1:]
+		} else {
+			host = hostAndUser
+		}
+	}
+	path = strings.Trim(path, "/")
+	path = strings.TrimSuffix(path, ".git")
+	if host == "" || path == "" {
+		return "", "", false
+	}
+	return host, path, true
+}

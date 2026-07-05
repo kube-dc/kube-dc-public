@@ -283,8 +283,8 @@ func TestGenerateRoot_DecodeIsLocal_NoInPodCall(t *testing.T) {
 	// round-trips cleanly. The bao CLI emits OTPs as printable
 	// ASCII whose byte length matches the decoded encoded_token.
 	const (
-		otp        = "B64otpVALUE-OPENBAO-2-5-3-LIVE-OK"     // 33 bytes
-		finalToken = "s.LiveDecodeVerifiedAgainstDC1123"     // 33 bytes (same length)
+		otp        = "B64otpVALUE-OPENBAO-2-5-3-LIVE-OK" // 33 bytes
+		finalToken = "s.LiveDecodeVerifiedAgainstDC1123" // 33 bytes (same length)
 	)
 
 	// Compute the encoded form the mock should return — base64 of
@@ -374,9 +374,9 @@ func TestGenerateRoot_DecodeIsLocal_NoInPodCall(t *testing.T) {
 // docs/internal/openbao-runbook.md.
 func TestDecodeRootToken_RoundTrip(t *testing.T) {
 	cases := []struct {
-		name  string
-		root  string
-		otp   string
+		name string
+		root string
+		otp  string
 	}{
 		// Both pairs are crafted so len(root) == len(otp) — bao's
 		// encode operation requires equal-length input.
@@ -408,7 +408,7 @@ func TestDecodeRootToken_RoundTrip(t *testing.T) {
 // encoded + otp pairs where decoded encoded length != otp byte length.
 func TestDecodeRootToken_LengthMismatch(t *testing.T) {
 	enc := base64.RawStdEncoding.EncodeToString([]byte("aaaaaaaaaa")) // 10 bytes
-	otp := "B"                                                         // 1 byte
+	otp := "B"                                                        // 1 byte
 	_, err := decodeRootToken(enc, otp)
 	if err == nil || !strings.Contains(err.Error(), "length mismatch") {
 		t.Errorf("expected length mismatch error, got %v", err)
@@ -429,9 +429,9 @@ func TestDecodeRootToken_LengthMismatch(t *testing.T) {
 // error, not a confusing downstream parse failure.
 func TestIsBase64ish_RejectsMalformedShapes(t *testing.T) {
 	cases := []struct {
-		name    string
-		value   string
-		wantOK  bool
+		name   string
+		value  string
+		wantOK bool
 	}{
 		{"empty", "", false},
 		{"plain base64", "Zm9vYmFyMTIzNDU2", true},
@@ -607,6 +607,44 @@ func TestParseStatus_BadJSON(t *testing.T) {
 	}
 }
 
+// E2E finding 23: a single-node file-storage deployment reports
+// ha_enabled=false and the zero active_time FOREVER — the 2.5 shim
+// must not synthesize "standby" from that, or activePodCached hides
+// the only working pod and every post-unseal step fails with
+// "no active (unsealed) pod found".
+func TestParseStatus_SingleNodeFileStorageIsNotStandby(t *testing.T) {
+	body := []byte(`{"type":"shamir","initialized":true,"sealed":false,
+		"version":"2.5.3","storage_type":"file","ha_enabled":false,
+		"active_time":"0001-01-01T00:00:00Z"}`)
+	var st ports.BaoStatus
+	if err := parseStatus("openbao-0", body, &st); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if st.Sealed {
+		t.Error("sealed should be false")
+	}
+	if st.HAMode != "" {
+		t.Errorf("HAMode = %q, want \"\" (single-node arm must match)", st.HAMode)
+	}
+}
+
+// The HA-enabled paths keep working: zero active_time → standby,
+// real timestamp → active.
+func TestParseStatus_HAEnabledShim(t *testing.T) {
+	standby := []byte(`{"initialized":true,"sealed":false,"ha_enabled":true,
+		"active_time":"0001-01-01T00:00:00Z"}`)
+	active := []byte(`{"initialized":true,"sealed":false,"ha_enabled":true,
+		"active_time":"2026-07-05T00:00:00Z"}`)
+	var st ports.BaoStatus
+	if err := parseStatus("openbao-0", standby, &st); err != nil || st.HAMode != "standby" {
+		t.Errorf("standby case: HAMode=%q err=%v", st.HAMode, err)
+	}
+	st = ports.BaoStatus{}
+	if err := parseStatus("openbao-1", active, &st); err != nil || st.HAMode != "active" {
+		t.Errorf("active case: HAMode=%q err=%v", st.HAMode, err)
+	}
+}
+
 // Sanity that nothing in the adapter retains share bytes — we can't
 // inspect goroutine memory, but we can verify the share bytes don't
 // turn up in any visible struct field. Defense-in-depth doc-test.
@@ -658,9 +696,9 @@ func fmtClientState(c *Client) string {
 // fallback echoes the sentinel.
 func newWSAlwaysDropsK8s(kubectlReply []byte, kubectlErr error) (*fakeK8s, *int, *int, *[]byte) {
 	var (
-		wsCalls       int
-		kubectlCalls  int
-		kubectlStdin  []byte
+		wsCalls      int
+		kubectlCalls int
+		kubectlStdin []byte
 	)
 	f := &fakeK8s{
 		exec: func(_ context.Context, _, _ string, _ []string, _ []byte) ([]byte, error) {
@@ -944,8 +982,8 @@ func TestExecIdempotentWrite_NormalizesNewlineForWrapper(t *testing.T) {
 func TestRevokeSelf_WS_DropExhausts_FallsBackToKubectl(t *testing.T) {
 	const sentinel = "KUBE_DC_WRITE_OK"
 	var (
-		wsCalls       int
-		kubectlCalls  int
+		wsCalls      int
+		kubectlCalls int
 	)
 	f := &fakeK8s{
 		exec: func(_ context.Context, _, pod string, cmd []string, _ []byte) ([]byte, error) {

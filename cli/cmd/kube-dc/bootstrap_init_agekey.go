@@ -7,7 +7,9 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap"
 	sopsadapter "github.com/shalb/kube-dc/cli/internal/bootstrap/adapters/sops"
@@ -252,5 +254,29 @@ func autoGenerateAgeKey(ctx context.Context, out io.Writer, o *clusterinit.InitO
 			fleetKey, err)
 	}
 	fmt.Fprintf(out, "[sops] generated %s\n", fleetKey)
+
+	// Commit the enrollment immediately (E2E finding 4, 2026-07-04).
+	// The script wrote/updated .sops.yaml; leaving it uncommitted
+	// trips Apply's own clean-tree gate one step later, and a
+	// subsequent push-failure rollback (go-git hard reset deletes
+	// untracked files) would even delete the just-generated age.key —
+	// causing a SECOND key to be generated on retry. age.key itself
+	// stays gitignored (never committed); the commit covers the
+	// .sops.yaml recipient enrollment.
+	// Identity pinned to the same author the Git adapter stamps —
+	// fresh installer machines have no global user.name/email and
+	// `git commit` would die with "unable to auto-detect email
+	// address" (review P2, reproduced with empty HOME).
+	for _, args := range [][]string{
+		{"add", ".sops.yaml"},
+		{"-c", "user.name=kube-dc bootstrap", "-c", "user.email=bootstrap@kube-dc.invalid",
+			"commit", "-m", "sops: enroll operator age key (bootstrap init greenfield)"},
+	} {
+		cmd := exec.CommandContext(ctx, "git", append([]string{"-C", o.Repo}, args...)...)
+		if outB, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("init: greenfield age-key: git %s: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(outB)))
+		}
+	}
+	fmt.Fprintln(out, "[sops] committed .sops.yaml enrollment")
 	return nil
 }

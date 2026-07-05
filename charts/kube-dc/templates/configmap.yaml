@@ -7,7 +7,9 @@ data:
     window.backendURL = 'https://{{ .Values.backend.gateway.hostname }}';
     window.frontendURL = 'https://{{ .Values.frontend.gateway.hostname }}';
     window.keycloakURL = '{{ .Values.manager.keycloakSecret.url }}';
-    window.ssoEnabled = {{ .Values.manager.keycloakSecret.ssoEnabled | default false }};
+    {{- /* printf-normalize: string "false" from Flux substitution must
+       render JS false, not survive `default` as a truthy string. */}}
+    window.ssoEnabled = {{ if eq (printf "%v" .Values.manager.keycloakSecret.ssoEnabled) "true" }}true{{ else }}false{{ end }};
     {{- if .Values.frontend.extraJsEnv }}
     {{- range $key, $value := .Values.frontend.extraJsEnv }}
     window.{{ $key }} = '{{ $value }}';

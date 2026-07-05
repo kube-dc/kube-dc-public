@@ -10,6 +10,7 @@ import (
 
 	bttui "github.com/shalb/kube-dc/cli/internal/bootstrap/tui"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/tui/screens"
+	"github.com/shalb/kube-dc/cli/internal/telemetry"
 )
 
 // bootstrapCmd registers `kube-dc bootstrap` and its subcommands. The
@@ -38,6 +39,15 @@ KUBE_DC_FLEET environment variable.`,
 
   # Same, via env var
   KUBE_DC_FLEET=~/projects/kube-dc-fleet kube-dc bootstrap`,
+		// C2 telemetry seam: one hook covers every bootstrap
+		// subcommand. The label is the static command path ONLY
+		// ("kube-dc bootstrap init") — never arguments or flag
+		// values, which can carry domains/cluster names. No-op
+		// unless the operator set KUBE_DC_TELEMETRY=1; v1 sink is a
+		// local counter file (nothing leaves the machine).
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			telemetry.Count(cmd.CommandPath())
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			repo, err := resolveFleetRepo(fleetRepo)
 			if err != nil {
@@ -64,6 +74,7 @@ KUBE_DC_FLEET environment variable.`,
 	cmd.AddCommand(bootstrapKeycloakCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapAccessCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapAnchorsCmd(&fleetRepo))
+	cmd.AddCommand(bootstrapAddNodeCmd())
 
 	return cmd
 }

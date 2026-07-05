@@ -135,7 +135,16 @@ func (c *Client) Fetch(ctx context.Context, host ports.SSHHost, remotePath strin
 	// Operators' kubeconfig paths are predictable (/etc/rancher/...) so
 	// the simple quoting is fine; if M4 ever needs operator-controlled
 	// paths, escape via shellescape.
-	runErr := runSessionWithCtx(ctx, session, conn, fmt.Sprintf("cat -- %s", shellSingleQuote(remotePath)))
+	// `sudo -n cat ||` first: the canonical target (RKE2's
+	// /etc/rancher/rke2/rke2.yaml) is root-owned 0600, and cloud
+	// images disable root SSH — a plain `cat` as the login user gets
+	// Permission denied (E2E finding 1, 2026-07-04). Passwordless
+	// sudo is standard on cloud images; when it's unavailable the
+	// fallback plain `cat` preserves the old behavior (root logins,
+	// world-readable staged copies).
+	q := shellSingleQuote(remotePath)
+	runErr := runSessionWithCtx(ctx, session, conn,
+		fmt.Sprintf("sudo -n cat -- %s 2>/dev/null || cat -- %s", q, q))
 	if runErr != nil {
 		if errors.Is(runErr, ports.ErrFileTooLarge) {
 			return nil, runErr
