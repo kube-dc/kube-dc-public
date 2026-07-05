@@ -37,15 +37,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func encodeBase64(b []byte) string         { return base64.StdEncoding.EncodeToString(b) }
+func encodeBase64(b []byte) string          { return base64.StdEncoding.EncodeToString(b) }
 func decodeBase64(s string) ([]byte, error) { return base64.StdEncoding.DecodeString(s) }
 
 // kmsCmd is the parent command. Sub-tree:
-//   kms
-//     keys
-//       list / describe / create / rotate / delete /
-//       schedule-delete / cancel-delete / set-min-decryption-version
-//     encrypt / decrypt
+//
+//	kms
+//	  keys
+//	    list / describe / create / rotate / delete /
+//	    schedule-delete / cancel-delete / set-min-decryption-version
+//	  encrypt / decrypt
 func kmsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "kms",

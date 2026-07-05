@@ -38,11 +38,11 @@ permissions.`,
 }
 
 // orgFromContextOrFlag returns the org name to use. Order:
-//   1. --org flag if non-empty.
-//   2. realm parsed out of the current kubeconfig context name
-//      (kube-dc/<domain>/<org>/<project> → org). Returns an error
-//      for an admin context (kube-dc/<domain>/admin) because org-admin
-//      elevation is meaningless from the realm-master persona.
+//  1. --org flag if non-empty.
+//  2. realm parsed out of the current kubeconfig context name
+//     (kube-dc/<domain>/<org>/<project> → org). Returns an error
+//     for an admin context (kube-dc/<domain>/admin) because org-admin
+//     elevation is meaningless from the realm-master persona.
 func orgFromContextOrFlag(flagOrg string) (string, error) {
 	if flagOrg != "" {
 		return flagOrg, nil
@@ -263,4 +263,3 @@ func orgsElevationsCmd() *cobra.Command {
 	cmd.Flags().StringVar(&org, "org", "", "Organization (default: current context's org)")
 	return cmd
 }
-

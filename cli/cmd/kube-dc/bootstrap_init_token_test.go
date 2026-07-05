@@ -204,10 +204,10 @@ func TestResolveGitHubToken_EmptyOutput_Empty(t *testing.T) {
 // assert.
 func TestResolveGitHubToken_TokenNeverLogged_TruthTable(t *testing.T) {
 	cases := []struct {
-		name     string
-		opts     *clusterinit.InitOptions
-		execOut  string
-		execErr  error
+		name    string
+		opts    *clusterinit.InitOptions
+		execOut string
+		execErr error
 	}{
 		{"flag-token", &clusterinit.InitOptions{GitHubToken: "SENSITIVE-FLAG-TOK"}, "", nil},
 		{"github-stdout", &clusterinit.InitOptions{}, "SENSITIVE-GH-TOK\n", nil},

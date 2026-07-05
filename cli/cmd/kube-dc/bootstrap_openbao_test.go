@@ -286,10 +286,10 @@ func TestRenderOpenBaoStatus_TriageDecisions(t *testing.T) {
 	}
 
 	cases := []struct {
-		name         string
-		mutate       func(r *openbao.StatusResult)
-		wantContain  []string
-		notContain   []string
+		name        string
+		mutate      func(r *openbao.StatusResult)
+		wantContain []string
+		notContain  []string
 	}{
 		{
 			// Fresh cluster: pods report Initialized=false + Sealed=true

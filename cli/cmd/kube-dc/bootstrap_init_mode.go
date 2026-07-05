@@ -19,9 +19,9 @@ import (
 //
 // **Design**: three minimal Kubernetes API calls, in order:
 //
-//   1. GET ns/kube-system  → K8sReachable (canonical "is API alive" check)
-//   2. GET ns/flux-system  → FluxSystemPresent
-//   3. GET deploy/kube-dc-manager in ns/kube-dc → KubeDCManagerPresent
+//  1. GET ns/kube-system  → K8sReachable (canonical "is API alive" check)
+//  2. GET ns/flux-system  → FluxSystemPresent
+//  3. GET deploy/kube-dc-manager in ns/kube-dc → KubeDCManagerPresent
 //
 // If step 1 fails, we short-circuit with K8sReachable=false (lets
 // DetectMode return the typed ErrK8sUnreachable). Steps 2 + 3 treat

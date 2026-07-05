@@ -80,10 +80,10 @@ Probes run against the current kubeconfig. Use KUBECONFIG env var or
 // printTopologyResult writes the probe table + verdict + reasoning +
 // recommendation in a consistent format. Three blocks:
 //
-//   1. PROBE table — one row per probe, with the class hint each
-//      signal points at (or "—" for purely informational rows)
-//   2. Classification line — Class + confidence + Verdict
-//   3. Reasoning + Next + Reference
+//  1. PROBE table — one row per probe, with the class hint each
+//     signal points at (or "—" for purely informational rows)
+//  2. Classification line — Class + confidence + Verdict
+//  3. Reasoning + Next + Reference
 //
 // The format matches the anchors doctor output shape (tabwriter
 // table + footer) so operators get a consistent UX across the

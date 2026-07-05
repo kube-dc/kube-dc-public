@@ -31,11 +31,11 @@ import (
 // `kubeconfig` + `kube-dc login` for day-2 operations.
 func bootstrapFetchKubeconfigCmd(fleetRepo *string) *cobra.Command {
 	var (
-		sshHost        string
-		domain         string
-		remotePath     string
-		destPath       string
-		setCurrent     bool
+		sshHost    string
+		domain     string
+		remotePath string
+		destPath   string
+		setCurrent bool
 	)
 	cmd := &cobra.Command{
 		Use:           "fetch-kubeconfig <cluster>",
@@ -172,4 +172,3 @@ func parseSSHHostArg(raw string) ports.SSHHost {
 	}
 	return ports.SSHHost{Alias: raw}
 }
-

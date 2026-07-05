@@ -11,10 +11,10 @@ import (
 //
 // Surface:
 //
-//   bootstrap break-glass adopt   <cluster>   create SA + token + sops-encrypted kubeconfig
-//   bootstrap break-glass         <cluster>   open a sub-shell with the decrypted kubeconfig
-//   bootstrap break-glass rotate  <cluster>   delete + recreate the SA token, re-encrypt
-//   bootstrap break-glass status  <cluster>   summary (server URL, last-modified) without using
+//	bootstrap break-glass adopt   <cluster>   create SA + token + sops-encrypted kubeconfig
+//	bootstrap break-glass         <cluster>   open a sub-shell with the decrypted kubeconfig
+//	bootstrap break-glass rotate  <cluster>   delete + recreate the SA token, re-encrypt
+//	bootstrap break-glass status  <cluster>   summary (server URL, last-modified) without using
 func bootstrapBreakGlassCmd(repoFlag *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "break-glass <cluster>",

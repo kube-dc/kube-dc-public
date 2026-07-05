@@ -276,166 +276,200 @@ All three nodes should appear with the `control-plane,etcd,master` roles. `NotRe
 
 ---
 
-## Phase 3 — Deploy Kube-DC
+## Phase 3 — Deploy Kube-DC with the `kube-dc` CLI
 
-### 3.1 Install Cluster.dev CLI
+Kube-DC installs through its own CLI (`kube-dc bootstrap init`), which
+scaffolds a **GitOps fleet repository**, bootstraps Flux against it, and
+lets Flux reconcile the whole platform (Kube-OVN, cert-manager, Envoy
+Gateway, Keycloak, KubeVirt, Kamaji, Rook Ceph, Grafana/Mimir/Loki, and
+the Kube-DC controllers). After install, **the fleet repo is the source
+of truth** — you change the cluster by committing to it, not by running
+`kubectl apply` or `helm install` by hand.
 
-On `master-1` (or your bastion host):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/shalb/cluster.dev/master/scripts/get_cdev.sh | sh
-```
-
-Verify:
-
-```bash
-cdev --version
-```
-
-### 3.2 Clone the Installer Template
-
-Create a project directory and set up the installer:
-
-```bash
-mkdir -p ~/kube-dc-install
-cd ~/kube-dc-install
-```
-
-Create the Cluster.dev project file:
-
-```yaml
-# ~/kube-dc-install/project.yaml
-name: kube-dc
-kind: Project
-backend: default
-variables:
-  organization: myorg
-exports:
-  CDEV_COLLECT_USAGE_STATS: false
-```
-
-### 3.3 Configure stack.yaml
-
-Create the stack configuration. This is the main configuration file — customize every value marked with a comment:
-
-```yaml
-# ~/kube-dc-install/stack.yaml
-name: cluster
-template: https://github.com/kube-dc/kube-dc-public//installer/kube-dc/templates/kube-dc?ref=main
-kind: Stack
-backend: default
-variables:
-  debug: "true"
-  kubeconfig: /root/.kube/config          # Path to your RKE2 kubeconfig
-
-  cluster_config:
-    keycloak_hostname: "login.example.com" # Keycloak SSO domain
-    default_gw_network_type: "cloud"
-    default_eip_network_type: "cloud"
-    default_fip_network_type: "cloud"
-    default_svc_lb_network_type: "cloud"
-    POD_CIDR: "10.100.0.0/16"             # Must match RKE2 cluster-cidr
-    POD_GATEWAY: "10.100.0.1"
-    SVC_CIDR: "10.101.0.0/16"             # Must match RKE2 service-cidr
-    JOIN_CIDR: "172.30.0.0/22"
-    cluster_dns: "10.101.0.11"            # Must match RKE2 cluster-dns
-    default_external_network:
-      type: cloud
-      nodes_list:                          # All nodes with the trunk interface
-        - master-1
-        - master-2
-        - master-3
-      name: ext-cloud                     # Kube-OVN ProviderNetwork name
-      vlan_id: "200"                      # Cloud VLAN ID on your switch
-      interface: "eth1"                   # Trunk interface name
-      cidr: "10.64.0.0/16"               # Cloud network CIDR
-      gateway: "10.64.0.1"
-      mtu: "1400"
-      exclude_ips:
-        - "10.64.0.1..10.64.0.100"       # Reserve first 100 IPs for infrastructure
-
-  node_external_ip: 203.0.113.10          # A public IP of master-1 (for initial DNS)
-
-  email: "admin@example.com"
-  domain: "example.com"                   # Your wildcard domain (*.example.com)
-  install_terraform: true
-  kubeApiExternalUrl: "https://kube-api.example.com:6443"
-
-  create_default:
-    enabled: true                          # Create a demo organization on first run
-    organization:
-      name: demo-org
-      description: "Demo Organization"
-      email: "admin@example.com"
-    project:
-      name: demo
-      cidr_block: "10.0.10.0/24"
-      egress_network_type: cloud
-
-  monitoring:
-    prom_storage: 50Gi
-    retention_size: 47GiB
-    retention: 365d
-
-  versions:
-    kube_dc: "v0.1.35"                    # Kube-DC release version
-```
-
-**Key values to customize:**
-
-| Variable | Description |
-|----------|-------------|
-| `kubeconfig` | Absolute path to your RKE2 kubeconfig |
-| `domain` | Your domain — wildcard `*.example.com` must resolve to your public IP |
-| `cluster_config.keycloak_hostname` | FQDN for Keycloak (e.g., `login.example.com`) |
-| `default_external_network.interface` | Trunk NIC name (same on all nodes, or patch later) |
-| `default_external_network.vlan_id` | Cloud VLAN ID configured on your switch |
-| `default_external_network.cidr` | Cloud network CIDR (large private range) |
-| `node_external_ip` | Public IP of `master-1` for initial wildcard DNS |
-| `versions.kube_dc` | Target Kube-DC release |
-
-### 3.4 Configure DNS
-
-Before deploying, configure a **wildcard DNS record** pointing to the public IP of `master-1` (the `node_external_ip` value in `stack.yaml`). Cert-Manager needs resolvable domains to issue Let's Encrypt certificates during deployment.
-
-```
-*.example.com  →  203.0.113.10  (A record, pointing to master-1 public IP)
-```
-
-This enables HTTPS for:
-- `console.example.com` — Kube-DC web console
-- `login.example.com` — Keycloak SSO
-- `grafana.example.com` — Grafana dashboards
-
-:::tip
-After deploying MetalLB in [Phase 4.1](#41-deploy-metallb-for-ha-ingress), update this DNS record to point to the MetalLB **floating IP** for high availability.
+:::info Why a fleet repo?
+Every component version, network setting, and credential lives in
+`clusters/<name>/` in your fleet repo (secrets encrypted with SOPS +
+age). Flux continuously reconciles it. This is what makes upgrades,
+disaster recovery, and multi-cluster fleets tractable — and it is the
+path validated end-to-end in the project's installer test plan.
 :::
 
-### 3.5 Deploy
+### 3.1 Install the `kube-dc` CLI
+
+On your **bastion / workstation** (not necessarily a cluster node):
 
 ```bash
-cd ~/kube-dc-install
-cdev apply
+# Linux amd64
+curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_linux_amd64 \
+  -o /usr/local/bin/kube-dc && sudo chmod +x /usr/local/bin/kube-dc
+# macOS: swap in kube-dc_darwin_amd64 / kube-dc_darwin_arm64
+kube-dc bootstrap doctor --no-tty     # verify local tooling
 ```
 
-The deployment takes **15–20 minutes**. On completion, you will see output like:
+`doctor` checks the required tools — `kubectl`, `flux`, `helm`, `sops`,
+`age`, `git`, `gh`, `ssh` — and reports any that are missing or below the
+minimum version. Fix every blocker before continuing. Also ensure the
+control-plane SSH key is loaded (`ssh-add <key>`); the CLI reads it from
+your `ssh-agent`, it never takes a key flag.
+
+### 3.2 Configure wildcard DNS (required before init)
+
+Point a **wildcard A record** at the public IP of `master-1`. `init`
+runs a DNS gate up front and Let's Encrypt (HTTP-01) needs the names to
+resolve during reconcile:
 
 ```
-console_url = https://console.example.com
-keycloak_url = https://login.example.com
-keycloak_user = admin
-keycloak_password = <generated>
-organization_name = demo-org
-project_name = demo
-organization_admin_username = admin
-retrieve_organization_password = kubectl get secret realm-access -n demo-org -o jsonpath='{.data.password}' | base64 -d
+*.example.com       →  203.0.113.10      (A record — master-1 public IP)
+kube-api.example.com →  203.0.113.10     (A record — API server SNI)
 ```
 
-Save these credentials.
+This is what makes `console.`, `login.`, `grafana.`, `flux.`, and every
+per-tenant hostname resolve. After Phase 4 (MetalLB HA) you re-point the
+wildcard at the floating IP.
+
+:::tip Behind a 1:1 NAT / floating IP?
+On clouds where the node never sees its own public IP locally (a
+kube-dc FIP, an EC2 elastic IP, an OpenStack/Hetzner floating IP), pass
+`--ssh-host`. The CLI SSH-probes the node, writes the **arriving
+(internal) IP** into the fleet, and drops the Gateway's `:6443`
+passthrough listener — otherwise the front door silently resets. Bare
+metal with the public IP bound on the NIC needs none of this.
+:::
+
+### 3.3 Run `kube-dc bootstrap init`
+
+Run this from the bastion with `KUBECONFIG` pointing at the RKE2 cluster
+from Phase 2. Start with `--dry-run` to review the plan, then re-run with
+`--yes` to apply:
+
+```bash
+kube-dc bootstrap init \
+  --preset=cloud+public-vlan \
+  --mode=install \
+  --name=dc1 \
+  --domain=example.com \
+  --node-external-ip=203.0.113.10 \
+  --email=admin@example.com \
+  --fleet-mode=new-repo \
+  --github-owner=my-org --github-repo=my-kube-dc-fleet \
+  --object-storage-mode=rook-ceph-multi-node \
+  --ceph-node=master-1=/dev/nvme1n1 \
+  --ceph-node=master-2=/dev/nvme1n1 \
+  --ceph-node=master-3=/dev/nvme1n1 \
+  --ssh-host=admin@203.0.113.10 \
+  --set=EXT_NET_INTERFACE=eth1 \
+  --set=EXT_NET_VLAN_ID=200 \
+  --set=KUBE_OVN_MASTER_NODES=192.168.0.1,192.168.0.2,192.168.0.3 \
+  --dry-run                                # review, then swap for --yes
+```
+
+**Key flags:**
+
+| Flag | Meaning |
+|------|---------|
+| `--preset` | `cloud+public-vlan` (cloud + provider VLANs), `cloud-vlan`, `internal-only` (single-node / lab, no provider VLAN), or `custom` |
+| `--name` | Cluster name — becomes `clusters/<name>/` in the fleet repo |
+| `--domain` / `--node-external-ip` | Wildcard domain + the public IP it resolves to (§3.2) |
+| `--fleet-mode` | `new-repo` (CLI creates the GitHub/GitLab repo), `existing-repo`, or `existing-fleet` (add a cluster to a repo that already has siblings — inherits their version pins) |
+| `--github-owner` / `--github-repo` | Where the fleet repo lives (auto-created in `new-repo` mode) |
+| `--object-storage-mode` | `rook-ceph-multi-node` (3+ OSDs, HA), `rook-ceph-local` (single OSD — lab), `rook-ceph-pvc`, `external-*`, or `disabled` |
+| `--ceph-node=NODE=DEVICE` | One raw block device per OSD node (repeat 3× for multi-node) |
+| `--ssh-host` | Control-plane SSH target — enables kubeconfig auto-pull **and** NAT-topology detection (§3.2) |
+| `--set=KUBE_OVN_MASTER_NODES` | Control-plane **internal** IPs (comma-separated) — not emitted by the preset, always set it |
+| `--set=EXT_NET_INTERFACE` / `EXT_NET_VLAN_ID` | Trunk NIC + cloud VLAN ID from Phase 1 |
+
+What `init` does, in order: generates a SOPS **age key** → creates +
+pushes the fleet repo → scaffolds `clusters/dc1/` (network, object
+storage, encrypted secrets) → `flux bootstrap` → pre-installs the
+CNI/CRD-bearing charts so a bare cluster can reconcile → hands off to
+Flux. It is idempotent and rolls back its own commit if the push fails.
+
+:::info Single-node / lab install
+For a one-box trial, use `--preset=internal-only --object-storage-mode=rook-ceph-local --rook-osd-node=<node> --rook-osd-size-gb=40`
+and skip the provider-VLAN `--set` flags. Size the node at **≥12 vCPU /
+27 GiB / 100 GB** — the full platform plus reconcile churn needs it.
+:::
+
+### 3.4 Watch the platform converge
+
+Flux reconciles in dependency order:
+`flux-system → infra-cni → infra-core → infra-object-storage → platform`.
+
+```bash
+export KUBECONFIG=~/.kube/config          # the cluster from Phase 2
+flux get kustomizations                   # all five should reach Ready=True
+flux get helmreleases -A                  # ~20 releases go Ready
+kubectl -n rook-ceph get cephcluster      # Mons → OSDs → Ready
+```
+
+A full converge takes roughly **10–20 minutes** on adequately-sized
+nodes. If a HelmRelease exhausts its retries during an early
+resource-tight phase, nudge it with a suspend/resume flip:
+`kubectl -n <ns> patch hr <name> --type=merge -p '{"spec":{"suspend":true}}'`
+then set it back to `false`.
+
+### 3.5 Post-install — SSO clients, OpenBao, credentials
+
+Two post-install steps run once Keycloak and OpenBao are Ready. Run them
+from your fleet-repo clone with `KUBECONFIG` at the new cluster:
+
+```bash
+# 1. OIDC clients (Flux Web, Grafana, admin console) — writes the client
+#    secrets SOPS-encrypted into clusters/dc1/, then commit + push.
+bash bootstrap/setup-keycloak-oidc.sh dc1
+git push && flux reconcile kustomization platform --with-source
+
+# 2. OpenBao — unseal-share custody + controller auth, fully automated.
+kube-dc bootstrap openbao init dc1 --repo .
+```
+
+The Keycloak admin password is generated into the `keycloak` secret:
+
+```bash
+kubectl -n keycloak get secret keycloak \
+  -o jsonpath='{.data.admin-password}' | base64 -d; echo
+```
+
+Organizations work **without** external SSO out of the box. To enable
+Google login for tenants, run `hack/bootstrap-sso-realm.sh` (needs a
+Google OAuth client), set `SSO_ENABLED=true` in
+`clusters/dc1/cluster-config.env`, and push.
+
+### 3.6 Verify the front door
+
+```bash
+for h in login console grafana flux; do
+  curl -s -o /dev/null -w "$h=%{http_code}\n" https://$h.example.com/
+done
+# login=302  console=200  grafana=302  flux=200   → Let's Encrypt certs live
+```
+
+Then create your first tenant with the [First Project](../cloud/first-project.md)
+flow, or apply an `Organization` + `Project` directly:
+
+```bash
+kubectl create ns acme
+kubectl apply -f - <<'EOF'
+apiVersion: kube-dc.com/v1
+kind: Organization
+metadata: { name: acme, namespace: acme }
+spec: { email: admin@example.com, description: "Acme Inc." }
+EOF
+kubectl -n acme get organization acme -o jsonpath='{.status.ready}'   # → true
+```
 
 ---
 
 ## Phase 4 — Post-Deployment Configuration
+
+:::note GitOps flow
+With the CLI install, MetalLB, monitoring, and the platform components
+below are **already deployed by Flux** from your fleet repo. This phase
+covers the cluster-specific pieces the fleet can't guess — chiefly the
+**floating public IP** for HA ingress. Apply these as fleet commits
+(under `clusters/<name>/`) rather than raw `kubectl` so they survive
+reconciles.
+:::
 
 ### 4.1 Deploy MetalLB for HA Ingress
 

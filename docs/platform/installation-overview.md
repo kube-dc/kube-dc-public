@@ -107,7 +107,10 @@ Physical Server NIC (e.g., eth1)
 
 ## Components Deployed by the Installer
 
-The Kube-DC installer ([Cluster.dev](https://cluster.dev)) automates the deployment of all platform components on top of an existing RKE2 cluster:
+The `kube-dc` CLI (`kube-dc bootstrap init`) scaffolds a GitOps **fleet
+repository** and bootstraps Flux against it; Flux then reconciles all
+platform components onto your RKE2 cluster. The fleet repo stays the
+source of truth for versions and configuration:
 
 | Component | Version | Purpose |
 |-----------|---------|---------|
@@ -142,7 +145,11 @@ Install RKE2 on all three nodes as a highly available control plane (3 server no
 
 ### Phase 3 — Kube-DC Deployment
 
-Clone the Kube-DC installer template from the [public repository](https://github.com/kube-dc/kube-dc-public), customize `project.yaml` and `stack.yaml` for your environment, and run `cdev apply`. The installer deploys all components automatically in ~15–20 minutes.
+Install the [`kube-dc` CLI](cluster-cli-overview.md), point wildcard DNS
+at your public IP, and run `kube-dc bootstrap init`. It creates a GitOps
+fleet repo, bootstraps Flux, and hands off to Flux to reconcile all
+components in ~10–20 minutes. Two one-time post-install steps wire the
+Keycloak OIDC clients and OpenBao. See the Installation Guide Phase 3.
 
 ### Phase 4 — Post-Deployment Configuration
 

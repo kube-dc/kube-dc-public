@@ -265,8 +265,8 @@ var validSecretTypes = map[string]struct{}{
 // dedicated type so buildCreateManagedSecret stays a pure function we
 // can table-test without touching the kubeconfig/backend.
 type createOpts struct {
-	Name, Namespace, Type, Description string
-	SyncDisabled                       bool
+	Name, Namespace, Type, Description   string
+	SyncDisabled                         bool
 	SyncTarget, SyncRefresh, SyncKeysCSV string
 }
 

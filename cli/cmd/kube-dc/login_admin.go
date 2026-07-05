@@ -193,6 +193,7 @@ func runAdminLogin(domain, caCertFile string, insecure, deviceCode bool) error {
 //   - "/admin"            (full.path: true, default Keycloak behavior)
 //   - "platform:admin"    (already-mapped, e.g. from a re-issued token)
 //   - "platform:/admin"
+//
 // Accept all four so the CLI doesn't gatekeep on a stylistic
 // difference between realms or claim mappings.
 func hasAdminGroup(groups []string, want string) bool {

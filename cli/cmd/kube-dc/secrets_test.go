@@ -210,13 +210,13 @@ func TestBuildSyncPatch_OmitempyContractForK8sSerialise(t *testing.T) {
 
 func TestRealmFromContext(t *testing.T) {
 	for ctx, want := range map[string]string{
-		"kube-dc/kube-dc.cloud/admin":             "master",
-		"kube-dc/kube-dc.cloud/shalb/envoy":       "shalb",
-		"kube-dc/kdc.eu-dc1.example.net/cs/demo":      "cs",
-		"kube-dc/cluster.example/org/proj-with-hyph":  "org",
-		"my-non-kubedc-context":                       "",
-		"kube-dc/only-one-level":                      "",
-		"":                                            "",
+		"kube-dc/kube-dc.cloud/admin":                "master",
+		"kube-dc/kube-dc.cloud/shalb/envoy":          "shalb",
+		"kube-dc/kdc.eu-dc1.example.net/cs/demo":     "cs",
+		"kube-dc/cluster.example/org/proj-with-hyph": "org",
+		"my-non-kubedc-context":                      "",
+		"kube-dc/only-one-level":                     "",
+		"":                                           "",
 	} {
 		if got := realmFromContext(ctx); got != want {
 			t.Errorf("realmFromContext(%q) = %q; want %q", ctx, got, want)

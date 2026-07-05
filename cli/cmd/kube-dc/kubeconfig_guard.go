@@ -33,9 +33,9 @@ func warnIfNonDefaultKubeconfig() error {
 	// is the no-op-on-default but loud-on-deviation contract.
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "  ┌─ kubeconfig destination ─")
-	fmt.Fprintf(os.Stderr,  "  │  $KUBECONFIG = %s\n", os.Getenv("KUBECONFIG"))
-	fmt.Fprintf(os.Stderr,  "  │  → writing to: %s\n", target)
-	fmt.Fprintf(os.Stderr,  "  │  (default would be %s — kubectx reads from there)\n", defaultPath)
+	fmt.Fprintf(os.Stderr, "  │  $KUBECONFIG = %s\n", os.Getenv("KUBECONFIG"))
+	fmt.Fprintf(os.Stderr, "  │  → writing to: %s\n", target)
+	fmt.Fprintf(os.Stderr, "  │  (default would be %s — kubectx reads from there)\n", defaultPath)
 	fmt.Fprintln(os.Stderr, "  └──")
 
 	// Only prompt when stdin is a TTY. Pipes / non-interactive shells
