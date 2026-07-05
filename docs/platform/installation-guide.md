@@ -110,7 +110,44 @@ echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" | sudo tee /etc/resolv.conf
 
 ## Phase 2 — RKE2 Cluster Bootstrap
 
-### 2.1 Install RKE2 on master-1
+The fastest path is `kube-dc bootstrap install`, which writes the canonical
+RKE2 config and installs RKE2 for you over SSH (§2.0). If you'd rather do it
+by hand — or need to understand exactly what that command produces — the
+manual steps follow in §2.1+.
+
+### 2.0 One command: `kube-dc bootstrap install` (recommended)
+
+From your bastion (after installing the CLI — see [Phase 3.1](#31-install-the-kube-dc-cli)):
+
+```bash
+kube-dc bootstrap install master-1 \
+  --ssh-host root@203.0.113.10 \
+  --domain example.com \
+  --preset cloud+public-vlan \
+  --dry-run                       # review the resolved config, then drop --dry-run
+```
+
+It resolves the node's internal IP over SSH, then writes
+`/etc/rancher/rke2/config.yaml` and installs + starts `rke2-server` with the
+exact config the manual steps below produce:
+`cni: none`, **`advertise-address` = the node's internal IP** (never a
+NAT/floating public IP — this is the single-IP-NAT trap), cluster/service
+CIDRs **pulled from the same `--preset` you'll pass to `init`** (so kube-ovn
+and the fleet never disagree), and memory-tiered kubelet reserves with a
+**`max-pods` floor of 200** (the platform is pod-dense; the upstream 110
+default is too small for an all-in-one node). The node comes up **NotReady**
+until Phase 3 installs the CNI — that's expected.
+
+Key flags: `--name` (RKE2 node-name; defaults to the positional arg — use the
+same name in `init`), `--node-ip` / `--external-ip` (override auto-detection),
+`--force` (re-run on an already-installed node — restarts to apply config
+changes), `--set POD_CIDR=…` (override a preset CIDR). Requires passwordless
+sudo (or a root login) on the node.
+
+Then skip to [§2.4 Verify](#24-verify-the-ha-cluster) (single node) or use §2.3
+to join additional control-plane nodes, and continue to Phase 3.
+
+### 2.1 Install RKE2 on master-1 (manual alternative)
 
 SSH into `master-1` and install kubectl:
 
