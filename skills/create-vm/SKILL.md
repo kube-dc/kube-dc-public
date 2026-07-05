@@ -24,7 +24,11 @@ Otherwise, use the reference table below.
 
 ### 2. Create DataVolume (Boot Disk)
 
-VMs use DataVolumes to import cloud images via HTTP. The DataVolume downloads the image and creates a PVC.
+VMs use DataVolumes to import a cloud image and create a PVC. The **primary
+path is a registry import** with `pullMethod: node`: the containerdisk is
+pulled through the node's containerd — faster, cached on the node for
+subsequent VMs, and works from any tenant VPC. The registry URL MUST be
+**digest-pinned** (`@sha256:...`) — never a bare tag, never `latest`.
 
 ```yaml
 apiVersion: cdi.kubevirt.io/v1beta1
@@ -32,6 +36,29 @@ kind: DataVolume
 metadata:
   name: {vm-name}-disk
   namespace: {project-namespace}
+spec:
+  source:
+    registry:
+      url: "docker://quay.io/containerdisks/ubuntu:24.04@sha256:..."   # ALWAYS digest-pinned
+      pullMethod: node
+  pvc:
+    accessModes: [ReadWriteOnce]
+    resources:
+      requests:
+        storage: {disk-size}    # Must be >= MIN_STORAGE for the OS
+    storageClassName: local-path
+```
+
+Ready digest-pinned refs come from the platform catalog (UI **OS Images** /
+`cdi-os-catalog` ConfigMap). For standard Linux images,
+`quay.io/containerdisks/<os>` provides upstream containerdisks — resolve the
+tag to a digest before use.
+
+**Fallback — HTTP import** (Windows/ISO, custom images, or OSes with no
+containerdisk). Uses the in-cluster S3 mirror URLs from the Available Images
+table:
+
+```yaml
 spec:
   source:
     http:
@@ -124,9 +151,12 @@ spec:
 ## Available Images
 
 Source: `cdi-os-catalog` ConfigMap in `kube-dc` namespace (multi-version,
-schema v2). The cluster mirrors every OS onto its own S3 bucket
-(`https://s3.<DOMAIN>/cdi-os-images/`); tenants always pull from that
-mirror, not from upstream CDNs. The `/latest/` URL alias is what the
+schema v2). Where the catalog carries a digest-pinned registry ref
+(standard Linux families), prefer the registry import from step 2; the
+HTTP URLs below are the fallback path (Windows/ISO, custom images).
+The cluster mirrors every OS onto its own S3 bucket
+(`https://s3.<DOMAIN>/cdi-os-images/`); tenants pull HTTP imports from
+that mirror, not from upstream CDNs. The `/latest/` URL alias is what the
 chart publishes; specific tag URLs are available for version pinning.
 
 URLs below show the `/latest/` form for a cloud cluster at
@@ -253,4 +283,5 @@ kubectl get dv {vm-name}-disk -n {project-namespace} -o jsonpath='{.status.phase
 - FIP and LoadBalancer on the same VM are mutually exclusive
 - Use the correct firmware type: `bios` for most Linux and Gentoo; `efi` only for Windows
 - Windows VMs need machine type `pc-q35-rhel8.6.0` and HyperV features
-- Prefer `/latest/` URLs from the cluster S3 mirror over upstream CDN URLs — survives upstream rotations and is the only source the refresh CronJob keeps fresh
+- Registry DataVolume URLs MUST be digest-pinned (`@sha256:...`) — never a bare tag or `latest`; take refs from the platform catalog (UI "OS Images")
+- For HTTP fallback imports, prefer `/latest/` URLs from the cluster S3 mirror over upstream CDN URLs — survives upstream rotations and is the only source the refresh CronJob keeps fresh

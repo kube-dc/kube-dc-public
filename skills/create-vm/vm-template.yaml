@@ -5,9 +5,15 @@ metadata:
   namespace: {project-namespace}
 spec:
   source:
-    http:
-      url: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
-  storage:
+    registry:
+      # ALWAYS digest-pinned — never a bare tag or :latest.
+      # Ready refs: platform catalog (UI "OS Images"); quay.io/containerdisks/<os> for standard images.
+      url: "docker://quay.io/containerdisks/ubuntu:24.04@sha256:ec914ce2270fd5e0e729a98a91664dbac50a3c5c15d744da9c6fb51bc25e81f8"
+      pullMethod: node    # pull via the node's containerd — faster, cached, works from any tenant VPC
+    # Fallback — HTTP import (Windows/ISO, custom images): replace `registry` above with:
+    # http:
+    #   url: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+  pvc:
     accessModes:
       - ReadWriteOnce
     resources:

@@ -65,7 +65,34 @@ aws s3 cp myfile.txt s3://{project-namespace}-{bucket-name}/ --endpoint-url http
 
 ## Block Storage (DataVolume for VMs)
 
-### Import from URL
+### Import from Registry (primary — OS boot disks)
+
+Pulls the containerdisk via the node's containerd (`pullMethod: node`) —
+faster, cached on the node, and works from any tenant VPC. The URL MUST be
+digest-pinned (`@sha256:...`) — never a bare tag or `latest`. Ready
+digest-pinned refs come from the platform catalog (UI "OS Images");
+`quay.io/containerdisks/<os>` works for standard Linux images.
+
+```yaml
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: {disk-name}
+  namespace: {project-namespace}
+spec:
+  source:
+    registry:
+      url: "docker://quay.io/containerdisks/ubuntu:24.04@sha256:..."   # ALWAYS digest-pinned
+      pullMethod: node
+  pvc:
+    accessModes: [ReadWriteOnce]
+    resources:
+      requests:
+        storage: {size}    # e.g. 20Gi
+    storageClassName: local-path
+```
+
+### Import from URL (fallback — Windows/ISO, custom images)
 
 ```yaml
 apiVersion: cdi.kubevirt.io/v1beta1
@@ -182,4 +209,5 @@ kubectl get pvc {pvc-name} -n {project-namespace} -o jsonpath='{.status.phase}'
 - OBC MUST have `kube-dc.com/organization: {org}` label
 - S3 endpoint: `https://s3.kube-dc.cloud`, region: `us-east-1`
 - Always use `storageClassName: local-path` (default)
+- Registry DataVolume URLs MUST be digest-pinned (`@sha256:...`) — never a bare tag or `latest`
 - Bucket name pattern: `{namespace}-{name}` — must be globally unique

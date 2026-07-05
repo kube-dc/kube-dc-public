@@ -1,4 +1,24 @@
-# DataVolume — import from URL (for VM boot disk)
+# DataVolume — registry import (primary path for VM boot disks)
+# URL MUST be digest-pinned (@sha256:...) — never a bare tag or :latest.
+# Ready refs: platform catalog (UI "OS Images"); quay.io/containerdisks/<os> for standard images.
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: {disk-name}
+  namespace: {project-namespace}
+spec:
+  source:
+    registry:
+      url: "docker://quay.io/containerdisks/ubuntu:24.04@sha256:ec914ce2270fd5e0e729a98a91664dbac50a3c5c15d744da9c6fb51bc25e81f8"
+      pullMethod: node    # pull via the node's containerd — faster, cached, works from any tenant VPC
+  pvc:
+    accessModes: [ReadWriteOnce]
+    resources:
+      requests:
+        storage: 20Gi
+    storageClassName: local-path
+---
+# DataVolume — import from URL (fallback: Windows/ISO, custom images)
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
 metadata:
