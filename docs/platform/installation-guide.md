@@ -821,14 +821,34 @@ kubectl get gateway -A
 kubectl logs -n envoy-gateway-system -l control-plane=envoy-gateway --tail=50
 ```
 
-### cdev apply Fails
+### `kube-dc bootstrap init` Fails
 
 ```bash
-# Re-run with debug output
-cdev apply --log-level debug
+# Review the plan without mutating anything
+kube-dc bootstrap init <same flags> --dry-run
 
-# Check specific unit status
-cdev output
+# Re-check local tooling + the target cluster
+kube-dc bootstrap doctor --no-tty
+kube-dc bootstrap status <cluster> --repo <fleet-repo>
+```
+
+`init` is idempotent and rolls back its own commit if the push fails —
+fix the reported cause and re-run. Common ones: `KUBE_OVN_MASTER_NODES`
+unset (pass the control-plane **internal** IPs via `--set`), the wildcard
+DNS record not yet resolving (the DNS gate blocks; re-run once
+`dig +short test.<domain>` returns your IP, or pass
+`--allow-dns-not-ready` to proceed without TLS), or a missing
+`delete_repo`/`repo` scope on the `gh` token for `new-repo` mode.
+
+### Flux Not Reconciling
+
+```bash
+flux get kustomizations                 # which layer is stuck?
+flux get helmreleases -A                # which HelmRelease failed?
+kubectl -n flux-system logs deploy/kustomize-controller --tail=50
+# reset an exhausted HelmRelease's retries:
+kubectl -n <ns> patch hr <name> --type=merge -p '{"spec":{"suspend":true}}'
+kubectl -n <ns> patch hr <name> --type=merge -p '{"spec":{"suspend":false}}'
 ```
 
 For additional help, consult the [Community & Support](/cloud/community-support) page.

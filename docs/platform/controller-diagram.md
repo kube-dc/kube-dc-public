@@ -5,7 +5,7 @@ A high-level view of Kube-DC controller components (excluding UI) and external d
 ```mermaid
 flowchart TB
   subgraph Installer
-    CD[cluster.dev IaC]
+    CD[kube-dc CLI + Flux GitOps]
   end
 
   subgraph K8sCluster["Kubernetes Cluster & CRDs"]
