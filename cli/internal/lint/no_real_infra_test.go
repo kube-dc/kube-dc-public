@@ -3,8 +3,8 @@
 //
 // The sync workflow (.github/workflows/sync_to_public_repo.yaml)
 // rsyncs charts/, examples/, docs/cloud/, docs/platform/, docs-ui/,
-// installer/, hack/, tests/, cli/, the root README.md and the
-// deploy-docs workflow to the public repo on every push to main.
+// hack/, tests/, cli/, the root README.md and the deploy-docs
+// workflow to the public repo on every push to main.
 // Real infrastructure identifiers (customer cluster names, public
 // IPs, node hostnames, operator identities, bastion FQDNs, operator
 // home paths) must therefore never be hardcoded ANYWHERE on that
@@ -14,7 +14,7 @@
 // over the full mirror surface (it lives in the cli module so it runs
 // under the standard `go -C cli test ./...` gate, but it walks the
 // REPO root — reviewer catch 2026-07-04: a cli-only scan missed
-// installer/ + tests/ leaks). Use neutral placeholders instead:
+// tests/ leaks). Use neutral placeholders instead:
 //
 //   - IPs:        RFC 5737 documentation ranges (203.0.113.x,
 //     198.51.100.x, 192.0.2.x)
@@ -50,7 +50,6 @@ var mirrorSurface = []string{
 	"docs/cloud",
 	"docs/platform",
 	"docs-ui",
-	"installer",
 	"hack",
 	"tests",
 	"cli",

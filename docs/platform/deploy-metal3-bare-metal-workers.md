@@ -88,8 +88,8 @@ Workers must have the **same VLAN trunk access** as the master nodes — they ne
 | Component | Status | Notes |
 |-----------|--------|-------|
 | **Kube-DC management cluster** | Required | 3-node HA cluster per [Installation Guide](installation-guide.md) |
-| **cert-manager** | Already installed | Deployed by cdev installer |
-| **Cluster API core** | Already installed | Deployed by cdev installer |
+| **cert-manager** | Already installed | Deployed by the kube-dc installer (Flux) |
+| **Cluster API core** | Already installed | Deployed by the kube-dc installer (Flux) |
 | **CAPM3 + BMO + Ironic** | To be installed | This guide covers installation |
 | **OS disk image** | To be prepared | Ubuntu 24.04 with RKE2 agent pre-baked |
 

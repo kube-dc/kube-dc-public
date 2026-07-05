@@ -203,46 +203,15 @@ curl -v http://X.X.X.X
 kubectl uncordon <node-name>
 ```
 
-## IaC Integration (cdev Template)
+## GitOps Integration (fleet)
 
-### Helm Unit
+The MetalLB HelmRelease itself is installed by Flux from the fleet. What you
+add per cluster is the floating-IP pool + advertisement + the EnvoyProxy
+patch that binds the front door to it — commit these under
+`clusters/<name>/` in your fleet repo (plain manifests, no templating) so
+they survive reconciles.
 
-```yaml
-- name: metallb
-  type: helm
-  depends_on: this.label-control-plane-nodes
-  source:
-    repository: "https://metallb.github.io/metallb"
-    chart: "metallb"
-    version: '{{ .variables.versions.metallb_helm | default "0.14.9" }}'
-  values:
-    - file: ./metallb/values.yaml
-  provider_conf:
-    config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
-  additional_options:
-    namespace: "metallb-system"
-    create_namespace: true
-    wait: true
-```
-
-### Helm Values (`metallb/values.yaml`)
-
-```yaml
-loadBalancerClass: metallb
-```
-
-### Config Unit
-
-```yaml
-- name: metallb-config
-  type: kubernetes
-  depends_on: this.metallb
-  source: ./metallb/
-  provider_conf:
-    config_path: {{ .variables.kubeconfig | default "~/.kube/config" }}
-```
-
-### IPAddressPool (`metallb/ipaddresspool.yaml`)
+### IPAddressPool + L2Advertisement
 
 ```yaml
 apiVersion: metallb.io/v1beta1
@@ -252,13 +221,9 @@ metadata:
   namespace: metallb-system
 spec:
   addresses:
-    - {{ .variables.node_external_ip }}/32
+    - 203.0.113.20/32          # your dedicated floating public IP
   autoAssign: false
-```
-
-### L2Advertisement (`metallb/l2advertisement.yaml`)
-
-```yaml
+---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
 metadata:
@@ -268,10 +233,10 @@ spec:
   ipAddressPools:
     - envoy-gateway-pool
   interfaces:
-    - ens3
+    - br-ext-cloud            # Kube-OVN provider bridge (or your L2 NIC)
 ```
 
-### EnvoyProxy Patch (`envoy-gateway/service-patch.yaml`)
+### EnvoyProxy patch (bind the Gateway to the floating IP)
 
 ```yaml
 apiVersion: gateway.envoyproxy.io/v1alpha1
@@ -291,8 +256,11 @@ spec:
           value:
             metadata:
               annotations:
-                metallb.universe.tf/loadBalancerIPs: {{ .variables.node_external_ip }}
+                metallb.universe.tf/loadBalancerIPs: 203.0.113.20
 ```
+
+After Flux applies these, re-point the wildcard DNS (`*.example.com`) at the
+floating IP so ingress fails over across control-plane nodes.
 
 ## CloudSigma Considerations
 
