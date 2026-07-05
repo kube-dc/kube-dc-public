@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -34,8 +35,45 @@ type ProbeResult struct {
 	Detail      string             // one-line summary for the right pane
 	FixHint     string             // optional next step the operator can take
 	FixAction   *FixAction         // structured form of FixHint — TUI dispatches Enter on this row to it
-	Reconcilers []ReconcilerStatus // per-Kustomization breakdown
-	Drifts      []ImageDrift       // per-Deployment image-tag drift, empty when in-sync
+	Reconcilers []ReconcilerStatus  // per-Kustomization breakdown
+	Drifts      []ImageDrift        // per-Deployment image-tag drift, empty when in-sync
+	HelmReleases []HelmReleaseStatus // per-HelmRelease (Flux helm.toolkit) readiness; nil when not probed
+	OpenBao      *OpenBaoStatus      // OpenBao pod/seal summary; nil when not probed / namespace absent
+}
+
+// HelmReleaseStatus is one Flux HelmRelease's readiness, for the
+// `bootstrap status <cluster>` deep view. Mirrors ReconcilerStatus but
+// for helm.toolkit.fluxcd.io/HelmRelease (the platform's actual
+// components — kube-ovn, cert-manager, keycloak, kubevirt, … — install
+// as HelmReleases underneath the Kustomizations).
+type HelmReleaseStatus struct {
+	Name      string
+	Namespace string
+	Ready     bool
+	Reason    string
+	Message   string
+	Revision  string // last applied revision (chart@version), "" if never applied
+	Suspended bool   // .spec.suspend
+}
+
+// OpenBaoStatus summarizes OpenBao's operational state for the deep view.
+// It is derived over HTTP from the OpenBao pods' readiness + the openbao
+// Service's two bootstrap markers — NOT a live `bao status` (that needs
+// pod-exec; `bootstrap openbao status` is the authoritative deep probe).
+// OpenBao's readiness probe fails while a pod is sealed, so a NotReady
+// pod is the seal/health signal here.
+type OpenBaoStatus struct {
+	ReadyPods int           // pods passing the readiness probe (≈ unsealed + serving)
+	TotalPods int           // openbao-N statefulset pods (snapshot Jobs excluded)
+	Pods      []OpenBaoPod  // per-pod name + ready
+	Finalized bool          // openbao Service has kube-dc.com/openbao-bootstrap-finalized
+	AuthSetup bool          // …/openbao-controller-auth-installed
+}
+
+// OpenBaoPod is one OpenBao statefulset pod's readiness.
+type OpenBaoPod struct {
+	Name  string
+	Ready bool
 }
 
 // FixAction is the machine-readable counterpart of FixHint. When the
@@ -156,11 +194,27 @@ func DefaultExpectedTags(env interface {
 	}
 	out := make(map[string]ExpectedTag, len(pairs))
 	for _, p := range pairs {
-		if tag := env.GetOr(p.envVar, ""); tag != "" {
+		// cluster-config.env keeps inline comments in the value
+		// (`DB_MANAGER_TAG=v0.1.11   # why-pinned`). An image tag never
+		// contains whitespace, so the first field is the tag — this keeps
+		// the drift output (expected=…) readable instead of dumping the
+		// whole rationale comment.
+		if tag := firstField(env.GetOr(p.envVar, "")); tag != "" {
 			out[p.nsName] = ExpectedTag{EnvVar: p.envVar, Tag: tag}
 		}
 	}
 	return out
+}
+
+// firstField returns the first whitespace-delimited token of s (""
+// when s is blank/whitespace). Used to strip inline `# comments` from
+// env values whose payload is a single whitespace-free token (a tag).
+func firstField(s string) string {
+	fields := strings.Fields(s)
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
 }
 
 // NewClusterProbe builds a probe for the given API server URL. dialTimeout
@@ -298,7 +352,182 @@ func (p *ClusterProbe) Run(ctx context.Context) ProbeResult {
 			res.FixHint = "live tags differ from cluster-config.env's *_TAG vars — `flux reconcile kustomization platform` or update env"
 		}
 	}
+
+	// Deep-view signals (best-effort — these enrich `bootstrap status
+	// <cluster>` but must never change Status or fail the probe; a
+	// permissions/version hiccup just leaves the section empty).
+	res.HelmReleases = p.fetchHelmReleases(ctx, cred.Status.Token)
+	res.OpenBao = p.fetchOpenBao(ctx, cred.Status.Token)
 	return res
+}
+
+// apiGET performs an authed GET against the cluster apiserver and returns
+// the body + HTTP status. Small helper for the deep-view fetches (the
+// Kustomization + drift paths predate it and keep their inline requests).
+func (p *ClusterProbe) apiGET(ctx context.Context, token, path string) ([]byte, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.apiURL+path, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4*1024*1024))
+	return body, resp.StatusCode, nil
+}
+
+// helmReleaseAPIVersions are tried in order — Flux GA is v2, but older
+// clusters still serve v2beta2/v2beta1. First 200 wins; a 404 means "not
+// this version, try the next".
+var helmReleaseAPIVersions = []string{"v2", "v2beta2", "v2beta1"}
+
+// fetchHelmReleases lists HelmReleases cluster-wide and returns their
+// readiness, sorted by namespace then name. Best-effort: any error (auth,
+// no CRD at any known version, decode) yields nil.
+func (p *ClusterProbe) fetchHelmReleases(ctx context.Context, token string) []HelmReleaseStatus {
+	for _, v := range helmReleaseAPIVersions {
+		body, status, err := p.apiGET(ctx, token, "/apis/helm.toolkit.fluxcd.io/"+v+"/helmreleases")
+		if err != nil {
+			return nil
+		}
+		if status == http.StatusNotFound {
+			continue // try the next apiVersion
+		}
+		if status != http.StatusOK {
+			return nil
+		}
+		return parseHelmReleases(body)
+	}
+	return nil
+}
+
+// parseHelmReleases turns a HelmRelease list body into sorted statuses.
+// Pure (no I/O) so it's unit-testable against canned apiserver JSON.
+func parseHelmReleases(body []byte) []HelmReleaseStatus {
+	var list helmReleaseList
+	if err := json.Unmarshal(body, &list); err != nil {
+		return nil
+	}
+	out := make([]HelmReleaseStatus, 0, len(list.Items))
+	for _, hr := range list.Items {
+		st := HelmReleaseStatus{
+			Name:      hr.Metadata.Name,
+			Namespace: hr.Metadata.Namespace,
+			Suspended: hr.Spec.Suspend,
+			Revision:  hr.Status.LastAppliedRevision,
+		}
+		for _, c := range hr.Status.Conditions {
+			if c.Type == "Ready" {
+				st.Ready = c.Status == "True"
+				st.Reason = c.Reason
+				st.Message = c.Message
+				break
+			}
+		}
+		out = append(out, st)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Namespace != out[j].Namespace {
+			return out[i].Namespace < out[j].Namespace
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
+// openBaoNamespace / openBaoService are the fleet's fixed OpenBao
+// locations (see internal/bootstrap/openbao — the annotations live on the
+// `openbao` Service in the `openbao` namespace).
+const (
+	openBaoNamespace = "openbao"
+	openBaoService   = "openbao"
+)
+
+// fetchOpenBao summarizes OpenBao from pod readiness + the openbao
+// Service's two bootstrap markers. Best-effort + HTTP-only (NOT a live
+// `bao status`): nil when the namespace/pods aren't found.
+func (p *ClusterProbe) fetchOpenBao(ctx context.Context, token string) *OpenBaoStatus {
+	body, status, err := p.apiGET(ctx, token, "/api/v1/namespaces/"+openBaoNamespace+"/pods")
+	if err != nil || status != http.StatusOK {
+		return nil
+	}
+	pods := parseOpenBaoPods(body)
+	if len(pods) == 0 {
+		return nil
+	}
+	ob := &OpenBaoStatus{Pods: pods, TotalPods: len(pods)}
+	for _, pod := range pods {
+		if pod.Ready {
+			ob.ReadyPods++
+		}
+	}
+	// Service annotations (bootstrap-finalized / controller-auth-installed).
+	if svcBody, svcStatus, serr := p.apiGET(ctx, token, "/api/v1/namespaces/"+openBaoNamespace+"/services/"+openBaoService); serr == nil && svcStatus == http.StatusOK {
+		ann := parseServiceAnnotations(svcBody)
+		ob.Finalized = ann["kube-dc.com/openbao-bootstrap-finalized"] != ""
+		ob.AuthSetup = ann["kube-dc.com/openbao-controller-auth-installed"] != ""
+	}
+	return ob
+}
+
+// parseOpenBaoPods extracts the openbao-N statefulset pods (snapshot Jobs
+// and other pods excluded) + their Ready condition. Pure.
+func parseOpenBaoPods(body []byte) []OpenBaoPod {
+	var list podList
+	if err := json.Unmarshal(body, &list); err != nil {
+		return nil
+	}
+	var out []OpenBaoPod
+	for _, pod := range list.Items {
+		name := pod.Metadata.Name
+		// Only the statefulset replicas (openbao-0, openbao-1, …). Skip
+		// snapshot/backup Jobs (openbao-snapshot-*) and anything else.
+		if !strings.HasPrefix(name, openBaoService+"-") {
+			continue
+		}
+		if suffix := name[len(openBaoService)+1:]; suffix == "" || !isAllDigits(suffix) {
+			continue
+		}
+		ready := false
+		for _, c := range pod.Status.Conditions {
+			if c.Type == "Ready" {
+				ready = c.Status == "True"
+				break
+			}
+		}
+		out = append(out, OpenBaoPod{Name: name, Ready: ready})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// parseServiceAnnotations pulls .metadata.annotations from a Service body.
+func parseServiceAnnotations(body []byte) map[string]string {
+	var svc struct {
+		Metadata struct {
+			Annotations map[string]string `json:"annotations"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal(body, &svc); err != nil {
+		return nil
+	}
+	return svc.Metadata.Annotations
 }
 
 // detectDrift fetches every Deployment whose namespace appears in
@@ -414,6 +643,40 @@ type condition struct {
 // detector reads are declared.
 type deploymentList struct {
 	Items []deployment `json:"items"`
+}
+
+// helmReleaseList / helmRelease mirror the Flux HelmRelease API shape we
+// need (name/ns/suspend + Ready condition + lastAppliedRevision).
+type helmReleaseList struct {
+	Items []helmRelease `json:"items"`
+}
+
+type helmRelease struct {
+	Metadata struct {
+		Name      string `json:"name"`
+		Namespace string `json:"namespace"`
+	} `json:"metadata"`
+	Spec struct {
+		Suspend bool `json:"suspend"`
+	} `json:"spec"`
+	Status struct {
+		Conditions          []condition `json:"conditions"`
+		LastAppliedRevision string      `json:"lastAppliedRevision"`
+	} `json:"status"`
+}
+
+// podList / pod carry just the fields fetchOpenBao needs (name + Ready).
+type podList struct {
+	Items []pod `json:"items"`
+}
+
+type pod struct {
+	Metadata struct {
+		Name string `json:"name"`
+	} `json:"metadata"`
+	Status struct {
+		Conditions []condition `json:"conditions"`
+	} `json:"status"`
 }
 
 type deployment struct {

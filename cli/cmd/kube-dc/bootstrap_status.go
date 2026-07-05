@@ -296,13 +296,79 @@ func renderDeepView(ctx context.Context, out io.Writer, noTTY bool, factory disc
 		}
 	}
 
-	// HelmRelease + OpenBao seal sections from M2-T01's contract
-	// are deferred: discover.ProbeResult doesn't surface them
-	// today (T2's ClusterProbe only walks Kustomizations + image
-	// drift). Tracker carries the deferral; both will land when
-	// ClusterProbe gains those signals.
+	renderHelmReleases(out, deep.Result.HelmReleases)
+	renderOpenBao(out, deep.Result.OpenBao)
 
 	return exitCodeForClusterStatus(deep.Result.Status), nil
+}
+
+// renderHelmReleases prints the per-HelmRelease readiness block — the
+// platform's actual components (kube-ovn, cert-manager, keycloak, …)
+// install as HelmReleases under the Kustomizations. No-op when none.
+func renderHelmReleases(out io.Writer, hrs []discover.HelmReleaseStatus) {
+	if len(hrs) == 0 {
+		return
+	}
+	notReady := 0
+	for _, hr := range hrs {
+		if !hr.Ready && !hr.Suspended {
+			notReady++
+		}
+	}
+	fmt.Fprintln(out)
+	fmt.Fprintf(out, "HelmReleases (%d, %d not-ready):\n", len(hrs), notReady)
+	for _, hr := range hrs {
+		mark, state := "✓", "Ready"
+		switch {
+		case hr.Suspended:
+			mark, state = "⏸", "Suspended"
+		case !hr.Ready:
+			mark, state = "✗", "NotReady"
+		}
+		line := fmt.Sprintf("  %s %s/%s  %s", mark, hr.Namespace, hr.Name, state)
+		if hr.Revision != "" {
+			line += "  rev=" + hr.Revision
+		}
+		fmt.Fprintln(out, line)
+		if !hr.Ready && !hr.Suspended && hr.Message != "" {
+			fmt.Fprintf(out, "      %s\n", firstStatusLine(hr.Message))
+		}
+	}
+}
+
+// renderOpenBao prints the OpenBao pod/seal summary. Seal state is
+// inferred from pod readiness (a sealed pod fails its readiness probe) +
+// the two bootstrap markers (see discover.OpenBaoStatus). No-op when nil.
+func renderOpenBao(out io.Writer, ob *discover.OpenBaoStatus) {
+	if ob == nil {
+		return
+	}
+	fmt.Fprintln(out)
+	seal := "sealed/not-serving"
+	switch {
+	case ob.TotalPods > 0 && ob.ReadyPods == ob.TotalPods:
+		seal = "unsealed"
+	case ob.ReadyPods > 0:
+		seal = "partially sealed"
+	}
+	fmt.Fprintf(out, "OpenBao: %d/%d pods Ready (%s), bootstrap-finalized=%t, controller-auth=%t\n",
+		ob.ReadyPods, ob.TotalPods, seal, ob.Finalized, ob.AuthSetup)
+	for _, p := range ob.Pods {
+		mark := "✓"
+		if !p.Ready {
+			mark = "✗"
+		}
+		fmt.Fprintf(out, "  %s %s\n", mark, p.Name)
+	}
+	fmt.Fprintln(out, "  (seal state inferred from readiness; `kube-dc bootstrap openbao status` is authoritative)")
+}
+
+// firstStatusLine trims a multi-line condition message to its first line.
+func firstStatusLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // renderNodesSection appends a "Nodes:" block to the deep view with
