@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/shalb/kube-dc/cli/internal/alerts"
 	alertstui "github.com/shalb/kube-dc/cli/internal/alerts/tui"
 	"github.com/shalb/kube-dc/cli/internal/auth"
@@ -894,7 +894,9 @@ func runAlerts(opts runAlertsOpts) error {
 		model.SetSource(opts.Source)
 	}
 
-	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	// v2: alt-screen + mouse-mode are declared on the model's tea.View
+	// (alertstui.Model.View), not as NewProgram options.
+	p := tea.NewProgram(model)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("failed to run TUI: %w", err)
 	}

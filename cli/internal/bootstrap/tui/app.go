@@ -1,7 +1,7 @@
 package tui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // RunRoot starts the integrated bootstrap TUI (the RootModel built in
@@ -10,10 +10,11 @@ import (
 // pass a factory that constructs the right RootModel for the chosen
 // starting tab.
 //
-// Wraps tea.NewProgram with the same options the alerts TUI uses
-// (alt-screen + mouse cell motion).
+// In Bubble Tea v2 the alt-screen + mouse-mode flags are declarative
+// View fields, not NewProgram options — RootModel.View() sets AltScreen
+// and MouseMode, so the program constructor is now bare.
 func RunRoot(newModel func() tea.Model) error {
-	p := tea.NewProgram(newModel(), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(newModel())
 	_, err := p.Run()
 	return err
 }

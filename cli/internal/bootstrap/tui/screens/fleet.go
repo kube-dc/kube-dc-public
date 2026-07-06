@@ -5,16 +5,17 @@ package screens
 import (
 	"context"
 	"fmt"
+	"image/color"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/discover"
 	bttui "github.com/shalb/kube-dc/cli/internal/bootstrap/tui"
@@ -60,9 +61,16 @@ type FleetModel struct {
 	// the Kustomization sub-list; the drill-down has its own viewport.
 	focus               fleetPaneFocus
 	kustomizationCursor int
-	drillDown           viewport.Model
-	drillDownOpen       bool
-	drillDownTitle      string
+	// detailsSelLine is the content line-index of the currently-selected
+	// details-pane row (set by refreshDetails); View scrolls the details
+	// viewport to keep it visible. -1 when nothing is selected.
+	detailsSelLine int
+	drillDown      viewport.Model
+	drillDownOpen  bool
+	drillDownTitle string
+	// driftReconcileArmed is the first-press state of the two-press 'R'
+	// confirm in the image-drift panel (reconcile reverts a dev image).
+	driftReconcileArmed bool
 
 	// pendingActionFor records the cluster currently running a dispatched
 	// FixAction (admin login, …) so the row's status pill shows "running…"
@@ -86,8 +94,8 @@ func NewFleetModel(repoRoot string) *FleetModel {
 	return &FleetModel{
 		repoRoot:  repoRoot,
 		statuses:  map[string]discover.ProbeResult{},
-		details:   viewport.New(0, 0),
-		drillDown: viewport.New(0, 0),
+		details:   viewport.New(),
+		drillDown: viewport.New(),
 		help:      h,
 		keys:      bttui.DefaultKeyMap(),
 		loading:   true,
@@ -144,9 +152,16 @@ func (m *FleetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// clamp the cursor + redraw.
 		m.clampKustomizationCursor()
 		m.refreshDetails()
-		// If the OpenBao side panel is open for this cluster, keep it live.
-		if m.drillDownOpen && m.drillDownTitle == openBaoDrillTitle && msg.Name == m.clusters[m.selected].Name {
-			m.openOpenBaoDrill()
+		// If a cluster-level side panel is open for this cluster, keep it
+		// live (a fresh probe resets a pending drift-reconcile confirm).
+		if m.drillDownOpen && msg.Name == m.selectedName() {
+			switch m.drillDownTitle {
+			case openBaoDrillTitle:
+				m.openOpenBaoDrill()
+			case driftDrillTitle:
+				m.driftReconcileArmed = false
+				m.openDriftDrill()
+			}
 		}
 	case bttui.TickMsg:
 		cmds := append(m.probeAllCmds(), m.tickCmd())
@@ -167,7 +182,7 @@ func (m *FleetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = nil
 		}
 		return m, m.reprobeOne(msg.Cluster)
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
 	// Forward viewport scroll messages (mouse wheel) to whichever pane
@@ -352,7 +367,7 @@ func (m *FleetModel) reprobeOne(name string) tea.Cmd {
 }
 
 // handleKey routes keystrokes per current pane focus (§9.9.1).
-func (m *FleetModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *FleetModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
@@ -396,6 +411,18 @@ func (m *FleetModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if cmd := m.execUnsealCmd(); cmd != nil {
 				return m, cmd
 			}
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.Reconcile):
+		// 'R' reconciles (reverts drift) — only in the image-drift panel,
+		// two-press: first arms + re-renders the CONFIRM warning, second
+		// executes. Reverting a dev image is destructive, hence the confirm.
+		if m.drillDownOpen && m.drillDownTitle == driftDrillTitle {
+			if m.driftReconcileArmed {
+				return m, m.execReconcileCmd()
+			}
+			m.driftReconcileArmed = true
+			m.openDriftDrill()
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.LoginAdmin):
@@ -447,9 +474,9 @@ func (m *FleetModel) handleArrow(delta int) (tea.Model, tea.Cmd) {
 		if n == 0 {
 			// No selectable rows in details — let viewport scroll instead.
 			if delta < 0 {
-				m.details.LineUp(1)
+				m.details.ScrollUp(1)
 			} else {
-				m.details.LineDown(1)
+				m.details.ScrollDown(1)
 			}
 			return m, nil
 		}
@@ -460,9 +487,9 @@ func (m *FleetModel) handleArrow(delta int) (tea.Model, tea.Cmd) {
 		}
 	case paneFocusDrillDown:
 		if delta < 0 {
-			m.drillDown.LineUp(1)
+			m.drillDown.ScrollUp(1)
 		} else {
-			m.drillDown.LineDown(1)
+			m.drillDown.ScrollDown(1)
 		}
 	}
 	return m, nil
@@ -495,9 +522,13 @@ func (m *FleetModel) handleEnter() (tea.Model, tea.Cmd) {
 		if m.kustomizationCursor < 0 || m.kustomizationCursor >= len(targets) {
 			return m, nil
 		}
-		if t := targets[m.kustomizationCursor]; t.openbao {
+		switch t := targets[m.kustomizationCursor]; t.kind {
+		case targetOpenBao:
 			m.openOpenBaoDrill()
-		} else {
+		case targetDrift:
+			m.driftReconcileArmed = false // fresh open — not armed
+			m.openDriftDrill()
+		default:
 			m.openDrillDown(t.rec)
 		}
 		return m, nil
@@ -646,10 +677,93 @@ func (m *FleetModel) openDrillDown(rec discover.ReconcilerStatus) {
 	m.refreshDetails()
 }
 
-// openBaoDrillTitle is the drill-down title used for the OpenBao side
-// panel, so ClusterProbeMsg can tell an open OpenBao panel from a
-// Kustomization drill-down and refresh only the former.
-const openBaoDrillTitle = "OpenBao"
+// openBaoDrillTitle / driftDrillTitle are the drill-down titles used for
+// the OpenBao + image-drift side panels, so ClusterProbeMsg / key
+// handlers can tell them apart from a Kustomization drill-down.
+const (
+	openBaoDrillTitle = "OpenBao"
+	driftDrillTitle   = "Image drift"
+)
+
+// openDriftDrill opens the image-drift side panel for the selected
+// cluster: each drifted deployment (fleet pin vs live) + BOTH remediation
+// directions, and — since drift is usually an intentional dev deploy — a
+// two-press 'R' to reconcile (revert live → fleet pin), guarded by
+// driftReconcileArmed. Reuses the bordered drill-down panel.
+func (m *FleetModel) openDriftDrill() {
+	if len(m.clusters) == 0 {
+		return
+	}
+	c := m.clusters[m.selected]
+	r, ok := m.statuses[c.Name]
+	if !ok || len(r.Drifts) == 0 {
+		return
+	}
+	var b strings.Builder
+	b.WriteString(bttui.Title.Render(" Image drift "))
+	b.WriteString("\n")
+	b.WriteString(bttui.Muted.Render(c.Name))
+	b.WriteString("\n\n")
+	for _, d := range r.Drifts {
+		running := d.Running
+		if running == "" {
+			running = "(missing)"
+		}
+		b.WriteString(bttui.Text.Render(d.Deployment) + "\n")
+		b.WriteString(bttui.Muted.Render("  fleet: "+d.EnvVar+"="+d.Expected) + "\n")
+		b.WriteString(bttui.Muted.Render("  live:  "+running) + "\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(bttui.Muted.Render("Drift is usually an intentional dev deploy.") + "\n")
+	b.WriteString(bttui.Muted.Render("Two ways to clear it:") + "\n\n")
+	b.WriteString(bttui.Muted.Render("adopt live as the pin:") + "\n")
+	b.WriteString(bttui.Text.Render("kube-dc bootstrap config set "+c.Name+" \\") + "\n")
+	b.WriteString(bttui.Text.Render("  "+r.Drifts[0].EnvVar+"=<live>") + "\n\n")
+	b.WriteString(bttui.Muted.Render("revert live → fleet pin:") + "\n")
+	b.WriteString(bttui.Text.Render("flux reconcile kustomization platform \\") + "\n")
+	b.WriteString(bttui.Text.Render("  -n flux-system --with-source") + "\n")
+
+	// Actions.
+	b.WriteString("\n")
+	b.WriteString(bttui.Muted.Render("─ actions ─") + "\n")
+	if m.driftReconcileArmed {
+		b.WriteString(lipgloss.NewStyle().Foreground(colorWarnFG()).Render("R again: CONFIRM revert (destroys the dev image)") + "\n")
+	} else {
+		b.WriteString(bttui.KeyLabel.Render("R") + bttui.Text.Render(" reconcile") + bttui.Muted.Render("  ⚠ reverts live → fleet pin") + "\n")
+		b.WriteString(bttui.Muted.Render("  (current kube-ctx; L to admin-login first)") + "\n")
+	}
+	b.WriteString(bttui.KeyLabel.Render("esc") + bttui.Muted.Render(" close"))
+
+	m.drillDown.SetContent(b.String())
+	m.drillDown.GotoTop()
+	m.drillDownOpen = true
+	m.drillDownTitle = driftDrillTitle
+	m.focus = paneFocusDrillDown
+	m.relayout()
+	m.refreshDetails()
+}
+
+// execReconcileCmd runs `flux reconcile kustomization platform` for the
+// selected cluster interactively (like the unseal/login execs) — pulls
+// the fleet-pinned tags back over a drifted (dev) image. Uses the current
+// kubeconfig context; re-probes on completion. Disarms the confirm.
+func (m *FleetModel) execReconcileCmd() tea.Cmd {
+	if len(m.clusters) == 0 {
+		return nil
+	}
+	c := m.clusters[m.selected]
+	m.driftReconcileArmed = false
+	m.pendingActionFor = c.Name
+	// `platform` is the kube-dc app layer that renders the *_TAG-bearing
+	// deployments (matches the drift hint); --with-source pulls git first.
+	cmd := exec.Command("flux", "reconcile", "kustomization", "platform", "-n", "flux-system", "--with-source")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return bttui.ActionDoneMsg{Cluster: c.Name, Action: "reconcile", Err: err}
+	})
+}
 
 // openOpenBaoDrill opens the OpenBao side panel for the selected cluster,
 // reusing the same bordered right-hand drill-down panel as the
@@ -700,6 +814,7 @@ func (m *FleetModel) openOpenBaoDrill() {
 func (m *FleetModel) closeDrillDown() {
 	m.drillDownOpen = false
 	m.drillDownTitle = ""
+	m.driftReconcileArmed = false
 	m.focus = paneFocusDetails
 	m.relayout()
 	m.refreshDetails()
@@ -718,25 +833,37 @@ func (m *FleetModel) currentReconcilers() []discover.ReconcilerStatus {
 	return r.Reconcilers
 }
 
-// detailTarget is one navigable/drill-into-able row in the details pane:
-// the OpenBao summary (openbao=true) or a Kustomization.
+// targetKind enumerates the drill-into-able row types in the details pane.
+type targetKind int
+
+const (
+	targetOpenBao targetKind = iota
+	targetDrift
+	targetKustomization
+)
+
+// detailTarget is one navigable/drill-into-able row in the details pane.
 type detailTarget struct {
-	openbao bool
-	rec     discover.ReconcilerStatus
+	kind targetKind
+	rec  discover.ReconcilerStatus // only for targetKustomization
 }
 
 // detailTargets is the ordered list of rows the details-pane cursor moves
-// over: OpenBao first (rendered right after status), then every
-// Kustomization. Empty until the selected cluster's probe lands.
+// over: OpenBao, then Image-drift (only when there IS drift), then every
+// Kustomization — matching the render order in refreshDetails. Empty
+// until the selected cluster's probe lands.
 func (m *FleetModel) detailTargets() []detailTarget {
-	if _, ok := m.statuses[m.selectedName()]; !ok {
+	r, ok := m.statuses[m.selectedName()]
+	if !ok {
 		return nil
 	}
-	recs := m.currentReconcilers()
-	targets := make([]detailTarget, 0, 1+len(recs))
-	targets = append(targets, detailTarget{openbao: true})
-	for _, rec := range recs {
-		targets = append(targets, detailTarget{rec: rec})
+	targets := make([]detailTarget, 0, 2+len(r.Reconcilers))
+	targets = append(targets, detailTarget{kind: targetOpenBao})
+	if len(r.Drifts) > 0 {
+		targets = append(targets, detailTarget{kind: targetDrift})
+	}
+	for _, rec := range r.Reconcilers {
+		targets = append(targets, detailTarget{kind: targetKustomization, rec: rec})
 	}
 	return targets
 }
@@ -763,10 +890,13 @@ func (m *FleetModel) clampKustomizationCursor() {
 	}
 }
 
-// View renders the screen.
-func (m *FleetModel) View() string {
+// View renders the screen. As a child screen it returns a plain
+// tea.View (Content only) — the RootModel wrapper declares the
+// program-level terminal modes. Driven standalone by teatest, this is
+// still a valid top-level View.
+func (m *FleetModel) View() tea.View {
 	if m.width == 0 || m.height == 0 {
-		return "Initializing…"
+		return tea.NewView("Initializing…")
 	}
 	// AppStyle adds horizontal padding (left/right 1 each) only — no
 	// vertical padding — so we own the full m.height for the body
@@ -842,11 +972,12 @@ func (m *FleetModel) View() string {
 		// (outer - 2 border - 2 padding = outer - 4). Heights mirror the
 		// existing top-pane convention (outer height set to listH-2,
 		// viewport height to detailsH-2).
-		m.details.Width = detailsW - 4
-		m.details.Height = detailsH - 2
+		m.details.SetWidth(detailsW - 4)
+		m.details.SetHeight(detailsH - 2)
+		m.ensureDetailsCursorVisible()
 
-		m.drillDown.Width = drillW - 4
-		m.drillDown.Height = detailsH - 2
+		m.drillDown.SetWidth(drillW - 4)
+		m.drillDown.SetHeight(detailsH - 2)
 
 		detailsStyle := bttui.DetailsPane
 		if m.focus == paneFocusDetails {
@@ -867,8 +998,9 @@ func (m *FleetModel) View() string {
 			Render(m.drillDown.View())
 		bottom = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 	} else {
-		m.details.Width = bottomW - 4
-		m.details.Height = detailsH - 2
+		m.details.SetWidth(bottomW - 4)
+		m.details.SetHeight(detailsH - 2)
+		m.ensureDetailsCursorVisible()
 		detailsStyle := bttui.DetailsPane
 		if m.focus == paneFocusDetails {
 			detailsStyle = bttui.DetailsPaneFocused
@@ -894,7 +1026,7 @@ func (m *FleetModel) View() string {
 	}
 
 	parts := append([]string{titleRow, body}, footerLines...)
-	return bttui.AppStyle.Render(lipgloss.JoinVertical(lipgloss.Left, parts...))
+	return tea.NewView(bttui.AppStyle.Render(lipgloss.JoinVertical(lipgloss.Left, parts...)))
 }
 
 // activeShortHelp implements §9.9.2 — only show keys actionable in the
@@ -1026,8 +1158,27 @@ func maxNameWidth(cs []discover.Cluster, minW, maxW int) int {
 
 // colorWarnFG returns the warning hue without exposing the package's
 // internal palette consts.
-func colorWarnFG() lipgloss.Color {
+func colorWarnFG() color.Color {
 	return lipgloss.Color("#FF9830")
+}
+
+// ensureDetailsCursorVisible scrolls the details viewport so the
+// currently-selected row (m.detailsSelLine, set by refreshDetails) stays
+// on screen as the cursor moves past the fold. No-op when nothing is
+// selected or the row is already visible. Must run after the viewport's
+// Height is set (View sizes it), hence it's called from View.
+func (m *FleetModel) ensureDetailsCursorVisible() {
+	if m.focus != paneFocusDetails || m.detailsSelLine < 0 || m.details.Height() <= 0 {
+		return
+	}
+	top := m.details.YOffset()
+	bottom := top + m.details.Height() - 1
+	switch {
+	case m.detailsSelLine < top:
+		m.details.SetYOffset(m.detailsSelLine)
+	case m.detailsSelLine > bottom:
+		m.details.SetYOffset(m.detailsSelLine - m.details.Height() + 1)
+	}
 }
 
 func (m *FleetModel) refreshDetails() {
@@ -1065,11 +1216,16 @@ func (m *FleetModel) refreshDetails() {
 			b.WriteString(bttui.Text.Render(r.FixHint))
 			b.WriteString("\n")
 		}
-		// Details-pane drill targets: OpenBao first (index 0), then the
-		// Kustomizations (index 1..). The cursor (▸, only when the details
-		// pane has focus) marks which row Enter drills into.
-		cursorFor := func(idx int) string {
-			if m.focus == paneFocusDetails && idx == m.kustomizationCursor {
+		// Details-pane drill targets, in the SAME order as detailTargets():
+		// OpenBao, Image-drift (only when drifted), then Kustomizations.
+		// The cursor (▸, only when the details pane has focus) marks which
+		// row Enter drills into; selLine records the selected row's line
+		// index so View can scroll to it. idx tracks the target index.
+		m.detailsSelLine = -1
+		idx := 0
+		cursorFor := func(i int) string {
+			if m.focus == paneFocusDetails && i == m.kustomizationCursor {
+				m.detailsSelLine = strings.Count(b.String(), "\n") // this row's line
 				return bttui.KeyLabel.Render("▸ ")
 			}
 			return "  "
@@ -1083,40 +1239,37 @@ func (m *FleetModel) refreshDetails() {
 				obSummary += " ⚠"
 			}
 		}
-		b.WriteString(cursorFor(0))
-		b.WriteString(bttui.Text.Render(padRight("▸ OpenBao", 30)))
+		b.WriteString(cursorFor(idx))
+		b.WriteString(bttui.Text.Render(padRight("OpenBao", 30)))
 		b.WriteString(" ")
 		b.WriteString(bttui.Muted.Render(obSummary + "  (enter)"))
 		b.WriteString("\n")
+		idx++
+		// Image-drift row (Enter → drift panel with remediation). Only when
+		// there IS drift, matching detailTargets().
+		if len(r.Drifts) > 0 {
+			b.WriteString(cursorFor(idx))
+			b.WriteString(lipgloss.NewStyle().Foreground(colorWarnFG()).Render(padRight("⚠ Image drift", 30)))
+			b.WriteString(" ")
+			b.WriteString(bttui.Muted.Render(fmt.Sprintf("%d deployment(s)  (enter)", len(r.Drifts))))
+			b.WriteString("\n")
+			idx++
+		}
 		if len(r.Reconcilers) > 0 {
 			b.WriteString("\n")
 			b.WriteString(bttui.Muted.Render("Kustomizations") + "\n")
-			for i, rec := range r.Reconcilers {
+			for _, rec := range r.Reconcilers {
 				glyph := reconcilerGlyph(rec)
 				detail := rec.Reason
 				if rec.Message != "" {
 					detail = rec.Reason + ": " + rec.Message
 				}
-				b.WriteString(cursorFor(i + 1)) // +1: OpenBao occupies index 0
+				b.WriteString(cursorFor(idx))
 				b.WriteString(bttui.Text.Render(padRight(glyph+" "+rec.Name, 30)))
 				b.WriteString(" ")
 				b.WriteString(bttui.Muted.Render(detail))
 				b.WriteString("\n")
-			}
-		}
-		if len(r.Drifts) > 0 {
-			b.WriteString("\n")
-			b.WriteString(bttui.Muted.Render("Image-tag drift (cluster-config.env vs running)") + "\n")
-			for _, d := range r.Drifts {
-				running := d.Running
-				if running == "" {
-					running = "missing"
-				}
-				b.WriteString("  ")
-				b.WriteString(lipgloss.NewStyle().Foreground(colorWarnFG()).Render("⚠ "))
-				b.WriteString(bttui.Text.Render(padRight(d.Deployment, 22)))
-				b.WriteString(bttui.Muted.Render(d.EnvVar + "=" + d.Expected + "  →  running=" + running))
-				b.WriteString("\n")
+				idx++
 			}
 		}
 		b.WriteString("\n")

@@ -12,17 +12,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/discover"
+	bttui "github.com/shalb/kube-dc/cli/internal/bootstrap/tui"
 	"github.com/shalb/kube-dc/cli/internal/config"
 	"github.com/shalb/kube-dc/cli/internal/jwt"
 	"github.com/shalb/kube-dc/cli/internal/kubeconfig"
-	bttui "github.com/shalb/kube-dc/cli/internal/bootstrap/tui"
 	"github.com/shalb/kube-dc/cli/pkg/credential"
 )
 
@@ -100,7 +100,7 @@ func NewContextModel() (*ContextModel, error) {
 
 	m := &ContextModel{
 		mgr:     mgr,
-		details: viewport.New(0, 0),
+		details: viewport.New(),
 		help:    h,
 		keys:    bttui.DefaultKeyMap(),
 	}
@@ -263,7 +263,7 @@ func (m *ContextModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.authTest = &copy
 		m.refreshDetails()
 		return m, nil
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
 	// Forward viewport messages (mouse wheel etc.) to the details
@@ -276,7 +276,7 @@ func (m *ContextModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *ContextModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *ContextModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
@@ -363,9 +363,9 @@ func (m *ContextModel) handleArrow(delta int) (tea.Model, tea.Cmd) {
 		// No selectable sub-rows in the details pane today (no drill-down
 		// in the contexts screen), so arrows just scroll the viewport.
 		if delta < 0 {
-			m.details.LineUp(1)
+			m.details.ScrollUp(1)
 		} else {
-			m.details.LineDown(1)
+			m.details.ScrollDown(1)
 		}
 	}
 	return m, nil
@@ -564,9 +564,9 @@ func (m *ContextModel) deleteSelected() {
 
 // View renders the screen — same chrome as FleetModel.View() so the
 // two screens look like siblings (§9.9.1 + §9.9.2).
-func (m *ContextModel) View() string {
+func (m *ContextModel) View() tea.View {
 	if m.width == 0 || m.height == 0 {
-		return "Initializing…"
+		return tea.NewView("Initializing…")
 	}
 	// AppStyle padding is 0 vertical, 1 horizontal — full m.height is
 	// ours for the body stack; subtracting from height was a leftover
@@ -617,8 +617,8 @@ func (m *ContextModel) View() string {
 	// is wider than the pane's content area (w-6) and made lipgloss
 	// expand the pane beyond Width(w-2), visually offsetting the bottom
 	// pane from the top one.
-	m.details.Width = w - 6
-	m.details.Height = detailsH - 2
+	m.details.SetWidth(w - 6)
+	m.details.SetHeight(detailsH - 2)
 	detailsStyle := bttui.DetailsPane
 	if m.focus == paneFocusDetails {
 		detailsStyle = bttui.DetailsPaneFocused
@@ -644,7 +644,7 @@ func (m *ContextModel) View() string {
 	}
 
 	parts := append([]string{titleRow, body}, footer...)
-	return bttui.AppStyle.Render(lipgloss.JoinVertical(lipgloss.Left, parts...))
+	return tea.NewView(bttui.AppStyle.Render(lipgloss.JoinVertical(lipgloss.Left, parts...)))
 }
 
 // activeShortHelp / activeFullHelp implement the active-only help rule
@@ -793,7 +793,7 @@ func (m *ContextModel) refreshDetails() {
 	e := m.entries[m.selected]
 	var b strings.Builder
 
-	b.WriteString(bttui.Title.Render(" "+e.Name+" "))
+	b.WriteString(bttui.Title.Render(" " + e.Name + " "))
 	b.WriteString("  ")
 	b.WriteString(identityBadge(e.Identity))
 	if e.IsCurrent {

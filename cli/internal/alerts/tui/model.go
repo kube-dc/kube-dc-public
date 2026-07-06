@@ -7,14 +7,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/pkg/browser"
 	"github.com/shalb/kube-dc/cli/internal/alerts"
 )
@@ -94,12 +94,12 @@ type Model struct {
 	groupIx int
 
 	// widgets
-	list     list.Model
-	details  viewport.Model
-	search   textinput.Model
-	help     help.Model
-	spinner  spinner.Model
-	keys     KeyMap
+	list    list.Model
+	details viewport.Model
+	search  textinput.Model
+	help    help.Model
+	spinner spinner.Model
+	keys    KeyMap
 
 	// modes
 	searching bool
@@ -115,7 +115,10 @@ func NewModel(client *alerts.AlertmanagerClient, cluster string, pf *alerts.Port
 	ti.Prompt = "🔍  "
 	ti.Placeholder = "search by alertname, label, annotation…"
 	ti.CharLimit = 128
-	ti.PromptStyle = KeyLabel
+	// v2 moved per-field styles into a Styles struct (PromptStyle is gone).
+	tis := ti.Styles()
+	tis.Focused.Prompt = KeyLabel
+	ti.SetStyles(tis)
 
 	// Spinner for refresh feedback.
 	sp := spinner.New()
@@ -152,7 +155,7 @@ func NewModel(client *alerts.AlertmanagerClient, cluster string, pf *alerts.Port
 		groupBy: GroupNone,
 		filter:  Filter{Severity: "all", State: "all"},
 		list:    l,
-		details: viewport.New(0, 0),
+		details: viewport.New(),
 		search:  ti,
 		help:    h,
 		spinner: sp,
@@ -282,7 +285,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		cmds = append(cmds, cmd)
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		// Search-mode takes all keys except Esc/Enter.
 		if m.searching {
 			return m.updateSearch(msg)
@@ -295,7 +298,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Route navigation keys: scroll keys go to the details viewport so the
 	// right pane is always scrollable without an explicit focus toggle.
 	var listCmd, detailsCmd tea.Cmd
-	if km, ok := msg.(tea.KeyMsg); ok && isDetailsScrollKey(km) {
+	if km, ok := msg.(tea.KeyPressMsg); ok && isDetailsScrollKey(km) {
 		m.details, detailsCmd = m.details.Update(msg)
 	} else {
 		m.list, listCmd = m.list.Update(msg)
@@ -313,7 +316,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // handleKey handles top-level key presses. Returns (cmd, true) if handled.
-func (m *Model) handleKey(msg tea.KeyMsg) (tea.Cmd, bool) {
+func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		return tea.Quit, true
@@ -379,7 +382,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 }
 
 // updateSearch is active while the search input is focused.
-func (m *Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter", "esc":
 		m.searching = false
@@ -500,10 +503,10 @@ func (m *Model) relayout() {
 
 	m.list.SetSize(listW-2, bodyH-2) // -2 for border
 	m.list.SetDelegate(itemDelegate{width: listW - 4})
-	m.details.Width = detailsW - 2
-	m.details.Height = bodyH - 2
-	m.search.Width = w - 4
-	m.help.Width = w
+	m.details.SetWidth(detailsW - 2)
+	m.details.SetHeight(bodyH - 2)
+	m.search.SetWidth(w - 4)
+	m.help.SetWidth(w)
 }
 
 // refreshDetails renders the selected alert into the details viewport.
@@ -529,7 +532,7 @@ func (m *Model) refreshDetails() {
 		if v, ok := a.Annotations[k]; ok && v != "" {
 			b.WriteString(lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(strings.ToUpper(k[:1]) + k[1:]))
 			b.WriteString("\n")
-			b.WriteString(lipgloss.NewStyle().Foreground(colorText).Render(wrap(v, m.details.Width)))
+			b.WriteString(lipgloss.NewStyle().Foreground(colorText).Render(wrap(v, m.details.Width())))
 			b.WriteString("\n\n")
 		}
 	}
@@ -537,7 +540,7 @@ func (m *Model) refreshDetails() {
 	// Labels as pills.
 	b.WriteString(lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render("Labels"))
 	b.WriteString("\n")
-	b.WriteString(renderPills(a.Labels, m.details.Width))
+	b.WriteString(renderPills(a.Labels, m.details.Width()))
 	b.WriteString("\n\n")
 
 	// Other annotations (excluding the ones we already printed).
@@ -555,7 +558,7 @@ func (m *Model) refreshDetails() {
 		for _, k := range alerts.SortedKeys(other) {
 			b.WriteString(KeyLabel.Render(k))
 			b.WriteString("  ")
-			b.WriteString(Text.Render(wrap(other[k], m.details.Width-lipgloss.Width(k)-2)))
+			b.WriteString(Text.Render(wrap(other[k], m.details.Width()-lipgloss.Width(k)-2)))
 			b.WriteString("\n")
 		}
 		b.WriteString("\n")
@@ -617,10 +620,12 @@ func renderPills(labels map[string]string, width int) string {
 	return strings.Join(rows, "\n")
 }
 
-// View renders the full screen.
-func (m *Model) View() string {
+// View renders the full screen. As the top-level program model it also
+// declares the terminal modes that used to be tea.NewProgram options in
+// v1 (alt-screen + mouse cell motion) — see cmd/kube-dc alerts runner.
+func (m *Model) View() tea.View {
 	if m.width == 0 || m.height == 0 {
-		return "Initializing…"
+		return m.frame("Initializing…")
 	}
 
 	// Header
@@ -676,7 +681,16 @@ func (m *Model) View() string {
 
 	parts := []string{titleRow, statRow, tabsRow, body}
 	parts = append(parts, footer...)
-	return AppStyle.Render(lipgloss.JoinVertical(lipgloss.Left, parts...))
+	return m.frame(AppStyle.Render(lipgloss.JoinVertical(lipgloss.Left, parts...)))
+}
+
+// frame wraps rendered content in a tea.View carrying the program's
+// terminal-mode flags (v2 declares these on the View, not the program).
+func (m *Model) frame(content string) tea.View {
+	v := tea.NewView(content)
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
 }
 
 // renderStatBar renders the "3 critical · 15 warning · …" counter.
@@ -774,7 +788,7 @@ func shortFP(fp string) string {
 
 // isDetailsScrollKey returns true for keys that should scroll the right
 // pane regardless of focus: PgUp, PgDn, and the vim-style shift-j / shift-k.
-func isDetailsScrollKey(km tea.KeyMsg) bool {
+func isDetailsScrollKey(km tea.KeyPressMsg) bool {
 	switch km.String() {
 	case "pgup", "pgdown", "J", "K", "ctrl+d", "ctrl+u":
 		return true
@@ -787,7 +801,7 @@ func isDetailsScrollKey(km tea.KeyMsg) bool {
 func (m *Model) isOverDetails(mm tea.MouseMsg) bool {
 	// Rough heuristic: the list pane occupies the first 45% of width.
 	cutoff := (m.width - 2) * 45 / 100
-	return mm.X > cutoff
+	return mm.Mouse().X > cutoff
 }
 
 // bestURL picks the most useful URL from an alert (runbook > generator).

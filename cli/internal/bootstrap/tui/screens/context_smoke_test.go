@@ -28,7 +28,7 @@ func TestContextModel_LiveKubeconfig(t *testing.T) {
 		t.Fatalf("NewContextModel: %v", err)
 	}
 
-	got := m.View()
+	got := m.View().Content
 	if got == "Initializing…" {
 		// View() returns a placeholder until WindowSizeMsg arrives.
 		// That's expected before the tea.Program loop starts; the

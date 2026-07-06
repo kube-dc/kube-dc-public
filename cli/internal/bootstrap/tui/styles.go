@@ -7,12 +7,16 @@
 // the bootstrap package from depending on alerts/tui internals.
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"image/color"
+
+	"charm.land/lipgloss/v2"
+)
 
 // Palette — must stay in sync with cli/internal/alerts/tui/styles.go.
 var (
-	colorBg        = lipgloss.Color("#181B1F")
-	colorSurface   = lipgloss.Color("#22252B")
+	colorBg      = lipgloss.Color("#181B1F")
+	colorSurface = lipgloss.Color("#22252B")
 	// colorBorder is the idle pane border. Earlier value (#2E3137) was
 	// only ~5% off the bg and rendered as visually-invisible on most
 	// terminals — the unfocused pane looked like it had no border at
@@ -27,12 +31,12 @@ var (
 	colorWhite     = lipgloss.Color("#FFFFFF")
 
 	// Cluster status hues — extends the alerts palette.
-	colorReady       = colorAccentAlt              // green
-	colorReconciling = colorAccent                 // blue
-	colorDrifted     = lipgloss.Color("#FF9830")   // orange
-	colorFailed      = lipgloss.Color("#F2495C")   // red
-	colorUnreachable = colorMuted                  // grey
-	colorUnknown     = lipgloss.Color("#A98BD8")   // light purple
+	colorReady       = colorAccentAlt            // green
+	colorReconciling = colorAccent               // blue
+	colorDrifted     = lipgloss.Color("#FF9830") // orange
+	colorFailed      = lipgloss.Color("#F2495C") // red
+	colorUnreachable = colorMuted                // grey
+	colorUnknown     = lipgloss.Color("#A98BD8") // light purple
 )
 
 // Suppress "declared but not used" while bootstrap screens are still being
@@ -117,7 +121,7 @@ var (
 // Pill renders a "key value" label in the alerts-TUI shape: the key gets
 // its own foreground hue (no background), the value uses the regular text
 // color. Scannable without flooding the UI with color blocks.
-func Pill(fg lipgloss.Color, key, value string) string {
+func Pill(fg color.Color, key, value string) string {
 	keyStyle := lipgloss.NewStyle().Foreground(fg).Bold(true)
 	valStyle := lipgloss.NewStyle().Foreground(colorText)
 	return keyStyle.Render(key) + " " + valStyle.Render(value)
@@ -125,7 +129,7 @@ func Pill(fg lipgloss.Color, key, value string) string {
 
 // Badge renders a single-color filled pill for a headline (severity, phase,
 // status). White foreground over the bg argument.
-func Badge(bg lipgloss.Color, text string) string {
+func Badge(bg color.Color, text string) string {
 	return lipgloss.NewStyle().
 		Foreground(colorWhite).
 		Background(bg).
@@ -135,12 +139,12 @@ func Badge(bg lipgloss.Color, text string) string {
 }
 
 // Dot returns a single colored bullet glyph.
-func Dot(c lipgloss.Color) string {
+func Dot(c color.Color) string {
 	return lipgloss.NewStyle().Foreground(c).Render("●")
 }
 
 // StatusColor returns the foreground color for a fleet-row status string.
-func StatusColor(status string) lipgloss.Color {
+func StatusColor(status string) color.Color {
 	switch status {
 	case "Ready":
 		return colorReady

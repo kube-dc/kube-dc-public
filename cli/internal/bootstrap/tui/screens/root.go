@@ -3,9 +3,9 @@ package screens
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	bttui "github.com/shalb/kube-dc/cli/internal/bootstrap/tui"
 )
@@ -105,7 +105,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, tea.Batch(cmds...)
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
@@ -137,14 +137,27 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// View stacks the tab bar above the active screen.
-func (m *RootModel) View() string {
+// View stacks the tab bar above the active screen. As the top-level
+// program model it also declares the terminal modes that used to be
+// NewProgram options in v1 (alt-screen + mouse cell motion) — see
+// RunRoot. Child screens return their own tea.View; we compose their
+// rendered .Content into this frame.
+func (m *RootModel) View() tea.View {
 	if m.width == 0 || m.height == 0 {
-		return "Initializing…"
+		return m.frame("Initializing…")
 	}
 	tabBar := m.renderTabBar()
-	body := m.tabs[m.active].model.View()
-	return lipgloss.JoinVertical(lipgloss.Left, tabBar, body)
+	body := m.tabs[m.active].model.View().Content
+	return m.frame(lipgloss.JoinVertical(lipgloss.Left, tabBar, body))
+}
+
+// frame wraps rendered content in a tea.View carrying the program's
+// terminal-mode flags (v2 declares these on the View, not the program).
+func (m *RootModel) frame(content string) tea.View {
+	v := tea.NewView(content)
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
 }
 
 // renderTabBar produces a single-row top bar. Active tab uses the
@@ -194,7 +207,7 @@ func (m *contextLoadErrorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *contextLoadErrorModel) View() string {
+func (m *contextLoadErrorModel) View() tea.View {
 	w := m.width
 	if w == 0 {
 		w = 80
@@ -202,5 +215,5 @@ func (m *contextLoadErrorModel) View() string {
 	body := bttui.WarnBox.
 		Width(w - 4).
 		Render("Could not load kubeconfig.\n\n" + m.err.Error() + "\n\nFix the kubeconfig file and re-launch `kube-dc bootstrap`.")
-	return bttui.AppStyle.Render(body)
+	return tea.NewView(bttui.AppStyle.Render(body))
 }

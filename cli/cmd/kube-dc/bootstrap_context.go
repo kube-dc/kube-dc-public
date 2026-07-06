@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
 	bttui "github.com/shalb/kube-dc/cli/internal/bootstrap/tui"

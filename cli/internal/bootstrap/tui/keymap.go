@@ -1,6 +1,6 @@
 package tui
 
-import "github.com/charmbracelet/bubbles/key"
+import "charm.land/bubbles/v2/key"
 
 // KeyMap describes every keystroke the bootstrap TUI binds. Modeled on
 // cli/internal/alerts/tui/keys.go so the two TUIs feel identical to use.
@@ -46,6 +46,7 @@ type KeyMap struct {
 	LoginOrg   key.Binding // [l] tenant login (org prompt)
 	OpenBao    key.Binding // [o] open the OpenBao side panel for the selected cluster
 	Unseal     key.Binding // [u] unseal the selected cluster (only in the OpenBao panel)
+	Reconcile  key.Binding // [R] reconcile (revert drift) — only in the image-drift panel
 	TestAuth   key.Binding // [t] HEAD /readyz with cached creds
 	Delete     key.Binding // [d] delete (context view only)
 }
@@ -98,6 +99,7 @@ func DefaultKeyMap() KeyMap {
 		LoginOrg:   key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "tenant login")),
 		OpenBao:    key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "openbao")),
 		Unseal:     key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "unseal")),
+		Reconcile:  key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "reconcile")),
 		TestAuth:   key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "test auth")),
 		Delete:     key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
 

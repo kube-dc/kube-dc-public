@@ -2,9 +2,10 @@ package alerts
 
 import (
 	"hash/fnv"
+	"image/color"
 	"sort"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // Severity constants (lower-case, matching Prometheus convention).
@@ -22,8 +23,8 @@ const (
 	StateUnprocessed = "unprocessed"
 )
 
-// SeverityColor returns a lipgloss ANSI color string for a severity label.
-func SeverityColor(sev string) lipgloss.Color {
+// SeverityColor returns a color for a severity label.
+func SeverityColor(sev string) color.Color {
 	switch sev {
 	case SeverityCritical:
 		return lipgloss.Color("#F2495C") // Grafana red
@@ -57,7 +58,7 @@ func SeverityIcon(sev string) string {
 // labelPalette is a stable, readable set of pastel-like colors used to
 // pick a consistent background color for a label key. Keeps output
 // deterministic across renders (no map-iteration randomness).
-var labelPalette = []lipgloss.Color{
+var labelPalette = []color.Color{
 	lipgloss.Color("#5F86B9"), // steel blue
 	lipgloss.Color("#7E5CAD"), // amethyst
 	lipgloss.Color("#2F9E72"), // viridian
@@ -74,7 +75,7 @@ var labelPalette = []lipgloss.Color{
 
 // ColorForKey returns a stable background color for a given label key
 // by hashing the key into the palette.
-func ColorForKey(key string) lipgloss.Color {
+func ColorForKey(key string) color.Color {
 	// Special cases keep the most meaningful keys visually aligned with
 	// Grafana's color choices.
 	switch key {

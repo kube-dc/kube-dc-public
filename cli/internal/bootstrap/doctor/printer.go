@@ -26,7 +26,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )

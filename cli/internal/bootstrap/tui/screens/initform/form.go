@@ -26,8 +26,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/huh"
-
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 )
 
@@ -38,6 +36,13 @@ import (
 type State struct {
 	// basics
 	Name, Domain, NodeIP, Email string
+	// SSHHost (user@host) enables the same NAT-topology detection the
+	// flag path does: init SSH-probes whether NodeIP is actually bound on
+	// the node and, behind a 1:1 NAT / cloud FIP, writes the arriving
+	// (internal) IP into NODE_EXTERNAL_IP + drops the 6443 listener
+	// (findings 17/17b). Empty = skip (a node with its public IP bound
+	// locally needs none).
+	SSHHost string
 	// mode + fleet
 	Mode      string
 	FleetMode string
@@ -49,9 +54,15 @@ type State struct {
 	Preset       string
 	NetVLANID    string
 	NetInterface string
-	PubVLANID    string
-	PubCIDR      string
-	PubGateway   string
+	// KubeOVNMasterNodes → KUBE_OVN_MASTER_NODES: the control-plane
+	// INTERNAL IPs (comma-separated) kube-ovn binds its master on. Not
+	// in any preset default + not caught by preset validation, but the
+	// install can't come up without it — so the wizard must collect it
+	// (every preset). IPs, not hostnames.
+	KubeOVNMasterNodes string
+	PubVLANID          string
+	PubCIDR            string
+	PubGateway         string
 	// object storage (OS-5)
 	OSMode          string
 	OSDNode         string
@@ -81,6 +92,7 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 	o.Domain = strings.TrimSpace(s.Domain)
 	o.NodeExternalIP = strings.TrimSpace(s.NodeIP)
 	o.Email = strings.TrimSpace(s.Email)
+	o.SSHHost = strings.TrimSpace(s.SSHHost)
 	o.Mode = clusterinit.Mode(s.Mode)
 	o.FleetMode = clusterinit.FleetMode(s.FleetMode)
 	if r := strings.TrimSpace(s.Repo); r != "" {
@@ -101,6 +113,7 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 	}
 	setIf("EXT_NET_VLAN_ID", s.NetVLANID)
 	setIf("EXT_NET_INTERFACE", s.NetInterface)
+	setIf("KUBE_OVN_MASTER_NODES", s.KubeOVNMasterNodes)
 	if s.Preset == string(clusterinit.PresetCloudPublicVLAN) {
 		setIf("EXT_PUBLIC_VLAN_ID", s.PubVLANID)
 		setIf("EXT_PUBLIC_CIDR", s.PubCIDR)
@@ -168,6 +181,7 @@ func (s *State) EquivalentFlags(o *clusterinit.InitOptions) string {
 	add("name", o.Name)
 	add("domain", o.Domain)
 	add("node-external-ip", o.NodeExternalIP)
+	add("ssh-host", o.SSHHost)
 	add("email", o.Email)
 	add("mode", string(o.Mode))
 	add("fleet-mode", string(o.FleetMode))
@@ -217,183 +231,6 @@ func (s *State) EquivalentFlags(o *clusterinit.InitOptions) string {
 	return b.String()
 }
 
-// Build assembles the huh form over `st`. `siblingHint` (may be "")
-// renders next to the object-storage mode select in existing-fleet
-// runs — hint, never inherit (OS-5 §7.3).
-func Build(st *State, siblingHint string) *huh.Form {
-	osDescription := "REQUIRED — Mimir, Loki, Velero and tenant buckets depend on it.\n" +
-		"external-ceph / external-s3 are fleet stubs (flag path fails closed)."
-	if siblingHint != "" {
-		osDescription += "\n" + siblingHint
-	}
-
-	return huh.NewForm(
-		// --- Group 1: cluster basics ---
-		huh.NewGroup(
-			huh.NewInput().Title("Cluster name").
-				Description("lowercase; nested allowed (eu/dc1)").
-				Value(&st.Name).Validate(clusterinit.ValidateClusterNameField),
-			huh.NewInput().Title("Domain").
-				Description("bare FQDN, e.g. kdc.example.com").
-				Value(&st.Domain).Validate(clusterinit.ValidateDomainField),
-			huh.NewInput().Title("Node external IP").
-				Description("public IP of any cluster node (wildcard DNS target)").
-				Value(&st.NodeIP).Validate(clusterinit.ValidateNodeIPField),
-			huh.NewInput().Title("Operator email").
-				Description("cert-manager / Let's Encrypt registration").
-				Value(&st.Email).Validate(clusterinit.ValidateEmailField),
-			huh.NewSelect[string]().Title("Mode").
-				Description("Foreign cluster with no fleet overlay yet? Use install/existing-fleet\nto scaffold it first — full foreign import isn't automated.").
-				Options(
-					huh.NewOption("install — fresh RKE2, no Flux: scaffold + install everything", "install"),
-					huh.NewOption("adopt — existing fleet overlay: Flux takes components over in place (pin versions first)", "adopt"),
-					huh.NewOption("resume — kube-dc already here: re-run post-install steps idempotently", "resume"),
-				).Value(&st.Mode),
-		).Title("Cluster basics"),
-
-		// --- Group 2: fleet repo ---
-		huh.NewGroup(
-			huh.NewSelect[string]().Title("Fleet mode").
-				Options(
-					huh.NewOption("existing-fleet — add to a fleet with sibling clusters", "existing-fleet"),
-					huh.NewOption("new-repo — create a brand-new fleet repo", "new-repo"),
-					huh.NewOption("existing-repo — adopt a repo without fleet structure", "existing-repo"),
-				).Value(&st.FleetMode),
-			huh.NewInput().Title("Fleet repo path").
-				Description("local checkout (empty = $KUBE_DC_FLEET / ~/.kube-dc/fleet)").
-				Value(&st.Repo),
-			huh.NewSelect[string]().Title("Git provider").
-				Options(
-					huh.NewOption("github", "github"),
-					huh.NewOption("gitlab", "gitlab"),
-				).Value(&st.Provider),
-			huh.NewInput().Title("Owner / group").
-				Description("token resolves via gh/glab auth — never typed here").
-				Value(&st.Owner),
-			huh.NewInput().Title("Repo name").Value(&st.RepoName),
-		).Title("Fleet repo"),
-
-		// --- Group 3: network preset ---
-		huh.NewGroup(
-			huh.NewSelect[string]().Title("Network preset").
-				Options(
-					huh.NewOption("cloud-vlan — shared-NAT tenant networking", "cloud-vlan"),
-					huh.NewOption("cloud+public-vlan — adds a routed public VLAN", "cloud+public-vlan"),
-					huh.NewOption("internal-only — no external networks", "internal-only"),
-					huh.NewOption("custom — bring your own --set keys", "custom"),
-				).Value(&st.Preset),
-			huh.NewInput().Title("EXT_NET_VLAN_ID").Value(&st.NetVLANID),
-			huh.NewInput().Title("EXT_NET_INTERFACE").Description("e.g. bond0").Value(&st.NetInterface),
-		).Title("Network"),
-
-		// Conditional: public-VLAN keys only for cloud+public-vlan
-		// (the M4-T04 preset gate would demand them anyway — asking
-		// up front beats a validation bounce).
-		huh.NewGroup(
-			huh.NewInput().Title("EXT_PUBLIC_VLAN_ID").Value(&st.PubVLANID),
-			huh.NewInput().Title("EXT_PUBLIC_CIDR").Description("e.g. 203.0.113.48/29").Value(&st.PubCIDR),
-			huh.NewInput().Title("EXT_PUBLIC_GATEWAY").Value(&st.PubGateway),
-		).Title("Public VLAN (cloud+public-vlan)").
-			WithHideFunc(func() bool { return st.Preset != string(clusterinit.PresetCloudPublicVLAN) }),
-
-		// --- Group 4: object storage (OS-5 §7.2) ---
-		huh.NewGroup(
-			huh.NewSelect[string]().Title("Object storage").
-				Description(osDescription).
-				Options(
-					huh.NewOption("rook-ceph-multi-node — 3+ nodes, raw devices (production HA)", "rook-ceph-multi-node"),
-					huh.NewOption("rook-ceph-local — single node, loop file (dev/small)", "rook-ceph-local"),
-					huh.NewOption("rook-ceph-pvc — OSDs on PVCs (CSI clouds)", "rook-ceph-pvc"),
-					huh.NewOption("disabled — NO S3; degraded/dev only", "disabled"),
-				).Value(&st.OSMode),
-		).Title("Object storage"),
-
-		huh.NewGroup(
-			huh.NewInput().Title("OSD node").
-				Value(&st.OSDNode).Validate(clusterinit.ValidateK8sNodeNameField),
-			huh.NewInput().Title("OSD size (GB)").Description("default 500").
-				Value(&st.OSDSizeGB).Validate(validateOptionalInt),
-			huh.NewInput().Title("OSD device").Description("empty = loop0 (loop file)").
-				Value(&st.OSDDevice).Validate(clusterinit.ValidateDeviceNameField),
-		).Title("rook-ceph-local").
-			WithHideFunc(func() bool { return st.OSMode != string(clusterinit.RookCephLocal) }),
-
-		huh.NewGroup(
-			huh.NewInput().Title("Ceph node 1").Description("NODE=DEVICE, e.g. host5-a=sdb").
-				Value(&st.CephNode1).Validate(clusterinit.ValidateNodeDevicePairField),
-			huh.NewInput().Title("Ceph node 2").
-				Value(&st.CephNode2).Validate(clusterinit.ValidateNodeDevicePairField),
-			huh.NewInput().Title("Ceph node 3").
-				Description("exactly 3 in v1 — 2-host topologies hand-patch slot 3").
-				Value(&st.CephNode3).Validate(clusterinit.ValidateNodeDevicePairField),
-		).Title("rook-ceph-multi-node").
-			WithHideFunc(func() bool { return st.OSMode != string(clusterinit.RookCephMultiNode) }),
-
-		huh.NewGroup(
-			huh.NewInput().Title("StorageClass").
-				Value(&st.StorageClass).Validate(clusterinit.ValidateStorageClassField),
-		).Title("rook-ceph-pvc").
-			WithHideFunc(func() bool { return st.OSMode != string(clusterinit.RookCephPVC) }),
-
-		huh.NewGroup(
-			huh.NewInput().Title("S3 hostname").Description("empty = s3.<domain>").
-				Value(&st.S3Hostname).Validate(clusterinit.ValidateOptionalDomainField),
-			huh.NewConfirm().Title("Expose S3 publicly (HTTPRoute + TLS)?").
-				Value(&st.NoS3Exposure).
-				Affirmative("No — internal only").Negative("Yes — expose"),
-		).Title("S3 endpoint").
-			WithHideFunc(func() bool {
-				return st.OSMode == string(clusterinit.RookDisabled) || st.OSMode == ""
-			}),
-
-		// disabled consequence confirm (OS-5 §7.4: the TUI equivalent
-		// of "the explicit mode is the consent").
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Object storage DISABLED — confirm the consequences").
-				Description("Mimir + Loki SUSPENDED (no metrics/logs storage);\ngrafana-pg backups + WAL archiving OFF (DB unprotected);\nNEVER for customer-ready clusters.").
-				Value(&st.DisabledConsent).
-				Affirmative("I understand — dev cluster").Negative("Go back").
-				// Reviewer P2: consent is ENFORCED, not decorative —
-				// declining blocks here (navigate back and pick a
-				// real mode instead); Apply double-checks (below).
-				Validate(func(ok bool) error {
-					if !ok {
-						return fmt.Errorf("declined — go back (shift+tab) and choose a rook-ceph-* mode, or confirm the degraded consequences")
-					}
-					return nil
-				}),
-		).Title("Degraded mode").
-			WithHideFunc(func() bool { return st.OSMode != string(clusterinit.RookDisabled) }),
-
-		// Adopt-only: the --allow-unpinned-adopt bypass, behind an
-		// explicit danger confirmation. The SAFE default (decline) means
-		// kube-dc refuses to install until the operator has pinned fleet
-		// versions to the live ones (`bootstrap adopt --pin-versions`) —
-		// exactly the gate CheckAdoptPinned enforces. Hidden outside
-		// adopt mode so install/resume never see it.
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Bypass the adopt version-pin safety gate?").
-				Description("SAFE (default — decline): kube-dc refuses to install until you've pinned\n"+
-					"fleet versions to the live ones (`bootstrap adopt <cluster> --pin-versions`),\n"+
-					"so Flux's first reconcile won't upgrade/restart adopted components.\n"+
-					"BYPASS: install now, unpinned — expect upgrades/restarts on first reconcile.").
-				Value(&st.AllowUnpinnedAdopt).
-				Affirmative("Bypass (RISKY)").Negative("No — I'll pin first (safe)"),
-		).Title("Adopt safety").
-			WithHideFunc(func() bool { return st.Mode != string(clusterinit.ModeAdopt) }),
-
-		// --- Group 5: gates ---
-		huh.NewGroup(
-			huh.NewConfirm().Title("Proceed even if wildcard DNS isn't wired yet?").
-				Description("TLS certs stay Pending until *.domain resolves").
-				Value(&st.AllowDNSNotReady).
-				Affirmative("Yes (--allow-dns-not-ready)").Negative("No — gate on DNS"),
-		).Title("Gates"),
-	)
-}
-
 // validateOptionalInt accepts empty (defaulted) or a positive integer.
 func validateOptionalInt(s string) error {
 	if strings.TrimSpace(s) == "" {
@@ -404,30 +241,6 @@ func validateOptionalInt(s string) error {
 		return fmt.Errorf("positive integer (or empty for the default)")
 	}
 	return nil
-}
-
-// Run builds + runs the wizard interactively, applies the answers to
-// `o`, and returns the equivalent-flags rendering for the cobra layer
-// to print. A cancelled form (Ctrl+C / Esc) returns huh's abort error
-// and leaves `o` untouched.
-func Run(o *clusterinit.InitOptions, siblingHint string) (string, error) {
-	st := &State{
-		Mode:      string(clusterinit.ModeInstall),
-		FleetMode: string(o.FleetMode),
-		Provider:  "github",
-		Preset:    string(clusterinit.PresetCloudVLAN),
-		Repo:      o.Repo,
-	}
-	if st.FleetMode == "" {
-		st.FleetMode = string(clusterinit.FleetExistingFleet)
-	}
-	if err := Build(st, siblingHint).Run(); err != nil {
-		return "", err
-	}
-	if err := st.Apply(o); err != nil {
-		return "", err
-	}
-	return st.EquivalentFlags(o), nil
 }
 
 // shellQuote makes a flag value safe to paste into a POSIX shell

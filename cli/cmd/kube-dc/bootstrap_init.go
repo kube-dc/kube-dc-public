@@ -175,8 +175,14 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 				// hint helper soft-fails to "" on any miss.
 				hintOpts := *o
 				hintOpts.FleetMode = clusterinit.FleetExistingFleet
-				eq, err := initform.Run(o, siblingObjectStorageModeHint(&hintOpts))
+				// T6+: the Proxmox-style settings panel (RunPanel)
+				// replaced the sequential huh form. A cancelled panel
+				// aborts init cleanly.
+				eq, err := initform.RunPanel(o, siblingObjectStorageModeHint(&hintOpts))
 				if err != nil {
+					if errors.Is(err, initform.ErrPanelCancelled) {
+						return nil
+					}
 					return fmt.Errorf("init wizard: %w", err)
 				}
 				wizardFlags = eq

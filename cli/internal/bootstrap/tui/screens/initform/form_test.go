@@ -93,17 +93,6 @@ func TestEquivalentFlags_RoundTripsTheSurface(t *testing.T) {
 	}
 }
 
-// TestBuild_ConstructsWithoutPanic — the form wires ~10 groups with
-// hide-funcs over shared state; construction must be panic-free and
-// the hint must land in the object-storage description.
-func TestBuild_ConstructsWithoutPanic(t *testing.T) {
-	st := baseState()
-	f := Build(st, "template sibling eu/dc1 uses rook-ceph-pvc")
-	if f == nil {
-		t.Fatal("nil form")
-	}
-}
-
 // Reviewer P2: unconsented disabled must never survive Apply — the
 // Confirm's Validate blocks it interactively; this guards
 // programmatic State construction.
@@ -181,6 +170,80 @@ func TestEquivalentFlags_AdoptBypass_RoundTripValidates(t *testing.T) {
 		if !strings.Contains(flags, want) {
 			t.Errorf("adopt equivalent flags missing %q\nFULL:\n%s", want, flags)
 		}
+	}
+}
+
+// TestApply_InternalOnlyE2EComplete proves the wizard now produces a
+// COMPLETE, valid install config for the e2e internal-only + NAT scenario
+// — matching the runbook's flag set (EXT_NET_* + KUBE_OVN_MASTER_NODES +
+// SSH host + rook-ceph-local). Guards the two gaps just closed (SSH host,
+// KUBE_OVN_MASTER_NODES) from regressing the wizard back to unusable.
+func TestApply_InternalOnlyE2EComplete(t *testing.T) {
+	st := &State{
+		Name: "e2e", Domain: "e2e.kube-dc.cloud",
+		NodeIP: "203.0.113.52", SSHHost: "ubuntu@203.0.113.52",
+		Email: "ops@example.com", Mode: "install", FleetMode: "new-repo",
+		Provider: "github", Owner: "kube-dc", RepoName: "e2e-fleet-r5",
+		Preset:             "internal-only",
+		NetVLANID:          "0",
+		NetInterface:       "enp1s0",
+		KubeOVNMasterNodes: "10.77.0.22",
+		OSMode:             "rook-ceph-local",
+		OSDNode:            "e2e-master-1", OSDSizeGB: "40",
+	}
+	o := &clusterinit.InitOptions{Yes: true}
+	if err := st.Apply(o); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if err := o.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if err := clusterinit.ValidatePresetRequiredKeys(o); err != nil {
+		t.Fatalf("ValidatePresetRequiredKeys: %v", err)
+	}
+	// The three env keys the install can't come up without.
+	for k, want := range map[string]string{
+		"EXT_NET_INTERFACE":     "enp1s0",
+		"EXT_NET_VLAN_ID":       "0",
+		"KUBE_OVN_MASTER_NODES": "10.77.0.22",
+	} {
+		if o.Sets[k] != want {
+			t.Errorf("Sets[%s]=%q, want %q", k, o.Sets[k], want)
+		}
+	}
+	if o.SSHHost != "ubuntu@203.0.113.52" {
+		t.Errorf("SSH host (NAT detection) not set: %q", o.SSHHost)
+	}
+	if o.RookMode != clusterinit.RookCephLocal || o.RookOSDNode != "e2e-master-1" {
+		t.Errorf("object storage not mapped: mode=%q node=%q", o.RookMode, o.RookOSDNode)
+	}
+}
+
+// The wizard's SSH-host field maps to o.SSHHost (enables NAT detection
+// in the apply path) and round-trips into the equivalent flags — closing
+// the gap where a wizard install couldn't handle a NAT / cloud-FIP node.
+func TestApply_SSHHostMapsAndFlags(t *testing.T) {
+	st := baseState()
+	st.SSHHost = "ubuntu@203.0.113.52"
+	o := &clusterinit.InitOptions{Yes: true}
+	if err := st.Apply(o); err != nil {
+		t.Fatal(err)
+	}
+	if o.SSHHost != "ubuntu@203.0.113.52" {
+		t.Errorf("SSH host not mapped: %q", o.SSHHost)
+	}
+	if err := o.Validate(); err != nil {
+		t.Fatalf("wizard options with SSH host must validate: %v", err)
+	}
+	if !strings.Contains(st.EquivalentFlags(o), "--ssh-host=ubuntu@203.0.113.52") {
+		t.Errorf("equivalent flags should include --ssh-host:\n%s", st.EquivalentFlags(o))
+	}
+	// Empty SSH host → flag omitted (plain public-IP node).
+	st.SSHHost = ""
+	o2 := &clusterinit.InitOptions{Yes: true}
+	_ = st.Apply(o2)
+	if strings.Contains(st.EquivalentFlags(o2), "--ssh-host") {
+		t.Error("empty SSH host must not emit --ssh-host")
 	}
 }
 

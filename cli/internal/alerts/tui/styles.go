@@ -1,6 +1,10 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"image/color"
+
+	"charm.land/lipgloss/v2"
+)
 
 // Palette — chosen to read well on dark backgrounds and roughly match
 // the Grafana Alertmanager UI.
@@ -27,30 +31,30 @@ var (
 		Padding(0, 1)
 
 	Subtitle = lipgloss.NewStyle().
-		Foreground(colorMuted).
-		Italic(true)
+			Foreground(colorMuted).
+			Italic(true)
 
 	StatBar = lipgloss.NewStyle().
 		Foreground(colorText).
 		Padding(0, 1)
 
 	TabActive = lipgloss.NewStyle().
-		Foreground(colorWhite).
-		Background(colorAccent).
-		Bold(true).
-		Padding(0, 2)
+			Foreground(colorWhite).
+			Background(colorAccent).
+			Bold(true).
+			Padding(0, 2)
 
 	TabInactive = lipgloss.NewStyle().
-		Foreground(colorMuted).
-		Padding(0, 2)
+			Foreground(colorMuted).
+			Padding(0, 2)
 
 	Divider = lipgloss.NewStyle().
 		Foreground(colorBorder)
 
 	ListPane = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorBorder).
-		Padding(0, 1)
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorBorder).
+			Padding(0, 1)
 
 	ListPaneFocused = ListPane.
 			BorderForeground(colorBorderHi)
@@ -92,7 +96,7 @@ var (
 // Pill renders a subtle "key value" label. The key is colored in its
 // own hue (no background), the value is in the regular text color.
 // This keeps labels scannable without flooding the UI with color blocks.
-func Pill(fg lipgloss.Color, key, value string) string {
+func Pill(fg color.Color, key, value string) string {
 	keyStyle := lipgloss.NewStyle().
 		Foreground(fg).
 		Bold(true)
@@ -102,7 +106,7 @@ func Pill(fg lipgloss.Color, key, value string) string {
 }
 
 // Badge renders a single-colored pill for a headline (like severity).
-func Badge(bg lipgloss.Color, text string) string {
+func Badge(bg color.Color, text string) string {
 	return lipgloss.NewStyle().
 		Foreground(colorWhite).
 		Background(bg).
@@ -112,6 +116,6 @@ func Badge(bg lipgloss.Color, text string) string {
 }
 
 // Dot returns a severity dot with its native color.
-func Dot(color lipgloss.Color) string {
-	return lipgloss.NewStyle().Foreground(color).Render("●")
+func Dot(c color.Color) string {
+	return lipgloss.NewStyle().Foreground(c).Render("●")
 }
