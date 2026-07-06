@@ -589,20 +589,31 @@ func (l layeredAdoptEnv) GetOr(key, fallback string) string {
 }
 
 // effectiveAdoptEnv builds the env the adopt gate compares against the
-// live cluster: the cluster's on-disk cluster-config.env (if scaffolded)
+// live cluster: the cluster's on-disk cluster-config.env (if it exists)
 // with the operator's `--set` overrides layered on top — i.e. exactly
-// what the apply will write. When the cluster isn't in the fleet repo
-// yet, the base is empty, so every detected component reads as unpinned
-// and the gate fails closed (the correct nudge to run
-// `bootstrap adopt --pin-versions` first).
-func effectiveAdoptEnv(o *clusterinit.InitOptions, out io.Writer) adopt.EnvReader {
+// what the apply will write. The bool return is whether a fleet overlay
+// (clusters/<name>/cluster-config.env) exists; false routes the gate to
+// the "scaffold first — adopt needs an existing overlay" boundary
+// message instead of the circular "run adopt --pin-versions" (which
+// would itself have nowhere to write).
+func effectiveAdoptEnv(o *clusterinit.InitOptions, out io.Writer) (adopt.EnvReader, bool) {
 	le := layeredAdoptEnv{overlay: o.Sets}
-	if env, _, err := loadClusterEnv(o.Repo, o.Name); err != nil {
-		fmt.Fprintf(out, "[adopt] note: no cluster-config.env for %q yet (%v) — treating all component versions as unpinned.\n", o.Name, err)
-	} else {
+	env, _, err := loadClusterEnv(o.Repo, o.Name)
+	switch {
+	case err == nil:
 		le.base = env
+		return le, true
+	case errors.Is(err, errClusterNotInFleet):
+		// No overlay yet — the boundary case. The gate emits the
+		// scaffold-first guidance; here just note the state.
+		fmt.Fprintf(out, "[adopt] no fleet overlay for %q yet — treating all component versions as unpinned.\n", o.Name)
+		return le, false
+	default:
+		// A different failure (repo unreadable, env parse error). Still
+		// treat as unpinned but surface the underlying error.
+		fmt.Fprintf(out, "[adopt] could not read cluster-config.env for %q (%v) — treating all component versions as unpinned.\n", o.Name, err)
+		return le, false
 	}
-	return le
 }
 
 // runApplyEngine is the shared tail that both apply paths converge
@@ -699,12 +710,14 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	// (Flux's first reconcile would upgrade/restart it) or is undetected.
 	// Read-only; only runs in adopt mode. Escape: --allow-unpinned-adopt.
 	if o.Mode == clusterinit.ModeAdopt {
+		adoptEnv, overlayExists := effectiveAdoptEnv(o, out)
 		if err := clusterinit.CheckAdoptPinned(ctx, clusterinit.AdoptGateOptions{
-			Inspector:   session.K8s,
-			Env:         effectiveAdoptEnv(o, out),
-			Allow:       o.AllowUnpinnedAdopt,
-			ClusterName: o.Name,
-			Out:         out,
+			Inspector:      session.K8s,
+			Env:            adoptEnv,
+			Allow:          o.AllowUnpinnedAdopt,
+			OverlayMissing: !overlayExists,
+			ClusterName:    o.Name,
+			Out:            out,
 		}); err != nil {
 			return err
 		}

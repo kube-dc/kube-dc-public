@@ -37,6 +37,14 @@ type AdoptGateOptions struct {
 	Env adopt.EnvReader
 	// Allow downgrades a hard failure to a warning (--allow-unpinned-adopt).
 	Allow bool
+	// OverlayMissing is true when the cluster has no
+	// clusters/<name>/cluster-config.env in the fleet yet. This is the
+	// boundary case: adopt-in-place pins INTO an existing overlay, so
+	// with none the failure guidance becomes "scaffold the cluster into
+	// the fleet first" rather than the circular "run adopt --pin-versions"
+	// (which would also have nowhere to write). Full foreign-cluster
+	// import (no overlay) isn't automated yet.
+	OverlayMissing bool
 	// ClusterName is only used to render the exact remediation command.
 	ClusterName string
 	Out         io.Writer
@@ -101,6 +109,23 @@ func CheckAdoptPinned(ctx context.Context, opts AdoptGateOptions) error {
 	for _, p := range problems {
 		fmt.Fprintf(opts.Out, "        - %s\n", p)
 	}
+
+	// The no-overlay boundary: adopt-in-place pins into an EXISTING
+	// clusters/<name>/cluster-config.env. With none, telling the operator
+	// to "run adopt --pin-versions" is circular (it has nowhere to write).
+	// Guide them to scaffold the cluster into the fleet first.
+	if opts.OverlayMissing {
+		fmt.Fprintf(opts.Out, "  Cluster %q has no fleet overlay (clusters/%s/cluster-config.env) yet.\n", target, target)
+		fmt.Fprintln(opts.Out, "  Adopt-in-place pins INTO an existing overlay — scaffold the cluster into")
+		fmt.Fprintln(opts.Out, "  the fleet first (importing a foreign cluster with no overlay isn't automated yet).")
+		if opts.Allow {
+			fmt.Fprintln(opts.Out, "[adopt] --allow-unpinned-adopt set — proceeding anyway (RISKY: expect upgrades/restarts on first reconcile).")
+			return nil
+		}
+		return fmt.Errorf("init --mode=adopt: cluster %q has no fleet overlay to pin into (clusters/%s/cluster-config.env) — scaffold it into the fleet first; foreign-cluster import isn't automated yet (or pass --allow-unpinned-adopt to proceed anyway)",
+			target, target)
+	}
+
 	fmt.Fprintf(opts.Out, "  Flux's first reconcile would upgrade/restart these. Pin them first:\n")
 	fmt.Fprintf(opts.Out, "      kube-dc bootstrap adopt %s --kubeconfig <target> --pin-versions --yes\n", target)
 

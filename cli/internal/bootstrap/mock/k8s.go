@@ -98,14 +98,19 @@ func (c *K8sClient) ListNamespaces(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
-// ListCRDs is a stub — the scenario fixture doesn't model CRDs, and
-// `bootstrap adopt` tests use a purpose-built fake rather than the mock
-// scenario. Present so mock.K8sClient still satisfies ports.K8sClient.
+// ListCRDs returns the scenario's modelled CRDs (cluster.crds). Most
+// scenarios model none (nil) — the greenfield default; scenarios that
+// exercise the `bootstrap adopt` / init --mode=adopt detection path set
+// `cluster.crds`. Adopt *engine* tests still use a purpose-built fake;
+// this backs the cmd-level init/adopt paths.
 func (c *K8sClient) ListCRDs(ctx context.Context) ([]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return nil, nil
+	if c.scenario == nil || c.scenario.Cluster == nil {
+		return nil, nil
+	}
+	return append([]string(nil), c.scenario.Cluster.CRDs...), nil
 }
 
 // HelmReleaseChartVersions is a stub — same rationale as ListCRDs; adopt

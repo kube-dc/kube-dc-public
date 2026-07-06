@@ -43,9 +43,9 @@ func TestRenderAdopt_WithFindings(t *testing.T) {
 		"ingress-nginx",
 		"kube-dc uses envoy-gateway",
 		"recommended: adopt",
-		"take the component over IN PLACE",     // corrected semantics
-		"--pin-versions --yes",                 // points at the mutation
-		"clusters/acme/<layer>",                // SKIP path uses the cluster name
+		"take the component over IN PLACE", // corrected semantics
+		"--pin-versions --yes",             // points at the mutation
+		"clusters/acme/<layer>",            // SKIP path uses the cluster name
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("report missing %q:\n%s", want, s)
@@ -152,5 +152,26 @@ func TestBootstrapAdopt_PinVersionsRequiresCluster(t *testing.T) {
 	cmd.SetArgs([]string{"--pin-versions"}) // no cluster arg
 	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "<cluster> arg is required") {
 		t.Errorf("--pin-versions without a cluster should error, got %v", err)
+	}
+}
+
+func TestBootstrapAdopt_PinVersionsNoOverlayBoundary(t *testing.T) {
+	// C3 boundary: --pin-versions against a cluster with no fleet overlay
+	// must give the scaffold-first guidance, not a bare "not found".
+	t.Setenv("KUBE_DC_MOCK", "cloud") // NewSession succeeds without a kubeconfig
+	// A fleet repo that HAS a clusters/ dir (so ListClusters succeeds) but
+	// not the queried cluster → errClusterNotInFleet.
+	repo := writeFleetFixture(t, map[string]string{"other": "KUBE_OVN_VERSION=v1.15.0\n"})
+	cmd := bootstrapAdoptCmd(&repo)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"acme", "--pin-versions"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("--pin-versions on a cluster with no overlay must error")
+	}
+	if !strings.Contains(err.Error(), "scaffold") || !strings.Contains(err.Error(), "isn't automated yet") {
+		t.Errorf("no-overlay error should give scaffold-first boundary guidance, got: %v", err)
 	}
 }

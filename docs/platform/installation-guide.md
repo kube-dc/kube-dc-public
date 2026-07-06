@@ -544,6 +544,66 @@ and skip the provider-VLAN `--set` flags. Size the node at **≥12 vCPU /
 27 GiB / 100 GB** — the full platform plus reconcile churn needs it.
 :::
 
+### 3.3.1 Which mode? `install` / `adopt` / `resume`
+
+`--mode` tells `init` what it's walking into. It auto-detects when
+omitted (`--mode=auto`), but knowing the model helps you pick the right
+path — and avoid the one that isn't automated yet:
+
+| Your situation | Mode | What happens |
+|----------------|------|--------------|
+| Fresh RKE2 cluster, no Flux | `install` | Scaffolds the fleet + `flux bootstrap` + installs the whole platform (the flow in §3.3). |
+| Cluster already runs some of kube-dc's components (cert-manager, kube-ovn, kubevirt, …) under Flux, but no kube-dc yet, **and it already has a fleet overlay** | `adopt` | kube-dc's Flux **takes those components over in place** — see below. |
+| kube-dc is already installed here | `resume` | Re-runs the post-install steps idempotently; no re-scaffold. |
+| A **foreign** cluster with no `clusters/<name>/cluster-config.env` in your fleet | *not automated yet* | Scaffold it into the fleet first (`install`/`existing-fleet`); full foreign import is a planned follow-up. |
+
+#### What `adopt` means
+
+Flux **takes existing components over in place** — the fleet's
+Kustomizations run with `prune: false` + `force: true`, so Flux adopts
+the running Helm releases instead of deleting and recreating them. The
+one safety step is **pinning your fleet's component versions to the
+versions already running**, so Flux's first reconcile doesn't upgrade or
+restart anything.
+
+#### Supported adopt flow
+
+Adopt-in-place assumes the cluster **already has a fleet overlay**
+(`clusters/<cluster>/cluster-config.env`). Pin live versions, then init:
+
+```bash
+# 1. Inventory what's already on the cluster (read-only)
+kube-dc bootstrap adopt <cluster> --kubeconfig ./target.yaml
+
+# 2. Preview the version pins, then write them (commit + push)
+kube-dc bootstrap adopt <cluster> --kubeconfig ./target.yaml --pin-versions
+kube-dc bootstrap adopt <cluster> --kubeconfig ./target.yaml --pin-versions --yes
+
+# 3. Install kube-dc — the adopt gate verifies everything is pinned first
+kube-dc bootstrap init --mode=adopt --name <cluster> … --yes
+```
+
+KubeVirt and CDI aren't Helm releases, so `--pin-versions` reads their
+version off the operator CR automatically. Anything it genuinely can't
+read is reported as *undetected* — resolve it with
+`--manual-pin KEY=VERSION` or `--skip-component NAME`.
+
+#### What `adopt` does **not** do (yet)
+
+- It does **not** import a completely foreign cluster with no fleet
+  overlay — scaffold the cluster into the fleet first.
+- It does **not** generate "leave-this-component-unmanaged" (overlay-SKIP)
+  rules — that's a planned, more invasive follow-up.
+
+#### Adopt failure table
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `cluster … has no fleet overlay` | No `clusters/<name>/cluster-config.env` | Scaffold the cluster into the fleet first (this is the import boundary). |
+| `N component(s) not version-pinned` (from `init --mode=adopt`) | Fleet pins drift from the live versions | Run `kube-dc bootstrap adopt <cluster> --pin-versions --yes`, then re-run `init`. |
+| `… unresolved (…)` (from `--pin-versions`) | A component's live version can't be read (not a Helm release, CR absent) | `--manual-pin KEY=VERSION` or `--skip-component NAME`. |
+| You accept the upgrade/restart risk anyway | — | `init --mode=adopt --allow-unpinned-adopt` (RISKY — expect components to upgrade/restart on the first reconcile). |
+
 ### 3.4 Watch the platform converge
 
 Flux reconciles in dependency order:

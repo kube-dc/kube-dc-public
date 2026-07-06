@@ -104,12 +104,16 @@ type HostFixture struct {
 // level means "unreachable"; an empty struct here means "reachable but
 // no flux, no kube-dc-manager, etc."
 type ClusterFixture struct {
-	APIEndpoint    string                  `yaml:"apiEndpoint"`
-	K8sVersion     string                  `yaml:"k8sVersion"`
-	Nodes          []NodeFixture           `yaml:"nodes"`
-	FluxInstalled  bool                    `yaml:"fluxInstalled"`
-	Kustomizations []KustomizationFixture  `yaml:"kustomizations"`
-	HelmReleases   []HelmReleaseFixture    `yaml:"helmReleases"`
+	APIEndpoint    string                 `yaml:"apiEndpoint"`
+	K8sVersion     string                 `yaml:"k8sVersion"`
+	Nodes          []NodeFixture          `yaml:"nodes"`
+	FluxInstalled  bool                   `yaml:"fluxInstalled"`
+	Kustomizations []KustomizationFixture `yaml:"kustomizations"`
+	HelmReleases   []HelmReleaseFixture   `yaml:"helmReleases"`
+	// CRDs present on the cluster, consumed by mock K8sClient.ListCRDs
+	// (the `bootstrap adopt` + init --mode=adopt detection path). Empty
+	// = no CRDs modelled (the greenfield default for most scenarios).
+	CRDs []string `yaml:"crds"`
 	// DeploymentImages: namespace → deployment-name → image:tag
 	DeploymentImages map[string]map[string]string `yaml:"deploymentImages"`
 	// NodeLabels: node-name → label-map. Lets scenarios mimic NFD
@@ -159,10 +163,10 @@ type HelmReleaseFixture struct {
 
 // OpenBaoFixture describes the openbao Helm release state.
 type OpenBaoFixture struct {
-	Initialized                  bool                  `yaml:"initialized"`
-	Pods                         []OpenBaoPodFixture   `yaml:"pods"`
-	BootstrapFinalizedAnnotation string                `yaml:"bootstrapFinalizedAnnotation"` // RFC3339
-	ControllerAuthAnnotation     string                `yaml:"controllerAuthAnnotation"`     // RFC3339
+	Initialized                  bool                `yaml:"initialized"`
+	Pods                         []OpenBaoPodFixture `yaml:"pods"`
+	BootstrapFinalizedAnnotation string              `yaml:"bootstrapFinalizedAnnotation"` // RFC3339
+	ControllerAuthAnnotation     string              `yaml:"controllerAuthAnnotation"`     // RFC3339
 	// UnsealKeys are the canonical Shamir shares the mock returns when
 	// scripts emit a sentinel payload — must be 5 entries (or 0 to
 	// signal "scenario doesn't exercise share capture").

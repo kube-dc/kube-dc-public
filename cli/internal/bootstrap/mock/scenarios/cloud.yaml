@@ -19,6 +19,11 @@ tools:
 cluster:
   apiEndpoint: https://kube-api.kube-dc.cloud:6443
   k8sVersion: v1.32.1+rke2r1
+  # CRDs present on the cluster — consumed only by `bootstrap adopt`
+  # (adopt.Detect) + the init --mode=adopt gate. cloud already runs
+  # cert-manager, so its CRD is present.
+  crds:
+    - certificates.cert-manager.io
   nodes:
     - { name: node-c3, status: Ready, nics: [enp94s0f0np0] }
     - { name: node-b2, status: Ready, nics: [enp94s0f0np0] }

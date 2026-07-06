@@ -113,6 +113,52 @@ func TestCheckAdoptPinned_AllowDowngradesToWarning(t *testing.T) {
 	}
 }
 
+func TestCheckAdoptPinned_NoOverlayBoundary(t *testing.T) {
+	// No fleet overlay yet → env is empty, so every detected component
+	// reads as a pending pin. With OverlayMissing set, the gate must give
+	// the scaffold-first boundary guidance, NOT the circular "run adopt
+	// --pin-versions" (which would have nowhere to write).
+	var buf bytes.Buffer
+	err := CheckAdoptPinned(context.Background(), AdoptGateOptions{
+		Inspector:      gateInspector{crds: []string{"certificates.cert-manager.io"}},
+		Env:            gateEnv{}, // empty — nothing pinned
+		OverlayMissing: true,
+		ClusterName:    "acme",
+		Out:            &buf,
+	})
+	if err == nil {
+		t.Fatal("no overlay + unpinned components must fail closed")
+	}
+	// The error must be the boundary message, not the pin-versions nudge.
+	if !strings.Contains(err.Error(), "no fleet overlay") || !strings.Contains(err.Error(), "scaffold") {
+		t.Errorf("no-overlay error should give the scaffold-first boundary: %v", err)
+	}
+	if strings.Contains(err.Error(), "run `bootstrap adopt") {
+		t.Errorf("no-overlay error must NOT give the circular pin-versions nudge: %v", err)
+	}
+	if !strings.Contains(buf.String(), "foreign cluster") {
+		t.Errorf("printed guidance should mention foreign-cluster import isn't automated: %q", buf.String())
+	}
+}
+
+func TestCheckAdoptPinned_NoOverlayAllowBypasses(t *testing.T) {
+	var buf bytes.Buffer
+	err := CheckAdoptPinned(context.Background(), AdoptGateOptions{
+		Inspector:      gateInspector{crds: []string{"certificates.cert-manager.io"}},
+		Env:            gateEnv{},
+		OverlayMissing: true,
+		Allow:          true,
+		ClusterName:    "acme",
+		Out:            &buf,
+	})
+	if err != nil {
+		t.Fatalf("--allow-unpinned-adopt should bypass the no-overlay boundary too, got %v", err)
+	}
+	if !strings.Contains(buf.String(), "RISKY") {
+		t.Errorf("expected a RISKY warning on bypass, got %q", buf.String())
+	}
+}
+
 func TestCheckAdoptPinned_GreenfieldPasses(t *testing.T) {
 	// No pre-existing components at all → nothing to gate.
 	err := CheckAdoptPinned(context.Background(), AdoptGateOptions{

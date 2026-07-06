@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -14,6 +15,13 @@ import (
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/discover"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/fleetconfig"
 )
+
+// errClusterNotInFleet is returned by loadClusterEnv when the named
+// cluster has no clusters/<name>/cluster-config.env in the fleet repo.
+// Callers (adopt / init --mode=adopt) errors.Is-check it to surface the
+// "adopt needs an existing fleet overlay — scaffold first" boundary
+// rather than a generic load failure.
+var errClusterNotInFleet = errors.New("cluster not found in fleet")
 
 // bootstrapConfigCmd registers `kube-dc bootstrap config` (V3) — the
 // day-2 editor for a cluster's clusters/<name>/cluster-config.env:
@@ -68,7 +76,7 @@ func loadClusterEnv(fleetRepoFlag, name string) (env *config.Env, repoRoot strin
 		names = append(names, c.Name)
 	}
 	sort.Strings(names)
-	return nil, "", fmt.Errorf("cluster %q not found in %s (known: %s)", name, repoRoot, strings.Join(names, ", "))
+	return nil, "", fmt.Errorf("%w: %q not in %s (known: %s)", errClusterNotInFleet, name, repoRoot, strings.Join(names, ", "))
 }
 
 func bootstrapConfigListCmd(fleetRepo *string) *cobra.Command {

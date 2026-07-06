@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -163,6 +164,11 @@ func parseAdoptPinOpts(skip, manual []string) (adopt.PinOptions, error) {
 func runAdoptPinVersions(cmd *cobra.Command, out io.Writer, k8s adopt.Inspector, fleetRepoFlag, clusterName string, opts adopt.PinOptions, ap adoptApply) error {
 	env, repoRoot, err := loadClusterEnv(fleetRepoFlag, clusterName)
 	if err != nil {
+		if errors.Is(err, errClusterNotInFleet) {
+			// The no-overlay boundary: --pin-versions writes INTO
+			// clusters/<name>/cluster-config.env, so there must be one.
+			return fmt.Errorf("bootstrap adopt --pin-versions: %w\n  adopt-in-place pins into an EXISTING fleet overlay — scaffold %q into the fleet first (`kube-dc bootstrap init`); importing a foreign cluster with no overlay isn't automated yet", err, clusterName)
+		}
 		return fmt.Errorf("bootstrap adopt --pin-versions: %w", err)
 	}
 	res, err := adopt.PinVersions(cmd.Context(), k8s, env, opts)

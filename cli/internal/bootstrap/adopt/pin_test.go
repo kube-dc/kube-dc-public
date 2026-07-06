@@ -103,6 +103,27 @@ func TestPinVersions_CRVersionFallback(t *testing.T) {
 	}
 }
 
+// C4 triad, explicit: CR PRESENT → resolves (TestPinVersions_CRVersionFallback),
+// CR READ-DENIED → error propagates (TestPinVersions_CRErrorPropagates),
+// CR MISSING → undetected (this test). A KubeVirt with no Helm release
+// AND no CR object leaves the version unreadable → Undetected, so the
+// operator must --manual-pin or --skip-component (or the init gate fails
+// closed).
+func TestPinVersions_CRMissingLeavesUndetected(t *testing.T) {
+	insp := fakeInspector{
+		crds:     []string{"kubevirts.kubevirt.io"},
+		charts:   map[string]string{}, // no Helm release
+		crFields: map[string]string{}, // CR absent → GetResourceFieldFirst returns ""
+	}
+	res, err := PinVersions(context.Background(), insp, fakeEnv{}, PinOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.HasUnresolved() || !containsSubstr(res.Undetected, "kubevirt") {
+		t.Errorf("kubevirt with no Helm release AND no CR object should be Undetected, got %+v", res)
+	}
+}
+
 func TestPinVersions_CRErrorPropagates(t *testing.T) {
 	insp := fakeInspector{
 		crds:   []string{"kubevirts.kubevirt.io"},

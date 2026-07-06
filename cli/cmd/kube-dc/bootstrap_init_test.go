@@ -303,6 +303,76 @@ func TestBootstrapInit_ApplyPlan_RefusesOnAllowNoKubevirtEligibleDrift(t *testin
 	}
 }
 
+// C2 (adopt fail-closed BEFORE mutation): with --mode=adopt against a
+// cluster whose live components (cert-manager CRD, per the mock) aren't
+// reflected in a fleet overlay, the adopt gate must refuse in
+// runApplyEngine BEFORE clusterinit.Apply touches the fleet/cluster —
+// same fail-fast contract as the DNS gate. Proves the gate is wired
+// into the apply path, not just unit-tested in isolation.
+func TestBootstrapInit_Adopt_GateBlocksBeforeMutation(t *testing.T) {
+	t.Setenv("KUBE_DC_MOCK", "cloud") // mock K8s reports the cert-manager CRD
+	repo := setupValidFleet(t)        // empty clusters/ → "atlantis" has no overlay
+	// Relax every earlier apply gate so we actually REACH the adopt gate:
+	// no dry-run (apply path), prereqs skipped, DNS downgraded, no push.
+	args := filterFlag(validAtlantisArgs(), "--dry-run")
+	args = filterFlag(args, "--mode")
+	args = append(args,
+		"--mode=adopt", "--yes",
+		"--allow-dns-not-ready", "--no-install-prereqs", "--no-push",
+	)
+	body, err := runInitCmdWithRepo(t, repo, args)
+	if err == nil {
+		t.Fatalf("adopt gate should block (cert-manager detected, no overlay); out:\n%s", body)
+	}
+	// cert-manager is detected but "atlantis" has no overlay → the
+	// no-overlay boundary error (not the pin-versions nudge).
+	if !strings.Contains(err.Error(), "no fleet overlay") {
+		t.Errorf("expected the no-overlay boundary error, got: %v", err)
+	}
+	// Engine mutation markers must NOT appear — the gate ran BEFORE
+	// runApplyEngine handed off to clusterinit.Apply.
+	for _, forbidden := range []string{"[scaffold]", "flux-install.sh"} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("engine mutated despite adopt-gate failure (contains %q):\n%s", forbidden, body)
+		}
+	}
+}
+
+// C5 (adopt-gate plan-hash safety): --allow-unpinned-adopt is a
+// substantive input, so dry-running WITH it then apply-plan WITHOUT it
+// (or vice versa) must trip ErrPlanInputDrift — an operator can't review
+// a plan that would refuse an unpinned cluster and then apply with the
+// bypass silently flipped. Mirrors the AllowNoKubevirtEligible case.
+func TestBootstrapInit_ApplyPlan_RefusesOnAllowUnpinnedAdoptDrift(t *testing.T) {
+	repo := setupValidFleet(t)
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.json")
+	// Dry-run WITH the bypass set.
+	prep := append(validAtlantisArgs(), "--plan-file="+planPath, "--allow-unpinned-adopt")
+	if _, err := runInitCmdWithRepo(t, repo, prep); err != nil {
+		t.Fatalf("dry-run prep: %v", err)
+	}
+	// Apply the plan WITHOUT the bypass — should surface ErrPlanInputDrift.
+	args := filterFlag(validAtlantisArgs(), "--dry-run")
+	args = append(args, "--apply-plan="+planPath, "--yes", "--allow-dns-not-ready")
+	_, err := runInitCmdWithRepo(t, repo, args)
+	if err == nil {
+		t.Fatal("input drift on --allow-unpinned-adopt must be rejected, got nil err")
+	}
+	if !errors.Is(err, clusterinit.ErrPlanInputDrift) {
+		t.Fatalf("expected ErrPlanInputDrift, got %v", err)
+	}
+}
+
+// C3/C5: --allow-unpinned-adopt registers on the cobra command surface.
+func TestBootstrapInit_AllowUnpinnedAdoptFlagRegistered(t *testing.T) {
+	empty := ""
+	cmd := bootstrapInitCmd(&empty)
+	if cmd.Flag("allow-unpinned-adopt") == nil {
+		t.Fatal("--allow-unpinned-adopt flag missing from `bootstrap init` — regression")
+	}
+}
+
 // M6-T05: the flag registers on the cobra command surface. Guards
 // against accidental removal from the flag registration block.
 func TestBootstrapInit_AllowNoKubevirtEligibleFlagRegistered(t *testing.T) {
