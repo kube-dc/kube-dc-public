@@ -96,14 +96,21 @@ func PinVersions(ctx context.Context, insp Inspector, env EnvReader, opts PinOpt
 		if c.VersionKey == "" {
 			continue // kube-dc has no pinnable base (e.g. ingress-nginx)
 		}
-		// A manual pin overrides live detection (and rescues components
-		// with no readable Helm release, e.g. KubeVirt/CDI).
+		// Version source precedence: --manual-pin > Helm chart version >
+		// operator-CR field (KubeVirt/CDI aren't Helm releases).
 		live, manual := "", false
 		if v, ok := opts.Manual[c.VersionKey]; ok && v != "" {
 			live, manual = v, true
 			usedManual[c.VersionKey] = true
 		} else {
 			live = charts[c.HelmReleaseNS+"/"+c.HelmRelease]
+		}
+		if live == "" && c.CRVersion != nil {
+			cv, err := insp.GetResourceFieldFirst(ctx, c.CRVersion.Group, c.CRVersion.Version, c.CRVersion.Resource, c.CRVersion.Namespace, c.CRVersion.Name, c.CRVersion.Fields...)
+			if err != nil {
+				return nil, err
+			}
+			live = cv
 		}
 		if live == "" {
 			res.Undetected = append(res.Undetected, c.Name)

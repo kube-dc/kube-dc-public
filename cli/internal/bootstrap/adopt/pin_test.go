@@ -72,6 +72,48 @@ func TestPinVersions(t *testing.T) {
 	}
 }
 
+// KubeVirt/CDI aren't Helm releases; their version comes from the
+// operator CR (item 4) — so they should NOT be undetected when the CR
+// exposes a version.
+func TestPinVersions_CRVersionFallback(t *testing.T) {
+	insp := fakeInspector{
+		crds: []string{"kubevirts.kubevirt.io", "datavolumes.cdi.kubevirt.io"},
+		// No Helm releases for either.
+		charts: map[string]string{},
+		// Operator CRs expose the running versions.
+		crFields: map[string]string{"kubevirt": "v1.8.1", "cdi": "v1.65.0"},
+	}
+	env := fakeEnv{
+		"KUBEVIRT_VERSION":     "v1.7.0", // drifted → pin to CR live v1.8.1
+		"KUBEVIRT_CDI_VERSION": "v1.65.0", // matches CR → already pinned
+	}
+	res, err := PinVersions(context.Background(), insp, env, PinOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasUnresolved() {
+		t.Errorf("kubevirt+cdi should resolve via CR, got undetected %v", res.Undetected)
+	}
+	kv := pinFor(res, "KUBEVIRT_VERSION")
+	if kv == nil || kv.Live != "v1.8.1" || kv.Manual {
+		t.Errorf("kubevirt should pin to CR live v1.8.1 (not manual): %+v", kv)
+	}
+	if !containsSubstr(res.AlreadyPinned, "cdi") {
+		t.Errorf("cdi should be already-pinned (CR v1.65.0 == env): %v", res.AlreadyPinned)
+	}
+}
+
+func TestPinVersions_CRErrorPropagates(t *testing.T) {
+	insp := fakeInspector{
+		crds:   []string{"kubevirts.kubevirt.io"},
+		charts: map[string]string{},
+		crErr:  context.DeadlineExceeded,
+	}
+	if _, err := PinVersions(context.Background(), insp, fakeEnv{}, PinOptions{}); err == nil {
+		t.Error("a CR-read error must propagate (not silently undetected)")
+	}
+}
+
 func TestPinVersions_ChartErrorPropagates(t *testing.T) {
 	insp := fakeInspector{
 		crds:     []string{"certificates.cert-manager.io"},

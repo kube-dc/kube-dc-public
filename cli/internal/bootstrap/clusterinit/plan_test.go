@@ -117,6 +117,9 @@ func TestComputeInputHash_SensitiveToChange(t *testing.T) {
 		{"set value", func(o *InitOptions) { o.Sets["EXT_NET_VLAN_ID"] = "999" }},
 		{"add nic", func(o *InitOptions) { o.NodeNICs["SRV8"] = "eno1" }},
 		{"toggle allow-dns-not-ready", func(o *InitOptions) { o.AllowDNSNotReady = true }},
+		// Item 5: the adopt-gate bypass changes apply-time safety
+		// posture, so a dry-run/apply mismatch MUST drift-detect.
+		{"toggle allow-unpinned-adopt", func(o *InitOptions) { o.AllowUnpinnedAdopt = true }},
 		{"change rook-osd-size", func(o *InitOptions) { o.RookOSDSizeGB = 750 }},
 		// C4 reviewer P1 (48d57b8f follow-up): NoPush changes
 		// apply-time behavior (skips push + flux-install), so a

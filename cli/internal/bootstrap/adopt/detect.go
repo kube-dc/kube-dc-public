@@ -65,8 +65,21 @@ type Component struct {
 	// version we read to pin. Conventionally the component's own name/ns.
 	HelmRelease   string
 	HelmReleaseNS string
+	// CRVersion is a fallback version source for components that are NOT
+	// Helm releases (KubeVirt, CDI): read a version field off their
+	// operator CR. Consulted only when no Helm release version is found.
+	CRVersion *CRVersionSource
 	// Note carries component-specific caveats (e.g. no ingress-nginx base).
 	Note string
+}
+
+// CRVersionSource reads a component's version from its operator custom
+// resource when it isn't a Helm release. Namespace "" = cluster-scoped;
+// Fields are candidate dot-paths (first non-empty wins).
+type CRVersionSource struct {
+	Group, Version, Resource string
+	Namespace, Name          string
+	Fields                   []string
 }
 
 // catalog is the set of components kube-dc installs that a pre-existing
@@ -77,8 +90,10 @@ var catalog = []Component{
 	{Name: "cert-manager", CRDs: []string{"certificates.cert-manager.io", "clusterissuers.cert-manager.io"}, Namespaces: []string{"cert-manager"}, FleetPath: "infrastructure/cert-manager", VersionKey: "CERT_MANAGER_VERSION", HelmRelease: "cert-manager", HelmReleaseNS: "cert-manager"},
 	{Name: "kube-ovn (CNI)", CRDs: []string{"subnets.kubeovn.io", "vpcs.kubeovn.io"}, FleetPath: "infrastructure/cni", VersionKey: "KUBE_OVN_VERSION", HelmRelease: "kube-ovn", HelmReleaseNS: "kube-system", Note: "kube-ovn is kube-dc's CNI — a version bump on adoption restarts OVN cluster-wide"},
 	{Name: "envoy-gateway", CRDs: []string{"envoyproxies.gateway.envoyproxy.io"}, Namespaces: []string{"envoy-gateway-system"}, FleetPath: "infrastructure/envoy-gateway", VersionKey: "ENVOY_GATEWAY_VERSION", HelmRelease: "envoy-gateway", HelmReleaseNS: "envoy-gateway-system"},
-	{Name: "kubevirt", CRDs: []string{"kubevirts.kubevirt.io"}, Namespaces: []string{"kubevirt"}, FleetPath: "platform/kubevirt", VersionKey: "KUBEVIRT_VERSION", HelmRelease: "kubevirt", HelmReleaseNS: "kubevirt"},
-	{Name: "cdi", CRDs: []string{"datavolumes.cdi.kubevirt.io", "cdis.cdi.kubevirt.io"}, Namespaces: []string{"cdi"}, FleetPath: "platform/kubevirt", VersionKey: "KUBEVIRT_CDI_VERSION", HelmRelease: "cdi", HelmReleaseNS: "cdi", Note: "CDI is bundled under platform/kubevirt"},
+	{Name: "kubevirt", CRDs: []string{"kubevirts.kubevirt.io"}, Namespaces: []string{"kubevirt"}, FleetPath: "platform/kubevirt", VersionKey: "KUBEVIRT_VERSION", HelmRelease: "kubevirt", HelmReleaseNS: "kubevirt",
+		CRVersion: &CRVersionSource{Group: "kubevirt.io", Version: "v1", Resource: "kubevirts", Namespace: "kubevirt", Name: "kubevirt", Fields: []string{"status.observedKubeVirtVersion", "spec.imageTag"}}},
+	{Name: "cdi", CRDs: []string{"datavolumes.cdi.kubevirt.io", "cdis.cdi.kubevirt.io"}, Namespaces: []string{"cdi"}, FleetPath: "platform/kubevirt", VersionKey: "KUBEVIRT_CDI_VERSION", HelmRelease: "cdi", HelmReleaseNS: "cdi", Note: "CDI is bundled under platform/kubevirt",
+		CRVersion: &CRVersionSource{Group: "cdi.kubevirt.io", Version: "v1beta1", Resource: "cdis", Namespace: "", Name: "cdi", Fields: []string{"status.observedVersion", "status.operatorVersion", "spec.imageTag"}}},
 	{Name: "kamaji", CRDs: []string{"tenantcontrolplanes.kamaji.clastix.io"}, Namespaces: []string{"kamaji-system"}, FleetPath: "platform/kamaji", VersionKey: "KAMAJI_VERSION", HelmRelease: "kamaji", HelmReleaseNS: "kamaji-system"},
 	{Name: "rook-ceph", CRDs: []string{"cephclusters.ceph.rook.io"}, Namespaces: []string{"rook-ceph"}, FleetPath: "infrastructure/rook-ceph", VersionKey: "ROOK_CEPH_VERSION", HelmRelease: "rook-ceph", HelmReleaseNS: "rook-ceph"},
 	{Name: "monitoring (prometheus-operator)", CRDs: []string{"prometheuses.monitoring.coreos.com"}, Namespaces: []string{"monitoring"}, FleetPath: "platform/monitoring", VersionKey: "PROM_OPERATOR_VERSION", HelmRelease: "prom-operator", HelmReleaseNS: "monitoring"},
@@ -110,6 +125,9 @@ type Inspector interface {
 	// HelmReleaseChartVersions keys "<namespace>/<release>" → live chart
 	// version, for the version-pin adoption path (PinVersions).
 	HelmReleaseChartVersions(ctx context.Context) (map[string]string, error)
+	// GetResourceFieldFirst reads a version field off a non-Helm
+	// component's operator CR (KubeVirt/CDI) — the CRVersion fallback.
+	GetResourceFieldFirst(ctx context.Context, group, version, resource, namespace, name string, fields ...string) (string, error)
 }
 
 // ErrMissingDependency is returned when no Inspector is supplied.

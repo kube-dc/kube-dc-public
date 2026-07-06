@@ -13,6 +13,8 @@ type fakeInspector struct {
 	nss      []string
 	graph    ports.Graph
 	charts   map[string]string
+	crFields map[string]string // CR name → version (GetResourceFieldFirst)
+	crErr    error
 	crdErr   error
 	graphErr error
 	chartErr error
@@ -29,6 +31,9 @@ func (f fakeInspector) DiscoverFluxGraph(context.Context) (ports.Graph, error) {
 }
 func (f fakeInspector) HelmReleaseChartVersions(context.Context) (map[string]string, error) {
 	return f.charts, f.chartErr
+}
+func (f fakeInspector) GetResourceFieldFirst(_ context.Context, _, _, _, _, name string, _ ...string) (string, error) {
+	return f.crFields[name], f.crErr
 }
 
 func findingFor(res *Result, name string) *Finding {

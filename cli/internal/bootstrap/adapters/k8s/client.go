@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
@@ -32,13 +33,13 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	utilexec "k8s.io/client-go/util/exec"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/remotecommand"
+	utilexec "k8s.io/client-go/util/exec"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/helm"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
@@ -68,9 +69,9 @@ var (
 
 // Client implements ports.K8sClient.
 type Client struct {
-	rest    *rest.Config
-	core    kubernetes.Interface
-	dyn     dynamic.Interface
+	rest *rest.Config
+	core kubernetes.Interface
+	dyn  dynamic.Interface
 
 	// kubeconfigPath is the operator-supplied path (empty = standard
 	// resolution: $KUBECONFIG → ~/.kube/config → in-cluster). Saved
@@ -222,6 +223,34 @@ func (c *Client) HelmReleaseChartVersions(ctx context.Context) (map[string]strin
 		})
 	}
 	return helm.LatestChartVersions(rels), nil
+}
+
+// GetResourceFieldFirst gets one custom resource (namespace "" →
+// cluster-scoped) and returns the first non-empty string among the
+// candidate dot-path fields. An absent resource is ("", nil) — the
+// "not present" signal — so adopt can probe optional operator CRs.
+func (c *Client) GetResourceFieldFirst(ctx context.Context, group, version, resource, namespace, name string, fields ...string) (string, error) {
+	gvr := schema.GroupVersionResource{Group: group, Version: version, Resource: resource}
+	ri := c.dyn.Resource(gvr)
+	var obj *unstructured.Unstructured
+	var err error
+	if namespace == "" {
+		obj, err = ri.Get(ctx, name, metav1.GetOptions{})
+	} else {
+		obj, err = ri.Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	}
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("k8s: get %s/%s %q: %w", group, resource, name, err)
+	}
+	for _, f := range fields {
+		if v, ok, _ := unstructured.NestedString(obj.Object, strings.Split(f, ".")...); ok && v != "" {
+			return v, nil
+		}
+	}
+	return "", nil
 }
 
 func (c *Client) NodeLabels(ctx context.Context) (map[string]map[string]string, error) {

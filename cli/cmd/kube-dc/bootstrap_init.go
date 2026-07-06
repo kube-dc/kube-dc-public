@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/adopt"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/discover"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/tui/screens/initform"
@@ -356,6 +357,8 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"Proceed even when M1-T03 DNS probes fail (certs will land Pending until DNS is wired)")
 	cmd.Flags().BoolVar(&o.AllowNoKubevirtEligible, "allow-no-kubevirt-eligible", false,
 		"Proceed even when the target cluster reports 0 NFD kubevirt-eligible nodes (VM workloads will fail to schedule until at least one node exposes /dev/kvm)")
+	cmd.Flags().BoolVar(&o.AllowUnpinnedAdopt, "allow-unpinned-adopt", false,
+		"With --mode=adopt: proceed even when pre-existing components aren't version-pinned to their live versions (RISKY — Flux's first reconcile may upgrade/restart them; run `bootstrap adopt --pin-versions` first instead)")
 	cmd.Flags().StringVar(&o.SSHHost, "ssh-host", "",
 		"SSH host for auto-kubeconfig-pull (M4-T06; deferred — operator must pass kubeconfig manually for v1)")
 	cmd.Flags().BoolVar(&o.NoSSH, "no-ssh", false, "Skip the SSH kubeconfig-pull step")
@@ -567,6 +570,41 @@ func runInitDefaultApply(ctx context.Context, out io.Writer, o *clusterinit.Init
 	return runApplyEngine(ctx, out, o, plan)
 }
 
+// layeredAdoptEnv presents the effective cluster-config.env to the
+// adopt gate: `--set KEY=VALUE` overrides win, then the on-disk file.
+// Satisfies adopt.EnvReader.
+type layeredAdoptEnv struct {
+	overlay map[string]string
+	base    adopt.EnvReader // *config.Env, or nil when not scaffolded yet
+}
+
+func (l layeredAdoptEnv) GetOr(key, fallback string) string {
+	if v, ok := l.overlay[key]; ok {
+		return v
+	}
+	if l.base != nil {
+		return l.base.GetOr(key, fallback)
+	}
+	return fallback
+}
+
+// effectiveAdoptEnv builds the env the adopt gate compares against the
+// live cluster: the cluster's on-disk cluster-config.env (if scaffolded)
+// with the operator's `--set` overrides layered on top — i.e. exactly
+// what the apply will write. When the cluster isn't in the fleet repo
+// yet, the base is empty, so every detected component reads as unpinned
+// and the gate fails closed (the correct nudge to run
+// `bootstrap adopt --pin-versions` first).
+func effectiveAdoptEnv(o *clusterinit.InitOptions, out io.Writer) adopt.EnvReader {
+	le := layeredAdoptEnv{overlay: o.Sets}
+	if env, _, err := loadClusterEnv(o.Repo, o.Name); err != nil {
+		fmt.Fprintf(out, "[adopt] note: no cluster-config.env for %q yet (%v) — treating all component versions as unpinned.\n", o.Name, err)
+	} else {
+		le.base = env
+	}
+	return le
+}
+
 // runApplyEngine is the shared tail that both apply paths converge
 // on. Builds a `bootstrap.Session` for the adapters, resolves the
 // GitHub token if --github-token wasn't passed, then calls
@@ -652,6 +690,24 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		Out:                     out,
 	}); err != nil {
 		return err
+	}
+
+	// Item 5: --mode=adopt safety gate. Consumes the resolved adopt plan
+	// (the pinned cluster-config.env) rather than silently re-detecting:
+	// re-runs adopt.PinVersions against the live cluster + the effective
+	// env and FAILS CLOSED when a pre-existing component would drift
+	// (Flux's first reconcile would upgrade/restart it) or is undetected.
+	// Read-only; only runs in adopt mode. Escape: --allow-unpinned-adopt.
+	if o.Mode == clusterinit.ModeAdopt {
+		if err := clusterinit.CheckAdoptPinned(ctx, clusterinit.AdoptGateOptions{
+			Inspector:   session.K8s,
+			Env:         effectiveAdoptEnv(o, out),
+			Allow:       o.AllowUnpinnedAdopt,
+			ClusterName: o.Name,
+			Out:         out,
+		}); err != nil {
+			return err
+		}
 	}
 
 	// Findings 17/17b (single-IP NAT): resolve the IP with which

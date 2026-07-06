@@ -144,6 +144,15 @@ type K8sClient interface {
 	// component in place without an upgrade/restart. Reads the
 	// `helm.sh/release.v1` Secrets and decodes each release payload.
 	HelmReleaseChartVersions(ctx context.Context) (map[string]string, error)
+
+	// GetResourceFieldFirst reads a custom resource (group/version/
+	// resource; namespace "" for cluster-scoped) named `name` and returns
+	// the first non-empty string among the candidate dot-path fields
+	// (e.g. "status.observedKubeVirtVersion"). Returns ("", nil) when the
+	// resource is ABSENT — a well-formed "not present" signal — so
+	// `bootstrap adopt` can read the version of non-Helm components
+	// (KubeVirt, CDI) from their operator CRs.
+	GetResourceFieldFirst(ctx context.Context, group, version, resource, namespace, name string, fields ...string) (string, error)
 }
 
 // Graph is a dependsOn-resolved view of `flux-system`. Nodes are sorted

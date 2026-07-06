@@ -205,13 +205,22 @@ type InitOptions struct {
 	// install kube-dc without needing VM workloads (multi-tenancy /
 	// GitOps only) opt in.
 	AllowNoKubevirtEligible bool
-	SSHHost                 string
-	NoSSH            bool
-	NoInstallPrereqs bool
-	NoCreateRepo     bool
-	MirrorRegistry   string
-	BundlePullSecret string
-	OpenBaoSharesOut string
+	// AllowUnpinnedAdopt downgrades the --mode=adopt safety gate from a
+	// hard failure to a warning. That gate (CheckAdoptPinned) consumes
+	// the resolved adopt plan: it re-runs adopt.PinVersions against the
+	// live cluster + cluster-config.env and refuses to install when a
+	// pre-existing component would drift (Flux's first reconcile would
+	// upgrade/restart it) or is undetected. Default false — the operator
+	// is expected to run `bootstrap adopt <cluster> --pin-versions` first;
+	// this flag is the lab/dev escape.
+	AllowUnpinnedAdopt bool
+	SSHHost            string
+	NoSSH              bool
+	NoInstallPrereqs   bool
+	NoCreateRepo       bool
+	MirrorRegistry     string
+	BundlePullSecret   string
+	OpenBaoSharesOut   string
 
 	// --- Plan/apply flow (M4-T02) ---
 	DryRun    bool
@@ -245,7 +254,6 @@ var ErrFleetModeNewRepo = errors.New("init: apply-path fleet modes require --git
 // GitHub); anything else is a typo or a future provider the
 // operator's binary doesn't know about.
 var ErrUnknownProvider = errors.New("init: --provider must be `github` or `gitlab`")
-
 
 // ErrFleetModeExistingRepo is returned when --fleet-mode=existing-fleet
 // is set without a resolvable --repo. Empty repo in existing-fleet

@@ -265,50 +265,56 @@ func hashHex(data []byte) string {
 // TestComputeInputHash_SensitiveToChange table guards the
 // "meaningful field changes the hash" invariant.
 type inputsForHash struct {
-	Preset           Preset            `json:"preset"`
-	Mode             Mode              `json:"mode"`
-	Name             string            `json:"name"`
-	Domain           string            `json:"domain"`
-	NodeExternalIP   string            `json:"nodeExternalIp"`
-	Email            string            `json:"email"`
-	FleetMode        FleetMode         `json:"fleetMode"`
-	Repo             string            `json:"repo"`
-	Provider         Provider          `json:"provider,omitempty"`
-	GitHubOwner      string            `json:"githubOwner"`
-	GitHubRepo       string            `json:"githubRepo"`
-	Sets             map[string]string `json:"sets,omitempty"`
-	NodeNICs         map[string]string `json:"nodeNics,omitempty"`
-	RookMode         RookMode          `json:"rookMode"`
-	RookOSDNode      string            `json:"rookOsdNode"`
-	RookOSDSizeGB    int               `json:"rookOsdSizeGb"`
+	Preset         Preset            `json:"preset"`
+	Mode           Mode              `json:"mode"`
+	Name           string            `json:"name"`
+	Domain         string            `json:"domain"`
+	NodeExternalIP string            `json:"nodeExternalIp"`
+	Email          string            `json:"email"`
+	FleetMode      FleetMode         `json:"fleetMode"`
+	Repo           string            `json:"repo"`
+	Provider       Provider          `json:"provider,omitempty"`
+	GitHubOwner    string            `json:"githubOwner"`
+	GitHubRepo     string            `json:"githubRepo"`
+	Sets           map[string]string `json:"sets,omitempty"`
+	NodeNICs       map[string]string `json:"nodeNics,omitempty"`
+	RookMode       RookMode          `json:"rookMode"`
+	RookOSDNode    string            `json:"rookOsdNode"`
+	RookOSDSizeGB  int               `json:"rookOsdSizeGb"`
 	// OS-1 object-storage companions — all substantive: a mode or
 	// companion change between dry-run and apply MUST drift-detect
 	// (they select which fleet manifests get scaffolded + which
 	// CEPH_*/S3_* env keys land in cluster-config.env).
-	RookOSDDevice       string            `json:"rookOsdDevice"`
-	CephNodes           map[string]string `json:"cephNodes,omitempty"`
-	CephStorageClass    string            `json:"cephStorageClass"`
-	CephOSDCount        int               `json:"cephOsdCount"`
-	CephOSDVolumeSizeGB int               `json:"cephOsdVolumeSizeGb"`
-	S3Hostname          string            `json:"s3Hostname"`
-	NoS3Exposure        bool              `json:"noS3Exposure"`
-	Addons           []string          `json:"addons,omitempty"`
-	AllowDNSNotReady        bool `json:"allowDnsNotReady"`
-	AllowNoKubevirtEligible bool `json:"allowNoKubevirtEligible"`
+	RookOSDDevice           string            `json:"rookOsdDevice"`
+	CephNodes               map[string]string `json:"cephNodes,omitempty"`
+	CephStorageClass        string            `json:"cephStorageClass"`
+	CephOSDCount            int               `json:"cephOsdCount"`
+	CephOSDVolumeSizeGB     int               `json:"cephOsdVolumeSizeGb"`
+	S3Hostname              string            `json:"s3Hostname"`
+	NoS3Exposure            bool              `json:"noS3Exposure"`
+	Addons                  []string          `json:"addons,omitempty"`
+	AllowDNSNotReady        bool              `json:"allowDnsNotReady"`
+	AllowNoKubevirtEligible bool              `json:"allowNoKubevirtEligible"`
+	// AllowUnpinnedAdopt IS substantive (like its Allow* siblings): it
+	// changes whether the --mode=adopt safety gate blocks or merely
+	// warns. Dry-run + apply MUST agree, or an operator could review a
+	// plan that would refuse an unpinned cluster and then apply with the
+	// bypass set.
+	AllowUnpinnedAdopt bool `json:"allowUnpinnedAdopt"`
 	// NoPush IS substantive — it changes apply-time behavior
 	// (skips `git push` + `flux-install.sh` — the cluster overlay
 	// stays local-only). Dry-run + apply MUST agree on this flag
 	// or an operator can review a local-only preview and
 	// accidentally apply a real commit+push+flux-install run (or
 	// vice versa). C4 reviewer P1 catch on 48d57b8f.
-	NoPush           bool              `json:"noPush"`
-	SSHHost          string            `json:"sshHost"`
-	NoSSH            bool              `json:"noSsh"`
-	NoInstallPrereqs bool              `json:"noInstallPrereqs"`
-	NoCreateRepo     bool              `json:"noCreateRepo"`
-	MirrorRegistry   string            `json:"mirrorRegistry"`
-	BundlePullSecret string            `json:"bundlePullSecret"`
-	OpenBaoSharesOut string            `json:"openbaoSharesOut"`
+	NoPush           bool   `json:"noPush"`
+	SSHHost          string `json:"sshHost"`
+	NoSSH            bool   `json:"noSsh"`
+	NoInstallPrereqs bool   `json:"noInstallPrereqs"`
+	NoCreateRepo     bool   `json:"noCreateRepo"`
+	MirrorRegistry   string `json:"mirrorRegistry"`
+	BundlePullSecret string `json:"bundlePullSecret"`
+	OpenBaoSharesOut string `json:"openbaoSharesOut"`
 }
 
 // hashExcludedFields is the registry of `InitOptions` fields that
@@ -360,14 +366,14 @@ func normalizeProviderForHash(p Provider) Provider {
 
 func (o *InitOptions) inputsForHash() inputsForHash {
 	return inputsForHash{
-		Preset:           o.Preset,
-		Mode:             o.Mode,
-		Name:             o.Name,
-		Domain:           o.Domain,
-		NodeExternalIP:   o.NodeExternalIP,
-		Email:            o.Email,
-		FleetMode:        o.FleetMode,
-		Repo:             o.Repo,
+		Preset:         o.Preset,
+		Mode:           o.Mode,
+		Name:           o.Name,
+		Domain:         o.Domain,
+		NodeExternalIP: o.NodeExternalIP,
+		Email:          o.Email,
+		FleetMode:      o.FleetMode,
+		Repo:           o.Repo,
 		// P3: normalize explicit `github` → empty so the default
 		// (empty) and the explicit form hash IDENTICALLY. Without
 		// this, an operator who dry-runs against the implicit
@@ -376,32 +382,33 @@ func (o *InitOptions) inputsForHash() inputsForHash {
 		// semantic change. Only non-default providers surface in
 		// the hash. Combined with `json:"provider,omitempty"` the
 		// canonical JSON omits the field for the default case.
-		Provider:         normalizeProviderForHash(o.Provider),
-		GitHubOwner:      o.GitHubOwner,
-		GitHubRepo:       o.GitHubRepo,
-		Sets:             o.Sets,
-		NodeNICs:         o.NodeNICs,
-		RookMode:         o.RookMode,
-		RookOSDNode:      o.RookOSDNode,
-		RookOSDSizeGB:    o.RookOSDSizeGB,
-		RookOSDDevice:       o.RookOSDDevice,
-		CephNodes:           o.CephNodes,
-		CephStorageClass:    o.CephStorageClass,
-		CephOSDCount:        o.CephOSDCount,
-		CephOSDVolumeSizeGB: o.CephOSDVolumeSizeGB,
-		S3Hostname:          o.S3Hostname,
-		NoS3Exposure:        o.NoS3Exposure,
-		Addons:           o.Addons,
+		Provider:                normalizeProviderForHash(o.Provider),
+		GitHubOwner:             o.GitHubOwner,
+		GitHubRepo:              o.GitHubRepo,
+		Sets:                    o.Sets,
+		NodeNICs:                o.NodeNICs,
+		RookMode:                o.RookMode,
+		RookOSDNode:             o.RookOSDNode,
+		RookOSDSizeGB:           o.RookOSDSizeGB,
+		RookOSDDevice:           o.RookOSDDevice,
+		CephNodes:               o.CephNodes,
+		CephStorageClass:        o.CephStorageClass,
+		CephOSDCount:            o.CephOSDCount,
+		CephOSDVolumeSizeGB:     o.CephOSDVolumeSizeGB,
+		S3Hostname:              o.S3Hostname,
+		NoS3Exposure:            o.NoS3Exposure,
+		Addons:                  o.Addons,
 		AllowDNSNotReady:        o.AllowDNSNotReady,
 		AllowNoKubevirtEligible: o.AllowNoKubevirtEligible,
-		NoPush:           o.NoPush,
-		SSHHost:          o.SSHHost,
-		NoSSH:            o.NoSSH,
-		NoInstallPrereqs: o.NoInstallPrereqs,
-		NoCreateRepo:     o.NoCreateRepo,
-		MirrorRegistry:   o.MirrorRegistry,
-		BundlePullSecret: o.BundlePullSecret,
-		OpenBaoSharesOut: o.OpenBaoSharesOut,
+		AllowUnpinnedAdopt:      o.AllowUnpinnedAdopt,
+		NoPush:                  o.NoPush,
+		SSHHost:                 o.SSHHost,
+		NoSSH:                   o.NoSSH,
+		NoInstallPrereqs:        o.NoInstallPrereqs,
+		NoCreateRepo:            o.NoCreateRepo,
+		MirrorRegistry:          o.MirrorRegistry,
+		BundlePullSecret:        o.BundlePullSecret,
+		OpenBaoSharesOut:        o.OpenBaoSharesOut,
 	}
 }
 

@@ -962,6 +962,9 @@ func (f *fakeInitK8s) ListCRDs(context.Context) ([]string, error) {
 func (f *fakeInitK8s) HelmReleaseChartVersions(context.Context) (map[string]string, error) {
 	panic("fakeInitK8s: HelmReleaseChartVersions not stubbed")
 }
+func (f *fakeInitK8s) GetResourceFieldFirst(context.Context, string, string, string, string, string, ...string) (string, error) {
+	panic("fakeInitK8s: GetResourceFieldFirst not stubbed")
+}
 func (f *fakeInitK8s) PodExec(context.Context, string, string, []string, []byte) ([]byte, error) {
 	panic("fakeInitK8s: PodExec not stubbed")
 }

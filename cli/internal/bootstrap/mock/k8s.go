@@ -117,6 +117,14 @@ func (c *K8sClient) HelmReleaseChartVersions(ctx context.Context) (map[string]st
 	return nil, nil
 }
 
+// GetResourceFieldFirst is a stub — adopt tests use a purpose-built fake.
+func (c *K8sClient) GetResourceFieldFirst(ctx context.Context, _, _, _, _, _ string, _ ...string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return "", nil
+}
+
 // PodExec is a stub — returns empty bytes + nil error. Specific
 // commands the mocked OpenBaoClient or other consumers care about will
 // be intercepted at the OpenBaoClient layer (which has typed knowledge
