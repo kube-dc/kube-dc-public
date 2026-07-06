@@ -22,6 +22,7 @@ import (
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/adopt"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/discover"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/fleetconfig"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/tui/screens/initform"
 )
 
@@ -266,6 +267,15 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 				out := cmd.OutOrStdout()
 				if err := runInitDryRun(out, o); err != nil {
 					return err
+				}
+				// Adopt-mode wizard step: show the live drift preview and,
+				// when there's writable drift, offer to pin versions inline
+				// (so Flux adopts in place). Declining is fine — the
+				// CheckAdoptPinned gate still runs during Apply.
+				if o.Mode == clusterinit.ModeAdopt {
+					if err := runInitAdoptWizardStep(cmd, out, o); err != nil {
+						return err
+					}
 				}
 				fmt.Fprintf(out, "\nEquivalent non-interactive invocation:\n\n%s\n\n", wizardFlags)
 				applyNow := false
@@ -614,6 +624,77 @@ func effectiveAdoptEnv(o *clusterinit.InitOptions, out io.Writer) (adopt.EnvRead
 		fmt.Fprintf(out, "[adopt] could not read cluster-config.env for %q (%v) — treating all component versions as unpinned.\n", o.Name, err)
 		return le, false
 	}
+}
+
+// runInitAdoptWizardStep runs the live adopt drift-preview during the
+// interactive wizard (Mode==adopt) and — when there's writable drift —
+// offers to write the version pins inline (the same commit/push
+// transaction as `adopt --pin-versions --yes`) so Flux adopts each
+// component in place. Declining is safe: the CheckAdoptPinned gate still
+// runs during Apply and fails closed unless --allow-unpinned-adopt.
+//
+// Interactive (huh.Confirm) + a fleet mutation on "yes" — this glue is
+// exercised via manual TTY validation; the pieces it composes are
+// unit-tested (initform.BuildAdoptPreview, adopt.PinVersions,
+// applyConfigSet's git transaction).
+func runInitAdoptWizardStep(cmd *cobra.Command, out io.Writer, o *clusterinit.InitOptions) error {
+	session, err := bootstrap.NewSession(bootstrap.Options{FleetRepoPath: o.Repo})
+	if session != nil {
+		defer session.Close()
+	}
+	if err != nil || session.K8s == nil {
+		fmt.Fprintln(out, "[adopt] live preview skipped (no cluster client) — the adopt gate still runs during apply.")
+		return nil
+	}
+
+	// On-disk overlay (tolerate not-found → the no-overlay boundary).
+	env, repoRoot, lerr := loadClusterEnv(o.Repo, o.Name)
+	overlayExists := lerr == nil
+	envReader := layeredAdoptEnv{overlay: o.Sets}
+	if overlayExists {
+		envReader.base = env
+	}
+
+	res, err := adopt.PinVersions(cmd.Context(), session.K8s, envReader, adopt.PinOptions{})
+	if err != nil {
+		return fmt.Errorf("adopt preview: %w", err)
+	}
+	pv := initform.BuildAdoptPreview(o.Name, res, overlayExists)
+	fmt.Fprintln(out, pv.Render())
+
+	// Only offer to write when there's actionable, writable drift (overlay
+	// exists + pending pins). No-overlay / undetected-only / already-safe
+	// all short-circuit — the gate (or the preview text) covers them.
+	if !pv.NeedsPinning() {
+		return nil
+	}
+
+	writeNow := false
+	if err := huh.NewConfirm().
+		Title("Write these version pins now?").
+		Description("commits + pushes clusters/" + o.Name + "/cluster-config.env so Flux adopts each component in place (no upgrade/restart)").
+		Affirmative("Write pins").Negative("No — pin later / bypass").
+		Value(&writeNow).Run(); err != nil {
+		return fmt.Errorf("init wizard adopt: %w", err)
+	}
+	if !writeNow {
+		fmt.Fprintln(out, "[adopt] pins not written — the adopt gate will fail closed at apply unless you pin first or pass --allow-unpinned-adopt.")
+		return nil
+	}
+
+	kvs := make([]fleetconfig.KV, 0, len(res.Pins))
+	for _, p := range res.Pins {
+		kvs = append(kvs, fleetconfig.KV{Key: p.VersionKey, Value: p.Live})
+	}
+	changes, err := fleetconfig.Plan(env, kvs, true)
+	if err != nil {
+		return fmt.Errorf("init wizard adopt: %w", err)
+	}
+	token := ""
+	if !o.NoPush {
+		token = resolveGitHubToken(o, out)
+	}
+	return applyConfigSet(cmd, out, repoRoot, env, changes, o.Name, o.NoPush, token, string(o.Provider))
 }
 
 // runApplyEngine is the shared tail that both apply paths converge

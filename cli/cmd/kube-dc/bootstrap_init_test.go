@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -1711,4 +1712,48 @@ func execGit(t *testing.T, dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// --- Slice C: interactive adopt wizard step (non-interactive branches) ---
+//
+// The huh.Confirm + inline pin-write is manual-TTY-validated; these
+// cover the branches that DON'T prompt, proving the glue doesn't hang
+// and produces the right preview/short-circuit.
+
+func TestRunInitAdoptWizardStep_NoClusterSkipsCleanly(t *testing.T) {
+	// No mock + a bogus kubeconfig → NewSession has no K8s client → the
+	// step prints a skip note and returns nil (the apply-path gate still
+	// runs later). Must not prompt or hang.
+	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "does-not-exist.yaml"))
+	repo := setupValidFleet(t)
+	var buf bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	o := &clusterinit.InitOptions{Repo: repo, Name: "atlantis", Mode: clusterinit.ModeAdopt}
+	if err := runInitAdoptWizardStep(cmd, &buf, o); err != nil {
+		t.Fatalf("no-cluster adopt step should return nil, got %v", err)
+	}
+	if !strings.Contains(buf.String(), "preview skipped") {
+		t.Errorf("expected the skip note, got:\n%s", buf.String())
+	}
+}
+
+func TestRunInitAdoptWizardStep_NoOverlayPreviewNoPrompt(t *testing.T) {
+	// Mock cluster (cert-manager CRD) + empty fleet (no "atlantis"
+	// overlay) → the no-overlay boundary. NeedsPinning is false (nowhere
+	// to write), so the step prints the boundary preview and returns
+	// WITHOUT reaching the huh.Confirm — headless-safe.
+	t.Setenv("KUBE_DC_MOCK", "cloud")
+	repo := setupValidFleet(t) // empty clusters/
+	var buf bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	o := &clusterinit.InitOptions{Repo: repo, Name: "atlantis", Mode: clusterinit.ModeAdopt}
+	if err := runInitAdoptWizardStep(cmd, &buf, o); err != nil {
+		t.Fatalf("no-overlay adopt step should return nil (preview only), got %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "adopt preview") || !strings.Contains(out, "no fleet overlay") {
+		t.Errorf("expected the no-overlay preview, got:\n%s", out)
+	}
 }
