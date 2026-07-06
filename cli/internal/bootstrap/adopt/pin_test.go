@@ -84,7 +84,7 @@ func TestPinVersions_CRVersionFallback(t *testing.T) {
 		crFields: map[string]string{"kubevirt": "v1.8.1", "cdi": "v1.65.0"},
 	}
 	env := fakeEnv{
-		"KUBEVIRT_VERSION":     "v1.7.0", // drifted → pin to CR live v1.8.1
+		"KUBEVIRT_VERSION":     "v1.7.0",  // drifted → pin to CR live v1.8.1
 		"KUBEVIRT_CDI_VERSION": "v1.65.0", // matches CR → already pinned
 	}
 	res, err := PinVersions(context.Background(), insp, env, PinOptions{})
@@ -130,9 +130,9 @@ func TestPinVersions_Escapes(t *testing.T) {
 	// silently). cert-manager has a live chart.
 	insp := fakeInspector{
 		crds: []string{
-			"certificates.cert-manager.io",  // cert-manager (live chart)
-			"kubevirts.kubevirt.io",         // kubevirt (no helm release)
-			"datavolumes.cdi.kubevirt.io",   // cdi (no helm release)
+			"certificates.cert-manager.io", // cert-manager (live chart)
+			"kubevirts.kubevirt.io",        // kubevirt (no helm release)
+			"datavolumes.cdi.kubevirt.io",  // cdi (no helm release)
 		},
 		charts: map[string]string{"cert-manager/cert-manager": "v1.14.4"},
 	}
