@@ -63,22 +63,45 @@ func TestRenderPinPlan(t *testing.T) {
 		Pins: []adopt.PinChange{
 			{Component: "cert-manager", VersionKey: "CERT_MANAGER_VERSION", Current: "v1.20.1", Live: "v1.14.4"},
 			{Component: "kube-ovn (CNI)", VersionKey: "KUBE_OVN_VERSION", Current: "", Live: "v1.15.0"},
+			{Component: "kubevirt", VersionKey: "KUBEVIRT_VERSION", Current: "", Live: "v1.8.1", Manual: true},
 		},
-		AlreadyPinned: []string{"kubevirt (KUBEVIRT_VERSION=v1.8.1)"},
+		AlreadyPinned: []string{"keycloak (KEYCLOAK_VERSION=24.3.0)"},
+		Skipped:       []string{"ingress-nginx"},
 		Undetected:    []string{"rook-ceph"},
+		UnusedManual:  []string{"BOGUS_VERSION"},
 	})
 	s := out.String()
 	for _, want := range []string{
-		"adopt --pin-versions — acme (2 pin(s))",
-		"~ CERT_MANAGER_VERSION: v1.20.1 → v1.14.4",
+		"adopt --pin-versions — acme (3 pin(s))",
+		"~ CERT_MANAGER_VERSION: v1.20.1 → v1.14.4   (cert-manager, pin to LIVE)",
 		"~ KUBE_OVN_VERSION: (unset) → v1.15.0", // unset current rendered
-		"already pinned to live: kubevirt",
-		"rook-ceph: live chart version not readable",
+		"~ KUBEVIRT_VERSION: (unset) → v1.8.1   (kubevirt, pin to --manual-pin value)",
+		"already pinned: keycloak",
+		"skipped (--skip-component): ingress-nginx",
+		"✗ rook-ceph: live version not readable",
+		"--manual-pin BOGUS_VERSION matched no detected component",
 		"adopts each in place",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("pin plan missing %q:\n%s", want, s)
 		}
+	}
+}
+
+func TestParseAdoptPinOpts(t *testing.T) {
+	opts, err := parseAdoptPinOpts([]string{"ingress-nginx", "cdi"}, []string{"KUBEVIRT_VERSION=v1.8.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opts.Skip["ingress-nginx"] || !opts.Skip["cdi"] {
+		t.Errorf("skip set wrong: %v", opts.Skip)
+	}
+	if opts.Manual["KUBEVIRT_VERSION"] != "v1.8.1" {
+		t.Errorf("manual pin wrong: %v", opts.Manual)
+	}
+	// A malformed --manual-pin (non-SCREAMING_SNAKE key) is rejected.
+	if _, err := parseAdoptPinOpts(nil, []string{"lower=x"}); err == nil {
+		t.Error("malformed --manual-pin should error")
 	}
 }
 

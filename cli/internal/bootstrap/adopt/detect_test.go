@@ -72,6 +72,11 @@ func TestDetect_NamespaceFallback(t *testing.T) {
 	if ing.Component.Note == "" {
 		t.Error("ingress-nginx should carry the envoy-gateway note")
 	}
+	// P2b: a component kube-dc has NO base for (FleetPath "(none)") must
+	// recommend skip, not adopt.
+	if ing.Recommend != DecisionSkip {
+		t.Errorf("ingress-nginx (no base) should recommend skip, got %q", ing.Recommend)
+	}
 }
 
 func TestDetect_CRDPreferredOverNamespace(t *testing.T) {

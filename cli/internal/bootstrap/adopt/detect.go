@@ -1,16 +1,21 @@
 // Package adopt powers `kube-dc bootstrap adopt` — the pre-install
-// inventory for an EXISTING cluster. Before kube-dc's Flux installs its
-// own kube-ovn / cert-manager / kubevirt / …, adopt detects which of
-// those a cluster ALREADY has (by CRD, most reliably) and reports a
-// per-component decision (adopt = keep it + exclude from kube-dc's Flux;
-// or replace = let kube-dc manage), so the operator never silently
-// clobbers existing infra.
+// inventory + version-pin adoption for an EXISTING cluster. Before
+// kube-dc's Flux installs its own kube-ovn / cert-manager / kubevirt /
+// …, adopt detects which of those a cluster ALREADY has (by CRD, most
+// reliably) and, per component, recommends:
 //
-// v1 is READ-ONLY: it detects + advises + prints the exact fleet-overlay
-// edit for each decision. It does NOT rewrite the fleet overlay — that
-// (the risky half: `resources:` rewriting / suspend / patches, frozen
-// into the hashed Plan) is a deliberate follow-up so a reviewed advisory
-// lands before any automated mutation.
+//   - adopt: let kube-dc's Flux take it over IN PLACE. The fleet's
+//     Kustomizations run prune:false + force:true, so Flux adopts the
+//     running Helm release rather than deleting it. The safe-adoption
+//     action is to PIN cluster-config.env to the component's LIVE chart
+//     version (PinVersions) so the first reconcile doesn't upgrade it.
+//   - skip: kube-dc has no base for it (e.g. ingress-nginx) — keep the
+//     operator's own; kube-dc won't manage it.
+//
+// The version-pin mutation (PinVersions + `--pin-versions`) writes the
+// pins via the config engine's git transaction. The overlay-SKIP path
+// (omitting a component so kube-dc never manages it — invasive per-cluster
+// overlay surgery) is deliberately NOT automated here.
 package adopt
 
 import (
@@ -112,9 +117,9 @@ var ErrMissingDependency = errors.New("adopt: missing Inspector")
 
 // Detect inventories the cluster: which catalog components are already
 // present, and whether Flux is installed. CRD presence wins; namespace
-// presence is the fallback signal. The recommendation is always Adopt in
-// v1 (keep + exclude — the safe default); Replace is an operator opt-in
-// surfaced by the command, not auto-recommended.
+// presence is the fallback signal. Each finding's recommendation comes
+// from recommendFor — adopt (Flux takes it over in place) for components
+// kube-dc has a base for, skip for those it doesn't (e.g. ingress-nginx).
 func Detect(ctx context.Context, insp Inspector) (*Result, error) {
 	if insp == nil {
 		return nil, ErrMissingDependency
@@ -142,7 +147,7 @@ func Detect(ctx context.Context, insp Inspector) (*Result, error) {
 			res.Findings = append(res.Findings, Finding{
 				Component: comp,
 				Via:       via,
-				Recommend: DecisionAdopt,
+				Recommend: recommendFor(comp),
 			})
 		}
 	}
@@ -150,6 +155,17 @@ func Detect(ctx context.Context, insp Inspector) (*Result, error) {
 		return res.Findings[i].Component.Name < res.Findings[j].Component.Name
 	})
 	return res, nil
+}
+
+// recommendFor picks the default decision. A component kube-dc has no
+// base for (FleetPath "(none)", e.g. ingress-nginx) can't be adopted —
+// recommend SKIP (keep the operator's own). Everything else defaults to
+// ADOPT (Flux takes it over in place; pin versions to make it safe).
+func recommendFor(comp Component) Decision {
+	if comp.FleetPath == "(none)" || comp.FleetPath == "" {
+		return DecisionSkip
+	}
+	return DecisionAdopt
 }
 
 // detectOne reports whether comp is present + how it was detected. A CRD

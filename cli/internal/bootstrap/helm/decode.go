@@ -59,3 +59,39 @@ func DecodeChartVersion(data []byte) (string, error) {
 func isGzip(b []byte) bool {
 	return len(b) >= 2 && b[0] == 0x1f && b[1] == 0x8b
 }
+
+// ReleaseSecret is the minimal view of a helm.sh/release.v1 Secret that
+// LatestChartVersions needs: which release (Namespace/Name), which
+// revision, and the raw `release` payload bytes.
+type ReleaseSecret struct {
+	Namespace string
+	Name      string // Helm release name
+	Revision  int
+	Data      []byte // the Secret's `release` field
+}
+
+// LatestChartVersions returns the chart version of the HIGHEST-revision
+// release per "<namespace>/<name>". It decodes ONLY the latest revision —
+// and if that one fails to decode, the release is OMITTED rather than
+// falling back to an older revision. For adoption a stale-revision pin
+// would risk a downgrade/restart on Flux's first reconcile, so "latest
+// unreadable" must surface as undetected, not as an older version.
+func LatestChartVersions(secrets []ReleaseSecret) map[string]string {
+	latest := map[string]ReleaseSecret{}
+	for _, s := range secrets {
+		if s.Name == "" {
+			continue
+		}
+		key := s.Namespace + "/" + s.Name
+		if cur, ok := latest[key]; !ok || s.Revision > cur.Revision {
+			latest[key] = s
+		}
+	}
+	out := make(map[string]string, len(latest))
+	for key, s := range latest {
+		if v, err := DecodeChartVersion(s.Data); err == nil {
+			out[key] = v
+		}
+	}
+	return out
+}

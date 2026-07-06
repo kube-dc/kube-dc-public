@@ -202,33 +202,26 @@ func (c *Client) HelmReleaseChartVersions(ctx context.Context) (map[string]strin
 	if err != nil {
 		return nil, fmt.Errorf("k8s: list helm release secrets: %w", err)
 	}
-	// Track the highest revision seen per "<ns>/<release>" so we decode
-	// the current release, not a superseded one.
-	bestRev := map[string]int{}
-	out := map[string]string{}
+	// Collect all release Secrets; LatestChartVersions picks the highest
+	// revision per release FIRST, then decodes only that one — so a
+	// corrupt latest revision surfaces as undetected instead of pinning a
+	// stale older revision (downgrade risk on adoption).
+	rels := make([]helm.ReleaseSecret, 0, len(secrets.Items))
 	for i := range secrets.Items {
 		s := &secrets.Items[i]
-		name := s.Labels["name"]
-		if name == "" {
-			continue
-		}
-		rev, _ := strconv.Atoi(s.Labels["version"])
-		key := s.Namespace + "/" + name
-		if existing, ok := bestRev[key]; ok && rev <= existing {
-			continue
-		}
 		blob, ok := s.Data["release"]
 		if !ok {
 			continue
 		}
-		ver, derr := helm.DecodeChartVersion(blob)
-		if derr != nil {
-			continue // skip an unparseable release rather than fail the map
-		}
-		bestRev[key] = rev
-		out[key] = ver
+		rev, _ := strconv.Atoi(s.Labels["version"])
+		rels = append(rels, helm.ReleaseSecret{
+			Namespace: s.Namespace,
+			Name:      s.Labels["name"],
+			Revision:  rev,
+			Data:      blob,
+		})
 	}
-	return out, nil
+	return helm.LatestChartVersions(rels), nil
 }
 
 func (c *Client) NodeLabels(ctx context.Context) (map[string]map[string]string, error) {

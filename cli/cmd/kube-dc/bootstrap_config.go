@@ -183,7 +183,7 @@ tree; on a commit/push failure the fleet repo is reset to its prior HEAD.`,
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show the diff; change nothing")
 	cmd.Flags().BoolVar(&yes, "yes", false, "Apply: write + commit (+ push unless --no-push). Without this, set only previews")
 	cmd.Flags().BoolVar(&noPush, "no-push", false, "Commit to the fleet repo but do not push to the remote")
-	cmd.Flags().StringVar(&githubToken, "github-token", "", "Token for the push (default: `gh auth token`, or `glab auth token` with --provider gitlab)")
+	cmd.Flags().StringVar(&githubToken, "github-token", "", "Token for the push (default: `gh auth token`, or `glab auth status --show-token` with --provider gitlab)")
 	cmd.Flags().StringVar(&provider, "provider", "", "Git host for the push credential: github (default) or gitlab")
 	return cmd
 }
