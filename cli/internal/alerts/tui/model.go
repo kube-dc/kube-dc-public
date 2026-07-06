@@ -295,10 +295,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Route navigation keys: scroll keys go to the details viewport so the
-	// right pane is always scrollable without an explicit focus toggle.
+	// Route navigation. An explicit details-scroll key (J/K/PgUp/PgDn/
+	// Ctrl+D/U) scrolls the right pane regardless of focus so it's always
+	// scrollable without a toggle; AND when the details pane is focused
+	// (Space/Enter) plain arrows scroll it too — otherwise focusing the
+	// details pane would be visual-only and ↑/↓ would still move the alert
+	// selection. Otherwise arrows drive the alert list.
 	var listCmd, detailsCmd tea.Cmd
-	if km, ok := msg.(tea.KeyPressMsg); ok && isDetailsScrollKey(km) {
+	km, isKey := msg.(tea.KeyPressMsg)
+	if isKey && (isDetailsScrollKey(km) || m.focus == focusDetails) {
 		m.details, detailsCmd = m.details.Update(msg)
 	} else {
 		m.list, listCmd = m.list.Update(msg)
@@ -363,6 +368,11 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		} else {
 			m.focus = focusList
 		}
+		return nil, true
+	case key.Matches(msg, m.keys.Enter):
+		// Enter focuses the details pane (matches the "details" help label);
+		// arrows then scroll the detail. Esc returns focus to the list.
+		m.focus = focusDetails
 		return nil, true
 	case key.Matches(msg, m.keys.OpenURL):
 		if a := m.selectedAlert(); a != nil {
