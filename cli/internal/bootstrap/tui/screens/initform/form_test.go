@@ -15,7 +15,7 @@ func baseState() *State {
 		NodeIP: "203.0.113.52", Email: "ops@atlantis.example.com",
 		Mode: "install", FleetMode: "existing-fleet", Repo: "/tmp/fleet",
 		Provider: "github", Owner: "kube-dc", RepoName: "kube-dc-fleet",
-		Preset: "cloud+public-vlan",
+		Preset:    "cloud+public-vlan",
 		NetVLANID: "1103", NetInterface: "bond0",
 		PubVLANID: "1100", PubCIDR: "203.0.113.48/29", PubGateway: "203.0.113.49",
 		OSMode:    "rook-ceph-multi-node",
@@ -121,6 +121,66 @@ func TestApply_DisabledRequiresConsent(t *testing.T) {
 	}
 	if o.RookMode != clusterinit.RookDisabled {
 		t.Errorf("mode not mapped: %v", o.RookMode)
+	}
+}
+
+// Adopt mode: the wizard maps the danger-confirm to
+// o.AllowUnpinnedAdopt, and the assembled options still pass the SAME
+// Validate() the flag path runs (thin-generator contract for adopt).
+func TestApply_AdoptModeBypassMapsAndValidates(t *testing.T) {
+	st := baseState()
+	st.Mode = "adopt"
+	st.AllowUnpinnedAdopt = true
+	o := &clusterinit.InitOptions{Yes: true}
+	if err := st.Apply(o); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if o.Mode != clusterinit.ModeAdopt {
+		t.Errorf("mode not mapped: %v", o.Mode)
+	}
+	if !o.AllowUnpinnedAdopt {
+		t.Error("adopt-mode bypass confirm should set o.AllowUnpinnedAdopt")
+	}
+	if err := o.Validate(); err != nil {
+		t.Fatalf("adopt wizard options must pass Validate: %v", err)
+	}
+}
+
+// The bypass only carries meaning in adopt mode — an install/resume run
+// must never emit it (keeps the plan hash + equivalent flags honest even
+// if the danger-confirm state leaks in from a reused State).
+func TestApply_BypassIgnoredOutsideAdopt(t *testing.T) {
+	st := baseState()
+	st.Mode = "install"
+	st.AllowUnpinnedAdopt = true // stale/leaked — must be ignored
+	o := &clusterinit.InitOptions{Yes: true}
+	if err := st.Apply(o); err != nil {
+		t.Fatal(err)
+	}
+	if o.AllowUnpinnedAdopt {
+		t.Error("--allow-unpinned-adopt must not survive a non-adopt mode")
+	}
+	if strings.Contains(st.EquivalentFlags(o), "--allow-unpinned-adopt") {
+		t.Error("install-mode equivalent flags must not include --allow-unpinned-adopt")
+	}
+}
+
+// C6 discipline: the equivalent command the wizard prints for an adopt
+// run must itself be a valid, re-runnable invocation — round-trip the
+// emitted flags back through Apply→Validate.
+func TestEquivalentFlags_AdoptBypass_RoundTripValidates(t *testing.T) {
+	st := baseState()
+	st.Mode = "adopt"
+	st.AllowUnpinnedAdopt = true
+	o := &clusterinit.InitOptions{Yes: true}
+	if err := st.Apply(o); err != nil {
+		t.Fatal(err)
+	}
+	flags := st.EquivalentFlags(o)
+	for _, want := range []string{"--mode=adopt", "--allow-unpinned-adopt"} {
+		if !strings.Contains(flags, want) {
+			t.Errorf("adopt equivalent flags missing %q\nFULL:\n%s", want, flags)
+		}
 	}
 }
 

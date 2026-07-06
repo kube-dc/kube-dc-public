@@ -66,6 +66,10 @@ type State struct {
 	DisabledConsent bool
 	// gates
 	AllowDNSNotReady bool
+	// adopt-only: the --allow-unpinned-adopt bypass. Default false
+	// (the SAFE path — pin versions first). Collected only when
+	// Mode==adopt, behind an explicit danger confirmation.
+	AllowUnpinnedAdopt bool
 }
 
 // Apply maps the collected answers onto InitOptions. Pure — no I/O.
@@ -144,6 +148,9 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 	o.S3Hostname = strings.TrimSpace(s.S3Hostname)
 	o.NoS3Exposure = s.NoS3Exposure
 	o.AllowDNSNotReady = s.AllowDNSNotReady
+	// The bypass only carries meaning in adopt mode; never emit it for
+	// install/resume (keeps the plan hash + equivalent flags honest).
+	o.AllowUnpinnedAdopt = s.AllowUnpinnedAdopt && o.Mode == clusterinit.ModeAdopt
 	return nil
 }
 
@@ -203,6 +210,9 @@ func (s *State) EquivalentFlags(o *clusterinit.InitOptions) string {
 	if o.AllowDNSNotReady {
 		b.WriteString("  --allow-dns-not-ready \\\n")
 	}
+	if o.AllowUnpinnedAdopt {
+		b.WriteString("  --allow-unpinned-adopt \\\n")
+	}
 	b.WriteString("  --dry-run")
 	return b.String()
 }
@@ -233,10 +243,11 @@ func Build(st *State, siblingHint string) *huh.Form {
 				Description("cert-manager / Let's Encrypt registration").
 				Value(&st.Email).Validate(clusterinit.ValidateEmailField),
 			huh.NewSelect[string]().Title("Mode").
+				Description("Foreign cluster with no fleet overlay yet? Use install/existing-fleet\nto scaffold it first — full foreign import isn't automated.").
 				Options(
-					huh.NewOption("install — fresh cluster", "install"),
-					huh.NewOption("adopt — existing components present", "adopt"),
-					huh.NewOption("resume — continue an interrupted init", "resume"),
+					huh.NewOption("install — fresh RKE2, no Flux: scaffold + install everything", "install"),
+					huh.NewOption("adopt — existing fleet overlay: Flux takes components over in place (pin versions first)", "adopt"),
+					huh.NewOption("resume — kube-dc already here: re-run post-install steps idempotently", "resume"),
 				).Value(&st.Mode),
 		).Title("Cluster basics"),
 
@@ -354,6 +365,24 @@ func Build(st *State, siblingHint string) *huh.Form {
 				}),
 		).Title("Degraded mode").
 			WithHideFunc(func() bool { return st.OSMode != string(clusterinit.RookDisabled) }),
+
+		// Adopt-only: the --allow-unpinned-adopt bypass, behind an
+		// explicit danger confirmation. The SAFE default (decline) means
+		// kube-dc refuses to install until the operator has pinned fleet
+		// versions to the live ones (`bootstrap adopt --pin-versions`) —
+		// exactly the gate CheckAdoptPinned enforces. Hidden outside
+		// adopt mode so install/resume never see it.
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Bypass the adopt version-pin safety gate?").
+				Description("SAFE (default — decline): kube-dc refuses to install until you've pinned\n"+
+					"fleet versions to the live ones (`bootstrap adopt <cluster> --pin-versions`),\n"+
+					"so Flux's first reconcile won't upgrade/restart adopted components.\n"+
+					"BYPASS: install now, unpinned — expect upgrades/restarts on first reconcile.").
+				Value(&st.AllowUnpinnedAdopt).
+				Affirmative("Bypass (RISKY)").Negative("No — I'll pin first (safe)"),
+		).Title("Adopt safety").
+			WithHideFunc(func() bool { return st.Mode != string(clusterinit.ModeAdopt) }),
 
 		// --- Group 5: gates ---
 		huh.NewGroup(
