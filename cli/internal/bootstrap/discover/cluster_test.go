@@ -21,9 +21,9 @@ func TestAggregate(t *testing.T) {
 		contains string // substring expected in Detail
 	}{
 		{
-			name: "all six layers ready",
-			ks:   readyN("infra-cni", "infra-core", "infra-public-network", "infra-object-storage", "platform", "addons"),
-			want: StatusReady,
+			name:     "all six layers ready",
+			ks:       readyN("infra-cni", "infra-core", "infra-public-network", "infra-object-storage", "platform", "addons"),
+			want:     StatusReady,
 			contains: "6/6 Ready",
 		},
 		{
@@ -54,6 +54,22 @@ func TestAggregate(t *testing.T) {
 			contains: "1/2 reconciling",
 		},
 		{
+			// Flux's normal mid-reconcile shape: Ready=Unknown + Progressing
+			// (no explicit Reconciling=True). Must count as Reconciling, NOT
+			// Unknown — the bug that made a whole cluster read "Unknown"
+			// while infra-core was just reconciling.
+			name: "Ready=Unknown + Progressing is Reconciling, not Unknown",
+			ks: append(
+				readyN("flux-system", "infra-cni"),
+				kustomization{
+					Metadata: meta("infra-core"),
+					Status:   statusWith(cond("Ready", "Unknown", "Progressing", "Reconciliation in progress")),
+				},
+			),
+			want:     StatusReconciling,
+			contains: "1/3 reconciling",
+		},
+		{
 			name:     "empty list → Unknown with install/adopt hint",
 			ks:       []kustomization{},
 			want:     StatusUnknown,
@@ -80,6 +96,28 @@ func TestAggregate(t *testing.T) {
 				t.Errorf("Detail = %q, want substring %q", got.Detail, tc.contains)
 			}
 		})
+	}
+}
+
+// TestAggregate_SetsReconcilingFlag confirms the per-reconciler
+// Reconciling flag is set for a progressing Kustomization (drives the ◑
+// glyph) but not for a Ready or a genuinely-failed one.
+func TestAggregate_SetsReconcilingFlag(t *testing.T) {
+	ks := []kustomization{
+		readyN("flux-system")[0],
+		{Metadata: meta("infra-core"), Status: statusWith(cond("Ready", "Unknown", "Progressing", "in progress"))},
+		{Metadata: meta("platform"), Status: statusWith(cond("Ready", "False", "BuildFailed", "boom"))},
+	}
+	res := aggregate(ks)
+	got := map[string]bool{}
+	for _, r := range res.Reconcilers {
+		got[r.Name] = r.Reconciling
+	}
+	if got["infra-core"] != true {
+		t.Errorf("infra-core (Progressing) should be Reconciling")
+	}
+	if got["flux-system"] != false || got["platform"] != false {
+		t.Errorf("ready + failed reconcilers should not be Reconciling: %v", got)
 	}
 }
 
@@ -213,9 +251,9 @@ func TestImageTag(t *testing.T) {
 // across namespaces.
 func TestSplitNamespacedName(t *testing.T) {
 	cases := []struct {
-		in        string
-		wantNS    string
-		wantName  string
+		in       string
+		wantNS   string
+		wantName string
 	}{
 		{"kube-dc/kube-dc-manager", "kube-dc", "kube-dc-manager"},
 		{"kube-dc/db-manager", "kube-dc", "db-manager"},

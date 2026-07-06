@@ -40,8 +40,6 @@ type RootTab int
 const (
 	RootTabFleet RootTab = iota
 	RootTabContext
-	RootTabReconcile
-	RootTabOpenBao
 )
 
 // NewRootModel builds the integrated bootstrap TUI rooted at the named
@@ -65,8 +63,6 @@ func NewRootModel(repoRoot string, startTab RootTab) *RootModel {
 		tabs: []tabSpec{
 			{name: "Fleet", model: fleet},
 			{name: "Contexts", model: contexts},
-			{name: "Reconcile", model: NewReconcileModel()},
-			{name: "OpenBao", model: NewOpenBaoModel()},
 		},
 		active: int(startTab),
 		keys:   bttui.DefaultKeyMap(),
@@ -129,44 +125,16 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.active = 1
 			}
 			return m, nil
-		case key.Matches(msg, m.keys.TopTab3):
-			if 2 < len(m.tabs) {
-				m.active = 2
-			}
-			return m, nil
-		case key.Matches(msg, m.keys.TopTab4):
-			if 3 < len(m.tabs) {
-				m.active = 3
-			}
-			return m, nil
 		}
 	}
-	// Route by message kind:
-	//   - INTERACTION (unhandled keys, mouse) → the ACTIVE tab only. A
-	//     keypress belongs to the focused screen.
-	//   - ASYNC (tick, probe completions, and each tab's own loaded-msg)
-	//     → BROADCAST to every tab. Init() kicks off every tab's fetch up
-	//     front, so an inactive tab's in-flight result MUST still reach it
-	//     — otherwise a load that lands while another tab is active is
-	//     dropped and the tab sits at "loading…" until manually refreshed.
-	//     Tabs ignore message types they don't recognise, so a broadcast
-	//     async msg only mutates its owning tab.
-	switch msg.(type) {
-	case tea.KeyMsg, tea.MouseMsg:
-		var cmd tea.Cmd
-		m.tabs[m.active].model, cmd = m.tabs[m.active].model.Update(msg)
-		return m, cmd
-	default:
-		var cmds []tea.Cmd
-		for i := range m.tabs {
-			var cmd tea.Cmd
-			m.tabs[i].model, cmd = m.tabs[i].model.Update(msg)
-			if cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-		}
-		return m, tea.Batch(cmds...)
-	}
+	// Forward everything else (unhandled keys, ticks, probe completions)
+	// to the ACTIVE screen. Both current tabs are coherent under this:
+	// Fleet is the start tab and owns the async probes/ticks it starts;
+	// Contexts loads synchronously in its constructor (Init is a no-op),
+	// so it has no in-flight async result that could be dropped here.
+	var cmd tea.Cmd
+	m.tabs[m.active].model, cmd = m.tabs[m.active].model.Update(msg)
+	return m, cmd
 }
 
 // View stacks the tab bar above the active screen.

@@ -144,6 +144,10 @@ func (m *FleetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// clamp the cursor + redraw.
 		m.clampKustomizationCursor()
 		m.refreshDetails()
+		// If the OpenBao side panel is open for this cluster, keep it live.
+		if m.drillDownOpen && m.drillDownTitle == openBaoDrillTitle && msg.Name == m.clusters[m.selected].Name {
+			m.openOpenBaoDrill()
+		}
 	case bttui.TickMsg:
 		cmds := append(m.probeAllCmds(), m.tickCmd())
 		return m, tea.Batch(cmds...)
@@ -151,6 +155,14 @@ func (m *FleetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pendingActionFor = ""
 		if msg.Err != nil {
 			m.err = fmt.Errorf("login %s failed: %w", msg.Cluster, msg.Err)
+		} else {
+			m.err = nil
+		}
+		return m, m.reprobeOne(msg.Cluster)
+	case bttui.ActionDoneMsg:
+		m.pendingActionFor = ""
+		if msg.Err != nil {
+			m.err = fmt.Errorf("%s %s failed: %w", msg.Action, msg.Cluster, msg.Err)
 		} else {
 			m.err = nil
 		}
@@ -284,6 +296,30 @@ func (m *FleetModel) execLoginCmd(admin bool) tea.Cmd {
 	})
 }
 
+// execUnsealCmd runs `kube-dc bootstrap openbao unseal <cluster> --repo
+// <fleet>` interactively (like the admin-login exec) so the operator
+// watches it run. It decrypts the cluster's shares from the fleet, but
+// execs against the CURRENT kubeconfig context — so the operator should
+// have that cluster's admin context active (press L to admin-login first
+// if needed). Interactive output makes a wrong target / auth failure
+// visible rather than silent. On completion the cluster is re-probed so
+// the OpenBao panel refreshes.
+func (m *FleetModel) execUnsealCmd() tea.Cmd {
+	if len(m.clusters) == 0 {
+		return nil
+	}
+	c := m.clusters[m.selected]
+	m.pendingActionFor = c.Name
+	args := []string{"bootstrap", "openbao", "unseal", c.Name, "--repo", m.repoRoot}
+	cmd := exec.Command(os.Args[0], args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return bttui.ActionDoneMsg{Cluster: c.Name, Action: "unseal", Err: err}
+	})
+}
+
 // reprobeOne re-runs the probe for exactly one cluster (post-login).
 func (m *FleetModel) reprobeOne(name string) tea.Cmd {
 	var target *discover.Cluster
@@ -346,6 +382,22 @@ func (m *FleetModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.refreshDetails()
 		}
 		return m, nil
+	case key.Matches(msg, m.keys.OpenBao):
+		// Open the OpenBao side panel for the selected cluster (mirrors
+		// the Kustomization drill-down's bordered right panel).
+		if len(m.clusters) > 0 {
+			m.openOpenBaoDrill()
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.Unseal):
+		// 'u' unseals the selected cluster — only meaningful while the
+		// OpenBao panel is open (so it can't fire by accident elsewhere).
+		if m.drillDownOpen && m.drillDownTitle == openBaoDrillTitle {
+			if cmd := m.execUnsealCmd(); cmd != nil {
+				return m, cmd
+			}
+		}
+		return m, nil
 	case key.Matches(msg, m.keys.LoginAdmin):
 		if cmd := m.execLoginCmd(true); cmd != nil {
 			return m, cmd
@@ -391,8 +443,8 @@ func (m *FleetModel) handleArrow(delta int) (tea.Model, tea.Cmd) {
 			m.refreshDetails()
 		}
 	case paneFocusDetails:
-		recs := m.currentReconcilers()
-		if len(recs) == 0 {
+		n := len(m.detailTargets())
+		if n == 0 {
 			// No selectable rows in details — let viewport scroll instead.
 			if delta < 0 {
 				m.details.LineUp(1)
@@ -402,7 +454,7 @@ func (m *FleetModel) handleArrow(delta int) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		next := m.kustomizationCursor + delta
-		if next >= 0 && next < len(recs) {
+		if next >= 0 && next < n {
 			m.kustomizationCursor = next
 			m.refreshDetails()
 		}
@@ -432,19 +484,21 @@ func (m *FleetModel) handleEnter() (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 		}
-		// No FixAction — Enter on a Ready row drops focus into details
-		// so the operator can drill into Kustomizations without a TAB.
+		// No FixAction — Enter drops focus into the details pane so the
+		// operator can arrow through Kustomizations and drill into one.
 		m.focus = paneFocusDetails
 		m.kustomizationCursor = 0
 		m.refreshDetails()
 		return m, nil
 	case paneFocusDetails:
-		recs := m.currentReconcilers()
-		if len(recs) == 0 {
+		targets := m.detailTargets()
+		if m.kustomizationCursor < 0 || m.kustomizationCursor >= len(targets) {
 			return m, nil
 		}
-		if m.kustomizationCursor >= 0 && m.kustomizationCursor < len(recs) {
-			m.openDrillDown(recs[m.kustomizationCursor])
+		if t := targets[m.kustomizationCursor]; t.openbao {
+			m.openOpenBaoDrill()
+		} else {
+			m.openDrillDown(t.rec)
 		}
 		return m, nil
 	case paneFocusDrillDown:
@@ -503,7 +557,10 @@ func (m *FleetModel) openDrillDown(rec discover.ReconcilerStatus) {
 
 	// Headline: state + suspend.
 	stateGlyph := "✓ ready"
-	if !rec.Ready {
+	switch {
+	case rec.Reconciling:
+		stateGlyph = "◑ reconciling"
+	case !rec.Ready:
 		stateGlyph = "✗ not ready"
 	}
 	b.WriteString(bttui.Text.Render("state:     "))
@@ -576,14 +633,65 @@ func (m *FleetModel) openDrillDown(rec discover.ReconcilerStatus) {
 	// Copy-paste hints. Use the short kubectl/flux forms so they fit
 	// in a 40%-wide pane on a typical terminal.
 	b.WriteString(bttui.Muted.Render("─ investigate ─") + "\n")
-	b.WriteString(bttui.Text.Render("kubectl describe ks/" + rec.Name + " -n flux-system") + "\n")
-	b.WriteString(bttui.Text.Render("flux logs ks/" + rec.Name + " -n flux-system") + "\n")
-	b.WriteString(bttui.Text.Render("flux reconcile kustomization " + rec.Name + " -n flux-system") + "\n")
+	b.WriteString(bttui.Text.Render("kubectl describe ks/"+rec.Name+" -n flux-system") + "\n")
+	b.WriteString(bttui.Text.Render("flux logs ks/"+rec.Name+" -n flux-system") + "\n")
+	b.WriteString(bttui.Text.Render("flux reconcile kustomization "+rec.Name+" -n flux-system") + "\n")
 
 	m.drillDown.SetContent(b.String())
 	m.drillDown.GotoTop()
 	m.drillDownOpen = true
 	m.drillDownTitle = rec.Name
+	m.focus = paneFocusDrillDown
+	m.relayout()
+	m.refreshDetails()
+}
+
+// openBaoDrillTitle is the drill-down title used for the OpenBao side
+// panel, so ClusterProbeMsg can tell an open OpenBao panel from a
+// Kustomization drill-down and refresh only the former.
+const openBaoDrillTitle = "OpenBao"
+
+// openOpenBaoDrill opens the OpenBao side panel for the selected cluster,
+// reusing the same bordered right-hand drill-down panel as the
+// Kustomization detail (so it matches the existing look + Esc/focus
+// behavior). Content is the coarse readiness summary from the cluster's
+// ClusterProbe result.
+func (m *FleetModel) openOpenBaoDrill() {
+	if len(m.clusters) == 0 {
+		return
+	}
+	c := m.clusters[m.selected]
+	var b strings.Builder
+	b.WriteString(bttui.Title.Render(" OpenBao "))
+	b.WriteString("\n")
+	b.WriteString(bttui.Muted.Render(c.Name))
+	b.WriteString("\n\n")
+
+	sealed := false
+	if r, ok := m.statuses[c.Name]; ok {
+		b.WriteString(renderFleetOpenBao(r.OpenBao))
+		if r.OpenBao != nil && (r.OpenBao.TotalPods == 0 || r.OpenBao.ReadyPods < r.OpenBao.TotalPods) {
+			sealed = true
+		}
+	} else {
+		b.WriteString(bttui.Muted.Render("probing… (r refresh)"))
+	}
+
+	// Actions: unseal (only when a pod is sealed/not-ready) + close. The
+	// unseal exec targets the current kubeconfig context — note it.
+	b.WriteString("\n")
+	b.WriteString(bttui.Muted.Render("─ actions ─") + "\n")
+	if sealed {
+		b.WriteString(bttui.KeyLabel.Render("u") + bttui.Text.Render(" unseal") + "\n")
+		b.WriteString(bttui.Muted.Render("  (current kube-ctx;") + "\n")
+		b.WriteString(bttui.Muted.Render("   L to admin-login)") + "\n")
+	}
+	b.WriteString(bttui.KeyLabel.Render("esc") + bttui.Muted.Render(" close"))
+
+	m.drillDown.SetContent(b.String())
+	m.drillDown.GotoTop()
+	m.drillDownOpen = true
+	m.drillDownTitle = openBaoDrillTitle
 	m.focus = paneFocusDrillDown
 	m.relayout()
 	m.refreshDetails()
@@ -610,16 +718,47 @@ func (m *FleetModel) currentReconcilers() []discover.ReconcilerStatus {
 	return r.Reconcilers
 }
 
-func (m *FleetModel) clampKustomizationCursor() {
+// detailTarget is one navigable/drill-into-able row in the details pane:
+// the OpenBao summary (openbao=true) or a Kustomization.
+type detailTarget struct {
+	openbao bool
+	rec     discover.ReconcilerStatus
+}
+
+// detailTargets is the ordered list of rows the details-pane cursor moves
+// over: OpenBao first (rendered right after status), then every
+// Kustomization. Empty until the selected cluster's probe lands.
+func (m *FleetModel) detailTargets() []detailTarget {
+	if _, ok := m.statuses[m.selectedName()]; !ok {
+		return nil
+	}
 	recs := m.currentReconcilers()
+	targets := make([]detailTarget, 0, 1+len(recs))
+	targets = append(targets, detailTarget{openbao: true})
+	for _, rec := range recs {
+		targets = append(targets, detailTarget{rec: rec})
+	}
+	return targets
+}
+
+// selectedName is the selected cluster's name, or "" when none.
+func (m *FleetModel) selectedName() string {
+	if len(m.clusters) == 0 {
+		return ""
+	}
+	return m.clusters[m.selected].Name
+}
+
+func (m *FleetModel) clampKustomizationCursor() {
+	n := len(m.detailTargets())
 	if m.kustomizationCursor < 0 {
 		m.kustomizationCursor = 0
 	}
-	if m.kustomizationCursor >= len(recs) {
-		if len(recs) == 0 {
+	if m.kustomizationCursor >= n {
+		if n == 0 {
 			m.kustomizationCursor = 0
 		} else {
-			m.kustomizationCursor = len(recs) - 1
+			m.kustomizationCursor = n - 1
 		}
 	}
 }
@@ -764,11 +903,14 @@ func (m *FleetModel) activeShortHelp() []key.Binding {
 	keys := []key.Binding{m.keys.Up, m.keys.Down, m.keys.Tab}
 	if m.focus == paneFocusList && m.selectedHasFixAction() {
 		keys = append(keys, m.keys.Enter) // Enter runs the FixAction
-	} else if m.focus == paneFocusDetails && len(m.currentReconcilers()) > 0 {
-		keys = append(keys, m.keys.Enter) // Enter opens drill-down
+	} else if m.focus == paneFocusDetails && len(m.detailTargets()) > 0 {
+		keys = append(keys, m.keys.Enter) // Enter opens the OpenBao / Kustomization panel
 	}
 	if m.drillDownOpen {
 		keys = append(keys, m.keys.Esc)
+	}
+	if len(m.clusters) > 0 {
+		keys = append(keys, m.keys.OpenBao) // 'o' opens the OpenBao side panel
 	}
 	if m.canAdminLogin() {
 		keys = append(keys, m.keys.LoginAdmin)
@@ -923,25 +1065,39 @@ func (m *FleetModel) refreshDetails() {
 			b.WriteString(bttui.Text.Render(r.FixHint))
 			b.WriteString("\n")
 		}
+		// Details-pane drill targets: OpenBao first (index 0), then the
+		// Kustomizations (index 1..). The cursor (▸, only when the details
+		// pane has focus) marks which row Enter drills into.
+		cursorFor := func(idx int) string {
+			if m.focus == paneFocusDetails && idx == m.kustomizationCursor {
+				return bttui.KeyLabel.Render("▸ ")
+			}
+			return "  "
+		}
+		// OpenBao row (Enter → OpenBao side panel), rendered right after status.
+		b.WriteString("\n")
+		obSummary := "no data"
+		if r.OpenBao != nil {
+			obSummary = fmt.Sprintf("%d/%d pods ready", r.OpenBao.ReadyPods, r.OpenBao.TotalPods)
+			if r.OpenBao.ReadyPods < r.OpenBao.TotalPods {
+				obSummary += " ⚠"
+			}
+		}
+		b.WriteString(cursorFor(0))
+		b.WriteString(bttui.Text.Render(padRight("▸ OpenBao", 30)))
+		b.WriteString(" ")
+		b.WriteString(bttui.Muted.Render(obSummary + "  (enter)"))
+		b.WriteString("\n")
 		if len(r.Reconcilers) > 0 {
 			b.WriteString("\n")
 			b.WriteString(bttui.Muted.Render("Kustomizations") + "\n")
 			for i, rec := range r.Reconcilers {
-				glyph := "✓"
-				if !rec.Ready {
-					glyph = "✗"
-				}
+				glyph := reconcilerGlyph(rec)
 				detail := rec.Reason
 				if rec.Message != "" {
 					detail = rec.Reason + ": " + rec.Message
 				}
-				// Cursor marker shows which row Enter would drill into,
-				// but only when the details pane has focus (§9.9.1).
-				cursor := "  "
-				if m.focus == paneFocusDetails && i == m.kustomizationCursor {
-					cursor = bttui.KeyLabel.Render("▸ ")
-				}
-				b.WriteString(cursor)
+				b.WriteString(cursorFor(i + 1)) // +1: OpenBao occupies index 0
 				b.WriteString(bttui.Text.Render(padRight(glyph+" "+rec.Name, 30)))
 				b.WriteString(" ")
 				b.WriteString(bttui.Muted.Render(detail))

@@ -30,8 +30,6 @@ type KeyMap struct {
 	TopTabPrev key.Binding // [
 	TopTab1    key.Binding // 1
 	TopTab2    key.Binding // 2
-	TopTab3    key.Binding // 3
-	TopTab4    key.Binding // 4
 
 	// Fleet-landing actions. The v2 actions (NewInstall, Adopt, Status,
 	// Config, Discover) live in the keymap but are filtered out of the
@@ -46,6 +44,8 @@ type KeyMap struct {
 	// In-TUI actions on the selected row/context.
 	LoginAdmin key.Binding // [L] admin login
 	LoginOrg   key.Binding // [l] tenant login (org prompt)
+	OpenBao    key.Binding // [o] open the OpenBao side panel for the selected cluster
+	Unseal     key.Binding // [u] unseal the selected cluster (only in the OpenBao panel)
 	TestAuth   key.Binding // [t] HEAD /readyz with cached creds
 	Delete     key.Binding // [d] delete (context view only)
 }
@@ -96,6 +96,8 @@ func DefaultKeyMap() KeyMap {
 
 		LoginAdmin: key.NewBinding(key.WithKeys("L"), key.WithHelp("L", "admin login")),
 		LoginOrg:   key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "tenant login")),
+		OpenBao:    key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "openbao")),
+		Unseal:     key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "unseal")),
 		TestAuth:   key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "test auth")),
 		Delete:     key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
 
@@ -103,7 +105,5 @@ func DefaultKeyMap() KeyMap {
 		TopTabPrev: key.NewBinding(key.WithKeys("["), key.WithHelp("[", "prev tab")),
 		TopTab1:    key.NewBinding(key.WithKeys("1"), key.WithHelp("1", "fleet")),
 		TopTab2:    key.NewBinding(key.WithKeys("2"), key.WithHelp("2", "contexts")),
-		TopTab3:    key.NewBinding(key.WithKeys("3"), key.WithHelp("3", "reconcile")),
-		TopTab4:    key.NewBinding(key.WithKeys("4"), key.WithHelp("4", "openbao")),
 	}
 }

@@ -39,6 +39,16 @@ type LoginDoneMsg struct {
 	Err     error
 }
 
+// ActionDoneMsg carries the result of a dispatched per-cluster action
+// subprocess (e.g. `bootstrap openbao unseal`) so the screen can clear
+// the pending marker + re-probe that cluster. Action is a short label
+// used in any error message ("unseal cloud failed: …").
+type ActionDoneMsg struct {
+	Cluster string
+	Action  string
+	Err     error
+}
+
 // AuthTestDoneMsg carries the result of a one-shot HEAD /readyz call
 // against the API server using the operator's cached creds. Used by the
 // context-manager screen's `t` key to verify a context actually works

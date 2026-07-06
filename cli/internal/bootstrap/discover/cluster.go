@@ -31,12 +31,12 @@ const (
 
 // ProbeResult is a single ClusterProbe.Run() outcome.
 type ProbeResult struct {
-	Status      ClusterStatus
-	Detail      string             // one-line summary for the right pane
-	FixHint     string             // optional next step the operator can take
-	FixAction   *FixAction         // structured form of FixHint — TUI dispatches Enter on this row to it
-	Reconcilers []ReconcilerStatus  // per-Kustomization breakdown
-	Drifts      []ImageDrift        // per-Deployment image-tag drift, empty when in-sync
+	Status       ClusterStatus
+	Detail       string              // one-line summary for the right pane
+	FixHint      string              // optional next step the operator can take
+	FixAction    *FixAction          // structured form of FixHint — TUI dispatches Enter on this row to it
+	Reconcilers  []ReconcilerStatus  // per-Kustomization breakdown
+	Drifts       []ImageDrift        // per-Deployment image-tag drift, empty when in-sync
 	HelmReleases []HelmReleaseStatus // per-HelmRelease (Flux helm.toolkit) readiness; nil when not probed
 	OpenBao      *OpenBaoStatus      // OpenBao pod/seal summary; nil when not probed / namespace absent
 }
@@ -63,11 +63,11 @@ type HelmReleaseStatus struct {
 // OpenBao's readiness probe fails while a pod is sealed, so a NotReady
 // pod is the seal/health signal here.
 type OpenBaoStatus struct {
-	ReadyPods int           // pods passing the readiness probe (≈ unsealed + serving)
-	TotalPods int           // openbao-N statefulset pods (snapshot Jobs excluded)
-	Pods      []OpenBaoPod  // per-pod name + ready
-	Finalized bool          // openbao Service has kube-dc.com/openbao-bootstrap-finalized
-	AuthSetup bool          // …/openbao-controller-auth-installed
+	ReadyPods int          // pods passing the readiness probe (≈ unsealed + serving)
+	TotalPods int          // openbao-N statefulset pods (snapshot Jobs excluded)
+	Pods      []OpenBaoPod // per-pod name + ready
+	Finalized bool         // openbao Service has kube-dc.com/openbao-bootstrap-finalized
+	AuthSetup bool         // …/openbao-controller-auth-installed
 }
 
 // OpenBaoPod is one OpenBao statefulset pod's readiness.
@@ -109,14 +109,15 @@ const (
 // Kustomization reports so the TUI's drill-down (§9.9.4) can show the
 // full picture, not just Ready=False.
 type ReconcilerStatus struct {
-	Name                   string
-	Ready                  bool
-	Reason                 string
-	Message                string
-	Suspended              bool        // .spec.suspend
-	LastAppliedRevision    string      // last revision that successfully reconciled
-	LastAttemptedRevision  string      // revision the controller is currently trying
-	Conditions             []Condition // every status.condition entry, verbatim
+	Name                  string
+	Ready                 bool
+	Reconciling           bool // actively progressing (Ready=Unknown/False + Progressing) — NOT failed
+	Reason                string
+	Message               string
+	Suspended             bool        // .spec.suspend
+	LastAppliedRevision   string      // last revision that successfully reconciled
+	LastAttemptedRevision string      // revision the controller is currently trying
+	Conditions            []Condition // every status.condition entry, verbatim
 }
 
 // Condition is the fleet-probe-side view of a Kubernetes condition. We
@@ -744,8 +745,8 @@ func sortDrifts(d []ImageDrift) {
 func aggregate(ks []kustomization) ProbeResult {
 	if len(ks) == 0 {
 		return ProbeResult{
-			Status: StatusUnknown,
-			Detail: "no Kustomizations in flux-system",
+			Status:  StatusUnknown,
+			Detail:  "no Kustomizations in flux-system",
 			FixHint: "run `kube-dc bootstrap install` to seed the fleet, or `adopt` if Flux exists elsewhere",
 		}
 	}
@@ -791,10 +792,10 @@ func aggregate(ks []kustomization) ProbeResult {
 			rs.Reason = readyCond.Reason
 			rs.Message = readyCond.Message
 			// A Kustomization that's actively reconciling and not yet
-			// settled also reports Ready=False; treat those as
-			// Reconciling rather than Failed when the explicit
-			// Reconciling condition is True.
-			if reconCond != nil && reconCond.Status == "True" {
+			// settled reports Ready=False (or Unknown, below); treat those
+			// as Reconciling rather than Failed.
+			if isReconciling(readyCond, reconCond) {
+				rs.Reconciling = true
 				reconciling++
 			} else {
 				failed++
@@ -803,7 +804,15 @@ func aggregate(ks []kustomization) ProbeResult {
 			rs.Ready = false
 			rs.Reason = readyCond.Reason
 			rs.Message = readyCond.Message
-			unknownReady++
+			// Flux sets Ready=Unknown + Reason=Progressing WHILE
+			// reconciling — that's in-progress, not a scary "unknown".
+			// Only a genuinely non-progressing Unknown counts as unknown.
+			if isReconciling(readyCond, reconCond) {
+				rs.Reconciling = true
+				reconciling++
+			} else {
+				unknownReady++
+			}
 		}
 		out.Reconcilers = append(out.Reconcilers, rs)
 	}
@@ -823,6 +832,24 @@ func aggregate(ks []kustomization) ProbeResult {
 		out.Detail = fmt.Sprintf("%d ready, %d unknown", readyTrue, unknownReady)
 	}
 	return out
+}
+
+// isReconciling reports whether a not-yet-Ready Kustomization is actively
+// progressing (so it should count as Reconciling, not Failed/Unknown).
+// Flux signals this two ways: an explicit Reconciling condition
+// (Status=True), and/or a Progressing reason on the Ready condition
+// (Ready is Unknown during a reconcile, False on a retrying one).
+func isReconciling(readyCond, reconCond *condition) bool {
+	if reconCond != nil && reconCond.Status == "True" {
+		return true
+	}
+	if readyCond != nil {
+		switch readyCond.Reason {
+		case "Progressing", "ProgressingWithRetry":
+			return true
+		}
+	}
+	return false
 }
 
 // buildTLSConfig fetches the API server's CA via TLS handshake and pins
