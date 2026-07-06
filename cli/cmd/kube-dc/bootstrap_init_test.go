@@ -338,6 +338,36 @@ func TestBootstrapInit_Adopt_GateBlocksBeforeMutation(t *testing.T) {
 	}
 }
 
+// C2/C3 edge: init --mode=adopt against a reachable cluster with NO
+// detected components AND no fleet overlay must still fail closed before
+// mutation — foreign-cluster import isn't automated. Regression guard for
+// the ordering bug where "nothing to pin → pass" ran before the
+// OverlayMissing boundary. Uses the "fresh" scenario (reachable cluster,
+// no CRDs) with an empty test fleet (no clusters/atlantis overlay).
+func TestBootstrapInit_Adopt_NoOverlayNoComponentsFailsClosed(t *testing.T) {
+	t.Setenv("KUBE_DC_MOCK", "fresh") // reachable cluster, ListCRDs → none
+	repo := setupValidFleet(t)        // empty clusters/ → "atlantis" has no overlay
+	args := filterFlag(validAtlantisArgs(), "--dry-run")
+	args = filterFlag(args, "--mode")
+	args = append(args,
+		"--mode=adopt", "--yes",
+		"--allow-dns-not-ready", "--allow-no-kubevirt-eligible",
+		"--no-install-prereqs", "--no-push",
+	)
+	body, err := runInitCmdWithRepo(t, repo, args)
+	if err == nil {
+		t.Fatalf("adopt on a no-overlay cluster with no components must fail closed; out:\n%s", body)
+	}
+	if !strings.Contains(err.Error(), "no fleet overlay") {
+		t.Errorf("expected the no-overlay boundary error, got: %v", err)
+	}
+	for _, forbidden := range []string{"[scaffold]", "flux-install.sh"} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("engine mutated despite the no-overlay gate (contains %q):\n%s", forbidden, body)
+		}
+	}
+}
+
 // C5 (adopt-gate plan-hash safety): --allow-unpinned-adopt is a
 // substantive input, so dry-running WITH it then apply-plan WITHOUT it
 // (or vice versa) must trip ErrPlanInputDrift — an operator can't review

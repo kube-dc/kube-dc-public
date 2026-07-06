@@ -75,7 +75,36 @@ func CheckAdoptPinned(ctx context.Context, opts AdoptGateOptions) error {
 		return fmt.Errorf("adopt preflight: %w", err)
 	}
 
-	// Nothing would drift and nothing is undetected → adopt-safe.
+	target := opts.ClusterName
+	if target == "" {
+		target = "<cluster>"
+	}
+
+	// The no-overlay boundary is enforced FIRST — before the "nothing to
+	// pin" success path. --mode=adopt pins INTO an existing
+	// clusters/<name>/cluster-config.env, so with no overlay there is
+	// nothing to adopt in place. Even a reachable cluster with ZERO
+	// detected components must NOT silently proceed to Apply (that would
+	// be foreign-cluster import, which isn't automated yet). Telling the
+	// operator to "run adopt --pin-versions" would be circular (nowhere to
+	// write) — guide them to scaffold the cluster into the fleet first.
+	// Fail closed unless --allow-unpinned-adopt.
+	if opts.OverlayMissing {
+		fmt.Fprintf(opts.Out, "[adopt] cluster %q has no fleet overlay (clusters/%s/cluster-config.env) yet.\n", target, target)
+		if names := unpinnedNames(res); len(names) > 0 {
+			fmt.Fprintf(opts.Out, "        detected but unpinnable without an overlay: %s\n", strings.Join(names, ", "))
+		}
+		fmt.Fprintln(opts.Out, "  Adopt-in-place pins INTO an existing overlay — scaffold the cluster into")
+		fmt.Fprintln(opts.Out, "  the fleet first (importing a foreign cluster with no overlay isn't automated yet).")
+		if opts.Allow {
+			fmt.Fprintln(opts.Out, "[adopt] --allow-unpinned-adopt set — proceeding anyway (RISKY: expect upgrades/restarts on first reconcile).")
+			return nil
+		}
+		return fmt.Errorf("init --mode=adopt: cluster %q has no fleet overlay to pin into (clusters/%s/cluster-config.env) — scaffold it into the fleet first; foreign-cluster import isn't automated yet (or pass --allow-unpinned-adopt to proceed anyway)",
+			target, target)
+	}
+
+	// Overlay exists. Nothing would drift and nothing is undetected → adopt-safe.
 	if len(res.Pins) == 0 && !res.HasUnresolved() {
 		if n := len(res.AlreadyPinned); n > 0 {
 			fmt.Fprintf(opts.Out, "[adopt] %d pre-existing component(s) already pinned to live versions — safe to adopt in place.\n", n)
@@ -83,10 +112,11 @@ func CheckAdoptPinned(ctx context.Context, opts AdoptGateOptions) error {
 		return nil
 	}
 
-	// Build the detailed list (printed line-by-line) + a compact
-	// names-only list (for the returned error, so it isn't a wall of
-	// text that repeats what was just printed). Drifting pins first
-	// (would upgrade/restart), then undetected (can't verify → unsafe).
+	// Overlay exists but components would drift or are undetected. Build
+	// the detailed list (printed line-by-line) + a compact names-only list
+	// (for the returned error, so it isn't a wall of text that repeats what
+	// was just printed). Drifting pins first (would upgrade/restart), then
+	// undetected (can't verify → unsafe).
 	var problems, names []string
 	for _, p := range res.Pins {
 		cur := p.Current
@@ -101,31 +131,10 @@ func CheckAdoptPinned(ctx context.Context, opts AdoptGateOptions) error {
 		names = append(names, u)
 	}
 
-	target := opts.ClusterName
-	if target == "" {
-		target = "<cluster>"
-	}
 	fmt.Fprintf(opts.Out, "[adopt] %d pre-existing component(s) are NOT pinned to their live versions:\n", len(problems))
 	for _, p := range problems {
 		fmt.Fprintf(opts.Out, "        - %s\n", p)
 	}
-
-	// The no-overlay boundary: adopt-in-place pins into an EXISTING
-	// clusters/<name>/cluster-config.env. With none, telling the operator
-	// to "run adopt --pin-versions" is circular (it has nowhere to write).
-	// Guide them to scaffold the cluster into the fleet first.
-	if opts.OverlayMissing {
-		fmt.Fprintf(opts.Out, "  Cluster %q has no fleet overlay (clusters/%s/cluster-config.env) yet.\n", target, target)
-		fmt.Fprintln(opts.Out, "  Adopt-in-place pins INTO an existing overlay — scaffold the cluster into")
-		fmt.Fprintln(opts.Out, "  the fleet first (importing a foreign cluster with no overlay isn't automated yet).")
-		if opts.Allow {
-			fmt.Fprintln(opts.Out, "[adopt] --allow-unpinned-adopt set — proceeding anyway (RISKY: expect upgrades/restarts on first reconcile).")
-			return nil
-		}
-		return fmt.Errorf("init --mode=adopt: cluster %q has no fleet overlay to pin into (clusters/%s/cluster-config.env) — scaffold it into the fleet first; foreign-cluster import isn't automated yet (or pass --allow-unpinned-adopt to proceed anyway)",
-			target, target)
-	}
-
 	fmt.Fprintf(opts.Out, "  Flux's first reconcile would upgrade/restart these. Pin them first:\n")
 	fmt.Fprintf(opts.Out, "      kube-dc bootstrap adopt %s --kubeconfig <target> --pin-versions --yes\n", target)
 
@@ -135,4 +144,16 @@ func CheckAdoptPinned(ctx context.Context, opts AdoptGateOptions) error {
 	}
 	return fmt.Errorf("init --mode=adopt: %d pre-existing component(s) not version-pinned (%s) — run `bootstrap adopt %s --pin-versions` first (see list above), or pass --allow-unpinned-adopt to proceed anyway",
 		len(names), strings.Join(names, ", "), target)
+}
+
+// unpinnedNames is the set of detected components that would need pinning
+// (pending pins + undetected). Used only to enrich the no-overlay message
+// when components were detected on a cluster that has no fleet overlay.
+func unpinnedNames(res *adopt.PinResult) []string {
+	names := make([]string, 0, len(res.Pins)+len(res.Undetected))
+	for _, p := range res.Pins {
+		names = append(names, p.Component)
+	}
+	names = append(names, res.Undetected...)
+	return names
 }

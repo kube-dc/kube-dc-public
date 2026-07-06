@@ -159,6 +159,40 @@ func TestCheckAdoptPinned_NoOverlayAllowBypasses(t *testing.T) {
 	}
 }
 
+func TestCheckAdoptPinned_NoOverlayGreenfieldFailsClosed(t *testing.T) {
+	// The edge: a reachable cluster with ZERO detected kube-dc components
+	// AND no fleet overlay. PinVersions finds nothing to pin — but adopt
+	// mode still requires an existing overlay, so this must FAIL CLOSED
+	// (foreign-cluster import isn't automated). Regression guard for the
+	// ordering bug where the "nothing to pin → pass" path ran before the
+	// OverlayMissing check.
+	var buf bytes.Buffer
+	err := CheckAdoptPinned(context.Background(), AdoptGateOptions{
+		Inspector:      gateInspector{}, // no CRDs → no components detected
+		Env:            gateEnv{},
+		OverlayMissing: true,
+		ClusterName:    "acme",
+		Out:            &buf,
+	})
+	if err == nil {
+		t.Fatal("no overlay must fail closed even when no components are detected")
+	}
+	if !strings.Contains(err.Error(), "no fleet overlay") || !strings.Contains(err.Error(), "scaffold") {
+		t.Errorf("expected the scaffold-first boundary error, got: %v", err)
+	}
+	// And the escape hatch still bypasses this greenfield-no-overlay case.
+	if err := CheckAdoptPinned(context.Background(), AdoptGateOptions{
+		Inspector:      gateInspector{},
+		Env:            gateEnv{},
+		OverlayMissing: true,
+		Allow:          true,
+		ClusterName:    "acme",
+		Out:            &bytes.Buffer{},
+	}); err != nil {
+		t.Errorf("--allow-unpinned-adopt should bypass greenfield-no-overlay, got %v", err)
+	}
+}
+
 func TestCheckAdoptPinned_GreenfieldPasses(t *testing.T) {
 	// No pre-existing components at all → nothing to gate.
 	err := CheckAdoptPinned(context.Background(), AdoptGateOptions{
