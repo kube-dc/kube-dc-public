@@ -136,6 +136,14 @@ type K8sClient interface {
 	// a CRD is the most reliable presence signal — before kube-dc's Flux
 	// would install its own. Cluster-scoped list.
 	ListCRDs(ctx context.Context) ([]string, error)
+
+	// HelmReleaseChartVersions returns the LIVE chart version of every
+	// Helm 3 release on the cluster, keyed by "<namespace>/<release>"
+	// (latest revision only). Used by `bootstrap adopt --pin-versions` to
+	// pin cluster-config.env to the running version so Flux adopts a
+	// component in place without an upgrade/restart. Reads the
+	// `helm.sh/release.v1` Secrets and decodes each release payload.
+	HelmReleaseChartVersions(ctx context.Context) (map[string]string, error)
 }
 
 // Graph is a dependsOn-resolved view of `flux-system`. Nodes are sorted

@@ -108,6 +108,15 @@ func (c *K8sClient) ListCRDs(ctx context.Context) ([]string, error) {
 	return nil, nil
 }
 
+// HelmReleaseChartVersions is a stub — same rationale as ListCRDs; adopt
+// tests use a purpose-built fake.
+func (c *K8sClient) HelmReleaseChartVersions(ctx context.Context) (map[string]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
 // PodExec is a stub — returns empty bytes + nil error. Specific
 // commands the mocked OpenBaoClient or other consumers care about will
 // be intercepted at the OpenBaoClient layer (which has typed knowledge

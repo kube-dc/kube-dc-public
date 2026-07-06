@@ -202,6 +202,9 @@ func (f *fakeSetupK8s) ListNamespaces(context.Context) ([]string, error) {
 func (f *fakeSetupK8s) ListCRDs(context.Context) ([]string, error) {
 	panic("fakeSetupK8s: ListCRDs not stubbed")
 }
+func (f *fakeSetupK8s) HelmReleaseChartVersions(context.Context) (map[string]string, error) {
+	panic("fakeSetupK8s: HelmReleaseChartVersions not stubbed")
+}
 func (f *fakeSetupK8s) PodExec(context.Context, string, string, []string, []byte) ([]byte, error) {
 	panic("fakeSetupK8s: PodExec not stubbed")
 }

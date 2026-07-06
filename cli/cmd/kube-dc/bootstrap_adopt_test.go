@@ -43,11 +43,41 @@ func TestRenderAdopt_WithFindings(t *testing.T) {
 		"ingress-nginx",
 		"kube-dc uses envoy-gateway",
 		"recommended: adopt",
-		"clusters/acme/",
-		"advisory only",
+		"take the component over IN PLACE",     // corrected semantics
+		"--pin-versions --yes",                 // points at the mutation
+		"clusters/acme/<layer>",                // SKIP path uses the cluster name
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("report missing %q:\n%s", want, s)
+		}
+	}
+	// The old wrong "exclude from kube-dc's Flux" framing must be gone.
+	if strings.Contains(s, "exclude from kube-dc's Flux") {
+		t.Errorf("stale 'exclude' wording still present:\n%s", s)
+	}
+}
+
+func TestRenderPinPlan(t *testing.T) {
+	var out bytes.Buffer
+	renderPinPlan(&out, "acme", &adopt.PinResult{
+		Pins: []adopt.PinChange{
+			{Component: "cert-manager", VersionKey: "CERT_MANAGER_VERSION", Current: "v1.20.1", Live: "v1.14.4"},
+			{Component: "kube-ovn (CNI)", VersionKey: "KUBE_OVN_VERSION", Current: "", Live: "v1.15.0"},
+		},
+		AlreadyPinned: []string{"kubevirt (KUBEVIRT_VERSION=v1.8.1)"},
+		Undetected:    []string{"rook-ceph"},
+	})
+	s := out.String()
+	for _, want := range []string{
+		"adopt --pin-versions — acme (2 pin(s))",
+		"~ CERT_MANAGER_VERSION: v1.20.1 → v1.14.4",
+		"~ KUBE_OVN_VERSION: (unset) → v1.15.0", // unset current rendered
+		"already pinned to live: kubevirt",
+		"rook-ceph: live chart version not readable",
+		"adopts each in place",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("pin plan missing %q:\n%s", want, s)
 		}
 	}
 }
@@ -64,10 +94,40 @@ func TestBootstrapAdopt_RejectsTwoArgs(t *testing.T) {
 	}
 }
 
-func TestBootstrapAdopt_HasKubeconfigFlag(t *testing.T) {
+func TestBootstrapAdopt_HasFlags(t *testing.T) {
 	repo := ""
 	cmd := bootstrapAdoptCmd(&repo)
-	if cmd.Flags().Lookup("kubeconfig") == nil {
-		t.Error("adopt should expose --kubeconfig")
+	for _, f := range []string{"kubeconfig", "pin-versions", "yes", "no-push", "github-token", "provider"} {
+		if cmd.Flags().Lookup(f) == nil {
+			t.Errorf("adopt missing --%s", f)
+		}
+	}
+}
+
+func TestBootstrapAdopt_RejectsBadProvider(t *testing.T) {
+	// Provider is validated before any session build (no kubeconfig needed).
+	repo := ""
+	cmd := bootstrapAdoptCmd(&repo)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"acme", "--provider", "bitbucket"})
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "provider must be github or gitlab") {
+		t.Errorf("bad --provider should be rejected, got %v", err)
+	}
+}
+
+func TestBootstrapAdopt_PinVersionsRequiresCluster(t *testing.T) {
+	// A mock session makes NewSession succeed without a real kubeconfig,
+	// so we reach the --pin-versions cluster-required check.
+	t.Setenv("KUBE_DC_MOCK", "cloud")
+	repo := ""
+	cmd := bootstrapAdoptCmd(&repo)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"--pin-versions"}) // no cluster arg
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "<cluster> arg is required") {
+		t.Errorf("--pin-versions without a cluster should error, got %v", err)
 	}
 }

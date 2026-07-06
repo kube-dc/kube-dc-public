@@ -12,8 +12,10 @@ type fakeInspector struct {
 	crds     []string
 	nss      []string
 	graph    ports.Graph
+	charts   map[string]string
 	crdErr   error
 	graphErr error
+	chartErr error
 }
 
 func (f fakeInspector) ListCRDs(context.Context) ([]string, error) {
@@ -24,6 +26,9 @@ func (f fakeInspector) ListNamespaces(context.Context) ([]string, error) {
 }
 func (f fakeInspector) DiscoverFluxGraph(context.Context) (ports.Graph, error) {
 	return f.graph, f.graphErr
+}
+func (f fakeInspector) HelmReleaseChartVersions(context.Context) (map[string]string, error) {
+	return f.charts, f.chartErr
 }
 
 func findingFor(res *Result, name string) *Finding {

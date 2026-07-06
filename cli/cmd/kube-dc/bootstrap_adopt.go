@@ -8,45 +8,72 @@ import (
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/adopt"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/fleetconfig"
 )
 
-// bootstrapAdoptCmd registers `kube-dc bootstrap adopt` (V2) — a
-// pre-install inventory for an EXISTING cluster. It detects components
-// kube-dc would install that are ALREADY present (cert-manager,
-// kube-ovn, kubevirt, …) and advises a per-component decision so `init`
-// doesn't clobber existing infra.
+// bootstrapAdoptCmd registers `kube-dc bootstrap adopt` (V2) — the
+// pre-install inventory + version-pin adoption for an EXISTING cluster.
 //
-// v1 is READ-ONLY: detect + advise + print the exact fleet-overlay edit.
-// It does NOT rewrite the fleet overlay (the risky half — see the adopt
-// package doc); that lands as a follow-up once the advisory is reviewed.
+// In this fleet "adopt" = let kube-dc's Flux take a component over IN
+// PLACE (the Kustomizations run prune:false + force:true, so Flux adopts
+// the running Helm release rather than deleting it). The safe-adoption
+// action is to PIN cluster-config.env to the component's LIVE version so
+// Flux's first reconcile doesn't upgrade/restart it.
+//
+//   - no flag:        advisory inventory (read-only) — what's already here.
+//   - --pin-versions: detect live chart versions + pin them into
+//     cluster-config.env (diff → commit → push, via the config engine).
 func bootstrapAdoptCmd(fleetRepo *string) *cobra.Command {
-	var kubeconfig string
+	var (
+		kubeconfig  string
+		pinVersions bool
+		yes         bool
+		noPush      bool
+		githubToken string
+		provider    string
+	)
 	cmd := &cobra.Command{
 		Use:           "adopt [cluster]",
-		Short:         "Inventory pre-existing components on a cluster before install (advisory)",
+		Short:         "Inventory + version-pin pre-existing components for in-place adoption",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Long: `Detects components already on the target cluster that kube-dc would
 otherwise install (cert-manager, kube-ovn, envoy-gateway, kubevirt,
-kamaji, rook-ceph, monitoring, cnpg, metallb, keycloak, …), by CRD
-(most reliable) then namespace. For each, it advises:
+kamaji, rook-ceph, monitoring, cnpg, metallb, keycloak, …), by CRD (most
+reliable) then namespace.
 
-  adopt    keep the existing component; exclude it from kube-dc's Flux
-           (kube-dc won't manage or clobber it) — the safe default.
-  replace  let kube-dc's Flux take it over (riskier; you opt in).
+In this fleet, ADOPT = Flux takes the component over IN PLACE: the
+Kustomizations run prune:false + force:true, so Flux adopts the running
+Helm release instead of deleting it. The safe-adoption action is to PIN
+cluster-config.env to the component's LIVE chart version so Flux's first
+reconcile does NOT upgrade/restart it.
 
-This is READ-ONLY — it prints the exact fleet-overlay edit for each
-decision but does not change anything. Point it at the target cluster
-with --kubeconfig (or KUBECONFIG). The optional [cluster] name is used
-only to render accurate clusters/<cluster>/… paths in the advice.`,
-		Example: `  kube-dc bootstrap adopt --kubeconfig ./target.kubeconfig
-  kube-dc bootstrap adopt acme --kubeconfig ./acme.kubeconfig`,
+  (no flag)        advisory inventory — read-only; what's already present.
+  --pin-versions   read each component's live chart version and pin it
+                   into clusters/<cluster>/cluster-config.env (diff →
+                   commit → push, via the same engine as 'config set').
+
+Point it at the TARGET cluster with --kubeconfig (or KUBECONFIG).
+--pin-versions also needs the fleet repo (--repo) + the [cluster] name.`,
+		Example: `  # Advisory inventory
+  kube-dc bootstrap adopt --kubeconfig ./target.kubeconfig
+
+  # Pin live versions so Flux adopts in place (preview, then --yes)
+  kube-dc bootstrap adopt acme --kubeconfig ./acme.kubeconfig --pin-versions
+  kube-dc bootstrap adopt acme --kubeconfig ./acme.kubeconfig --pin-versions --yes`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			clusterName := "<cluster>"
-			if len(args) == 1 && args[0] != "" {
+			clusterName := ""
+			if len(args) == 1 {
 				clusterName = args[0]
 			}
+			out := cmd.OutOrStdout()
+
+			if provider != "" && provider != string(clusterinit.ProviderGitHub) && provider != string(clusterinit.ProviderGitLab) {
+				return fmt.Errorf("bootstrap adopt: --provider must be github or gitlab (got %q)", provider)
+			}
+
 			session, err := bootstrap.NewSession(bootstrap.Options{
 				FleetRepoPath: *fleetRepo,
 				Kubeconfig:    kubeconfig,
@@ -54,8 +81,8 @@ only to render accurate clusters/<cluster>/… paths in the advice.`,
 			if session != nil {
 				defer session.Close()
 			}
-			// adopt needs a live cluster — unlike doctor, a missing
-			// kubeconfig is fatal (there's nothing to inventory).
+			// adopt needs a live cluster — a missing kubeconfig is fatal
+			// (there's nothing to inventory).
 			if err != nil {
 				return fmt.Errorf("bootstrap adopt: need a target cluster (set --kubeconfig / KUBECONFIG): %w", err)
 			}
@@ -64,16 +91,92 @@ only to render accurate clusters/<cluster>/… paths in the advice.`,
 				return fmt.Errorf("bootstrap adopt: no k8s client (set --kubeconfig / KUBECONFIG)")
 			}
 
+			if pinVersions {
+				if clusterName == "" {
+					return fmt.Errorf("bootstrap adopt --pin-versions: a <cluster> arg is required (to locate clusters/<cluster>/cluster-config.env)")
+				}
+				return runAdoptPinVersions(cmd, out, k8s, *fleetRepo, clusterName, yes, noPush, githubToken, provider)
+			}
+
+			label := clusterName
+			if label == "" {
+				label = "<cluster>"
+			}
 			res, err := adopt.Detect(cmd.Context(), k8s)
 			if err != nil {
 				return fmt.Errorf("bootstrap adopt: %w", err)
 			}
-			renderAdopt(cmd.OutOrStdout(), res, clusterName)
+			renderAdopt(out, res, label)
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Kubeconfig for the TARGET cluster to inventory (default: $KUBECONFIG, then ~/.kube/config)")
+	cmd.Flags().BoolVar(&pinVersions, "pin-versions", false, "Pin cluster-config.env to each component's LIVE chart version (adopt in place; needs --repo + [cluster])")
+	cmd.Flags().BoolVar(&yes, "yes", false, "With --pin-versions: apply (write + commit + push). Without it, preview the diff")
+	cmd.Flags().BoolVar(&noPush, "no-push", false, "With --pin-versions --yes: commit locally, don't push")
+	cmd.Flags().StringVar(&githubToken, "github-token", "", "Token for the push (default: `gh auth token`, or `glab auth token` with --provider gitlab)")
+	cmd.Flags().StringVar(&provider, "provider", "", "Git host for the push credential: github (default) or gitlab")
 	return cmd
+}
+
+// runAdoptPinVersions detects live chart versions and pins them into the
+// cluster's cluster-config.env so Flux adopts each component in place.
+// Reuses the config engine's write+commit transaction (loadClusterEnv →
+// fleetconfig.Plan → applyConfigSet).
+func runAdoptPinVersions(cmd *cobra.Command, out io.Writer, k8s adopt.Inspector, fleetRepoFlag, clusterName string, yes, noPush bool, githubToken, provider string) error {
+	env, repoRoot, err := loadClusterEnv(fleetRepoFlag, clusterName)
+	if err != nil {
+		return fmt.Errorf("bootstrap adopt --pin-versions: %w", err)
+	}
+	res, err := adopt.PinVersions(cmd.Context(), k8s, env)
+	if err != nil {
+		return fmt.Errorf("bootstrap adopt --pin-versions: %w", err)
+	}
+	renderPinPlan(out, clusterName, res)
+	if len(res.Pins) == 0 {
+		fmt.Fprintln(out, "[adopt] no version pins needed — nothing to change.")
+		return nil
+	}
+	if !yes {
+		fmt.Fprintln(out, "\n[adopt] preview — re-run with --yes to write the pins (commit"+pushSuffix(noPush)+").")
+		return nil
+	}
+
+	// Enact via the config engine's write+commit transaction. allowAdd:
+	// a version key may be absent on a fresh/foreign fleet overlay.
+	kvs := make([]fleetconfig.KV, 0, len(res.Pins))
+	for _, p := range res.Pins {
+		kvs = append(kvs, fleetconfig.KV{Key: p.VersionKey, Value: p.Live})
+	}
+	changes, err := fleetconfig.Plan(env, kvs, true)
+	if err != nil {
+		return fmt.Errorf("bootstrap adopt --pin-versions: %w", err)
+	}
+	return applyConfigSet(cmd, out, repoRoot, env, changes, clusterName, noPush, githubToken, provider)
+}
+
+func renderPinPlan(out io.Writer, clusterName string, res *adopt.PinResult) {
+	fmt.Fprintf(out, "== adopt --pin-versions — %s (%d pin(s)) ==\n", clusterName, len(res.Pins))
+	for _, p := range res.Pins {
+		cur := p.Current
+		if cur == "" {
+			cur = "(unset)"
+		}
+		fmt.Fprintf(out, "  ~ %s: %s → %s   (%s, pin to LIVE)\n", p.VersionKey, cur, p.Live, p.Component)
+	}
+	for _, a := range res.AlreadyPinned {
+		fmt.Fprintf(out, "    already pinned to live: %s\n", a)
+	}
+	for _, u := range res.Undetected {
+		fmt.Fprintf(out, "  ⚠ %s: live chart version not readable (no Helm release found) — pin manually\n", u)
+	}
+	if len(res.Pins) > 0 {
+		fmt.Fprintln(out, "\n  Pinning to LIVE means Flux adopts each in place (prune:false + force:true)")
+		fmt.Fprintln(out, "  with no upgrade/restart. Bump the pins later, deliberately, per component.")
+		fmt.Fprintln(out, "  REVIEW each pin: the value is the chart's metadata.version, which may")
+		fmt.Fprintln(out, "  differ in FORMAT from the fleet's key (e.g. a `v` prefix, or chart-vs-app")
+		fmt.Fprintln(out, "  version) — confirm it's what the fleet's HelmRelease consumes before --yes.")
+	}
 }
 
 func renderAdopt(out io.Writer, res *adopt.Result, clusterName string) {
@@ -89,18 +192,20 @@ func renderAdopt(out io.Writer, res *adopt.Result, clusterName string) {
 
 	for _, f := range res.Findings {
 		fmt.Fprintf(out, "\n  • %s  (detected via %s)\n", f.Component.Name, f.Via)
-		fmt.Fprintf(out, "      kube-dc would install it at: %s\n", f.Component.FleetPath)
+		fmt.Fprintf(out, "      kube-dc installs it at: %s\n", f.Component.FleetPath)
+		if f.Component.VersionKey != "" {
+			fmt.Fprintf(out, "      version pin: %s\n", f.Component.VersionKey)
+		}
 		if f.Component.Note != "" {
 			fmt.Fprintf(out, "      note: %s\n", f.Component.Note)
 		}
-		fmt.Fprintf(out, "      recommended: %s (keep it; exclude from kube-dc's Flux)\n", f.Recommend)
+		fmt.Fprintf(out, "      recommended: %s\n", f.Recommend)
 	}
 
-	fmt.Fprintln(out, "\n  To ADOPT a component (keep it, exclude from kube-dc's Flux), omit its")
-	fmt.Fprintf(out, "  line from clusters/%s/<layer>/kustomization.yaml (keep prune:false +\n", clusterName)
-	fmt.Fprintln(out, "  force:true on the Flux Kustomizations so nothing you own is deleted).")
-	fmt.Fprintln(out, "  To REPLACE (let kube-dc manage it), leave it in — but verify live-vs-fleet")
-	fmt.Fprintln(out, "  first (a version/CRD mismatch can disrupt the running component).")
-	fmt.Fprintln(out, "\n  (advisory only — this command changes nothing; automated fleet-overlay")
-	fmt.Fprintln(out, "  edits are a planned follow-up.)")
+	fmt.Fprintln(out, "\n  ADOPT (default): let Flux take the component over IN PLACE — the fleet's")
+	fmt.Fprintln(out, "  Kustomizations run prune:false + force:true, so nothing you own is deleted.")
+	fmt.Fprintf(out, "  Make it safe by pinning cluster-config.env to the LIVE versions first:\n")
+	fmt.Fprintf(out, "      kube-dc bootstrap adopt %s --kubeconfig <target> --pin-versions --yes\n", clusterName)
+	fmt.Fprintln(out, "  SKIP (keep your own, don't let kube-dc manage it): omit the component from")
+	fmt.Fprintf(out, "  clusters/%s/<layer> — manual overlay edit; not automated here.\n", clusterName)
 }

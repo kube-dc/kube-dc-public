@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
@@ -39,6 +40,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/remotecommand"
 
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/helm"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
 
@@ -184,6 +186,47 @@ func (c *Client) ListCRDs(ctx context.Context) ([]string, error) {
 	out := make([]string, 0, len(list.Items))
 	for i := range list.Items {
 		out = append(out, list.Items[i].GetName())
+	}
+	return out, nil
+}
+
+// HelmReleaseChartVersions lists every helm.sh/release.v1 Secret
+// (owner=helm), keeps the highest revision per release, and decodes each
+// release payload to its chart version. Keyed by "<namespace>/<release>".
+// A Secret that fails to decode is skipped (best-effort — one malformed
+// release must not blank the whole map).
+func (c *Client) HelmReleaseChartVersions(ctx context.Context) (map[string]string, error) {
+	secrets, err := c.core.CoreV1().Secrets(metav1.NamespaceAll).List(ctx, metav1.ListOptions{
+		LabelSelector: "owner=helm",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("k8s: list helm release secrets: %w", err)
+	}
+	// Track the highest revision seen per "<ns>/<release>" so we decode
+	// the current release, not a superseded one.
+	bestRev := map[string]int{}
+	out := map[string]string{}
+	for i := range secrets.Items {
+		s := &secrets.Items[i]
+		name := s.Labels["name"]
+		if name == "" {
+			continue
+		}
+		rev, _ := strconv.Atoi(s.Labels["version"])
+		key := s.Namespace + "/" + name
+		if existing, ok := bestRev[key]; ok && rev <= existing {
+			continue
+		}
+		blob, ok := s.Data["release"]
+		if !ok {
+			continue
+		}
+		ver, derr := helm.DecodeChartVersion(blob)
+		if derr != nil {
+			continue // skip an unparseable release rather than fail the map
+		}
+		bestRev[key] = rev
+		out[key] = ver
 	}
 	return out, nil
 }
