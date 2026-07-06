@@ -51,6 +51,9 @@ func (f *fakeK8s) DeploymentImages(context.Context, string) (map[string]string, 
 func (f *fakeK8s) ListNamespaces(context.Context) ([]string, error) {
 	panic("fakeK8s: ListNamespaces not stubbed")
 }
+func (f *fakeK8s) ListCRDs(context.Context) ([]string, error) {
+	panic("fakeK8s: ListCRDs not stubbed")
+}
 func (f *fakeK8s) GetServiceAnnotation(ctx context.Context, ns, svc, key string) (string, error) {
 	if f.getAnn == nil {
 		panic("fakeK8s: GetServiceAnnotation not stubbed")

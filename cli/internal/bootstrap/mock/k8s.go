@@ -98,6 +98,16 @@ func (c *K8sClient) ListNamespaces(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
+// ListCRDs is a stub — the scenario fixture doesn't model CRDs, and
+// `bootstrap adopt` tests use a purpose-built fake rather than the mock
+// scenario. Present so mock.K8sClient still satisfies ports.K8sClient.
+func (c *K8sClient) ListCRDs(ctx context.Context) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
 // PodExec is a stub — returns empty bytes + nil error. Specific
 // commands the mocked OpenBaoClient or other consumers care about will
 // be intercepted at the OpenBaoClient layer (which has typed knowledge

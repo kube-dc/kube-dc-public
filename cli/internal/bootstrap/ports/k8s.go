@@ -129,6 +129,13 @@ type K8sClient interface {
 	// Returns ("", error) on missing ConfigMap; returns ("", nil) for
 	// missing key (well-formed absent signal).
 	GetConfigMapData(ctx context.Context, ns, name, key string) (string, error)
+
+	// ListCRDs returns every installed CustomResourceDefinition name
+	// (e.g. "certificates.cert-manager.io"). Used by `bootstrap adopt`
+	// (V2) to detect components already present on an existing cluster —
+	// a CRD is the most reliable presence signal — before kube-dc's Flux
+	// would install its own. Cluster-scoped list.
+	ListCRDs(ctx context.Context) ([]string, error)
 }
 
 // Graph is a dependsOn-resolved view of `flux-system`. Nodes are sorted

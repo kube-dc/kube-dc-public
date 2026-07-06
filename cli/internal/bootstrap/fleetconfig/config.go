@@ -8,6 +8,7 @@ package fleetconfig
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/config"
@@ -17,9 +18,28 @@ import (
 var (
 	ErrBadAssignment = fmt.Errorf("config: assignment must be KEY=VALUE")
 	ErrEmptyKey      = fmt.Errorf("config: empty key")
+	ErrBadKey        = fmt.Errorf("config: invalid key")
 	ErrBadValue      = fmt.Errorf("config: invalid value")
 	ErrUnknownKey    = fmt.Errorf("config: key not present in cluster-config.env (pass --add to create it)")
 )
+
+// keyShape enforces the cluster-config.env convention (same rule
+// `bootstrap init --set` applies): SCREAMING_SNAKE_CASE, starting with
+// an uppercase letter. Keeps `config set --add` from committing keys
+// Flux/envsubst won't consume predictably (a lowercase/mixed key is
+// almost always a typo).
+var keyShape = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+
+// ValidateKey rejects a key that isn't SCREAMING_SNAKE_CASE.
+func ValidateKey(key string) error {
+	if key == "" {
+		return ErrEmptyKey
+	}
+	if !keyShape.MatchString(key) {
+		return fmt.Errorf("%w: %q must be SCREAMING_SNAKE_CASE (cluster-config.env convention)", ErrBadKey, key)
+	}
+	return nil
+}
 
 // Change is one planned key mutation, for the diff/plan the operator
 // reviews before a `set` commits.
@@ -74,8 +94,8 @@ func ParseAssignments(args []string) ([]KV, error) {
 		}
 		key := strings.TrimSpace(a[:eq])
 		val := strings.TrimSpace(a[eq+1:])
-		if key == "" {
-			return nil, ErrEmptyKey
+		if err := ValidateKey(key); err != nil {
+			return nil, err
 		}
 		if err := ValidateValue(val); err != nil {
 			return nil, fmt.Errorf("%s: %w", key, err)

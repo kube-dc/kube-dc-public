@@ -4,6 +4,11 @@ description: A Helm chart for kube-dc manager
 
 type: application
 
-version: v0.4.0
+version: v0.4.1
 
+# appVersion stays v0.4.0: this is a chart-only bump (vm-startup M1-T03a —
+# osImages containerdisk fields + os-images-configmap render + os-image-prepull
+# DaemonSet). No image code changed; image tags are pinned per-cluster via
+# cluster-config.env, so the default fallback (appVersion) still resolves to
+# real v0.4.0 images.
 appVersion: v0.4.0

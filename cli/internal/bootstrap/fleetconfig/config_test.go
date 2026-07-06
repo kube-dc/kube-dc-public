@@ -49,10 +49,26 @@ func TestParseAssignments(t *testing.T) {
 	if kvs[2].Key != "C" || kvs[2].Value != "x=y" { // only first '=' splits
 		t.Errorf("C should split on first '=': %+v", kvs[2])
 	}
-	// Errors.
-	for _, bad := range [][]string{{"noeq"}, {"=v"}, {"A=1", "A=2"}, {"A="}} {
+	// Errors — incl. non-SCREAMING_SNAKE keys (P3: --add can't create junk keys).
+	for _, bad := range [][]string{
+		{"noeq"}, {"=v"}, {"A=1", "A=2"}, {"A="},
+		{"lower=1"}, {"Mixed_Case=1"}, {"1LEADING=1"}, {"HAS-DASH=1"},
+	} {
 		if _, err := ParseAssignments(bad); err == nil {
 			t.Errorf("ParseAssignments(%v) should error", bad)
+		}
+	}
+}
+
+func TestValidateKey(t *testing.T) {
+	for _, ok := range []string{"KUBE_DC_MANAGER_TAG", "A", "X1", "PROM_RETENTION_SIZE"} {
+		if err := ValidateKey(ok); err != nil {
+			t.Errorf("ValidateKey(%q) unexpected error: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "lower", "Mixed_Case", "1LEADING", "HAS-DASH", "_LEADING_UNDERSCORE", "HAS SPACE"} {
+		if err := ValidateKey(bad); err == nil {
+			t.Errorf("ValidateKey(%q) should error", bad)
 		}
 	}
 }

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -123,6 +122,7 @@ func bootstrapConfigSetCmd(fleetRepo *string) *cobra.Command {
 		noPush      bool
 		yes         bool
 		githubToken string
+		provider    string
 	)
 	cmd := &cobra.Command{
 		Use:           "set <cluster> KEY=VALUE [KEY=VALUE ...]",
@@ -147,6 +147,12 @@ tree; on a commit/push failure the fleet repo is reset to its prior HEAD.`,
 			clusterName, assignments := args[0], args[1:]
 			out := cmd.OutOrStdout()
 
+			switch provider {
+			case "", string(clusterinit.ProviderGitHub), string(clusterinit.ProviderGitLab):
+			default:
+				return fmt.Errorf("bootstrap config set: --provider must be github or gitlab (got %q)", provider)
+			}
+
 			sets, err := fleetconfig.ParseAssignments(assignments)
 			if err != nil {
 				return fmt.Errorf("bootstrap config set: %w", err)
@@ -170,14 +176,15 @@ tree; on a commit/push failure the fleet repo is reset to its prior HEAD.`,
 				return nil
 			}
 
-			return applyConfigSet(cmd, out, repoRoot, env, changes, clusterName, noPush, githubToken)
+			return applyConfigSet(cmd, out, repoRoot, env, changes, clusterName, noPush, githubToken, provider)
 		},
 	}
 	cmd.Flags().BoolVar(&add, "add", false, "Allow creating keys that don't already exist (default: only update existing keys)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show the diff; change nothing")
 	cmd.Flags().BoolVar(&yes, "yes", false, "Apply: write + commit (+ push unless --no-push). Without this, set only previews")
 	cmd.Flags().BoolVar(&noPush, "no-push", false, "Commit to the fleet repo but do not push to the remote")
-	cmd.Flags().StringVar(&githubToken, "github-token", "", "GitHub token for the push (default: `gh auth token`)")
+	cmd.Flags().StringVar(&githubToken, "github-token", "", "Token for the push (default: `gh auth token`, or `glab auth token` with --provider gitlab)")
+	cmd.Flags().StringVar(&provider, "provider", "", "Git host for the push credential: github (default) or gitlab")
 	return cmd
 }
 
@@ -185,20 +192,16 @@ tree; on a commit/push failure the fleet repo is reset to its prior HEAD.`,
 // clusterinit.Apply: snapshot HEAD, refuse a dirty tree, write, commit
 // (or commit+push), and reset to the prior HEAD on any failure so a
 // half-applied change never lingers in the fleet repo.
-func applyConfigSet(cmd *cobra.Command, out io.Writer, repoRoot string, env *config.Env, changes []fleetconfig.Change, clusterName string, noPush bool, githubToken string) error {
+func applyConfigSet(cmd *cobra.Command, out io.Writer, repoRoot string, env *config.Env, changes []fleetconfig.Change, clusterName string, noPush bool, githubToken, provider string) error {
 	ctx := cmd.Context()
-	// config only needs the Git port — tolerate a missing kubeconfig
-	// (ErrRealAdaptersNotReady) the same way status/doctor do; Git is
-	// still wired.
-	session, err := bootstrap.NewSession(bootstrap.Options{FleetRepoPath: repoRoot})
-	if err != nil && !errors.Is(err, bootstrap.ErrRealAdaptersNotReady) {
-		return fmt.Errorf("bootstrap config set: build session: %w", err)
+	// config only needs the Git port. NewSession builds k8s FIRST and
+	// returns ErrRealAdaptersNotReady before wiring Git, so a git-only
+	// day-2 command must use NewGitOnly — otherwise `config set` fails
+	// with "git adapter unavailable" whenever there's no kubeconfig.
+	git, err := bootstrap.NewGitOnly()
+	if err != nil {
+		return fmt.Errorf("bootstrap config set: build git adapter: %w", err)
 	}
-	if session == nil || session.Git == nil {
-		return fmt.Errorf("bootstrap config set: git adapter unavailable")
-	}
-	defer session.Close()
-	git := session.Git
 
 	preSHA, err := git.Head(ctx, repoRoot)
 	if err != nil {
@@ -225,7 +228,10 @@ func applyConfigSet(cmd *cobra.Command, out io.Writer, repoRoot string, env *con
 	if noPush {
 		sha, err = git.Commit(ctx, repoRoot, msg)
 	} else {
-		token := resolveGitHubToken(&clusterinit.InitOptions{GitHubToken: githubToken}, out)
+		token := resolveGitHubToken(&clusterinit.InitOptions{
+			GitHubToken: githubToken,
+			Provider:    clusterinit.Provider(provider),
+		}, out)
 		sha, err = git.CommitAndPush(ctx, repoRoot, msg, token)
 	}
 	if err != nil {

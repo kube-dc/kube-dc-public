@@ -55,6 +55,13 @@ var (
 		Version:  "v1",
 		Resource: "kustomizations",
 	}
+	// crdGVR is cluster-scoped (no .Namespace()) — used by ListCRDs for
+	// `bootstrap adopt` component detection.
+	crdGVR = schema.GroupVersionResource{
+		Group:    "apiextensions.k8s.io",
+		Version:  "v1",
+		Resource: "customresourcedefinitions",
+	}
 )
 
 // Client implements ports.K8sClient.
@@ -163,6 +170,22 @@ func (c *Client) DiscoverFluxGraph(ctx context.Context) (ports.Graph, error) {
 	// Kustomizations a real cluster has.
 	topoSort(nodes)
 	return ports.Graph{Nodes: nodes}, nil
+}
+
+// ListCRDs returns every installed CustomResourceDefinition name. CRDs
+// are cluster-scoped, so no .Namespace() — the dynamic list needs only
+// list perms on apiextensions.k8s.io. Empty (nil) when the cluster has
+// no CRDs; errors otherwise.
+func (c *Client) ListCRDs(ctx context.Context) ([]string, error) {
+	list, err := c.dyn.Resource(crdGVR).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("k8s: list CRDs: %w", err)
+	}
+	out := make([]string, 0, len(list.Items))
+	for i := range list.Items {
+		out = append(out, list.Items[i].GetName())
+	}
+	return out, nil
 }
 
 func (c *Client) NodeLabels(ctx context.Context) (map[string]map[string]string, error) {

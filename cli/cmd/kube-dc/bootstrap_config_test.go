@@ -130,6 +130,43 @@ func TestBootstrapConfig_SetYesNoPush_CommitsLocally(t *testing.T) {
 	}
 }
 
+// Regression for the review P2: `config set --yes` needs ONLY Git, so a
+// missing/invalid kubeconfig must NOT block it (NewGitOnly bypasses k8s).
+func TestBootstrapConfig_SetYes_NoKubeconfig(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	// Point KUBECONFIG at a nonexistent file — the old NewSession path
+	// failed here with "git adapter unavailable".
+	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "does-not-exist.yaml"))
+	repo := writeFleetFixture(t, map[string]string{"cloud": configEnvFixture})
+	gitInit(t, repo)
+
+	out, err := runConfig(t, repo, "set", "cloud", "PROM_RETENTION=30d", "--yes", "--no-push")
+	if err != nil {
+		t.Fatalf("set --yes with no kubeconfig should still commit (git-only): %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "committed") {
+		t.Errorf("expected a commit even without a kubeconfig:\n%s", out)
+	}
+}
+
+func TestBootstrapConfig_SetRejectsBadProvider(t *testing.T) {
+	repo := writeFleetFixture(t, map[string]string{"cloud": configEnvFixture})
+	out, err := runConfig(t, repo, "set", "cloud", "PROM_RETENTION=30d", "--yes", "--provider", "bitbucket")
+	if err == nil || !strings.Contains(err.Error(), "provider must be github or gitlab") {
+		t.Errorf("bad --provider should be rejected, got out=%q err=%v", out, err)
+	}
+}
+
+func TestBootstrapConfig_SetRejectsBadKey(t *testing.T) {
+	repo := writeFleetFixture(t, map[string]string{"cloud": configEnvFixture})
+	// Even with --add, a non-SCREAMING_SNAKE key is refused (P3).
+	if _, err := runConfig(t, repo, "set", "cloud", "lower_case=1", "--add"); err == nil {
+		t.Error("--add with a lowercase key should be rejected")
+	}
+}
+
 func TestBootstrapConfig_SetYes_DirtyTreeRefused(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not on PATH")

@@ -165,6 +165,26 @@ func NewSSHOnly(opts ...ssh.Option) (ports.SSHClient, error) {
 	return ssh.New(opts...), nil
 }
 
+// NewGitOnly constructs just the Git port. Isolated from NewSession the
+// same way NewSSHOnly/NewSOPSOnly are: `bootstrap config set` edits +
+// commits the fleet repo and needs ONLY Git — a missing kubeconfig must
+// not block it. NewSession builds k8s FIRST and returns
+// ErrRealAdaptersNotReady before Git is wired, so day-2 git-only
+// commands use this instead.
+//
+// Same KUBE_DC_MOCK honouring as the other *Only constructors; never
+// touches kubeconfig / apiserver / any other adapter.
+func NewGitOnly() (ports.GitClient, error) {
+	if scenario := os.Getenv("KUBE_DC_MOCK"); scenario != "" {
+		s, err := mock.Load(scenario)
+		if err != nil {
+			return nil, fmt.Errorf("bootstrap: load mock scenario %q: %w", scenario, err)
+		}
+		return mock.NewGitClient(s), nil
+	}
+	return git.New(), nil
+}
+
 // NewScriptOnly constructs just the ScriptRunner port. Isolated
 // from NewSession so subcommands that only shell out to fleet-repo
 // scripts (M4-T07 install-prereqs; any future script-only ceremony)
