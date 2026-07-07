@@ -21,6 +21,7 @@ import (
 	"github.com/shalb/kube-dc/cli/internal/bootstrap"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/adopt"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/config"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/discover"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/fleetconfig"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/tui/screens/initform"
@@ -61,6 +62,9 @@ func bootstrapInitCmd(fleetRepo *string) *cobra.Command {
 		// RunE can detect a conflicting double-set instead of silently
 		// letting parse order win.
 		objectStorageModeFlag, rookModeAliasFlag string
+		// --config prefills inputs from a cluster-config.env-format file;
+		// --save-config writes the resolved inputs back out as one.
+		configPath, saveConfigPath string
 	)
 
 	cmd := &cobra.Command{
@@ -152,6 +156,14 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 				o.Repo = *fleetRepo
 			}
 
+			// Prefill: seed o from --config (a cluster-config.env-format
+			// file) + KUBE_DC_INIT_* env BEFORE the wizard/validation, so
+			// the panel opens pre-filled and explicit flags still win
+			// (precedence via cmd.Flags().Changed). See clusterinit/prefill.go.
+			if err := applyInitPrefill(cmd, o, configPath); err != nil {
+				return err
+			}
+
 			// `--no-tty` auto-toggles when stdout is captured (tests,
 			// pipelines). Mirror the doctor/status convention so the
 			// apply gate doesn't trip on `kube-dc bootstrap init |
@@ -233,6 +245,16 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 			// cloud+public-vlan" before the plan is ever rendered.
 			if err := clusterinit.ValidatePresetRequiredKeys(o); err != nil {
 				return err
+			}
+
+			// --save-config: persist the resolved input surface as a
+			// reusable cluster-config.env-format spec (runs on --dry-run
+			// too, to prepare a spec). Never includes the git token.
+			if saveConfigPath != "" {
+				if err := clusterinit.WriteSpec(o, saveConfigPath); err != nil {
+					return fmt.Errorf("init --save-config: %w", err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "[spec] wrote reusable input spec → %s\n", saveConfigPath)
 			}
 
 			// M4-T13: domain-collision check against existing
@@ -337,6 +359,10 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 	// REQUIRED, no default: the old silent default-to-disabled shipped
 	// clusters whose monitoring layer could never converge. `disabled`
 	// stays available as an explicit choice (loud plan warning).
+	cmd.Flags().StringVar(&configPath, "config", "",
+		"Prefill inputs from a cluster-config.env-format file (native keys + KUBE_DC_INIT_* orchestration). Precedence: defaults < --config < KUBE_DC_INIT_* env < flags < TUI edits. An existing cluster's cluster-config.env works as a template (clone-from-sibling)")
+	cmd.Flags().StringVar(&saveConfigPath, "save-config", "",
+		"After resolving inputs, write them as a reusable cluster-config.env-format spec (config keys + KUBE_DC_INIT_*; never the git token). Runs on --dry-run too, to prepare a spec")
 	cmd.Flags().StringVar(&objectStorageModeFlag, "object-storage-mode", "",
 		fmt.Sprintf("Object storage mode (REQUIRED; one of %s; external-* recognised but fail closed — fleet stubs)", joinRookModes(clusterinit.AllRookModes)))
 	cmd.Flags().StringVar(&rookModeAliasFlag, "rook-mode", "",
@@ -1167,11 +1193,86 @@ func discoverFleetState(o *clusterinit.InitOptions) clusterinit.FleetState {
 func bareInitInvocation(cmd *cobra.Command) bool {
 	bare := true
 	cmd.Flags().Visit(func(f *pflag.Flag) {
-		if f.Name != "repo" {
+		switch f.Name {
+		case "repo", "config", "save-config":
+			// Context/prefill flags, not content — the wizard preseeds from
+			// them (repo = fleet context; config = prefill source; save-config
+			// = where to persist). `init --config x.env` opens the panel
+			// PRE-FILLED; mixing in a content flag (--name, …) still routes to
+			// the flag path per the reviewer-P2 rule below.
+		default:
 			bare = false
 		}
 	})
 	return bare
+}
+
+// applyInitPrefill seeds o from --config (a cluster-config.env-format
+// file) and KUBE_DC_INIT_* environment variables before the wizard /
+// validation. A single merged ImportMap (env-over-file) keeps precedence
+// consistent across scalars + overlay; explicit flags still win via
+// cmd.Flags().Changed. Logs a one-line summary + any ignored (non-input)
+// keys so a clone-from-sibling is honest about what it dropped.
+func applyInitPrefill(cmd *cobra.Command, o *clusterinit.InitOptions, configPath string) error {
+	merged := map[string]string{}
+	if configPath != "" {
+		env, err := config.LoadEnv(configPath)
+		if err != nil {
+			return fmt.Errorf("init --config: %w", err)
+		}
+		for k, v := range env.AsMap() {
+			merged[k] = v
+		}
+	}
+	for k, v := range initEnvPrefill() { // KUBE_DC_INIT_* env wins over the file
+		merged[k] = v
+	}
+	if len(merged) == 0 {
+		return nil
+	}
+	ignored := clusterinit.ImportMap(o, merged, cmd.Flags().Changed)
+	out := cmd.OutOrStdout()
+	if configPath != "" {
+		fmt.Fprintf(out, "[prefill] loaded %d input key(s) from %s\n", len(merged)-len(ignored), configPath)
+	}
+	if len(ignored) > 0 {
+		fmt.Fprintf(out, "[prefill] ignored %d non-input key(s) (versions/derived/feature): %s\n",
+			len(ignored), strings.Join(ignored, ", "))
+	}
+	return nil
+}
+
+// initEnvPrefill collects KUBE_DC_INIT_*-prefixed env vars into the prefill
+// vocabulary: orchestration keys keep the prefix (KUBE_DC_INIT_MODE); a
+// prefixed native config key strips it (KUBE_DC_INIT_CLUSTER_NAME →
+// CLUSTER_NAME). Confining env to one prefix stops a stray CLUSTER_NAME in
+// the shell from hijacking init.
+func initEnvPrefill() map[string]string {
+	orch := map[string]bool{
+		clusterinit.KeyMode: true, clusterinit.KeyFleetMode: true,
+		clusterinit.KeyPreset: true, clusterinit.KeyProvider: true,
+		clusterinit.KeyGitHubOwner: true, clusterinit.KeyGitHubRepo: true,
+		clusterinit.KeyRepo: true, clusterinit.KeySSHHost: true,
+		clusterinit.KeyAllowDNS: true, clusterinit.KeyAllowNoKVM: true,
+		clusterinit.KeyAllowUnpin: true, clusterinit.KeyNoS3Exposure: true,
+	}
+	out := map[string]string{}
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, clusterinit.InitPrefix) {
+			continue
+		}
+		eq := strings.IndexByte(e, '=')
+		if eq < 0 {
+			continue
+		}
+		name, val := e[:eq], e[eq+1:]
+		if orch[name] {
+			out[name] = val
+		} else {
+			out[strings.TrimPrefix(name, clusterinit.InitPrefix)] = val
+		}
+	}
+	return out
 }
 
 // siblingObjectStorageModeHint returns a one-line hint naming the

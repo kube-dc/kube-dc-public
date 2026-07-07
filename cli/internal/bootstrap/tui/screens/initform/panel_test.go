@@ -3,6 +3,8 @@ package initform
 import (
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 )
 
@@ -71,6 +73,13 @@ func TestPanel_Visibility(t *testing.T) {
 		t.Error("KUBE_OVN_MASTER_NODES must always be present")
 	}
 
+	// Gates always exposes both bypass toggles — the no-KVM one is what lets
+	// a first-time user install on a nested/cloud VM without /dev/kvm.
+	if !hasLabel(fieldLabels(m, "Gates"), "Allow DNS not ready") ||
+		!hasLabel(fieldLabels(m, "Gates"), "Allow node without /dev/kvm") {
+		t.Errorf("Gates must expose both allow toggles: %v", fieldLabels(m, "Gates"))
+	}
+
 	// Storage fields follow OSMode.
 	m.st.OSMode = "rook-ceph-local"
 	if !hasLabel(fieldLabels(m, "Storage"), "OSD node") || hasLabel(fieldLabels(m, "Storage"), "Ceph node 1") {
@@ -101,12 +110,15 @@ func TestPanel_ValidationGate(t *testing.T) {
 	if len(m.validationErrors()) == 0 {
 		t.Fatal("empty required fields should produce validation errors")
 	}
-	// Fill the required set → clean.
+	// Fill the required set → clean (internal-only still needs the preset's
+	// EXT_NET_* keys, now surfaced by validationErrors).
 	m.st.Name = "e2e"
 	m.st.Domain = "e2e.kube-dc.cloud"
 	m.st.NodeIP = "203.0.113.52"
 	m.st.Email = "ops@example.com"
 	m.st.KubeOVNMasterNodes = "10.77.0.22"
+	m.st.NetInterface = "enp1s0"
+	m.st.NetVLANID = "0"
 	if errs := m.validationErrors(); len(errs) != 0 {
 		t.Errorf("complete config should have no validation errors, got %v", errs)
 	}
@@ -117,6 +129,7 @@ func TestPanel_DisabledNeedsConsent(t *testing.T) {
 		Mode: "install", Preset: "internal-only", OSMode: "disabled",
 		Name: "e2e", Domain: "e2e.kube-dc.cloud", NodeIP: "203.0.113.52",
 		Email: "ops@example.com", KubeOVNMasterNodes: "10.77.0.22",
+		NetInterface: "enp1s0", NetVLANID: "0",
 	}, "")
 	if len(m.validationErrors()) == 0 {
 		t.Error("disabled object storage without consent must block Apply")
@@ -149,6 +162,100 @@ func TestPanel_CycleAndToggle(t *testing.T) {
 	m.activate()
 	if m.st.Mode != "adopt" {
 		t.Errorf("activate on Mode should cycle install→adopt, got %q", m.st.Mode)
+	}
+}
+
+// TestPanel_EscBackQuitParity locks the exit UX to match the Fleet TUI:
+// Esc is "back" (never exits) and q / ctrl+c quit. Esc from the fields
+// pane returns to the sections list; Esc on the sections pane is a no-op
+// (does NOT cancel/quit); q on the sections pane cancels + quits.
+func TestPanel_EscBackQuitParity(t *testing.T) {
+	esc := tea.KeyPressMsg{Code: tea.KeyEsc}
+
+	// Esc on fields → back to sections, no cancel, no quit cmd.
+	m := NewPanelModel(&State{Mode: "install"}, "")
+	m.focus = focusFields
+	if _, cmd := m.updateNav(esc); cmd != nil {
+		t.Error("Esc must not emit a command (no quit)")
+	}
+	if m.focus != focusSections {
+		t.Errorf("Esc on fields should step back to sections, focus=%v", m.focus)
+	}
+	if m.Cancelled() {
+		t.Error("Esc must never cancel")
+	}
+
+	// Esc on sections → no-op: stays on sections, still not cancelled.
+	if _, cmd := m.updateNav(esc); cmd != nil {
+		t.Error("Esc on sections must not emit a command (no quit)")
+	}
+	if m.focus != focusSections || m.Cancelled() {
+		t.Errorf("Esc on sections must be a no-op (focus=%v cancelled=%v)", m.focus, m.Cancelled())
+	}
+
+	// q on sections → cancel + quit.
+	if _, cmd := m.updateNav(tea.KeyPressMsg{Code: 'q', Text: "q"}); cmd == nil {
+		t.Error("q should emit tea.Quit")
+	}
+	if !m.Cancelled() {
+		t.Error("q should cancel the panel")
+	}
+}
+
+// Honest readiness: preset-required keys without a dedicated Required flag
+// (EXT_PUBLIC_* for cloud+public-vlan) must block "ready" so Apply won't
+// fail later at ValidatePresetRequiredKeys.
+func TestPanel_PresetRequiredKeysSurfaced(t *testing.T) {
+	m := NewPanelModel(&State{
+		Mode: "install", Preset: "cloud+public-vlan", OSMode: "rook-ceph-local",
+		Name: "dc1", Domain: "kdc.example.com", NodeIP: "203.0.113.10", Email: "ops@example.com",
+		NetInterface: "bond0", NetVLANID: "100", KubeOVNMasterNodes: "10.0.0.5", OSDNode: "dc1-m1",
+	}, "")
+	if len(m.validationErrors()) == 0 {
+		t.Fatal("cloud+public-vlan with empty EXT_PUBLIC_* must not report ready")
+	}
+	m.st.PubVLANID = "200"
+	m.st.PubCIDR = "198.51.100.0/28"
+	m.st.PubGateway = "198.51.100.1"
+	if errs := m.validationErrors(); len(errs) != 0 {
+		t.Errorf("public keys filled → should be ready, got %v", errs)
+	}
+}
+
+// ←/→ cycle a select field in place (forward/back), a friendlier UX than
+// enter-only cycling.
+func TestPanel_SelectCycleArrows(t *testing.T) {
+	m := NewPanelModel(&State{Mode: "install"}, "")
+	m.focus = focusFields
+	m.secCursor = sectionIndex(m, "Basics")
+	for i, l := range fieldLabels(m, "Basics") {
+		if l == "Mode" {
+			m.fieldCursor = i
+		}
+	}
+	m.updateNav(tea.KeyPressMsg{Code: tea.KeyRight})
+	if m.st.Mode != "adopt" {
+		t.Errorf("→ should cycle Mode install→adopt, got %q", m.st.Mode)
+	}
+	m.updateNav(tea.KeyPressMsg{Code: tea.KeyLeft})
+	if m.st.Mode != "install" {
+		t.Errorf("← should cycle Mode back to install, got %q", m.st.Mode)
+	}
+}
+
+// '?' toggles the full-help overlay.
+func TestPanel_HelpToggle(t *testing.T) {
+	m := NewPanelModel(&State{Mode: "install"}, "")
+	if m.showHelp {
+		t.Fatal("help should be off by default")
+	}
+	m.updateNav(tea.KeyPressMsg{Code: '?', Text: "?"})
+	if !m.showHelp {
+		t.Error("? should toggle help on")
+	}
+	m.updateNav(tea.KeyPressMsg{Code: '?', Text: "?"})
+	if m.showHelp {
+		t.Error("? should toggle help off")
 	}
 }
 

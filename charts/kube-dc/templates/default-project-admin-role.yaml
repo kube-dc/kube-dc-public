@@ -77,6 +77,10 @@ rules:
 - apiGroups: [cdi.kubevirt.io]
   resources: ["*"]
   verbs: ["*"]
+# VolumeSnapshots — read golden images for the instant-clone (vm-startup Phase C+D)
+- apiGroups: [snapshot.storage.k8s.io]
+  resources: [volumesnapshots]
+  verbs: [get, list, watch]
 # Autoscaling
 - apiGroups: [autoscaling]
   resources: [horizontalpodautoscalers]
@@ -248,6 +252,10 @@ rules:
 - apiGroups: [cdi.kubevirt.io]
   resources: ["*"]
   verbs: ["*"]
+# VolumeSnapshots — read golden images for the instant-clone (vm-startup Phase C+D)
+- apiGroups: [snapshot.storage.k8s.io]
+  resources: [volumesnapshots]
+  verbs: [get, list, watch]
 # Autoscaling
 - apiGroups: [autoscaling]
   resources: [horizontalpodautoscalers]
@@ -399,6 +407,10 @@ rules:
 - apiGroups: [cdi.kubevirt.io]
   resources: ["*"]
   verbs: [get, list, watch]
+# VolumeSnapshots — read golden images for the instant-clone (vm-startup Phase C+D)
+- apiGroups: [snapshot.storage.k8s.io]
+  resources: [volumesnapshots]
+  verbs: [get, list, watch]
 # Autoscaling - read only
 - apiGroups: [autoscaling]
   resources: [horizontalpodautoscalers]
@@ -542,6 +554,10 @@ rules:
 # CDI - read only
 - apiGroups: [cdi.kubevirt.io]
   resources: ["*"]
+  verbs: [get, list]
+# VolumeSnapshots — read golden images for the instant-clone (vm-startup Phase C+D)
+- apiGroups: [snapshot.storage.k8s.io]
+  resources: [volumesnapshots]
   verbs: [get, list]
 # Autoscaling - read only
 - apiGroups: [autoscaling]

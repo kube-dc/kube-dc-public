@@ -2,6 +2,8 @@ package initform
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -88,7 +90,8 @@ func TestPanel_Teatest_EditFieldCommits(t *testing.T) {
 	}
 }
 
-// TestPanel_Teatest_CancelAborts: Esc on the section pane cancels; the
+// TestPanel_Teatest_CancelAborts: 'q' quits + cancels (matching the Fleet
+// TUI's exit keys). Esc is "back", not an exit — so we send 'q' here; the
 // final model reports cancelled (init aborts cleanly, State untouched).
 func TestPanel_Teatest_CancelAborts(t *testing.T) {
 	m := NewPanelModel(&State{Mode: "install"}, "")
@@ -96,12 +99,63 @@ func TestPanel_Teatest_CancelAborts(t *testing.T) {
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
 		return bytes.Contains(b, []byte("Basics"))
 	}, teatest.WithDuration(3*time.Second), teatest.WithCheckInterval(20*time.Millisecond))
-	tm.Send(tea.KeyPressMsg{Code: tea.KeyEsc}) // on the section pane → cancel
+	tm.Send(tea.KeyPressMsg{Code: 'q', Text: "q"}) // quit (matches Fleet TUI)
 	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
 	fm := tm.FinalModel(t).(*PanelModel)
 	if !fm.Cancelled() || fm.Applied() {
-		t.Fatalf("Esc on sections should cancel (cancelled=%v applied=%v)", fm.Cancelled(), fm.Applied())
+		t.Fatalf("'q' should cancel (cancelled=%v applied=%v)", fm.Cancelled(), fm.Applied())
 	}
+}
+
+// TestPanel_Teatest_PrefillAndSaveDraft drives the two prefill/save UX
+// paths end-to-end: (1) a prefilled State opens the panel PRE-FILLED (the
+// cluster name renders without any typing), and (2) 'S' writes a reusable
+// draft spec ("save values, decide later") that is a valid re-loadable file.
+func TestPanel_Teatest_PrefillAndSaveDraft(t *testing.T) {
+	m := NewPanelModel(validE2EState(), "")
+	dir := t.TempDir()
+	m.draftPath = filepath.Join(dir, "draft.env")
+	tm := asciiProgram(t, m, 120, 40)
+
+	// Opens pre-filled — the prefilled cluster name shows on the Basics pane.
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+		return bytes.Contains(b, []byte("Basics")) && bytes.Contains(b, []byte("e2e"))
+	}, teatest.WithDuration(3*time.Second), teatest.WithCheckInterval(20*time.Millisecond))
+
+	// 'S' saves the draft and confirms in the footer.
+	tm.Send(tea.KeyPressMsg{Code: 'S', Text: "S"})
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+		return bytes.Contains(b, []byte("saved draft"))
+	}, teatest.WithDuration(3*time.Second), teatest.WithCheckInterval(20*time.Millisecond))
+
+	tm.Send(tea.KeyPressMsg{Code: 'q', Text: "q"}) // quit — decide later
+	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+
+	body, err := os.ReadFile(m.draftPath)
+	if err != nil {
+		t.Fatalf("draft spec not written: %v", err)
+	}
+	if !bytes.Contains(body, []byte("CLUSTER_NAME=e2e")) || !bytes.Contains(body, []byte("KUBE_DC_INIT_MODE=install")) {
+		t.Errorf("draft spec missing expected keys:\n%s", body)
+	}
+}
+
+// TestPanel_Teatest_HelpOverlay drives the '?' full-help overlay end-to-end
+// (bubbles/help), proving the keybinding help renders in the real program.
+func TestPanel_Teatest_HelpOverlay(t *testing.T) {
+	m := NewPanelModel(validE2EState(), "")
+	tm := asciiProgram(t, m, 120, 40)
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+		return bytes.Contains(b, []byte("Basics"))
+	}, teatest.WithDuration(3*time.Second), teatest.WithCheckInterval(20*time.Millisecond))
+
+	tm.Send(tea.KeyPressMsg{Code: '?', Text: "?"}) // open full help
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool {
+		return bytes.Contains(b, []byte("switch pane")) || bytes.Contains(b, []byte("cycle option"))
+	}, teatest.WithDuration(3*time.Second), teatest.WithCheckInterval(20*time.Millisecond))
+
+	tm.Send(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
 }
 
 // TestPanel_Golden_Sections is the golden-file technique: snapshot a pure

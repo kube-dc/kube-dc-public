@@ -544,6 +544,60 @@ and skip the provider-VLAN `--set` flags. Size the node at **≥12 vCPU /
 27 GiB / 100 GB** — the full platform plus reconcile churn needs it.
 :::
 
+### 3.3.2 Interactive panel + reusable config (`--config` / `--save-config`)
+
+Run `kube-dc bootstrap init` **with no flags** in a terminal and you get a
+guided settings panel (sections: Basics / Fleet / Network / Storage /
+Gates / Review) instead of a long flag line. Keys: `Tab` switches the
+section list ↔ fields, `↑↓` move, `Enter` edits a text field / cycles a
+select / toggles / Applies, `←/→` cycle a select in place, `S` saves a
+draft, `?` shows full help, `Esc` steps back, `q` quits. Each field shows a
+`*` if required and `✓`/`⚠` for valid/invalid; the section list shows
+`✓`/`⚠` per section and the title shows live readiness. Long sections
+scroll. The Review pane shows the equivalent flag command (and any
+preserved advanced `--set` keys) before you Apply.
+
+You don't have to retype everything each run. The wizard, the flags, and
+CI all share **one prefill format — the fleet's own `cluster-config.env`**:
+
+| Action | How |
+|--------|-----|
+| **Prefill from a file** | `kube-dc bootstrap init --config install.env` — opens the panel **pre-filled**; add `--yes --no-tty` to run headless |
+| **Clone from a sibling** | `--config` an existing cluster's `clusters/<name>/cluster-config.env` — **every operator key is carried** (identity, network, gateway nodes/type, MetalLB, anchors, object storage + replication, SMTP, quotas, feature flags); only scaffold-owned keys are dropped (versions/image tags + domain-derived `KUBE_API_EXTERNAL_URL`/`KEYCLOAK_HOSTNAME`/`OVN_DB_IPS` + universal/preset network defaults), logged as "N ignored" |
+| **Prefill from env** | export `KUBE_DC_INIT_*` vars (`KUBE_DC_INIT_CLUSTER_NAME`, `KUBE_DC_INIT_MODE`, …) — handy in CI |
+| **Save a reusable spec** | `--save-config install.env` writes the resolved inputs (runs on `--dry-run` too) |
+| **Save a draft, decide later** | press **`S`** in the panel → writes `kube-dc-init.draft.env`; resume with `--config kube-dc-init.draft.env` |
+
+Precedence (lowest → highest): **defaults → `--config` file → `KUBE_DC_INIT_*` env → explicit flags → your edits in the TUI.**
+
+The file uses cluster-config.env-native keys for config (`CLUSTER_NAME`,
+`DOMAIN`, `EXT_NET_INTERFACE`, `KUBE_OVN_MASTER_NODES`, `KUBE_OVN_GW_NODES`,
+`OBJECT_STORAGE_MODE`, …) and a `KUBE_DC_INIT_` prefix for install-only
+orchestration (`_MODE`, `_FLEET_MODE`, `_GITHUB_REPO`, `_SSH_HOST`,
+`_ALLOW_NO_KVM`, …), which is stripped before the cluster's real config is
+written. The panel has dedicated fields for the install-critical
+disk/network *pointers* (gateway nodes + type, Ceph replication size,
+NIC/VLAN/master-nodes, OSD devices); any other operator `--set` key from a
+prefill/clone (MetalLB, anchors, platform-endpoints, SMTP, quotas, feature
+flags) is **preserved** through the panel and listed under Review as
+"advanced (--set)" — edit those in the `.env`. It never contains the
+git token (that comes from `gh`/`glab` auth). Starter templates:
+[`examples/install/`](../../examples/install/) — `internal-only.env`,
+`cloud-vlan.env`, `cloud-public-vlan.env`.
+
+```bash
+cp examples/install/internal-only.env my-cluster.env
+$EDITOR my-cluster.env                          # edit CLUSTER_NAME, DOMAIN, IPs, repo…
+kube-dc bootstrap init --config my-cluster.env  # panel opens pre-filled → review → Apply
+```
+
+:::tip Nested / cloud VM without `/dev/kvm`
+Set `KUBE_DC_INIT_ALLOW_NO_KVM=true` (or toggle **Gates → Allow node
+without /dev/kvm**) so the KubeVirt-eligibility gate doesn't block — VM
+workloads won't schedule until a node exposes `/dev/kvm`, but the install
+completes.
+:::
+
 ### 3.3.1 Which mode? `install` / `adopt` / `resume`
 
 `--mode` tells `init` what it's walking into. It auto-detects when

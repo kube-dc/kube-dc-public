@@ -38,6 +38,13 @@ type envLine struct {
 	raw   string // verbatim original (blank/comment) or "KEY=value" reconstructed
 }
 
+// NewEnv returns an empty, ready-to-Set in-memory Env (index initialized).
+// Use it when building a cluster-config.env-format file from scratch, e.g.
+// `bootstrap init --save-config`; LoadEnv is the on-disk counterpart.
+func NewEnv() *Env {
+	return &Env{index: map[string]int{}}
+}
+
 // LoadEnv reads cluster-config.env at path.
 func LoadEnv(path string) (*Env, error) {
 	f, err := os.Open(path)
@@ -134,6 +141,11 @@ func (e *Env) Keys() []string {
 // that LoadEnv's eq-position parser handles as a comment on
 // round-trip — callers should reject empty keys upstream.
 func (e *Env) Set(key, value string) {
+	if e.index == nil {
+		// Honour the "never panics" contract for an in-memory Env built
+		// via &Env{} (LoadEnv initializes index; a bare literal doesn't).
+		e.index = map[string]int{}
+	}
 	if i, ok := e.index[key]; ok {
 		e.lines[i].value = value
 		e.lines[i].raw = key + "=" + value

@@ -4,11 +4,15 @@ description: A Helm chart for kube-dc manager
 
 type: application
 
-version: v0.4.1
+version: v0.4.2
 
-# appVersion stays v0.4.0: this is a chart-only bump (vm-startup M1-T03a —
-# osImages containerdisk fields + os-images-configmap render + os-image-prepull
-# DaemonSet). No image code changed; image tags are pinned per-cluster via
-# cluster-config.env, so the default fallback (appVersion) still resolves to
-# real v0.4.0 images.
-appVersion: v0.4.0
+# appVersion IS the default manager image tag (manager-deployment.yaml falls
+# back to .Chart.AppVersion when manager.image.tag is unset). It MUST move in
+# lockstep with a chart that needs new manager code: v0.4.2 adds the
+# res_golden_snapshots seeder (vm-startup Phase C+D golden seeding) alongside the
+# manager ClusterRole grants (storageclasses/volumesnapshots/volumesnapshotcontents
+# + cdi read) and the 4 default-project roles' volumesnapshots read. Pinning
+# appVersion to v0.4.2 stops a bare `helm install` from pairing new RBAC/chart
+# with an old (pre-seeder) manager image. shalb/kube-dc-manager:v0.4.2 must be
+# published for this chart version.
+appVersion: v0.4.2

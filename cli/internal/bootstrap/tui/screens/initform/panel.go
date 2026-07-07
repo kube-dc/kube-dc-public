@@ -4,12 +4,55 @@ import (
 	"image/color"
 	"strings"
 
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
+	bttui "github.com/shalb/kube-dc/cli/internal/bootstrap/tui"
 )
+
+// panelKeyMap drives the help bar (bubbles/help). The keys mirror what
+// updateNav/updateEditing actually handle; this exists so the footer's
+// short help + the '?' full-help overlay stay in sync with the bindings.
+type panelKeyMap struct {
+	Nav   key.Binding
+	Pane  key.Binding
+	Edit  key.Binding
+	Cycle key.Binding
+	Save  key.Binding
+	Help  key.Binding
+	Back  key.Binding
+	Quit  key.Binding
+}
+
+func (k panelKeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Nav, k.Pane, k.Edit, k.Save, k.Help, k.Quit}
+}
+
+func (k panelKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Nav, k.Pane},
+		{k.Edit, k.Cycle, k.Save},
+		{k.Back, k.Help, k.Quit},
+	}
+}
+
+func defaultPanelKeys() panelKeyMap {
+	return panelKeyMap{
+		Nav:   key.NewBinding(key.WithKeys("up", "down", "k", "j"), key.WithHelp("↑↓", "move")),
+		Pane:  key.NewBinding(key.WithKeys("tab", "shift+tab"), key.WithHelp("tab", "switch pane")),
+		Edit:  key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "edit/apply")),
+		Cycle: key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("←→", "cycle option")),
+		Save:  key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "save draft")),
+		Help:  key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
+		Back:  key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
+		Quit:  key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+	}
+}
 
 // --- small layout helpers (local to initform; the screens package has
 // its own copies, but that's a different package) ---
@@ -44,6 +87,11 @@ func colorWarnFG() color.Color { return lipgloss.Color("#FF9830") }
 // over that list, so the field set + the pure logic (visibility,
 // validation, apply→InitOptions) are unit-tested independently of the
 // Bubble Tea plumbing (which needs a TTY).
+
+// defaultDraftPath is where the 'S' save-draft writes when the panel
+// wasn't told otherwise (CWD-relative). "decide later" → reload with
+// `kube-dc bootstrap init --config kube-dc-init.draft.env`.
+const defaultDraftPath = "kube-dc-init.draft.env"
 
 type panelKind int
 
@@ -127,6 +175,10 @@ func panelFields() []panelField {
 			func(s *State) string { return s.NetInterface }, func(s *State, v string) { s.NetInterface = v }, nil),
 		txt("Network", "KUBE_OVN_MASTER_NODES", "control-plane INTERNAL IP(s), comma-separated — required", true,
 			func(s *State) string { return s.KubeOVNMasterNodes }, func(s *State, v string) { s.KubeOVNMasterNodes = v }, nil),
+		txt("Network", "Gateway nodes", "KUBE_OVN_GW_NODES — OVN external-gateway node names, comma-separated (empty = default)", false,
+			func(s *State) string { return s.GWNodes }, func(s *State, v string) { s.GWNodes = v }, nil),
+		txt("Network", "Gateway type", "KUBE_OVN_GW_TYPE — centralized | distributed (empty = fleet default)", false,
+			func(s *State) string { return s.GWType }, func(s *State, v string) { s.GWType = v }, nil),
 		txt("Network", "EXT_PUBLIC_VLAN_ID", "public VLAN id", false,
 			func(s *State) string { return s.PubVLANID }, func(s *State, v string) { s.PubVLANID = v }, nil).with(isPublic),
 		txt("Network", "EXT_PUBLIC_CIDR", "e.g. 203.0.113.48/29", false,
@@ -151,6 +203,14 @@ func panelFields() []panelField {
 			func(s *State) string { return s.CephNode3 }, func(s *State, v string) { s.CephNode3 = v }, clusterinit.ValidateNodeDevicePairField).with(osIs("rook-ceph-multi-node")),
 		txt("Storage", "StorageClass", "backing SC for OSD PVCs", false,
 			func(s *State) string { return s.StorageClass }, func(s *State, v string) { s.StorageClass = v }, clusterinit.ValidateStorageClassField).with(osIs("rook-ceph-pvc")),
+		txt("Storage", "OSD count", "number of PVC-backed OSDs (empty = fleet default)", false,
+			func(s *State) string { return s.CephOSDCount }, func(s *State, v string) { s.CephOSDCount = v }, validateOptionalInt).with(osIs("rook-ceph-pvc")),
+		txt("Storage", "OSD volume size (GB)", "size of each PVC-backed OSD (empty = fleet default)", false,
+			func(s *State) string { return s.CephOSDVolumeSize }, func(s *State, v string) { s.CephOSDVolumeSize = v }, validateOptionalInt).with(osIs("rook-ceph-pvc")),
+		txt("Storage", "Ceph replication size", "CEPH_REPLICATION_SIZE — OSD replica count (1 = dev/no-redundancy, 2-3 = HA; empty = default)", false,
+			func(s *State) string { return s.CephReplicationSize }, func(s *State, v string) { s.CephReplicationSize = v }, validateOptionalInt).with(func(s *State) bool {
+			return s.OSMode != "" && s.OSMode != string(clusterinit.RookDisabled)
+		}),
 		toggle("Storage", "Object storage DISABLED consent", "REQUIRED to proceed with disabled (no metrics/logs storage)",
 			func(s *State) bool { return s.DisabledConsent }, func(s *State, v bool) { s.DisabledConsent = v }).with(osIs("disabled")),
 
@@ -161,6 +221,8 @@ func panelFields() []panelField {
 		// --- Gates ---
 		toggle("Gates", "Allow DNS not ready", "proceed even if wildcard DNS isn't wired (certs stay Pending)",
 			func(s *State) bool { return s.AllowDNSNotReady }, func(s *State, v bool) { s.AllowDNSNotReady = v }),
+		toggle("Gates", "Allow node without /dev/kvm", "proceed when no node exposes /dev/kvm (nested/cloud VMs); VM workloads (KubeVirt / managed-K8s) won't schedule until one does",
+			func(s *State) bool { return s.AllowNoKubevirtEligible }, func(s *State, v bool) { s.AllowNoKubevirtEligible = v }),
 
 		// --- Review ---
 		{Section: "Review", Label: "Apply this configuration", Desc: "validate + build the plan + install", Kind: panelAction},
@@ -204,6 +266,23 @@ type PanelModel struct {
 	editing bool
 	input   textinput.Model
 
+	// fieldsVP scrolls the fields pane so a section with many fields (e.g.
+	// Network / Storage) stays fully reachable on any terminal height.
+	fieldsVP viewport.Model
+	// fieldCursorLine is the content line of the focused field, so View can
+	// scroll fieldsVP to keep the cursor visible.
+	fieldCursorLine int
+	// help + keys render the footer help bar; showHelp toggles the '?'
+	// full-help overlay.
+	help     help.Model
+	keys     panelKeyMap
+	showHelp bool
+
+	// draftPath is where 'S' writes the save-draft spec (decide later).
+	draftPath string
+	// notice is a transient footer message (e.g. "saved draft → …").
+	notice string
+
 	width, height int
 
 	// Outcomes read by RunPanel after the program exits.
@@ -224,7 +303,19 @@ func NewPanelModel(st *State, siblingHint string) *PanelModel {
 	ti := textinput.New()
 	ti.Prompt = "› "
 	ti.CharLimit = 512
-	return &PanelModel{st: st, fields: panelFields(), hint: siblingHint, input: ti}
+
+	h := help.New()
+	h.Styles.ShortKey = bttui.KeyLabel
+	h.Styles.ShortDesc = bttui.Muted
+	h.Styles.ShortSeparator = bttui.Muted
+	h.Styles.FullKey = h.Styles.ShortKey
+	h.Styles.FullDesc = h.Styles.ShortDesc
+
+	return &PanelModel{
+		st: st, fields: panelFields(), hint: siblingHint, input: ti,
+		fieldsVP: viewport.New(), help: h, keys: defaultPanelKeys(),
+		draftPath: defaultDraftPath,
+	}
 }
 
 // visibleSections returns the section names that currently have ≥1
@@ -315,9 +406,34 @@ func (m *PanelModel) validationErrors() []string {
 	if m.st.OSMode == string(clusterinit.RookDisabled) && !m.st.DisabledConsent {
 		errs = append(errs, "Storage: disabled requires the consent toggle")
 	}
+	// Preset-required keys the panel has no dedicated Required flag for
+	// (e.g. EXT_PUBLIC_* for cloud+public-vlan, EXT_NET_* for cloud-vlan) —
+	// surface them here so "ready" is HONEST and Apply won't fail later at
+	// ValidatePresetRequiredKeys. Best-effort: Apply's consent error is
+	// tolerated; scratch is fully populated regardless.
+	scratch := &clusterinit.InitOptions{}
+	_ = m.st.Apply(scratch)
+	if err := clusterinit.ValidatePresetRequiredKeys(scratch); err != nil {
+		errs = append(errs, "Network: "+err.Error())
+	}
 	return errs
 }
 
 // Applied / Cancelled expose the outcome to RunPanel.
 func (m *PanelModel) Applied() bool   { return m.applied }
 func (m *PanelModel) Cancelled() bool { return m.cancelled }
+
+// saveDraft writes the current answers as a reusable spec (the 'S' key —
+// "save values, decide later"). Best-effort: a work-in-progress draft may
+// be incomplete or have object-storage disabled without consent, so
+// Apply's consent error is tolerated — the draft captures whatever is
+// filled and reloads via `init --config <draftPath>`.
+func (m *PanelModel) saveDraft() {
+	scratch := &clusterinit.InitOptions{}
+	_ = m.st.Apply(scratch)
+	if err := clusterinit.WriteSpec(scratch, m.draftPath); err != nil {
+		m.notice = "save failed: " + err.Error()
+		return
+	}
+	m.notice = "saved draft → " + m.draftPath + "  (reload: init --config " + m.draftPath + ")"
+}

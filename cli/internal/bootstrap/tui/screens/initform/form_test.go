@@ -93,6 +93,33 @@ func TestEquivalentFlags_RoundTripsTheSurface(t *testing.T) {
 	}
 }
 
+// The "equivalent" command must be actually equivalent for rook-ceph-pvc
+// sizing — --ceph-osd-count / --ceph-osd-volume-size-gb, not just the
+// storage class (scriptability promise).
+func TestEquivalentFlags_PVCSizing(t *testing.T) {
+	st := baseState()
+	st.OSMode = "rook-ceph-pvc"
+	st.CephNode1, st.CephNode2, st.CephNode3 = "", "", ""
+	st.StorageClass = "fast-nvme"
+	st.CephOSDCount = "4"
+	st.CephOSDVolumeSize = "300"
+	o := &clusterinit.InitOptions{Yes: true}
+	if err := st.Apply(o); err != nil {
+		t.Fatal(err)
+	}
+	flags := st.EquivalentFlags(o)
+	for _, want := range []string{
+		"--object-storage-mode=rook-ceph-pvc",
+		"--ceph-storage-class=fast-nvme",
+		"--ceph-osd-count=4",
+		"--ceph-osd-volume-size-gb=300",
+	} {
+		if !strings.Contains(flags, want) {
+			t.Errorf("equivalent flags missing %q\nFULL:\n%s", want, flags)
+		}
+	}
+}
+
 // Reviewer P2: unconsented disabled must never survive Apply — the
 // Confirm's Validate blocks it interactively; this guards
 // programmatic State construction.
@@ -244,6 +271,48 @@ func TestApply_SSHHostMapsAndFlags(t *testing.T) {
 	_ = st.Apply(o2)
 	if strings.Contains(st.EquivalentFlags(o2), "--ssh-host") {
 		t.Error("empty SSH host must not emit --ssh-host")
+	}
+}
+
+// The wizard's "Allow node without /dev/kvm" toggle maps to
+// o.AllowNoKubevirtEligible and round-trips into the equivalent flags —
+// the gate a first-time user on a nested/cloud VM (no /dev/kvm) needs to
+// complete an install without dropping to the flag path.
+func TestApply_AllowNoKubevirtEligibleMapsAndFlags(t *testing.T) {
+	st := baseState()
+	st.AllowNoKubevirtEligible = true
+	o := &clusterinit.InitOptions{Yes: true}
+	if err := st.Apply(o); err != nil {
+		t.Fatal(err)
+	}
+	if !o.AllowNoKubevirtEligible {
+		t.Error("AllowNoKubevirtEligible should map to InitOptions")
+	}
+	if !strings.Contains(st.EquivalentFlags(o), "--allow-no-kubevirt-eligible") {
+		t.Errorf("equivalent flags should include --allow-no-kubevirt-eligible:\n%s", st.EquivalentFlags(o))
+	}
+	// Off → flag omitted (the normal path where the gate enforces).
+	st.AllowNoKubevirtEligible = false
+	o2 := &clusterinit.InitOptions{Yes: true}
+	_ = st.Apply(o2)
+	if strings.Contains(st.EquivalentFlags(o2), "--allow-no-kubevirt-eligible") {
+		t.Error("flag must be omitted when the toggle is off")
+	}
+}
+
+// initialState (the wizard's starting defaults) must serve the first-time
+// user: no fleet yet → new-repo. An explicit --fleet-mode still wins.
+func TestInitialState_FirstTimeDefaultsToNewRepo(t *testing.T) {
+	st := initialState(&clusterinit.InitOptions{})
+	if st.FleetMode != string(clusterinit.FleetNewRepo) {
+		t.Errorf("first-time default FleetMode should be new-repo, got %q", st.FleetMode)
+	}
+	if st.Mode != string(clusterinit.ModeInstall) {
+		t.Errorf("default Mode should be install, got %q", st.Mode)
+	}
+	st2 := initialState(&clusterinit.InitOptions{FleetMode: clusterinit.FleetExistingFleet})
+	if st2.FleetMode != string(clusterinit.FleetExistingFleet) {
+		t.Errorf("an explicit --fleet-mode must be preserved, got %q", st2.FleetMode)
 	}
 }
 

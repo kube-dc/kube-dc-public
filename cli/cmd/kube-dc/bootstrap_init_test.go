@@ -1757,3 +1757,28 @@ func TestRunInitAdoptWizardStep_NoOverlayPreviewNoPrompt(t *testing.T) {
 		t.Errorf("expected the no-overlay preview, got:\n%s", out)
 	}
 }
+
+// TestInitEnvPrefill_Normalization checks the KUBE_DC_INIT_* env → prefill
+// vocabulary mapping: orchestration keys keep the prefix, native config
+// keys strip it, and non-prefixed env is ignored (no hijack of a stray
+// CLUSTER_NAME in the shell).
+func TestInitEnvPrefill_Normalization(t *testing.T) {
+	t.Setenv("KUBE_DC_INIT_MODE", "adopt")             // orchestration → keeps prefix
+	t.Setenv("KUBE_DC_INIT_CLUSTER_NAME", "dc9")       // config → strips prefix
+	t.Setenv("KUBE_DC_INIT_EXT_NET_INTERFACE", "eth0") // overlay config → strips prefix
+	t.Setenv("UNRELATED_ENV", "ignored")
+
+	m := initEnvPrefill()
+	if m[clusterinit.KeyMode] != "adopt" {
+		t.Errorf("orchestration key must keep the KUBE_DC_INIT_ prefix: %v", m)
+	}
+	if m["CLUSTER_NAME"] != "dc9" {
+		t.Errorf("native config key must strip the prefix: %v", m)
+	}
+	if m["EXT_NET_INTERFACE"] != "eth0" {
+		t.Errorf("overlay config key must strip the prefix: %v", m)
+	}
+	if _, ok := m["UNRELATED_ENV"]; ok {
+		t.Error("non-prefixed env must be ignored (no hijack)")
+	}
+}
