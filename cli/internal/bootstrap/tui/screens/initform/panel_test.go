@@ -1,6 +1,7 @@
 package initform
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -256,6 +257,55 @@ func TestPanel_HelpToggle(t *testing.T) {
 	m.updateNav(tea.KeyPressMsg{Code: '?', Text: "?"})
 	if m.showHelp {
 		t.Error("? should toggle help off")
+	}
+}
+
+func TestPanel_EditInvalidShowsInlineError(t *testing.T) {
+	m := NewPanelModel(&State{Mode: "install", Preset: "internal-only"}, "")
+	m.focus = focusFields
+	m.secCursor = sectionIndex(m, "Basics")
+	for i, l := range fieldLabels(m, "Basics") {
+		if l == "Node external IP" {
+			m.fieldCursor = i
+		}
+	}
+	m.activate()
+	m.input.SetValue("not-an-ip")
+	m.updateEditing(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !m.editing {
+		t.Fatal("invalid Enter should keep editing")
+	}
+	if strings.TrimSpace(m.editError) == "" {
+		t.Fatal("invalid Enter should store a visible edit error")
+	}
+	body, _ := m.renderFieldsBody(120)
+	if !strings.Contains(body, m.editError) {
+		t.Fatalf("inline error missing from render body: error=%q body=\n%s", m.editError, body)
+	}
+}
+
+func TestPanel_ReviewShowsEquivalentCommand(t *testing.T) {
+	st := validE2EState()
+	st.OSMode = "rook-ceph-pvc"
+	st.OSDNode, st.OSDSizeGB, st.OSDDevice = "", "", ""
+	st.StorageClass = "fast-nvme"
+	st.CephOSDCount = "4"
+	st.CephOSDVolumeSize = "300"
+	m := NewPanelModel(st, "")
+	m.secCursor = sectionIndex(m, "Review")
+	m.focus = focusFields
+	body, _ := m.renderFieldsBody(160)
+	for _, want := range []string{
+		"equivalent command",
+		"kube-dc bootstrap init",
+		"--object-storage-mode=rook-ceph-pvc",
+		"--ceph-osd-count=4",
+		"--ceph-osd-volume-size-gb=300",
+		"--dry-run",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("review body missing %q:\n%s", want, body)
+		}
 	}
 }
 

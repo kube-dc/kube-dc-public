@@ -106,6 +106,10 @@ var skipDirs = map[string]bool{
 var skipFiles = map[string]bool{
 	"package-lock.json": true, "yarn.lock": true, "pnpm-lock.yaml": true,
 	"go.sum": true,
+	// A local, gitignored save-draft (`bootstrap init` → 'S', or
+	// --save-config into the repo) legitimately holds the operator's real
+	// values; it's never committed, so the lint must not scan it.
+	"kube-dc-init.draft.env": true,
 }
 
 func TestNoRealInfraReferences(t *testing.T) {

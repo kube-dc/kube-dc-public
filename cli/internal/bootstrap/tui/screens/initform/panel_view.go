@@ -48,21 +48,24 @@ func (m *PanelModel) updateEditing(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		f := m.editingField()
 		if f != nil && val != "" && f.Validate != nil {
 			if err := f.Validate(val); err != nil {
-				// Keep editing; the footer shows the error.
+				m.editError = err.Error()
 				return m, nil
 			}
 		}
 		if f != nil {
 			f.Set(m.st, val)
 		}
+		m.editError = ""
 		m.editing = false
 		m.input.Blur()
 		return m, nil
 	case "esc":
+		m.editError = ""
 		m.editing = false
 		m.input.Blur()
 		return m, nil
 	}
+	m.editError = ""
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
@@ -184,6 +187,7 @@ func (m *PanelModel) activate() (tea.Model, tea.Cmd) {
 	}
 	switch f.Kind {
 	case panelText:
+		m.editError = ""
 		m.editing = true
 		m.input.SetValue(f.Get(m.st))
 		m.input.CursorEnd()
@@ -264,6 +268,8 @@ func (m *PanelModel) View() tea.View {
 	switch {
 	case m.notice != "":
 		status = lipgloss.NewStyle().Foreground(lipgloss.Color("#5794F2")).Render(m.notice)
+	case m.editing && m.editError != "":
+		status = lipgloss.NewStyle().Foreground(colorWarnFG()).Render("⚠ " + m.editError)
 	case len(verrs) > 0:
 		status = lipgloss.NewStyle().Foreground(colorWarnFG()).Render(fmt.Sprintf("⚠ %d setting(s) need attention", len(verrs)))
 	default:
@@ -418,6 +424,9 @@ func (m *PanelModel) renderFieldsBody(maxW int) (string, int) {
 		row := cursor + glyph + " " + bttui.Text.Render(padRight(lbl, 24)) + " "
 		if m.editing && focused {
 			b.WriteString(row + m.input.View() + "\n")
+			if m.editError != "" {
+				b.WriteString("      " + warnStyle.Render(m.editError) + "\n")
+			}
 		} else {
 			var shown string
 			switch f.Kind {
@@ -452,6 +461,13 @@ func (m *PanelModel) renderFieldsBody(maxW int) (string, int) {
 			for _, e := range verrs {
 				b.WriteString("  " + lipgloss.NewStyle().Foreground(colorWarnFG()).Render("⚠ "+e) + "\n")
 			}
+		} else if flags, err := m.equivalentPreview(); err != nil {
+			b.WriteString(lipgloss.NewStyle().Foreground(colorWarnFG()).Render("⚠ cannot build preview: "+err.Error()) + "\n")
+		} else {
+			b.WriteString(bttui.Muted.Render("equivalent command (safe preview):") + "\n")
+			for _, line := range strings.Split(flags, "\n") {
+				b.WriteString("  " + bttui.Text.Render(line) + "\n")
+			}
 		}
 		// Advanced overlay keys carried from a prefill/clone that have no
 		// dedicated field — shown so they're visible (edit them in the
@@ -472,6 +488,14 @@ func (m *PanelModel) renderFieldsBody(maxW int) (string, int) {
 		}
 	}
 	return b.String(), cursorLine
+}
+
+func (m *PanelModel) equivalentPreview() (string, error) {
+	o := &clusterinit.InitOptions{}
+	if err := m.st.Apply(o); err != nil {
+		return "", err
+	}
+	return m.st.EquivalentFlags(o), nil
 }
 
 func nonEmptyOr(s, fallback string) string {

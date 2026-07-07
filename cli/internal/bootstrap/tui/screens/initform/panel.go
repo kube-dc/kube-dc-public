@@ -265,6 +265,9 @@ type PanelModel struct {
 
 	editing bool
 	input   textinput.Model
+	// editError is the current text-field validation error. It is rendered
+	// inline while editing so Enter never appears to do nothing.
+	editError string
 
 	// fieldsVP scrolls the fields pane so a section with many fields (e.g.
 	// Network / Storage) stays fully reachable on any terminal height.
