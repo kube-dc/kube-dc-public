@@ -1,6 +1,6 @@
 ---
 name: create-vm
-description: Deploy a virtual machine in a Kube-DC project with SSH access, cloud-init configuration, and optional external IP exposure. Supports Ubuntu, Debian, CentOS, Fedora, Alpine, openSUSE, Gentoo, and Windows images.
+description: Deploy a virtual machine in a Kube-DC project with SSH, cloud-init, optional external access, and an optional gated Dedicated GPU VM profile. Use for ordinary VMs and whole-device GPU VMs that require platform preflight and non-migration safeguards.
 ---
 
 ## Prerequisites
@@ -8,6 +8,7 @@ description: Deploy a virtual machine in a Kube-DC project with SSH access, clou
 - Project namespace: `{org}-{project}`
 - SSH keypair secrets auto-exist in project namespace
 - **Quota**: verify sufficient CPU, memory, storage, and (if external IP needed) publicIPv4 capacity — use the `check-quota` skill
+- **Dedicated GPU only**: require device quota and the independent VM creation gate; raw KubeVirt access is not GPU product authorization
 
 ## Steps
 
@@ -80,6 +81,14 @@ Key requirements:
 - **Guest agent**: MUST install `qemu-guest-agent` in cloud-init (use the OS-specific cloud-init from the images table)
 - **SSH keys**: Reference `authorized-keys-default` via `accessCredentials`
 - **Firmware**: Use the correct `firmware` and `machine` type for the OS (see table)
+
+### 3a. Add a Dedicated GPU (Optional)
+
+When the user explicitly requests a whole-device GPU VM, read
+[references/dedicated-gpu.md](references/dedicated-gpu.md) before generating
+the VM. Use the Kube-DC wizard or authenticated backend validation/create
+transaction. Do not attach native host devices or apply a GPU VM directly with
+`kubectl`.
 
 ### 4. Wait for VM Ready
 
@@ -277,6 +286,7 @@ kubectl get dv {vm-name}-disk -n {project-namespace} -o jsonpath='{.status.phase
 - If no IP: guest agent may not be installed — verify cloud-init includes `qemu-guest-agent`
 
 ## Safety
+- For a Dedicated GPU VM, follow [references/dedicated-gpu.md](references/dedicated-gpu.md); enforce `evictionStrategy: None` and never bypass backend preflight
 - ALWAYS include `qemu-guest-agent` in cloud-init — without it, IP reporting and SSH key injection won't work
 - ALWAYS use `networkName: {namespace}/default` — other networks don't exist in the VPC
 - Use `storageClassName: local-path` for DataVolumes

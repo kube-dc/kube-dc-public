@@ -1,6 +1,5 @@
 interface:
-  display_name: Deploy Application
-  short_description: Deploy a containerized app with optional HTTPS and database
-  brand_color: '#D97706'
-policy:
-  allow_implicit_invocation: true
+  display_name: "Deploy Application"
+  short_description: "Deploy apps, including gated Shared GPU"
+  brand_color: "#D97706"
+  default_prompt: "Use $deploy-app to deploy a Kube-DC application with the required quota, networking, storage, and GPU safety checks."

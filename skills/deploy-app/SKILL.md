@@ -1,6 +1,6 @@
 ---
 name: deploy-app
-description: Deploy a containerized application to a Kube-DC project with optional database, service exposure (HTTPS via Gateway or direct EIP), and persistent storage. Covers Helm deployments and raw manifests.
+description: Deploy a containerized application to a Kube-DC project with optional database, service exposure, persistent storage, and gated Shared GPU acceleration. Use for Helm or raw CPU workloads and for Shared GPU requests that must go through the platform preview/create API.
 ---
 
 ## Prerequisites
@@ -8,6 +8,7 @@ description: Deploy a containerized application to a Kube-DC project with option
 - Project namespace: `{org}-{project}`
 - For HTTPS exposure: cert-manager `Issuer` must exist (or will be created)
 - **Quota**: verify sufficient CPU, memory, and pod capacity before deploying — use the `check-quota` skill
+- **Shared GPU only**: verify all three accelerator quota dimensions and use the independent gated creation flow; raw Kubernetes access is not GPU product authorization
 
 ## Steps
 
@@ -66,6 +67,14 @@ spec:
               cpu: "500m"
               memory: "512Mi"
 ```
+
+### 2a. Add Shared GPU Acceleration (Optional)
+
+When the user explicitly requests a Shared GPU workload, read
+[references/shared-gpu.md](references/shared-gpu.md) before generating or
+submitting anything. Use the authenticated preview/create endpoints described
+there. Do not add native GPU resources to the generic Deployment above and do
+not bypass the product creation flag with `kubectl apply`.
 
 ### 3. Create the Service
 
@@ -241,6 +250,7 @@ curl -s -o /dev/null -w "%{http_code}" https://\{app-name\}-\{project-namespace\
 - No hostname: Issuer may be missing — check `kubectl get issuer -n {project-namespace}`
 - 503/404: App may not be listening on the expected port
 ## Safety
+- For Shared GPU, use the gated backend workflow in [references/shared-gpu.md](references/shared-gpu.md); never raw-apply a handcrafted GPU manifest
 - Always set resource requests/limits on containers
 - Default to Gateway Route (`expose-route: https`) for web apps
 - Use Direct EIP only for non-HTTP protocols

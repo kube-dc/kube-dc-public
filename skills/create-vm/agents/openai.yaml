@@ -1,6 +1,5 @@
 interface:
-  display_name: Create Virtual Machine
-  short_description: Deploy a VM with SSH access and cloud-init
-  brand_color: '#7C3AED'
-policy:
-  allow_implicit_invocation: true
+  display_name: "Create Virtual Machine"
+  short_description: "Create VMs, including gated Dedicated GPU"
+  brand_color: "#7C3AED"
+  default_prompt: "Use $create-vm to create a Kube-DC virtual machine with the required quota, storage, networking, and GPU safety checks."
