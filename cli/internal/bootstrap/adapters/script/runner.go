@@ -52,7 +52,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
@@ -223,17 +222,10 @@ func (r *Runner) defaultCmdFactory(ctx context.Context, name ports.ScriptKind, e
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Env = mergeEnv(env)
 	cmd.Dir = root
-	// Run the script in its OWN process group so we can signal the
-	// entire tree (bash + any children it spawned: `sleep & wait $!`
-	// in a trap pattern is a classic source of "child holds stdout
-	// after parent exits" hangs). Without Setpgid + group-targeted
-	// signaling, an orphaned grandchild can keep our drainer blocked
-	// on Read indefinitely.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		// Negative pid = signal the entire process group (POSIX).
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
-	}
+	// Process-group setup + ctx-cancel signaling are POSIX-only
+	// (Setpgid / syscall.Kill broke the windows cross-compile in the
+	// v0.5.0 GoReleaser run) — platform seam in procgroup_{unix,windows}.go.
+	configureProcessGroup(cmd)
 	cmd.WaitDelay = killGrace
 	return cmd, nil
 }
