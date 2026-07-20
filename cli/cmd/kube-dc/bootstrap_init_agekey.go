@@ -129,6 +129,18 @@ func validateAgeKeyEnrollment(ctx context.Context, out io.Writer, o *clusterinit
 		// preview render. The generate script would otherwise
 		// create `age.key` + `.sops.yaml` on the operator's disk,
 		// violating the dry-run "no side effects" contract.
+		// P0 ordering fix (review 2026-07-20): when --repo is an empty
+		// dir awaiting the fleet-starter OCI pull, generate-age-key.sh
+		// does not exist yet — running (or even checking) it HERE, in
+		// RunE before the apply engine, made the documented
+		// empty-directory install fail before the starter step could
+		// ever run. Defer: the engine re-invokes this gate right after
+		// StepStarter extracts the scripts (and before scaffold, which
+		// needs the key for SOPS).
+		if !clusterinit.StarterShapePresent(o.Repo) {
+			fmt.Fprintf(out, "[sops] age-key generation deferred — runs after the fleet starter is fetched\n")
+			return nil
+		}
 		fleetKey := filepath.Join(o.Repo, "age.key")
 		if _, err := os.Stat(fleetKey); errors.Is(err, fs.ErrNotExist) {
 			if !mutationsAllowed {

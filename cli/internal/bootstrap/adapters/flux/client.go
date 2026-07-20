@@ -161,6 +161,26 @@ func (c *Client) WatchHelmReleases(ctx context.Context) (<-chan ports.HelmReleas
 // the canonical flux pattern (`flux reconcile` does this same poke
 // + watch underneath). We skip the watch half because callers driving
 // this typically have a watch stream open already.
+// PullArtifact downloads + extracts a Flux OCI artifact into dir via
+// `flux pull artifact` — same shell-out posture as Bootstrap (the flux
+// CLI is a doctor-checked install prerequisite, so no extra dependency
+// and no OCI client library in our tree). Anonymous pull: the
+// fleet-starter artifact is public; no creds are read.
+func (c *Client) PullArtifact(ctx context.Context, url, dir string) error {
+	if url == "" {
+		return fmt.Errorf("flux: PullArtifact requires a url")
+	}
+	if dir == "" {
+		return fmt.Errorf("flux: PullArtifact requires an output dir")
+	}
+	args := []string{"pull", "artifact", url, "--output", dir}
+	_, stderr, err := c.runFluxCmd(ctx, nil, args...)
+	if err != nil {
+		return fmt.Errorf("flux pull artifact %s: %w (stderr: %s)", url, err, bytes.TrimSpace(stderr))
+	}
+	return nil
+}
+
 func (c *Client) Reconcile(ctx context.Context, kind, name string) error {
 	gvr, err := gvrForKind(kind)
 	if err != nil {

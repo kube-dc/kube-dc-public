@@ -220,6 +220,28 @@ func (c *Client) Push(ctx context.Context, dir, token string) error {
 // Commit is CommitAndPush minus the push step (see ports/git.go).
 // Used by M4-T12's apply path when `--no-push` is set. Returns the
 // new commit SHA.
+// Init creates an empty repository in dir with `branch` as HEAD.
+// Idempotent — an existing repo is left untouched so a re-run of the
+// starter extraction (or an operator-prepared checkout) never loses
+// history.
+func (c *Client) Init(_ context.Context, dir, branch string) error {
+	if branch == "" {
+		branch = "main"
+	}
+	_, err := gogit.PlainInitWithOptions(dir, &gogit.PlainInitOptions{
+		InitOptions: gogit.InitOptions{
+			DefaultBranch: plumbing.NewBranchReferenceName(branch),
+		},
+	})
+	if errors.Is(err, gogit.ErrRepositoryAlreadyExists) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("git: init %s: %w", dir, err)
+	}
+	return nil
+}
+
 func (c *Client) Commit(_ context.Context, dir, msg string) (string, error) {
 	return c.commitLocal(dir, msg)
 }

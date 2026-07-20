@@ -62,6 +62,23 @@ func (c *GitClient) Clone(ctx context.Context, repoURL, dir, token string) error
 	return nil
 }
 
+// Init mirrors the adapter's idempotent contract: creates an empty
+// mock repo (zero commits) unless dir is already tracked.
+func (c *GitClient) Init(ctx context.Context, dir, branch string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, exists := c.repos[dir]; exists {
+		return nil
+	}
+	c.repos[dir] = &mockRepo{
+		dirty: map[string]ports.FileDiff{},
+	}
+	return nil
+}
+
 func (c *GitClient) Pull(ctx context.Context, dir, token string) error {
 	if err := ctx.Err(); err != nil {
 		return err

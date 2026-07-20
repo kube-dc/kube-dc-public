@@ -28,6 +28,14 @@ type GitClient interface {
 	// merging with an unrelated checkout).
 	Clone(ctx context.Context, repoURL, dir, token string) error
 
+	// Init creates an empty git repository in dir with `branch` as the
+	// initial HEAD branch. Idempotent: an existing repository is left
+	// untouched (nil error). Used by the fleet-starter extraction — a
+	// freshly extracted starter must be a repo on a deterministic
+	// branch BEFORE the engine's commit+push and flux bootstrap steps
+	// (branch detection, installer-bugs B5).
+	Init(ctx context.Context, dir, branch string) error
+
 	// Pull is `git pull --rebase` against the configured upstream of
 	// `dir`. Used to refresh the fleet repo cache before reading it.
 	// `token` is the GitHub PAT used to authenticate against private

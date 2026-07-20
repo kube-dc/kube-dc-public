@@ -41,6 +41,15 @@ type FluxClient interface {
 	// `kind` is "Kustomization" or "HelmRelease". Equivalent to
 	// `flux reconcile kustomization <name> --with-source`.
 	Reconcile(ctx context.Context, kind, name string) error
+
+	// PullArtifact downloads and extracts a Flux OCI artifact
+	// (`flux pull artifact --url <url> --output <dir>`) into dir.
+	// Used by `bootstrap init --fleet-mode=new-repo` to fetch the
+	// fleet-starter bundle (oci://ghcr.io/kube-dc/fleet-starter:<ver>)
+	// when the operator's --repo dir doesn't already carry the shared
+	// fleet trees. Anonymous pull — the starter artifact is public;
+	// no registry credentials are read or required.
+	PullArtifact(ctx context.Context, url, dir string) error
 }
 
 // FluxBootstrapOpts carries everything `flux bootstrap github` needs.
@@ -92,12 +101,12 @@ type KustomizationEvent struct {
 // don't carry it explicitly here — the TUI groups HRs under their
 // Kustomization in the waterfall view.
 type HelmReleaseEvent struct {
-	Name        string
-	Namespace   string
-	Ready       bool
-	Reconciling bool
-	Reason      string
-	Message     string
+	Name         string
+	Namespace    string
+	Ready        bool
+	Reconciling  bool
+	Reason       string
+	Message      string
 	ChartName    string
 	ChartVersion string
 	LastApplied  time.Time

@@ -251,9 +251,16 @@ type InitOptions struct {
 	NoSSH              bool
 	NoInstallPrereqs   bool
 	NoCreateRepo       bool
-	MirrorRegistry     string
-	BundlePullSecret   string
-	OpenBaoSharesOut   string
+	// StarterRef overrides the fleet-starter OCI artifact pulled into
+	// --repo when the shared fleet trees are absent (greenfield
+	// new-repo/existing-repo modes). Empty = the cobra layer resolves
+	// oci://ghcr.io/kube-dc/fleet-starter:<cli-version> (or :latest for
+	// dev builds). A checkout that already has the shape skips the pull
+	// entirely, whatever this is set to.
+	StarterRef       string
+	MirrorRegistry   string
+	BundlePullSecret string
+	OpenBaoSharesOut string
 
 	// --- Plan/apply flow (M4-T02) ---
 	DryRun    bool

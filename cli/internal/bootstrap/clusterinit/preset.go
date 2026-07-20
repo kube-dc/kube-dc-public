@@ -102,9 +102,9 @@ var universalNetworkDefaults = map[string]string{
 	//
 	// INFRA_ATTACHMENT_ENABLED is likewise written at apply time: it is true only
 	// when the node CIDR was actually determined.
-	"INFRA_ATTACHMENT_SUBNET":         "infra-net",
-	"INFRA_ATTACHMENT_CIDR":           "100.66.0.0/16",
-	"INFRA_ATTACHMENT_GATEWAY":        "100.66.0.1",
+	"INFRA_ATTACHMENT_SUBNET":  "infra-net",
+	"INFRA_ATTACHMENT_CIDR":    "100.66.0.0/16",
+	"INFRA_ATTACHMENT_GATEWAY": "100.66.0.1",
 	// MUST contain the literal {namespace}: it is what keeps one security group
 	// per project instead of a single shared group spanning every tenant. The
 	// chart refuses to render without it.

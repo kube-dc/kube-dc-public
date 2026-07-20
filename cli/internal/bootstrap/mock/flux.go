@@ -34,6 +34,19 @@ func (c *FluxClient) Bootstrap(ctx context.Context, opts ports.FluxBootstrapOpts
 	return nil
 }
 
+// PullArtifact is a no-op in mock mode — the starter is "already
+// extracted". Mirrors Bootstrap's posture: record-only, never touches
+// the network or the filesystem.
+func (c *FluxClient) PullArtifact(ctx context.Context, url, dir string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.scenario == nil {
+		return fmt.Errorf("mock: FluxClient.PullArtifact: scenario is nil")
+	}
+	return nil
+}
+
 // WatchKustomizations emits one event per fixture, then closes. Caller
 // MUST drain to completion.
 func (c *FluxClient) WatchKustomizations(ctx context.Context) (<-chan ports.KustomizationEvent, error) {

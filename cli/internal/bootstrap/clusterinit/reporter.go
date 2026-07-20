@@ -29,6 +29,7 @@ type StepID string
 
 const (
 	StepPrepare         StepID = "prepare"
+	StepStarter         StepID = "fleet-starter"
 	StepInstallPrereqs  StepID = "install-prereqs"
 	StepDNS             StepID = "dns"
 	StepKubeVirt        StepID = "kubevirt-eligibility"
@@ -106,6 +107,11 @@ func InstallSteps(o InstallStepInputs) []Step {
 	add := func(id StepID, title string) { steps = append(steps, Step{ID: id, Title: title}) }
 
 	add(StepPrepare, "Prepare local session")
+	if o.Starter {
+		// Before install-prereqs: scripts/install-prerequisites.sh and
+		// bootstrap/add-cluster.sh both live INSIDE the starter trees.
+		add(StepStarter, "Fetch fleet starter (OCI)")
+	}
 	if !o.NoInstallPrereqs {
 		add(StepInstallPrereqs, "Install prerequisites")
 	}
@@ -159,14 +165,16 @@ func InstallSteps(o InstallStepInputs) []Step {
 // re-encode flag semantics.
 type InstallStepInputs struct {
 	NoInstallPrereqs bool
-	Adopt            bool // Mode == adopt
-	SSH              bool // SSHHost != "" && !NoSSH
-	NewRepoCreate    bool // new-repo && !NoCreateRepo && !NoPush
-	NewRepoRemote    bool // new-repo && !NoPush (origin add/set-url)
-	NoPush           bool
-	Finalize         bool // drive OpenBao/Keycloak after reconcile (!NoPush)
-	GPUEnabled       bool // track GPU Flux layers when products are installed
-	HAMiEnabled      bool // include the HAMi layer in GPU progress
+	Starter          bool // greenfield fleet-mode (new-repo/existing-repo): shared trees may need the OCI starter pull
+
+	Adopt         bool // Mode == adopt
+	SSH           bool // SSHHost != "" && !NoSSH
+	NewRepoCreate bool // new-repo && !NoCreateRepo && !NoPush
+	NewRepoRemote bool // new-repo && !NoPush (origin add/set-url)
+	NoPush        bool
+	Finalize      bool // drive OpenBao/Keycloak after reconcile (!NoPush)
+	GPUEnabled    bool // track GPU Flux layers when products are installed
+	HAMiEnabled   bool // include the HAMi layer in GPU progress
 }
 
 // GPUInstallStepIDs returns the terminal milestones that must be skipped when

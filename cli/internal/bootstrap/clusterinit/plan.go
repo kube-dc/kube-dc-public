@@ -336,6 +336,7 @@ type inputsForHash struct {
 	NoSSH            bool   `json:"noSsh"`
 	NoInstallPrereqs bool   `json:"noInstallPrereqs"`
 	NoCreateRepo     bool   `json:"noCreateRepo"`
+	StarterRef       string `json:"starterRef"`
 	MirrorRegistry   string `json:"mirrorRegistry"`
 	BundlePullSecret string `json:"bundlePullSecret"`
 	OpenBaoSharesOut string `json:"openbaoSharesOut"`
@@ -450,6 +451,7 @@ func (o *InitOptions) inputsForHash() inputsForHash {
 		NoSSH:                   o.NoSSH,
 		NoInstallPrereqs:        o.NoInstallPrereqs,
 		NoCreateRepo:            o.NoCreateRepo,
+		StarterRef:              o.StarterRef,
 		MirrorRegistry:          o.MirrorRegistry,
 		BundlePullSecret:        o.BundlePullSecret,
 		OpenBaoSharesOut:        o.OpenBaoSharesOut,

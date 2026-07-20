@@ -1821,3 +1821,20 @@ func TestInitEnvPrefill_Normalization(t *testing.T) {
 		t.Error("non-prefixed env must be ignored (no hijack)")
 	}
 }
+
+func TestResolveStarterRef(t *testing.T) {
+	saved := version
+	defer func() { version = saved }()
+
+	version = "0.5.0" // GoReleaser stamps WITHOUT the leading v
+	if got := resolveStarterRef(""); got != "oci://ghcr.io/kube-dc/fleet-starter:v0.5.0" {
+		t.Errorf("release build ref = %q", got)
+	}
+	version = "dev"
+	if got := resolveStarterRef(""); got != "oci://ghcr.io/kube-dc/fleet-starter:latest" {
+		t.Errorf("dev build ref = %q", got)
+	}
+	if got := resolveStarterRef("oci://example.com/custom:v1"); got != "oci://example.com/custom:v1" {
+		t.Errorf("override not honored: %q", got)
+	}
+}

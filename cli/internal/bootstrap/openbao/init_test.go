@@ -190,6 +190,7 @@ type fakeGit struct {
 }
 
 func (g *fakeGit) Clone(_ context.Context, _, _, _ string) error                     { return nil }
+func (g *fakeGit) Init(_ context.Context, _, _ string) error { return nil }
 func (g *fakeGit) Pull(_ context.Context, _, _ string) error                         { return nil }
 func (g *fakeGit) Diff(_ context.Context, _ string) (ports.Diff, error)              { return g.diff, nil }
 func (g *fakeGit) CreateRepo(_ context.Context, _, _ string, _ bool, _ string) error { return nil }

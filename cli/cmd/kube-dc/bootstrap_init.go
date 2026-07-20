@@ -513,6 +513,10 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"Skip the auto-install-prerequisites step (M4-T07)")
 	cmd.Flags().BoolVar(&o.NoCreateRepo, "no-create-repo", false,
 		"Skip the GitHub repo creation step (M4-T05; existing-fleet mode skips this anyway)")
+	cmd.Flags().StringVar(&o.StarterRef, "starter-ref", "",
+		"Fleet-starter OCI artifact to extract into --repo when the shared fleet trees are absent "+
+			"(default: oci://ghcr.io/kube-dc/fleet-starter:<cli-version>; dev builds use :latest). "+
+			"A --repo that already carries the trees skips the pull")
 	cmd.Flags().StringVar(&o.MirrorRegistry, "mirror-registry", "",
 		"Container image mirror registry (airgap installs)")
 	cmd.Flags().StringVar(&o.BundlePullSecret, "bundle-pull-secret", "",
@@ -681,6 +685,11 @@ func step(rep clusterinit.StepReporter, id clusterinit.StepID, fn func() error) 
 // scan if --repo is set; otherwise empty.
 func runInitDryRun(out io.Writer, o *clusterinit.InitOptions) error {
 	fleet := discoverFleetState(o)
+	// Freeze the starter ref into the plan (review P1 2026-07-20): an
+	// empty override must hash as the CONCRETE version this binary
+	// resolves, or a plan reviewed under v0.5.1 could be applied by
+	// v0.5.2 and silently pull the newer starter.
+	o.StarterRef = pinStarterDigest(out, resolveStarterRef(o.StarterRef))
 	plan, err := clusterinit.BuildPlan(o, fleet)
 	if err != nil {
 		return fmt.Errorf("build plan: %w", err)
@@ -730,6 +739,14 @@ func runInitApplyPlan(ctx context.Context, out io.Writer, o *clusterinit.InitOpt
 	fmt.Fprintln(out, "=== kube-dc bootstrap init — APPLY-PLAN ===")
 	fmt.Fprintf(out, "Plan source: %s\n", o.ApplyPlan)
 
+	// Same ref-pin as the dry-run/apply paths (review P1 2026-07-20):
+	// the saved plan hashed the CONCRETE starter ref this binary
+	// resolves; re-deriving from a raw empty override here would
+	// mismatch every plan this same binary just wrote — and a plan
+	// written by a DIFFERENT version fails verification loudly, which
+	// is exactly the version-drift protection the pin exists for.
+	o.StarterRef = pinStarterDigest(out, resolveStarterRef(o.StarterRef))
+
 	plan, err := clusterinit.LoadPlan(o.ApplyPlan)
 	if err != nil {
 		return fmt.Errorf("load plan: %w", err)
@@ -752,6 +769,11 @@ func runInitApplyPlan(ctx context.Context, out io.Writer, o *clusterinit.InitOpt
 func runInitDefaultApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, rep clusterinit.StepReporter) error {
 	fmt.Fprintln(out, "=== kube-dc bootstrap init — APPLY ===")
 	fleet := discoverFleetState(o)
+	// Freeze the starter ref into the plan (review P1 2026-07-20): an
+	// empty override must hash as the CONCRETE version this binary
+	// resolves, or a plan reviewed under v0.5.1 could be applied by
+	// v0.5.2 and silently pull the newer starter.
+	o.StarterRef = pinStarterDigest(out, resolveStarterRef(o.StarterRef))
 	plan, err := clusterinit.BuildPlan(o, fleet)
 	if err != nil {
 		return fmt.Errorf("build plan: %w", err)
@@ -892,8 +914,15 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	// pushed, reconciling cluster to finalize against.
 	sshEnabled := o.SSHHost != "" && !o.NoSSH
 	gpu := o.GPU()
+	// Run the starter step for EVERY greenfield mode — EnsureStarter
+	// itself decides pull vs skip vs REPAIR (shape present with broken
+	// git state). Gating on shape-absence here made the repair path
+	// unreachable from the real CLI (review P1 2026-07-20): a retry
+	// after a died-at-commit run would skip the step and fail later.
+	starterNeeded := plan.FleetMode != clusterinit.FleetExistingFleet
 	rep.Plan(clusterinit.InstallSteps(clusterinit.InstallStepInputs{
 		NoInstallPrereqs: o.NoInstallPrereqs,
+		Starter:          starterNeeded,
 		Adopt:            o.Mode == clusterinit.ModeAdopt,
 		SSH:              sshEnabled,
 		NewRepoCreate:    plan.FleetMode == clusterinit.FleetNewRepo && !o.NoCreateRepo && !o.NoPush,
@@ -927,6 +956,34 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	}
 	if session != nil {
 		defer session.Close()
+	}
+
+	// Fleet-starter acquisition (greenfield new-repo/existing-repo).
+	// MUST precede install-prereqs: scripts/install-prerequisites.sh
+	// and bootstrap/add-cluster.sh live INSIDE the starter trees, so a
+	// customer with an empty --repo has no runnable scripts until this
+	// extracts. Skipped entirely when the operator supplied a fleet
+	// checkout (the legacy rsync flow keeps working unchanged).
+	if starterNeeded {
+		if err := step(rep, clusterinit.StepStarter, func() error {
+			_, e := clusterinit.EnsureStarter(ctx, clusterinit.EnsureStarterOptions{
+				RepoPath: o.Repo,
+				Ref:      o.StarterRef, // pinned pre-plan; see runInitDryRun/DefaultApply
+				Flux:     session.Flux,
+				Git:      session.Git,
+				Out:      out,
+			})
+			return e
+		}); err != nil {
+			return fmt.Errorf("apply: fleet starter: %w", err)
+		}
+		// The age-key gate deferred generation while the starter was
+		// pending (generate-age-key.sh lives INSIDE the starter — P0
+		// ordering fix, review 2026-07-20). Run it now, before scaffold
+		// needs the key for SOPS encryption.
+		if err := validateAgeKeyEnrollment(ctx, out, o, true); err != nil {
+			return fmt.Errorf("apply: age key (post-starter): %w", err)
+		}
 	}
 
 	// M4-T07 auto-install prereqs. Runs FIRST — before DNS / NFD /
@@ -1842,4 +1899,24 @@ func remoteIdentity(raw string) (host, path string, ok bool) {
 		return "", "", false
 	}
 	return host, path, true
+}
+
+// resolveStarterRef returns the fleet-starter OCI ref to pull:
+// operator override verbatim, else the artifact matching this binary's
+// own version (GoReleaser stamps main.version without the leading "v";
+// the artifact tags carry it). Dev builds track :latest — a dev CLI
+// against a pinned starter would mask exactly the drift dev builds
+// exist to surface.
+func resolveStarterRef(override string) string {
+	if override != "" {
+		return override
+	}
+	v := version
+	if v == "" || v == "dev" {
+		return "oci://ghcr.io/kube-dc/fleet-starter:latest"
+	}
+	if !strings.HasPrefix(v, "v") {
+		v = "v" + v
+	}
+	return "oci://ghcr.io/kube-dc/fleet-starter:" + v
 }
