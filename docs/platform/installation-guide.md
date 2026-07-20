@@ -267,7 +267,7 @@ sudo systemctl enable rke2-server.service
 sudo systemctl start rke2-server.service
 ```
 
-Monitor startup (wait until the node is `Ready`):
+Monitor startup (wait until `rke2-server` settles; the node registers **NotReady** — expected until the CNI lands in Phase 3):
 
 ```bash
 sudo journalctl -u rke2-server -f
@@ -523,6 +523,7 @@ kube-dc bootstrap init \
   --node-external-ip=203.0.113.10 \
   --email=admin@example.com \
   --fleet-mode=new-repo \
+  --repo=$HOME/fleet-dc1 \
   --github-owner=my-org --github-repo=my-kube-dc-fleet \
   --object-storage-mode=rook-ceph-multi-node \
   --ceph-node=master-1=/dev/nvme1n1 \
@@ -543,6 +544,7 @@ kube-dc bootstrap init \
 | `--name` | Cluster name — becomes `clusters/<name>/` in the fleet repo |
 | `--domain` / `--node-external-ip` | Wildcard domain + the public IP it resolves to (§3.2) |
 | `--fleet-mode` | `new-repo` (CLI creates the GitHub/GitLab repo), `existing-repo`, or `existing-fleet` (add a cluster to a repo that already has siblings — inherits their version pins) |
+| `--repo` | Local path for the fleet checkout. Point it at an **empty directory** — the CLI pulls the shared platform trees into it from the fleet-starter OCI artifact (see below). Default when omitted: `$KUBE_DC_FLEET`, else `~/.kube-dc/fleet` |
 | `--github-owner` / `--github-repo` | Where the fleet repo lives (auto-created in `new-repo` mode) |
 | `--object-storage-mode` | `rook-ceph-multi-node` (3+ OSDs, HA), `rook-ceph-local` (single OSD — lab), `rook-ceph-pvc`, `external-*`, or `disabled` |
 | `--ceph-node=NODE=DEVICE` | One raw block device per OSD node (repeat 3× for multi-node) |
@@ -552,11 +554,18 @@ kube-dc bootstrap init \
 | `--set=INGRESS_MODE` | `metallb-lb` (default — Envoy Service `type: LoadBalancer` via MetalLB). `hostnetwork` (Envoy binds `:443` on the host) is a real topology but **not yet automated — `init` rejects it**; scaffold with `metallb-lb` and apply the EnvoyProxy hostNetwork patch manually if you need it |
 | `--set=METALLB_MODE` | `l2` (default — ARP on a shared L2 segment) or `bgp` (announce VIPs as `/32` BGP routes — routed/L3-only fabrics; see §5 “BGP announcement”). `bgp` requires `METALLB_BGP_LOCAL_ASN`, `METALLB_BGP_PEER_ASN`, `METALLB_BGP_PEER_ADDRESS` (all validated) |
 
-What `init` does, in order: generates a SOPS **age key** → creates +
+What `init` does, in order: **fetches the fleet starter** (when `--repo`
+is a fresh/empty directory, the shared platform trees — `bootstrap/`,
+`infrastructure/`, `platform/`, `addons/` — are pulled from the
+versioned OCI artifact `oci://ghcr.io/kube-dc/fleet-starter:<cli-version>`
+and committed; a directory that already carries them is used as-is;
+override with `--starter-ref`) → generates a SOPS **age key** → creates +
 pushes the fleet repo → scaffolds `clusters/dc1/` (network, object
 storage, encrypted secrets) → `flux bootstrap` → pre-installs the
 CNI/CRD-bearing charts so a bare cluster can reconcile → hands off to
 Flux. It is idempotent and rolls back its own commit if the push fails.
+You do **not** need to clone or download anything besides the CLI —
+point `--repo` at an empty directory.
 
 :::info Single-node / lab install
 For a one-box trial, use `--preset=internal-only --object-storage-mode=rook-ceph-local --rook-osd-node=<node> --rook-osd-size-gb=40`
@@ -681,11 +690,13 @@ read is reported as *undetected* — resolve it with
 ### 3.4 Watch the platform converge
 
 Flux reconciles in dependency order:
-`flux-system → infra-cni → infra-core → infra-object-storage → platform`.
+`flux-system → infra-cni → infra-core → infra-object-storage → platform`
+(plus the isolated `platform-cdi-storage` child, which converges on its
+own once the CDI operator registers its CRDs).
 
 ```bash
 export KUBECONFIG=~/.kube/config          # the cluster from Phase 2
-flux get kustomizations                   # all five should reach Ready=True
+flux get kustomizations                   # every listed Kustomization reaches Ready=True
 flux get helmreleases -A                  # ~20 releases go Ready
 kubectl -n rook-ceph get cephcluster      # Mons → OSDs → Ready
 ```
@@ -759,9 +770,69 @@ covers the cluster-specific pieces the fleet can't guess — chiefly the
 reconciles.
 :::
 
-### 4.1 Deploy MetalLB for HA Ingress
+### 4.1 Promote Ingress to a Floating IP (MetalLB HA)
 
-MetalLB provides a **floating public IP** for Envoy Gateway that automatically fails over between the three control-plane nodes.
+Right after install, Envoy Gateway serves on **one node's public IP**
+(the fleet base pins the Service to `externalIPs: [NODE_EXTERNAL_IP]`) —
+working, but not HA. MetalLB promotes it to a **floating public IP**
+that fails over between nodes.
+
+**GitOps path (recommended — how the production clusters run).** Three
+fleet commits under `clusters/<name>/`:
+
+1. **Set the keys** in `clusters/<name>/cluster-config.env` (scaffolded
+   with `CHANGEME` values):
+
+   ```bash
+   METALLB_FLOATING_IP=203.0.113.20   # your dedicated floating public IP
+   METALLB_INTERFACE=br-ext-cloud     # NIC/bridge for the ARP announcement (l2 mode)
+   METALLB_MODE=l2                    # or bgp — see the BGP section below
+   ```
+
+2. **Wire the MetalLB layers** — two Flux Kustomizations in the cluster
+   overlay (skip if already present). `addons` installs the operator
+   (`path: ./addons/metallb`, `dependsOn: platform`); `addons-config`
+   ships the pool + advertisement CRs (`path: ./addons/metallb-config`,
+   or `./addons/metallb-config-bgp` for BGP mode) and MUST `dependsOn:
+   addons` **with a healthCheck on the metallb-controller Deployment** —
+   the CRs reference MetalLB CRDs, and without the gate the first
+   server-side dry-run fails with `no matches for kind
+   "L2Advertisement"`. Both take `postBuild.substituteFrom:
+   cluster-config` so the env keys above land in the CRs. Reference both
+   files from `clusters/<name>/kustomization.yaml`.
+
+3. **Point the Envoy Service at the floating IP** — patch the shared
+   EnvoyProxy from the cluster's `platform.yaml` Flux Kustomization
+   (replacing the single-node `externalIPs` pin):
+
+   ```yaml
+   # add under clusters/<name>/platform.yaml → spec.patches
+   patches:
+     - target:
+         group: gateway.envoyproxy.io
+         version: v1alpha1
+         kind: EnvoyProxy
+         name: custom-proxy-config
+       patch: |-
+         - op: add
+           path: /spec/provider/kubernetes/envoyService/patch/value/metadata
+           value:
+             annotations:
+               metallb.universe.tf/loadBalancerIPs: "${METALLB_FLOATING_IP}"
+         - op: remove
+           path: /spec/provider/kubernetes/envoyService/patch/value/spec/externalIPs
+   ```
+
+Commit + push, then `flux reconcile kustomization platform --with-source`.
+Because the live Service's `loadBalancerClass` is immutable, delete it
+once so it is recreated with the MetalLB class + floating IP:
+
+```bash
+kubectl delete svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-name
+```
+
+<details>
+<summary>Manual fallback (no GitOps) — raw helm + kubectl</summary>
 
 ```bash
 # Install MetalLB
@@ -793,6 +864,8 @@ kind: L2Advertisement
 metadata:
   name: envoy-gateway-l2
   namespace: metallb-system
+  labels:
+    kube-dc.com/advertisement: envoy-gateway   # shared patch-target label (see BGP notes)
 spec:
   ipAddressPools:
     - envoy-gateway-pool
@@ -800,6 +873,43 @@ spec:
     - br-ext-cloud                        # Kube-OVN provider bridge
 EOF
 ```
+
+Update the Envoy Gateway service to use MetalLB:
+
+```bash
+cat <<'EOF' | kubectl replace -f -
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: custom-proxy-config
+  namespace: envoy-gateway-system
+spec:
+  logging:
+    level:
+      default: warn
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        externalTrafficPolicy: Cluster
+        loadBalancerClass: metallb
+        patch:
+          type: StrategicMerge
+          value:
+            metadata:
+              annotations:
+                metallb.universe.tf/loadBalancerIPs: "203.0.113.20"
+EOF
+```
+
+Delete the existing Envoy service so it is recreated with the new config (`loadBalancerClass` is immutable):
+
+```bash
+kubectl delete svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-name
+```
+
+
+</details>
 
 #### Alternative: BGP announcement (routed / L3-only datacenters)
 
@@ -883,40 +993,6 @@ Notes:
   ARP on the external network and still require the L2 segment described
   in the network prerequisites — BGP mode does not remove that
   requirement.
-
-Update the Envoy Gateway service to use MetalLB:
-
-```bash
-cat <<'EOF' | kubectl replace -f -
-apiVersion: gateway.envoyproxy.io/v1alpha1
-kind: EnvoyProxy
-metadata:
-  name: custom-proxy-config
-  namespace: envoy-gateway-system
-spec:
-  logging:
-    level:
-      default: warn
-  provider:
-    type: Kubernetes
-    kubernetes:
-      envoyService:
-        externalTrafficPolicy: Cluster
-        loadBalancerClass: metallb
-        patch:
-          type: StrategicMerge
-          value:
-            metadata:
-              annotations:
-                metallb.universe.tf/loadBalancerIPs: "203.0.113.20"
-EOF
-```
-
-Delete the existing Envoy service so it is recreated with the new config (`loadBalancerClass` is immutable):
-
-```bash
-kubectl delete svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-name
-```
 
 Verify:
 
@@ -1053,7 +1129,7 @@ kubectl get provider-networks ext-cloud -o jsonpath='{.status.vlans}'
 
 ### 4.4 Update DNS to MetalLB Floating IP
 
-Now that MetalLB is running, update the wildcard DNS record (initially set in [Phase 3.4](#34-configure-dns)) to point to the **floating IP** instead of the single-node IP:
+Now that MetalLB is running, update the wildcard DNS record (initially set in [§3.2](#32-configure-wildcard-dns-required-before-init)) to point to the **floating IP** instead of the single-node IP:
 
 ```
 *.example.com  →  203.0.113.20  (A record, MetalLB floating IP)
@@ -1121,7 +1197,10 @@ To enable Google OAuth login, see [SSO with Google Auth](sso-google-auth.md).
 
 Additional worker nodes can be added to the management cluster in two ways:
 
-**Manual addition** — Install RKE2 agent on a new server and join it to the cluster:
+**Recommended** — use the CLI join from [§2.3](#23-add-worker-nodes-with-kube-dc-bootstrap-install---join-server):
+`kube-dc bootstrap install worker-1 --ssh-host root@<worker-ip> --join-server root@<cp-ip>`.
+
+**Manual addition** (no CLI) — install the RKE2 agent by hand:
 
 ```bash
 # On the new worker node
