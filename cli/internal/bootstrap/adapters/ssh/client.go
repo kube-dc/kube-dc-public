@@ -1,7 +1,8 @@
 // Package ssh is the real ports.SSHClient adapter.
 //
 // **Auth flow** (per B-004): try ssh-agent first (via
-// `$SSH_AUTH_SOCK`), fall back to `IdentityFile` from `~/.ssh/config`.
+// `$SSH_AUTH_SOCK`), fall back to `IdentityFile` from `~/.ssh/config`, then
+// OpenSSH's standard ~/.ssh/id_* identity files.
 // NEVER accept a `--ssh-key` flag — operators put keys in their ssh
 // config; the CLI doesn't manage them.
 //
@@ -712,9 +713,11 @@ func loadAuthMethods(identityFile string) ([]ssh.AuthMethod, error) {
 		}
 	}
 
-	// 2. IdentityFile from ssh_config (or operator-supplied) fallback.
-	if identityFile != "" {
-		body, err := os.ReadFile(identityFile)
+	// 2. IdentityFile from ssh_config, or OpenSSH's standard identity-file
+	// defaults when the target is an explicit user@host/IP without a Host
+	// block. We never accept key bytes or a --ssh-key flag from callers.
+	for _, candidate := range identityFileCandidates(identityFile) {
+		body, err := os.ReadFile(candidate)
 		if err == nil {
 			signer, err := ssh.ParsePrivateKey(body)
 			if err == nil {
@@ -724,9 +727,42 @@ func loadAuthMethods(identityFile string) ([]ssh.AuthMethod, error) {
 	}
 
 	if len(methods) == 0 {
-		return nil, fmt.Errorf("ssh: no auth methods available (set SSH_AUTH_SOCK or configure IdentityFile)")
+		return nil, fmt.Errorf("ssh: no auth methods available (set SSH_AUTH_SOCK, configure IdentityFile, or install a standard ~/.ssh/id_* key)")
 	}
 	return methods, nil
+}
+
+func identityFileCandidates(configured string) []string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		if configured == "" {
+			return nil
+		}
+		return []string{expandTilde(configured)}
+	}
+	names := []string{"id_rsa", "id_ecdsa", "id_ecdsa_sk", "id_ed25519", "id_ed25519_sk", "id_dsa"}
+	out := make([]string, 0, len(names)+1)
+	seen := make(map[string]struct{}, len(names)+1)
+	add := func(path string) {
+		if path == "" {
+			return
+		}
+		path = expandTilde(path)
+		if _, ok := seen[path]; ok {
+			return
+		}
+		seen[path] = struct{}{}
+		out = append(out, path)
+	}
+	// kevinburke/ssh_config returns OpenSSH's default id_rsa value even
+	// when no IdentityFile directive exists. Treat the resolved value as
+	// the first candidate, not an exclusive one; OpenSSH itself continues
+	// through its standard identity list unless IdentitiesOnly is set.
+	add(configured)
+	for _, name := range names {
+		add(filepath.Join(home, ".ssh", name))
+	}
+	return out
 }
 
 func expandTilde(p string) string {

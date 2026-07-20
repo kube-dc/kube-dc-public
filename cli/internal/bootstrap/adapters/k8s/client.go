@@ -269,6 +269,176 @@ func (c *Client) NodeLabels(ctx context.Context) (map[string]map[string]string, 
 	return out, nil
 }
 
+// GPUNodeRuntimes binds exact Node identity to the active device-plugin owners
+// scheduled there. It uses one Node GET and one field-selected Pod LIST per
+// requested node; unrelated nodes and Pods are never listed or returned.
+func (c *Client) GPUNodeRuntimes(ctx context.Context, nodes []string) (map[string]ports.GPUNodeRuntime, error) {
+	out := make(map[string]ports.GPUNodeRuntime, len(nodes))
+	for _, name := range nodes {
+		node, err := c.core.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("k8s: get GPU node %s: %w", name, err)
+		}
+		labels := make(map[string]string, len(node.Labels))
+		for key, value := range node.Labels {
+			labels[key] = value
+		}
+		pods, err := c.core.CoreV1().Pods(metav1.NamespaceAll).List(ctx, metav1.ListOptions{
+			FieldSelector: "spec.nodeName=" + name,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("k8s: list Pods on GPU node %s: %w", name, err)
+		}
+		owners := make([]ports.GPUPluginOwner, 0)
+		for i := range pods.Items {
+			pod := &pods.Items[i]
+			if pod.DeletionTimestamp != nil || pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+				continue
+			}
+			for _, owner := range pod.OwnerReferences {
+				if owner.Controller != nil && *owner.Controller {
+					owners = append(owners, ports.GPUPluginOwner{Namespace: pod.Namespace, Kind: owner.Kind, Name: owner.Name})
+					break
+				}
+			}
+		}
+		sort.Slice(owners, func(i, j int) bool {
+			left := owners[i].Namespace + "/" + owners[i].Kind + "/" + owners[i].Name
+			right := owners[j].Namespace + "/" + owners[j].Kind + "/" + owners[j].Name
+			return left < right
+		})
+		out[name] = ports.GPUNodeRuntime{
+			Name: name, SystemUUID: node.Status.NodeInfo.SystemUUID,
+			Labels: labels, PluginOwners: owners,
+		}
+	}
+	return out, nil
+}
+
+func (c *Client) GPUNodeTransitionState(ctx context.Context, name string) (ports.GPUNodeTransitionState, error) {
+	node, err := c.core.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return ports.GPUNodeTransitionState{}, fmt.Errorf("k8s: get GPU node %s: %w", name, err)
+	}
+	pods, err := c.core.CoreV1().Pods(metav1.NamespaceAll).List(ctx, metav1.ListOptions{FieldSelector: "spec.nodeName=" + name})
+	if err != nil {
+		return ports.GPUNodeTransitionState{}, fmt.Errorf("k8s: list Pods on GPU node %s: %w", name, err)
+	}
+
+	labels := make(map[string]string, len(node.Labels))
+	for key, value := range node.Labels {
+		labels[key] = value
+	}
+	owners := make([]ports.GPUPluginOwner, 0)
+	holdersByKey := map[string]ports.GPUHolder{}
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if pod.DeletionTimestamp != nil || pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+			continue
+		}
+		controllerKind, controllerName := "Pod", pod.Name
+		for _, owner := range pod.OwnerReferences {
+			if owner.Controller != nil && *owner.Controller {
+				owners = append(owners, ports.GPUPluginOwner{Namespace: pod.Namespace, Kind: owner.Kind, Name: owner.Name})
+				controllerKind, controllerName = owner.Kind, owner.Name
+				break
+			}
+		}
+		resources := podGPUResources(pod)
+		if len(resources) > 0 {
+			key := pod.Namespace + "/" + controllerKind + "/" + controllerName
+			holder := holdersByKey[key]
+			holder.Namespace, holder.Kind, holder.Name = pod.Namespace, controllerKind, controllerName
+			holder.Resources = mergeStrings(holder.Resources, resources)
+			holdersByKey[key] = holder
+		}
+	}
+	sort.Slice(owners, func(i, j int) bool {
+		return owners[i].Namespace+"/"+owners[i].Kind+"/"+owners[i].Name < owners[j].Namespace+"/"+owners[j].Kind+"/"+owners[j].Name
+	})
+	holders := make([]ports.GPUHolder, 0, len(holdersByKey))
+	for _, holder := range holdersByKey {
+		holders = append(holders, holder)
+	}
+	sort.Slice(holders, func(i, j int) bool {
+		return holders[i].Namespace+"/"+holders[i].Kind+"/"+holders[i].Name < holders[j].Namespace+"/"+holders[j].Kind+"/"+holders[j].Name
+	})
+	ready := false
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == corev1.NodeReady {
+			ready = condition.Status == corev1.ConditionTrue
+			break
+		}
+	}
+	return ports.GPUNodeTransitionState{
+		Runtime: ports.GPUNodeRuntime{Name: node.Name, SystemUUID: node.Status.NodeInfo.SystemUUID, Labels: labels, PluginOwners: owners},
+		Holders: holders, Ready: ready, Unschedulable: node.Spec.Unschedulable,
+	}, nil
+}
+
+func (c *Client) SetGPUNodeSchedulable(ctx context.Context, name string, schedulable bool) error {
+	patch := []byte(`{"spec":{"unschedulable":` + strconv.FormatBool(!schedulable) + `}}`)
+	if _, err := c.core.CoreV1().Nodes().Patch(ctx, name, types.MergePatchType, patch, metav1.PatchOptions{}); err != nil {
+		return fmt.Errorf("k8s: set GPU node %s schedulable=%t: %w", name, schedulable, err)
+	}
+	return nil
+}
+
+func podGPUResources(pod *corev1.Pod) []string {
+	seen := map[string]bool{}
+	if len(pod.Spec.ResourceClaims) > 0 {
+		// During a GPU-node ownership transition every DRA holder is unsafe,
+		// even if its DeviceClass belongs to a future non-GPU driver. Blocking
+		// is preferable to moving a node while kubelet has prepared devices.
+		seen["resource.k8s.io/claim"] = true
+	}
+	add := func(resources corev1.ResourceList) {
+		for name, quantity := range resources {
+			key := string(name)
+			if quantity.Sign() > 0 && isGPUResourceName(key) {
+				seen[key] = true
+			}
+		}
+	}
+	for i := range pod.Spec.InitContainers {
+		add(pod.Spec.InitContainers[i].Resources.Requests)
+		add(pod.Spec.InitContainers[i].Resources.Limits)
+	}
+	for i := range pod.Spec.Containers {
+		add(pod.Spec.Containers[i].Resources.Requests)
+		add(pod.Spec.Containers[i].Resources.Limits)
+	}
+	for i := range pod.Spec.EphemeralContainers {
+		add(pod.Spec.EphemeralContainers[i].Resources.Requests)
+		add(pod.Spec.EphemeralContainers[i].Resources.Limits)
+	}
+	add(pod.Spec.Overhead)
+	out := make([]string, 0, len(seen))
+	for name := range seen {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func isGPUResourceName(name string) bool {
+	return strings.HasPrefix(name, "nvidia.com/") || strings.HasPrefix(name, "requests.nvidia.com/") ||
+		strings.HasPrefix(name, "amd.com/gpu") || strings.HasPrefix(name, "gpu.intel.com/")
+}
+
+func mergeStrings(left, right []string) []string {
+	seen := map[string]bool{}
+	for _, value := range append(left, right...) {
+		seen[value] = true
+	}
+	out := make([]string, 0, len(seen))
+	for value := range seen {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func (c *Client) DeploymentImages(ctx context.Context, ns string) (map[string]string, error) {
 	list, err := c.core.AppsV1().Deployments(ns).List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -292,6 +462,19 @@ func (c *Client) ListNamespaces(ctx context.Context) ([]string, error) {
 	out := make([]string, 0, len(list.Items))
 	for _, n := range list.Items {
 		out = append(out, n.Name)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func (c *Client) ListPodNames(ctx context.Context, ns, labelSelector string) ([]string, error) {
+	list, err := c.core.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{LabelSelector: labelSelector})
+	if err != nil {
+		return nil, fmt.Errorf("k8s: list pods in %s with selector %q: %w", ns, labelSelector, err)
+	}
+	out := make([]string, 0, len(list.Items))
+	for _, pod := range list.Items {
+		out = append(out, pod.Name)
 	}
 	sort.Strings(out)
 	return out, nil

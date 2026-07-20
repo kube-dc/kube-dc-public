@@ -120,7 +120,8 @@ func (c *Client) WatchKustomizations(ctx context.Context) (<-chan ports.Kustomiz
 	out := make(chan ports.KustomizationEvent, 16)
 	go func() {
 		defer close(out)
-		c.watchLoop(ctx, kustomizationGVR, func(u *unstructured.Unstructured) bool {
+		// Kustomizations we care about live in flux-system.
+		c.watchLoop(ctx, kustomizationGVR, fluxSystemNamespace, func(u *unstructured.Unstructured) bool {
 			ev := kustomizationFromUnstructured(u)
 			select {
 			case out <- ev:
@@ -138,7 +139,12 @@ func (c *Client) WatchHelmReleases(ctx context.Context) (<-chan ports.HelmReleas
 	out := make(chan ports.HelmReleaseEvent, 16)
 	go func() {
 		defer close(out)
-		c.watchLoop(ctx, helmReleaseGVR, func(u *unstructured.Unstructured) bool {
+		// HelmReleases are cluster-wide — kube-dc's land in kube-system,
+		// cert-manager, rook-ceph, cnpg-system, monitoring, etc. (NOT
+		// flux-system). Watch ALL namespaces ("") or the reconcile tally
+		// reports 0 HelmReleases while the platform is full of Ready ones
+		// (kube-dc E2E 2026-07-08: showed "0/0" with 7 HRs Ready).
+		c.watchLoop(ctx, helmReleaseGVR, metav1.NamespaceAll, func(u *unstructured.Unstructured) bool {
 			ev := helmReleaseFromUnstructured(u)
 			select {
 			case out <- ev:
@@ -183,14 +189,39 @@ func gvrForKind(kind string) (schema.GroupVersionResource, error) {
 // errors. emit is invoked for every successful unstructured event;
 // returning false from emit signals "consumer is gone / ctx done"
 // and unwinds the loop without further reconnects.
-func (c *Client) watchLoop(ctx context.Context, gvr schema.GroupVersionResource, emit func(*unstructured.Unstructured) bool) {
+func (c *Client) watchLoop(ctx context.Context, gvr schema.GroupVersionResource, namespace string, emit func(*unstructured.Unstructured) bool) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
-		w, err := c.dyn.Resource(gvr).Namespace(fluxSystemNamespace).Watch(ctx, metav1.ListOptions{})
+		// LIST first, then Watch from the list's resourceVersion. A bare
+		// Watch delivers only *changes* — so on an already-converged,
+		// quiet cluster (e.g. a resume against a healthy platform) it
+		// would emit nothing and a consumer waiting for "platform Ready"
+		// would sit until timeout even though everything is Ready. The
+		// initial List emits current state as a snapshot; the subsequent
+		// Watch (pinned to the list's resourceVersion) picks up changes
+		// without a gap. Re-listing on every reconnect also avoids
+		// "resourceVersion too old" (HTTP 410) after a dropped watch.
+		list, err := c.dyn.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(2 * time.Second):
+				continue
+			}
+		}
+		for i := range list.Items {
+			if !emit(&list.Items[i]) {
+				return
+			}
+		}
+		w, err := c.dyn.Resource(gvr).Namespace(namespace).Watch(ctx, metav1.ListOptions{
+			ResourceVersion: list.GetResourceVersion(),
+		})
 		if err != nil {
 			select {
 			case <-ctx.Done():

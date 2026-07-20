@@ -82,6 +82,20 @@ func (f *Factory) Host(mode discover.HostProbeMode) []ports.Probe {
 	return out
 }
 
+// Accelerators mirrors the real factory's dedicated doctor category. Existing
+// scenarios intentionally default to no accelerator fixture; hardware-specific
+// facts are covered by discover's sysfs fixtures instead of fabricated here.
+func (f *Factory) Accelerators(mode discover.HostProbeMode) []ports.Probe {
+	result := notApplicableResult("accelerator-pci")
+	if mode == discover.HostProbeOn {
+		result = ports.Result{
+			Status: ports.StatusMissing, Severity: ports.SeverityInfo,
+			Detail: "no PCI class 0300/0302 accelerator fixture",
+		}
+	}
+	return []ports.Probe{discover.NewStaticProbe("accelerator-pci", result)}
+}
+
 // DNS delegates to the real DNS probes — the mock session's
 // DNSClient is already scenario-backed (mock.DNSClient resolves
 // against the scenario's `dns:` map), so wiring the real probes

@@ -165,6 +165,48 @@ func NewSSHOnly(opts ...ssh.Option) (ports.SSHClient, error) {
 	return ssh.New(opts...), nil
 }
 
+// NewGPUClusterOnly constructs the narrow, read-only target-cluster adapter
+// used by GPU identity/plugin conflict preflight. Requiring an explicit
+// kubeconfig prevents bootstrap init from accidentally inspecting whatever
+// unrelated context happens to be current on the operator workstation.
+func NewGPUClusterOnly(kubeconfig string) (ports.GPUClusterReader, error) {
+	if kubeconfig == "" {
+		return nil, fmt.Errorf("bootstrap: GPU target kubeconfig is required")
+	}
+	client, err := k8s.New(kubeconfig)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap: build GPU target cluster adapter: %w", err)
+	}
+	return client, nil
+}
+
+// NewGPUTransitionOnly constructs the narrow day-two GPU transition adapter.
+// Unlike NewGPUClusterOnly it exposes exact holder observation plus the single
+// spec.unschedulable patch used by the cordon-first state machine.
+func NewGPUTransitionOnly(kubeconfig string) (ports.GPUTransitionClient, error) {
+	if kubeconfig == "" {
+		return nil, fmt.Errorf("bootstrap: GPU target kubeconfig is required")
+	}
+	client, err := k8s.New(kubeconfig)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap: build GPU transition adapter: %w", err)
+	}
+	return client, nil
+}
+
+// NewGPUDRAOnly builds the read-only adapter used by status, doctor and
+// migration planning. It never mutates workloads, claims, nodes, or Fleet.
+func NewGPUDRAOnly(kubeconfig string) (ports.GPUDRAReader, error) {
+	if kubeconfig == "" {
+		return nil, fmt.Errorf("bootstrap: GPU target kubeconfig is required")
+	}
+	client, err := k8s.New(kubeconfig)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap: build GPU DRA target cluster adapter: %w", err)
+	}
+	return client, nil
+}
+
 // NewGitOnly constructs just the Git port. Isolated from NewSession the
 // same way NewSSHOnly/NewSOPSOnly are: `bootstrap config set` edits +
 // commits the fleet repo and needs ONLY Git — a missing kubeconfig must

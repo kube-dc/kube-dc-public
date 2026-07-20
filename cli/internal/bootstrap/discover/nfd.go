@@ -131,17 +131,17 @@ const rawNFDPrefix = "feature.node.kubernetes.io/"
 //
 // The KVM check requires TWO conditions to hold on a node:
 //
-//   1. Hardware virtualization is supported by the CPU:
-//        Intel VT-x → cpu-cpuid.VMX
-//        AMD-V      → cpu-cpuid.SVM
-//      NFD sets these labels from /proc/cpuinfo flags.
+//  1. Hardware virtualization is supported by the CPU:
+//     Intel VT-x → cpu-cpuid.VMX
+//     AMD-V      → cpu-cpuid.SVM
+//     NFD sets these labels from /proc/cpuinfo flags.
 //
-//   2. The Linux `kvm` kernel module is loaded:
-//        NFD may label this as `kernel-module.kvm` or
-//        `kernel-loadedmodule.kvm` depending on which feature
-//        source is enabled (loadedmodule is more recent). We
-//        accept either alias so this fallback isn't fragile to
-//        NFD's own version drift.
+//  2. The Linux `kvm` kernel module is loaded:
+//     NFD may label this as `kernel-module.kvm` or
+//     `kernel-loadedmodule.kvm` depending on which feature
+//     source is enabled (loadedmodule is more recent). We
+//     accept either alias so this fallback isn't fragile to
+//     NFD's own version drift.
 //
 // **Not checked here** (deferred to the M6-T02 composite):
 //   - The arch-specific submodule (`kvm_intel` for Intel,
@@ -156,7 +156,7 @@ const rawNFDPrefix = "feature.node.kubernetes.io/"
 //
 // So the raw fallback's rule is:
 //
-//     kubevirt-eligible = (VMX ∨ SVM) ∧ (kvm-module ∨ kvm-loadedmodule)
+//	kubevirt-eligible = (VMX ∨ SVM) ∧ (kvm-module ∨ kvm-loadedmodule)
 //
 // **Over-count risk**: VMX+kvm true, but kvm_intel not actually
 // loaded (rare — implies an operator ran `modprobe kvm` by hand
@@ -173,10 +173,9 @@ const (
 )
 
 // GPU vendor IDs as they appear in NFD's raw pci-*.present labels.
-// NFD's config decides the exact shape: default is
-// `pci-<class>_<vendor>.present`, but common tenant configs also
-// enable `pci-<vendor>.present` (any class). We match on substring
-// so both shapes are recognised.
+// Only the class-qualified `pci-<class>_<vendor>.present` form is
+// accepted. Vendor-only labels are intentionally ignored: NVIDIA and AMD
+// expose audio, USB, encryption, and bridge functions which are not GPUs.
 const (
 	pciVendorNvidia = "10de" // NVIDIA Corp.
 	pciVendorAMD    = "1002" // Advanced Micro Devices, Inc.
@@ -270,11 +269,10 @@ func isKubeVirtEligible(node map[string]string, compositesInstalled bool) bool {
 }
 
 // hasVendorGPU resolves a node's GPU-by-vendor. Composites-preferred:
-// if the composite label is set to "true", return true. Fallback:
-// substring-match against any pci-* label containing the vendor ID.
-// The substring match handles both NFD-default `pci-<class>_<vendor>`
-// shape and the any-class `pci-<vendor>` shape without operator
-// intervention.
+// if the composite label is set to "true", return true. Raw fallback accepts
+// only NFD's class-qualified display/3D controller labels (0300/0302).
+// Vendor-only matching is unsafe because a vendor ID identifies every PCI
+// function made by that vendor, not only its accelerators.
 func hasVendorGPU(node map[string]string, compositesInstalled bool, compositeKey, vendorID string) bool {
 	if compositesInstalled {
 		return node[compositeKey] == "true"
@@ -286,7 +284,13 @@ func hasVendorGPU(node map[string]string, compositesInstalled bool, compositeKey
 		if v != "true" {
 			continue
 		}
-		if strings.Contains(k, vendorID) {
+		raw := strings.TrimSuffix(strings.TrimPrefix(k, rawNFDPrefix+"pci-"), ".present")
+		parts := strings.Split(raw, "_")
+		if len(parts) != 2 {
+			continue
+		}
+		class, vendor := strings.ToLower(parts[0]), strings.ToLower(parts[1])
+		if (class == "0300" || class == "0302") && vendor == vendorID {
 			return true
 		}
 	}

@@ -202,7 +202,19 @@ node-name: ${NODE_NAME}
 node-ip: ${NODE_IP}
 node-external-ip: ${EXTERNAL_IP}
 disable-cloud-controller: true
-disable: rke2-ingress-nginx
+disable:
+  - rke2-ingress-nginx
+  # Traefik is RKE2's DEFAULT packaged ingress and must be disabled too:
+  # kube-dc serves ingress with Envoy Gateway, which owns the Gateway API
+  # CRDs. Left enabled, rke2-traefik-crd fails forever trying to import
+  # them ("exists and cannot be imported into the current release") and
+  # rke2-traefik then fails on the missing CRDs -- observed on
+  # a live cluster at ~600 restarts over 2 days. Worse than the noise:
+  # if it ever succeeded it would contend with Envoy for those CRDs and
+  # for the :80/:443 hostPorts -- a packaged ingress-nginx once hijacked
+  # the API server's :443 exactly that way on a host-network Envoy cluster.
+  - rke2-traefik
+  - rke2-traefik-crd
 cni: none
 cluster-cidr: "${POD_CIDR}"
 service-cidr: "${SERVICE_CIDR}"
@@ -250,7 +262,19 @@ node-name: ${NODE_NAME}
 node-ip: ${NODE_IP}
 node-external-ip: ${EXTERNAL_IP}
 disable-cloud-controller: true
-disable: rke2-ingress-nginx
+disable:
+  - rke2-ingress-nginx
+  # Traefik is RKE2's DEFAULT packaged ingress and must be disabled too:
+  # kube-dc serves ingress with Envoy Gateway, which owns the Gateway API
+  # CRDs. Left enabled, rke2-traefik-crd fails forever trying to import
+  # them ("exists and cannot be imported into the current release") and
+  # rke2-traefik then fails on the missing CRDs -- observed on
+  # a live cluster at ~600 restarts over 2 days. Worse than the noise:
+  # if it ever succeeded it would contend with Envoy for those CRDs and
+  # for the :80/:443 hostPorts -- a packaged ingress-nginx once hijacked
+  # the API server's :443 exactly that way on a host-network Envoy cluster.
+  - rke2-traefik
+  - rke2-traefik-crd
 cni: none
 cluster-cidr: "${POD_CIDR}"
 service-cidr: "${SERVICE_CIDR}"

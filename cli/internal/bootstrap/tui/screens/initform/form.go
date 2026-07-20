@@ -90,6 +90,18 @@ type State struct {
 	S3Hostname        string
 	NoS3Exposure      bool
 	DisabledConsent   bool
+	// VM root-disk storage (PRD vm-storage-mode). Optional; empty/local =
+	// local-path (the VM default). shared-rbd needs a rook-ceph-* OSMode.
+	// Goldens stay CLI-only (--vm-golden) — the TUI collects the mode.
+	VMStorageMode string
+	// accelerators — thin view over clusterinit.GPUConfig. Node modes and
+	// profiles use the canonical comma-separated CLI/config representation.
+	GPUPlatform, GPUDriverSource                                  string
+	GPUOperatorVersion, NVIDIADriverVersion, NVIDIAToolkitVersion string
+	HAMiEnabled                                                   bool
+	HAMiVersion, HAMiSchedulerVersion                             string
+	GPUNodeModes, GPUProfiles                                     string
+	AllowUnassignedGPUs, VGPUSecretReady                          bool
 	// gates
 	AllowDNSNotReady bool
 	// AllowNoKubevirtEligible → --allow-no-kubevirt-eligible: proceed when
@@ -221,6 +233,41 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 	}
 	o.S3Hostname = strings.TrimSpace(s.S3Hostname)
 	o.NoS3Exposure = s.NoS3Exposure
+	// VM root-disk storage — the mode only; --vm-golden stays CLI-only.
+	// Empty == local (the writer + Validate both treat it as no-op). The
+	// selector is HIDDEN unless object storage is rook-backed (shared-rbd
+	// needs rbd-pool); clear a stale non-local value the user can no longer
+	// see, so Validate can't fail on a hidden field.
+	vmMode := strings.TrimSpace(s.VMStorageMode)
+	rookBacked := o.RookMode == clusterinit.RookCephLocal ||
+		o.RookMode == clusterinit.RookCephMultiNode ||
+		o.RookMode == clusterinit.RookCephPVC
+	if !rookBacked {
+		vmMode = ""
+	}
+	o.VMStorageMode = clusterinit.VMStorageMode(vmMode)
+	// Rebuild the GPU surface from the panel. Disabled clears all dependent
+	// values so hidden fields cannot leak an earlier enabled configuration.
+	o.GPUPlatform = clusterinit.GPUPlatformMode(strings.TrimSpace(s.GPUPlatform))
+	o.GPUDriverSource = clusterinit.GPUDriverSource(strings.TrimSpace(s.GPUDriverSource))
+	o.GPUOperatorVersion = strings.TrimSpace(s.GPUOperatorVersion)
+	o.NVIDIADriverVersion = strings.TrimSpace(s.NVIDIADriverVersion)
+	o.NVIDIAToolkitVersion = strings.TrimSpace(s.NVIDIAToolkitVersion)
+	o.HAMiEnabled = s.HAMiEnabled
+	o.HAMiVersion = strings.TrimSpace(s.HAMiVersion)
+	o.HAMiSchedulerVersion = strings.TrimSpace(s.HAMiSchedulerVersion)
+	modes, err := clusterinit.ParseGPUNodeModes([]string{s.GPUNodeModes})
+	if err != nil {
+		return fmt.Errorf("GPU node modes: %w", err)
+	}
+	o.GPUNodeModes = modes
+	o.GPUProfiles = splitComma(s.GPUProfiles)
+	o.AllowUnassignedGPUs = s.AllowUnassignedGPUs
+	o.VGPUSecretReady = s.VGPUSecretReady
+	if o.GPUPlatform == clusterinit.GPUPlatformDisabled {
+		o.GPUNodeModes, o.GPUProfiles = nil, nil
+		o.HAMiEnabled, o.AllowUnassignedGPUs, o.VGPUSecretReady = false, false, false
+	}
 	o.AllowDNSNotReady = s.AllowDNSNotReady
 	o.AllowNoKubevirtEligible = s.AllowNoKubevirtEligible
 	// The bypass only carries meaning in adopt mode; never emit it for
@@ -284,6 +331,7 @@ func (s *State) FromOptions(o *clusterinit.InitOptions) {
 		}
 	}
 	set(&s.OSMode, string(o.RookMode))
+	set(&s.VMStorageMode, string(o.VMStorageMode))
 	set(&s.OSDNode, o.RookOSDNode)
 	if o.RookOSDSizeGB > 0 {
 		s.OSDSizeGB = strconv.Itoa(o.RookOSDSizeGB)
@@ -310,6 +358,22 @@ func (s *State) FromOptions(o *clusterinit.InitOptions) {
 		s.CephOSDVolumeSize = strconv.Itoa(o.CephOSDVolumeSizeGB)
 	}
 	set(&s.S3Hostname, o.S3Hostname)
+	set(&s.GPUPlatform, string(o.GPUPlatform))
+	set(&s.GPUDriverSource, string(o.GPUDriverSource))
+	set(&s.GPUOperatorVersion, o.GPUOperatorVersion)
+	set(&s.NVIDIADriverVersion, o.NVIDIADriverVersion)
+	set(&s.NVIDIAToolkitVersion, o.NVIDIAToolkitVersion)
+	s.HAMiEnabled = o.HAMiEnabled
+	set(&s.HAMiVersion, o.HAMiVersion)
+	set(&s.HAMiSchedulerVersion, o.HAMiSchedulerVersion)
+	if len(o.GPUNodeModes) > 0 {
+		s.GPUNodeModes = gpuNodeModesString(o.GPUNodeModes)
+	}
+	if len(o.GPUProfiles) > 0 {
+		s.GPUProfiles = strings.Join(o.GPUProfiles, ",")
+	}
+	s.AllowUnassignedGPUs = o.AllowUnassignedGPUs
+	s.VGPUSecretReady = o.VGPUSecretReady
 	if o.NoS3Exposure {
 		s.NoS3Exposure = true
 	}
@@ -384,6 +448,18 @@ func (s *State) EquivalentFlags(o *clusterinit.InitOptions) string {
 	if o.NoS3Exposure {
 		b.WriteString("  --no-s3-exposure \\\n")
 	}
+	// VM root-disk storage — only emit when non-default (local is the
+	// default; omitting the flag is equivalent). Goldens come from the CLI
+	// (not the TUI) but round-trip here so a prefilled invocation reproduces.
+	if o.VMStorageMode != "" && o.VMStorageMode != clusterinit.VMStorageLocal {
+		add("vm-storage-mode", string(o.VMStorageMode))
+		for _, g := range o.VMGoldens {
+			add("vm-golden", g)
+		}
+		for _, g := range o.VMGoldensBlock {
+			add("vm-golden-block", g)
+		}
+	}
 	if o.AllowDNSNotReady {
 		b.WriteString("  --allow-dns-not-ready \\\n")
 	}
@@ -393,8 +469,55 @@ func (s *State) EquivalentFlags(o *clusterinit.InitOptions) string {
 	if o.AllowUnpinnedAdopt {
 		b.WriteString("  --allow-unpinned-adopt \\\n")
 	}
+	add("gpu-platform", string(o.GPUPlatform))
+	if o.GPUPlatform != clusterinit.GPUPlatformDisabled {
+		add("gpu-driver-source", string(o.GPUDriverSource))
+		add("gpu-operator-version", o.GPUOperatorVersion)
+		add("nvidia-driver-version", o.NVIDIADriverVersion)
+		add("nvidia-toolkit-version", o.NVIDIAToolkitVersion)
+		if o.HAMiEnabled {
+			b.WriteString("  --hami-enabled \\\n")
+		}
+		add("hami-version", o.HAMiVersion)
+		add("hami-scheduler-version", o.HAMiSchedulerVersion)
+		for _, pair := range strings.Split(gpuNodeModesString(o.GPUNodeModes), ",") {
+			add("gpu-node-mode", pair)
+		}
+		for _, profile := range o.GPUProfiles {
+			add("gpu-profile", profile)
+		}
+		if o.AllowUnassignedGPUs {
+			b.WriteString("  --allow-unassigned-gpus \\\n")
+		}
+		if o.VGPUSecretReady {
+			b.WriteString("  --vgpu-secret-ready \\\n")
+		}
+	}
 	b.WriteString("  --dry-run")
 	return b.String()
+}
+
+func splitComma(raw string) []string {
+	var out []string
+	for _, item := range strings.Split(raw, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func gpuNodeModesString(m map[string]clusterinit.GPUNodeMode) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, k+"="+string(m[k]))
+	}
+	return strings.Join(parts, ",")
 }
 
 // validateOptionalInt accepts empty (defaulted) or a positive integer.

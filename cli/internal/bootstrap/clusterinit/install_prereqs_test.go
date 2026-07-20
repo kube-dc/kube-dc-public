@@ -19,8 +19,8 @@ type stubProbe struct {
 	result ports.Result
 }
 
-func (p *stubProbe) Name() string                              { return p.name }
-func (p *stubProbe) Run(_ context.Context) ports.Result        { return p.result }
+func (p *stubProbe) Name() string                       { return p.name }
+func (p *stubProbe) Run(_ context.Context) ports.Result { return p.result }
 
 // fakePrereqRunner records ScriptRunner.Run calls + emits a
 // canned Line stream (stdout lines + a StreamExit terminator).
@@ -30,6 +30,12 @@ type fakePrereqRunner struct {
 	lines    []ports.Line
 	exitCode int
 	runErr   error
+	// dropExit omits the terminal exit record, modelling a script that
+	// was killed or a runner that died mid-run.
+	dropExit bool
+	// exitText overrides the exit record's text verbatim (e.g. a
+	// malformed code). Ignored when dropExit is set.
+	exitText string
 
 	// captured
 	calls    int
@@ -48,8 +54,15 @@ func (f *fakePrereqRunner) Run(_ context.Context, name ports.ScriptKind, env map
 	for _, l := range f.lines {
 		ch <- l
 	}
-	// Terminator line carries the exit code.
-	ch <- ports.Line{Stream: ports.StreamExit, Text: fmt.Sprintf("%d", f.exitCode)}
+	// Terminator line carries the exit code. dropExit/exitText let a
+	// spec drive the contract violations ports.Drain must reject.
+	if !f.dropExit {
+		text := f.exitText
+		if text == "" {
+			text = fmt.Sprintf("%d", f.exitCode)
+		}
+		ch <- ports.Line{Stream: ports.StreamExit, Text: text}
+	}
 	close(ch)
 	return ch, nil
 }
@@ -342,9 +355,9 @@ func TestDetectMissingTools_SortsAlphabetically(t *testing.T) {
 // tool now probes as present" between the pre- and post-install
 // detectMissingTools passes.
 type flippingProbe struct {
-	name        string
+	name         string
 	first, later ports.Result
-	callp       *int
+	callp        *int
 }
 
 func (p *flippingProbe) Name() string { return p.name }
@@ -354,4 +367,60 @@ func (p *flippingProbe) Run(_ context.Context) ports.Result {
 		return p.first
 	}
 	return p.later
+}
+
+// Caller-level regressions for the ports.Drain migration.
+//
+// Testing the contract in ports.Drain alone is not enough: this caller
+// could be reverted to its old hand-rolled loop -- which defaulted the
+// exit code to 0 and parsed with fmt.Sscanf -- and every existing spec
+// here would stay green, because the fake always appended a well-formed
+// exit record. These drive the two shapes that loop got wrong.
+//
+// Both must fail the install. The post-install re-probe narrows the
+// blast radius but does not cover this: it answers "is the tool present
+// now", not "did we ever learn how the installer ended". A script killed
+// after installing one of two tools re-probes clean for the one it
+// managed to install.
+func TestInstallPrereqs_TruncatedStream_FailsInstall(t *testing.T) {
+	call := 0
+	probes := []ports.Probe{
+		&flippingProbe{name: "sops", first: missingResult, later: presentResult, callp: &call},
+		&stubProbe{name: "kubectl", result: presentResult},
+	}
+	runner := &fakePrereqRunner{
+		lines:    []ports.Line{{Stream: ports.StreamStdout, Text: "[install] apt-get install sops"}},
+		dropExit: true, // killed mid-run: no terminal exit record
+	}
+	var out bytes.Buffer
+	_, err := InstallPrereqs(context.Background(), InstallPrereqsOptions{
+		Runner: runner, Probes: probes, Assume: true, Out: &out,
+	})
+	if err == nil {
+		t.Fatal("a stream with no exit record must fail the install, not be synthesized as exit 0")
+	}
+	if !errors.Is(err, ports.ErrStreamTruncated) {
+		t.Errorf("want ports.ErrStreamTruncated, got %v", err)
+	}
+}
+
+func TestInstallPrereqs_MalformedExitCode_FailsInstall(t *testing.T) {
+	call := 0
+	probes := []ports.Probe{
+		&flippingProbe{name: "sops", first: missingResult, later: presentResult, callp: &call},
+		&stubProbe{name: "kubectl", result: presentResult},
+	}
+	// fmt.Sscanf("%d") stopped at the first non-digit and reported
+	// success, so this parsed as a clean exit 0.
+	runner := &fakePrereqRunner{exitText: "0garbage"}
+	var out bytes.Buffer
+	_, err := InstallPrereqs(context.Background(), InstallPrereqsOptions{
+		Runner: runner, Probes: probes, Assume: true, Out: &out,
+	})
+	if err == nil {
+		t.Fatal(`exit record "0garbage" must fail the install, not parse as a clean 0`)
+	}
+	if !errors.Is(err, ports.ErrStreamBadExitCode) {
+		t.Errorf("want ports.ErrStreamBadExitCode, got %v", err)
+	}
 }

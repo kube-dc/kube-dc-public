@@ -232,7 +232,7 @@ POD_CIDR=10.100.0.0/16
 		"EXT_PUBLIC_CIDR":    "203.0.113.48/29",
 		"EXT_PUBLIC_GATEWAY": "203.0.113.49",
 	}
-	if err := postProcessClusterConfig(path, plan, sets); err != nil {
+	if err := postProcessClusterConfig(path, plan, sets, ""); err != nil {
 		t.Fatalf("postProcess: %v", err)
 	}
 
@@ -241,10 +241,10 @@ POD_CIDR=10.100.0.0/16
 	for _, want := range []string{
 		"EXT_NET_VLAN_ID=1103",
 		"EXT_NET_INTERFACE=bond0",
-		"EXT_PUBLIC_VLAN_ID=1100",      // new key appended
+		"EXT_PUBLIC_VLAN_ID=1100", // new key appended
 		"EXT_PUBLIC_CIDR=203.0.113.48/29",
 		"EXT_PUBLIC_GATEWAY=203.0.113.49",
-		"KUBE_DC_VERSION=v0.3.63",      // inherited
+		"KUBE_DC_VERSION=v0.3.63", // inherited
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("env missing %q\nFULL:\n%s", want, out)
@@ -269,7 +269,7 @@ func TestPostProcessClusterConfig_OperatorOverrideBeatsInherited(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	plan := &Plan{
-		Preset:      PresetCloudPublicVLAN,
+		Preset:            PresetCloudPublicVLAN,
 		InheritedDefaults: map[string]string{"KUBE_DC_VERSION": "v0.3.63"},
 	}
 	sets := map[string]string{
@@ -280,7 +280,7 @@ func TestPostProcessClusterConfig_OperatorOverrideBeatsInherited(t *testing.T) {
 		"EXT_PUBLIC_GATEWAY": "10.0.0.1",
 		"KUBE_DC_VERSION":    "v0.4.0", // operator override
 	}
-	if err := postProcessClusterConfig(path, plan, sets); err != nil {
+	if err := postProcessClusterConfig(path, plan, sets, ""); err != nil {
 		t.Fatalf("postProcess: %v", err)
 	}
 	body, _ := os.ReadFile(path)
@@ -536,5 +536,49 @@ func TestScaffold_ScriptNonZeroExit(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "exit=1") {
 		t.Errorf("error should report exit code: %v", err)
+	}
+}
+
+// A stream that ends without a terminal exit record must fail the
+// scaffold, not be read as a clean exit 0.
+//
+// drainAndRedactAddCluster used to return (0, nil) in exactly this case,
+// documented as a defensive fallback. It was the opposite: a killed
+// add-cluster.sh or a runner that died mid-run produces precisely this
+// shape, and Scaffold would continue into post-processing believing the
+// overlay had been written.
+func TestScaffold_TruncatedStream_IsFailureNotSuccess(t *testing.T) {
+	repo := t.TempDir()
+	runner := &fakeScriptRunner{
+		fleetRoot: repo,
+		lines: []ports.Line{
+			{Stream: ports.StreamStdout, Text: "==> Creating cluster overlay: atlantis", Time: time.Now()},
+			// No StreamExit record: the stream just ends.
+		},
+	}
+	var out bytes.Buffer
+	err := Scaffold(context.Background(), ScaffoldOptions{
+		Plan: &Plan{
+			ClusterName: "atlantis",
+			Domain:      "kdc.atlantis.example.com",
+			Preset:      PresetCloudPublicVLAN,
+		},
+		FleetRepo:      repo,
+		NodeExternalIP: "203.0.113.52",
+		Sets: map[string]string{
+			"EXT_NET_VLAN_ID":    "1103",
+			"EXT_NET_INTERFACE":  "bond0",
+			"EXT_PUBLIC_VLAN_ID": "1100",
+			"EXT_PUBLIC_CIDR":    "203.0.113.48/29",
+			"EXT_PUBLIC_GATEWAY": "203.0.113.49",
+		},
+		Runner: runner,
+		Out:    &out,
+	})
+	if err == nil {
+		t.Fatal("truncated stream must fail the scaffold, not be synthesized as exit 0")
+	}
+	if !errors.Is(err, ports.ErrStreamTruncated) {
+		t.Errorf("want ports.ErrStreamTruncated, got %v", err)
 	}
 }

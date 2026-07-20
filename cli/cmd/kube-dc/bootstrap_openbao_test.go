@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -249,7 +250,7 @@ func TestBootstrapOpenBaoStatus_MockCloud_RendersPolicyGenerationDrift(t *testin
 	}
 	for _, want := range []string{
 		"policy-generation:",
-		"1 expected",
+		fmt.Sprintf("%d expected", openbao.PolicyGeneration),
 		"<absent> installed",
 		"DRIFT",
 		// P3 fix: drift command MUST include the cluster name —

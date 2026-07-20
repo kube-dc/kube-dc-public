@@ -1,0 +1,11 @@
+▸   GPU platform             ‹ enabled ›  ←→
+      disabled / inventory only / install products
+    Driver source            ‹ gpu-operator ›  ←→
+  ✓ GPU Operator version     v26.3.3
+  ✓ NVIDIA driver version    580.126.20
+  ✓ Toolkit version          v1.19.1
+  ✓ Node mode assignments    gpu-worker-a=pod-hami
+  ✓ Enabled profile IDs      nvidia-v100-hami
+    Shared GPU runtime       [x]  ↵
+  ✓ Shared GPU version       2.9.0
+  ✓ Scheduler version        v1.35.3

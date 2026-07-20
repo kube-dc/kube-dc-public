@@ -513,9 +513,13 @@ func nonEmptyOr(s, fallback string) string {
 func initialState(o *clusterinit.InitOptions) *State {
 	// Wizard defaults first (first-time user)…
 	st := &State{
-		Mode:     string(clusterinit.ModeInstall),
-		Provider: "github",
-		Preset:   string(clusterinit.PresetCloudVLAN),
+		Mode: string(clusterinit.ModeInstall), Provider: "github", Preset: string(clusterinit.PresetCloudVLAN),
+		GPUPlatform: string(clusterinit.GPUPlatformDisabled), GPUDriverSource: string(clusterinit.GPUDriverOperator),
+		GPUOperatorVersion:   clusterinit.DefaultGPUOperatorVersion,
+		NVIDIADriverVersion:  clusterinit.DefaultNVIDIADriverVersion,
+		NVIDIAToolkitVersion: clusterinit.DefaultNVIDIAToolkitVersion,
+		HAMiVersion:          clusterinit.DefaultHAMiVersion,
+		HAMiSchedulerVersion: clusterinit.DefaultHAMiSchedulerKubeVersion,
 	}
 	// …then overlay any prefill present in o (--config / KUBE_DC_INIT_* env
 	// / flags). FromOptions only overlays non-empty values, so defaults

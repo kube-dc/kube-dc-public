@@ -24,15 +24,15 @@ import (
 //
 // The check is bi-directional:
 //
-//   1. Every `InitOptions` field is either in inputsForHash OR in
-//      hashExcludedFields (never both, never neither).
-//   2. Every field in inputsForHash has a matching name on
-//      `InitOptions` (catches drifted/ghost hash fields — a
-//      renamed InitOptions field that leaves stale bytes in the
-//      hash struct).
-//   3. Every key in hashExcludedFields matches a real InitOptions
-//      field (catches stale exclusions — a deleted field whose
-//      exclusion entry lingers).
+//  1. Every `InitOptions` field is either in inputsForHash OR in
+//     hashExcludedFields (never both, never neither).
+//  2. Every field in inputsForHash has a matching name on
+//     `InitOptions` (catches drifted/ghost hash fields — a
+//     renamed InitOptions field that leaves stale bytes in the
+//     hash struct).
+//  3. Every key in hashExcludedFields matches a real InitOptions
+//     field (catches stale exclusions — a deleted field whose
+//     exclusion entry lingers).
 func TestPlanHashCoverage_AllInitOptionsFieldsAccountedFor(t *testing.T) {
 	gaps := findCoverageGaps(
 		reflect.TypeOf(InitOptions{}),
@@ -144,7 +144,7 @@ func TestPlanHashCoverage_LintCatchesKnownRegressions(t *testing.T) {
 		Preset string
 	}
 	type ghostHash struct {
-		Preset string
+		Preset       string
 		OldFieldName string // no matching InitOptions field
 	}
 	gaps = findCoverageGaps(
@@ -306,7 +306,9 @@ func nonZeroValueFor(t reflect.Type) reflect.Value {
 		}
 	case reflect.Map:
 		if t.Key().Kind() == reflect.String && t.Elem().Kind() == reflect.String {
-			return reflect.ValueOf(map[string]string{"k": "v"})
+			m := reflect.MakeMapWithSize(t, 1)
+			m.SetMapIndex(reflect.ValueOf("k").Convert(t.Key()), reflect.ValueOf("v").Convert(t.Elem()))
+			return m
 		}
 	}
 	panic("nonZeroValueFor: unhandled type " + t.String() +

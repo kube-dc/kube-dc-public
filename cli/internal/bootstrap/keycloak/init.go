@@ -78,20 +78,19 @@ func Init(ctx context.Context, opts InitOptions) error {
 		return fmt.Errorf("keycloak init: start setup-keycloak-oidc.sh: %w", err)
 	}
 
-	exit := 0
-	for ln := range lines {
-		if ln.Stream == ports.StreamExit {
-			n, perr := parseExitCode(ln.Text)
-			if perr != nil {
-				return fmt.Errorf("keycloak init: parse exit code %q: %w", ln.Text, perr)
-			}
-			exit = n
-			continue
-		}
-		// Forward non-exit lines through to the caller's Out. The
-		// script doesn't echo secret material to stdout — only the
-		// names of resources it touches + the SOPS commit hash.
+	// Forward non-exit lines through to the caller's Out. The script
+	// doesn't echo secret material to stdout — only the names of
+	// resources it touches + the SOPS commit hash.
+	//
+	// ports.Drain enforces the ScriptRunner contract. This loop used to
+	// default exit to 0, so a stream that ended without an exit record
+	// printed "init complete" and reported the OIDC clients configured
+	// and the secrets committed on the strength of output we never got.
+	exit, err := ports.Drain(lines, func(ln ports.Line) {
 		fmt.Fprintf(out, "[keycloak-init %s] %s\n", ln.Stream, ln.Text)
+	})
+	if err != nil {
+		return fmt.Errorf("keycloak init: %w", err)
 	}
 	if exit != 0 {
 		return fmt.Errorf("keycloak init: setup-keycloak-oidc.sh exit=%d", exit)
@@ -112,17 +111,4 @@ func validate(opts InitOptions) error {
 		return fmt.Errorf("%w: Runner", ErrMissingDependency)
 	}
 	return nil
-}
-
-// parseExitCode pulls the integer exit code out of a StreamExit
-// line's Text. Mirrors the pattern in openbao/init.go.
-func parseExitCode(s string) (int, error) {
-	n := 0
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return 0, fmt.Errorf("not a number")
-		}
-		n = n*10 + int(c-'0')
-	}
-	return n, nil
 }

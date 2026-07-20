@@ -103,6 +103,40 @@ func TestPanel_Visibility(t *testing.T) {
 	if len(m.visibleInSection("Adopt")) == 0 {
 		t.Error("Adopt fields should be visible in adopt mode")
 	}
+
+	// Accelerators is conditional over the same state that maps to flags.
+	m.st.GPUPlatform = "disabled"
+	if labels := fieldLabels(m, "Accelerators"); len(labels) != 1 || labels[0] != "GPU platform" {
+		t.Errorf("disabled GPU panel should expose only its mode selector: %v", labels)
+	}
+	m.st.GPUPlatform = "enabled"
+	m.st.GPUDriverSource = "gpu-operator"
+	m.st.GPUNodeModes = "gpu-worker-a=pod-hami"
+	labels := fieldLabels(m, "Accelerators")
+	for _, want := range []string{"Driver source", "Node mode assignments", "Shared GPU runtime", "Shared GPU version"} {
+		if !hasLabel(labels, want) {
+			t.Errorf("enabled Shared GPU panel missing %q: %v", want, labels)
+		}
+	}
+}
+
+func TestPanel_GPUCrossFieldValidationBlocksReview(t *testing.T) {
+	m := NewPanelModel(validE2EState(), "")
+	m.st.GPUPlatform = "enabled"
+	m.st.GPUDriverSource = "gpu-operator"
+	m.st.GPUOperatorVersion = clusterinit.DefaultGPUOperatorVersion
+	m.st.NVIDIADriverVersion = clusterinit.DefaultNVIDIADriverVersion
+	m.st.NVIDIAToolkitVersion = clusterinit.DefaultNVIDIAToolkitVersion
+	m.st.GPUNodeModes = "gpu-worker-a=pod-hami"
+	m.st.HAMiVersion = clusterinit.DefaultHAMiVersion
+	m.st.HAMiSchedulerVersion = clusterinit.DefaultHAMiSchedulerKubeVersion
+	if errs := m.validationErrors(); len(errs) == 0 || !strings.Contains(strings.Join(errs, " "), "requires --hami-enabled") {
+		t.Fatalf("missing Shared GPU runtime must block Review: %v", errs)
+	}
+	m.st.HAMiEnabled = true
+	if errs := m.validationErrors(); len(errs) != 0 {
+		t.Fatalf("valid GPU panel should pass: %v", errs)
+	}
 }
 
 func TestPanel_ValidationGate(t *testing.T) {

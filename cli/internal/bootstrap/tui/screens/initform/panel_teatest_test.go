@@ -12,6 +12,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/golden"
 	"github.com/charmbracelet/x/exp/teatest/v2"
+
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 )
 
 // asciiProgram forces the program's color profile to ASCII so teatest's
@@ -168,4 +170,23 @@ func TestPanel_Golden_Sections(t *testing.T) {
 	m := NewPanelModel(validE2EState(), "")
 	m.focus = focusSections
 	golden.RequireEqual(t, []byte(ansi.Strip(m.renderSections())))
+}
+
+func TestPanel_Golden_Accelerators(t *testing.T) {
+	st := validE2EState()
+	st.GPUPlatform = "enabled"
+	st.GPUDriverSource = "gpu-operator"
+	st.GPUOperatorVersion = clusterinit.DefaultGPUOperatorVersion
+	st.NVIDIADriverVersion = clusterinit.DefaultNVIDIADriverVersion
+	st.NVIDIAToolkitVersion = clusterinit.DefaultNVIDIAToolkitVersion
+	st.GPUNodeModes = "gpu-worker-a=pod-hami"
+	st.GPUProfiles = "nvidia-v100-hami"
+	st.HAMiEnabled = true
+	st.HAMiVersion = clusterinit.DefaultHAMiVersion
+	st.HAMiSchedulerVersion = clusterinit.DefaultHAMiSchedulerKubeVersion
+	m := NewPanelModel(st, "")
+	m.secCursor = sectionIndex(m, "Accelerators")
+	m.focus = focusFields
+	body, _ := m.renderFieldsBody(90)
+	golden.RequireEqual(t, []byte(ansi.Strip(body)))
 }

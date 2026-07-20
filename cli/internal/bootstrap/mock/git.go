@@ -19,13 +19,13 @@ import (
 type GitClient struct {
 	scenario *Scenario
 
-	mu        sync.Mutex
-	repos     map[string]*mockRepo
+	mu           sync.Mutex
+	repos        map[string]*mockRepo
 	createdRepos map[string]bool // owner/repo -> exists
 }
 
 type mockRepo struct {
-	commits []string                // SHA history; latest at end
+	commits []string                  // SHA history; latest at end
 	dirty   map[string]ports.FileDiff // working-tree changes
 }
 
@@ -115,6 +115,12 @@ func (c *GitClient) CommitAndPush(ctx context.Context, dir, msg, token string) (
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.commitLocked(dir, msg)
+}
+
+// Push is a no-op in the mock (no real remote); it just honours ctx.
+// Present so the mock satisfies ports.GitClient's resume-path Push.
+func (c *GitClient) Push(ctx context.Context, dir, token string) error {
+	return ctx.Err()
 }
 
 // Commit is the same as CommitAndPush minus the (already-noop) push

@@ -256,3 +256,28 @@ func TestImportMap_CloneFromSiblingIgnoresBulk(t *testing.T) {
 		t.Error("clone-from-sibling should still import the input surface")
 	}
 }
+
+func TestImportMap_PreservesIngressAndBGPModeKeys(t *testing.T) {
+	// Regression for the BGP slice: a sibling cluster running
+	// METALLB_MODE=bgp (routed/L3 fabric) or INGRESS_MODE=hostnetwork
+	// must keep those modes when cloned — silently dropping them would
+	// downgrade the clone to l2/ARP and break a no-shared-L2 datacenter.
+	src := map[string]string{
+		"INGRESS_MODE":             "hostnetwork",
+		"METALLB_MODE":             "bgp",
+		"METALLB_BGP_LOCAL_ASN":    "64512",
+		"METALLB_BGP_PEER_ASN":     "64513",
+		"METALLB_BGP_PEER_ADDRESS": "192.0.2.1",
+		"METALLB_BGP_PEER_PORT":    "179",
+	}
+	o := &InitOptions{}
+	ignored := ImportMap(o, src, func(string) bool { return false })
+	if len(ignored) != 0 {
+		t.Fatalf("expected no ignored keys, got %v", ignored)
+	}
+	for k, want := range src {
+		if got := o.Sets[k]; got != want {
+			t.Errorf("Sets[%s] = %q, want %q (mode key dropped on clone)", k, got, want)
+		}
+	}
+}

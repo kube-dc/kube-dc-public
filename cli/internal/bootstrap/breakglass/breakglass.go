@@ -32,6 +32,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -50,6 +51,39 @@ const (
 	BreakGlassClusterRoleBinding = "break-glass"
 	BreakGlassFileBasename       = "break-glass-kubeconfig.enc.yaml"
 )
+
+// breakGlassEncryptedRegex is passed explicitly to `sops --encrypt` for the
+// break-glass kubeconfig. It MUST NOT be left to the fleet's `.sops.yaml`
+// creation rule: that rule is `encrypted_regex: ^(data|stringData)$` (tuned
+// for Kubernetes Secret manifests), which does NOT match a raw kubeconfig's
+// secret field (`users[].user.token`). Relying on it made sops add its MAC
+// block but leave the cluster-admin token in CLEARTEXT in a file named
+// `*.enc.yaml` headed for git (kube-dc E2E 2026-07-08, P1 leak). We encrypt
+// the kubeconfig's secret fields explicitly; the server URL, contexts and
+// `certificate-authority-data` (public CA) stay plaintext so
+// `break-glass status` can read metadata without decrypting.
+const breakGlassEncryptedRegex = `^(token|client-key-data|client-certificate-data|password)$`
+
+// assertSecretsEncrypted fails closed if any sensitive value from the
+// plaintext kubeconfig appears verbatim in the encrypted output — i.e. the
+// encryption silently skipped a secret field (wrong regex, sops-version
+// interaction, etc.). Cheap defence-in-depth so a future regression can
+// never commit a cleartext credential.
+func assertSecretsEncrypted(plain, encrypted []byte) error {
+	re := regexp.MustCompile(`(?m)^\s*(token|client-key-data|client-certificate-data|password):\s*(\S+)\s*$`)
+	enc := string(encrypted)
+	for _, m := range re.FindAllStringSubmatch(string(plain), -1) {
+		key, val := m[1], m[2]
+		if len(val) < 8 {
+			continue // empty / trivial placeholder, not a real secret
+		}
+		if strings.Contains(enc, val) {
+			return fmt.Errorf("refusing to write break-glass kubeconfig: field %q left in cleartext after sops encrypt "+
+				"(check sops version and the fleet .sops.yaml encrypted_regex)", key)
+		}
+	}
+	return nil
+}
 
 // Manifest is the YAML applied during Adopt. Embedded as a string so
 // the operator can `cat` it from the binary if Go's manifest copy ever
@@ -530,11 +564,23 @@ func sopsEncryptToFile(ctx context.Context, plain []byte, target string) error {
 	if err != nil {
 		rel = tmpPath
 	}
-	cmd := exec.CommandContext(ctx, "sops", "--encrypt", "-i", rel)
+	cmd := exec.CommandContext(ctx, "sops", "--encrypt",
+		"--encrypted-regex", breakGlassEncryptedRegex,
+		"-i", rel)
 	cmd.Dir = fleetRoot
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
+		return err
+	}
+	// Fail closed BEFORE promoting the temp file to the committed path:
+	// verify no plaintext secret survived the encrypt (see
+	// breakGlassEncryptedRegex for the leak this guards against).
+	encBytes, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return err
+	}
+	if err := assertSecretsEncrypted(plain, encBytes); err != nil {
 		return err
 	}
 	return os.Rename(tmpPath, target)

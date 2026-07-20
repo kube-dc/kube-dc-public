@@ -53,6 +53,8 @@ func bootstrapDoctorCmd(fleetRepo *string) *cobra.Command {
 
   - Physical world           (host kernel modules, NICs, DNS the
                               operator must wire up themselves)
+  - Accelerators             (PCI class/variant, driver, IOMMU,
+                              VFIO and KVM readiness)
   - Auto-handled by CLI      (kubectl/flux/sops/age/git/gh/ssh/bao
                               binaries the CLI offers to install)
   - CLI verifies + suggests  (gh auth scopes, age key recipients,
@@ -169,6 +171,9 @@ func assembleProbes(session *bootstrap.Session, hostProbesOn bool, domain, nodeI
 	}
 	for _, p := range factory.Host(mode) {
 		out = append(out, doctor.CategorizedProbe{Category: doctor.CategoryPhysical, Probe: p})
+	}
+	for _, p := range factory.Accelerators(mode) {
+		out = append(out, doctor.CategorizedProbe{Category: doctor.CategoryAccelerators, Probe: p})
 	}
 
 	// M6-T03: cluster-scope probes (NFD reader). These need a

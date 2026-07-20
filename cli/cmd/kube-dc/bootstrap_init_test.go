@@ -1591,6 +1591,45 @@ func TestBareInitInvocation_Gate(t *testing.T) {
 	if bareInitInvocation(build([]string{"--name=x", "--no-tty", "--dry-run"})) {
 		t.Error("--name set must NOT be bare")
 	}
+	if bareInitInvocation(build([]string{"--gpu-ssh-host-map=gpu-a=192.0.2.10", "--no-tty", "--dry-run"})) {
+		t.Error("--gpu-ssh-host-map set must NOT be bare")
+	}
+}
+
+func TestGPUHostMapFlagRejectsDuplicateNodesBeforeDiscovery(t *testing.T) {
+	args := append(validAtlantisArgs(),
+		"--gpu-ssh-host-map=gpu-a=192.0.2.10",
+		"--gpu-ssh-host-map=gpu-a=192.0.2.11",
+	)
+	_, err := runInitCmd(t, args)
+	if err == nil || !strings.Contains(err.Error(), "--gpu-ssh-host-map") || !strings.Contains(err.Error(), "listed more than once") {
+		t.Fatalf("expected attributed duplicate-map error, got %v", err)
+	}
+}
+
+func TestGPUPreflightFlagsAreExposed(t *testing.T) {
+	repo := ""
+	cmd := bootstrapInitCmd(&repo)
+	for _, name := range []string{"gpu-ssh-host-map", "gpu-kubeconfig"} {
+		if cmd.Flags().Lookup(name) == nil {
+			t.Fatalf("%s flag missing", name)
+		}
+	}
+}
+
+func TestGPUEnabledRequiresExplicitTargetKubeconfigBeforeDiscovery(t *testing.T) {
+	args := append(validAtlantisArgs(),
+		"--gpu-platform=enabled",
+		"--gpu-driver-source=gpu-operator",
+		"--gpu-node-mode=gpu-a=pod-hami",
+		"--gpu-shared-allocator=hami-device-plugin",
+		"--gpu-profile=nvidia-v100-hami",
+		"--hami-enabled",
+	)
+	_, err := runInitCmd(t, args)
+	if err == nil || !strings.Contains(err.Error(), "--gpu-kubeconfig is required") {
+		t.Fatalf("error=%v", err)
+	}
 }
 
 // Review P1 (E2E finding 5 follow-up): origin must be ENSURED for every

@@ -3,6 +3,7 @@ package mock
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
@@ -95,6 +96,21 @@ func (c *K8sClient) ListNamespaces(ctx context.Context) ([]string, error) {
 	for ns := range c.scenario.Cluster.DeploymentImages {
 		out = append(out, ns)
 	}
+	return out, nil
+}
+
+func (c *K8sClient) ListPodNames(ctx context.Context, ns, _ string) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if ns != "openbao" || c.scenario == nil || c.scenario.OpenBao == nil {
+		return []string{}, nil
+	}
+	out := make([]string, 0, len(c.scenario.OpenBao.Pods))
+	for _, pod := range c.scenario.OpenBao.Pods {
+		out = append(out, pod.Name)
+	}
+	sort.Strings(out)
 	return out, nil
 }
 

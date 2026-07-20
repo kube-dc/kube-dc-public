@@ -33,6 +33,11 @@ type Factory interface {
 	// short-circuit to "not applicable".
 	Host(mode HostProbeMode) []ports.Probe
 
+	// Accelerators returns host-local PCI/driver/IOMMU/VFIO/KVM probes.
+	// It is separate from Host so doctor can render a stable Accelerators
+	// category without identifying probe types by their display names.
+	Accelerators(mode HostProbeMode) []ports.Probe
+
 	// DNS returns the wildcard + explicit-FQDN probes resolved via
 	// the supplied client. Empty `domain` → no DNS section.
 	DNS(domain, nodeIP string, dns ports.DNSClient) []ports.Probe
@@ -86,10 +91,10 @@ type StatusRow struct {
 // the existing `ProbeResult` shape (reconcilers + drifts) and adds
 // the cluster's metadata for the header block.
 type StatusDeepResult struct {
-	Name     string
-	Domain   string
-	APIURL   string
-	Result   ProbeResult
+	Name   string
+	Domain string
+	APIURL string
+	Result ProbeResult
 }
 
 // ErrClusterNotFound is returned by StatusDeep when no cluster
@@ -112,6 +117,10 @@ func (RealFactory) Host(mode HostProbeMode) []ports.Probe {
 	return AllHostProbes(mode)
 }
 
+func (RealFactory) Accelerators(mode HostProbeMode) []ports.Probe {
+	return []ports.Probe{NewGPUHostProbe(mode, realHostFS{})}
+}
+
 func (RealFactory) DNS(domain, nodeIP string, dns ports.DNSClient) []ports.Probe {
 	if domain == "" {
 		return nil
@@ -126,7 +135,7 @@ func (RealFactory) Cluster(k8s ports.K8sClient) []ports.Probe {
 	if k8s == nil {
 		return nil
 	}
-	return []ports.Probe{NewNFDProbe(k8s)}
+	return []ports.Probe{NewNFDProbe(k8s), NewInfraAttachProbe(k8s, "")}
 }
 
 // ClusterOpenBao returns the openbao-scope probes (currently just

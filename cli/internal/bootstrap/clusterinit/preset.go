@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // M4-T04 — preset → env-map table.
@@ -90,14 +91,32 @@ var universalNetworkDefaults = map[string]string{
 	"K8S_SERVICE_IP": "10.101.0.1",
 	"CLUSTER_DNS":    "10.101.0.11",
 	"JOIN_CIDR":      "172.30.0.0/22",
+
+	// Tenant Networking v2. These four are identical on every cluster, so they
+	// belong with the other universal network shape.
+	//
+	// INFRA_ATTACHMENT_ROUTES is deliberately NOT here: its first element is the
+	// node LAN, which differs per cluster and is resolved over SSH at apply time
+	// (see DetectNodeCIDR). A default here would be wrong on every cluster but
+	// the one it was copied from, and wrong-but-valid routes misroute silently.
+	//
+	// INFRA_ATTACHMENT_ENABLED is likewise written at apply time: it is true only
+	// when the node CIDR was actually determined.
+	"INFRA_ATTACHMENT_SUBNET":         "infra-net",
+	"INFRA_ATTACHMENT_CIDR":           "100.66.0.0/16",
+	"INFRA_ATTACHMENT_GATEWAY":        "100.66.0.1",
+	// MUST contain the literal {namespace}: it is what keeps one security group
+	// per project instead of a single shared group spanning every tenant. The
+	// chart refuses to render without it.
+	"INFRA_ATTACHMENT_SECURITY_GROUP": "infra-lock-{namespace}",
 }
 
 // universalMonitoringDefaults are the Prometheus storage knobs every
 // preset inherits. Operator can override per-cluster via --set.
 var universalMonitoringDefaults = map[string]string{
-	"PROM_STORAGE":         "20Gi",
-	"PROM_RETENTION":       "365d",
-	"PROM_RETENTION_SIZE":  "17GiB",
+	"PROM_STORAGE":        "20Gi",
+	"PROM_RETENTION":      "365d",
+	"PROM_RETENTION_SIZE": "17GiB",
 }
 
 // universalPlatformEndpointDefaults are the kube-api internal endpoint
@@ -153,6 +172,39 @@ var universalAnchorDefaults = map[string]string{
 	"EXT_NET_ANCHOR_SSH_HOSTS": "",
 }
 
+// universalIngressDefaults are the ingress-topology + MetalLB
+// announcement-mode knobs every preset inherits.
+//
+// INGRESS_MODE — how the Envoy gateway front-door is exposed:
+//   - "metallb-lb" (default): EnvoyProxy Service type=LoadBalancer +
+//     loadBalancerClass=metallb (the fleet base
+//     platform/gateway-config/envoyproxy.yaml). Production default on
+//     every current cluster except one legacy hostNetwork deployment.
+//   - "hostnetwork": Envoy data-plane pods on the host network binding
+//     :443 directly (requires the useListenerPortAsContainerPort +
+//     hostNetwork EnvoyProxy patch on the cluster's platform
+//     Kustomization). Legacy/appliance topologies only. NOTE: init
+//     REJECTS this value today — the scaffold can't write that patch
+//     yet (D””'.1), so accepting it would produce a cluster with an
+//     unreachable front door. See validateIngressAndMetalLB.
+//
+// METALLB_MODE — how MetalLB announces LoadBalancer VIPs:
+//   - "l2" (default): ARP/GARP L2Advertisement on METALLB_INTERFACE;
+//     requires a shared L2 segment between the announcing nodes and
+//     the upstream router (fleet addons/metallb-config).
+//   - "bgp": BGPAdvertisement — VIPs announced as /32 routes over BGP
+//     sessions to the DC fabric (fleet addons/metallb-config-bgp);
+//     requires METALLB_BGP_LOCAL_ASN + METALLB_BGP_PEER_ASN +
+//     METALLB_BGP_PEER_ADDRESS (validated below). For routed/L3-only
+//     datacenters with no shared L2 broadcast domain.
+//
+// Both default-safe: the cluster boots with the defaults and an
+// operator flips modes consciously per docs/platform/installation-guide.
+var universalIngressDefaults = map[string]string{
+	"INGRESS_MODE": "metallb-lb",
+	"METALLB_MODE": "l2",
+}
+
 // universalEmail is a placeholder — the operator's --email flag
 // populates the actual EMAIL key downstream, so we don't ship a
 // preset default for it (would otherwise shadow the flag).
@@ -172,12 +224,12 @@ func mergeInto(dst, src map[string]string) {
 // `EXT_PUBLIC_*` block.
 var internalOnlyPreset = func() PresetSpec {
 	defaults := map[string]string{
-		"EXT_NET_NAME":              "ext-cloud",
-		"EXT_NET_TYPE":              "cloud",
-		"EXT_NET_CIDR":              "100.65.0.0/16",
-		"EXT_NET_GATEWAY":           "100.65.0.1",
-		"EXT_NET_MTU":               "1400",
-		"DEFAULT_GW_NETWORK_TYPE":   "cloud",
+		"EXT_NET_NAME":            "ext-cloud",
+		"EXT_NET_TYPE":            "cloud",
+		"EXT_NET_CIDR":            "100.65.0.0/16",
+		"EXT_NET_GATEWAY":         "100.65.0.1",
+		"EXT_NET_MTU":             "1400",
+		"DEFAULT_GW_NETWORK_TYPE": "cloud",
 		// No DEFAULT_EIP_NETWORK_TYPE / DEFAULT_FIP_NETWORK_TYPE /
 		// DEFAULT_SVC_LB_NETWORK_TYPE=public for internal-only —
 		// these route to the cloud network by default in this preset.
@@ -189,6 +241,7 @@ var internalOnlyPreset = func() PresetSpec {
 	mergeInto(defaults, universalMonitoringDefaults)
 	mergeInto(defaults, universalPlatformEndpointDefaults)
 	mergeInto(defaults, universalAnchorDefaults)
+	mergeInto(defaults, universalIngressDefaults)
 	return PresetSpec{
 		Defaults: defaults,
 		RequiredKeys: []string{
@@ -210,12 +263,12 @@ var internalOnlyPreset = func() PresetSpec {
 // before the public VLAN was added.
 var cloudVLANPreset = func() PresetSpec {
 	defaults := map[string]string{
-		"EXT_NET_NAME":              "ext-cloud",
-		"EXT_NET_TYPE":              "cloud",
-		"EXT_NET_CIDR":              "100.65.0.0/16",
-		"EXT_NET_GATEWAY":           "100.65.0.1",
-		"EXT_NET_MTU":               "1400",
-		"DEFAULT_GW_NETWORK_TYPE":   "cloud",
+		"EXT_NET_NAME":                "ext-cloud",
+		"EXT_NET_TYPE":                "cloud",
+		"EXT_NET_CIDR":                "100.65.0.0/16",
+		"EXT_NET_GATEWAY":             "100.65.0.1",
+		"EXT_NET_MTU":                 "1400",
+		"DEFAULT_GW_NETWORK_TYPE":     "cloud",
 		"DEFAULT_EIP_NETWORK_TYPE":    "cloud",
 		"DEFAULT_FIP_NETWORK_TYPE":    "cloud",
 		"DEFAULT_SVC_LB_NETWORK_TYPE": "cloud",
@@ -224,6 +277,7 @@ var cloudVLANPreset = func() PresetSpec {
 	mergeInto(defaults, universalMonitoringDefaults)
 	mergeInto(defaults, universalPlatformEndpointDefaults)
 	mergeInto(defaults, universalAnchorDefaults)
+	mergeInto(defaults, universalIngressDefaults)
 	return PresetSpec{
 		Defaults: defaults,
 		RequiredKeys: []string{
@@ -247,12 +301,12 @@ var cloudVLANPreset = func() PresetSpec {
 // supplies the per-rack VLAN IDs.
 var cloudPublicVLANPreset = func() PresetSpec {
 	defaults := map[string]string{
-		"EXT_NET_NAME":              "ext-cloud",
-		"EXT_NET_TYPE":              "cloud",
-		"EXT_NET_CIDR":              "100.65.0.0/16",
-		"EXT_NET_GATEWAY":           "100.65.0.1",
-		"EXT_NET_MTU":               "1400",
-		"DEFAULT_GW_NETWORK_TYPE":   "cloud",
+		"EXT_NET_NAME":                "ext-cloud",
+		"EXT_NET_TYPE":                "cloud",
+		"EXT_NET_CIDR":                "100.65.0.0/16",
+		"EXT_NET_GATEWAY":             "100.65.0.1",
+		"EXT_NET_MTU":                 "1400",
+		"DEFAULT_GW_NETWORK_TYPE":     "cloud",
 		"DEFAULT_EIP_NETWORK_TYPE":    "public",
 		"DEFAULT_FIP_NETWORK_TYPE":    "public",
 		"DEFAULT_SVC_LB_NETWORK_TYPE": "public",
@@ -261,6 +315,7 @@ var cloudPublicVLANPreset = func() PresetSpec {
 	mergeInto(defaults, universalMonitoringDefaults)
 	mergeInto(defaults, universalPlatformEndpointDefaults)
 	mergeInto(defaults, universalAnchorDefaults)
+	mergeInto(defaults, universalIngressDefaults)
 	return PresetSpec{
 		Defaults: defaults,
 		RequiredKeys: []string{
@@ -321,9 +376,9 @@ func SpecFor(p Preset) (PresetSpec, bool) {
 // EnvMapFor returns the merged env map for the preset + operator
 // `--set` overrides. Merge order:
 //
-//   1. Universal defaults (network/monitoring) from the preset spec.
-//   2. Preset-specific defaults (EXT_NET_*, DEFAULT_*_NETWORK_TYPE).
-//   3. `--set KEY=VALUE` deltas — these win over defaults.
+//  1. Universal defaults (network/monitoring) from the preset spec.
+//  2. Preset-specific defaults (EXT_NET_*, DEFAULT_*_NETWORK_TYPE).
+//  3. `--set KEY=VALUE` deltas — these win over defaults.
 //
 // Returns ErrPresetMissingRequired if any RequiredKeys aren't in
 // the final merged map (after --set is layered). The error message
@@ -476,11 +531,169 @@ func ValidatePresetValues(p Preset, envMap map[string]string) error {
 	validateAnchorIPs(envMap, extCIDR, extCIDRok, &errs)
 	validateAnchorSSHHosts(envMap, &errs)
 
+	// Ingress topology + MetalLB announcement mode (D'''''.1 / BGP).
+	validateIngressAndMetalLB(envMap, &errs)
+
+	// Tenant Networking v2.
+	validateInfraAttachment(envMap, &errs)
+
 	if len(errs) > 0 {
 		sort.Strings(errs)
 		return fmt.Errorf("%w: preset=%s; %s", ErrPresetInvalidValue, p, strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+// validateIngressAndMetalLB enforces the ingress-topology and MetalLB
+// announcement-mode schema:
+//
+//   - INGRESS_MODE ∈ {metallb-lb, hostnetwork} when present;
+//   - METALLB_MODE ∈ {l2, bgp} when present;
+//   - METALLB_FLOATING_IP parses as an IP when present (both modes —
+//     it's the VIP MetalLB announces);
+//   - METALLB_MODE=bgp additionally REQUIRES the BGP session trio:
+//     METALLB_BGP_LOCAL_ASN + METALLB_BGP_PEER_ASN (1..4294967295) and
+//     METALLB_BGP_PEER_ADDRESS (parseable IP). Optional
+//     METALLB_BGP_PEER_PORT must be 1..65535 when present.
+//
+// The BGP trio is validated here (not RequiredKeys) because it's only
+// required conditionally — an l2-mode cluster must not be forced to
+// supply ASNs. Mirrors the EXT_NET_ANCHOR_REQUIRED coverage-check
+// pattern: mode flags make their dependent keys mandatory.
+func validateIngressAndMetalLB(envMap map[string]string, errs *[]string) {
+	switch v := strings.TrimSpace(envMap["INGRESS_MODE"]); v {
+	case "", "metallb-lb":
+		// default / explicit default — fine.
+	case "hostnetwork":
+		// The mode EXISTS (one legacy production cluster runs it via a
+		// hand-authored EnvoyProxy patch) but init cannot produce a
+		// working hostnetwork cluster yet — the shared gateway-config
+		// base stays type=LoadBalancer and the scaffold writes no
+		// EnvoyProxy patch. Accepting it would validate a config whose
+		// front door never comes up (review finding 2026-07-10, P1).
+		// Reject loudly until the D'''''.1 per-mode variants land.
+		*errs = append(*errs,
+			"INGRESS_MODE: \"hostnetwork\" is not yet automated by init — the scaffold "+
+				"would leave the Envoy front door unreachable. Use metallb-lb (default); "+
+				"if you genuinely need hostNetwork ingress, scaffold with metallb-lb and "+
+				"apply the EnvoyProxy hostNetwork+useListenerPortAsContainerPort patch to "+
+				"the cluster's platform.yaml manually (see the fleet's add-cluster.sh "+
+				"INGRESS_MODE comment), then set the key for the record")
+	default:
+		*errs = append(*errs, fmt.Sprintf(
+			"INGRESS_MODE: %q is not a valid mode (metallb-lb; hostnetwork pending automation)", v))
+	}
+
+	mode := strings.TrimSpace(envMap["METALLB_MODE"])
+	if mode != "" && mode != "l2" && mode != "bgp" {
+		*errs = append(*errs, fmt.Sprintf(
+			"METALLB_MODE: %q is not a valid mode (l2 | bgp)", mode))
+	}
+
+	// IPv4-only: the fleet + chart render the pool as "<ip>/32" and
+	// BGPAdvertisement with aggregationLength (v4). An IPv6 VIP would
+	// validate here and then produce a broken /32 IPv6 pool — MetalLB
+	// needs /128 + aggregationLengthV6 for v6, which we don't render
+	// yet (review finding 2026-07-10). Reject until family-aware
+	// rendering exists.
+	if v := strings.TrimSpace(envMap["METALLB_FLOATING_IP"]); v != "" {
+		ip := net.ParseIP(v)
+		if ip == nil {
+			*errs = append(*errs, fmt.Sprintf(
+				"METALLB_FLOATING_IP: %q is not a valid IP address", v))
+		} else if ip.To4() == nil {
+			*errs = append(*errs, fmt.Sprintf(
+				"METALLB_FLOATING_IP: %q is IPv6 — the rendered pool is IPv4 /32 only; IPv6 VIPs are not supported yet", v))
+		}
+	}
+
+	if mode == "bgp" {
+		for _, k := range []string{"METALLB_BGP_LOCAL_ASN", "METALLB_BGP_PEER_ASN"} {
+			v := strings.TrimSpace(envMap[k])
+			if v == "" {
+				*errs = append(*errs, fmt.Sprintf(
+					"%s: required when METALLB_MODE=bgp (pass --set %s=<asn>)", k, k))
+				continue
+			}
+			if msg := validateASN(v); msg != "" {
+				*errs = append(*errs, k+": "+msg)
+			}
+		}
+		peer := strings.TrimSpace(envMap["METALLB_BGP_PEER_ADDRESS"])
+		if peer == "" {
+			*errs = append(*errs,
+				"METALLB_BGP_PEER_ADDRESS: required when METALLB_MODE=bgp "+
+					"(pass --set METALLB_BGP_PEER_ADDRESS=<router-ip>)")
+		} else if ip := net.ParseIP(peer); ip == nil {
+			*errs = append(*errs, fmt.Sprintf(
+				"METALLB_BGP_PEER_ADDRESS: %q is not a valid IP address", peer))
+		} else if ip.To4() == nil {
+			// Same IPv4-only constraint as METALLB_FLOATING_IP: the
+			// speaker announces IPv4 /32 pools; a v6 session to a v4
+			// announcement is a config the fleet can't render yet.
+			*errs = append(*errs, fmt.Sprintf(
+				"METALLB_BGP_PEER_ADDRESS: %q is IPv6 — IPv6 peering is not supported yet (IPv4 /32 pools only)", peer))
+		}
+		if v := strings.TrimSpace(envMap["METALLB_BGP_PEER_PORT"]); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 1 || n > 65535 {
+				*errs = append(*errs, fmt.Sprintf(
+					"METALLB_BGP_PEER_PORT: %q is not a valid TCP port (1..65535)", v))
+			}
+		}
+		// Rendered verbatim into BGPPeer.spec.holdTime — an unparseable
+		// value passes init and then fails at Flux reconciliation
+		// (review finding 2026-07-10). RFC 4271 §4.2: the hold time is
+		// a two-octet unsigned count of WHOLE seconds — 0 or 3..65535.
+		// Fractional-second durations are rejected rather than silently
+		// normalized (the wire format can't carry them).
+		if v := strings.TrimSpace(envMap["METALLB_BGP_HOLD_TIME"]); v != "" {
+			d, err := time.ParseDuration(v)
+			switch {
+			case err != nil:
+				*errs = append(*errs, fmt.Sprintf(
+					"METALLB_BGP_HOLD_TIME: %q is not a valid duration (e.g. 90s, 3m)", v))
+			case d%time.Second != 0:
+				// Checked BEFORE the range checks so every fractional
+				// value (500ms as much as 90.5s) gets the precise
+				// diagnostic — the value as typed cannot exist on the
+				// wire at all, which matters more than which side of
+				// the 3s minimum it falls on.
+				*errs = append(*errs, fmt.Sprintf(
+					"METALLB_BGP_HOLD_TIME: %s has sub-second precision — hold time is a whole number of seconds on the wire (0 or 3..65535, RFC 4271 §4.2)", v))
+			case d != 0 && d < 3*time.Second:
+				// Covers negatives too — any non-zero duration below 3s.
+				*errs = append(*errs, fmt.Sprintf(
+					"METALLB_BGP_HOLD_TIME: %s must be 0 or at least 3s (RFC 4271 §4.2)", v))
+			case d > 65535*time.Second:
+				*errs = append(*errs, fmt.Sprintf(
+					"METALLB_BGP_HOLD_TIME: %s exceeds the BGP maximum of 65535s (two-octet seconds field, RFC 4271 §4.2)", v))
+			}
+		}
+	}
+}
+
+// validateASN returns an empty string when v is a valid, usable BGP AS
+// number, or an explanation otherwise. Range is 1..4294967294 (4-byte
+// ASNs per RFC 6793; 0 reserved per RFC 7607; 4294967295 reserved per
+// RFC 7300). Also rejects the special values a session must never be
+// configured with: 65535 (reserved, RFC 7300 — the well-known-community
+// ASN) and 23456 (AS_TRANS, RFC 6793 §9 — a translation placeholder,
+// not an assignable ASN; catalogued in RFC 7249).
+func validateASN(v string) string {
+	n, err := strconv.ParseUint(strings.TrimSpace(v), 10, 64)
+	if err != nil {
+		return fmt.Sprintf("%q is not a number (AS numbers are 1..4294967294)", v)
+	}
+	switch {
+	case n < 1 || n > 4294967294:
+		return fmt.Sprintf("%d outside the usable AS-number range 1..4294967294 (0 and 4294967295 are reserved)", n)
+	case n == 65535:
+		return "65535 is reserved (RFC 7300) — not a usable ASN"
+	case n == 23456:
+		return "23456 is AS_TRANS (RFC 6793) — a translation placeholder, not a usable ASN"
+	}
+	return ""
 }
 
 // validateVLANID returns an empty string when v is a valid VLAN
@@ -848,4 +1061,55 @@ func PresetKustomizations(p Preset) ([]string, bool) {
 	out := make([]string, len(spec.Kustomizations))
 	copy(out, spec.Kustomizations)
 	return out, true
+}
+
+// validateInfraAttachment enforces the Tenant Networking v2 schema at PLAN time.
+//
+// It exists because every one of these mistakes is silent or near-silent at
+// install time and expensive afterwards:
+//
+//   - a route that does not parse is rejected by the manager with os.Exit(1),
+//     giving a cluster whose kube-dc-manager CrashLoopBackOffs. The chart's own
+//     `required` guards do not catch it, because a placeholder like
+//     CHANGEME_NODE_CIDR is still a non-empty string.
+//   - a security group template without the literal {namespace} collapses every
+//     project onto ONE shared group, which is a cross-tenant isolation failure,
+//     not a cosmetic one.
+//   - a gateway outside the infra CIDR gives pods an unreachable next hop.
+//
+// Only what is present is validated: these keys are written at apply time, and a
+// cluster with dual-homing disabled legitimately carries empty values.
+func validateInfraAttachment(envMap map[string]string, errs *[]string) {
+	enabled := strings.TrimSpace(envMap["INFRA_ATTACHMENT_ENABLED"])
+	routes := strings.TrimSpace(envMap["INFRA_ATTACHMENT_ROUTES"])
+	sg := strings.TrimSpace(envMap["INFRA_ATTACHMENT_SECURITY_GROUP"])
+
+	if enabled != "" && enabled != "true" && enabled != "false" {
+		*errs = append(*errs, fmt.Sprintf(
+			"INFRA_ATTACHMENT_ENABLED=%q must be exactly true or false (consumed unquoted as a YAML boolean)", enabled))
+	}
+
+	if enabled == "true" && routes == "" {
+		*errs = append(*errs, "INFRA_ATTACHMENT_ROUTES must be set when INFRA_ATTACHMENT_ENABLED=true "+
+			"(node LAN, join subnet and pod subnet; omitting the node subnet makes kubelet probe replies asymmetric so pods never reach Ready)")
+	}
+	for _, r := range strings.Split(routes, ",") {
+		r = strings.TrimSpace(r)
+		if r == "" {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(r); err != nil {
+			*errs = append(*errs, fmt.Sprintf(
+				"INFRA_ATTACHMENT_ROUTES contains %q which is not a CIDR (the manager rejects it and exits, leaving kube-dc-manager in CrashLoopBackOff)", r))
+		}
+	}
+
+	if sg != "" && !strings.Contains(sg, "{namespace}") {
+		*errs = append(*errs, fmt.Sprintf(
+			"INFRA_ATTACHMENT_SECURITY_GROUP=%q must contain the literal {namespace} "+
+				"(without it every project shares one security group, which is a cross-tenant isolation failure)", sg))
+	}
+
+	infraCIDR, infraOK := parseCIDRIfPresent(envMap, "INFRA_ATTACHMENT_CIDR", errs)
+	checkGatewayInCIDR(envMap, "INFRA_ATTACHMENT_GATEWAY", infraCIDR, infraOK, errs)
 }

@@ -185,7 +185,7 @@ func TestPrinter_EmptyCategory_NoSectionHeader(t *testing.T) {
 		{Category: CategoryAutoHandled, Name: "kubectl", Result: ports.Result{Severity: ports.SeverityInfo, Detail: "ok"}},
 	}
 	out, _ := runPrinter(t, results, "")
-	if strings.Contains(out, "Physical world:") || strings.Contains(out, "CLI verifies + suggests:") {
+	if strings.Contains(out, "Physical world:") || strings.Contains(out, "Accelerators:") || strings.Contains(out, "CLI verifies + suggests:") {
 		t.Errorf("empty sections leaked headers: %q", out)
 	}
 	if !strings.Contains(out, "Auto-handled by CLI:") {

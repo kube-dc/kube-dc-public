@@ -71,6 +71,11 @@ type ApplyOptions struct {
 	// DetectArrivingIP, not the operator-declared public IP.
 	NodeExternalIP string
 
+	// NodeCIDR is the node's LAN prefix, resolved over SSH before Apply and
+	// forwarded to Scaffold so INFRA_ATTACHMENT_ROUTES can be written. Empty
+	// disables dual-homing for this cluster rather than guessing a prefix.
+	NodeCIDR string
+
 	// SingleIPNAT forwards the findings-17/17b topology detection to
 	// Scaffold (step 8: 6443-listener removal patch).
 	SingleIPNAT bool
@@ -86,6 +91,13 @@ type ApplyOptions struct {
 	// ObjectStorage carries the OS-1 mode + companions for the OS-2
 	// scaffold writer (Scaffold step 7).
 	ObjectStorage ObjectStorageSpec
+
+	// VMStorage carries the VM root-disk mode + golden subset for the
+	// scaffold writer (Scaffold step 9). See vmstorage.go.
+	VMStorage VMStorageSpec
+
+	// GPU carries the validated, non-secret accelerator fleet contract.
+	GPU GPUConfig
 
 	// Runner executes scripts (add-cluster.sh, flux-install.sh).
 	// Real flow uses the script adapter; tests use a fake.
@@ -122,6 +134,12 @@ type ApplyOptions struct {
 
 	// Out is the operator-facing log writer. nil = ioutil.Discard.
 	Out io.Writer
+
+	// Reporter observes milestone lifecycle (Scaffold / commit-push /
+	// flux-install). nil ⇒ NopReporter, in which case behavior is
+	// identical to the pre-reporter engine (detail still goes to Out).
+	// The install-run TUI supplies one to drive its live checklist.
+	Reporter StepReporter
 }
 
 // --- Errors ---
@@ -157,6 +175,7 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 	if out == nil {
 		out = io.Discard
 	}
+	rep := reporterOrNop(opts.Reporter)
 
 	// Phase 1: capture pre-commit SHA (rollback target).
 	preSHA, err := opts.Git.Head(ctx, opts.FleetRepo)
@@ -198,61 +217,110 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 	// `docs/` README there. Removing it would destroy the operator's
 	// work. Skip cleanup in that case.
 	clusterDir := filepath.Join(opts.FleetRepo, "clusters", opts.Plan.ClusterName)
+	resuming := false
+	rep.Start(StepScaffold)
 	if err := Scaffold(ctx, ScaffoldOptions{
 		Plan:           opts.Plan,
 		FleetRepo:      opts.FleetRepo,
 		NodeExternalIP: opts.NodeExternalIP,
+		NodeCIDR:       opts.NodeCIDR,
 		Sets:           opts.Sets,
 		NodeNICs:       opts.NodeNICs,
 		ObjectStorage:  opts.ObjectStorage,
+		VMStorage:      opts.VMStorage,
+		GPU:            opts.GPU,
 		SingleIPNAT:    opts.SingleIPNAT,
 		Runner:         opts.Runner,
 		Out:            out,
 	}); err != nil {
 		if errors.Is(err, ErrScaffoldTargetExists) {
-			// Pre-existing dir — leave it alone.
+			// RESUME (retry/restart): the overlay already exists from a
+			// prior apply. Rather than fail, skip re-scaffolding and
+			// continue — the Phase-2 clean-tree gate already confirmed
+			// nothing is uncommitted, so there's nothing new to commit
+			// and flux-install is idempotent. This is what makes a
+			// re-run of `init` resume a partially-completed install
+			// instead of erroring. To force a fresh scaffold, edit or
+			// remove clusters/<name>/ first.
+			fmt.Fprintf(out, "[apply] cluster overlay clusters/%s already exists — resuming (skipping scaffold + commit; flux-install is idempotent)\n", opts.Plan.ClusterName)
+			rep.Done(StepScaffold, nil)
+			resuming = true
+		} else {
+			rep.Done(StepScaffold, err)
+			// Best-effort cleanup of the partial cluster dir. Failures
+			// in cleanup don't mask the original Scaffold error — we
+			// log them so the operator knows manual cleanup is needed,
+			// then return the Scaffold error.
+			if rmErr := os.RemoveAll(clusterDir); rmErr != nil {
+				fmt.Fprintf(out, "[apply] WARNING: cleanup of partial scaffold at %s failed: %v\n",
+					clusterDir, rmErr)
+				fmt.Fprintf(out, "[apply] Manually inspect + remove that directory before re-running (may contain plaintext secrets if SOPS fallback fired).\n")
+			} else {
+				fmt.Fprintf(out, "[apply] cleaned up partial scaffold at %s\n", clusterDir)
+			}
 			return fmt.Errorf("apply: scaffold: %w", err)
 		}
-		// Best-effort cleanup of the partial cluster dir. Failures
-		// in cleanup don't mask the original Scaffold error — we
-		// log them so the operator knows manual cleanup is needed,
-		// then return the Scaffold error.
-		if rmErr := os.RemoveAll(clusterDir); rmErr != nil {
-			fmt.Fprintf(out, "[apply] WARNING: cleanup of partial scaffold at %s failed: %v\n",
-				clusterDir, rmErr)
-			fmt.Fprintf(out, "[apply] Manually inspect + remove that directory before re-running (may contain plaintext secrets if SOPS fallback fired).\n")
-		} else {
-			fmt.Fprintf(out, "[apply] cleaned up partial scaffold at %s\n", clusterDir)
-		}
-		return fmt.Errorf("apply: scaffold: %w", err)
+	} else {
+		rep.Done(StepScaffold, nil)
 	}
 
 	// Phase 4: commit + push (atomic with rollback on push failure).
-	msg := fmt.Sprintf("feat(%s): initial bootstrap via kube-dc CLI", opts.Plan.ClusterName)
-	commitSHA, err := commitAndMaybePush(ctx, opts, msg)
-	if err != nil {
-		// Push failed — roll back the local commit so the operator's
-		// repo looks like Apply was never called. The pre-commit SHA
-		// captured in Phase 1 is the canonical rollback target (per
-		// agent-rule 8: never HEAD~1; use captured SHA).
-		fmt.Fprintf(out, "[apply] commit-push failed; rolling back local commit to %s\n", preSHA)
-		if rerr := opts.Git.ResetHard(ctx, opts.FleetRepo, preSHA); rerr != nil {
-			return fmt.Errorf("apply: commit-push failed AND rollback failed (manual recovery needed): commit-push=%w; rollback=%v",
-				err, rerr)
+	// On resume the overlay is already COMMITTED (the clean-tree gate
+	// proved nothing is uncommitted, and an untracked overlay would have
+	// tripped that gate as dirty), so there's nothing new to commit —
+	// but a prior --no-push run or a failed push can leave HEAD ahead of
+	// the branch Flux reconciles. A clean tree does NOT prove the commit
+	// is on the remote, so we PUSH HEAD (idempotent) rather than skip:
+	// otherwise flux-install would point Flux at a remote missing the
+	// overlay. Under --no-push the overlay is local-only by contract, so
+	// there's nothing to push and flux-install is itself skipped below.
+	if resuming {
+		if opts.NoPush {
+			rep.Skip(StepCommitPush, "overlay already committed; --no-push (local-only)")
+			fmt.Fprintln(out, "[apply] resuming: overlay already committed (--no-push, local-only)")
+		} else {
+			rep.Start(StepCommitPush)
+			if perr := opts.Git.Push(ctx, opts.FleetRepo, opts.GitHubToken); perr != nil {
+				rep.Done(StepCommitPush, perr)
+				return fmt.Errorf("apply: resume push (overlay committed locally may be unpushed — cannot confirm the remote Flux reconciles has it): %w", perr)
+			}
+			rep.Done(StepCommitPush, nil)
+			fmt.Fprintln(out, "[apply] resuming: overlay already committed — pushed HEAD to upstream, proceeding to flux-install")
 		}
-		return fmt.Errorf("apply: commit-push: %w", err)
+	} else {
+		rep.Start(StepCommitPush)
+		msg := fmt.Sprintf("feat(%s): initial bootstrap via kube-dc CLI", opts.Plan.ClusterName)
+		commitSHA, cerr := commitAndMaybePush(ctx, opts, msg)
+		if cerr != nil {
+			rep.Done(StepCommitPush, cerr)
+			// Push failed — roll back the local commit so the operator's
+			// repo looks like Apply was never called. The pre-commit SHA
+			// captured in Phase 1 is the canonical rollback target (per
+			// agent-rule 8: never HEAD~1; use captured SHA).
+			fmt.Fprintf(out, "[apply] commit-push failed; rolling back local commit to %s\n", preSHA)
+			if rerr := opts.Git.ResetHard(ctx, opts.FleetRepo, preSHA); rerr != nil {
+				return fmt.Errorf("apply: commit-push failed AND rollback failed (manual recovery needed): commit-push=%w; rollback=%v",
+					cerr, rerr)
+			}
+			return fmt.Errorf("apply: commit-push: %w", cerr)
+		}
+		rep.Done(StepCommitPush, nil)
+		fmt.Fprintf(out, "[apply] commit=%s%s\n", commitSHA, pushedSuffix(opts.NoPush))
 	}
-	fmt.Fprintf(out, "[apply] commit=%s%s\n", commitSHA, pushedSuffix(opts.NoPush))
 
 	// Phase 5: flux-install.sh (skipped when NoPush — Flux needs a
 	// pushed commit to reconcile from).
 	if opts.NoPush {
+		rep.Skip(StepFluxInstall, "--no-push: cluster overlay is local-only")
 		fmt.Fprintln(out, "[apply] --no-push set; skipping flux-install (cluster overlay exists locally only)")
 		return nil
 	}
+	rep.Start(StepFluxInstall)
 	if err := runFluxInstall(ctx, opts, out); err != nil {
+		rep.Done(StepFluxInstall, err)
 		return fmt.Errorf("%w: %v", ErrApplyFluxInstallFailed, err)
 	}
+	rep.Done(StepFluxInstall, nil)
 	fmt.Fprintf(out, "[apply] complete — Flux is reconciling cluster %q\n", opts.Plan.ClusterName)
 	return nil
 }
@@ -339,21 +407,19 @@ func runFluxInstall(ctx context.Context, opts ApplyOptions, out io.Writer) error
 	if err != nil {
 		return fmt.Errorf("start flux-install.sh: %w", err)
 	}
-	exitCode := 0
-	for ln := range lines {
-		if ln.Stream == ports.StreamExit {
-			c, err := parseExitCode(ln.Text)
-			if err != nil {
-				return fmt.Errorf("flux-install exit code parse: %w", err)
-			}
-			exitCode = c
-			continue
-		}
+	// ports.Drain enforces the ScriptRunner contract: a stream that ends
+	// without a terminal exit record is a failure, not a silent success.
+	// This loop previously defaulted exitCode to 0, so a killed
+	// flux-install left the CLI reporting Flux as installed.
+	exitCode, err := ports.Drain(lines, func(ln ports.Line) {
 		streamTag := "stdout"
 		if ln.Stream == ports.StreamStderr {
 			streamTag = "stderr"
 		}
 		fmt.Fprintf(out, "[flux-install %s] %s\n", streamTag, ln.Text)
+	})
+	if err != nil {
+		return fmt.Errorf("flux-install: %w", err)
 	}
 	if exitCode != 0 {
 		return fmt.Errorf("flux-install.sh exit=%d", exitCode)

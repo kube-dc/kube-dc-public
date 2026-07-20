@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -21,6 +23,127 @@ import (
 
 // Compile-time assertion.
 var _ ports.K8sClient = (*Client)(nil)
+var _ ports.GPUClusterReader = (*Client)(nil)
+var _ ports.GPUTransitionClient = (*Client)(nil)
+
+func TestListPodNamesUsesNamespaceSelectorAndSorts(t *testing.T) {
+	const selector = "app.kubernetes.io/name=openbao,component=server"
+	clientset := fake.NewSimpleClientset(
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "openbao", Name: "openbao-2", Labels: map[string]string{"app.kubernetes.io/name": "openbao", "component": "server"}}},
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "openbao", Name: "openbao-0", Labels: map[string]string{"app.kubernetes.io/name": "openbao", "component": "server"}}},
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "other", Name: "openbao-1", Labels: map[string]string{"app.kubernetes.io/name": "openbao", "component": "server"}}},
+	)
+	c := &Client{core: clientset}
+
+	got, err := c.ListPodNames(context.Background(), "openbao", selector)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"openbao-0", "openbao-2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("pods = %v, want %v", got, want)
+	}
+
+	var gotSelector string
+	for _, action := range clientset.Actions() {
+		if action.GetVerb() == "list" && action.GetResource().Resource == "pods" {
+			gotSelector = action.(clienttesting.ListAction).GetListRestrictions().Labels.String()
+		}
+	}
+	if gotSelector != selector {
+		t.Fatalf("label selector = %q, want %q", gotSelector, selector)
+	}
+}
+
+func TestGPUNodeRuntimesUsesExactNodeAndNodeScopedPods(t *testing.T) {
+	controller := true
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "gpu-a", Labels: map[string]string{"kube-dc.com/gpu.workload-mode": "pod-hami"}},
+		Status:     corev1.NodeStatus{NodeInfo: corev1.NodeSystemInfo{SystemUUID: "uuid-a"}},
+	}
+	active := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "gpu-operator", Name: "hami-device-plugin-abc",
+			OwnerReferences: []metav1.OwnerReference{{Kind: "DaemonSet", Name: "hami-device-plugin", Controller: &controller}},
+		},
+		Spec: corev1.PodSpec{NodeName: "gpu-a"}, Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+	terminal := active.DeepCopy()
+	terminal.Name = "old-plugin"
+	terminal.Status.Phase = corev1.PodSucceeded
+	clientset := fake.NewSimpleClientset(node, active, terminal)
+	c := &Client{core: clientset}
+
+	got, err := c.GPUNodeRuntimes(context.Background(), []string{"gpu-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := got["gpu-a"]
+	if runtime.SystemUUID != "uuid-a" || runtime.Labels["kube-dc.com/gpu.workload-mode"] != "pod-hami" {
+		t.Fatalf("runtime=%+v", runtime)
+	}
+	wantOwners := []ports.GPUPluginOwner{{Namespace: "gpu-operator", Kind: "DaemonSet", Name: "hami-device-plugin"}}
+	if !reflect.DeepEqual(runtime.PluginOwners, wantOwners) {
+		t.Fatalf("owners=%+v", runtime.PluginOwners)
+	}
+
+	var selector string
+	for _, action := range clientset.Actions() {
+		if action.GetVerb() == "list" && action.GetResource().Resource == "pods" {
+			selector = action.(clienttesting.ListAction).GetListRestrictions().Fields.String()
+		}
+	}
+	if selector != "spec.nodeName=gpu-a" {
+		t.Fatalf("pod field selector=%q", selector)
+	}
+}
+
+func TestGPUNodeTransitionStateFindsPodAndVMIHoldersAndPatchesOnlyCordon(t *testing.T) {
+	controller := true
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "gpu-a", Labels: map[string]string{
+			"kube-dc.com/gpu.workload-mode": "pod-hami", "kube-dc.com/gpu.expected-workload-mode": "pod-hami",
+		}},
+		Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}},
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "tenant-a", Name: "gpu-pod", OwnerReferences: []metav1.OwnerReference{{Kind: "Job", Name: "training", Controller: &controller}}},
+		Spec: corev1.PodSpec{NodeName: "gpu-a", Containers: []corev1.Container{{Name: "main", Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{"nvidia.com/gpu": resource.MustParse("1"), "requests.nvidia.com/gpumem": resource.MustParse("4096")},
+		}}}}, Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+	vmiPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "tenant-b", Name: "virt-launcher-vm", OwnerReferences: []metav1.OwnerReference{{Kind: "VirtualMachineInstance", Name: "gpu-vm", Controller: &controller}}},
+		Spec: corev1.PodSpec{NodeName: "gpu-a", Containers: []corev1.Container{{Name: "compute", Resources: corev1.ResourceRequirements{
+			Limits: corev1.ResourceList{"nvidia.com/GV100": resource.MustParse("1")},
+		}}}}, Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+	claimTemplate := "trainer-gpu"
+	draPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "tenant-c", Name: "dra-pod", OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: "trainer-abc", Controller: &controller}}},
+		Spec:       corev1.PodSpec{NodeName: "gpu-a", ResourceClaims: []corev1.PodResourceClaim{{Name: "gpu", ResourceClaimTemplateName: &claimTemplate}}, Containers: []corev1.Container{{Name: "main"}}},
+		Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+	clientset := fake.NewSimpleClientset(node, pod, vmiPod, draPod)
+	c := &Client{core: clientset}
+	state, err := c.GPUNodeTransitionState(context.Background(), "gpu-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !state.Ready || state.Unschedulable || len(state.Holders) != 3 {
+		t.Fatalf("unexpected state: %+v", state)
+	}
+	if state.Holders[0].Kind != "Job" || state.Holders[1].Kind != "VirtualMachineInstance" || state.Holders[2].Kind != "ReplicaSet" || state.Holders[2].Resources[0] != "resource.k8s.io/claim" {
+		t.Fatalf("holders=%+v", state.Holders)
+	}
+	if err := c.SetGPUNodeSchedulable(context.Background(), "gpu-a", false); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := clientset.CoreV1().Nodes().Get(context.Background(), "gpu-a", metav1.GetOptions{})
+	if err != nil || !updated.Spec.Unschedulable {
+		t.Fatalf("node was not cordoned: node=%+v err=%v", updated, err)
+	}
+}
 
 func TestKustomizationToNode_ReadsConditionsAndDeps(t *testing.T) {
 	u := &unstructured.Unstructured{
@@ -317,9 +440,9 @@ echo "stub-output"
 	}
 
 	cases := []struct {
-		name      string
-		stdin     []byte
-		wantI     bool
+		name  string
+		stdin []byte
+		wantI bool
 	}{
 		{"no_stdin_omits_i", nil, false},
 		{"with_stdin_adds_i", []byte("token-payload"), true},

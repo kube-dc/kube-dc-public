@@ -1,8 +1,9 @@
-// Package doctor renders ports.Result lists as the three-section
+// Package doctor renders ports.Result lists as the four-section
 // pre-flight report from installer-ux §4:
 //
 //	Physical world          - things the operator must wire up
 //	                          (DNS, NICs, host kernel modules, ...)
+//	Accelerators            - GPU PCI, driver, IOMMU, VFIO/KVM readiness
 //	Auto-handled by CLI     - prereqs the CLI offers to install
 //	                          (kubectl/flux/sops binaries, RKE2 unit, ...)
 //	CLI verifies + suggests - settings the CLI checks but cannot
@@ -32,12 +33,13 @@ import (
 )
 
 // Category is the section bucket every NamedResult lands in. The
-// three values are stable + ordered so iteration produces the same
+// values are stable + ordered so iteration produces the same
 // section sequence on every Print call.
 type Category int
 
 const (
 	CategoryPhysical Category = iota
+	CategoryAccelerators
 	CategoryAutoHandled
 	CategoryVerifiesSuggests
 )
@@ -46,6 +48,8 @@ func (c Category) String() string {
 	switch c {
 	case CategoryPhysical:
 		return "Physical world"
+	case CategoryAccelerators:
+		return "Accelerators"
 	case CategoryAutoHandled:
 		return "Auto-handled by CLI"
 	case CategoryVerifiesSuggests:
@@ -58,6 +62,7 @@ func (c Category) String() string {
 // installer-ux §4 order regardless of how callers built the input.
 var orderedCategories = []Category{
 	CategoryPhysical,
+	CategoryAccelerators,
 	CategoryAutoHandled,
 	CategoryVerifiesSuggests,
 }
@@ -114,7 +119,7 @@ func (p *Printer) Print(results []NamedResult) int {
 	}
 	useColor := !p.NoTTY && !p.NoColor && os.Getenv("NO_COLOR") == ""
 
-	// Group by category for the three-section layout.
+	// Group by category for the ordered section layout.
 	bucketed := bucketByCategory(results)
 	width := computeColumnWidth(results)
 

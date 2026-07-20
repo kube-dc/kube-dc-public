@@ -69,6 +69,17 @@ type GitClient interface {
 	// pushed commit.
 	Commit(ctx context.Context, dir, msg string) (commitSHA string, err error)
 
+	// Push pushes the current HEAD of `dir` to its upstream. It creates
+	// no commit (unlike CommitAndPush) — it's the push half on its own.
+	// Idempotent: a no-op (nil error) when the remote is already up to
+	// date. Used by the resume path (M4): when a prior apply committed
+	// the cluster overlay locally but the push didn't land (--no-push
+	// then re-run, or a failed push left HEAD ahead of upstream), a
+	// resume must push HEAD so the branch Flux reconciles actually
+	// contains the overlay — skipping the push would point flux-install
+	// at a remote missing the cluster.
+	Push(ctx context.Context, dir, token string) error
+
 	// ResetHard is `git reset --hard <ref>` against `dir`. Used for
 	// commit rollback per agent rule 8. Refuses to run when the named
 	// `ref` is not an ancestor of HEAD (prevents accidental forward-

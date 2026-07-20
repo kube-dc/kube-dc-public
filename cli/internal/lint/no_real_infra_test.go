@@ -1,13 +1,13 @@
 // Package lint holds tree-wide hygiene checks for everything that
 // ships to the PUBLIC kube-dc-public mirror.
 //
-// The sync workflow (.github/workflows/sync_to_public_repo.yaml)
-// rsyncs charts/, examples/, docs/cloud/, docs/platform/, docs-ui/,
-// hack/, tests/, cli/, the root README.md and the deploy-docs
-// workflow to the public repo on every push to main.
-// Real infrastructure identifiers (customer cluster names, public
-// IPs, node hostnames, operator identities, bastion FQDNs, operator
-// home paths) must therefore never be hardcoded ANYWHERE on that
+// The manually maintained public surface contains charts/, examples/,
+// docs/cloud/, docs/platform/, docs-ui/, hack/, tests/, cli/, and the
+// root README.md. Repository operators must copy only that allow-list
+// when updating kube-dc-public.
+// Real infrastructure identifiers (customer cluster names, public IPs,
+// node hostnames, operator identities, bastion FQDNs, operator home
+// paths) must therefore never be hardcoded ANYWHERE on that
 // surface — not in code, tests, fixtures, comments, or docs examples.
 //
 // TestNoRealInfraReferences enforces that with a banned-pattern scan
@@ -39,11 +39,10 @@ import (
 	"testing"
 )
 
-// mirrorSurface is the exact rsync set from
-// .github/workflows/sync_to_public_repo.yaml (dirs + single files).
-// Entries missing on disk are skipped silently so a standalone cli/
-// checkout (the public repo layout keeps the same relative shape)
-// still runs the scan over whatever is present.
+// mirrorSurface is the explicit public-mirror allow-list. Entries missing on
+// disk are skipped silently so a standalone cli/ checkout (the public repo
+// layout keeps the same relative shape) still runs the scan over whatever is
+// present.
 var mirrorSurface = []string{
 	"charts",
 	"examples",
@@ -54,7 +53,6 @@ var mirrorSurface = []string{
 	"tests",
 	"cli",
 	"README.md",
-	".github/workflows/deploy-docs.yml",
 }
 
 // bannedPatterns are case-insensitive regexes over file contents.
@@ -157,8 +155,17 @@ func TestNoRealInfraReferences(t *testing.T) {
 			continue // the ban list itself names the banned tokens
 		}
 		info, err := os.Stat(path)
-		if err != nil || info.Size() > 4<<20 {
-			continue // unreadable / gone / too big to be source
+		if err != nil {
+			continue // deleted tracked path in a pre-commit working tree
+		}
+		rel, _ := filepath.Rel(repoRoot, path)
+		for _, b := range bannedPatterns {
+			if b.re.MatchString(rel) {
+				violations = append(violations, rel+": path — "+b.reason)
+			}
+		}
+		if info.Size() > 4<<20 {
+			continue // too big to be source
 		}
 		body, err := os.ReadFile(path)
 		if err != nil {

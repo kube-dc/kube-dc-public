@@ -51,6 +51,13 @@ type K8sClient interface {
 	// before generating compatibility-decisions form.
 	ListNamespaces(ctx context.Context) ([]string, error)
 
+	// ListPodNames returns sorted Pod names in ns matching the Kubernetes
+	// label selector. OpenBao day-two operations use this instead of probing
+	// guessed StatefulSet ordinals through PodExec: exec transport failures
+	// and absent pods must never be mistaken for healthy/unsealed replicas.
+	// An empty, successful list is returned as [] rather than nil.
+	ListPodNames(ctx context.Context, ns, labelSelector string) ([]string, error)
+
 	// PodExec runs a command inside the named pod and returns combined
 	// stdout+stderr. Used by OpenBao adapter (`bao status` per pod, ad-
 	// hoc `bao operator unseal`, etc.) — the OpenBao port methods that

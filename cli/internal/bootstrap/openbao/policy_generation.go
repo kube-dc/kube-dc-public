@@ -64,11 +64,11 @@ import (
 // controller-tier policies/roles (see file header).
 //
 // **Generation history**:
-//   1 — Initial cookie. Corresponds to the M5-T08 policy set:
-//       ManagerPolicyHCL + DBManagerPolicyHCL + their k8s-host
-//       roles + the standard TokenTTL/TokenMaxTTL. First stamped
-//       by clusters running kube-dc CLI at M5-T07 landing (2026-07-03).
-const PolicyGeneration = 1
+//   - Generation 1: initial manager + db-manager policies and roles; first
+//     stamped by clusters running M5-T07 (2026-07-03).
+//   - Generation 2: adds SnapshotPolicyHCL and the openbao/openbao-snapshot
+//     Kubernetes-auth role with a 15-minute no-default-policy token (2026-07-17).
+const PolicyGeneration = 2
 
 // AnnotationPolicyGeneration stores the last-stamped generation
 // number on svc/openbao. Distinct from AnnotationControllerAuthInstalled

@@ -8,11 +8,13 @@ import "context"
 // add-node (V4 will drive `install-agent.sh` over SSH).
 //
 // **Auth flow** (per B-004 resolution):
-//   1. ssh-agent first (via `$SSH_AUTH_SOCK`).
-//   2. Fall back to `IdentityFile` from `~/.ssh/config` parsed via
-//      kevinburke/ssh_config or equivalent.
-//   3. NEVER accept a `--ssh-key` flag. Operators put keys in their
-//      ssh config; the CLI doesn't manage them.
+//  1. ssh-agent first (via `$SSH_AUTH_SOCK`).
+//  2. Fall back to `IdentityFile` from `~/.ssh/config` parsed via
+//     kevinburke/ssh_config or equivalent.
+//  3. For explicit user@host/IP targets without a Host block, try OpenSSH's
+//     standard ~/.ssh/id_* files.
+//  4. NEVER accept a `--ssh-key` flag. Operators put keys in their
+//     ssh config; the CLI doesn't manage them.
 //
 // Host config (User, Port, ProxyJump, …) is taken from `~/.ssh/config`
 // when present. The adapter respects standard ssh_config semantics so

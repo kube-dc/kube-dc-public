@@ -176,19 +176,18 @@ func InstallPrereqs(ctx context.Context, opts InstallPrereqsOptions) (*InstallPr
 	if err != nil {
 		return res, fmt.Errorf("init: install-prereqs: run script: %w", err)
 	}
-	var exitCode int
-	for line := range lines {
-		if line.Stream == ports.StreamExit {
-			// Adapter emits the numeric exit code in Text; parse it
-			// for the return value below. Non-zero → script failure.
-			// We keep draining even on non-zero so the channel
-			// closes cleanly and doesn't leak.
-			if _, perr := fmt.Sscanf(line.Text, "%d", &exitCode); perr != nil {
-				exitCode = 1 // defensive: treat unparseable exit as failure
-			}
-			continue
-		}
+	// ports.Drain enforces the ScriptRunner contract for every engine.
+	// This loop used to default exitCode to 0 and parse with
+	// fmt.Sscanf("%d"), so a stream that ended without an exit record
+	// read as success and "0garbage" parsed as a clean 0. The re-probe
+	// below narrows the blast radius but does not enforce the contract:
+	// it catches "the tool is missing", not "we never learned how the
+	// installer ended".
+	exitCode, derr := ports.Drain(lines, func(line ports.Line) {
 		fmt.Fprintln(out, line.Text)
+	})
+	if derr != nil {
+		return res, fmt.Errorf("init: install-prereqs: %w", derr)
 	}
 	if exitCode != 0 {
 		return res, fmt.Errorf("init: install-prereqs: script exited %d", exitCode)

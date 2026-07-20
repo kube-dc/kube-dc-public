@@ -21,7 +21,15 @@ type fakeK8s struct {
 	exec        func(ctx context.Context, ns, pod string, cmd []string, stdin []byte) ([]byte, error)
 	kubectlExec func(ctx context.Context, ns, pod string, cmd []string, stdin []byte) ([]byte, error)
 	getAnn      func(ctx context.Context, ns, svc, key string) (string, error)
+	listPods    func(ctx context.Context, ns, selector string) ([]string, error)
 	setAnn      func(ctx context.Context, ns, svc, key, value string) error
+}
+
+func (f *fakeK8s) ListPodNames(ctx context.Context, ns, selector string) ([]string, error) {
+	if f.listPods != nil {
+		return f.listPods(ctx, ns, selector)
+	}
+	return []string{"openbao-0"}, nil
 }
 
 func (f *fakeK8s) PodExec(ctx context.Context, ns, pod string, cmd []string, stdin []byte) ([]byte, error) {
@@ -90,13 +98,18 @@ func (f *fakeK8s) GetConfigMapData(_ context.Context, _, _, _ string) (string, e
 // Compile-time assertion that the openbao adapter implements its port.
 var _ ports.OpenBaoClient = (*Client)(nil)
 
+func isStatusCommand(cmd []string) bool {
+	return len(cmd) == 3 && cmd[0] == "/bin/sh" && cmd[1] == "-c" && strings.Contains(cmd[2], "bao status -format=json")
+}
+
 func TestStatus_ParsesActivePodOutput(t *testing.T) {
+
 	f := &fakeK8s{
 		exec: func(_ context.Context, _, pod string, cmd []string, _ []byte) ([]byte, error) {
 			if pod != "openbao-2" {
 				t.Errorf("unexpected pod %q", pod)
 			}
-			if len(cmd) < 2 || cmd[0] != "bao" || cmd[1] != "status" {
+			if !isStatusCommand(cmd) {
 				t.Errorf("unexpected cmd %v", cmd)
 			}
 			return []byte(`{"initialized":true,"sealed":false,"version":"2.5.3","ha_mode":"active","raft_index":14721,"active_node_id":"node-2"}`), nil
@@ -127,6 +140,50 @@ func TestStatus_ParsesSealedPodOutputDespiteExitError(t *testing.T) {
 	}
 	if !st.Sealed {
 		t.Error("Sealed=false on a sealed-pod output")
+	}
+}
+
+func TestPodList_UsesExactSelectorAndReturnsOnlyListedPods(t *testing.T) {
+	const wantSelector = "app.kubernetes.io/instance=openbao,app.kubernetes.io/name=openbao,component=server"
+	f := &fakeK8s{
+		listPods: func(_ context.Context, ns, selector string) ([]string, error) {
+			if ns != "openbao" {
+				t.Fatalf("namespace = %q, want openbao", ns)
+			}
+			if selector != wantSelector {
+				t.Fatalf("selector = %q, want %q", selector, wantSelector)
+			}
+			return []string{"openbao-0"}, nil
+		},
+		exec: func(context.Context, string, string, []string, []byte) ([]byte, error) {
+			t.Fatal("PodList must not probe guessed ordinals through PodExec")
+			return nil, nil
+		},
+	}
+
+	pods, err := New(f).PodList(context.Background())
+	if err != nil {
+		t.Fatalf("PodList: %v", err)
+	}
+	if got := strings.Join(pods, ","); got != "openbao-0" {
+		t.Fatalf("pods = %q, want only the listed replica", got)
+	}
+}
+
+func TestPodList_EmptyListFailsWithoutInventingReplicas(t *testing.T) {
+	f := &fakeK8s{
+		listPods: func(context.Context, string, string) ([]string, error) {
+			return []string{}, nil
+		},
+		exec: func(context.Context, string, string, []string, []byte) ([]byte, error) {
+			t.Fatal("empty discovery must not fall back to ordinal probing")
+			return nil, nil
+		},
+	}
+
+	_, err := New(f).PodList(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "no server pods found") {
+		t.Fatalf("PodList error = %v, want no-server-pods error", err)
 	}
 }
 
@@ -222,7 +279,7 @@ func TestRevokeSelf_FeedsTokenViaStdinNotArgv(t *testing.T) {
 		if len(cmd) > 0 && cmd[0] == "true" {
 			return nil, nil
 		}
-		if len(cmd) > 1 && cmd[0] == "bao" && cmd[1] == "status" {
+		if isStatusCommand(cmd) {
 			if pod == "openbao-0" {
 				return []byte(`{"initialized":true,"sealed":false,"ha_mode":"active"}`), nil
 			}
@@ -316,7 +373,7 @@ func TestGenerateRoot_DecodeIsLocal_NoInPodCall(t *testing.T) {
 			switch {
 			case len(cmd) > 0 && cmd[0] == "true":
 				return nil, nil
-			case len(cmd) > 1 && cmd[0] == "bao" && cmd[1] == "status":
+			case isStatusCommand(cmd):
 				if pod == "openbao-0" {
 					return []byte(`{"initialized":true,"sealed":false,"ha_mode":"active"}`), nil
 				}
@@ -479,7 +536,7 @@ func TestGenerateRoot_MalformedEncodedToken_RejectedByGuard(t *testing.T) {
 			switch {
 			case len(cmd) > 0 && cmd[0] == "true":
 				return nil, nil
-			case len(cmd) > 1 && cmd[0] == "bao" && cmd[1] == "status":
+			case isStatusCommand(cmd):
 				if pod == "openbao-0" {
 					return []byte(`{"initialized":true,"sealed":false,"ha_mode":"active"}`), nil
 				}
@@ -997,7 +1054,7 @@ func TestRevokeSelf_WS_DropExhausts_FallsBackToKubectl(t *testing.T) {
 	f := &fakeK8s{
 		exec: func(_ context.Context, _, pod string, cmd []string, _ []byte) ([]byte, error) {
 			// First call: bao status (active-pod detection).
-			if len(cmd) > 1 && cmd[0] == "bao" && cmd[1] == "status" {
+			if isStatusCommand(cmd) {
 				if pod == "openbao-0" {
 					return []byte(`{"initialized":true,"sealed":false,"ha_mode":"active"}`), nil
 				}
@@ -1031,7 +1088,7 @@ func TestRevokeSelf_AlreadyRevoked_NoFallback(t *testing.T) {
 	var kubectlCalls int
 	f := &fakeK8s{
 		exec: func(_ context.Context, _, pod string, cmd []string, _ []byte) ([]byte, error) {
-			if len(cmd) > 1 && cmd[0] == "bao" && cmd[1] == "status" {
+			if isStatusCommand(cmd) {
 				if pod == "openbao-0" {
 					return []byte(`{"initialized":true,"sealed":false,"ha_mode":"active"}`), nil
 				}
@@ -1064,3 +1121,52 @@ func TestRevokeSelf_AlreadyRevoked_NoFallback(t *testing.T) {
 // where `resolveKubectl` and the argv-construction logic are
 // accessible — see internal/bootstrap/adapters/k8s/client_test.go
 // (TestResolveKubectl* + TestRealKubectlStreamer_BuildsArgv*).
+
+// TestStatus_ParsesStorageType verifies the storage_type field (raft vs
+// file) is surfaced — the signal the generate-root guard relies on.
+func TestStatus_ParsesStorageType(t *testing.T) {
+	for _, tc := range []struct{ name, json, want string }{
+		{"raft", `{"initialized":true,"sealed":false,"storage_type":"raft"}`, "raft"},
+		{"file", `{"initialized":true,"sealed":false,"storage_type":"file"}`, "file"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &fakeK8s{exec: func(_ context.Context, _, _ string, _ []string, _ []byte) ([]byte, error) {
+				return []byte(tc.json), nil
+			}}
+			st, err := New(f).Status(context.Background(), "openbao-0")
+			if err != nil {
+				t.Fatalf("Status: %v", err)
+			}
+			if st.StorageType != tc.want {
+				t.Errorf("StorageType = %q, want %q", st.StorageType, tc.want)
+			}
+		})
+	}
+}
+
+// TestGenerateRoot_RefusesFileBackend asserts the ceremony fails fast with
+// ErrFileStorageBackend on the file backend (which 405s generate-root) —
+// instead of burning retries and surfacing a cryptic 405. Regression guard
+// for the 2026-07-09 file-vs-raft OpenBao incident.
+func TestGenerateRoot_RefusesFileBackend(t *testing.T) {
+	f := &fakeK8s{
+		exec: func(_ context.Context, _, _ string, cmd []string, _ []byte) ([]byte, error) {
+			switch {
+			case len(cmd) > 0 && cmd[0] == "true":
+				return nil, nil // every probed pod "exists"
+			case isStatusCommand(cmd):
+				// active + file on every pod; activePodCached picks openbao-0.
+				return []byte(`{"initialized":true,"sealed":false,"ha_mode":"active","storage_type":"file"}`), nil
+			case len(cmd) > 2 && cmd[0] == "bao" && cmd[2] == "generate-root":
+				t.Errorf("generate-root must NOT be attempted on the file backend; argv=%v", cmd)
+				return nil, errors.New("unexpected generate-root exec")
+			default:
+				return nil, fmt.Errorf("unexpected exec: %v", cmd)
+			}
+		},
+	}
+	_, err := New(f).GenerateRoot(context.Background(), [][]byte{[]byte("s1"), []byte("s2"), []byte("s3")})
+	if !errors.Is(err, ErrFileStorageBackend) {
+		t.Fatalf("GenerateRoot on file backend: err = %v, want ErrFileStorageBackend", err)
+	}
+}

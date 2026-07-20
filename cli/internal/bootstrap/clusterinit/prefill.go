@@ -44,6 +44,15 @@ const (
 	KeyAllowNoKVM   = InitPrefix + "ALLOW_NO_KVM"
 	KeyAllowUnpin   = InitPrefix + "ALLOW_UNPINNED_ADOPT"
 	KeyNoS3Exposure = InitPrefix + "NO_S3_EXPOSURE"
+	// VM root-disk storage (install-only: selects which rbd-vm fleet
+	// manifests get scaffolded — never reconciled into cluster-config.env).
+	// Goldens are comma-joined lists.
+	KeyVMStorageMode      = InitPrefix + "VM_STORAGE_MODE"
+	KeyVMGolden           = InitPrefix + "VM_GOLDEN"
+	KeyVMGoldenBlock      = InitPrefix + "VM_GOLDEN_BLOCK"
+	KeyGPUPlatform        = InitPrefix + "GPU_PLATFORM"
+	KeyGPUAllowUnassigned = InitPrefix + "GPU_ALLOW_UNASSIGNED"
+	KeyVGPUSecretReady    = InitPrefix + "VGPU_SECRET_READY"
 )
 
 // denyImportExact are the keys the scaffold/preset OWNS or recomputes:
@@ -58,6 +67,17 @@ var denyImportExact = map[string]bool{
 	"KUBE_API_EXTERNAL_URL": true, "KEYCLOAK_HOSTNAME": true, "OVN_DB_IPS": true,
 	"POD_CIDR": true, "POD_GATEWAY": true, "SVC_CIDR": true, "K8S_SERVICE_IP": true,
 	"CLUSTER_DNS": true, "JOIN_CIDR": true,
+	// Tenant Networking v2. NODE_CIDR is the sibling's node LAN and
+	// INFRA_ATTACHMENT_ROUTES is built from it, so importing either puts the
+	// WRONG node subnet into the new cluster's injected routes.
+	//
+	// This one does not fail loudly. A sibling's CIDR is still a well-formed
+	// CIDR, so it passes every validation and the manager starts happily; what
+	// breaks is asymmetric routing — a dual-homed pod answers kubelet probes over
+	// the wrong NIC and never reaches Ready, on a cluster where nothing is red.
+	// Strictly worse than a crash. The rest of the INFRA_ATTACHMENT_* keys are
+	// universal and safe to carry.
+	"NODE_CIDR": true, "INFRA_ATTACHMENT_ROUTES": true,
 	"EXT_NET_NAME": true, "EXT_NET_TYPE": true, "EXT_NET_CIDR": true,
 	"EXT_NET_GATEWAY": true, "EXT_NET_EXCLUDE_IPS": true,
 	"DEFAULT_GW_NETWORK_TYPE": true, "DEFAULT_EIP_NETWORK_TYPE": true,
@@ -82,6 +102,14 @@ const maxCephSlots = 3
 // specOrder is the canonical write order for a saved spec (identity →
 // network → storage → orchestration), so `--save-config` diffs are stable.
 var specOrder = []string{
+	// Tenant Networking v2. NODE_CIDR and INFRA_ATTACHMENT_ROUTES are
+	// deny-imported (they are node-specific), but they still belong in the
+	// ordering so --save-config output is complete and stable for the cluster
+	// it was taken from.
+	"NODE_CIDR", "INFRA_ATTACHMENT_ENABLED", "INFRA_ATTACHMENT_SUBNET",
+	"INFRA_ATTACHMENT_CIDR", "INFRA_ATTACHMENT_GATEWAY",
+	"INFRA_ATTACHMENT_SECURITY_GROUP", "INFRA_ATTACHMENT_ROUTES",
+
 	"CLUSTER_NAME", "DOMAIN", "NODE_EXTERNAL_IP", "EMAIL",
 	"EXT_NET_VLAN_ID", "EXT_NET_INTERFACE", "EXT_NET_MTU", "KUBE_OVN_MASTER_NODES",
 	"EXT_PUBLIC_VLAN_ID", "EXT_PUBLIC_CIDR", "EXT_PUBLIC_GATEWAY",
@@ -91,6 +119,11 @@ var specOrder = []string{
 	"CEPH_NODE_3", "CEPH_NODE_3_DEVICE",
 	"CEPH_OSD_STORAGE_CLASS", "CEPH_OSD_COUNT", "CEPH_OSD_VOLUME_SIZE_GB",
 	"S3_HOSTNAME",
+	KeyVMStorageMode, KeyVMGolden, KeyVMGoldenBlock,
+	KeyGPUPlatform, "GPU_DRIVER_SOURCE", "GPU_OPERATOR_VERSION",
+	"NVIDIA_DRIVER_VERSION", "NVIDIA_TOOLKIT_VERSION", "HAMI_ENABLED", "GPU_SHARED_ALLOCATOR",
+	"HAMI_VERSION", "HAMI_KUBE_SCHEDULER_VERSION", "GPU_NODE_MODES", "GPU_PROFILES",
+	KeyGPUAllowUnassigned, KeyVGPUSecretReady,
 	KeyMode, KeyFleetMode, KeyPreset, KeyProvider,
 	KeyGitHubOwner, KeyGitHubRepo, KeyRepo, KeySSHHost,
 	KeyAllowDNS, KeyAllowNoKVM, KeyAllowUnpin, KeyNoS3Exposure,
@@ -224,6 +257,90 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 	boolean(KeyAllowNoKVM, "allow-no-kubevirt-eligible", &o.AllowNoKubevirtEligible)
 	boolean(KeyAllowUnpin, "allow-unpinned-adopt", &o.AllowUnpinnedAdopt)
 	boolean(KeyNoS3Exposure, "no-s3-exposure", &o.NoS3Exposure)
+	if v, ok := src[KeyGPUPlatform]; ok {
+		seen[KeyGPUPlatform] = true
+		if _, ok := src["GPU_ENABLED"]; ok {
+			seen["GPU_ENABLED"] = true
+		}
+		if _, ok := src["GPU_CATALOG_ENABLED"]; ok {
+			seen["GPU_CATALOG_ENABLED"] = true
+		}
+		if !flagChanged("gpu-platform") && strings.TrimSpace(v) != "" {
+			o.GPUPlatform = GPUPlatformMode(strings.TrimSpace(v))
+		}
+	} else if v, ok := src["GPU_ENABLED"]; ok {
+		seen["GPU_ENABLED"] = true
+		if !flagChanged("gpu-platform") {
+			if parsePrefillBool(v) {
+				o.GPUPlatform = GPUPlatformEnabled
+			} else {
+				o.GPUPlatform = GPUPlatformDisabled
+			}
+		}
+	} else if v, ok := src["GPU_CATALOG_ENABLED"]; ok {
+		seen["GPU_CATALOG_ENABLED"] = true
+		if !flagChanged("gpu-platform") {
+			if parsePrefillBool(v) {
+				o.GPUPlatform = GPUPlatformEnabled
+			} else {
+				o.GPUPlatform = GPUPlatformDisabled
+			}
+		}
+	}
+	if v, ok := src["GPU_DRIVER_SOURCE"]; ok {
+		seen["GPU_DRIVER_SOURCE"] = true
+		if !flagChanged("gpu-driver-source") {
+			o.GPUDriverSource = GPUDriverSource(strings.TrimSpace(v))
+		}
+	}
+	str("GPU_OPERATOR_VERSION", "gpu-operator-version", &o.GPUOperatorVersion)
+	str("NVIDIA_DRIVER_VERSION", "nvidia-driver-version", &o.NVIDIADriverVersion)
+	str("NVIDIA_TOOLKIT_VERSION", "nvidia-toolkit-version", &o.NVIDIAToolkitVersion)
+	boolean("HAMI_ENABLED", "hami-enabled", &o.HAMiEnabled)
+	if v, ok := src["GPU_SHARED_ALLOCATOR"]; ok {
+		seen["GPU_SHARED_ALLOCATOR"] = true
+		if !flagChanged("gpu-shared-allocator") {
+			o.GPUSharedAllocator = GPUSharedAllocator(strings.TrimSpace(v))
+		}
+	}
+	str("HAMI_VERSION", "hami-version", &o.HAMiVersion)
+	str("HAMI_KUBE_SCHEDULER_VERSION", "hami-scheduler-version", &o.HAMiSchedulerVersion)
+	if v, ok := src["GPU_NODE_MODES"]; ok {
+		seen["GPU_NODE_MODES"] = true
+		if !flagChanged("gpu-node-mode") {
+			if modes, err := ParseGPUNodeModes([]string{v}); err == nil {
+				o.GPUNodeModes = modes
+			}
+		}
+	}
+	if v, ok := src["GPU_PROFILES"]; ok {
+		seen["GPU_PROFILES"] = true
+		if !flagChanged("gpu-profile") {
+			o.GPUProfiles = canonicalGPUProfiles([]string{v})
+		}
+	}
+	boolean(KeyGPUAllowUnassigned, "allow-unassigned-gpus", &o.AllowUnassignedGPUs)
+	boolean(KeyVGPUSecretReady, "vgpu-secret-ready", &o.VGPUSecretReady)
+
+	// VM root-disk storage (install-only). Goldens are comma-joined lists.
+	if v, ok := src[KeyVMStorageMode]; ok {
+		seen[KeyVMStorageMode] = true
+		if !flagChanged("vm-storage-mode") && strings.TrimSpace(v) != "" {
+			o.VMStorageMode = VMStorageMode(strings.TrimSpace(v))
+		}
+	}
+	if v, ok := src[KeyVMGolden]; ok {
+		seen[KeyVMGolden] = true
+		if !flagChanged("vm-golden") {
+			o.VMGoldens = splitCSVList(v)
+		}
+	}
+	if v, ok := src[KeyVMGoldenBlock]; ok {
+		seen[KeyVMGoldenBlock] = true
+		if !flagChanged("vm-golden-block") {
+			o.VMGoldensBlock = splitCSVList(v)
+		}
+	}
 
 	// --- everything else → o.Sets overlay (deny-list) ---
 	// Any remaining key that the scaffold/preset doesn't OWN (denyImport)
@@ -321,6 +438,30 @@ func ExportMap(o *InitOptions) map[string]string {
 	}
 	if o.NoS3Exposure {
 		m[KeyNoS3Exposure] = "true"
+	}
+	if o.GPUPlatform != "" {
+		put(KeyGPUPlatform, string(o.GPUPlatform))
+		for k, v := range GPUConfigEnv(o.GPU()) {
+			put(k, v)
+		}
+	}
+	if o.AllowUnassignedGPUs {
+		m[KeyGPUAllowUnassigned] = "true"
+	}
+	if o.VGPUSecretReady {
+		m[KeyVGPUSecretReady] = "true"
+	}
+	// VM root-disk storage — only when non-default (local == the default;
+	// omitting the keys reproduces it). Goldens canonicalized (deduped +
+	// sorted) so the saved spec is order-stable.
+	if o.VMStorageMode != "" && o.VMStorageMode != VMStorageLocal {
+		put(KeyVMStorageMode, string(o.VMStorageMode))
+		if g := canonicalGoldens(o.VMGoldens); len(g) > 0 {
+			put(KeyVMGolden, strings.Join(g, ","))
+		}
+		if g := canonicalGoldens(o.VMGoldensBlock); len(g) > 0 {
+			put(KeyVMGoldenBlock, strings.Join(g, ","))
+		}
 	}
 	return m
 }

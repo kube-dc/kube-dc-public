@@ -259,8 +259,8 @@ func TestValidatePresetValues_EmptyRequiredValue_Rejected(t *testing.T) {
 	// required-key gate (key present) and T10 would write it to
 	// cluster-config.env producing an unbootable cluster.
 	cases := []struct {
-		name   string
-		value  string
+		name  string
+		value string
 	}{
 		{"empty string", ""},
 		{"whitespace only", "   "},
@@ -357,10 +357,10 @@ func TestValidatePresetValues_CIDR(t *testing.T) {
 		}
 	}
 	cases := []struct {
-		name      string
-		cidr, gw  string
-		wantErr   bool
-		wantSub   string
+		name     string
+		cidr, gw string
+		wantErr  bool
+		wantSub  string
 	}{
 		{"valid pair", "203.0.113.48/29", "203.0.113.49", false, ""},
 		{"valid /24", "10.0.0.0/24", "10.0.0.1", false, ""},
@@ -942,6 +942,248 @@ func TestValidatePresetValues_AnchorSSHHosts(t *testing.T) {
 			}
 			if err != nil {
 				t.Errorf("expected ok, got %v", err)
+			}
+		})
+	}
+}
+
+func TestEnvMapFor_IngressDefaults_AllPresets(t *testing.T) {
+	// D'''''.1 / BGP slice: every non-custom preset inherits the
+	// ingress-topology + MetalLB announcement-mode defaults so a
+	// freshly scaffolded cluster-config.env documents both knobs.
+	for _, p := range []Preset{PresetInternalOnly, PresetCloudVLAN, PresetCloudPublicVLAN} {
+		sets := map[string]string{
+			"EXT_NET_VLAN_ID":   "1103",
+			"EXT_NET_INTERFACE": "bond0",
+		}
+		if p == PresetCloudPublicVLAN {
+			sets["EXT_PUBLIC_VLAN_ID"] = "1100"
+			sets["EXT_PUBLIC_CIDR"] = "203.0.113.48/29"
+			sets["EXT_PUBLIC_GATEWAY"] = "203.0.113.49"
+		}
+		envMap, err := EnvMapFor(p, sets)
+		if err != nil {
+			t.Fatalf("preset %s: EnvMapFor unexpected err: %v", p, err)
+		}
+		if got := envMap["INGRESS_MODE"]; got != "metallb-lb" {
+			t.Errorf("preset %s: INGRESS_MODE = %q, want %q", p, got, "metallb-lb")
+		}
+		if got := envMap["METALLB_MODE"]; got != "l2" {
+			t.Errorf("preset %s: METALLB_MODE = %q, want %q", p, got, "l2")
+		}
+	}
+
+	// Custom preset ships no defaults — operator vouches for the env.
+	envMap, err := EnvMapFor(PresetCustom, nil)
+	if err != nil {
+		t.Fatalf("custom preset: unexpected err: %v", err)
+	}
+	if _, ok := envMap["INGRESS_MODE"]; ok {
+		t.Errorf("custom preset must not inject INGRESS_MODE")
+	}
+}
+
+func TestValidatePresetValues_IngressAndMetalLBModes(t *testing.T) {
+	base := func(extra map[string]string) map[string]string {
+		m := map[string]string{
+			"EXT_NET_VLAN_ID":   "1103",
+			"EXT_NET_INTERFACE": "bond0",
+		}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+
+	cases := []struct {
+		name    string
+		extra   map[string]string
+		wantErr bool
+		wantSub string // substring the error must contain when wantErr
+	}{
+		{"defaults valid", nil, false, ""},
+		{"explicit metallb-lb + l2", map[string]string{
+			"INGRESS_MODE": "metallb-lb", "METALLB_MODE": "l2"}, false, ""},
+		// hostnetwork EXISTS as a topology but init can't scaffold it yet
+		// (no EnvoyProxy patch written) — accepting it would validate a
+		// cluster whose front door never comes up. Rejected with an
+		// actionable message until D'''''.1 automates the variant
+		// (review finding 2026-07-10, P1).
+		{"hostnetwork rejected until automated", map[string]string{
+			"INGRESS_MODE": "hostnetwork"}, true, "not yet automated"},
+		{"bad ingress mode", map[string]string{
+			"INGRESS_MODE": "nodeport"}, true, "INGRESS_MODE"},
+		{"bad metallb mode", map[string]string{
+			"METALLB_MODE": "arp"}, true, "METALLB_MODE"},
+		{"floating ip invalid", map[string]string{
+			"METALLB_FLOATING_IP": "not-an-ip"}, true, "METALLB_FLOATING_IP"},
+		{"floating ip valid", map[string]string{
+			"METALLB_FLOATING_IP": "192.0.2.10"}, false, ""},
+		{"bgp missing trio", map[string]string{
+			"METALLB_MODE": "bgp"}, true, "required when METALLB_MODE=bgp"},
+		{"bgp complete valid", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "64512",
+			"METALLB_BGP_PEER_ASN":     "64513",
+			"METALLB_BGP_PEER_ADDRESS": "192.0.2.1",
+		}, false, ""},
+		{"bgp asn zero rejected", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "0",
+			"METALLB_BGP_PEER_ASN":     "64513",
+			"METALLB_BGP_PEER_ADDRESS": "192.0.2.1",
+		}, true, "METALLB_BGP_LOCAL_ASN"},
+		{"bgp asn text rejected", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "as64512",
+			"METALLB_BGP_PEER_ASN":     "64513",
+			"METALLB_BGP_PEER_ADDRESS": "192.0.2.1",
+		}, true, "not a number"},
+		{"bgp asn overflow rejected", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "64512",
+			"METALLB_BGP_PEER_ASN":     "4294967296",
+			"METALLB_BGP_PEER_ADDRESS": "192.0.2.1",
+		}, true, "METALLB_BGP_PEER_ASN"},
+		{"bgp peer address invalid", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "64512",
+			"METALLB_BGP_PEER_ASN":     "64513",
+			"METALLB_BGP_PEER_ADDRESS": "router.example.com",
+		}, true, "METALLB_BGP_PEER_ADDRESS"},
+		{"bgp peer port invalid", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "64512",
+			"METALLB_BGP_PEER_ASN":     "64513",
+			"METALLB_BGP_PEER_ADDRESS": "192.0.2.1",
+			"METALLB_BGP_PEER_PORT":    "70000",
+		}, true, "METALLB_BGP_PEER_PORT"},
+		{"bgp peer port valid", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "64512",
+			"METALLB_BGP_PEER_ASN":     "64513",
+			"METALLB_BGP_PEER_ADDRESS": "192.0.2.1",
+			"METALLB_BGP_PEER_PORT":    "179",
+		}, false, ""},
+		// IPv4-only: the fleet/chart render "<ip>/32" pools; an IPv6 VIP
+		// or peer would pass net.ParseIP and then produce a broken pool
+		// (MetalLB v6 needs /128 + aggregationLengthV6, which we don't
+		// render). Review finding 2026-07-10.
+		{"floating ip ipv6 rejected", map[string]string{
+			"METALLB_FLOATING_IP": "2001:db8::10"}, true, "IPv6"},
+		{"bgp peer ipv6 rejected", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "64512",
+			"METALLB_BGP_PEER_ASN":     "64513",
+			"METALLB_BGP_PEER_ADDRESS": "2001:db8::1",
+		}, true, "IPv6"},
+		// Reserved / special ASNs: 65535 + 4294967295 (RFC 7300),
+		// 23456 = AS_TRANS (RFC 6793 / RFC 7249).
+		{"bgp asn 65535 reserved", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "65535",
+			"METALLB_BGP_PEER_ASN":     "64513",
+			"METALLB_BGP_PEER_ADDRESS": "192.0.2.1",
+		}, true, "reserved"},
+		{"bgp asn 4294967295 reserved", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "64512",
+			"METALLB_BGP_PEER_ASN":     "4294967295",
+			"METALLB_BGP_PEER_ADDRESS": "192.0.2.1",
+		}, true, "reserved"},
+		{"bgp asn 23456 as_trans", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "23456",
+			"METALLB_BGP_PEER_ASN":     "64513",
+			"METALLB_BGP_PEER_ADDRESS": "192.0.2.1",
+		}, true, "AS_TRANS"},
+		// Hold-time: rendered verbatim into BGPPeer.spec.holdTime — a
+		// typo must fail init, not Flux reconciliation. RFC 4271 §4.2:
+		// 0 or >= 3s.
+		{"bgp hold time valid", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "64512",
+			"METALLB_BGP_PEER_ASN":     "64513",
+			"METALLB_BGP_PEER_ADDRESS": "192.0.2.1",
+			"METALLB_BGP_HOLD_TIME":    "90s",
+		}, false, ""},
+		{"bgp hold time zero valid", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "64512",
+			"METALLB_BGP_PEER_ASN":     "64513",
+			"METALLB_BGP_PEER_ADDRESS": "192.0.2.1",
+			"METALLB_BGP_HOLD_TIME":    "0s",
+		}, false, ""},
+		{"bgp hold time garbage rejected", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "64512",
+			"METALLB_BGP_PEER_ASN":     "64513",
+			"METALLB_BGP_PEER_ADDRESS": "192.0.2.1",
+			"METALLB_BGP_HOLD_TIME":    "fast",
+		}, true, "METALLB_BGP_HOLD_TIME"},
+		{"bgp hold time below 3s rejected", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "64512",
+			"METALLB_BGP_PEER_ASN":     "64513",
+			"METALLB_BGP_PEER_ADDRESS": "192.0.2.1",
+			"METALLB_BGP_HOLD_TIME":    "2s",
+		}, true, "at least 3s"},
+		// Protocol maximum: hold time is a two-octet seconds field —
+		// 65535s is the last valid value, 65536s overflows the wire
+		// format. Fractional seconds can't be carried at all.
+		{"bgp hold time 65535s boundary valid", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "64512",
+			"METALLB_BGP_PEER_ASN":     "64513",
+			"METALLB_BGP_PEER_ADDRESS": "192.0.2.1",
+			"METALLB_BGP_HOLD_TIME":    "65535s",
+		}, false, ""},
+		{"bgp hold time 65536s rejected", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "64512",
+			"METALLB_BGP_PEER_ASN":     "64513",
+			"METALLB_BGP_PEER_ADDRESS": "192.0.2.1",
+			"METALLB_BGP_HOLD_TIME":    "65536s",
+		}, true, "65535"},
+		{"bgp hold time 500ms gets sub-second diagnostic", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "64512",
+			"METALLB_BGP_PEER_ASN":     "64513",
+			"METALLB_BGP_PEER_ADDRESS": "192.0.2.1",
+			// Below 3s AND fractional: must hit the sub-second branch
+			// (the precise diagnosis), not the generic range message —
+			// P3 review finding, the ordering used to shadow it.
+			"METALLB_BGP_HOLD_TIME": "500ms",
+		}, true, "sub-second"},
+		{"bgp hold time fractional rejected", map[string]string{
+			"METALLB_MODE":             "bgp",
+			"METALLB_BGP_LOCAL_ASN":    "64512",
+			"METALLB_BGP_PEER_ASN":     "64513",
+			"METALLB_BGP_PEER_ADDRESS": "192.0.2.1",
+			"METALLB_BGP_HOLD_TIME":    "90.5s",
+		}, true, "sub-second"},
+		// l2 mode must NOT demand the BGP trio.
+		{"l2 mode no bgp keys required", map[string]string{
+			"METALLB_MODE": "l2"}, false, ""},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			envMap, err := EnvMapFor(PresetInternalOnly, base(tc.extra))
+			if err != nil {
+				t.Fatalf("EnvMapFor unexpected err: %v", err)
+			}
+			err = ValidatePresetValues(PresetInternalOnly, envMap)
+			if tc.wantErr {
+				if !errors.Is(err, ErrPresetInvalidValue) {
+					t.Fatalf("expected ErrPresetInvalidValue, got %v", err)
+				}
+				if !strings.Contains(err.Error(), tc.wantSub) {
+					t.Fatalf("error %q does not contain %q", err.Error(), tc.wantSub)
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected validation error: %v", err)
 			}
 		})
 	}

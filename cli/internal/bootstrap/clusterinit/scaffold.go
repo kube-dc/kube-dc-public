@@ -70,6 +70,18 @@ type ScaffoldOptions struct {
 	// separately; the cobra layer reads it from o.NodeExternalIP.
 	NodeExternalIP string
 
+	// NodeCIDR is the node's LAN prefix (e.g. 192.168.110.0/24), resolved over
+	// SSH by DetectNodeCIDR before the fleet is scaffolded.
+	//
+	// It is the only Tenant Networking v2 value the installer cannot derive from
+	// its own inputs: the node's external IP is a different network, a bare
+	// internal IP carries no mask, and on a greenfield install there is no
+	// cluster kubeconfig yet to ask. Empty means "could not determine", and
+	// dual-homing is then written DISABLED rather than guessed — a wrong prefix
+	// installs cleanly and misroutes kubelet probe replies, which is worse than
+	// not enabling the feature.
+	NodeCIDR string
+
 	// Sets is the resolved operator --set overrides from
 	// InitOptions. Layered on top of the preset's defaults during
 	// post-process; the Plan struct surfaces overrides via
@@ -87,6 +99,15 @@ type ScaffoldOptions struct {
 	// trigger the OS-2 writer (step 7: overlay + Flux layer +
 	// platform dependsOn + env keys); disabled writes nothing.
 	ObjectStorage ObjectStorageSpec
+
+	// VMStorage carries the VM root-disk mode + golden subset. shared-rbd
+	// triggers the writer (step 9: rbd-vm.yaml + goldens overlay +
+	// kustomization resource); local writes nothing. See vmstorage.go.
+	VMStorage VMStorageSpec
+
+	// GPU is the public accelerator contract. It contributes only non-secret
+	// substitutions; licenses and registry credentials remain SOPS-owned.
+	GPU GPUConfig
 
 	// SingleIPNAT triggers the findings-17/17b wiring (step 8): the
 	// node sits behind a 1:1 NAT with only one IP, so the scaffolded
@@ -148,6 +169,11 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	if out == nil {
 		out = io.Discard
 	}
+	// Fail before add-cluster.sh creates any files when a requested GPU
+	// variant is not renderable by the fleet packages in this checkout.
+	if err := ValidateGPUScaffold(opts.FleetRepo, opts.GPU); err != nil {
+		return fmt.Errorf("scaffold: %w", err)
+	}
 
 	// (1) Preflight: refuse if the marker file already exists.
 	// We check `cluster-config.env` rather than the bare directory
@@ -199,7 +225,7 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// operator --set overrides + inherited version pins. Order and
 	// comments preserved via config.Env's in-place Set.
 	envPath := filepath.Join(clusterDir, "cluster-config.env")
-	if err := postProcessClusterConfig(envPath, opts.Plan, opts.Sets); err != nil {
+	if err := postProcessClusterConfig(envPath, opts.Plan, opts.Sets, opts.NodeCIDR, opts.GPU); err != nil {
 		return fmt.Errorf("scaffold: post-process %s: %w", envPath, err)
 	}
 
@@ -235,6 +261,23 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 		}
 	}
 
+	// (9) VM root-disk storage wiring — rbd-vm.yaml (base + goldens Flux
+	// Kustomizations) + the selected FS golden subset overlay +
+	// kustomization resource. No-op for local; fails closed for
+	// shared-rbd-live-migration (Validate already refuses it, this is
+	// defense in depth). Independent of the object-storage kustomization
+	// patch (adds a different resource entry).
+	if err := WriteVMStorage(opts.FleetRepo, opts.Plan.ClusterName, opts.VMStorage, out); err != nil {
+		return fmt.Errorf("scaffold: %w", err)
+	}
+
+	// (10) GPU ownership stack — exact-node NFD rules followed by the GPU
+	// Operator and optional HAMi Flux layers. No-op for disabled/detect-only;
+	// catalog, billing, and both workload-creation gates remain independent.
+	if err := WriteGPUInfrastructure(opts.FleetRepo, opts.Plan.ClusterName, opts.GPU, out); err != nil {
+		return fmt.Errorf("scaffold: %w", err)
+	}
+
 	fmt.Fprintf(out, "[scaffold] cluster overlay created at %s\n", clusterDir)
 	return nil
 }
@@ -268,48 +311,23 @@ func redactAddClusterLine(line string) string {
 }
 
 // drainAndRedactAddCluster reads `lines` until the channel closes,
-// writes each (redacted) line to `out`, and returns the exit code
-// extracted from the final StreamExit line. Returns 0 with nil err
-// when the channel closes without an explicit exit line (i.e. the
-// adapter terminated cleanly with no exit signal — defensive
-// fallback; real adapter always emits one).
+// writes each (redacted) line to `out`, and returns the exit code from
+// the terminal StreamExit record.
+//
+// It used to return (0, nil) when the channel closed with no exit line,
+// documented as a "defensive fallback; real adapter always emits one".
+// That fallback was the failure: a killed script or a dead runner
+// produces exactly that shape, and add-cluster would read it as success
+// and continue into post-processing on output it never received.
+// ports.Drain now enforces the ScriptRunner contract for every engine.
 func drainAndRedactAddCluster(lines <-chan ports.Line, out io.Writer) (int, error) {
-	exitCode := 0
-	for ln := range lines {
-		if ln.Stream == ports.StreamExit {
-			n, err := parseExitCode(ln.Text)
-			if err != nil {
-				return 0, fmt.Errorf("parse exit code %q: %w", ln.Text, err)
-			}
-			exitCode = n
-			continue
-		}
-		text := redactAddClusterLine(ln.Text)
+	return ports.Drain(lines, func(ln ports.Line) {
 		streamTag := "stdout"
 		if ln.Stream == ports.StreamStderr {
 			streamTag = "stderr"
 		}
-		fmt.Fprintf(out, "[%s] %s\n", streamTag, text)
-	}
-	return exitCode, nil
-}
-
-// parseExitCode parses the integer-as-string emitted by the
-// adapter's StreamExit line. Returns the int + nil for valid
-// input; the explicit helper keeps the supervise contract
-// (`Line{Stream: StreamExit, Text: strconv.Itoa(code)}`) decoded
-// in one place.
-func parseExitCode(s string) (int, error) {
-	// Reject the empty string explicitly — strconv.Atoi("") returns
-	// an error too, but the wrapping message gets sharper here.
-	if strings.TrimSpace(s) == "" {
-		return 0, fmt.Errorf("empty exit code")
-	}
-	n := 0
-	if _, err := fmt.Sscanf(s, "%d", &n); err != nil {
-		return 0, err
-	}
-	return n, nil
+		fmt.Fprintf(out, "[%s] %s\n", streamTag, redactAddClusterLine(ln.Text))
+	})
 }
 
 // --- SOPS encryption verification ---
@@ -364,7 +382,7 @@ func verifySOPSEncrypted(path string) error {
 // script's CHANGEME defaults. config.Env.Set preserves the
 // original line position when a key already exists; otherwise
 // appends.
-func postProcessClusterConfig(path string, plan *Plan, sets map[string]string) error {
+func postProcessClusterConfig(path string, plan *Plan, sets map[string]string, nodeCIDR string, gpu ...GPUConfig) error {
 	env, err := config.LoadEnv(path)
 	if err != nil {
 		return err
@@ -387,6 +405,11 @@ func postProcessClusterConfig(path string, plan *Plan, sets map[string]string) e
 		// network shape; inherited defaults are version pins).
 		merged[k] = v
 	}
+	if len(gpu) > 0 {
+		for k, v := range GPUConfigEnv(gpu[0]) {
+			merged[k] = v
+		}
+	}
 
 	// Walk merged in stable key order so the file written when a
 	// new key is appended is deterministic across runs (Go map
@@ -400,6 +423,31 @@ func postProcessClusterConfig(path string, plan *Plan, sets map[string]string) e
 	sort.Strings(keys)
 	for _, k := range keys {
 		env.Set(k, merged[k])
+	}
+
+	// Tenant Networking v2 routes. Written here rather than left to the scaffold
+	// script because the CLI is the only party that knows the node prefix: the
+	// script tries to read it from a cluster kubeconfig, which does not exist yet
+	// on a greenfield install.
+	//
+	// An operator --set always wins — someone who typed the value explicitly
+	// knows their topology better than a route lookup does.
+	if _, overridden := sets["INFRA_ATTACHMENT_ROUTES"]; !overridden {
+		if nodeCIDR != "" {
+			env.Set("NODE_CIDR", nodeCIDR)
+			env.Set("INFRA_ATTACHMENT_ROUTES",
+				strings.Join([]string{nodeCIDR, merged["JOIN_CIDR"], merged["POD_CIDR"]}, ","))
+			env.Set("INFRA_ATTACHMENT_ENABLED", "true")
+		} else {
+			// Fail safe, never fatal. A placeholder would pass the chart's
+			// non-empty check and then be rejected by net.ParseCIDR in the
+			// manager, giving a cluster whose kube-dc-manager CrashLoopBackOffs.
+			// Disabled means the cluster boots on the legacy path and dual-homing
+			// is turned on afterwards, once the prefix is known.
+			env.Set("NODE_CIDR", "")
+			env.Set("INFRA_ATTACHMENT_ROUTES", "")
+			env.Set("INFRA_ATTACHMENT_ENABLED", "false")
+		}
 	}
 
 	if err := env.Write(""); err != nil {

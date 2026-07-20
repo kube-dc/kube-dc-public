@@ -57,21 +57,21 @@ func TestNFDDetect_NoNFDInstalled(t *testing.T) {
 // to raw NFD labels. Full truth table for the (virt-flag, kvm)
 // pair, plus a "no NFD virt labels at all" case:
 //
-//   VMX ∧ kvm  → eligible (Intel, typical)
-//   SVM ∧ kvm  → eligible (AMD, typical)
-//   VMX ∧ ¬kvm → NOT eligible (Intel host that hasn't
-//                loaded the kvm module — e.g. bare-metal
-//                container platform, sysadmin removed kvm)
-//   SVM ∧ ¬kvm → NOT eligible (AMD, same shape as above —
-//                mirror of vmx-no-kvm; added 2026-07-02 for
-//                symmetric coverage after the M4-T08 review)
-//   ¬VMX ∧ ¬SVM ∧ kvm → NOT eligible (kvm module without any
-//                hardware-virt flag; near-impossible on x86 —
-//                the module load would fail without VMX/SVM —
-//                but a defensive assertion catches a future
-//                arm64/riscv path where CPUID flags aren't
-//                the right signal at all)
-//   no virt labels at all → NOT eligible (container-only host)
+//	VMX ∧ kvm  → eligible (Intel, typical)
+//	SVM ∧ kvm  → eligible (AMD, typical)
+//	VMX ∧ ¬kvm → NOT eligible (Intel host that hasn't
+//	             loaded the kvm module — e.g. bare-metal
+//	             container platform, sysadmin removed kvm)
+//	SVM ∧ ¬kvm → NOT eligible (AMD, same shape as above —
+//	             mirror of vmx-no-kvm; added 2026-07-02 for
+//	             symmetric coverage after the M4-T08 review)
+//	¬VMX ∧ ¬SVM ∧ kvm → NOT eligible (kvm module without any
+//	             hardware-virt flag; near-impossible on x86 —
+//	             the module load would fail without VMX/SVM —
+//	             but a defensive assertion catches a future
+//	             arm64/riscv path where CPUID flags aren't
+//	             the right signal at all)
+//	no virt labels at all → NOT eligible (container-only host)
 func TestNFDDetect_RawNFDOnly_KubeVirtEligible(t *testing.T) {
 	src := &fakeNodeLabels{labels: map[string]map[string]string{
 		"intel-node": {
@@ -127,8 +127,8 @@ func TestNFDDetect_RawNFDOnly_KubeVirtEligible(t *testing.T) {
 func TestNFDDetect_RawNFDOnly_Fallback_LoadedmoduleLabel(t *testing.T) {
 	src := &fakeNodeLabels{labels: map[string]map[string]string{
 		"intel-node-alias": {
-			"feature.node.kubernetes.io/cpu-cpuid.VMX":            "true",
-			"feature.node.kubernetes.io/kernel-loadedmodule.kvm":  "true",
+			"feature.node.kubernetes.io/cpu-cpuid.VMX":           "true",
+			"feature.node.kubernetes.io/kernel-loadedmodule.kvm": "true",
 		},
 	}}
 	r, err := NFDDetect(context.Background(), src)
@@ -140,23 +140,23 @@ func TestNFDDetect_RawNFDOnly_Fallback_LoadedmoduleLabel(t *testing.T) {
 	}
 }
 
-// TestNFDDetect_RawNFDOnly_GPUsByVendorID — raw NFD PCI labels can
-// come in two shapes:
-//
-//   - pci-<class>_<vendor>.present   (default with feature-source
-//     including class prefix)
-//   - pci-<vendor>.present            (any-class shape)
-//
-// Detector's substring match handles both.
-func TestNFDDetect_RawNFDOnly_GPUsByVendorID(t *testing.T) {
+// TestNFDDetect_RawNFDOnly_GPUsRequireDisplayClass proves raw fallback
+// accepts only PCI display/3D controller classes and never vendor-only labels.
+func TestNFDDetect_RawNFDOnly_GPUsRequireDisplayClass(t *testing.T) {
 	src := &fakeNodeLabels{labels: map[string]map[string]string{
 		"gpu-node-classy": {
 			// Default NFD shape: pci-<class>_<vendor>. 0300 = display.
 			"feature.node.kubernetes.io/pci-0300_10de.present": "true",
 		},
-		"gpu-node-anyclass": {
-			// Any-class shape.
+		"gpu-node-3d": {
+			"feature.node.kubernetes.io/pci-0302_1002.present": "true",
+		},
+		"vendor-only-false-positive": {
+			// Could represent audio/USB/encryption; must never count.
 			"feature.node.kubernetes.io/pci-1002.present": "true",
+		},
+		"vendor-audio-false-positive": {
+			"feature.node.kubernetes.io/pci-0403_10de.present": "true",
 		},
 		"cpu-only-node": {
 			// Non-GPU PCI (e.g. Intel Ethernet 8086) shouldn't count.
@@ -174,8 +174,8 @@ func TestNFDDetect_RawNFDOnly_GPUsByVendorID(t *testing.T) {
 	if !equalStringsNFD(r.NvidiaGPUNodes, []string{"gpu-node-classy"}) {
 		t.Errorf("NvidiaGPUNodes = %v, want [gpu-node-classy]", r.NvidiaGPUNodes)
 	}
-	if !equalStringsNFD(r.AMDGPUNodes, []string{"gpu-node-anyclass"}) {
-		t.Errorf("AMDGPUNodes = %v, want [gpu-node-anyclass]", r.AMDGPUNodes)
+	if !equalStringsNFD(r.AMDGPUNodes, []string{"gpu-node-3d"}) {
+		t.Errorf("AMDGPUNodes = %v, want [gpu-node-3d]", r.AMDGPUNodes)
 	}
 }
 
@@ -187,7 +187,7 @@ func TestNFDDetect_CompositesInstalled_PreferredOverRaw(t *testing.T) {
 	src := &fakeNodeLabels{labels: map[string]map[string]string{
 		"trusted-composite-yes": {
 			// Composite says yes; raw would also say yes.
-			"kube-dc.com/kubevirt-eligible":                 "true",
+			"kube-dc.com/kubevirt-eligible":                "true",
 			"feature.node.kubernetes.io/cpu-cpuid.VMX":     "true",
 			"feature.node.kubernetes.io/kernel-module.kvm": "true",
 		},
@@ -196,7 +196,7 @@ func TestNFDDetect_CompositesInstalled_PreferredOverRaw(t *testing.T) {
 			// yes. M6-T02's rule saw a reason to exclude (e.g. host
 			// tainted, /dev/kvm not accessible, whatever). Detector
 			// must trust the composite.
-			"kube-dc.com/kubevirt-eligible":                 "false",
+			"kube-dc.com/kubevirt-eligible":                "false",
 			"feature.node.kubernetes.io/cpu-cpuid.VMX":     "true",
 			"feature.node.kubernetes.io/kernel-module.kvm": "true",
 		},

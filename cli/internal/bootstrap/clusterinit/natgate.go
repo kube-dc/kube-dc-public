@@ -225,3 +225,82 @@ func patchPlatformSingleIPNAT(lines []string) ([]string, bool, error) {
 	out = append(out, "")
 	return out, true, nil
 }
+
+// NodeCIDRFromAddrOutput derives the node's LAN prefix — the network its
+// primary address sits on — from `ip -o addr show` output.
+//
+// This is the one value Tenant Networking v2 cannot get anywhere else during a
+// greenfield bootstrap. INFRA_ATTACHMENT_ROUTES must carry the node subnet so a
+// dual-homed pod answers kubelet probes over its infra NIC; omit it and replies
+// take the wrong path, so pods never reach Ready while nothing reports an error.
+//
+// It cannot be inferred from the arguments the installer already has. The node's
+// EXTERNAL IP is a different network, and a bare internal IP carries no mask —
+// only the `inet <addr>/<prefix>` token does, which is why the prefix is read
+// from this output rather than assumed to be /24.
+//
+// nodeIP selects which address to use, so the caller decides (normally the same
+// address DetectArrivingIP resolved). Returns the masked network, e.g.
+// 192.168.110.11/24 -> 192.168.110.0/24.
+//
+// Fails CLOSED: any doubt returns an error and the caller must degrade rather
+// than guess, because a wrong-but-plausible CIDR is worse than none — it
+// installs cleanly and misroutes silently.
+func NodeCIDRFromAddrOutput(addrOut []byte, nodeIP string) (string, error) {
+	ip := net.ParseIP(nodeIP)
+	if ip == nil {
+		return "", fmt.Errorf("node-cidr: %q is not an IP", nodeIP)
+	}
+	for _, line := range strings.Split(string(addrOut), "\n") {
+		fields := strings.Fields(line)
+		for i, f := range fields {
+			// Only IPv4: the injected routes are IPv4 and mixing families here
+			// would silently produce an unusable route.
+			if f != "inet" || i+1 >= len(fields) {
+				continue
+			}
+			addr, ipnet, err := net.ParseCIDR(fields[i+1])
+			if err != nil || addr == nil || ipnet == nil {
+				continue
+			}
+			if addr.Equal(ip) {
+				return ipnet.String(), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("node-cidr: no inet address matching %s in `ip -o addr show` output", nodeIP)
+}
+
+// DetectNodeCIDR resolves the node's LAN prefix over SSH — the value
+// INFRA_ATTACHMENT_ROUTES needs so a dual-homed pod answers kubelet probes over
+// its infra NIC.
+//
+// It resolves the node's PRIMARY address by route lookup rather than trusting
+// the address the operator passed on the command line: that argument is the
+// node's external/public IP, which on a NAT'd host is not bound to any interface
+// at all, and even when it is bound it may not be the address kubelet registers
+// as InternalIP. The route-source address is the one the node actually uses.
+//
+// Deliberately separate from DetectArrivingIP. That probe answers "is this host
+// behind 1:1 NAT" and fails OPEN, because guessing wrong there only costs a
+// passthrough listener. This one feeds a routing table, where a wrong answer
+// misroutes silently, so it fails CLOSED and the caller must degrade rather than
+// substitute a guess.
+func DetectNodeCIDR(ctx context.Context, opts ArrivingIPOptions) (string, error) {
+	if opts.SSH == nil {
+		return "", fmt.Errorf("node-cidr: nil SSH client")
+	}
+	routeOut, err := opts.SSH.Run(ctx, opts.Host, "ip -4 route get 192.0.2.1")
+	if err != nil {
+		return "", fmt.Errorf("node-cidr: ip route get: %w", err)
+	}
+	src, err := parseRouteSrc(routeOut)
+	if err != nil {
+		return "", fmt.Errorf("node-cidr: %w", err)
+	}
+	addrOut, err := opts.SSH.Run(ctx, opts.Host, "ip -o addr show")
+	if err != nil {
+		return "", fmt.Errorf("node-cidr: ip addr show: %w", err)
+	}
+	return NodeCIDRFromAddrOutput(addrOut, src)
+}

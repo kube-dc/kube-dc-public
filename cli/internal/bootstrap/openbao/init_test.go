@@ -5,8 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +17,25 @@ import (
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/secrets"
 )
+
+// TestMain sandboxes HOME for the whole package.
+//
+// Init's custody paths derive their destination from os.UserHomeDir(),
+// so a test that forgets t.Setenv("HOME", ...) writes real share files
+// into the developer's ~/.kube-dc. That actually happened during this
+// review pass. Redirecting HOME once here makes the leak impossible
+// rather than relying on every future test to remember.
+func TestMain(m *testing.M) {
+	sandbox, err := os.MkdirTemp("", "openbao-test-home-")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "sandbox home: %v\n", err)
+		os.Exit(1)
+	}
+	os.Setenv("HOME", sandbox)
+	code := m.Run()
+	os.RemoveAll(sandbox)
+	os.Exit(code)
+}
 
 // fakeRunner emits canned Lines + tracks the sentinel-callback the
 // engine attaches via WithSentinelCallback. The test triggers the
@@ -31,6 +52,22 @@ type fakeRunner struct {
 	// the Run path (true = real flow; false = simulate "script
 	// exited without emitting sentinel").
 	fireSentinel bool
+	// exitCode is the code reported on the StreamExit line. Non-zero
+	// WITH fireSentinel models the P0 case the write-ahead custody
+	// exists for: the script emitted the shares and then died.
+	exitCode int
+	// exitText overrides the exit-line text verbatim; a value that does
+	// not parse as an integer makes drainOpenBaoInit report a parse
+	// error.
+	exitText string
+	// dropExit omits the terminal exit record entirely, modelling a
+	// truncated stream (script killed, runner died, connection lost).
+	dropExit bool
+	// trailingOutput, when set, is emitted AFTER the exit record --
+	// forbidden by the ScriptRunner contract.
+	trailingOutput string
+	// extraExit, when set, is emitted as a SECOND exit record.
+	extraExit string
 }
 
 func (f *fakeRunner) WithSentinelCallback(cb ports.SentinelCallback) ports.ScriptRunner {
@@ -44,6 +81,11 @@ func (f *fakeRunner) WithSentinelCallback(cb ports.SentinelCallback) ports.Scrip
 		lines:           f.lines,
 		sentinelPayload: f.sentinelPayload,
 		fireSentinel:    f.fireSentinel,
+		exitCode:        f.exitCode,
+		exitText:        f.exitText,
+		dropExit:        f.dropExit,
+		trailingOutput:  f.trailingOutput,
+		extraExit:       f.extraExit,
 	}
 }
 
@@ -52,7 +94,7 @@ func (f *fakeRunner) Run(_ context.Context, kind ports.ScriptKind, _ map[string]
 	// even on the cb-error branch (lines + 3 marker lines). Avoids
 	// the deadlock that hit on the malformed-payload tests where
 	// the cb fires inline and the consumer hadn't started reading.
-	out := make(chan ports.Line, len(f.lines)+4)
+	out := make(chan ports.Line, len(f.lines)+8)
 	for _, ln := range f.lines {
 		out <- ln
 	}
@@ -65,7 +107,19 @@ func (f *fakeRunner) Run(_ context.Context, kind ports.ScriptKind, _ map[string]
 			return out, nil
 		}
 	}
-	out <- ports.Line{Stream: ports.StreamExit, Text: "0", Time: time.Now()}
+	if !f.dropExit {
+		exitText := f.exitText
+		if exitText == "" {
+			exitText = strconv.Itoa(f.exitCode)
+		}
+		out <- ports.Line{Stream: ports.StreamExit, Text: exitText, Time: time.Now()}
+	}
+	if f.extraExit != "" {
+		out <- ports.Line{Stream: ports.StreamExit, Text: f.extraExit, Time: time.Now()}
+	}
+	if f.trailingOutput != "" {
+		out <- ports.Line{Stream: ports.StreamStdout, Text: f.trailingOutput, Time: time.Now()}
+	}
 	close(out)
 	return out, nil
 }
@@ -75,10 +129,10 @@ func (f *fakeRunner) Run(_ context.Context, kind ports.ScriptKind, _ map[string]
 // trip verify (bytes.Contains) passes; mismatch can be forced via
 // the alterValue field.
 type fakeSOPS struct {
-	mu          sync.Mutex
-	written     map[string][]byte
-	alterValue  map[string][]byte // keys whose stored value differs from input (forces round-trip mismatch)
-	decryptErr  error
+	mu         sync.Mutex
+	written    map[string][]byte
+	alterValue map[string][]byte // keys whose stored value differs from input (forces round-trip mismatch)
+	decryptErr error
 }
 
 func newFakeSOPS() *fakeSOPS {
@@ -111,8 +165,8 @@ func (s *fakeSOPS) SetStringData(_ context.Context, _, key string, value []byte)
 	s.written[key] = stored
 	return nil
 }
-func (s *fakeSOPS) Recipients(_ string) ([]string, error)    { return nil, nil }
-func (s *fakeSOPS) DerivePubKey(_ string) (string, error)     { return "", nil }
+func (s *fakeSOPS) Recipients(_ string) ([]string, error) { return nil, nil }
+func (s *fakeSOPS) DerivePubKey(_ string) (string, error) { return "", nil }
 
 // fakeGit records the order of operations so push-failure tests
 // can confirm ResetHard ran with the captured pre-commit SHA.
@@ -135,11 +189,11 @@ type fakeGit struct {
 	resetErr   error
 }
 
-func (g *fakeGit) Clone(_ context.Context, _, _, _ string) error                          { return nil }
-func (g *fakeGit) Pull(_ context.Context, _, _ string) error                              { return nil }
-func (g *fakeGit) Diff(_ context.Context, _ string) (ports.Diff, error)                   { return g.diff, nil }
-func (g *fakeGit) CreateRepo(_ context.Context, _, _ string, _ bool, _ string) error      { return nil }
-func (g *fakeGit) Head(_ context.Context, _ string) (string, error)                       { return g.preSHA, nil }
+func (g *fakeGit) Clone(_ context.Context, _, _, _ string) error                     { return nil }
+func (g *fakeGit) Pull(_ context.Context, _, _ string) error                         { return nil }
+func (g *fakeGit) Diff(_ context.Context, _ string) (ports.Diff, error)              { return g.diff, nil }
+func (g *fakeGit) CreateRepo(_ context.Context, _, _ string, _ bool, _ string) error { return nil }
+func (g *fakeGit) Head(_ context.Context, _ string) (string, error)                  { return g.preSHA, nil }
 func (g *fakeGit) ResetHard(_ context.Context, _, ref string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -167,6 +221,16 @@ func (g *fakeGit) CommitAndPush(_ context.Context, _, _, _ string) (string, erro
 	}
 	g.pushed = true
 	return g.commitSHA, nil
+}
+
+func (g *fakeGit) Push(_ context.Context, _, _ string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.pushErr != nil {
+		return g.pushErr
+	}
+	g.pushed = true
+	return nil
 }
 
 // fakeBao implements ports.OpenBaoClient for the M5-T01 review-pass
@@ -478,11 +542,12 @@ func TestInit_RejectsMalformedJSON(t *testing.T) {
 	if err == nil {
 		t.Fatal("malformed JSON should error")
 	}
-	// Different shape than ErrShareCaptureMissing — the script
-	// returns non-zero exit because the sentinel cb returned an
-	// error. "openbao-init.sh exit=1" surfaces.
-	if !strings.Contains(err.Error(), "exit=1") {
-		t.Errorf("malformed payload should surface as script exit=1; got %v", err)
+	// Different shape than ErrShareCaptureMissing: the payload was
+	// captured but unusable. The parse cause is reported ahead of the
+	// resulting exit=1, because "json unmarshal" tells the operator
+	// what went wrong and "exit=1" does not.
+	if !strings.Contains(err.Error(), "json unmarshal") {
+		t.Errorf("malformed payload should surface as a parse failure; got %v", err)
 	}
 }
 
@@ -499,20 +564,32 @@ func TestInit_RejectsTooFewShares(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on <5 shares")
 	}
-	if !strings.Contains(err.Error(), "exit=1") {
-		t.Errorf("3-share payload should fail script (cb returned err); got %v", err)
+	if !strings.Contains(err.Error(), "got 3") {
+		t.Errorf("3-share payload should fail with the share count; got %v", err)
+	}
+	// P0 (review-pass 3): rejecting the payload must NOT throw away the
+	// 3 shares it did contain. The vault is initialized either way, and
+	// the unseal threshold is 3 — those shares may be the only way back
+	// in. loadBufferFromJSON therefore stores before it validates.
+	if !strings.Contains(err.Error(), "3 captured share(s) were preserved") {
+		t.Errorf("partial payload must still preserve the shares it carried; got %v", err)
 	}
 }
 
 // --- round-trip verify failure ---
 
-func TestInit_RoundTripMismatch_TriggersRollback(t *testing.T) {
+// P0 (review-pass): a round-trip mismatch must NOT roll back. By this
+// point openbao-init.sh has already initialized the vault, so the 5
+// captured shares are the only key material in existence — ResetHard
+// would delete the recovery material and leave the vault permanently
+// sealed. Instead the shares are preserved off-git and the error names
+// where they went.
+func TestInit_RoundTripMismatch_PreservesSharesNoRollback(t *testing.T) {
 	repo := setupFleet(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	runner := &fakeRunner{fireSentinel: true, sentinelPayload: []byte(canonicalShareJSON)}
 	sops := newFakeSOPS()
-	// Force OPENBAO_UNSEAL_KEY_2 to store a different value than
-	// was passed in — round-trip Decrypt won't contain the
-	// captured plaintext.
 	sops.alterValue["OPENBAO_UNSEAL_KEY_2"] = []byte("tampered-value")
 	git := &fakeGit{preSHA: "ROLLBACK-TARGET", commitSHA: "post"}
 	opts := baseInitOpts(t, repo, runner, sops, git)
@@ -521,19 +598,30 @@ func TestInit_RoundTripMismatch_TriggersRollback(t *testing.T) {
 	if !errors.Is(err, ErrShareCustodyFailed) {
 		t.Fatalf("expected ErrShareCustodyFailed, got %v", err)
 	}
-	// Rollback ran with the captured pre-commit SHA.
-	if len(git.resetCalls) != 1 {
-		t.Fatalf("expected 1 ResetHard call, got %v", git.resetCalls)
+	if len(git.resetCalls) != 0 {
+		t.Fatalf("ResetHard must NEVER run after the vault is initialized; got %v", git.resetCalls)
 	}
-	if git.resetCalls[0] != "ROLLBACK-TARGET" {
-		t.Errorf("ResetHard called with %q, want ROLLBACK-TARGET", git.resetCalls[0])
+	// The shares must survive somewhere the operator can reach.
+	dump := filepath.Join(home, ".kube-dc", "openbao-emergency-shares-atlantis.yaml")
+	if _, statErr := os.Stat(dump); statErr != nil {
+		t.Fatalf("emergency dump missing at %s: %v", dump, statErr)
+	}
+	if !strings.Contains(err.Error(), dump) {
+		t.Errorf("error must tell the operator where the shares are; got: %v", err)
 	}
 }
 
 // --- push failure rollback ---
 
-func TestInit_PushFailure_RollsBackToPreSHA(t *testing.T) {
+// P0 (review-pass): THE cs/next failure. A push failure must preserve
+// the encrypted shares, never roll back. Previously this rolled the
+// commit away, leaving OpenBao Initialized with zero shares in the
+// fleet — recoverable only because the operator happened to pass the
+// optional --openbao-shares-out.
+func TestInit_PushFailure_PreservesSharesNoRollback(t *testing.T) {
 	repo := setupFleet(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	runner := &fakeRunner{fireSentinel: true, sentinelPayload: []byte(canonicalShareJSON)}
 	sops := newFakeSOPS()
 	pushErr := errors.New("simulated push failure")
@@ -545,11 +633,96 @@ func TestInit_PushFailure_RollsBackToPreSHA(t *testing.T) {
 	if !errors.Is(err, pushErr) {
 		t.Fatalf("expected push error to surface, got %v", err)
 	}
-	if len(git.resetCalls) != 1 {
-		t.Fatalf("expected 1 ResetHard call, got %v", git.resetCalls)
+	if len(git.resetCalls) != 0 {
+		t.Fatalf("ResetHard must NEVER run after the vault is initialized; got %v", git.resetCalls)
 	}
-	if git.resetCalls[0] != "PRE-COMMIT-SHA" {
-		t.Errorf("ResetHard called with %q, want PRE-COMMIT-SHA (never HEAD~1)", git.resetCalls[0])
+	// No --openbao-shares-out was set, so init must have made an
+	// off-git copy itself: a stray `git checkout` in the fleet must
+	// not be able to destroy the only custody.
+	dump := filepath.Join(home, ".kube-dc", "openbao-emergency-shares-atlantis.yaml")
+	if _, statErr := os.Stat(dump); statErr != nil {
+		t.Fatalf("no off-git copy written on push failure (%s): %v", dump, statErr)
+	}
+	// And the operator gets the exact remaining steps. The fake commits
+	// successfully ("post") and fails only the push, so the ONLY
+	// remaining step is `git push`.
+	for _, want := range []string{"git push", "Nothing was rolled back"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing recovery guidance %q; got: %v", want, err)
+		}
+	}
+	// P1 (review-pass 3): the hint must NOT tell the operator to
+	// re-commit. `git add && git commit && git push` dies at the commit
+	// with "nothing to commit" (exit 1), so the && chain never reaches
+	// the push and the shares silently stay local — the recovery
+	// instructions would not actually recover anything.
+	if strings.Contains(err.Error(), "git commit") {
+		t.Errorf("commit already succeeded (%s) — hint must not re-commit, "+
+			"or the && chain aborts before push; got: %v", git.commitSHA, err)
+	}
+}
+
+// P1 (review-pass 3): the mirror of the case above. When the COMMIT
+// itself failed there is nothing staged, so the operator does need the
+// full add/commit/push chain.
+func TestInit_CommitFailure_HintIncludesAddAndCommit(t *testing.T) {
+	repo := setupFleet(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	runner := &fakeRunner{fireSentinel: true, sentinelPayload: []byte(canonicalShareJSON)}
+	sops := newFakeSOPS()
+	commitErr := errors.New("simulated commit failure")
+	// commitSHA empty => CommitAndPush failed before producing a commit.
+	git := &fakeGit{preSHA: "PRE", commitSHA: "", pushErr: commitErr}
+	opts := baseInitOpts(t, repo, runner, sops, git)
+	opts.NoPush = false
+
+	err := Init(context.Background(), opts)
+	if err == nil {
+		t.Fatal("expected commit failure to surface")
+	}
+	for _, want := range []string{"git add", "git commit", "git push"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("no commit exists, so the hint needs %q; got: %v", want, err)
+		}
+	}
+}
+
+// P1 (review-pass 3): --no-push + a successful commit means the shares
+// are already where the operator asked them to be. Telling them to run
+// `git push` would contradict the flag they passed.
+func TestInit_NoPushHint_DoesNotInstructPush(t *testing.T) {
+	if got := manualFinishHint(InitOptions{FleetRepo: "/fleet", NoPush: true},
+		"clusters/x/secrets.enc.yaml", "msg", "abc123"); strings.Contains(got, "git push") {
+		t.Errorf("--no-push with a good commit must not instruct a push; got: %q", got)
+	}
+}
+
+// A shares-out write failure must NOT abandon the ceremony: the
+// encrypted copy in the fleet is the authoritative custody, so the
+// convenience file failing is a warning, not a rollback trigger.
+func TestInit_SharesOutFailure_IsWarningNotRollback(t *testing.T) {
+	repo := setupFleet(t)
+	runner := &fakeRunner{fireSentinel: true, sentinelPayload: []byte(canonicalShareJSON)}
+	sops := newFakeSOPS()
+	git := &fakeGit{preSHA: "PRE", commitSHA: "post"}
+	opts := baseInitOpts(t, repo, runner, sops, git)
+	// Unwritable destination (a directory component that is a file).
+	bad := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(bad, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opts.SharesOutPath = filepath.Join(bad, "shares.yaml")
+
+	err := Init(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("shares-out failure must not fail the ceremony: %v", err)
+	}
+	if len(git.resetCalls) != 0 {
+		t.Fatalf("ResetHard must not run; got %v", git.resetCalls)
+	}
+	if git.commitCalls == 0 {
+		t.Error("the encrypted shares must still be committed")
 	}
 }
 
@@ -959,6 +1132,9 @@ func (f *fakeInitK8s) ListNamespaces(context.Context) ([]string, error) {
 func (f *fakeInitK8s) ListCRDs(context.Context) ([]string, error) {
 	panic("fakeInitK8s: ListCRDs not stubbed")
 }
+func (f *fakeInitK8s) ListPodNames(context.Context, string, string) ([]string, error) {
+	panic("fakeInitK8s: ListPodNames not stubbed")
+}
 func (f *fakeInitK8s) HelmReleaseChartVersions(context.Context) (map[string]string, error) {
 	panic("fakeInitK8s: HelmReleaseChartVersions not stubbed")
 }
@@ -1008,13 +1184,13 @@ func TestInit_PhaseC_RunsControllerAuthSetup(t *testing.T) {
 	if bao.configureAuthCalls != 1 {
 		t.Errorf("ConfigureKubernetesAuth calls = %d, want 1", bao.configureAuthCalls)
 	}
-	// Two policies in order
-	if len(bao.policyCalls) != 2 || bao.policyCalls[0] != ManagerPolicyName || bao.policyCalls[1] != DBManagerPolicyName {
+	// Three policies in order, including the read-only snapshot job.
+	if len(bao.policyCalls) != 3 || bao.policyCalls[0] != ManagerPolicyName || bao.policyCalls[1] != DBManagerPolicyName || bao.policyCalls[2] != SnapshotPolicyName {
 		t.Errorf("policy call order wrong: %v", bao.policyCalls)
 	}
-	// Two roles in order
-	wantRoles := []string{KubernetesAuthPath + "/" + ManagerRoleName, KubernetesAuthPath + "/" + DBManagerRoleName}
-	if len(bao.roleCalls) != 2 || bao.roleCalls[0] != wantRoles[0] || bao.roleCalls[1] != wantRoles[1] {
+	// Three roles in order.
+	wantRoles := []string{KubernetesAuthPath + "/" + ManagerRoleName, KubernetesAuthPath + "/" + DBManagerRoleName, KubernetesAuthPath + "/" + SnapshotRoleName}
+	if len(bao.roleCalls) != len(wantRoles) || bao.roleCalls[0] != wantRoles[0] || bao.roleCalls[1] != wantRoles[1] || bao.roleCalls[2] != wantRoles[2] {
 		t.Errorf("role call order wrong: %v (want %v)", bao.roleCalls, wantRoles)
 	}
 }
@@ -1112,5 +1288,417 @@ func TestInit_PhaseC_SetupFailure_RevokesAndReturnsErr(t *testing.T) {
 	// Recovery message points at setup-controller-auth, not unseal.
 	if !strings.Contains(out.String(), "setup-controller-auth") {
 		t.Errorf("output should suggest setup-controller-auth recovery:\n%s", out.String())
+	}
+}
+
+// --- P0 (review-pass 3): write-ahead custody ---
+//
+// The shares only ever exist in a secrets.Buffer that `defer
+// buf.Scrub()` wipes on EVERY return from Init. Before this pass, the
+// error paths between the sentinel callback and Phase B returned
+// straight out — so a script that emitted its share payload and then
+// failed (nonzero exit, truncated stream, bad payload, missing root
+// token) left an INITIALIZED vault whose keys had just been zeroed in
+// memory and written nowhere. Unrecoverable.
+//
+// Each spec below drives one of those paths and asserts the shares
+// reached disk anyway.
+
+// sharesReachedDisk asserts an emergency dump exists for the cluster
+// and actually contains the captured share material.
+func sharesReachedDisk(t *testing.T, home, cluster string) string {
+	t.Helper()
+	dir := filepath.Join(home, ".kube-dc")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("no custody dir %s: %v", dir, err)
+	}
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), "openbao-emergency-shares-") {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		body, rerr := os.ReadFile(path)
+		if rerr != nil {
+			t.Fatalf("read %s: %v", path, rerr)
+		}
+		// The first canonical share must be present verbatim, or the
+		// file is custody in name only.
+		if !strings.Contains(string(body), "share1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=") {
+			t.Fatalf("%s exists but does not contain the captured shares:\n%s", path, body)
+		}
+		if fi, serr := os.Stat(path); serr == nil && fi.Mode().Perm() != 0o600 {
+			t.Errorf("custody file %s has mode %o, want 0600", path, fi.Mode().Perm())
+		}
+		return path
+	}
+	t.Fatalf("shares were captured but no emergency dump exists in %s (entries: %v)", dir, entries)
+	return ""
+}
+
+func TestInit_PostCaptureFailures_AlwaysPreserveShares(t *testing.T) {
+	cases := []struct {
+		name    string
+		mutate  func(*fakeRunner, *fakeSOPS, *fakeGit)
+		wantMsg string
+	}{
+		{
+			// The script emitted the shares, then died — e.g. the unseal
+			// or annotate step inside openbao-init.sh failed. The vault
+			// is initialized regardless.
+			name:    "nonzero exit after the payload was emitted",
+			mutate:  func(r *fakeRunner, _ *fakeSOPS, _ *fakeGit) { r.exitCode = 7 },
+			wantMsg: "exit=7",
+		},
+		{
+			// Truncated stream: no exit line at all.
+			name:    "drain error after the payload was emitted",
+			mutate:  func(r *fakeRunner, _ *fakeSOPS, _ *fakeGit) { r.exitText = "not-a-number" },
+			wantMsg: "drain",
+		},
+		{
+			// Payload parsed but carried no root token. Init refuses to
+			// continue — the shares are still real and still the only
+			// copy of the vault's recovery material.
+			name: "root token absent from an otherwise valid payload",
+			mutate: func(r *fakeRunner, _ *fakeSOPS, _ *fakeGit) {
+				r.sentinelPayload = []byte(strings.Replace(canonicalShareJSON,
+					`"root_token": "ROOT_TOKEN_BBBBBBBBBBBBBBBBBBBBBB"`, `"root_token": ""`, 1))
+			},
+			wantMsg: "root_token",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := setupFleet(t)
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			runner := &fakeRunner{fireSentinel: true, sentinelPayload: []byte(canonicalShareJSON)}
+			sops := newFakeSOPS()
+			git := &fakeGit{preSHA: "PRE", commitSHA: "post"}
+			tc.mutate(runner, sops, git)
+			opts := baseInitOpts(t, repo, runner, sops, git)
+
+			err := Init(context.Background(), opts)
+			if err == nil {
+				t.Fatal("expected failure")
+			}
+			if !strings.Contains(err.Error(), tc.wantMsg) {
+				t.Errorf("error should mention %q; got: %v", tc.wantMsg, err)
+			}
+			// The whole point: shares on disk, and the error says where.
+			path := sharesReachedDisk(t, home, "atlantis")
+			if !strings.Contains(err.Error(), path) {
+				t.Errorf("error must tell the operator where the shares are (%s); got: %v", path, err)
+			}
+			if len(git.resetCalls) != 0 {
+				t.Errorf("ResetHard must NEVER run once the vault is initialized; got %v", git.resetCalls)
+			}
+		})
+	}
+}
+
+// A failure BEFORE the sentinel fires is free: the vault was never
+// initialized, so there is nothing to preserve and no scary custody
+// message to show the operator.
+func TestInit_PreCaptureFailure_NoCustodyFile(t *testing.T) {
+	repo := setupFleet(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	runner := &fakeRunner{fireSentinel: false, exitCode: 3}
+	git := &fakeGit{preSHA: "PRE"}
+	err := Init(context.Background(), baseInitOpts(t, repo, runner, newFakeSOPS(), git))
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+	if entries, rerr := os.ReadDir(filepath.Join(home, ".kube-dc")); rerr == nil {
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), "openbao-emergency-shares-") {
+				t.Fatalf("no shares were ever captured, so nothing should be dumped; found %s", e.Name())
+			}
+		}
+	}
+	if strings.Contains(err.Error(), "vault IS initialized") {
+		t.Errorf("pre-capture failure must not claim the vault is initialized; got: %v", err)
+	}
+}
+
+// On full success the write-ahead plaintext copy must be cleaned up —
+// the encrypted, committed secrets.enc.yaml is the custody of record,
+// and leaving plaintext shares in ~/.kube-dc would quietly undo that.
+func TestInit_Success_RemovesWriteAheadCopy(t *testing.T) {
+	repo := setupFleet(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	runner := &fakeRunner{fireSentinel: true, sentinelPayload: []byte(canonicalShareJSON)}
+	git := &fakeGit{preSHA: "PRE", commitSHA: "post"}
+	if err := Init(context.Background(), baseInitOpts(t, repo, runner, newFakeSOPS(), git)); err != nil {
+		t.Fatalf("happy path failed: %v", err)
+	}
+	entries, rerr := os.ReadDir(filepath.Join(home, ".kube-dc"))
+	if rerr != nil {
+		return // dir never created — also fine
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "openbao-emergency-shares-") {
+			t.Errorf("write-ahead plaintext copy %s survived a successful ceremony", e.Name())
+		}
+	}
+}
+
+// --- P1 (review-pass 3): emergency dumps must never clobber ---
+
+// A second failed ceremony must not overwrite the first one's shares.
+// The earlier file may belong to a still-sealed vault nobody has
+// recovered yet; overwriting it destroys the only way back in.
+func TestEmergencyDump_NeverOverwritesExistingDump(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	buf := secrets.NewBuffer()
+	if err := loadBufferFromJSON(buf, []byte(canonicalShareJSON)); err != nil {
+		t.Fatalf("seed buffer: %v", err)
+	}
+	opts := InitOptions{ClusterName: "atlantis"}
+
+	first, err := emergencyDumpShares(opts, buf)
+	if err != nil {
+		t.Fatalf("first dump: %v", err)
+	}
+	// Mark the first file so we can prove it was not replaced.
+	marker := "# FIRST-CEREMONY-DO-NOT-LOSE\n"
+	body, _ := os.ReadFile(first)
+	if err := os.WriteFile(first, append([]byte(marker), body...), 0o600); err != nil {
+		t.Fatalf("mark first dump: %v", err)
+	}
+
+	second, err := emergencyDumpShares(opts, buf)
+	if err != nil {
+		t.Fatalf("second dump: %v", err)
+	}
+	if second == first {
+		t.Fatalf("second dump reused the first path %s — the earlier shares would be destroyed", first)
+	}
+	after, _ := os.ReadFile(first)
+	if !strings.HasPrefix(string(after), marker) {
+		t.Errorf("first ceremony's dump at %s was overwritten", first)
+	}
+	if b, rerr := os.ReadFile(second); rerr != nil || !strings.Contains(string(b), "share1AAAA") {
+		t.Errorf("second dump %s is not usable custody: %v", second, rerr)
+	}
+}
+
+// Nested cluster names must not collide with hyphenated ones. The old
+// "/"->"-" flattening mapped BOTH "cs/next" and "cs-next" onto
+// openbao-emergency-shares-cs-next.yaml.
+func TestEmergencyDump_NestedNameDoesNotCollideWithHyphen(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	buf := secrets.NewBuffer()
+	if err := loadBufferFromJSON(buf, []byte(canonicalShareJSON)); err != nil {
+		t.Fatalf("seed buffer: %v", err)
+	}
+	nested, err := emergencyDumpShares(InitOptions{ClusterName: "cs/next"}, buf)
+	if err != nil {
+		t.Fatalf("nested dump: %v", err)
+	}
+	hyphen, err := emergencyDumpShares(InitOptions{ClusterName: "cs-next"}, buf)
+	if err != nil {
+		t.Fatalf("hyphen dump: %v", err)
+	}
+	if nested == hyphen {
+		t.Fatalf("cs/next and cs-next both dumped to %s", nested)
+	}
+	// Both must still be single files directly under ~/.kube-dc — a
+	// nested name must never turn into a directory tree.
+	for _, p := range []string{nested, hyphen} {
+		if filepath.Dir(p) != filepath.Join(home, ".kube-dc") {
+			t.Errorf("dump %s escaped ~/.kube-dc", p)
+		}
+	}
+}
+
+// A partial capture is exactly when custody matters most: refusing to
+// write because fewer than 5 shares arrived would discard the 3 that
+// might still unseal the vault.
+func TestEmergencyDump_PartialCaptureStillWritesWithWarning(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	buf := secrets.NewBuffer()
+	partial := `{"unseal_keys_b64":["p1AAAA=","p2BBBB=","p3CCCC="],"root_token":"s.tok"}`
+	if err := loadBufferFromJSON(buf, []byte(partial)); err != nil {
+		t.Skipf("loader rejects partial payloads outright: %v", err)
+	}
+	path, err := emergencyDumpShares(InitOptions{ClusterName: "atlantis"}, buf)
+	if err != nil {
+		t.Fatalf("partial capture must still be preserved, got: %v", err)
+	}
+	body, _ := os.ReadFile(path)
+	if !strings.Contains(string(body), "p1AAAA=") {
+		t.Errorf("partial dump lost the shares it did have:\n%s", body)
+	}
+	if !strings.Contains(string(body), "PARTIAL CAPTURE") {
+		t.Errorf("partial dump must be labelled so it is not mistaken for full custody:\n%s", body)
+	}
+}
+
+// --- truncated stream (no terminal exit record) ---
+//
+// The drainer used to initialise exit=0 and return it untouched when
+// the channel closed without a StreamExit line. A killed script, a dead
+// runner or a dropped connection therefore read as a clean exit 0 —
+// which for openbao-init.sh means asserting the vault was initialized
+// and finalized on the strength of output we never received.
+
+// Truncated BEFORE the sentinel fires: nothing was captured, so this is
+// an ordinary failure. Init must not claim custody it does not have.
+func TestInit_TruncatedStreamBeforeCapture_FailsWithoutCustodyClaim(t *testing.T) {
+	repo := setupFleet(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	runner := &fakeRunner{fireSentinel: false, dropExit: true}
+	git := &fakeGit{preSHA: "PRE", commitSHA: "post"}
+	sops := newFakeSOPS()
+
+	err := Init(context.Background(), baseInitOpts(t, repo, runner, sops, git))
+	if !errors.Is(err, ErrScriptStreamTruncated) {
+		t.Fatalf("truncated stream must not be synthesized as exit 0; got %v", err)
+	}
+	// Nothing was captured => no custody file and no custody language.
+	if entries, rerr := os.ReadDir(filepath.Join(home, ".kube-dc")); rerr == nil {
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), "openbao-emergency-shares-") {
+				t.Errorf("no shares were captured, so nothing should be dumped; found %s", e.Name())
+			}
+		}
+	}
+	if strings.Contains(err.Error(), "vault IS initialized") {
+		t.Errorf("pre-capture truncation must not claim the vault is initialized; got: %v", err)
+	}
+	// And it must not have written anything to the fleet.
+	if len(sops.written) != 0 {
+		t.Errorf("truncated pre-capture run must not encrypt anything; wrote %d keys", len(sops.written))
+	}
+	if git.commitCalls != 0 {
+		t.Errorf("truncated pre-capture run must not commit; got %d commits", git.commitCalls)
+	}
+}
+
+// Truncated AFTER the sentinel fires: the vault IS initialized and we
+// hold its only keys. This is the dangerous one — it must fail, must
+// preserve, and must tell the operator where the shares are.
+func TestInit_TruncatedStreamAfterCapture_PreservesSharesAndNamesPath(t *testing.T) {
+	repo := setupFleet(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	runner := &fakeRunner{
+		fireSentinel:    true,
+		sentinelPayload: []byte(canonicalShareJSON),
+		dropExit:        true,
+	}
+	git := &fakeGit{preSHA: "PRE", commitSHA: "post"}
+
+	err := Init(context.Background(), baseInitOpts(t, repo, runner, newFakeSOPS(), git))
+	if !errors.Is(err, ErrScriptStreamTruncated) {
+		t.Fatalf("expected ErrScriptStreamTruncated, got %v", err)
+	}
+	path := sharesReachedDisk(t, home, "atlantis")
+	if !strings.Contains(err.Error(), path) {
+		t.Errorf("error must name the custody path %s; got: %v", path, err)
+	}
+	if !strings.Contains(err.Error(), "vault IS initialized") {
+		t.Errorf("post-capture truncation must warn the vault is initialized; got: %v", err)
+	}
+	if len(git.resetCalls) != 0 {
+		t.Errorf("ResetHard must NEVER run once the vault is initialized; got %v", git.resetCalls)
+	}
+}
+
+// Direct drainer coverage: EOF with no exit record is an error, and a
+// present exit record still round-trips its code.
+func TestDrainOpenBaoInit_RequiresTerminalExitRecord(t *testing.T) {
+	mk := func(lines ...ports.Line) <-chan ports.Line {
+		ch := make(chan ports.Line, len(lines))
+		for _, l := range lines {
+			ch <- l
+		}
+		close(ch)
+		return ch
+	}
+	stdout := ports.Line{Stream: ports.StreamStdout, Text: "working"}
+
+	if _, err := drainOpenBaoInit(mk(stdout), io.Discard); !errors.Is(err, ErrScriptStreamTruncated) {
+		t.Errorf("EOF without an exit record must error; got %v", err)
+	}
+	if _, err := drainOpenBaoInit(mk(), io.Discard); !errors.Is(err, ErrScriptStreamTruncated) {
+		t.Errorf("empty stream must error; got %v", err)
+	}
+	for _, code := range []string{"0", "7"} {
+		got, err := drainOpenBaoInit(mk(stdout, ports.Line{Stream: ports.StreamExit, Text: code}), io.Discard)
+		if err != nil {
+			t.Errorf("exit=%s should drain cleanly; got %v", code, err)
+		}
+		if want, _ := strconv.Atoi(code); got != want {
+			t.Errorf("exit code %s round-tripped as %d", code, got)
+		}
+	}
+}
+
+// P2 (review-pass 4): the ScriptRunner contract says the exit record is
+// the FINAL record. "An exit appeared somewhere" is weaker, and the old
+// drainer accepted both looser shapes plus a malformed code:
+//
+//   - output after the exit record  (stream interleaved or truncated
+//     mid-restart; the code we captured may not describe this run)
+//   - a second exit record          (a trailing 0 masking a real failure)
+//   - "0garbage"                    (fmt.Sscanf stopped at the first
+//     non-digit and reported success)
+//
+// All three are now rejected by ports.Drain. Any shares already captured
+// must still be preserved, since the vault is initialized either way.
+func TestInit_MalformedExitRecords_AreRejectedAndPreserveShares(t *testing.T) {
+	cases := []struct {
+		name    string
+		mutate  func(*fakeRunner)
+		wantErr error
+	}{
+		{
+			name:    "exit code with a trailing garbage suffix",
+			mutate:  func(r *fakeRunner) { r.exitText = "0garbage" },
+			wantErr: ports.ErrStreamBadExitCode,
+		},
+		{
+			name:    "output after the exit record",
+			mutate:  func(r *fakeRunner) { r.trailingOutput = "late line after exit" },
+			wantErr: ports.ErrStreamOutputAfterExit,
+		},
+		{
+			name:    "a second exit record masking the first",
+			mutate:  func(r *fakeRunner) { r.exitCode = 1; r.extraExit = "0" },
+			wantErr: ports.ErrStreamDuplicateExit,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := setupFleet(t)
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			runner := &fakeRunner{fireSentinel: true, sentinelPayload: []byte(canonicalShareJSON)}
+			tc.mutate(runner)
+			git := &fakeGit{preSHA: "PRE", commitSHA: "post"}
+
+			err := Init(context.Background(), baseInitOpts(t, repo, runner, newFakeSOPS(), git))
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("want %v, got %v", tc.wantErr, err)
+			}
+			// The vault is initialized regardless of how mangled the
+			// stream was, so custody still applies.
+			path := sharesReachedDisk(t, home, "atlantis")
+			if !strings.Contains(err.Error(), path) {
+				t.Errorf("error must name the custody path %s; got: %v", path, err)
+			}
+			if len(git.resetCalls) != 0 {
+				t.Errorf("ResetHard must NEVER run once the vault is initialized; got %v", git.resetCalls)
+			}
+		})
 	}
 }

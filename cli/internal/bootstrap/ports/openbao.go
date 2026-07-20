@@ -139,4 +139,7 @@ type BaoStatus struct {
 	HAMode       string // "active" | "standby" | "" (single-node)
 	RaftIndex    uint64 // 0 when not using raft storage
 	ActiveNodeID string // populated on standby pods; empty on the active node
+	StorageType  string // "raft" | "file"; the platform requires raft — the
+	// file backend 405s the generate-root ceremony so controller-auth /
+	// KMS / etcd-encryption cannot be provisioned (kube-dc 2026-07-09).
 }

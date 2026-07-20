@@ -39,8 +39,8 @@ type fakeGit struct {
 	resetErr   error
 }
 
-func (g *fakeGit) Clone(_ context.Context, _, _, _ string) error  { return nil }
-func (g *fakeGit) Pull(_ context.Context, _, _ string) error      { return nil }
+func (g *fakeGit) Clone(_ context.Context, _, _, _ string) error { return nil }
+func (g *fakeGit) Pull(_ context.Context, _, _ string) error     { return nil }
 func (g *fakeGit) CreateRepo(_ context.Context, _, _ string, _ bool, _ string) error {
 	return nil
 }
@@ -69,6 +69,17 @@ func (g *fakeGit) CommitAndPush(_ context.Context, _, _, _ string) (string, erro
 	}
 	g.pushed = true
 	return g.commitSHA, nil
+}
+
+func (g *fakeGit) Push(_ context.Context, _, _ string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.pushErr != nil {
+		g.pushAtCommit = true
+		return g.pushErr
+	}
+	g.pushed = true
+	return nil
 }
 
 func (g *fakeGit) Commit(_ context.Context, _, _ string) (string, error) {
@@ -649,4 +660,77 @@ func (f *flippingScriptRunner) Run(ctx context.Context, name ports.ScriptKind, e
 	// inspect the args downstream.
 	f.wrapped.calls = append(f.wrapped.calls, fakeScriptCall{Kind: name, Env: env, Args: args})
 	return out, nil
+}
+
+// TestApply_Resume_PushesThenFluxInstall proves the resume path (existing
+// overlay → ErrScaffoldTargetExists): rather than fail, Apply pushes HEAD
+// — a clean working tree does NOT prove the committed overlay is on the
+// remote branch Flux reconciles — and then runs flux-install. Regression
+// guard for the P1 resume-correctness fix.
+func TestApply_Resume_PushesThenFluxInstall(t *testing.T) {
+	repo := applyFleet(t)
+	// Pre-create the overlay so Scaffold's preflight returns
+	// ErrScaffoldTargetExists and Apply takes the resume branch.
+	overlay := filepath.Join(repo, "clusters", "atlantis")
+	if err := os.MkdirAll(overlay, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Scaffold's "already initialised" marker is cluster-config.env —
+	// write it so the preflight returns ErrScaffoldTargetExists (resume).
+	if err := os.WriteFile(filepath.Join(overlay, "cluster-config.env"), []byte("CLUSTER_NAME=atlantis\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runner := applyRunner(t, repo)
+	git := &fakeGit{preSHA: "abc123", commitSHA: "def456"}
+
+	if err := Apply(context.Background(), atlantisApplyOpts(t, repo, runner, git)); err != nil {
+		t.Fatalf("resume apply: %v", err)
+	}
+	if !git.pushed {
+		t.Fatal("resume must Push HEAD before flux-install (a clean tree doesn't prove the overlay is pushed)")
+	}
+	if git.commitCall != 0 {
+		t.Fatalf("resume created %d new commit(s); unchanged GPU manifests would trigger an unnecessary Flux apply", git.commitCall)
+	}
+	var fluxRan bool
+	for _, c := range runner.calls {
+		if c.Kind == ports.ScriptAddCluster {
+			t.Fatal("resume reran add-cluster/scaffold; healthy GPU operands must remain untouched")
+		}
+		if c.Kind == ports.ScriptFluxInstall {
+			fluxRan = true
+		}
+	}
+	if !fluxRan {
+		t.Fatal("resume must run flux-install after pushing HEAD")
+	}
+}
+
+// TestApply_Resume_PushFailure_BlocksFluxInstall proves a resume push
+// failure is fatal — we must not point flux-install at a remote we can't
+// confirm contains the overlay.
+func TestApply_Resume_PushFailure_BlocksFluxInstall(t *testing.T) {
+	repo := applyFleet(t)
+	overlay := filepath.Join(repo, "clusters", "atlantis")
+	if err := os.MkdirAll(overlay, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Scaffold's "already initialised" marker is cluster-config.env —
+	// write it so the preflight returns ErrScaffoldTargetExists (resume).
+	if err := os.WriteFile(filepath.Join(overlay, "cluster-config.env"), []byte("CLUSTER_NAME=atlantis\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runner := applyRunner(t, repo)
+	pushErr := errors.New("simulated resume push failure")
+	git := &fakeGit{preSHA: "abc123", pushErr: pushErr}
+
+	err := Apply(context.Background(), atlantisApplyOpts(t, repo, runner, git))
+	if !errors.Is(err, pushErr) {
+		t.Fatalf("want resume push error, got %v", err)
+	}
+	for _, c := range runner.calls {
+		if c.Kind == ports.ScriptFluxInstall {
+			t.Fatal("flux-install ran despite resume push failure")
+		}
+	}
 }

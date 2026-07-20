@@ -75,12 +75,13 @@ func New(k8s ports.K8sClient) *Client {
 // ---------- ports.OpenBaoClient ----------
 
 func (c *Client) Status(ctx context.Context, pod string) (ports.BaoStatus, error) {
-	// `bao status` is read-only — execWithRetry handles the WS-flake
-	// retry policy (see helper docstring). `bao status` exits 2 on a
-	// sealed vault, but the JSON body is still emitted; we route
-	// both paths through parseStatus and fall back to the wrapped
-	// error only if parseStatus genuinely can't extract a JSON.
-	out, err := c.execWithRetry(ctx, pod, []string{"bao", "status", "-format=json"})
+	// `bao status` exits 2 on a sealed server. Some exec transports lose
+	// stdout on a non-zero remote exit, which previously converted the
+	// authoritative JSON into a false "already unsealed" zero value.
+	// Normalize only exit 2 inside the pod so the JSON reaches the parser;
+	// all other command failures remain non-zero.
+	statusCmd := []string{"/bin/sh", "-c", `bao status -format=json || [ "$?" -eq 2 ]`}
+	out, err := c.execWithRetry(ctx, pod, statusCmd)
 	if err != nil {
 		var st ports.BaoStatus
 		if parseErr := parseStatus(pod, out, &st); parseErr == nil {
@@ -210,6 +211,16 @@ func (c *Client) execIdempotentWriteWithRetry(
 // can distinguish it from a true bao error.
 var errWSDrop = fmt.Errorf("openbao: WebSocket exec drop (no sentinel)")
 
+// ErrFileStorageBackend is returned by GenerateRoot when OpenBao is running
+// the `file` storage backend, on which `sys/generate-root/attempt` returns
+// 405 — so the generate-root ceremony (and everything downstream: controller-
+// auth, per-org transit, KMSKey, managed-K8s etcd encryption) can never
+// succeed. This turns a cryptic mid-install 405 into an actionable failure.
+// The platform standard is single-node RAFT (OPENBAO_HA_ENABLED=true +
+// OPENBAO_REPLICAS=1) — never file. (single-node file-backend cluster, 2026-07-09)
+var ErrFileStorageBackend = fmt.Errorf("openbao: file storage backend does not support generate-root " +
+	"(set OPENBAO_HA_ENABLED=true for raft in the cluster's cluster-config.env and reconcile, then re-run)")
+
 // execWithRetry runs a stdin-less, read-only bao command with the
 // F-bootstrap-3 retry policy: bounded to 6 attempts because
 // WebSocket exec drops captured stdout intermittently against busy
@@ -255,39 +266,16 @@ func (c *Client) execWithRetry(ctx context.Context, pod string, cmd []string) ([
 }
 
 func (c *Client) PodList(ctx context.Context) ([]string, error) {
-	// Probe sequentially for the StatefulSet pods (openbao-0..N).
-	// The shipping chart names pods deterministically, so this
-	// converges in N calls. A future K8sClient.ListPods would let us
-	// do a selector query in one round-trip; until then this is the
-	// simplest path that doesn't expand the port surface.
-	//
-	// Pods that exist in the apiserver but haven't been scheduled
-	// onto a node yet ("does not have a host assigned") are treated
-	// the same as a 404 — break the scan and return the pods we
-	// already saw. The StatefulSet's OrderedReady policy guarantees
-	// openbao-(N+1) is never scheduled before openbao-N is Ready, so
-	// the first unscheduled index is always the tail of the cluster.
-	// This is exactly the race Init's post-commit revoke + annotate
-	// step hits: openbao-0 just became Ready and the StatefulSet
-	// hasn't created openbao-1 yet, but a subsequent reconcile may
-	// have already put openbao-1 in the API.
-	var pods []string
-	for i := 0; i < 5; i++ {
-		name := fmt.Sprintf("openbao-%d", i)
-		// `true` is a tiny shell builtin — confirms the pod exists +
-		// the kubelet/apiserver chain works without invoking bao.
-		if _, err := c.k8s.PodExec(ctx, openbaoNamespace, name, []string{"true"}, nil); err != nil {
-			if isPodNotFound(err) || isPodNotScheduled(err) {
-				break
-			}
-			return nil, fmt.Errorf("openbao: probe %s: %w", name, err)
-		}
-		pods = append(pods, name)
+	// List actual StatefulSet members. Probing guessed ordinals through exec
+	// produced phantom openbao-1/2 members on a live one-replica cluster.
+	const selector = "app.kubernetes.io/instance=openbao,app.kubernetes.io/name=openbao,component=server"
+	pods, err := c.k8s.ListPodNames(ctx, openbaoNamespace, selector)
+	if err != nil {
+		return nil, fmt.Errorf("openbao: list server pods: %w", err)
 	}
 	if len(pods) == 0 {
-		return nil, fmt.Errorf("openbao: no openbao-N pods found in %s", openbaoNamespace)
+		return nil, fmt.Errorf("openbao: no server pods found in %s", openbaoNamespace)
 	}
-	sort.Strings(pods)
 	return pods, nil
 }
 
@@ -400,10 +388,16 @@ func (c *Client) GenerateRoot(ctx context.Context, shares [][]byte) ([]byte, err
 	if err != nil {
 		return nil, fmt.Errorf("openbao: locate active pod: %w", err)
 	}
+	// Fail fast on the file storage backend: generate-root 405s there, so
+	// the ceremony below would burn its retries and surface a cryptic
+	// "405 unsupported operation". Surface the actionable cause instead.
+	if st, sErr := c.Status(ctx, pod); sErr == nil && st.StorageType == "file" {
+		return nil, ErrFileStorageBackend
+	}
 	const outerAttempts = 5
 	var (
-		tok      []byte
-		lastErr  error
+		tok     []byte
+		lastErr error
 	)
 	for outerAttempt := 1; outerAttempt <= outerAttempts; outerAttempt++ {
 		tok, lastErr = c.generateRootOnce(ctx, pod, shares)
@@ -437,14 +431,14 @@ func (c *Client) GenerateRoot(ctx context.Context, shares [][]byte) ([]byte, err
 // Validation errors with non-empty stderr surface immediately.
 //
 // Classification priority:
-//   1. errors.Is(err, errWSDrop) — sentinel-wrapped explicit drops
-//      from execWithRetry / execIdempotentWriteWithRetry exhaustion.
-//      This is the preferred path (no string matching).
-//   2. String fallbacks — for failure shapes that originate at the
-//      engine layer (share-3 auto-clear, raw exec exit codes with
-//      empty body). These wrap errors with task-specific phrasing
-//      that doesn't carry errWSDrop, so we match on the wrapper's
-//      message.
+//  1. errors.Is(err, errWSDrop) — sentinel-wrapped explicit drops
+//     from execWithRetry / execIdempotentWriteWithRetry exhaustion.
+//     This is the preferred path (no string matching).
+//  2. String fallbacks — for failure shapes that originate at the
+//     engine layer (share-3 auto-clear, raw exec exit codes with
+//     empty body). These wrap errors with task-specific phrasing
+//     that doesn't carry errWSDrop, so we match on the wrapper's
+//     message.
 //
 // Deterministic ceremony inputs (shares + opts) make every
 // retryable case safe to re-run.
@@ -1131,6 +1125,11 @@ func parseStatus(pod string, out []byte, st *ports.BaoStatus) error {
 		// from it marked the only (unsealed, working) pod as
 		// standby and activePodCached found no active pod at all.
 		HAEnabled bool `json:"ha_enabled"`
+
+		// storage_type distinguishes raft (required) from file (broken:
+		// 405s generate-root). Surfaced so the generate-root ceremony can
+		// fail fast with an actionable message instead of a cryptic 405.
+		StorageType string `json:"storage_type"`
 	}
 	start := bytes.IndexByte(out, '{')
 	if start < 0 {
@@ -1146,6 +1145,7 @@ func parseStatus(pod string, out []byte, st *ports.BaoStatus) error {
 	st.HAMode = raw.HAMode
 	st.RaftIndex = raw.RaftIndex
 	st.ActiveNodeID = raw.ActiveNodeID
+	st.StorageType = raw.StorageType
 	// OpenBao 2.5+ compatibility: derive HAMode from active_time
 	// when the legacy ha_mode field is absent. active_time is the
 	// zero RFC3339 value ("0001-01-01T00:00:00Z") for standbys; any

@@ -43,7 +43,7 @@ type hostFS interface {
 
 type realHostFS struct{}
 
-func (realHostFS) ReadFile(p string) ([]byte, error)      { return os.ReadFile(p) }
+func (realHostFS) ReadFile(p string) ([]byte, error)       { return os.ReadFile(p) }
 func (realHostFS) ReadDir(p string) ([]fs.DirEntry, error) { return os.ReadDir(p) }
 
 // HostProbeMode tells host probes whether they should run or
@@ -67,10 +67,10 @@ const (
 // in this monorepo). The bare-metal-workers doc (docs/platform/
 // deploy-metal3-bare-metal-workers.md) calls out the same set:
 //
-//   fs.inotify.max_user_watches  = 1524288
-//   fs.inotify.max_user_instances = 4024
-//   net.ipv4.ip_forward          = 1
-//   modprobe nf_conntrack
+//	fs.inotify.max_user_watches  = 1524288
+//	fs.inotify.max_user_instances = 4024
+//	net.ipv4.ip_forward          = 1
+//	modprobe nf_conntrack
 //
 // openvswitch is loaded automatically when openvswitch-switch is
 // installed (it's also the kube-ovn-controller's daemon path), so

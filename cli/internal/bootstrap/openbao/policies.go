@@ -24,7 +24,13 @@ var ManagerPolicyHCL string
 //go:embed policies/db-manager.hcl
 var DBManagerPolicyHCL string
 
-// Hardcoded SA + role parameters for the two roles. These are
+// SnapshotPolicyHCL permits the snapshot CronJob to read a Raft snapshot.
+// It deliberately excludes restore, force-restore, and secrets-engine paths.
+//
+//go:embed policies/snapshot.hcl
+var SnapshotPolicyHCL string
+
+// Hardcoded SA + role parameters for the controller and workload roles. These are
 // chart-shape invariants — changing them is a chart-coordinated
 // breaking change that warrants a separate PR, NOT a flag here.
 const (
@@ -38,6 +44,11 @@ const (
 	DBManagerSAName     = "kube-dc-db-manager"
 	DBManagerSAns       = "kube-dc"
 
+	SnapshotPolicyName = "openbao-snapshot"
+	SnapshotRoleName   = "openbao-snapshot"
+	SnapshotSAName     = "openbao-snapshot"
+	SnapshotSAns       = "openbao"
+
 	// Auth mount path under the root namespace. Hardcoded to match
 	// the manager-side login at internal/openbao/auth.go.
 	KubernetesAuthPath = "k8s-host"
@@ -46,12 +57,14 @@ const (
 	// initial TTL, 24h cap — same as the shell script. The controller
 	// renews on a sliding window via the auth/token/renew-self grant
 	// embedded in both policies.
-	TokenTTL    = "1h"
-	TokenMaxTTL = "24h"
+	TokenTTL            = "1h"
+	TokenMaxTTL         = "24h"
+	SnapshotTokenTTL    = "15m"
+	SnapshotTokenMaxTTL = "15m"
 
 	// Annotations stamped on svc/openbao for idempotence detection.
-	AnnotationBootstrapFinalized       = "kube-dc.com/openbao-bootstrap-finalized"
-	AnnotationControllerAuthInstalled  = "kube-dc.com/openbao-controller-auth-installed"
+	AnnotationBootstrapFinalized      = "kube-dc.com/openbao-bootstrap-finalized"
+	AnnotationControllerAuthInstalled = "kube-dc.com/openbao-controller-auth-installed"
 )
 
 // ManagerRoleParams returns the bao-write key=value pairs for the
@@ -76,5 +89,18 @@ func DBManagerRoleParams() map[string]string {
 		"policies":                         DBManagerPolicyName,
 		"token_ttl":                        TokenTTL,
 		"token_max_ttl":                    TokenMaxTTL,
+	}
+}
+
+// SnapshotRoleParams binds only the openbao/openbao-snapshot service account
+// and issues a short-lived token without the default policy.
+func SnapshotRoleParams() map[string]string {
+	return map[string]string{
+		"bound_service_account_names":      SnapshotSAName,
+		"bound_service_account_namespaces": SnapshotSAns,
+		"policies":                         SnapshotPolicyName,
+		"token_ttl":                        SnapshotTokenTTL,
+		"token_max_ttl":                    SnapshotTokenMaxTTL,
+		"token_no_default_policy":          "true",
 	}
 }

@@ -20,7 +20,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          # Track the module's own Go requirement instead of a pinned
+          # toolchain — a hardcoded '1.22' broke the v0.5.0 release when
+          # cli/go.mod moved to go 1.26.
+          go-version-file: cli/go.mod
           cache: true
           cache-dependency-path: cli/go.sum
 

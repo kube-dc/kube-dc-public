@@ -55,8 +55,8 @@ func ExtractThresholdShares(decrypted []byte) ([][]byte, error) {
 type RefreshMode int
 
 const (
-	RefreshFull    RefreshMode = iota // enable + configure + policies + roles + annotate
-	RefreshPolicy                     // policies + roles only (skip enable + configure; keep annotation)
+	RefreshFull   RefreshMode = iota // enable + configure + policies + roles + annotate
+	RefreshPolicy                    // policies + roles only (skip enable + configure; keep annotation)
 )
 
 // SetupControllerAuthOptions parameterises the engine. Token is the
@@ -64,8 +64,8 @@ const (
 // calling this function. The engine never owns the token's
 // lifetime.
 type SetupControllerAuthOptions struct {
-	Token       []byte               // root token, in-memory only
-	RefreshMode RefreshMode          // Full | Refresh
+	Token       []byte      // root token, in-memory only
+	RefreshMode RefreshMode // Full | Refresh
 	OpenBao     ports.OpenBaoClient
 	K8s         ports.K8sClient
 	Out         io.Writer
@@ -90,16 +90,17 @@ var ErrSetupEmptyToken = errors.New("openbao setup-controller-auth: empty token 
 // RevokeSelf still fires.
 //
 // Steps (in order):
-//   1. EnableAuthPath  (RefreshFull only) — enable kubernetes auth at k8s-host
-//   2. ConfigureKubernetesAuth (RefreshFull only) — point at the apiserver
-//   3. ApplyPolicy     — kube-dc-controller-manager (cross-Org admin)
-//   4. WriteAuthRole   — kube-dc-controller-manager bound to kube-dc-manager SA
-//   5. ApplyPolicy     — db-manager (Transit encrypt/decrypt + database engine)
-//   6. WriteAuthRole   — db-manager bound to kube-dc-db-manager SA
-//   7. SetAnnotations  (RefreshFull only) — kube-dc.com/openbao-controller-auth-installed=<rfc3339>
+//  1. EnableAuthPath  (RefreshFull only) — enable kubernetes auth at k8s-host
+//  2. ConfigureKubernetesAuth (RefreshFull only) — point at the apiserver
+//  3. ApplyPolicy     — kube-dc-controller-manager (cross-Org admin)
+//  4. WriteAuthRole   — kube-dc-controller-manager bound to kube-dc-manager SA
+//  5. ApplyPolicy     — db-manager (Transit encrypt/decrypt + database engine)
+//  6. WriteAuthRole   — db-manager bound to kube-dc-db-manager SA
+//  7. ApplyPolicy + WriteAuthRole — read-only Raft snapshot job
+//  8. SetAnnotations — installed policy generation and Full-mode timestamp
 //
-// On RefreshPolicy: steps 1, 2, 7 are skipped (the existing
-// annotation stays — it was already truthful).
+// On RefreshPolicy, steps 1 and 2 are skipped and the original Full-mode
+// installed timestamp is preserved; policy generation is still updated.
 func SetupControllerAuth(ctx context.Context, opts SetupControllerAuthOptions) error {
 	if err := validateSetupOptions(opts); err != nil {
 		return err
@@ -151,6 +152,18 @@ func SetupControllerAuth(ctx context.Context, opts SetupControllerAuthOptions) e
 		KubernetesAuthPath, DBManagerRoleName, DBManagerSAns, DBManagerSAName)
 	if err := opts.OpenBao.WriteAuthRole(ctx, opts.Token, KubernetesAuthPath, DBManagerRoleName, DBManagerRoleParams()); err != nil {
 		return fmt.Errorf("write role %s: %w", DBManagerRoleName, err)
+	}
+
+	// Snapshot policy/role: short-lived Kubernetes-auth token scoped only to
+	// GET sys/storage/raft/snapshot. No static token Secret is provisioned.
+	fmt.Fprintf(out, "[openbao] applying policy %s\n", SnapshotPolicyName)
+	if err := opts.OpenBao.ApplyPolicy(ctx, opts.Token, SnapshotPolicyName, SnapshotPolicyHCL); err != nil {
+		return fmt.Errorf("apply policy %s: %w", SnapshotPolicyName, err)
+	}
+	fmt.Fprintf(out, "[openbao] writing role auth/%s/role/%s (bound to %s/%s)\n",
+		KubernetesAuthPath, SnapshotRoleName, SnapshotSAns, SnapshotSAName)
+	if err := opts.OpenBao.WriteAuthRole(ctx, opts.Token, KubernetesAuthPath, SnapshotRoleName, SnapshotRoleParams()); err != nil {
+		return fmt.Errorf("write role %s: %w", SnapshotRoleName, err)
 	}
 
 	// Step 7 — annotation stamps. Two markers:

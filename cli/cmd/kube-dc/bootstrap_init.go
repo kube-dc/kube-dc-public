@@ -20,10 +20,12 @@ import (
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/adopt"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/anchors"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/config"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/discover"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/fleetconfig"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/tui/screens/initform"
 )
 
@@ -56,7 +58,8 @@ import (
 func bootstrapInitCmd(fleetRepo *string) *cobra.Command {
 	o := &clusterinit.InitOptions{}
 	var (
-		setFlags, nodeNICFlags, addonFlags, cephNodeFlags []string
+		setFlags, nodeNICFlags, addonFlags, cephNodeFlags, gpuNodeModeFlags, gpuSSHHostMapFlags []string
+		gpuSSHHostOverrides                                                                     map[string]string
 		// --object-storage-mode is canonical (OS-1); --rook-mode is a
 		// deprecated alias for one release. Bound to separate vars so
 		// RunE can detect a conflicting double-set instead of silently
@@ -64,7 +67,7 @@ func bootstrapInitCmd(fleetRepo *string) *cobra.Command {
 		objectStorageModeFlag, rookModeAliasFlag string
 		// --config prefills inputs from a cluster-config.env-format file;
 		// --save-config writes the resolved inputs back out as one.
-		configPath, saveConfigPath string
+		configPath, saveConfigPath, gpuKubeconfig string
 	)
 
 	cmd := &cobra.Command{
@@ -132,6 +135,16 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 				o.CephNodes = pairs
 			}
 			o.Addons = addonFlags
+			if modes, err := clusterinit.ParseGPUNodeModes(gpuNodeModeFlags); err != nil {
+				return fmt.Errorf("--gpu-node-mode: %w", err)
+			} else if len(modes) > 0 {
+				o.GPUNodeModes = modes
+			}
+			if overrides, err := anchors.ParseSSHHostMapSlice(gpuSSHHostMapFlags); err != nil {
+				return fmt.Errorf("--gpu-ssh-host-map: %w", err)
+			} else {
+				gpuSSHHostOverrides = overrides
+			}
 
 			// Resolve the canonical/alias mode pair (OS-1).
 			// --object-storage-mode wins; --rook-mode is honoured only
@@ -222,7 +235,6 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 				}
 				return err
 			}
-
 			// M4-T05 GitLab fail-closed boundary RETIRED (properly
 			// this time): the coordinated `kube-dc-fleet` PR
 			// landing alongside this slice made `flux-install.sh`
@@ -245,6 +257,43 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 			// cloud+public-vlan" before the plan is ever rendered.
 			if err := clusterinit.ValidatePresetRequiredKeys(o); err != nil {
 				return err
+			}
+			gpu := o.GPU()
+			var gpuReader ports.GPUClusterReader
+			if gpu.Platform == clusterinit.GPUPlatformEnabled {
+				if strings.TrimSpace(gpuKubeconfig) == "" {
+					return fmt.Errorf("init: --gpu-kubeconfig is required when --gpu-platform=enabled so plugin conflicts are checked against an explicit target cluster")
+				}
+				gpuReader, err = bootstrap.NewGPUClusterOnly(gpuKubeconfig)
+				if err != nil {
+					return fmt.Errorf("GPU target preflight: %w", err)
+				}
+			}
+			inventories, err := runGPUHostCompatibilityPreflight(cmd.Context(), cmd.OutOrStdout(), gpu, gpuSSHHostOverrides)
+			if err != nil {
+				return err
+			}
+			if err := clusterinit.ValidateGPUClusterConflicts(cmd.Context(), gpu, inventories, gpuReader); err != nil {
+				return fmt.Errorf("GPU target preflight: %w", err)
+			}
+			if gpu.Platform == clusterinit.GPUPlatformEnabled && gpu.SharedAllocator == clusterinit.GPUSharedAllocatorAuto {
+				report, err := evaluateGPUAutoDRA(cmd.Context(), gpuKubeconfig, time.Now())
+				if err != nil {
+					return fmt.Errorf("GPU DRA auto-selection: %w", err)
+				}
+				for _, item := range report.Checks {
+					state := "PASS"
+					if !item.Pass {
+						state = "FAIL"
+					}
+					fmt.Fprintf(cmd.OutOrStdout(), "[DRA %s] %s: %s\n", state, item.Name, item.Message)
+				}
+				if !report.Ready {
+					return fmt.Errorf("GPU DRA auto-selection failed; choose an explicit staged allocator or resolve every failed check; compatibility mode was not selected")
+				}
+			}
+			if gpu.Platform == clusterinit.GPUPlatformEnabled {
+				fmt.Fprintln(cmd.OutOrStdout(), "[preflight] Accelerators: target identity, mode labels, and device-plugin ownership qualified")
 			}
 
 			// --save-config: persist the resolved input surface as a
@@ -319,7 +368,25 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 				}
 			}
 
-			return runInit(cmd.Context(), cmd.OutOrStdout(), o, autoResolution)
+			// Interactive apply on a real TTY runs inside the live
+			// install screen (milestone checklist + colorized log
+			// pane) instead of streaming raw script output to stdout.
+			// Dry-run never uses it (nothing mutates); --no-tty / CI
+			// keeps the plain stream with a NopReporter (byte-for-byte
+			// unchanged output).
+			if !o.NoTTY && !o.DryRun {
+				return runInitInstallTUI(cmd.Context(), cmd.OutOrStdout(), o, autoResolution)
+			}
+			initErr := runInit(cmd.Context(), cmd.OutOrStdout(), o, autoResolution, clusterinit.NopReporter{})
+			// Plain/CI path: runPostApply already wrote the password-free
+			// access block (URLs + kubectl retrieval hint, NO password) to
+			// stdout. o.AccessSummary is only set on the interactive path,
+			// so this is a no-op here — the admin password never reaches
+			// captured CI output.
+			if o.AccessSummary != "" {
+				fmt.Fprint(cmd.OutOrStdout(), o.AccessSummary)
+			}
+			return initErr
 		},
 	}
 
@@ -386,6 +453,44 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"S3 endpoint hostname for the exposure layer (default: s3.<domain>)")
 	cmd.Flags().BoolVar(&o.NoS3Exposure, "no-s3-exposure", false,
 		"Skip the S3 exposure layer (Certificate + HTTPRoute) — cluster-internal S3 only")
+	cmd.Flags().StringVar((*string)(&o.VMStorageMode), "vm-storage-mode", string(clusterinit.VMStorageLocal),
+		fmt.Sprintf("VM root-disk storage tier (optional; one of %s; default local — local-path). shared-rbd needs a rook-ceph-* object-storage mode (provides rbd-pool); shared-rbd-live-migration is installer-deferred", joinStringers(clusterinit.AllVMStorageModes)))
+	cmd.Flags().StringSliceVar(&o.VMGoldens, "vm-golden", nil,
+		"FS golden OS for --vm-storage-mode=shared-rbd (repeatable/comma-sep, e.g. debian-12,alpine-3.21; default: one containerdisk golden; Windows opt-in)")
+	cmd.Flags().StringSliceVar(&o.VMGoldensBlock, "vm-golden-block", nil,
+		"Block/live-migration golden OS for --vm-storage-mode=shared-rbd-live-migration (repeatable; forward-compat — live migration is installer-deferred)")
+
+	// --- Accelerators ---
+	cmd.Flags().StringVar((*string)(&o.GPUPlatform), "gpu-platform", string(clusterinit.GPUPlatformDisabled),
+		fmt.Sprintf("GPU platform mode (one of %s)", joinStringers(clusterinit.AllGPUPlatformModes)))
+	cmd.Flags().StringVar((*string)(&o.GPUDriverSource), "gpu-driver-source", string(clusterinit.GPUDriverOperator),
+		fmt.Sprintf("NVIDIA driver ownership (one of %s)", joinStringers(clusterinit.AllGPUDriverSources)))
+	cmd.Flags().StringVar(&o.GPUOperatorVersion, "gpu-operator-version", clusterinit.DefaultGPUOperatorVersion,
+		"Pinned NVIDIA GPU Operator chart version")
+	cmd.Flags().StringVar(&o.NVIDIADriverVersion, "nvidia-driver-version", clusterinit.DefaultNVIDIADriverVersion,
+		"Pinned NVIDIA driver branch/version validated by kube-dc")
+	cmd.Flags().StringVar(&o.NVIDIAToolkitVersion, "nvidia-toolkit-version", clusterinit.DefaultNVIDIAToolkitVersion,
+		"Pinned NVIDIA container-toolkit version")
+	cmd.Flags().BoolVar(&o.HAMiEnabled, "hami-enabled", false,
+		"Install Shared GPU scheduling/runtime support (required by pod-hami mode)")
+	cmd.Flags().StringVar((*string)(&o.GPUSharedAllocator), "gpu-shared-allocator", string(clusterinit.GPUSharedAllocatorAuto),
+		fmt.Sprintf("Shared GPU allocator (one of %s; DRA is recommended and auto fails closed if DRA qualification is unavailable)", joinStringers(clusterinit.AllGPUSharedAllocators)))
+	cmd.Flags().StringVar(&o.HAMiVersion, "hami-version", clusterinit.DefaultHAMiVersion,
+		"Pinned Shared GPU runtime chart version")
+	cmd.Flags().StringVar(&o.HAMiSchedulerVersion, "hami-scheduler-version", clusterinit.DefaultHAMiSchedulerKubeVersion,
+		"Pinned kube-scheduler image version used by Shared GPU scheduling")
+	cmd.Flags().StringSliceVar(&gpuNodeModeFlags, "gpu-node-mode", nil,
+		"Per-node GPU owner (repeatable/comma-separated NODE=pod-hami|vm-passthrough|vm-vgpu|disabled)")
+	cmd.Flags().StringSliceVar(&gpuSSHHostMapFlags, "gpu-ssh-host-map", nil,
+		"SSH target override for a GPU node (repeatable NODE=HOST); otherwise NODE is resolved through ~/.ssh/config")
+	cmd.Flags().StringVar(&gpuKubeconfig, "gpu-kubeconfig", "",
+		"Kubeconfig for the exact target cluster used to bind GPU host UUIDs and reject plugin conflicts (required when GPU platform is enabled)")
+	cmd.Flags().StringSliceVar(&o.GPUProfiles, "gpu-profile", nil,
+		"Stable GPU profile ID to enable (repeatable/comma-separated; never a native resource name)")
+	cmd.Flags().BoolVar(&o.AllowUnassignedGPUs, "allow-unassigned-gpus", false,
+		"Consent to detected GPU hardware remaining unassigned (required for detect-only)")
+	cmd.Flags().BoolVar(&o.VGPUSecretReady, "vgpu-secret-ready", false,
+		"Acknowledge that vGPU license/private-registry secrets exist in SOPS (never supplies the secret)")
 
 	// --- Addons ---
 	// NOTE: not yet wired into apply — passing --addon currently fails
@@ -501,13 +606,16 @@ func resolveAutoMode(ctx context.Context, out io.Writer, o *clusterinit.InitOpti
 // M4-T12 the default-apply and --apply-plan paths both invoke the
 // real Apply engine (Scaffold + commit + push + flux-install); only
 // flag-validation gating differs.
-func runInit(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, modeRes modeResolution) error {
+func runInit(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, modeRes modeResolution, rep clusterinit.StepReporter) error {
+	if rep == nil {
+		rep = clusterinit.NopReporter{}
+	}
 	switch {
 	case o.DryRun:
 		return runInitDryRun(out, o)
 
 	case o.ApplyPlan != "":
-		return runInitApplyPlan(ctx, out, o)
+		return runInitApplyPlan(ctx, out, o, rep)
 
 	default:
 		// Default-flow apply: build the plan from validated current
@@ -516,8 +624,49 @@ func runInit(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, mod
 		// --apply-plan path where the plan was built in a prior
 		// session).
 		_ = modeRes
-		return runInitDefaultApply(ctx, out, o)
+		return runInitDefaultApply(ctx, out, o, rep)
 	}
+}
+
+// runGPUHostCompatibilityPreflight is the command boundary for the read-only
+// GPU host gate. Only enabled product installs open SSH connections; disabled
+// and detect-only configurations return before the adapter is constructed.
+func runGPUHostCompatibilityPreflight(ctx context.Context, out io.Writer, g clusterinit.GPUConfig, overrides map[string]string) (map[string]discover.GPUHostInventory, error) {
+	if g.Platform == "" || g.Platform == clusterinit.GPUPlatformDisabled || g.Platform == clusterinit.GPUPlatformDetectOnly {
+		return map[string]discover.GPUHostInventory{}, nil
+	}
+	sshClient, err := bootstrap.NewSSHOnly()
+	if err != nil {
+		return nil, fmt.Errorf("GPU host preflight: build SSH adapter: %w", err)
+	}
+	resolver := anchors.NewHostResolver(overrides)
+	inventories, err := clusterinit.DiscoverAndValidateGPUHostsSSH(ctx, g, sshClient, clusterinit.GPUHostResolver(resolver))
+	if err != nil {
+		return nil, fmt.Errorf("GPU host preflight: %w", err)
+	}
+	nodes := make([]string, 0, len(inventories))
+	for node := range inventories {
+		nodes = append(nodes, node)
+	}
+	sort.Strings(nodes)
+	for _, node := range nodes {
+		inv := inventories[node]
+		fmt.Fprintf(out, "[preflight] Accelerators: node %s qualified for %s: devices=%d iommu=%t vfio=%t kvm=%t\n",
+			node, g.NodeModes[node], len(inv.Devices), inv.IOMMUEnabled, inv.VFIOReady, inv.KVMReady)
+	}
+	return inventories, nil
+}
+
+// step runs one milestone function, bracketing it with reporter
+// Start/Done so a TUI (or any StepReporter) can render a live checklist
+// without the engine's control flow changing. The err is reported AND
+// returned unchanged, so existing `if err := …; err != nil { return }`
+// call sites keep their semantics.
+func step(rep clusterinit.StepReporter, id clusterinit.StepID, fn func() error) error {
+	rep.Start(id)
+	err := fn()
+	rep.Done(id, err)
+	return err
 }
 
 // runInitDryRun derives the Plan from `o`, renders it for human
@@ -577,7 +726,7 @@ func runInitDryRun(out io.Writer, o *clusterinit.InitOptions) error {
 // never calls `discoverFleetState` or `InheritFromSiblings` on this
 // path — fleet-state changes between dry-run and apply do not
 // influence what gets written.
-func runInitApplyPlan(ctx context.Context, out io.Writer, o *clusterinit.InitOptions) error {
+func runInitApplyPlan(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, rep clusterinit.StepReporter) error {
 	fmt.Fprintln(out, "=== kube-dc bootstrap init — APPLY-PLAN ===")
 	fmt.Fprintf(out, "Plan source: %s\n", o.ApplyPlan)
 
@@ -592,7 +741,7 @@ func runInitApplyPlan(ctx context.Context, out io.Writer, o *clusterinit.InitOpt
 	fmt.Fprintf(out, "Loaded plan for cluster %q (planHash=%s, %d scripts).\n",
 		plan.ClusterName, plan.PlanHash, len(plan.ScriptsToRun))
 	fmt.Fprintln(out, "Inputs verified — applying plan verbatim.")
-	return runApplyEngine(ctx, out, o, plan)
+	return runApplyEngine(ctx, out, o, plan, rep)
 }
 
 // runInitDefaultApply is the no-flags-apply path: BuildPlan from
@@ -600,7 +749,7 @@ func runInitApplyPlan(ctx context.Context, out io.Writer, o *clusterinit.InitOpt
 // is needed because the plan and the engine's `Sets`/`NodeNICs`
 // come from the same InitOptions instance — they're coherent by
 // construction.
-func runInitDefaultApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions) error {
+func runInitDefaultApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, rep clusterinit.StepReporter) error {
 	fmt.Fprintln(out, "=== kube-dc bootstrap init — APPLY ===")
 	fleet := discoverFleetState(o)
 	plan, err := clusterinit.BuildPlan(o, fleet)
@@ -609,7 +758,7 @@ func runInitDefaultApply(ctx context.Context, out io.Writer, o *clusterinit.Init
 	}
 	fmt.Fprintf(out, "Built plan for cluster %q (planHash=%s, %d scripts).\n",
 		plan.ClusterName, plan.PlanHash, len(plan.ScriptsToRun))
-	return runApplyEngine(ctx, out, o, plan)
+	return runApplyEngine(ctx, out, o, plan, rep)
 }
 
 // layeredAdoptEnv presents the effective cluster-config.env to the
@@ -733,16 +882,41 @@ func runInitAdoptWizardStep(cmd *cobra.Command, out io.Writer, o *clusterinit.In
 // on. Builds a `bootstrap.Session` for the adapters, resolves the
 // GitHub token if --github-token wasn't passed, then calls
 // `clusterinit.Apply`.
-func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, plan *clusterinit.Plan) error {
+func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, plan *clusterinit.Plan, rep clusterinit.StepReporter) error {
+	if rep == nil {
+		rep = clusterinit.NopReporter{}
+	}
+	// Announce the full ordered milestone set once, before any step,
+	// so a StepReporter (the install TUI) can render the whole
+	// checklist up front. The finalize steps run only when there's a
+	// pushed, reconciling cluster to finalize against.
+	sshEnabled := o.SSHHost != "" && !o.NoSSH
+	gpu := o.GPU()
+	rep.Plan(clusterinit.InstallSteps(clusterinit.InstallStepInputs{
+		NoInstallPrereqs: o.NoInstallPrereqs,
+		Adopt:            o.Mode == clusterinit.ModeAdopt,
+		SSH:              sshEnabled,
+		NewRepoCreate:    plan.FleetMode == clusterinit.FleetNewRepo && !o.NoCreateRepo && !o.NoPush,
+		NewRepoRemote:    plan.FleetMode == clusterinit.FleetNewRepo && !o.NoPush,
+		NoPush:           o.NoPush,
+		Finalize:         !o.NoPush,
+		GPUEnabled:       gpu.Platform == clusterinit.GPUPlatformEnabled,
+		HAMiEnabled:      gpu.HAMiEnabled,
+	}))
+
 	// GitLab fail-closed guard retired — the coordinated
 	// `kube-dc-fleet` PR made `flux-install.sh` provider-aware.
 	// Provider info now flows through `ApplyOptions` (see
 	// `runFluxInstall`).
 
-	session, err := bootstrap.NewSession(bootstrap.Options{
-		FleetRepoPath: o.Repo,
-	})
-	if err != nil {
+	var session *bootstrap.Session
+	if err := step(rep, clusterinit.StepPrepare, func() error {
+		var e error
+		session, e = bootstrap.NewSession(bootstrap.Options{
+			FleetRepoPath: o.Repo,
+		})
+		return e
+	}); err != nil {
 		// Mock-mode + non-kubeconfig real flows both return errors
 		// here; the engine NEEDS a real session for the apply
 		// path, so surface the failure directly. (Mock-mode apply
@@ -765,10 +939,13 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	// install-prereqs` first). No-op contract preserved — 0
 	// missing → no ScriptRunner call, cheap.
 	if !o.NoInstallPrereqs {
-		if _, err := clusterinit.InstallPrereqs(ctx, clusterinit.InstallPrereqsOptions{
-			Runner: session.Scripts,
-			Assume: o.Yes,
-			Out:    out,
+		if err := step(rep, clusterinit.StepInstallPrereqs, func() error {
+			_, e := clusterinit.InstallPrereqs(ctx, clusterinit.InstallPrereqsOptions{
+				Runner: session.Scripts,
+				Assume: o.Yes,
+				Out:    out,
+			})
+			return e
 		}); err != nil {
 			// Consent-required maps to a helpful message rather than
 			// a bare error. Structural failures bubble as-is.
@@ -790,12 +967,14 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	// takes precedence over the flag either way. See
 	// clusterinit/dnsgate.go for the wildcard + explicit-FQDN
 	// fallback + record-set printer.
-	if err := clusterinit.CheckDNSReady(ctx, clusterinit.DNSGateOptions{
-		Domain:           o.Domain,
-		NodeExternalIP:   o.NodeExternalIP,
-		AllowDNSNotReady: o.AllowDNSNotReady,
-		DNS:              session.DNS,
-		Out:              out,
+	if err := step(rep, clusterinit.StepDNS, func() error {
+		return clusterinit.CheckDNSReady(ctx, clusterinit.DNSGateOptions{
+			Domain:           o.Domain,
+			NodeExternalIP:   o.NodeExternalIP,
+			AllowDNSNotReady: o.AllowDNSNotReady,
+			DNS:              session.DNS,
+			Out:              out,
+		})
 	}); err != nil {
 		return err
 	}
@@ -808,10 +987,12 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	// install it). Blocks only when NFD IS installed and reports 0
 	// kubevirt-eligible nodes (a demonstrable hardware/config
 	// misconfig). Escape hatch: --allow-no-kubevirt-eligible.
-	if err := clusterinit.CheckKubeVirtEligibility(ctx, clusterinit.NFDGateOptions{
-		K8s:                     session.K8s,
-		AllowNoKubevirtEligible: o.AllowNoKubevirtEligible,
-		Out:                     out,
+	if err := step(rep, clusterinit.StepKubeVirt, func() error {
+		return clusterinit.CheckKubeVirtEligibility(ctx, clusterinit.NFDGateOptions{
+			K8s:                     session.K8s,
+			AllowNoKubevirtEligible: o.AllowNoKubevirtEligible,
+			Out:                     out,
+		})
 	}); err != nil {
 		return err
 	}
@@ -824,13 +1005,15 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	// Read-only; only runs in adopt mode. Escape: --allow-unpinned-adopt.
 	if o.Mode == clusterinit.ModeAdopt {
 		adoptEnv, overlayExists := effectiveAdoptEnv(o, out)
-		if err := clusterinit.CheckAdoptPinned(ctx, clusterinit.AdoptGateOptions{
-			Inspector:      session.K8s,
-			Env:            adoptEnv,
-			Allow:          o.AllowUnpinnedAdopt,
-			OverlayMissing: !overlayExists,
-			ClusterName:    o.Name,
-			Out:            out,
+		if err := step(rep, clusterinit.StepAdoptGate, func() error {
+			return clusterinit.CheckAdoptPinned(ctx, clusterinit.AdoptGateOptions{
+				Inspector:      session.K8s,
+				Env:            adoptEnv,
+				Allow:          o.AllowUnpinnedAdopt,
+				OverlayMissing: !overlayExists,
+				ClusterName:    o.Name,
+				Out:            out,
+			})
 		}); err != nil {
 			return err
 		}
@@ -848,22 +1031,79 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	// is unchanged.
 	applyNodeIP := o.NodeExternalIP
 	singleIPNAT := false
-	if o.SSHHost != "" && !o.NoSSH {
-		if sshClient, err := bootstrap.NewSSHOnly(); err != nil {
-			fmt.Fprintf(out, "[apply] WARNING: NAT-topology probe skipped (ssh adapter: %v)\n", err)
-		} else if arriving, nat, err := clusterinit.DetectArrivingIP(ctx, clusterinit.ArrivingIPOptions{
-			SSH:      sshClient,
-			Host:     parseSSHHostArg(o.SSHHost),
-			PublicIP: o.NodeExternalIP,
-			Out:      out,
-		}); err != nil {
-			fmt.Fprintf(out, "[apply] WARNING: NAT-topology probe failed (%v) — keeping NODE_EXTERNAL_IP=%s\n", err, o.NodeExternalIP)
-		} else if nat {
-			applyNodeIP = arriving
-			singleIPNAT = true
-			fmt.Fprintf(out, "[apply] single-IP NAT detected: %s is not bound on the node; NODE_EXTERNAL_IP=%s (arriving IP), 6443 passthrough listener will be dropped\n",
-				o.NodeExternalIP, arriving)
+	// Node LAN prefix for Tenant Networking v2. Empty means "not determined",
+	// which writes dual-homing DISABLED rather than guessing — see the probe
+	// below and postProcessClusterConfig.
+	nodeCIDR := ""
+	if v, ok := o.Sets["NODE_CIDR"]; ok && v != "" {
+		// An explicit --set NODE_CIDR wins over any probe: it is the only way to
+		// get a dual-homed cluster with --no-ssh, where nothing can be detected.
+		nodeCIDR = v
+	}
+	if sshEnabled {
+		// Probe never hard-fails (fails open with a warning) — report
+		// it as a milestone that always succeeds; the log pane carries
+		// the detail (skipped / kept / arriving-IP substituted).
+		_ = step(rep, clusterinit.StepNATProbe, func() error {
+			sshClient, err := bootstrap.NewSSHOnly()
+			if err != nil {
+				fmt.Fprintf(out, "[apply] WARNING: NAT-topology probe skipped (ssh adapter: %v)\n", err)
+				return nil
+			}
+			arriving, nat, err := clusterinit.DetectArrivingIP(ctx, clusterinit.ArrivingIPOptions{
+				SSH:      sshClient,
+				Host:     parseSSHHostArg(o.SSHHost),
+				PublicIP: o.NodeExternalIP,
+				Out:      out,
+			})
+			if err != nil {
+				fmt.Fprintf(out, "[apply] WARNING: NAT-topology probe failed (%v) — keeping NODE_EXTERNAL_IP=%s\n", err, o.NodeExternalIP)
+				return nil
+			}
+			if nat {
+				applyNodeIP = arriving
+				singleIPNAT = true
+				fmt.Fprintf(out, "[apply] single-IP NAT detected: %s is not bound on the node; NODE_EXTERNAL_IP=%s (arriving IP), 6443 passthrough listener will be dropped\n",
+					o.NodeExternalIP, arriving)
+			}
+			return nil
+		})
+
+		// Node LAN prefix. Separate from the NAT probe because the two have
+		// opposite failure policies: NAT detection fails OPEN (a wrong answer
+		// costs a passthrough listener), while this feeds a routing table where
+		// a wrong answer misroutes silently, so it fails CLOSED and simply
+		// leaves dual-homing off.
+		if nodeCIDR == "" {
+			_ = step(rep, clusterinit.StepNATProbe, func() error {
+				sshClient, err := bootstrap.NewSSHOnly()
+				if err != nil {
+					fmt.Fprintf(out, "[apply] WARNING: node-CIDR probe skipped (ssh adapter: %v); Tenant Networking v2 will be DISABLED\n", err)
+					return nil
+				}
+				cidr, err := clusterinit.DetectNodeCIDR(ctx, clusterinit.ArrivingIPOptions{
+					SSH:      sshClient,
+					Host:     parseSSHHostArg(o.SSHHost),
+					PublicIP: o.NodeExternalIP,
+					Out:      out,
+				})
+				if err != nil {
+					fmt.Fprintf(out, "[apply] WARNING: could not determine the node network CIDR (%v)\n", err)
+					fmt.Fprintf(out, "[apply]          Tenant Networking v2 will be DISABLED for this cluster. Enable it later with:\n")
+					fmt.Fprintf(out, "[apply]          kube-dc bootstrap config set %s NODE_CIDR=<cidr> INFRA_ATTACHMENT_ROUTES=<node>,<join>,<pod> INFRA_ATTACHMENT_ENABLED=true\n", o.Name)
+					return nil
+				}
+				nodeCIDR = cidr
+				fmt.Fprintf(out, "[apply] node network CIDR: %s (Tenant Networking v2 enabled)\n", cidr)
+				return nil
+			})
 		}
+	} else if nodeCIDR == "" {
+		// --no-ssh has no discovery source at all: no SSH, and no cluster
+		// kubeconfig at scaffold time. Say so plainly rather than silently
+		// producing a cluster that is not dual-homed.
+		fmt.Fprintf(out, "[apply] NOTE: --no-ssh cannot detect the node network CIDR, so Tenant Networking v2 will be DISABLED.\n")
+		fmt.Fprintf(out, "[apply]       Pass --set NODE_CIDR=<node-lan-cidr> to enable it at install time.\n")
 	}
 
 	// --no-push uses Git.Commit (no push), so a GitHub token would
@@ -887,12 +1127,14 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	// to have created the remote in the first place, and the token
 	// isn't resolved on that path.
 	if plan.FleetMode == clusterinit.FleetNewRepo && !o.NoCreateRepo && !o.NoPush {
-		if err := clusterinit.CreateRemoteRepo(ctx, clusterinit.CreateRepoOptions{
-			Provider: o.Provider,
-			Owner:    o.GitHubOwner,
-			Name:     o.GitHubRepo,
-			Token:    token,
-			Out:      out,
+		if err := step(rep, clusterinit.StepCreateRepo, func() error {
+			return clusterinit.CreateRemoteRepo(ctx, clusterinit.CreateRepoOptions{
+				Provider: o.Provider,
+				Owner:    o.GitHubOwner,
+				Name:     o.GitHubRepo,
+				Token:    token,
+				Out:      out,
+			})
 		}); err != nil {
 			return err
 		}
@@ -907,7 +1149,9 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	// pushing the bootstrap commit to the wrong remote is worse than
 	// failing.
 	if plan.FleetMode == clusterinit.FleetNewRepo && !o.NoPush {
-		if err := ensureOriginRemote(ctx, out, o.Repo, o.Provider, o.GitHubOwner, o.GitHubRepo); err != nil {
+		if err := step(rep, clusterinit.StepRemote, func() error {
+			return ensureOriginRemote(ctx, out, o.Repo, o.Provider, o.GitHubOwner, o.GitHubRepo)
+		}); err != nil {
 			return err
 		}
 	}
@@ -916,10 +1160,13 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		Plan:           plan,
 		FleetRepo:      o.Repo,
 		NodeExternalIP: applyNodeIP,
+		NodeCIDR:       nodeCIDR,
 		SingleIPNAT:    singleIPNAT,
 		Sets:           o.Sets,
 		NodeNICs:       o.NodeNICs,
 		ObjectStorage:  o.ObjectStorage(),
+		VMStorage:      o.VMStorage(),
+		GPU:            o.GPU(),
 		Runner:         session.Scripts,
 		Git:            session.Git,
 		GitHubToken:    token,
@@ -928,6 +1175,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		GitHubRepo:     o.GitHubRepo,
 		NoPush:         o.NoPush,
 		Out:            out,
+		Reporter:       rep,
 	}); err != nil {
 		return err
 	}
@@ -944,11 +1192,43 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	// cluster is up + reconciling; the operator can re-run
 	// `bootstrap fetch-kubeconfig` manually if the auto-pull
 	// couldn't reach the master.
-	if o.SSHHost != "" && !o.NoSSH {
-		if err := autoFetchKubeconfig(ctx, out, o); err != nil {
-			fmt.Fprintf(out, "[apply] WARNING: auto-fetch kubeconfig failed: %v\n", err)
+	fetchOK := true
+	var fetchErr error
+	if sshEnabled {
+		// Fetch is best-effort (cluster is already up) — report as a
+		// milestone that reflects success/failure but never aborts the
+		// run. A failure here downgrades to a warning + re-run hint.
+		fetchErr = step(rep, clusterinit.StepFetchKubeconfig, func() error {
+			return autoFetchKubeconfig(ctx, out, o)
+		})
+		if fetchErr != nil {
+			fetchOK = false
+			fmt.Fprintf(out, "[apply] WARNING: auto-fetch kubeconfig failed: %v\n", fetchErr)
 			fmt.Fprintf(out, "[apply]          re-run: kube-dc bootstrap fetch-kubeconfig %s --ssh-host %s --domain %s\n",
 				o.Name, o.SSHHost, o.Domain)
+		}
+	}
+
+	// Finalize phase (full-flow): once Flux is reconciling, poll the
+	// platform HelmReleases to readiness and drive the post-reconcile
+	// steps that used to be separate operator commands — OpenBao
+	// init/unseal/controller-auth + Keycloak OIDC. Skipped under
+	// --no-push (no live cluster) and when there was no kubeconfig to
+	// reach. Every finalize step is BEST-EFFORT: the cluster is
+	// already up + reconciling, so a finalize failure is a warning
+	// with a re-run hint, never a hard error that would mask a
+	// successful install.
+	if !o.NoPush {
+		if sshEnabled && !fetchOK {
+			reason := fmt.Sprintf("kubeconfig fetch failed: %v", fetchErr)
+			rep.Skip(clusterinit.StepReconcile, reason)
+			skipGPUInstallSteps(rep, gpu, reason)
+			rep.Skip(clusterinit.StepOpenBao, reason)
+			rep.Skip(clusterinit.StepKeycloakOIDC, reason)
+			fmt.Fprintln(out, "[post] skipped because the fresh admin kubeconfig was not fetched; refusing to guess from the current context")
+			finalizeHint(out, o)
+		} else {
+			runPostApply(ctx, out, o, rep)
 		}
 	}
 	return nil
@@ -1364,6 +1644,11 @@ func writeOptionsSummary(out io.Writer, o *clusterinit.InitOptions) {
 			provider, o.GitHubOwner, o.GitHubRepo, tok)
 	}
 	fmt.Fprintf(out, "Object store: mode=%s osd-node=%s osd-size=%dGB\n", o.RookMode, o.RookOSDNode, o.RookOSDSizeGB)
+	vmGoldens := "default"
+	if len(o.VMGoldens) > 0 {
+		vmGoldens = strings.Join(o.VMGoldens, ",")
+	}
+	fmt.Fprintf(out, "VM root disk: mode=%s goldens=%s\n", o.VMStorageMode, vmGoldens)
 	if len(o.Addons) > 0 {
 		fmt.Fprintf(out, "Addons:       %v\n", o.Addons)
 	}
@@ -1444,6 +1729,10 @@ func assertRequiredFlagsRegistered(fs *pflag.FlagSet) error {
 		"rook-osd-node", "rook-osd-size-gb", "rook-osd-device",
 		"ceph-node", "ceph-storage-class", "ceph-osd-count", "ceph-osd-volume-size-gb",
 		"s3-hostname", "no-s3-exposure",
+		"vm-storage-mode", "vm-golden", "vm-golden-block",
+		"gpu-platform", "gpu-driver-source", "gpu-operator-version", "nvidia-driver-version", "nvidia-toolkit-version",
+		"hami-enabled", "gpu-shared-allocator", "hami-version", "hami-scheduler-version", "gpu-node-mode", "gpu-ssh-host-map", "gpu-kubeconfig", "gpu-profile",
+		"allow-unassigned-gpus", "vgpu-secret-ready",
 		"addon",
 		"allow-dns-not-ready", "ssh-host", "no-ssh", "no-install-prereqs", "no-create-repo",
 		"mirror-registry", "bundle-pull-secret", "openbao-shares-out",

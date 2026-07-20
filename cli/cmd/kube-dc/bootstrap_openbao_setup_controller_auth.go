@@ -37,9 +37,9 @@ func bootstrapOpenBaoSetupControllerAuthCmd(fleetRepo *string) *cobra.Command {
 	var refreshPolicy bool
 	cmd := &cobra.Command{
 		Use:   "setup-controller-auth <cluster-name>",
-		Short: "Provision auth/k8s-host + kube-dc-controller-manager + db-manager policies/roles (M5-T08)",
+		Short: "Provision OpenBao Kubernetes-auth policies and workload roles",
 		Long: `Idempotent setup of OpenBao's Kubernetes-auth mount + the
-two controller-tier policies and roles. Replaces
+controller, database-manager, and snapshot policies and roles. Replaces
 hack/openbao-setup-controller-auth.sh.
 
 Reads 3-of-5 Shamir shares from clusters/<name>/secrets.enc.yaml, runs
@@ -53,6 +53,8 @@ root token, then writes:
   - policy db-manager (M3-T05 envelope encryption + M4-T01 database engine)
   - role   db-manager bound to kube-dc-db-manager SA
   - annotation kube-dc.com/openbao-controller-auth-installed on svc/openbao
+  - policy/role openbao-snapshot bound to openbao/openbao-snapshot SA
+    (15-minute no-default-policy token; Raft snapshot read only)
 
 The root token is deferred-revoked the moment it leaves the
 generate-root call — never written to the operator's disk, never

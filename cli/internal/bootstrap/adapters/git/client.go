@@ -15,20 +15,35 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	nethttp "net/http"
 	"os"
+	osuser "os/user"
+	"path/filepath"
 	"strings"
 	"time"
 
 	gogit "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
+	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
+
+// errNoSSHCredentials is returned when a remote needs SSH but neither an
+// agent identity nor an on-disk key is usable. Wrapped with the remote
+// URL by authFor so the operator sees which remote failed.
+var errNoSSHCredentials = errors.New(
+	"uses SSH but no usable SSH credentials were found (start an ssh-agent " +
+		"holding the key, or add an unencrypted ~/.ssh/id_ed25519); " +
+		"alternatively point the remote at https:// so the token can be used")
 
 // Client implements ports.GitClient.
 type Client struct {
@@ -79,9 +94,13 @@ func (c *Client) Clone(ctx context.Context, repoURL, dir, token string) error {
 	if existsAndPopulated(dir) {
 		return fmt.Errorf("git: %s is non-empty; refuse to clone into populated dir", dir)
 	}
-	_, err := gogit.PlainCloneContext(ctx, dir, false, &gogit.CloneOptions{
+	auth, err := c.authFor(repoURL, token)
+	if err != nil {
+		return err
+	}
+	_, err = gogit.PlainCloneContext(ctx, dir, false, &gogit.CloneOptions{
 		URL:      repoURL,
-		Auth:     basicAuth(token),
+		Auth:     auth,
 		Progress: io.Discard,
 	})
 	if err != nil {
@@ -99,8 +118,12 @@ func (c *Client) Pull(ctx context.Context, dir, token string) error {
 	if err != nil {
 		return fmt.Errorf("git: worktree %s: %w", dir, err)
 	}
+	auth, err := c.authForDirection(repo, dirFetch, token)
+	if err != nil {
+		return err
+	}
 	err = wt.PullContext(ctx, &gogit.PullOptions{
-		Auth:     basicAuth(token),
+		Auth:     auth,
 		Progress: io.Discard,
 	})
 	if err != nil && err != gogit.NoErrAlreadyUpToDate {
@@ -149,20 +172,49 @@ func (c *Client) CommitAndPush(ctx context.Context, dir, msg, token string) (str
 	if err != nil {
 		return "", err
 	}
-	repo, err := gogit.PlainOpen(dir)
-	if err != nil {
-		return sha, fmt.Errorf("git: open %s: %w", dir, err)
-	}
-	if pushErr := repo.PushContext(ctx, &gogit.PushOptions{
-		Auth:     basicAuth(token),
-		Progress: io.Discard,
-	}); pushErr != nil && pushErr != gogit.NoErrAlreadyUpToDate {
+	if pushErr := c.Push(ctx, dir, token); pushErr != nil {
 		// Per ports/git.go: the local commit is NOT rolled back here.
 		// Return the commit SHA so the caller can choose to keep or
 		// discard it via ResetHard.
-		return sha, fmt.Errorf("git: push %s: %w", dir, pushErr)
+		return sha, pushErr
 	}
 	return sha, nil
+}
+
+// Push pushes the current HEAD to upstream without creating a commit.
+// A no-op (nil) when already up to date. See ports/git.go.
+func (c *Client) Push(ctx context.Context, dir, token string) error {
+	repo, err := gogit.PlainOpen(dir)
+	if err != nil {
+		return fmt.Errorf("git: open %s: %w", dir, err)
+	}
+	head, err := repo.Head()
+	if err != nil {
+		return fmt.Errorf("git: head %s: %w", dir, err)
+	}
+	if !head.Name().IsBranch() {
+		return fmt.Errorf("git: cannot push detached HEAD in %s", dir)
+	}
+	// Explicit refspec for the current branch so the push does NOT depend
+	// on branch upstream tracking being configured. A freshly `git init`'d
+	// fleet whose origin was added but never `--set-upstream` otherwise
+	// fails with an empty, unhelpful go-git error — the resume path hit
+	// exactly that (e2e r6).
+	ref := head.Name() // refs/heads/<branch>
+	spec := config.RefSpec(fmt.Sprintf("%s:%s", ref, ref))
+	// Push auth MUST come from the push URL, not the fetch URL.
+	auth, err := c.authForDirection(repo, dirPush, token)
+	if err != nil {
+		return err
+	}
+	if pushErr := repo.PushContext(ctx, &gogit.PushOptions{
+		RefSpecs: []config.RefSpec{spec},
+		Auth:     auth,
+		Progress: io.Discard,
+	}); pushErr != nil && pushErr != gogit.NoErrAlreadyUpToDate {
+		return fmt.Errorf("git: push %s (%s): %w", dir, ref.Short(), pushErr)
+	}
+	return nil
 }
 
 // Commit is CommitAndPush minus the push step (see ports/git.go).
@@ -308,6 +360,190 @@ func basicAuth(token string) *githttp.BasicAuth {
 	}
 }
 
+// isSSHURL reports whether remote uses the SSH transport.
+//
+// Delegated to go-git's own parser rather than pattern-matched here: a
+// hand-rolled check must re-implement scp-like detection and gets it
+// subtly wrong. The previous version required an "@", so userless
+// scp-like remotes (`host:path` — which git and go-git both accept,
+// resolving the login to the current OS user) were classified as
+// non-SSH and handed HTTP credentials. transport.NewEndpoint is the
+// same function go-git uses to choose a transport, so our
+// classification cannot drift from the one that actually dials.
+func isSSHURL(remote string) bool {
+	ep, err := transport.NewEndpoint(remote)
+	if err != nil {
+		return false
+	}
+	return ep.Protocol == "ssh"
+}
+
+// sshUser extracts the login from an SSH remote, or "" when the URL
+// omits one.
+//
+// Empty is deliberate, not a fallback to "git": for a userless
+// `ssh://host/path`, OpenSSH and go-git both connect as the current OS
+// user, and go-git's NewSSHAgentAuth("") resolves that for us. Forcing
+// "git" would break self-hosted remotes that rely on the local login.
+// Hosted forges (github/gitlab/…) always spell the user explicitly, so
+// they are unaffected.
+func sshUser(remote string) string {
+	ep, err := transport.NewEndpoint(remote)
+	if err != nil {
+		return ""
+	}
+	return ep.User
+}
+
+// defaultKeyFiles lists the conventional private keys, strongest first.
+func defaultKeyFiles() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, name := range []string{"id_ed25519", "id_ecdsa", "id_rsa"} {
+		p := filepath.Join(home, ".ssh", name)
+		if _, statErr := os.Stat(p); statErr == nil {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// sshAuthFor builds an SSH auth method that offers agent identities AND
+// on-disk keys within a SINGLE handshake.
+//
+// Why combined rather than "agent, else files": go-git's
+// NewSSHAgentAuth only dials SSH_AUTH_SOCK — it never checks that the
+// agent actually holds a usable signer. A reachable but empty (or
+// wrong-key) agent therefore won the selection and ~/.ssh/id_ed25519
+// was never tried, turning a recoverable situation into an opaque
+// transport failure that also bypassed the actionable error below.
+// Offering both sets lets the server pick whichever key it accepts.
+func sshAuthFor(user string) (transport.AuthMethod, error) {
+	// agentSigners is nil when no agent is reachable.
+	var agentSigners func() ([]ssh.Signer, error)
+	if os.Getenv("SSH_AUTH_SOCK") != "" {
+		if a, err := gitssh.NewSSHAgentAuth(user); err == nil {
+			agentSigners = a.Callback
+			// NewSSHAgentAuth resolves "" to the current OS user; adopt
+			// that so the key-file signers below use the same login.
+			user = a.User
+		}
+	}
+	keyFiles := defaultKeyFiles()
+	if agentSigners == nil && len(keyFiles) == 0 {
+		return nil, errNoSSHCredentials
+	}
+	if user == "" {
+		// No agent resolved it for us — do it ourselves so the auth
+		// method carries a concrete login.
+		if u, err := osuser.Current(); err == nil {
+			user = u.Username
+		}
+	}
+
+	return &gitssh.PublicKeysCallback{
+		User: user,
+		Callback: func() ([]ssh.Signer, error) {
+			var signers []ssh.Signer
+			if agentSigners != nil {
+				// An empty/broken agent must not abort the handshake —
+				// fall through to the key files.
+				if s, err := agentSigners(); err == nil {
+					signers = append(signers, s...)
+				}
+			}
+			for _, p := range keyFiles {
+				pk, err := gitssh.NewPublicKeysFromFile(user, p, "")
+				if err != nil {
+					// Passphrase-protected key with no passphrase
+					// available — skip it, try the next.
+					continue
+				}
+				signers = append(signers, pk.Signer)
+			}
+			if len(signers) == 0 {
+				return nil, errNoSSHCredentials
+			}
+			return signers, nil
+		},
+	}, nil
+}
+
+// authFor picks the auth method that matches the remote's transport.
+//
+// Why this exists: this adapter used to hand githttp.BasicAuth to every
+// operation, which only works for https:// remotes. A fleet cloned over
+// SSH (`git@github.com:org/repo.git` — what `gh repo clone` and most
+// operators produce) failed with go-git's opaque "invalid auth method".
+// That surfaced mid-ceremony: `bootstrap openbao init` initialized the
+// vault, encrypted the Shamir shares, then could not push and rolled the
+// commit back — leaving an initialized OpenBao with no shares in the
+// fleet (cs/next, 2026-07). Transport and credential type must agree.
+func (c *Client) authFor(remote, token string) (transport.AuthMethod, error) {
+	if !isSSHURL(remote) {
+		// Includes the empty-remote case: preserve the historical
+		// behaviour of handing over the token (nil when unset).
+		return basicAuth(token), nil
+	}
+	auth, err := sshAuthFor(sshUser(remote))
+	if err != nil {
+		return nil, fmt.Errorf("git: remote %q: %w", remote, err)
+	}
+	return auth, nil
+}
+
+// gitDirection distinguishes the two transport directions, which can
+// have different URLs (and therefore different credential types).
+type gitDirection int
+
+const (
+	dirFetch gitDirection = iota
+	dirPush
+)
+
+// authForDirection resolves the auth method for one direction of a
+// repo's origin remote. Extracted so the Pull→fetch / Push→push wiring
+// is directly testable: previously remoteURLsOf() and authFor() were
+// each covered, but nothing asserted that Push actually consults the
+// PUSH url — mutating the Push call site back to the fetch url still
+// passed the suite.
+func (c *Client) authForDirection(repo *gogit.Repository, d gitDirection, token string) (transport.AuthMethod, error) {
+	fetchURL, pushURL := remoteURLsOf(repo, "")
+	url := fetchURL
+	if d == dirPush {
+		url = pushURL
+	}
+	return c.authFor(url, token)
+}
+
+// remoteURLsOf returns the fetch and push URLs configured for the named
+// remote ("origin" when name is empty). Both are "" when the remote
+// cannot be resolved — in which case authFor falls back to token auth.
+//
+// Fetch and push can differ: git appends `pushurl` entries to the same
+// remote, and go-git mirrors that split — remote.go uses URLs[0] for
+// fetch but URLs[len-1] for push ("Fetch will always use the first URL,
+// while push will use all of them"). Selecting auth from URLs[0] alone
+// therefore hands HTTP credentials to an SSH pushurl (or vice-versa) and
+// reproduces the exact "invalid auth method" this adapter set out to fix.
+func remoteURLsOf(repo *gogit.Repository, name string) (fetchURL, pushURL string) {
+	if name == "" {
+		name = gogit.DefaultRemoteName
+	}
+	rem, err := repo.Remote(name)
+	if err != nil || rem == nil {
+		return "", ""
+	}
+	urls := rem.Config().URLs
+	if len(urls) == 0 {
+		return "", ""
+	}
+	return urls[0], urls[len(urls)-1]
+}
+
 // statusCode maps go-git's (worktree, staging) status codes into the
 // `git status --porcelain` two-letter shorthand the port contract
 // describes.
@@ -372,4 +608,3 @@ func assertAncestorOfHEAD(repo *gogit.Repository, target plumbing.Hash) error {
 	}
 	return fmt.Errorf("ref is not an ancestor of HEAD")
 }
-

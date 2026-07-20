@@ -3,7 +3,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
-.PHONY: build install clean test release-snapshot
+.PHONY: build install clean test test-ssh-e2e test-ssh-harness test-all release-snapshot
 
 build:
 	@echo "Building kube-dc $(VERSION)..."
@@ -19,6 +19,25 @@ clean:
 
 test:
 	go test -v ./...
+
+# SSH end-to-end specs for the git adapter. They are env-gated, so a
+# plain `make test` SKIPS them silently -- which is why the credential
+# regressions they cover (agent vs key-file fallback, fetch-vs-push auth,
+# userless URLs) went unproven for so long. This target stands up the
+# throwaway sshd and runs the whole credential matrix: agent-only,
+# key-file-only, wrong-key agent + key file, empty agent + key file.
+# Requires sshd, ssh-agent and git on the host.
+test-ssh-e2e: test-ssh-harness
+	../hack/ssh-e2e-harness.sh matrix
+
+# Adversarial checks on the harness's own teardown safety. Fast, needs no
+# network, and guards the guardrails: a harness that reports a clean
+# teardown while leaking a process makes every other gate untrustworthy.
+test-ssh-harness:
+	../hack/ssh-e2e-harness.sh selftest
+
+# Everything a change to this module should pass before review.
+test-all: test test-ssh-e2e
 
 # Build for all platforms locally (requires goreleaser)
 release-snapshot:

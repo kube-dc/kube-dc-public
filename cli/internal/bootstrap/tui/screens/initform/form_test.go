@@ -43,6 +43,37 @@ func TestApply_ThenValidatePasses(t *testing.T) {
 	}
 }
 
+func TestApply_GPUThinGeneratorParity(t *testing.T) {
+	st := baseState()
+	st.GPUPlatform = "enabled"
+	st.GPUDriverSource = "gpu-operator"
+	st.GPUOperatorVersion = clusterinit.DefaultGPUOperatorVersion
+	st.NVIDIADriverVersion = clusterinit.DefaultNVIDIADriverVersion
+	st.NVIDIAToolkitVersion = clusterinit.DefaultNVIDIAToolkitVersion
+	st.GPUNodeModes = "gpu-worker-b=vm-passthrough,gpu-worker-a=pod-hami"
+	st.GPUProfiles = "nvidia-v100-hami,nvidia-v100-passthrough"
+	st.HAMiEnabled = true
+	st.HAMiVersion = clusterinit.DefaultHAMiVersion
+	st.HAMiSchedulerVersion = clusterinit.DefaultHAMiSchedulerKubeVersion
+	o := &clusterinit.InitOptions{Yes: true}
+	if err := st.Apply(o); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Validate(); err != nil {
+		t.Fatalf("GPU panel options: %v", err)
+	}
+	flags := st.EquivalentFlags(o)
+	for _, want := range []string{
+		"--gpu-platform=enabled", "--gpu-node-mode=gpu-worker-a=pod-hami",
+		"--gpu-node-mode=gpu-worker-b=vm-passthrough", "--hami-enabled",
+		"--gpu-profile=nvidia-v100-hami",
+	} {
+		if !strings.Contains(flags, want) {
+			t.Errorf("equivalent flags missing %q:\n%s", want, flags)
+		}
+	}
+}
+
 func TestApply_NonPublicPresetDropsPublicKeys(t *testing.T) {
 	st := baseState()
 	st.Preset = "cloud-vlan"
@@ -68,6 +99,39 @@ func TestApply_LocalModeFields(t *testing.T) {
 	}
 	if err := o.Validate(); err != nil {
 		t.Fatalf("local wizard options must validate: %v", err)
+	}
+}
+
+func TestApply_VMStorageMode_MappedWhenRook(t *testing.T) {
+	st := baseState() // OSMode = rook-ceph-multi-node (rook-backed)
+	st.VMStorageMode = "shared-rbd"
+	o := &clusterinit.InitOptions{Yes: true}
+	if err := st.Apply(o); err != nil {
+		t.Fatal(err)
+	}
+	if o.VMStorageMode != clusterinit.VMStorageSharedRBD {
+		t.Errorf("shared-rbd must map through with a rook object-storage mode, got %q", o.VMStorageMode)
+	}
+}
+
+func TestApply_VMStorageMode_ClearedWhenNotRook(t *testing.T) {
+	// The selector is hidden when object storage isn't rook-backed; a stale
+	// non-local State value must be cleared so Validate can't fail on a field
+	// the user can no longer see (review P2).
+	st := baseState()
+	st.OSMode = "disabled"
+	st.CephNode1, st.CephNode2, st.CephNode3 = "", "", ""
+	st.DisabledConsent = true
+	st.VMStorageMode = "shared-rbd" // stale, from before switching to disabled
+	o := &clusterinit.InitOptions{Yes: true}
+	if err := st.Apply(o); err != nil {
+		t.Fatal(err)
+	}
+	if o.VMStorageMode != "" {
+		t.Errorf("stale VM mode must be cleared when object storage isn't rook-backed, got %q", o.VMStorageMode)
+	}
+	if err := o.Validate(); err != nil {
+		t.Fatalf("cleared VM mode must validate (disabled + local): %v", err)
 	}
 }
 

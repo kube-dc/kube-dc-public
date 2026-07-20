@@ -202,6 +202,9 @@ func (f *fakeSetupK8s) ListNamespaces(context.Context) ([]string, error) {
 func (f *fakeSetupK8s) ListCRDs(context.Context) ([]string, error) {
 	panic("fakeSetupK8s: ListCRDs not stubbed")
 }
+func (f *fakeSetupK8s) ListPodNames(context.Context, string, string) ([]string, error) {
+	panic("fakeSetupK8s: ListPodNames not stubbed")
+}
 func (f *fakeSetupK8s) HelmReleaseChartVersions(context.Context) (map[string]string, error) {
 	panic("fakeSetupK8s: HelmReleaseChartVersions not stubbed")
 }
@@ -243,25 +246,25 @@ func canonicalOpts(bao *fakeSetupBao, k8s *fakeSetupK8s, out *bytes.Buffer, mode
 
 // --- happy path ---
 
-func TestSetupControllerAuth_RefreshFull_Hits6CallsInOrder(t *testing.T) {
+func TestSetupControllerAuth_RefreshFull_HitsAllCallsInOrder(t *testing.T) {
 	bao := &fakeSetupBao{}
 	k8s := &fakeSetupK8s{caCert: "-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n"}
 	var out bytes.Buffer
 	if err := SetupControllerAuth(context.Background(), canonicalOpts(bao, k8s, &out, RefreshFull)); err != nil {
 		t.Fatalf("SetupControllerAuth: %v\n%s", err, out.String())
 	}
-	// 1 EnableAuthPath, 1 ConfigureKubernetesAuth, 2 ApplyPolicy, 2 WriteAuthRole, 1 SetAnnotations
+	// 1 EnableAuthPath, 1 ConfigureKubernetesAuth, 3 policies, 3 roles, 1 annotation batch.
 	if len(bao.enableCalls) != 1 {
 		t.Errorf("expected 1 EnableAuthPath call, got %d", len(bao.enableCalls))
 	}
 	if len(bao.configureCalls) != 1 {
 		t.Errorf("expected 1 ConfigureKubernetesAuth call, got %d", len(bao.configureCalls))
 	}
-	if len(bao.policyCalls) != 2 {
-		t.Errorf("expected 2 ApplyPolicy calls, got %d", len(bao.policyCalls))
+	if len(bao.policyCalls) != 3 {
+		t.Errorf("expected 3 ApplyPolicy calls, got %d", len(bao.policyCalls))
 	}
-	if len(bao.roleCalls) != 2 {
-		t.Errorf("expected 2 WriteAuthRole calls, got %d", len(bao.roleCalls))
+	if len(bao.roleCalls) != 3 {
+		t.Errorf("expected 3 WriteAuthRole calls, got %d", len(bao.roleCalls))
 	}
 	if len(bao.annotateCalls) != 1 {
 		t.Errorf("expected 1 SetAnnotations call, got %d", len(bao.annotateCalls))
@@ -315,11 +318,11 @@ func TestSetupControllerAuth_RefreshFull_ProperPathsAndNames(t *testing.T) {
 		t.Errorf("ConfigureKubernetesAuth must set DisableISSValidation=true on OpenBao 2.5.x")
 	}
 	// Policy names + role names match hardcoded constants
-	if bao.policyCalls[0].name != ManagerPolicyName || bao.policyCalls[1].name != DBManagerPolicyName {
-		t.Errorf("policy names wrong: %s, %s", bao.policyCalls[0].name, bao.policyCalls[1].name)
+	if bao.policyCalls[0].name != ManagerPolicyName || bao.policyCalls[1].name != DBManagerPolicyName || bao.policyCalls[2].name != SnapshotPolicyName {
+		t.Errorf("policy names wrong: %v", bao.policyCalls)
 	}
-	if bao.roleCalls[0].role != ManagerRoleName || bao.roleCalls[1].role != DBManagerRoleName {
-		t.Errorf("role names wrong: %s, %s", bao.roleCalls[0].role, bao.roleCalls[1].role)
+	if bao.roleCalls[0].role != ManagerRoleName || bao.roleCalls[1].role != DBManagerRoleName || bao.roleCalls[2].role != SnapshotRoleName {
+		t.Errorf("role names wrong: %v", bao.roleCalls)
 	}
 	// Role params have correct SA bindings
 	if bao.roleCalls[0].params["bound_service_account_names"] != ManagerSAName {
@@ -328,6 +331,12 @@ func TestSetupControllerAuth_RefreshFull_ProperPathsAndNames(t *testing.T) {
 	if bao.roleCalls[1].params["bound_service_account_names"] != DBManagerSAName {
 		t.Errorf("db-manager role SA name wrong: %v", bao.roleCalls[1].params)
 	}
+	if got := bao.roleCalls[2].params; got["bound_service_account_names"] != SnapshotSAName || got["bound_service_account_namespaces"] != SnapshotSAns {
+		t.Errorf("snapshot role binding wrong: %v", got)
+	} else if got["token_ttl"] != SnapshotTokenTTL || got["token_max_ttl"] != SnapshotTokenMaxTTL || got["token_no_default_policy"] != "true" {
+		t.Errorf("snapshot role must issue only a short-lived, no-default-policy token: %v", got)
+	}
+
 	// Annotations — Full mode stamps both:
 	//   - AnnotationControllerAuthInstalled (RFC3339 timestamp)
 	//   - AnnotationPolicyGeneration (M5-T07 compile-time int)
@@ -369,11 +378,11 @@ func TestSetupControllerAuth_RefreshPolicy_SkipsEnableConfigureAnnotate(t *testi
 		t.Errorf("RefreshPolicy must NOT stamp %s (Full-only); batch=%v", AnnotationControllerAuthInstalled, kv)
 	}
 	// Policies + roles ARE rewritten.
-	if len(bao.policyCalls) != 2 {
-		t.Errorf("RefreshPolicy must rewrite 2 policies; got %d", len(bao.policyCalls))
+	if len(bao.policyCalls) != 3 {
+		t.Errorf("RefreshPolicy must rewrite 3 policies; got %d", len(bao.policyCalls))
 	}
-	if len(bao.roleCalls) != 2 {
-		t.Errorf("RefreshPolicy must rewrite 2 roles; got %d", len(bao.roleCalls))
+	if len(bao.roleCalls) != 3 {
+		t.Errorf("RefreshPolicy must rewrite 3 roles; got %d", len(bao.roleCalls))
 	}
 }
 
@@ -479,10 +488,10 @@ func TestEmbeddedHCL_HasExpectedPaths(t *testing.T) {
 	// drops a path doesn't ship silently. These are the load-bearing
 	// per-Org grants the tenant reconcilers depend on.
 	for _, want := range []string{
-		`path "sys/namespaces/*"`,        // Org provisioning
-		`path "+/transit/*"`,             // M3 KMS
-		`path "+/pki_int/*"`,             // M2 cert-manager
-		`path "+/database/roles/+"`,      // M4 DBCP
+		`path "sys/namespaces/*"`,   // Org provisioning
+		`path "+/transit/*"`,        // M3 KMS
+		`path "+/pki_int/*"`,        // M2 cert-manager
+		`path "+/database/roles/+"`, // M4 DBCP
 		`path "+/database/static-roles/+"`,
 		`path "+/database/static-creds/+"`,
 	} {
@@ -491,13 +500,17 @@ func TestEmbeddedHCL_HasExpectedPaths(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		`path "+/transit/encrypt/+"`,     // db-manager DEK wrap
-		`path "+/transit/decrypt/+"`,     // db-manager DEK unwrap
-		`path "+/sys/mounts/database"`,   // M4-T01 database engine mount
-		`path "+/database/config/+"`,     // M4-T01 per-DB config
+		`path "+/transit/encrypt/+"`,   // db-manager DEK wrap
+		`path "+/transit/decrypt/+"`,   // db-manager DEK unwrap
+		`path "+/sys/mounts/database"`, // M4-T01 database engine mount
+		`path "+/database/config/+"`,   // M4-T01 per-DB config
 	} {
 		if !strings.Contains(DBManagerPolicyHCL, want) {
 			t.Errorf("DBManagerPolicyHCL missing %q (HCL extraction may have dropped it)", want)
 		}
 	}
+	if !strings.Contains(SnapshotPolicyHCL, `path "sys/storage/raft/snapshot"`) || !strings.Contains(SnapshotPolicyHCL, `capabilities = ["read"]`) {
+		t.Errorf("SnapshotPolicyHCL must grant only Raft snapshot read: %q", SnapshotPolicyHCL)
+	}
+
 }

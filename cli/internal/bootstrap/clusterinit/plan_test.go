@@ -477,6 +477,29 @@ func TestRender_ObjectStorageOS1Shape(t *testing.T) {
 	}
 }
 
+func TestWarningsForGPUReviewCapacityRollbackAndNonMigration(t *testing.T) {
+	o := validSharedGPUOptions()
+	shared := strings.Join(warningsForOptions(&o), "\n")
+	for _, want := range []string{"privileged", "holder-safe drain", "never grants tenant quota", "capacity review", "keeps billing plus Pod/VM creation gates closed", "GitOps-owned", "zero Pod/VMI holders", "failed transition cordoned"} {
+		if !strings.Contains(shared, want) {
+			t.Errorf("Shared GPU review missing %q:\n%s", want, shared)
+		}
+	}
+	if strings.Contains(shared, "non-live-migratable") {
+		t.Fatalf("Pod-only plan received VM-only warning:\n%s", shared)
+	}
+
+	o.GPUNodeModes = map[string]GPUNodeMode{"gpu-worker-a": GPUNodeVMPassthrough}
+	o.HAMiEnabled = false
+	o.GPUProfiles = []string{"nvidia-v100-passthrough"}
+	vm := strings.Join(warningsForOptions(&o), "\n")
+	for _, want := range []string{"non-live-migratable", "stop/start", "LiveMigrate"} {
+		if !strings.Contains(vm, want) {
+			t.Errorf("GPU VM review missing %q:\n%s", want, vm)
+		}
+	}
+}
+
 // TestRender_NoPushShape — C4 reviewer P1: the render must match
 // what apply.go actually does under --no-push. Two invariants:
 // (1) the commit line reflects local-only (no "+ push"), and (2)

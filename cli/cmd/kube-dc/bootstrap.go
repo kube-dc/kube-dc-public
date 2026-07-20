@@ -80,6 +80,7 @@ KUBE_DC_FLEET environment variable.`,
 	cmd.AddCommand(bootstrapAccessCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapAnchorsCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapAddNodeCmd())
+	cmd.AddCommand(bootstrapGPUCmd(&fleetRepo))
 
 	return cmd
 }

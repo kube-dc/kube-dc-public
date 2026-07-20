@@ -190,6 +190,39 @@ type InitOptions struct {
 	S3Hostname   string
 	NoS3Exposure bool
 
+	// --- VM root-disk storage (PRD docs/prd/vm-storage-mode.md) ---
+	// OPTIONAL, default `local` (unlike RookMode, omitting it never
+	// fails Validate). local-path stays the VM default in every mode.
+	// The shared-rbd modes require an object-storage mode that provides
+	// the rbd-pool CephBlockPool (the rook-ceph-* modes) — verified,
+	// never created. See VMStorageMode / vmstorage.go.
+	VMStorageMode VMStorageMode
+	// VMGoldens is the selected FS golden subset for shared-rbd
+	// (`--vm-golden debian-12,alpine-3.21`). Empty = one containerdisk
+	// default (defaultVMGolden). Never all-by-default; Windows opt-in.
+	VMGoldens []string
+	// VMGoldensBlock is the selected Block (live-migration) golden set —
+	// carried for forward-compat; live-migration is installer-deferred.
+	VMGoldensBlock []string
+
+	// --- Accelerators (GPU PRD section 6) ---
+	// This surface is deliberately non-secret. Licenses, registry credentials,
+	// and portal tokens stay in the SOPS workflow; VGPUSecretReady is only a
+	// readiness acknowledgement.
+	GPUPlatform          GPUPlatformMode
+	GPUDriverSource      GPUDriverSource
+	GPUOperatorVersion   string
+	NVIDIADriverVersion  string
+	NVIDIAToolkitVersion string
+	HAMiEnabled          bool
+	GPUSharedAllocator   GPUSharedAllocator
+	HAMiVersion          string
+	HAMiSchedulerVersion string
+	GPUNodeModes         map[string]GPUNodeMode
+	GPUProfiles          []string
+	AllowUnassignedGPUs  bool
+	VGPUSecretReady      bool
+
 	// --- Addons ---
 	// Addons is the de-duplicated list of `--addon` values.
 	// Validated against the registry (metallb, sso-google,
@@ -229,6 +262,15 @@ type InitOptions struct {
 	NoPush    bool
 	NoTTY     bool
 	Yes       bool
+
+	// AccessSummary is a TRANSIENT OUTPUT (never a plan input): the
+	// post-apply phase fills it with the end-of-install access block
+	// (Keycloak admin URL + password + SSO URLs). The cobra layer
+	// prints it to the real terminal AFTER the install screen closes,
+	// so the Keycloak admin password reaches the operator but never
+	// the redacted transcript. Excluded from the plan hash
+	// (hashExcludedFields).
+	AccessSummary string
 }
 
 // --- Errors ---
@@ -329,6 +371,14 @@ var ErrObjectStorageModeRequired = errors.New("init: --object-storage-mode is re
 // against a real upstream (see the per-mode README fleet-side).
 var ErrObjectStorageModeStub = errors.New("init: this object-storage mode is a fleet-side stub (no manifests exist yet); provide S3 out-of-band and hand-author clusters/<name>/object-storage/ — see infrastructure/object-storage/modes/<mode>/README.md")
 
+// ErrVMStorageNeedsRookRBDPool fails the shared-rbd VM-storage modes
+// closed when the object-storage mode cannot provide the rbd-pool
+// CephBlockPool. The rbd-vm StorageClass binds pool=rbd-pool, which is
+// shipped by the rook-ceph-* object-storage modes only (verified, never
+// created by the installer — PRD §2.2). `disabled` / `external-*` don't
+// provide it, so a shared-rbd VM disk would never provision.
+var ErrVMStorageNeedsRookRBDPool = errors.New("init: --vm-storage-mode=shared-rbd requires an object-storage mode that provides the rbd-pool CephBlockPool (rook-ceph-local|rook-ceph-multi-node|rook-ceph-pvc)")
+
 // NOTE (OS-2): the former ErrObjectStorageScaffoldNotImplemented
 // fail-closed sentinel for the rook-* modes was deleted when the
 // scaffold writer shipped (objectstorage.go) — the three rook modes
@@ -369,6 +419,8 @@ func (o *InitOptions) Validate() error {
 	errs = append(errs, validateMode(o.Mode)...)
 	errs = append(errs, validateFleetMode(o.FleetMode)...)
 	errs = append(errs, validateObjectStorage(o)...)
+	errs = append(errs, validateVMStorage(o)...)
+	errs = append(errs, validateGPU(o)...)
 	errs = append(errs, validateAddons(o.Addons)...)
 	errs = append(errs, validateNodeNICs(o.NodeNICs)...)
 	errs = append(errs, validateSets(o.Sets)...)
@@ -408,6 +460,19 @@ func (o *InitOptions) Validate() error {
 		return ErrObjectStorageModeRequired
 	case RookExternalCeph, RookExternalS3:
 		return fmt.Errorf("%w (mode=%s)", ErrObjectStorageModeStub, o.RookMode)
+	}
+
+	// VM storage mode gates (PRD vm-storage-mode). shared-rbd* is an
+	// OPTIONAL VM tier; when chosen it needs an object-storage mode that
+	// ships the rbd-pool CephBlockPool (the rook-ceph-* modes) — verified
+	// here, never created (§2.2). shared-rbd-live-migration is
+	// installer-deferred (runtime egress + Block catalog §3.2b) — fail
+	// closed with the manual path.
+	if scaffoldsVMStorage(o.VMStorageMode) && !scaffoldsObjectStorage(o.RookMode) {
+		return fmt.Errorf("%w (--vm-storage-mode=%s needs a rook-ceph-* object-storage mode that provides rbd-pool; --object-storage-mode=%s does not)", ErrVMStorageNeedsRookRBDPool, o.VMStorageMode, o.RookMode)
+	}
+	if o.VMStorageMode == VMStorageSharedRBDLiveMigration {
+		return ErrVMStorageLiveMigrationDeferred
 	}
 
 	// --github-owner + --github-repo are required for ANY fleet
@@ -669,6 +734,46 @@ func validateObjectStorage(o *InitOptions) []string {
 		if o.CephOSDVolumeSizeGB < 0 {
 			errs = append(errs, "--ceph-osd-volume-size-gb must be >= 0 (0 = fleet default)")
 		}
+	}
+	return errs
+}
+
+// validateVMStorage does the structural checks for --vm-storage-mode and
+// its golden flags (cobra-time; no fleet access — the golden-catalog
+// existence check is at write time, resolveVMGoldens). The rbd-pool
+// cross-flag requirement + the live-migration deferral are in Validate's
+// cross-flag pass. Empty mode is valid (optional; == local).
+func validateVMStorage(o *InitOptions) []string {
+	var errs []string
+	if o.VMStorageMode != "" {
+		known := false
+		for _, ok := range AllVMStorageModes {
+			if o.VMStorageMode == ok {
+				known = true
+				break
+			}
+		}
+		if !known {
+			// Bad mode — return early, don't cascade golden-flag noise.
+			return []string{fmt.Sprintf("--vm-storage-mode %q not recognised (want one of %s)", o.VMStorageMode, joinVMStorageModes(AllVMStorageModes))}
+		}
+	}
+	for _, g := range o.VMGoldens {
+		if !vmGoldenNameRegex.MatchString(g) {
+			errs = append(errs, fmt.Sprintf("--vm-golden %q is not a valid golden name (lowercase a-z, 0-9, '-', '.')", g))
+		}
+	}
+	for _, g := range o.VMGoldensBlock {
+		if !vmGoldenNameRegex.MatchString(g) {
+			errs = append(errs, fmt.Sprintf("--vm-golden-block %q is not a valid golden name (lowercase a-z, 0-9, '-', '.')", g))
+		}
+	}
+	// The golden flags only make sense with a shared-rbd mode.
+	if len(o.VMGoldens) > 0 && !scaffoldsVMStorage(o.VMStorageMode) {
+		errs = append(errs, "--vm-golden requires --vm-storage-mode=shared-rbd (or shared-rbd-live-migration)")
+	}
+	if len(o.VMGoldensBlock) > 0 && o.VMStorageMode != VMStorageSharedRBDLiveMigration {
+		errs = append(errs, "--vm-golden-block requires --vm-storage-mode=shared-rbd-live-migration")
 	}
 	return errs
 }

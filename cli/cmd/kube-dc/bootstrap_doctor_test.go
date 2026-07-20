@@ -162,6 +162,42 @@ func TestBootstrapDoctorCmd_NFDInPhysicalSection(t *testing.T) {
 	t.Errorf("nfd row not found in output\nOUTPUT:\n%s", body)
 }
 
+func TestBootstrapDoctorCmd_AcceleratorCategoryAndNoSectionFlag(t *testing.T) {
+	t.Setenv("KUBE_DC_MOCK", "cloud")
+	t.Setenv("NO_COLOR", "1")
+
+	var out bytes.Buffer
+	fleetRepo := ""
+	cmd := bootstrapDoctorCmd(&fleetRepo)
+	if cmd.Flags().Lookup("section") != nil {
+		t.Fatal("doctor must not invent a --section flag")
+	}
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--no-tty", "--host-probes"})
+	_ = cmd.Execute()
+
+	body := out.String()
+	mustContain(t, body, "Accelerators:")
+	mustContain(t, body, "accelerator-pci")
+	mustContain(t, body, "no PCI class 0300/0302 accelerator fixture")
+
+	section := ""
+	for _, line := range strings.Split(body, "\n") {
+		switch strings.TrimSpace(line) {
+		case "Physical world:", "Auto-handled by CLI:", "CLI verifies + suggests:", "Accelerators:":
+			section = strings.TrimSuffix(strings.TrimSpace(line), ":")
+		}
+		if strings.Contains(line, " accelerator-pci ") {
+			if section != "Accelerators" {
+				t.Fatalf("accelerator row landed under %q\nOUTPUT:\n%s", section, body)
+			}
+			return
+		}
+	}
+	t.Fatalf("accelerator row not found\nOUTPUT:\n%s", body)
+}
+
 // M6-T03: with no kubeconfig-backed session, the doctor still
 // renders — the NFD probe is skipped silently rather than
 // crashing on a nil K8sClient. Fresh laptop / pre-install case.

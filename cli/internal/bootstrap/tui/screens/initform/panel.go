@@ -138,6 +138,10 @@ func panelFields() []panelField {
 	}
 	isNewRepo := func(s *State) bool { return s.FleetMode == string(clusterinit.FleetNewRepo) }
 	isAdopt := func(s *State) bool { return s.Mode == string(clusterinit.ModeAdopt) }
+	gpuConfigured := func(s *State) bool { return s.GPUPlatform != string(clusterinit.GPUPlatformDisabled) }
+	gpuEnabled := func(s *State) bool { return s.GPUPlatform == string(clusterinit.GPUPlatformEnabled) }
+	hamiSelected := func(s *State) bool { return gpuEnabled(s) && strings.Contains(s.GPUNodeModes, "=pod-hami") }
+	vgpuSelected := func(s *State) bool { return gpuEnabled(s) && strings.Contains(s.GPUNodeModes, "=vm-vgpu") }
 
 	fields := []panelField{
 		// --- Basics ---
@@ -214,6 +218,46 @@ func panelFields() []panelField {
 		toggle("Storage", "Object storage DISABLED consent", "REQUIRED to proceed with disabled (no metrics/logs storage)",
 			func(s *State) bool { return s.DisabledConsent }, func(s *State, v bool) { s.DisabledConsent = v }).with(osIs("disabled")),
 
+		// VM root-disk storage — optional. Shown only when object storage is a
+		// rook-ceph-* mode (shared-rbd needs the rbd-pool CephBlockPool those
+		// modes ship); otherwise VMs use local-path (the default). Goldens are
+		// CLI-only (--vm-golden). shared-rbd-live-migration is NOT offered in
+		// the wizard — it fails closed at install time (runtime egress + Block
+		// catalog); advanced operators use the --vm-storage-mode CLI flag.
+		sel("Storage", "VM root disk", "optional — local (default) or shared Ceph RBD; goldens via --vm-golden",
+			[]string{"local", "shared-rbd"},
+			func(s *State) string { return s.VMStorageMode }, func(s *State, v string) { s.VMStorageMode = v }).with(func(s *State) bool {
+			return s.OSMode == string(clusterinit.RookCephLocal) ||
+				s.OSMode == string(clusterinit.RookCephMultiNode) ||
+				s.OSMode == string(clusterinit.RookCephPVC)
+		}),
+
+		// --- Accelerators ---
+		sel("Accelerators", "GPU platform", "disabled / inventory only / install products", []string{"disabled", "detect-only", "enabled"},
+			func(s *State) string { return s.GPUPlatform }, func(s *State, v string) { s.GPUPlatform = v }),
+		sel("Accelerators", "Driver source", "GPU Operator or an already managed host driver", []string{"gpu-operator", "preinstalled"},
+			func(s *State) string { return s.GPUDriverSource }, func(s *State, v string) { s.GPUDriverSource = v }).with(gpuConfigured),
+		txt("Accelerators", "GPU Operator version", "qualified chart pin", false,
+			func(s *State) string { return s.GPUOperatorVersion }, func(s *State, v string) { s.GPUOperatorVersion = v }, nil).with(func(s *State) bool { return gpuConfigured(s) && s.GPUDriverSource == "gpu-operator" }),
+		txt("Accelerators", "NVIDIA driver version", "qualified branch; upgrades require a canary", false,
+			func(s *State) string { return s.NVIDIADriverVersion }, func(s *State, v string) { s.NVIDIADriverVersion = v }, nil).with(gpuConfigured),
+		txt("Accelerators", "Toolkit version", "qualified container-toolkit pin", false,
+			func(s *State) string { return s.NVIDIAToolkitVersion }, func(s *State, v string) { s.NVIDIAToolkitVersion = v }, nil).with(gpuConfigured),
+		txt("Accelerators", "Node mode assignments", "NODE is also the default ~/.ssh/config alias; CLI --gpu-ssh-host-map overrides it", false,
+			func(s *State) string { return s.GPUNodeModes }, func(s *State, v string) { s.GPUNodeModes = v }, validateGPUNodeModesField).with(gpuEnabled),
+		txt("Accelerators", "Enabled profile IDs", "stable IDs, comma-separated; no PCI/resource names", false,
+			func(s *State) string { return s.GPUProfiles }, func(s *State, v string) { s.GPUProfiles = v }, nil).with(gpuEnabled),
+		toggle("Accelerators", "Shared GPU runtime", "required when any node uses pod-hami",
+			func(s *State) bool { return s.HAMiEnabled }, func(s *State, v bool) { s.HAMiEnabled = v }).with(hamiSelected),
+		txt("Accelerators", "Shared GPU version", "qualified runtime chart pin", false,
+			func(s *State) string { return s.HAMiVersion }, func(s *State, v string) { s.HAMiVersion = v }, nil).with(hamiSelected),
+		txt("Accelerators", "Scheduler version", "must match the cluster Kubernetes minor", false,
+			func(s *State) string { return s.HAMiSchedulerVersion }, func(s *State, v string) { s.HAMiSchedulerVersion = v }, nil).with(hamiSelected),
+		toggle("Accelerators", "vGPU secrets ready", "readiness only; license/private registry values stay encrypted in SOPS",
+			func(s *State) bool { return s.VGPUSecretReady }, func(s *State, v bool) { s.VGPUSecretReady = v }).with(vgpuSelected),
+		toggle("Accelerators", "Allow unassigned GPUs", "required for detect-only; creates no product or entitlement",
+			func(s *State) bool { return s.AllowUnassignedGPUs }, func(s *State, v bool) { s.AllowUnassignedGPUs = v }).with(func(s *State) bool { return s.GPUPlatform == "detect-only" }),
+
 		// --- Adopt (only in adopt mode) ---
 		toggle("Adopt", "Bypass version-pin gate", "RISKY — proceed unpinned (default: pin first)",
 			func(s *State) bool { return s.AllowUnpinnedAdopt }, func(s *State, v bool) { s.AllowUnpinnedAdopt = v }).with(isAdopt),
@@ -228,6 +272,11 @@ func panelFields() []panelField {
 		{Section: "Review", Label: "Apply this configuration", Desc: "validate + build the plan + install", Kind: panelAction},
 	}
 	return fields
+}
+
+func validateGPUNodeModesField(s string) error {
+	_, err := clusterinit.ParseGPUNodeModes([]string{s})
+	return err
 }
 
 // with attaches a Visible predicate (fluent helper for panelFields).
@@ -415,7 +464,11 @@ func (m *PanelModel) validationErrors() []string {
 	// ValidatePresetRequiredKeys. Best-effort: Apply's consent error is
 	// tolerated; scratch is fully populated regardless.
 	scratch := &clusterinit.InitOptions{}
-	_ = m.st.Apply(scratch)
+	if err := m.st.Apply(scratch); err != nil {
+		errs = append(errs, "Accelerators: "+err.Error())
+	} else if err := clusterinit.ValidateGPUConfig(scratch); err != nil {
+		errs = append(errs, "Accelerators: "+err.Error())
+	}
 	if err := clusterinit.ValidatePresetRequiredKeys(scratch); err != nil {
 		errs = append(errs, "Network: "+err.Error())
 	}
