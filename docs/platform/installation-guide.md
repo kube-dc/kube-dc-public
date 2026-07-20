@@ -54,7 +54,25 @@ network:
 :::warning Important
 - Replace `eth0` and `eth1` with your actual interface names (run `ip link` to check).
 - Do **not** assign IPs to the trunk interface (`eth1`) — Kube-OVN will create OVS bridges and VLAN subinterfaces automatically.
+- Do **not** pre-create empty VLAN subinterfaces for the cloud/provider VLANs (`vlans:` entries with `addresses: []`) — Kube-OVN owns those VLANs on the trunk; pre-created ones are redundant and can conflict with the OVS bridge setup. Pass the **trunk** interface (`EXT_NET_INTERFACE`) + the VLAN ID instead.
 - On `master-2` use `192.168.0.2`, on `master-3` use `192.168.0.3`.
+:::
+
+:::tip LACP bonds (common pitfalls)
+If the trunk is an 802.3ad bond, three defaults quietly hurt:
+
+- `transmit-hash-policy: layer2` hashes all traffic toward one MAC onto a
+  **single slave** — use `layer3+4` to actually use both links.
+- `lacp-rate: slow` means link-failure detection up to **90 s** — use
+  `lacp-rate: fast` (3 s) if you care about node-loss failover time.
+- An `mtu: 9000` on the bond is **inherited by every VLAN on it**,
+  including management. Only use jumbo end-to-end where the switch/router
+  path supports it — a jumbo management VLAN against a 1500-byte gateway
+  produces path-MTU blackholes that look like random hangs.
+
+Also ensure only **one** default route: if another NIC runs DHCP, add
+`dhcp4-overrides: { use-routes: false }` (or a high `route-metric`) so it
+can't inject a second default route next to the management one.
 :::
 
 Back up the default netplan and apply:
@@ -530,7 +548,9 @@ kube-dc bootstrap init \
 | `--ceph-node=NODE=DEVICE` | One raw block device per OSD node (repeat 3× for multi-node) |
 | `--ssh-host` | Control-plane SSH target — enables kubeconfig auto-pull **and** NAT-topology detection (§3.2) |
 | `--set=KUBE_OVN_MASTER_NODES` | Control-plane **internal** IPs (comma-separated) — not emitted by the preset, always set it |
-| `--set=EXT_NET_INTERFACE` / `EXT_NET_VLAN_ID` | Trunk NIC + cloud VLAN ID from Phase 1 |
+| `--set=EXT_NET_INTERFACE` / `EXT_NET_VLAN_ID` | Trunk NIC + cloud VLAN ID from Phase 1 (`EXT_NET_VLAN_ID=0` = untagged carrier) |
+| `--set=INGRESS_MODE` | `metallb-lb` (default — Envoy Service `type: LoadBalancer` via MetalLB). `hostnetwork` (Envoy binds `:443` on the host) is a real topology but **not yet automated — `init` rejects it**; scaffold with `metallb-lb` and apply the EnvoyProxy hostNetwork patch manually if you need it |
+| `--set=METALLB_MODE` | `l2` (default — ARP on a shared L2 segment) or `bgp` (announce VIPs as `/32` BGP routes — routed/L3-only fabrics; see §5 “BGP announcement”). `bgp` requires `METALLB_BGP_LOCAL_ASN`, `METALLB_BGP_PEER_ASN`, `METALLB_BGP_PEER_ADDRESS` (all validated) |
 
 What `init` does, in order: generates a SOPS **age key** → creates +
 pushes the fleet repo → scaffolds `clusters/dc1/` (network, object
@@ -780,6 +800,89 @@ spec:
     - br-ext-cloud                        # Kube-OVN provider bridge
 EOF
 ```
+
+#### Alternative: BGP announcement (routed / L3-only datacenters)
+
+L2 advertisement (above, the default — `METALLB_MODE=l2`) announces the
+VIP via ARP and therefore needs a **shared L2 segment** between the
+announcing nodes and your router. If your datacenter is fully routed
+(L3-to-the-host, no shared broadcast domain for the VIP), switch MetalLB
+to **BGP mode** instead: each speaker node opens a BGP session to your
+router and announces the VIP as a `/32` route (your router should ECMP
+across the nodes). MetalLB ships FRR mode by default, so no extra
+components are needed.
+
+For GitOps-managed clusters, set `METALLB_MODE=bgp` plus the
+`METALLB_BGP_*` keys in `cluster-config.env` and point the cluster's
+`addons-config` at `addons/metallb-config-bgp` (instead of
+`addons/metallb-config`) — the keys are validated by
+`kube-dc bootstrap init`. The equivalent manual objects:
+
+```bash
+cat <<'EOF' | kubectl apply -f -
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: envoy-gateway-peer
+  namespace: metallb-system
+spec:
+  myASN: 64512                          # your cluster's ASN (private range 64512-65534 is fine)
+  peerASN: 64513                        # your router's ASN
+  peerAddress: 192.0.2.1                # router IP reachable from every speaker node
+  holdTime: "90s"
+---
+apiVersion: metallb.io/v1beta1
+kind: BGPAdvertisement
+metadata:
+  name: envoy-gateway-bgp
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - envoy-gateway-pool
+  aggregationLength: 32                 # exact /32 host routes
+EOF
+```
+
+Notes:
+- **The two modes are exclusive per pool** — create either the
+  `L2Advertisement` or the `BGPAdvertisement` for `envoy-gateway-pool`,
+  never both.
+- **Migrating an existing GitOps cluster l2 → bgp**: the addons-config
+  Flux Kustomization typically runs `prune: false`, so swapping the
+  referenced dir does **not** remove the old `L2Advertisement` — the VIP
+  would be announced via ARP *and* BGP simultaneously. After the swap
+  reconciles, delete it explicitly:
+  `kubectl -n metallb-system delete l2advertisement envoy-gateway-l2`
+  (or set `prune: true` on the addons-config Kustomization — it only
+  ships MetalLB CRs, so pruning is safe there).
+- **Per-cluster patches must target the shared label, not kind+name.**
+  A kustomize patch targeting `kind: L2Advertisement, name:
+  envoy-gateway-l2` is *silently ignored* after the base swap — a
+  `nodeSelectors` restriction would vanish and **every** speaker node
+  would start announcing. Both advertisement variants carry the label
+  `kube-dc.com/advertisement=envoy-gateway` and the same-shaped
+  `spec.nodeSelectors`; target that
+  (`target: { labelSelector: "kube-dc.com/advertisement=envoy-gateway" }`)
+  and the patch survives mode swaps unchanged.
+- **Two orthogonal node-selector layers** (per MetalLB's advanced BGP
+  docs): `BGPAdvertisement.spec.nodeSelectors` limits which nodes
+  *announce* the route; `BGPPeer.spec.nodeSelectors` limits which nodes
+  *establish a session* at all. On heterogeneous clusters restrict
+  both — a node that can't reach the router shouldn't hold a flapping
+  session.
+- Your router must accept sessions from **every node selected by the
+  `BGPPeer`** — by default that is every node running a MetalLB
+  speaker. To restrict which nodes open sessions, use
+  `BGPPeer.spec.nodeSelectors` (advertisement selectors do **not**
+  limit sessions — see the next bullet).
+- For session auth add `password:` (TCP-MD5) to the `BGPPeer`; for
+  sub-second failover add a `BFDProfile` and reference it via
+  `bfdProfile:`.
+- **Scope**: BGP mode covers the platform ingress VIP(s) announced by
+  MetalLB. Tenant floating IPs (EIp/FIp) are announced by Kube-OVN via
+  ARP on the external network and still require the L2 segment described
+  in the network prerequisites — BGP mode does not remove that
+  requirement.
 
 Update the Envoy Gateway service to use MetalLB:
 

@@ -35,6 +35,14 @@ Physical Interface (enp0s31f6)
 └── VLAN 4011 (Public Network) - 168.119.17.48/28 (ext-public)
 ```
 
+> **Routed / L3-only datacenters**: the external networks above are L2
+> segments (tagged or untagged — `EXT_NET_VLAN_ID=0` is supported when the
+> carrier NIC *is* the segment). Tenant EIP/FIP reachability is ARP-based
+> and needs that L2 adjacency. The **platform ingress VIPs** announced by
+> MetalLB can alternatively be advertised over **BGP** (`METALLB_MODE=bgp`)
+> for fabrics with no shared L2 — see the installation guide's
+> "BGP announcement" section.
+
 ## Example Cluster Usage
 
 - **shalb-demo project**: Uses `egressNetworkType: cloud` → EIP: 100.65.0.102 (development/testing)
