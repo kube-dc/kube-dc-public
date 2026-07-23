@@ -88,8 +88,15 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {workload-name}
-  labels: *labels
-  annotations: *annotations
+  labels: &labels
+    app.kubernetes.io/name: {workload-name}
+    app.kubernetes.io/managed-by: kube-dc
+    kube-dc.com/gpu-backend: dra
+    kube-dc.com/gpu-profile: nvidia-v100-hami
+  annotations: &annotations
+    kube-dc.com/gpu-workload-hash: "0000000000000000000000000000000000000000000000000000000000000000"
+    kube-dc.com/gpu-memory-mib: "8192"
+    kube-dc.com/gpu-core-percent: "25"
 spec:
   replicas: 1
   strategy:
@@ -131,9 +138,11 @@ Apply it into your project:
 kubectl apply -n {project-namespace} -f shared-gpu.yaml
 ```
 
-> The YAML anchors (`&labels` / `*labels`) keep the labels identical everywhere
-> the contract requires them. If your editor strips anchors, just repeat the
-> same four labels and three annotations in each place.
+> Each document defines its own `&labels` / `&annotations` and reuses them
+> within that document — YAML anchors do not carry across the `---` separator, so
+> the ResourceClaimTemplate and the Deployment each declare the labels once. If
+> your editor strips YAML anchors, just write the same four labels and three
+> annotations wherever `*labels` / `*annotations` appears.
 
 ## Verify
 
