@@ -24,6 +24,7 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       items: [
         'deploy-first-app',
+        'gpu-shared-workloads',
       ],
     },
     {
@@ -34,6 +35,7 @@ const sidebars: SidebarsConfig = {
         'creating-vm',
         'connecting-vm',
         'vm-lifecycle',
+        'gpu-vm-guests',
       ],
     },
     {
