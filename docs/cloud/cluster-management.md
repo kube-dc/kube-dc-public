@@ -495,34 +495,6 @@ Deletion is fully automated. The controller removes resources in the correct ord
 
 ## Troubleshooting
 
-### `kubectl logs`, `exec`, and `port-forward` return "connection refused"
-
-Commands that stream through a worker's kubelet — `kubectl logs`,
-`kubectl exec`, `kubectl port-forward`, `kubectl attach`, and `kubectl top` —
-currently fail against managed clusters with:
-
-```
-Error from server: Get "https://<worker-ip>:10250/containerLogs/...":
-  dial tcp <worker-ip>:10250: connect: connection refused
-```
-
-This is a known limitation being addressed, and it is confined to those
-streaming commands. Everything that goes through the API server directly —
-`kubectl get`, `describe`, `apply`, `edit`, `delete`, `scale`, `rollout` —
-works normally, and **your workloads and Services are unaffected**: pods run
-and LoadBalancers serve traffic as usual. It does not indicate a problem with
-your cluster.
-
-To read application logs in the meantime, ship them off the node instead of
-relying on `kubectl logs`:
-
-- send container stdout/stderr to an in-cluster logging stack (for example
-  Loki + Grafana, or Elasticsearch) or an external log service;
-- or have the application write to a mounted volume or object-storage bucket
-  you can read out-of-band.
-
-`kubectl logs` and the other streaming commands will start working again once
-the fix ships — no changes to your manifests are needed.
 
 ### Cluster Stuck in Provisioning
 
