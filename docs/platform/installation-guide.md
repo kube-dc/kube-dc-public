@@ -128,10 +128,12 @@ echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" | sudo tee /etc/resolv.conf
 
 ## Phase 2 — RKE2 Cluster Bootstrap
 
-The fastest path is `kube-dc bootstrap install`, which writes the canonical
-RKE2 config and installs RKE2 for you over SSH (§2.0). If you'd rather do it
-by hand — or need to understand exactly what that command produces — the
-manual steps follow in §2.1+.
+The fastest path is
+[`kube-dc bootstrap install` in §2.0](#20-one-command-kube-dc-bootstrap-install-recommended),
+which writes the canonical RKE2 config and installs RKE2 for you over SSH. If
+you’d rather do it by hand — or need to understand exactly what that command
+produces — the manual reference is grouped in
+[§2.3](#23-manual-fallback-install-rke2-without-the-cli).
 
 ### 2.0 One command: `kube-dc bootstrap install` (recommended)
 
@@ -158,16 +160,14 @@ until Phase 3 installs the CNI — that's expected.
 
 Since CLI v0.5.3 it also enables the **RKE2 embedded registry mirror (spegel)**
 on every node by default: nodes P2P-share image content, so repeated
-containerdisk/image pulls stay off the WAN. `--embedded-registry=false` opts out. An existing operator-managed
-`/etc/rancher/rke2/registries.yaml` is never overwritten, but default-on install
-refuses to restart RKE2 when that file has no non-empty `mirrors:` mapping. Pair it with the
-image-acceleration stack that `bootstrap init` scaffolds by default
+containerdisk/image pulls stay off the WAN. `--embedded-registry=false` opts
+out. An existing operator-managed `/etc/rancher/rke2/registries.yaml` is never
+overwritten, but default-on install refuses to restart RKE2 when that file has
+no non-empty `mirrors:` mapping. Pair it with the image-acceleration stack that
+`bootstrap init` scaffolds by default
 (tenant-cluster addons, zot registry depot, CDI OS-image mirror —
 `--image-acceleration=false` opts out; see the
 [enterprise install guide](private-ca-enterprise-install.md) §6).
-
-> v0.5.2 enabled the flags but its published starter omitted registry-depot.
-> v0.5.3 is the first complete default stack and also wires its Gateway listener.
 
 > ⚠️ When retrofitting spegel onto an **existing** cluster, restart
 > `rke2-server`/`rke2-agent` one node at a time and **drain or stop KubeVirt
@@ -177,8 +177,8 @@ image-acceleration stack that `bootstrap init` scaffolds by default
 Key flags: `--name` (RKE2 node-name; defaults to the positional arg — use the
 same name in `init`), `--node-ip` / `--external-ip` (override auto-detection),
 `--force` (re-run on an already-installed node — restarts to apply config
-changes, but refuses while KubeVirt/QEMU workloads are resident), `--set POD_CIDR=…` (override a preset CIDR). Requires passwordless
-sudo (or a root login) on the node.
+changes, but refuses while KubeVirt/QEMU workloads are resident),
+`--set POD_CIDR=…` (override a preset CIDR). Requires passwordless sudo (or a root login) on the node.
 
 **Reaching nodes through a bastion.** `install`, the joins, `fetch-kubeconfig`,
 `remove-node`, and `connect` all honour an SSH jump host from `~/.ssh/config`
@@ -204,10 +204,82 @@ become the apiserver advertise-address. It takes the same `--ssh-jump` /
 `--ssh-accept-new-host-keys` and exits non-zero if the node isn't ready, so
 it works as a CI gate.
 
-Then skip to [§2.4 Verify](#24-verify-the-ha-cluster) (single node) or use §2.3
-to join additional control-plane nodes, and continue to Phase 3.
+Continue in topology order:
 
-### 2.1 Install RKE2 on master-1 (manual alternative)
+- For an HA control plane,
+  [add master-2 and master-3 in §2.1](#21-add-master-2-and-master-3-with-kube-dc-bootstrap-install---role-server).
+- Add workload capacity with
+  [worker nodes in §2.2](#22-add-worker-nodes-with-kube-dc-bootstrap-install---join-server).
+- For a no-CLI installation, use the
+  [manual reference in §2.3](#23-manual-fallback-install-rke2-without-the-cli).
+- For a single-node cluster, or after all planned nodes have joined,
+  [verify the cluster in §2.4](#24-verify-the-ha-cluster), then continue to
+  [Phase 3](#phase-3--deploy-kube-dc-with-the-kube-dc-cli).
+
+### 2.1 Add master-2 and master-3 with `kube-dc bootstrap install --role server`
+
+Additional control-plane nodes (for etcd quorum — run 3 for HA) use the
+**same command with `--role server`**. Unlike a worker, an additional
+server writes its own config, so it still needs `--domain` + `--preset`
+(use the SAME values as the first server):
+
+```bash
+# --role server      makes this an ADDITIONAL control-plane, not a worker
+# --join-server       any existing control-plane node (token + internal IP read over SSH)
+# --domain/--preset   MUST match the first server (an additional server writes its own config)
+kube-dc bootstrap install master-2 \
+  --ssh-host root@203.0.113.11 \
+  --name master-2 \
+  --join-server root@203.0.113.10 \
+  --role server \
+  --domain kube.example.com \
+  --preset cloud+public-vlan \
+  --dry-run
+```
+
+Review the plan (it announces "control-plane JOIN", the dialled
+`<cp>:9345` supervisor, and the redacted token), then drop `--dry-run`.
+Repeat for `master-3`. Each node registers with the `control-plane,etcd`
+roles and its etcd joins the quorum. The join token is read over SSH and
+**never printed**. This flow is validated end-to-end (a VM joining a live
+cluster as a second `control-plane,etcd` node + etcd member).
+
+> **etcd quorum:** run an ODD number of control-plane nodes (1 or 3, not
+> 2). With exactly 2 members, losing either breaks quorum. To *remove* a
+> control-plane node later, remove its etcd member first
+> (`etcdctl member remove`) — deleting the node/VM alone strands the
+> member and can break quorum.
+
+### 2.2 Add worker nodes with `kube-dc bootstrap install --join-server`
+
+To add a **worker** (rke2-agent) to the cluster, point the same
+`bootstrap install` command at an existing control-plane node — its
+node-token and internal IP are read over SSH, and the worker's RKE2 agent
+is installed and joined:
+
+```bash
+# --ssh-host    the new worker
+# --join-server any existing control-plane node (token + internal IP read over SSH)
+# --dry-run     review the plan first, then drop it to apply
+kube-dc bootstrap install worker-1 \
+  --ssh-host root@203.0.113.20 \
+  --name worker-1 \
+  --join-server root@203.0.113.10 \
+  --dry-run
+```
+
+No `--domain`/`--preset` needed — a worker inherits cluster config from
+the server it joins. The agent dials the control-plane's **internal** IP
+(auto-detected, never a NAT/floating IP). The worker registers and shows
+up in `kubectl get nodes` (NotReady until kube-ovn schedules onto it). If
+you already have the token, pass `--join-token` + `--cp-host` to skip the
+control-plane SSH. To reach the worker (and the `--join-server`
+control-plane) through a bastion, add `--ssh-jump user@bastion` — see the
+[reachability note in §2.0](#20-one-command-kube-dc-bootstrap-install-recommended).
+
+> This flow is validated end-to-end (a worker VM joining a live cluster).
+
+### 2.3 Manual fallback: install RKE2 without the CLI
 
 SSH into `master-1` and install kubectl:
 
@@ -317,7 +389,7 @@ kubectl get nodes
 
 The node will show `NotReady` until a CNI is installed — this is expected.
 
-### 2.2 Get the Join Token
+#### 2.3.1 Get the join token for manual joins
 
 On `master-1`, retrieve the join token:
 
@@ -327,72 +399,7 @@ sudo cat /var/lib/rancher/rke2/server/node-token
 
 Save this token — you need it for `master-2` and `master-3`.
 
-### 2.3 Add worker nodes with `kube-dc bootstrap install --join-server`
-
-To add a **worker** (rke2-agent) to the cluster, point the same
-`bootstrap install` command at an existing control-plane node — its
-node-token and internal IP are read over SSH, and the worker's RKE2 agent
-is installed and joined:
-
-```bash
-# --ssh-host    the new worker
-# --join-server any existing control-plane node (token + internal IP read over SSH)
-# --dry-run     review the plan first, then drop it to apply
-kube-dc bootstrap install worker-1 \
-  --ssh-host root@203.0.113.20 \
-  --name worker-1 \
-  --join-server root@203.0.113.10 \
-  --dry-run
-```
-
-No `--domain`/`--preset` needed — a worker inherits cluster config from
-the server it joins. The agent dials the control-plane's **internal** IP
-(auto-detected, never a NAT/floating IP). The worker registers and shows
-up in `kubectl get nodes` (NotReady until kube-ovn schedules onto it). If
-you already have the token, pass `--join-token` + `--cp-host` to skip the
-control-plane SSH. To reach the worker (and the `--join-server`
-control-plane) through a bastion, add `--ssh-jump user@bastion` — see the
-[reachability note](#20-one-command-kube-dc-bootstrap-install-recommended)
-in §2.0.
-
-> This flow is validated end-to-end (a worker VM joining a live cluster).
-
-### 2.3.1 Join master-2 and master-3 with `--role server`
-
-Additional control-plane nodes (for etcd quorum — run 3 for HA) use the
-**same command with `--role server`**. Unlike a worker, an additional
-server writes its own config, so it still needs `--domain` + `--preset`
-(use the SAME values as the first server):
-
-```bash
-# --role server      makes this an ADDITIONAL control-plane, not a worker
-# --join-server       any existing control-plane node (token + internal IP read over SSH)
-# --domain/--preset   MUST match the first server (an additional server writes its own config)
-kube-dc bootstrap install master-2 \
-  --ssh-host root@203.0.113.11 \
-  --name master-2 \
-  --join-server root@203.0.113.10 \
-  --role server \
-  --domain kube.example.com \
-  --preset cloud+public-vlan \
-  --dry-run
-```
-
-Review the plan (it announces "control-plane JOIN", the dialled
-`<cp>:9345` supervisor, and the redacted token), then drop `--dry-run`.
-Repeat for `master-3`. Each node registers with the `control-plane,etcd`
-roles and its etcd joins the quorum. The join token is read over SSH and
-**never printed**. This flow is validated end-to-end (a VM joining a live
-cluster as a second `control-plane,etcd` node + etcd member).
-
-> **etcd quorum:** run an ODD number of control-plane nodes (1 or 3, not
-> 2). With exactly 2 members, losing either breaks quorum. To *remove* a
-> control-plane node later, remove its etcd member first
-> (`etcdctl member remove`) — deleting the node/VM alone strands the
-> member and can break quorum.
-
-<details>
-<summary>Manual fallback (no CLI) — write the RKE2 join config by hand</summary>
+#### 2.3.2 Join master-2 and master-3 manually
 
 On **each additional node** (`master-2`, `master-3`), create the RKE2 config and join:
 
@@ -437,7 +444,32 @@ sudo systemctl enable rke2-server.service
 sudo systemctl start rke2-server.service
 ```
 
-</details>
+#### 2.3.3 Join worker nodes manually
+
+Use the token from [§2.3.1](#231-get-the-join-token-for-manual-joins) and the
+control-plane internal IP:
+
+```bash
+# On the new worker node
+sudo mkdir -p /etc/rancher/rke2/
+cat <<EOF | sudo tee /etc/rancher/rke2/registries.yaml
+mirrors:
+  "*":
+EOF
+
+cat <<EOF | sudo tee /etc/rancher/rke2/config.yaml
+token: <TOKEN_FROM_MASTER_1>
+server: https://192.168.0.1:9345
+node-name: worker-1
+node-ip: 192.168.0.11
+EOF
+
+export INSTALL_RKE2_VERSION="v1.35.0+rke2r1"
+export INSTALL_RKE2_TYPE="agent"
+curl -sfL https://get.rke2.io | sh -
+sudo systemctl enable rke2-agent.service
+sudo systemctl start rke2-agent.service
+```
 
 ### 2.4 Verify the HA Cluster
 
@@ -1241,34 +1273,7 @@ To enable Google OAuth login, see [SSO with Google Auth](sso-google-auth.md).
 
 ### Worker Node Scaling with Metal3
 
-Additional worker nodes can be added to the management cluster in two ways:
-
-**Recommended** — use the CLI join from [§2.3](#23-add-worker-nodes-with-kube-dc-bootstrap-install---join-server):
-`kube-dc bootstrap install worker-1 --ssh-host root@<worker-ip> --join-server root@<cp-ip>`.
-
-**Manual addition** (no CLI) — install the RKE2 agent by hand:
-
-```bash
-# On the new worker node
-sudo mkdir -p /etc/rancher/rke2/
-cat <<EOF | sudo tee /etc/rancher/rke2/registries.yaml
-mirrors:
-  "*":
-EOF
-
-cat <<EOF | sudo tee /etc/rancher/rke2/config.yaml
-token: <TOKEN_FROM_MASTER_1>
-server: https://192.168.0.1:9345
-node-name: worker-1
-node-ip: 192.168.0.11
-EOF
-
-export INSTALL_RKE2_VERSION="v1.35.0+rke2r1"
-export INSTALL_RKE2_TYPE="agent"
-curl -sfL https://get.rke2.io | sh -
-sudo systemctl enable rke2-agent.service
-sudo systemctl start rke2-agent.service
-```
+For direct node joins, use the [CLI procedure in §2.2](#22-add-worker-nodes-with-kube-dc-bootstrap-install---join-server) or the [manual procedure in §2.3.3](#233-join-worker-nodes-manually).
 
 **Automated provisioning with Metal3** — Metal3 uses the Cluster API bare-metal provider to PXE-boot and provision new servers automatically. This is ideal for large-scale deployments where servers are managed via IPMI/BMC. Metal3 handles:
 

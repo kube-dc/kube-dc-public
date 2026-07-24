@@ -156,10 +156,6 @@ stay NotReady → `kubelet-csr-approver` Pending → MachineDeployments stuck
 (`--image-acceleration=false` opts out); `bootstrap install` enables spegel per
 node. What you get, and what it needs:
 
-> v0.5.2 enabled the flags but its published starter accidentally omitted
-> `platform/registry-depot`; v0.5.3 is the first release whose starter contains
-> all three platform trees and wires the registry Gateway listener.
-
 - **spegel** — RKE2 embedded registry (§1 note; nodes P2P-share image content).
 - **tenant-addons** — Sveltos ClusterProfiles (Cilium CNI, CoreDNS) for
   managed/nested tenant clusters. Without this a tenant cluster gets **no
