@@ -24,21 +24,31 @@ Throughout, placeholders:
 ```bash
 # RKE2 hosts (server/agent) — the bootstrap scripts default to the embedded
 # registry mirror (spegel): embedded-registry: true + a mirrors:"*" entry in
-# /etc/rancher/rke2/registries.yaml. Verify after install:
+# /etc/rancher/rke2/registries.yaml. --repo is a LOCAL checkout path; the
+# GitHub destination is selected separately. Verify after install:
 #   ss -tln | grep :5001        # spegel listening on servers
 kube-dc bootstrap init \
   --domain "${DOMAIN}" \
-  --fleet-mode=new-repo --repo git@github.com:<org>/kube-dc-fleet.git
+  --fleet-mode=new-repo \
+  --provider=github \
+  --github-owner=<org> \
+  --github-repo=kube-dc-fleet \
+  --repo="${HOME}/kube-dc-fleet"
 # ... follow the interactive flow (nodes, ext-net, object storage mode,
 # OpenBao, keycloak). Flux then converges the platform.
 ```
 
-Post-`init` day-2 sanity: `kube-dc bootstrap status`, `kube-dc bootstrap config`.
+Post-`init` day-2 sanity: `kube-dc bootstrap status <cluster> --repo <path>` and
+`kube-dc bootstrap config list <cluster> --repo <path>`.
 
-> **Fixed in CLI ≥ v0.5.2:** `kube-dc bootstrap install` enables the embedded
-> registry by default on every node (`EMBEDDED_REGISTRY=false` opts out; an
-> existing operator-managed `registries.yaml` is never overwritten). On clusters
-> installed with an older CLI, enable spegel per node: append
+> **CLI ≥ v0.5.3:** `kube-dc bootstrap install` enables the embedded registry
+> by default on every node (`--embedded-registry=false` opts out; an
+> existing operator-managed `registries.yaml` is never overwritten). If that
+> file has no non-empty `mirrors:` mapping, install refuses before restarting
+> RKE2; either add a mirror or opt out explicitly. A forced re-run also refuses
+> while KubeVirt/QEMU workloads are resident on the node.
+>
+> On clusters installed with an older CLI, enable spegel per node: append
 > `embedded-registry: true` + `supervisor-metrics: true` to
 > `/etc/rancher/rke2/config.yaml` (servers), write `mirrors:\n  "*":` into
 > `registries.yaml` (all nodes), restart `rke2-server`/`rke2-agent` one node at
@@ -54,10 +64,11 @@ Post-`init` day-2 sanity: `kube-dc bootstrap status`, `kube-dc bootstrap config`
 > (`umount -l`), delete the stale `VolumeAttachment`s, reboot the node. Seen
 > twice in real installs; treat the drain rule as mandatory.
 
-## 2. Private-CA trust — four independent consumers
+## 2. Private-CA trust — independent consumers
 
-The platform has **four separate trust stores**; all four must carry the
-corporate CA bundle or the corresponding subsystem breaks in its own way:
+The platform has **at least six independent TLS trust paths**. There is no
+single process-wide switch; each applicable path must receive the corporate CA
+bundle or its subsystem breaks independently:
 
 | Consumer | Mechanism | Symptom when missing |
 |---|---|---|
@@ -65,10 +76,13 @@ corporate CA bundle or the corresponding subsystem breaks in its own way:
 | UI backend (Node) | `backend.extraEnv: NODE_EXTRA_CA_CERTS=/etc/kube-dc-ca/ca.pem` + configMap volume (HR values) | "Keycloak admin client not configured"; grafana-launch / OpenBao / S3 calls fail |
 | oidc-webhook-authenticator | `SSL_CERT_DIR=/etc/ssl/certs:/extra-ca` + CA configMap on the DaemonSet | **cluster-wide 401** for all OIDC users |
 | cloud-shell job (Go CLI) | shipped automatically from the backend's `NODE_EXTRA_CA_CERTS` into the per-shell Secret (`ca.pem`) + `SSL_CERT_DIR` | shell loops `session expired. Run: kube-dc login…` because token refresh can't TLS to Keycloak |
+| OpenBao OIDC discovery | manager supplies the same PEM as `oidc_discovery_ca_pem` | every org sync reports a discovery URL TLS/400 error |
+| CNPG/barman S3 client | database `endpointCA` when supported; otherwise the restricted internal HTTP workaround in §4 | continuous archiving fails certificate verification |
 
 Create one ConfigMap (e.g. `kube-dc-trusted-ca`, key `ca.pem`, full chain) in
-`kube-dc` and point all mechanisms at it. **Verify the ConfigMap actually
-contains the chain you think it does** — a wrong/stale CA configmap fails
+`kube-dc` as the source for mechanisms that accept a mounted bundle, and feed
+that same chain into the protocol-specific OpenBao/CNPG settings. **Verify the
+bundle actually contains the full chain** — a wrong or stale ConfigMap fails
 identically to a missing one.
 
 Additionally, the chart (≤ v0.5.16) does **not** consume
@@ -136,11 +150,15 @@ stay NotReady → `kubelet-csr-approver` Pending → MachineDeployments stuck
   `tenant-addons In [enabled]`** — the management cluster is itself a
   SveltosCluster and must never receive the tenant default StorageClass.
 
-## 6. Image acceleration (CLI ≥ v0.5.2: on by default)
+## 6. Image acceleration (CLI ≥ v0.5.3: complete and on by default)
 
 `kube-dc bootstrap init` now scaffolds the stack for every new cluster
 (`--image-acceleration=false` opts out); `bootstrap install` enables spegel per
 node. What you get, and what it needs:
+
+> v0.5.2 enabled the flags but its published starter accidentally omitted
+> `platform/registry-depot`; v0.5.3 is the first release whose starter contains
+> all three platform trees and wires the registry Gateway listener.
 
 - **spegel** — RKE2 embedded registry (§1 note; nodes P2P-share image content).
 - **tenant-addons** — Sveltos ClusterProfiles (Cilium CNI, CoreDNS) for

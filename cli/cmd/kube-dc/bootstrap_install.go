@@ -29,16 +29,17 @@ import (
 // behind E2E findings 12/13). See internal/bootstrap/rke2.
 func bootstrapInstallCmd(fleetRepo *string) *cobra.Command {
 	var (
-		sshHost     string
-		domain      string
-		nodeName    string
-		preset      string
-		sets        []string
-		nodeIP      string
-		externalIP  string
-		rke2Version string
-		force       bool
-		dryRun      bool
+		sshHost          string
+		domain           string
+		nodeName         string
+		preset           string
+		sets             []string
+		nodeIP           string
+		externalIP       string
+		rke2Version      string
+		embeddedRegistry bool
+		force            bool
+		dryRun           bool
 		// Join mode (--join-server): worker by default, or an additional
 		// control-plane with --role server.
 		joinServer string
@@ -202,18 +203,19 @@ UNKNOWN key; a MISMATCH is still refused).`,
 					}
 				}
 				return rke2.JoinWorker(cmd.Context(), rke2.JoinWorkerOptions{
-					SSH:          sshClient,
-					Worker:       hostFor(sshHost),
-					WorkerName:   nodeName,
-					WorkerIP:     nodeIP,
-					ControlPlane: hostFor(joinServer),
-					JoinToken:    joinToken,
-					CPHost:       cpHost,
-					CPPort:       cpPort,
-					RKE2Version:  rke2Version,
-					Force:        force,
-					DryRun:       dryRun,
-					Out:          cmd.OutOrStdout(),
+					SSH:                     sshClient,
+					Worker:                  hostFor(sshHost),
+					WorkerName:              nodeName,
+					WorkerIP:                nodeIP,
+					ControlPlane:            hostFor(joinServer),
+					JoinToken:               joinToken,
+					CPHost:                  cpHost,
+					CPPort:                  cpPort,
+					RKE2Version:             rke2Version,
+					DisableEmbeddedRegistry: !embeddedRegistry,
+					Force:                   force,
+					DryRun:                  dryRun,
+					Out:                     cmd.OutOrStdout(),
 				})
 			}
 
@@ -251,19 +253,20 @@ UNKNOWN key; a MISMATCH is still refused).`,
 
 			out := cmd.OutOrStdout()
 			opts := rke2.InstallOptions{
-				SSH:         sshClient,
-				Host:        hostFor(sshHost),
-				NodeName:    nodeName,
-				Domain:      domain,
-				PodCIDR:     podCIDR,
-				ServiceCIDR: svcCIDR,
-				ClusterDNS:  clusterDNS,
-				NodeIP:      nodeIP,
-				ExternalIP:  externalIP,
-				RKE2Version: rke2Version,
-				Force:       force,
-				DryRun:      dryRun,
-				Out:         out,
+				SSH:                     sshClient,
+				Host:                    hostFor(sshHost),
+				NodeName:                nodeName,
+				Domain:                  domain,
+				PodCIDR:                 podCIDR,
+				ServiceCIDR:             svcCIDR,
+				ClusterDNS:              clusterDNS,
+				NodeIP:                  nodeIP,
+				ExternalIP:              externalIP,
+				RKE2Version:             rke2Version,
+				DisableEmbeddedRegistry: !embeddedRegistry,
+				Force:                   force,
+				DryRun:                  dryRun,
+				Out:                     out,
 			}
 			// Additional control-plane: resolve the join token + the
 			// existing CP's internal IP (over SSH unless supplied), then
@@ -288,6 +291,7 @@ UNKNOWN key; a MISMATCH is still refused).`,
 	cmd.Flags().StringVar(&nodeIP, "node-ip", "", "Node internal IP (default: auto-detected over SSH). First-server: also the apiserver advertise-address")
 	cmd.Flags().StringVar(&externalIP, "external-ip", "", "RKE2 node-external-ip (default: same as --node-ip; first-server only)")
 	cmd.Flags().StringVar(&rke2Version, "rke2-version", "", "RKE2 version (default: the pinned kube-dc default)")
+	cmd.Flags().BoolVar(&embeddedRegistry, "embedded-registry", true, "Enable the RKE2 embedded spegel registry mirror; use --embedded-registry=false to opt out")
 	cmd.Flags().BoolVar(&force, "force", false, "Re-run even if rke2 is already active on the node (restarts to apply config)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Resolve + print the plan (incl. read-only SSH probes); change nothing")
 	// Join mode.

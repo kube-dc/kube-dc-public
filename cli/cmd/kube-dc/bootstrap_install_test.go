@@ -6,6 +6,18 @@ import (
 	"testing"
 )
 
+func TestBootstrapInstall_EmbeddedRegistryFlagDefaultsOn(t *testing.T) {
+	repo := ""
+	cmd := bootstrapInstallCmd(&repo)
+	f := cmd.Flags().Lookup("embedded-registry")
+	if f == nil {
+		t.Fatal("--embedded-registry flag missing")
+	}
+	if f.DefValue != "true" {
+		t.Fatalf("embedded registry default = %q, want true", f.DefValue)
+	}
+}
+
 func TestResolveInstallCIDRs_PresetDefaults(t *testing.T) {
 	pod, svc, dns, err := resolveInstallCIDRs("internal-only", nil)
 	if err != nil {

@@ -66,6 +66,35 @@ func TestJoinWorker_DryRun_RedactsTokenNoMutation(t *testing.T) {
 	}
 }
 
+func TestJoinWorker_ForceRefusesRunningVMs(t *testing.T) {
+	var out bytes.Buffer
+	ssh := joinSSH()
+	ssh.runs["systemctl is-active rke2-agent"] = "active"
+	ssh.runs["pgrep -fa"] = "4321 /usr/bin/qemu-kvm -name guest=example_vm"
+	o := joinBase(ssh, &out)
+	o.Force = true
+	err := JoinWorker(context.Background(), o)
+	if err == nil || !strings.Contains(err.Error(), "refusing to restart RKE2") {
+		t.Fatalf("running VM must block worker restart, got %v", err)
+	}
+	if ssh.putCalls != 0 || ssh.ranAny("systemctl restart rke2-agent") {
+		t.Fatal("VM safety failure must happen before script write/restart")
+	}
+}
+
+func TestJoinWorker_EmbeddedRegistryOptOutPropagates(t *testing.T) {
+	var out bytes.Buffer
+	ssh := joinSSH()
+	o := joinBase(ssh, &out)
+	o.DisableEmbeddedRegistry = true
+	if err := JoinWorker(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	if !ssh.ranAny("EMBEDDED_REGISTRY='false'") {
+		t.Errorf("opt-out was not passed to agent installer: %v", ssh.ranCmds)
+	}
+}
+
 func TestJoinWorker_HappyPath(t *testing.T) {
 	var out bytes.Buffer
 	ssh := joinSSH()
@@ -220,7 +249,7 @@ func TestEmbeddedAgent_EnvContractAndInvariants(t *testing.T) {
 	if len(s) == 0 {
 		t.Fatal("install-agent.sh did not embed")
 	}
-	for _, k := range []string{"SERVER_TOKEN", "NODE_NAME", "NODE_IP", "rke2-agent", "INSTALL_RKE2_TYPE"} {
+	for _, k := range []string{"SERVER_TOKEN", "NODE_NAME", "NODE_IP", "rke2-agent", "INSTALL_RKE2_TYPE", "registries_has_mirror", "--embedded-registry=false"} {
 		if !strings.Contains(s, k) {
 			t.Errorf("agent installer missing %q", k)
 		}

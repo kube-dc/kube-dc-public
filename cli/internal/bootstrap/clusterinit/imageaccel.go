@@ -118,6 +118,12 @@ func WriteImageAccel(fleetRepo, clusterName string, spec ImageAccelSpec, out io.
 			if err := ensureRegistryDepotSecret(fleetRepo, out); err != nil {
 				return err
 			}
+			// The registry HTTPRoute targets a dedicated Gateway listener.
+			// It is cluster-specific because the shared platform must stay
+			// healthy when registry-depot is disabled.
+			if err := ensureRegistryDepotListener(clusterDir, out); err != nil {
+				return err
+			}
 		}
 		file := filepath.Join(clusterDir, p.name+".yaml")
 		if err := os.WriteFile(file, []byte(p.yamlFn(clusterName)), 0o644); err != nil {

@@ -156,15 +156,18 @@ and the fleet never disagree), and memory-tiered kubelet reserves with a
 default is too small for an all-in-one node). The node comes up **NotReady**
 until Phase 3 installs the CNI — that's expected.
 
-Since CLI v0.5.2 it also enables the **RKE2 embedded registry mirror (spegel)**
+Since CLI v0.5.3 it also enables the **RKE2 embedded registry mirror (spegel)**
 on every node by default: nodes P2P-share image content, so repeated
-containerdisk/image pulls stay off the WAN. `EMBEDDED_REGISTRY=false` in the
-environment opts out, and an existing operator-managed
-`/etc/rancher/rke2/registries.yaml` is never overwritten. Pair it with the
+containerdisk/image pulls stay off the WAN. `--embedded-registry=false` opts out. An existing operator-managed
+`/etc/rancher/rke2/registries.yaml` is never overwritten, but default-on install
+refuses to restart RKE2 when that file has no non-empty `mirrors:` mapping. Pair it with the
 image-acceleration stack that `bootstrap init` scaffolds by default
 (tenant-cluster addons, zot registry depot, CDI OS-image mirror —
 `--image-acceleration=false` opts out; see the
 [enterprise install guide](private-ca-enterprise-install.md) §6).
+
+> v0.5.2 enabled the flags but its published starter omitted registry-depot.
+> v0.5.3 is the first complete default stack and also wires its Gateway listener.
 
 > ⚠️ When retrofitting spegel onto an **existing** cluster, restart
 > `rke2-server`/`rke2-agent` one node at a time and **drain or stop KubeVirt
@@ -174,7 +177,7 @@ image-acceleration stack that `bootstrap init` scaffolds by default
 Key flags: `--name` (RKE2 node-name; defaults to the positional arg — use the
 same name in `init`), `--node-ip` / `--external-ip` (override auto-detection),
 `--force` (re-run on an already-installed node — restarts to apply config
-changes), `--set POD_CIDR=…` (override a preset CIDR). Requires passwordless
+changes, but refuses while KubeVirt/QEMU workloads are resident), `--set POD_CIDR=…` (override a preset CIDR). Requires passwordless
 sudo (or a root login) on the node.
 
 **Reaching nodes through a bastion.** `install`, the joins, `fetch-kubeconfig`,
@@ -240,11 +243,18 @@ automatically from `/proc/meminfo`. The example below uses the
 ```bash
 sudo mkdir -p /etc/rancher/rke2/
 
+cat <<EOF | sudo tee /etc/rancher/rke2/registries.yaml
+mirrors:
+  "*":
+EOF
+
 cat <<EOF | sudo tee /etc/rancher/rke2/config.yaml
 node-name: master-1
 disable-cloud-controller: true
 disable: rke2-ingress-nginx              # Replaced by Envoy Gateway
 cni: none                                # Replaced by Kube-OVN
+embedded-registry: true
+supervisor-metrics: true
 cluster-cidr: "10.100.0.0/16"
 service-cidr: "10.101.0.0/16"
 cluster-dns: "10.101.0.11"
@@ -363,7 +373,7 @@ kube-dc bootstrap install master-2 \
   --name master-2 \
   --join-server root@203.0.113.10 \
   --role server \
-  --domain acme.com \
+  --domain kube.example.com \
   --preset cloud+public-vlan \
   --dry-run
 ```
@@ -389,6 +399,11 @@ On **each additional node** (`master-2`, `master-3`), create the RKE2 config and
 ```bash
 sudo mkdir -p /etc/rancher/rke2/
 
+cat <<EOF | sudo tee /etc/rancher/rke2/registries.yaml
+mirrors:
+  "*":
+EOF
+
 cat <<EOF | sudo tee /etc/rancher/rke2/config.yaml
 token: <TOKEN_FROM_MASTER_1>
 server: https://192.168.0.1:9345         # master-1 management IP
@@ -396,6 +411,8 @@ node-name: master-2                      # Use master-3 on the third node
 disable-cloud-controller: true
 disable: rke2-ingress-nginx
 cni: none
+embedded-registry: true
+supervisor-metrics: true
 node-label:
   - kube-dc-manager=true
   - kube-ovn/role=master
@@ -486,10 +503,24 @@ path validated end-to-end in the project's installer test plan.
 On your **bastion / workstation** (not necessarily a cluster node):
 
 ```bash
-# Linux amd64
-curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_linux_amd64 \
-  -o /usr/local/bin/kube-dc && sudo chmod +x /usr/local/bin/kube-dc
-# macOS: swap in kube-dc_darwin_amd64 / kube-dc_darwin_arm64
+# Linux amd64 — change asset for another platform
+asset=kube-dc_linux_amd64
+task_cli_tmp="$(mktemp -d)"
+curl -fSL https://github.com/kube-dc/kube-dc-public/releases/latest/download/${asset} \
+  -o "${task_cli_tmp}/${asset}"
+curl -fSL https://github.com/kube-dc/kube-dc-public/releases/latest/download/checksums.txt \
+  -o "${task_cli_tmp}/checksums.txt"
+if command -v sha256sum >/dev/null; then
+  ( cd "${task_cli_tmp}" && grep " ${asset}$" checksums.txt | sha256sum -c - )
+else
+  ( cd "${task_cli_tmp}" && grep " ${asset}$" checksums.txt | shasum -a 256 -c - )
+fi
+sudo install -m 0755 "${task_cli_tmp}/${asset}" /usr/local/bin/kube-dc
+rm -rf "${task_cli_tmp}"
+hash -r
+type -a kube-dc                 # expose an older PATH shadow, if one exists
+kube-dc version
+# macOS: set asset=kube-dc_darwin_amd64 or kube-dc_darwin_arm64
 kube-dc bootstrap doctor --no-tty     # verify local tooling
 ```
 
@@ -1220,6 +1251,11 @@ Additional worker nodes can be added to the management cluster in two ways:
 ```bash
 # On the new worker node
 sudo mkdir -p /etc/rancher/rke2/
+cat <<EOF | sudo tee /etc/rancher/rke2/registries.yaml
+mirrors:
+  "*":
+EOF
+
 cat <<EOF | sudo tee /etc/rancher/rke2/config.yaml
 token: <TOKEN_FROM_MASTER_1>
 server: https://192.168.0.1:9345

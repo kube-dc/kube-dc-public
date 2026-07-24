@@ -15,17 +15,22 @@ Browser-based authentication CLI for Kube-DC clusters, following patterns from A
 ### From Release
 
 ```bash
-# Linux (amd64)
-sudo curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_linux_amd64 -o /usr/local/bin/kube-dc && sudo chmod +x /usr/local/bin/kube-dc
-
-# Linux (arm64)
-sudo curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_linux_arm64 -o /usr/local/bin/kube-dc && sudo chmod +x /usr/local/bin/kube-dc
-
-# macOS (Apple Silicon)
-sudo curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_darwin_arm64 -o /usr/local/bin/kube-dc && sudo chmod +x /usr/local/bin/kube-dc
-
-# macOS (Intel)
-sudo curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_darwin_amd64 -o /usr/local/bin/kube-dc && sudo chmod +x /usr/local/bin/kube-dc
+# Linux amd64 (use kube-dc_linux_arm64, kube-dc_darwin_arm64, or
+# kube-dc_darwin_amd64 for another platform)
+asset=kube-dc_linux_amd64
+task_cli_tmp="$(mktemp -d)"
+curl -fSL "https://github.com/kube-dc/kube-dc-public/releases/latest/download/${asset}" -o "${task_cli_tmp}/${asset}"
+curl -fSL https://github.com/kube-dc/kube-dc-public/releases/latest/download/checksums.txt -o "${task_cli_tmp}/checksums.txt"
+if command -v sha256sum >/dev/null; then
+  ( cd "${task_cli_tmp}" && grep " ${asset}$" checksums.txt | sha256sum -c - )
+else
+  ( cd "${task_cli_tmp}" && grep " ${asset}$" checksums.txt | shasum -a 256 -c - )
+fi
+sudo install -m 0755 "${task_cli_tmp}/${asset}" /usr/local/bin/kube-dc
+rm -rf "${task_cli_tmp}"
+hash -r
+type -a kube-dc
+kube-dc version
 
 # Windows (PowerShell)
 Invoke-WebRequest -Uri https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_windows_amd64.exe -OutFile kube-dc.exe

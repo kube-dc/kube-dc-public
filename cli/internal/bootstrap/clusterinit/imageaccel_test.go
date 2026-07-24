@@ -41,6 +41,9 @@ func tempFleet(t *testing.T, cluster string, platformDirs ...string) string {
 	if err := os.WriteFile(filepath.Join(clusterDir, "kustomization.yaml"), []byte(kust), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(clusterDir, "platform.yaml"), []byte(genPlatformYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	return fleet
 }
 

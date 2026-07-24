@@ -74,6 +74,11 @@ type InstallOptions struct {
 
 	// RKE2Version overrides defaultRKE2Version.
 	RKE2Version string
+	// DisableEmbeddedRegistry opts out of RKE2's embedded spegel mirror.
+	// The zero value preserves the product default (enabled). This is a
+	// negative option deliberately: non-Cobra/API callers that predate
+	// this field keep the same default instead of silently disabling it.
+	DisableEmbeddedRegistry bool
 
 	// JoinToken + JoinServer turn a first-server install into an
 	// ADDITIONAL control-plane (server) join for HA/etcd-quorum.
@@ -131,6 +136,9 @@ func buildInstallEnv(o InstallOptions) map[string]string {
 		"POD_CIDR":     o.PodCIDR,
 		"SERVICE_CIDR": o.ServiceCIDR,
 		"CLUSTER_DNS":  o.ClusterDNS,
+	}
+	if o.DisableEmbeddedRegistry {
+		env["EMBEDDED_REGISTRY"] = "false"
 	}
 	// A non-default supervisor port only applies to a control-plane join;
 	// otherwise let the script's own 9345 default stand (mirrors the
@@ -243,6 +251,11 @@ func Install(ctx context.Context, o InstallOptions) error {
 	if wasActive && !o.Force {
 		fmt.Fprintf(out, "[install] rke2-server already active on %s — nothing to do (use --force to re-run).\n", o.NodeName)
 		return nil
+	}
+	if wasActive {
+		if err := ensureNoRunningVMs(ctx, o.SSH, o.Host); err != nil {
+			return fmt.Errorf("rke2 install: pre-restart VM safety gate: %w", err)
+		}
 	}
 
 	// Push the installer.
@@ -408,6 +421,27 @@ func remoteInstallCmd(env map[string]string, scriptPath string) string {
 	return b.String()
 }
 
+// runningVMProbeCmd is intentionally process-based rather than Kubernetes-API
+// based: bootstrap install may run while the apiserver is unavailable, and the
+// failure we are preventing is local to this node. The bracketed first letter
+// keeps pgrep from matching its own command line.
+const runningVMProbeCmd = `sudo -n sh -c 'command -v pgrep >/dev/null || { echo "pgrep not found" >&2; exit 127; }; pgrep -fa "[q]emu-system|[q]emu-kvm|[v]irt-launcher" || true'`
+
+// ensureNoRunningVMs refuses an in-place RKE2 restart while KubeVirt/QEMU
+// workloads are still resident. Restarting RKE2 under a live RBD-backed VMI
+// can race kubelet/CSI teardown and leave an unkillable mount. Operators must
+// migrate/drain or stop the VMs first; there is deliberately no unsafe bypass.
+func ensureNoRunningVMs(ctx context.Context, ssh ports.SSHClient, host ports.SSHHost) error {
+	out, err := ssh.Run(ctx, host, runningVMProbeCmd)
+	if err != nil {
+		return fmt.Errorf("cannot verify that the node has no running VMs: %w", err)
+	}
+	if procs := strings.TrimSpace(string(out)); procs != "" {
+		return fmt.Errorf("refusing to restart RKE2 while KubeVirt/QEMU processes are running; migrate/drain or stop every VM on this node, then retry:\n%s", procs)
+	}
+	return nil
+}
+
 // shellQuote single-quotes a value for safe shell interpolation.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
@@ -452,6 +486,11 @@ func renderPlan(out io.Writer, o InstallOptions, env map[string]string) {
 	fmt.Fprintf(out, "  cluster-cidr:      %s\n", env["POD_CIDR"])
 	fmt.Fprintf(out, "  service-cidr:      %s\n", env["SERVICE_CIDR"])
 	fmt.Fprintf(out, "  cluster-dns:       %s\n", env["CLUSTER_DNS"])
+	if o.DisableEmbeddedRegistry {
+		fmt.Fprintln(out, "  embedded registry: disabled (explicit opt-out)")
+	} else {
+		fmt.Fprintln(out, "  embedded registry: enabled (spegel, wildcard mirror)")
+	}
 	fmt.Fprintf(out, "  tls-san:           %s, kube-api.%s, %s, %s\n", o.Domain, o.Domain, env["EXTERNAL_IP"], env["NODE_IP"])
 	fmt.Fprintln(out, "  cni:               none (kube-ovn installed later by Flux)")
 	fmt.Fprintln(out, "  kubelet reserved + max-pods: auto-tiered from the node's memory")

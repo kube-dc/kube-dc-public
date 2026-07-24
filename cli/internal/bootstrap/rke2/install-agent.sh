@@ -129,8 +129,34 @@ log_info "Node memory: ${MEM_TOTAL_GIB} GiB → system-reserved=${KUBELET_SYS_RE
 # any capacity" — RKE2 docs). Same env knobs as install-server.sh.
 EMBEDDED_REGISTRY="${EMBEDDED_REGISTRY:-true}"
 REGISTRY_MIRROR_SCOPE="${REGISTRY_MIRROR_SCOPE:-*}"
+# Return success only when registries.yaml contains at least one mirror key.
+# Enabling embedded-registry against a configs-only/empty mirrors file hangs
+# affected RKE2 versions, so preserve operator files but fail closed.
+registries_has_mirror() {
+    awk '
+        BEGIN { in_mirrors = 0; found = 0 }
+        /^mirrors:[[:space:]]*/ {
+            in_mirrors = 1
+            rest = $0
+            sub(/^mirrors:[[:space:]]*/, "", rest)
+            sub(/[[:space:]]+#.*/, "", rest)
+            sub(/^#.*/, "", rest)
+            if (rest != "" && rest != "{}") found = 1
+            next
+        }
+        in_mirrors && /^[^[:space:]#]/ { in_mirrors = 0 }
+        in_mirrors && /^[[:space:]]+[^[:space:]#][^:]*:[[:space:]]*/ { found = 1 }
+        END { exit(found ? 0 : 1) }
+    ' "$1"
+}
+
 if [[ "${EMBEDDED_REGISTRY}" == "true" ]]; then
     if [[ -f "${RANCHER_DIR}/registries.yaml" ]]; then
+        if ! registries_has_mirror "${RANCHER_DIR}/registries.yaml"; then
+            log_error "Refusing to enable the embedded registry: existing ${RANCHER_DIR}/registries.yaml has no mirror entries."
+            log_error "Add a non-empty mirrors: mapping, or rerun kube-dc bootstrap install with --embedded-registry=false."
+            exit 1
+        fi
         # Never truncate an operator-managed registries.yaml (private
         # mirrors/credentials/TLS live here). Keep it; the embedded registry
         # still works with whatever mirrors it defines.

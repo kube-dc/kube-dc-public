@@ -94,6 +94,13 @@ func TestBuildInstallEnv(t *testing.T) {
 	if env2["EXTERNAL_IP"] != "203.0.113.9" || env2["RKE2_VERSION"] != "v1.36.0+rke2r1" {
 		t.Errorf("explicit overrides not honored: %+v", env2)
 	}
+	if _, ok := env["EMBEDDED_REGISTRY"]; ok {
+		t.Error("default-on embedded registry should use the script default, not an override")
+	}
+	disabled := buildInstallEnv(InstallOptions{DisableEmbeddedRegistry: true})
+	if disabled["EMBEDDED_REGISTRY"] != "false" {
+		t.Errorf("explicit opt-out not propagated: %+v", disabled)
+	}
 }
 
 func TestRemoteInstallCmd(t *testing.T) {
@@ -244,6 +251,40 @@ func TestInstall_HappyPath(t *testing.T) {
 	}
 	if !ssh.ranAny("NODE_NAME='dc1'") || !ssh.ranAny("bash "+remoteScriptPath) {
 		t.Errorf("installer not run with env: %v", ssh.ranCmds)
+	}
+}
+
+func TestInstall_ForceRefusesRunningVMsBeforeMutation(t *testing.T) {
+	ssh := &fakeSSH{runs: map[string]string{
+		"ip -4 route get":                 "1.1.1.1 dev eth0 src 198.51.100.5",
+		"systemctl is-active rke2-server": "active",
+		"pgrep -fa":                       "1234 /usr/bin/qemu-system-x86_64 -name guest=example_vm",
+	}}
+	o := baseOpts(ssh)
+	o.Force = true
+	err := Install(context.Background(), o)
+	if err == nil || !strings.Contains(err.Error(), "refusing to restart RKE2") {
+		t.Fatalf("running VM must block restart, got %v", err)
+	}
+	if ssh.putCalls != 0 || ssh.ranAny("systemctl restart rke2-server") {
+		t.Fatal("VM safety failure must happen before script write/restart")
+	}
+}
+
+func TestInstall_ForceFailsClosedWhenVMProbeFails(t *testing.T) {
+	ssh := &fakeSSH{
+		runs: map[string]string{
+			"ip -4 route get":                 "1.1.1.1 dev eth0 src 198.51.100.5",
+			"systemctl is-active rke2-server": "active",
+			"pgrep -fa":                       "",
+		},
+		runErr: map[string]error{"pgrep -fa": fmt.Errorf("sudo denied")},
+	}
+	o := baseOpts(ssh)
+	o.Force = true
+	err := Install(context.Background(), o)
+	if err == nil || !strings.Contains(err.Error(), "cannot verify") {
+		t.Fatalf("failed VM probe must fail closed, got %v", err)
 	}
 }
 

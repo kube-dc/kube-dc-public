@@ -52,9 +52,12 @@ type JoinWorkerOptions struct {
 	CPPort int
 
 	RKE2Version string
-	Force       bool
-	DryRun      bool
-	Out         io.Writer
+	// DisableEmbeddedRegistry opts this worker out of participation in
+	// the RKE2 embedded spegel mirror. Zero value keeps the default on.
+	DisableEmbeddedRegistry bool
+	Force                   bool
+	DryRun                  bool
+	Out                     io.Writer
 }
 
 // JoinWorker installs an rke2-agent on the worker and joins it to the
@@ -120,6 +123,11 @@ func JoinWorker(ctx context.Context, o JoinWorkerOptions) error {
 		fmt.Fprintf(out, "[join] rke2-agent already active on %s — nothing to do (use --force to re-run).\n", o.WorkerName)
 		return nil
 	}
+	if wasActive {
+		if err := ensureNoRunningVMs(ctx, o.SSH, o.Worker); err != nil {
+			return fmt.Errorf("rke2 join: pre-restart VM safety gate: %w", err)
+		}
+	}
 
 	fmt.Fprintf(out, "[join] pushing RKE2 agent installer to %s\n", remoteAgentScriptPath)
 	if err := o.SSH.Put(ctx, o.Worker, remoteAgentScriptPath, installAgentScript, 0o755); err != nil {
@@ -138,6 +146,9 @@ func JoinWorker(ctx context.Context, o JoinWorkerOptions) error {
 	}
 	if o.RKE2Version != "" {
 		env["RKE2_VERSION"] = o.RKE2Version
+	}
+	if o.DisableEmbeddedRegistry {
+		env["EMBEDDED_REGISTRY"] = "false"
 	}
 	cmd := remoteAgentCmd(env, remoteAgentScriptPath, o.JoinToken, o.CPHost, o.WorkerIP)
 	res, err := o.SSH.Run(ctx, o.Worker, cmd)
@@ -246,5 +257,10 @@ func renderJoinPlan(out io.Writer, o JoinWorkerOptions) {
 	fmt.Fprintf(out, "  join server:       %s:%d\n", o.CPHost, o.CPPort)
 	fmt.Fprintf(out, "  join token:        (from control-plane, redacted)\n")
 	fmt.Fprintf(out, "  RKE2 version:      %s\n", ver)
+	if o.DisableEmbeddedRegistry {
+		fmt.Fprintln(out, "  embedded registry: disabled (explicit opt-out)")
+	} else {
+		fmt.Fprintln(out, "  embedded registry: enabled (spegel, wildcard mirror)")
+	}
 	fmt.Fprintln(out, "  kubelet reserved + max-pods: auto-tiered from the worker's memory")
 }
