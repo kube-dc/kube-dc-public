@@ -1,13 +1,17 @@
 package screens
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 	bttui "github.com/shalb/kube-dc/cli/internal/bootstrap/tui"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/tui/screens/initform"
 )
 
 // RootModel is the top-level Bubble Tea model that composes every
@@ -25,12 +29,29 @@ type RootModel struct {
 	active int
 
 	keys bttui.KeyMap
+
+	// repoRoot is the fleet checkout the root TUI was launched against
+	// (--repo resolution) — the New Cluster tab inherits it, including
+	// on the discard-reset path.
+	repoRoot string
+
+	// Init-tab plumbing (T6 root-router embed). initOpts is the
+	// InitOptions the embedded panel writes into on Apply; initPanel is
+	// the live panel model (rebuilt fresh when the operator backs out
+	// so a later visit starts clean). Read post-run via InitResult.
+	initOpts  *clusterinit.InitOptions
+	initPanel *initform.PanelModel
 }
 
 // tabSpec is one entry in the top tab bar.
 type tabSpec struct {
 	name  string
 	model tea.Model
+	// modal marks a screen whose body accepts free TEXT input (the init
+	// panel). The root must not intercept its keys — 'q', '[', ']' and
+	// digits are typed characters there, not navigation. Only Ctrl+C
+	// stays global.
+	modal bool
 }
 
 // RootTab indexes the tabs in display order. Keep these stable — the
@@ -40,6 +61,7 @@ type RootTab int
 const (
 	RootTabFleet RootTab = iota
 	RootTabContext
+	RootTabInit
 )
 
 // NewRootModel builds the integrated bootstrap TUI rooted at the named
@@ -59,13 +81,31 @@ func NewRootModel(repoRoot string, startTab RootTab) *RootModel {
 		contexts = newContextLoadErrorModel(err)
 	}
 
+	// The embedded init panel inherits the ROOT's fleet context
+	// (manual TTY finding 2026-07-20: launching `bootstrap --repo
+	// <existing-fleet>` and opening New Cluster showed new-repo with an
+	// empty repo path — the operator's context was dropped). Repo path
+	// prefills from the root's --repo resolution; when that checkout
+	// already carries scaffolded cluster overlays, the mode defaults to
+	// existing-fleet (add cluster N+1, inherit sibling pins) — both
+	// remain ordinary editable fields. No live-cluster probe here: the
+	// gather is synchronous (3s budget) and would delay every
+	// `bootstrap` launch; the standalone `bootstrap init` path carries
+	// it. On Apply the root program exits and the cobra layer prints
+	// the equivalent init command.
+	initOpts, initPanel := newInitTabPanel(repoRoot)
+
 	r := &RootModel{
 		tabs: []tabSpec{
 			{name: "Fleet", model: fleet},
 			{name: "Contexts", model: contexts},
+			{name: "New Cluster", model: initPanel, modal: true},
 		},
-		active: int(startTab),
-		keys:   bttui.DefaultKeyMap(),
+		active:    int(startTab),
+		keys:      bttui.DefaultKeyMap(),
+		repoRoot:  repoRoot,
+		initOpts:  initOpts,
+		initPanel: initPanel,
 	}
 	if r.active < 0 || r.active >= len(r.tabs) {
 		r.active = 0
@@ -106,6 +146,40 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 	case tea.KeyPressMsg:
+		// A modal tab (the init panel) owns its keys DYNAMICALLY
+		// (manual TTY finding 2026-07-20 — a static always-modal gate
+		// trapped operators on the tab):
+		//   - while a text field is EDITING, every key except Ctrl+C is
+		//     typed input ('q', digits, brackets included);
+		//   - in NAV mode the root's tab-switch keys work normally and
+		//     PRESERVE the panel state (come back later, nothing lost);
+		//     'q' stays the panel's own "discard + back" (handled in
+		//     forwardToActive), and Ctrl+C quits globally.
+		if m.tabs[m.active].modal {
+			if msg.String() == "ctrl+c" {
+				return m, tea.Quit
+			}
+			if m.initPanel != nil && m.initPanel.Editing() {
+				return m.forwardToActive(msg)
+			}
+			switch {
+			case key.Matches(msg, m.keys.TopTabNext):
+				m.active = (m.active + 1) % len(m.tabs)
+				return m, nil
+			case key.Matches(msg, m.keys.TopTabPrev):
+				m.active = (m.active - 1 + len(m.tabs)) % len(m.tabs)
+				return m, nil
+			case key.Matches(msg, m.keys.TopTab1):
+				m.active = 0
+				return m, nil
+			case key.Matches(msg, m.keys.TopTab2):
+				m.active = 1
+				return m, nil
+			case key.Matches(msg, m.keys.TopTab3):
+				return m, nil // already here
+			}
+			return m.forwardToActive(msg)
+		}
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
@@ -125,15 +199,44 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.active = 1
 			}
 			return m, nil
+		case key.Matches(msg, m.keys.TopTab3):
+			if 2 < len(m.tabs) {
+				m.active = 2
+			}
+			return m, nil
 		}
 	}
 	// Forward everything else (unhandled keys, ticks, probe completions)
-	// to the ACTIVE screen. Both current tabs are coherent under this:
+	// to the ACTIVE screen. Both non-modal tabs are coherent under this:
 	// Fleet is the start tab and owns the async probes/ticks it starts;
 	// Contexts loads synchronously in its constructor (Init is a no-op),
 	// so it has no in-flight async result that could be dropped here.
+	return m.forwardToActive(msg)
+}
+
+// forwardToActive routes msg to the active screen, then post-processes
+// the init panel's terminal states: a CANCELLED panel ('q' in nav mode)
+// becomes "back to Fleet" with a fresh panel (its tea.Quit is
+// swallowed — quitting the whole program because the operator backed
+// out of one tab is wrong); an APPLIED panel lets the quit through so
+// the cobra layer can print the equivalent init command (InitResult).
+func (m *RootModel) forwardToActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.tabs[m.active].model, cmd = m.tabs[m.active].model.Update(msg)
+	if m.tabs[m.active].modal && m.initPanel != nil {
+		if m.initPanel.Cancelled() {
+			// Discard = fresh FORM, same CONTEXT — the rebuilt panel
+			// re-inherits the root's fleet repo/mode, exactly like the
+			// first visit.
+			m.initOpts, m.initPanel = newInitTabPanel(m.repoRoot)
+			m.tabs[m.active].model = m.initPanel
+			m.active = int(RootTabFleet)
+			return m, nil // swallow the panel's tea.Quit
+		}
+		if m.initPanel.Applied() {
+			return m, tea.Quit
+		}
+	}
 	return m, cmd
 }
 
@@ -183,6 +286,68 @@ func (m *RootModel) renderTabBar() string {
 		pad = 1
 	}
 	return " " + bar + strings.Repeat(" ", pad) + hint
+}
+
+// newInitTabPanel builds the New Cluster tab's options+panel with the
+// root's fleet context inherited (repo path always; existing-fleet mode
+// when the checkout has scaffolded siblings). Used at construction AND
+// on the discard-reset path so both start identically.
+func newInitTabPanel(repoRoot string) (*clusterinit.InitOptions, *initform.PanelModel) {
+	o := &clusterinit.InitOptions{Repo: repoRoot}
+	if hasFleetSiblings(repoRoot) {
+		o.FleetMode = clusterinit.FleetExistingFleet
+	}
+	return o, initform.NewEmbeddedPanel(o, "", nil)
+}
+
+// hasFleetSiblings reports whether repoRoot already contains at least
+// one scaffolded cluster overlay (clusters/<name>/cluster-config.env,
+// including the nested eu/dc1-shape one level deeper). That is the
+// signal the checkout is an EXISTING fleet — the New Cluster tab then
+// defaults to fleet-mode existing-fleet instead of new-repo.
+func hasFleetSiblings(repoRoot string) bool {
+	base := filepath.Join(repoRoot, "clusters")
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(base, e.Name(), "cluster-config.env")); err == nil {
+			return true
+		}
+		// Nested cluster names (clusters/eu/dc1/…) sit one level deeper.
+		sub, err := os.ReadDir(filepath.Join(base, e.Name()))
+		if err != nil {
+			continue
+		}
+		for _, se := range sub {
+			if se.IsDir() {
+				if _, err := os.Stat(filepath.Join(base, e.Name(), se.Name(), "cluster-config.env")); err == nil {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// InitResult reports the embedded init panel's outcome after the
+// program exits: the equivalent `kube-dc bootstrap init …` command and
+// true when the operator completed Apply; ("", false) otherwise. The
+// cobra `bootstrap` entry prints the command so the operator can run
+// the actual install (the root TUI never runs the apply engine itself).
+func (m *RootModel) InitResult() (string, bool) {
+	if m.initPanel == nil || m.initOpts == nil {
+		return "", false
+	}
+	eq, err := m.initPanel.Result(m.initOpts)
+	if err != nil {
+		return "", false
+	}
+	return eq, true
 }
 
 // contextLoadErrorModel is the placeholder we render in place of the

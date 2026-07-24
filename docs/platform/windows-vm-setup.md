@@ -1,10 +1,20 @@
-# Windows 11 VM Tutorial - Complete Setup Guide
+# Windows 11 VM Setup — Operator Guide (building the golden)
 
-This comprehensive guide covers the complete process of setting up Windows 11 VMs in KubeVirt, from infrastructure setup to golden image creation and deployment.
+This is the **one-time operator task** that produces the Windows 11 golden image for a
+cluster. Once the golden is built and published to the cluster's S3 OS-image mirror
+(`s3.<your-domain>/cdi-os-images/windows/11/latest/windows11-x64-golden.qcow2`), it
+appears in the Console UI Operating System dropdown as **Windows 11 Enterprise (Golden
+Image)**, and **end users create Windows VMs from the console** — see
+[Creating a VM](/cloud/creating-vm#windows-11). Users do not run this guide.
+
+:::note Storage requirement
+The finished golden is ~75 GB. Each Windows VM clones it, so a user's project needs
+**~75–80 GB of free storage quota** to launch one.
+:::
 
 ## Overview
 
-This tutorial provides two deployment methods:
+This guide provides two deployment methods:
 
 1. **Golden Image Deployment** (Recommended) - Deploy pre-configured VMs in 5-10 minutes
 2. **Fresh Installation** - Create custom Windows installations with full control
@@ -139,10 +149,10 @@ spec:
   ingressClassName: nginx
   tls:
   - hosts:
-    - iso.stage.kube-dc.com
+    - iso.example.com
     secretName: iso-server-tls
   rules:
-  - host: iso.stage.kube-dc.com
+  - host: iso.example.com
     http:
       paths:
       - path: /
@@ -205,8 +215,8 @@ kubectl cp hack/windows/install-openssh-windows.ps1 iso/iso-upload-pod:/storage/
 kubectl delete pod iso-upload-pod -n iso --wait=true
 
 # Verify files are accessible
-curl -I https://iso.stage.kube-dc.com/win11-x64.iso
-curl -I https://iso.stage.kube-dc.com/virtio-win.iso
+curl -I https://iso.example.com/win11-x64.iso
+curl -I https://iso.example.com/virtio-win.iso
 ```
 
 ## Step 3: Fresh Windows Installation
@@ -220,20 +230,20 @@ Use the complete VM manifest that includes all required DataVolumes:
 kubectl apply -f hack/windows/windows11-vm.yaml
 
 # Monitor DataVolume download progress
-kubectl get dv -n shalb-dev
+kubectl get dv -n <project-namespace>
 
 # Check VM status
-kubectl get vm,vmi -n shalb-dev | grep windows11
+kubectl get vm,vmi -n <project-namespace> | grep windows11
 ```
 
 ### 3.2 Windows Installation Process
 
 ```bash
 # Access VM console via VNC
-virtctl vnc windows11-vm -n shalb-dev
+virtctl vnc windows11-vm -n <project-namespace>
 
 # Or use VNC proxy
-virtctl vnc windows11-vm -n shalb-dev --proxy-only --port 5900
+virtctl vnc windows11-vm -n <project-namespace> --proxy-only --port 5900
 # Then connect VNC client to localhost:5900
 ```
 
@@ -264,12 +274,12 @@ After Windows installation, configure SSH and RDP access:
 
 ```powershell
 # Method 1: Download and run script
-Invoke-WebRequest -Uri "https://iso.stage.kube-dc.com/install-openssh-windows.ps1" -OutFile "install-openssh-windows.ps1"
+Invoke-WebRequest -Uri "https://iso.example.com/install-openssh-windows.ps1" -OutFile "install-openssh-windows.ps1"
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 .\install-openssh-windows.ps1
 
 # Method 2: Direct execution (bypass execution policy)
-PowerShell -ExecutionPolicy Bypass -Command "Invoke-Expression (Invoke-WebRequest -Uri 'https://iso.stage.kube-dc.com/install-openssh-windows.ps1').Content"
+PowerShell -ExecutionPolicy Bypass -Command "Invoke-Expression (Invoke-WebRequest -Uri 'https://iso.example.com/install-openssh-windows.ps1').Content"
 ```
 
 **Script Features:**
@@ -291,8 +301,8 @@ PowerShell -ExecutionPolicy Bypass -Command "Invoke-Expression (Invoke-WebReques
 # Options: Generalize, Enter System Out-of-Box Experience (OOBE), Shutdown
 
 # 2. Stop the source VM (CRITICAL for export)
-kubectl patch vm windows11-vm -n shalb-dev --type merge -p '{"spec":{"runStrategy":"Halted"}}'
-kubectl wait --for=delete vmi/windows11-vm -n shalb-dev --timeout=300s
+kubectl patch vm windows11-vm -n <project-namespace> --type merge -p '{"spec":{"runStrategy":"Halted"}}'
+kubectl wait --for=delete vmi/windows11-vm -n <project-namespace> --timeout=300s
 ```
 
 ### 4.2 Export to QCOW2 Golden Image
@@ -303,7 +313,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: export-golden-image
-  namespace: shalb-dev
+  namespace: <project-namespace>
 spec:
   restartPolicy: Never
   containers:
@@ -348,20 +358,20 @@ spec:
 ```bash
 # Export golden image
 kubectl apply -f hack/windows/export-golden-image.yaml
-kubectl wait --for=condition=Ready pod/export-golden-image -n shalb-dev --timeout=120s
+kubectl wait --for=condition=Ready pod/export-golden-image -n <project-namespace> --timeout=120s
 
 # Monitor export progress
-kubectl logs -n shalb-dev export-golden-image -f
+kubectl logs -n <project-namespace> export-golden-image -f
 
 # Manual copy to ISO server (if curl upload fails)
-kubectl cp shalb-dev/export-golden-image:/pvc/windows11-x64-golden.qcow2 /tmp/
+kubectl cp <project-namespace>/export-golden-image:/pvc/windows11-x64-golden.qcow2 /tmp/
 kubectl cp /tmp/windows11-x64-golden.qcow2 iso/iso-upload-pod:/storage/
 
 # Verify golden image is available
-curl -I https://iso.stage.kube-dc.com/windows11-x64-golden.qcow2
+curl -I https://iso.example.com/windows11-x64-golden.qcow2
 
 # Clean up export pod
-kubectl delete pod export-golden-image -n shalb-dev --wait=true
+kubectl delete pod export-golden-image -n <project-namespace> --wait=true
 ```
 
 ## Step 5: Deploy from Golden Image
@@ -375,13 +385,13 @@ kubectl apply -f hack/windows/win11-x64.yaml
 # Create SSH key secret for key injection
 kubectl create secret generic authorized-keys-default \
   --from-file=key1=~/.ssh/id_rsa.pub \
-  -n shalb-dev
+  -n <project-namespace>
 
 # Monitor deployment
-kubectl get vm,vmi,dv -n shalb-dev | grep win11-x64
+kubectl get vm,vmi,dv -n <project-namespace> | grep win11-x64
 
 # Get VM IP when ready
-kubectl get vmi win11-x64 -n shalb-dev -o jsonpath='{.status.interfaces[0].ipAddress}'
+kubectl get vmi win11-x64 -n <project-namespace> -o jsonpath='{.status.interfaces[0].ipAddress}'
 
 # SSH to VM (once guest agent is ready)
 ssh kube-dc@<vm-ip>
@@ -484,10 +494,10 @@ kubectl top pods -n <namespace> | grep virt-launcher
 
 Once deployed, the following resources are available:
 
-- **Windows 11 ISO**: `https://iso.stage.kube-dc.com/win11-x64.iso` (5.4GB)
-- **VirtIO Drivers**: `https://iso.stage.kube-dc.com/virtio-win.iso` (700MB)
-- **SSH Script**: `https://iso.stage.kube-dc.com/install-openssh-windows.ps1` (5KB)
-- **Golden Image**: `https://iso.stage.kube-dc.com/windows11-x64-golden.qcow2` (21.3GB)
+- **Windows 11 ISO**: `https://iso.example.com/win11-x64.iso` (5.4GB)
+- **VirtIO Drivers**: `https://iso.example.com/virtio-win.iso` (700MB)
+- **SSH Script**: `https://iso.example.com/install-openssh-windows.ps1` (5KB)
+- **Golden Image**: `https://iso.example.com/windows11-x64-golden.qcow2` (21.3GB)
 
 ## Security Considerations
 

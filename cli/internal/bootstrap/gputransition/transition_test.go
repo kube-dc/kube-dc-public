@@ -110,6 +110,26 @@ func TestRunReverseVMPassthroughToPodHAMi(t *testing.T) {
 	}
 }
 
+func TestRunAlreadyAtHealthyTargetIsTrueNoOp(t *testing.T) {
+	cluster := &fakeCluster{states: []ports.GPUNodeTransitionState{
+		nodeState(ModeVMPassthrough, false, "nvidia-sandbox-device-plugin-daemonset"),
+	}}
+	fleet := &fakeFleet{mode: ModeVMPassthrough}
+	var out bytes.Buffer
+	o := runOptions(cluster, fleet)
+	o.Out = &out
+	result, err := Run(context.Background(), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Resumed || result.Revision != "" || fleet.applyCalls != 0 || len(cluster.schedulable) != 0 {
+		t.Fatalf("no-op result=%+v apply=%d sched=%v", result, fleet.applyCalls, cluster.schedulable)
+	}
+	if !strings.Contains(out.String(), "already at vm-passthrough") || !strings.Contains(out.String(), "no cordon") {
+		t.Fatalf("output=%s", out.String())
+	}
+}
+
 func TestRunLegacyHAMiToDRA(t *testing.T) {
 	cluster := &fakeCluster{states: []ports.GPUNodeTransitionState{
 		nodeState(ModePodHAMi, false, "hami-device-plugin"),

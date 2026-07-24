@@ -86,6 +86,65 @@ A FIP maps all ports from an external IP directly to a VM. The VM is fully acces
 
 ---
 
+## Network MTU (1400)
+
+Kube-DC project networks use an encapsulated overlay, so the usable MTU inside a project is **1400 bytes**, not the 1500 you may be used to. Your VMs and pods are configured with this automatically — a VM's interface picks up 1400 over DHCP, and pods get it from the network plugin. You normally never need to think about it.
+
+**The exception is software that assumes 1500 and doesn't inherit the MTU from its host — most commonly Docker.** If you install Docker inside a VM, its default bridge is created with an MTU of 1500. Containers on that bridge then send packets too large for the 1400 network, and those packets are silently dropped.
+
+This produces a distinctive failure: **small requests succeed, large transfers hang and then fail.**
+
+```
+# Succeeds — a small response fits
+RUN curl -v https://github.com/example/repo
+
+# Fails — bulk data does not
+RUN git clone --depth 1 https://github.com/example/repo /src
+  error: RPC failed; curl 56 Recv failure: Connection reset by peer
+  fatal: expected flush after ref listing
+```
+
+It looks like a broken network, but connectivity is fine — only the oversized packets are lost. `docker pull`, `apt-get`, `npm install` and similar can fail the same way.
+
+### Which side is at fault?
+
+Run the failing command **directly on the VM**, outside Docker:
+
+| Result | Cause | Fix |
+|--------|-------|-----|
+| Works on the VM, fails in Docker | Docker's container MTU | Set Docker's MTU (below) |
+| Fails on the VM too | The VM's own interface | Check `ip link show` — it should report `mtu 1400` |
+
+### Fix: set Docker's MTU
+
+Create or edit `/etc/docker/daemon.json` inside the VM:
+
+```json
+{
+  "mtu": 1400
+}
+```
+
+Then restart Docker:
+
+```bash
+sudo systemctl restart docker
+```
+
+Verify a container now gets the right MTU:
+
+```bash
+# Should print 1400. Before the fix it prints 1500.
+docker run --rm alpine ip link show eth0
+
+# The VM itself should already show 1400
+ip link show
+```
+
+If you build with BuildKit or `docker buildx`, recreate the builder after changing the daemon config so it picks up the new MTU — or build with `--network=host` so build steps use the VM's interface directly.
+
+Other container runtimes take the same setting: Podman uses `mtu` in its network config, and standalone containerd/CNI sets it in the bridge plugin config.
+
 ## Managing Networking via UI
 
 The Console UI provides a **Networking** section with three tabs for managing network resources:

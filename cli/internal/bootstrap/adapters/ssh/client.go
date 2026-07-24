@@ -533,9 +533,14 @@ func (c *Client) recordNewHost(path, hostname string, key ssh.PublicKey) error {
 	if err != nil {
 		return fmt.Errorf("ssh: record new host key for %s: %w", hostname, err)
 	}
-	defer f.Close()
 	if _, err := f.WriteString(line + "\n"); err != nil {
-		return fmt.Errorf("ssh: record new host key for %s: %w", hostname, err)
+		return errors.Join(fmt.Errorf("ssh: record new host key for %s: %w", hostname, err), f.Close())
+	}
+	if err := f.Sync(); err != nil {
+		return errors.Join(fmt.Errorf("ssh: sync new host key for %s: %w", hostname, err), f.Close())
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("ssh: close known_hosts after recording %s: %w", hostname, err)
 	}
 	if c.acceptedHosts == nil {
 		c.acceptedHosts = map[string]string{}

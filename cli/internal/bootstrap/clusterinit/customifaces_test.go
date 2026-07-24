@@ -388,4 +388,3 @@ sops:
 		t.Errorf("infrastructure.yaml missing enp1s0:\n%s", infra)
 	}
 }
-

@@ -35,8 +35,20 @@ Kube-DC virtualization is powered by [KubeVirt](https://kubevirt.io/) and uses t
 3. **Version** *(optional, advanced)* — most Linux families now expose multiple maintained versions (e.g., Ubuntu 24.04 currently keeps `20260321`, `20260225`, `20260209`, `20260131`). Leave the dropdown on **Latest** to take the newest mirrored bytes — Kube-DC keeps `/latest/` pointing at the freshest version per family, refreshed weekly. Pin a specific version only if you need reproducibility against a known build.
 4. **vCPUs** and **RAM** — set resources based on your workload
 5. **Root Storage Size** — set disk size (e.g., 12 GB for Linux, 70 GB for Windows)
+6. **Root disk storage** — the real storage choice for the VM (see [below](#root-disk-storage)):
+   - **Local disk (default)** — node-local storage; best durable-write latency. No snapshots, no live migration.
+   - **Shared RBD** — shared Ceph-backed storage; supports snapshots and (optionally) live migration. Slower durable writes.
+   - When **Shared RBD** is selected, an **Enable live migration** checkbox appears — tick it to let the VM move between nodes during maintenance (available when the OS has a Block golden and the cluster has ≥2 CPU-compatible nodes).
+7. **Accelerator** *(when entitled and enabled)* — keep **No GPU** for an
+   ordinary VM, or select an available Dedicated GPU VM profile. GPU VMs cannot
+   live migrate; the wizard clears live migration and maintenance requires a
+   shutdown/restart. Follow the [guest driver and lifecycle guide](gpu-vm-guests.md)
+   after first boot.
 
 <img src={require('./images/vm-creation-step1.png').default} alt="VM Creation" style={{maxWidth: '700px', width: '100%'}} />
+
+A compact summary under the selector shows exactly what will be provisioned
+(root disk, provisioning, snapshots, live migration) before you submit.
 
 ### Step 3: Review and Create
 
@@ -283,7 +295,21 @@ spec:
 
 ### Windows 11
 
-Windows VMs require additional configuration for UEFI boot, TPM, and Hyper-V features:
+**From the Console UI (simplest):** pick **Windows 11 Enterprise (Golden Image)** in
+the Operating System dropdown, set Root Storage to **70 GB**, and create. The console
+clones a pre-built golden (VirtIO drivers, QEMU guest agent and SSH/RDP already
+installed) and applies the correct UEFI + TPM + Hyper-V configuration automatically.
+The VM boots to the Windows lock screen in a few minutes — open **Launch Remote
+Console** to use it.
+
+:::tip Storage quota
+A Windows golden is ~75 GB, so its clone needs **~75–80 GB of free storage quota** in
+your project. If the project is near its storage limit the clone fails with a quota
+error — free space or request more before creating a Windows VM.
+:::
+
+The kubectl equivalent, showing the UEFI boot, TPM and Hyper-V features Windows
+requires:
 
 <details>
 <summary>Windows 11 — DataVolume + VirtualMachine manifest</summary>
@@ -303,7 +329,9 @@ spec:
     storageClassName: local-path
   source:
     http:
-      url: https://iso.stage.kube-dc.com/windows11-x64-golden.qcow2
+      # The golden published to your cluster's S3 OS-image mirror (the same entry
+      # the Console UI clones). Replace <your-cluster-domain> with your domain.
+      url: https://s3.<your-cluster-domain>/cdi-os-images/windows/11/latest/windows11-x64-golden.qcow2
 ---
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
@@ -386,6 +414,155 @@ spec:
 :::note Windows Images
 Windows cloud images must be pre-built with VirtIO drivers and the QEMU guest agent installed. See [Managing OS Images](/platform/managing-os-images) and [Windows VM Setup](/platform/windows-vm-setup) for details on preparing golden images.
 :::
+
+---
+
+## Root disk storage
+
+When you create a VM the main storage decision is real infrastructure, not a product
+tier: **where does the root disk live?**
+
+| Root disk | What you get | Trade-off |
+|---|---|---|
+| **Local disk (default)** | Node-local storage. **Best durable-write latency.** | Lives on one node — no volume snapshots, and a node drain stops the VM. |
+| **Shared RBD** | Shared Ceph-backed storage. Supports **snapshots** and (optionally) **live migration**. | Higher durable-write latency for fsync-heavy workloads. |
+
+The decision most users make is simply: **do I want the fastest disk writes, or shared
+storage features (snapshots, live migration)?** Local disk cannot live-migrate because
+it is local to one node — that limitation is inherent, not a policy.
+
+When you pick **Shared RBD**, two things follow:
+
+- **Provisioning** — if a prepared *golden* image exists for the OS, Kube-DC clones it
+  (the VM boots in seconds); otherwise it imports the image on first boot. This is
+  automatic — you don't choose it.
+- **Enable live migration** *(checkbox)* — opt in to let the VM move between nodes during
+  maintenance. Available when the OS has a *Block* golden and the cluster has ≥2
+  CPU-compatible nodes; it uses RWX **Block** mode and a pinned CPU model.
+
+Operators: the cluster-side mechanics (storage tiers, enabling RBD, migration pools, the
+CPU-headroom rule) are in [VM storage tiers & live migration](/platform/vm-storage-tiers).
+
+### Create an HA (live-migratable) VM — the simple way
+
+1. In **+ Create VM**, choose your OS (e.g. Ubuntu 24.04) and set CPU / RAM / storage.
+2. Under **Root disk storage**, select **Shared RBD**.
+3. Tick **Enable live migration**. If your cluster has more than one CPU pool, pick the
+   **Migration pool** to pin to.
+4. Review the summary, click **Next → Finish**.
+
+That's it — the VM comes up live-migratable. During node maintenance Kube-DC moves it
+to another node in the pool with no downtime.
+
+:::warning CPU headroom for migration
+A live migration briefly runs **two copies** of the VM (source + target) while memory
+is copied. Keep **free CPU quota ≥ the VM's CPU count**, or a migration will wait until
+you free capacity. Prefer smaller HA VMs, or migrate them one at a time.
+:::
+
+### The generated manifest
+
+Choosing **Shared RBD + live migration** renders explicit KubeVirt resources — there is
+no hidden magic and no mutating webhook. Kube-DC also stamps two descriptive labels
+(`kube-dc.com/vm-profile`, `kube-dc.com/storage-tier`) so the choice is visible in
+`kubectl`, but **nothing depends on them** — the spec fields below are the source of
+truth. You can write the same manifest by hand:
+
+<details>
+<summary>Ubuntu 24.04 — HA / live-migratable VM (generated manifest)</summary>
+
+```yaml
+# Root disk: an RWX Block clone of the OS's Block golden snapshot.
+# accessModes: ReadWriteMany + volumeMode: Block + storageClassName: rbd-vm
+# are what make the disk (and therefore the VM) live-migratable.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ubuntu-root
+  labels:
+    kube-dc.com/vm-profile: migratable       # descriptive only
+    kube-dc.com/storage-tier: rbd-vm-block    # descriptive only
+spec:
+  accessModes:
+  - ReadWriteMany
+  volumeMode: Block
+  storageClassName: rbd-vm
+  resources:
+    requests:
+      storage: 12Gi
+  dataSource:
+    apiGroup: snapshot.storage.k8s.io
+    kind: VolumeSnapshot
+    name: ubuntu-24.04-golden-block   # the per-project Block golden snapshot
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: ubuntu
+  labels:
+    kube-dc.com/vm-profile: migratable
+    kube-dc.com/storage-tier: rbd-vm-block
+spec:
+  running: true
+  template:
+    spec:
+      evictionStrategy: LiveMigrate    # drain a node ⇒ live-migrate, don't kill
+      networks:
+      - name: vpc_net_0
+        multus:
+          default: true
+          networkName: your-namespace/default
+      domain:
+        cpu:
+          cores: 1
+          model: Skylake-Server-IBRS   # pinned to the migration pool's CPU model
+        memory:
+          guest: 2G
+        devices:
+          interfaces:
+          - name: vpc_net_0
+            bridge: {}
+          disks:
+          - name: root-volume
+            disk:
+              bus: virtio
+          - name: cloudinitdisk
+            disk:
+              bus: virtio
+      accessCredentials:
+      - sshPublicKey:
+          source:
+            secret:
+              secretName: authorized-keys-default
+          propagationMethod:
+            qemuGuestAgent:
+              users:
+              - ubuntu
+      volumes:
+      - name: root-volume
+        persistentVolumeClaim:
+          claimName: ubuntu-root
+      - name: cloudinitdisk
+        cloudInitNoCloud:
+          userData: |
+            #cloud-config
+            packages:
+              - qemu-guest-agent
+            runcmd:
+              - systemctl enable --now qemu-guest-agent
+```
+
+</details>
+
+The three facts that make it migratable are the PVC's `ReadWriteMany` + `Block` +
+`rbd-vm`, the VM's `evictionStrategy: LiveMigrate`, and the pinned `cpu.model`. Verify
+with:
+
+```bash
+kubectl get vmi ubuntu -n <your-namespace> \
+  -o jsonpath='{range .status.conditions[*]}{.type}={.status} {end}'
+# LiveMigratable=True StorageLiveMigratable=True → good
+```
 
 ### Monitor VM Status
 
@@ -489,6 +666,7 @@ See the [Service Exposure Guide](service-exposure.md) for more options including
 | VM running but not Ready | `kubectl get vmi` — verify guest agent is connected |
 | No IP assigned | Check `networkName` matches your project's default network |
 | SSH key not injected | Verify `authorized-keys-default` secret exists and guest agent is running |
+| Docker in the VM: `git clone` / `docker pull` / `apt-get` hangs then fails, but `curl` works | Docker's default MTU (1500) is larger than the project network's 1400. Set `{"mtu": 1400}` in `/etc/docker/daemon.json` and restart Docker — see [Network MTU](networking-overview.md#network-mtu-1400) |
 
 ```bash
 # Check events for errors

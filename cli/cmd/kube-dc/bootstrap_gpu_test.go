@@ -23,6 +23,7 @@ target:
   rke2: v1.36.1+rke2r1
   driver: 580.130.00
   gpuOperator: v26.3.4
+  dcgmExporter: 4.4.1-4.6.0-ubuntu22.04
 canary:
   completedAt: 2026-07-14T12:00:00Z
   allocationPassed: true
@@ -38,6 +39,7 @@ func gpuUpgradeArgs(path string) []string {
 		"--current-rke2", "v1.35.3+rke2r3", "--target-rke2", "v1.36.1+rke2r1",
 		"--current-driver", "580.126.20", "--target-driver", "580.130.00",
 		"--current-gpu-operator", "v26.3.3", "--target-gpu-operator", "v26.3.4",
+		"--current-dcgm-exporter", "4.4.1-4.6.0-ubuntu22.04", "--target-dcgm-exporter", "4.4.1-4.6.0-ubuntu22.04",
 	}
 }
 
@@ -54,6 +56,16 @@ func TestRequireGPUCreationClosedFailsClosedOnMissingOrOpenGate(t *testing.T) {
 	env.Set("GPU_VM_CREATION_ENABLED", "false")
 	if err := requireGPUCreationClosed(env); err != nil {
 		t.Fatalf("closed gates rejected: %v", err)
+	}
+}
+
+func TestGPUDRARegistersReadOnlyPostflightAndRecoveryCommands(t *testing.T) {
+	cmd := bootstrapGPUDRACmd(time.Now)
+	for _, name := range []string{"doctor", "postflight", "recovery-plan"} {
+		found, _, err := cmd.Find([]string{name})
+		if err != nil || found == nil || found.Name() != name {
+			t.Fatalf("DRA subcommand %q not registered: found=%v err=%v", name, found, err)
+		}
 	}
 }
 

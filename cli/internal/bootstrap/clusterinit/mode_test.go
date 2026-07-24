@@ -127,9 +127,9 @@ func TestResolveMode_ExplicitOverride_NoProbe(t *testing.T) {
 
 func TestResolveMode_Auto_SubstitutesProbeResult(t *testing.T) {
 	cases := []struct {
-		name      string
-		in        ModeProbeInputs
-		wantMode  Mode
+		name     string
+		in       ModeProbeInputs
+		wantMode Mode
 	}{
 		{"fresh K8s -> install", ModeProbeInputs{K8sReachable: true}, ModeInstall},
 		{"flux only -> adopt", ModeProbeInputs{K8sReachable: true, FluxSystemPresent: true}, ModeAdopt},

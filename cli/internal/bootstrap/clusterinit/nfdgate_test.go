@@ -171,11 +171,11 @@ func TestCheckKubeVirtEligibility_RawFallback(t *testing.T) {
 	err := CheckKubeVirtEligibility(context.Background(), NFDGateOptions{
 		K8s: &fakeNodeLabels{labels: map[string]map[string]string{
 			"srv1": {
-				"feature.node.kubernetes.io/cpu-cpuid.VMX":            "true",
-				"feature.node.kubernetes.io/kernel-loadedmodule.kvm":  "true",
+				"feature.node.kubernetes.io/cpu-cpuid.VMX":           "true",
+				"feature.node.kubernetes.io/kernel-loadedmodule.kvm": "true",
 			},
 			"srv2": {
-				"feature.node.kubernetes.io/cpu-model.family":         "6",
+				"feature.node.kubernetes.io/cpu-model.family": "6",
 			},
 		}},
 		Out: &out,

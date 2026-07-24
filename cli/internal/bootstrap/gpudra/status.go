@@ -26,6 +26,15 @@ type Report struct {
 	Checks []Check `json:"checks"`
 }
 
+// DriverRecoveryPlan is read-only. It identifies one exact stale
+// DaemonSet-owned kubelet-plugin Pod and the checks that make a serialized
+// manual delete safe; it never deletes the Pod itself.
+type DriverRecoveryPlan struct {
+	Eligible  bool                   `json:"eligible"`
+	Checks    []Check                `json:"checks"`
+	Candidate *ports.GPUDRADriverPod `json:"candidate,omitempty"`
+}
+
 type Options struct {
 	Now            time.Time
 	MaxCanaryAge   time.Duration
@@ -75,6 +84,47 @@ func Evaluate(status ports.GPUDRAStatus, options Options) Report {
 		}
 	}
 	return report
+}
+
+func PlanDriverRecovery(status ports.GPUDRAStatus, now time.Time, minUnreadyAge time.Duration) DriverRecoveryPlan {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if minUnreadyAge <= 0 {
+		minUnreadyAge = 10 * time.Minute
+	}
+	candidates := make([]ports.GPUDRADriverPod, 0, len(status.DriverPods))
+	for _, pod := range status.DriverPods {
+		age := now.Sub(pod.ReadyLastTransitionTime)
+		if !pod.Ready && !pod.Deleting && pod.NodeReady && !pod.ReadyLastTransitionTime.IsZero() && age >= minUnreadyAge {
+			candidates = append(candidates, pod)
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].ReadyLastTransitionTime.Equal(candidates[j].ReadyLastTransitionTime) {
+			return candidates[i].Namespace+"/"+candidates[i].Name < candidates[j].Namespace+"/"+candidates[j].Name
+		}
+		return candidates[i].ReadyLastTransitionTime.Before(candidates[j].ReadyLastTransitionTime)
+	})
+	checks := []Check{
+		check("driver-degraded", status.DriverDesired > 0 && status.DriverReady < status.DriverDesired,
+			fmt.Sprintf("ready=%d desired=%d", status.DriverReady, status.DriverDesired)),
+		check("inventory-empty", status.ResourceSlices == 0 && status.Devices == 0,
+			fmt.Sprintf("slices=%d devices=%d", status.ResourceSlices, status.Devices)),
+		check("stale-driver-pod", len(candidates) > 0,
+			fmt.Sprintf("eligible=%d observed=%d minAge=%s", len(candidates), len(status.DriverPods), minUnreadyAge)),
+	}
+	plan := DriverRecoveryPlan{Eligible: true, Checks: checks}
+	for _, item := range checks {
+		if !item.Pass {
+			plan.Eligible = false
+		}
+	}
+	if plan.Eligible {
+		candidate := candidates[0]
+		plan.Candidate = &candidate
+	}
+	return plan
 }
 
 func check(name string, pass bool, message string) Check {

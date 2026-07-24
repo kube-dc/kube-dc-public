@@ -2,6 +2,11 @@
 
 Kube-DC enforces a multi-layered security model across all project namespaces. This page describes the security enforcement mechanisms, how to manage exemptions, and how to configure per-project exceptions.
 
+GPU workloads add privileged drivers, device plugins, quota/billing flows, and
+two different isolation models. See the dedicated [GPU security threat
+model](gpu-threat-model.md) for its invariants, threat register, evidence, and
+approval gates.
+
 ## Overview
 
 The platform uses Kubernetes-native admission policies to enforce security boundaries in project namespaces. These policies run in-process in the API server — no external dependencies are required.

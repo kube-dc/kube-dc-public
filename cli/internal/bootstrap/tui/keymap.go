@@ -30,6 +30,7 @@ type KeyMap struct {
 	TopTabPrev key.Binding // [
 	TopTab1    key.Binding // 1
 	TopTab2    key.Binding // 2
+	TopTab3    key.Binding // 3
 
 	// Fleet-landing actions. The v2 actions (NewInstall, Adopt, Status,
 	// Config, Discover) live in the keymap but are filtered out of the
@@ -107,5 +108,6 @@ func DefaultKeyMap() KeyMap {
 		TopTabPrev: key.NewBinding(key.WithKeys("["), key.WithHelp("[", "prev tab")),
 		TopTab1:    key.NewBinding(key.WithKeys("1"), key.WithHelp("1", "fleet")),
 		TopTab2:    key.NewBinding(key.WithKeys("2"), key.WithHelp("2", "contexts")),
+		TopTab3:    key.NewBinding(key.WithKeys("3"), key.WithHelp("3", "new cluster")),
 	}
 }

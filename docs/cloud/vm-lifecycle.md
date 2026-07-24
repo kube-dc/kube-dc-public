@@ -56,6 +56,13 @@ This performs a graceful reboot — sends ACPI shutdown signal to the guest OS, 
 `virtctl restart` maintains the VM's state and is faster than manually stopping and starting. Use it for applying kernel updates or recovering from hung processes.
 :::
 
+:::warning Dedicated GPU VMs
+An attached GPU cannot live migrate. Stop releases the device, and a later
+start may queue or attach a different physical device. A restart also requires
+compatible capacity, so do not rely on stable device identity. See
+[Dedicated GPU VM guest setup](gpu-vm-guests.md) for the complete lifecycle.
+:::
+
 ### Check VM Status
 
 ```bash

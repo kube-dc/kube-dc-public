@@ -205,6 +205,14 @@ type InitOptions struct {
 	// carried for forward-compat; live-migration is installer-deferred.
 	VMGoldensBlock []string
 
+	// ImageAcceleration wires the on-cluster image path (tenant-addons,
+	// cdi-os-mirror, registry-depot — see imageaccel.go) into the scaffold.
+	// Default TRUE for new clusters (`--image-acceleration=false` opts out);
+	// pieces missing from an older starter are skipped with a warning.
+	// Spegel (the RKE2 embedded registry) is independent: bootstrap install
+	// enables it per node.
+	ImageAcceleration bool
+
 	// --- Accelerators (GPU PRD section 6) ---
 	// This surface is deliberately non-secret. Licenses, registry credentials,
 	// and portal tokens stay in the SOPS workflow; VGPUSecretReady is only a

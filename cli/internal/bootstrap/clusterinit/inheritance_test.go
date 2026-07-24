@@ -54,8 +54,8 @@ func TestInheritFromSiblings_SingleSibling(t *testing.T) {
 			"KUBE_DC_VERSION":     "v0.3.63",
 			"KUBE_DC_MANAGER_TAG": "v0.3.63",
 			"OPENBAO_VERSION":     "2.5.3",
-			"DOMAIN":              "kube-dc.cloud",     // not a version key — should be ignored
-			"EXT_NET_VLAN_ID":     "1103",              // not a version key
+			"DOMAIN":              "kube-dc.cloud", // not a version key — should be ignored
+			"EXT_NET_VLAN_ID":     "1103",          // not a version key
 		}),
 	})
 	if got.TemplateName != "cloud" {
@@ -85,13 +85,13 @@ func TestInheritFromSiblings_MostRecentWins(t *testing.T) {
 	t1 := time.Date(2026, 5, 25, 9, 0, 0, 0, time.UTC)
 	siblings := []SiblingCluster{
 		sibling("stage", "stage.kube-dc.com", t0, map[string]string{
-			"KUBE_DC_VERSION":     "v0.3.60",
-			"OPENBAO_VERSION":     "2.5.1",
-			"SOMETHING_ELSE_TAG":  "v0.1.0", // only in stage
+			"KUBE_DC_VERSION":    "v0.3.60",
+			"OPENBAO_VERSION":    "2.5.1",
+			"SOMETHING_ELSE_TAG": "v0.1.0", // only in stage
 		}),
 		sibling("cloud", "kube-dc.cloud", t1, map[string]string{
-			"KUBE_DC_VERSION":     "v0.3.63",
-			"OPENBAO_VERSION":     "2.5.3",
+			"KUBE_DC_VERSION": "v0.3.63",
+			"OPENBAO_VERSION": "2.5.3",
 		}),
 	}
 	got := InheritFromSiblings(siblings)

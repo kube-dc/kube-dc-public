@@ -29,7 +29,7 @@ func bootstrapGPUCmd(fleetRepo *string) *cobra.Command {
 
 func bootstrapGPUDRACmd(now func() time.Time) *cobra.Command {
 	var kubeconfig, driver, deviceClass, digest, output string
-	var maxCanaryAge time.Duration
+	var maxCanaryAge, minDriverUnreadyAge time.Duration
 	cmd := &cobra.Command{
 		Use:   "dra",
 		Short: "Detect and validate the DRA shared-GPU backend",
@@ -37,6 +37,12 @@ func bootstrapGPUDRACmd(now func() time.Time) *cobra.Command {
 doctor enforces the Kubernetes, digest, inventory, ownership, and canary support
 gate; plan additionally requires creation gates closed and zero legacy holders;
 rollback-plan requires creation gates closed and zero DRA holders/claims.
+postflight reruns the full doctor gate after each upgraded GPU node and includes
+the exact current-DaemonSet-owned driver Pod state in its diagnostic output.
+
+recovery-plan is read-only and emits one exact kubelet-plugin Pod deletion only
+when the DaemonSet is degraded, its DRA inventory is empty, and an old unready
+Pod remains on a Ready node. The operator must execute that command separately.
 
 Apply is performed by bootstrap init with --gpu-shared-allocator=dra (or auto)
 after a saved plan passes this command. No subcommand silently falls back to the
@@ -62,18 +68,34 @@ legacy device-plugin allocator.`,
 		fmt.Fprintf(command.OutOrStdout(), "DeviceClass: %s (present=%t)\n", status.DeviceClass, status.DeviceClassPresent)
 		fmt.Fprintf(command.OutOrStdout(), "Inventory: slices=%d devices=%d shareable=%d\n", status.ResourceSlices, status.Devices, status.ShareableDevices)
 		fmt.Fprintf(command.OutOrStdout(), "Driver: ready=%d/%d images=%s owners=%s\n", status.DriverReady, status.DriverDesired, strings.Join(status.DriverImages, ","), strings.Join(status.AllocatorOwners, ","))
+		for _, pod := range status.DriverPods {
+			fmt.Fprintf(command.OutOrStdout(), "Driver Pod: %s/%s node=%s phase=%s ready=%t nodeReady=%t deleting=%t created=%s readyTransition=%s\n",
+				pod.Namespace, pod.Name, pod.Node, pod.Phase, pod.Ready, pod.NodeReady, pod.Deleting, pod.CreationTimestamp.UTC().Format(time.RFC3339), pod.ReadyLastTransitionTime.UTC().Format(time.RFC3339))
+		}
 		fmt.Fprintf(command.OutOrStdout(), "Claims: total=%d allocated=%d pending=%d holders=%d legacy-holders=%d\n", status.Claims, status.AllocatedClaims, status.PendingClaims, len(status.DRAHolders), len(status.LegacyHolders))
 		fmt.Fprintf(command.OutOrStdout(), "Creation gates: shared=%t vm=%t; DRA nodes=%s; wrong-mode=%s\n", status.SharedCreationEnabled, status.VMCreationEnabled, strings.Join(status.DRANodes, ","), strings.Join(status.WrongModeNodes, ","))
 		return nil
 	}
-	renderReport := func(command *cobra.Command, report gpudra.Report) error {
+	renderReport := func(command *cobra.Command, report gpudra.Report, status *ports.GPUDRAStatus) error {
 		if output == "json" {
-			body, err := json.MarshalIndent(report, "", "  ")
+			var value any = report
+			if status != nil {
+				value = struct {
+					Status ports.GPUDRAStatus `json:"status"`
+					Report gpudra.Report      `json:"report"`
+				}{Status: *status, Report: report}
+			}
+			body, err := json.MarshalIndent(value, "", "  ")
 			if err != nil {
 				return err
 			}
 			fmt.Fprintln(command.OutOrStdout(), string(body))
 		} else {
+			if status != nil {
+				if err := renderStatus(command, *status); err != nil {
+					return err
+				}
+			}
 			for _, item := range report.Checks {
 				state := "PASS"
 				if !item.Pass {
@@ -100,7 +122,7 @@ legacy device-plugin allocator.`,
 			},
 		})
 	}
-	addGate := func(name, short string, migration, rollback bool) {
+	addGate := func(name, short string, migration, rollback, includeStatus bool) {
 		cmd.AddCommand(&cobra.Command{
 			Use: name, Short: short, SilenceUsage: true,
 			RunE: func(command *cobra.Command, _ []string) error {
@@ -108,21 +130,60 @@ legacy device-plugin allocator.`,
 				if err != nil {
 					return err
 				}
-				return renderReport(command, gpudra.Evaluate(status, gpudra.Options{
+				report := gpudra.Evaluate(status, gpudra.Options{
 					Now: now(), MaxCanaryAge: maxCanaryAge, RequiredDigest: digest,
 					MigrationPlan: migration, RollbackPlan: rollback,
-				}))
+				})
+				if includeStatus {
+					return renderReport(command, report, &status)
+				}
+				return renderReport(command, report, nil)
 			},
 		})
 	}
-	addGate("doctor", "Validate DRA support and runtime health", false, false)
-	addGate("plan", "Validate the legacy-to-DRA migration gate", true, false)
-	addGate("rollback-plan", "Validate the DRA-to-compatibility rollback gate", false, true)
+	addGate("doctor", "Validate DRA support and runtime health", false, false, false)
+	addGate("postflight", "Validate DRA runtime health after a GPU node upgrade", false, false, true)
+	addGate("plan", "Validate the legacy-to-DRA migration gate", true, false, false)
+	addGate("rollback-plan", "Validate the DRA-to-compatibility rollback gate", false, true, false)
+	cmd.AddCommand(&cobra.Command{
+		Use: "recovery-plan", Short: "Plan a serialized stale DRA driver Pod recovery", SilenceUsage: true,
+		RunE: func(command *cobra.Command, _ []string) error {
+			status, err := read(command.Context())
+			if err != nil {
+				return err
+			}
+			plan := gpudra.PlanDriverRecovery(status, now(), minDriverUnreadyAge)
+			if output == "json" {
+				body, err := json.MarshalIndent(plan, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(command.OutOrStdout(), string(body))
+			} else {
+				for _, item := range plan.Checks {
+					state := "PASS"
+					if !item.Pass {
+						state = "FAIL"
+					}
+					fmt.Fprintf(command.OutOrStdout(), "[%s] %s: %s\n", state, item.Name, item.Message)
+				}
+				if plan.Candidate != nil {
+					fmt.Fprintf(command.OutOrStdout(), "Candidate: %s/%s on Ready node %s\n", plan.Candidate.Namespace, plan.Candidate.Name, plan.Candidate.Node)
+					fmt.Fprintf(command.OutOrStdout(), "Execute separately after review: kubectl --kubeconfig \"$KUBECONFIG\" -n %s delete pod %s --wait=false\n", plan.Candidate.Namespace, plan.Candidate.Name)
+				}
+			}
+			if !plan.Eligible {
+				return fmt.Errorf("no safe stale-driver recovery candidate; no mutation was made")
+			}
+			return nil
+		},
+	})
 	cmd.PersistentFlags().StringVar(&kubeconfig, "kubeconfig", "", "Explicit admin kubeconfig for the target cluster (required)")
 	cmd.PersistentFlags().StringVar(&driver, "driver", "hami-core-gpu.project-hami.io", "Qualified DRA driver name")
 	cmd.PersistentFlags().StringVar(&deviceClass, "device-class", "kube-dc-nvidia-v100-shared-8g", "Fixed product DeviceClass")
 	cmd.PersistentFlags().StringVar(&digest, "driver-digest", gpudra.DefaultDriverDigest, "Required HAMi DRA image digest")
 	cmd.PersistentFlags().DurationVar(&maxCanaryAge, "max-canary-age", 10*time.Minute, "Maximum accepted age of the allocation canary")
+	cmd.PersistentFlags().DurationVar(&minDriverUnreadyAge, "min-driver-unready-age", 10*time.Minute, "Minimum age of an unready driver Pod before recovery is eligible")
 	cmd.PersistentFlags().StringVar(&output, "output", "text", "Output format: text or json")
 	_ = cmd.MarkPersistentFlagRequired("kubeconfig")
 	cmd.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
@@ -309,7 +370,7 @@ func newGPUUpgradeCheckCmd(now func() time.Time) *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Long: `Upgrade-check is a read-only pre-mutation gate for GPU nodes. It
-matches the requested kernel, RKE2, NVIDIA driver, GPU Operator and exact PCI
+matches the requested kernel, RKE2, NVIDIA driver, GPU Operator, DCGM exporter and exact PCI
 identity against a reviewed qualification record. It also requires recent
 allocation, monitoring and rollback canary evidence. Unknown tuples, RKE2
 downgrades and skipped Kubernetes minors are blocked.
@@ -323,7 +384,8 @@ an upgrade Plan, then retain its output with the change record.`,
     --current-kernel 6.8.0-134-generic --target-kernel 6.8.0-135-generic \
     --current-rke2 v1.35.3+rke2r3 --target-rke2 v1.36.1+rke2r1 \
     --current-driver 580.126.20 --target-driver 580.130.00 \
-    --current-gpu-operator v26.3.3 --target-gpu-operator v26.3.4`,
+    --current-gpu-operator v26.3.3 --target-gpu-operator v26.3.4 \
+    --current-dcgm-exporter 4.4.1-4.6.0-ubuntu22.04 --target-dcgm-exporter 4.4.1-4.6.0-ubuntu22.04`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			q, err := gpuupgrade.Load(qualification)
 			if err != nil {
@@ -356,8 +418,10 @@ an upgrade Plan, then retain its output with the change record.`,
 	cmd.Flags().StringVar(&target.Driver, "target-driver", "", "Proposed NVIDIA driver version (required)")
 	cmd.Flags().StringVar(&current.GPUOperator, "current-gpu-operator", "", "Current GPU Operator chart version (required)")
 	cmd.Flags().StringVar(&target.GPUOperator, "target-gpu-operator", "", "Proposed GPU Operator chart version (required)")
+	cmd.Flags().StringVar(&current.DCGMExporter, "current-dcgm-exporter", "", "Current DCGM exporter version or immutable digest (required)")
+	cmd.Flags().StringVar(&target.DCGMExporter, "target-dcgm-exporter", "", "Proposed DCGM exporter version or immutable digest (required)")
 	cmd.Flags().DurationVar(&maxAge, "max-canary-age", gpuupgrade.DefaultMaxAge, "Maximum accepted age of canary evidence")
-	for _, name := range []string{"qualification", "pci-id", "current-kernel", "target-kernel", "current-rke2", "target-rke2", "current-driver", "target-driver", "current-gpu-operator", "target-gpu-operator"} {
+	for _, name := range []string{"qualification", "pci-id", "current-kernel", "target-kernel", "current-rke2", "target-rke2", "current-driver", "target-driver", "current-gpu-operator", "target-gpu-operator", "current-dcgm-exporter", "target-dcgm-exporter"} {
 		_ = cmd.MarkFlagRequired(name)
 	}
 	return cmd

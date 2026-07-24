@@ -2,6 +2,13 @@
 
 This guide explains how to expose services in Kube-DC projects. The method you use depends on your **project's network type** and your requirements.
 
+> **Managed Kubernetes clusters**: every annotation below also works on
+> `LoadBalancer` services **inside** a managed tenant cluster — the cloud
+> controller manager copies them to the management cluster at service creation
+> time. See [Cluster Management](cluster-management.md#exposing-services-loadbalancer)
+> for the tenant-cluster specifics (Issuer prerequisite, hostname pinning,
+> public-IP quota).
+
 ## Quick Reference
 
 | Network Type | Default EIP Source | Best For | Recommended Method |
@@ -89,13 +96,25 @@ For projects with `egressNetworkType: cloud`, use Gateway Routes to expose servi
 
 | Annotation | Description | Example Values |
 |------------|-------------|----------------|
-| `network.kube-dc.com/external-network-type` | EIP type for auto-created EIP | `cloud`, `public` |
+| `network.kube-dc.com/external-network-type` | EIP type for auto-created EIP (set at creation, immutable) | `cloud`, `public` |
 
 > **Tip**: Use this on a LoadBalancer service to get a public EIP in a cloud project:
 > ```yaml
 > annotations:
 >   network.kube-dc.com/external-network-type: "public"
 > ```
+
+> **Set this when you create the Service — it cannot be changed afterwards.**
+> The annotation chooses which external network the Service's address is
+> allocated from, and an external IP keeps the type it was allocated with for
+> life. Editing the annotation on a Service that already has an address is
+> rejected, so you get a clear error instead of a change that appears to work
+> and does nothing.
+>
+> To move a workload to a different external network, create a second Service
+> with the annotation you want, cut traffic over to its address, then delete the
+> old one. In that order the workload is never without a reachable address —
+> deleting first would release the old IP before the new one is serving.
 
 #### Status Annotations (Read-Only)
 

@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap"
+	k8sadapter "github.com/shalb/kube-dc/cli/internal/bootstrap/adapters/k8s"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/adopt"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/anchors"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
@@ -203,7 +204,7 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 				// T6+: the Proxmox-style settings panel (RunPanel)
 				// replaced the sequential huh form. A cancelled panel
 				// aborts init cleanly.
-				eq, err := initform.RunPanel(o, siblingObjectStorageModeHint(&hintOpts))
+				eq, err := initform.RunPanel(o, siblingObjectStorageModeHint(&hintOpts), gatherPanelProbe(cmd.Context()))
 				if err != nil {
 					if errors.Is(err, initform.ErrPanelCancelled) {
 						return nil
@@ -453,6 +454,8 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"S3 endpoint hostname for the exposure layer (default: s3.<domain>)")
 	cmd.Flags().BoolVar(&o.NoS3Exposure, "no-s3-exposure", false,
 		"Skip the S3 exposure layer (Certificate + HTTPRoute) — cluster-internal S3 only")
+	cmd.Flags().BoolVar(&o.ImageAcceleration, "image-acceleration", true,
+		"Wire the on-cluster image path (tenant-addons + cdi-os-mirror + registry-depot zot) into the scaffold; spegel (RKE2 embedded registry) is enabled per node by bootstrap install (default: true)")
 	cmd.Flags().StringVar((*string)(&o.VMStorageMode), "vm-storage-mode", string(clusterinit.VMStorageLocal),
 		fmt.Sprintf("VM root-disk storage tier (optional; one of %s; default local — local-path). shared-rbd needs a rook-ceph-* object-storage mode (provides rbd-pool); shared-rbd-live-migration is installer-deferred", joinStringers(clusterinit.AllVMStorageModes)))
 	cmd.Flags().StringSliceVar(&o.VMGoldens, "vm-golden", nil,
@@ -1223,6 +1226,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		NodeNICs:       o.NodeNICs,
 		ObjectStorage:  o.ObjectStorage(),
 		VMStorage:      o.VMStorage(),
+		ImageAccel:     o.ImageAccel(),
 		GPU:            o.GPU(),
 		Runner:         session.Scripts,
 		Git:            session.Git,
@@ -1919,4 +1923,30 @@ func resolveStarterRef(override string) string {
 		v = "v" + v
 	}
 	return "oci://ghcr.io/kube-dc/fleet-starter:" + v
+}
+
+// gatherPanelProbe reads live-cluster node facts for the init panel's
+// probe-driven prefill (T6 polish). STRICTLY best-effort: 3s budget,
+// ambient kubeconfig resolution, and ANY failure returns nil — the
+// panel must open identically on a laptop with no cluster in reach.
+// Nil is also returned when there are no facts, so the panel never
+// renders an empty "probed from live cluster" hint.
+func gatherPanelProbe(ctx context.Context) *initform.ProbePrefill {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	facts, err := k8sadapter.GatherNodeNetworkFacts(ctx, "")
+	if err != nil || len(facts) == 0 {
+		return nil
+	}
+	pf := make([]initform.ProbeNodeFact, 0, len(facts))
+	for _, f := range facts {
+		pf = append(pf, initform.ProbeNodeFact{
+			Name: f.Name, InternalIP: f.InternalIP, ControlPlane: f.ControlPlane,
+		})
+	}
+	p := initform.BuildProbePrefill(pf)
+	if len(p.ControlPlaneIPs) == 0 && len(p.AllNodeNames) == 0 {
+		return nil
+	}
+	return &p
 }

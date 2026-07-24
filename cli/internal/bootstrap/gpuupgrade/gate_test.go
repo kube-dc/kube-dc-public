@@ -13,14 +13,14 @@ func validQualification() Qualification {
 		APIVersion: APIVersion, Kind: Kind, ID: "v100-kernel-canary-1", State: "qualified",
 		ApprovedBy: "platform-review", SourceRevision: strings.Repeat("a", 40),
 		Hardware: []string{"10de:1db6/10de:124a"},
-		Target:   Target{Kernel: "6.8.0-135-generic", RKE2: "v1.36.1+rke2r1", Driver: "580.130.00", GPUOperator: "v26.3.4"},
+		Target:   Target{Kernel: "6.8.0-135-generic", RKE2: "v1.36.1+rke2r1", Driver: "580.130.00", GPUOperator: "v26.3.4", DCGMExporter: "4.4.1-4.6.0-ubuntu22.04"},
 		Canary:   Canary{CompletedAt: "2026-07-14T12:00:00Z", AllocationPassed: true, MonitoringPassed: true, RollbackPassed: true, Evidence: "change-record-42"},
 	}
 }
 
 func validRequest() Request {
 	return Request{
-		Current: Target{Kernel: "6.8.0-134-generic", RKE2: "v1.35.3+rke2r3", Driver: "580.126.20", GPUOperator: "v26.3.3"},
+		Current: Target{Kernel: "6.8.0-134-generic", RKE2: "v1.35.3+rke2r3", Driver: "580.126.20", GPUOperator: "v26.3.3", DCGMExporter: "4.4.1-4.6.0-ubuntu22.04"},
 		Target:  validQualification().Target, Hardware: []string{"10DE:1DB6/10DE:124A"},
 		Now: time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC),
 	}
@@ -43,6 +43,7 @@ func TestCheckFailsClosed(t *testing.T) {
 		want string
 	}{
 		{"unknown target", func(_ *Qualification, r *Request) { r.Target.Driver = "999.0" }, "not the qualified value"},
+		{"unknown exporter", func(_ *Qualification, r *Request) { r.Target.DCGMExporter = "4.5.3-4.8.2" }, "dcgmExporter target"},
 		{"hardware mismatch", func(_ *Qualification, r *Request) { r.Hardware = []string{"10de:1db4/10de:1212"} }, "hardware tuple mismatch"},
 		{"minor skip", func(q *Qualification, r *Request) { q.Target.RKE2 = "v1.37.1+rke2r1"; r.Target.RKE2 = q.Target.RKE2 }, "cannot skip"},
 		{"downgrade", func(q *Qualification, r *Request) { q.Target.RKE2 = "v1.34.9+rke2r1"; r.Target.RKE2 = q.Target.RKE2 }, "downgrade"},

@@ -3,6 +3,7 @@ package credential
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"time"
 
@@ -17,6 +18,23 @@ import (
 // always the right one for the identity that just expired.
 func reloginCmd(server, realm string) string {
 	domain := extractDomain(server)
+
+	// Inside the console's cloud shell there is no browser and no way to
+	// complete an OAuth redirect, so telling the user to run `kube-dc login`
+	// is advice they cannot act on — they just see the command fail again.
+	//
+	// The shell is seeded with a REFRESH_TOKEN copied from the browser session
+	// at creation time, and that token is NOT an offline token (the console
+	// requests `openid profile email`), so it dies after the realm's
+	// ssoSessionIdleTimeout — 30 minutes by default, while the shell's own TTL
+	// is 7200s. The shell therefore outlives its credential roughly 4x, and the
+	// only real remedy from inside is to get a fresh one: close the shell and
+	// reopen it from the console.
+	if inCloudShell() {
+		return "close this shell and open a new one from the console " +
+			"(the shell's credential is issued when it starts, and cannot be renewed from inside)"
+	}
+
 	if realm == "master" {
 		return fmt.Sprintf("kube-dc login --domain %s --admin", domain)
 	}
@@ -24,6 +42,15 @@ func reloginCmd(server, realm string) string {
 		return fmt.Sprintf("kube-dc login --domain %s --org %s", domain, realm)
 	}
 	return fmt.Sprintf("kube-dc login --domain %s --org <your-org>", domain)
+}
+
+// inCloudShell reports whether we are running inside a console-spawned shell
+// pod. The job template sets REFRESH_TOKEN and SERVER_ENDPOINT from the
+// browser session (ui/backend/controllers/cloud-shell/kube-dc-job-standalone.yaml);
+// neither is present in a normal workstation login, which stores credentials on
+// disk instead.
+func inCloudShell() bool {
+	return os.Getenv("REFRESH_TOKEN") != "" && os.Getenv("SERVER_ENDPOINT") != ""
 }
 
 // notLoggedInErr is the consistent "no creds for this (server, realm)"

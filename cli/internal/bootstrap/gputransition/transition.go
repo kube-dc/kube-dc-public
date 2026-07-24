@@ -83,6 +83,12 @@ func Run(ctx context.Context, o Options) (Result, error) {
 	if state.Unschedulable && !o.ResumeCordoned {
 		return Result{}, fmt.Errorf("gpu transition blocked: node %s is already cordoned; inspect the prior failure and pass --resume-cordoned only when this workflow owns the cordon", o.Node)
 	}
+	readyWithoutCordon := state
+	readyWithoutCordon.Unschedulable = true
+	if active == o.To && expected == o.To && fleetMode == o.To && !state.Unschedulable && targetReady(readyWithoutCordon, o.To) {
+		fmt.Fprintf(o.Out, "GPU node transition: %s already at %s; no cordon, GitOps write, or runtime mutation was made.\n", o.Node, o.To)
+		return Result{Resumed: true}, nil
+	}
 
 	fmt.Fprintf(o.Out, "GPU node transition: %s %s -> %s\n", o.Node, o.From, o.To)
 	fmt.Fprintln(o.Out, "  preflight: zero native GPU Pod/VMI holders")

@@ -3,9 +3,12 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -50,6 +53,13 @@ It follows the same patterns as AWS CLI, GCloud, and other cloud provider CLIs:
 	rootCmd.AddCommand(orgsCmd())
 	rootCmd.AddCommand(auditCmd())
 	rootCmd.AddCommand(versionCmd())
+
+	// Cobra prints "Error: <err>" itself, and the handler below prints the same
+	// error again — so every failure has always been emitted twice. It went
+	// unnoticed while messages were one-liners; a multi-line explanation makes
+	// it obvious. main() is the single place that knows about the doctor's exit
+	// codes, so it stays the printer and cobra stays quiet.
+	rootCmd.SilenceErrors = true
 
 	if err := rootCmd.Execute(); err != nil {
 		// doctorExitCodeErr carries the doctor's max-severity exit
@@ -106,6 +116,11 @@ Two identity modes:
 			if admin && org != "" {
 				return fmt.Errorf("--admin and --org are mutually exclusive (admin always uses the master realm)")
 			}
+			// Past flag validation everything that can fail is a RUNTIME problem
+			// (unknown realm, unreachable Keycloak, browser flow timeout). Dumping
+			// the usage block in front of those buries the actual explanation —
+			// which is the whole point of the realm pre-flight below.
+			cmd.SilenceUsage = true
 			if admin {
 				return runAdminLogin(domain, caCertFile, insecure, deviceCode)
 			}
@@ -168,6 +183,21 @@ func runLogin(domain, org, caCertFile string, insecure, deviceCode bool) error {
 	fmt.Printf("\n🔐 Logging in to %s (org: %s)\n", domain, org)
 	fmt.Printf("   API Server: %s\n", server)
 	fmt.Printf("   Keycloak:   %s\n\n", keycloakURL)
+
+	// Confirm the realm exists BEFORE opening a browser. Keycloak answers an
+	// unknown realm with a bare 404 page, so without this the user gets a
+	// browser window showing "404" and no indication of what went wrong or
+	// which value was rejected.
+	//
+	// The mistake this catches is not a typo — it is a genuine ambiguity in our
+	// own naming. `kube-dc login` asks for the ORGANIZATION, but the thing a
+	// tenant works in day to day is a PROJECT, and project namespaces are
+	// `<org>-<project>`. Someone in org `test2` working on project `test2-2`
+	// naturally enters `test2-2` and lands on a realm that does not exist
+	// (reported 2026-07-20).
+	if err := verifyRealmExists(keycloakURL, org, caCertPEM); err != nil {
+		return err
+	}
 
 	// Create OAuth config
 	oauthConfig := &auth.OAuthConfig{
@@ -736,6 +766,11 @@ func credentialCmd() *cobra.Command {
 			if server == "" {
 				return fmt.Errorf("--server flag is required")
 			}
+			// kubectl invokes this as an exec plugin, so its stderr is what the
+			// user actually sees when a session expires. Printing the flag usage
+			// block in front of "session expired" buries the one line that tells
+			// them what to do — and they never typed the command anyway.
+			cmd.SilenceUsage = true
 
 			provider, err := credential.NewProvider()
 			if err != nil {
@@ -937,4 +972,49 @@ func outputTable(alertList []alerts.Alert) error {
 
 	fmt.Printf("\nTotal: %d alerts\n", len(alertList))
 	return nil
+}
+
+// verifyRealmExists checks that the Keycloak realm backing an organization is
+// actually there, so a wrong org name fails here with an explanation instead of
+// as a bare 404 in the user's browser.
+//
+// Deliberately fails OPEN on anything that is not a definitive 404: a proxy, a
+// captive portal, an offline resolver or a self-signed chain must not be able to
+// block a login that would otherwise have worked. Only Keycloak explicitly
+// saying "no such realm" stops us.
+func verifyRealmExists(keycloakURL, realm, caCertPEM string) error {
+	transport := &http.Transport{}
+	if caCertPEM != "" {
+		pool := x509.NewCertPool()
+		if pool.AppendCertsFromPEM([]byte(caCertPEM)) {
+			transport.TLSClientConfig = &tls.Config{RootCAs: pool}
+		}
+	}
+	client := &http.Client{Timeout: 8 * time.Second, Transport: transport}
+
+	url := fmt.Sprintf("%s/realms/%s/.well-known/openid-configuration",
+		strings.TrimSuffix(keycloakURL, "/"), realm)
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil // unreachable / TLS problem — let the normal flow surface it
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		return nil
+	}
+	return fmt.Errorf(`organization %q does not exist on this cluster
+
+Keycloak has no realm %q, so the browser would just show a 404.
+
+`+"`kube-dc login`"+` wants the ORGANIZATION, which is not the same as the
+project you work in. Project namespaces are named <org>-<project>, so if you
+work in something like "acme-web" the organization is usually "acme".
+
+  - the organization is the top-level tenant (the Keycloak realm)
+  - the project lives inside it and is selected AFTER login, with:
+        kube-dc ns <project>
+
+Check the organization name in the console, or with:
+    kubectl get organizations -A`, realm, realm)
 }

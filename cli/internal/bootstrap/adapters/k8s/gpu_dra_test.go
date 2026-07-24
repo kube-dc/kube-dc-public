@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/dynamic/fake"
@@ -27,7 +28,7 @@ func TestGPUDRAStatusAggregatesQualifiedOperatorState(t *testing.T) {
 	core := kubernetesfake.NewSimpleClientset(
 		&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "gpu-a", Labels: map[string]string{
 			"kube-dc.com/gpu.workload-mode": "pod-hami-dra", "kube-dc.com/gpu.expected-workload-mode": "pod-hami-dra",
-		}}},
+		}}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}}},
 		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "tenant-a", Name: "trainer-abc", OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: "trainer-123", Controller: &controller}}},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, ResourceClaimStatuses: []corev1.PodResourceClaimStatus{{Name: "gpu", ResourceClaimName: &claimName}}}},
 		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "tenant-b", Name: "foreign-trainer"},
@@ -36,9 +37,17 @@ func TestGPUDRAStatusAggregatesQualifiedOperatorState(t *testing.T) {
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, ResourceClaimStatuses: []corev1.PodResourceClaimStatus{{Name: "gpu", ResourceClaimName: &ownedClaimName}}}},
 		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "tenant-d", Name: "a100-first-available-trainer"},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, ResourceClaimStatuses: []corev1.PodResourceClaimStatus{{Name: "gpu", ResourceClaimName: &firstAvailableClaimName}}}},
-		&appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Namespace: "hami-system", Name: "hami-dra-driver-kubelet-plugin"},
+		&appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Namespace: "hami-system", Name: "hami-dra-driver-kubelet-plugin", UID: types.UID("dra-ds"), Labels: map[string]string{"app.kubernetes.io/name": "hami-dra-driver", "app.kubernetes.io/component": "kubelet-plugin"}},
 			Spec:   appsv1.DaemonSetSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "driver", Image: "docker.io/projecthami/k8s-dra-driver@sha256:abc"}}}}},
 			Status: appsv1.DaemonSetStatus{DesiredNumberScheduled: 1, NumberReady: 1, NumberAvailable: 1}},
+		&appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Namespace: "tenant-forgery", Name: "hami-dra-driver-kubelet-plugin", UID: types.UID("forged-ds"), Labels: map[string]string{"app.kubernetes.io/name": "hami-dra-driver", "app.kubernetes.io/component": "kubelet-plugin"}},
+			Status: appsv1.DaemonSetStatus{DesiredNumberScheduled: 99, NumberReady: 99, NumberAvailable: 99}},
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "hami-system", Name: "hami-dra-driver-gpu-a", CreationTimestamp: metav1.NewTime(time.Date(2026, 7, 17, 11, 0, 0, 0, time.UTC)), Labels: map[string]string{"app.kubernetes.io/name": "hami-dra-driver", "hami-dra-driver-component": "kubelet-plugin"}, OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "DaemonSet", Name: "hami-dra-driver-kubelet-plugin", UID: types.UID("dra-ds"), Controller: &controller}}},
+			Spec: corev1.PodSpec{NodeName: "gpu-a"}, Status: corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue, LastTransitionTime: metav1.NewTime(time.Date(2026, 7, 17, 11, 5, 0, 0, time.UTC))}}}},
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "tenant-forgery", Name: "forged-driver", Labels: map[string]string{"app.kubernetes.io/name": "hami-dra-driver", "hami-dra-driver-component": "kubelet-plugin"}, OwnerReferences: []metav1.OwnerReference{{Kind: "DaemonSet", Name: "hami-dra-driver-kubelet-plugin", UID: types.UID("forged-ds"), Controller: &controller}}},
+			Spec: corev1.PodSpec{NodeName: "gpu-a"}},
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "hami-system", Name: "stale-from-replaced-daemonset", OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "DaemonSet", Name: "hami-dra-driver-kubelet-plugin", UID: types.UID("old-dra-ds"), Controller: &controller}}},
+			Spec: corev1.PodSpec{NodeName: "gpu-a"}, Status: corev1.PodStatus{Phase: corev1.PodUnknown}},
 		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-dc", Name: "kube-dc-backend"}, Spec: appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "backend", Env: []corev1.EnvVar{{Name: "GPU_SHARED_CREATION_ENABLED", Value: "false"}, {Name: "GPU_VM_CREATION_ENABLED", Value: "false"}}}}}}}},
 		&batchv1.CronJob{ObjectMeta: metav1.ObjectMeta{Namespace: "gpu-operator", Name: "hami-device-plugin-canary"}, Status: batchv1.CronJobStatus{LastSuccessfulTime: &lastSuccess}},
 	)
@@ -81,7 +90,7 @@ func TestGPUDRAStatusAggregatesQualifiedOperatorState(t *testing.T) {
 	if status.ResourceSlices != 1 || status.Devices != 1 || status.ShareableDevices != 1 || status.Claims != 1 || status.GPUClaims != 3 || status.AllocatedClaims != 1 || len(status.DRAHolders) != 3 {
 		t.Fatalf("inventory state=%+v", status)
 	}
-	if status.DriverReady != 1 || status.DriverDesired != 1 || len(status.AllocatorOwners) != 1 || len(status.DRANodes) != 1 || !status.CanaryPresent || status.CanaryLastSuccessfulTime == nil {
+	if status.DriverReady != 1 || status.DriverDesired != 1 || len(status.AllocatorOwners) != 1 || len(status.DRANodes) != 1 || len(status.DriverPods) != 1 || !status.DriverPods[0].Ready || !status.DriverPods[0].NodeReady || status.DriverPods[0].ReadyLastTransitionTime.IsZero() || !status.CanaryPresent || status.CanaryLastSuccessfulTime == nil {
 		t.Fatalf("operator state=%+v", status)
 	}
 }

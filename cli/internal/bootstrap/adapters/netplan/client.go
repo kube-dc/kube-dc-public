@@ -19,6 +19,7 @@ package netplan
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -147,7 +148,7 @@ func (c *Client) Restore(ctx context.Context, src string) error {
 // use os.Rename because src and dst may live on different filesystems
 // (snapshot in /tmp vs /etc/netplan on /). 0o600 default keeps secrets
 // out of world-readable mode regardless of the source's bits.
-func copyFile(src, dst string) error {
+func copyFile(src, dst string) (retErr error) {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -172,7 +173,9 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() {
+		retErr = errors.Join(retErr, out.Close())
+	}()
 
 	if _, err := io.Copy(out, in); err != nil {
 		return err
@@ -196,4 +199,3 @@ func runReal(ctx context.Context, name string, args ...string) ([]byte, []byte, 
 	err := cmd.Run()
 	return stdout.Bytes(), stderr.Bytes(), err
 }
-

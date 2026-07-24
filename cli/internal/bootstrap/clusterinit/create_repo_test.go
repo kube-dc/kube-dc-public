@@ -136,7 +136,7 @@ func TestCreateGitHubRepo_AlreadyExistsCaseInsensitive(t *testing.T) {
 				err:       errors.New("exit status 1"),
 			}
 			err := CreateGitHubRepo(context.Background(), CreateRepoOptions{
-				Owner:  "a", Name: "b", runner: fake,
+				Owner: "a", Name: "b", runner: fake,
 			})
 			if err != nil {
 				t.Errorf("expected already-exists sniff to match %q, got %v", msg, err)
@@ -503,9 +503,9 @@ func TestNormalizeProviderForHash(t *testing.T) {
 	cases := []struct {
 		in, want Provider
 	}{
-		{"", ""},                            // default → default
-		{ProviderGitHub, ""},                // explicit default → default
-		{ProviderGitLab, ProviderGitLab},    // non-default → verbatim
+		{"", ""},                         // default → default
+		{ProviderGitHub, ""},             // explicit default → default
+		{ProviderGitLab, ProviderGitLab}, // non-default → verbatim
 		{Provider("bitbucket"), Provider("bitbucket")}, // future / typo → verbatim (Validate() catches upstream)
 	}
 	for _, c := range cases {
@@ -534,13 +534,13 @@ func TestBuildPlan_ProviderHashStability(t *testing.T) {
 			GitHubRepo:     "fleet",
 			RookMode:       RookDisabled, // baseline: no companion flags needed
 			Sets: map[string]string{
-				"EXT_NET_VLAN_ID":  "1",
+				"EXT_NET_VLAN_ID":   "1",
 				"EXT_NET_INTERFACE": "e",
 			},
 		}
 	}
 
-	optEmpty := baselineOpts()   // Provider unset
+	optEmpty := baselineOpts() // Provider unset
 	optGitHub := baselineOpts()
 	optGitHub.Provider = ProviderGitHub // explicit default
 
@@ -578,7 +578,7 @@ func TestCreateRemoteRepo_EmptyProvider_DefaultsToGitHub(t *testing.T) {
 	fake := &fakeGhRunner{}
 	err := CreateRemoteRepo(context.Background(), CreateRepoOptions{
 		// Provider unset
-		Owner:  "a", Name: "b",
+		Owner: "a", Name: "b",
 		runner: fake,
 	})
 	if err != nil {

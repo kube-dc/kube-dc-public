@@ -301,6 +301,7 @@ type inputsForHash struct {
 	// + apply MUST agree or an operator could preview a shared-rbd plan and
 	// apply a local-only one (or a different golden subset).
 	VMStorageMode           VMStorageMode          `json:"vmStorageMode"`
+	ImageAcceleration       bool                   `json:"imageAcceleration,omitempty"`
 	VMGoldens               []string               `json:"vmGoldens,omitempty"`
 	VMGoldensBlock          []string               `json:"vmGoldensBlock,omitempty"`
 	GPUPlatform             GPUPlatformMode        `json:"gpuPlatform,omitempty"`
@@ -427,6 +428,7 @@ func (o *InitOptions) inputsForHash() inputsForHash {
 		S3Hostname:              o.S3Hostname,
 		NoS3Exposure:            o.NoS3Exposure,
 		VMStorageMode:           o.VMStorageMode,
+		ImageAcceleration:       o.ImageAcceleration,
 		VMGoldens:               canonicalGoldens(o.VMGoldens),
 		VMGoldensBlock:          canonicalGoldens(o.VMGoldensBlock),
 		GPUPlatform:             o.GPUPlatform,
@@ -714,6 +716,25 @@ func filesForOptions(o *InitOptions, fleet FleetState) []PlanFile {
 			PlanFile{Path: "clusters/" + base + "infra-object-storage.yaml",
 				Description: "Flux layer 1d (healthCheck: CephCluster Ready)", Action: "+"},
 		)
+	}
+	if o.ImageAcceleration {
+		// Image-acceleration trio (imageaccel.go, Scaffold step 9b). Pieces
+		// whose platform/ dir is absent from the starter are skipped at
+		// apply time with a warning; the S3-backed pieces additionally
+		// require an object-storage mode (they depend on
+		// infra-object-storage). The plan lists the intent.
+		files = append(files,
+			PlanFile{Path: "clusters/" + base + "tenant-addons.yaml",
+				Description: "tenant-cluster addons (Sveltos: CNI/CoreDNS) Kustomization", Action: "+"},
+		)
+		if scaffoldsObjectStorage(o.RookMode) {
+			files = append(files,
+				PlanFile{Path: "clusters/" + base + "cdi-os-mirror.yaml",
+					Description: "CDI OS-image S3 mirror Kustomization", Action: "+"},
+				PlanFile{Path: "clusters/" + base + "registry-depot.yaml",
+					Description: "zot registry depot Kustomization (+ minted push credential)", Action: "+"},
+			)
+		}
 	}
 	if scaffoldVM {
 		goldenDesc := "default (1 golden)"

@@ -96,6 +96,9 @@ type ApplyOptions struct {
 	// scaffold writer (Scaffold step 9). See vmstorage.go.
 	VMStorage VMStorageSpec
 
+	// ImageAccel wires the image-acceleration trio (Scaffold step 9b).
+	ImageAccel ImageAccelSpec
+
 	// GPU carries the validated, non-secret accelerator fleet contract.
 	GPU GPUConfig
 
@@ -228,6 +231,7 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 		NodeNICs:       opts.NodeNICs,
 		ObjectStorage:  opts.ObjectStorage,
 		VMStorage:      opts.VMStorage,
+		ImageAccel:     opts.ImageAccel,
 		GPU:            opts.GPU,
 		SingleIPNAT:    opts.SingleIPNAT,
 		Runner:         opts.Runner,

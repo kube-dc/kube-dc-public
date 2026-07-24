@@ -32,6 +32,21 @@ type GPUHolder struct {
 	Resources []string
 }
 
+// GPUDRADriverPod is the exact operator-owned kubelet-plugin state needed to
+// diagnose a DaemonSet that is stuck behind a stale post-reboot Pod. It remains
+// operator-only and contains no physical GPU identity.
+type GPUDRADriverPod struct {
+	Namespace               string    `json:"namespace"`
+	Name                    string    `json:"name"`
+	Node                    string    `json:"node"`
+	Phase                   string    `json:"phase"`
+	Ready                   bool      `json:"ready"`
+	NodeReady               bool      `json:"nodeReady"`
+	Deleting                bool      `json:"deleting"`
+	CreationTimestamp       time.Time `json:"creationTimestamp"`
+	ReadyLastTransitionTime time.Time `json:"readyLastTransitionTime"`
+}
+
 // GPUNodeTransitionState is the minimum state required by the holder-safe
 // pod-hami <-> vm-passthrough transition engine.
 type GPUNodeTransitionState struct {
@@ -74,6 +89,7 @@ type GPUDRAStatus struct {
 	PendingClaims            int
 	DriverReady              int32
 	DriverDesired            int32
+	DriverPods               []GPUDRADriverPod
 	DriverImages             []string
 	AllocatorOwners          []string
 	DRANodes                 []string

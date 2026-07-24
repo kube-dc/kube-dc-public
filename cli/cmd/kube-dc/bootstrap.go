@@ -53,9 +53,19 @@ KUBE_DC_FLEET environment variable.`,
 			if err != nil {
 				return err
 			}
-			return bttui.RunRoot(func() tea.Model {
-				return screens.NewRootModel(repo, screens.RootTabFleet)
-			})
+			root := screens.NewRootModel(repo, screens.RootTabFleet)
+			if err := bttui.RunRoot(func() tea.Model { return root }); err != nil {
+				return err
+			}
+			// The Init tab hands off rather than installing in-TUI: an
+			// Applied panel exits the program and we print the exact
+			// command to run (same equivalent-flags contract the
+			// standalone `bootstrap init` panel prints on Review).
+			if eq, ok := root.InitResult(); ok {
+				fmt.Fprintf(cmd.OutOrStdout(),
+					"\nInit settings captured. Run the install with:\n\n%s  --yes\n", eq)
+			}
+			return nil
 		},
 	}
 

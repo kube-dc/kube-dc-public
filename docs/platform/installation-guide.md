@@ -156,6 +156,21 @@ and the fleet never disagree), and memory-tiered kubelet reserves with a
 default is too small for an all-in-one node). The node comes up **NotReady**
 until Phase 3 installs the CNI — that's expected.
 
+Since CLI v0.5.2 it also enables the **RKE2 embedded registry mirror (spegel)**
+on every node by default: nodes P2P-share image content, so repeated
+containerdisk/image pulls stay off the WAN. `EMBEDDED_REGISTRY=false` in the
+environment opts out, and an existing operator-managed
+`/etc/rancher/rke2/registries.yaml` is never overwritten. Pair it with the
+image-acceleration stack that `bootstrap init` scaffolds by default
+(tenant-cluster addons, zot registry depot, CDI OS-image mirror —
+`--image-acceleration=false` opts out; see the
+[enterprise install guide](private-ca-enterprise-install.md) §6).
+
+> ⚠️ When retrofitting spegel onto an **existing** cluster, restart
+> `rke2-server`/`rke2-agent` one node at a time and **drain or stop KubeVirt
+> VMs on the node first** — restarting under running VMs can wedge the node
+> (see the enterprise guide §1 for the failure signature and recovery).
+
 Key flags: `--name` (RKE2 node-name; defaults to the positional arg — use the
 same name in `init`), `--node-ip` / `--external-ip` (override auto-detection),
 `--force` (re-run on an already-installed node — restarts to apply config

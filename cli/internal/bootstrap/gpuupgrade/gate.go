@@ -32,10 +32,11 @@ var (
 // qualified. Keeping the tuple indivisible prevents an independently proven
 // kernel and driver from being combined without evidence for that combination.
 type Target struct {
-	Kernel      string `yaml:"kernel"`
-	RKE2        string `yaml:"rke2"`
-	Driver      string `yaml:"driver"`
-	GPUOperator string `yaml:"gpuOperator"`
+	Kernel       string `yaml:"kernel"`
+	RKE2         string `yaml:"rke2"`
+	Driver       string `yaml:"driver"`
+	GPUOperator  string `yaml:"gpuOperator"`
+	DCGMExporter string `yaml:"dcgmExporter"`
 }
 
 type Canary struct {
@@ -138,6 +139,7 @@ func Check(q Qualification, req Request) (Result, error) {
 		{"rke2", req.Current.RKE2, req.Target.RKE2, q.Target.RKE2},
 		{"driver", req.Current.Driver, req.Target.Driver, q.Target.Driver},
 		{"gpuOperator", req.Current.GPUOperator, req.Target.GPUOperator, q.Target.GPUOperator},
+		{"dcgmExporter", req.Current.DCGMExporter, req.Target.DCGMExporter, q.Target.DCGMExporter},
 	} {
 		if strings.TrimSpace(field.current) == "" || strings.TrimSpace(field.target) == "" {
 			problems = append(problems, field.name+" current and target values are required")
@@ -147,7 +149,7 @@ func Check(q Qualification, req Request) (Result, error) {
 		}
 	}
 	if req.Current == req.Target {
-		problems = append(problems, "at least one kernel, RKE2, driver, or GPU Operator target must change")
+		problems = append(problems, "at least one kernel, RKE2, driver, GPU Operator, or DCGM exporter target must change")
 	}
 	if err := validateRKE2Step(req.Current.RKE2, req.Target.RKE2); err != nil {
 		problems = append(problems, err.Error())

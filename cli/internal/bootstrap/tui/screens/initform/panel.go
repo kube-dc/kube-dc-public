@@ -479,6 +479,20 @@ func (m *PanelModel) validationErrors() []string {
 func (m *PanelModel) Applied() bool   { return m.applied }
 func (m *PanelModel) Cancelled() bool { return m.cancelled }
 
+// Editing reports whether a text field currently owns the keyboard.
+// The root-router uses this for DYNAMIC modality: while editing, every
+// key (incl. digits/brackets/'q') is typed input; in nav mode the root's
+// tab-switch keys work normally (manual TTY finding 2026-07-20 — the
+// static always-modal gate trapped operators on the tab).
+func (m *PanelModel) Editing() bool { return m.editing }
+
+// MarkEmbedded adjusts help text for the root-router embed, where 'q'
+// in nav mode DISCARDS the form and returns to the Fleet tab instead
+// of quitting a standalone program.
+func (m *PanelModel) MarkEmbedded() {
+	m.keys.Quit = key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "discard + back"))
+}
+
 // saveDraft writes the current answers as a reusable spec (the 'S' key —
 // "save values, decide later"). Best-effort: a work-in-progress draft may
 // be incomplete or have object-storage disabled without consent, so

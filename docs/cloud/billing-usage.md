@@ -286,6 +286,12 @@ The effective limit for any resource is the **lower** of the per-project cap and
 kubectl delete resourcequota project-quota -n myorg-dev
 ```
 
+The organization-admin quota API uses patch-style updates: omitted fields keep
+their current value, while an explicit empty string removes a classic
+CPU/memory/storage/pods cap. Accelerator profiles use product IDs; omitting a
+profile keeps it in the shared organization pool, while an explicit value of
+`0` denies that accelerator profile for the project.
+
 ---
 
 ## Tracking Usage with kubectl
@@ -347,7 +353,7 @@ Example output:
 }
 ```
 
-- **hard** shows the organization limit when no per-project cap is set (`perProjectQuotaSet: false`), or the per-project cap when one is configured
+- **hard** shows the organization limit when no `project-quota` exists. When one is configured, each classic dimension shows only its explicit per-project cap; an omitted dimension remains pooled and is not presented as a project cap
 - **perProjectQuotaSet** — `true` if an admin has applied an explicit per-project `ResourceQuota`
 
 ### All projects at a glance

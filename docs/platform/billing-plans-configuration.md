@@ -123,9 +123,15 @@ data:
       memPerProject: <MiB>
     addons:
       <addon-id>:
+        disabled: <boolean>
         cpu: "<cpu>"
         memory: "<memory>"
         storage: "<storage>"
+        gpu:
+          <stable-profile-id>:
+            shares: <integer>
+            memoryMiB: <integer>
+            corePercent: <integer>
     eipQuota:
       <plan-id>: <number>
 ```
@@ -192,9 +198,53 @@ Resource add-ons that can be attached to an organization via the `billing.kube-d
 
 | Field | Description | Example |
 |-------|-------------|---------|
+| `disabled` | Kill switch: hides the add-on from purchase APIs and prevents its annotation from granting resources. Omitted means enabled. | `true` |
+| `selfService` | Purchase visibility: `false` hides the add-on from tenant purchase APIs while still allowing an operator assignment to grant resources. Omitted means visible. | `false` |
 | `cpu` | Additional CPU per addon unit | `"4"` |
 | `memory` | Additional memory per addon unit | `"8Gi"` |
 | `storage` | Additional storage per addon unit | `"40Gi"` |
+| `gpu.<profile>.shares` | Concurrent shared-GPU workloads per unit | `1` |
+| `gpu.<profile>.memoryMiB` | Aggregate GPU memory budget per unit | `8192` |
+| `gpu.<profile>.corePercent` | Aggregate GPU compute budget per unit | `25` |
+| `providers.stripe.priceId` | Exact Stripe Price ID; legacy environment lookup remains a fallback | `price_...` |
+| `providers.whmcs.configurableOptionName` | Exact, case-sensitive WHMCS quantity option mapped to this stable add-on ID | `Kube-DC Shared NVIDIA V100 8 GB` |
+
+The D-005 pilot SKU uses the same annotation and quantity mechanics as Turbo
+add-ons. It ships operator-only and unpriced: installing or upgrading kube-dc
+does not assign GPU capacity, and tenants cannot purchase it:
+
+```yaml
+addons:
+  gpu-v100-shared-8g:
+    disabled: false
+    selfService: false
+    displayName: "Shared NVIDIA V100 — 8 GB"
+    description: "1 concurrent GPU workload • 8 GB GPU memory • 25% compute"
+    price: 0
+    currency: EUR
+    providers:
+      stripe:
+        priceId: ""
+      whmcs:
+        configurableOptionName: "Kube-DC Shared NVIDIA V100 8 GB"
+    gpu:
+      nvidia-v100-hami:
+        shares: 1
+        memoryMiB: 8192
+        corePercent: 25
+```
+
+Before assigning the SKU, deploy a billing-eligible matching GPU profile. Keep
+`selfService: false` during the internal pilot; after the acceptance gates pass,
+set the real monthly price and change it to `true` (or remove the field) to
+offer self-service purchase. Quantity multiplies every dimension: quantity 2
+produces 2 shares, 16384 MiB, and 50% aggregate compute.
+
+WHMCS module 1.3.0 sends signed configurable-option values on activate, change,
+and renew. The backend maps only explicitly configured option names, applies
+the same add-on quantity/catalog validation as other providers, and runs active
+GPU-holder reduction checks before changing annotations. Older module payloads
+do not contain `configurableOptions` and preserve existing assignments.
 
 #### `eipQuota`
 
@@ -679,7 +729,7 @@ The billing backend exposes the following REST endpoints under `/api/billing/`:
 | `PUT` | `/projects/:id/quota` | Set per-project ResourceQuota (org-admin only) |
 | `DELETE` | `/projects/:id/quota` | Remove per-project ResourceQuota (org-admin only) |
 
-Per-project quotas use standard Kubernetes `ResourceQuota` objects. They coexist with the HRQ — the most restrictive limit wins. HRQ-managed quotas (prefixed `hrq-*`) are read-only; only the `project-quota` ResourceQuota can be managed via the API.
+Per-project quotas use standard Kubernetes `ResourceQuota` objects. They coexist with the HRQ — the most restrictive limit wins. The HNC-managed `hrq.hnc.x-k8s.io` quota is read-only; only the `project-quota` ResourceQuota can be managed through the authorized kube-dc API.
 
 ### Stripe Integration
 

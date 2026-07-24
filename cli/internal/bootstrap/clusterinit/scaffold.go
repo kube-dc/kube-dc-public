@@ -105,6 +105,10 @@ type ScaffoldOptions struct {
 	// kustomization resource); local writes nothing. See vmstorage.go.
 	VMStorage VMStorageSpec
 
+	// ImageAccel wires the image-acceleration trio (tenant-addons,
+	// cdi-os-mirror, registry-depot). Default-on; see imageaccel.go.
+	ImageAccel ImageAccelSpec
+
 	// GPU is the public accelerator contract. It contributes only non-secret
 	// substitutions; licenses and registry credentials remain SOPS-owned.
 	GPU GPUConfig
@@ -268,6 +272,13 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// defense in depth). Independent of the object-storage kustomization
 	// patch (adds a different resource entry).
 	if err := WriteVMStorage(opts.FleetRepo, opts.Plan.ClusterName, opts.VMStorage, out); err != nil {
+		return fmt.Errorf("scaffold: %w", err)
+	}
+
+	// (9b) Image-acceleration trio (tenant-addons + cdi-os-mirror +
+	// registry-depot). Default-on; pieces absent from an older starter are
+	// skipped with a warning. See imageaccel.go.
+	if err := WriteImageAccel(opts.FleetRepo, opts.Plan.ClusterName, opts.ImageAccel, out); err != nil {
 		return fmt.Errorf("scaffold: %w", err)
 	}
 

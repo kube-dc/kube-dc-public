@@ -531,23 +531,63 @@ func initialState(o *clusterinit.InitOptions) *State {
 	return st
 }
 
-// RunPanel runs the install settings panel, applies the result onto o,
-// and returns the equivalent-flags rendering (thin-generator contract).
-// A cancelled panel returns ErrPanelCancelled and leaves o untouched.
-func RunPanel(o *clusterinit.InitOptions, siblingHint string) (string, error) {
-	m := NewPanelModel(initialState(o), siblingHint)
+// NewEmbeddedPanel builds a PanelModel over o's prefill for embedding
+// in a parent TUI (the root-router Init tab) — same state setup as
+// RunPanel without owning a tea.Program. The parent reads the outcome
+// via Applied()/Cancelled() + Result().
+//
+// probe (nil-safe) carries live-cluster facts gathered best-effort by
+// the cobra layer; they fill ONLY fields still empty after the
+// config/env/flag prefill (lowest precedence — see prefill_probe.go)
+// and the filled values are named in the hint line so the operator
+// knows they came from the cluster, not their own input.
+func NewEmbeddedPanel(o *clusterinit.InitOptions, siblingHint string, probe *ProbePrefill) *PanelModel {
+	st := initialState(o)
+	if probe != nil {
+		if notes := probe.ApplyTo(st); len(notes) > 0 {
+			probedLine := "probed from live cluster: " + strings.Join(notes, "; ")
+			if siblingHint != "" {
+				siblingHint += "\n" + probedLine
+			} else {
+				siblingHint = probedLine
+			}
+		}
+	}
+	pm := NewPanelModel(st, siblingHint)
+	pm.MarkEmbedded()
+	return pm
+}
+
+// Result applies an Applied panel's state onto o and returns the
+// equivalent-flags rendering (thin-generator contract). A panel that
+// was cancelled — or never reached Apply — returns ErrPanelCancelled
+// and leaves o untouched.
+func (m *PanelModel) Result(o *clusterinit.InitOptions) (string, error) {
+	if m.Cancelled() || !m.Applied() {
+		return "", ErrPanelCancelled
+	}
+	// m.st is the same *State initialState built, mutated by the
+	// operator's edits during the run.
+	if err := m.st.Apply(o); err != nil {
+		return "", err
+	}
+	return m.st.EquivalentFlags(o), nil
+}
+
+// RunPanel runs the install settings panel standalone (the bare-TTY
+// `bootstrap init` path), applies the result onto o, and returns the
+// equivalent-flags rendering. A cancelled panel returns
+// ErrPanelCancelled and leaves o untouched. See NewEmbeddedPanel for
+// the probe contract.
+func RunPanel(o *clusterinit.InitOptions, siblingHint string, probe *ProbePrefill) (string, error) {
+	m := NewEmbeddedPanel(o, siblingHint, probe)
 	res, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return "", err
 	}
 	pm, ok := res.(*PanelModel)
-	if !ok || pm.Cancelled() || !pm.Applied() {
+	if !ok {
 		return "", ErrPanelCancelled
 	}
-	// pm.st is the same *State initialState built, mutated by the operator's
-	// edits during the run.
-	if err := pm.st.Apply(o); err != nil {
-		return "", err
-	}
-	return pm.st.EquivalentFlags(o), nil
+	return pm.Result(o)
 }

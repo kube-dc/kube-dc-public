@@ -122,6 +122,28 @@ else
 fi
 log_info "Node memory: ${MEM_TOTAL_GIB} GiB → system-reserved=${KUBELET_SYS_RESERVED}, max-pods=${KUBELET_MAX_PODS}"
 
+# --- Embedded registry mirror (spegel) — vm-startup-acceleration Phase A ---
+# Agents don't take the embedded-registry flag (server-only), but they must
+# have a mirrors entry in registries.yaml to PARTICIPATE in the P2P mirror
+# (a node without one "does not participate in the distributed registry in
+# any capacity" — RKE2 docs). Same env knobs as install-server.sh.
+EMBEDDED_REGISTRY="${EMBEDDED_REGISTRY:-true}"
+REGISTRY_MIRROR_SCOPE="${REGISTRY_MIRROR_SCOPE:-*}"
+if [[ "${EMBEDDED_REGISTRY}" == "true" ]]; then
+    if [[ -f "${RANCHER_DIR}/registries.yaml" ]]; then
+        # Never truncate an operator-managed registries.yaml (private
+        # mirrors/credentials/TLS live here). Keep it; the embedded registry
+        # still works with whatever mirrors it defines.
+        log_warn "registries.yaml already exists — keeping it (not overwriting with the default mirror entry)"
+    else
+        cat > "${RANCHER_DIR}/registries.yaml" <<EOF
+mirrors:
+  "${REGISTRY_MIRROR_SCOPE}":
+EOF
+    fi
+    log_info "Embedded registry mirror participation enabled (mirror scope: ${REGISTRY_MIRROR_SCOPE})"
+fi
+
 # Generate config.yaml
 # Memory reservation + eviction protects kubelet/containerd from kernel OOM
 # under sudden pressure. See bootstrap/rke2/install-server.sh + the

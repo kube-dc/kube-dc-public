@@ -41,7 +41,8 @@ import (
 
 // StatusOptions is the parameter bundle for Status. ClusterName is a
 // display label only (see file header). OpenBao is the live port
-// (real adapter or scenario mock). Out captures the operator log.
+// (real adapter or scenario mock). Out is deprecated and retained for source
+// compatibility; the cobra layer renders StatusResult to its own writer.
 type StatusOptions struct {
 	ClusterName string
 	OpenBao     ports.OpenBaoClient
@@ -194,11 +195,6 @@ func Status(ctx context.Context, opts StatusOptions) (StatusResult, error) {
 	if opts.OpenBao == nil {
 		return StatusResult{}, fmt.Errorf("%w: OpenBao", ErrStatusMissingDependency)
 	}
-	out := opts.Out
-	if out == nil {
-		out = io.Discard
-	}
-
 	res := StatusResult{ClusterName: opts.ClusterName}
 
 	pods, err := opts.OpenBao.PodList(ctx)

@@ -5,13 +5,23 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
+)
+
+const (
+	hamiDRANamespace    = "hami-system"
+	hamiDRAName         = "hami-dra-driver-kubelet-plugin"
+	legacyHAMiNamespace = "gpu-operator"
 )
 
 var (
@@ -258,7 +268,13 @@ func (c *Client) populateDRAOperators(ctx context.Context, status *ports.GPUDRAS
 	if err != nil {
 		return fmt.Errorf("k8s: list Nodes for DRA ownership: %w", err)
 	}
+	nodeReady := map[string]bool{}
 	for i := range nodes.Items {
+		for _, condition := range nodes.Items[i].Status.Conditions {
+			if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue {
+				nodeReady[nodes.Items[i].Name] = true
+			}
+		}
 		active := nodes.Items[i].Labels["kube-dc.com/gpu.workload-mode"]
 		expected := nodes.Items[i].Labels["kube-dc.com/gpu.expected-workload-mode"]
 		if active == "pod-hami-dra" || expected == "pod-hami-dra" {
@@ -271,22 +287,35 @@ func (c *Client) populateDRAOperators(ctx context.Context, status *ports.GPUDRAS
 	sort.Strings(status.DRANodes)
 	sort.Strings(status.WrongModeNodes)
 
-	daemonSets, err := c.core.AppsV1().DaemonSets(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("k8s: list DaemonSets for DRA ownership: %w", err)
+	daemonSets := make([]appsv1.DaemonSet, 0)
+	// Trusted-namespace Lists and the exact checks below are deliberately
+	// redundant. Keep both layers so a future broader List cannot make a tenant
+	// object authoritative, and a future relaxed filter is still namespace-bound.
+	for _, namespace := range []string{hamiDRANamespace, legacyHAMiNamespace} {
+		list, err := c.core.AppsV1().DaemonSets(namespace).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return fmt.Errorf("k8s: list trusted %s DaemonSets for DRA ownership: %w", namespace, err)
+		}
+		daemonSets = append(daemonSets, list.Items...)
 	}
 	images := map[string]bool{}
-	for i := range daemonSets.Items {
-		ds := &daemonSets.Items[i]
+	draDaemonSets := map[string]types.UID{}
+	for i := range daemonSets {
+		// Revalidate namespace, name and labels even though the API reads above
+		// are already namespace-scoped; this loop is the inner trust boundary.
+		ds := &daemonSets[i]
 		name := ds.Namespace + "/" + ds.Name
-		isDRA := strings.Contains(ds.Name, "hami-dra")
-		isLegacy := strings.Contains(ds.Name, "hami-device-plugin") && !isDRA
+		isDRA := ds.Namespace == hamiDRANamespace && ds.Name == hamiDRAName &&
+			ds.Labels["app.kubernetes.io/name"] == "hami-dra-driver" &&
+			ds.Labels["app.kubernetes.io/component"] == "kubelet-plugin"
+		isLegacy := ds.Namespace == legacyHAMiNamespace && strings.Contains(ds.Name, "hami-device-plugin")
 		if (isDRA || isLegacy) && ds.Status.NumberAvailable > 0 {
 			status.AllocatorOwners = append(status.AllocatorOwners, name)
 		}
 		if !isDRA {
 			continue
 		}
+		draDaemonSets[name] = ds.UID
 		status.DriverReady += ds.Status.NumberReady
 		status.DriverDesired += ds.Status.DesiredNumberScheduled
 		for _, container := range append(ds.Spec.Template.Spec.InitContainers, ds.Spec.Template.Spec.Containers...) {
@@ -295,6 +324,40 @@ func (c *Client) populateDRAOperators(ctx context.Context, status *ports.GPUDRAS
 	}
 	status.DriverImages = sortedKeys(images)
 	sort.Strings(status.AllocatorOwners)
+
+	driverPods, err := c.core.CoreV1().Pods(hamiDRANamespace).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/name=hami-dra-driver,hami-dra-driver-component=kubelet-plugin"})
+	if err != nil {
+		return fmt.Errorf("k8s: list trusted HAMi DRA driver Pods: %w", err)
+	}
+	for i := range driverPods.Items {
+		pod := &driverPods.Items[i]
+		owner := metav1.GetControllerOf(pod)
+		if owner == nil || owner.Kind != "DaemonSet" {
+			continue
+		}
+		daemonSetUID, owned := draDaemonSets[pod.Namespace+"/"+owner.Name]
+		if !owned || daemonSetUID == "" || owner.UID != daemonSetUID {
+			continue
+		}
+		ready := false
+		var readyTransition time.Time
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == corev1.PodReady {
+				ready = condition.Status == corev1.ConditionTrue
+				readyTransition = condition.LastTransitionTime.Time
+				break
+			}
+		}
+		status.DriverPods = append(status.DriverPods, ports.GPUDRADriverPod{
+			Namespace: pod.Namespace, Name: pod.Name, Node: pod.Spec.NodeName,
+			Phase: string(pod.Status.Phase), Ready: ready, NodeReady: nodeReady[pod.Spec.NodeName],
+			Deleting: pod.DeletionTimestamp != nil, CreationTimestamp: pod.CreationTimestamp.Time,
+			ReadyLastTransitionTime: readyTransition,
+		})
+	}
+	sort.Slice(status.DriverPods, func(i, j int) bool {
+		return status.DriverPods[i].Namespace+"/"+status.DriverPods[i].Name < status.DriverPods[j].Namespace+"/"+status.DriverPods[j].Name
+	})
 
 	deployments, err := c.core.AppsV1().Deployments(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
 	if err != nil {

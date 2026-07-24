@@ -191,6 +191,32 @@ log_info "  kube-reserved=${KUBELET_KUBE_RESERVED}"
 log_info "  eviction-hard=${KUBELET_EVICTION_HARD}"
 log_info "  max-pods=${KUBELET_MAX_PODS}"
 
+# --- Embedded registry mirror (spegel) — vm-startup-acceleration Phase A ---
+# Every node serves/pulls image content P2P from its containerd store (RKE2
+# embedded spegel, GA >= v1.31.4). Requires TCP 5001 + 9345 between nodes.
+# EMBEDDED_REGISTRY=false opts out; REGISTRY_MIRROR_SCOPE narrows the mirror
+# list (default "*" = all registries). registries.yaml is ALWAYS written when
+# enabled: embedded-registry with no mirrors entry hangs rke2 startup on some
+# versions (rancher/rke2#9755).
+EMBEDDED_REGISTRY="${EMBEDDED_REGISTRY:-true}"
+REGISTRY_MIRROR_SCOPE="${REGISTRY_MIRROR_SCOPE:-*}"
+EMBEDDED_REGISTRY_BLOCK=""
+if [[ "${EMBEDDED_REGISTRY}" == "true" ]]; then
+    EMBEDDED_REGISTRY_BLOCK=$'embedded-registry: true\nsupervisor-metrics: true'
+    if [[ -f "${RANCHER_DIR}/registries.yaml" ]]; then
+        # Never truncate an operator-managed registries.yaml (private
+        # mirrors/credentials/TLS live here). The embedded registry works
+        # with whatever mirrors it already defines.
+        log_warn "registries.yaml already exists — keeping it (not overwriting with the default mirror entry)"
+    else
+        cat > "${RANCHER_DIR}/registries.yaml" <<EOF
+mirrors:
+  "${REGISTRY_MIRROR_SCOPE}":
+EOF
+    fi
+    log_info "Embedded registry mirror enabled (mirror scope: ${REGISTRY_MIRROR_SCOPE})"
+fi
+
 # Generate config.yaml
 if [[ -n "${JOIN_TOKEN}" && -n "${JOIN_SERVER}" ]]; then
     log_info "Mode: Joining existing cluster at ${JOIN_SERVER}"
@@ -253,6 +279,7 @@ tls-san:
   - ${JOIN_SERVER}
 advertise-address: ${NODE_IP}
 debug: true
+${EMBEDDED_REGISTRY_BLOCK}
 EOF
 else
     log_info "Mode: Initializing new cluster"
@@ -310,6 +337,7 @@ tls-san:
   - ${NODE_IP}
 advertise-address: ${NODE_IP}
 debug: true
+${EMBEDDED_REGISTRY_BLOCK}
 EOF
 fi
 
