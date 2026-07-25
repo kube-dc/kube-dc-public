@@ -1263,6 +1263,50 @@ func TestBootstrapInit_AgeKey_DryRunDowngradesMissingKey(t *testing.T) {
 	}
 }
 
+func TestValidateAgeKeyEnrollment_ExistingRepoDefersUntilStarter(t *testing.T) {
+	o := &clusterinit.InitOptions{
+		Repo:      t.TempDir(),
+		FleetMode: clusterinit.FleetExistingRepo,
+	}
+	var out bytes.Buffer
+	if err := validateAgeKeyEnrollment(context.Background(), &out, o, true); err != nil {
+		t.Fatalf("empty existing-repo should defer until starter extraction: %v", err)
+	}
+	if !strings.Contains(out.String(), "generation deferred") {
+		t.Fatalf("existing-repo did not enter the greenfield deferral path: %q", out.String())
+	}
+}
+
+func TestValidateAgeKeyEnrollment_ExistingRepoGeneratesAfterStarter(t *testing.T) {
+	repo := t.TempDir()
+	for _, marker := range []string{
+		"bootstrap/add-cluster.sh",
+		"infrastructure/kube-ovn-network-public/kustomization.yaml",
+		"infrastructure/ext-net-bridge-tag/kustomization.yaml",
+		"platform/kustomization.yaml",
+		"addons/metallb/kustomization.yaml",
+		"addons/metallb-config/kustomization.yaml",
+		"addons/metallb-config-bgp/kustomization.yaml",
+		"scripts/install-prerequisites.sh",
+	} {
+		path := filepath.Join(repo, marker)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir marker parent: %v", err)
+		}
+		if err := os.WriteFile(path, []byte("fixture\n"), 0o644); err != nil {
+			t.Fatalf("write marker: %v", err)
+		}
+	}
+	o := &clusterinit.InitOptions{
+		Repo:      repo,
+		FleetMode: clusterinit.FleetExistingRepo,
+	}
+	err := validateAgeKeyEnrollment(context.Background(), io.Discard, o, false)
+	if !errors.Is(err, clusterinit.ErrAgeKeyDryRunSkip) {
+		t.Fatalf("starter-present existing-repo must enter generation branch, got %v", err)
+	}
+}
+
 func TestBootstrapInit_AgeKey_FleetKeyPermissionError_Surfaces(t *testing.T) {
 	// Review-pass P3: when <fleet>/age.key exists but is
 	// unreadable, resolveAgeKeyPath must surface the stat error

@@ -24,7 +24,7 @@ import (
 // message when not.
 //
 // **Greenfield generation** (M4-T09 close, SHA `1ace3c9d`): when
-// --fleet-mode=new-repo and no `<fleet>/age.key` exists, this
+// either greenfield mode has no `<fleet>/age.key`, this
 // wiring auto-runs `bootstrap/generate-age-key.sh` via
 // `NewScriptOnly` — the operator no longer runs it manually. When
 // invoked under `--dry-run`, the auto-run is suppressed (returns
@@ -97,19 +97,19 @@ func resolveAgeKeyPath(o *clusterinit.InitOptions) (clusterinit.AgeKeyResolution
 //  4. Calls `clusterinit.CheckAgeKeyEnrollment` for the typed
 //     enrolled/not-enrolled decision.
 //
-// For --fleet-mode=new-repo, auto-runs
-// `bootstrap/generate-age-key.sh` via ScriptRunner when the
+// For either greenfield mode (--fleet-mode=new-repo or existing-repo),
+// auto-runs `bootstrap/generate-age-key.sh` via ScriptRunner when the
 // fleet's `age.key` is missing (M4-T09 greenfield-generate close).
 // Dry-run suppresses the auto-run and returns `ErrAgeKeyDryRunSkip`
-// which the RunE downgrades to a warning. For non-existing-fleet
-// modes (existing-repo), this is a no-op — the engine slice that
-// adopts an empty repo will handle key setup on its own timeline.
+// which the RunE downgrades to a warning. Existing-repo needs the
+// same contract as new-repo: both acquire the starter into an empty
+// directory and scaffold encrypted secrets immediately afterwards.
 //
 // On success (enrolled), prints "[sops] ✓ enrolled (pubkey=… via
 // <source>)" so operators see which key the CLI consulted.
 func validateAgeKeyEnrollment(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, mutationsAllowed bool) error {
 	switch o.FleetMode {
-	case clusterinit.FleetNewRepo:
+	case clusterinit.FleetNewRepo, clusterinit.FleetExistingRepo:
 		// M4-T09 greenfield-generate close: if the fleet already
 		// carries an age.key + .sops.yaml (operator pre-generated,
 		// OR the fleet-starter was extracted into --repo), treat
@@ -158,8 +158,6 @@ func validateAgeKeyEnrollment(ctx context.Context, out io.Writer, o *clusterinit
 	case clusterinit.FleetExistingFleet:
 		// Fall through to the enrollment check.
 	default:
-		// existing-repo (uncommon) — no fleet-level age contract to
-		// check yet. Pass through silently.
 		return nil
 	}
 
@@ -213,7 +211,7 @@ func validateAgeKeyEnrollment(ctx context.Context, out io.Writer, o *clusterinit
 
 // autoGenerateAgeKey runs `bootstrap/generate-age-key.sh` from the
 // fleet repo — the M4-T09 greenfield-generate close. Called when
-// `--fleet-mode=new-repo` and no `<fleet>/age.key` exists yet.
+// either greenfield mode has no `<fleet>/age.key` yet.
 //
 // **Preconditions**: the script must be present in the fleet repo.
 // In practice that means either (a) the operator already cloned or
@@ -225,7 +223,7 @@ func validateAgeKeyEnrollment(ctx context.Context, out io.Writer, o *clusterinit
 // action.
 //
 // **Not invoked in dry-run** — the caller (`validateAgeKeyEnrollment`)
-// only reaches this branch on `--fleet-mode=new-repo`. Dry-run
+// only reaches this branch for a greenfield mode. Dry-run
 // still ends up here but the RunE downstream of Validate treats
 // ErrAgeKeyNotFound + ErrAgeKeyGenerateFailed as WARNINGs on
 // dry-run (see the surrounding cobra dispatch's downgrade logic).
