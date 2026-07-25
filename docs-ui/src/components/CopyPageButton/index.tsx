@@ -4,7 +4,7 @@ import { useLocation } from '@docusaurus/router';
 import BrowserOnly from '@docusaurus/BrowserOnly';
 import styles from './styles.module.css';
 
-function CopyPageButtonContent(): JSX.Element {
+function CopyPageButtonContent(): React.JSX.Element {
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -201,7 +201,7 @@ function CopyPageButtonContent(): JSX.Element {
   );
 }
 
-export default function CopyPageButton(): JSX.Element {
+export default function CopyPageButton(): React.JSX.Element {
   return (
     <BrowserOnly fallback={<div />}>
       {() => <CopyPageButtonContent />}

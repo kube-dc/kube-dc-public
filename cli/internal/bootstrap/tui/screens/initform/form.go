@@ -54,6 +54,7 @@ type State struct {
 	Preset       string
 	NetVLANID    string
 	NetInterface string
+	NodeNICs     string // comma-separated NODE=IFACE overrides
 	// KubeOVNMasterNodes → KUBE_OVN_MASTER_NODES: the control-plane
 	// INTERNAL IPs (comma-separated) kube-ovn binds its master on. Not
 	// in any preset default + not caught by preset validation, but the
@@ -63,6 +64,16 @@ type State struct {
 	PubVLANID          string
 	PubCIDR            string
 	PubGateway         string
+	PubExclude1        string
+	PubExclude2        string
+	MetalLBMode        string
+	MetalLBVIP         string
+	MetalLBInterface   string
+	MetalLBLocalASN    string
+	MetalLBPeerASN     string
+	MetalLBPeerAddress string
+	MetalLBPeerPort    string
+	MetalLBHoldTime    string
 	// network POINTING (operator hardware/topology → o.Sets). GWNodes is
 	// the OVN external-gateway node list (KUBE_OVN_GW_NODES; anchors must be
 	// a subset — the preset cross-checks it); GWType is centralized|
@@ -129,7 +140,12 @@ type State struct {
 var fieldBackedOverlayKeys = map[string]bool{
 	"EXT_NET_VLAN_ID": true, "EXT_NET_INTERFACE": true, "KUBE_OVN_MASTER_NODES": true,
 	"EXT_PUBLIC_VLAN_ID": true, "EXT_PUBLIC_CIDR": true, "EXT_PUBLIC_GATEWAY": true,
-	"KUBE_OVN_GW_NODES": true, "KUBE_OVN_GW_TYPE": true, "CEPH_REPLICATION_SIZE": true,
+	"EXT_PUBLIC_EXCLUDE_IPS_1": true, "EXT_PUBLIC_EXCLUDE_IPS_2": true,
+	"METALLB_MODE": true, "METALLB_FLOATING_IP": true, "METALLB_INTERFACE": true,
+	"METALLB_BGP_LOCAL_ASN": true, "METALLB_BGP_PEER_ASN": true,
+	"METALLB_BGP_PEER_ADDRESS": true, "METALLB_BGP_PEER_PORT": true,
+	"METALLB_BGP_HOLD_TIME": true,
+	"KUBE_OVN_GW_NODES":     true, "KUBE_OVN_GW_TYPE": true, "CEPH_REPLICATION_SIZE": true,
 }
 
 // Apply maps the collected answers onto InitOptions. Pure — no I/O.
@@ -155,6 +171,14 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 	o.GitHubRepo = strings.TrimSpace(s.RepoName)
 	o.Preset = clusterinit.Preset(s.Preset)
 
+	// Per-node ProviderNetwork exceptions are a first-class panel value.
+	// Rebuild the map so clearing the field removes stale mappings.
+	nicPairs, err := clusterinit.ParseSetPairs(splitComma(s.NodeNICs))
+	if err != nil {
+		return fmt.Errorf("per-node NICs: %w", err)
+	}
+	o.NodeNICs = nicPairs
+
 	// Rebuild the --set overlay from scratch: preserved advanced keys first,
 	// then the field-backed keys on top (a dedicated field always wins over
 	// a stale ExtraSets entry). A cleared field simply isn't written.
@@ -170,6 +194,14 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 	setIf("EXT_NET_VLAN_ID", s.NetVLANID)
 	setIf("EXT_NET_INTERFACE", s.NetInterface)
 	setIf("KUBE_OVN_MASTER_NODES", s.KubeOVNMasterNodes)
+	setIf("METALLB_MODE", s.MetalLBMode)
+	setIf("METALLB_FLOATING_IP", s.MetalLBVIP)
+	setIf("METALLB_INTERFACE", s.MetalLBInterface)
+	setIf("METALLB_BGP_LOCAL_ASN", s.MetalLBLocalASN)
+	setIf("METALLB_BGP_PEER_ASN", s.MetalLBPeerASN)
+	setIf("METALLB_BGP_PEER_ADDRESS", s.MetalLBPeerAddress)
+	setIf("METALLB_BGP_PEER_PORT", s.MetalLBPeerPort)
+	setIf("METALLB_BGP_HOLD_TIME", s.MetalLBHoldTime)
 	setIf("KUBE_OVN_GW_NODES", s.GWNodes)
 	setIf("KUBE_OVN_GW_TYPE", s.GWType)
 	setIf("CEPH_REPLICATION_SIZE", s.CephReplicationSize)
@@ -179,6 +211,8 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 		setIf("EXT_PUBLIC_VLAN_ID", s.PubVLANID)
 		setIf("EXT_PUBLIC_CIDR", s.PubCIDR)
 		setIf("EXT_PUBLIC_GATEWAY", s.PubGateway)
+		setIf("EXT_PUBLIC_EXCLUDE_IPS_1", s.PubExclude1)
+		setIf("EXT_PUBLIC_EXCLUDE_IPS_2", s.PubExclude2)
 	}
 
 	// Reset ALL mode-specific storage fields, then set for the selected mode
@@ -308,6 +342,18 @@ func (s *State) FromOptions(o *clusterinit.InitOptions) {
 	set(&s.Owner, o.GitHubOwner)
 	set(&s.RepoName, o.GitHubRepo)
 	set(&s.Preset, string(o.Preset))
+	if len(o.NodeNICs) > 0 {
+		keys := make([]string, 0, len(o.NodeNICs))
+		for node := range o.NodeNICs {
+			keys = append(keys, node)
+		}
+		sort.Strings(keys)
+		parts := make([]string, 0, len(keys))
+		for _, node := range keys {
+			parts = append(parts, node+"="+o.NodeNICs[node])
+		}
+		s.NodeNICs = strings.Join(parts, ",")
+	}
 	if o.Sets != nil {
 		set(&s.NetVLANID, o.Sets["EXT_NET_VLAN_ID"])
 		set(&s.NetInterface, o.Sets["EXT_NET_INTERFACE"])
@@ -318,6 +364,16 @@ func (s *State) FromOptions(o *clusterinit.InitOptions) {
 		set(&s.PubVLANID, o.Sets["EXT_PUBLIC_VLAN_ID"])
 		set(&s.PubCIDR, o.Sets["EXT_PUBLIC_CIDR"])
 		set(&s.PubGateway, o.Sets["EXT_PUBLIC_GATEWAY"])
+		set(&s.PubExclude1, o.Sets["EXT_PUBLIC_EXCLUDE_IPS_1"])
+		set(&s.PubExclude2, o.Sets["EXT_PUBLIC_EXCLUDE_IPS_2"])
+		set(&s.MetalLBMode, o.Sets["METALLB_MODE"])
+		set(&s.MetalLBVIP, o.Sets["METALLB_FLOATING_IP"])
+		set(&s.MetalLBInterface, o.Sets["METALLB_INTERFACE"])
+		set(&s.MetalLBLocalASN, o.Sets["METALLB_BGP_LOCAL_ASN"])
+		set(&s.MetalLBPeerASN, o.Sets["METALLB_BGP_PEER_ASN"])
+		set(&s.MetalLBPeerAddress, o.Sets["METALLB_BGP_PEER_ADDRESS"])
+		set(&s.MetalLBPeerPort, o.Sets["METALLB_BGP_PEER_PORT"])
+		set(&s.MetalLBHoldTime, o.Sets["METALLB_BGP_HOLD_TIME"])
 		// Every other overlay key (no dedicated field) → ExtraSets, so a
 		// prefilled/cloned config survives the panel untouched.
 		for k, v := range o.Sets {
@@ -420,6 +476,14 @@ func (s *State) EquivalentFlags(o *clusterinit.InitOptions) string {
 	sort.Strings(keys)
 	for _, k := range keys {
 		add("set", k+"="+o.Sets[k])
+	}
+	nicKeys := make([]string, 0, len(o.NodeNICs))
+	for node := range o.NodeNICs {
+		nicKeys = append(nicKeys, node)
+	}
+	sort.Strings(nicKeys)
+	for _, node := range nicKeys {
+		add("node-nic", node+"="+o.NodeNICs[node])
 	}
 	add("object-storage-mode", string(o.RookMode))
 	if o.RookMode == clusterinit.RookCephLocal {

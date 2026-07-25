@@ -133,6 +133,8 @@ func panelFields() []panelField {
 			Set: func(s *State, v string) { set(s, v == "yes") }}
 	}
 	isPublic := func(s *State) bool { return s.Preset == string(clusterinit.PresetCloudPublicVLAN) }
+	isL2 := func(s *State) bool { return s.MetalLBMode == "" || s.MetalLBMode == "l2" }
+	isBGP := func(s *State) bool { return s.MetalLBMode == "bgp" }
 	osIs := func(mode string) func(*State) bool {
 		return func(s *State) bool { return s.OSMode == mode }
 	}
@@ -175,9 +177,11 @@ func panelFields() []panelField {
 			func(s *State) string { return s.Preset }, func(s *State, v string) { s.Preset = v }),
 		txt("Network", "EXT_NET_VLAN_ID", "provider VLAN id (0 if none)", false,
 			func(s *State) string { return s.NetVLANID }, func(s *State, v string) { s.NetVLANID = v }, nil),
-		txt("Network", "EXT_NET_INTERFACE", "trunk NIC, e.g. bond0 / enp1s0", false,
+		txt("Network", "EXT_NET_INTERFACE", "default trunk NIC, e.g. bond0 / enp1s0", false,
 			func(s *State) string { return s.NetInterface }, func(s *State, v string) { s.NetInterface = v }, nil),
-		txt("Network", "KUBE_OVN_MASTER_NODES", "control-plane INTERNAL IP(s), comma-separated — required", true,
+		txt("Network", "Per-node NIC overrides", "NODE=IFACE comma list, e.g. master-3=eno1", false,
+			func(s *State) string { return s.NodeNICs }, func(s *State, v string) { s.NodeNICs = v }, nil),
+		txt("Network", "KUBE_OVN_MASTER_NODES", "control-plane INTERNAL IP(s), comma-separated — required; OVN_DB_IPS is derived", true,
 			func(s *State) string { return s.KubeOVNMasterNodes }, func(s *State, v string) { s.KubeOVNMasterNodes = v }, nil),
 		txt("Network", "Gateway nodes", "KUBE_OVN_GW_NODES — OVN external-gateway node names, comma-separated (empty = default)", false,
 			func(s *State) string { return s.GWNodes }, func(s *State, v string) { s.GWNodes = v }, nil),
@@ -189,6 +193,26 @@ func panelFields() []panelField {
 			func(s *State) string { return s.PubCIDR }, func(s *State, v string) { s.PubCIDR = v }, nil).with(isPublic),
 		txt("Network", "EXT_PUBLIC_GATEWAY", "public gateway IP", false,
 			func(s *State) string { return s.PubGateway }, func(s *State, v string) { s.PubGateway = v }, nil).with(isPublic),
+		txt("Network", "EXT_PUBLIC_EXCLUDE_IPS_1", "reserved IP or start..end range", true,
+			func(s *State) string { return s.PubExclude1 }, func(s *State, v string) { s.PubExclude1 = v }, nil).with(isPublic),
+		txt("Network", "EXT_PUBLIC_EXCLUDE_IPS_2", "second reserved IP or start..end range", true,
+			func(s *State) string { return s.PubExclude2 }, func(s *State, v string) { s.PubExclude2 = v }, nil).with(isPublic),
+		sel("Network", "MetalLB mode", "L2 ARP/GARP or BGP routed announcement", []string{"l2", "bgp"},
+			func(s *State) string { return s.MetalLBMode }, func(s *State, v string) { s.MetalLBMode = v }),
+		txt("Network", "MetalLB VIP", "dedicated IPv4 address for the Envoy front door", true,
+			func(s *State) string { return s.MetalLBVIP }, func(s *State, v string) { s.MetalLBVIP = v }, nil),
+		txt("Network", "MetalLB L2 interface", "node NIC/bridge carrying the VIP segment", true,
+			func(s *State) string { return s.MetalLBInterface }, func(s *State, v string) { s.MetalLBInterface = v }, nil).with(isL2),
+		txt("Network", "BGP local ASN", "METALLB_BGP_LOCAL_ASN", true,
+			func(s *State) string { return s.MetalLBLocalASN }, func(s *State, v string) { s.MetalLBLocalASN = v }, nil).with(isBGP),
+		txt("Network", "BGP peer ASN", "METALLB_BGP_PEER_ASN", true,
+			func(s *State) string { return s.MetalLBPeerASN }, func(s *State, v string) { s.MetalLBPeerASN = v }, nil).with(isBGP),
+		txt("Network", "BGP peer address", "router IPv4 address reachable from speakers", true,
+			func(s *State) string { return s.MetalLBPeerAddress }, func(s *State, v string) { s.MetalLBPeerAddress = v }, nil).with(isBGP),
+		txt("Network", "BGP peer port", "empty = MetalLB default 179", false,
+			func(s *State) string { return s.MetalLBPeerPort }, func(s *State, v string) { s.MetalLBPeerPort = v }, nil).with(isBGP),
+		txt("Network", "BGP hold time", "empty = default; otherwise 0 or 3..65535 whole seconds", false,
+			func(s *State) string { return s.MetalLBHoldTime }, func(s *State, v string) { s.MetalLBHoldTime = v }, nil).with(isBGP),
 
 		// --- Object storage ---
 		sel("Storage", "Object storage", "REQUIRED — Mimir/Loki/tenant buckets depend on it", []string{"rook-ceph-multi-node", "rook-ceph-local", "rook-ceph-pvc", "disabled"},

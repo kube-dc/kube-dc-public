@@ -310,6 +310,7 @@ func TestScaffold_AppliesCustomInterfacesWhenNodeNICsSet(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(repo, "clusters"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	writeStarterScaffoldSources(t, repo)
 	envBody := "CLUSTER_NAME=test\n"
 	infraBody := `apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -327,6 +328,14 @@ spec:
     - name: infra-cni
   interval: 10m
 `
+	rootKustomization := `apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - flux-system
+  - infrastructure.yaml
+  - platform.yaml
+  - secrets.enc.yaml
+`
 	encryptedSecrets := `stringData:
     KEYCLOAK_ADMIN_PASSWORD: ENC[AES256_GCM,data:abc,iv:xyz,type:str]
 sops:
@@ -342,6 +351,9 @@ sops:
 				return err
 			}
 			if err := os.WriteFile(filepath.Join(clusterDir, "infrastructure.yaml"), []byte(infraBody), 0o644); err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(clusterDir, "kustomization.yaml"), []byte(rootKustomization), 0o644); err != nil {
 				return err
 			}
 			return os.WriteFile(filepath.Join(clusterDir, "secrets.enc.yaml"), []byte(encryptedSecrets), 0o644)

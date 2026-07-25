@@ -646,9 +646,10 @@ func TestEnvMapFor_AnchorDefaults_AllPresets(t *testing.T) {
 				t.Fatalf("EnvMapFor: %v", err)
 			}
 			for k, want := range map[string]string{
-				"EXT_NET_ANCHOR_IPS":       "",
-				"EXT_NET_ANCHOR_INTERFACE": "br-ext-cloud",
-				"EXT_NET_ANCHOR_REQUIRED":  "false",
+				"EXT_NET_ANCHOR_IPS":          "",
+				"EXT_NET_ANCHOR_INTERFACE":    "br-ext-cloud",
+				"EXT_NET_ANCHOR_REQUIRED":     "false",
+				"EXT_NET_NODE_EGRESS_ENABLED": "false",
 			} {
 				v, present := got[k]
 				if !present {
@@ -669,10 +670,36 @@ func TestEnvMapFor_Anchor_CustomPresetUntouched(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnvMapFor: %v", err)
 	}
-	for _, k := range []string{"EXT_NET_ANCHOR_IPS", "EXT_NET_ANCHOR_INTERFACE", "EXT_NET_ANCHOR_REQUIRED"} {
+	for _, k := range []string{"EXT_NET_ANCHOR_IPS", "EXT_NET_ANCHOR_INTERFACE", "EXT_NET_ANCHOR_REQUIRED", "EXT_NET_NODE_EGRESS_ENABLED"} {
 		if _, present := got[k]; present {
 			t.Errorf("PresetCustom leaked %s into env", k)
 		}
+	}
+}
+
+func TestValidateNodeEgress_IsExplicitAndRequiresCompleteAnchors(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{"default-off", map[string]string{"EXT_NET_NODE_EGRESS_ENABLED": "false"}, ""},
+		{"invalid", map[string]string{"EXT_NET_NODE_EGRESS_ENABLED": "yes"}, "lowercase true or false"},
+		{"enabled-without-required", map[string]string{"EXT_NET_NODE_EGRESS_ENABLED": "true"}, "requires EXT_NET_ANCHOR_REQUIRED=true"},
+		{"enabled-with-required", map[string]string{"EXT_NET_NODE_EGRESS_ENABLED": "true", "EXT_NET_ANCHOR_REQUIRED": "true"}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var errs []string
+			validateNodeEgress(tt.env, &errs)
+			got := strings.Join(errs, "; ")
+			if tt.want == "" && got != "" {
+				t.Fatalf("unexpected validation error: %s", got)
+			}
+			if tt.want != "" && !strings.Contains(got, tt.want) {
+				t.Fatalf("want %q in %q", tt.want, got)
+			}
+		})
 	}
 }
 
@@ -1184,6 +1211,44 @@ func TestValidatePresetValues_IngressAndMetalLBModes(t *testing.T) {
 				}
 			} else if err != nil {
 				t.Fatalf("unexpected validation error: %v", err)
+			}
+		})
+	}
+}
+
+// TestValidateOVNDbIPs — a bare IP list passes every install gate and then
+// breaks only at Project reconcile ("unknown network protocol"), leaving a
+// VPC whose router options are never set. add-cluster.sh's own comment used
+// to recommend exactly that, so the mistake was easy to make and slow to see.
+func TestValidateOVNDbIPs(t *testing.T) {
+	cases := []struct {
+		name    string
+		value   string
+		wantErr bool
+	}{
+		{"canonical three-node", "tcp:10.0.0.11:6641,tcp:10.0.0.12:6641,tcp:10.0.0.13:6641", false},
+		{"single endpoint", "tcp:192.168.1.3:6641", false},
+		{"ssl transport", "ssl:10.0.0.11:6641", false},
+		{"bracketed IPv6 override", "ssl:[2001:db8::11]:6641", false},
+		{"spaces tolerated", "tcp:10.0.0.11:6641, tcp:10.0.0.12:6641", false},
+		{"empty is chart default", "", false},
+		{"CHANGEME handled by the placeholder check", "CHANGEME", false},
+
+		{"bare IP list — the real regression", "10.0.0.11,10.0.0.12,10.0.0.13", true},
+		{"single bare IP", "10.0.0.11", true},
+		{"scheme but no port", "tcp:10.0.0.11", true},
+		{"scheme and colon but empty port", "tcp:10.0.0.11:", true},
+		{"not an IP", "tcp:master01:6641", true},
+		{"non-numeric port", "tcp:10.0.0.11:ovn", true},
+		{"zero port", "tcp:10.0.0.11:0", true},
+		{"port above range", "tcp:10.0.0.11:65536", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var errs []string
+			validateOVNDbIPs(map[string]string{"OVN_DB_IPS": tc.value}, &errs)
+			if got := len(errs) > 0; got != tc.wantErr {
+				t.Errorf("validateOVNDbIPs(%q): err=%v want %v (%v)", tc.value, got, tc.wantErr, errs)
 			}
 		})
 	}

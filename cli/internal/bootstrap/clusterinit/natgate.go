@@ -169,6 +169,59 @@ const natPlatformPatchEntry = `    ` + natPlatformPatchesMarker + `
         - op: remove
           path: /spec/listeners/12`
 
+// GatewayCollidesWithAPIServer reports whether the Envoy Service's external
+// address is one of the cluster's OWN node IPs, read from the scaffolded
+// cluster-config.env.
+//
+// The 6443 listener is unsafe whenever `envoy externalIP == an apiserver
+// address`, and single-IP NAT is only ONE way to arrive there. The other —
+// and the common one on an internal deployment — is simply setting
+// NODE_EXTERNAL_IP to a control-plane node's own address. There is no NAT
+// involved, so DetectArrivingIP finds nothing and the patch never fires,
+// yet the consequence is identical: kube-proxy programs the externalIP for
+// the Envoy Service on EVERY node, so any node dialling <that IP>:6443
+// reaches Envoy instead of the apiserver. Envoy sees an unmatched SNI and
+// resets.
+//
+// Observed on a fresh 3+3 install with NODE_EXTERNAL_IP = master01's IP:
+// from a worker, master01:6443 returned errno=104 with no certificate while
+// master02:6443 returned CN=kube-apiserver. Nodes fell to NotReady one at a
+// time as each rke2 agent's local load balancer happened to rotate onto
+// master01 — a slow, confusing failure that looks like a flaky worker.
+//
+// This check needs no SSH, so it also covers --no-ssh runs, where the probe
+// is skipped entirely and the collision would otherwise ship unnoticed.
+func GatewayCollidesWithAPIServer(envBody string) bool {
+	ip := strings.TrimSpace(envValue(envBody, "NODE_EXTERNAL_IP"))
+	if ip == "" {
+		return false
+	}
+	// Both keys list control-plane addresses; either is enough, and they are
+	// normally identical. Checking both means a cluster that set only one
+	// still gets the protection.
+	for _, key := range []string{"KUBE_OVN_MASTER_NODES", "OVN_DB_IPS"} {
+		for _, candidate := range strings.Split(envValue(envBody, key), ",") {
+			if controlPlaneCandidateHost(candidate) == ip {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func controlPlaneCandidateHost(candidate string) string {
+	candidate = strings.TrimSpace(candidate)
+	scheme, address, hasScheme := strings.Cut(candidate, ":")
+	if !hasScheme || (scheme != "tcp" && scheme != "ssl") {
+		return candidate
+	}
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return candidate
+	}
+	return strings.Trim(host, "[]")
+}
+
 // WriteSingleIPNATPatch appends the 6443-listener removal to the
 // scaffolded platform.yaml. Composes with the OS-4 disabled block:
 // when a `patches:` key already exists it must be ours (OS-4 marker) —
@@ -199,15 +252,30 @@ func patchPlatformSingleIPNAT(lines []string) ([]string, bool, error) {
 		}
 	}
 	if hasPatchesKey {
-		// Only compose with a block we generated (OS-4 disabled).
-		osFourSeen := false
+		// Compose with any block WE generated; refuse only a hand-edited one.
+		//
+		// This used to accept the OS-4 marker alone, which broke a normal
+		// install: WriteAddons now writes the Gateway VIP patch earlier in the
+		// scaffold sequence, so on a cluster with
+		//   METALLB_FLOATING_IP != NODE_EXTERNAL_IP,
+		//   NODE_EXTERNAL_IP a control-plane address (or single-IP NAT), and
+		//   object storage ENABLED (so the OS-4 marker is absent)
+		// the `patches:` key exists, no OS-4 marker is found, and init aborts.
+		// Every kube-dc-owned marker has to be recognised here.
+		ours := false
 		for _, l := range lines {
-			if strings.TrimSpace(l) == disabledPlatformPatchesMarker {
-				osFourSeen = true
+			t := strings.TrimSpace(l)
+			for _, m := range ownedPlatformPatchMarkers {
+				if t == m || strings.Contains(t, m) {
+					ours = true
+					break
+				}
+			}
+			if ours {
 				break
 			}
 		}
-		if !osFourSeen {
+		if !ours {
 			return nil, false, fmt.Errorf("platform.yaml already has a patches: block (hand-edited?) — add the single-IP-NAT 6443-listener removal manually (marker: %q)", natPlatformPatchesMarker)
 		}
 	}
@@ -303,4 +371,17 @@ func DetectNodeCIDR(ctx context.Context, opts ArrivingIPOptions) (string, error)
 		return "", fmt.Errorf("node-cidr: ip addr show: %w", err)
 	}
 	return NodeCIDRFromAddrOutput(addrOut, src)
+}
+
+// ownedPlatformPatchMarkers lists every marker kube-dc writes into
+// clusters/<name>/platform.yaml `patches:`. Any writer that needs to compose
+// with an existing block must accept ALL of them — recognising only a subset
+// turns a normal combination of features into a hard install failure.
+//
+// Keep this in sync when adding a new managed patch.
+var ownedPlatformPatchMarkers = []string{
+	disabledPlatformPatchesMarker, // object-storage disabled
+	natPlatformPatchesMarker,      // single-IP NAT / 6443 listener removal
+	gatewayVIPMarker,              // Gateway address = MetalLB VIP
+	gatewayServiceVIPMarker,       // Envoy Service explicitly requests VIP
 }

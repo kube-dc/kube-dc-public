@@ -62,17 +62,40 @@ It follows the same patterns as AWS CLI, GCloud, and other cloud provider CLIs:
 	rootCmd.SilenceErrors = true
 
 	if err := rootCmd.Execute(); err != nil {
-		// doctorExitCodeErr carries the doctor's max-severity exit
-		// code (1/2/3); the printer has already rendered its full
-		// report so we exit silently with the code rather than
-		// re-printing the error.
-		var de interface{ ExitCode() int }
-		if errors.As(err, &de) {
-			os.Exit(de.ExitCode())
+		code, msg := classifyExecuteErr(err)
+		if msg != "" {
+			fmt.Fprintln(os.Stderr, msg)
 		}
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		os.Exit(code)
 	}
+}
+
+// classifyExecuteErr decides the process exit code and what (if anything)
+// to print for an error returned by rootCmd.Execute().
+//
+// Split out of main() so the contract is testable: main() itself calls
+// os.Exit and cannot be exercised by a unit test, which is how the bug
+// below survived.
+//
+//   - *doctorExitCodeErr (incl. wrapped): the command has ALREADY rendered
+//     its full report, so exit with its code and print nothing.
+//   - everything else: print the error and exit 1.
+//
+// The match MUST be on the concrete *doctorExitCodeErr. It was previously
+// `var de interface{ ExitCode() int }`, and *exec.ExitError satisfies that
+// too — so every failing child process (sops, kubectl, bao, ssh) took the
+// silent path and exited with the child's status while printing nothing.
+// `openbao setup-controller-auth` surfaced as exit=100 with zero bytes on
+// stdout and stderr, with no way to diagnose it.
+func classifyExecuteErr(err error) (code int, msg string) {
+	if err == nil {
+		return 0, ""
+	}
+	var de *doctorExitCodeErr
+	if errors.As(err, &de) {
+		return de.ExitCode(), ""
+	}
+	return 1, err.Error()
 }
 
 func loginCmd() *cobra.Command {

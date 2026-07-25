@@ -89,9 +89,18 @@ var bannedPatterns = []struct {
 	{re: regexp.MustCompile(`(?i)(voa|vtsap|tsap)@`), reason: "operator identity — use ops@example.com"},
 	{re: regexp.MustCompile(`@shalb\.com`), reason: "employee email domain — use example.com identities"},
 	{re: regexp.MustCompile(`\bcs\.shalb\.com`), reason: "real bastion domain — use bastion.example.com"},
+	{re: regexp.MustCompile(`(?i)datapark`), reason: "real customer name — use a fictional name or just \"an on-prem install\""},
+	{re: regexp.MustCompile(`10\.191\.3[0-9]\.`), reason: "real customer LAN/public ranges — use RFC 5737 documentation addresses"},
+	{re: regexp.MustCompile(`(?i)kube-dev\.inf\.`), reason: "real customer cluster domain — use cluster.example.com"},
 }
 
-// skipDirs are never scanned. Mirrors the rsync excludes for docs-ui
+// This denylist only catches infrastructure we already know about. It is a
+// regression backstop, not a substitute for reviewing every installer-derived
+// comment, fixture, and document for the current customer's names, addresses,
+// domains, and operator identities before mirroring or publishing.
+
+// skipDirs are never scanned.
+// Mirrors the rsync excludes for docs-ui
 // (node_modules, build, .docusaurus, .cache-loader) plus the usual
 // non-source dirs.
 var skipDirs = map[string]bool{

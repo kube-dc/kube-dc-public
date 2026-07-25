@@ -247,7 +247,24 @@ func (c *Client) Put(ctx context.Context, host ports.SSHHost, remotePath string,
 	// install(1) handles atomic write + mode in one shot. -D would also
 	// create parent dirs but we deliberately don't (callers know where
 	// they're writing: /usr/local/sbin/, /etc/systemd/system/).
-	cmd := fmt.Sprintf("install -m %04o /dev/stdin %s", mode, shellSingleQuote(remotePath))
+	//
+	// Elevate when we are not already root. Every caller writes to a
+	// root-owned directory, so without this `anchors apply` fails on every
+	// node with
+	//   install: cannot create regular file '/usr/local/sbin/kube-dc-anchor-bind':
+	//   Permission denied
+	// even though the documented contract ("passwordless sudo is required —
+	// the installer runs sudo -n") is satisfied on the host. Fetch already
+	// elevates the same way.
+	//
+	// The choice is made INSIDE one shell rather than as `sudo … || …`,
+	// because the body arrives on stdin and can only be consumed once: a
+	// failed first attempt would swallow it and the fallback would write an
+	// empty file. `exec` keeps stdin attached to the process that writes.
+	install := fmt.Sprintf("install -m %04o /dev/stdin %s", mode, shellSingleQuote(remotePath))
+	cmd := fmt.Sprintf(
+		"if [ \"$(id -u)\" -ne 0 ] && command -v sudo >/dev/null 2>&1; then exec sudo -n %s; else exec %s; fi",
+		install, install)
 	if err := runSessionWithCtx(ctx, session, client, cmd); err != nil {
 		return fmt.Errorf("ssh: put %s on %s: %w (stderr: %s)",
 			remotePath, sshTarget(host), err, bytes.TrimSpace(stderr.Bytes()))

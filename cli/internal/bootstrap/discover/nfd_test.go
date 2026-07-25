@@ -140,6 +140,62 @@ func TestNFDDetect_RawNFDOnly_Fallback_LoadedmoduleLabel(t *testing.T) {
 	}
 }
 
+// TestNFDDetect_RawNFDOnly_NoModuleLabelsAnywhere_FallsBackToCPUFlag —
+// regression for a hard `bootstrap init` failure on a healthy cluster.
+//
+// NFD's kernel source publishes kernel-module.* / kernel-loadedmodule.*
+// only when an operator configures the module list, and the kube-dc fleet's
+// NFD values do not. So on a stock install NO node carries either label. The
+// raw rule (VMX ∨ SVM) ∧ (kvm-module ∨ kvm-loadedmodule) then evaluates
+// false for every node, and init aborts with
+//
+//	no KubeVirt-eligible nodes: 0 of 6 nodes have kube-dc.com/kubevirt-eligible
+//	... enable nested virt on the underlying hypervisor and load the `kvm`
+//	kernel module on each node
+//
+// on bare-metal hosts where VMX was set, kvm was loaded and /dev/kvm was
+// present. The labels below are the real ones observed on that cluster.
+//
+// The distinction the detector must draw: a missing module label only means
+// "no kvm" if the module source is publishing at all. Contrast with
+// TestNFDDetect_RawNFDOnly_KubeVirtEligible, where other nodes DO carry
+// module labels and vmx-no-kvm-node is therefore correctly ineligible.
+func TestNFDDetect_RawNFDOnly_NoModuleLabelsAnywhere_FallsBackToCPUFlag(t *testing.T) {
+	realWorldNode := func() map[string]string {
+		return map[string]string{
+			"feature.node.kubernetes.io/cpu-cpuid.VMX":             "true",
+			"feature.node.kubernetes.io/cpu-cpuid.AESNI":           "true",
+			"feature.node.kubernetes.io/cpu-model.vendor_id":       "Intel",
+			"feature.node.kubernetes.io/kernel-config.NO_HZ":       "true",
+			"feature.node.kubernetes.io/kernel-version.major":      "6",
+			"feature.node.kubernetes.io/system-os_release.ID":      "ubuntu",
+			"feature.node.kubernetes.io/storage-nonrotationaldisk": "true",
+		}
+	}
+	src := &fakeNodeLabels{labels: map[string]map[string]string{
+		"master01": realWorldNode(),
+		"master02": realWorldNode(),
+		"worker01": realWorldNode(),
+		"container-only": {
+			// No virt flag at all — must stay ineligible even in the
+			// degraded mode, or the gate would be meaningless.
+			"feature.node.kubernetes.io/cpu-hardware_multithreading": "true",
+		},
+	}}
+	r, err := NFDDetect(context.Background(), src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if r.KernelModuleLabelsAvailable {
+		t.Fatal("KernelModuleLabelsAvailable must be false — no node carries a module label")
+	}
+	want := []string{"master01", "master02", "worker01"}
+	if !equalStringsNFD(r.KubeVirtEligibleNodes, want) {
+		t.Errorf("KubeVirtEligibleNodes = %v, want %v — a cluster whose NFD never publishes "+
+			"module labels must not report every node ineligible", r.KubeVirtEligibleNodes, want)
+	}
+}
+
 // TestNFDDetect_RawNFDOnly_GPUsRequireDisplayClass proves raw fallback
 // accepts only PCI display/3D controller classes and never vendor-only labels.
 func TestNFDDetect_RawNFDOnly_GPUsRequireDisplayClass(t *testing.T) {
@@ -420,4 +476,29 @@ func equalStringsNFD(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// TestNFDDetect_UnrelatedModuleLabelDoesNotEnableStrictBranch — NFD module
+// labels are rule-specific, so a cluster can publish kernel-module.vfio while
+// never publishing kernel-module.kvm. Inferring "KVM labels are available"
+// from any module label reinstates the false negative: strict mode engages and
+// every VMX node is reported ineligible.
+func TestNFDDetect_UnrelatedModuleLabelDoesNotEnableStrictBranch(t *testing.T) {
+	src := &fakeNodeLabels{labels: map[string]map[string]string{
+		"node-a": {
+			"feature.node.kubernetes.io/cpu-cpuid.VMX":      "true",
+			"feature.node.kubernetes.io/kernel-module.vfio": "true", // NOT kvm
+		},
+	}}
+	r, err := NFDDetect(context.Background(), src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if r.KernelModuleLabelsAvailable {
+		t.Error("a non-KVM module label must not count as KVM-label availability")
+	}
+	if r.KubeVirtEligibleCount() != 1 {
+		t.Errorf("VMX node must stay eligible when no kvm label is published, got %d eligible",
+			r.KubeVirtEligibleCount())
+	}
 }

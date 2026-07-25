@@ -31,6 +31,9 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'security-model',
+        'gpu-threat-model',
+        'gpu-supply-chain',
+        'gpu-capacity-reservations',
         'managing-os-images',
         'project-resources',
         'windows-vm-setup',

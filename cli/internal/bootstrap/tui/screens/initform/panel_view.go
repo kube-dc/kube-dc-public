@@ -514,6 +514,7 @@ func initialState(o *clusterinit.InitOptions) *State {
 	// Wizard defaults first (first-time user)…
 	st := &State{
 		Mode: string(clusterinit.ModeInstall), Provider: "github", Preset: string(clusterinit.PresetCloudVLAN),
+		MetalLBMode: "l2",
 		GPUPlatform: string(clusterinit.GPUPlatformDisabled), GPUDriverSource: string(clusterinit.GPUDriverOperator),
 		GPUOperatorVersion:   clusterinit.DefaultGPUOperatorVersion,
 		NVIDIADriverVersion:  clusterinit.DefaultNVIDIADriverVersion,

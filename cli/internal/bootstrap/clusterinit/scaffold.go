@@ -252,6 +252,27 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 		return fmt.Errorf("scaffold: %w", err)
 	}
 
+	// (7b) infra-public-network — presets with a routed public VLAN
+	// (cloud+public-vlan) list this layer, and the plan prints it, but
+	// infrastructure.yaml is written by add-cluster.sh which has no preset
+	// awareness. Without this the EXT_PUBLIC_* keys are scaffolded and then
+	// consumed by nothing: no ext-public Vlan/Subnet, so no public EIP pool
+	// and no tenant public EIP pool (a MetalLB VIP uses this VLAN only when speakers also have a host-facing interface). No-op for other presets.
+	if err := WritePublicNetwork(opts.FleetRepo, opts.Plan.ClusterName, opts.Plan.Preset, out); err != nil {
+		return fmt.Errorf("scaffold: %w", err)
+	}
+
+	// (7c) addons/addons-config — MetalLB. Same shape of omission as (7b):
+	// add-cluster.sh writes and preset.go validates INGRESS_MODE +
+	// METALLB_*, but nothing emitted the layers that consume them, so the
+	// DEFAULT ingress path installed no MetalLB at all. The Envoy Service
+	// then never gets a LoadBalancer IP and the Gateway silently falls back
+	// to a node address — front door up, configured VIP unused, no failover.
+	// No-op for INGRESS_MODE=hostnetwork.
+	if err := WriteAddons(opts.FleetRepo, opts.Plan.ClusterName, out); err != nil {
+		return fmt.Errorf("scaffold: %w", err)
+	}
+
 	// (8) Single-IP NAT wiring (findings 17/17b) — drop the 6443
 	// passthrough listener via a platform.yaml spec.patches entry.
 	// MUST stay after step 7: the OS-4 disabled writer refuses any
@@ -259,7 +280,16 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// with the OS-4 block when both fire. Apply-time detected (SSH
 	// probe), so dry-run plans don't list it — the substitution +
 	// patch are logged at apply.
-	if opts.SingleIPNAT {
+	// Also fire when NODE_EXTERNAL_IP is simply one of the cluster's own node
+	// addresses. That is the same collision without any NAT, so the SSH probe
+	// above reports nothing — and under --no-ssh it never runs at all.
+	collides := opts.SingleIPNAT
+	if !collides {
+		if body, err := os.ReadFile(filepath.Join(opts.FleetRepo, "clusters", opts.Plan.ClusterName, "cluster-config.env")); err == nil {
+			collides = GatewayCollidesWithAPIServer(string(body))
+		}
+	}
+	if collides {
 		if err := WriteSingleIPNATPatch(opts.FleetRepo, opts.Plan.ClusterName, out); err != nil {
 			return fmt.Errorf("scaffold: %w", err)
 		}
@@ -436,6 +466,26 @@ func postProcessClusterConfig(path string, plan *Plan, sets map[string]string, n
 		env.Set(k, merged[k])
 	}
 
+	// OVN_DB_IPS is not an independent topology input: it is the same
+	// control-plane address set as KUBE_OVN_MASTER_NODES, with the OVN NB
+	// transport and port attached. Derive it unless the operator explicitly
+	// overrides it (e.g. ssl endpoints). This removes a duplicated value that
+	// the starter previously left as CHANGEME and that failed only when the
+	// first Project reconciled.
+	if _, overridden := sets["OVN_DB_IPS"]; !overridden {
+		masters := strings.TrimSpace(merged["KUBE_OVN_MASTER_NODES"])
+		if masters != "" {
+			endpoints := make([]string, 0, strings.Count(masters, ",")+1)
+			for _, master := range strings.Split(masters, ",") {
+				master = strings.TrimSpace(master)
+				if master != "" {
+					endpoints = append(endpoints, "tcp:"+master+":6641")
+				}
+			}
+			env.Set("OVN_DB_IPS", strings.Join(endpoints, ","))
+		}
+	}
+
 	// Tenant Networking v2 routes. Written here rather than left to the scaffold
 	// script because the CLI is the only party that knows the node prefix: the
 	// script tries to read it from a cluster kubeconfig, which does not exist yet
@@ -458,6 +508,21 @@ func postProcessClusterConfig(path string, plan *Plan, sets map[string]string, n
 			env.Set("NODE_CIDR", "")
 			env.Set("INFRA_ATTACHMENT_ROUTES", "")
 			env.Set("INFRA_ATTACHMENT_ENABLED", "false")
+		}
+	}
+
+	// Re-run semantic validation against the exact file we are about to
+	// publish, including derived values. Then fail closed if any starter
+	// placeholder survived. Every current CHANGEME is load-bearing
+	// (OVN, ProviderNetwork, or MetalLB); allowing one through merely defers
+	// the failure to Flux or the first tenant reconcile.
+	finalValues := env.AsMap()
+	if err := ValidatePresetValues(plan.Preset, finalValues); err != nil {
+		return fmt.Errorf("scaffold: final cluster-config.env: %w", err)
+	}
+	for key, value := range finalValues {
+		if strings.HasPrefix(strings.TrimSpace(value), "CHANGEME") {
+			return fmt.Errorf("scaffold: final cluster-config.env still contains placeholder %s=%s; provide it with --set %s=<value>", key, value, key)
 		}
 	}
 

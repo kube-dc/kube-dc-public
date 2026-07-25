@@ -131,7 +131,11 @@ func applyOne(ctx context.Context, ssh ports.SSHClient, e Entry, iface string, s
 	// enables persistence (symlink in multi-user.target.wants) AND
 	// starts the unit (which binds the anchor immediately).
 	if _, err := ssh.Run(ctx, host,
-		fmt.Sprintf("systemctl daemon-reload && systemctl enable --now %s", UnitName)); err != nil {
+		// sudo -n, matching rke2/join.go and install.go: the operator SSHes as
+		// an unprivileged user with passwordless sudo (the documented contract),
+		// so an unprefixed systemctl exits 1 on every node and the anchor never
+		// activates even though its unit file installed fine.
+		fmt.Sprintf("sudo -n systemctl daemon-reload && sudo -n systemctl enable --now %s", UnitName)); err != nil {
 		return fmt.Errorf("systemctl enable: %w", err)
 	}
 
@@ -142,7 +146,7 @@ func applyOne(ctx context.Context, ssh ports.SSHClient, e Entry, iface string, s
 	// the verify command runs as root via SSH, so apply the same
 	// shellQuote helper that probe.go already uses.
 	if _, err := ssh.Run(ctx, host,
-		fmt.Sprintf("systemctl is-active --quiet %s && ip -4 addr show %s | grep -wq %s",
+		fmt.Sprintf("sudo -n systemctl is-active --quiet %s && ip -4 addr show %s | grep -wq %s",
 			UnitName, shellQuote(iface), shellQuote(e.CIDR))); err != nil {
 		return fmt.Errorf("verify: %w", err)
 	}

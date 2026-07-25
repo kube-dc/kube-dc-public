@@ -111,6 +111,9 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 			ClusterName: o.Name,
 			FleetRepo:   o.Repo,
 			Runner:      session.Scripts,
+			Git:         session.Git,
+			GitHubToken: token,
+			NoPush:      o.NoPush,
 			Out:         out,
 		})
 	})

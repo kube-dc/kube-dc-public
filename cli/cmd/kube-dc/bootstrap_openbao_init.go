@@ -132,18 +132,22 @@ choice for off-fleet backup.`,
 //
 // Token value is NEVER logged.
 func resolveGHToken(out io.Writer) string {
+	return resolveGHTokenFor("openbao", out)
+}
+
+func resolveGHTokenFor(component string, out io.Writer) string {
 	cmd := exec.Command("gh", "auth", "token")
 	cmd.Stderr = io.Discard
 	stdout, err := cmd.Output()
 	if err != nil {
-		fmt.Fprintln(out, "[openbao] no GitHub token resolved (gh auth token failed; push may fail if remote requires auth)")
+		fmt.Fprintf(out, "[%s] no GitHub token resolved (gh auth token failed; push may fail if remote requires auth)\n", component)
 		return ""
 	}
 	token := strings.TrimSpace(string(stdout))
 	if token == "" {
-		fmt.Fprintln(out, "[openbao] no GitHub token resolved (gh auth token returned empty)")
+		fmt.Fprintf(out, "[%s] no GitHub token resolved (gh auth token returned empty)\n", component)
 		return ""
 	}
-	fmt.Fprintln(out, "[openbao] resolved GitHub token via gh auth token")
+	fmt.Fprintf(out, "[%s] resolved GitHub token via gh auth token\n", component)
 	return token
 }

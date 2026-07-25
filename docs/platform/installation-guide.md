@@ -124,6 +124,85 @@ sudo rm -f /etc/resolv.conf
 echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" | sudo tee /etc/resolv.conf
 ```
 
+:::danger A wildcard DNS record + a search domain breaks ALL external name resolution from pods
+If your platform domain has a **wildcard A record** (`*.example.com`, which
+§3.2 asks you to create) then the nodes' `search` list must **not** contain
+that domain.
+
+kubelet copies the node's `search` domains into every pod's
+`/etc/resolv.conf`, and Kubernetes uses `ndots:5` — so a short name like
+`github.com` (1 dot) tries the **search suffixes first**:
+
+```
+github.com.example.com   →  matches *.example.com  →  your ingress IP  ✗
+github.com               →  140.82.121.4                              ✓
+```
+
+Every external hostname — `github.com`, `ghcr.io`, `docker.io` — then
+resolves to your ingress IP from inside pods. Flux fails to clone with
+`dial tcp <your-ingress-ip>:443: connect: connection refused`, which looks
+like a Flux or firewall problem and is neither.
+
+Use a resolver that can answer both your internal names and the internet,
+and keep only a parent domain in `search` (a parent normally has no
+wildcard, so it NXDOMAINs safely and the resolver falls through to the
+absolute name):
+
+```bash
+sudo rm -f /etc/resolv.conf
+cat <<'EOF' | sudo tee /etc/resolv.conf
+nameserver 10.0.0.53           # a resolver that serves BOTH internal + external
+search inf.example.com         # parent only — NOT the platform domain
+options edns0 trust-ad
+EOF
+sudo chattr +i /etc/resolv.conf   # keep DHCP/netplan from rewriting it
+```
+
+Verify before installing — the first must NXDOMAIN, the second must return
+the real address:
+
+```bash
+dig +short github.com.example.com   # empty  → good
+dig +short github.com               # 140.x  → good
+```
+
+If you hit this after install, fix the nodes then restart CoreDNS **and any
+pod that needs the internet** — search domains are baked into a pod's
+`resolv.conf` when it is created.
+:::
+
+### 1.5 Install the `kube-dc` CLI
+
+Install the CLI on your **bastion / workstation** before Phase 2; both the RKE2
+bootstrap and the GitOps scaffold use it:
+
+```bash
+# Linux amd64 — change asset for another platform
+asset=kube-dc_linux_amd64
+task_cli_tmp="$(mktemp -d)"
+curl -fSL https://github.com/kube-dc/kube-dc-public/releases/latest/download/${asset} \
+  -o "${task_cli_tmp}/${asset}"
+curl -fSL https://github.com/kube-dc/kube-dc-public/releases/latest/download/checksums.txt \
+  -o "${task_cli_tmp}/checksums.txt"
+if command -v sha256sum >/dev/null; then
+  ( cd "${task_cli_tmp}" && grep " ${asset}$" checksums.txt | sha256sum -c - )
+else
+  ( cd "${task_cli_tmp}" && grep " ${asset}$" checksums.txt | shasum -a 256 -c - )
+fi
+sudo install -m 0755 "${task_cli_tmp}/${asset}" /usr/local/bin/kube-dc
+rm -rf "${task_cli_tmp}"
+hash -r
+type -a kube-dc                 # expose an older PATH shadow, if one exists
+kube-dc version
+# macOS: set asset=kube-dc_darwin_amd64 or kube-dc_darwin_arm64
+kube-dc bootstrap doctor --no-tty
+```
+
+The download uses the latest published release and verifies it against the
+published checksum before installation. `doctor` checks `kubectl`, `flux`,
+`helm`, `sops`, `age`, `git`, `gh`, and `ssh`; fix every blocker before
+continuing. Ensure the control-plane key is loaded with `ssh-add <key>`.
+
 ---
 
 ## Phase 2 — RKE2 Cluster Bootstrap
@@ -137,7 +216,7 @@ produces — the manual reference is grouped in
 
 ### 2.0 One command: `kube-dc bootstrap install` (recommended)
 
-From your bastion (after installing the CLI — see [Phase 3.1](#31-install-the-kube-dc-cli)):
+From your bastion (after installing the CLI — see [§1.5](#15-install-the-kube-dc-cli)):
 
 ```bash
 kube-dc bootstrap install master-1 \
@@ -158,7 +237,7 @@ and the fleet never disagree), and memory-tiered kubelet reserves with a
 default is too small for an all-in-one node). The node comes up **NotReady**
 until Phase 3 installs the CNI — that's expected.
 
-Since CLI v0.5.3 it also enables the **RKE2 embedded registry mirror (spegel)**
+The current CLI also enables the **RKE2 embedded registry mirror (spegel)**
 on every node by default: nodes P2P-share image content, so repeated
 containerdisk/image pulls stay off the WAN. `--embedded-registry=false` opts
 out. An existing operator-managed `/etc/rancher/rke2/registries.yaml` is never
@@ -280,6 +359,12 @@ control-plane) through a bastion, add `--ssh-jump user@bastion` — see the
 > This flow is validated end-to-end (a worker VM joining a live cluster).
 
 ### 2.3 Manual fallback: install RKE2 without the CLI
+
+<details>
+<summary>Manual fallback (no CLI) — write the RKE2 server and join configs by hand</summary>
+
+The CLI flow in §§2.0–2.2 is recommended. Expand this only when the CLI cannot
+be used or when auditing the exact RKE2 files it generates.
 
 SSH into `master-1` and install kubectl:
 
@@ -471,6 +556,8 @@ sudo systemctl enable rke2-agent.service
 sudo systemctl start rke2-agent.service
 ```
 
+</details>
+
 ### 2.4 Verify the HA Cluster
 
 Back on `master-1`:
@@ -530,37 +617,22 @@ disaster recovery, and multi-cluster fleets tractable — and it is the
 path validated end-to-end in the project's installer test plan.
 :::
 
-### 3.1 Install the `kube-dc` CLI
+### 3.1 Confirm the CLI and local tooling
 
-On your **bastion / workstation** (not necessarily a cluster node):
+The CLI was installed on the bastion/workstation in
+[§1.5](#15-install-the-kube-dc-cli). Reconfirm the executable and its local
+prerequisites before scaffolding GitOps state:
 
 ```bash
-# Linux amd64 — change asset for another platform
-asset=kube-dc_linux_amd64
-task_cli_tmp="$(mktemp -d)"
-curl -fSL https://github.com/kube-dc/kube-dc-public/releases/latest/download/${asset} \
-  -o "${task_cli_tmp}/${asset}"
-curl -fSL https://github.com/kube-dc/kube-dc-public/releases/latest/download/checksums.txt \
-  -o "${task_cli_tmp}/checksums.txt"
-if command -v sha256sum >/dev/null; then
-  ( cd "${task_cli_tmp}" && grep " ${asset}$" checksums.txt | sha256sum -c - )
-else
-  ( cd "${task_cli_tmp}" && grep " ${asset}$" checksums.txt | shasum -a 256 -c - )
-fi
-sudo install -m 0755 "${task_cli_tmp}/${asset}" /usr/local/bin/kube-dc
-rm -rf "${task_cli_tmp}"
-hash -r
 type -a kube-dc                 # expose an older PATH shadow, if one exists
 kube-dc version
-# macOS: set asset=kube-dc_darwin_amd64 or kube-dc_darwin_arm64
-kube-dc bootstrap doctor --no-tty     # verify local tooling
+kube-dc bootstrap doctor --no-tty
 ```
 
-`doctor` checks the required tools — `kubectl`, `flux`, `helm`, `sops`,
-`age`, `git`, `gh`, `ssh` — and reports any that are missing or below the
-minimum version. Fix every blocker before continuing. Also ensure the
-control-plane SSH key is loaded (`ssh-add <key>`); the CLI reads it from
-your `ssh-agent`, it never takes a key flag.
+`doctor` checks `kubectl`, `flux`, `helm`, `sops`, `age`, `git`, `gh`, and
+`ssh`. Fix every blocker before continuing. Ensure the control-plane SSH key is
+loaded (`ssh-add <key>`); the CLI reads it from `ssh-agent`, never from a key
+flag.
 
 ### 3.2 Configure wildcard DNS (required before init)
 
@@ -584,6 +656,55 @@ kube-dc FIP, an EC2 elastic IP, an OpenStack/Hetzner floating IP), pass
 (internal) IP** into the fleet, and drops the Gateway's `:6443`
 passthrough listener — otherwise the front door silently resets. Bare
 metal with the public IP bound on the NIC needs none of this.
+:::
+
+:::warning Internal domain served by a private CA
+A corporate/private CA is not one switch: the install host, manager, backend,
+Kubernetes OIDC authenticator, and OpenBao discovery each verify TLS in a
+separate process. Configure all of them from the same full root+intermediate
+PEM bundle.
+
+First trust it on the machine running `bootstrap init` and verify discovery:
+
+```bash
+sudo cp corp-ca.pem /usr/local/share/ca-certificates/kube-dc-corp-ca.crt
+sudo update-ca-certificates
+curl -fsS https://login.<domain>/realms/master/.well-known/openid-configuration >/dev/null
+```
+
+Then create one ConfigMap in `kube-dc` and pass it to both chart consumers:
+
+```bash
+kubectl -n kube-dc create configmap kube-dc-trusted-ca \
+  --from-file=ca.pem=corp-ca.pem
+```
+
+```yaml
+manager:
+  trustedCA:
+    configMapName: kube-dc-trusted-ca
+backend:
+  trustedCA:
+    configMapName: kube-dc-trusted-ca
+    fileName: ca.pem
+```
+
+The manager mount sets `SSL_CERT_DIR`. The manager also copies the validated
+certificate bundle into each `OpenIDConnect.spec.caBundle` and forwards it to
+OpenBao as `oidc_discovery_ca_pem`; a configured missing, unreadable, or
+malformed bundle now fails reconciliation explicitly instead of silently
+shipping OIDC resources that reject every token with 401. The backend mount
+sets `NODE_EXTRA_CA_CERTS`, including the cloud-shell token-refresh path.
+
+Greenfield installs enable the chart-owned admin frontend. The deferred Keycloak
+finalizer creates a SOPS-encrypted Secret containing both `client-id` and
+`client-secret`, adds it to the generated `addons` Kustomization, and only then
+sets `backend.keycloakAdminClient.secretName`. This ordering avoids blocking the
+core backend on a Secret that cannot exist until Keycloak is Ready; no manual
+`extraEnv` or postRenderer is required. Populate the Gateway TLS secrets with the
+corporate wildcard certificate instead of waiting for public ACME validation.
+See [Private-CA enterprise installation](private-ca-enterprise-install.md) for
+the consumer-by-consumer verification matrix and recovery checks.
 :::
 
 ### 3.3 Run `kube-dc bootstrap init`
@@ -611,6 +732,14 @@ kube-dc bootstrap init \
   --set=EXT_NET_INTERFACE=eth1 \
   --set=EXT_NET_VLAN_ID=200 \
   --set=KUBE_OVN_MASTER_NODES=192.168.0.1,192.168.0.2,192.168.0.3 \
+  --set=KUBE_OVN_GW_NODES=master-1,master-2,master-3 \
+  --node-nic=master-3=eno1 \
+  --set=EXT_PUBLIC_VLAN_ID=300 \
+  --set=EXT_PUBLIC_CIDR=203.0.113.0/24 \
+  --set=EXT_PUBLIC_GATEWAY=203.0.113.1 \
+  --set=METALLB_MODE=l2 \
+  --set=METALLB_FLOATING_IP=203.0.113.20 \
+  --set=METALLB_INTERFACE=ext-pub-anchor \
   --dry-run                                # review, then swap for --yes
 ```
 
@@ -625,12 +754,63 @@ kube-dc bootstrap init \
 | `--repo` | Local path for the fleet checkout. Point it at an **empty directory** — the CLI pulls the shared platform trees into it from the fleet-starter OCI artifact (see below). Default when omitted: `$KUBE_DC_FLEET`, else `~/.kube-dc/fleet` |
 | `--github-owner` / `--github-repo` | Where the fleet repo lives (auto-created in `new-repo` mode) |
 | `--object-storage-mode` | `rook-ceph-multi-node` (3+ OSDs, HA), `rook-ceph-local` (single OSD — lab), `rook-ceph-pvc`, `external-*`, or `disabled` |
-| `--ceph-node=NODE=DEVICE` | One raw block device per OSD node (repeat 3× for multi-node) |
+| `--ceph-node=NODE=DEVICE` | One raw block device per OSD node (repeat 3× for multi-node). **Re-used hardware: see the zap warning below** |
 | `--ssh-host` | Control-plane SSH target — enables kubeconfig auto-pull **and** NAT-topology detection (§3.2) |
 | `--set=KUBE_OVN_MASTER_NODES` | Control-plane **internal** IPs (comma-separated) — not emitted by the preset, always set it |
+| `--set=KUBE_OVN_GW_NODES` | Gateway/announcer **node names**. Required when an L2 VIP is inside `EXT_PUBLIC_CIDR`; the CLI derives one public anchor per listed node |
 | `--set=EXT_NET_INTERFACE` / `EXT_NET_VLAN_ID` | Trunk NIC + cloud VLAN ID from Phase 1 (`EXT_NET_VLAN_ID=0` = untagged carrier) |
+| `--node-nic=NODE=IFACE` | Per-node override when a node's provider/trunk NIC differs from `EXT_NET_INTERFACE` (repeatable; also exposed in TUI/config) |
+| `--set=EXT_PUBLIC_*` | Public VLAN/CIDR/gateway for `cloud+public-vlan`. When the VIP is in this CIDR, the CLI derives the minimum gateway/VIP/anchor exclusions; widen them for any other reserved addresses |
+| `--set=METALLB_FLOATING_IP` / `METALLB_INTERFACE` | Dedicated ingress VIP and the host interface that carries its L2 segment. For an L2 VIP inside `EXT_PUBLIC_CIDR`, the current CLI selects the fleet-managed `ext-pub-anchor`; elsewhere the operator supplies the real interface |
 | `--set=INGRESS_MODE` | `metallb-lb` (default — Envoy Service `type: LoadBalancer` via MetalLB). `hostnetwork` (Envoy binds `:443` on the host) is a real topology but **not yet automated — `init` rejects it**; scaffold with `metallb-lb` and apply the EnvoyProxy hostNetwork patch manually if you need it |
-| `--set=METALLB_MODE` | `l2` (default — ARP on a shared L2 segment) or `bgp` (announce VIPs as `/32` BGP routes — routed/L3-only fabrics; see §5 “BGP announcement”). `bgp` requires `METALLB_BGP_LOCAL_ASN`, `METALLB_BGP_PEER_ASN`, `METALLB_BGP_PEER_ADDRESS` (all validated) |
+| `--set=METALLB_MODE` | `l2` (default — ARP on a shared L2 segment) or `bgp` (announce VIPs as `/32` BGP routes — routed/L3-only fabrics; see §4.3 “BGP mode and mode changes”). `bgp` requires `METALLB_BGP_LOCAL_ASN`, `METALLB_BGP_PEER_ASN`, `METALLB_BGP_PEER_ADDRESS` (all validated) |
+
+`EXT_NET_NODE_EGRESS_ENABLED` is deliberately not part of the normal install
+recipe. It is a default-off escape hatch for a site whose physical cloud-VLAN
+gateway cannot forward tenant traffic correctly. For a reviewed new-install
+spec, opt in with `KUBE_DC_INIT_NODE_EGRESS_ENABLED=true`; init writes the live
+`EXT_NET_NODE_EGRESS_ENABLED=true` value, but clone-from-sibling intentionally
+drops that live key. Enabling it turns gateway nodes into internet NAT routers,
+requires `EXT_NET_ANCHOR_REQUIRED=true` plus complete audited ext-cloud
+anchors, and changes the security/failure-domain model. Fix the upstream router
+instead whenever possible.
+
+:::danger Re-used disks: `lsblk`/`blkid` looking clean is NOT enough
+If the OSD devices ever belonged to another Ceph cluster, wiping them with
+`wipefs` / `sgdisk --zap-all` / `dd` of the first few hundred MB makes
+`lsblk` and `blkid` report them as empty — while **Ceph still refuses
+them**. `osd-prepare` completes without creating a single OSD and logs:
+
+```
+--> Raw device /dev/sdb is already prepared.
+skipping osd.4: "<uuid>" belonging to a different ceph cluster "<old-fsid>"
+skipping OSD configuration as no devices matched the storage settings
+```
+
+Ceph Squid (v19) documents **redundant bluestore labels** at 0, 1 GiB,
+10 GiB, 100 GiB, and 1 TiB. Do not infer that this list is exhaustive or
+hand-zero it: even after a large window at every documented offset was zeroed,
+`ceph-bluestore-tool show-label` still returned the original valid label. The
+cause was not pinned down (a missed copy, stale read path, or another offset),
+so use Ceph's own tool, which owns the on-disk format:
+
+```bash
+# privileged pod on the node, hostPath /dev + /run/udev, ceph image
+ceph-volume lvm zap --destroy /dev/sdb     # works on RAW devices too
+                                           # (`ceph-volume zap` is NOT a subcommand)
+```
+
+Verify with the tools Ceph itself uses — **not** `lsblk`/`blkid`:
+
+```bash
+ceph-volume raw list                      # must not list the device
+ceph-bluestore-tool show-label --dev /dev/sdb   # must say "unable to read label"
+```
+
+Then `kubectl -n rook-ceph delete job -l app=rook-ceph-osd-prepare` and
+`kubectl -n rook-ceph rollout restart deploy/rook-ceph-operator`; the OSDs
+appear immediately.
+:::
 
 What `init` does, in order: **fetches the fleet starter** (when `--repo`
 is a fresh/empty directory, the shared platform trees — `bootstrap/`,
@@ -638,16 +818,17 @@ is a fresh/empty directory, the shared platform trees — `bootstrap/`,
 versioned OCI artifact `oci://ghcr.io/kube-dc/fleet-starter:<cli-version>`
 and committed; a directory that already carries them is used as-is;
 override with `--starter-ref`) → generates a SOPS **age key** → creates +
-pushes the fleet repo → scaffolds `clusters/dc1/` (network, object
-storage, encrypted secrets) → `flux bootstrap` → pre-installs the
-CNI/CRD-bearing charts so a bare cluster can reconcile → hands off to
-Flux. It is idempotent and rolls back its own commit if the push fails.
+pushes the fleet repo → scaffolds `clusters/dc1/` (cloud/public networks,
+per-node ProviderNetwork NIC mappings, ordered MetalLB operator/config,
+object storage, and encrypted secrets) → `flux bootstrap` → pre-installs the
+CNI/CRD-bearing charts so a bare cluster can reconcile → hands off to Flux.
+It is idempotent and rolls back its own commit if the push fails.
 You do **not** need to clone or download anything besides the CLI —
 point `--repo` at an empty directory.
 
 :::info Single-node / lab install
 For a one-box trial, use `--preset=internal-only --object-storage-mode=rook-ceph-local --rook-osd-node=<node> --rook-osd-size-gb=40`
-and skip the provider-VLAN `--set` flags. Size the node at **≥12 vCPU /
+and skip the public-VLAN `--set` flags. A dedicated MetalLB VIP and its real L2 interface are still required (the example file includes them). Size the node at **≥12 vCPU /
 27 GiB / 100 GB** — the full platform plus reconcile churn needs it.
 :::
 
@@ -682,14 +863,14 @@ The file uses cluster-config.env-native keys for config (`CLUSTER_NAME`,
 `OBJECT_STORAGE_MODE`, …) and a `KUBE_DC_INIT_` prefix for install-only
 orchestration (`_MODE`, `_FLEET_MODE`, `_GITHUB_REPO`, `_SSH_HOST`,
 `_ALLOW_NO_KVM`, …), which is stripped before the cluster's real config is
-written. The panel has dedicated fields for the install-critical
-disk/network *pointers* (gateway nodes + type, Ceph replication size,
-NIC/VLAN/master-nodes, OSD devices); any other operator `--set` key from a
-prefill/clone (MetalLB, anchors, platform-endpoints, SMTP, quotas, feature
-flags) is **preserved** through the panel and listed under Review as
-"advanced (--set)" — edit those in the `.env`. It never contains the
-git token (that comes from `gh`/`glab` auth). Starter templates:
-[`examples/install/`](../../examples/install/) — `internal-only.env`,
+written. The panel has dedicated fields for install-critical topology:
+gateway nodes/type, Ceph replication, default and per-node NICs, cloud/public
+VLANs, public exclusions, control-plane IPs, MetalLB L2/BGP settings, and OSD
+devices. Other operator `--set` keys from a prefill/clone (anchors, platform
+endpoints, SMTP, quotas, and feature flags) are **preserved** and shown under
+Review as advanced values. It never contains the git token (that comes from
+`gh`/`glab` auth). Starter templates:
+[`examples/install/`](https://github.com/kube-dc/kube-dc-public/tree/main/examples/install) — `internal-only.env`,
 `cloud-vlan.env`, `cloud-public-vlan.env`.
 
 ```bash
@@ -787,14 +968,18 @@ then set it back to `false`.
 
 ### 3.5 Post-install — SSO clients, OpenBao, credentials
 
-Two post-install steps run once Keycloak and OpenBao are Ready. Run them
-from your fleet-repo clone with `KUBECONFIG` at the new cluster:
+`bootstrap init` attempts both finalizers automatically once Keycloak and OpenBao
+are Ready. If either component was still reconciling, the CLI marks that step
+deferred without undoing the install; resume only the named step from the fleet
+clone with `KUBECONFIG` at the new cluster:
 
 ```bash
-# 1. OIDC clients (Flux Web, Grafana, admin console) — writes the client
-#    secrets SOPS-encrypted into clusters/dc1/, then commit + push.
-bash bootstrap/setup-keycloak-oidc.sh dc1
-git push && flux reconcile kustomization platform --with-source
+# 1. OIDC clients (Flux Web, Grafana, admin console) — materialises the
+#    backend Secret safely, commits, and pushes through the CLI Git adapter.
+kube-dc bootstrap keycloak init dc1 --repo .
+flux reconcile kustomization flux-system --with-source
+flux reconcile kustomization addons
+flux reconcile kustomization platform
 
 # 2. OpenBao — unseal-share custody + controller auth, fully automated.
 kube-dc bootstrap openbao init dc1 --repo .
@@ -812,6 +997,59 @@ Google login for tenants, run `hack/bootstrap-sso-realm.sh` (needs a
 Google OAuth client), set `SSO_ENABLED=true` in
 `clusters/dc1/cluster-config.env`, and push.
 
+### 3.5.1 MANDATORY — OIDC-webhook cutover on every control-plane node
+
+RKE2 boots cert-only (§2.1). Until the apiserver is pointed at the
+oidc-webhook-authenticator, **every Keycloak JWT returns HTTP 401** — tenant
+`kubectl`, the console's Manage-Organization calls, and the k8-manager /
+db-manager operators all fail. Do this after Flux finishes `infra-core`.
+
+Pre-flight — the authenticator must be Ready on each control plane, and each
+must already have the kubeconfig:
+
+```bash
+kubectl -n oidc-webhook-authenticator get pods -o wide   # one per CP, all Ready
+ssh <cp> 'ls /etc/rancher/oidc-webhook-kubeconfig.yaml'
+```
+
+Then, **one control-plane node at a time**, gating on the apiserver coming
+back before touching the next:
+
+```bash
+sudo cp /etc/rancher/rke2/config.yaml /etc/rancher/rke2/config.yaml.pre-oidc
+cat <<'EOF' | sudo tee -a /etc/rancher/rke2/config.yaml
+kube-apiserver-arg:
+  - authentication-token-webhook-config-file=/etc/rancher/oidc-webhook-kubeconfig.yaml
+  - authentication-token-webhook-cache-ttl=2m
+EOF
+sudo systemctl restart rke2-server
+```
+
+Confirm the flags are live on the process, then move on:
+
+```bash
+ps -ef | grep [k]ube-apiserver | tr ' ' '\n' | grep authentication-token-webhook
+```
+
+:::warning Health-check the apiserver on 127.0.0.1, not the node IP
+Do **not** probe `https://<node-ip>:6443/readyz` to decide the apiserver is
+back. The Envoy Gateway Service pins `externalIPs` **and** publishes a
+`:6443` TLS-passthrough listener, so kube-proxy captures that IP:port on
+every node — a request without matching SNI fails and is
+indistinguishable from a dead apiserver. Probe from the node itself:
+
+```bash
+ssh <cp> 'curl -sk -o /dev/null https://127.0.0.1:6443/readyz'
+```
+:::
+
+:::warning Envoy on a control-plane node with hostNetwork
+If Envoy Gateway runs single-replica **hostNetwork** on a CP node, drain it
+off that node first, or `kube-apiserver` will not rebind `:6443`
+(`address already in use`). A LoadBalancer-Service Envoy (the default) is
+unaffected.
+:::
+
 ### 3.6 Verify the front door
 
 ```bash
@@ -821,7 +1059,7 @@ done
 # login=302  console=200  grafana=302  flux=200   → Let's Encrypt certs live
 ```
 
-Then create your first tenant with the [First Project](../cloud/first-project.md)
+Then create your first tenant with the [First Project](/cloud/first-project)
 flow, or apply an `Organization` + `Project` directly:
 
 ```bash
@@ -837,383 +1075,217 @@ kubectl -n acme get organization acme -o jsonpath='{.status.ready}'   # → true
 
 ---
 
-## Phase 4 — Post-Deployment Configuration
+## Phase 4 — Verify generated networking and cut over ingress
 
-:::note GitOps flow
-With the CLI install, MetalLB, monitoring, and the platform components
-below are **already deployed by Flux** from your fleet repo. This phase
-covers the cluster-specific pieces the fleet can't guess — chiefly the
-**floating public IP** for HA ingress. Apply these as fleet commits
-(under `clusters/<name>/`) rather than raw `kubectl` so they survive
-reconciles.
+The recommended flow is still GitOps, but these resources are no longer a
+manual construction exercise. `bootstrap init` writes the cluster overlay and
+Flux applies it. Phase 4 is where you prove that the chosen physical topology
+matches the generated resources before moving DNS.
+
+### 4.1 What `bootstrap init` already generates
+
+| Input | Generated result |
+|---|---|
+| `EXT_NET_INTERFACE` | default NIC on the `${EXT_NET_NAME}` Kube-OVN `ProviderNetwork` |
+| repeated `--node-nic=NODE=IFACE` or the TUI **Per-node NIC overrides** field | one label-safe, deterministic `ProviderNetwork.spec.customInterfaces` patch in `infra-core` |
+| `--preset=cloud+public-vlan` + complete `EXT_PUBLIC_*` values | `infra-public-network` Flux layer and the `ext-public` Kube-OVN VLAN/Subnet |
+| L2 `METALLB_FLOATING_IP` inside `EXT_PUBLIC_CIDR` + `KUBE_OVN_GW_NODES` | `ext-pub-anchor` access port, one derived per-node anchor, VIP return-policy routing, and minimum IPAM exclusions |
+| `INGRESS_MODE=metallb-lb` | MetalLB operator plus an ordered, health-gated config layer |
+| `METALLB_MODE=l2` | `IPAddressPool` + `L2Advertisement` on `METALLB_INTERFACE` |
+| `METALLB_MODE=bgp` | `IPAddressPool` + `BGPPeer` + `/32` `BGPAdvertisement` |
+| `METALLB_FLOATING_IP` | explicit Envoy Service `loadBalancerIPs` request (the pool has `autoAssign: false`) and, when different from the node address, the Gateway address patch |
+
+The installer rejects missing public-network reservations, a missing L2
+interface, incomplete BGP peer data, unsupported IPv6 VIPs, malformed/range-
+invalid ASNs and hold times, and any unresolved `CHANGEME` left in the final
+cluster config. The starter artifact must contain the matching `addons/` and
+`infrastructure/kube-ovn-network-public/` and `infrastructure/ext-net-bridge-tag/` source trees; mixing a newer CLI with
+an older starter fails before partial overlay files are promoted.
+
+:::warning The CLI creates the OVS anchor port, not the physical trunk
+The public preset creates Kube-OVN logical `ext-public` network for tenant
+EIp/FIp allocation. When an **L2** `METALLB_FLOATING_IP` is inside that CIDR,
+the current CLI also derives one address per `KUBE_OVN_GW_NODES` entry,
+selects `ext-pub-anchor`, reserves gateway + VIP + anchors from tenant IPAM,
+and the starter-provided `ext-net-bridge-tag` DaemonSet continuously creates
+the OVS internal access port and VIP return-policy route on those nodes.
+
+Before binding a derived anchor, the worker performs ARP duplicate-address
+detection on the tagged port. This protects upgrades where an LRP/EIP received
+the address before the exclusion existed; Kube-OVN exclusions protect new
+allocations but do not evict old ones. A detected reply leaves the anchor
+container NotReady and the Flux health gate fails instead of creating two ARP
+owners.
+
+That automation stops at the host. The parent provider bridge and physical NIC
+must already carry `EXT_PUBLIC_VLAN_ID`, and the upstream switch must allow the
+VLAN and ARP/GARP. An OVS access port carries one VLAN tag, which is why the
+public VIP uses a second internal port instead of `br-ext-cloud`. If the VIP
+stays in `EXT_NET_CIDR`, no public anchors are derived and the operator-supplied
+`METALLB_INTERFACE` remains authoritative. BGP mode reserves the VIP but does
+not create L2 anchors. Only the live checks below can prove the physical path.
 :::
 
-### 4.1 Promote Ingress to a Floating IP (MetalLB HA)
-
-Right after install, Envoy Gateway serves on **one node's public IP**
-(the fleet base pins the Service to `externalIPs: [NODE_EXTERNAL_IP]`) —
-working, but not HA. MetalLB promotes it to a **floating public IP**
-that fails over between nodes.
-
-**GitOps path (recommended — how the production clusters run).** Three
-fleet commits under `clusters/<name>/`:
-
-1. **Set the keys** in `clusters/<name>/cluster-config.env` (scaffolded
-   with `CHANGEME` values):
-
-   ```bash
-   METALLB_FLOATING_IP=203.0.113.20   # your dedicated floating public IP
-   METALLB_INTERFACE=br-ext-cloud     # NIC/bridge for the ARP announcement (l2 mode)
-   METALLB_MODE=l2                    # or bgp — see the BGP section below
-   ```
-
-2. **Wire the MetalLB layers** — two Flux Kustomizations in the cluster
-   overlay (skip if already present). `addons` installs the operator
-   (`path: ./addons/metallb`, `dependsOn: platform`); `addons-config`
-   ships the pool + advertisement CRs (`path: ./addons/metallb-config`,
-   or `./addons/metallb-config-bgp` for BGP mode) and MUST `dependsOn:
-   addons` **with a healthCheck on the metallb-controller Deployment** —
-   the CRs reference MetalLB CRDs, and without the gate the first
-   server-side dry-run fails with `no matches for kind
-   "L2Advertisement"`. Both take `postBuild.substituteFrom:
-   cluster-config` so the env keys above land in the CRs. Reference both
-   files from `clusters/<name>/kustomization.yaml`.
-
-3. **Point the Envoy Service at the floating IP** — patch the shared
-   EnvoyProxy from the cluster's `platform.yaml` Flux Kustomization
-   (replacing the single-node `externalIPs` pin):
-
-   ```yaml
-   # add under clusters/<name>/platform.yaml → spec.patches
-   patches:
-     - target:
-         group: gateway.envoyproxy.io
-         version: v1alpha1
-         kind: EnvoyProxy
-         name: custom-proxy-config
-       patch: |-
-         - op: add
-           path: /spec/provider/kubernetes/envoyService/patch/value/metadata
-           value:
-             annotations:
-               metallb.universe.tf/loadBalancerIPs: "${METALLB_FLOATING_IP}"
-         - op: remove
-           path: /spec/provider/kubernetes/envoyService/patch/value/spec/externalIPs
-   ```
-
-Commit + push, then `flux reconcile kustomization platform --with-source`.
-Because the live Service's `loadBalancerClass` is immutable, delete it
-once so it is recreated with the MetalLB class + floating IP:
+### 4.2 Verify ProviderNetwork and custom NIC mapping
 
 ```bash
-kubectl delete svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-name
+kubectl get providernetwork ext-cloud -o yaml
+kubectl get providernetwork ext-cloud \
+  -o jsonpath='{.status.readyNodes}{"\n"}{.status.notReadyNodes}{"\n"}'
+kubectl get vlan
+kubectl get subnet ext-cloud ext-public   # ext-public only for the public preset
 ```
+
+Nodes with different trunk NIC names should have been supplied during init:
+
+```bash
+kube-dc bootstrap init ... \
+  --node-nic=master-2=eno1 \
+  --node-nic=master-3=enp6s0
+```
+
+The same comma-separated `NODE=IFACE` mapping is editable in the TUI and
+round-trips through `KUBE_DC_INIT_NODE_NICS` in a saved config. Do **not** apply
+a raw `ProviderNetwork` object after install: that creates drift from the fleet
+source of truth.
 
 <details>
-<summary>Manual fallback (no GitOps) — raw helm + kubectl</summary>
+<summary>Day-2 fallback for an older overlay without the generated patch</summary>
 
-```bash
-# Install MetalLB
-helm repo add metallb https://metallb.github.io/metallb
-helm repo update
-helm install metallb metallb/metallb \
-  --namespace metallb-system \
-  --create-namespace \
-  --set loadBalancerClass=metallb \
-  --wait
-```
+Add this to the `infra-core` Flux Kustomization in
+`clusters/<name>/infrastructure.yaml`, commit, and reconcile. The current CLI
+generates this shape automatically.
 
-Create the IP pool and L2 advertisement:
-
-```bash
-cat <<'EOF' | kubectl apply -f -
-apiVersion: metallb.io/v1beta1
-kind: IPAddressPool
-metadata:
-  name: envoy-gateway-pool
-  namespace: metallb-system
+```yaml
 spec:
-  addresses:
-    - 203.0.113.20/32                     # Your dedicated floating public IP
-  autoAssign: false
----
-apiVersion: metallb.io/v1beta1
-kind: L2Advertisement
-metadata:
-  name: envoy-gateway-l2
-  namespace: metallb-system
-  labels:
-    kube-dc.com/advertisement: envoy-gateway   # shared patch-target label (see BGP notes)
-spec:
-  ipAddressPools:
-    - envoy-gateway-pool
-  interfaces:
-    - br-ext-cloud                        # Kube-OVN provider bridge
-EOF
-```
-
-Update the Envoy Gateway service to use MetalLB:
-
-```bash
-cat <<'EOF' | kubectl replace -f -
-apiVersion: gateway.envoyproxy.io/v1alpha1
-kind: EnvoyProxy
-metadata:
-  name: custom-proxy-config
-  namespace: envoy-gateway-system
-spec:
-  logging:
-    level:
-      default: warn
-  provider:
-    type: Kubernetes
-    kubernetes:
-      envoyService:
-        externalTrafficPolicy: Cluster
-        loadBalancerClass: metallb
-        patch:
-          type: StrategicMerge
+  patches:
+    - target:
+        group: kubeovn.io
+        version: v1
+        kind: ProviderNetwork
+        name: ${EXT_NET_NAME}
+      patch: |-
+        - op: add
+          path: /spec/customInterfaces
           value:
-            metadata:
-              annotations:
-                metallb.universe.tf/loadBalancerIPs: "203.0.113.20"
-EOF
+            - interface: eno1
+              nodes: [master-2]
+            - interface: enp6s0
+              nodes: [master-3]
 ```
-
-Delete the existing Envoy service so it is recreated with the new config (`loadBalancerClass` is immutable):
-
-```bash
-kubectl delete svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-name
-```
-
 
 </details>
 
-#### Alternative: BGP announcement (routed / L3-only datacenters)
-
-L2 advertisement (above, the default — `METALLB_MODE=l2`) announces the
-VIP via ARP and therefore needs a **shared L2 segment** between the
-announcing nodes and your router. If your datacenter is fully routed
-(L3-to-the-host, no shared broadcast domain for the VIP), switch MetalLB
-to **BGP mode** instead: each speaker node opens a BGP session to your
-router and announces the VIP as a `/32` route (your router should ECMP
-across the nodes). MetalLB ships FRR mode by default, so no extra
-components are needed.
-
-For GitOps-managed clusters, set `METALLB_MODE=bgp` plus the
-`METALLB_BGP_*` keys in `cluster-config.env` and point the cluster's
-`addons-config` at `addons/metallb-config-bgp` (instead of
-`addons/metallb-config`) — the keys are validated by
-`kube-dc bootstrap init`. The equivalent manual objects:
+### 4.3 Verify MetalLB allocation and announcement
 
 ```bash
-cat <<'EOF' | kubectl apply -f -
-apiVersion: metallb.io/v1beta2
-kind: BGPPeer
-metadata:
-  name: envoy-gateway-peer
-  namespace: metallb-system
-spec:
-  myASN: 64512                          # your cluster's ASN (private range 64512-65534 is fine)
-  peerASN: 64513                        # your router's ASN
-  peerAddress: 192.0.2.1                # router IP reachable from every speaker node
-  holdTime: "90s"
----
-apiVersion: metallb.io/v1beta1
-kind: BGPAdvertisement
-metadata:
-  name: envoy-gateway-bgp
-  namespace: metallb-system
-spec:
-  ipAddressPools:
-    - envoy-gateway-pool
-  aggregationLength: 32                 # exact /32 host routes
-EOF
+kubectl -n metallb-system get ipaddresspool,l2advertisement,bgppeer,bgpadvertisement
+kubectl -n envoy-gateway-system get svc \
+  -l gateway.envoyproxy.io/owning-gateway-name -o yaml
+kubectl get gateway -A
 ```
 
-Notes:
-- **The two modes are exclusive per pool** — create either the
-  `L2Advertisement` or the `BGPAdvertisement` for `envoy-gateway-pool`,
-  never both.
-- **Migrating an existing GitOps cluster l2 → bgp**: the addons-config
-  Flux Kustomization typically runs `prune: false`, so swapping the
-  referenced dir does **not** remove the old `L2Advertisement` — the VIP
-  would be announced via ARP *and* BGP simultaneously. After the swap
-  reconciles, delete it explicitly:
-  `kubectl -n metallb-system delete l2advertisement envoy-gateway-l2`
-  (or set `prune: true` on the addons-config Kustomization — it only
-  ships MetalLB CRs, so pruning is safe there).
-- **Per-cluster patches must target the shared label, not kind+name.**
-  A kustomize patch targeting `kind: L2Advertisement, name:
-  envoy-gateway-l2` is *silently ignored* after the base swap — a
-  `nodeSelectors` restriction would vanish and **every** speaker node
-  would start announcing. Both advertisement variants carry the label
-  `kube-dc.com/advertisement=envoy-gateway` and the same-shaped
-  `spec.nodeSelectors`; target that
-  (`target: { labelSelector: "kube-dc.com/advertisement=envoy-gateway" }`)
-  and the patch survives mode swaps unchanged.
-- **Two orthogonal node-selector layers** (per MetalLB's advanced BGP
-  docs): `BGPAdvertisement.spec.nodeSelectors` limits which nodes
-  *announce* the route; `BGPPeer.spec.nodeSelectors` limits which nodes
-  *establish a session* at all. On heterogeneous clusters restrict
-  both — a node that can't reach the router shouldn't hold a flapping
-  session.
-- Your router must accept sessions from **every node selected by the
-  `BGPPeer`** — by default that is every node running a MetalLB
-  speaker. To restrict which nodes open sessions, use
-  `BGPPeer.spec.nodeSelectors` (advertisement selectors do **not**
-  limit sessions — see the next bullet).
-- For session auth add `password:` (TCP-MD5) to the `BGPPeer`; for
-  sub-second failover add a `BFDProfile` and reference it via
-  `bfdProfile:`.
-- **Scope**: BGP mode covers the platform ingress VIP(s) announced by
-  MetalLB. Tenant floating IPs (EIp/FIp) are announced by Kube-OVN via
-  ARP on the external network and still require the L2 segment described
-  in the network prerequisites — BGP mode does not remove that
-  requirement.
+Confirm all of these, not just a controller log line:
 
-Verify:
+1. the Envoy Service annotation requests exactly `METALLB_FLOATING_IP`;
+2. `status.loadBalancer.ingress` contains that IP;
+3. the Gateway address is that IP when it differs from `NODE_EXTERNAL_IP`;
+4. the announcing interface exists and is on the intended VLAN; and
+5. TCP reaches the VIP from both the local segment and the actual client path.
 
 ```bash
-# Check MetalLB speakers are running
-kubectl get pods -n metallb-system
-
-# Check the floating IP is assigned
-kubectl get svc -n envoy-gateway-system -o wide
-
-# Check speaker announcement
-kubectl logs -n metallb-system -l app.kubernetes.io/component=speaker --tail=20 | grep serviceAnnounced
+ip -br link show "$METALLB_INTERFACE"
+ip neigh show <VIP>       # INCOMPLETE while real neighbours are REACHABLE is evidence
+curl -sk -o /dev/null -w '%{http_code}\n' \
+  --resolve console.example.com:443:<VIP> https://console.example.com/
 ```
 
-:::warning loadBalancerClass Isolation
-The `loadBalancerClass: metallb` setting is **critical**. Without it, MetalLB will attempt to handle all `LoadBalancer` services in the cluster, conflicting with the Kube-DC LoadBalancer controller that manages project service IPs. This isolation ensures MetalLB only manages the Envoy Gateway floating IP.
-:::
+A MetalLB L2 VIP need not answer ICMP. `serviceAnnounced` only means the
+speaker accepted desired state; it does not prove the interface has the right
+VLAN or that the upstream router learned the address. Restart speakers after
+creating an interface that was absent when they first reconciled, then repeat
+the network-side check.
 
-### 4.2 Configure Provider Network (Custom NIC Names)
+#### BGP mode and mode changes
 
-If your nodes have **different NIC names** for the trunk interface, you need to patch the ProviderNetwork with custom interface mappings.
+For a new cluster, choosing `METALLB_MODE=bgp` in CLI/TUI selects the BGP base
+and requires `METALLB_BGP_LOCAL_ASN`, `METALLB_BGP_PEER_ASN`, and
+`METALLB_BGP_PEER_ADDRESS`; optional port and hold time are validated against
+the wire format. The shared fleet defaults both `BGPPeer` sessions and
+`BGPAdvertisement` announcements to nodes labelled
+`ovn.kubernetes.io/external-gw=true`; the router must accept sessions from every
+node selected by `BGPPeer`. A per-cluster label-targeted patch can replace this
+when a routed fabric uses dedicated speakers. `BGPAdvertisement.spec.nodeSelectors`
+controls who announces a prefix; it does not limit who opens a session.
 
-Create `provider-network-patch.yaml`:
+For a day-2 L2↔BGP migration, change the `addons-config` base in Git and remove
+the old advertisement explicitly after reconcile because that Kustomization
+uses `prune: false`. Target per-cluster selector patches by the stable label
+`kube-dc.com/advertisement=envoy-gateway`, not by kind/name; a kind-specific
+patch is silently ignored after the mode changes. L2/BGP here covers platform
+VIPs only. Tenant EIp/FIp announcement remains Kube-OVN's L2 responsibility.
+
+When leaving public-subnet L2 mode, clear `EXT_NET_PUBLIC_ANCHOR_IPS` and
+`EXT_NET_PUBLIC_ANCHOR_VLAN` in the same change. Current CLI/TUI validation
+rejects stale L2 host state; the fleet worker also retires its owned address,
+policy rule, route table, and OVS port whenever `METALLB_MODE` is not `l2`.
+Clusters created before the mode key existed default to `l2` for compatibility.
+
+### 4.4 Optional ext-cloud anchor units
+
+Some L2 topologies need one real address on the provider bridge of every
+eligible gateway/speaker node before the kernel will source announcements
+correctly. This is explicit day-2 work, not a hidden init side effect:
+
+1. enumerate every existing host address, DHCP reservation, Kube-OVN LRP/EIP,
+   VIP, and excluded range first;
+2. put unique `host=CIDR` entries in `EXT_NET_ANCHOR_IPS`, the interface in
+   `EXT_NET_ANCHOR_INTERFACE`, and SSH targets in
+   `EXT_NET_ANCHOR_SSH_HOSTS`;
+3. set `EXT_NET_ANCHOR_REQUIRED=true` only when every gateway node is covered;
+4. run and verify:
+
+```bash
+kube-dc bootstrap anchors apply <cluster> --repo <fleet>
+kube-dc bootstrap doctor anchors <cluster> --repo <fleet>
+```
+
+Kube-OVN removes `excludeIps` from the free pool used for **new** random LRP/EIP
+allocations, so exclusions protect anchors on a greenfield install. They do not
+evict an address already allocated before the exclusion was widened. Enumerate
+live LRP/EIP and host claims, and rely on the worker's duplicate-address probe:
+a host anchor colliding with an older OVN LRP produces two MACs answering for
+one IP and intermittent outages.
+
+### 4.5 Move DNS only after client-side acceptance
+
+The base keeps the original node `externalIPs` path alive while the generated
+MetalLB request is validated. Test the VIP from outside the node segment. In
+the same reviewed fleet change that moves wildcard/API DNS to the VIP, remove
+the old node pin from the EnvoyProxy patch:
 
 ```yaml
-apiVersion: kubeovn.io/v1
-kind: ProviderNetwork
-metadata:
-  name: ext-cloud
 spec:
-  defaultInterface: eth1                  # Default for most nodes
-  customInterfaces:
-    - interface: eno1                     # Override for nodes with different NIC names
-      nodes:
-        - master-3
-  autoCreateVlanSubinterfaces: true       # Auto-create VLAN subinterfaces
-  preserveVlanInterfaces: true            # Migrate existing VLAN configs to OVS
+  patches:
+    - target:
+        group: gateway.envoyproxy.io
+        version: v1alpha1
+        kind: EnvoyProxy
+        name: custom-proxy-config
+      patch: |-
+        - op: remove
+          path: /spec/provider/kubernetes/envoyService/patch/value/spec/externalIPs
 ```
 
-Apply:
+Then commit, push, reconcile, and change DNS:
 
-```bash
-kubectl apply -f provider-network-patch.yaml
+```text
+*.example.com        → <METALLB_FLOATING_IP>
+kube-api.example.com → <METALLB_FLOATING_IP>   # only if the 6443 route is enabled
 ```
 
-Verify all nodes are ready:
-
-```bash
-kubectl get provider-networks ext-cloud -o jsonpath='{.status.readyNodes}' | jq .
-```
-
-### 4.3 Configure External Networks
-
-The base installer creates the cloud network. If you need a **provider (public) network** for dedicated public IPs, create additional Kube-OVN resources.
-
-Create `external-networks.yaml`:
-
-```yaml
----
-# Cloud network VLAN and Subnet (created by installer, shown for reference)
-apiVersion: kubeovn.io/v1
-kind: Vlan
-metadata:
-  name: vlan200
-spec:
-  id: 200                                # Your cloud VLAN ID
-  provider: ext-cloud
----
-apiVersion: kubeovn.io/v1
-kind: Subnet
-metadata:
-  name: ext-cloud
-  labels:
-    network.kube-dc.com/external-network-type: cloud
-    network.kube-dc.com/default-external: "true"
-spec:
-  protocol: IPv4
-  cidrBlock: 10.64.0.0/16
-  gateway: 10.64.0.1
-  vlan: vlan200
-  mtu: 1400
-  gatewayType: distributed
-  natOutgoing: false
-  private: false
-  enableLb: true
-  excludeIps:
-    - 10.64.0.1..10.64.0.100
-
----
-# Provider (public) network — additional VLAN on same ProviderNetwork
-apiVersion: kubeovn.io/v1
-kind: Vlan
-metadata:
-  name: vlan300
-spec:
-  id: 300                                # Your provider VLAN ID
-  provider: ext-cloud
----
-apiVersion: kubeovn.io/v1
-kind: Subnet
-metadata:
-  name: ext-public
-  labels:
-    network.kube-dc.com/external-network-type: public
-spec:
-  protocol: IPv4
-  cidrBlock: 203.0.113.0/24              # Your public IPv4 subnet
-  gateway: 203.0.113.1
-  vlan: vlan300
-  mtu: 1400
-  gatewayType: distributed
-  natOutgoing: false
-  private: false
-  enableLb: true
-  excludeIps:
-    - 203.0.113.1..203.0.113.3           # Reserved for infrastructure
-    - 203.0.113.254
-```
-
-Apply the provider network (the cloud network is already created by the installer):
-
-```bash
-kubectl apply -f external-networks.yaml
-```
-
-Verify:
-
-```bash
-kubectl get vlan
-kubectl get subnet ext-cloud ext-public
-kubectl get provider-networks ext-cloud -o jsonpath='{.status.vlans}'
-# Expected: ["vlan200","vlan300"]
-```
-
-### 4.4 Update DNS to MetalLB Floating IP
-
-Now that MetalLB is running, update the wildcard DNS record (initially set in [§3.2](#32-configure-wildcard-dns-required-before-init)) to point to the **floating IP** instead of the single-node IP:
-
-```
-*.example.com  →  203.0.113.20  (A record, MetalLB floating IP)
-```
-
-This ensures high availability — if any node goes down, MetalLB migrates the IP to a healthy node and all services remain reachable.
+Keep the old DNS target until the new records resolve and HTTPS/API probes pass
+from the user network. Roll back DNS first if acceptance fails.
 
 ---
 
@@ -1235,9 +1307,11 @@ kubectl get pods -n monitoring           # Prometheus, Grafana, Loki
 kubectl get pods -n kamaji-system        # Kamaji
 ```
 
-### Access the Web Console
+### Access the web consoles
 
-Open `https://console.example.com` in your browser.
+Open `https://console.example.com` for tenants and `https://admin.example.com`
+for platform administrators. The admin frontend is enabled by the greenfield
+scaffold; its Keycloak-backed pages become active after §3.5 finalization.
 
 Retrieve the demo organization admin password:
 
@@ -1307,7 +1381,7 @@ kubectl get pods -n kube-system -l app=kube-ovn-controller
 kubectl logs -n kube-system -l app=kube-ovn-controller --tail=50
 ```
 
-Common issue: Nodes have different NIC names. Apply a ProviderNetwork patch (see [Phase 4.2](#42-configure-provider-network-custom-nic-names)).
+Common issue: nodes have different NIC names. Supply `--node-nic=NODE=IFACE` during init or update the generated GitOps patch (see [Phase 4.2](#42-verify-providernetwork-and-custom-nic-mapping)).
 
 ### MetalLB Not Announcing IP
 

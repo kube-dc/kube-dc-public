@@ -53,8 +53,12 @@ var ErrStarterArtifactInvalid = errors.New("init: fleet-starter artifact missing
 // what the scaffolded Flux Kustomizations reference.
 var starterShapeMarkers = []string{
 	"bootstrap/add-cluster.sh",
-	"infrastructure",
-	"platform",
+	"infrastructure/kube-ovn-network-public/kustomization.yaml",
+	"infrastructure/ext-net-bridge-tag/kustomization.yaml",
+	"platform/kustomization.yaml",
+	"addons/metallb/kustomization.yaml",
+	"addons/metallb-config/kustomization.yaml",
+	"addons/metallb-config-bgp/kustomization.yaml",
 	// Parity with the publisher's pre-push assertion (review P2
 	// 2026-07-20): both ends validate the SAME set, so a bad override
 	// or replaced tag fails at extraction, not one step later inside

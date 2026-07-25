@@ -41,7 +41,7 @@ kube-dc bootstrap init \
 Post-`init` day-2 sanity: `kube-dc bootstrap status <cluster> --repo <path>` and
 `kube-dc bootstrap config list <cluster> --repo <path>`.
 
-> **CLI ≥ v0.5.3:** `kube-dc bootstrap install` enables the embedded registry
+> **Current CLI:** `kube-dc bootstrap install` enables the embedded registry
 > by default on every node (`--embedded-registry=false` opts out; an
 > existing operator-managed `registries.yaml` is never overwritten). If that
 > file has no non-empty `mirrors:` mapping, install refuses before restarting
@@ -66,29 +66,60 @@ Post-`init` day-2 sanity: `kube-dc bootstrap status <cluster> --repo <path>` and
 
 ## 2. Private-CA trust — independent consumers
 
-The platform has **at least six independent TLS trust paths**. There is no
-single process-wide switch; each applicable path must receive the corporate CA
-bundle or its subsystem breaks independently:
+The platform has independent TLS clients. A CA trusted by the install host is
+not automatically trusted by pods, and a CA mounted into the manager is not
+automatically trusted by Node.js or by the Kubernetes OIDC authenticator.
+Use one full root+intermediate PEM bundle and verify every consumer:
 
-| Consumer | Mechanism | Symptom when missing |
+| Consumer | Current mechanism | Symptom when missing |
 |---|---|---|
-| kube-dc-manager (Go) | `MANAGER_TRUSTED_CA_CONFIGMAP=<cm>` in `cluster-config.env` → chart mounts it + `SSL_CERT_DIR` | every Organization reconcile fails `x509: unknown authority`; **new org realms are never created**; admin Users page shows realm 404s |
-| UI backend (Node) | `backend.extraEnv: NODE_EXTRA_CA_CERTS=/etc/kube-dc-ca/ca.pem` + configMap volume (HR values) | "Keycloak admin client not configured"; grafana-launch / OpenBao / S3 calls fail |
-| oidc-webhook-authenticator | `SSL_CERT_DIR=/etc/ssl/certs:/extra-ca` + CA configMap on the DaemonSet | **cluster-wide 401** for all OIDC users |
-| cloud-shell job (Go CLI) | shipped automatically from the backend's `NODE_EXTRA_CA_CERTS` into the per-shell Secret (`ca.pem`) + `SSL_CERT_DIR` | shell loops `session expired. Run: kube-dc login…` because token refresh can't TLS to Keycloak |
-| OpenBao OIDC discovery | manager supplies the same PEM as `oidc_discovery_ca_pem` | every org sync reports a discovery URL TLS/400 error |
-| CNPG/barman S3 client | database `endpointCA` when supported; otherwise the restricted internal HTTP workaround in §4 | continuous archiving fails certificate verification |
+| install workstation / bastion | OS trust store used by `curl`, `flux`, and bootstrap scripts | Keycloak discovery/bootstrap times out or fails `unknown authority` |
+| kube-dc manager (Go) | `manager.trustedCA.configMapName` → read-only mount + `SSL_CERT_DIR` | Organization/Keycloak reconciliation fails |
+| UI backend (Node.js) | `backend.trustedCA.configMapName` + `fileName` → `NODE_EXTRA_CA_CERTS` | admin pages, Grafana/OpenBao/S3, or cloud-shell token refresh fails |
+| Kubernetes OIDC authenticator | manager copies the validated PEM into every `OpenIDConnect.spec.caBundle` | every browser JWT is rejected by the API server with 401 |
+| OpenBao OIDC discovery | manager forwards the same bundle as `oidc_discovery_ca_pem` | org auth setup reports discovery TLS/400 errors |
+| CNPG/barman S3 client | database `endpointCA` when the API supports it; otherwise the restricted internal HTTP workaround in §4 | continuous archiving fails certificate verification |
 
-Create one ConfigMap (e.g. `kube-dc-trusted-ca`, key `ca.pem`, full chain) in
-`kube-dc` as the source for mechanisms that accept a mounted bundle, and feed
-that same chain into the protocol-specific OpenBao/CNPG settings. **Verify the
-bundle actually contains the full chain** — a wrong or stale ConfigMap fails
-identically to a missing one.
+Create a single ConfigMap in `kube-dc`:
 
-Additionally, the chart (≤ v0.5.16) does **not** consume
-`keycloakAdminClient.secretName`; wire the admin client through
-`backend.extraEnv` (`KEYCLOAK_ADMIN_CLIENT_URL/_REALM/_ID/_SECRET`, ID/secret
-from the bootstrap-created secret).
+```bash
+kubectl -n kube-dc create configmap kube-dc-trusted-ca \
+  --from-file=ca.pem=corp-ca.pem
+```
+
+Set both chart values in the cluster's kube-dc HelmRelease:
+
+```yaml
+manager:
+  trustedCA:
+    configMapName: kube-dc-trusted-ca
+backend:
+  trustedCA:
+    configMapName: kube-dc-trusted-ca
+    fileName: ca.pem
+```
+
+The configured directory is fail-closed: unreadable/missing directories and
+malformed certificate blocks stop reconciliation with an explicit error. The
+loader emits only parseable `CERTIFICATE` blocks, so a combined PEM cannot
+leak a private-key block into OpenBao or an OIDC CR. Public-CA clusters leave
+both values empty and continue using system roots.
+
+The chart also consumes the bootstrap-created Keycloak admin client through
+`backend.keycloakAdminClient.secretName`. Do not duplicate the client ID,
+secret, URL, or realm in `backend.extraEnv`.
+
+Verification:
+
+```bash
+# manager/backend mounts and environment
+kubectl -n kube-dc get deploy -l app.kubernetes.io/name=kube-dc -o yaml | \
+  grep -E 'SSL_CERT_DIR|NODE_EXTRA_CA_CERTS|trusted-ca'
+# every organization realm CR should carry a non-empty base64 caBundle
+kubectl get openidconnect -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.caBundle}{"\n"}{end}'
+# a real Keycloak token must authenticate, not merely reach the endpoint
+kubectl --token="${OIDC_TOKEN}" auth can-i get projects.kube-dc.com
+```
 
 ## 3. Tenant networking — accepted customizations
 
@@ -150,7 +181,7 @@ stay NotReady → `kubelet-csr-approver` Pending → MachineDeployments stuck
   `tenant-addons In [enabled]`** — the management cluster is itself a
   SveltosCluster and must never receive the tenant default StorageClass.
 
-## 6. Image acceleration (CLI ≥ v0.5.3: complete and on by default)
+## 6. Image acceleration (complete and on by default)
 
 `kube-dc bootstrap init` now scaffolds the stack for every new cluster
 (`--image-acceleration=false` opts out); `bootstrap install` enables spegel per
@@ -180,9 +211,12 @@ mind the drain rule in §1 when enabling spegel.
 
 ## 7. Billing (quota-only mode)
 
-With `BILLING_PROVIDER=none` the backend skips the subscription gate but the
-frontend still disables **Create New Project** until the org carries
-`billing.kube-dc.com/subscription=active` — annotate each org (tracked UI gap).
+With `BILLING_PROVIDER=none`, project creation is intentionally subscription-
+free in both backend and frontend. The manager treats organizations as
+unmetered: it creates object-store users without a quota block. Do not encode
+"unmetered" as zero — zero is the suspended/disabled quota. Verify a fresh
+organization can create a Project and reaches a Ready
+`CephObjectStoreUser/<organization>` without a subscription annotation.
 
 ## 8. Windows VMs
 

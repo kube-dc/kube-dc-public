@@ -15,6 +15,61 @@ func infraErrs(env map[string]string) string {
 	return strings.Join(errs, "; ")
 }
 
+func managementAPIErrs(env map[string]string) string {
+	var errs []string
+	validateManagementAPI(env, &errs)
+	return strings.Join(errs, "; ")
+}
+
+func TestValidateManagementAPI_ServiceRequiresExactInCIDRIPv4(t *testing.T) {
+	valid := map[string]string{
+		"MANAGEMENT_API_MODE":      "service",
+		"INFRA_ATTACHMENT_ENABLED": "true",
+		"K8S_SERVICE_IP":           "10.101.0.1",
+		"SVC_CIDR":                 "10.101.0.0/16",
+		"INFRA_ATTACHMENT_ROUTES":  "192.0.2.0/24,10.100.0.0/16",
+	}
+	if got := managementAPIErrs(valid); got != "" {
+		t.Fatalf("valid service mode rejected: %s", got)
+	}
+
+	for name, mutate := range map[string]func(map[string]string){
+		"dual-home-disabled":   func(v map[string]string) { v["INFRA_ATTACHMENT_ENABLED"] = "false" },
+		"outside-service-cidr": func(v map[string]string) { v["K8S_SERVICE_IP"] = "10.102.0.1" },
+		"ipv6":                 func(v map[string]string) { v["K8S_SERVICE_IP"] = "2001:db8::1" },
+		"ipv4-mapped":          func(v map[string]string) { v["K8S_SERVICE_IP"] = "::ffff:10.101.0.1" },
+		"route-overlap":        func(v map[string]string) { v["INFRA_ATTACHMENT_ROUTES"] = "10.101.0.0/16" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := make(map[string]string, len(valid))
+			for key, value := range valid {
+				candidate[key] = value
+			}
+			mutate(candidate)
+			if got := managementAPIErrs(candidate); got == "" {
+				t.Fatal("unsafe service mode accepted")
+			}
+		})
+	}
+}
+
+func TestValidateManagementAPI_ExplicitModes(t *testing.T) {
+	if got := managementAPIErrs(map[string]string{"MANAGEMENT_API_MODE": "external"}); got != "" {
+		t.Fatalf("external mode rejected: %s", got)
+	}
+	if got := managementAPIErrs(map[string]string{
+		"MANAGEMENT_API_MODE": "platformVIP", "PLATFORM_ENDPOINT_KUBE_API_ENABLED": "true", "KUBE_API_INTERNAL_VIP": "100.66.0.31",
+	}); got != "" {
+		t.Fatalf("valid platformVIP mode rejected: %s", got)
+	}
+	if got := managementAPIErrs(map[string]string{"MANAGEMENT_API_MODE": "platformVIP"}); got == "" {
+		t.Fatal("platformVIP mode accepted without an enabled IPv4 VIP")
+	}
+	if got := managementAPIErrs(map[string]string{"MANAGEMENT_API_MODE": "automatic"}); !strings.Contains(got, "external, platformVIP, or service") {
+		t.Fatalf("unknown mode did not fail clearly: %q", got)
+	}
+}
+
 func TestValidateInfraAttachment_AcceptsAWellFormedConfig(t *testing.T) {
 	got := infraErrs(map[string]string{
 		"INFRA_ATTACHMENT_ENABLED":        "true",

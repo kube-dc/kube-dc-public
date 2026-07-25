@@ -53,6 +53,11 @@ func validAtlantisArgs() []string {
 		"--set=EXT_PUBLIC_VLAN_ID=1100",
 		"--set=EXT_PUBLIC_CIDR=203.0.113.48/29",
 		"--set=EXT_PUBLIC_GATEWAY=203.0.113.49",
+		"--set=EXT_PUBLIC_EXCLUDE_IPS_1=203.0.113.49",
+		"--set=EXT_PUBLIC_EXCLUDE_IPS_2=203.0.113.50",
+		"--set=KUBE_OVN_MASTER_NODES=192.0.2.11",
+		"--set=METALLB_FLOATING_IP=100.65.0.20",
+		"--set=METALLB_INTERFACE=br-ext-cloud",
 		"--dry-run",
 		"--no-tty",
 	}
@@ -542,6 +547,11 @@ func TestBootstrapInit_DryRun_GitLab_Allowed(t *testing.T) {
 		"--set=EXT_PUBLIC_VLAN_ID=1100",
 		"--set=EXT_PUBLIC_CIDR=203.0.113.48/29",
 		"--set=EXT_PUBLIC_GATEWAY=203.0.113.49",
+		"--set=EXT_PUBLIC_EXCLUDE_IPS_1=203.0.113.49",
+		"--set=EXT_PUBLIC_EXCLUDE_IPS_2=203.0.113.50",
+		"--set=KUBE_OVN_MASTER_NODES=192.0.2.11",
+		"--set=METALLB_FLOATING_IP=100.65.0.20",
+		"--set=METALLB_INTERFACE=br-ext-cloud",
 		"--dry-run",
 		"--no-tty",
 	}

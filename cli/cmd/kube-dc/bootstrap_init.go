@@ -418,8 +418,17 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"Provider PAT; leave unset to source via `gh auth token` / `glab auth login` state (never logged)")
 
 	// --- Overrides ---
-	cmd.Flags().StringSliceVar(&setFlags, "set", nil,
-		"Override a cluster-config.env key (repeatable; KEY=VALUE; SCREAMING_SNAKE_CASE)")
+	// StringArray, NOT StringSlice: StringSlice CSV-splits the value, so a
+	// key whose value legitimately contains commas is torn apart. The
+	// documented invocation
+	//   --set=KUBE_OVN_MASTER_NODES=192.168.0.1,192.168.0.2,192.168.0.3
+	// died with `--set: expected KEY=VALUE, got "192.168.0.2"`, and there was
+	// no escaping that worked -- operators had to fall back to --config.
+	// `--set` is already repeatable for multiple keys, so nothing is lost.
+	// (bootstrap install's --set has always been StringArray; this aligns
+	// init with it.)
+	cmd.Flags().StringArrayVar(&setFlags, "set", nil,
+		"Override a cluster-config.env key (repeatable; KEY=VALUE; SCREAMING_SNAKE_CASE; values may contain commas)")
 	cmd.Flags().StringSliceVar(&nodeNICFlags, "node-nic", nil,
 		"Per-node primary NIC (repeatable; NODE=IFACE; drives the customInterfaces patch)")
 

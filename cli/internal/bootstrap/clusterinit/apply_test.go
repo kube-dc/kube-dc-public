@@ -109,6 +109,7 @@ func applyFleet(t *testing.T) string {
 	if err := os.MkdirAll(filepath.Join(dir, "clusters"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	writeStarterScaffoldSources(t, dir)
 	return dir
 }
 
@@ -133,6 +134,19 @@ metadata:
 spec:
   interval: 10m
 `
+	rootKustomization := `apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - flux-system
+  - infrastructure.yaml
+  - platform.yaml
+  - secrets.enc.yaml
+configMapGenerator:
+  - name: cluster-config
+    namespace: flux-system
+    envs:
+      - cluster-config.env
+`
 	encryptedSecrets := `stringData:
     KEYCLOAK_ADMIN_PASSWORD: ENC[AES256_GCM,data:abc,iv:xyz,type:str]
 sops:
@@ -155,6 +169,12 @@ sops:
 				return err
 			}
 			if err := os.WriteFile(filepath.Join(clusterDir, "infrastructure.yaml"), []byte(infraBody), 0o644); err != nil {
+				return err
+			}
+			// The real add-cluster.sh always writes the root kustomization;
+			// omitting it here let scaffold steps that edit it (addons)
+			// pass in tests while failing on a real overlay.
+			if err := os.WriteFile(filepath.Join(clusterDir, "kustomization.yaml"), []byte(rootKustomization), 0o644); err != nil {
 				return err
 			}
 			return os.WriteFile(filepath.Join(clusterDir, "secrets.enc.yaml"), []byte(encryptedSecrets), 0o644)
@@ -470,6 +490,19 @@ metadata:
   name: infra-core
 spec: {}
 `
+	rootKustomization := `apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - flux-system
+  - infrastructure.yaml
+  - platform.yaml
+  - secrets.enc.yaml
+configMapGenerator:
+  - name: cluster-config
+    namespace: flux-system
+    envs:
+      - cluster-config.env
+`
 	encryptedSecrets := `stringData:
     K: ENC[AES256_GCM,data:abc,iv:xyz,type:str]
 sops:
@@ -492,6 +525,12 @@ sops:
 				return err
 			}
 			if err := os.WriteFile(filepath.Join(clusterDir, "infrastructure.yaml"), []byte(infraBody), 0o644); err != nil {
+				return err
+			}
+			// The real add-cluster.sh always writes the root kustomization;
+			// omitting it here let scaffold steps that edit it (addons)
+			// pass in tests while failing on a real overlay.
+			if err := os.WriteFile(filepath.Join(clusterDir, "kustomization.yaml"), []byte(rootKustomization), 0o644); err != nil {
 				return err
 			}
 			return os.WriteFile(filepath.Join(clusterDir, "secrets.enc.yaml"), []byte(encryptedSecrets), 0o644)

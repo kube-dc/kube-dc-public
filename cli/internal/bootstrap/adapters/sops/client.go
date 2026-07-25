@@ -61,7 +61,13 @@ func (c *Client) Encrypt(ctx context.Context, path string) error {
 	// First-time encrypt of a freshly-scaffolded plaintext file.
 	// Recipients come from the nearest .sops.yaml (standard sops
 	// behaviour). UPDATES use SetStringData, NOT this method.
-	_, stderr, err := c.exec(ctx, filepath.Dir(path), nil, "--encrypt", "--in-place", path)
+	// Pass the BASE name: the command already runs with cwd =
+	// filepath.Dir(path). Handing it the full path re-resolves a
+	// RELATIVE path against that new cwd and doubles the prefix
+	// (clusters/x/clusters/x/secrets.enc.yaml). Absolute paths happen
+	// to survive, which is why this only bites callers that pass
+	// `--repo .`. Base is correct for both.
+	_, stderr, err := c.exec(ctx, filepath.Dir(path), nil, "--encrypt", "--in-place", filepath.Base(path))
 	if err != nil {
 		return fmt.Errorf("sops encrypt %s: %w\nstderr: %s", path, err, bytes.TrimSpace(stderr))
 	}
@@ -72,7 +78,9 @@ func (c *Client) Decrypt(ctx context.Context, path string) ([]byte, error) {
 	if path == "" {
 		return nil, fmt.Errorf("sops: empty path")
 	}
-	stdout, stderr, err := c.exec(ctx, filepath.Dir(path), nil, "--decrypt", path)
+	// Base name, not the full path — see the note in Encrypt: cwd is
+	// already filepath.Dir(path), so a relative path would be doubled.
+	stdout, stderr, err := c.exec(ctx, filepath.Dir(path), nil, "--decrypt", filepath.Base(path))
 	if err != nil {
 		return nil, fmt.Errorf("sops decrypt %s: %w\nstderr: %s", path, err, bytes.TrimSpace(stderr))
 	}
@@ -88,18 +96,18 @@ func (c *Client) Decrypt(ctx context.Context, path string) ([]byte, error) {
 //
 // Sequence:
 //
-//	1. Decrypt the existing file to []byte (in-memory only).
-//	2. Parse the YAML, set stringData[key] = string(value).
-//	3. Get the existing recipients so the re-encrypt uses the same
-//	   identity set (independent of .sops.yaml drift).
-//	4. Pipe the mutated plaintext to `sops --encrypt --age <recipients>
-//	   --input-type yaml /dev/stdin` with --output pointing at a
-//	   sibling tempfile in the destination directory (same filesystem
-//	   → atomic rename below).
-//	5. Scrub the in-memory plaintext.
-//	6. os.Rename(tempfile, path) — atomic per POSIX.
-//	7. Round-trip verify: decrypt the new file and confirm the value
-//	   round-trips. Restore the pre-change file if verify fails.
+//  1. Decrypt the existing file to []byte (in-memory only).
+//  2. Parse the YAML, set stringData[key] = string(value).
+//  3. Get the existing recipients so the re-encrypt uses the same
+//     identity set (independent of .sops.yaml drift).
+//  4. Pipe the mutated plaintext to `sops --encrypt --age <recipients>
+//     --input-type yaml /dev/stdin` with --output pointing at a
+//     sibling tempfile in the destination directory (same filesystem
+//     → atomic rename below).
+//  5. Scrub the in-memory plaintext.
+//  6. os.Rename(tempfile, path) — atomic per POSIX.
+//  7. Round-trip verify: decrypt the new file and confirm the value
+//     round-trips. Restore the pre-change file if verify fails.
 func (c *Client) SetStringData(ctx context.Context, path, key string, value []byte) error {
 	if path == "" || key == "" {
 		return fmt.Errorf("sops: SetStringData needs path + key")
@@ -153,10 +161,17 @@ func (c *Client) SetStringData(ctx context.Context, path, key string, value []by
 	// supersedes the file under tmpPath, making this a no-op.
 	defer func() { _ = os.Remove(tmpPath) }()
 
+	// --output takes the tempfile's BASE name: the command runs with
+	// cwd=dir, and os.CreateTemp(dir, …) returns a name that KEEPS a
+	// relative dir prefix. Passing the full relative tmpPath made sops
+	// resolve it against its own cwd and write to
+	// clusters/x/clusters/x/.sops-… (same doubling as Encrypt/Decrypt).
+	// tmpPath itself stays as-is below — os.Chmod/os.Rename run in the
+	// CLI process's cwd, where the relative path is already correct.
 	args := []string{
 		"--encrypt",
 		"--input-type", "yaml",
-		"--output", tmpPath,
+		"--output", filepath.Base(tmpPath),
 		"--filename-override", base, // helps sops pick the right .sops.yaml rules if recipients flag is ignored
 		"--age", strings.Join(recipients, ","),
 		"/dev/stdin",

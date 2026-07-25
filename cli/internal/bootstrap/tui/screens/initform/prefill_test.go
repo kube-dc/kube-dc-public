@@ -86,7 +86,7 @@ func TestExtraSets_PanelRoundTripLossless(t *testing.T) {
 			// field-backed:
 			"EXT_NET_INTERFACE": "bond0", "KUBE_OVN_MASTER_NODES": "10.0.0.5",
 			"KUBE_OVN_GW_NODES": "m1,w1", "KUBE_OVN_GW_TYPE": "centralized", "CEPH_REPLICATION_SIZE": "2",
-			// advanced (no dedicated field) — must survive via ExtraSets:
+			// dedicated MetalLB field plus advanced keys that survive via ExtraSets:
 			"METALLB_INTERFACE": "bond0", "EXT_NET_ANCHOR_IPS": "m1=203.0.113.0/24",
 			"EXT_NET_MTU": "1400", "SMTP_HOST": "smtp.example.com", "SYSTEM_QUOTA_MIMIR_BLOCKS": "50Gi",
 		},
@@ -97,7 +97,10 @@ func TestExtraSets_PanelRoundTripLossless(t *testing.T) {
 	if s.GWNodes != "m1,w1" || s.GWType != "centralized" || s.CephReplicationSize != "2" {
 		t.Errorf("pointer fields not seeded: gw=%q type=%q repl=%q", s.GWNodes, s.GWType, s.CephReplicationSize)
 	}
-	for _, k := range []string{"METALLB_INTERFACE", "EXT_NET_ANCHOR_IPS", "EXT_NET_MTU", "SMTP_HOST", "SYSTEM_QUOTA_MIMIR_BLOCKS"} {
+	if s.MetalLBInterface != "bond0" {
+		t.Errorf("dedicated MetalLB interface field not seeded: %q", s.MetalLBInterface)
+	}
+	for _, k := range []string{"EXT_NET_ANCHOR_IPS", "EXT_NET_MTU", "SMTP_HOST", "SYSTEM_QUOTA_MIMIR_BLOCKS"} {
 		if s.ExtraSets[k] != o.Sets[k] {
 			t.Errorf("advanced key %q not preserved in ExtraSets (got %q)", k, s.ExtraSets[k])
 		}
@@ -145,7 +148,7 @@ func TestApply_ReplacementNoStaleLeak(t *testing.T) {
 	s.OSMode = string(clusterinit.RookCephLocal) // multi-node → local
 	s.OSDNode = "dc1-m1"
 	s.Preset = string(clusterinit.PresetInternalOnly) // away from public
-	delete(s.ExtraSets, "METALLB_INTERFACE")          // dropped an advanced key
+	s.MetalLBInterface = ""                           // cleared its dedicated field
 
 	if err := s.Apply(o); err != nil {
 		t.Fatalf("Apply: %v", err)

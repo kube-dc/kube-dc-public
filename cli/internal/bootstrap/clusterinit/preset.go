@@ -133,6 +133,7 @@ var universalMonitoringDefaults = map[string]string{
 // that we can't validate at preset-render time. See PRD §6.D.2
 // (docs/prd/internal-platform-endpoints-implementation.md).
 var universalPlatformEndpointDefaults = map[string]string{
+	"MANAGEMENT_API_MODE":                "external",
 	"KUBE_API_INTERNAL_VIP":              "",
 	"PLATFORM_ENDPOINT_KUBE_API_ENABLED": "false",
 }
@@ -162,6 +163,15 @@ var universalAnchorDefaults = map[string]string{
 	"EXT_NET_ANCHOR_IPS":       "",
 	"EXT_NET_ANCHOR_INTERFACE": "br-ext-cloud",
 	"EXT_NET_ANCHOR_REQUIRED":  "false",
+	// Site escape hatch only. Generic anchor/GARP support must never silently
+	// turn a gateway node into a tenant internet router; ordinary installs
+	// keep the upstream router as their egress path.
+	"EXT_NET_NODE_EGRESS_ENABLED": "false",
+	// Access VLAN the fleet's ext-net-bridge-tag DaemonSet asserts on
+	// the external bridge's own port. Derived from EXT_NET_VLAN_ID in
+	// derivePublicAnchorEnv (empty stays empty on untagged topologies);
+	// exists in every preset for Flux's strict envsubst.
+	"EXT_NET_ANCHOR_VLAN": "",
 	// EXT_NET_ANCHOR_SSH_HOSTS maps Kubernetes node names (the keys in
 	// EXT_NET_ANCHOR_IPS) to real SSH targets the operator's laptop
 	// can reach (bare IP, FQDN, or ssh_config alias). Required when
@@ -170,6 +180,21 @@ var universalAnchorDefaults = map[string]string{
 	// Per-node override: `kube-dc bootstrap anchors apply --ssh-host-map
 	// host5-a=10.0.0.5` (precedence: flag > fleet > ssh_config).
 	"EXT_NET_ANCHOR_SSH_HOSTS": "",
+}
+
+// universalPublicAnchorDefaults — the routed-public-VLAN twin of
+// universalAnchorDefaults. The keys exist in EVERY preset (empty on
+// non-public topologies) because the fleet's ext-net-bridge-tag
+// DaemonSet references them via Flux's strict envsubst — a missing
+// key fails the whole Kustomization. Real values are derived in
+// EnvMapFor (derivePublicAnchorEnv) from the operator's EXT_PUBLIC_*
+// inputs; see publicanchor.go for why the anchor addresses are
+// load-bearing (VIP return path) and how the IPAM reservation
+// protects them from tenant EIP/LRP collisions.
+var universalPublicAnchorDefaults = map[string]string{
+	"EXT_NET_PUBLIC_ANCHOR_INTERFACE": "ext-pub-anchor",
+	"EXT_NET_PUBLIC_ANCHOR_VLAN":      "",
+	"EXT_NET_PUBLIC_ANCHOR_IPS":       "",
 }
 
 // universalIngressDefaults are the ingress-topology + MetalLB
@@ -241,6 +266,7 @@ var internalOnlyPreset = func() PresetSpec {
 	mergeInto(defaults, universalMonitoringDefaults)
 	mergeInto(defaults, universalPlatformEndpointDefaults)
 	mergeInto(defaults, universalAnchorDefaults)
+	mergeInto(defaults, universalPublicAnchorDefaults)
 	mergeInto(defaults, universalIngressDefaults)
 	return PresetSpec{
 		Defaults: defaults,
@@ -277,6 +303,7 @@ var cloudVLANPreset = func() PresetSpec {
 	mergeInto(defaults, universalMonitoringDefaults)
 	mergeInto(defaults, universalPlatformEndpointDefaults)
 	mergeInto(defaults, universalAnchorDefaults)
+	mergeInto(defaults, universalPublicAnchorDefaults)
 	mergeInto(defaults, universalIngressDefaults)
 	return PresetSpec{
 		Defaults: defaults,
@@ -315,6 +342,7 @@ var cloudPublicVLANPreset = func() PresetSpec {
 	mergeInto(defaults, universalMonitoringDefaults)
 	mergeInto(defaults, universalPlatformEndpointDefaults)
 	mergeInto(defaults, universalAnchorDefaults)
+	mergeInto(defaults, universalPublicAnchorDefaults)
 	mergeInto(defaults, universalIngressDefaults)
 	return PresetSpec{
 		Defaults: defaults,
@@ -420,6 +448,13 @@ func EnvMapFor(p Preset, sets map[string]string) (map[string]string, error) {
 			ErrPresetMissingRequired, p, strings.Join(missing, ", "))
 	}
 
+	// Fill the public-anchor keys that follow mechanically from the
+	// public-VLAN inputs (see publicanchor.go). Custom preset is
+	// exempt — the operator vouches for the whole env by picking it.
+	if p != PresetCustom {
+		derivePublicAnchorEnv(out)
+	}
+
 	return out, nil
 }
 
@@ -438,7 +473,56 @@ func ValidatePresetRequiredKeys(o *InitOptions) error {
 	if err != nil {
 		return err
 	}
-	return ValidatePresetValues(o.Preset, envMap)
+	if err := ValidatePresetValues(o.Preset, envMap); err != nil {
+		return err
+	}
+	return validateCompleteInstallerValues(o.Preset, envMap)
+}
+
+// validateCompleteInstallerValues enforces inputs that are required for a complete
+// generated installation but are not universal PresetSpec.RequiredKeys. Keeping
+// this separate from ValidatePresetValues lets callers validate partial maps while
+// the CLI and TUI apply gate still fail before writing an unusable fleet overlay.
+func validateCompleteInstallerValues(p Preset, envMap map[string]string) error {
+	if p == PresetCustom || envMap == nil {
+		return nil
+	}
+
+	var missing []string
+	require := func(key string) {
+		value := strings.TrimSpace(envMap[key])
+		if value == "" || strings.HasPrefix(value, "CHANGEME") {
+			missing = append(missing, key)
+		}
+	}
+
+	// These values are consumed unconditionally by the shared fleet sources.
+	require("KUBE_OVN_MASTER_NODES")
+	if p == PresetCloudPublicVLAN {
+		require("EXT_PUBLIC_EXCLUDE_IPS_1")
+		require("EXT_PUBLIC_EXCLUDE_IPS_2")
+	}
+
+	ingressMode := strings.TrimSpace(envMap["INGRESS_MODE"])
+	if ingressMode == "" || ingressMode == ingressModeMetalLB {
+		require("METALLB_FLOATING_IP")
+		mode := strings.TrimSpace(envMap["METALLB_MODE"])
+		if mode == "" || mode == "l2" {
+			require("METALLB_INTERFACE")
+		}
+		if p == PresetCloudPublicVLAN && publicL2VIPUsesPublicSubnet(envMap) {
+			// Node names, not control-plane IPs: the fleet worker uses this
+			// exact set to bind one public anchor and expose the L2 interface.
+			require("KUBE_OVN_GW_NODES")
+		}
+	}
+
+	if len(missing) == 0 {
+		return nil
+	}
+	sort.Strings(missing)
+	return fmt.Errorf("%w: preset=%s; missing %s (pass via --set KEY=VALUE)",
+		ErrPresetMissingRequired, p, strings.Join(missing, ", "))
 }
 
 // ValidatePresetValues runs the semantic-validation pass over the
@@ -516,8 +600,10 @@ func ValidatePresetValues(p Preset, envMap map[string]string) error {
 	// parsed.
 	publicCIDR, publicCIDRok := parseCIDRIfPresent(envMap, "EXT_PUBLIC_CIDR", &errs)
 	checkGatewayInCIDR(envMap, "EXT_PUBLIC_GATEWAY", publicCIDR, publicCIDRok, &errs)
+	validateExcludeIPRanges(envMap, publicCIDR, publicCIDRok, &errs)
 	extCIDR, extCIDRok := parseCIDRIfPresent(envMap, "EXT_NET_CIDR", &errs)
 	checkGatewayInCIDR(envMap, "EXT_NET_GATEWAY", extCIDR, extCIDRok, &errs)
+	validateKubeOVNMasterNodes(envMap, &errs)
 
 	// Per-node anchor IPs (productized per-node MetalLB L3 anchor
 	// design). Validation only fires when EXT_NET_ANCHOR_IPS is set;
@@ -530,12 +616,20 @@ func ValidatePresetValues(p Preset, envMap map[string]string) error {
 	// review).
 	validateAnchorIPs(envMap, extCIDR, extCIDRok, &errs)
 	validateAnchorSSHHosts(envMap, &errs)
+	validateNodeEgress(envMap, &errs)
+
+	// Routed-public-VLAN per-node anchors (publicanchor.go).
+	validatePublicAnchor(envMap, &errs)
 
 	// Ingress topology + MetalLB announcement mode (D'''''.1 / BGP).
 	validateIngressAndMetalLB(envMap, &errs)
 
 	// Tenant Networking v2.
 	validateInfraAttachment(envMap, &errs)
+	validateManagementAPI(envMap, &errs)
+
+	// OVN northbound endpoints.
+	validateOVNDbIPs(envMap, &errs)
 
 	if len(errs) > 0 {
 		sort.Strings(errs)
@@ -560,8 +654,62 @@ func ValidatePresetValues(p Preset, envMap map[string]string) error {
 // required conditionally — an l2-mode cluster must not be forced to
 // supply ASNs. Mirrors the EXT_NET_ANCHOR_REQUIRED coverage-check
 // pattern: mode flags make their dependent keys mandatory.
+// validateOVNDbIPs checks that OVN_DB_IPS carries transport endpoints, not
+// bare addresses.
+//
+// The manager passes this straight to the OVN northbound client, which needs
+// `tcp:<ip>:6641` per entry. A plain IP list is accepted by every gate in the
+// install and then fails at the only place it matters — Project reconcile:
+//
+//	failed to create OVN NB client: unable to connect to any endpoints:
+//	failed to connect to 10.0.0.11: unknown network protocol
+//
+// so the VPC is created but its router options are never set and tenant
+// networking silently never completes. The error surfaces long after `init`
+// reports success, on a cluster that otherwise looks healthy.
+//
+// add-cluster.sh used to describe this key as "normally the exact same
+// comma-separated list as KUBE_OVN_MASTER_NODES" — bare IPs — so following
+// the scaffold's own guidance produced an unusable value. That comment is
+// corrected; this check makes the mistake impossible to ship.
+func validateOVNDbIPs(envMap map[string]string, errs *[]string) {
+	raw := strings.TrimSpace(envMap["OVN_DB_IPS"])
+	// Empty is fine (chart default applies) and CHANGEME is caught by the
+	// generic placeholder check — flagging either here would double-report.
+	if raw == "" || strings.HasPrefix(raw, "CHANGEME") {
+		return
+	}
+	for _, ep := range strings.Split(raw, ",") {
+		ep = strings.TrimSpace(ep)
+		if ep == "" {
+			continue
+		}
+		host, ok := strings.CutPrefix(ep, "tcp:")
+		if !ok {
+			host, ok = strings.CutPrefix(ep, "ssl:")
+		}
+		if !ok {
+			*errs = append(*errs, fmt.Sprintf(
+				"OVN_DB_IPS entry %q must be tcp:<ip>:6641 (a bare IP list is silently accepted here and then fails every Project reconcile with \"unknown network protocol\")", ep))
+			continue
+		}
+		address, port, err := net.SplitHostPort(host)
+		if err != nil || net.ParseIP(strings.Trim(address, "[]")) == nil {
+			*errs = append(*errs, fmt.Sprintf(
+				"OVN_DB_IPS entry %q must be tcp:<ip>:<port>, e.g. tcp:10.0.0.11:6641", ep))
+			continue
+		}
+		portNumber, err := strconv.Atoi(port)
+		if err != nil || portNumber < 1 || portNumber > 65535 {
+			*errs = append(*errs, fmt.Sprintf(
+				"OVN_DB_IPS entry %q has invalid port %q (expected 1..65535)", ep, port))
+		}
+	}
+}
+
 func validateIngressAndMetalLB(envMap map[string]string, errs *[]string) {
-	switch v := strings.TrimSpace(envMap["INGRESS_MODE"]); v {
+	ingressMode := strings.TrimSpace(envMap["INGRESS_MODE"])
+	switch ingressMode {
 	case "", "metallb-lb":
 		// default / explicit default — fine.
 	case "hostnetwork":
@@ -581,13 +729,26 @@ func validateIngressAndMetalLB(envMap map[string]string, errs *[]string) {
 				"INGRESS_MODE comment), then set the key for the record")
 	default:
 		*errs = append(*errs, fmt.Sprintf(
-			"INGRESS_MODE: %q is not a valid mode (metallb-lb; hostnetwork pending automation)", v))
+			"INGRESS_MODE: %q is not a valid mode (metallb-lb; hostnetwork pending automation)", ingressMode))
 	}
 
 	mode := strings.TrimSpace(envMap["METALLB_MODE"])
-	if mode != "" && mode != "l2" && mode != "bgp" {
+	if mode == "" {
+		mode = "l2"
+	}
+	if mode != "l2" && mode != "bgp" {
 		*errs = append(*errs, fmt.Sprintf(
 			"METALLB_MODE: %q is not a valid mode (l2 | bgp)", mode))
+	}
+
+	vip := strings.TrimSpace(envMap["METALLB_FLOATING_IP"])
+	if mode == "l2" {
+		iface := strings.TrimSpace(envMap["METALLB_INTERFACE"])
+		if iface != "" && !strings.HasPrefix(iface, "CHANGEME") {
+			if msg := validateNICName(iface); msg != "" {
+				*errs = append(*errs, "METALLB_INTERFACE: "+msg)
+			}
+		}
 	}
 
 	// IPv4-only: the fleet + chart render the pool as "<ip>/32" and
@@ -596,14 +757,14 @@ func validateIngressAndMetalLB(envMap map[string]string, errs *[]string) {
 	// needs /128 + aggregationLengthV6 for v6, which we don't render
 	// yet (review finding 2026-07-10). Reject until family-aware
 	// rendering exists.
-	if v := strings.TrimSpace(envMap["METALLB_FLOATING_IP"]); v != "" {
-		ip := net.ParseIP(v)
+	if vip != "" && !strings.HasPrefix(vip, "CHANGEME") {
+		ip := net.ParseIP(vip)
 		if ip == nil {
 			*errs = append(*errs, fmt.Sprintf(
-				"METALLB_FLOATING_IP: %q is not a valid IP address", v))
+				"METALLB_FLOATING_IP: %q is not a valid IP address", vip))
 		} else if ip.To4() == nil {
 			*errs = append(*errs, fmt.Sprintf(
-				"METALLB_FLOATING_IP: %q is IPv6 — the rendered pool is IPv4 /32 only; IPv6 VIPs are not supported yet", v))
+				"METALLB_FLOATING_IP: %q is IPv6 — the rendered pool is IPv4 /32 only; IPv6 VIPs are not supported yet", vip))
 		}
 	}
 
@@ -671,6 +832,79 @@ func validateIngressAndMetalLB(envMap map[string]string, errs *[]string) {
 			}
 		}
 	}
+}
+
+// validateKubeOVNMasterNodes checks the control-plane addresses from which
+// postProcessClusterConfig derives OVN_DB_IPS. Hostnames are deliberately not
+// accepted: kube-ovn binds these addresses and the manager needs stable
+// tcp:<ip>:6641 endpoints before cluster DNS is trustworthy.
+func validateKubeOVNMasterNodes(envMap map[string]string, errs *[]string) {
+	raw := strings.TrimSpace(envMap["KUBE_OVN_MASTER_NODES"])
+	if raw == "" || strings.HasPrefix(raw, "CHANGEME") {
+		return // the RequiredKeys pass reports the missing value
+	}
+	for _, value := range strings.Split(raw, ",") {
+		value = strings.TrimSpace(value)
+		if value == "" || net.ParseIP(value) == nil || net.ParseIP(value).To4() == nil {
+			*errs = append(*errs, fmt.Sprintf(
+				"KUBE_OVN_MASTER_NODES: %q is not an IP address (expected comma-separated control-plane internal IPs)", value))
+		}
+	}
+}
+
+// validateExcludeIPRanges validates the two strings consumed unconditionally
+// by infrastructure/kube-ovn-network-public/subnet-public.yaml. Each value is
+// either one IP or an inclusive "start..end" range, and every endpoint must
+// belong to EXT_PUBLIC_CIDR. Empty strings cannot be used as placeholders:
+// Flux strict envsubst would render a null/invalid excludeIps entry.
+func validateExcludeIPRanges(envMap map[string]string, cidr *net.IPNet, cidrOK bool, errs *[]string) {
+	for _, key := range []string{"EXT_PUBLIC_EXCLUDE_IPS_1", "EXT_PUBLIC_EXCLUDE_IPS_2"} {
+		raw, present := envMap[key]
+		raw = strings.TrimSpace(raw)
+		if !present || raw == "" || strings.HasPrefix(raw, "CHANGEME") {
+			continue // RequiredKeys reports absent/empty values.
+		}
+		parts := strings.Split(raw, "..")
+		if len(parts) > 2 {
+			*errs = append(*errs, fmt.Sprintf(
+				"%s: %q must be one IP or an inclusive start..end range", key, raw))
+			continue
+		}
+		var parsed []net.IP
+		valid := true
+		for _, part := range parts {
+			ip := net.ParseIP(strings.TrimSpace(part))
+			if ip == nil {
+				*errs = append(*errs, fmt.Sprintf(
+					"%s: %q contains an invalid IP address", key, raw))
+				valid = false
+				break
+			}
+			parsed = append(parsed, ip)
+			if cidrOK && !cidr.Contains(ip) {
+				*errs = append(*errs, fmt.Sprintf(
+					"%s: %s is outside EXT_PUBLIC_CIDR %s", key, ip, cidr))
+				valid = false
+			}
+		}
+		if valid && len(parsed) == 2 && compareIP(parsed[0], parsed[1]) > 0 {
+			*errs = append(*errs, fmt.Sprintf(
+				"%s: range start %s is after end %s", key, parsed[0], parsed[1]))
+		}
+	}
+}
+
+func compareIP(a, b net.IP) int {
+	a16, b16 := a.To16(), b.To16()
+	for i := 0; i < len(a16); i++ {
+		switch {
+		case a16[i] < b16[i]:
+			return -1
+		case a16[i] > b16[i]:
+			return 1
+		}
+	}
+	return 0
 }
 
 // validateASN returns an empty string when v is a valid, usable BGP AS
@@ -943,6 +1177,27 @@ func validateAnchorIPs(envMap map[string]string, extCIDR *net.IPNet, extCIDROK b
 	}
 }
 
+// validateNodeEgress keeps the customer-specific node-NAT escape hatch
+// independent from generic MetalLB anchors. Without this explicit gate,
+// merely enabling anchors for GARP would also install internet NAT and
+// forwarding policy on every external-gateway node.
+func validateNodeEgress(envMap map[string]string, errs *[]string) {
+	raw, present := envMap["EXT_NET_NODE_EGRESS_ENABLED"]
+	if !present || strings.TrimSpace(raw) == "" {
+		return // custom presets may omit it; active presets default to false
+	}
+	v := strings.TrimSpace(raw)
+	if v != "true" && v != "false" {
+		*errs = append(*errs,
+			"EXT_NET_NODE_EGRESS_ENABLED: must be lowercase true or false")
+		return
+	}
+	if v == "true" && strings.TrimSpace(envMap["EXT_NET_ANCHOR_REQUIRED"]) != "true" {
+		*errs = append(*errs,
+			"EXT_NET_NODE_EGRESS_ENABLED=true requires EXT_NET_ANCHOR_REQUIRED=true so every gateway node has an audited anchor")
+	}
+}
+
 // validateAnchorSSHHosts enforces the EXT_NET_ANCHOR_SSH_HOSTS schema:
 //
 //   - format `node=host[,node=host...]` (each pair has an `=`);
@@ -1041,6 +1296,7 @@ func ValidateAnchorConfig(envMap map[string]string) error {
 	extCIDR, extCIDROK := parseCIDRIfPresent(envMap, "EXT_NET_CIDR", &errs)
 	validateAnchorIPs(envMap, extCIDR, extCIDROK, &errs)
 	validateAnchorSSHHosts(envMap, &errs)
+	validateNodeEgress(envMap, &errs)
 	if len(errs) > 0 {
 		sort.Strings(errs)
 		return fmt.Errorf("%w: %s", ErrPresetInvalidValue, strings.Join(errs, "; "))
@@ -1079,6 +1335,53 @@ func PresetKustomizations(p Preset) ([]string, bool) {
 //
 // Only what is present is validated: these keys are written at apply time, and a
 // cluster with dual-homing disabled legitimately carries empty values.
+func validateManagementAPI(envMap map[string]string, errs *[]string) {
+	mode := strings.TrimSpace(envMap["MANAGEMENT_API_MODE"])
+	if mode == "" {
+		mode = "external"
+	}
+	switch mode {
+	case "external":
+		// KUBE_API_EXTERNAL_URL is already part of the installer contract.
+	case "platformVIP":
+		if envMap["PLATFORM_ENDPOINT_KUBE_API_ENABLED"] != "true" {
+			*errs = append(*errs, "MANAGEMENT_API_MODE=platformVIP requires PLATFORM_ENDPOINT_KUBE_API_ENABLED=true")
+		}
+		vip := net.ParseIP(strings.TrimSpace(envMap["KUBE_API_INTERNAL_VIP"]))
+		if vip == nil || vip.To4() == nil {
+			*errs = append(*errs, "MANAGEMENT_API_MODE=platformVIP requires KUBE_API_INTERNAL_VIP to be an IPv4 address")
+		}
+	case "service":
+		if envMap["INFRA_ATTACHMENT_ENABLED"] != "true" {
+			*errs = append(*errs, "MANAGEMENT_API_MODE=service requires INFRA_ATTACHMENT_ENABLED=true")
+		}
+		serviceIPText := strings.TrimSpace(envMap["K8S_SERVICE_IP"])
+		serviceIP := net.ParseIP(serviceIPText)
+		if serviceIP == nil || serviceIP.To4() == nil || serviceIP.String() != serviceIPText {
+			*errs = append(*errs, "MANAGEMENT_API_MODE=service requires K8S_SERVICE_IP to be a canonical IPv4 address")
+			break
+		}
+		_, serviceCIDR, err := net.ParseCIDR(strings.TrimSpace(envMap["SVC_CIDR"]))
+		if err != nil || serviceCIDR.IP.To4() == nil {
+			*errs = append(*errs, "MANAGEMENT_API_MODE=service requires SVC_CIDR to be a valid IPv4 CIDR")
+		} else if !serviceCIDR.Contains(serviceIP) {
+			*errs = append(*errs, fmt.Sprintf("K8S_SERVICE_IP %s is outside SVC_CIDR %s", serviceIP, serviceCIDR))
+		}
+		for _, route := range strings.Split(envMap["INFRA_ATTACHMENT_ROUTES"], ",") {
+			route = strings.TrimSpace(route)
+			if route == "" {
+				continue
+			}
+			_, network, err := net.ParseCIDR(route)
+			if err == nil && network.Contains(serviceIP) {
+				*errs = append(*errs, fmt.Sprintf("INFRA_ATTACHMENT_ROUTES entry %s includes K8S_SERVICE_IP %s; the API route must remain role-scoped", route, serviceIP))
+			}
+		}
+	default:
+		*errs = append(*errs, fmt.Sprintf("MANAGEMENT_API_MODE=%q must be external, platformVIP, or service", mode))
+	}
+}
+
 func validateInfraAttachment(envMap map[string]string, errs *[]string) {
 	enabled := strings.TrimSpace(envMap["INFRA_ATTACHMENT_ENABLED"])
 	routes := strings.TrimSpace(envMap["INFRA_ATTACHMENT_ROUTES"])

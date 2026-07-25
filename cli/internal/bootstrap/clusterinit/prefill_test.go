@@ -201,6 +201,7 @@ func TestImportMap_DenyListClonesOperatorDropsOwned(t *testing.T) {
 		"CEPH_REPLICATION_SIZE":    "2", "SMTP_HOST": "smtp.example.com",
 		"BILLING_PROVIDER": "whmcs", "SYSTEM_QUOTA_MIMIR_BLOCKS": "50Gi",
 		"PLATFORM_ENDPOINT_KUBE_API_ENABLED": "true",
+		"MANAGEMENT_API_MODE":                "service",
 	}
 	owned := map[string]string{
 		"KUBE_DC_VERSION": "v0.4.0", "KUBE_OVN_VERSION": "v1.15.10",
@@ -279,5 +280,48 @@ func TestImportMap_PreservesIngressAndBGPModeKeys(t *testing.T) {
 		if got := o.Sets[k]; got != want {
 			t.Errorf("Sets[%s] = %q, want %q (mode key dropped on clone)", k, got, want)
 		}
+	}
+}
+
+// Node egress turns gateway nodes into site-specific internet routers. A live
+// sibling may have enabled it for a broken upstream firewall, but a new cluster
+// must opt in through the install-only key instead of cloning that exception.
+func TestImportMap_NodeEgressRequiresExplicitInstallKey(t *testing.T) {
+	const liveKey = "EXT_NET_NODE_EGRESS_ENABLED"
+
+	clone := &InitOptions{}
+	ignored := ImportMap(clone, map[string]string{liveKey: "true"}, noFlagsChanged)
+	if got := clone.Sets[liveKey]; got != "" {
+		t.Fatalf("clone inherited site-specific node egress: %q", got)
+	}
+	if want := []string{liveKey}; !reflect.DeepEqual(ignored, want) {
+		t.Fatalf("ignored = %v, want %v", ignored, want)
+	}
+
+	install := &InitOptions{}
+	if ignored := ImportMap(install, map[string]string{KeyNodeEgress: "true"}, noFlagsChanged); len(ignored) != 0 {
+		t.Fatalf("explicit install key was ignored: %v", ignored)
+	}
+	if got := install.Sets[liveKey]; got != "true" {
+		t.Fatalf("explicit install key mapped to %q, want true", got)
+	}
+
+	explicitSet := &InitOptions{Sets: map[string]string{liveKey: "false"}}
+	ImportMap(explicitSet, map[string]string{KeyNodeEgress: "true"}, noFlagsChanged)
+	if got := explicitSet.Sets[liveKey]; got != "false" {
+		t.Fatalf("explicit --set lost precedence: got %q", got)
+	}
+
+	saved := ExportMap(install)
+	if got := saved[KeyNodeEgress]; got != "true" {
+		t.Fatalf("saved spec install key = %q, want true", got)
+	}
+	if _, leaked := saved[liveKey]; leaked {
+		t.Fatalf("saved spec exposed live node-egress key; clone safety would be bypassed")
+	}
+	roundTrip := &InitOptions{}
+	ImportMap(roundTrip, saved, noFlagsChanged)
+	if got := roundTrip.Sets[liveKey]; got != "true" {
+		t.Fatalf("saved spec round-trip = %q, want true", got)
 	}
 }

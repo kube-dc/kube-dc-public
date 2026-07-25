@@ -26,9 +26,10 @@ import (
 // Idempotent end-to-end: re-running on a cluster where all clients
 // already exist produces no diff.
 func bootstrapKeycloakInitCmd(fleetRepo *string) *cobra.Command {
+	var noPush bool
 	cmd := &cobra.Command{
 		Use:   "init <cluster-name>",
-		Short: "Bootstrap Keycloak master-realm OIDC clients + commit secrets (D'-1)",
+		Short: "Bootstrap Keycloak OIDC clients + persist encrypted secrets (D'-1)",
 		Long: `Runs bootstrap/setup-keycloak-oidc.sh against the named cluster's
 Keycloak deployment. The script:
 
@@ -45,15 +46,17 @@ Keycloak deployment. The script:
      each application can match the admin group.
   6. Creates the 'admin' group; adds the bootstrap 'admin' user;
      sets the user's email (Grafana requires this).
-  7. Extracts flux-web + grafana client secrets, SOPS-encrypts them
-     into clusters/<name>/secrets.enc.yaml under
-     FLUX_WEB_OIDC_CLIENT_SECRET + GRAFANA_OIDC_CLIENT_SECRET, and
-     round-trip-verifies each one.
-  8. Commits the updated file with a descriptive message.
+  7. Extracts and round-trip-verifies the Flux, Grafana, and confidential
+     admin-backend secrets. The admin Secret is materialised live before the
+     chart reference is enabled, then owned by the generated addons layer.
+  8. Commits and pushes the encrypted files plus chart wiring (--no-push
+     keeps the commit local for an explicit test workflow).
 
 After this completes, run:
 
-  flux reconcile kustomization platform --with-source
+  flux reconcile kustomization flux-system --with-source
+  flux reconcile kustomization addons
+  flux reconcile kustomization platform
   kubectl rollout restart deploy/flux-operator       -n flux-system
   kubectl rollout restart deploy/prom-operator-grafana -n monitoring
 
@@ -82,13 +85,24 @@ they don't pick up Secret rotations without a restart.`,
 				defer session.Close()
 			}
 
+			out := cmd.OutOrStdout()
+			var token string
+			if !noPush {
+				token = resolveGHTokenFor("keycloak", out)
+			}
+
 			return keycloak.Init(cmd.Context(), keycloak.InitOptions{
 				ClusterName: clusterName,
 				FleetRepo:   repo,
 				Runner:      session.Scripts,
-				Out:         cmd.OutOrStdout(),
+				Git:         session.Git,
+				GitHubToken: token,
+				NoPush:      noPush,
+				Out:         out,
 			})
 		},
 	}
+	cmd.Flags().BoolVar(&noPush, "no-push", false,
+		"Commit locally; do not push the Keycloak client secrets and chart wiring")
 	return cmd
 }

@@ -87,6 +87,14 @@ type NFDResult struct {
 	// for authoritative labels" hint.
 	CompositesInstalled bool
 
+	// KernelModuleLabelsAvailable is true when at least one node carries
+	// any kernel-module.* / kernel-loadedmodule.* label, i.e. NFD's module
+	// feature source is actually publishing. It is a property of the
+	// cluster's NFD configuration, not of any single node, which is why it
+	// is resolved once and passed down: a per-node "kvm label missing"
+	// reading is only meaningful if some node proves the source is live.
+	KernelModuleLabelsAvailable bool
+
 	// TotalNodes is the count of nodes NodeLabels returned. Present
 	// even when NFDInstalled is false so a caller can still say
 	// "3 nodes, no NFD".
@@ -158,13 +166,24 @@ const rawNFDPrefix = "feature.node.kubernetes.io/"
 //
 //	kubevirt-eligible = (VMX ∨ SVM) ∧ (kvm-module ∨ kvm-loadedmodule)
 //
+// but ONLY when the module labels are actually being published — see
+// NFDResult.KernelModuleLabelsAvailable. NFD emits them only if an operator
+// configures the module list, and the kube-dc fleet's NFD values do not, so
+// on a stock install the term is absent everywhere and the rule degrades to
+// (VMX ∨ SVM). This was originally documented as having no under-count risk;
+// that was wrong, and it cost a hard `init` failure on a healthy bare-metal
+// cluster.
+//
 // **Over-count risk**: VMX+kvm true, but kvm_intel not actually
 // loaded (rare — implies an operator ran `modprobe kvm` by hand
 // without the arch sub); KubeVirt VMI schedule would fail at
-// runtime. M6-T02's composite catches this; raw doesn't.
+// runtime. M6-T02's composite catches this; raw doesn't. The degraded
+// rule widens this: a CPU that supports virt but has no kvm module
+// loaded now counts as eligible.
 //
-// **Under-count risk**: none — every VM-capable node in the wild
-// has both flags set.
+// **Under-count risk**: none once the availability check is applied —
+// a node is only failed on a missing module label when some other node
+// proves NFD is publishing them.
 const (
 	rawCPUIDVMX      = "feature.node.kubernetes.io/cpu-cpuid.VMX"
 	rawCPUIDSVM      = "feature.node.kubernetes.io/cpu-cpuid.SVM"
@@ -229,6 +248,45 @@ func NFDDetect(ctx context.Context, src NodeLabelsProvider) (NFDResult, error) {
 		}
 	}
 
+	// Is the kernel-module signal available AT ALL in this cluster?
+	//
+	// NFD's kernel source ships `kernel-config.*` and `kernel-version.*`
+	// out of the box, but emits `kernel-module.*` / `kernel-loadedmodule.*`
+	// only when an operator configures the module list. The kube-dc fleet's
+	// NFD values do not, so on a stock install NO node carries either label
+	// — verified on a 6-node bare-metal cluster with VMX set, kvm loaded and
+	// /dev/kvm present, where NFD produced 39 labels and not one was a
+	// module label.
+	//
+	// Read as a plain absence, that turns the raw rule
+	// (VMX ∨ SVM) ∧ (kvm-module ∨ kvm-loadedmodule) into a permanent false,
+	// and `init` hard-fails "0 of 6 nodes have kube-dc.com/kubevirt-eligible"
+	// while telling the operator to enable nested virt and load kvm — both
+	// of which are already true. Absence of evidence was being read as
+	// evidence of absence.
+	//
+	// So distinguish the two: if some node reports module labels, the source
+	// is live and a node lacking kvm genuinely lacks it (keep the conjunct).
+	// If no node reports any, the source is off and the module term is
+	// unknown — fall back to the CPU flag alone rather than fail closed.
+	for _, node := range labels {
+		for k := range node {
+			// KVM-SPECIFIC on purpose. NFD module labels come from
+			// operator-authored rules, so a cluster may publish e.g.
+			// kernel-module.vfio and never kernel-module.kvm. Treating any
+			// module label as proof the KVM one would appear sends the strict
+			// branch live and reports every VMX/SVM node ineligible — the same
+			// false negative this check exists to prevent, just harder to see.
+			if k == rawKernelModKVM || k == rawKernelModKVM2 {
+				r.KernelModuleLabelsAvailable = true
+				break
+			}
+		}
+		if r.KernelModuleLabelsAvailable {
+			break
+		}
+	}
+
 	// Second pass: fill the per-node capability lists. Deterministic
 	// alphabetical order — matters for stable snapshot tests and
 	// consumer-facing rendering (M6-T03 doctor row, M6-T05 preset
@@ -241,7 +299,7 @@ func NFDDetect(ctx context.Context, src NodeLabelsProvider) (NFDResult, error) {
 
 	for _, name := range nodeNames {
 		node := labels[name]
-		if isKubeVirtEligible(node, r.CompositesInstalled) {
+		if isKubeVirtEligible(node, r.CompositesInstalled, r.KernelModuleLabelsAvailable) {
 			r.KubeVirtEligibleNodes = append(r.KubeVirtEligibleNodes, name)
 		}
 		if hasVendorGPU(node, r.CompositesInstalled, compositeGPUNvidia, pciVendorNvidia) {
@@ -259,11 +317,17 @@ func NFDDetect(ctx context.Context, src NodeLabelsProvider) (NFDResult, error) {
 // authoritative. Fallback: raw VMX-or-SVM + kvm-module (best-effort;
 // may over-count vs a strict M6-T02 rule that also checks e.g.
 // /dev/kvm accessibility — that's why the composite exists).
-func isKubeVirtEligible(node map[string]string, compositesInstalled bool) bool {
+func isKubeVirtEligible(node map[string]string, compositesInstalled, kernelModuleLabelsAvailable bool) bool {
 	if compositesInstalled {
 		return node[compositeKubeVirtEligible] == "true"
 	}
 	hasVirt := node[rawCPUIDVMX] == "true" || node[rawCPUIDSVM] == "true"
+	if !kernelModuleLabelsAvailable {
+		// NFD is not publishing module labels anywhere in this cluster,
+		// so the kvm term is unknown rather than false. Gate on the CPU
+		// flag alone; M6-T02's composite is what makes this strict.
+		return hasVirt
+	}
 	hasKVM := node[rawKernelModKVM] == "true" || node[rawKernelModKVM2] == "true"
 	return hasVirt && hasKVM
 }

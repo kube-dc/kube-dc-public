@@ -299,9 +299,18 @@ func TestScaffold_HappyPath(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(repo, "clusters"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	writeStarterScaffoldSources(t, repo)
 
 	// The fake script "writes" the same files the real script would:
 	// cluster-config.env with CHANGEMEs + an encrypted secrets.enc.yaml.
+	rootKustomization := `apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - flux-system
+  - infrastructure.yaml
+  - platform.yaml
+  - secrets.enc.yaml
+`
 	encryptedSecrets := `apiVersion: v1
 stringData:
     KEYCLOAK_ADMIN_PASSWORD: ENC[AES256_GCM,data:abc,iv:xyz,type:str]
@@ -322,6 +331,17 @@ EXT_NET_INTERFACE=CHANGEME
 				return err
 			}
 			if err := os.WriteFile(filepath.Join(clusterDir, "cluster-config.env"), []byte(envBody), 0o644); err != nil {
+				return err
+			}
+			// The real add-cluster.sh also writes infrastructure.yaml; the fake
+			// must too, or WritePublicNetwork has nothing to append the
+			// infra-public-network layer to. Omitting it here would only hide
+			// the failure the writer is designed to raise.
+			if err := os.WriteFile(filepath.Join(clusterDir, "infrastructure.yaml"),
+				[]byte("apiVersion: kustomize.toolkit.fluxcd.io/v1\nkind: Kustomization\nmetadata:\n  name: infra-cni\n  namespace: flux-system\n"), 0o644); err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(clusterDir, "kustomization.yaml"), []byte(rootKustomization), 0o644); err != nil {
 				return err
 			}
 			return os.WriteFile(filepath.Join(clusterDir, "secrets.enc.yaml"), []byte(encryptedSecrets), 0o644)

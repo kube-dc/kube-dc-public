@@ -27,7 +27,10 @@ func TestEncrypt_BuildsExpectedArgs(t *testing.T) {
 	if err := c.Encrypt(context.Background(), "/path/to/secret.enc.yaml"); err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
-	want := []string{"--encrypt", "--in-place", "/path/to/secret.enc.yaml"}
+	// Base name, not the full path: the adapter runs sops with
+	// cwd=filepath.Dir(path), so passing the full path would re-resolve a
+	// relative path against that cwd and double the prefix.
+	want := []string{"--encrypt", "--in-place", "secret.enc.yaml"}
 	if !equal(captured, want) {
 		t.Errorf("args=%v want %v", captured, want)
 	}
@@ -58,7 +61,7 @@ func TestEncrypt_SurfacesStderr(t *testing.T) {
 func TestDecrypt_ReturnsStdout(t *testing.T) {
 	c := &Client{
 		exec: func(_ context.Context, _ string, _ []byte, args ...string) ([]byte, []byte, error) {
-			want := []string{"--decrypt", "/path/to/secret.enc.yaml"}
+			want := []string{"--decrypt", "secret.enc.yaml"}
 			if !equal(args, want) {
 				t.Errorf("args=%v want %v", args, want)
 			}
@@ -103,7 +106,7 @@ sops:
 	const secretValue = "test-share-DO-NOT-LEAK-INTO-ARGV"
 
 	c := &Client{
-		exec: func(_ context.Context, _ string, stdin []byte, args ...string) ([]byte, []byte, error) {
+		exec: func(_ context.Context, dir string, stdin []byte, args ...string) ([]byte, []byte, error) {
 			switch {
 			case args[0] == "--decrypt":
 				// First call (read current plaintext) and the final
@@ -115,9 +118,11 @@ sops:
 				capturedEncryptArgs = append([]string(nil), args...)
 				capturedStdin = append([]byte(nil), stdin...)
 				// Simulate sops writing the encrypted output.
+				// Resolve --output the way sops does: relative paths are
+				// relative to the command's OWN cwd, not the test process.
 				for i := 0; i < len(args)-1; i++ {
 					if args[i] == "--output" {
-						_ = os.WriteFile(args[i+1], []byte("encrypted-blob"), 0o644)
+						_ = os.WriteFile(resolveOutput(dir, args[i+1]), []byte("encrypted-blob"), 0o644)
 					}
 				}
 				return nil, nil, nil
@@ -161,14 +166,15 @@ func TestSetStringData_AtomicRenameToDestination(t *testing.T) {
 	const encBlob = "fresh-encrypted-output"
 
 	c := &Client{
-		exec: func(_ context.Context, _ string, _ []byte, args ...string) ([]byte, []byte, error) {
+		exec: func(_ context.Context, dir string, _ []byte, args ...string) ([]byte, []byte, error) {
 			if args[0] == "--decrypt" {
 				return []byte("stringData:\n  KEY: value\n"), nil, nil
 			}
 			if args[0] == "--encrypt" {
+				// Resolve --output against the command's cwd, like real sops.
 				for i := 0; i < len(args)-1; i++ {
 					if args[i] == "--output" {
-						_ = os.WriteFile(args[i+1], []byte(encBlob), 0o644)
+						_ = os.WriteFile(resolveOutput(dir, args[i+1]), []byte(encBlob), 0o644)
 					}
 				}
 			}
@@ -210,7 +216,13 @@ func TestSetStringData_RoundTripFailureSurfaces(t *testing.T) {
 	}
 	decryptCalls := 0
 	c := &Client{
-		exec: func(_ context.Context, _ string, _ []byte, args ...string) ([]byte, []byte, error) {
+		// `dir` must be honoured. --output carries a BASE name and sops
+		// resolves it against the command's own cwd; a fake that writes
+		// args[i+1] verbatim resolves it against the TEST process instead
+		// and drops .sops-secret.enc.yaml-* into the package directory on
+		// every run. Five of those were committed by accident before this
+		// was noticed. resolveOutput does what sops does.
+		exec: func(_ context.Context, dir string, _ []byte, args ...string) ([]byte, []byte, error) {
 			if args[0] == "--decrypt" {
 				decryptCalls++
 				if decryptCalls == 1 {
@@ -222,7 +234,7 @@ func TestSetStringData_RoundTripFailureSurfaces(t *testing.T) {
 			if args[0] == "--encrypt" {
 				for i := 0; i < len(args)-1; i++ {
 					if args[i] == "--output" {
-						_ = os.WriteFile(args[i+1], []byte("blob"), 0o644)
+						_ = os.WriteFile(resolveOutput(dir, args[i+1]), []byte("blob"), 0o644)
 					}
 				}
 			}
@@ -357,4 +369,137 @@ func equal(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// TestRelativePath_NotDoubled pins the bug that made
+// `kube-dc bootstrap openbao setup-controller-auth <c> --repo .` die with
+// sops exit 100:
+//
+//	cannot operate on non-existent file
+//	  ".../clusters/atlantis/clusters/atlantis/secrets.enc.yaml"
+//
+// The adapter chdirs to filepath.Dir(path); handing sops the *relative*
+// path again made it resolve against that new cwd. The argument must be
+// the base name so cwd + arg address the file exactly once.
+func TestRelativePath_NotDoubled(t *testing.T) {
+	for _, path := range []string{
+		"clusters/atlantis/secrets.enc.yaml",      // relative (--repo .)
+		"/abs/clusters/atlantis/secrets.enc.yaml", // absolute (--repo /abs)
+	} {
+		var gotDir string
+		var gotArgs []string
+		c := &Client{
+			exec: func(_ context.Context, dir string, _ []byte, args ...string) ([]byte, []byte, error) {
+				gotDir, gotArgs = dir, args
+				return []byte("kind: Secret\n"), nil, nil
+			},
+		}
+		if _, err := c.Decrypt(context.Background(), path); err != nil {
+			t.Fatalf("Decrypt(%q): %v", path, err)
+		}
+		if gotDir != filepath.Dir(path) {
+			t.Errorf("Decrypt(%q): cwd=%q want %q", path, gotDir, filepath.Dir(path))
+		}
+		arg := gotArgs[len(gotArgs)-1]
+		if arg != filepath.Base(path) {
+			t.Errorf("Decrypt(%q): arg=%q want base %q", path, arg, filepath.Base(path))
+		}
+		if strings.Contains(filepath.Join(gotDir, arg), "clusters/atlantis/clusters/atlantis") {
+			t.Errorf("Decrypt(%q): path doubled: %q", path, filepath.Join(gotDir, arg))
+		}
+	}
+}
+
+// TestSetStringData_RelativePath_OutputNotDoubled covers the same doubling
+// class as TestRelativePath_NotDoubled, but for the --output tempfile.
+//
+// os.CreateTemp(dir, …) returns a name that KEEPS a relative dir prefix, so
+// with dir="clusters/atlantis" tmpPath is "clusters/atlantis/.sops-…". The
+// command already runs with cwd=dir, so passing that full relative path made
+// sops write to clusters/atlantis/clusters/atlantis/.sops-… and the follow-up
+// os.Chmod/os.Rename then failed on a file that was never created.
+//
+// The other SetStringData tests cannot catch this: they use absolute
+// t.TempDir() paths, and their fake writes --output relative to the TEST
+// process instead of the cwd handed to the command. This fake resolves a
+// relative --output against `dir`, the way sops actually does.
+func TestSetStringData_RelativePath_OutputNotDoubled(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	rel := filepath.Join("clusters", "atlantis", "secrets.enc.yaml")
+	if err := os.MkdirAll(filepath.Dir(rel), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	src := `apiVersion: v1
+kind: Secret
+stringData:
+    OPENBAO_UNSEAL_KEY_1: ENC[AES256_GCM,data:x,iv:y,tag:z,type:str]
+sops:
+    age:
+        - recipient: age10mskwx065akee5mw4txeqtnn90t724phdzx9k4jxnrgcp9cces6sqfkwvu
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            body
+            -----END AGE ENCRYPTED FILE-----
+`
+	if err := os.WriteFile(rel, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	const val = "relative-path-share"
+	c := &Client{
+		exec: func(_ context.Context, dir string, _ []byte, args ...string) ([]byte, []byte, error) {
+			switch args[0] {
+			case "--decrypt":
+				return []byte("apiVersion: v1\nkind: Secret\nstringData:\n  OPENBAO_UNSEAL_KEY_1: " + val + "\n"), nil, nil
+			case "--encrypt":
+				var out string
+				for i := 0; i < len(args)-1; i++ {
+					if args[i] == "--output" {
+						out = args[i+1]
+					}
+				}
+				if out == "" {
+					t.Fatal("--encrypt invoked without --output")
+				}
+				// Faithful to sops: a relative --output resolves against
+				// the command's OWN cwd, which the adapter set to dir.
+				resolved := out
+				if !filepath.IsAbs(resolved) {
+					resolved = filepath.Join(dir, resolved)
+				}
+				if err := os.WriteFile(resolved, []byte("encrypted-blob"), 0o600); err != nil {
+					t.Fatalf("sops could not write --output %q (resolved %q) — doubled path?: %v", out, resolved, err)
+				}
+				return nil, nil, nil
+			default:
+				t.Errorf("unexpected sops args: %v", args)
+				return nil, nil, nil
+			}
+		},
+	}
+
+	if err := c.SetStringData(context.Background(), rel, "OPENBAO_UNSEAL_KEY_1", []byte(val)); err != nil {
+		t.Fatalf("SetStringData with relative path: %v", err)
+	}
+	// The destination must hold the encrypted blob the fake wrote, proving
+	// the tempfile landed where Chmod/Rename expected it.
+	got, err := os.ReadFile(rel)
+	if err != nil {
+		t.Fatalf("read destination: %v", err)
+	}
+	if string(got) != "encrypted-blob" {
+		t.Errorf("destination = %q, want the encrypted blob (rename did not publish the tempfile)", got)
+	}
+}
+
+// resolveOutput mirrors how sops treats --output: an absolute path is used
+// as-is, a relative one resolves against the command's own working
+// directory. The fakes must model this, otherwise a doubled relative path
+// (the bug fixed alongside these tests) is invisible to them.
+func resolveOutput(dir, out string) string {
+	if filepath.IsAbs(out) {
+		return out
+	}
+	return filepath.Join(dir, out)
 }

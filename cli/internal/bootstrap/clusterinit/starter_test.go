@@ -27,15 +27,7 @@ func (f *fakePuller) PullArtifact(_ context.Context, url, dir string) error {
 	// err-first ordering made the partial-pull test vacuous).
 	files := f.files
 	if files == nil {
-		files = []string{
-			"bootstrap/add-cluster.sh",
-			"infrastructure/kustomization.yaml",
-			"platform/kustomization.yaml",
-			"addons/metallb/helmrelease.yaml",
-			"scripts/install-prerequisites.sh",
-			"clusters/.gitkeep",
-			".gitignore",
-		}
+		files = testStarterFiles("clusters/.gitkeep", ".gitignore")
 	}
 	for _, rel := range files {
 		p := filepath.Join(dir, rel)
@@ -51,6 +43,11 @@ func (f *fakePuller) PullArtifact(_ context.Context, url, dir string) error {
 		}
 	}
 	return f.err
+}
+
+func testStarterFiles(extra ...string) []string {
+	files := append([]string{}, starterShapeMarkers...)
+	return append(files, extra...)
 }
 
 // fakeStarterGit records Init/Commit calls.
@@ -77,7 +74,7 @@ func TestEnsureStarter_ShapePresentSkips(t *testing.T) {
 	// .git (a real checkout always does); a shape WITHOUT .git takes
 	// the repair path — separate test below.
 	dir := t.TempDir()
-	for _, p := range []string{"bootstrap/add-cluster.sh", "infrastructure/x", "platform/x", "scripts/install-prerequisites.sh", ".git/HEAD"} {
+	for _, p := range testStarterFiles(".git/HEAD") {
 		full := filepath.Join(dir, p)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatal(err)
@@ -226,7 +223,7 @@ func TestEnsureStarter_ShapeWithoutGitRepaired(t *testing.T) {
 	// the repo must still get init+commit (review P1: the engine's
 	// later steps need a usable repository).
 	dir := t.TempDir()
-	for _, p := range []string{"bootstrap/add-cluster.sh", "infrastructure/x", "platform/x", "scripts/install-prerequisites.sh"} {
+	for _, p := range starterShapeMarkers {
 		full := filepath.Join(dir, p)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatal(err)
@@ -317,7 +314,7 @@ func TestEnsureStarter_UnbornHeadRepaired(t *testing.T) {
 	// Shape present, .git present, but HEAD unborn (prior run's Init
 	// succeeded, Commit failed). Must commit — not silently skip.
 	dir := t.TempDir()
-	for _, p := range []string{"bootstrap/add-cluster.sh", "infrastructure/x", "platform/x", "scripts/install-prerequisites.sh"} {
+	for _, p := range starterShapeMarkers {
 		full := filepath.Join(dir, p)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatal(err)
@@ -354,11 +351,7 @@ func TestEnsureStarter_PreseedReadmeAndGitignorePreserved(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("my-scratch/\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	puller := &fakePuller{files: []string{
-		"bootstrap/add-cluster.sh", "infrastructure/x", "platform/x",
-		"scripts/install-prerequisites.sh", "clusters/.gitkeep",
-		".gitignore", "README.md",
-	}}
+	puller := &fakePuller{files: testStarterFiles("clusters/.gitkeep", ".gitignore", "README.md")}
 	if _, err := EnsureStarter(context.Background(), EnsureStarterOptions{
 		RepoPath: dir, Ref: testStarterRef, Flux: puller, Git: &fakeStarterGit{},
 	}); err != nil {

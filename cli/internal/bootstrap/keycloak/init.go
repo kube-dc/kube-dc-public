@@ -12,7 +12,7 @@
 //   - Surgical `sops --set` updates so only the rotated keys get a
 //     new IV/tag — every other ENC token stays byte-identical and
 //     the diff is reviewable.
-//   - Git commit with a descriptive message.
+//   - Git commit with a descriptive message (the Go engine pushes it).
 //
 // **Future work** ports the logic to a pure-Go REST client + the
 // SOPS adapter (same shape as the OpenBao engine), gaining the
@@ -46,7 +46,16 @@ type InitOptions struct {
 	// this to the script-adapter, tests wire to a fake.
 	Runner ports.ScriptRunner
 
-	// Out is where redacted stdout + status lines go. nil = ioutil.Discard.
+	// Git pushes the script-created commit to the remote Flux watches.
+	Git ports.GitClient
+
+	// GitHubToken is passed to the transport adapter; empty is valid for SSH.
+	GitHubToken string
+
+	// NoPush leaves the script-created commit local for explicit test workflows.
+	NoPush bool
+
+	// Out is where redacted stdout + status lines go. nil = io.Discard.
 	Out io.Writer
 }
 
@@ -58,7 +67,9 @@ var ErrMissingDependency = errors.New("keycloak: init missing required dependenc
 // Init invokes bootstrap/setup-keycloak-oidc.sh via the script
 // runner. The script is fully idempotent — re-running on a cluster
 // where all OIDC clients are already configured produces no Git
-// diff. Returns nil on script-exit-zero, a wrapped error otherwise.
+// diff. The engine snapshots HEAD before the script and pushes only when the
+// script created a new commit, unless NoPush is set; failures preserve the
+// local commit for explicit recovery.
 func Init(ctx context.Context, opts InitOptions) error {
 	if err := validate(opts); err != nil {
 		return err
@@ -66,6 +77,14 @@ func Init(ctx context.Context, opts InitOptions) error {
 	out := opts.Out
 	if out == nil {
 		out = io.Discard
+	}
+	var preSHA string
+	if !opts.NoPush {
+		var err error
+		preSHA, err = opts.Git.Head(ctx, opts.FleetRepo)
+		if err != nil {
+			return fmt.Errorf("keycloak init: read fleet HEAD before ceremony: %w", err)
+		}
 	}
 
 	fmt.Fprintf(out, "[keycloak] running bootstrap/setup-keycloak-oidc.sh for %s\n", opts.ClusterName)
@@ -95,8 +114,23 @@ func Init(ctx context.Context, opts InitOptions) error {
 	if exit != 0 {
 		return fmt.Errorf("keycloak init: setup-keycloak-oidc.sh exit=%d", exit)
 	}
-	fmt.Fprintf(out, "[keycloak] init complete — flux-web + grafana + kube-dc-admin clients configured, secrets committed.\n")
-	fmt.Fprintf(out, "[keycloak] next: flux reconcile kustomization platform --with-source && kubectl rollout restart deploy/{flux-operator,prom-operator-grafana}\n")
+	if opts.NoPush {
+		fmt.Fprintln(out, "[keycloak] init complete — secrets committed locally (--no-push)")
+	} else {
+		postSHA, err := opts.Git.Head(ctx, opts.FleetRepo)
+		if err != nil {
+			return fmt.Errorf("keycloak init: read fleet HEAD after ceremony (local commit may need manual push): %w", err)
+		}
+		if postSHA == preSHA {
+			fmt.Fprintln(out, "[keycloak] init complete — clients already converged; no new commit to push")
+		} else {
+			if err := opts.Git.Push(ctx, opts.FleetRepo, opts.GitHubToken); err != nil {
+				return fmt.Errorf("keycloak init: push durable OIDC config (local commit preserved; live backend Secret already materialized): %w", err)
+			}
+			fmt.Fprintln(out, "[keycloak] init complete — clients configured; encrypted secrets + chart wiring committed and pushed")
+		}
+	}
+	fmt.Fprintln(out, "[keycloak] next: flux reconcile kustomization flux-system --with-source && flux reconcile kustomization addons && flux reconcile kustomization platform")
 	return nil
 }
 
@@ -109,6 +143,9 @@ func validate(opts InitOptions) error {
 	}
 	if opts.Runner == nil {
 		return fmt.Errorf("%w: Runner", ErrMissingDependency)
+	}
+	if !opts.NoPush && opts.Git == nil {
+		return fmt.Errorf("%w: Git", ErrMissingDependency)
 	}
 	return nil
 }

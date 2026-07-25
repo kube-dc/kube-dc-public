@@ -40,7 +40,8 @@ public-facing services depend on:
 
 Each client's secret is extracted from Keycloak, SOPS-encrypted
 into clusters/<name>/secrets.enc.yaml (FLUX_WEB_OIDC_CLIENT_SECRET
-and GRAFANA_OIDC_CLIENT_SECRET), and committed to the fleet repo.
+and GRAFANA_OIDC_CLIENT_SECRET), plus the admin-backend Secret and its
+chart wiring, then committed and pushed to the fleet repo.
 The 'admin' group + 'groups' client scope + group-membership
 mapper are all configured idempotently so re-running the command
 on an already-bootstrapped cluster is safe and produces no diff.

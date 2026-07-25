@@ -5,6 +5,6 @@ import type { WrapperProps } from '@docusaurus/types';
 
 type Props = WrapperProps<typeof DocItemType>;
 
-export default function DocItemWrapper(props: Props): JSX.Element {
+export default function DocItemWrapper(props: Props): React.JSX.Element {
   return <DocItem {...props} />;
 }

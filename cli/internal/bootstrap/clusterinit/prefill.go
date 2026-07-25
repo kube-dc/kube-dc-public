@@ -44,6 +44,11 @@ const (
 	KeyAllowNoKVM   = InitPrefix + "ALLOW_NO_KVM"
 	KeyAllowUnpin   = InitPrefix + "ALLOW_UNPINNED_ADOPT"
 	KeyNoS3Exposure = InitPrefix + "NO_S3_EXPOSURE"
+	// KeyNodeEgress is install-only by design: live cluster-config.env uses
+	// EXT_NET_NODE_EGRESS_ENABLED, but clone-from-sibling must never inherit this
+	// site-specific internet-gateway escape hatch.
+	KeyNodeEgress = InitPrefix + "NODE_EGRESS_ENABLED"
+	KeyNodeNICs   = InitPrefix + "NODE_NICS"
 	// VM root-disk storage (install-only: selects which rbd-vm fleet
 	// manifests get scaffolded — never reconciled into cluster-config.env).
 	// Goldens are comma-joined lists.
@@ -78,8 +83,13 @@ var denyImportExact = map[string]bool{
 	// Strictly worse than a crash. The rest of the INFRA_ATTACHMENT_* keys are
 	// universal and safe to carry.
 	"NODE_CIDR": true, "INFRA_ATTACHMENT_ROUTES": true,
+	// Public-anchor map is derived from THIS cluster's VIP + gateway-node
+	// names (derivePublicAnchorEnv); a sibling's map carries the sibling's
+	// node names and VIP block, so a clone must re-derive, not inherit.
+	"EXT_NET_PUBLIC_ANCHOR_IPS": true, "EXT_NET_PUBLIC_ANCHOR_VLAN": true,
 	"EXT_NET_NAME": true, "EXT_NET_TYPE": true, "EXT_NET_CIDR": true,
-	"EXT_NET_GATEWAY": true, "EXT_NET_EXCLUDE_IPS": true,
+	"EXT_NET_NODE_EGRESS_ENABLED": true,
+	"EXT_NET_GATEWAY":             true, "EXT_NET_EXCLUDE_IPS": true,
 	"DEFAULT_GW_NETWORK_TYPE": true, "DEFAULT_EIP_NETWORK_TYPE": true,
 	"DEFAULT_FIP_NETWORK_TYPE": true, "DEFAULT_SVC_LB_NETWORK_TYPE": true,
 }
@@ -106,13 +116,17 @@ var specOrder = []string{
 	// deny-imported (they are node-specific), but they still belong in the
 	// ordering so --save-config output is complete and stable for the cluster
 	// it was taken from.
-	"NODE_CIDR", "INFRA_ATTACHMENT_ENABLED", "INFRA_ATTACHMENT_SUBNET",
+	"MANAGEMENT_API_MODE", "NODE_CIDR", "INFRA_ATTACHMENT_ENABLED", "INFRA_ATTACHMENT_SUBNET",
 	"INFRA_ATTACHMENT_CIDR", "INFRA_ATTACHMENT_GATEWAY",
 	"INFRA_ATTACHMENT_SECURITY_GROUP", "INFRA_ATTACHMENT_ROUTES",
 
 	"CLUSTER_NAME", "DOMAIN", "NODE_EXTERNAL_IP", "EMAIL",
 	"EXT_NET_VLAN_ID", "EXT_NET_INTERFACE", "EXT_NET_MTU", "KUBE_OVN_MASTER_NODES",
+	"KUBE_OVN_GW_NODES", "EXT_NET_ANCHOR_IPS", "EXT_NET_ANCHOR_INTERFACE",
+	"EXT_NET_ANCHOR_REQUIRED", "EXT_NET_ANCHOR_SSH_HOSTS", KeyNodeEgress,
+	KeyNodeNICs,
 	"EXT_PUBLIC_VLAN_ID", "EXT_PUBLIC_CIDR", "EXT_PUBLIC_GATEWAY",
+	"EXT_NET_PUBLIC_ANCHOR_INTERFACE",
 	"OBJECT_STORAGE_MODE",
 	"CEPH_LOCAL_OSD_NODE", "CEPH_LOCAL_OSD_SIZE_GB", "CEPH_LOCAL_OSD_DEVICE",
 	"CEPH_NODE_1", "CEPH_NODE_1_DEVICE", "CEPH_NODE_2", "CEPH_NODE_2_DEVICE",
@@ -229,6 +243,14 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 	str(KeyRepo, "repo", &o.Repo)
 	str(KeyGitHubOwner, "github-owner", &o.GitHubOwner)
 	str(KeyGitHubRepo, "github-repo", &o.GitHubRepo)
+	if v, ok := src[KeyNodeNICs]; ok {
+		seen[KeyNodeNICs] = true
+		if !flagChanged("node-nic") {
+			if parsed, err := ParseSetPairs(splitCSVList(v)); err == nil {
+				o.NodeNICs = parsed
+			}
+		}
+	}
 	if v, ok := src[KeyMode]; ok {
 		seen[KeyMode] = true
 		if !flagChanged("mode") && strings.TrimSpace(v) != "" {
@@ -257,6 +279,12 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 	boolean(KeyAllowNoKVM, "allow-no-kubevirt-eligible", &o.AllowNoKubevirtEligible)
 	boolean(KeyAllowUnpin, "allow-unpinned-adopt", &o.AllowUnpinnedAdopt)
 	boolean(KeyNoS3Exposure, "no-s3-exposure", &o.NoS3Exposure)
+	if v, ok := src[KeyNodeEgress]; ok {
+		seen[KeyNodeEgress] = true
+		if _, explicitlySet := o.Sets["EXT_NET_NODE_EGRESS_ENABLED"]; !explicitlySet {
+			o.Sets["EXT_NET_NODE_EGRESS_ENABLED"] = strings.TrimSpace(v)
+		}
+	}
 	if v, ok := src[KeyGPUPlatform]; ok {
 		seen[KeyGPUPlatform] = true
 		if _, ok := src["GPU_ENABLED"]; ok {
@@ -415,6 +443,10 @@ func ExportMap(o *InitOptions) map[string]string {
 	// model), so emit every one — that's what makes a saved/cloned spec
 	// carry all operator config, not just a curated subset.
 	for k, v := range o.Sets {
+		if k == "EXT_NET_NODE_EGRESS_ENABLED" {
+			put(KeyNodeEgress, v)
+			continue
+		}
 		put(k, v)
 	}
 	put(KeyMode, string(o.Mode))
@@ -427,6 +459,18 @@ func ExportMap(o *InitOptions) map[string]string {
 	put(KeyGitHubRepo, o.GitHubRepo)
 	put(KeyRepo, o.Repo)
 	put(KeySSHHost, o.SSHHost)
+	if len(o.NodeNICs) > 0 {
+		nodes := make([]string, 0, len(o.NodeNICs))
+		for node := range o.NodeNICs {
+			nodes = append(nodes, node)
+		}
+		sort.Strings(nodes)
+		pairs := make([]string, 0, len(nodes))
+		for _, node := range nodes {
+			pairs = append(pairs, node+"="+o.NodeNICs[node])
+		}
+		put(KeyNodeNICs, strings.Join(pairs, ","))
+	}
 	if o.AllowDNSNotReady {
 		m[KeyAllowDNS] = "true"
 	}

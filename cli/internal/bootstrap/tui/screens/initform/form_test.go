@@ -17,7 +17,10 @@ func baseState() *State {
 		Provider: "github", Owner: "kube-dc", RepoName: "kube-dc-fleet",
 		Preset:    "cloud+public-vlan",
 		NetVLANID: "1103", NetInterface: "bond0",
-		PubVLANID: "1100", PubCIDR: "203.0.113.48/29", PubGateway: "203.0.113.49",
+		KubeOVNMasterNodes: "192.0.2.11",
+		PubVLANID:          "1100", PubCIDR: "203.0.113.48/29", PubGateway: "203.0.113.49",
+		PubExclude1: "203.0.113.49", PubExclude2: "203.0.113.50",
+		MetalLBMode: "l2", MetalLBVIP: "100.65.0.20", MetalLBInterface: "br-ext-cloud",
 		OSMode:    "rook-ceph-multi-node",
 		CephNode1: "host5-a=sdb", CephNode2: "host6-a=sdb", CephNode3: "host7-a=sdc",
 		AllowDNSNotReady: true,
@@ -279,8 +282,9 @@ func TestApply_InternalOnlyE2EComplete(t *testing.T) {
 		NetVLANID:          "0",
 		NetInterface:       "enp1s0",
 		KubeOVNMasterNodes: "10.77.0.22",
-		OSMode:             "rook-ceph-local",
-		OSDNode:            "e2e-master-1", OSDSizeGB: "40",
+		MetalLBMode:        "l2", MetalLBVIP: "100.65.0.20", MetalLBInterface: "br-ext-cloud",
+		OSMode:  "rook-ceph-local",
+		OSDNode: "e2e-master-1", OSDSizeGB: "40",
 	}
 	o := &clusterinit.InitOptions{Yes: true}
 	if err := st.Apply(o); err != nil {

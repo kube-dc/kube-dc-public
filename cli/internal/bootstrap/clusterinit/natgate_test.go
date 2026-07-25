@@ -211,3 +211,113 @@ func TestWriteSingleIPNATPatch_RefusesHandEditedPatches(t *testing.T) {
 		t.Errorf("refusal should name the marker for manual wiring: %v", err)
 	}
 }
+
+// TestGatewayCollidesWithAPIServer — the 6443 listener is unsafe whenever the
+// Envoy Service's externalIP is also an apiserver address. Single-IP NAT is
+// only one route there; pointing NODE_EXTERNAL_IP at a control-plane node's
+// own IP is the other, involves no NAT, and so was invisible to the SSH probe.
+func TestGatewayCollidesWithAPIServer(t *testing.T) {
+	cases := []struct {
+		name string
+		env  string
+		want bool
+	}{
+		{
+			// The on-prem case: an internal cluster fronted by master01.
+			name: "node external IP is a control-plane node",
+			env: "NODE_EXTERNAL_IP=203.0.113.11\n" +
+				"KUBE_OVN_MASTER_NODES=203.0.113.11,203.0.113.12,203.0.113.13\n",
+			want: true,
+		},
+		{
+			name: "only OVN_DB_IPS lists it",
+			env:  "NODE_EXTERNAL_IP=192.0.2.13\nOVN_DB_IPS=tcp:192.0.2.11:6641,tcp:192.0.2.12:6641,tcp:192.0.2.13:6641\n",
+			want: true,
+		},
+		{
+			// A real public ingress address — the listener is safe, and
+			// removing it would needlessly kill tenant kube-api SNI routing.
+			name: "distinct public ingress IP",
+			env: "NODE_EXTERNAL_IP=203.0.113.10\n" +
+				"KUBE_OVN_MASTER_NODES=203.0.113.11,203.0.113.12,203.0.113.13\n",
+			want: false,
+		},
+		{
+			name: "whitespace around list entries still matches",
+			env:  "NODE_EXTERNAL_IP=203.0.113.12\nKUBE_OVN_MASTER_NODES=203.0.113.11, 203.0.113.12 ,203.0.113.13\n",
+			want: true,
+		},
+		{
+			name: "no node external IP",
+			env:  "KUBE_OVN_MASTER_NODES=203.0.113.11\n",
+			want: false,
+		},
+		{
+			// A commented-out assignment is not a definition.
+			name: "commented key does not count",
+			env:  "NODE_EXTERNAL_IP=203.0.113.11\n#KUBE_OVN_MASTER_NODES=203.0.113.11\n",
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := GatewayCollidesWithAPIServer(tc.env); got != tc.want {
+				t.Errorf("GatewayCollidesWithAPIServer = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestPatchComposition_GatewayVIPThenSingleIPNAT — the two Gateway patches must
+// coexist. Scaffold writes the VIP patch (WriteAddons) BEFORE the 6443-listener
+// removal, so by the time the latter runs a `patches:` block already exists.
+// Accepting only the object-storage marker made a normal combination abort the
+// whole install:
+//
+//	METALLB_FLOATING_IP != NODE_EXTERNAL_IP
+//	NODE_EXTERNAL_IP is a control-plane address (or single-IP NAT)
+//	object storage ENABLED, so the OS-4 marker is absent
+//
+// which is exactly the shape of the cluster this was found on.
+func TestPatchComposition_GatewayVIPThenSingleIPNAT(t *testing.T) {
+	repo, cluster := baseOverlay(t, "INGRESS_MODE=metallb-lb\n"+
+		"NODE_EXTERNAL_IP=203.0.113.11\nMETALLB_FLOATING_IP=198.51.100.2\n"+
+		"KUBE_OVN_MASTER_NODES=203.0.113.11,203.0.113.12,203.0.113.13\n")
+
+	// 1. WriteAddons creates the patches: block with the VIP entry.
+	if err := WriteAddons(repo, cluster, nil); err != nil {
+		t.Fatalf("WriteAddons: %v", err)
+	}
+	// 2. The 6443 removal must compose with it, not reject it.
+	if err := WriteSingleIPNATPatch(repo, cluster, nil); err != nil {
+		t.Fatalf("WriteSingleIPNATPatch must compose with the Gateway VIP patch: %v", err)
+	}
+
+	got := read(t, filepath.Join(repo, "clusters", cluster), "platform.yaml")
+	for _, want := range []string{gatewayServiceVIPMarker, gatewayVIPMarker, natPlatformPatchesMarker} {
+		if !strings.Contains(got, want) {
+			t.Errorf("platform.yaml lost %q:\n%s", want, got)
+		}
+	}
+	if n := strings.Count(got, "patches:"); n != 1 {
+		t.Errorf("want exactly one patches: block, got %d:\n%s", n, got)
+	}
+}
+
+// TestPatchComposition_RefusesHandEditedBlock — the guard must still protect a
+// patches: block we did not write.
+func TestPatchComposition_RefusesHandEditedBlock(t *testing.T) {
+	repo, cluster := baseOverlay(t, "INGRESS_MODE=hostnetwork\n")
+	p := filepath.Join(repo, "clusters", cluster, "platform.yaml")
+	body, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hand := string(body) + "  patches:\n    - target: {kind: Gateway, name: eg}\n      patch: |\n        - op: remove\n          path: /spec/listeners/0\n"
+	if err := os.WriteFile(p, []byte(hand), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteSingleIPNATPatch(repo, cluster, nil); err == nil {
+		t.Error("a hand-edited patches: block must still be refused")
+	}
+}

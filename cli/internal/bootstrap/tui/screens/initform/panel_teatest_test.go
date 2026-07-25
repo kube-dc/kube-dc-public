@@ -36,6 +36,7 @@ func validE2EState() *State {
 		Mode: "install", FleetMode: "new-repo", Provider: "github",
 		Owner: "kube-dc", RepoName: "e2e-fleet-r5", Preset: "internal-only",
 		NetVLANID: "0", NetInterface: "enp1s0", KubeOVNMasterNodes: "10.77.0.22",
+		MetalLBMode: "l2", MetalLBVIP: "100.65.0.20", MetalLBInterface: "br-ext-cloud",
 		OSMode: "rook-ceph-local", OSDNode: "e2e-master-1", OSDSizeGB: "40",
 	}
 }
