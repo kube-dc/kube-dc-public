@@ -198,6 +198,11 @@ log_info "  max-pods=${KUBELET_MAX_PODS}"
 # list (default "*" = all registries). registries.yaml is ALWAYS written when
 # enabled: embedded-registry with no mirrors entry hangs rke2 startup on some
 # versions (rancher/rke2#9755).
+# The "*" default is deliberate despite RKE2's equal-trust warning: every node
+# this script installs is a platform-owned MANAGEMENT-cluster node (masters +
+# storage workers of one kube-dc install). Tenant workloads run inside VMs and
+# nested clusters, never on these hosts, so the nodes already share full trust.
+# Narrow REGISTRY_MIRROR_SCOPE only for topologies that break that assumption.
 EMBEDDED_REGISTRY="${EMBEDDED_REGISTRY:-true}"
 REGISTRY_MIRROR_SCOPE="${REGISTRY_MIRROR_SCOPE:-*}"
 # Return success only when registries.yaml contains at least one mirror key.

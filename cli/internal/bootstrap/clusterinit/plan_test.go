@@ -135,6 +135,7 @@ func TestComputeInputHash_SensitiveToChange(t *testing.T) {
 		{"ceph storage class", func(o *InitOptions) { o.CephStorageClass = "fast-ssd" }},
 		{"s3 hostname", func(o *InitOptions) { o.S3Hostname = "s3.other.example.com" }},
 		{"toggle no-s3-exposure", func(o *InitOptions) { o.NoS3Exposure = true }},
+		{"private CA fingerprint", func(o *InitOptions) { o.TrustedCAFingerprint = strings.Repeat("a", 64) }},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -408,6 +409,8 @@ func TestRender_GreenfieldShape(t *testing.T) {
 	o.FleetMode = FleetNewRepo
 	o.GitHubOwner = "shalb"
 	o.GitHubRepo = "kube-dc-fleet"
+	o.StarterRef = "oci://ghcr.io/kube-dc/fleet-starter:v9.9.9:test"
+	o.OpenBaoSharesOut = "/secure/off-git/atlantis-openbao-shares.yaml"
 	p, err := BuildPlan(o, FleetState{}) // no priors
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
@@ -416,6 +419,9 @@ func TestRender_GreenfieldShape(t *testing.T) {
 	p.Render(&buf)
 	body := buf.String()
 	for _, want := range []string{
+		"== Reviewed inputs ==",
+		"Starter: oci://ghcr.io/kube-dc/fleet-starter:v9.9.9:test",
+		"OpenBao shares-out: /secure/off-git/atlantis-openbao-shares.yaml",
 		"Files to write",
 		"cluster-config.env",
 		"secrets.enc.yaml",
@@ -664,5 +670,37 @@ func TestConsentMarker_FlattensNestedClusterName(t *testing.T) {
 	}
 	if name := entries[0].Name(); !strings.Contains(name, "eu_dc1") {
 		t.Errorf("marker filename should flatten eu/dc1 -> eu_dc1, got %q", name)
+	}
+}
+
+func TestFilesForOptions_ListsEveryGreenfieldScaffoldSideEffect(t *testing.T) {
+	o := validBase()
+	o.RookMode = RookCephLocal
+	o.RookOSDNode = "worker-1"
+	o.RookOSDSizeGB = 100
+	o.ImageAcceleration = true
+	o.TrustedCAFingerprint = strings.Repeat("a", 64)
+
+	files := filesForOptions(&o, FleetState{})
+	got := make(map[string]PlanFile, len(files))
+	for _, file := range files {
+		got[file.Path] = file
+	}
+	for _, want := range []string{
+		"clusters/atlantis/addons-config.yaml",
+		"clusters/atlantis/addons-config/kustomization.yaml",
+		"clusters/atlantis/addons.yaml",
+		"clusters/atlantis/addons/kustomization.yaml",
+		"clusters/atlantis/cdi-block-device-access.yaml",
+		"clusters/atlantis/ext-net-bridge-tag.yaml",
+		"clusters/atlantis/trusted-ca.yaml",
+		"platform/registry-depot/secret.enc.yaml",
+	} {
+		if _, ok := got[want]; !ok {
+			t.Errorf("plan omits scaffold side effect %s", want)
+		}
+	}
+	if got["platform/registry-depot/secret.enc.yaml"].Action != "~" {
+		t.Fatalf("shared registry secret must be represented as ensure/modify, got %+v", got["platform/registry-depot/secret.enc.yaml"])
 	}
 }

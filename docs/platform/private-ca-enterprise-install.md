@@ -14,9 +14,6 @@ Throughout, placeholders:
 |---|---|---|
 | `${DOMAIN}` | cluster base domain | `kube.example.com` |
 | `${EXT_CIDR}` | ext-cloud VLAN CIDR | `192.0.2.0/24` |
-| `${NODE_GW}` | node anchor IP on ext-cloud (egress NAT) | `192.0.2.11` |
-| `${ENVOY_VIP}` | MetalLB internal VIP for Envoy | `192.0.2.31` |
-| `${KUBE_API_VIP}` | MetalLB internal VIP for kube-api | `192.0.2.32` |
 | corporate CA | root+intermediate PEM bundle | `corp-ca.pem` |
 
 ## 1. Base install — kube-dc commands only
@@ -80,30 +77,35 @@ Use one full root+intermediate PEM bundle and verify every consumer:
 | OpenBao OIDC discovery | manager forwards the same bundle as `oidc_discovery_ca_pem` | org auth setup reports discovery TLS/400 errors |
 | CNPG/barman S3 client | database `endpointCA` when the API supports it; otherwise the restricted internal HTTP workaround in §4 | continuous archiving fails certificate verification |
 
-Create a single ConfigMap in `kube-dc`:
+For a greenfield install, pass the same certificate-only bundle to the CLI:
 
 ```bash
-kubectl -n kube-dc create configmap kube-dc-trusted-ca \
-  --from-file=ca.pem=corp-ca.pem
+kube-dc bootstrap init ... \
+  --tls-mode=byo-wildcard \
+  --tls-cert=wildcard-fullchain.pem \
+  --tls-key=wildcard-key.pem \
+  --trusted-ca-bundle=corp-ca.pem
 ```
 
-Set both chart values in the cluster's kube-dc HelmRelease:
+`--trusted-ca-bundle` is the trust contract; `--tls-*` is the served-certificate
+contract. They are deliberately separate. The CLI refuses private-key or leaf
+PEM blocks in the CA bundle, plan-pins its canonical SHA-256, writes
+`clusters/<name>/trusted-ca.yaml`, lists it in the cluster Kustomization, and
+sets both chart consumers to the generated `kube-dc-private-ca` ConfigMap.
+The manager mount then supplies the same validated bundle to every
+`OpenIDConnect.spec.caBundle` and to OpenBao `oidc_discovery_ca_pem`; the
+backend consumes `ca.pem` through `NODE_EXTRA_CA_CERTS`.
 
-```yaml
-manager:
-  trustedCA:
-    configMapName: kube-dc-trusted-ca
-backend:
-  trustedCA:
-    configMapName: kube-dc-trusted-ca
-    fileName: ca.pem
-```
+For an existing cluster created before this installer input, the equivalent
+day-2 migration is to commit that ConfigMap and the three env keys
+`MANAGER_TRUSTED_CA_CONFIGMAP=kube-dc-private-ca`,
+`BACKEND_TRUSTED_CA_CONFIGMAP=kube-dc-private-ca`, and
+`BACKEND_TRUSTED_CA_FILENAME=ca.pem` to its fleet overlay. Do not patch live
+objects only: the manager owns OIDC specs and Flux owns the workloads.
 
 The configured directory is fail-closed: unreadable/missing directories and
-malformed certificate blocks stop reconciliation with an explicit error. The
-loader emits only parseable `CERTIFICATE` blocks, so a combined PEM cannot
-leak a private-key block into OpenBao or an OIDC CR. Public-CA clusters leave
-both values empty and continue using system roots.
+malformed certificate blocks stop reconciliation explicitly. Public-CA
+clusters omit the flag and continue using system roots.
 
 The chart also consumes the bootstrap-created Keycloak admin client through
 `backend.keycloakAdminClient.secretName`. Do not duplicate the client ID,
@@ -121,26 +123,29 @@ kubectl get openidconnect -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.
 kubectl --token="${OIDC_TOKEN}" auth can-i get projects.kube-dc.com
 ```
 
-## 3. Tenant networking — accepted customizations
+## 3. Tenant networking — management API contract
 
-On this topology the tenant VPC **cannot reach MetalLB VIPs** on the ext-cloud
-localnet (VIP ARP never crosses; only real host IPs answer). Accepted fixes:
+Use `MANAGEMENT_API_MODE=service` with Tenant Networking v2. Platform-owned
+controllers that must call the management Kubernetes API are classified into
+the `api-client` role and admitted with an immutable route to the exact
+`K8S_SERVICE_IP/32` through `INFRA_ATTACHMENT_GATEWAY`. Kube-OVN service load
+balancing on `infra-net` performs the DNAT. The route (destination **and**
+gateway), not a mutable SecurityGroup label, is the source of truth.
 
-1. **kube-api**: add a per-VPC static route `${KUBE_API_VIP}/32 → ${NODE_GW}`
-   (`spec.staticRoutes` on the tenant VPC). The node's kube-proxy DNATs the
-   VIP to the apiservers. *Gap (tracked): the project controller should add
-   this route automatically for new tenants.*
-2. **Envoy-served hostnames** (`login/backend/console/billing/s3/bao`): point
-   the **vpc-dns hosts block** at the **Envoy Service ClusterIP** — not the
-   VIP. ClusterIP DNAT via the node egress path works from tenant pods *and*
-   VMs. Pin the value as `ENVOY_GATEWAY_CLUSTER_IP` in `cluster-config.env`
-   (re-pin if the Envoy Service is ever recreated).
-3. **Pod-backed ClusterIPs are NOT reachable from the tenant VPC** (only
-   host-backed ones — kube-api, hostNetwork Envoy). Don't point tenant
-   workloads at e.g. the internal RGW Service.
-4. Egress throughput: if L3-forwarded traffic is shaped by an external
-   firewall, use the node-NAT egress (`EXT_NET_GATEWAY=${NODE_GW}` + the
-   egress-nat DaemonSet with internet-only masquerade + INPUT anchor guard).
+Do not add per-project routes to a MetalLB kube-api VIP or a node anchor, and
+do not make the entire Service CIDR reachable. Those were topology-specific
+workarounds that create a node SPOF and can authorize a pod whose route is
+absent. Ordinary customer workloads intentionally cannot reach the management
+ClusterIP; only controller-proven API clients receive the exact TCP/443 rule.
+
+Acceptance must test both boundaries:
+
+1. CSI, CCM, CNPG/MariaDB bootstrap Jobs and other classified platform clients
+   can call `https://$K8S_SERVICE_IP:443` and carry an
+   `ovn.kubernetes.io/routes` entry with the current infra gateway.
+2. A plain tenant workload cannot call that ClusterIP. Its external platform
+   access (console/login/Gateway routes) is a separate ingress contract and
+   must not be “fixed” by widening management-API policy.
 
 ## 4. Object storage / S3
 

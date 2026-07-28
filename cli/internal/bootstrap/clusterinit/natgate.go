@@ -384,4 +384,5 @@ var ownedPlatformPatchMarkers = []string{
 	natPlatformPatchesMarker,      // single-IP NAT / 6443 listener removal
 	gatewayVIPMarker,              // Gateway address = MetalLB VIP
 	gatewayServiceVIPMarker,       // Envoy Service explicitly requests VIP
+	byoWildcardTLSMarker,          // byo-wildcard ACME Certificate suppression
 }

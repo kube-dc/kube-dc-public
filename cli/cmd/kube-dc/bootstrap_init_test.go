@@ -1509,6 +1509,8 @@ func TestBootstrapInit_HelpStable(t *testing.T) {
 	for _, want := range []string{
 		"--dry-run",
 		"--apply-plan",
+		"--trusted-ca-bundle",
+		"--openbao-shares-out",
 		"--no-tty",
 		"cluster-config.env",
 		"SCREAMING_SNAKE_CASE",

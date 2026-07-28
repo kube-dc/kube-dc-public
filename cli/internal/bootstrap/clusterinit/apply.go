@@ -99,6 +99,13 @@ type ApplyOptions struct {
 	// ImageAccel wires the image-acceleration trio (Scaffold step 9b).
 	ImageAccel ImageAccelSpec
 
+	// WildcardTLS is the validated byo-wildcard material (Scaffold step 11).
+	// nil = acme mode. Loaded by the cobra layer before Apply starts.
+	WildcardTLS *WildcardTLSMaterial
+
+	// TrustedCA is validated public CA material (Scaffold step 12).
+	TrustedCA *TrustedCAMaterial
+
 	// GPU carries the validated, non-secret accelerator fleet contract.
 	GPU GPUConfig
 
@@ -232,6 +239,8 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 		ObjectStorage:  opts.ObjectStorage,
 		VMStorage:      opts.VMStorage,
 		ImageAccel:     opts.ImageAccel,
+		WildcardTLS:    opts.WildcardTLS,
+		TrustedCA:      opts.TrustedCA,
 		GPU:            opts.GPU,
 		SingleIPNAT:    opts.SingleIPNAT,
 		Runner:         opts.Runner,

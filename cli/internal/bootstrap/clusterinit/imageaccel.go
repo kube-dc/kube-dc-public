@@ -43,6 +43,7 @@ package clusterinit
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -208,48 +209,131 @@ stringData:
   REGISTRY_PUSH_PASSWORD: "%s"
 `, string(hash), password)
 
-	// Write plaintext to a temp file (same dir, 0600), encrypt in place,
-	// VERIFY the result is actually encrypted, then atomically rename to the
-	// final tracked path — a crash mid-way leaves only the temp file, which
-	// the .enc.yaml SOPS creation rule never matches and git never sees as
-	// the real secret. The temp is removed on every failure path.
-	// NOTE: the temp name must still match .sops.yaml's path_regex
-	// (\.enc\.yaml$) or sops refuses to encrypt it.
-	tmp := secretPath + ".tmp.enc.yaml"
-	if err := os.WriteFile(tmp, []byte(plain), 0o600); err != nil {
-		return fmt.Errorf("image-accel: write registry secret: %w", err)
+	if err := sopsEncryptToFile(fleetRepo, secretPath, plain, []string{password}); err != nil {
+		return fmt.Errorf("image-accel: %w", err)
+	}
+	fmt.Fprintf(out, "[scaffold] registry-depot push credential minted (ci-pusher, SOPS-encrypted)\n")
+	return nil
+}
+
+// sopsEncryptToFile writes plaintext SOPS-encrypted to finalPath with the
+// guarantees a committed secret needs:
+//
+//   - plaintext touches disk only as a same-directory 0600 temp file, encrypted
+//     in place and removed on EVERY failure path — a crash mid-way leaves only
+//     the temp, which the .enc.yaml SOPS creation rule never matches and git
+//     never sees as the real secret;
+//   - the sops OUTPUT is verified: it must carry SOPS metadata and must not
+//     contain any of the mustNotLeak strings (sops encrypts VALUES only; a
+//     mis-scoped encrypted_regex would leave the material in cleartext while
+//     the file still "looks" encrypted);
+//   - the final tracked path appears only via an atomic rename of the verified
+//     ciphertext.
+//
+// NOTE: the temp name must still match .sops.yaml's path_regex (\.enc\.yaml$)
+// or sops refuses to encrypt it.
+func sopsEncryptToFile(fleetRepo, finalPath, plaintext string, mustNotLeak []string) error {
+	// Serialize the whole sweep→write→encrypt→rename sequence per artifact:
+	// without the lock, one process's stale-temp sweep can delete ANOTHER
+	// process's live temp, and two completing runs race last-rename-wins
+	// (codex pass-5, HIGH). The lock lives in the OS temp dir, keyed by the
+	// absolute artifact path: flock is machine-local either way, and a lock
+	// file inside the overlay would end up committed by wholesale git adds.
+	release, err := lockFile(sopsLockPath(finalPath))
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	// A hard crash inside the plaintext window leaves the temp behind. Sweep
+	// residue from PRIOR crashes first — the stale temp may hold plaintext
+	// secret material, and a predictable leftover is exactly what a later
+	// wholesale `git add` would stage (codex review 2026-07-27, HIGH).
+	// Directory listing + prefix match, not filepath.Glob: a glob would need
+	// meta-character escaping of finalPath. A removal FAILURE is an error —
+	// proceeding would leave known plaintext residue behind a "success".
+	dir, base := filepath.Dir(finalPath), filepath.Base(finalPath)
+	if entries, err := os.ReadDir(dir); err == nil {
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), base+".tmp-") && strings.HasSuffix(e.Name(), ".enc.yaml") {
+				if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+					return fmt.Errorf("remove stale plaintext temp %s: %w", e.Name(), err)
+				}
+			}
+		}
+	}
+	// Unpredictable name + O_EXCL: nothing can pre-place a file OR a symlink
+	// at the temp path to redirect the plaintext write.
+	var suffix [8]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return fmt.Errorf("temp suffix: %w", err)
+	}
+	tmp := fmt.Sprintf("%s.tmp-%x.enc.yaml", finalPath, suffix)
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", tmp, err)
+	}
+	if _, err := f.WriteString(plaintext); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return fmt.Errorf("write %s: %w", tmp, err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("close %s: %w", tmp, err)
 	}
 	cleanup := func() { _ = os.Remove(tmp) }
 	cmd := exec.Command("sops", "--encrypt", "--in-place", tmp)
 	cmd.Dir = fleetRepo
 	if outB, err := cmd.CombinedOutput(); err != nil {
 		cleanup()
-		return fmt.Errorf("image-accel: sops-encrypt registry secret: %w (%s)", err, string(outB))
+		return fmt.Errorf("sops-encrypt %s: %w (%s)", filepath.Base(finalPath), err, string(outB))
 	}
 	enc, err := os.ReadFile(tmp)
 	if err != nil {
 		cleanup()
-		return fmt.Errorf("image-accel: read encrypted secret: %w", err)
+		return fmt.Errorf("read encrypted %s: %w", filepath.Base(finalPath), err)
 	}
-	if !strings.Contains(string(enc), "sops") || strings.Contains(string(enc), password) {
+	if !strings.Contains(string(enc), "sops") {
 		cleanup()
-		return fmt.Errorf("image-accel: sops output does not look encrypted — refusing to keep it")
+		return fmt.Errorf("sops output for %s does not look encrypted — refusing to keep it", filepath.Base(finalPath))
 	}
-	if err := os.Rename(tmp, secretPath); err != nil {
+	for _, leak := range mustNotLeak {
+		if leak != "" && strings.Contains(string(enc), leak) {
+			cleanup()
+			return fmt.Errorf("sops output for %s still contains secret material in cleartext — refusing to keep it (check .sops.yaml encrypted_regex)", filepath.Base(finalPath))
+		}
+	}
+	if err := os.Rename(tmp, finalPath); err != nil {
 		cleanup()
-		return fmt.Errorf("image-accel: finalize registry secret: %w", err)
+		return fmt.Errorf("finalize %s: %w", filepath.Base(finalPath), err)
 	}
-	fmt.Fprintf(out, "[scaffold] registry-depot push credential minted (ci-pusher, SOPS-encrypted)\n")
 	return nil
 }
 
+// sopsLockPath derives the machine-local lock path for one artifact. Absolute
+// so two working directories against the same fleet checkout share the lock.
+func sopsLockPath(finalPath string) string {
+	abs, err := filepath.Abs(finalPath)
+	if err != nil {
+		abs = finalPath
+	}
+	sum := sha256.Sum256([]byte(abs))
+	return filepath.Join(os.TempDir(), fmt.Sprintf("kube-dc-sops-%x.lock", sum[:8]))
+}
+
 // patchKustomizationResource returns a patchFileLines patch that appends
-// `  - <resource>` after the last entry of the resources: list (idempotent).
+// `- <resource>` after the last entry of the resources: list (idempotent).
+//
+// The entry indentation is taken from the list's OWN first entry rather than
+// assumed: kube-dc scaffolds two-space lists, but a hand-reindented file would
+// otherwise receive a mismatched entry — mixed indentation in one block
+// sequence is a YAML parse error that surfaces later as a Flux failure, far
+// from the command that caused it (codex review 2026-07-26).
 func patchKustomizationResource(resource string) func([]string) ([]string, bool, error) {
-	entry := "  - " + resource
 	return func(lines []string) ([]string, bool, error) {
 		for _, l := range lines {
-			if strings.TrimSpace(l) == strings.TrimSpace(entry) {
+			if strings.TrimSpace(l) == "- "+resource {
 				return lines, false, nil // already wired
 			}
 		}
@@ -264,14 +348,21 @@ func patchKustomizationResource(resource string) func([]string) ([]string, bool,
 		if resIdx == -1 {
 			return nil, false, fmt.Errorf("kustomization has no resources: list")
 		}
-		// insertion point: after the last consecutive "  - …" entry
+		// Indentation + insertion point come from the existing entries.
+		indent := "  "
 		insert := resIdx + 1
-		for insert < len(lines) && strings.HasPrefix(lines[insert], "  - ") {
+		if insert < len(lines) {
+			trimmed := strings.TrimLeft(lines[insert], " ")
+			if strings.HasPrefix(trimmed, "- ") {
+				indent = lines[insert][:len(lines[insert])-len(trimmed)]
+			}
+		}
+		for insert < len(lines) && strings.HasPrefix(lines[insert], indent+"- ") {
 			insert++
 		}
 		out := make([]string, 0, len(lines)+1)
 		out = append(out, lines[:insert]...)
-		out = append(out, entry)
+		out = append(out, indent+"- "+resource)
 		out = append(out, lines[insert:]...)
 		return out, true, nil
 	}

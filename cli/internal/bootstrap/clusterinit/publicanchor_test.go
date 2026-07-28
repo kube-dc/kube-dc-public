@@ -330,6 +330,7 @@ func TestValidatePublicAnchor_RequiresEveryAnnouncer(t *testing.T) {
 func TestValidatePublicAnchor_RejectsUnusableAddressesAndWiringDrift(t *testing.T) {
 	base := func() map[string]string {
 		return map[string]string{
+			"EXT_NET_ANCHOR_INTERFACE":        "br-ext-cloud",
 			"EXT_NET_PUBLIC_ANCHOR_INTERFACE": "ext-pub-anchor",
 			"EXT_NET_PUBLIC_ANCHOR_VLAN":      "301",
 			"EXT_NET_PUBLIC_ANCHOR_IPS":       "node1=192.0.2.3/28",
@@ -350,6 +351,7 @@ func TestValidatePublicAnchor_RejectsUnusableAddressesAndWiringDrift(t *testing.
 	}{
 		{"network-anchor", func(e map[string]string) { e["EXT_NET_PUBLIC_ANCHOR_IPS"] = "node1=192.0.2.0/28" }, "network/broadcast"},
 		{"broadcast-vip", func(e map[string]string) { e["METALLB_FLOATING_IP"] = "192.0.2.15" }, "network/broadcast"},
+		{"missing-parent-bridge", func(e map[string]string) { e["EXT_NET_ANCHOR_INTERFACE"] = "" }, "required as the parent OVS bridge"},
 		{"interface-drift", func(e map[string]string) { e["METALLB_INTERFACE"] = "br-wrong" }, "must equal EXT_NET_PUBLIC_ANCHOR_INTERFACE"},
 		{"vlan-drift", func(e map[string]string) { e["EXT_NET_PUBLIC_ANCHOR_VLAN"] = "302" }, "must equal EXT_PUBLIC_VLAN_ID"},
 		{"gateway-is-vip", func(e map[string]string) { e["EXT_PUBLIC_GATEWAY"] = "192.0.2.2" }, "must differ from EXT_PUBLIC_GATEWAY"},

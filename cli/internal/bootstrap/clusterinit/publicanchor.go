@@ -179,6 +179,7 @@ func validatePublicAnchor(envMap map[string]string, errs *[]string) {
 	raw := strings.TrimSpace(envMap["EXT_NET_PUBLIC_ANCHOR_IPS"])
 	vip, publicCIDR, vipInPublic := publicVIPNetwork(envMap)
 	publicL2 := publicL2VIPUsesPublicSubnet(envMap)
+	parentBridge := strings.TrimSpace(envMap["EXT_NET_ANCHOR_INTERFACE"])
 	gw := net.ParseIP(strings.TrimSpace(envMap["EXT_PUBLIC_GATEWAY"]))
 	gw = gw.To4()
 
@@ -206,6 +207,9 @@ func validatePublicAnchor(envMap map[string]string, errs *[]string) {
 	}
 
 	if publicL2 {
+		if parentBridge == "" {
+			*errs = append(*errs, "EXT_NET_ANCHOR_INTERFACE: required as the parent OVS bridge for EXT_NET_PUBLIC_ANCHOR_INTERFACE in public L2 mode")
+		}
 		if raw == "" {
 			*errs = append(*errs,
 				"EXT_NET_PUBLIC_ANCHOR_IPS: empty, but an L2 MetalLB VIP inside EXT_PUBLIC_CIDR needs one per-node anchor on every announcing gateway node (otherwise the VIP accepts connections and silently drops replies) — set KUBE_OVN_GW_NODES so init derives the map, or pass EXT_NET_PUBLIC_ANCHOR_IPS explicitly")

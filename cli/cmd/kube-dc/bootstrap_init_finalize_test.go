@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/shalb/kube-dc/cli/internal/bootstrap"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 )
 
 func TestWriteGPUInstallCompletionNeverClaimsAutomaticEntitlement(t *testing.T) {
@@ -88,5 +91,22 @@ func TestWaitPodRunning_ContextCancel(t *testing.T) {
 	})
 	if err := waitPodRunning(ctx, io.Discard, fake, "openbao", "openbao-0", time.Minute); !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestPostApplyOpenBaoInitOptionsCarriesSharesOutCustodyPath(t *testing.T) {
+	opts := &clusterinit.InitOptions{
+		Name:             "atlantis",
+		Repo:             "/fleet",
+		NoPush:           true,
+		OpenBaoSharesOut: "/secure/off-git/atlantis-openbao-shares.yaml",
+	}
+	session := &bootstrap.Session{}
+	got := postApplyOpenBaoInitOptions(opts, session, "token", io.Discard)
+	if got.SharesOutPath != opts.OpenBaoSharesOut {
+		t.Fatalf("automatic finalizer dropped --openbao-shares-out: got %q, want %q", got.SharesOutPath, opts.OpenBaoSharesOut)
+	}
+	if got.ClusterName != opts.Name || got.FleetRepo != opts.Repo || !got.NoPush {
+		t.Fatalf("automatic finalizer options drifted: %+v", got)
 	}
 }

@@ -83,18 +83,7 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 		if err := waitPodRunning(ctx, out, session.K8s, openBaoNamespace, openBaoPod, finalizeReadyBudget); err != nil {
 			return err
 		}
-		return openbao.Init(ctx, openbao.InitOptions{
-			ClusterName: o.Name,
-			FleetRepo:   o.Repo,
-			Runner:      session.Scripts,
-			SOPS:        session.SOPS,
-			Git:         session.Git,
-			OpenBao:     session.OpenBao,
-			K8s:         session.K8s,
-			GitHubToken: token,
-			NoPush:      o.NoPush,
-			Out:         out,
-		})
+		return openbao.Init(ctx, postApplyOpenBaoInitOptions(o, session, token, out))
 	})
 	if obErr != nil {
 		fmt.Fprintf(out, "[finalize] OpenBao init deferred (%v)\n", obErr)
@@ -139,6 +128,25 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 	fmt.Fprint(out, accessBlock(ctx, o, session.SOPS, false /*withPassword*/, obDeferred, kcDeferred))
 	if !o.NoTTY {
 		o.AccessSummary = accessBlock(ctx, o, session.SOPS, true /*withPassword*/, obDeferred, kcDeferred)
+	}
+}
+
+// postApplyOpenBaoInitOptions is kept as a small, testable wiring boundary.
+// The automatic full-install path must honor every custody option exposed by
+// bootstrap init just like the standalone openbao init command does.
+func postApplyOpenBaoInitOptions(o *clusterinit.InitOptions, session *bootstrap.Session, token string, out io.Writer) openbao.InitOptions {
+	return openbao.InitOptions{
+		ClusterName:   o.Name,
+		FleetRepo:     o.Repo,
+		Runner:        session.Scripts,
+		SOPS:          session.SOPS,
+		Git:           session.Git,
+		OpenBao:       session.OpenBao,
+		K8s:           session.K8s,
+		GitHubToken:   token,
+		NoPush:        o.NoPush,
+		SharesOutPath: o.OpenBaoSharesOut,
+		Out:           out,
 	}
 }
 

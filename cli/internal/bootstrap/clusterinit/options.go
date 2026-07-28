@@ -213,6 +213,29 @@ type InitOptions struct {
 	// enables it per node.
 	ImageAcceleration bool
 
+	// --- Platform TLS (docs/platform/certificates.md) ---
+	// TLSMode selects who issues the platform certificates: "acme" (default,
+	// cert-manager via the ACME ClusterIssuer) or "byo-wildcard" (operator-
+	// supplied wildcard, SOPS-committed, ACME Certificates suppressed).
+	// TLSCert/TLSKey are LOCAL paths to the material; they are read once,
+	// validated (pair match, chain order, EKU, validity window, the *.<domain>
+	// SAN), and never stored in the plan or logs — only the SOPS artifact
+	// carries them, and only encrypted.
+	TLSMode string
+	TLSCert string
+	TLSKey  string
+	// TLSCertFingerprint is NOT a flag: the RunE preflight stamps the hex
+	// SHA-256 of the validated leaf certificate here so the PLAN carries the
+	// identity of the certificate the operator reviewed. Apply re-loads the
+	// material and refuses a fingerprint mismatch — without this, a
+	// different-but-also-valid pair could ship under the reviewed plan hash.
+	TLSCertFingerprint string
+	// TrustedCABundle is a local certificate-only PEM path. Its validated
+	// canonical fingerprint is plan-pinned; the public CA material is written
+	// to a ConfigMap, never to a Secret.
+	TrustedCABundle      string
+	TrustedCAFingerprint string
+
 	// --- Accelerators (GPU PRD section 6) ---
 	// This surface is deliberately non-secret. Licenses, registry credentials,
 	// and portal tokens stay in the SOPS workflow; VGPUSecretReady is only a
@@ -439,6 +462,9 @@ func (o *InitOptions) Validate() error {
 	errs = append(errs, validateAddons(o.Addons)...)
 	errs = append(errs, validateNodeNICs(o.NodeNICs)...)
 	errs = append(errs, validateSets(o.Sets)...)
+	if err := ValidateTLSMode(o.TLSMode, o.TLSCert, o.TLSKey); err != nil {
+		errs = append(errs, err.Error())
+	}
 
 	if len(errs) > 0 {
 		return fmt.Errorf("%w: %s", ErrValidation, strings.Join(errs, "; "))

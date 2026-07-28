@@ -127,6 +127,10 @@ log_info "Node memory: ${MEM_TOTAL_GIB} GiB → system-reserved=${KUBELET_SYS_RE
 # have a mirrors entry in registries.yaml to PARTICIPATE in the P2P mirror
 # (a node without one "does not participate in the distributed registry in
 # any capacity" — RKE2 docs). Same env knobs as install-server.sh.
+# The "*" default is deliberate despite RKE2's equal-trust warning: every node
+# this script installs is a platform-owned MANAGEMENT-cluster node. Tenant
+# workloads run inside VMs and nested clusters, never on these hosts. Narrow
+# REGISTRY_MIRROR_SCOPE only for topologies that break that assumption.
 EMBEDDED_REGISTRY="${EMBEDDED_REGISTRY:-true}"
 REGISTRY_MIRROR_SCOPE="${REGISTRY_MIRROR_SCOPE:-*}"
 # Return success only when registries.yaml contains at least one mirror key.

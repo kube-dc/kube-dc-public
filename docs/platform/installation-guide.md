@@ -178,11 +178,12 @@ bootstrap and the GitOps scaffold use it:
 
 ```bash
 # Linux amd64 — change asset for another platform
+KUBE_DC_INSTALL_VERSION=vX.Y.Z   # choose the approved immutable release
 asset=kube-dc_linux_amd64
 task_cli_tmp="$(mktemp -d)"
-curl -fSL https://github.com/kube-dc/kube-dc-public/releases/latest/download/${asset} \
+curl -fSL https://github.com/kube-dc/kube-dc-public/releases/download/${KUBE_DC_INSTALL_VERSION}/${asset} \
   -o "${task_cli_tmp}/${asset}"
-curl -fSL https://github.com/kube-dc/kube-dc-public/releases/latest/download/checksums.txt \
+curl -fSL https://github.com/kube-dc/kube-dc-public/releases/download/${KUBE_DC_INSTALL_VERSION}/checksums.txt \
   -o "${task_cli_tmp}/checksums.txt"
 if command -v sha256sum >/dev/null; then
   ( cd "${task_cli_tmp}" && grep " ${asset}$" checksums.txt | sha256sum -c - )
@@ -198,8 +199,9 @@ kube-dc version
 kube-dc bootstrap doctor --no-tty
 ```
 
-The download uses the latest published release and verifies it against the
-published checksum before installation. `doctor` checks `kubectl`, `flux`,
+The download pins one reviewed release (never the mutable `latest` alias) and
+verifies it against that release's published checksum before installation.
+`doctor` checks `kubectl`, `flux`,
 `helm`, `sops`, `age`, `git`, `gh`, and `ssh`; fix every blocker before
 continuing. Ensure the control-plane key is loaded with `ssh-add <key>`.
 
@@ -219,10 +221,12 @@ produces — the manual reference is grouped in
 From your bastion (after installing the CLI — see [§1.5](#15-install-the-kube-dc-cli)):
 
 ```bash
+RKE2_VERSION=v1.35.0+rke2r1  # pin the same reviewed version on EVERY node
 kube-dc bootstrap install master-1 \
   --ssh-host root@203.0.113.10 \
   --domain example.com \
   --preset cloud+public-vlan \
+  --rke2-version "$RKE2_VERSION" \
   --dry-run                       # review the resolved config, then drop --dry-run
 ```
 
@@ -313,6 +317,7 @@ kube-dc bootstrap install master-2 \
   --role server \
   --domain kube.example.com \
   --preset cloud+public-vlan \
+  --rke2-version "$RKE2_VERSION" \
   --dry-run
 ```
 
@@ -344,6 +349,7 @@ kube-dc bootstrap install worker-1 \
   --ssh-host root@203.0.113.20 \
   --name worker-1 \
   --join-server root@203.0.113.10 \
+  --rke2-version "$RKE2_VERSION" \
   --dry-run
 ```
 
@@ -672,22 +678,17 @@ sudo update-ca-certificates
 curl -fsS https://login.<domain>/realms/master/.well-known/openid-configuration >/dev/null
 ```
 
-Then create one ConfigMap in `kube-dc` and pass it to both chart consumers:
+Pass the same CA-only bundle to `bootstrap init`:
 
 ```bash
-kubectl -n kube-dc create configmap kube-dc-trusted-ca \
-  --from-file=ca.pem=corp-ca.pem
+kube-dc bootstrap init ... \
+  --trusted-ca-bundle=corp-ca.pem
 ```
 
-```yaml
-manager:
-  trustedCA:
-    configMapName: kube-dc-trusted-ca
-backend:
-  trustedCA:
-    configMapName: kube-dc-trusted-ca
-    fileName: ca.pem
-```
+The CLI rejects private-key and non-CA PEM blocks, plan-pins the canonical
+bundle fingerprint, writes `clusters/<name>/trusted-ca.yaml`, and sets both
+`MANAGER_TRUSTED_CA_CONFIGMAP` and `BACKEND_TRUSTED_CA_CONFIGMAP`. This is
+the durable GitOps source; do not patch a live ConfigMap by hand.
 
 The manager mount sets `SSL_CERT_DIR`. The manager also copies the validated
 certificate bundle into each `OpenIDConnect.spec.caBundle` and forwards it to
@@ -740,6 +741,7 @@ kube-dc bootstrap init \
   --set=METALLB_MODE=l2 \
   --set=METALLB_FLOATING_IP=203.0.113.20 \
   --set=METALLB_INTERFACE=ext-pub-anchor \
+  --openbao-shares-out=$HOME/dc1-openbao-shares.yaml \
   --dry-run                                # review, then swap for --yes
 ```
 
@@ -752,6 +754,7 @@ kube-dc bootstrap init \
 | `--domain` / `--node-external-ip` | Wildcard domain + the public IP it resolves to (§3.2) |
 | `--fleet-mode` | `new-repo` (CLI creates the GitHub/GitLab repo), `existing-repo`, or `existing-fleet` (add a cluster to a repo that already has siblings — inherits their version pins) |
 | `--repo` | Local path for the fleet checkout. Point it at an **empty directory** — the CLI pulls the shared platform trees into it from the fleet-starter OCI artifact (see below). Default when omitted: `$KUBE_DC_FLEET`, else `~/.kube-dc/fleet` |
+| `--starter-ref` | Immutable full OCI starter reference. Released CLIs default to their own version; pin it explicitly in controlled/reinstall procedures and never use `:latest` |
 | `--github-owner` / `--github-repo` | Where the fleet repo lives (auto-created in `new-repo` mode) |
 | `--object-storage-mode` | `rook-ceph-multi-node` (3+ OSDs, HA), `rook-ceph-local` (single OSD — lab), `rook-ceph-pvc`, `external-*`, or `disabled` |
 | `--ceph-node=NODE=DEVICE` | One raw block device per OSD node (repeat 3× for multi-node). **Re-used hardware: see the zap warning below** |
@@ -764,6 +767,10 @@ kube-dc bootstrap init \
 | `--set=METALLB_FLOATING_IP` / `METALLB_INTERFACE` | Dedicated ingress VIP and the host interface that carries its L2 segment. For an L2 VIP inside `EXT_PUBLIC_CIDR`, the current CLI selects the fleet-managed `ext-pub-anchor`; elsewhere the operator supplies the real interface |
 | `--set=INGRESS_MODE` | `metallb-lb` (default — Envoy Service `type: LoadBalancer` via MetalLB). `hostnetwork` (Envoy binds `:443` on the host) is a real topology but **not yet automated — `init` rejects it**; scaffold with `metallb-lb` and apply the EnvoyProxy hostNetwork patch manually if you need it |
 | `--set=METALLB_MODE` | `l2` (default — ARP on a shared L2 segment) or `bgp` (announce VIPs as `/32` BGP routes — routed/L3-only fabrics; see §4.3 “BGP mode and mode changes”). `bgp` requires `METALLB_BGP_LOCAL_ASN`, `METALLB_BGP_PEER_ASN`, `METALLB_BGP_PEER_ADDRESS` (all validated) |
+| `--trusted-ca-bundle` | Certificate-only root/intermediate PEM for a private-CA platform. The CLI creates the durable ConfigMap and wires manager, backend, OIDC and OpenBao from one plan-pinned source |
+| `--openbao-shares-out` | Additional off-git `0600` custody copy of the five Shamir shares. The automatic post-apply finalizer honors this path; never place it inside a Git tree |
+
+`EXT_NET_ANCHOR_INTERFACE` names the parent OVS bridge even when `EXT_NET_ANCHOR_IPS` is empty; public L2 mode creates `EXT_NET_PUBLIC_ANCHOR_INTERFACE` on that bridge. Do not clear the bridge key merely because ext-cloud anchor addresses or node-egress NAT are disabled.
 
 `EXT_NET_NODE_EGRESS_ENABLED` is deliberately not part of the normal install
 recipe. It is a default-off escape hatch for a site whose physical cloud-VLAN
@@ -807,6 +814,14 @@ ceph-volume raw list                      # must not list the device
 ceph-bluestore-tool show-label --dev /dev/sdb   # must say "unable to read label"
 ```
 
+Both commands must execute successfully enough to prove their result. Parse
+`ceph-volume raw list` as JSON and require that the exact device is absent; a
+command or JSON error is **not** an empty inventory. For `show-label`, success
+means the device is still owned, and only the clean-device "unable to read
+label ... (2) No such file or directory" result is acceptance. Treat every
+other error as a hard stop. On a clean reinstall, run this paired gate after
+nodes join but **before** Flux/Rook is allowed to reconcile.
+
 Then `kubectl -n rook-ceph delete job -l app=rook-ceph-osd-prepare` and
 `kubectl -n rook-ceph rollout restart deploy/rook-ceph-operator`; the OSDs
 appear immediately.
@@ -816,7 +831,7 @@ What `init` does, in order: **fetches the fleet starter** (when `--repo`
 is a fresh/empty directory, the shared platform trees — `bootstrap/`,
 `infrastructure/`, `platform/`, `addons/` — are pulled from the
 versioned OCI artifact `oci://ghcr.io/kube-dc/fleet-starter:<cli-version>`
-and committed; a directory that already carries them is used as-is;
+and committed; a directory that already carries them is used as-is and is **not upgraded**; converge an old fleet to the matching starter before init;
 override with `--starter-ref`) → generates a SOPS **age key** → creates +
 pushes the fleet repo → scaffolds `clusters/dc1/` (cloud/public networks,
 per-node ProviderNetwork NIC mappings, ordered MetalLB operator/config,
@@ -832,7 +847,7 @@ and skip the public-VLAN `--set` flags. A dedicated MetalLB VIP and its real L2 
 27 GiB / 100 GB** — the full platform plus reconcile churn needs it.
 :::
 
-### 3.3.2 Interactive panel + reusable config (`--config` / `--save-config`)
+### 3.3.1 Interactive panel + reusable config (`--config` / `--save-config`)
 
 Run `kube-dc bootstrap init` **with no flags** in a terminal and you get a
 guided settings panel (sections: Basics / Fleet / Network / Storage /
@@ -886,7 +901,7 @@ workloads won't schedule until a node exposes `/dev/kvm`, but the install
 completes.
 :::
 
-### 3.3.1 Which mode? `install` / `adopt` / `resume`
+### 3.3.2 Which mode? `install` / `adopt` / `resume`
 
 `--mode` tells `init` what it's walking into. It auto-detects when
 omitted (`--mode=auto`), but knowing the model helps you pick the right
@@ -999,7 +1014,7 @@ Google OAuth client), set `SSO_ENABLED=true` in
 
 ### 3.5.1 MANDATORY — OIDC-webhook cutover on every control-plane node
 
-RKE2 boots cert-only (§2.1). Until the apiserver is pointed at the
+RKE2 boots cert-only (Phase 2). Until the apiserver is pointed at the
 oidc-webhook-authenticator, **every Keycloak JWT returns HTTP 401** — tenant
 `kubectl`, the console's Manage-Organization calls, and the k8-manager /
 db-manager operators all fail. Do this after Flux finishes `infra-core`.

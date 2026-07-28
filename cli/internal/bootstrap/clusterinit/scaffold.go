@@ -113,6 +113,15 @@ type ScaffoldOptions struct {
 	// substitutions; licenses and registry credentials remain SOPS-owned.
 	GPU GPUConfig
 
+	// WildcardTLS is the validated byo-wildcard material (nil = acme mode,
+	// nothing scaffolded). Loaded + validated by the cobra layer BEFORE any
+	// file is written, so a bad certificate fails the run with zero side
+	// effects. See wildcardtls.go.
+	WildcardTLS *WildcardTLSMaterial
+
+	// TrustedCA is validated public CA material for manager/backend/OIDC/OpenBao.
+	TrustedCA *TrustedCAMaterial
+
 	// SingleIPNAT triggers the findings-17/17b wiring (step 8): the
 	// node sits behind a 1:1 NAT with only one IP, so the scaffolded
 	// platform.yaml gets a patches entry removing the Gateway's 6443
@@ -316,6 +325,22 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// Operator and optional HAMi Flux layers. No-op for disabled/detect-only;
 	// catalog, billing, and both workload-creation gates remain independent.
 	if err := WriteGPUInfrastructure(opts.FleetRepo, opts.Plan.ClusterName, opts.GPU, out); err != nil {
+		return fmt.Errorf("scaffold: %w", err)
+	}
+
+	// (11) byo-wildcard TLS — the SOPS secret set + ACME suppression +
+	// TLS_MODE marker. MUST stay after (7) and (9b): the suppression patches
+	// target infra-object-storage.yaml and registry-depot.yaml, which those
+	// steps write; run earlier, the layers would exist without their
+	// Certificates suppressed and cert-manager would fight the operator's
+	// material. Nil material = acme mode = no-op.
+	if err := WriteWildcardTLS(opts.FleetRepo, opts.Plan.ClusterName, opts.Plan.Domain, opts.WildcardTLS, out); err != nil {
+		return fmt.Errorf("scaffold: %w", err)
+	}
+
+	// (12) private-CA trust — one public ConfigMap consumed by manager +
+	// backend; manager propagates the same bundle to OIDC and OpenBao.
+	if err := WriteTrustedCA(opts.FleetRepo, opts.Plan.ClusterName, opts.TrustedCA, out); err != nil {
 		return fmt.Errorf("scaffold: %w", err)
 	}
 

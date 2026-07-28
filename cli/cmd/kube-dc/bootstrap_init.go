@@ -82,7 +82,7 @@ OpenBao-initialised cluster. Per installer-prd §4.1.
 
 Three operating modes:
 
-  --dry-run            Print the plan; exit 0; no mutations.
+  --dry-run            Print the plan; exit 0; no cluster or fleet mutation (--plan-file, --save-config, and the local consent marker may write operator-selected local files).
   --apply-plan <path>  Apply a previously-written plan (hash-pinned).
   (default)            Walk the install flow against the live fleet.
 
@@ -259,6 +259,29 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 			if err := clusterinit.ValidatePresetRequiredKeys(o); err != nil {
 				return err
 			}
+			// byo-wildcard TLS material loads + validates BEFORE any state
+			// mutates (and before the plan renders), so a mismatched key,
+			// wrong-domain SAN, or expired certificate fails a dry-run too —
+			// with zero files written. Only subject + notAfter are ever
+			// printed; runApplyEngine re-loads through the same door so the
+			// material never rides a plan or a config struct.
+			if tlsMaterial, err := loadWildcardTLSFromOptions(o); err != nil {
+				return err
+			} else if tlsMaterial != nil {
+				// Bind the plan to THIS certificate, not merely the mode.
+				o.TLSCertFingerprint = tlsMaterial.Fingerprint
+				fmt.Fprintf(cmd.OutOrStdout(), "[preflight] byo-wildcard TLS validated: subject=%s notAfter=%s sha256=%s (nothing renews this for you)\n",
+					tlsMaterial.Subject, tlsMaterial.NotAfter.Format("2006-01-02"), tlsMaterial.Fingerprint[:16])
+			}
+
+			if caMaterial, err := loadTrustedCAFromOptions(o); err != nil {
+				return err
+			} else if caMaterial != nil {
+				o.TrustedCAFingerprint = caMaterial.Fingerprint
+				fmt.Fprintf(cmd.OutOrStdout(), "[preflight] private-CA bundle validated: certificates=%d sha256=%s\n",
+					caMaterial.CertCount, caMaterial.Fingerprint[:16])
+			}
+
 			gpu := o.GPU()
 			var gpuReader ports.GPUClusterReader
 			if gpu.Platform == clusterinit.GPUPlatformEnabled {
@@ -465,6 +488,14 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"Skip the S3 exposure layer (Certificate + HTTPRoute) — cluster-internal S3 only")
 	cmd.Flags().BoolVar(&o.ImageAcceleration, "image-acceleration", true,
 		"Wire the on-cluster image path (tenant-addons + cdi-os-mirror + registry-depot zot) into the scaffold; spegel (RKE2 embedded registry) is enabled per node by bootstrap install (default: true)")
+	cmd.Flags().StringVar(&o.TLSMode, "tls-mode", clusterinit.TLSModeACME,
+		"Platform TLS mode: 'acme' (cert-manager issues via the ACME ClusterIssuer) or 'byo-wildcard' (operator-supplied *.<domain> certificate, SOPS-committed, ACME Certificates suppressed; requires --tls-cert/--tls-key). See docs/platform/certificates.md")
+	cmd.Flags().StringVar(&o.TLSCert, "tls-cert", "",
+		"Path to the wildcard certificate chain, leaf first (PEM); byo-wildcard only")
+	cmd.Flags().StringVar(&o.TLSKey, "tls-key", "",
+		"Path to the matching private key (PEM); read once, committed only SOPS-encrypted, never logged; byo-wildcard only")
+	cmd.Flags().StringVar(&o.TrustedCABundle, "trusted-ca-bundle", "",
+		"Path to a certificate-only PEM CA bundle trusted by manager, backend, OIDC and OpenBao; written as a public ConfigMap and plan-pinned by SHA-256")
 	cmd.Flags().StringVar((*string)(&o.VMStorageMode), "vm-storage-mode", string(clusterinit.VMStorageLocal),
 		fmt.Sprintf("VM root-disk storage tier (optional; one of %s; default local — local-path). shared-rbd needs a rook-ceph-* object-storage mode (provides rbd-pool); shared-rbd-live-migration is installer-deferred", joinStringers(clusterinit.AllVMStorageModes)))
 	cmd.Flags().StringSliceVar(&o.VMGoldens, "vm-golden", nil,
@@ -537,7 +568,7 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"Operator-supplied write-only file for the 5 OpenBao shares (mode 0600; never under a git tree)")
 
 	// --- Plan/apply flow ---
-	cmd.Flags().BoolVar(&o.DryRun, "dry-run", false, "Print the plan; exit 0; no mutations")
+	cmd.Flags().BoolVar(&o.DryRun, "dry-run", false, "Print the plan; exit 0; no cluster or fleet mutation (--plan-file, --save-config, and the local consent marker may write operator-selected local files)")
 	cmd.Flags().BoolVar(&o.DryRun, "print-plan", false, "Alias for --dry-run")
 	cmd.Flags().StringVar(&o.PlanFile, "plan-file", "",
 		"With --dry-run, write the plan JSON here; with --apply-plan, ignored unless it matches --apply-plan")
@@ -1225,6 +1256,41 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		}
 	}
 
+	// Re-load the byo-wildcard material from the operator's paths. The RunE
+	// preflight already validated + reported it; loading again here keeps the
+	// material out of every intermediate signature (it must never ride a plan
+	// or a config struct) at the cost of two cheap file reads. Any change to
+	// the files between preflight and apply is re-validated, not trusted —
+	// and the PLAN pins the certificate identity, so the material that ships
+	// must be byte-for-byte the certificate the operator reviewed.
+	wildcardTLS, err := loadWildcardTLSFromOptions(o)
+	if err != nil {
+		return err
+	}
+	switch {
+	case wildcardTLS != nil && plan.TLSMode != clusterinit.TLSModeBYOWildcard:
+		return fmt.Errorf("init: --tls-mode=byo-wildcard supplied but the plan under review was generated without it — re-run the plan")
+	case wildcardTLS == nil && plan.TLSMode == clusterinit.TLSModeBYOWildcard:
+		return fmt.Errorf("init: the reviewed plan requires byo-wildcard TLS but no --tls-cert/--tls-key material was supplied")
+	case wildcardTLS != nil && plan.TLSCertFingerprint != wildcardTLS.Fingerprint:
+		return fmt.Errorf(
+			"init: the certificate at --tls-cert is NOT the one the reviewed plan approved (plan sha256=%.16s, supplied sha256=%.16s) — re-run the plan against the current material",
+			plan.TLSCertFingerprint, wildcardTLS.Fingerprint)
+	}
+
+	trustedCA, err := loadTrustedCAFromOptions(o)
+	if err != nil {
+		return err
+	}
+	switch {
+	case trustedCA != nil && plan.TrustedCAFingerprint == "":
+		return fmt.Errorf("init: --trusted-ca-bundle supplied but the reviewed plan omitted private-CA trust — re-run the plan")
+	case trustedCA == nil && plan.TrustedCAFingerprint != "":
+		return fmt.Errorf("init: the reviewed plan requires --trusted-ca-bundle material")
+	case trustedCA != nil && plan.TrustedCAFingerprint != trustedCA.Fingerprint:
+		return fmt.Errorf("init: the CA bundle is NOT the one the reviewed plan approved (plan sha256=%.16s, supplied sha256=%.16s) — re-run the plan", plan.TrustedCAFingerprint, trustedCA.Fingerprint)
+	}
+
 	if err := clusterinit.Apply(ctx, clusterinit.ApplyOptions{
 		Plan:           plan,
 		FleetRepo:      o.Repo,
@@ -1236,6 +1302,8 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		ObjectStorage:  o.ObjectStorage(),
 		VMStorage:      o.VMStorage(),
 		ImageAccel:     o.ImageAccel(),
+		WildcardTLS:    wildcardTLS,
+		TrustedCA:      trustedCA,
 		GPU:            o.GPU(),
 		Runner:         session.Scripts,
 		Git:            session.Git,
@@ -1800,12 +1868,13 @@ func assertRequiredFlagsRegistered(fs *pflag.FlagSet) error {
 		"ceph-node", "ceph-storage-class", "ceph-osd-count", "ceph-osd-volume-size-gb",
 		"s3-hostname", "no-s3-exposure",
 		"vm-storage-mode", "vm-golden", "vm-golden-block",
+		"tls-mode", "tls-cert", "tls-key", "trusted-ca-bundle",
 		"gpu-platform", "gpu-driver-source", "gpu-operator-version", "nvidia-driver-version", "nvidia-toolkit-version",
 		"hami-enabled", "gpu-shared-allocator", "hami-version", "hami-scheduler-version", "gpu-node-mode", "gpu-ssh-host-map", "gpu-kubeconfig", "gpu-profile",
 		"allow-unassigned-gpus", "vgpu-secret-ready",
 		"addon",
 		"allow-dns-not-ready", "ssh-host", "no-ssh", "no-install-prereqs", "no-create-repo",
-		"mirror-registry", "bundle-pull-secret", "openbao-shares-out",
+		"starter-ref", "mirror-registry", "bundle-pull-secret", "openbao-shares-out",
 		"dry-run", "plan-file", "apply-plan", "no-push", "no-tty", "yes",
 	}
 	for _, name := range required {
@@ -1958,4 +2027,22 @@ func gatherPanelProbe(ctx context.Context) *initform.ProbePrefill {
 		return nil
 	}
 	return &p
+}
+
+// loadWildcardTLSFromOptions loads + validates the byo-wildcard material named
+// by the operator's flags, or returns (nil, nil) in acme mode. Both the RunE
+// preflight (early, user-visible failure — a dry-run validates too) and
+// runApplyEngine (the value that actually ships) go through this one door.
+func loadWildcardTLSFromOptions(o *clusterinit.InitOptions) (*clusterinit.WildcardTLSMaterial, error) {
+	if o.TLSMode != clusterinit.TLSModeBYOWildcard {
+		return nil, nil
+	}
+	return clusterinit.LoadWildcardTLS(o.TLSCert, o.TLSKey, o.Domain)
+}
+
+// loadTrustedCAFromOptions validates the public CA material named by the
+// operator. Only the canonical fingerprint enters the plan; apply reloads and
+// compares it before any fleet mutation.
+func loadTrustedCAFromOptions(o *clusterinit.InitOptions) (*clusterinit.TrustedCAMaterial, error) {
+	return clusterinit.LoadTrustedCABundle(o.TrustedCABundle)
 }
