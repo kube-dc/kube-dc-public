@@ -112,19 +112,25 @@ repository** and bootstraps Flux against it; Flux then reconciles all
 platform components onto your RKE2 cluster. The fleet repo stays the
 source of truth for versions and configuration:
 
+> **Versions below are indicative, as of Kube-DC v0.5.34.** Component versions
+> are pinned per cluster in the GitOps fleet repository
+> (`clusters/<name>/cluster-config.env`), which is the authoritative source. A
+> given cluster may differ. **Kamaji** is a kube-dc fork carrying
+> platform-specific patches.
+
 | Component | Version | Purpose |
 |-----------|---------|---------|
-| **Kube-OVN** | v1.15.0 | Core CNI — overlay/underlay networking, VPC isolation, NAT gateways |
+| **Kube-OVN** | v1.15.10 | Core CNI — overlay/underlay networking, VPC isolation, NAT gateways |
 | **Multus CNI** | v4.1.0 | Multi-interface support for pods and VMs |
-| **KubeVirt** | v1.6.0 | Virtual machine management on Kubernetes |
-| **KubeVirt CDI** | v1.62.0 | VM disk image import and management |
-| **Keycloak** | 24.x | Identity provider — SSO, OIDC, multi-tenant realms |
-| **Cert-Manager** | v1.14.x | Automatic TLS certificate provisioning (Let's Encrypt) |
-| **Envoy Gateway** | v1.2.x | API gateway — HTTPS ingress, routing, rate limiting |
-| **Kamaji** | 1.0.0 | Managed Kubernetes control planes (tenant clusters) |
+| **KubeVirt** | v1.8.1 | Virtual machine management on Kubernetes |
+| **KubeVirt CDI** | v1.65.0 | VM disk image import and management |
+| **Keycloak** | 24.3.0 | Identity provider — SSO, OIDC, multi-tenant realms |
+| **Cert-Manager** | v1.20.1 | Automatic TLS certificate provisioning (Let's Encrypt) |
+| **Envoy Gateway** | v1.7.1 | API gateway — HTTPS ingress, routing, rate limiting |
+| **Kamaji** | 1.0.8-kube-dc | Managed Kubernetes control planes (tenant clusters) |
 | **Cluster API** | v1.8.x | Declarative cluster lifecycle management |
-| **Sveltos** | v0.57.x | GitOps-style addon management for tenant clusters |
-| **Kyverno** | v1.15.x | Policy engine — admission control, resource validation |
+| **Sveltos** | v0.57.2 | GitOps-style addon management for tenant clusters |
+| **Kyverno** | v1.17.1 | Policy engine — admission control, resource validation |
 | **HNC** | v1.1.0 | Hierarchical namespaces for multi-tenancy |
 | **Prometheus + Grafana** | 67.x | Monitoring, alerting, dashboards |
 | **Loki + Alloy** | 6.x | Log aggregation and collection |

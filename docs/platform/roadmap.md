@@ -3,36 +3,59 @@
 > **Build Your Own AI & GPU Cloud on Any Server**  
 > Transform bare-metal servers into a modern cloud with Kubernetes-native orchestration, GPU sharing, and multi-tenancy.
 
-**Last Updated**: December 9, 2025
+**Last Updated**: July 29, 2026 — status refreshed against the shipped release.
+
+!!! warning "Dates below the Current State section are not current"
+    The quarterly plan in this page was written in December 2025. Several
+    milestones have shipped; the remaining target dates have **not** been
+    re-baselined and should be treated as indicative rather than committed.
+    For what is shipped today, use the Current State section and the
+    [platform documentation](index.md).
 
 ---
 
 ## Executive Summary
 
-| Milestone | Target Date | Key Deliverable |
-|-----------|-------------|-----------------|
-| **Installer v2** | Jan 2026 | Single-node & simplified installation |
-| **Global Admin UI** | Feb 2026 | Platform-wide administration console |
-| **Database as a Service** | Mar 2026 | PostgreSQL, MySQL, MongoDB, Redis |
-| **S3 Object Storage** | Apr 2026 | Rook/Ceph multi-tenant buckets |
-| **GPU/AI Platform** | May 2026 | HAMI sharing, KubeFlow integration |
-| **Billing System** | Jun 2026 | Metering, pricing, usage reports |
-| **Licensing** | Jul 2026 | Node-based license management |
-| **Hybrid Cloud** | Sep 2026 | Multi-cluster federation, DR |
-| **Advanced Networking** | Oct 2026 | VPN, Security Groups, Service Mesh |
-| **Edge Computing** | Q1 2027 | Lightweight edge deployments |
+| Milestone | Status | Key Deliverable |
+|-----------|--------|-----------------|
+| **Installer v2** | ✅ Shipped | GitOps installer — `kube-dc bootstrap init` scaffolds a Flux fleet repository ([guide](installation-guide.md)) |
+| **Global Admin UI** | ✅ Shipped | Platform-wide administration console |
+| **Database as a Service** | ◧ Partial | PostgreSQL (CloudNativePG) and MariaDB shipped ([docs](/cloud/managed-databases)). MongoDB and Redis not implemented |
+| **S3 Object Storage** | ✅ Shipped | Rook/Ceph multi-tenant buckets ([docs](/cloud/object-storage)) |
+| **GPU/AI Platform** | ◧ Pilot | Shared GPU via DRA and dedicated passthrough to VM guests, both **pilot**. HAMI and KubeFlow not implemented |
+| **Billing System** | ◧ Partial | Quota enforcement and Stripe integration shipped; resource metering and usage reports outstanding |
+| **Licensing** | 🔲 Not started | No node-based licensing model exists today |
+| **Hybrid Cloud** | 🔲 Planned | Multi-cluster federation, DR |
+| **Advanced Networking** | ◧ Partial | Tenant VLAN attachment shipped ([docs](tenant-vlan-attachment.md)); VPN, security groups and service mesh outstanding |
+| **Edge Computing** | 🔲 Planned | Lightweight edge deployments |
 
 ---
 
-## Current State (v0.1.35) ✅
+## Current State (v0.5.34) ✅
 
 ### Core Platform — Complete
-- **Multi-Tenancy**: Organizations, Projects, Keycloak SSO, RBAC
-- **Networking**: Kube-OVN VPC, EIP/FIP, LoadBalancer, multi-network support
-- **Virtualization**: KubeVirt VMs, Linux/Windows support, VNC, SSH injection
-- **KaaS**: Multi-tenant control planes (Kamaji), KubeVirt/CloudSigma workers, Cilium CNI
-- **Observability**: Prometheus metrics, Loki logging, VM monitoring charts
-- **UI**: Web console, VM lifecycle, monitoring dashboards
+- **Multi-Tenancy**: Organizations, Projects, Keycloak SSO, RBAC, hierarchical namespaces
+- **Networking**: Kube-OVN VPC, EIP/FIP, LoadBalancer, Envoy Gateway ingress, tenant VLAN attachment
+- **Virtualization**: KubeVirt VMs, Linux/Windows support, VNC, SSH injection, storage tiers, live migration
+- **Bare metal**: Metal3-provisioned worker nodes
+- **KaaS**: Multi-tenant control planes (Kamaji), KubeVirt/CloudSigma workers, Cilium CNI, staged upgrades, etcd backup and encryption at rest
+- **Managed databases**: PostgreSQL (CloudNativePG) and MariaDB, with credential rotation policies
+- **Object storage**: S3-compatible per-project buckets on Rook-Ceph
+- **Security services**: KMS keys, managed secrets, managed certificates (private CA and ACME)
+- **Observability**: tenant-isolated metrics, logs, dashboards and alerts on shared Mimir/Loki/Grafana
+- **Billing**: plans, per-organization quotas, Stripe subscription integration
+- **UI**: web console, admin console, VM lifecycle, monitoring dashboards
+- **Automation**: `kube-dc` CLI, Kubernetes API, GitOps, agent skills for AI IDEs
+
+### Known limitations
+
+- **Backup protects configuration metadata only** on the default `local-path`
+  storage backend — VM disk and persistent-volume data are **not** captured.
+  Snapshot-capable storage is required for data protection. See
+  [Backups & Snapshots](/cloud/backups-snapshots).
+- **GPU capabilities are pilot-stage** and gated per cluster.
+- **Disconnected (air-gapped) installation is not implemented.** CLI parameters
+  exist but are reserved for that work.
 
 ---
 

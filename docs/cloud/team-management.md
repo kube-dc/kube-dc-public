@@ -4,7 +4,7 @@ Kube-DC provides a comprehensive multi-tenant access control system that lets or
 
 ## Security Model
 
-Each organization in Kube-DC operates within a **completely isolated identity domain**:
+Each organization in Kube-DC operates within a **dedicated identity domain**:
 
 - **Dedicated Keycloak Realm** — Every organization gets its own Keycloak realm, acting as an independent OIDC provider. Users from different organizations cannot share credentials or sessions.
 - **Isolated JWT Tokens** — Authentication tokens are scoped to a single organization realm. A token issued for `acme` cannot be used to access `example` organization resources.
@@ -38,7 +38,7 @@ Every project receives these four roles automatically:
 
 | Role | Description | Key Permissions |
 |------|-------------|-----------------|
-| `admin` | Full project control | All resources and verbs, RBAC management |
+| `admin` | Broad project management | Full CRUD on the supported project resource set, RBAC management |
 | `developer` | Workload management | VMs, pods, services, secrets: full CRUD; no RBAC |
 | `project-manager` | View and monitor | All resources: get, list, watch; VM console/VNC access |
 | `user` | Read-only access | All resources: get, list; no console, no secrets |

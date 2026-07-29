@@ -20,7 +20,7 @@ To prevent workloads from compromising the shared infrastructure, certain pod co
 
 These restrictions only apply to dangerous host-level features. Normal Kubernetes workflows are fully supported:
 
-- **Deploy containers** — Pods, Deployments, StatefulSets, DaemonSets, Jobs, CronJobs
+- **Deploy containers** — Pods, Deployments, StatefulSets, DaemonSets, Jobs *(CronJobs are read-only in projects — use a [Managed Cluster](provisioning-cluster.md) for scheduled workloads)*
 - **Manage storage** — PersistentVolumeClaims (block storage), emptyDir, ConfigMaps, Secrets
 - **Expose services** — LoadBalancer, ClusterIP, Ingress, Gateway API routes
 - **Create virtual machines** — KubeVirt VMs with full lifecycle management (start, stop, restart, migrate, console, VNC)
@@ -80,9 +80,9 @@ Access to resources within a project is controlled by your assigned role. See [U
 
 ### Shell Access
 
-None of the standard roles include `kubectl exec` or `kubectl attach` permissions. This means you cannot open a shell inside running containers via `kubectl exec`.
+**Containers:** the **Admin** and **Developer** roles include `kubectl exec` (`pods/exec`), so they can open a shell inside running containers. Project Manager and User roles cannot. No role includes `kubectl attach`.
 
-**For virtual machines**, use the **VM console** or **VNC** instead — these are available to Admin, Developer, and Project Manager roles:
+**For virtual machines**, use the **VM console** or **VNC** — available to Admin, Developer, and Project Manager roles:
 
 ```bash
 # Access VM console
@@ -93,7 +93,7 @@ virtctl vnc my-vm
 ```
 
 :::info
-Shell access restrictions protect sensitive credentials and runtime state inside system containers. For your own VMs, use the console or VNC access provided by KubeVirt.
+Exec access follows project roles: read-oriented roles (Project Manager, User) cannot open shells in containers. For your own VMs, use the console or VNC access provided by KubeVirt.
 :::
 
 ## Resource Quotas

@@ -7,9 +7,9 @@ Kube-DC extends Kubernetes with a robust set of features designed for enterprise
 ## Organization Management
 
 !!! info "Foundation for Multi-Tenancy"
-    Organization Management provides the foundation for Kube-DC's multi-tenant capabilities, enabling complete isolation between different users and groups.
+    Organization Management provides the foundation for Kube-DC's multi-tenant capabilities, providing organization-scoped identity and project-scoped workload isolation between different users and groups.
 
-Kube-DC's multi-tenant architecture allows service providers to host multiple organizations with complete isolation and customization.
+Kube-DC's multi-tenant architecture allows service providers to host multiple organizations with layered isolation — separate identity realms, projects and networks — and per-organization customization.
 
 **Capabilities:**
 
@@ -67,7 +67,7 @@ Kube-DC provides advanced networking capabilities that bridge traditional data c
 - **NAT and Internet Gateway**: Control outbound and inbound internet access per project
 - **External IP Assignment**: Assign public IPs directly to VMs or Kubernetes services
 - **Load Balancer Integration**: Create and manage load balancers for services and VMs
-- **Network Policies**: Define granular rules for network traffic filtering
+- **Platform-Managed Traffic Controls**: Each project's VPC is isolated by platform-managed rules — cross-project routing is blocked by default. (Tenant-authored `NetworkPolicy` resources are not currently supported in projects.)
 - **DNS Management**: Automatic DNS for services and VMs with custom domain support
 
 !!! example "Real-World Applications"

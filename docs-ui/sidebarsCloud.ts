@@ -9,22 +9,65 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'what-is-kube-dc',
+        'core-concepts',
+        {
+          type: 'doc',
+          id: 'core-features',
+          label: 'Platform Capabilities',
+        },
         'sign-up-login',
         'dashboard-overview',
-        'core-concepts',
-        'core-features',
         'first-project',
-        'cli-kubeconfig',
         'ai-ide-integration',
       ],
     },
     {
       type: 'category',
-      label: 'Quick Start',
+      label: 'Projects',
+      collapsed: false,
+      items: [
+        {
+          type: 'doc',
+          id: 'kubernetes-projects',
+          label: 'Overview',
+        },
+        {
+          type: 'doc',
+          id: 'cli-kubeconfig',
+          label: 'Connect with a Project Kubeconfig',
+        },
+        {
+          type: 'doc',
+          id: 'security-restrictions',
+          label: 'Project Compatibility and Restrictions',
+        },
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Deploying Applications',
+      collapsed: false,
+      items: [
+        {
+          type: 'doc',
+          id: 'deploy-first-app',
+          label: 'Deploy Your First Application',
+        },
+        {
+          type: 'doc',
+          id: 'gpu-shared-workloads',
+          label: 'Run Shared GPU Workloads',
+        },
+        'gitops',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Managed Kubernetes Clusters',
       collapsed: true,
       items: [
-        'deploy-first-app',
-        'gpu-shared-workloads',
+        'provisioning-cluster',
+        'cluster-management',
       ],
     },
     {
@@ -47,15 +90,6 @@ const sidebars: SidebarsConfig = {
         'public-floating-ips',
         'private-networking',
         'service-exposure',
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Managed Kubernetes',
-      collapsed: true,
-      items: [
-        'provisioning-cluster',
-        'cluster-management',
       ],
     },
     {
@@ -95,15 +129,6 @@ const sidebars: SidebarsConfig = {
         'team-management',
         'billing-usage',
         'scaling-performance',
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Advanced Topics',
-      collapsed: true,
-      items: [
-        'security-restrictions',
-        'gitops',
       ],
     },
     {
