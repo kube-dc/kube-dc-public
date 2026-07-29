@@ -55,6 +55,11 @@ const sidebars: SidebarsConfig = {
         },
         {
           type: 'doc',
+          id: 'deploy-wordpress-stack',
+          label: 'Deploy a Full WordPress Stack',
+        },
+        {
+          type: 'doc',
           id: 'gpu-shared-workloads',
           label: 'Run Shared GPU Workloads',
         },

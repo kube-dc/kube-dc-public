@@ -80,7 +80,9 @@ Access to resources within a project is controlled by your assigned role. See [U
 
 ### Shell Access
 
-**Containers:** the **Admin** and **Developer** roles include `kubectl exec` (`pods/exec`), so they can open a shell inside running containers. Project Manager and User roles cannot. No role includes `kubectl attach`.
+**Containers:** although the **Admin** and **Developer** roles carry the `pods/exec` RBAC permission, an admission policy currently **denies `kubectl exec` in project namespaces** — so in practice you cannot open a shell inside running containers, regardless of role. No role includes `kubectl attach`.
+
+For administrative tasks against your application's filesystem, run a **Job** that mounts the same volume (see the WP-CLI and backup Jobs in [Deploy a Full WordPress Stack](deploy-wordpress-stack.md)) — Jobs are first-class in projects and cover install, migration and backup workflows.
 
 **For virtual machines**, use the **VM console** or **VNC** — available to Admin, Developer, and Project Manager roles:
 
@@ -93,7 +95,7 @@ virtctl vnc my-vm
 ```
 
 :::info
-Exec access follows project roles: read-oriented roles (Project Manager, User) cannot open shells in containers. For your own VMs, use the console or VNC access provided by KubeVirt.
+For your own VMs, use the console or VNC access provided by KubeVirt. For containers, use `kubectl logs` and Jobs.
 :::
 
 ## Resource Quotas
