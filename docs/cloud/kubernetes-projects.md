@@ -22,7 +22,7 @@ A Project is a governed environment on the shared platform cluster. It is not a 
 
 Identity stays scoped to your Organization; billing is aggregated there too. The Project supplies the namespace, authorization, network and governance boundaries for everything in it.
 
-Admin and Developer roles can use `kubectl exec`, logs and `kubectl top`; pod attach is not granted.
+Use `kubectl logs` and `kubectl top` for containers. `kubectl exec`/`attach` are blocked in project namespaces by design — run administrative tasks as **Jobs** mounting the same volumes (the [WordPress guide](deploy-wordpress-stack.md) shows the pattern), and use the console/VNC for VMs.
 
 ## Deploy in about 60 seconds
 

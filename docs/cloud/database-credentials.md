@@ -132,7 +132,7 @@ Before creating a policy, the underlying database user must exist:
 
 ```bash
 # Connect to your managed database however you normally would
-# (port-forward, kubectl exec, your IDE, etc.) and run:
+# (port-forward, your IDE, a client Job, etc.) and run:
 psql -c "CREATE USER app WITH LOGIN PASSWORD 'temporary-bootstrap';"
 psql -c "GRANT ALL PRIVILEGES ON DATABASE mydb TO app;"
 # (Or the MariaDB equivalent.)

@@ -80,7 +80,7 @@ Access to resources within a project is controlled by your assigned role. See [U
 
 ### Shell Access
 
-**Containers:** although the **Admin** and **Developer** roles carry the `pods/exec` RBAC permission, an admission policy currently **denies `kubectl exec` in project namespaces** — so in practice you cannot open a shell inside running containers, regardless of role. No role includes `kubectl attach`.
+**Containers:** `kubectl exec` and `kubectl attach` are **blocked in project namespaces by design**. Standard project roles do not grant them, and an admission policy enforces the restriction even for custom roles that would add the permission.
 
 For administrative tasks against your application's filesystem, run a **Job** that mounts the same volume (see the WP-CLI and backup Jobs in [Deploy a Full WordPress Stack](deploy-wordpress-stack.md)) — Jobs are first-class in projects and cover install, migration and backup workflows.
 

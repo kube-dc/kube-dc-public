@@ -107,7 +107,7 @@ A Project can be managed with:
 
 A **compatible** Helm chart renders resources that (1) use Kubernetes APIs supported in the Project, (2) stay within the Project namespace, (3) require only verbs granted to the installing user, and (4) comply with Project pod-security policy. Charts that create CRDs, cluster-scoped RBAC, admission webhooks, StorageClasses, NetworkPolicies, CronJobs, or privileged/host-access workloads are not supported in Projects — use a Managed Cluster for those. See [Kubernetes Projects](kubernetes-projects.md) for the full boundary and how to check a chart before installing.
 
-Admin and Developer roles can use `kubectl exec` (`pods/exec`); pod attach is not granted. Project administrators can define custom namespaced Roles within their authority — but a namespaced Role can never grant cluster-scoped resources.
+`kubectl exec` and `kubectl attach` are blocked in project namespaces by design — use `kubectl logs` and run administrative tasks as Jobs. Project administrators can define custom namespaced Roles within their authority — but a namespaced Role can never grant cluster-scoped resources, and the exec restriction is enforced by admission policy even for custom roles.
 
 ## Next steps
 

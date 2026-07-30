@@ -360,7 +360,8 @@ Workloads pick up rotated passwords on the next pod restart (or via your app's `
 #### Force a rotation now
 
 ```bash
-kubectl exec -n my-project deploy/orders-api -- kube-dc db credentials rotate my-postgres-app-rotated
+# from any workstation with your project kubeconfig (exec into pods is blocked in projects):
+kube-dc db credentials rotate my-postgres-app-rotated
 ```
 
 …or via the **Rotate** button in the Credentials tab. Manual rotation is audited and updates the projected Secret within ~15s.
