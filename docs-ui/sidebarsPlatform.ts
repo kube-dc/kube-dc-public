@@ -39,6 +39,7 @@ const sidebars: SidebarsConfig = {
         'windows-vm-setup',
         'sso-google-auth',
         'networking-external',
+        'tenant-vlan-attachment',
         'observability',
         'upgrading-management-cluster',
         'billing-plans-configuration',

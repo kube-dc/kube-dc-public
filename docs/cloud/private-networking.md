@@ -184,8 +184,24 @@ Projects are isolated by default. To communicate between projects:
 
 ---
 
+## Reaching Physical Hardware
+
+The VPC above is an overlay Kube-DC builds for you. If a workload has to reach
+equipment that already exists in the datacenter — a storage array, an appliance,
+anything that only speaks to its own subnet — your project can instead be given a
+second interface directly on that physical network segment.
+
+That is a **datacenter VLAN**, and it is handed to your organization by the
+platform administrator. Your default route stays on the VPC; the VLAN interface
+carries only traffic to that segment.
+
+See [Datacenter VLANs](datacenter-vlans.md).
+
+---
+
 ## Next Steps
 
+- [Datacenter VLANs](datacenter-vlans.md) — Attach a project to a physical network segment
 - [External & Floating IPs](public-floating-ips.md) — Manage EIPs and FIPs
 - [Service Exposure Guide](service-exposure.md) — Expose services with Gateway Routes and LoadBalancers
 - [How Networking Works](networking-overview.md) — High-level networking concepts

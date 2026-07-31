@@ -193,4 +193,5 @@ What are you exposing?
 
 - [External & Floating IPs](public-floating-ips.md) — Create and manage EIPs and FIPs
 - [VPC & Private Networking](private-networking.md) — Understand project isolation and subnets
+- [Datacenter VLANs](datacenter-vlans.md) — Put workloads on a physical network segment to reach your own hardware
 - [Service Exposure Guide](service-exposure.md) — Complete reference for all exposure methods with examples
