@@ -10,6 +10,7 @@ Kube-DC provides enterprise-grade networking through Kube-OVN and Envoy Gateway,
 | [Physical Layer](#physical-network-layer) | VLANs and provider bridges |
 | [OVN Architecture](#ovn-logical-network) | VPCs, subnets, routers |
 | [Service Exposure](#service-exposure) | LoadBalancers, Gateway Routes |
+| [Tenant VLAN attachment](#attaching-a-project-to-a-physical-vlan) | Putting a project on a datacenter VLAN |
 | [Envoy Gateway](#envoy-gateway) | HTTP/HTTPS/gRPC routing |
 
 ---
@@ -374,6 +375,23 @@ Kube-DC supports both networking approaches:
 - Requires coordination with physical network infrastructure
 - Physical switches handle data-plane forwarding
 - Cannot be isolated by VPCs as they are managed by physical switches
+
+### Attaching a project to a physical VLAN
+
+Underlay attachment is exposed to tenants as **datacenter VLANs**: an operator
+declares a physical segment, allocates it to an organization, and the
+organization's own administrator assigns it to one of their projects. Workloads
+in that project then attach directly to the physical wire while keeping their
+default route on the project VPC.
+
+Because the segment is underlay, the isolation guarantees above apply — traffic
+on that wire is bounded by the physical network, not by the project's VPC.
+
+- **Operators:** [Tenant VLAN attachment](tenant-vlan-attachment.md) — declaring
+  segments, allocating them to organizations, the assignment lifecycle, and the
+  node-readiness model.
+- **Tenants:** [Datacenter VLANs](/cloud/datacenter-vlans) — assigning an
+  allocated VLAN to a project and attaching pods and VMs to it.
 
 ## Network Security
 

@@ -22,7 +22,9 @@ There are two things to operate here, and keeping them apart is the whole point:
 ```
 
 The user-facing half of this is documented in
-[Datacenter VLANs](/cloud/datacenter-vlans) on the tenant docs.
+[Datacenter VLANs](/cloud/datacenter-vlans) on the tenant docs. For where this
+sits in the wider network design — overlay vs. underlay, VPCs, provider bridges
+— see [Networking Architecture](architecture-networking.md#attaching-a-project-to-a-physical-vlan).
 
 ---
 
