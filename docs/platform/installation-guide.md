@@ -726,9 +726,9 @@ kube-dc bootstrap init \
   --repo=$HOME/fleet-dc1 \
   --github-owner=my-org --github-repo=my-kube-dc-fleet \
   --object-storage-mode=rook-ceph-multi-node \
-  --ceph-node=master-1=/dev/nvme1n1 \
-  --ceph-node=master-2=/dev/nvme1n1 \
-  --ceph-node=master-3=/dev/nvme1n1 \
+  --ceph-node=master-1=nvme1n1 \
+  --ceph-node=master-2=nvme1n1 \
+  --ceph-node=master-3=nvme1n1 \
   --ssh-host=admin@203.0.113.10 \
   --set=EXT_NET_INTERFACE=eth1 \
   --set=EXT_NET_VLAN_ID=200 \
@@ -757,7 +757,7 @@ kube-dc bootstrap init \
 | `--starter-ref` | Immutable full OCI starter reference. Released CLIs default to their own version; pin it explicitly in controlled/reinstall procedures and never use `:latest` |
 | `--github-owner` / `--github-repo` | Where the fleet repo lives (auto-created in `new-repo` mode) |
 | `--object-storage-mode` | `rook-ceph-multi-node` (3+ OSDs, HA), `rook-ceph-local` (single OSD — lab), `rook-ceph-pvc`, `external-*`, or `disabled` |
-| `--ceph-node=NODE=DEVICE` | One raw block device per OSD node (repeat 3× for multi-node). **Re-used hardware: see the zap warning below** |
+| `--ceph-node=NODE=DEVICE` | One raw block device per OSD node (repeat 3× for multi-node). Device is the **bare name** as `lsblk` shows it (`nvme1n1`, `sdb`) — a `/dev/` prefix is stripped automatically since v0.5.13. **Re-used hardware: see the zap warning below** |
 | `--ssh-host` | Control-plane SSH target — enables kubeconfig auto-pull **and** NAT-topology detection (§3.2) |
 | `--set=KUBE_OVN_MASTER_NODES` | Control-plane **internal** IPs (comma-separated) — not emitted by the preset, always set it |
 | `--set=KUBE_OVN_GW_NODES` | Gateway/announcer **node names**. Required when an L2 VIP is inside `EXT_PUBLIC_CIDR`; the CLI derives one public anchor per listed node |
@@ -1328,10 +1328,13 @@ Open `https://console.example.com` for tenants and `https://admin.example.com`
 for platform administrators. The admin frontend is enabled by the greenfield
 scaffold; its Keycloak-backed pages become active after §3.5 finalization.
 
-Retrieve the demo organization admin password:
+Retrieve the admin password of the organization you created in
+[§3.6](#36-verify-the-front-door) (the manager writes a `realm-access`
+Secret into every Organization's namespace on reconcile — nothing named
+`demo-org` exists on a fresh install):
 
 ```bash
-kubectl get secret realm-access -n demo-org -o jsonpath='{.data.password}' | base64 -d
+kubectl get secret realm-access -n acme -o jsonpath='{.data.password}' | base64 -d; echo
 ```
 
 Log in with:
