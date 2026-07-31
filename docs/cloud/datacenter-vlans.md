@@ -174,12 +174,7 @@ section listing every VLAN this project holds. Tick the ones you want and the
 generated manifest gets the network and its matching interface, correctly paired —
 review it on the next step before creating.
 
-<!-- SCREENSHOT: Create VM → Step 1, scrolled to the "Datacenter VLANs" section
-     with at least one VLAN ticked.
-     Save as: docs/cloud/images/vlan-4-create-vm.png
-     Then replace this comment with:
-     ![Selecting a datacenter VLAN when creating a VM](images/vlan-4-create-vm.png)
--->
+![Selecting a datacenter VLAN when creating a VM](images/vlan-4-create-vm.png)
 
 The section only appears when this project actually holds a VLAN, and only lists
 VLANs that are ready to attach. Ticking more than one warns you that the VM will
