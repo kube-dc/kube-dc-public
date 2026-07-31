@@ -43,6 +43,14 @@ async function isRetinaPng(src: string): Promise<boolean> {
         return x >= RETINA_MIN_PPM;
       }
     }
+    // Fallback for captures whose export pipeline stripped the pHYs chunk:
+    // nothing 1x in these docs is anywhere near this wide (diagrams top out
+    // ~1400px), while full-window Retina captures are 2200px+. Screenshots
+    // smaller than this that lost their chunk must be re-stamped — see the
+    // repo notes.
+    const ihdrW =
+      (buf[16] << 24) | (buf[17] << 16) | (buf[18] << 8) | buf[19];
+    return ihdrW >= 2000;
   } catch {
     /* network/parse failure → treat as 1x, render natural */
   }
