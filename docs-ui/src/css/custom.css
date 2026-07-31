@@ -476,32 +476,43 @@ button[class*='toggleButton'] svg {
   background-color: rgba(255, 255, 255, 0.15) !important;
 }
 
-/* Documentation images - limit max width for better readability */
+/* ---------------------------------------------------------------------------
+   Documentation images
+   ---------------------------------------------------------------------------
+   Rule: an image renders at its NATURAL size, never wider than the content
+   column and never upscaled.
+
+   - Small captures (cards, modals, dropdowns, single rows) show 1:1 and look
+     "normal" with no author effort.
+   - Large captures (wide tables, whole-page screenshots) scale down to fill
+     the column, which keeps their text as legible as the layout allows.
+
+   This replaced a fixed `max-width: 450px` default plus a list of magic
+   alt-text keywords ("dashboard", "list", "diagram"…) that widened whichever
+   images happened to match. Wide screenshots whose alt text missed a keyword
+   were crushed to 450px and became unreadable. Do not reintroduce
+   size-by-alt-text: alt text is for accessibility, not layout.
+
+   Need an exception? Use a class, not a keyword:
+     <img className="screenshot-narrow" …/>   cap at 480px
+     <img className="screenshot-full"   …/>   ignore the column cap
+--------------------------------------------------------------------------- */
 article img {
-  max-width: 450px;
+  max-width: 100%;
   height: auto;
   display: block;
-  margin: 1rem 0;
+  margin: 1.25rem 0;
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-/* Larger images for dashboard screenshots and diagrams */
-article img[alt*="dashboard"],
-article img[alt*="Subscription"],
-article img[alt*="plans"],
-article img[alt*="Hierarchy"],
-article img[alt*="diagram"],
-article img[alt*="architecture"],
-article img[alt*="new project"],
-article img[alt*="ready"],
-article img[alt*="list"] {
-  max-width: 800px;
+/* Opt-in: hold a small decorative image back from filling the column. */
+article img.screenshot-narrow {
+  max-width: 480px;
 }
 
-/* Full-width images for UI screenshots */
-article img[alt*="workloads view"],
-article img[alt*="organization view"],
-article img[alt*="full-width"] {
-  max-width: 100%;
+/* Opt-in: let an exceptionally wide capture use every available pixel. */
+article img.screenshot-full {
+  max-width: none;
+  width: 100%;
 }
