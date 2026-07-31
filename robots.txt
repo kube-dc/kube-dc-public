@@ -1,0 +1,38 @@
+# Kube-DC Documentation - robots.txt
+# https://docs.kube-dc.com
+
+# Allow all standard search engines
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+# Allow AI/LLM crawlers
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
+# Default: allow all
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://docs.kube-dc.com/sitemap.xml

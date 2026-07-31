@@ -1,0 +1,1 @@
+"use strict";(globalThis.webpackChunkkube_dc_docs=globalThis.webpackChunkkube_dc_docs||[]).push([[4229],{64229(e,c,s){s.d(c,{createCynefinServices:()=>a.t});var a=s(63486);s(51400)}}]);

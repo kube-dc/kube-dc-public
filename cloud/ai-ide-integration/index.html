@@ -1,1895 +1,218 @@
-
 <!doctype html>
-<html lang="en" class="no-js">
-  <head>
-    
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width,initial-scale=1">
-      
-      
-      
-        <link rel="canonical" href="https://docs.kube-dc.com/cloud/ai-ide-integration/">
-      
-      
-      
-      
-        
-      
-      
-      <link rel="icon" href="../../images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.4">
-    
-    
-      
-        <title>AI IDE Integration - Kube-DC</title>
-      
-    
-    
-      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
-      
-        
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
-      
-      
+<html lang="en" dir="ltr" class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-ai-ide-integration" data-has-hydrated="false">
+<head>
+<meta charset="UTF-8">
+<meta name="generator" content="Docusaurus v3.10.2">
+<title data-rh="true">AI IDE Integration | Kube-DC Documentation</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://docs.kube-dc.com/img/kube-dc-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://docs.kube-dc.com/img/kube-dc-social-card.jpg"><meta data-rh="true" property="og:url" content="https://docs.kube-dc.com/cloud/ai-ide-integration"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" property="og:site_name" content="Kube-DC"><meta data-rh="true" name="keywords" content="Kube-DC, Kubernetes, data center, multi-tenancy, KubeVirt, virtual machines, managed Kubernetes, Kamaji, Cluster API, OVN, networking, object storage, billing, RBAC, SSO"><meta data-rh="true" property="og:type" content="website"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="AI IDE Integration | Kube-DC Documentation"><meta data-rh="true" name="description" content="Kube-DC now ships Agent Skills — structured knowledge packages that teach AI assistants how to generate correct Kube-DC manifests. Skills work alongside MCP servers and are supported by Claude Code, Cursor, and Windsurf. See Agent Skills Setup below."><meta data-rh="true" property="og:description" content="Kube-DC now ships Agent Skills — structured knowledge packages that teach AI assistants how to generate correct Kube-DC manifests. Skills work alongside MCP servers and are supported by Claude Code, Cursor, and Windsurf. See Agent Skills Setup below."><link data-rh="true" rel="icon" href="/images/favicon.png"><link data-rh="true" rel="canonical" href="https://docs.kube-dc.com/cloud/ai-ide-integration"><link data-rh="true" rel="alternate" href="https://docs.kube-dc.com/cloud/ai-ide-integration" hreflang="en"><link data-rh="true" rel="alternate" href="https://docs.kube-dc.com/cloud/ai-ide-integration" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"AI IDE Integration","item":"https://docs.kube-dc.com/cloud/ai-ide-integration"}]}</script><link rel="preconnect" href="https://www.google-analytics.com">
+<link rel="preconnect" href="https://www.googletagmanager.com">
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-XQ2DPWNG99"></script>
+<script>function gtag(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],gtag("js",new Date),gtag("config","G-XQ2DPWNG99",{anonymize_ip:!0})</script>
 
 
-    
-    
-      
-    
-    
-      
-        
-        
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
-        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
-      
-    
-    
-      <link rel="stylesheet" href="../../stylesheets/extra.css">
-    
-    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
-    
-      
-  
 
 
-  
-  
-    <script>"undefined"!=typeof __md_analytics&&__md_analytics()</script>
-  
 
-    
-    
-  </head>
-  
-  
-    
-    
-      
-    
-    
-    
-    
-    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo">
-  
-    
-    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
-    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
-    <label class="md-overlay" for="__drawer"></label>
-    <div data-md-component="skip">
-      
-        
-        <a href="#ai-ide-integration" class="md-skip">
-          Skip to content
-        </a>
-      
-    </div>
-    <div data-md-component="announce">
-      
-    </div>
-    
-    
-      
 
-<header class="md-header" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../.." title="Kube-DC" class="md-header__button md-logo" aria-label="Kube-DC" data-md-component="logo">
-      
-  <img src="../../images/logo.png" alt="logo">
 
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            Kube-DC
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              AI IDE Integration
-            
-          </span>
-        </div>
-      </div>
-    </div>
-    
-      
-        <form class="md-header__option" data-md-component="palette">
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
-    
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17 6H7c-3.31 0-6 2.69-6 6s2.69 6 6 6h10c3.31 0 6-2.69 6-6s-2.69-6-6-6m0 10H7c-2.21 0-4-1.79-4-4s1.79-4 4-4h10c2.21 0 4 1.79 4 4s-1.79 4-4 4M7 9c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3"/></svg>
-      </label>
-    
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
-    
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17 7H7a5 5 0 0 0-5 5 5 5 0 0 0 5 5h10a5 5 0 0 0 5-5 5 5 0 0 0-5-5m0 8a3 3 0 0 1-3-3 3 3 0 0 1 3-3 3 3 0 0 1 3 3 3 3 0 0 1-3 3"/></svg>
-      </label>
-    
-  
-</form>
-      
-    
-    
-      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
-    
-    
-    
-      
-      
-        <label class="md-header__button md-icon" for="__search">
-          
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
-        </label>
-        <div class="md-search" data-md-component="search" role="dialog">
-  <label class="md-search__overlay" for="__search"></label>
-  <div class="md-search__inner" role="search">
-    <form class="md-search__form" name="search">
-      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
-      <label class="md-search__icon md-icon" for="__search">
-        
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
-        
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
-      </label>
-      <nav class="md-search__options" aria-label="Search">
-        
-        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
-          
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-        </button>
-      </nav>
-      
-    </form>
-    <div class="md-search__output">
-      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
-        <div class="md-search-result" data-md-component="search-result">
-          <div class="md-search-result__meta">
-            Initializing search
-          </div>
-          <ol class="md-search-result__list" role="presentation"></ol>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-      
-    
-    
-      <div class="md-header__source">
-        <a href="https://github.com/kube-dc/kube-dc-public" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
-    
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    kube-dc/kube-dc-public
-  </div>
-</a>
-      </div>
-    
-  </nav>
-  
-</header>
-    
-    <div class="md-container" data-md-component="container">
-      
-      
-        
-          
-            
-<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
-  <div class="md-grid">
-    <ul class="md-tabs__list">
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../.." class="md-tabs__link">
-          
-  
-  
-  Introduction
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../quickstart-overview/" class="md-tabs__link">
-          
-  
-  
-  Quick Start
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../architecture-overview/" class="md-tabs__link">
-          
-  
-  
-  Architecture & Concepts
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../tutorial-virtual-machines/" class="md-tabs__link">
-          
-  
-  
-  User Guide
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../project_resources/" class="md-tabs__link">
-          
-  
-  
-  Reference
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    <li class="md-tabs__item">
-      <a href="../../community-support/" class="md-tabs__link">
-        
-  
-  
-    
-  
-  Community & Support
-
-      </a>
-    </li>
-  
-
-      
-    </ul>
-  </div>
-</nav>
-          
-        
-      
-      <main class="md-main" data-md-component="main">
-        <div class="md-main__inner md-grid">
-          
-            
-              
-              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
-                <div class="md-sidebar__scrollwrap">
-                  <div class="md-sidebar__inner">
-                    
-
-
-  
-
-
-<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
-  <label class="md-nav__title" for="__drawer">
-    <a href="../.." title="Kube-DC" class="md-nav__button md-logo" aria-label="Kube-DC" data-md-component="logo">
-      
-  <img src="../../images/logo.png" alt="logo">
-
-    </a>
-    Kube-DC
-  </label>
-  
-    <div class="md-nav__source">
-      <a href="https://github.com/kube-dc/kube-dc-public" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
-    
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    kube-dc/kube-dc-public
-  </div>
-</a>
-    </div>
-  
-  <ul class="md-nav__list" data-md-scrollfix>
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
-        
-          
-          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Introduction
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_1">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Introduction
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../.." class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    What Is Kube-DC?
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../core-features/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Core Features
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
-        
-          
-          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Quick Start
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Quick Start
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../quickstart-overview/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Overview
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../quickstart-hetzner/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Deployment on Hetzner
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
-        
-          
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Architecture & Concepts
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_3">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Architecture & Concepts
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../architecture-overview/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Overall Architecture
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../architecture-multi-tenancy/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Multi-Tenancy & RBAC
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../architecture-virtualization/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Virtualization (KubeVirt)
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../architecture-networking/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Networking (Kube-OVN, VLANs)
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
-        
-          
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    User Guide
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_4">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    User Guide
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../tutorial-virtual-machines/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Deploying VMs & Containers
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../tutorial-user-groups/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    User & Group Management
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../tutorial-service-exposure/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Service Exposure Guide
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../tutorial-networking-external/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Additional External Networks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../tutorial-kubeconfig/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Configuring Kubeconfig for Local Access
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../tutorial-windows-vm/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Windows VM Setup
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../tutorial-sso-google-auth/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Google SSO Authentication
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../managing-os-images/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Managing OS Images
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
-        
-          
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Reference
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Reference
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../project_resources/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Project Resources
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../community-support/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Community & Support
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-  </ul>
-</nav>
-                  </div>
-                </div>
-              </div>
-            
-            
-              
-              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
-                <div class="md-sidebar__scrollwrap">
-                  <div class="md-sidebar__inner">
-                    
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#how-it-works-mcp-and-kubernetes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        How It Works: MCP and Kubernetes
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#step-0-get-your-kube-dc-kubeconfig" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Step 0: Get Your Kube-DC Kubeconfig
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#claude-code" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Claude Code
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Claude Code">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#install-the-mcp-server" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Install the MCP server
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#example-workflows" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Example workflows
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#non-destructive-mode" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Non-destructive mode
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#cursor" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cursor
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Cursor">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#configure-the-mcp-server" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Configure the MCP server
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Usage
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#tip-add-a-cursorrules-file" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tip: Add a .cursorrules file
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#windsurf" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Windsurf
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Windsurf">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#configure-the-mcp-server_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Configure the MCP server
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#usage_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Usage
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#tip-add-a-windsurfmd-file" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tip: Add a WINDSURF.md file
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#vs-code" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        VS Code
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="VS Code">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#essential-extensions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Essential Extensions
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#mcp-with-vs-code-github-copilot" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        MCP with VS Code + GitHub Copilot
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#alternative-red-hat-kubernetes-mcp-server" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Alternative: Red Hat Kubernetes MCP Server
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#mcp-server-capabilities" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        MCP Server Capabilities
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#practical-kube-dc-workflows" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Practical Kube-DC Workflows
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Practical Kube-DC Workflows">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#deploying-an-application" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Deploying an application
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#debugging-a-failing-deployment" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Debugging a failing deployment
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#quota-aware-manifest-generation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Quota-aware manifest generation
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#checking-organization-resource-usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Checking organization resource usage
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#security-considerations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Security Considerations
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#further-reading" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Further Reading
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-                  </div>
-                </div>
-              </div>
-            
-          
-          
-            <div class="md-content" data-md-component="content">
-              
-              <article class="md-content__inner md-typeset">
-                
-                  
-
-
-  
-  
-
-
-<h1 id="ai-ide-integration">AI IDE Integration<a class="headerlink" href="#ai-ide-integration" title="Permanent link"> ¶</a></h1>
-<p>:::caution Work in Progress
-This page is actively being expanded. Current content covers MCP server setup and core workflows. Sections on advanced multi-cluster setups and Windsurf-specific features are still being written.
-:::</p>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Kube-DC","applicationCategory":"Cloud Infrastructure","operatingSystem":"Kubernetes","description":"An open-source platform that transforms Kubernetes into a full-featured data center with multi-tenancy, virtual machines, managed Kubernetes clusters, networking, storage, and billing.","url":"https://docs.kube-dc.com","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"featureList":["Multi-tenant organization management","Virtual machine lifecycle management via KubeVirt","Managed Kubernetes clusters (Kamaji + Cluster API)","Managed databases (PostgreSQL, MariaDB)","Public and floating IP management (OVN)","S3-compatible object storage (Rook Ceph)","Block storage with persistent volumes","Backup and restore via Velero","SSO integration (Keycloak OIDC)","Hierarchical RBAC with project isolation","Billing plans and resource quotas","Web console and CLI access"],"sourceOrganization":{"@type":"Organization","name":"Shalb","url":"https://shalb.com"}}</script><link rel="stylesheet" href="/assets/css/styles.a6ee054f.css">
+<script src="/assets/js/runtime~main.bfdb2b83.js" defer="defer"></script>
+<script src="/assets/js/main.5c65ee26.js" defer="defer"></script>
+</head>
+<body>
+<svg style="display: none;"><defs>
+<symbol id="theme-svg-external-link" viewBox="0 0 24 24"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||"light"),document.documentElement.setAttribute("data-theme-choice",t||"light")}(),function(){try{const c=new URLSearchParams(window.location.search).entries();for(var[t,e]of c)if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id="__docusaurus"><link rel="preload" as="image" href="/img/kube-dc-logo.png"><div role="region" aria-label="Skip to main content"><a class="skipToContent_fXgn" href="#__docusaurus_skipToContent_fallback">Skip to main content</a></div><nav aria-label="Main" class="theme-layout-navbar navbar navbar--fixed-top"><div class="navbar__inner"><div class="theme-layout-navbar-left navbar__items"><button aria-label="Toggle navigation bar" aria-expanded="false" class="navbar__toggle clean-btn" type="button"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="2" d="M4 7h22M4 15h22M4 23h22"></path></svg></button><a class="navbar__brand" href="/"><div class="navbar__logo"><img src="/img/kube-dc-logo.png" alt="Kube-DC Logo" class="themedComponent_mlkZ themedComponent--light_NVdE"><img src="/img/kube-dc-logo.png" alt="Kube-DC Logo" class="themedComponent_mlkZ themedComponent--dark_xIcU"></div><b class="navbar__title text--truncate">Kube-DC</b></a><a aria-current="page" class="navbar__item navbar__link navbar__link--active" href="/cloud/">Cloud Guide</a><a class="navbar__item navbar__link" href="/platform/">Platform Docs</a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><a href="https://github.com/kube-dc/kube-dc-public" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a><div class="toggle_vylO colorModeToggle_DEke"><button class="clean-btn toggleButton_gllP toggleButtonDisabled_aARS" type="button" disabled="" title="system mode" aria-label="Switch between dark and light mode (currently system mode)"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_g3eP lightToggleIcon_pyhR"><path fill="currentColor" d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_g3eP darkToggleIcon_wfgR"><path fill="currentColor" d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_g3eP systemToggleIcon_QzmC"><path fill="currentColor" d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"></path></svg></button></div><div class="navbarSearchContainer_Bca1"><div class="navbar__search searchBarContainer_NW3z" dir="ltr"><input placeholder="Search" aria-label="Search" class="navbar__search-input searchInput_YFbd" value=""><div class="loadingRing_RJI3 searchBarLoadingRing_YnHq"><div></div><div></div><div></div><div></div></div></div></div></div></div><div role="presentation" class="navbar-sidebar__backdrop"></div></nav><div id="__docusaurus_skipToContent_fallback" class="theme-layout-main main-wrapper mainWrapper_z2l0"><div class="docsWrapper_hBAB"><button aria-label="Scroll back to top" class="clean-btn theme-back-to-top-button backToTopButton_sjWU" type="button"></button><div class="docRoot_UBD9"><aside class="theme-doc-sidebar-container docSidebarContainer_YfHR"><div class="sidebarViewport_aRkj"><div class="sidebar_njMd"><nav aria-label="Docs sidebar" class="menu thin-scrollbar menu_SIkG"><ul class="theme-doc-sidebar-menu menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/cloud/"><span class="linkLabel_WmDU">Kube-DC Cloud</span></a></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret menu__link--active" role="button" aria-expanded="true" href="/cloud/what-is-kube-dc"><span class="categoryLinkLabel_W154">Getting Started</span></a></div><ul class="menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/cloud/what-is-kube-dc"><span class="linkLabel_WmDU">What is Kube-DC?</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/cloud/core-concepts"><span class="linkLabel_WmDU">Core Concepts</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/cloud/core-features"><span class="linkLabel_WmDU">Platform Capabilities</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/cloud/sign-up-login"><span class="linkLabel_WmDU">Sign Up &amp; Login</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/cloud/dashboard-overview"><span class="linkLabel_WmDU">Dashboard Overview</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/cloud/first-project"><span class="linkLabel_WmDU">Creating Your First Project</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link menu__link--active" aria-current="page" tabindex="0" href="/cloud/ai-ide-integration"><span class="linkLabel_WmDU">AI IDE Integration</span></a></li></ul></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="true" href="/cloud/kubernetes-projects"><span class="categoryLinkLabel_W154">Projects</span></a></div><ul class="menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/cloud/kubernetes-projects"><span class="linkLabel_WmDU">Overview</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/cloud/cli-kubeconfig"><span class="linkLabel_WmDU">Connect with a Project Kubeconfig</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/cloud/security-restrictions"><span class="linkLabel_WmDU">Project Compatibility and Restrictions</span></a></li></ul></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="true" href="/cloud/deploy-first-app"><span class="categoryLinkLabel_W154">Deploying Applications</span></a></div><ul class="menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/cloud/deploy-first-app"><span class="linkLabel_WmDU">Deploy Your First Application</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/cloud/deploy-wordpress-stack"><span class="linkLabel_WmDU">Deploy a Full WordPress Stack</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/cloud/gpu-shared-workloads"><span class="linkLabel_WmDU">Run Shared GPU Workloads</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/cloud/gitops"><span class="linkLabel_WmDU">GitOps &amp; Automation</span></a></li></ul></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/cloud/provisioning-cluster"><span class="categoryLinkLabel_W154">Managed Kubernetes Clusters</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/cloud/creating-vm"><span class="categoryLinkLabel_W154">Virtual Machines</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/cloud/networking-overview"><span class="categoryLinkLabel_W154">Networking</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/cloud/managed-databases"><span class="categoryLinkLabel_W154">Managed Databases</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/cloud/block-storage"><span class="categoryLinkLabel_W154">Storage &amp; Data</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/cloud/secrets-manager"><span class="categoryLinkLabel_W154">Security &amp; Identity</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/cloud/team-management"><span class="categoryLinkLabel_W154">Account Management &amp; Billing</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/cloud/examples"><span class="categoryLinkLabel_W154">Examples &amp; Tutorials</span></a></div></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/cloud/community-support"><span class="linkLabel_WmDU">Community &amp; Support</span></a></li></ul></nav></div></div></aside><main class="docMainContainer_TBSr"><div class="container padding-top--md padding-bottom--lg"><div class="row"><div class="col docItemCol_z5aJ"><div class="docItemContainer_c0TR"><article><div style="display:flex;align-items:center;justify-content:space-between"><nav class="theme-doc-breadcrumbs breadcrumbsContainer_Z_bl" aria-label="Breadcrumbs"><ul class="breadcrumbs"><li class="breadcrumbs__item"><a aria-label="Home page" class="breadcrumbs__link" href="/"><svg viewBox="0 0 24 24" class="breadcrumbHomeIcon_YNFT"><path d="M10 19v-5h4v5c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-7h1.7c.46 0 .68-.57.33-.87L12.67 3.6c-.38-.34-.96-.34-1.34 0l-8.36 7.53c-.34.3-.13.87.33.87H5v7c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z" fill="currentColor"></path></svg></a></li><li class="breadcrumbs__item"><span class="breadcrumbs__link">Getting Started</span></li><li class="breadcrumbs__item breadcrumbs__item--active"><span class="breadcrumbs__link">AI IDE Integration</span></li></ul></nav><div></div></div><div class="tocCollapsible_ETCw theme-doc-toc-mobile tocMobile_ITEo"><button type="button" class="clean-btn tocCollapsibleButton_TO0P">On this page</button></div><div class="theme-doc-markdown markdown"><header><h1>AI IDE Integration</h1></header>
+<div class="theme-admonition theme-admonition-tip admonition_xJq3 alert alert--success"><div class="admonitionHeading_Gvgb"><span class="admonitionIcon_Rf37"><svg viewBox="0 0 12 16"><path fill-rule="evenodd" d="M6.5 0C3.48 0 1 2.19 1 5c0 .92.55 2.25 1 3 1.34 2.25 1.78 2.78 2 4v1h5v-1c.22-1.22.66-1.75 2-4 .45-.75 1-2.08 1-3 0-2.81-2.48-5-5.5-5zm3.64 7.48c-.25.44-.47.8-.67 1.11-.86 1.41-1.25 2.06-1.45 3.23-.02.05-.02.11-.02.17H5c0-.06 0-.13-.02-.17-.2-1.17-.59-1.83-1.45-3.23-.2-.31-.42-.67-.67-1.11C2.44 6.78 2 5.65 2 5c0-2.2 2.02-4 4.5-4 1.22 0 2.36.42 3.22 1.19C10.55 2.94 11 3.94 11 5c0 .66-.44 1.78-.86 2.48zM4 14h5c-.23 1.14-1.3 2-2.5 2s-2.27-.86-2.5-2z"></path></svg></span>New: Agent Skills</div><div class="admonitionContent_BuS1"><p>Kube-DC now ships <strong>Agent Skills</strong> — structured knowledge packages that teach AI assistants how to generate correct Kube-DC manifests. Skills work alongside MCP servers and are supported by Claude Code, Cursor, and Windsurf. See <a href="#agent-skills-setup" class="">Agent Skills Setup</a> below.</p></div></div>
 <p>Modern AI coding assistants — Claude Code, Cursor, Windsurf, and VS Code with Copilot — can connect directly to your Kube-DC cluster via the <strong>Model Context Protocol (MCP)</strong>. Once connected, you can manage workloads, debug pods, apply manifests, and inspect logs entirely through natural language, without leaving your editor.</p>
-<hr />
-<h2 id="how-it-works-mcp-and-kubernetes">How It Works: MCP and Kubernetes<a class="headerlink" href="#how-it-works-mcp-and-kubernetes" title="Permanent link"> ¶</a></h2>
+<hr>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="how-it-works-mcp-and-kubernetes">How It Works: MCP and Kubernetes<a href="#how-it-works-mcp-and-kubernetes" class="hash-link" aria-label="Direct link to How It Works: MCP and Kubernetes" title="Direct link to How It Works: MCP and Kubernetes" translate="no">​</a></h2>
 <p>The <strong>Model Context Protocol (MCP)</strong> is an open standard that gives AI assistants structured access to external tools and data sources. A Kubernetes MCP server acts as a bridge between your AI IDE and your cluster:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>AI IDE (Claude/Cursor/Windsurf)
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>         │
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>         │  MCP protocol
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>         ▼
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>Kubernetes MCP Server
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>         │
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>         │  Kubernetes API
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>         ▼
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>Kube-DC Cluster (via kubeconfig)
-</span></code></pre></div>
-<p>The AI can then answer questions like <em>"Why is my deployment not scaling?"</em> or execute commands like <em>"Scale the nginx deployment to 3 replicas in project acme-dev"</em> with full awareness of your cluster state.</p>
-<hr />
-<h2 id="step-0-get-your-kube-dc-kubeconfig">Step 0: Get Your Kube-DC Kubeconfig<a class="headerlink" href="#step-0-get-your-kube-dc-kubeconfig" title="Permanent link"> ¶</a></h2>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">AI IDE (Claude/Cursor/Windsurf)</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">         │</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">         │  MCP protocol</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">         ▼</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">Kubernetes MCP Server</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">         │</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">         │  Kubernetes API</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">         ▼</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">Kube-DC Cluster (via kubeconfig)</span><br></div></code></pre></div></div>
+<p>The AI can then answer questions like <em>&quot;Why is my deployment not scaling?&quot;</em> or execute commands like <em>&quot;Scale the nginx deployment to 3 replicas in project acme-dev&quot;</em> with full awareness of your cluster state.</p>
+<hr>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="agent-skills-setup">Agent Skills Setup<a href="#agent-skills-setup" class="hash-link" aria-label="Direct link to Agent Skills Setup" title="Direct link to Agent Skills Setup" translate="no">​</a></h2>
+<p>Generic Kubernetes MCP servers let AI assistants run <code>kubectl</code> — but they don&#x27;t know about Kube-DC CRDs, annotations, naming conventions, or multi-tenant constraints. <strong>Agent Skills</strong> bridge this gap by providing structured, Kube-DC-specific knowledge that AI assistants load automatically.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="what-skills-provide">What Skills Provide<a href="#what-skills-provide" class="hash-link" aria-label="Direct link to What Skills Provide" title="Direct link to What Skills Provide" translate="no">​</a></h3>
+<table><thead><tr><th>Without Skills</th><th>With Skills</th></tr></thead><tbody><tr><td>Agent guesses CRD schemas</td><td>Agent knows exact <code>apiVersion</code>, fields, and defaults</td></tr><tr><td>Wrong annotations</td><td>Correct <code>service.nlb.kube-dc.com/*</code> annotations</td></tr><tr><td>Missing <code>qemu-guest-agent</code> in VMs</td><td>Always included (safety rule)</td></tr><tr><td>Wrong namespace patterns</td><td>Correct <code>{org}-{project}</code> naming</td></tr><tr><td>No awareness of exposure paths</td><td>Knows Gateway Route vs Direct EIP decision</td></tr><tr><td>Generic kubectl advice</td><td>Kube-DC-specific templates and workflows</td></tr></tbody></table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="available-skills">Available Skills<a href="#available-skills" class="hash-link" aria-label="Direct link to Available Skills" title="Direct link to Available Skills" translate="no">​</a></h3>
+<table><thead><tr><th>Skill</th><th>What It Does</th></tr></thead><tbody><tr><td><code>create-project</code></td><td>Create a project with VPC networking and correct network type</td></tr><tr><td><code>deploy-app</code></td><td>Deploy a containerized app with optional database and HTTPS</td></tr><tr><td><code>create-vm</code></td><td>Provision a VM with SSH access, cloud-init, and guest agent</td></tr><tr><td><code>create-database</code></td><td>Create managed PostgreSQL/MariaDB with connection patterns</td></tr><tr><td><code>expose-service</code></td><td>Expose via Gateway Route (HTTPS) or Direct EIP (TCP/UDP)</td></tr><tr><td><code>manage-cluster</code></td><td>Scale workers, upgrade K8s version, access kubeconfig</td></tr><tr><td><code>manage-networking</code></td><td>Create EIPs, FIPs, understand VPC networking</td></tr><tr><td><code>manage-storage</code></td><td>S3 buckets (OBC), DataVolumes, PVCs</td></tr><tr><td><code>manage-access</code></td><td>OrganizationGroup RBAC and role management</td></tr><tr><td><code>manage-secrets</code></td><td>Project secrets backed by OpenBao, synced to Kubernetes Secrets</td></tr><tr><td><code>manage-certificates</code></td><td>x509 certificates from the Org private CA or public ACME</td></tr><tr><td><code>manage-kms</code></td><td>Per-project encryption keys + envelope encryption helpers (Go/Python)</td></tr><tr><td><code>check-quota</code></td><td>Inspect org + project resource quotas before deploying</td></tr><tr><td><code>ssh-into-vm</code></td><td>SSH into a VM using the project&#x27;s auto-generated keypair</td></tr><tr><td><code>use-kube-dc-cli</code></td><td>Authentication, context switching, and namespace management via kube-dc CLI</td></tr></tbody></table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="install-skills">Install Skills<a href="#install-skills" class="hash-link" aria-label="Direct link to Install Skills" title="Direct link to Install Skills" translate="no">​</a></h3>
+<p>There are three ways to add Kube-DC skills to your IDE, depending on your setup:</p>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id="option-a-npx-skills-add-recommended">Option A: <code>npx skills add</code> (Recommended)<a href="#option-a-npx-skills-add-recommended" class="hash-link" aria-label="Direct link to option-a-npx-skills-add-recommended" title="Direct link to option-a-npx-skills-add-recommended" translate="no">​</a></h4>
+<p>The standard way to install agent skills — one command installs to the right directory for your IDE. Skills are available in <strong>any project</strong> you open.</p>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token comment" style="color:#999988;font-style:italic"># Install all Kube-DC skills globally (available in every workspace)</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">npx skills </span><span class="token function" style="color:#d73a49">add</span><span class="token plain"> kube-dc/kube-dc-public </span><span class="token parameter variable" style="color:#36acaa">-g</span><span class="token plain"> </span><span class="token parameter variable" style="color:#36acaa">-y</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain" style="display:inline-block"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token comment" style="color:#999988;font-style:italic"># Or install specific skills only</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">npx skills </span><span class="token function" style="color:#d73a49">add</span><span class="token plain"> kube-dc/kube-dc-public </span><span class="token parameter variable" style="color:#36acaa">--skill</span><span class="token plain"> create-vm </span><span class="token parameter variable" style="color:#36acaa">--skill</span><span class="token plain"> deploy-app </span><span class="token parameter variable" style="color:#36acaa">-g</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain" style="display:inline-block"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token comment" style="color:#999988;font-style:italic"># Or install to current workspace only (without -g)</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">npx skills </span><span class="token function" style="color:#d73a49">add</span><span class="token plain"> kube-dc/kube-dc-public </span><span class="token parameter variable" style="color:#36acaa">-y</span><br></div></code></pre></div></div>
+<p>The CLI auto-detects your installed IDEs (Claude Code, Cursor, Windsurf, Codex, Copilot, and <a href="https://github.com/vercel-labs/skills#supported-agents" target="_blank" rel="noopener noreferrer" class="">40+ more</a>) and installs skills to the correct directory.</p>
+<p>With <code>-g</code> (global), skills are physically stored once under <code>~/.agents/skills/</code> and the installer creates per-IDE symlinks so each tool finds them at its expected location:</p>
+<table><thead><tr><th>IDE</th><th>Per-IDE path (symlink)</th><th>Workspace install path</th></tr></thead><tbody><tr><td>Claude Code</td><td><code>~/.claude/skills/&lt;name&gt;</code> → <code>~/.agents/skills/&lt;name&gt;</code></td><td><code>.claude/skills/</code></td></tr><tr><td>Cursor</td><td><code>~/.cursor/skills/&lt;name&gt;</code> → <code>~/.agents/skills/&lt;name&gt;</code></td><td><code>.agents/skills/</code></td></tr><tr><td>Windsurf</td><td><code>~/.codeium/windsurf/skills/&lt;name&gt;</code> → <code>~/.agents/skills/&lt;name&gt;</code></td><td><code>.windsurf/skills/</code></td></tr><tr><td>Codex</td><td><code>~/.codex/skills/&lt;name&gt;</code> → <code>~/.agents/skills/&lt;name&gt;</code></td><td><code>.agents/skills/</code></td></tr><tr><td>Copilot</td><td><code>~/.copilot/skills/&lt;name&gt;</code> → <code>~/.agents/skills/&lt;name&gt;</code></td><td><code>.agents/skills/</code></td></tr></tbody></table>
+<p>To list installed skills or inspect a SKILL.md, walk through the symlink in either direction — <code>ls -L ~/.claude/skills/</code> and <code>ls ~/.agents/skills/</code> both show the same set. Workspace installs (omit <code>-g</code>) drop real files into the workspace path, no symlinks.</p>
+<p>Each skill&#x27;s <code>name</code> and <code>description</code> appear in the agent&#x27;s context at startup (~100 tokens per skill). The full SKILL.md and supporting templates are loaded on demand when the agent detects a matching task.</p>
+<div class="theme-admonition theme-admonition-tip admonition_xJq3 alert alert--success"><div class="admonitionHeading_Gvgb"><span class="admonitionIcon_Rf37"><svg viewBox="0 0 12 16"><path fill-rule="evenodd" d="M6.5 0C3.48 0 1 2.19 1 5c0 .92.55 2.25 1 3 1.34 2.25 1.78 2.78 2 4v1h5v-1c.22-1.22.66-1.75 2-4 .45-.75 1-2.08 1-3 0-2.81-2.48-5-5.5-5zm3.64 7.48c-.25.44-.47.8-.67 1.11-.86 1.41-1.25 2.06-1.45 3.23-.02.05-.02.11-.02.17H5c0-.06 0-.13-.02-.17-.2-1.17-.59-1.83-1.45-3.23-.2-.31-.42-.67-.67-1.11C2.44 6.78 2 5.65 2 5c0-2.2 2.02-4 4.5-4 1.22 0 2.36.42 3.22 1.19C10.55 2.94 11 3.94 11 5c0 .66-.44 1.78-.86 2.48zM4 14h5c-.23 1.14-1.3 2-2.5 2s-2.27-.86-2.5-2z"></path></svg></span>tip</div><div class="admonitionContent_BuS1"><p>Use <code>npx skills add kube-dc/kube-dc-public --list</code> to see all available skills before installing.</p></div></div>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id="option-b-system-prompt--ide-settings-lightweight">Option B: System Prompt / IDE Settings (Lightweight)<a href="#option-b-system-prompt--ide-settings-lightweight" class="hash-link" aria-label="Direct link to Option B: System Prompt / IDE Settings (Lightweight)" title="Direct link to Option B: System Prompt / IDE Settings (Lightweight)" translate="no">​</a></h4>
+<p>If you can&#x27;t install skills globally, you can paste the Kube-DC context into your IDE&#x27;s system prompt settings. Copy the content of <code>_agent-instructions.md</code> (or <code>AGENTS.md</code>):</p>
+<table><thead><tr><th>IDE</th><th>Where to Paste</th></tr></thead><tbody><tr><td><strong>Claude Code</strong></td><td>Settings → Custom Instructions (or use <code>CLAUDE.md</code> in any project)</td></tr><tr><td><strong>Cursor</strong></td><td>Settings → Rules for AI → User Rules</td></tr><tr><td><strong>Windsurf</strong></td><td>Settings → AI Rules → Global Rules</td></tr><tr><td><strong>VS Code + Copilot</strong></td><td>Settings → GitHub Copilot → Instructions</td></tr><tr><td><strong>Codex</strong></td><td>Workspace <code>AGENTS.md</code> (no global setting)</td></tr></tbody></table>
+<p>The <code>_agent-instructions.md</code> file (~150 lines) contains CRD tables, naming conventions, safety rules, and service exposure patterns — compact enough to fit in any system prompt field.</p>
+<div class="theme-admonition theme-admonition-note admonition_xJq3 alert alert--secondary"><div class="admonitionHeading_Gvgb"><span class="admonitionIcon_Rf37"><svg viewBox="0 0 14 16"><path fill-rule="evenodd" d="M6.3 5.69a.942.942 0 0 1-.28-.7c0-.28.09-.52.28-.7.19-.18.42-.28.7-.28.28 0 .52.09.7.28.18.19.28.42.28.7 0 .28-.09.52-.28.7a1 1 0 0 1-.7.3c-.28 0-.52-.11-.7-.3zM8 7.99c-.02-.25-.11-.48-.31-.69-.2-.19-.42-.3-.69-.31H6c-.27.02-.48.13-.69.31-.2.2-.3.44-.31.69h1v3c.02.27.11.5.31.69.2.2.42.31.69.31h1c.27 0 .48-.11.69-.31.2-.19.3-.42.31-.69H8V7.98v.01zM7 2.3c-3.14 0-5.7 2.54-5.7 5.68 0 3.14 2.56 5.7 5.7 5.7s5.7-2.55 5.7-5.7c0-3.15-2.56-5.69-5.7-5.69v.01zM7 .98c3.86 0 7 3.14 7 7s-3.14 7-7 7-7-3.12-7-7 3.14-7 7-7z"></path></svg></span>Limitations</div><div class="admonitionContent_BuS1"><p>The system prompt provides <strong>awareness</strong> (correct namespaces, annotations, safety rules) but not the detailed step-by-step procedures and YAML templates that skills include. For full manifest generation capability, use <strong>Option A</strong> (global skills install).</p><table><thead><tr><th>Capability</th><th style="text-align:center">Option A (Skills)</th><th style="text-align:center">Option B (System Prompt)</th></tr></thead><tbody><tr><td>CRD reference &amp; naming</td><td style="text-align:center">✅</td><td style="text-align:center">✅</td></tr><tr><td>Safety rules &amp; constraints</td><td style="text-align:center">✅</td><td style="text-align:center">✅</td></tr><tr><td>Service exposure decision guide</td><td style="text-align:center">✅</td><td style="text-align:center">✅</td></tr><tr><td>Step-by-step procedures</td><td style="text-align:center">✅</td><td style="text-align:center">❌</td></tr><tr><td>Ready-to-use YAML templates</td><td style="text-align:center">✅</td><td style="text-align:center">❌</td></tr><tr><td>DB connection patterns</td><td style="text-align:center">✅</td><td style="text-align:center">❌</td></tr><tr><td>Cluster scaling/upgrade guides</td><td style="text-align:center">✅</td><td style="text-align:center">❌</td></tr><tr><td>Windsurf workflows (<code>/deploy-wordpress</code>)</td><td style="text-align:center">✅</td><td style="text-align:center">❌</td></tr></tbody></table></div></div>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id="option-c-workspace-install">Option C: Workspace Install<a href="#option-c-workspace-install" class="hash-link" aria-label="Direct link to Option C: Workspace Install" title="Direct link to Option C: Workspace Install" translate="no">​</a></h4>
+<p>If you want the full package (skills + docs + examples + workflows) in a specific project:</p>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token function" style="color:#d73a49">git</span><span class="token plain"> clone https://github.com/kube-dc/kube-dc-public.git</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token builtin class-name">cd</span><span class="token plain"> kube-dc-public</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token comment" style="color:#999988;font-style:italic"># Open this folder in your IDE</span><br></div></code></pre></div></div>
+<p>Or add it as a submodule in your own repo:</p>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token builtin class-name">cd</span><span class="token plain"> my-project</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token function" style="color:#d73a49">git</span><span class="token plain"> submodule </span><span class="token function" style="color:#d73a49">add</span><span class="token plain"> https://github.com/kube-dc/kube-dc-public.git .kube-dc</span><br></div></code></pre></div></div>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="repository-structure">Repository Structure<a href="#repository-structure" class="hash-link" aria-label="Direct link to Repository Structure" title="Direct link to Repository Structure" translate="no">​</a></h3>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">kube-dc-public/</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">├── AGENTS.md                          # Universal instructions (all IDEs)</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">├── CLAUDE.md                          # Claude Code instructions</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">├── _agent-instructions.md             # Canonical source (edit here)</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">├── skills/                            # 10 workflow-grouped skills (npx skills discovers this)</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">│   ├── create-project/</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">│   ├── deploy-app/</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">│   ├── create-vm/</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">│   ├── create-database/</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">│   ├── expose-service/</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">│   ├── manage-cluster/</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">│   ├── manage-networking/</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">│   ├── manage-storage/</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">│   ├── manage-access/</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">│   └── ssh-into-vm/</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">├── knowledge/</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">│   └── index.md                       # Master catalog of CRDs, skills, docs</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">├── .windsurf/</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">│   ├── rules/kube-dc-conventions.md   # Always-on safety rules</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">│   ├── skills/ → skills/              # Symlink</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">│   └── workflows/                     # /deploy-wordpress, /setup-project</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">├── .claude/</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">│   └── skills/ → skills/              # Symlink</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">├── .cursor/</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">│   └── rules/kube-dc-conventions/     # Always-on safety rules</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">├── docs/                              # Full documentation</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">└── examples/                          # Ready-to-use YAML manifests</span><br></div></code></pre></div></div>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="what-each-ide-discovers">What Each IDE Discovers<a href="#what-each-ide-discovers" class="hash-link" aria-label="Direct link to What Each IDE Discovers" title="Direct link to What Each IDE Discovers" translate="no">​</a></h3>
+<p>All <code>npx skills add -g</code> installs land in <code>~/.agents/skills/</code>, with per-IDE symlinks at the paths below.</p>
+<table><thead><tr><th>IDE</th><th style="text-align:center">Install via <code>npx skills</code> (symlink target)</th><th style="text-align:center">Workspace Discovery</th><th style="text-align:center">System Prompt</th></tr></thead><tbody><tr><td><strong>Claude Code</strong></td><td style="text-align:center">✅ <code>~/.claude/skills/</code></td><td style="text-align:center"><code>CLAUDE.md</code> + <code>.claude/skills/</code></td><td style="text-align:center">Settings → Custom Instructions</td></tr><tr><td><strong>Cursor</strong></td><td style="text-align:center">✅ <code>~/.cursor/skills/</code></td><td style="text-align:center"><code>AGENTS.md</code> + <code>.cursor/rules/</code></td><td style="text-align:center">Settings → Rules for AI</td></tr><tr><td><strong>Windsurf</strong></td><td style="text-align:center">✅ <code>~/.codeium/windsurf/skills/</code></td><td style="text-align:center"><code>AGENTS.md</code> + <code>.windsurf/skills/</code></td><td style="text-align:center">Settings → Global Rules</td></tr><tr><td><strong>Codex</strong></td><td style="text-align:center">✅ <code>~/.codex/skills/</code></td><td style="text-align:center"><code>AGENTS.md</code></td><td style="text-align:center">—</td></tr><tr><td><strong>Copilot</strong></td><td style="text-align:center">✅ <code>~/.copilot/skills/</code></td><td style="text-align:center"><code>AGENTS.md</code></td><td style="text-align:center">Settings → Instructions</td></tr></tbody></table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="test-the-skills">Test the Skills<a href="#test-the-skills" class="hash-link" aria-label="Direct link to Test the Skills" title="Direct link to Test the Skills" translate="no">​</a></h3>
+<p>Open any project in your IDE (with skills installed globally or via system prompt) and try:</p>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">Create a new project called &quot;demo&quot; in organization &quot;myorg&quot; with cloud networking.</span><br></div></code></pre></div></div>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">Deploy a PostgreSQL HA database called &quot;app-db&quot; in project shalb-demo.</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">Show me how to connect my app to it.</span><br></div></code></pre></div></div>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">Create an Ubuntu VM with SSH access in namespace shalb-demo.</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">How do I SSH into it?</span><br></div></code></pre></div></div>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">Expose my nginx service via HTTPS with auto TLS in namespace shalb-demo.</span><br></div></code></pre></div></div>
+<p>The agent should generate correct Kube-DC manifests with proper CRD schemas, annotations, and namespace patterns — without any manual correction.</p>
+<hr>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="step-0-get-your-kube-dc-kubeconfig">Step 0: Get Your Kube-DC Kubeconfig<a href="#step-0-get-your-kube-dc-kubeconfig" class="hash-link" aria-label="Direct link to Step 0: Get Your Kube-DC Kubeconfig" title="Direct link to Step 0: Get Your Kube-DC Kubeconfig" translate="no">​</a></h2>
 <p>All integrations below require a valid kubeconfig pointing at your Kube-DC cluster.</p>
 <ol>
-<li>Log in to the Kube-DC console</li>
-<li>Click <strong>Get CLI Access</strong> in the dashboard</li>
-<li>Follow the displayed commands to download your kubeconfig</li>
+<li class="">Log in to the Kube-DC console</li>
+<li class="">Click <strong>Get CLI Access</strong> in the dashboard</li>
+<li class="">Follow the displayed commands to download your kubeconfig</li>
 </ol>
 <p>Your kubeconfig will be saved at <code>~/.kube/config</code> by default. Verify it works:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>namespaces
-</span></code></pre></div>
-<p>See <a href="../cli-kubeconfig/">CLI &amp; Kubeconfig</a> for full setup instructions.</p>
-<hr />
-<h2 id="claude-code">Claude Code<a class="headerlink" href="#claude-code" title="Permanent link"> ¶</a></h2>
-<p><a href="https://claude.com/product/claude-code">Claude Code</a> is Anthropic's terminal-based AI agent. It can read files, run commands, manage Git, and — with MCP — interact with your Kubernetes cluster directly from the terminal.</p>
-<h3 id="install-the-mcp-server">Install the MCP server<a class="headerlink" href="#install-the-mcp-server" title="Permanent link"> ¶</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Add Kubernetes MCP to Claude Code (one-time setup)</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>claude<span class="w"> </span>mcp<span class="w"> </span>add<span class="w"> </span>kubernetes<span class="w"> </span>--<span class="w"> </span>npx<span class="w"> </span>mcp-server-kubernetes
-</span></code></pre></div>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">kube-dc ns</span><br></div></code></pre></div></div>
+<p>See <a class="" href="/cloud/cli-kubeconfig">CLI &amp; Kubeconfig</a> for full setup instructions.</p>
+<hr>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="claude-code">Claude Code<a href="#claude-code" class="hash-link" aria-label="Direct link to Claude Code" title="Direct link to Claude Code" translate="no">​</a></h2>
+<p><a href="https://claude.com/product/claude-code" target="_blank" rel="noopener noreferrer" class="">Claude Code</a> is Anthropic&#x27;s terminal-based AI agent. It can read files, run commands, manage Git, and — with MCP — interact with your Kubernetes cluster directly from the terminal.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="install-the-mcp-server">Install the MCP server<a href="#install-the-mcp-server" class="hash-link" aria-label="Direct link to Install the MCP server" title="Direct link to Install the MCP server" translate="no">​</a></h3>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token comment" style="color:#999988;font-style:italic"># Add Kubernetes MCP to Claude Code (one-time setup)</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">claude mcp </span><span class="token function" style="color:#d73a49">add</span><span class="token plain"> kubernetes -- npx mcp-server-kubernetes</span><br></div></code></pre></div></div>
 <p>This reads your <code>~/.kube/config</code> automatically. Verify the connection:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>claude<span class="w"> </span>mcp<span class="w"> </span>list
-</span></code></pre></div>
-<h3 id="example-workflows">Example workflows<a class="headerlink" href="#example-workflows" title="Permanent link"> ¶</a></h3>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">claude mcp list</span><br></div></code></pre></div></div>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="example-workflows">Example workflows<a href="#example-workflows" class="hash-link" aria-label="Direct link to Example workflows" title="Direct link to Example workflows" translate="no">​</a></h3>
 <p>Once connected, use natural language in the Claude Code terminal:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>&gt; Show me all pods that are not running in namespace shalb-demo
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>&gt; Why is the nginx deployment failing?
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>&gt; Apply this deployment manifest and wait for it to be ready
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>&gt; Get the logs from the last crashed container in pod my-app-xxx
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>&gt; Scale the api-server deployment to 3 replicas
-</span></code></pre></div>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">&gt; Show me all pods that are not running in namespace shalb-demo</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">&gt; Why is the nginx deployment failing?</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">&gt; Apply this deployment manifest and wait for it to be ready</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">&gt; Get the logs from the last crashed container in pod my-app-xxx</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">&gt; Scale the api-server deployment to 3 replicas</span><br></div></code></pre></div></div>
 <p>Claude Code can chain multiple kubectl operations automatically — for example, if a pod is crashing, it will fetch events, logs, and describe the pod in a single response.</p>
-<h3 id="non-destructive-mode">Non-destructive mode<a class="headerlink" href="#non-destructive-mode" title="Permanent link"> ¶</a></h3>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="use-kube-dc-agent-skills">Use Kube-DC Agent Skills<a href="#use-kube-dc-agent-skills" class="hash-link" aria-label="Direct link to Use Kube-DC Agent Skills" title="Direct link to Use Kube-DC Agent Skills" translate="no">​</a></h3>
+<p>Open the <code>kube-dc-public</code> repo in Claude Code. It contains:</p>
+<ul>
+<li class=""><code>CLAUDE.md</code> — loaded automatically, references <code>@_agent-instructions.md</code> and <code>@knowledge/index.md</code></li>
+<li class=""><code>.claude/skills/</code> — 10 workflow-grouped skills (symlink to <code>.agents/skills/</code>)</li>
+</ul>
+<p>With both MCP and skills, Claude Code can generate correct Kube-DC manifests <strong>and</strong> apply them directly. See <a href="#agent-skills-setup" class="">Agent Skills Setup</a> above.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="non-destructive-mode">Non-destructive mode<a href="#non-destructive-mode" class="hash-link" aria-label="Direct link to Non-destructive mode" title="Direct link to Non-destructive mode" translate="no">​</a></h3>
 <p>For production clusters, run the MCP server in read-only mode to prevent accidental changes:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>claude<span class="w"> </span>mcp<span class="w"> </span>add<span class="w"> </span>kubernetes<span class="w"> </span>--<span class="w"> </span>npx<span class="w"> </span>mcp-server-kubernetes<span class="w"> </span>--non-destructive
-</span></code></pre></div>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">claude mcp </span><span class="token function" style="color:#d73a49">add</span><span class="token plain"> kubernetes -- npx mcp-server-kubernetes --non-destructive</span><br></div></code></pre></div></div>
 <p>In this mode the server can read, describe, get logs, and explain resources but cannot create, delete, patch, or scale.</p>
-<hr />
-<h2 id="cursor">Cursor<a class="headerlink" href="#cursor" title="Permanent link"> ¶</a></h2>
-<p><a href="https://www.cursor.com">Cursor</a> is a VS Code fork built around AI pair programming. It supports MCP servers through its AI configuration.</p>
-<h3 id="configure-the-mcp-server">Configure the MCP server<a class="headerlink" href="#configure-the-mcp-server" title="Permanent link"> ¶</a></h3>
+<hr>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="cursor">Cursor<a href="#cursor" class="hash-link" aria-label="Direct link to Cursor" title="Direct link to Cursor" translate="no">​</a></h2>
+<p><a href="https://www.cursor.com" target="_blank" rel="noopener noreferrer" class="">Cursor</a> is a VS Code fork built around AI pair programming. It supports MCP servers through its AI configuration.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="configure-the-mcp-server">Configure the MCP server<a href="#configure-the-mcp-server" class="hash-link" aria-label="Direct link to Configure the MCP server" title="Direct link to Configure the MCP server" translate="no">​</a></h3>
 <p>Create or edit <code>~/.cursor/mcp.json</code>:</p>
-<div class="language-json highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="p">{</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="nt">&quot;kubernetes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span><span class="p">,</span>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;mcp-server-kubernetes&quot;</span><span class="p">]</span>
-</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">    </span><span class="p">}</span>
-</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">  </span><span class="p">}</span>
-</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="p">}</span>
-</span></code></pre></div>
-<p>Restart Cursor. The Kubernetes MCP server will start automatically when Cursor's AI features are used.</p>
-<h3 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link"> ¶</a></h3>
+<div class="language-json codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-json codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  </span><span class="token property" style="color:#36acaa">&quot;mcpServers&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token property" style="color:#36acaa">&quot;kubernetes&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">      </span><span class="token property" style="color:#36acaa">&quot;command&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token string" style="color:#e3116c">&quot;npx&quot;</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">      </span><span class="token property" style="color:#36acaa">&quot;args&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">[</span><span class="token string" style="color:#e3116c">&quot;mcp-server-kubernetes&quot;</span><span class="token punctuation" style="color:#393A34">]</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token punctuation" style="color:#393A34">}</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  </span><span class="token punctuation" style="color:#393A34">}</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token punctuation" style="color:#393A34">}</span><br></div></code></pre></div></div>
+<p>Restart Cursor. The Kubernetes MCP server will start automatically when Cursor&#x27;s AI features are used.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="usage">Usage<a href="#usage" class="hash-link" aria-label="Direct link to Usage" title="Direct link to Usage" translate="no">​</a></h3>
 <p>Open the Cursor chat (<code>Cmd+L</code> / <code>Ctrl+L</code>) and ask questions about your cluster:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>@kubernetes list all pods in shalb-prod that have been restarting
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>@kubernetes describe the ingress for my-app and check if the service exists
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>@kubernetes what is the current resource usage vs quota in namespace shalb-demo?
-</span></code></pre></div>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">@kubernetes list all pods in shalb-prod that have been restarting</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">@kubernetes describe the ingress for my-app and check if the service exists</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">@kubernetes what is the current resource usage vs quota in namespace shalb-demo?</span><br></div></code></pre></div></div>
 <p>Cursor can also generate and apply manifests directly from the chat, editing files and running <code>kubectl apply</code> in sequence.</p>
-<h3 id="tip-add-a-cursorrules-file">Tip: Add a <code>.cursorrules</code> file<a class="headerlink" href="#tip-add-a-cursorrules-file" title="Permanent link"> ¶</a></h3>
-<p>Add a <code>.cursorrules</code> file to your project to give Cursor context about your Kube-DC environment:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>This project deploys to Kube-DC Cloud (kube-dc.com).
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>Organization: acme-corp
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>Projects are deployed in namespaces following the pattern: {org}-{project}
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>Example namespaces: acme-corp-dev, acme-corp-staging, acme-corp-prod
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>Resource quotas are enforced at the organization level.
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>Use the kubeconfig at ~/.kube/config for all kubectl operations.
-</span></code></pre></div>
-<hr />
-<h2 id="windsurf">Windsurf<a class="headerlink" href="#windsurf" title="Permanent link"> ¶</a></h2>
-<p><a href="https://windsurf.com">Windsurf</a> (by Codeium) is an AI-native IDE with a built-in agentic system called Cascade. It supports MCP servers natively through its settings.</p>
-<h3 id="configure-the-mcp-server_1">Configure the MCP server<a class="headerlink" href="#configure-the-mcp-server_1" title="Permanent link"> ¶</a></h3>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="tip-use-kube-dc-agent-skills">Tip: Use Kube-DC Agent Skills<a href="#tip-use-kube-dc-agent-skills" class="hash-link" aria-label="Direct link to Tip: Use Kube-DC Agent Skills" title="Direct link to Tip: Use Kube-DC Agent Skills" translate="no">​</a></h3>
+<p>Instead of a generic <code>.cursorrules</code> file, open the <code>kube-dc-public</code> repo in Cursor. It contains:</p>
+<ul>
+<li class=""><code>AGENTS.md</code> — Cursor reads this automatically for Kube-DC context</li>
+<li class=""><code>.cursor/rules/kube-dc-conventions/RULE.md</code> — always-on rules for namespace patterns, CRD naming, and safety constraints</li>
+</ul>
+<p>This gives Cursor full awareness of Kube-DC CRDs, annotations, and naming conventions — far more comprehensive than a hand-written rules file. See <a href="#agent-skills-setup" class="">Agent Skills Setup</a> above.</p>
+<hr>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="windsurf">Windsurf<a href="#windsurf" class="hash-link" aria-label="Direct link to Windsurf" title="Direct link to Windsurf" translate="no">​</a></h2>
+<p><a href="https://windsurf.com" target="_blank" rel="noopener noreferrer" class="">Windsurf</a> (by Codeium) is an AI-native IDE with a built-in agentic system called Cascade. It supports MCP servers natively through its settings.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="configure-the-mcp-server-1">Configure the MCP server<a href="#configure-the-mcp-server-1" class="hash-link" aria-label="Direct link to Configure the MCP server" title="Direct link to Configure the MCP server" translate="no">​</a></h3>
 <p>Open Windsurf Settings → MCP Servers and add:</p>
-<div class="language-json highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="p">{</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span><span class="nt">&quot;kubernetes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span><span class="p">,</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;mcp-server-kubernetes&quot;</span><span class="p">],</span>
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">      </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Kube-DC cluster management&quot;</span>
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">    </span><span class="p">}</span>
-</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">  </span><span class="p">}</span>
-</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="p">}</span>
-</span></code></pre></div>
+<div class="language-json codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-json codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  </span><span class="token property" style="color:#36acaa">&quot;mcpServers&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token property" style="color:#36acaa">&quot;kubernetes&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">      </span><span class="token property" style="color:#36acaa">&quot;command&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token string" style="color:#e3116c">&quot;npx&quot;</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">      </span><span class="token property" style="color:#36acaa">&quot;args&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">[</span><span class="token string" style="color:#e3116c">&quot;mcp-server-kubernetes&quot;</span><span class="token punctuation" style="color:#393A34">]</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">      </span><span class="token property" style="color:#36acaa">&quot;description&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token string" style="color:#e3116c">&quot;Kube-DC cluster management&quot;</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token punctuation" style="color:#393A34">}</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  </span><span class="token punctuation" style="color:#393A34">}</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token punctuation" style="color:#393A34">}</span><br></div></code></pre></div></div>
 <p>Alternatively, edit <code>~/.codeium/windsurf/mcp_config.json</code> directly.</p>
-<h3 id="usage_1">Usage<a class="headerlink" href="#usage_1" title="Permanent link"> ¶</a></h3>
-<p>Cascade (Windsurf's AI agent) can use the Kubernetes MCP automatically when you describe infrastructure tasks. In the Cascade panel:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>Deploy the app from this Dockerfile to my kube-dc cluster in the staging namespace.
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>Check if all pods in acme-corp-prod are healthy and summarize any issues.
-</span></code></pre></div>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="usage-1">Usage<a href="#usage-1" class="hash-link" aria-label="Direct link to Usage" title="Direct link to Usage" translate="no">​</a></h3>
+<p>Cascade (Windsurf&#x27;s AI agent) can use the Kubernetes MCP automatically when you describe infrastructure tasks. In the Cascade panel:</p>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">Deploy the app from this Dockerfile to my kube-dc cluster in the staging namespace.</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">Check if all pods in acme-corp-prod are healthy and summarize any issues.</span><br></div></code></pre></div></div>
 <p>Cascade can chain file edits, terminal commands, and MCP tool calls in a single flow — writing the Deployment YAML, applying it, and monitoring rollout status.</p>
-<h3 id="tip-add-a-windsurfmd-file">Tip: Add a <code>WINDSURF.md</code> file<a class="headerlink" href="#tip-add-a-windsurfmd-file" title="Permanent link"> ¶</a></h3>
-<p>Create a <code>WINDSURF.md</code> in your project root with cluster-specific context Cascade should always be aware of:</p>
-<div class="language-markdown highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="gu">## Kube-DC Cluster Context</span>
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="k">-</span><span class="w"> </span>Cluster: kube-dc.cloud (kubeconfig at ~/.kube/config)
-</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="k">-</span><span class="w"> </span>Org namespace pattern: {org}-{project}
-</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="k">-</span><span class="w"> </span>Storage class: local-path
-</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="k">-</span><span class="w"> </span>External IP annotation: service.nlb.kube-dc.com/bind-on-default-gw-eip: &quot;true&quot;
-</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="k">-</span><span class="w"> </span>Default image registry: registry.kube-dc.cloud
-</span></code></pre></div>
-<hr />
-<h2 id="vs-code">VS Code<a class="headerlink" href="#vs-code" title="Permanent link"> ¶</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="tip-use-kube-dc-agent-skills--workflows">Tip: Use Kube-DC Agent Skills + Workflows<a href="#tip-use-kube-dc-agent-skills--workflows" class="hash-link" aria-label="Direct link to Tip: Use Kube-DC Agent Skills + Workflows" title="Direct link to Tip: Use Kube-DC Agent Skills + Workflows" translate="no">​</a></h3>
+<p>Instead of a generic <code>WINDSURF.md</code> file, open the <code>kube-dc-public</code> repo in Windsurf. It contains:</p>
+<ul>
+<li class=""><code>AGENTS.md</code> — loaded automatically for Kube-DC context</li>
+<li class=""><code>.windsurf/rules/kube-dc-conventions.md</code> — always-on safety rules</li>
+<li class=""><code>.windsurf/skills/</code> — 10 workflow-grouped skills (symlink to <code>.agents/skills/</code>)</li>
+<li class=""><code>.windsurf/workflows/</code> — slash commands:<!-- -->
+<ul>
+<li class=""><code>/deploy-wordpress</code> — Deploy WordPress with managed MariaDB, HTTPS, and auto TLS</li>
+<li class=""><code>/setup-project</code> — Create a new project with organization verification and optional resources</li>
+</ul>
+</li>
+</ul>
+<p>This gives Cascade full awareness of Kube-DC CRDs, annotations, naming conventions, and step-by-step procedures. See <a href="#agent-skills-setup" class="">Agent Skills Setup</a> above.</p>
+<hr>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="vs-code">VS Code<a href="#vs-code" class="hash-link" aria-label="Direct link to VS Code" title="Direct link to VS Code" translate="no">​</a></h2>
 <p>VS Code supports Kubernetes cluster management via both dedicated extensions and MCP through GitHub Copilot.</p>
-<h3 id="essential-extensions">Essential Extensions<a class="headerlink" href="#essential-extensions" title="Permanent link"> ¶</a></h3>
-<p><strong><a href="https://marketplace.visualstudio.com/items?itemName=ms-kubernetes-tools.vscode-kubernetes-tools">Kubernetes</a></strong><br />
-The official Kubernetes extension provides a full cluster browser in the VS Code sidebar:
-- Browse namespaces, pods, deployments, services, and more
-- View and edit live resources
-- Stream pod logs directly in the editor
-- Port-forward to services with a single click
-- Supports multiple kubeconfig contexts — switch between Kube-DC projects instantly</p>
-<p><strong><a href="https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml">YAML</a></strong><br />
-Provides schema validation and autocompletion for Kubernetes manifests. YAML files containing <code>apiVersion:</code> and <code>kind:</code> are automatically validated against Kubernetes schemas.</p>
-<p><strong><a href="https://marketplace.visualstudio.com/items?itemName=eamodio.gitlens">GitLens</a></strong> <em>(optional)</em><br />
-Recommended for GitOps workflows where your manifests live in Git.</p>
-<h3 id="mcp-with-vs-code-github-copilot">MCP with VS Code + GitHub Copilot<a class="headerlink" href="#mcp-with-vs-code-github-copilot" title="Permanent link"> ¶</a></h3>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="essential-extensions">Essential Extensions<a href="#essential-extensions" class="hash-link" aria-label="Direct link to Essential Extensions" title="Direct link to Essential Extensions" translate="no">​</a></h3>
+<p><strong><a href="https://marketplace.visualstudio.com/items?itemName=ms-kubernetes-tools.vscode-kubernetes-tools" target="_blank" rel="noopener noreferrer" class="">Kubernetes</a></strong><br>
+<!-- -->The official Kubernetes extension provides a full cluster browser in the VS Code sidebar:</p>
+<ul>
+<li class="">Browse namespaces, pods, deployments, services, and more</li>
+<li class="">View and edit live resources</li>
+<li class="">Stream pod logs directly in the editor</li>
+<li class="">Port-forward to services with a single click</li>
+<li class="">Supports multiple kubeconfig contexts — switch between Kube-DC projects instantly</li>
+</ul>
+<p><strong><a href="https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml" target="_blank" rel="noopener noreferrer" class="">YAML</a></strong><br>
+<!-- -->Provides schema validation and autocompletion for Kubernetes manifests. YAML files containing <code>apiVersion:</code> and <code>kind:</code> are automatically validated against Kubernetes schemas.</p>
+<p><strong><a href="https://marketplace.visualstudio.com/items?itemName=eamodio.gitlens" target="_blank" rel="noopener noreferrer" class="">GitLens</a></strong> <em>(optional)</em><br>
+<!-- -->Recommended for GitOps workflows where your manifests live in Git.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="mcp-with-vs-code--github-copilot">MCP with VS Code + GitHub Copilot<a href="#mcp-with-vs-code--github-copilot" class="hash-link" aria-label="Direct link to MCP with VS Code + GitHub Copilot" title="Direct link to MCP with VS Code + GitHub Copilot" translate="no">​</a></h3>
 <p>VS Code + GitHub Copilot supports MCP via settings. Add to your VS Code <code>settings.json</code>:</p>
-<div class="language-json highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="p">{</span>
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span><span class="nt">&quot;mcp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">    </span><span class="nt">&quot;servers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">      </span><span class="nt">&quot;kubernetes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">        </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;npx&quot;</span><span class="p">,</span>
-</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="w">        </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;mcp-server-kubernetes&quot;</span><span class="p">],</span>
-</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="w">        </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Kubernetes cluster management&quot;</span>
-</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">      </span><span class="p">}</span>
-</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="w">    </span><span class="p">}</span>
-</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="w">  </span><span class="p">}</span>
-</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="p">}</span>
-</span></code></pre></div>
+<div class="language-json codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-json codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  </span><span class="token property" style="color:#36acaa">&quot;mcp&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token property" style="color:#36acaa">&quot;servers&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">      </span><span class="token property" style="color:#36acaa">&quot;kubernetes&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">        </span><span class="token property" style="color:#36acaa">&quot;command&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token string" style="color:#e3116c">&quot;npx&quot;</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">        </span><span class="token property" style="color:#36acaa">&quot;args&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">[</span><span class="token string" style="color:#e3116c">&quot;mcp-server-kubernetes&quot;</span><span class="token punctuation" style="color:#393A34">]</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">        </span><span class="token property" style="color:#36acaa">&quot;description&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token string" style="color:#e3116c">&quot;Kubernetes cluster management&quot;</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">      </span><span class="token punctuation" style="color:#393A34">}</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token punctuation" style="color:#393A34">}</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  </span><span class="token punctuation" style="color:#393A34">}</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token punctuation" style="color:#393A34">}</span><br></div></code></pre></div></div>
 <p>With this enabled, you can ask Copilot in the chat panel (<code>Ctrl+Alt+I</code>):</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>@workspace show me all crashlooping pods and suggest fixes
-</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>@workspace generate a Deployment for nginx with resource limits matching our Dev Pool plan
-</span></code></pre></div>
-<h3 id="alternative-red-hat-kubernetes-mcp-server">Alternative: Red Hat Kubernetes MCP Server<a class="headerlink" href="#alternative-red-hat-kubernetes-mcp-server" title="Permanent link"> ¶</a></h3>
-<p>The <a href="https://github.com/containers/kubernetes-mcp-server">Red Hat kubernetes-mcp-server</a> is a single-binary MCP server with no external dependencies (no Node.js or kubectl needed):</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># Download the binary for your platform</span>
-</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>curl<span class="w"> </span>-L<span class="w"> </span>https://github.com/containers/kubernetes-mcp-server/releases/latest/download/kubernetes-mcp-server-linux-amd64<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">  </span>-o<span class="w"> </span>~/.local/bin/kubernetes-mcp-server<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span>~/.local/bin/kubernetes-mcp-server
-</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>
-</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="c1"># Add to VS Code settings.json</span>
-</span><span id="__span-14-6"><a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="o">{</span>
-</span><span id="__span-14-7"><a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="w">  </span><span class="s2">&quot;mcp&quot;</span>:<span class="w"> </span><span class="o">{</span>
-</span><span id="__span-14-8"><a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="w">    </span><span class="s2">&quot;servers&quot;</span>:<span class="w"> </span><span class="o">{</span>
-</span><span id="__span-14-9"><a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="w">      </span><span class="s2">&quot;kubernetes&quot;</span>:<span class="w"> </span><span class="o">{</span>
-</span><span id="__span-14-10"><a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a><span class="w">        </span><span class="s2">&quot;command&quot;</span>:<span class="w"> </span><span class="s2">&quot;kubernetes-mcp-server&quot;</span>,
-</span><span id="__span-14-11"><a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a><span class="w">        </span><span class="s2">&quot;args&quot;</span>:<span class="w"> </span><span class="o">[</span><span class="s2">&quot;--read-only&quot;</span><span class="o">]</span>
-</span><span id="__span-14-12"><a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a><span class="w">      </span><span class="o">}</span>
-</span><span id="__span-14-13"><a id="__codelineno-14-13" name="__codelineno-14-13" href="#__codelineno-14-13"></a><span class="w">    </span><span class="o">}</span>
-</span><span id="__span-14-14"><a id="__codelineno-14-14" name="__codelineno-14-14" href="#__codelineno-14-14"></a><span class="w">  </span><span class="o">}</span>
-</span><span id="__span-14-15"><a id="__codelineno-14-15" name="__codelineno-14-15" href="#__codelineno-14-15"></a><span class="o">}</span>
-</span></code></pre></div>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">@workspace show me all crashlooping pods and suggest fixes</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">@workspace generate a Deployment for nginx with resource limits matching our Dev Pool plan</span><br></div></code></pre></div></div>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="alternative-red-hat-kubernetes-mcp-server">Alternative: Red Hat Kubernetes MCP Server<a href="#alternative-red-hat-kubernetes-mcp-server" class="hash-link" aria-label="Direct link to Alternative: Red Hat Kubernetes MCP Server" title="Direct link to Alternative: Red Hat Kubernetes MCP Server" translate="no">​</a></h3>
+<p>The <a href="https://github.com/containers/kubernetes-mcp-server" target="_blank" rel="noopener noreferrer" class="">Red Hat kubernetes-mcp-server</a> is a single-binary MCP server with no external dependencies (no Node.js or kubectl needed):</p>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token comment" style="color:#999988;font-style:italic"># Download the binary for your platform</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token function" style="color:#d73a49">curl</span><span class="token plain"> </span><span class="token parameter variable" style="color:#36acaa">-L</span><span class="token plain"> https://github.com/containers/kubernetes-mcp-server/releases/latest/download/kubernetes-mcp-server-linux-amd64 </span><span class="token punctuation" style="color:#393A34">\</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  </span><span class="token parameter variable" style="color:#36acaa">-o</span><span class="token plain"> ~/.local/bin/kubernetes-mcp-server </span><span class="token operator" style="color:#393A34">&amp;&amp;</span><span class="token plain"> </span><span class="token function" style="color:#d73a49">chmod</span><span class="token plain"> +x ~/.local/bin/kubernetes-mcp-server</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain" style="display:inline-block"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token comment" style="color:#999988;font-style:italic"># Add to VS Code settings.json</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  </span><span class="token string" style="color:#e3116c">&quot;mcp&quot;</span><span class="token builtin class-name">:</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token string" style="color:#e3116c">&quot;servers&quot;</span><span class="token builtin class-name">:</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">      </span><span class="token string" style="color:#e3116c">&quot;kubernetes&quot;</span><span class="token builtin class-name">:</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">        </span><span class="token string" style="color:#e3116c">&quot;command&quot;</span><span class="token builtin class-name">:</span><span class="token plain"> </span><span class="token string" style="color:#e3116c">&quot;kubernetes-mcp-server&quot;</span><span class="token plain">,</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">        </span><span class="token string" style="color:#e3116c">&quot;args&quot;</span><span class="token builtin class-name">:</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">[</span><span class="token string" style="color:#e3116c">&quot;--read-only&quot;</span><span class="token punctuation" style="color:#393A34">]</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">      </span><span class="token punctuation" style="color:#393A34">}</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token punctuation" style="color:#393A34">}</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  </span><span class="token punctuation" style="color:#393A34">}</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token punctuation" style="color:#393A34">}</span><br></div></code></pre></div></div>
 <p>Recommended for production use due to its safety modes and single-binary deployment.</p>
-<hr />
-<h2 id="mcp-server-capabilities">MCP Server Capabilities<a class="headerlink" href="#mcp-server-capabilities" title="Permanent link"> ¶</a></h2>
+<hr>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="mcp-server-capabilities">MCP Server Capabilities<a href="#mcp-server-capabilities" class="hash-link" aria-label="Direct link to MCP Server Capabilities" title="Direct link to MCP Server Capabilities" translate="no">​</a></h2>
 <p>All Kubernetes MCP servers expose a common set of operations that AI tools can call:</p>
-<table>
-<thead>
-<tr>
-<th>Operation</th>
-<th>Example natural language prompt</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>List resources</td>
-<td>"Show all pods in namespace acme-prod"</td>
-</tr>
-<tr>
-<td>Describe resource</td>
-<td>"Describe the ingress my-app and check if the backend service exists"</td>
-</tr>
-<tr>
-<td>Get logs</td>
-<td>"Get logs from the last crashed container in pod api-xxx"</td>
-</tr>
-<tr>
-<td>Apply manifest</td>
-<td>"Apply this deployment YAML to the cluster"</td>
-</tr>
-<tr>
-<td>Scale</td>
-<td>"Scale the api deployment to 3 replicas"</td>
-</tr>
-<tr>
-<td>Delete</td>
-<td>"Delete all completed jobs in acme-dev"</td>
-</tr>
-<tr>
-<td>Port forward</td>
-<td>"Port forward port 8080 from the backend pod to my local machine"</td>
-</tr>
-<tr>
-<td>Helm</td>
-<td>"Install nginx-ingress using Helm in namespace ingress-nginx"</td>
-</tr>
-<tr>
-<td>Diagnose</td>
-<td>"Why is my pod in CrashLoopBackOff? Walk through logs, events, and describe"</td>
-</tr>
-<tr>
-<td>Quota check</td>
-<td>"What is the current CPU and memory usage vs quota for my organization?"</td>
-</tr>
-</tbody>
-</table>
-<hr />
-<h2 id="practical-kube-dc-workflows">Practical Kube-DC Workflows<a class="headerlink" href="#practical-kube-dc-workflows" title="Permanent link"> ¶</a></h2>
-<h3 id="deploying-an-application">Deploying an application<a class="headerlink" href="#deploying-an-application" title="Permanent link"> ¶</a></h3>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>Deploy a Nginx deployment with 2 replicas to namespace acme-corp-demo.
-</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>Use resource requests of 100m CPU and 128Mi memory to stay within quota.
-</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>Expose it via a ClusterIP service on port 80.
-</span></code></pre></div>
-<h3 id="debugging-a-failing-deployment">Debugging a failing deployment<a class="headerlink" href="#debugging-a-failing-deployment" title="Permanent link"> ¶</a></h3>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>The deployment my-api in namespace acme-corp-prod is not ready.
-</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>Check the pod events, describe the deployment, get the last 100 lines of logs,
-</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>and tell me what is wrong and how to fix it.
-</span></code></pre></div>
-<h3 id="quota-aware-manifest-generation">Quota-aware manifest generation<a class="headerlink" href="#quota-aware-manifest-generation" title="Permanent link"> ¶</a></h3>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>Generate a Kubernetes Deployment for a Node.js app.
-</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>The organization is on the Pro Pool plan (8 vCPU / 24 GB total).
-</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>I want to allocate 2 vCPU and 4 GB to this service.
-</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>Include appropriate resource requests and limits.
-</span></code></pre></div>
-<h3 id="checking-organization-resource-usage">Checking organization resource usage<a class="headerlink" href="#checking-organization-resource-usage" title="Permanent link"> ¶</a></h3>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>Show me the current resource quota usage for namespace acme-corp.
-</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>Which projects are consuming the most CPU and memory?
-</span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>Is there headroom to deploy another 2-replica deployment?
-</span></code></pre></div>
-<hr />
-<h2 id="security-considerations">Security Considerations<a class="headerlink" href="#security-considerations" title="Permanent link"> ¶</a></h2>
+<table><thead><tr><th>Operation</th><th>Example natural language prompt</th></tr></thead><tbody><tr><td>List resources</td><td>&quot;Show all pods in namespace acme-prod&quot;</td></tr><tr><td>Describe resource</td><td>&quot;Describe the ingress my-app and check if the backend service exists&quot;</td></tr><tr><td>Get logs</td><td>&quot;Get logs from the last crashed container in pod api-xxx&quot;</td></tr><tr><td>Apply manifest</td><td>&quot;Apply this deployment YAML to the cluster&quot;</td></tr><tr><td>Scale</td><td>&quot;Scale the api deployment to 3 replicas&quot;</td></tr><tr><td>Delete</td><td>&quot;Delete all completed jobs in acme-dev&quot;</td></tr><tr><td>Port forward</td><td>&quot;Port forward port 8080 from the backend pod to my local machine&quot;</td></tr><tr><td>Helm</td><td>&quot;Install nginx-ingress using Helm in namespace ingress-nginx&quot;</td></tr><tr><td>Diagnose</td><td>&quot;Why is my pod in CrashLoopBackOff? Walk through logs, events, and describe&quot;</td></tr><tr><td>Quota check</td><td>&quot;What is the current CPU and memory usage vs quota for my organization?&quot;</td></tr></tbody></table>
+<hr>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="practical-kube-dc-workflows">Practical Kube-DC Workflows<a href="#practical-kube-dc-workflows" class="hash-link" aria-label="Direct link to Practical Kube-DC Workflows" title="Direct link to Practical Kube-DC Workflows" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="deploy-wordpress-with-managed-database">Deploy WordPress with managed database<a href="#deploy-wordpress-with-managed-database" class="hash-link" aria-label="Direct link to Deploy WordPress with managed database" title="Direct link to Deploy WordPress with managed database" translate="no">​</a></h3>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">Deploy WordPress with a managed HA MariaDB database in project shalb-demo.</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">Expose it via HTTPS with auto TLS.</span><br></div></code></pre></div></div>
+<p>With Agent Skills loaded, the agent will: create a <code>KdcDatabase</code> with <code>engine: mariadb</code> (WordPress core has no PostgreSQL driver — <code>engine: postgresql</code> produces a tight CrashLoop), wait for it to become Ready, build a small bridge Secret aliasing the auto-generated password to the chart&#x27;s expected key (<code>mariadb-password</code>), deploy WordPress via <code>helm install</code> with <code>externalDatabase.existingSecret</code> pointing at the bridge, expose with <code>service.type=LoadBalancer</code> plus <code>service.nlb.kube-dc.com/expose-route: https</code>, and report the auto-generated hostname.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="create-a-vm-with-ssh-access">Create a VM with SSH access<a href="#create-a-vm-with-ssh-access" class="hash-link" aria-label="Direct link to Create a VM with SSH access" title="Direct link to Create a VM with SSH access" translate="no">​</a></h3>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">Create an Ubuntu 24.04 VM called &quot;dev-box&quot; with 4 CPU cores and 8GB RAM</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">in namespace shalb-demo. I need to SSH into it from outside the cluster.</span><br></div></code></pre></div></div>
+<p>The agent will: create a DataVolume + VirtualMachine with <code>qemu-guest-agent</code>, create an EIP + LoadBalancer service for SSH, extract the SSH private key, and provide the connection command.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="scale-a-managed-kubernetes-cluster">Scale a managed Kubernetes cluster<a href="#scale-a-managed-kubernetes-cluster" class="hash-link" aria-label="Direct link to Scale a managed Kubernetes cluster" title="Direct link to Scale a managed Kubernetes cluster" translate="no">​</a></h3>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">Scale the &quot;production&quot; cluster&#x27;s workers pool to 5 replicas in project shalb-prod.</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">Also show me how to access the cluster&#x27;s kubeconfig.</span><br></div></code></pre></div></div>
+<p>The agent will: use <code>kubectl patch kdccluster</code> with <code>--type merge</code> (including all pools), extract the kubeconfig from the <code>{cluster}-cp-admin-kubeconfig</code> secret, and write it to a temp file.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="expose-a-grpc-service">Expose a gRPC service<a href="#expose-a-grpc-service" class="hash-link" aria-label="Direct link to Expose a gRPC service" title="Direct link to Expose a gRPC service" translate="no">​</a></h3>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">I have a gRPC service running on port 50051 in namespace shalb-demo.</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">Expose it externally with auto TLS.</span><br></div></code></pre></div></div>
+<p>The agent will use the correct Gateway Route annotations: <code>expose-route: https</code> + <code>route-port: &quot;50051&quot;</code>.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="debug-a-failing-deployment">Debug a failing deployment<a href="#debug-a-failing-deployment" class="hash-link" aria-label="Direct link to Debug a failing deployment" title="Direct link to Debug a failing deployment" translate="no">​</a></h3>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">The deployment my-api in namespace shalb-prod is not ready.</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">Check the pod events, describe the deployment, get the last 100 lines of logs,</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">and tell me what is wrong and how to fix it.</span><br></div></code></pre></div></div>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="create-an-s3-bucket-and-connect-it-to-an-app">Create an S3 bucket and connect it to an app<a href="#create-an-s3-bucket-and-connect-it-to-an-app" class="hash-link" aria-label="Direct link to Create an S3 bucket and connect it to an app" title="Direct link to Create an S3 bucket and connect it to an app" translate="no">​</a></h3>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">Create an S3 bucket called &quot;uploads&quot; in project shalb-demo.</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">Show me how to mount the credentials in my deployment.</span><br></div></code></pre></div></div>
+<p>The agent will: create an ObjectBucketClaim with the required <code>kube-dc.com/organization</code> label, and show the <code>envFrom</code> pattern for mounting the auto-created Secret and ConfigMap.</p>
+<hr>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="security-considerations">Security Considerations<a href="#security-considerations" class="hash-link" aria-label="Direct link to Security Considerations" title="Direct link to Security Considerations" translate="no">​</a></h2>
 <ul>
-<li><strong>Use read-only mode</strong> (<code>--non-destructive</code> or <code>--read-only</code>) for production clusters when only inspection is needed</li>
-<li><strong>Use a dedicated ServiceAccount</strong> with minimal RBAC instead of a cluster-admin kubeconfig when sharing MCP access with a team</li>
-<li><strong>Never commit kubeconfig files</strong> to Git repositories</li>
-<li><strong>Scope by namespace</strong> — your Kube-DC kubeconfig is already scoped to your organization's projects</li>
-<li>The Kube-DC kubeconfig uses short-lived tokens; re-download it from the console if the AI reports authentication errors</li>
+<li class=""><strong>Use read-only mode</strong> (<code>--non-destructive</code> or <code>--read-only</code>) for production clusters when only inspection is needed</li>
+<li class=""><strong>Use a dedicated ServiceAccount</strong> with minimal RBAC instead of a cluster-admin kubeconfig when sharing MCP access with a team</li>
+<li class=""><strong>Never commit kubeconfig files</strong> to Git repositories</li>
+<li class=""><strong>Scope by namespace</strong> — your Kube-DC kubeconfig is already scoped to your organization&#x27;s projects</li>
+<li class="">The Kube-DC kubeconfig uses short-lived tokens; re-download it from the console if the AI reports authentication errors</li>
 </ul>
-<hr />
-<h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link"> ¶</a></h2>
+<hr>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="further-reading">Further Reading<a href="#further-reading" class="hash-link" aria-label="Direct link to Further Reading" title="Direct link to Further Reading" translate="no">​</a></h2>
 <ul>
-<li><a href="https://github.com/GoogleCloudPlatform/kubectl-ai">kubectl-ai by Google Cloud</a> — AI-powered kubectl with natural language to command translation</li>
-<li><a href="https://github.com/rohitg00/kubectl-mcp-server">kubectl-mcp-server</a> — MCP server with natural language to kubectl, supports Gemini, Claude, Cursor, Windsurf, Copilot</li>
-<li><a href="https://github.com/Flux159/mcp-server-kubernetes">mcp-server-kubernetes</a> — Full-featured npm MCP server</li>
-<li><a href="https://github.com/containers/kubernetes-mcp-server">containers/kubernetes-mcp-server</a> — Red Hat single-binary MCP server</li>
-<li><a href="../gitops/">GitOps with Kube-DC</a> — Managing cluster state declaratively via Git</li>
-<li><a href="../cli-kubeconfig/">CLI &amp; Kubeconfig</a> — Setting up kubectl for Kube-DC</li>
-</ul>
-
-
-
-
-
-
-
-
-
-  
-
-
-
-
-                
-              </article>
-            </div>
-          
-          
-<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
-        </div>
-        
-      </main>
-      
-        <footer class="md-footer">
-  
-  <div class="md-footer-meta md-typeset">
-    <div class="md-footer-meta__inner md-grid">
-      <!-- 
-  Copyright and theme information
--->
-
-<div class="md-copyright">
-  <div class="md-copyright__highlight">
-    Project developed by <a href="https://shalb.com" target="_blank">SHALB</a>
-  </div>
-</div>
-      
-        
-<div class="md-social">
-  
-    
-    
-    
-    
-      
-      
-    
-    <a href="https://github.com/kube-dc/kube-dc-public" target="_blank" rel="noopener" title="github.com" class="md-social__link">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-    </a>
-  
-    
-    
-    
-    
-      
-      
-    
-    <a href="https://join.slack.com/t/kube-dc/shared_invite/zt-31mr5c6ci-W3kYQ7qGDULlGQ5QJjsxmA" target="_blank" rel="noopener" title="join.slack.com" class="md-social__link">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M94.1 315.1c0 25.9-21.2 47.1-47.1 47.1S0 341 0 315.1 21.2 268 47.1 268h47.1v47.1zm23.7 0c0-25.9 21.2-47.1 47.1-47.1s47.1 21.2 47.1 47.1v117.8c0 25.9-21.2 47.1-47.1 47.1s-47.1-21.2-47.1-47.1zm47.1-189c-25.9 0-47.1-21.2-47.1-47.1s21.2-47 47.1-47S212 53.2 212 79.1v47.1h-47.1zm0 23.7c25.9 0 47.1 21.2 47.1 47.1S190.8 244 164.9 244H47.1C21.2 244 0 222.8 0 196.9s21.2-47.1 47.1-47.1zm189 47.1c0-25.9 21.2-47.1 47.1-47.1s47 21.2 47 47.1-21.2 47.1-47.1 47.1h-47.1v-47.1zm-23.7 0c0 25.9-21.2 47.1-47.1 47.1S236 222.8 236 196.9V79.1c0-25.9 21.2-47.1 47.1-47.1s47.1 21.2 47.1 47.1zm-47.1 189c25.9 0 47.1 21.2 47.1 47.1s-21.2 47-47.1 47-47.1-21.2-47.1-47.1v-47.1h47.1zm0-23.7c-25.9 0-47.1-21.2-47.1-47.1s21.2-47.1 47.1-47.1h117.8c25.9 0 47.1 21.2 47.1 47.1s-21.2 47.1-47.1 47.1z"/></svg>
-    </a>
-  
-    
-    
-    
-    
-      
-      
-    
-    <a href="https://kube-dc.com" target="_blank" rel="noopener" title="kube-dc.com" class="md-social__link">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M459.4 151.7c.3 4.5.3 9.1.3 13.6 0 138.7-105.6 298.6-298.6 298.6-59.5 0-114.7-17.2-161.1-47.1 8.4 1 16.6 1.3 25.3 1.3 49.1 0 94.2-16.6 130.3-44.8-46.1-1-84.8-31.2-98.1-72.8 6.5 1 13 1.6 19.8 1.6 9.4 0 18.8-1.3 27.6-3.6-48.1-9.7-84.1-52-84.1-103v-1.3c14 7.8 30.2 12.7 47.4 13.3-28.3-18.8-46.8-51-46.8-87.4 0-19.5 5.2-37.4 14.3-53C87.4 130.8 165 172.4 252.1 176.9c-1.6-7.8-2.6-15.9-2.6-24C249.5 95.1 296.3 48 354.4 48c30.2 0 57.5 12.7 76.7 33.1 23.7-4.5 46.5-13.3 66.6-25.3-7.8 24.4-24.4 44.8-46.1 57.8 21.1-2.3 41.6-8.1 60.4-16.2-14.3 20.8-32.2 39.3-52.6 54.3"/></svg>
-    </a>
-  
-</div>
-      
-    </div>
-  </div>
-</footer>
-      
-    </div>
-    <div class="md-dialog" data-md-component="dialog">
-      <div class="md-dialog__inner md-typeset"></div>
-    </div>
-    
-    
-    
-      
-      
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "content.code.copy", "content.code.select"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
-    
-    
-      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
-      
-    
-  </body>
+<li class=""><a href="https://github.com/GoogleCloudPlatform/kubectl-ai" target="_blank" rel="noopener noreferrer" class="">kubectl-ai by Google Cloud</a> — AI-powered kubectl with natural language to command translation</li>
+<li class=""><a href="https://github.com/rohitg00/kubectl-mcp-server" target="_blank" rel="noopener noreferrer" class="">kubectl-mcp-server</a> — MCP server with natural language to kubectl, supports Gemini, Claude, Cursor, Windsurf, Copilot</li>
+<li class=""><a href="https://github.com/Flux159/mcp-server-kubernetes" target="_blank" rel="noopener noreferrer" class="">mcp-server-kubernetes</a> — Full-featured npm MCP server</li>
+<li class=""><a href="https://github.com/containers/kubernetes-mcp-server" target="_blank" rel="noopener noreferrer" class="">containers/kubernetes-mcp-server</a> — Red Hat single-binary MCP server</li>
+<li class=""><a class="" href="/cloud/gitops">GitOps with Kube-DC</a> — Managing cluster state declaratively via Git</li>
+<li class=""><a class="" href="/cloud/cli-kubeconfig">CLI &amp; Kubeconfig</a> — Setting up kubectl for Kube-DC</li>
+</ul></div></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"><a class="pagination-nav__link pagination-nav__link--prev" href="/cloud/first-project"><div class="pagination-nav__sublabel">Previous</div><div class="pagination-nav__label">Creating Your First Project</div></a><a class="pagination-nav__link pagination-nav__link--next" href="/cloud/kubernetes-projects"><div class="pagination-nav__sublabel">Next</div><div class="pagination-nav__label">Overview</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_bqdL thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#how-it-works-mcp-and-kubernetes" class="table-of-contents__link toc-highlight">How It Works: MCP and Kubernetes</a></li><li><a href="#agent-skills-setup" class="table-of-contents__link toc-highlight">Agent Skills Setup</a><ul><li><a href="#what-skills-provide" class="table-of-contents__link toc-highlight">What Skills Provide</a></li><li><a href="#available-skills" class="table-of-contents__link toc-highlight">Available Skills</a></li><li><a href="#install-skills" class="table-of-contents__link toc-highlight">Install Skills</a></li><li><a href="#repository-structure" class="table-of-contents__link toc-highlight">Repository Structure</a></li><li><a href="#what-each-ide-discovers" class="table-of-contents__link toc-highlight">What Each IDE Discovers</a></li><li><a href="#test-the-skills" class="table-of-contents__link toc-highlight">Test the Skills</a></li></ul></li><li><a href="#step-0-get-your-kube-dc-kubeconfig" class="table-of-contents__link toc-highlight">Step 0: Get Your Kube-DC Kubeconfig</a></li><li><a href="#claude-code" class="table-of-contents__link toc-highlight">Claude Code</a><ul><li><a href="#install-the-mcp-server" class="table-of-contents__link toc-highlight">Install the MCP server</a></li><li><a href="#example-workflows" class="table-of-contents__link toc-highlight">Example workflows</a></li><li><a href="#use-kube-dc-agent-skills" class="table-of-contents__link toc-highlight">Use Kube-DC Agent Skills</a></li><li><a href="#non-destructive-mode" class="table-of-contents__link toc-highlight">Non-destructive mode</a></li></ul></li><li><a href="#cursor" class="table-of-contents__link toc-highlight">Cursor</a><ul><li><a href="#configure-the-mcp-server" class="table-of-contents__link toc-highlight">Configure the MCP server</a></li><li><a href="#usage" class="table-of-contents__link toc-highlight">Usage</a></li><li><a href="#tip-use-kube-dc-agent-skills" class="table-of-contents__link toc-highlight">Tip: Use Kube-DC Agent Skills</a></li></ul></li><li><a href="#windsurf" class="table-of-contents__link toc-highlight">Windsurf</a><ul><li><a href="#configure-the-mcp-server-1" class="table-of-contents__link toc-highlight">Configure the MCP server</a></li><li><a href="#usage-1" class="table-of-contents__link toc-highlight">Usage</a></li><li><a href="#tip-use-kube-dc-agent-skills--workflows" class="table-of-contents__link toc-highlight">Tip: Use Kube-DC Agent Skills + Workflows</a></li></ul></li><li><a href="#vs-code" class="table-of-contents__link toc-highlight">VS Code</a><ul><li><a href="#essential-extensions" class="table-of-contents__link toc-highlight">Essential Extensions</a></li><li><a href="#mcp-with-vs-code--github-copilot" class="table-of-contents__link toc-highlight">MCP with VS Code + GitHub Copilot</a></li><li><a href="#alternative-red-hat-kubernetes-mcp-server" class="table-of-contents__link toc-highlight">Alternative: Red Hat Kubernetes MCP Server</a></li></ul></li><li><a href="#mcp-server-capabilities" class="table-of-contents__link toc-highlight">MCP Server Capabilities</a></li><li><a href="#practical-kube-dc-workflows" class="table-of-contents__link toc-highlight">Practical Kube-DC Workflows</a><ul><li><a href="#deploy-wordpress-with-managed-database" class="table-of-contents__link toc-highlight">Deploy WordPress with managed database</a></li><li><a href="#create-a-vm-with-ssh-access" class="table-of-contents__link toc-highlight">Create a VM with SSH access</a></li><li><a href="#scale-a-managed-kubernetes-cluster" class="table-of-contents__link toc-highlight">Scale a managed Kubernetes cluster</a></li><li><a href="#expose-a-grpc-service" class="table-of-contents__link toc-highlight">Expose a gRPC service</a></li><li><a href="#debug-a-failing-deployment" class="table-of-contents__link toc-highlight">Debug a failing deployment</a></li><li><a href="#create-an-s3-bucket-and-connect-it-to-an-app" class="table-of-contents__link toc-highlight">Create an S3 bucket and connect it to an app</a></li></ul></li><li><a href="#security-considerations" class="table-of-contents__link toc-highlight">Security Considerations</a></li><li><a href="#further-reading" class="table-of-contents__link toc-highlight">Further Reading</a></li></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer_xBL4 footer--dark"><div class="container footerContainer_ndOD"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class="footer__title">Cloud Guide</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" href="/cloud">Getting Started</a></li><li class="footer__item"><a class="footer__link-item" href="/cloud/creating-vm">Virtual Machines</a></li><li class="footer__item"><a class="footer__link-item" href="/cloud/public-floating-ips">Networking</a></li></ul></div><div class="theme-layout-footer-column col footer__col"><div class="footer__title">Platform</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" href="/platform/installation-overview">Installation</a></li><li class="footer__item"><a class="footer__link-item" href="/platform/architecture-overview">Architecture</a></li><li class="footer__item"><a class="footer__link-item" href="/platform/billing-plans-configuration">Operations</a></li></ul></div><div class="theme-layout-footer-column col footer__col"><div class="footer__title">Community</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://github.com/kube-dc/kube-dc-public" target="_blank" rel="noopener noreferrer" class="footer__link-item">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://join.slack.com/t/kube-dc/shared_invite/zt-31mr5c6ci-W3kYQ7qGDULlGQ5QJjsxmA" target="_blank" rel="noopener noreferrer" class="footer__link-item">Slack<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://github.com/kube-dc/kube-dc-public/issues" target="_blank" rel="noopener noreferrer" class="footer__link-item">Issues<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div><div class="theme-layout-footer-column col footer__col"><div class="footer__title">More</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" href="/platform/roadmap">Roadmap</a></li><li class="footer__item"><a href="https://shalb.com" target="_blank" rel="noopener noreferrer" class="footer__link-item">Shalb<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://shalb.com/contact" target="_blank" rel="noopener noreferrer" class="footer__link-item">Contact<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div></div><div class="footerBottom_SMHg"><div class="copyright_g70o"><div class="footer__copyright">Copyright © 2026 Kube-DC Project. Made with ❤️ in Kyiv.</div></div><div class="socialLinks_pCXT"><a href="https://github.com/shalb/kube-dc" target="_blank" rel="noopener noreferrer" class="socialLink_S6Im" aria-label="GitHub"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"></path></svg></a></div></div></div></footer></div>
+</body>
 </html>

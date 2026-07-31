@@ -1,0 +1,1 @@
+"use strict";(globalThis.webpackChunkkube_dc_docs=globalThis.webpackChunkkube_dc_docs||[]).push([[206],{20206(e,c,s){s.d(c,{createTreeViewServices:()=>a.I});var a=s(92275);s(51400)}}]);
