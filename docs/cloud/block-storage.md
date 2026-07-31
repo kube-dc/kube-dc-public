@@ -5,14 +5,14 @@ Kube-DC provides persistent block storage through two Kubernetes-native mechanis
 ## Volumes Dashboard
 
 <div style={{width: '100%', maxWidth: 'none'}}>
-<img src={require('./images/volume-view.png').default} alt="Volumes dashboard" style={{width: '100%', display: 'block'}} />
+![Volumes dashboard](images/volume-view.png)
 </div>
 
 The Volumes view shows all persistent storage in your project. Volumes are organized by **Storage Class** in the left sidebar. Each volume shows its name, attachment status, capacity, storage class, type (DataVolume or PVC), age, and which VM or pod it is attached to.
 
 Click on any volume to expand its details:
 
-<img src={require('./images/volumes-view.png').default} alt="Volume detail view" style={{maxWidth: '800px', width: '100%'}} />
+![Volume detail view](images/volumes-view.png)
 
 The detail panel shows:
 - **Volume Information** — Name, type, capacity, and storage class

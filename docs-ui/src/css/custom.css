@@ -493,6 +493,12 @@ button[class*='toggleButton'] svg {
    were crushed to 450px and became unreadable. Do not reintroduce
    size-by-alt-text: alt text is for accessibility, not layout.
 
+   Retina: screenshots are captured on 2x displays, so natural pixel width is
+   twice the depicted UI size. src/clientModules/retinaImages.ts detects 2x
+   captures via the PNG pHYs DPI chunk (Mac Retina = 144 dpi) and halves their
+   rendered width so they appear at true UI scale; the max-width here still
+   clamps them to the column. 1x exports and diagrams render natural.
+
    Need an exception? Use a class, not a keyword:
      <img className="screenshot-narrow" …/>   cap at 480px
      <img className="screenshot-full"   …/>   ignore the column cap

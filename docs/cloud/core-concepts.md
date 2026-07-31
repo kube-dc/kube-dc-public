@@ -3,7 +3,7 @@
 Kube-DC uses **Organizations** and **Projects** to connect identity, authorization, networking, resource governance and billing to the workloads you deploy. Understanding this model — and the upfront choice between running a workload *in your Project* or *in a Managed Cluster* — is most of what you need to use the platform well.
 
 <div style={{width: '100%', maxWidth: 'none'}}>
-<img src={require('./images/core-concept.png').default} alt="Kube-DC Organization, Project, and resource model" style={{width: '100%', display: 'block'}} />
+![Kube-DC Organization, Project, and resource model](images/core-concept.png)
 </div>
 
 ## The resource model

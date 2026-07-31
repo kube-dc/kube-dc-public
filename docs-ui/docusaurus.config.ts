@@ -36,6 +36,8 @@ const config: Config = {
     },
   },
 
+  clientModules: [require.resolve('./src/clientModules/retinaImages.ts')],
+
   themes: [
     '@docusaurus/theme-mermaid',
     [

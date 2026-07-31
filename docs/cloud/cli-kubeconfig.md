@@ -19,7 +19,7 @@ You can access the CLI tool directly from the Console UI right after creating a 
 2. Click the **Get CLI Access** card
 3. Follow the displayed commands to install and authenticate
 
-<img src={require('./images/get-kubeconfig.png').default} alt="Get CLI Access from Console UI" style={{maxWidth: '800px', width: '100%'}} />
+![Get CLI Access from Console UI](images/get-kubeconfig.png)
 
 The Console UI provides platform-specific installation commands and your authentication details. The `kube-dc` CLI will:
 

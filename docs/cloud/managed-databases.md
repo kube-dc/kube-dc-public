@@ -4,7 +4,7 @@ Kube-DC provides fully managed **PostgreSQL** and **MariaDB** databases as a bui
 
 ## Databases Overview
 
-<img src={require('./images/db-manager-overview.png').default} alt="Managed Databases overview" style={{maxWidth: '900px', width: '100%'}} />
+![Managed Databases overview](images/db-manager-overview.png)
 
 The Databases view shows all databases in your project. The left sidebar organizes databases by engine type (**PostgreSQL** and **MariaDB**). Each database shows its name, engine, version, status, replica count, and age.
 
@@ -73,7 +73,7 @@ Click **View Details** on any database to access the full management interface w
 
 ### Summary
 
-<img src={require('./images/postgres-view.png').default} alt="Database summary tab" style={{maxWidth: '800px', width: '100%'}} />
+![Database summary tab](images/postgres-view.png)
 
 The Summary tab provides a quick overview of your database:
 
@@ -83,7 +83,7 @@ The Summary tab provides a quick overview of your database:
 
 ### Connection
 
-<img src={require('./images/postgres-connections.png').default} alt="Database connection tab" style={{maxWidth: '800px', width: '100%'}} />
+![Database connection tab](images/postgres-connections.png)
 
 The Connection tab shows everything you need to connect to your database:
 
@@ -387,7 +387,7 @@ Operator-level concerns (break-glass superuser, OpenBao policy refresh, troubles
 
 ### Backups
 
-<img src={require('./images/db-backups-schedule.png').default} alt="Database backups tab" style={{maxWidth: '800px', width: '100%'}} />
+![Database backups tab](images/db-backups-schedule.png)
 
 The Backups tab manages both scheduled and on-demand backups:
 
@@ -420,11 +420,11 @@ The Configure tab lets you adjust database resources, scaling, and engine parame
 
 **PostgreSQL Configuration:**
 
-<img src={require('./images/postgres-configuration.png').default} alt="PostgreSQL configuration" style={{maxWidth: '800px', width: '100%'}} />
+![PostgreSQL configuration](images/postgres-configuration.png)
 
 **MariaDB Configuration:**
 
-<img src={require('./images/mariadb-configuration.png').default} alt="MariaDB configuration" style={{maxWidth: '800px', width: '100%'}} />
+![MariaDB configuration](images/mariadb-configuration.png)
 
 #### Resources
 

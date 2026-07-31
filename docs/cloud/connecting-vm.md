@@ -19,7 +19,7 @@ The Console UI provides instant browser-based access to your VMs — no SSH keys
 2. Click on your VM name to open the details page
 3. Click **Launch Remote Console** for graphical VNC access, or **Launch SSH Terminal** for a browser-based SSH session
 
-<img src={require('./images/connecting-vm.png').default} alt="VM Console Access Options" style={{maxWidth: '400px', width: '100%'}} />
+![VM Console Access Options](images/connecting-vm.png)
 
 **Remote Console** opens a VNC session in your browser — useful for VMs with desktop environments or when you need to access the boot process or BIOS.
 

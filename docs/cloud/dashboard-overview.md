@@ -11,7 +11,7 @@ The Kube-DC dashboard is your central interface for managing projects, workloads
 
 After logging in, you land on the **Projects** page. It lists all projects in your organization along with their status, network CIDR, running pods, resource quotas, and creation date.
 
-<img src={require('./images/projects-view-navigation.png').default} alt="Projects view with navigation menu" style={{maxWidth: '800px', width: '100%'}} />
+![Projects view with navigation menu](images/projects-view-navigation.png)
 
 From here you can:
 
@@ -37,7 +37,7 @@ Click your name in the top-right corner to open the user menu with the following
 Selecting **Manage Workloads** or clicking **Go to Project** takes you to the main workloads dashboard.
 
 <div style={{width: '100%', maxWidth: 'none'}}>
-<img src={require('./images/kube-dc-workloads-view.png').default} alt="Kube-DC workloads dashboard" style={{width: '100%', display: 'block'}} />
+![Kube-DC workloads dashboard](images/kube-dc-workloads-view.png)
 </div>
 
 The workloads dashboard provides:
@@ -111,7 +111,7 @@ The tabs from left to right are:
 
 From the Projects page, click the **Kube-DC** logo in the top-left corner to access the organization management view.
 
-<img src={require('./images/kube-dc-manage-org-view.png').default} alt="Organization management view" style={{maxWidth: '800px', width: '100%'}} />
+![Organization management view](images/kube-dc-manage-org-view.png)
 
 The left sidebar provides access to:
 
@@ -129,7 +129,7 @@ The left sidebar provides access to:
 
 Select **Project console** from the user menu to launch a browser-based terminal. The console provides a pre-authenticated `kubectl` session scoped to the projects in your organization.
 
-<img src={require('./images/project-web-console.png').default} alt="Web-based project console" style={{maxWidth: '800px', width: '100%'}} />
+![Web-based project console](images/project-web-console.png)
 
 From the console you can:
 
@@ -143,7 +143,7 @@ From the console you can:
 
 Select **Manage user** from the user menu to open your account settings.
 
-<img src={require('./images/accont-change-password.png').default} alt="Account settings — password and 2FA" style={{maxWidth: '800px', width: '100%'}} />
+![Account settings — password and 2FA](images/accont-change-password.png)
 
 ### Change Password
 

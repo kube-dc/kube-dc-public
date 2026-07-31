@@ -149,7 +149,7 @@ Other container runtimes take the same setting: Podman uses `mtu` in its network
 
 The Console UI provides a **Networking** section with three tabs for managing network resources:
 
-<img src={require('./images/network-mgmt.png').default} alt="Network Management UI" style={{maxWidth: '900px', width: '100%'}} />
+![Network Management UI](images/network-mgmt.png)
 
 - **External IPs** — view and create EIPs, see network type (Cloud/Public), ownership, and status
 - **Floating IPs** — manage FIP-to-VM mappings

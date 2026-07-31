@@ -46,7 +46,7 @@ When you create a cluster, Kube-DC orchestrates several components:
 
 Navigate to **Kubernetes** in your project to view all managed clusters:
 
-<img src={require('./images/k8s-screen.png').default} alt="Managed Kubernetes clusters view" style={{maxWidth: '900px', width: '100%'}} />
+![Managed Kubernetes clusters view](images/k8s-screen.png)
 
 The clusters view shows all your managed Kubernetes clusters with their version, phase (status), API endpoint, datastore backend, and age. From here you can create new clusters, view cluster details, download kubeconfig files, or delete clusters.
 
@@ -56,7 +56,7 @@ The dashboard provides a guided 5-step wizard.
 
 ### Step 1: Basic Configuration
 
-<img src={require('./images/k8s-create-cluster.png').default} alt="Create Cluster - Basic Config" style={{maxWidth: '600px', width: '100%'}} />
+![Create Cluster - Basic Config](images/k8s-create-cluster.png)
 
 - **Cluster Name** — Unique within your project (3–12 chars, lowercase, hyphens allowed).
 - **Kubernetes Version** — Select the desired version (e.g., `v1.34.0`).
@@ -71,7 +71,7 @@ The dashboard provides a guided 5-step wizard.
 
 ### Step 2: Datastore Configuration
 
-<img src={require('./images/k8s-datastore.png').default} alt="Create Cluster - Datastore" style={{maxWidth: '600px', width: '100%'}} />
+![Create Cluster - Datastore](images/k8s-datastore.png)
 
 Choose how your cluster's etcd state is stored:
 
@@ -87,7 +87,7 @@ For dedicated datastores:
 
 ### Step 3: Network & Addons
 
-<img src={require('./images/k8s-network-addons.png').default} alt="Create Cluster - Network" style={{maxWidth: '600px', width: '100%'}} />
+![Create Cluster - Network](images/k8s-network-addons.png)
 
 - **Service CIDR** — IP range for Kubernetes Services (default: `10.96.0.0/16`). Each cluster has isolated networking.
 - **Pod CIDR** — IP range for Pods (default: `10.244.0.0/16`).
@@ -102,7 +102,7 @@ For dedicated datastores:
 
 ### Step 4: Worker Pools
 
-<img src={require('./images/k8s-workers.png').default} alt="Create Cluster - Workers" style={{maxWidth: '600px', width: '100%'}} />
+![Create Cluster - Workers](images/k8s-workers.png)
 
 Define one or more worker pools — each a group of identically configured VMs:
 
@@ -116,7 +116,7 @@ Click **+ Add Pool** to add pools with different configurations (e.g., a general
 
 ### Step 5: Review and Create
 
-<img src={require('./images/k8s-review.png').default} alt="Create Cluster - Review" style={{maxWidth: '600px', width: '100%'}} />
+![Create Cluster - Review](images/k8s-review.png)
 
 The Review step shows the exact YAML manifests that will be applied. Inspect both the **KdcCluster** and **Datastore** tabs to verify the configuration.
 
@@ -317,7 +317,7 @@ Provisioning typically takes 3–5 minutes. The cluster goes through phases: `Pe
 
 Once the cluster is `Ready`, click the **Kubeconfig** button on the cluster detail page to download the kubeconfig file.
 
-<img src={require('./images/k8s-cluster-view.png').default} alt="Cluster View" style={{maxWidth: '600px', width: '100%'}} />
+![Cluster View](images/k8s-cluster-view.png)
 
 The cluster detail page shows:
 

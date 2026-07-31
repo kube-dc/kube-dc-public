@@ -26,7 +26,7 @@ Kube-DC virtualization is powered by [KubeVirt](https://kubevirt.io/) and uses t
 2. Navigate to **Virtual Machines**
 3. Click **+** to create a new VM
 
-<img src={require('./images/vm-list-view.png').default} alt="VM List View" style={{maxWidth: '900px', width: '100%'}} />
+![VM List View](images/vm-list-view.png)
 
 ### Step 2: Configure the VM
 
@@ -45,7 +45,7 @@ Kube-DC virtualization is powered by [KubeVirt](https://kubevirt.io/) and uses t
    shutdown/restart. Follow the [guest driver and lifecycle guide](gpu-vm-guests.md)
    after first boot.
 
-<img src={require('./images/vm-creation-step1.png').default} alt="VM Creation" style={{maxWidth: '700px', width: '100%'}} />
+![VM Creation](images/vm-creation-step1.png)
 
 A compact summary under the selector shows exactly what will be provisioned
 (root disk, provisioning, snapshots, live migration) before you submit.
@@ -54,7 +54,7 @@ A compact summary under the selector shows exactly what will be provisioned
 
 Click **Next** to review the generated YAML, then **Finish** to create the VM.
 
-<img src={require('./images/vm-creation-review.png').default} alt="VM Review" style={{maxWidth: '700px', width: '100%'}} />
+![VM Review](images/vm-creation-review.png)
 
 The VM will appear in the list. Wait for the status to reach **Running**.
 
@@ -62,7 +62,7 @@ The VM will appear in the list. Wait for the status to reach **Running**.
 
 Click on a VM to view its details — OS info, status, performance metrics, and conditions.
 
-<img src={require('./images/vm-details-view.png').default} alt="VM Details" style={{maxWidth: '900px', width: '100%'}} />
+![VM Details](images/vm-details-view.png)
 
 From the details page you can:
 

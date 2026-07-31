@@ -6,7 +6,7 @@ Kube-DC provides S3-compatible object storage for storing files, images, backups
 
 A **bucket** is a container for your objects (files). Each bucket has a unique name, its own access credentials, and can be set to **Private** or **Public Read** access.
 
-<img src={require('./images/s3-bucket-view.png').default} alt="Object Storage buckets view" style={{maxWidth: '800px', width: '100%'}} />
+![Object Storage buckets view](images/s3-bucket-view.png)
 
 The Object Storage view shows all your buckets with their S3 bucket name, status, access level, credentials availability, and age. The sidebar tree provides quick navigation between **Overview**, **Buckets**, and **Access Keys**.
 
@@ -90,7 +90,7 @@ Deleting a bucket removes all objects inside it permanently.
 
 The built-in file browser lets you manage objects directly from the dashboard without any external tools.
 
-<img src={require('./images/s3-manage-files.png').default} alt="S3 file browser" style={{maxWidth: '800px', width: '100%'}} />
+![S3 file browser](images/s3-manage-files.png)
 
 From the bucket detail view, click **Browse Files** to open the file browser. You can:
 
@@ -111,7 +111,7 @@ Kube-DC provides two types of S3 credentials:
 
 These keys provide access to **all buckets** across all projects in your organization. Manage them from the **Access Keys** section.
 
-<img src={require('./images/s3-access-keys.png').default} alt="S3 access keys" style={{maxWidth: '600px', width: '100%'}} />
+![S3 access keys](images/s3-access-keys.png)
 
 The Access Keys view shows:
 

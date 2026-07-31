@@ -4,7 +4,7 @@ The **Billing & Subscriptions** section lets you monitor resource consumption, m
 
 ## Overview Dashboard
 
-<img src={require('./images/billing-subsciption-view.png').default} alt="Billing overview" style={{maxWidth: '800px', width: '100%'}} />
+![Billing overview](images/billing-subsciption-view.png)
 
 The **Overview** tab shows your current state at a glance:
 
@@ -48,6 +48,31 @@ Kube-DC offers three subscription plans. All resources are provisioned across yo
 | **Bandwidth** | Unlimited 1Gbit/s | Unlimited 1Gbit/s | Unlimited 1Gbit/s |
 
 All plans include Nested Kubernetes clusters (KubeVirt), unlimited bandwidth, and full platform access with no feature restrictions.
+
+### Plans with a GPU
+
+Some installations offer a **GPU alternative for each tier**. When they do, the
+plan grid shows a **Standard / With GPU** switch: the tiers are otherwise
+identical — same CPU, memory, storage, IPv4 and pod limits — and the GPU version
+adds a shared GPU allocation to the same tier.
+
+A GPU plan lists what it includes:
+
+| | Meaning |
+|---|---|
+| **Concurrent GPU workloads** | How many GPU workloads can run at the same time |
+| **GPU memory** | Total GPU memory reserved across those workloads |
+| **GPU compute** | Total share of GPU compute across those workloads |
+
+:::note GPU quota is an entitlement, not a reservation
+Your plan entitles you to run that much GPU at once. It does not hold a physical
+GPU aside for you: if every matching GPU is busy, a new GPU workload waits in the
+queue until one frees up.
+:::
+
+If you do not see the switch, this installation does not sell GPU as part of a
+plan. GPU may still be available as an add-on — check the **Add-ons** section of
+your Billing page, or ask your provider.
 
 :::tip Estimate Performance for Your Workload
 Not sure which plan fits your needs? See the [Scaling & Performance Guide](scaling-performance.md) for detailed estimates:
@@ -139,7 +164,7 @@ To resolve this:
 
 ## Turbo Add-ons
 
-<img src={require('./images/billing-subsciptions-addons.png').default} alt="Turbo add-ons" style={{maxWidth: '800px', width: '100%'}} />
+![Turbo add-ons](images/billing-subsciptions-addons.png)
 
 Turbo Add-ons let you boost your organization's resources without switching plans. Add-ons are applied to your **entire organization** and stack — you can add the same package multiple times.
 
