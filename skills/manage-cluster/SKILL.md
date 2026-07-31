@@ -67,6 +67,93 @@ kubectl patch kdccluster {cluster} -n {namespace} --type=json \
 
 Control plane keeps running; only workers are removed.
 
+### Autoscale a Worker Pool
+
+Add nodes automatically when pods cannot be scheduled. `replicas` keeps its
+meaning — the desired count — and the platform moves it between
+`minReplicas` and `maxReplicas`, the same model as an EKS node group.
+
+```bash
+kubectl patch kdccluster {cluster} -n {namespace} --type=json -p '[
+  {"op":"add","path":"/spec/workers/0/autoscaling",
+   "value":{"enabled":true,"minReplicas":2,"maxReplicas":8}}
+]'
+```
+
+`replicas` must be within `[minReplicas, maxReplicas]` while enabled — set
+it in the same patch if the current value is outside the new bounds:
+
+```bash
+kubectl patch kdccluster {cluster} -n {namespace} --type=json -p '[
+  {"op":"add","path":"/spec/workers/0/autoscaling",
+   "value":{"enabled":true,"minReplicas":3,"maxReplicas":8}},
+  {"op":"replace","path":"/spec/workers/0/replicas","value":3}
+]'
+```
+
+**What triggers a scale-up:** a pod is Pending and unschedulable, and its
+CPU/memory requests would fit a new node of this pool. Pods that a new node
+cannot help — waiting on a PersistentVolumeClaim, requesting more than one
+node of this pool provides, or pinned by node affinity to somewhere else —
+do not trigger scaling.
+
+**Scale-down is not performed.** Nodes are only added. Remove them by
+lowering `replicas` (or `maxReplicas`) yourself.
+
+Optional tuning — omit for sensible defaults (120s stabilization, at most 2
+nodes per step, 300s between scale-ups):
+
+```yaml
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 120   # sustained demand before acting
+      maxNodesPerStep: 2                # never add more than this at once
+      cooldownSeconds: 300              # minimum gap between scale-ups
+```
+
+Disable without losing the settings:
+
+```bash
+kubectl patch kdccluster {cluster} -n {namespace} --type=json \
+  -p '[{"op":"replace","path":"/spec/workers/0/autoscaling/enabled","value":false}]'
+```
+
+#### Check what autoscaling is doing
+
+```bash
+kubectl get kdccluster {cluster} -n {namespace} \
+  -o jsonpath='{.status.workerPools[0].autoscaling}' | jq
+```
+
+```json
+{
+  "mode": "PendingPods",
+  "minReplicas": 2,
+  "maxReplicas": 8,
+  "lastScaleTime": "2026-07-31T13:49:24Z",
+  "lastScaleReason": "3 unschedulable pod(s) fit this pool; +1 node(s)",
+  "limitedBy": ""
+}
+```
+
+`limitedBy` is the field to read when the pool did **not** grow although
+pods are pending:
+
+| Value | Meaning |
+|---|---|
+| `Max` | At `maxReplicas` — raise it if more capacity is wanted |
+| `Quota` | Organization/project quota would be exceeded |
+| `Placement` | The infrastructure could not place another node |
+| `RollingUpdate` | A rollout is in progress; scaling resumes after it |
+| *(empty)* | Not constrained |
+
+The same information appears on the cluster's Workers tab in the console,
+where autoscaling can also be enabled and tuned without kubectl.
+
 ### Upgrade Kubernetes Version
 
 ```bash
@@ -217,6 +304,9 @@ kubectl get kdccluster {cluster} -n {project-namespace} \
 - **Always use `storageType: datavolume`** — this is the production default
 - Rolling update: new worker Ready before old one removed (zero downtime)
 - Prefer `--type=json` patch over merge patch to avoid dropping fields
+- Autoscaling only ADDS nodes; it never removes them. Shrink a pool yourself
+- While autoscaling is enabled, `replicas` must stay within
+  `[minReplicas, maxReplicas]` — patch both together when changing bounds
 - Never expose kubeconfig contents in chat output
 - Write kubeconfig to temp file with `chmod 600`
 - Clean up temporary kubeconfig files after use
