@@ -54,20 +54,25 @@
   --ifm-background-surface-color: #242424;
 }
 
-/* Inline code - elegant styling with softer contrast */
-code {
-  background-color: #f5f5f5 !important;
-  color: #476582 !important;
-  padding: 0.2rem 0.4rem;
-  border-radius: 3px;
-  border: 1px solid #e0e0e0;
-  font-weight: 500;
+/* GitHub-like inline code inside documentation prose */
+.theme-doc-markdown :not(pre) > code {
+  padding: 0.15em 0.35em;
+  margin: 0;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.9em;
+  font-weight: 400;
+  line-height: inherit;
+  color: inherit;
+  background-color: rgba(175, 184, 193, 0.2);
+  border: 0;
+  border-radius: 4px;
+  box-shadow: none;
 }
 
-[data-theme='dark'] code {
-  background-color: #2d2d2d !important;
-  color: #e3e3e3 !important;
-  border-color: #404040;
+/* Dark theme equivalent */
+[data-theme='dark'] .theme-doc-markdown :not(pre) > code {
+  color: inherit;
+  background-color: rgba(110, 118, 129, 0.4);
 }
 
 /* ============================================

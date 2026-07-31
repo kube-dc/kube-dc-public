@@ -6,8 +6,8 @@ stays on the tenant VPC interface.
 
 There are two things to operate here, and keeping them apart is the whole point:
 
-- **The wire.** A `FabricSegment` is one physical broadcast domain — one
-  `(ProviderNetwork, VLAN id)` pair. You declare it once, after the switch really
+- **The wire.** A `FabricSegment` is one physical broadcast domain—one
+  (`ProviderNetwork`, VLAN ID) pair. You declare it once, after the switch really
   delivers the tag to the nodes.
 - **Who may use it.** A `FabricSegmentAllocation` offers that wire to one
   **organization**. Their own admin then binds it to one of their **projects**,
