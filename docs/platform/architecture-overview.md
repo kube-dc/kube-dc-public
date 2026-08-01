@@ -72,14 +72,13 @@ underlying infrastructure. Managed Clusters retain their own API,
 authorization, and CNI boundaries.
 
 <figure className="diagram-comparison" data-diagram="architectural-layers" tabIndex="0" aria-label="Scrollable architectural layers diagram">
-  <img
-    src="/diagrams/generated/architectural-layers.svg"
-    alt="Kube-DC architectural layers from users and access surfaces through Organization and Project governance, workload capabilities, the management cluster, and physical or cloud infrastructure."
-  />
+
+![Kube-DC architectural layers from users and access surfaces through Organization and Project governance, workload capabilities, the management cluster, and physical or cloud infrastructure.](images/architectural-layers.svg)
+
   <figcaption>Architectural layers and the boundaries between platform governance, Project workloads, and Managed Clusters.</figcaption>
 </figure>
 
-[Open the full-size SVG for zooming or printing.](/diagrams/generated/architectural-layers.svg)
+[Open the full-size SVG for zooming or printing.](images/architectural-layers.svg)
 
 </details>
 

@@ -90,14 +90,13 @@ the public address remains mapped at the platform edge rather than configured
 inside the guest.
 
 <figure className="diagram-comparison" data-diagram="fip-to-vm" tabIndex="0" aria-label="Scrollable Floating IP traffic diagram">
-  <img
-    src="/diagrams/generated/fip-to-vm.svg"
-    alt="External traffic reaches a Floating IP in Organization acme and Project production, where one-to-one NAT maps example public address 203.0.113.10 to the running VM's private address with all ports forwarded."
-  />
+
+![External traffic reaches a Floating IP in Organization acme and Project production, where one-to-one NAT maps example public address 203.0.113.10 to the private address of the running VM with all ports forwarded.](images/fip-to-vm.svg)
+
   <figcaption>A Floating IP maps an external address to the VM's existing private interface through bidirectional one-to-one NAT.</figcaption>
 </figure>
 
-[Open the full-size SVG for zooming or printing.](/diagrams/generated/fip-to-vm.svg)
+[Open the full-size SVG for zooming or printing.](images/fip-to-vm.svg)
 
 </details>
 

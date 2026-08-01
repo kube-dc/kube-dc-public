@@ -74,14 +74,13 @@ profile with separate workers. It is an example architecture, not a validated
 capacity plan or a universal deployment requirement.
 
 <figure className="diagram-comparison" data-diagram="reference-architecture" tabIndex="0" aria-label="Scrollable reference architecture diagram">
-  <img
-    src="/diagrams/generated/reference-architecture.svg"
-    alt="Illustrative Kube-DC reference architecture with operators and Flux, three RKE2 server nodes, a management network, separate workers, platform services, optional provider networks, Project networks, workloads, and distinct Managed Cluster control planes."
-  />
+
+![Illustrative Kube-DC reference architecture with operators and Flux, three RKE2 server nodes, a management network, separate workers, platform services, optional provider networks, Project networks, workloads, and distinct Managed Cluster control planes.](images/reference-architecture.svg)
+
   <figcaption>Illustrative production topology; actual node count and capacity depend on enabled services and workloads.</figcaption>
 </figure>
 
-[Open the full-size SVG for zooming or printing.](/diagrams/generated/reference-architecture.svg)
+[Open the full-size SVG for zooming or printing.](images/reference-architecture.svg)
 
 </details>
 
