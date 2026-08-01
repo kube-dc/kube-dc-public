@@ -1,32 +1,41 @@
 ---
 name: manage-certificates
-description: Request and manage x509 certificates in a Kube-DC project — ManagedCertificate resources backed by either the Organization's private intermediate CA (mTLS, internal services, code signing) or a public ACME issuer (Let's Encrypt by default). Certificates auto-renew before expiry; the result lands in a Kubernetes Secret your workloads mount. For HTTPS via Gateway / HTTPRoute use the expose-service skill — it auto-creates the ManagedCertificate. Use this skill directly only for mTLS, client certs, code signing, or custom durations.
+description: Request and manage a Project-scoped ManagedCertificate for private Organization PKI or public ACME issuance, then consume the resulting Kubernetes TLS Secret.
 ---
 
+## When to Use This Skill
+
+Use `ManagedCertificate` when an application needs an explicitly managed
+X.509 certificate for server TLS, client authentication, mTLS, or code signing.
+
+Gateway HTTPS exposure is a separate flow. The `expose-service` skill creates
+an HTTPRoute and a raw cert-manager `Certificate` through the Project's
+`Issuer`; it does not create a `ManagedCertificate`.
+
 ## Prerequisites
-- Target project must exist and be Ready
-- Project namespace: `{org}-{project}`
-- For `type: public` — the requested `dnsNames` must resolve to your project's external IP and be on the Organization's allowed-domains list (admission webhook enforces)
-- For `type: private` — the Organization's intermediate CA must be provisioned (auto-done at first request)
 
-## Key Concepts
+- The target Project exists and is Ready.
+- Know its backing namespace: `{organization}-{project}`.
+- Every DNS SAN is allowed by
+  `Organization.spec.security.certificateDomains`.
+- Private issuance requires the platform's OpenBao PKI and Organization
+  intermediate issuer to be ready.
+- Public issuance requires the configured ACME path, DNS, and Gateway
+  reachability.
 
-- **ManagedCertificate** — Project-scoped CRD that wraps cert-manager + the OpenBao PKI engine. You name a target Kubernetes Secret and a SAN list; the platform issues + renews + writes `tls.crt` / `tls.key` / `ca.crt` into the Secret.
-- **type** — `private` (Org intermediate CA — trusted inside the platform) or `public` (ACME — trusted by browsers).
-- **purpose** — `server` (server TLS auth, the default), `client` (client TLS auth for mTLS), `mtls` (both), `code-signing` (code-signing EKU).
-- **Auto-renewal** — Renews `renewBefore` ahead of expiry (default 15d for a 90d cert). No tenant action required.
+ManagedCertificate currently rejects IP SANs even though the CRD reserves an
+`ipAddresses` field. Use allowed DNS names.
 
-## Decide: type=private or type=public?
+## Choose the Trust Root
 
-| Need | Pick |
-|------|------|
-| HTTPS endpoint reachable from the internet | `public` |
-| Internal service mTLS (service-to-service in the project / org) | `private` |
-| Client certs you ship to partners or workloads | `private` |
-| Code signing (signing images, OCI artifacts) | `private` |
-| Short-lived certs (< 90d) for batch jobs | `private` |
+| Type | Use |
+|---|---|
+| `private` | Internal TLS, mTLS, clients, or code signing through the Organization intermediate CA |
+| `public` | Browser/public trust through the configured ACME issuer |
 
-`public` certs cost an ACME issuance — don't churn them. `private` is free + fast (< 10s issuance) but not internet-trusted.
+Private certificates are not publicly trusted. Distribute the Organization
+trust chain to each client that must validate them. Managed Clusters do not
+receive that trust chain automatically.
 
 ## Request a Certificate
 
@@ -34,56 +43,60 @@ description: Request and manage x509 certificates in a Kube-DC project — Manag
 apiVersion: security.kube-dc.com/v1alpha1
 kind: ManagedCertificate
 metadata:
-  name: {cert-name}
-  namespace: {project-namespace}        # {org}-{project}
+  name: api-tls
+  namespace: "{backing-namespace}"
 spec:
-  type: private                         # private | public
-  purpose: server                       # server | client | mtls | code-signing
+  type: private # private | public
+  purpose: server # server | client | mtls | code-signing
   dnsNames:
-    - {hostname-or-san-1}
-    - {hostname-or-san-2}
-  duration: 90d                         # validity period
-  renewBefore: 15d                      # renew this far ahead of expiry
-  targetSecretName: {cert-name}         # Kubernetes Secret to project into
+  - api.production.internal
+  duration: 90d
+  renewBefore: 15d
+  targetSecretName: api-tls
 ```
 
-See @managed-certificate-template.yaml for a fully-annotated template.
+Use [managed-certificate-template.yaml](managed-certificate-template.yaml) for
+an annotated version.
 
-### Common shapes
+CLI examples:
 
 ```bash
-# Public server cert for an HTTPS endpoint
-kube-dc certificates request {api-name} \
+kube-dc certificates request api-tls \
   --type=public \
-  --dns={api.your-domain.com}
+  --target=api-tls \
+  --dns=api.example.com
 
-# Private mTLS cert for an internal service
-kube-dc certificates request {svc-name} \
-  --type=private --purpose=mtls \
-  --dns={svc.internal} \
-  --dns={svc.{project-namespace}.svc.cluster.local}
-
-# Private client cert (handed to a partner / off-cluster client)
-kube-dc certificates request {partner-name} \
-  --type=private --purpose=client \
-  --dns={partner-name}.partners.internal
-
-# Short-lived cert for a batch job
-kube-dc certificates request {batch-name} \
+kube-dc certificates request worker-mtls \
   --type=private \
-  --dns={batch-job.internal} \
-  --duration=30d --renew-before=5d
+  --purpose=mtls \
+  --target=worker-mtls \
+  --dns=worker.production.internal
 ```
 
-## Use the Certificate
+If `targetSecretName` is omitted from a raw resource, admission defaults it to
+`{managed-certificate-name}-tls`.
 
-The platform writes a standard `kubernetes.io/tls` Secret with `tls.crt`, `tls.key`, and (for `type: private`) `ca.crt` containing the Org intermediate CA chain.
+## Permissions
+
+| Role | View | Request | Renew existing | Delete |
+|---|---|---|---|---|
+| `admin` | Yes | Yes | Yes | Yes |
+| `developer` | Yes | Yes | Yes | Yes |
+| `project-manager` | Yes | No | Yes | No |
+| `user` | Yes | No | No | No |
+
+Issuance happens in the platform controller; users never receive the issuing CA
+private key.
+
+## Consume the TLS Secret
+
+A Ready certificate produces a `kubernetes.io/tls` Secret with `tls.crt`
+and `tls.key`. Private certificates also include `ca.crt`.
 
 ```yaml
 spec:
   containers:
   - name: app
-    image: my-app
     volumeMounts:
     - name: tls
       mountPath: /etc/tls
@@ -91,80 +104,61 @@ spec:
   volumes:
   - name: tls
     secret:
-      secretName: {cert-name}
+      secretName: api-tls
 ```
 
-For Gateway / HTTPRoute use the secret directly in `certificateRefs`:
+For a Gateway resource you manage yourself, reference this Secret from the
+listener's `certificateRefs`. For Kube-DC Service exposure, set
+`service.nlb.kube-dc.com/tls-secret` to consume an existing compatible Secret.
 
-```yaml
-spec:
-  listeners:
-  - name: https
-    port: 443
-    protocol: HTTPS
-    tls:
-      certificateRefs:
-      - kind: Secret
-        name: {cert-name}
-```
-
-## Inspect / Renew / Delete
+## Inspect and Renew
 
 ```bash
 kube-dc certificates list
-kube-dc certificates get {cert-name}
+kube-dc certificates get api-tls
+kubectl get mcert api-tls -n {backing-namespace} -o yaml
 
-# Force re-issuance (e.g. after a security event)
-kube-dc certificates renew {cert-name}
-
-# Delete CRD + cert-manager Certificate + Kubernetes Secret
-# (--yes is required; the CLI refuses without it)
-kube-dc certificates delete {cert-name} --yes
+# Request an early reissuance.
+kube-dc certificates renew api-tls
 ```
 
-`kubectl` short name is `mcert`:
+The controller normally renews `renewBefore` ahead of expiry. cert-manager
+updates the Secret in place. Applications reading a Secret volume must reload
+the certificate; environment variables do not update in running containers.
+
+## Delete
 
 ```bash
-kubectl get mcert -n {project-namespace}
-kubectl describe mcert {cert-name} -n {project-namespace}
+kube-dc certificates delete api-tls --yes
 ```
+
+Deleting a ManagedCertificate removes its owned cert-manager Certificate. The
+target Secret can remain because cert-manager Secret owner references are not
+enabled on every installation. Move consumers first, then verify and delete any
+retained Secret explicitly when it is no longer needed.
 
 ## Verification
 
-After requesting a certificate:
-
 ```bash
-# 1. ManagedCertificate is Ready
-kubectl get managedcertificate {name} -n {project-namespace} \
-  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
-# Expected: True
+kubectl get mcert api-tls -n {backing-namespace} \
+  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}{"\t"}{.status.notAfter}{"\n"}'
 
-# 2. Target Secret exists with valid TLS data
-kubectl get secret {targetSecretName} -n {project-namespace} \
-  -o jsonpath='{.type}'
-# Expected: kubernetes.io/tls
-
-# 3. Expiry is in the future
-kubectl get managedcertificate {name} -n {project-namespace} \
-  -o jsonpath='{.status.notAfter}'
-# Expected: future RFC3339 timestamp
-
-# 4. Renewal is scheduled
-kubectl get managedcertificate {name} -n {project-namespace} \
-  -o jsonpath='{.status.renewalTime}'
-# Expected: future timestamp, earlier than notAfter by renewBefore
+kubectl get secret api-tls -n {backing-namespace} \
+  -o jsonpath='{.type}{"\n"}'
 ```
 
-**Success**: Ready=True, target Secret has `tls.crt`/`tls.key`, notAfter in the future.
-**Failure**:
-- Stuck `CertificateRequested` for `type=public`: ACME HTTP-01 challenge can't complete — check DNS points at the cluster's ingress IP, and that the project's HTTPRoute / Gateway is up.
-- Stuck `CertificateRequested` for `type=private`: PKI engine missing for the Org — check the cluster admin enabled OpenBao.
-- `dnsNames not allowed`: an admission webhook rejected one of the SANs. Verify against the Org's allowed-domains list.
+On failure, inspect ManagedCertificate conditions, events, and the underlying
+cert-manager Certificate. Typical causes are:
+
+- a SAN outside the Organization's allowed certificate domains;
+- unavailable Organization PKI for a private certificate;
+- DNS, Gateway, or ACME challenge failure for a public certificate;
+- `renewBefore` not shorter than `duration`.
 
 ## Safety
 
-- `dnsNames` are validated against the Organization's allowed-domains list. Don't try to issue for a domain you don't control — the request will be admission-rejected.
-- `type: public` issuance hits Let's Encrypt rate limits (50 certs / domain / week by default). Don't churn them.
-- Deleting a ManagedCertificate also deletes the target Kubernetes Secret. Workloads currently mounting it will fail to restart until you fix references. Run `kubectl get pods -n {project-namespace} -o yaml | grep -A2 secretName.*{cert-name}` to find users first.
-- The platform does NOT support BYO private key. Every issuance generates a fresh key pair. If you need to bring your own key, use cert-manager primitives directly (not this skill).
-- For HTTPS exposure (the common case), use the `expose-service` skill — it creates the right Gateway / HTTPRoute and auto-provisions the ManagedCertificate so you don't have to do both halves by hand.
+- Do not request a name the Organization does not control.
+- Do not promise a fixed ACME issuance time or rate-limit allowance.
+- Do not claim private certificates are automatically trusted.
+- ManagedCertificate does not support bring-your-own private keys.
+- Review consumers before renewal after a security event or before deletion.

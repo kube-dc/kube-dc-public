@@ -9,6 +9,8 @@ paths and implementation details are intentionally omitted.
 
 ```mermaid
 flowchart TB
+  accTitle: Kube-DC controller topology
+  accDescr: The CLI and Fleet supply desired state to platform controllers, which reconcile Projects and shared platform resources through Kubernetes APIs.
   subgraph GitOps["Installer and GitOps"]
     CLI["kube-dc CLI"]
     Fleet["Fleet repository"]
@@ -16,14 +18,14 @@ flowchart TB
   end
 
   subgraph API["Kubernetes API"]
-    TenantCRDs["Tenant CRDs<br/>Organization, Project, OrganizationGroup"]
+    ProductCRDs["Organization and Project CRDs<br/>Organization, Project, OrganizationGroup"]
     NetworkCRDs["Network CRDs<br/>EIp, FIp"]
     SecurityCRDs["Security CRDs<br/>ManagedSecret, ManagedCertificate,<br/>KMSKey, DatabaseCredentialPolicy"]
     CoreResources["Core resources<br/>Service, Secret, ConfigMap, Namespace"]
   end
 
   subgraph Manager["kube-dc Manager"]
-    TenantControllers["Tenant controllers"]
+    ProductControllers["Organization and Project controllers"]
     NetworkControllers["Network controllers"]
     SecurityControllers["Security controllers"]
     EndpointControllers["Platform endpoint controllers"]
@@ -39,20 +41,19 @@ flowchart TB
   end
 
   CLI --> Fleet --> Flux --> API
-  TenantCRDs --> TenantControllers
+  ProductCRDs --> ProductControllers
   NetworkCRDs --> NetworkControllers
   SecurityCRDs --> SecurityControllers
   CoreResources --> NetworkControllers
   CoreResources --> EndpointControllers
 
-  TenantControllers --> Keycloak
-  TenantControllers --> KubeOVN
-  TenantControllers --> KubeVirt
-  TenantControllers --> Observability
+  ProductControllers --> Keycloak
+  ProductControllers --> KubeOVN
+  ProductControllers --> KubeVirt
+  ProductControllers --> Observability
 
   NetworkControllers --> KubeOVN
-  EndpointControllers --> Gateway
-  EndpointControllers --> KubeOVN
+  EndpointControllers --> CoreResources
 
   SecurityControllers --> OpenBao
   SecurityControllers --> Gateway
@@ -64,8 +65,8 @@ flowchart TB
   classDef api fill:#f7ecff,stroke:#7d4fa3,stroke-width:1px;
 
   class CLI,Fleet,Flux input;
-  class TenantCRDs,NetworkCRDs,SecurityCRDs,CoreResources api;
-  class TenantControllers,NetworkControllers,SecurityControllers,EndpointControllers manager;
+  class ProductCRDs,NetworkCRDs,SecurityCRDs,CoreResources api;
+  class ProductControllers,NetworkControllers,SecurityControllers,EndpointControllers manager;
   class Keycloak,OpenBao,KubeOVN,KubeVirt,Gateway,Observability platform;
 ```
 
@@ -73,9 +74,9 @@ flowchart TB
 
 | Controller group | Watches | Main responsibility |
 | --- | --- | --- |
-| Tenant controllers | Organizations, Projects, OrganizationGroups | Create tenant namespaces, identity mappings, RBAC, default project networking, quotas, and project lifecycle state. |
-| Network controllers | EIps, FIps, LoadBalancer Services | Allocate and bind external addresses, program Kube-OVN objects, and keep service load balancers attached to the right routers and switches. |
-| Platform endpoint controllers | Annotated platform Services and endpoint health | Publish platform APIs through the configured external network path and keep endpoint health discoverable. |
+| Organization and Project controllers | Organizations, Projects, OrganizationGroups | Create backing namespaces, identity mappings, RBAC, default Project networking, quotas, and Project lifecycle state. |
+| Network controllers | EIp and FIp resources, LoadBalancer Services | Allocate and bind external addresses, program Kube-OVN objects, and keep service load balancers attached to the right routers and switches. |
+| Platform endpoint controllers | Annotated selectorless platform Services and Nodes | Probe eligible node backends and maintain companion EndpointSlices; charts and Fleet own the VIP, Gateway, routes, and certificates. |
 | Security controllers | ManagedSecrets, ManagedCertificates, KMSKeys, DatabaseCredentialPolicies | Bridge project security resources to OpenBao, cert-manager, projected Kubernetes Secrets, and status rollups. |
 | Status aggregation | Project security and platform state | Roll child-resource readiness into higher-level Project and Organization status so operators and UI users see one clear state. |
 
@@ -83,39 +84,44 @@ flowchart TB
 
 ```mermaid
 sequenceDiagram
-  actor Operator
+  accTitle: Project lifecycle reconciliation
+  accDescr: A platform administrator creates an Organization, an Organization administrator creates a Project, and controllers reconcile its identity, backing namespace, networking, quotas, and readiness.
+  actor PlatformAdmin as Platform administrator
+  actor OrgAdmin as Organization administrator
   participant API as Kubernetes API
-  participant Tenant as Tenant controllers
+  participant Product as Organization and Project controllers
   participant Network as Network controllers
   participant Identity as Keycloak
   participant OVN as Kube-OVN and Multus
   participant Virt as KubeVirt and storage
   participant Obs as Observability
 
-  Operator->>API: Create Organization
-  API->>Tenant: Reconcile Organization
-  Tenant->>Identity: Create or update realm and groups
-  Tenant->>API: Publish Organization status
+  PlatformAdmin->>API: Create Organization
+  API->>Product: Reconcile Organization
+  Product->>Identity: Create or update realm and groups
+  Product->>API: Publish Organization status
 
-  Operator->>API: Create Project
-  API->>Tenant: Reconcile Project
-  Tenant->>API: Create project namespace and RBAC
-  Tenant->>OVN: Create project VPC, subnet, NAD, and SNAT
-  Tenant->>Virt: Prepare VM and storage integration
-  Tenant->>Obs: Prepare project dashboards and data sources
-  Tenant->>API: Publish Project status
+  OrgAdmin->>API: Create Project
+  API->>Product: Reconcile Project
+  Product->>API: Create backing namespace, hierarchy, RBAC, and trust resources
+  Product->>OVN: Create Project VPC, subnet, NAD, SNAT, and router policies
+  Product->>Virt: Prepare optional backup and golden-image resources
+  Product->>Obs: Refresh the Organization datasource scope
+  Product->>API: Publish Project status
 
-  Operator->>API: Create OrganizationGroup
-  API->>Tenant: Reconcile access mapping
-  Tenant->>Identity: Sync group membership target
-  Tenant->>API: Create project RoleBindings
+  OrgAdmin->>API: Create OrganizationGroup
+  API->>Product: Reconcile access mapping
+  Product->>Identity: Sync group membership target
+  Product->>API: Create Project RoleBindings
 ```
 
 ## Network Flow
 
 ```mermaid
 flowchart LR
-  subgraph Project["Project namespace"]
+  accTitle: Project workload network flow
+  accDescr: Project workloads use their isolated subnet, with controlled egress through the Project router and optional external IP mappings for ingress or dedicated egress.
+  subgraph Project["Project<br/>(backing namespace)"]
     Workload["VMs and Pods"]
     Service["Service type LoadBalancer"]
     FIp["FIp resource"]
@@ -152,10 +158,11 @@ flowchart LR
 
 Kube-DC has two address concepts:
 
-- **EIp** is the allocated external address object. It can back a project
+- **EIp** is the allocated external address object. It can back a Project
   gateway, a service load balancer, or another higher-level resource.
-- **FIp** attaches an external address to a specific VM interface. It is the
-  tenant-facing floating-IP workflow.
+- **FIp** creates a 1:1 NAT mapping from an EIp to either a selected VM
+  interface (`vmTarget`) or an explicit internal workload address
+  (`ipAddress`). The guest or Pod keeps its internal address.
 
 The controller keeps ownership and status on the Kube-DC resources while
 Kube-OVN owns the low-level routing, NAT, and load-balancer programming.
@@ -164,7 +171,9 @@ Kube-OVN owns the low-level routing, NAT, and load-balancer programming.
 
 ```mermaid
 flowchart TB
-  subgraph ProjectNS["Project namespace"]
+  accTitle: Project secret and certificate flow
+  accDescr: Project-scoped managed resources are validated and reconciled to Kubernetes secrets and certificates without exposing platform credentials to Project users.
+  subgraph ProjectNS["Project<br/>(backing namespace)"]
     MS["ManagedSecret"]
     MC["ManagedCertificate"]
     KMS["KMSKey"]
@@ -204,50 +213,53 @@ flowchart TB
   DBPolicyCtl --> StatusCtl
 ```
 
-Security controllers make project-scoped security resources safe for tenants to
-request while keeping privileged operations centralized in the platform. The
-Ready conditions on the child resources are aggregated so the Project status can
-show whether its security dependencies are usable.
+Security controllers validate and reconcile Project-scoped requests while
+keeping backend credentials and privileged operations in platform service
+accounts. Ready conditions on child resources are aggregated so the Project
+status can show whether its security dependencies are usable.
 
 ## Platform Endpoint Flow
 
 ```mermaid
 flowchart LR
-  subgraph PlatformNS["Platform namespaces"]
-    Service["Platform Service"]
-    Health["Endpoint health"]
+  accTitle: Platform endpoint reconciliation
+  accDescr: Fleet owns endpoint resources, while the endpoint controller probes eligible nodes and maintains the selectorless Service EndpointSlice used by the Gateway.
+  subgraph Desired["Chart and Fleet desired state"]
+    Pool["MetalLB IPAddressPool and advertisement"]
+    Service["Annotated selectorless LoadBalancer Service"]
+    Gateway["Envoy or Kubernetes API listener"]
   end
 
-  subgraph EndpointCtl["Platform endpoint controller"]
-    Discovery["Discover service endpoints"]
-    Publish["Publish external endpoint"]
+  subgraph EndpointCtl["PlatformEndpointReconciler"]
+    Watch["Watch annotated Service and Nodes"]
+    Probe["Probe each node backend"]
+    Slice["Maintain companion EndpointSlice"]
   end
 
-  subgraph Gateway["Gateway layer"]
-    Route["Gateway route"]
-    Backend["Backend target"]
-    Cert["TLS certificate"]
+  subgraph ProjectPath["Project VPC path"]
+    DNS["vpc-dns hostname rewrite"]
+    VIP["Stable internal VIP"]
+    Client["Managed Cluster or Project workload"]
   end
 
-  subgraph Network["External network"]
-    EIP["External IP"]
-    User["Operator or user"]
-  end
-
-  Service --> Discovery
-  Health --> Discovery
-  Discovery --> Publish
-  Publish --> Route
-  Publish --> Backend
-  Publish --> Cert
-  Route --> EIP
-  EIP --> User
+  Pool --> Service
+  Gateway --> Service
+  Service --> Watch
+  Watch --> Probe --> Slice
+  Slice --> Service
+  Client --> DNS --> VIP --> Service
 ```
 
-Platform endpoints are used for management-plane services such as login, admin
-interfaces, and break-glass access paths. The controller publishes only the
-services that are explicitly marked for platform exposure and keeps health
-visible so operators can distinguish routing issues from backend readiness.
+The chart and Fleet configuration own the MetalLB pool, advertisement,
+LoadBalancer Service, Gateway resources, routes, and certificates. The
+`PlatformEndpointReconciler` does not create those objects. It watches an
+explicitly annotated selectorless Service, health-probes the eligible node
+backends, and maintains the Service's companion EndpointSlice.
+
+For topologies that cannot hairpin through the public address, `vpc-dns`
+rewrites platform hostnames to the internal VIP. This keeps the hostname and TLS
+identity unchanged while selecting a reachable path. See
+[Internal platform endpoints](internal-platform-endpoints.md).
 
 ## Reading The Diagram
 

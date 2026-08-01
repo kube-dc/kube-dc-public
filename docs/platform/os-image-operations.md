@@ -70,6 +70,26 @@ deleted before the new one is ready; schedule it in a quiet window.
 The Windows FS golden is a one-shot import: updating the S3 object does **not**
 re-import automatically; a rebuild is a deliberate operator action.
 
+**Blue/green golden refresh (non-destructive).** Never delete a live golden to
+rebuild it. The seeder prefers the snapshot labelled
+`kube-dc.com/golden-active: "true"` when a family has more than one ready golden,
+so a refresh is a *switch*, not a gap:
+
+1. Stage the new golden **alongside** the live one — same
+   `kube-dc.com/golden-os` label, a distinct object name (e.g. suffix the build
+   date), and **no** `golden-active` label yet. Tenants keep using the old one.
+2. Boot-test it: `./hack/windows/automated/validate-clone.sh <ns> <new-snapshot>`
+   — must exit 0 (PHASE 1 RDP boot proof, PHASE 2 guest agent).
+3. Promote: set `kube-dc.com/golden-active: "true"` on the new snapshot and
+   remove it from the old one. Within one Project resync (≤15 min) every project
+   is re-seeded to the new golden; the seeder re-creates each per-project
+   snapshot in the same pass, so there is no window without a golden.
+4. Keep the previous golden until the new one has soaked, then delete it —
+   that is your rollback (flip the label back).
+
+With no `golden-active` label anywhere, behaviour is exactly as before (first
+ready golden wins), so single-golden clusters need no changes.
+
 **Rebuild a stuck mirror family** — check the mirror Job's `summary |` log line;
 per-family failures keep the previous catalog pin (nothing breaks, it goes
 stale). Re-run: `kubectl -n kube-dc create job --from=cronjob/cdi-os-mirror-refresh <name>`.
@@ -84,7 +104,47 @@ Create-VM flow cannot yet attach installer CDROMs). The Windows containerdisk
 is deliberately not published (a >20 GiB blob defeats the depot's S3 driver and
 spegel serves a blob from a single peer).
 
+### Windows media in the public image bucket — ACCEPTED (2026-07-31)
+
+The `cdi-os-images` bucket is **anonymously readable**: CDI importers pull golden
+and catalog images over plain HTTP from inside every tenant VPC, with no
+credentials. That bucket also holds the Windows installer ISO and the Windows
+golden qcow2, so those objects are publicly fetchable by URL.
+
+**Decision: accepted.** Rationale:
+
+- The media is Microsoft's **Windows 11 Enterprise Evaluation** build — the same
+  bits any person can download from Microsoft's Evaluation Center without a
+  licence or account.
+- The golden carries **no product key, no activation state, and no customer
+  data** — it is the neutral BYOL base image (see
+  [Windows VM setup](windows-vm-setup.md)); each tenant applies their own
+  entitlement inside their VM.
+- Making the bucket credentialed would break the unauthenticated CDI import path
+  that every OS family depends on, for no gain while the media stays evaluation-grade.
+
+**Guardrails — these are what keep the decision valid:**
+
+- **Never** publish an *activated*, volume-licensed, KMS-configured, or
+  product-key-bearing Windows image to this bucket. If we ever ship licensed
+  media, it must move to a credentialed/private path **first**.
+- Never place customer-specific or tenant-derived images here.
+- Re-open this decision if we switch away from evaluation media, or if the
+  redistribution terms of the source media change.
+
 ## Known limitations (tracked)
+
+- **The live Windows golden has no working qemu-guest-agent** (found 2026-07-31 by
+  `hack/windows/automated/validate-clone.sh`). A clone boots fully — RDP 3389 and
+  SSH 22 both answer within minutes — but `AgentConnected` never becomes true.
+  Because KubeVirt injects tenant SSH keys **through** the agent, and
+  `guestOSInfo` comes from it:
+  - ✅ Windows VMs work: RDP and password/SSH login with the baked `kube-dc` user.
+  - ❌ **Per-tenant SSH-key injection does not take effect**, and the VM reports no
+    guest OS info in the UI.
+  Fix path: the automated bake (`hack/windows/automated/`) installs the agent in
+  `FirstLogonCommands`, so the next bake resolves it. The currently published
+  golden needs a re-bake (or an in-place agent install + re-snapshot).
 
 - Block-golden rebuild is destructive (not blue/green) — quiet-window only.
 - Windows golden has no automated refresh cadence yet; the unattended bake

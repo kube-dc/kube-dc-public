@@ -1,213 +1,174 @@
 ---
 name: manage-storage
-description: Manage Kube-DC storage resources — create S3 buckets (ObjectBucketClaim), DataVolumes for VMs, and PersistentVolumeClaims for containers.
+description: Create ObjectBucketClaims for S3-compatible buckets, DataVolumes for VM disks, and PersistentVolumeClaims for Project workloads.
 ---
 
 ## Prerequisites
-- Target project must exist and be Ready
-- Project namespace: `{org}-{project}`
-- **Quota**: verify sufficient storage capacity before creating large DataVolumes or PVCs — use the `check-quota` skill
 
-## S3 Object Storage (ObjectBucketClaim)
+- The target Project exists and is Ready.
+- Know its backing namespace: `{organization}-{project}`.
+- Check storage and object-storage quota.
+- Read StorageClass names and the external S3 endpoint from the live
+  installation. Do not assume every provider uses the same classes or domain.
 
-### Create Bucket
+## Object Storage
+
+### Create a Bucket Claim
 
 ```yaml
 apiVersion: objectbucket.io/v1alpha1
 kind: ObjectBucketClaim
 metadata:
-  name: {bucket-name}
-  namespace: {project-namespace}
+  name: "{bucket-name}"
+  namespace: "{backing-namespace}"
   labels:
-    kube-dc.com/organization: {org}    # REQUIRED label
+    kube-dc.com/organization: "{organization}"
 spec:
-  bucketName: {project-namespace}-{bucket-name}
-  storageClassName: ceph-bucket
+  bucketName: "{backing-namespace}-{bucket-name}"
+  storageClassName: "{bucket-storage-class}"
 ```
 
-**Required**: The `kube-dc.com/organization` label MUST be set.
+The Organization label is required for correct dashboard attribution,
+Organization bucket totals, and usage reporting on manually created claims.
+The underlying OBC provisioner may still bind an unlabeled claim, but Kube-DC
+cannot attribute it correctly.
 
-### Auto-Created Resources
+A bound claim creates a same-name Secret and ConfigMap in the Project's backing
+namespace:
 
-When OBC is provisioned, Kubernetes creates:
+| Resource | Important keys |
+|---|---|
+| Secret | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` |
+| ConfigMap | `BUCKET_HOST`, `BUCKET_NAME`, `BUCKET_PORT`, `BUCKET_REGION` |
 
-| Resource | Name | Keys |
-|----------|------|------|
-| Secret | `{bucket-name}` | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` |
-| ConfigMap | `{bucket-name}` | `BUCKET_HOST`, `BUCKET_NAME`, `BUCKET_PORT`, `BUCKET_REGION` |
+These are per-bucket credentials. Use them only for that bucket. Organization
+account keys do not automatically grant data access to all ObjectBucketClaims.
 
-### Mount in Workload
+### Mount Bucket Configuration
 
 ```yaml
-containers:
-  - name: app
-    envFrom:
-      - secretRef:
-          name: {bucket-name}
-      - configMapRef:
-          name: {bucket-name}
-    env:
-      - name: S3_ENDPOINT
-        value: "https://s3.kube-dc.cloud"
+envFrom:
+- secretRef:
+    name: "{bucket-name}"
+- configMapRef:
+    name: "{bucket-name}"
 ```
 
-### AWS CLI Access
+For in-Project traffic, build the endpoint from `BUCKET_HOST` and
+`BUCKET_PORT`. For a workstation, set `S3_ENDPOINT` to the external endpoint
+shown by the Kube-DC console or provider:
 
 ```bash
-# Get credentials
-export AWS_ACCESS_KEY_ID=$(kubectl get secret {bucket-name} -n {namespace} -o jsonpath='{.data.AWS_ACCESS_KEY_ID}' | base64 -d)
-export AWS_SECRET_ACCESS_KEY=$(kubectl get secret {bucket-name} -n {namespace} -o jsonpath='{.data.AWS_SECRET_ACCESS_KEY}' | base64 -d)
+export AWS_ACCESS_KEY_ID="$(
+  kubectl get secret {bucket-name} -n {backing-namespace} \
+    -o jsonpath='{.data.AWS_ACCESS_KEY_ID}' | base64 -d
+)"
+export AWS_SECRET_ACCESS_KEY="$(
+  kubectl get secret {bucket-name} -n {backing-namespace} \
+    -o jsonpath='{.data.AWS_SECRET_ACCESS_KEY}' | base64 -d
+)"
+export BUCKET_NAME="$(
+  kubectl get configmap {bucket-name} -n {backing-namespace} \
+    -o jsonpath='{.data.BUCKET_NAME}'
+)"
 
-# Use AWS CLI
-aws s3 ls s3://{project-namespace}-{bucket-name}/ --endpoint-url https://s3.kube-dc.cloud
-aws s3 cp myfile.txt s3://{project-namespace}-{bucket-name}/ --endpoint-url https://s3.kube-dc.cloud
+aws --endpoint-url "$S3_ENDPOINT" s3 ls "s3://$BUCKET_NAME/"
 ```
 
-## Block Storage (DataVolume for VMs)
+Do not print the Secret values.
 
-### Import from Registry (primary — OS boot disks)
+## VM Disks with DataVolume
 
-Pulls the containerdisk via the node's containerd (`pullMethod: node`) —
-faster, cached on the node, and works from any tenant VPC. The URL MUST be
-digest-pinned (`@sha256:...`) — never a bare tag or `latest`. Ready
-digest-pinned refs come from the platform catalog (UI "OS Images");
-`quay.io/containerdisks/<os>` works for standard Linux images.
+Choose a VM storage class offered to the Project. Prefer a digest-pinned
+registry image from the live OS image catalog:
 
 ```yaml
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
 metadata:
-  name: {disk-name}
-  namespace: {project-namespace}
+  name: "{disk-name}"
+  namespace: "{backing-namespace}"
 spec:
   source:
     registry:
-      url: "docker://quay.io/containerdisks/ubuntu:24.04@sha256:..."   # ALWAYS digest-pinned
+      url: "docker://{registry-image}@sha256:{digest}"
       pullMethod: node
   pvc:
-    accessModes: [ReadWriteOnce]
+    accessModes:
+    - ReadWriteOnce
     resources:
       requests:
-        storage: {size}    # e.g. 20Gi
-    storageClassName: local-path
+        storage: "{size}"
+    storageClassName: "{vm-storage-class}"
 ```
 
-### Import from URL (fallback — Windows/ISO, custom images)
+Use an HTTP source for provider-supported custom images or installation media:
 
 ```yaml
-apiVersion: cdi.kubevirt.io/v1beta1
-kind: DataVolume
-metadata:
-  name: {disk-name}
-  namespace: {project-namespace}
 spec:
   source:
     http:
       url: "{image-url}"
   storage:
-    accessModes: [ReadWriteOnce]
+    accessModes:
+    - ReadWriteOnce
     resources:
       requests:
-        storage: {size}    # e.g. 20Gi
-    storageClassName: local-path
+        storage: "{size}"
+    storageClassName: "{vm-storage-class}"
 ```
 
-### Blank Disk (Additional Data Volume)
+Create a blank data disk with `source.blank: {}`. See
+[datavolume-template.yaml](datavolume-template.yaml) for all three shapes.
 
-```yaml
-apiVersion: cdi.kubevirt.io/v1beta1
-kind: DataVolume
-metadata:
-  name: {disk-name}
-  namespace: {project-namespace}
-spec:
-  source:
-    blank: {}
-  storage:
-    accessModes: [ReadWriteOnce]
-    resources:
-      requests:
-        storage: {size}
-    storageClassName: local-path
-```
+Attach a DataVolume to a VM by referencing it under both
+`domain.devices.disks` and `volumes[].dataVolume.name`.
 
-### Attach Additional Disk to VM
-
-Add to VM spec:
-```yaml
-spec:
-  template:
-    spec:
-      domain:
-        devices:
-          disks:
-            - name: datadisk
-              disk:
-                bus: virtio
-      volumes:
-        - name: datadisk
-          dataVolume:
-            name: {disk-name}
-```
-
-## Block Storage (PVC for Containers)
+## Container Persistent Volumes
 
 ```yaml
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {pvc-name}
-  namespace: {project-namespace}
+  name: "{claim-name}"
+  namespace: "{backing-namespace}"
 spec:
-  accessModes: [ReadWriteOnce]
-  storageClassName: local-path
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: "{project-storage-class}"
   resources:
     requests:
-      storage: {size}
+      storage: "{size}"
 ```
+
+Choose access modes supported by the selected StorageClass. Do not assume
+ReadWriteMany or live migration support from a class name alone.
 
 ## Verification
 
-After creating storage resources:
-
-### ObjectBucketClaim (S3)
 ```bash
-# 1. Check OBC is Bound
-kubectl get obc {bucket-name} -n {project-namespace} -o jsonpath='{.status.phase}'
-# Expected: Bound
+# Bucket and generated connection resources
+kubectl get obc {bucket-name} -n {backing-namespace}
+kubectl get secret,configmap {bucket-name} -n {backing-namespace}
 
-# 2. Verify credential secret was created
-kubectl get secret {bucket-name} -n {project-namespace} -o jsonpath='{.data.AWS_ACCESS_KEY_ID}' | base64 -d
-# Expected: non-empty access key
+# VM disk
+kubectl get dv {disk-name} -n {backing-namespace} \
+  -o jsonpath='{.status.phase}{"\n"}'
+kubectl get pvc {disk-name} -n {backing-namespace}
 
-# 3. Verify ConfigMap was created
-kubectl get configmap {bucket-name} -n {project-namespace} -o jsonpath='{.data.BUCKET_NAME}'
-# Expected: {project-namespace}-{bucket-name}
+# Container claim
+kubectl get pvc {claim-name} -n {backing-namespace}
 ```
 
-### DataVolume
-```bash
-# 1. Check import completed
-kubectl get dv {disk-name} -n {project-namespace} -o jsonpath='{.status.phase}'
-# Expected: Succeeded
+Expected states are `Bound` for ObjectBucketClaim/PVC and `Succeeded` for a
+completed DataVolume import. If a resource remains Pending, inspect its events
+and confirm quota, class availability, image access, and placement.
 
-# 2. Check PVC was created
-kubectl get pvc {disk-name} -n {project-namespace}
-# Expected: STATUS=Bound
-```
-
-### PVC
-```bash
-# 1. Check PVC is Bound
-kubectl get pvc {pvc-name} -n {project-namespace} -o jsonpath='{.status.phase}'
-# Expected: Bound
-```
-
-**Success**: Phase is `Bound` (OBC/PVC) or `Succeeded` (DataVolume), credentials exist.
-**Failure**: If `Pending`, check `kubectl describe obc|dv|pvc {name} -n {project-namespace}` for events.
 ## Safety
-- OBC MUST have `kube-dc.com/organization: {org}` label
-- S3 endpoint: `https://s3.kube-dc.cloud`, region: `us-east-1`
-- Always use `storageClassName: local-path` (default)
-- Registry DataVolume URLs MUST be digest-pinned (`@sha256:...`) — never a bare tag or `latest`
-- Bucket name pattern: `{namespace}-{name}` — must be globally unique
+
+- Label manually created OBCs for the owning Organization.
+- Use the claim's generated per-bucket credentials.
+- Read endpoints, regions, and StorageClasses from the installation.
+- Pin registry images by digest for reproducible boot disks.
+- Deleting an ObjectBucketClaim can permanently delete every object in its
+  bucket. Confirm retention requirements first.

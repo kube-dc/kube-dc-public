@@ -6,8 +6,9 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
   title: 'Kube-DC Documentation',
-  tagline: 'Kubernetes Data Center Platform',
+  tagline: 'Build with Kube-DC or operate the platform',
   favicon: 'images/favicon.png',
+  staticDirectories: ['static', '../static'],
 
   // Note: future.v4 flag can cause SSG issues with external docs
   // Removed for compatibility
@@ -22,12 +23,13 @@ const config: Config = {
   organizationName: 'kube-dc', // GitHub org name (kube-dc/kube-dc-public)
   projectName: 'kube-dc-public', // GitHub repo name.
 
-  onBrokenLinks: 'warn',
+  onBrokenLinks: 'throw',
+  onBrokenAnchors: 'throw',
 
   markdown: {
     mermaid: true,
     hooks: {
-      onBrokenMarkdownLinks: 'warn',
+      onBrokenMarkdownLinks: 'throw',
     },
     mdx1Compat: {
       comments: true,
@@ -36,7 +38,10 @@ const config: Config = {
     },
   },
 
-  clientModules: [require.resolve('./src/clientModules/retinaImages.ts')],
+  clientModules: [
+    require.resolve('./src/clientModules/retinaImages.ts'),
+    require.resolve('./src/clientModules/diagramComparison.ts'),
+  ],
 
   themes: [
     '@docusaurus/theme-mermaid',
@@ -50,7 +55,8 @@ const config: Config = {
         indexDocs: true,
         indexBlog: false,
         indexPages: false,
-        docsRouteBasePath: ['/cloud','/platform'],
+        docsDir: ['../docs/cloud', '../docs/platform'],
+        docsRouteBasePath: ['/cloud', '/platform'],
         searchResultLimits: 8,
         searchResultContextMaxLength: 50,
       },
@@ -73,6 +79,7 @@ const config: Config = {
           path: '../docs/cloud',
           routeBasePath: '/cloud',
           sidebarPath: './sidebarsCloud.ts',
+          editUrl: ({docPath}) => 'https://github.com/kube-dc/kube-dc-public/edit/main/docs/cloud/' + docPath,
         },
         blog: false,
         theme: {
@@ -98,22 +105,17 @@ const config: Config = {
         name: 'Kube-DC',
         applicationCategory: 'Cloud Infrastructure',
         operatingSystem: 'Kubernetes',
-        description: 'An open-source platform that transforms Kubernetes into a full-featured data center with multi-tenancy, virtual machines, managed Kubernetes clusters, networking, storage, and billing.',
+        description: 'An open-source platform that transforms Kubernetes into a full-featured data center with multi-tenancy, virtual machines, Managed Clusters, networking, storage, and billing.',
         url: 'https://docs.kube-dc.com',
-        offers: {
-          '@type': 'Offer',
-          price: '0',
-          priceCurrency: 'USD',
-        },
         featureList: [
           'Multi-tenant organization management',
           'Virtual machine lifecycle management via KubeVirt',
-          'Managed Kubernetes clusters (Kamaji + Cluster API)',
+          'Managed Clusters (Kamaji + Cluster API)',
           'Managed databases (PostgreSQL, MariaDB)',
           'Public and floating IP management (OVN)',
           'S3-compatible object storage (Rook Ceph)',
           'Block storage with persistent volumes',
-          'Backup and restore via Velero',
+          'Service-specific backup and recovery',
           'SSO integration (Keycloak OIDC)',
           'Hierarchical RBAC with project isolation',
           'Billing plans and resource quotas',
@@ -136,6 +138,7 @@ const config: Config = {
         path: '../docs/platform',
         routeBasePath: '/platform',
         sidebarPath: './sidebarsPlatform.ts',
+        editUrl: ({docPath}) => 'https://github.com/kube-dc/kube-dc-public/edit/main/docs/platform/' + docPath,
       },
     ],
     function llmsPlugin() {
@@ -147,49 +150,128 @@ const config: Config = {
           const cloudDir = path.resolve(__dirname, '../docs/cloud');
           const platformDir = path.resolve(__dirname, '../docs/platform');
           const siteUrl = 'https://docs.kube-dc.com';
-          const description = 'Kube-DC is an open-source Kubernetes Data Center platform. It provides multi-tenancy, virtual machines (KubeVirt), managed Kubernetes clusters (Kamaji + Cluster API), managed databases, OVN networking with public/floating IPs, S3 object storage, block storage, backups, SSO, RBAC, and billing.';
+          const description = 'Kube-DC is an open-source Kubernetes Data Center platform. It provides multi-tenancy, virtual machines (KubeVirt), Managed Clusters (Kamaji + Cluster API), managed databases, OVN networking with public/floating IPs, S3 object storage, block storage, backups, SSO, RBAC, and billing.';
 
           const header = `# Kube-DC Documentation\n\n> ${description}\n`;
           const indexLines: string[] = [header, `For the complete documentation in a single file, see: ${siteUrl}/llms-full.txt\n`];
           const fullSections: string[] = [header];
 
-          function extractTitle(content: string): string {
-            const match = content.match(/^#\s+(.+)$/m);
-            return match ? match[1].trim() : '';
+          function parseDocument(content: string): {title: string; body: string} {
+            const frontmatter = content.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+            const frontmatterTitleMatch = frontmatter?.[1].match(/^title:\s*(.+?)\s*$/m);
+            const frontmatterTitle = frontmatterTitleMatch?.[1]
+              .trim()
+              .replace(/^(['"])(.*)\1$/, '$2') ?? '';
+            let body = frontmatter ? content.slice(frontmatter[0].length) : content;
+            const contentTitle = body.match(/^#\s+(.+?)(?:\r?\n|$)/m);
+            if (contentTitle) body = body.replace(contentTitle[0], '');
+            return {
+              title: frontmatterTitle || contentTitle?.[1].trim() || '',
+              body: body.trim(),
+            };
           }
           function extractDescription(content: string): string {
-            const lines = content.split('\n');
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith(':::') || trimmed.startsWith('import ') || trimmed.startsWith('<') || trimmed.startsWith('---') || trimmed.startsWith('![') || trimmed.startsWith('|')) continue;
-              return trimmed.length > 160 ? trimmed.slice(0, 157) + '...' : trimmed;
+            const paragraphs = content
+              .replace(/^---\s*\n[\s\S]*?\n---\s*\n/, '')
+              .replace(/```[\s\S]*?```/g, '')
+              .split(/\n\s*\n/)
+              .map((paragraph) => paragraph
+                .split('\n')
+                .map((line) => line.trim())
+                .join(' ')
+                .trim());
+
+            for (const paragraph of paragraphs) {
+              if (!paragraph || /^(#|:::|import |export |<|!\[|\||---|>)/.test(paragraph)) continue;
+              const plain = paragraph
+                .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+                .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+                .replace(/[*_`]+/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+              if (!plain) continue;
+              if (plain.length <= 160) return plain;
+              const shortened = plain.slice(0, 157).replace(/\s+\S*$/, '');
+              return `${shortened}...`;
             }
             return '';
           }
+          function rewriteRelativeDocLinks(content: string, routeBase: string): string {
+            return content.replace(
+              /\[([^\]]+)\]\((?![a-z][a-z0-9+.-]*:|\/|#)(?:\.\/)?([^)\s]+)\.md(#[^)]+)?\)/gi,
+              (_match: string, label: string, target: string, anchor = '') => {
+                const slug = target === 'index' ? '' : target;
+                const targetUrl = slug ? `${siteUrl}${routeBase}/${slug}` : `${siteUrl}${routeBase}/`;
+                return `[${label}](${targetUrl}${anchor})`;
+              },
+            );
+          }
+          function shiftPageHeadings(content: string): string {
+            let fenceCharacter = '';
+            let fenceLength = 0;
 
+            return content.split('\n').map((line) => {
+              const fence = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+              if (fence) {
+                const marker = fence[1];
+                if (!fenceCharacter) {
+                  fenceCharacter = marker[0];
+                  fenceLength = marker.length;
+                } else if (marker[0] === fenceCharacter && marker.length >= fenceLength && /^\s{0,3}(`+|~+)\s*$/.test(line)) {
+                  fenceCharacter = '';
+                  fenceLength = 0;
+                }
+                return line;
+              }
+              if (fenceCharacter) return line;
+
+              return line.replace(/^(\s{0,3})(#{1,6})(?=[ \t])/, (_match, indent: string, hashes: string) =>
+                `${indent}${'#'.repeat(Math.min(hashes.length + 2, 6))}`,
+              );
+            }).join('\n');
+          }
+
+          let documentCount = 0;
           for (const [label, dir, routeBase] of [['Cloud Guide', cloudDir, '/cloud'], ['Platform Docs', platformDir, '/platform']] as const) {
             indexLines.push(`\n## ${label}\n`);
             fullSections.push(`\n## ${label}\n`);
 
             const files = fs.readdirSync(dir).filter((f: string) => f.endsWith('.md')).sort();
             for (const file of files) {
-              const content = fs.readFileSync(path.join(dir, file), 'utf-8');
+              const source = fs.readFileSync(path.join(dir, file), 'utf-8');
+              const document = parseDocument(source);
               const slug = file.replace('.md', '');
               const url = `${siteUrl}${routeBase}/${slug === 'index' ? '' : slug}`;
-              const title = extractTitle(content) || slug;
-              const desc = extractDescription(content);
+              const title = document.title || slug;
+              const desc = extractDescription(document.body);
               indexLines.push(`- [${title}](${url})${desc ? ': ' + desc : ''}`);
 
-              const cleaned = content
+              const cleaned = shiftPageHeadings(rewriteRelativeDocLinks(document.body
                 .replace(/^import\s.*;\s*$/gm, '')
-                .replace(/<img\s[^>]*\/?\s*>/g, '[image]')
-                .trim();
-              fullSections.push(`\n---\n\n### ${routeBase}/${slug}\n\n${cleaned}\n`);
+                .replace(/!\[([^\]]*)\]\([^)]*\)/g, (_match: string, alt: string) => alt ? `[Image: ${alt}]` : '[Image]')
+                .replace(/<img\s[^>]*\/?\s*>/g, '[Image]')
+                .trim(), routeBase));
+              fullSections.push(`\n---\n\n### ${title}\n\nCanonical URL: ${url}\n\n${cleaned}\n`);
+              documentCount += 1;
             }
           }
 
+          const fullContent = fullSections.join('\n');
+          const structuralContent = fullContent.replace(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1\s*$/gm, '');
+          const h1Count = structuralContent.match(/^#\s+/gm)?.length ?? 0;
+          if (h1Count !== 1) {
+            throw new Error(`llms-full.txt must contain exactly one H1; found ${h1Count}`);
+          }
+          const h3Count = structuralContent.match(/^###\s+/gm)?.length ?? 0;
+          if (h3Count !== documentCount) {
+            throw new Error(`llms-full.txt must contain one H3 per document; expected ${documentCount}, found ${h3Count}`);
+          }
+          if (/\]\((?![a-z][a-z0-9+.-]*:|\/|#)[^)]*\.md(?:#[^)]*)?\)/i.test(fullContent)) {
+            throw new Error('llms-full.txt contains a relative Markdown document link');
+          }
+
           fs.writeFileSync(path.join(outDir, 'llms.txt'), indexLines.join('\n') + '\n');
-          fs.writeFileSync(path.join(outDir, 'llms-full.txt'), fullSections.join('\n'));
+          fs.writeFileSync(path.join(outDir, 'llms-full.txt'), fullContent);
           console.log(`[llms-txt] Generated llms.txt and llms-full.txt`);
         },
       };
@@ -201,10 +283,10 @@ const config: Config = {
     image: 'img/kube-dc-social-card.jpg',
     metadata: [
       {property: 'og:site_name', content: 'Kube-DC'},
-      {name: 'description', content: 'Kube-DC documentation — an open-source Kubernetes Data Center platform with multi-tenancy, virtual machines, managed Kubernetes, networking, storage, and billing.'},
-      {name: 'keywords', content: 'Kube-DC, Kubernetes, data center, multi-tenancy, KubeVirt, virtual machines, managed Kubernetes, Kamaji, Cluster API, OVN, networking, object storage, billing, RBAC, SSO'},
+      {name: 'description', content: 'Kube-DC documentation for Organizations, Projects, virtual machines, Managed Clusters, networking, storage, and billing.'},
+      {name: 'keywords', content: 'Kube-DC, Kubernetes, data center, Organizations, Projects, KubeVirt, virtual machines, Managed Clusters, Kamaji, Cluster API, OVN, networking, object storage, billing, RBAC, SSO'},
       {property: 'og:type', content: 'website'},
-      {property: 'og:description', content: 'Documentation for Kube-DC — transform Kubernetes into a comprehensive Data Center with VMs, managed K8s, networking, storage, and billing.'},
+      {property: 'og:description', content: 'Documentation for Kube-DC: deploy applications and VMs in Projects, create Managed Clusters, and operate the platform.'},
     ],
     colorMode: {
       defaultMode: 'light',
@@ -309,7 +391,7 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Kube-DC Project. Made with ❤️ in Kyiv.`,
+      copyright: `Copyright © ${new Date().getFullYear()} Kube-DC Project.`,
     },
     prism: {
       theme: prismThemes.github,

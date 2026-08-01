@@ -1,6 +1,6 @@
 # Installation Guide
 
-This guide walks you through deploying Kube-DC on three bare-metal servers from scratch. By the end, you will have a fully operational cloud platform with HA control plane, virtual machine support, managed Kubernetes clusters, and public IP networking.
+This guide walks you through deploying Kube-DC on three bare-metal servers from scratch. By the end, you will have a fully operational cloud platform with HA control plane, virtual machine support, Managed Clusters, and public IP networking.
 
 **Time estimate:** ~60 minutes (excluding server provisioning).
 
@@ -248,7 +248,7 @@ out. An existing operator-managed `/etc/rancher/rke2/registries.yaml` is never
 overwritten, but default-on install refuses to restart RKE2 when that file has
 no non-empty `mirrors:` mapping. Pair it with the image-acceleration stack that
 `bootstrap init` scaffolds by default
-(tenant-cluster addons, zot registry depot, CDI OS-image mirror —
+(Managed Cluster add-ons, zot registry depot, CDI OS-image mirror —
 `--image-acceleration=false` opts out; see the
 [enterprise install guide](private-ca-enterprise-install.md) §6).
 

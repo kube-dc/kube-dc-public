@@ -1,536 +1,128 @@
-# Backups & Snapshots
+# Data Protection and Recovery
 
-:::caution Work in Progress
-Backup functionality is currently in **testing and validation phase**. Current implementation backs up VM and workload **metadata only** (configurations, definitions) but not actual disk data due to storage backend limitations.
+Backups in Kube-DC are service-specific. There is no single Project backup that
+automatically protects every VM disk, database, object, and Kubernetes resource.
 
-**For full VM data protection**, migration to snapshot-capable storage (Ceph RBD, Longhorn) is required.
+Start by identifying the data owner:
+
+| Resource | Supported protection path | What it protects |
+|----------|---------------------------|------------------|
+| Managed PostgreSQL or MariaDB | Database backup and restore | Database engine data and recovery metadata |
+| Managed Cluster | etcd snapshots | Kubernetes API state in that Managed Cluster |
+| Application files on a PVC | Application-native backup to object storage | Files selected by the application |
+| Object storage bucket | Application retention, versioning, or replication policy | Objects covered by that policy |
+| Project manifests | Git or another configuration repository | Desired configuration, not runtime data |
+| VM or arbitrary Project PVC | No general Project-wide self-service workflow | Use an application-consistent method or a provider-approved storage workflow |
+
+:::warning No Project-wide Velero workflow
+Do not create Velero `Backup`, `Restore`, or `Schedule` resources from a
+Project guide. The platform Velero installation and its namespace are
+operator-owned, and a metadata-only capture is not a VM or PVC data backup.
+Contact your provider when you need a platform-level recovery service.
 :::
 
-Kube-DC provides backup and restore capabilities for virtual machines, containers, and persistent data using Velero. Backups are stored in S3-compatible object storage (Rook Ceph RGW) at `https://s3.kube-dc.cloud`.
+## Managed Database Backups
 
-## Overview
+Configure backups on the `KdcDatabase` or in the database detail view. Confirm
+that the database reports a successful backup before relying on it.
 
-### Current Capabilities
+A database recovery plan should record:
 
-Velero currently backs up:
-- **Virtual Machine Configurations** — VM definitions, DataVolumes, PVC metadata
-- **VirtualMachineSnapshots** — KubeVirt snapshot resources (metadata)
-- **Container Workloads** — Deployments, StatefulSets, and all Kubernetes resources
-- **Kubernetes Resources** — ConfigMaps, Secrets, Services, networking resources
+- backup schedule and retention
+- last successful backup time
+- recovery mode: restored copy or destructive in-place restore
+- PostgreSQL point-in-time recovery window, when enabled
+- encryption key and object-storage dependencies
+- application maintenance and credential behavior during restore
 
-### Known Limitations
+A restored copy is safer for validation because it leaves the source database
+running. In-place restore replaces current data and requires a maintenance
+window.
 
-⚠️ **Volume Data Not Backed Up**: With the current `local-path` storage backend:
-- Only **metadata** (configurations) is backed up
-- VM disk data is **not** captured
-- Suitable for disaster recovery of infrastructure configurations
-- **Not suitable** for data loss protection
+See [Managed Databases: Backups](managed-databases.md#backups) for configuration
+and restore procedures.
 
-For full data backup, snapshot-capable storage is required (planned upgrade to Ceph RBD).
+## Managed Cluster Snapshots
 
-### Backup Scope
+Managed Cluster backups are etcd snapshots. They protect Kubernetes API state,
+including resources stored in etcd. They do **not** copy application data from
+PersistentVolumes, external databases, or object storage.
 
-Backups are created in the `velero` namespace but target project resources using `includedNamespaces`. Each project can only back up resources within its own namespace, providing complete isolation.
+Use the cluster detail view's danger zone to list snapshots, take an on-demand
+snapshot, or start a restore. During restore, the Managed Cluster API is
+temporarily unavailable and API state created after the selected snapshot is
+lost. Worker workloads may continue running, but their control-plane view is
+rolled back.
 
-### Managed Kubernetes Control-Plane Backups
+Before restoring:
 
-If you provisioned a [managed Kubernetes cluster](provisioning-cluster.md)
-in your project, Kube-DC also runs an **automatic daily backup** of
-that cluster's control-plane `etcd`. This is independent of the
-Velero workload backups described in this page — it's handled by the
-managed-K8s controller and aimed at disaster recovery of the cluster
-itself, not the workloads running on it.
+1. Confirm the selected snapshot completed successfully.
+2. Back up workload data through its owning service.
+3. Record changes made after the snapshot.
+4. Notify application owners of the API interruption.
+5. Verify nodes, controllers, and workloads after the restore.
 
-| | Velero workload backups | Managed-K8s etcd backup |
-|---|---|---|
-| What it captures | VM / workload definitions and metadata in your project namespace | Control-plane etcd of a `KdcCluster` (everything `kubectl` returns on the tenant cluster) |
-| Frequency | On demand or scheduled (you control it) | Daily 02:00 UTC by default (`spec.backup.schedule`) |
-| Retention | Backup spec / lifecycle policy | 7 days default (`spec.backup.retentionDays`) |
-| Encryption at rest | Bucket-level only | **Envelope-encrypted** when [encryption.etcd.enabled](provisioning-cluster.md#encryption-at-rest) is on — uses the same KEK as the live cluster, anyone with bucket read access can't decrypt |
-| Restore mechanism | Velero Restore CR | `kube-dc.com/restore-from` annotation on a fresh `KdcCluster` |
-| Storage location | Bucket you create + register with Velero | Per-project `managed-k8s-backups` OBC (auto-provisioned) |
+Scheduled snapshots require the platform's managed backup bucket to be
+available. Check the cluster backup status rather than assuming backup is
+enabled on every installation.
 
-You don't configure managed-K8s etcd backups separately — they ship
-with every `KdcCluster`. See [Provisioning a Cluster](provisioning-cluster.md)
-for the spec fields (`spec.backup.*` + `spec.encryption.etcd.*`) and
-[the restore annotation](provisioning-cluster.md#annotations).
+## Applications and Persistent Volumes
 
-## Prerequisites
+A PVC is storage, not a backup. For stateful applications, use a
+consistency-aware tool that understands the data format, then write the backup
+to a different failure domain such as [Object Storage](object-storage.md).
 
-### Step 1: Create a Backup Bucket
+Examples include:
 
-Before creating backups, you need an S3 bucket to store them.
+- database-native dumps for an application-managed database
+- an application export followed by an object-storage upload
+- a Job that mounts the PVC read-only and archives files after the application
+  has quiesced writes
 
-**Via Dashboard**:
-1. Navigate to **Object Storage** → **Buckets**
-2. Click **+ Create Bucket**
-3. Enter bucket name: `my-project-backups`
-4. Choose **Private** access
-5. Click **Create**
+A storage clone in the same system is useful for testing, but it is not a
+disaster-recovery copy by itself.
 
-**Via kubectl**:
-```bash
-kubectl apply -f - <<EOF
-apiVersion: objectbucket.io/v1alpha1
-kind: ObjectBucketClaim
-metadata:
-  name: project-backups
-  namespace: my-project
-  labels:
-    kube-dc.com/organization: myorg
-spec:
-  bucketName: myorg-myproject-backups
-  storageClassName: ceph-bucket
-EOF
-```
+## Virtual Machines
 
-Wait for the bucket to be provisioned:
-```bash
-kubectl get objectbucketclaim project-backups -n my-project
-# Wait for status: Bound
-```
+Back up data from inside the guest or with an application-consistent storage
+workflow approved by the provider. A VM manifest contains hardware and network
+configuration; it does not contain the bytes on the attached disk.
 
-### Step 2: Request Backup Storage Setup
+For recoverability, keep:
 
-:::info Manual Setup Required
-Currently, backup storage configuration requires administrator assistance. Contact support to enable backup storage for your project by providing:
-- **Project namespace**: `my-project`
-- **Bucket name**: `myorg-myproject-backups`
+- the VM manifest or build automation in version control
+- guest configuration outside the VM image
+- application data backups in a separate storage system
+- a documented method to recreate network exposure and credentials
 
-The administrator will configure a BackupStorageLocation that allows you to create backups referencing your bucket.
+Do not remove VM, PVC, or snapshot finalizers to force a restore or deletion.
+That can orphan storage and make recovery harder.
 
-**Automated setup via controller is planned.**
-:::
+## Object Storage
 
-**What the administrator does**:
-```bash
-# Extract S3 credentials from your project
-ACCESS_KEY=$(kubectl get secret project-backups -n my-project -o jsonpath='{.data.AWS_ACCESS_KEY_ID}' | base64 -d)
-SECRET_KEY=$(kubectl get secret project-backups -n my-project -o jsonpath='{.data.AWS_SECRET_ACCESS_KEY}' | base64 -d)
-BUCKET=$(kubectl get cm project-backups -n my-project -o jsonpath='{.data.BUCKET_NAME}')
+Object storage is a destination for backups, not automatically a backup of
+itself. Decide whether your application needs versioning, retention, replication,
+or an export to another account or provider. Test access with the same
+credentials and endpoint the restore process will use.
 
-# Create credential secret in velero namespace
-kubectl create secret generic bsl-my-project -n velero \
-  --from-literal=cloud="[default]
-aws_access_key_id=${ACCESS_KEY}
-aws_secret_access_key=${SECRET_KEY}"
+## Define the Recovery Objective
 
-# Create BackupStorageLocation
-kubectl apply -f - <<EOF
-apiVersion: velero.io/v1
-kind: BackupStorageLocation
-metadata:
-  name: my-project
-  namespace: velero
-  labels:
-    kube-dc.com/project: my-project
-spec:
-  provider: aws
-  objectStorage:
-    bucket: ${BUCKET}
-  config:
-    region: us-east-1
-    s3ForcePathStyle: "true"
-    s3Url: https://s3.kube-dc.cloud
-  credential:
-    name: bsl-my-project
-    key: cloud
-EOF
-```
+For each production workload, record:
 
-Once configured, you'll be able to reference the BackupStorageLocation by your project namespace name in backup resources.
+- **RPO**: how much recent data can be lost
+- **RTO**: how long recovery may take
+- backup owner and alert recipient
+- retention and deletion policy
+- encryption keys and credential custody
+- restore order for database, files, configuration, and network exposure
 
-## Creating Backups
-
-:::info Important: Backup Namespace
-All Backup resources must be created in the **`velero` namespace**, not in your project namespace. Use `includedNamespaces` to specify which project namespaces to back up.
-
-This is a Velero requirement — backup controllers only watch the `velero` namespace.
-:::
-
-### Backup a Virtual Machine
-
-**Via kubectl**:
-```bash
-kubectl apply -f - <<EOF
-apiVersion: velero.io/v1
-kind: Backup
-metadata:
-  name: ubuntu-vm-backup
-  namespace: my-project
-spec:
-  # Include only this namespace
-  includedNamespaces:
-    - my-project
-  
-  # Select the VM by label
-  labelSelector:
-    matchLabels:
-      kubevirt.io/vm: ubuntu
-  
-  # Include VM-related resources
-  includedResources:
-    - virtualmachines
-    - virtualmachineinstances
-    - datavolumes
-    - persistentvolumeclaims
-    - persistentvolumes
-  
-  # Reference your project's backup storage
-  storageLocation: my-project
-  
-  # Retention period (7 days)
-  ttl: 168h
-EOF
-
-# Wait for snapshot to complete
-kubectl wait --for=condition=Ready virtualmachinesnapshot/ubuntu-snapshot-$(date +%Y%m%d) -n my-project --timeout=5m
-```
-
-**Step 2: Backup VM and Snapshot Resources**:
-```bash
-kubectl apply -f - <<EOF
-apiVersion: velero.io/v1
-kind: Backup
-metadata:
-  name: ubuntu-vm-backup-$(date +%Y%m%d)
-  namespace: velero  # Must be velero namespace
-spec:
-  includedNamespaces:
-    - my-project
-  includedResources:
-    - virtualmachines.kubevirt.io
-    - virtualmachinesnapshots.snapshot.kubevirt.io
-    - virtualmachinesnapshotcontents.snapshot.kubevirt.io
-    - datavolumes.cdi.kubevirt.io
-    - persistentvolumeclaims
-  storageLocation: my-project
-  ttl: 168h  # 7 days
-  defaultVolumesToFsBackup: true
-EOF
-```
-
-:::warning Metadata Only
-This backup captures VM configuration and resource definitions but **not disk data**. The VM can be recreated but will start with empty/original disks.
-:::
-
-### Check Backup Status
-
-```bash
-# List backups (in velero namespace)
-kubectl get backups -n velero
-
-# Get detailed status
-kubectl describe backup ubuntu-vm-backup-$(date +%Y%m%d) -n velero
-
-# View backup logs
-kubectl logs -n velero deployment/velero | grep ubuntu-vm-backup-$(date +%Y%m%d)
-```
-
-**Backup phases**:
-- `New` — Backup request received
-- `InProgress` — Backing up resources and volumes
-- `Completed` — Backup finished successfully
-- `PartiallyFailed` — Some resources failed to back up
-- `Failed` — Backup failed
-
-### Backup Entire Project
-
-Backup all resources in your project namespace:
-
-```bash
-kubectl apply -f - <<EOF
-apiVersion: velero.io/v1
-kind: Backup
-metadata:
-  name: full-project-backup-$(date +%Y%m%d)
-  namespace: velero  # Must be velero namespace
-spec:
-  includedNamespaces:
-    - my-project
-  storageLocation: my-project
-  ttl: 720h  # 30 days
-EOF
-```
-
-This backs up all VMs, containers, services, configurations, and persistent volumes in the project.
-
-### Backup Specific Resources
-
-**Example: Backup only database StatefulSets**:
-```bash
-kubectl apply -f - <<EOF
-apiVersion: velero.io/v1
-kind: Backup
-metadata:
-  name: database-backup-$(date +%Y%m%d)
-  namespace: velero  # Must be velero namespace
-spec:
-  includedNamespaces:
-    - my-project
-  includedResources:
-    - statefulsets
-    - persistentvolumeclaims
-    - services
-    - configmaps
-    - secrets
-  labelSelector:
-    matchLabels:
-      app: postgresql
-  storageLocation: my-project
-  ttl: 168h
-  defaultVolumesToFsBackup: true
-EOF
-```
-
-## Restoring from Backups
-
-### Restore a Virtual Machine
-
-**List available backups**:
-```bash
-kubectl get backup -n velero
-```
-
-**Create a restore**:
-```bash
-kubectl apply -f - <<EOF
-apiVersion: velero.io/v1
-kind: Restore
-metadata:
-  name: restore-ubuntu-vm-$(date +%Y%m%d)
-  namespace: velero  # Must be velero namespace
-spec:
-  backupName: ubuntu-vm-backup-$(date +%Y%m%d)
-  includedNamespaces:
-    - my-project
-EOF
-```
-
-:::warning Data Limitations
-Restore recreates VM configuration but **not disk data**. The restored VM will reference the original PVCs if they still exist, or create new empty volumes if they don't.
-:::
-
-**Monitor restore progress**:
-```bash
-# Check restore status
-kubectl get restore restore-ubuntu-vm-$(date +%Y%m%d) -n velero
-
-# Get detailed information
-kubectl describe restore restore-ubuntu-vm-$(date +%Y%m%d) -n velero
-
-# Watch for completion
-kubectl get restore restore-ubuntu-vm-$(date +%Y%m%d) -n velero -w
-```
-
-**Restore phases**:
-- `New` — Restore request received
-- `InProgress` — Restoring resources
-- `Completed` — Restore finished successfully
-- `PartiallyFailed` — Some resources failed to restore
-- `Failed` — Restore failed
-
-### Restore to Different Namespace
-
-To restore to a different project (requires permissions in both namespaces):
-
-```bash
-kubectl apply -f - <<EOF
-apiVersion: velero.io/v1
-kind: Restore
-metadata:
-  name: restore-to-staging-$(date +%Y%m%d)
-  namespace: velero  # Must be velero namespace
-spec:
-  backupName: full-project-backup-$(date +%Y%m%d)
-  namespaceMapping:
-    my-project: my-project-staging
-  restorePVs: true
-EOF
-```
-
-### Partial Restore
-
-**Restore only specific resources**:
-```bash
-kubectl apply -f - <<EOF
-apiVersion: velero.io/v1
-kind: Restore
-metadata:
-  name: restore-vm-only-$(date +%Y%m%d)
-  namespace: velero  # Must be velero namespace
-spec:
-  backupName: full-project-backup-$(date +%Y%m%d)
-  includedResources:
-    - virtualmachines
-    - datavolumes
-    - persistentvolumeclaims
-  labelSelector:
-    matchLabels:
-      kubevirt.io/vm: ubuntu
-  restorePVs: true
-EOF
-```
-
-## Scheduled Backups
-
-Create automated backup schedules using cron syntax:
-
-```bash
-kubectl apply -f - <<EOF
-apiVersion: velero.io/v1
-kind: Schedule
-metadata:
-  name: daily-backup
-  namespace: velero  # Must be velero namespace
-spec:
-  schedule: "0 2 * * *"  # Every day at 2 AM
-  template:
-    includedNamespaces:
-      - my-project
-    storageLocation: my-project
-    ttl: 720h  # Keep for 30 days
-EOF
-```
-
-**Check scheduled backups**:
-```bash
-# List schedules
-kubectl get schedule -n velero
-
-# View schedule details
-kubectl describe schedule daily-backup -n velero
-
-# List backups created by schedule
-kubectl get backup -n velero -l velero.io/schedule-name=daily-backup
-```
-
-## Backup Best Practices
-
-### Before Backing Up VMs
-
-1. **Shut down VMs for consistent backups** (optional but recommended):
-   ```bash
-   virtctl stop ubuntu -n my-project
-   # Create backup
-   # Restart VM
-   virtctl start ubuntu -n my-project
-   ```
-
-2. **Tag VMs for selective backups**:
-   ```yaml
-   metadata:
-     labels:
-       backup-policy: daily
-       environment: production
-   ```
-
-### Retention Policies
-
-Set appropriate TTLs based on backup type:
-
-| Backup Type | TTL | Use Case |
-|-------------|-----|----------|
-| Pre-upgrade snapshots | 24h-168h | Short-term rollback |
-| Daily automated backups | 168h-720h | Recent recovery |
-| Weekly backups | 2160h-4320h | Long-term retention |
-| Monthly backups | 8760h | Compliance |
-
-### Performance Considerations
-
-**Backup duration** depends on data size:
-- Small VMs (&lt;10GB): 5-15 minutes
-- Medium VMs (10-50GB): 30-90 minutes
-- Large VMs (&gt;100GB): 2-4 hours
-
-**Tips for faster backups**:
-- Schedule backups during low-usage periods
-- Exclude temporary data directories
-- Use compression (enabled by default in restic)
-
-## Troubleshooting
-
-### Backup Stuck in InProgress
-
-**Check node-agent logs**:
-```bash
-kubectl logs -n velero -l name=node-agent --tail=100
-```
-
-**Check backup details**:
-```bash
-kubectl describe backup <backup-name> -n my-project
-```
-
-**Common causes**:
-- Large volumes taking time to back up
-- Node-agent pod not running
-- Network issues connecting to S3
-
-### Restore Fails with Resource Conflicts
-
-If resources already exist, the restore will fail. Options:
-
-**Option 1: Delete existing resources**:
-```bash
-kubectl delete vm ubuntu -n my-project
-# Then retry restore
-```
-
-**Option 2: Restore to different namespace**:
-```bash
-# Use namespaceMapping in restore spec
-```
-
-### Backup Shows PartiallyFailed
-
-**View backup logs**:
-```bash
-velero backup logs <backup-name> -n my-project
-```
-
-**Common issues**:
-- Some PVCs are not mounted (restic requires mounted volumes)
-- Transient resource errors
-- Insufficient S3 storage quota
-
-## Storage Quotas
-
-Backup storage counts toward your object storage quota:
-
-| Plan | Storage Limit | Recommended Max Backups |
-|------|--------------|-------------------------|
-| Dev | 20 GB | 5-10 backups |
-| Pro | 100 GB | 20-30 backups |
-| Scale | 500 GB | 50-100 backups |
-
-**Monitor backup storage usage**:
-```bash
-# List backups with sizes
-kubectl get backup -n my-project -o custom-columns=NAME:.metadata.name,SIZE:.status.progress.totalItems,AGE:.metadata.creationTimestamp
-```
-
-**Clean up old backups**:
-```bash
-kubectl delete backup <backup-name> -n my-project
-```
-
-Backups are automatically deleted when their TTL expires.
-
-## Quick Reference
-
-| Task | Command |
-|------|---------|
-| List backups | `kubectl get backup -n my-project` |
-| Create VM backup | `kubectl apply -f backup.yaml` |
-| Check backup status | `kubectl describe backup <name> -n my-project` |
-| List restores | `kubectl get restore -n my-project` |
-| Create restore | `kubectl apply -f restore.yaml` |
-| List schedules | `kubectl get schedule -n my-project` |
-| Delete backup | `kubectl delete backup <name> -n my-project` |
-| View backup logs | `velero backup logs <name> -n my-project` |
+Run a restore test on a schedule. A successful upload proves that a backup was
+written; only a restore test proves that it is usable.
 
 ## Next Steps
 
-- [Block Storage](block-storage.md) — Understand persistent volumes
-- [Object Storage](object-storage.md) — Manage S3 buckets
+- [Managed Databases](managed-databases.md)
+- [Managed Clusters](cluster-management.md)
+- [Object Storage](object-storage.md)
+- [Block Storage](block-storage.md)
+- [GitOps](gitops.md)

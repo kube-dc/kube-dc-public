@@ -1,115 +1,59 @@
-# OS-specific cloud-init configurations for Kube-DC VMs
-# Source: images-configmap in kube-dc namespace
-# Each OS requires qemu-guest-agent for IP reporting and SSH key injection
+# Reference fragments only. Use the live OS catalog's default user and the
+# cloud-init rendered by the Kube-DC VM wizard when it differs.
+#
+# QEMU Guest Agent is required for accessCredentials key injection, readiness,
+# and IP reporting.
 
-# Ubuntu 24.04 / Debian 12 LTS / openSUSE Leap 15.3
-# Simple systemd-based guest agent
 ---
-os: ubuntu-debian-opensuse
-cloud_user: ubuntu  # or: debian, opensuse
+family: debian-systemd
+examples:
+  - ubuntu
+  - debian
+cloud_user: "{catalog-default-user}"
 cloud_init: |
   #cloud-config
   package_update: true
-  package_upgrade: true
   packages:
     - qemu-guest-agent
   runcmd:
     - systemctl enable --now qemu-guest-agent
 
-# CentOS Stream 9 / Fedora 41
-# Needs SELinux permissive mode for guest agent SSH key injection
 ---
-os: centos-fedora
-cloud_user: centos  # or: fedora
+family: rpm-systemd
+examples:
+  - centos-stream
+  - fedora
+cloud_user: "{catalog-default-user}"
 cloud_init: |
   #cloud-config
   package_update: true
-  package_upgrade: true
   packages:
     - qemu-guest-agent
-    - policycoreutils-python-utils
   runcmd:
-    - setenforce 0
-    - sed -i 's/SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
-    - setsebool -P virt_qemu_ga_manage_ssh 1
-    - setsebool -P virt_qemu_ga_exec 1
-    - setsebool -P virt_qemu_ga_file_transfer 1
-    - restorecon -R /usr/bin/qemu-ga
-    - semanage fcontext -a -t virt_qemu_ga_exec_t '/usr/bin/qemu-ga' || true
-    - restorecon /usr/bin/qemu-ga
     - systemctl enable --now qemu-guest-agent
-    - systemctl restart qemu-guest-agent
+    # Keep SELinux enforcing. Apply only guest-agent policy booleans that exist
+    # in the selected image; do not disable SELinux as a generic workaround.
+    - setsebool -P virt_qemu_ga_manage_ssh 1 || true
 
-# CentOS requires additional user setup
 ---
-os: centos-extra
-cloud_init_extra: |
-  users:
-  - name: centos
-    groups: wheel
-    sudo: ALL=(ALL) NOPASSWD:ALL
-    shell: /bin/bash
-    lock_passwd: false
-  packages:
-    - lrzsz
-
-# Alpine Linux 3.19
-# Uses rc-service instead of systemd
----
-os: alpine
-cloud_user: alpine
+family: alpine-openrc
+examples:
+  - alpine
+cloud_user: "{catalog-default-user}"
 cloud_init: |
   #cloud-config
   package_update: true
-  package_upgrade: true
   packages:
     - qemu-guest-agent
   runcmd:
-    - rc-service qemu-guest-agent restart
     - rc-update add qemu-guest-agent default
+    - rc-service qemu-guest-agent start
 
-# Gentoo Linux
-# Uses EFI firmware, needs user setup
 ---
-os: gentoo
-cloud_user: gentoo
-firmware: efi
-cloud_init: |
-  #cloud-config
-  users:
-  - name: gentoo
-    groups: wheel
-    sudo: ALL=(ALL) NOPASSWD:ALL
-    shell: /bin/bash
-    lock_passwd: false
-  package_update: true
-  packages:
-    - app-emulation/qemu-guest-agent
-  runcmd:
-    - systemctl enable qemu-guest-agent
-    - systemctl start qemu-guest-agent
-
-# Windows 11 Enterprise (Golden Image)
-# Pre-configured, no cloud-init needed
----
-os: windows-golden
-cloud_user: kube-dc
-firmware: efi
-machine_type: pc-q35-rhel8.6.0
-features: hyperv,acpi,apic,smm,tpm
-cloud_init: |
-  # Windows golden image - pre-configured with SSH, RDP, and VirtIO drivers
-  # No cloud-init needed - uses QEMU Guest Agent for SSH key injection
-
-# Windows 11 Enterprise (Fresh Install)
-# Requires manual setup via VNC console
----
-os: windows-fresh
-cloud_user: Administrator
-firmware: efi
-machine_type: pc-q35-rhel8.6.0
-features: hyperv,acpi,apic,smm,tpm
-boot_order: cdrom,disk
-cloud_init: |
-  # Fresh Windows installation with VirtIO drivers
-  # Requires manual setup via VNC console
+family: windows-golden
+cloud_user: "{catalog-default-user}"
+cloud_init: null
+notes:
+  - Use the Kube-DC VM wizard's complete UEFI, TPM, Hyper-V, disk, and machine configuration.
+  - The qualified golden image already contains VirtIO drivers, SSH, and QEMU Guest Agent.
+  - Do not apply the generic Linux VM template to Windows.

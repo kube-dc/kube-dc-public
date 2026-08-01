@@ -12,7 +12,7 @@ function HomepageHeader() {
   return (
     <header className={clsx('hero hero--primary', styles.heroBanner)}>
       <div className="container">
-        <Heading as="h1" className="hero__title">
+        <Heading as="h1" className={clsx('hero__title', styles.heroTitle)}>
           {siteConfig.title}
         </Heading>
         <p className="hero__subtitle">{siteConfig.tagline}</p>
@@ -31,7 +31,7 @@ type CardProps = {
 
 function DocCard({title, description, link, buttonLabel, items}: CardProps) {
   return (
-    <div className={clsx('col col--4')}>
+    <div className={clsx('col col--6')}>
       <div className={styles.card}>
         <Heading as="h2">{title}</Heading>
         <p>{description}</p>
@@ -49,7 +49,6 @@ function DocCard({title, description, link, buttonLabel, items}: CardProps) {
 }
 
 export default function Home(): ReactNode {
-  const {siteConfig} = useDocusaurusContext();
   return (
     <Layout
       title="Home"
@@ -59,43 +58,34 @@ export default function Home(): ReactNode {
         <div className="row">
           <DocCard
             title="Cloud Guide"
-            description="User documentation for Kube-DC Cloud. Deploy VMs, Kubernetes clusters, and manage your infrastructure."
+            description="Create Projects, deploy workloads, and manage cloud resources in your Organization."
             link="/cloud"
-            buttonLabel="Cloud Guide"
+            buttonLabel="Open Cloud Guide"
             items={[
-              'Virtual Machines & Containers',
-              'Networking & Public IPs',
-              'Managed Kubernetes',
-              'Storage & Backups',
-              'Account & Billing',
+              'Organizations and Projects',
+              'Applications and Virtual Machines',
+              'Managed Clusters',
+              'Networking, Storage, and Data Services',
+              'Access, Usage, and Billing',
             ]}
           />
           <DocCard
             title="Platform Docs"
-            description="Operator documentation for deploying and managing the Kube-DC platform on your own infrastructure."
+            description="Install, secure, and operate the Kube-DC platform on your infrastructure."
             link="/platform"
-            buttonLabel="Platform Docs"
+            buttonLabel="Open Platform Docs"
             items={[
-              'Installation & Setup',
-              'Architecture Deep Dive',
-              'Operations & Configuration',
-              'Infrastructure Add-ons',
-              'Billing & Quota Management',
-            ]}
-          />
-          <DocCard
-            title="AI IDE Integration"
-            description="Use AI assistants to manage your Kube-DC infrastructure with natural language — directly from your IDE."
-            link="/cloud/ai-ide-integration"
-            buttonLabel="Setup AI Skills"
-            items={[
-              'Claude Code, Cursor, Windsurf, Codex',
-              'Agent Skills with YAML Templates',
-              'Kubernetes MCP Server Setup',
-              'Natural Language Workflows',
+              'Installation and Upgrades',
+              'Architecture and Security',
+              'Networking and Storage',
+              'Observability and Day-2 Operations',
+              'Operator CLI and Reference',
             ]}
           />
         </div>
+        <p className={styles.secondaryLink}>
+          Automating Kube-DC? <Link to="/cloud/ai-ide-integration">Set up AI agent skills</Link>.
+        </p>
       </main>
     </Layout>
   );

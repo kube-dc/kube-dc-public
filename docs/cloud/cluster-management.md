@@ -1,69 +1,58 @@
-# Cluster Management
+# Manage a Managed Cluster
 
-Once your managed Kubernetes cluster is running, you can deploy workloads, expose services with external IPs or HTTPS routes, use persistent storage, scale worker pools, and manage the cluster lifecycle.
+Once your Managed Cluster is running, you can deploy workloads, expose Services, use persistent storage, scale worker pools, and manage its lifecycle.
 
 ## Getting the Kubeconfig
 
-The admin kubeconfig lives in a Secret in your project namespace on the
-management cluster. It contains several variants that differ only in the API
-server endpoint:
-
-| Key | Endpoint | Use from |
-|-----|----------|----------|
-| `admin.svc` / `super-admin.svc` | in-cluster Service | inside the management cluster |
-| `admin.conf` / `super-admin.conf` | the cluster's EIP | inside the project VPC / cloud network |
+For workstation access, download the generated external kubeconfig. It already
+contains the supported external API endpoint; do not rewrite the server field:
 
 ```bash
-kubectl get secret dev-cp-admin-kubeconfig -n my-project \
+kubectl get secret dev-cp-admin-kubeconfig-external -n acme-production \
   -o jsonpath='{.data.admin\.conf}' | base64 -d > /tmp/dev-kubeconfig
-```
 
-For access **from the internet** (clusters created with the public API route
-enabled), point the kubeconfig at the cluster's public endpoint from
-`status.endpoint`:
-
-```bash
-ENDPOINT=$(kubectl get kdccluster dev -n my-project -o jsonpath='{.status.endpoint}')
-sed -i "s|server: .*|server: $ENDPOINT|" /tmp/dev-kubeconfig
 kubectl --kubeconfig=/tmp/dev-kubeconfig get nodes
 ```
 
-The dashboard's kubeconfig download does this for you.
+The cluster detail view's **Kubeconfig** action downloads the same data. If the
+external Secret does not exist, the API endpoint is private. Enable external
+API exposure or connect through an operator-approved private network path.
 
 ## Exposing Services (LoadBalancer)
 
-When you create a `Service` of type `LoadBalancer` inside your tenant cluster, the Cloud Controller Manager (CCM) provisions a real LoadBalancer service in the management cluster, giving your application an external IP.
+When you create a `Service` of type `LoadBalancer` inside your Managed Cluster, the Cloud Controller Manager (CCM) provisions a real LoadBalancer service in the platform cluster, giving your application an external IP.
 
-### How It Works
+### How LoadBalancer Services Work
 
 ```
-┌──── Tenant Cluster ─────┐        ┌──── Management Cluster ────────────┐
-│                         │        │  Project Namespace                 │
-│  Service (LoadBalancer) │───────▶│  Service (LoadBalancer)            │
-│  langfuse-web-lb:3000   │  CCM   │  → External IP: 100.65.0.169       │
-│                         │        │                                    │
+┌──── Managed Cluster ─────┐        ┌──── Platform Cluster ────────────┐
+│  Cluster: dev            │        │  Project: production              │
+│  Service (LoadBalancer) │───────▶│  Backing namespace:               │
+│  my-app:3000            │  CCM   │  acme-production                  │
+│                         │        │  Service + external IP             │
 └─────────────────────────┘        └────────────────────────────────────┘
 ```
 
-1. You create a `Service` of type `LoadBalancer` in the tenant cluster
-2. The CCM running in your project namespace detects the service
-3. A corresponding LoadBalancer service is created in the management cluster
-4. An external IP is allocated and reported back to the tenant cluster service
+1. You create a `Service` of type `LoadBalancer` in the Managed Cluster
+2. The per-cluster CCM in the Project's backing namespace watches the Managed Cluster Service
+3. A corresponding LoadBalancer Service is created in the Project's backing namespace on the platform cluster
+4. An external IP is allocated and reported back to the Managed Cluster service
 
 All `service.nlb.kube-dc.com/*` and `network.kube-dc.com/*` annotations on the
-tenant service are copied to the management-cluster service, so every exposure
+Managed Cluster Service are copied to the platform-side Service, so every exposure
 method from the [Service Exposure Guide](service-exposure.md) — Gateway routes
 with automatic TLS, dedicated EIPs, public IPs — also works from inside a
-tenant cluster.
+Managed Cluster.
 
-!!! warning "Annotations are copied at creation time only"
-    The CCM copies annotations when it first creates the management-cluster
-    service. Adding or changing an annotation on an existing tenant service has
-    no effect — delete and recreate the service with the annotations in place.
+:::warning[Annotations are copied at creation time only]
+The CCM copies annotations when it first creates the platform-side
+Service. Adding or changing an annotation on an existing Managed Cluster Service has
+no effect — delete and recreate the service with the annotations in place.
+:::
 
 ### Example: Expose a Web Application
 
-Inside your tenant cluster, create a LoadBalancer service:
+Inside your Managed Cluster, create a LoadBalancer service:
 
 ```yaml
 apiVersion: v1
@@ -98,7 +87,7 @@ kubectl --kubeconfig=/tmp/dev-kubeconfig apply -f service.yaml
 ### Verify the Service
 
 ```bash
-# Check the service in the tenant cluster
+# Check the service in the Managed Cluster
 kubectl --kubeconfig=/tmp/dev-kubeconfig get svc my-app-lb
 
 # Example output:
@@ -106,11 +95,13 @@ kubectl --kubeconfig=/tmp/dev-kubeconfig get svc my-app-lb
 # my-app-lb   LoadBalancer   10.96.201.161  100.65.0.169   80:30092/TCP   5m
 ```
 
-The `EXTERNAL-IP` is a real IP routable from outside the cluster. For public IPs, the service is accessible from the internet.
+The `EXTERNAL-IP` is reachable outside the Managed Cluster, but it is not
+always internet-routable. A cloud address is reachable only from configured
+platform networks; a public address is reachable from the internet.
 
 ### Working Example
 
-A Langfuse deployment exposed via LoadBalancer in a real tenant cluster:
+A Langfuse deployment exposed via LoadBalancer in a real Managed Cluster:
 
 ```bash
 $ kubectl --kubeconfig=/tmp/dev-kubeconfig get svc langfuse-web-lb -n langfuse
@@ -118,35 +109,39 @@ NAME             TYPE           CLUSTER-IP      EXTERNAL-IP    PORT(S)          
 langfuse-web-lb  LoadBalancer   10.96.201.161   100.65.0.169   3000:30092/TCP   15d
 ```
 
-The service is annotated with `network.kube-dc.com/external-network-type: public` and receives a dedicated public IP (`203.0.113.45`) accessible on port 3000. Without the annotation the service gets a cloud IP from the shared `100.65.0.0/16` range instead, reachable from other projects in the cloud but not from the internet.
+The sample `100.65.0.169` address is from the cloud network and is not
+internet-routable. To request a public address, set
+`network.kube-dc.com/external-network-type: public` when you first create the
+Service. The resulting public address is shown in `EXTERNAL-IP`. Direct
+cross-Project access to cloud addresses is blocked by default.
 
-!!! note "Public IPs count against your organization quota"
-    Public EIPs are limited per organization by your plan. If the quota is
-    exhausted, the tenant service stays at `EXTERNAL-IP: <pending>` forever —
-    the quota error is only visible on the management cluster (`kubectl
-    describe eip -n <project>` or the dashboard), not inside the tenant
-    cluster. Check your organization's public IPv4 usage before exposing
-    services with `external-network-type: public`. Cloud IPs (the default)
-    are not quota-limited.
+:::note[Public IPs count against your Organization quota]
+Public EIPs are limited per Organization by your plan. If the quota is
+exhausted, the Managed Cluster Service stays at `EXTERNAL-IP: <pending>` forever —
+the quota error may not appear inside the Managed Cluster. Check the
+dashboard's public IPv4 usage and the platform-side Service status before exposing
+services with `external-network-type: public`. Cloud IPs (the default)
+are not quota-limited.
+:::
 
 ## Exposing Services (HTTPS Gateway Route)
 
 For web applications, the simplest exposure method is a **Gateway route**: one
 annotation gives you HTTPS with an automatically provisioned Let's Encrypt
-certificate, served by the management cluster's Envoy Gateway. This works from
-inside tenant clusters because the CCM propagates the annotations.
+certificate, served by the platform cluster's Envoy Gateway. This works from
+inside Managed Clusters because the CCM propagates the annotations.
 
-### Step 1: Create the ACME Issuer (once per project)
+### Step 1: Create the ACME Issuer (once per Project)
 
-The certificate Issuer lives in your **project namespace on the management
-cluster** (use your Kube-DC project kubeconfig, not the tenant cluster one):
+The certificate Issuer lives in your **Project's backing namespace on the
+platform cluster** (use your Kube-DC project kubeconfig, not the Managed Cluster one):
 
 ```yaml
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: letsencrypt
-  namespace: my-project
+  namespace: acme-production
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
@@ -166,7 +161,7 @@ spec:
 Without the Issuer, HTTPS routes stay pending: the Certificate is created but
 never issued.
 
-### Step 2: Annotate a LoadBalancer service in the tenant cluster
+### Step 2: Annotate a LoadBalancer service in the Managed Cluster
 
 ```yaml
 apiVersion: v1
@@ -176,7 +171,7 @@ metadata:
   namespace: default
   annotations:
     service.nlb.kube-dc.com/expose-route: "https"
-    service.nlb.kube-dc.com/route-hostname: "my-app-my-project.kube-dc.cloud"
+    service.nlb.kube-dc.com/route-hostname: "my-app-acme-production.kube-dc.cloud"
 spec:
   type: LoadBalancer
   selector:
@@ -186,22 +181,23 @@ spec:
     targetPort: 80
 ```
 
-!!! tip "Always pin `route-hostname`"
-    Without `route-hostname`, the hostname is auto-generated from the
-    management-side service name (a UID-derived hash like
-    `af3d76ff…-my-project.kube-dc.cloud`). It is hard to read **and it
-    changes** if the tenant Service is ever deleted and recreated. Set an
-    explicit hostname under the cluster's wildcard domain (or your own domain
-    with DNS pointed at the Gateway).
+:::tip[Always pin `route-hostname`]
+Without `route-hostname`, the hostname is auto-generated from the
+management-side service name (a UID-derived hash like
+`af3d76ff…-acme-production.kube-dc.cloud`). It is hard to read **and it
+changes** if the Managed Cluster Service is ever deleted and recreated. Set an
+explicit hostname under the cluster's wildcard domain (or your own domain
+with DNS pointed at the Gateway).
+:::
 
 ### Step 3: Verify
 
 ```bash
-# Certificate + route are created in the project namespace (management cluster)
-kubectl get certificate,httproute -n my-project
+# Certificate + route are created in the Project's backing namespace
+kubectl get certificate,httproute -n acme-production
 
 # After ~1-2 minutes:
-curl https://my-app-my-project.kube-dc.cloud
+curl https://my-app-acme-production.kube-dc.cloud
 ```
 
 Issuance typically completes in one to two minutes. `http` and
@@ -210,21 +206,21 @@ Issuance typically completes in one to two minutes. `http` and
 
 ## Persistent Storage (KubeVirt CSI)
 
-When KubeVirt CSI is enabled during cluster creation, you can use PersistentVolumeClaims inside your tenant cluster. The CSI driver creates DataVolumes in your project namespace on the management cluster, providing real persistent storage.
+For a KubeVirt-backed Managed Cluster with KubeVirt CSI enabled, the node driver runs in the Managed Cluster and the infrastructure-side CSI controller creates DataVolumes in the Project's backing namespace. This gives Managed Cluster workloads persistent block storage backed by the platform cluster.
 
-### How It Works
+### How KubeVirt CSI Works
 
 ```
-┌──── Tenant Cluster ─────┐        ┌──── Management Cluster ────────────┐
-│                         │        │  Project Namespace                 │
+┌──── Managed Cluster ─────┐        ┌──── Platform Cluster ────────────┐
+│                         │        │  Project: production              │
 │  PVC: my-data (5Gi)     │───────▶│  DataVolume → PVC (5Gi)            │
 │  StorageClass: kubevirt │  CSI   │  StorageClass: local-path          │
 │                         │        │  (hotplugged to worker VM)         │
 └─────────────────────────┘        └────────────────────────────────────┘
 ```
 
-1. You create a PVC in the tenant cluster using the `kubevirt` StorageClass
-2. The CSI controller (running in your project namespace) creates a DataVolume in the management cluster
+1. You create a PVC in the Managed Cluster using the `kubevirt` StorageClass
+2. The infrastructure-side CSI controller in the Project's backing namespace creates a DataVolume on the platform cluster
 3. The DataVolume is hotplugged to the worker VM where the pod is scheduled
 4. The volume is mounted into the pod as a regular block device
 
@@ -250,7 +246,7 @@ The `kubevirt` StorageClass is automatically created when KubeVirt CSI is enable
 ### Verify Storage
 
 ```bash
-# Check PVCs in the tenant cluster
+# Check PVCs in the Managed Cluster
 kubectl --kubeconfig=/tmp/dev-kubeconfig get pvc -n langfuse
 
 # Example output:
@@ -259,11 +255,11 @@ kubectl --kubeconfig=/tmp/dev-kubeconfig get pvc -n langfuse
 # langfuse-postgres-pvc   Bound    pvc-377...   5Gi        RWO            kubevirt       15d
 ```
 
-Each PVC in the tenant cluster corresponds to a DataVolume and PVC in your project namespace on the management cluster:
+Each PVC in the Managed Cluster corresponds to a DataVolume and PVC in the Project's backing namespace on the platform cluster:
 
 ```bash
-# Corresponding PVCs on the management cluster (project namespace)
-kubectl get pvc -n my-project | grep pvc-c09
+# Corresponding PVCs in the Project's backing namespace
+kubectl get pvc -n acme-production | grep pvc-c09
 pvc-c09c6404-63ac-4ebc-9aab-671b4583b599   Bound   pvc-2d6bb...   11362347344   RWO   local-path   15d
 ```
 
@@ -275,7 +271,7 @@ The default `kubevirt` StorageClass uses the following configuration:
 |-----------|-------|-------------|
 | `provisioner` | `csi.kubevirt.io` | KubeVirt CSI driver |
 | `bus` | `scsi` | Disk bus type for hotplug |
-| `infraStorageClassName` | `local-path` | Storage class used on the management cluster |
+| `infraStorageClassName` | `local-path` | Storage class used on the platform cluster |
 
 ### Access Modes
 
@@ -288,8 +284,8 @@ The default `kubevirt` StorageClass uses the following configuration:
 
 ### Additional Storage Classes
 
-You can create extra tenant StorageClasses that map to any storage class
-available in your project on the management cluster (for example replicated
+You can create additional Managed Cluster StorageClasses that map to any storage class
+offered to your Project on the platform cluster (for example replicated
 Ceph RBD instead of node-local storage):
 
 ```yaml
@@ -300,13 +296,14 @@ metadata:
 provisioner: csi.kubevirt.io
 parameters:
   bus: scsi
-  infraStorageClassName: rbd-vm   # storage class on the management cluster
+  infraStorageClassName: rbd-vm   # storage class on the platform cluster
 reclaimPolicy: Delete
 allowVolumeExpansion: true
 ```
 
-Check which infra storage classes your project offers with your Kube-DC
-project kubeconfig: `kubectl get storageclass`.
+Choose an infrastructure storage class offered in the cluster creation UI or
+documented by your provider. StorageClasses are cluster-scoped and are not
+listable with a Project kubeconfig.
 
 ## Scaling Workers
 
@@ -316,70 +313,147 @@ Use a **JSON patch targeting only the replica count**:
 
 ```bash
 # Scale the first worker pool to 5 replicas
-kubectl patch kdccluster dev -n my-project --type=json \
+kubectl patch kdccluster dev -n acme-production --type=json \
   -p '[{"op":"replace","path":"/spec/workers/0/replicas","value":5}]'
 ```
 
-!!! danger "Never scale with a merge patch on `spec.workers`"
-    `spec.workers` is a **list**. A merge patch like
-    `--type merge -p '{"spec":{"workers":[{"name":"workers","replicas":5}]}}'`
-    **replaces the whole list**, silently wiping `cpuCores`, `memory`,
-    `diskSize` and `image` from your pool spec — new workers would then be
-    created with default sizing instead of yours. Always use a JSON patch
-    (`--type=json`) for single-field changes, or apply a full manifest that
-    includes every field of every pool.
+:::danger[Never scale with a merge patch on `spec.workers`]
+`spec.workers` is a **list**. A merge patch like
+`--type merge -p '{"spec":{"workers":[{"name":"workers","replicas":5}]}}'`
+**replaces the whole list**, silently wiping `cpuCores`, `memory`,
+`diskSize` and `image` from your pool spec — new workers would then be
+created with default sizing instead of yours. Always use a JSON patch
+(`--type=json`) for single-field changes, or apply a full manifest that
+includes every field of every pool.
+:::
 
 ### Add a Worker Pool
 
-To add a pool (or change pool sizing), apply the **complete** workers list
-with all fields for all pools:
+Append a pool with JSON Patch so every existing pool, including optional
+autoscaling, labels, taints, drain, and network settings, remains unchanged:
 
 ```bash
-kubectl patch kdccluster dev -n my-project --type merge -p '{
-  "spec": {
-    "workers": [
-      {
-        "name": "workers",
-        "replicas": 3,
-        "cpuCores": 2,
-        "memory": "8Gi",
-        "image": "docker.io/shalb/ubuntu-2404-container-disk:v1.36.1",
-        "infrastructureProvider": "kubevirt",
-        "storageType": "datavolume"
-      },
-      {
-        "name": "highmem-pool",
-        "replicas": 2,
-        "cpuCores": 4,
-        "memory": "16Gi",
-        "image": "docker.io/shalb/ubuntu-2404-container-disk:v1.36.1",
-        "infrastructureProvider": "kubevirt",
-        "storageType": "datavolume"
-      }
-    ]
-  }
-}'
+kubectl patch kdccluster dev -n acme-production --type=json -p '[
+  {"op":"add","path":"/spec/workers/-","value":{
+    "name":"highmem-pool",
+    "replicas":2,
+    "cpuCores":4,
+    "memory":"16Gi",
+    "diskSize":"30Gi",
+    "image":"docker.io/shalb/ubuntu-2404-container-disk:v1.36.1",
+    "architecture":"amd64",
+    "infrastructureProvider":"kubevirt",
+    "storageType":"datavolume"
+  }}
+]'
 ```
 
-New workers boot, join, and become `Ready` in roughly 3-10 minutes
-(root-disk import plus kubeadm join).
+Provisioning time varies with image import, quota, and node readiness. Watch the
+`KdcCluster` status instead of relying on a fixed duration.
 
 ### Scale to Zero
 
-Scale a worker pool to zero to temporarily stop worker VMs while keeping the control plane running:
+A worker pool can reach zero only while another pool has Ready workers. This
+guard prevents the last available worker pool from being stopped:
 
 ```bash
-kubectl patch kdccluster dev -n my-project --type=json \
+kubectl patch kdccluster dev -n acme-production --type=json \
   -p '[{"op":"replace","path":"/spec/workers/0/replicas","value":0}]'
 ```
 
-The control plane continues running and the cluster remains accessible via `kubectl`. Scale back up when needed.
+The control plane remains accessible. Scale the pool back up before removing or
+stopping the other Ready pool.
+
+### Autoscaling a Worker Pool
+
+Instead of scaling by hand, a pool can add nodes on its own when workloads
+do not fit. The model is the same as an EKS node group: `replicas` is still
+the desired node count, and the platform moves it between `minReplicas` and
+`maxReplicas`.
+
+Enable it from the **Workers** tab of the cluster in the console (On/Off,
+Min, Max), or with kubectl:
+
+```bash
+kubectl patch kdccluster dev -n acme-production --type=json -p '[
+  {"op":"add","path":"/spec/workers/0/autoscaling",
+   "value":{"enabled":true,"minReplicas":2,"maxReplicas":8}}
+]'
+```
+
+:::note[`replicas` must be inside the bounds]
+While autoscaling is enabled, `replicas` has to be within
+`[minReplicas, maxReplicas]`. If the pool's current count is outside the
+bounds you are setting, change both in the same patch — the console does
+this for you automatically.
+:::
+
+**What causes a node to be added:** a pod is `Pending` because the scheduler
+could not place it, and that pod's CPU/memory requests would fit on a new
+node of this pool. Pods a new node cannot help are ignored — a pod waiting
+on a PersistentVolumeClaim, a pod requesting more resources than one node of
+this pool provides, or a pod pinned by node affinity elsewhere.
+
+**Nodes are only added, never removed.** To shrink a pool, lower `replicas`
+(or `maxReplicas`) yourself.
+
+Scale-ups are deliberately unhurried: demand must persist for about two
+minutes, at most two nodes are added per step, and there is a cooldown of
+five minutes between steps. Tune per pool if needed:
+
+```yaml
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 120
+      maxNodesPerStep: 2
+      cooldownSeconds: 300
+```
+
+#### Why didn't my pool grow?
+
+The console shows the reason on the pool card. From kubectl:
+
+```bash
+kubectl get kdccluster dev -n acme-production \
+  -o jsonpath='{.status.workerPools[0].autoscaling}'
+```
+
+```json
+{
+  "mode": "PendingPods",
+  "minReplicas": 2,
+  "maxReplicas": 8,
+  "lastScaleTime": "2026-07-31T13:49:24Z",
+  "lastScaleReason": "3 unschedulable pod(s) fit this pool; +1 node(s)",
+  "limitedBy": ""
+}
+```
+
+`limitedBy` is empty when nothing is holding the pool back. Otherwise:
+
+| `limitedBy` | What it means |
+|---|---|
+| `Max` | The pool is at `maxReplicas`. Raise it to allow more nodes. |
+| `Quota` | Your Organization or Project quota would be exceeded. |
+| `Placement` | The infrastructure could not place another node right now. |
+| `RollingUpdate` | An upgrade or rollout is in progress; scaling resumes afterwards. |
 
 ## Upgrading Kubernetes Version
 
-You can upgrade your cluster's Kubernetes version with a single command. The upgrade is fully automated — control plane is updated first, then worker nodes are replaced one by one with zero downtime.
+A Managed Cluster upgrade updates the control plane first and then replaces
+workers using a rolling strategy. Plan a maintenance window: application
+availability depends on replicas, disruption budgets, spare capacity, and
+storage topology.
 
-### Available Versions
+### Choose a Supported Version
+
+The table below is an example catalog and can age between documentation
+releases. Use the dashboard's version selector as the source of truth, and
+choose the exact worker image paired with the target control-plane version.
 
 | Version | Worker Image | Status |
 |---------|-------------|--------|
@@ -387,7 +461,7 @@ You can upgrade your cluster's Kubernetes version with a single command. The upg
 | v1.35.0 | `docker.io/shalb/ubuntu-2404-container-disk:v1.35.2` | Supported |
 | v1.34.0 | `quay.io/capk/ubuntu-2404-container-disk:v1.34.1` | Supported |
 
-### Via Dashboard
+### Upgrade via Dashboard
 
 When an upgrade is available, the cluster detail page shows an **Upgrade to vX.Y.Z** button in the header and a version badge in the Summary tab.
 
@@ -400,12 +474,12 @@ When an upgrade is available, the cluster detail page shows an **Upgrade to vX.Y
 
 The upgrade progress is visible in the cluster status. The phase will change during the upgrade and return to **Ready** once complete.
 
-### Via kubectl
+### Upgrade via kubectl
 
 **Step 1: Check current version**
 
 ```bash
-kubectl get kdccluster dev -n my-project
+kubectl get kdccluster dev -n acme-production
 # NAME   VERSION   PHASE   ENDPOINT   DATASTORE   AGE
 # dev    v1.34.0   Ready   ...        dev-etcd    29d
 ```
@@ -415,7 +489,7 @@ kubectl get kdccluster dev -n my-project
 Patch both `spec.version` and the worker image in a single command:
 
 ```bash
-kubectl patch kdccluster dev -n my-project --type=json -p '[
+kubectl patch kdccluster dev -n acme-production --type=json -p '[
   {"op":"replace","path":"/spec/version","value":"v1.35.0"},
   {"op":"replace","path":"/spec/workers/0/image","value":"docker.io/shalb/ubuntu-2404-container-disk:v1.35.2"}
 ]'
@@ -424,7 +498,7 @@ kubectl patch kdccluster dev -n my-project --type=json -p '[
 For clusters with multiple worker pools, update each pool's image:
 
 ```bash
-kubectl patch kdccluster dev -n my-project --type=json -p '[
+kubectl patch kdccluster dev -n acme-production --type=json -p '[
   {"op":"replace","path":"/spec/version","value":"v1.35.0"},
   {"op":"replace","path":"/spec/workers/0/image","value":"docker.io/shalb/ubuntu-2404-container-disk:v1.35.2"},
   {"op":"replace","path":"/spec/workers/1/image","value":"docker.io/shalb/ubuntu-2404-container-disk:v1.35.2"}
@@ -433,30 +507,31 @@ kubectl patch kdccluster dev -n my-project --type=json -p '[
 
 **Step 3: Monitor the upgrade**
 
-The upgrade happens in two phases:
-
-1. **Control plane** (~2-5 min) — API server, scheduler, and controller-manager are updated
-2. **Worker rollout** (~3-10 min per node) — New workers are created before old ones are removed
+The platform first reconciles the control plane, then replaces workers with the
+catalog-paired image. Completion time depends on image pulls, node readiness,
+workload disruption constraints, and available Project quota.
 
 ```bash
 # Watch cluster status
-kubectl get kdccluster dev -n my-project -w
+kubectl get kdccluster dev -n acme-production -w
 
-# Watch worker machine rollout
-kubectl get machines -n my-project -l cluster.x-k8s.io/cluster-name=dev -w
+# Watch worker-pool rollout through the Project-visible resource
+kubectl get machinedeployments -n acme-production -w
 ```
 
-During the worker rollout, you will see both old and new machines running simultaneously. The new worker joins the cluster and becomes Ready before the old worker is drained and removed. Your workloads continue running without interruption.
+During the worker rollout, old and new Machines can coexist. Keep enough quota
+for surge capacity and verify application replicas and disruption budgets;
+single-replica or node-local workloads can be interrupted.
 
 **Step 4: Verify the upgrade**
 
 ```bash
 # Check cluster version
-kubectl get kdccluster dev -n my-project
+kubectl get kdccluster dev -n acme-production
 # NAME   VERSION   PHASE   ...
 # dev    v1.35.0   Ready   ...
 
-# Check node versions inside the tenant cluster
+# Check node versions inside the Managed Cluster
 kubectl --kubeconfig=/tmp/dev-kubeconfig get nodes -o wide
 # NAME                    STATUS   VERSION   CONTAINER-RUNTIME
 # dev-workers-xxx-yyy     Ready    v1.35.2   containerd://2.2.2
@@ -466,19 +541,19 @@ kubectl --kubeconfig=/tmp/dev-kubeconfig get nodes -o wide
 
 - **Sequential minor versions only** — You must upgrade one minor version at a time (e.g., v1.34 → v1.35). Skipping versions is not supported.
 - **No downgrades** — Kubernetes version downgrades are not supported. The system will reject any attempt to lower the version.
-- **Zero downtime** — Workers are replaced using a rolling update strategy (`maxSurge=1`). A new worker is created and becomes Ready before the old one is removed, so your workloads are never interrupted.
+- **Rolling replacement** — A new worker is created before an old worker is removed. Keep multiple application replicas, suitable disruption budgets, and enough spare quota; the platform does not guarantee uninterrupted workloads.
 - **Image must match version** — Always update the worker image alongside the version. The image contains the matching kubelet and kubeadm binaries.
 
 ## Deleting a Cluster
 
-### Via Dashboard
+### Delete via Dashboard
 
 Navigate to the cluster detail page and use the delete action.
 
-### Via kubectl
+### Delete via kubectl
 
 ```bash
-kubectl delete kdccluster dev -n my-project
+kubectl delete kdccluster dev -n acme-production
 ```
 
 Deletion is fully automated. The controller removes resources in the correct order:
@@ -490,8 +565,9 @@ Deletion is fully automated. The controller removes resources in the correct ord
 5. Services and EIPs
 6. Dedicated datastore (if applicable)
 
-!!! warning
-    Deleting a cluster is irreversible. All workloads, services, and data inside the cluster will be permanently removed. Back up any important data before deleting.
+:::warning
+Deleting a cluster is irreversible. All workloads, services, and data inside the cluster will be permanently removed. Back up any important data before deleting.
+:::
 
 ## Troubleshooting
 
@@ -499,55 +575,53 @@ Deletion is fully automated. The controller removes resources in the correct ord
 ### Cluster Stuck in Provisioning
 
 ```bash
-# Check events in the project namespace
-kubectl get events -n my-project --sort-by='.lastTimestamp' | tail -20
+# Check events in the Project backing namespace
+kubectl get events -n acme-production --sort-by='.lastTimestamp' | tail -20
 
 # Check KdcCluster status
-kubectl describe kdccluster dev -n my-project
+kubectl describe kdccluster dev -n acme-production
 
 # Check control plane pods
-kubectl get pods -n my-project -l kamaji.clastix.io/name=dev-cp
+kubectl get pods -n acme-production -l kamaji.clastix.io/name=dev-cp
 ```
 
 ### Workers Not Joining
 
 ```bash
 # Check MachineDeployment status
-kubectl get machinedeployments -n my-project
+kubectl get machinedeployments -n acme-production
 
-# Check individual machines
-kubectl get machines -n my-project
 
 # Check worker VM status
-kubectl get vmi -n my-project
+kubectl get vmi -n acme-production
 ```
 
 ### Service Not Getting External IP
 
 ```bash
 # Verify CCM is running
-kubectl get deploy -n my-project -l k8s-app=kccm-dev
+kubectl get deploy -n acme-production -l k8s-app=kccm-dev
 
 # Check CCM logs
-kubectl logs -n my-project -l k8s-app=kccm-dev
+kubectl logs -n acme-production -l k8s-app=kccm-dev
 
-# Verify the service annotation in tenant cluster
+# Verify the service annotation in Managed Cluster
 kubectl --kubeconfig=/tmp/dev-kubeconfig get svc my-app-lb -o yaml | grep -A2 annotations
 ```
 
 ### PVC Stuck in Pending
 
 ```bash
-# Check the CSI controller logs on the management cluster
-kubectl logs -n my-project -l app=kubevirt-csi-driver --all-containers
+# Check the CSI controller logs on the platform cluster
+kubectl logs -n acme-production -l app=kubevirt-csi-driver --all-containers
 
-# Check the DataVolume import on the management cluster
-kubectl get dv -n my-project
+# Check the DataVolume import on the platform cluster
+kubectl get dv -n acme-production
 
-# Check the CSI node daemonset in the tenant cluster
+# Check the CSI node daemonset in the Managed Cluster
 kubectl --kubeconfig=/tmp/dev-kubeconfig get pods -n kubevirt-csi-driver
 
-# Verify StorageClass exists in tenant cluster
+# Verify StorageClass exists in Managed Cluster
 kubectl --kubeconfig=/tmp/dev-kubeconfig get storageclass
 ```
 
@@ -563,30 +637,36 @@ DataVolume import), KubeVirt waits before attaching the other volumes to that
 VM too. Already-bound volumes then fail to mount with `couldn't find device by
 serial id` until the broken sibling is resolved.
 
-Fix the failing PVC first (check `kubectl get dv -n my-project` on the
-management cluster for `ImportInProgress` with restarts) or delete it — the
-healthy volumes attach within a minute afterwards.
+Fix the failing PVC first (check `kubectl get dv -n acme-production` on the
+platform cluster for `ImportInProgress` with restarts) or delete it — the
+healthy volumes can attach when the controller retries.
 
 ### Pod Stuck After Rescheduling to Another Worker
 
 With the default `kubevirt` StorageClass, the backing disk lives on
 **node-local storage of the hypervisor host** where it was first provisioned.
 If your pod is later rescheduled to a worker VM running on a *different*
-hypervisor host, the volume cannot follow: on the management cluster the
+hypervisor host, the volume cannot follow: on the platform cluster the
 hotplug helper pod reports
-`didn't match PersistentVolume's node affinity`, and inside the tenant
-cluster the pod hangs in `ContainerCreating` with
+`didn't match PersistentVolume's node affinity`, and inside the Managed
+Cluster the pod hangs in `ContainerCreating` with
 `couldn't find device by serial id`.
 
-Recover by steering the pod back to the worker it ran on before:
+Identify the worker on the disk's original hypervisor host. Leave that
+known-good worker schedulable, cordon every other candidate, and wait for the
+replacement Pod to become Ready there before restoring normal scheduling:
 
 ```bash
-kubectl cordon <other-workers…>   # cordon all workers except the original
-kubectl delete pod <stuck-pod>
-kubectl uncordon <other-workers…>
+# Do not include <known-good-worker> in this list.
+kubectl --kubeconfig=/tmp/dev-kubeconfig cordon <other-worker-1> <other-worker-2>
+kubectl --kubeconfig=/tmp/dev-kubeconfig delete pod <stuck-pod>
+kubectl --kubeconfig=/tmp/dev-kubeconfig get pods -l app=<label> -w -o wide
+
+# After the replacement is Ready on <known-good-worker>:
+kubectl --kubeconfig=/tmp/dev-kubeconfig uncordon <other-worker-1> <other-worker-2>
 ```
 
-For workloads that must survive rescheduling to any worker, use a tenant
+For workloads that must survive rescheduling to any worker, use a Managed Cluster
 StorageClass backed by replicated storage (see
 [Additional Storage Classes](#additional-storage-classes)) if your platform
 offers one.
@@ -594,27 +674,22 @@ offers one.
 ## End-to-End Example: WordPress
 
 A complete stateful application — MariaDB and WordPress on persistent volumes,
-exposed over HTTPS through the management cluster's Gateway. Apply inside the
-tenant cluster (the ACME Issuer from
+exposed over HTTPS through the platform cluster's Gateway. Apply inside the
+Managed Cluster (the ACME Issuer from
 [Exposing Services (HTTPS Gateway Route)](#exposing-services-https-gateway-route)
-must exist in your project):
+must exist in your Project). Create the namespace and generate unique database
+credentials before applying the workload manifest:
+
+```bash
+kubectl --kubeconfig=/tmp/dev-kubeconfig create namespace wordpress
+kubectl --kubeconfig=/tmp/dev-kubeconfig -n wordpress create secret generic mariadb-auth \
+  --from-literal=root-password="$(openssl rand -base64 24)" \
+  --from-literal=password="$(openssl rand -base64 24)"
+```
+
+Save the remaining resources as `wordpress.yaml`:
 
 ```yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: wordpress
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: mariadb-auth
-  namespace: wordpress
-type: Opaque
-stringData:
-  root-password: "change-me-root"
-  password: "change-me"
----
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -733,7 +808,7 @@ metadata:
   namespace: wordpress
   annotations:
     service.nlb.kube-dc.com/expose-route: "https"
-    service.nlb.kube-dc.com/route-hostname: "wordpress-my-project.kube-dc.cloud"
+    service.nlb.kube-dc.com/route-hostname: "wordpress-acme-production.kube-dc.cloud"
 spec:
   type: LoadBalancer
   selector:
@@ -743,10 +818,13 @@ spec:
     targetPort: 80
 ```
 
-Within ~3 minutes the PVCs bind, the disks hotplug into the worker VMs, the
-certificate issues, and `https://wordpress-my-project.kube-dc.cloud` serves
-the WordPress installer. Data survives pod restarts; for rescheduling across
-workers mind the
+```bash
+kubectl --kubeconfig=/tmp/dev-kubeconfig apply -f wordpress.yaml
+```
+
+Wait for the PVCs, worker-disk attachments, certificate, and HTTPRoute to
+report Ready before opening the configured hostname. Data survives Pod
+restarts; for rescheduling across workers, read the
 [placement caveat](#pod-stuck-after-rescheduling-to-another-worker) of the
 default storage class.
 
@@ -754,13 +832,15 @@ default storage class.
 
 | Operation | Command |
 |-----------|---------|
-| List clusters | `kubectl get kdccluster -n my-project` |
-| Get cluster details | `kubectl describe kdccluster dev -n my-project` |
-| Get kubeconfig | `kubectl get secret dev-cp-admin-kubeconfig -n my-project -o jsonpath='{.data.admin\.conf}' \| base64 -d` (see [Getting the Kubeconfig](#getting-the-kubeconfig)) |
-| Check endpoint | `kubectl get kdccluster dev -n my-project -o jsonpath='{.status.endpoint}'` |
-| Scale workers | `kubectl patch kdccluster dev -n my-project --type=json -p '[{"op":"replace","path":"/spec/workers/0/replicas","value":5}]'` |
-| Delete cluster | `kubectl delete kdccluster dev -n my-project` |
-| Check datastore | `kubectl get kdcclusterdatastores -n my-project` |
+| List clusters | `kubectl get kdccluster -n acme-production` |
+| Get cluster details | `kubectl describe kdccluster dev -n acme-production` |
+| Get kubeconfig | `kubectl get secret dev-cp-admin-kubeconfig-external -n acme-production -o jsonpath='{.data.admin\.conf}' \| base64 -d` (see [Getting the Kubeconfig](#getting-the-kubeconfig)) |
+| Check endpoint | `kubectl get kdccluster dev -n acme-production -o jsonpath='{.status.endpoint}'` |
+| Scale workers | `kubectl patch kdccluster dev -n acme-production --type=json -p '[{"op":"replace","path":"/spec/workers/0/replicas","value":5}]'` |
+| Enable autoscaling | `kubectl patch kdccluster dev -n acme-production --type=json -p '[{"op":"add","path":"/spec/workers/0/autoscaling","value":{"enabled":true,"minReplicas":2,"maxReplicas":8}}]'` |
+| Check autoscaling state | `kubectl get kdccluster dev -n acme-production -o jsonpath='{.status.workerPools[0].autoscaling}'` |
+| Delete cluster | `kubectl delete kdccluster dev -n acme-production` |
+| Check datastore | `kubectl get kdcclusterdatastores -n acme-production` |
 
 ## Next Steps
 

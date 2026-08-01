@@ -1,297 +1,139 @@
 ---
 name: create-vm
-description: Deploy a virtual machine in a Kube-DC project with SSH, cloud-init, optional external access, and an optional gated Dedicated GPU VM profile. Use for ordinary VMs and whole-device GPU VMs that require platform preflight and non-migration safeguards.
+description: Create a KubeVirt virtual machine in a Kube-DC Project using the live OS catalog, Project networking, supported storage, and the generated SSH keypair.
 ---
+
+# Create a Virtual Machine
+
+A VM is a workload inside a Project. Its Kubernetes resources live in the
+Project's backing namespace; it is not a Managed Cluster and does not create a
+separate Kubernetes API.
 
 ## Prerequisites
-- Target project must exist and be Ready
-- Project namespace: `{org}-{project}`
-- SSH keypair secrets auto-exist in project namespace
-- **Quota**: verify sufficient CPU, memory, storage, and (if external IP needed) publicIPv4 capacity — use the `check-quota` skill
-- **Dedicated GPU only**: require device quota and the independent VM creation gate; raw KubeVirt access is not GPU product authorization
 
-## Steps
+- The Project is Ready and selected with `kube-dc use`.
+- CPU, memory, storage, and public IPv4 quota are checked as applicable.
+- The live OS catalog provides the image, default user, minimum resources,
+  firmware, and import source.
+- A supported VM StorageClass and access-mode/volume-mode pair are selected.
+- `ssh-keypair-default` and `authorized-keys-default` exist in the backing
+  namespace.
 
-### 1. Look Up Available Images
+## 1. Select from the live catalog
 
-The platform provides a catalog of OS images in the `images-configmap` ConfigMap (namespace `kube-dc`).
-If you have access, retrieve the live catalog:
+Use the console's **OS Images** catalog. API clients can query:
+
+```http
+GET /api/create-vm/{project-backing-namespace}/os-images
+Authorization: Bearer {kube-dc-jwt}
+```
+
+Do not embed a static OS/version table or provider S3 hostname. Catalog entries
+can change independently on each installation.
+
+Prefer the catalog's digest-pinned registry reference with
+`pullMethod: node`. Use its HTTP URL only for entries such as installation
+media or custom images that do not offer a registry source. Never turn a
+mutable tag into an apparently reproducible boot disk.
+
+## 2. Select storage
+
+Use the VM wizard or the live storage-class endpoint:
+
+```http
+GET /api/create-vm/{project-backing-namespace}/storageclasses
+Authorization: Bearer {kube-dc-jwt}
+```
+
+The chosen access mode and volume mode must be a supported pair for that class.
+Node-local storage and shared block storage have different snapshot and live
+migration behavior. Do not infer capabilities from a class name alone.
+
+## 3. Create the DataVolume and VM
+
+Start from [vm-template.yaml](vm-template.yaml). It is a Linux cloud-image
+template; Windows and provider-specific golden images should use the manifest
+rendered by the VM wizard.
+
+The essential contracts are:
+
+- DataVolume source comes from the live catalog.
+- Registry sources are digest-pinned and use `pullMethod: node`.
+- The root disk is at least the catalog minimum.
+- The network is a Multus bridge to
+  `{project-backing-namespace}/default`.
+- `accessCredentials` references `authorized-keys-default` and names the
+  catalog's OS user.
+- The guest image runs QEMU Guest Agent for key injection and IP/readiness
+  reporting.
+- CPU and memory fit quota with operational headroom.
 
 ```bash
-kubectl get configmap images-configmap -n kube-dc -o jsonpath='{.data.images\.yaml}'
+kubectl apply -f vm.yaml
+kubectl get datavolume,virtualmachine -w
 ```
 
-Otherwise, use the reference table below.
+Do not create the VM until the manifest has the correct user, firmware,
+machine type, and storage shape for the selected catalog entry.
 
-### 2. Create DataVolume (Boot Disk)
+## 4. Optional dedicated GPU
 
-VMs use DataVolumes to import a cloud image and create a PVC. The **primary
-path is a registry import** with `pullMethod: node`: the containerdisk is
-pulled through the node's containerd — faster, cached on the node for
-subsequent VMs, and works from any tenant VPC. The registry URL MUST be
-**digest-pinned** (`@sha256:...`) — never a bare tag, never `latest`.
+When a whole-device GPU is explicitly requested, follow
+[references/dedicated-gpu.md](references/dedicated-gpu.md). Use the Kube-DC VM
+wizard or authenticated validate/create transaction. Do not raw-apply native
+host-device resources. Dedicated GPU VMs cannot live migrate and must use
+`evictionStrategy: None`.
 
-```yaml
-apiVersion: cdi.kubevirt.io/v1beta1
-kind: DataVolume
-metadata:
-  name: {vm-name}-disk
-  namespace: {project-namespace}
-spec:
-  source:
-    registry:
-      url: "docker://quay.io/containerdisks/ubuntu:24.04@sha256:..."   # ALWAYS digest-pinned
-      pullMethod: node
-  pvc:
-    accessModes: [ReadWriteOnce]
-    resources:
-      requests:
-        storage: {disk-size}    # Must be >= MIN_STORAGE for the OS
-    storageClassName: local-path
-```
+## 5. Connect
 
-Ready digest-pinned refs come from the platform catalog (UI **OS Images** /
-`cdi-os-catalog` ConfigMap). For standard Linux images,
-`quay.io/containerdisks/<os>` provides upstream containerdisks — resolve the
-tag to a digest before use.
+The generated Project keypair can be used only when the VM references
+`authorized-keys-default` and the guest agent has injected the public key.
 
-**Fallback — HTTP import** (Windows/ISO, custom images, or OSes with no
-containerdisk). Uses the in-cluster S3 mirror URLs from the Available Images
-table:
+For local access, first choose a supported route:
 
-```yaml
-spec:
-  source:
-    http:
-      url: "{os-image-url}"    # From Available Images table
-  storage:
-    accessModes: [ReadWriteOnce]
-    resources:
-      requests:
-        storage: {disk-size}    # Must be >= MIN_STORAGE for the OS
-    storageClassName: local-path
-```
+- browser SSH or console in the Kube-DC UI;
+- FIP for direct one-to-one VM access;
+- EIP-bound LoadBalancer Service for an exposed port;
+- an approved private route to the Project network.
 
-See @vm-template.yaml for the complete VM + DataVolume manifest.
+Follow `ssh-into-vm` for key handling and `manage-networking` for FIP/EIP
+status fields. A private VMI address is not automatically reachable from a
+workstation.
 
-### 3. Create VirtualMachine
-
-Key requirements:
-- **Network**: MUST use `networkName: {namespace}/default` with Multus bridge
-- **Guest agent**: MUST install `qemu-guest-agent` in cloud-init (use the OS-specific cloud-init from the images table)
-- **SSH keys**: Reference `authorized-keys-default` via `accessCredentials`
-- **Firmware**: Use the correct `firmware` and `machine` type for the OS (see table)
-
-### 3a. Add a Dedicated GPU (Optional)
-
-When the user explicitly requests a whole-device GPU VM, read
-[references/dedicated-gpu.md](references/dedicated-gpu.md) before generating
-the VM. Use the Kube-DC wizard or authenticated backend validation/create
-transaction. Do not attach native host devices or apply a GPU VM directly with
-`kubectl`.
-
-### 4. Wait for VM Ready
+## Verify
 
 ```bash
-kubectl get vm {vm-name} -n {project-namespace} -w
-kubectl get vmi {vm-name} -n {project-namespace} -o jsonpath='{.status.interfaces[0].ipAddress}'
+kubectl get datavolume {vm}-disk \
+  -o jsonpath='{.status.phase}{"\n"}'
+kubectl get virtualmachine {vm} \
+  -o jsonpath='{.status.printableStatus}{"\n"}'
+kubectl get virtualmachineinstance {vm} \
+  -o jsonpath='{.status.conditions[?(@.type=="AgentConnected")].status}{"\n"}'
+kubectl get virtualmachineinstance {vm} \
+  -o jsonpath='{.status.interfaces[?(@.name=="default")].ipAddress}{"\n"}'
 ```
 
-### 5. SSH Access
+Expected signals are DataVolume `Succeeded`, VM `Running`, guest agent
+connected, and a non-empty interface address.
+
+If provisioning stalls:
 
 ```bash
-# Extract project SSH private key
-kubectl get secret ssh-keypair-default -n {project-namespace} \
-  -o jsonpath='{.data.id_rsa}' | base64 -d > /tmp/vm_ssh_key
-chmod 600 /tmp/vm_ssh_key
-
-# Get VM IP
-VM_IP=$(kubectl get vmi {vm-name} -n {project-namespace} \
-  -o jsonpath='{.status.interfaces[0].ipAddress}')
-
-# SSH in
-ssh -i /tmp/vm_ssh_key {cloud-user}@$VM_IP
+kubectl describe datavolume {vm}-disk
+kubectl describe virtualmachine {vm}
+kubectl get events --sort-by=.lastTimestamp
 ```
 
-### 6. External Access (Optional)
-
-For SSH from outside the cluster, use Direct EIP + LoadBalancer:
-
-```yaml
-apiVersion: kube-dc.com/v1
-kind: EIp
-metadata:
-  name: {vm-name}-eip
-  namespace: {project-namespace}
-spec:
-  externalNetworkType: public
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: {vm-name}-ssh
-  namespace: {project-namespace}
-  annotations:
-    service.nlb.kube-dc.com/bind-on-eip: "{vm-name}-eip"
-spec:
-  type: LoadBalancer
-  ports:
-  - port: 22
-    targetPort: 22
-  selector:
-    kubevirt.io/domain: {vm-name}
-```
-
-Or use a Floating IP for direct 1:1 NAT:
-
-```yaml
-apiVersion: kube-dc.com/v1
-kind: FIp
-metadata:
-  name: {vm-name}-fip
-  namespace: {project-namespace}
-spec:
-  externalNetworkType: public
-  vmTarget:
-    vmName: {vm-name}
-    interfaceName: default
-```
-
-## Available Images
-
-Source: `cdi-os-catalog` ConfigMap in `kube-dc` namespace (multi-version,
-schema v2). Where the catalog carries a digest-pinned registry ref
-(standard Linux families), prefer the registry import from step 2; the
-HTTP URLs below are the fallback path (Windows/ISO, custom images).
-The cluster mirrors every OS onto its own S3 bucket
-(`https://s3.<DOMAIN>/cdi-os-images/`); tenants pull HTTP imports from
-that mirror, not from upstream CDNs. The `/latest/` URL alias is what the
-chart publishes; specific tag URLs are available for version pinning.
-
-URLs below show the `/latest/` form for a cloud cluster at
-`s3.kube-dc.cloud` — substitute your cluster's S3 hostname.
-
-| OS | Cloud User | `/latest/` Image URL | Min RAM | Min CPU | Min Disk | Firmware |
-|----|-----------|----------------------|---------|---------|----------|----------|
-| Ubuntu 26.04 LTS | `ubuntu` | `https://s3.kube-dc.cloud/cdi-os-images/ubuntu/26.04/latest/resolute-server-cloudimg-amd64.img` | 1G | 1 | 20G | bios |
-| Ubuntu 24.04 LTS | `ubuntu` | `https://s3.kube-dc.cloud/cdi-os-images/ubuntu/24.04/latest/noble-server-cloudimg-amd64.img` | 1G | 1 | 20G | bios |
-| Ubuntu 22.04 LTS | `ubuntu` | `https://s3.kube-dc.cloud/cdi-os-images/ubuntu/22.04/latest/jammy-server-cloudimg-amd64.img` | 1G | 1 | 20G | bios |
-| Debian 12 LTS | `debian` | `https://s3.kube-dc.cloud/cdi-os-images/debian/12/latest/debian-12-generic-amd64.qcow2` | 1G | 1 | 20G | bios |
-| CentOS Stream 9 | `centos` | `https://s3.kube-dc.cloud/cdi-os-images/centos-stream/9/latest/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2` | 2G | 1 | 20G | bios |
-| Fedora 42 | `fedora` | `https://s3.kube-dc.cloud/cdi-os-images/fedora/42/latest/Fedora-Cloud-Base-Generic-42-1.1.x86_64.qcow2` | 2G | 1 | 25G | bios |
-| Alpine Linux 3.21 | `alpine` | `https://s3.kube-dc.cloud/cdi-os-images/alpine/3.21/latest/nocloud_alpine-3.21.0-x86_64-bios-cloudinit-r0.qcow2` | 512M | 1 | 10G | bios |
-| openSUSE Leap 15.6 | `opensuse` | `https://s3.kube-dc.cloud/cdi-os-images/opensuse-leap/15.6/latest/openSUSE-Leap-15.6-Minimal-VM.x86_64-Cloud.qcow2` | 2G | 1 | 20G | bios |
-| Gentoo Linux | `gentoo` | `https://s3.kube-dc.cloud/cdi-os-images/gentoo/amd64/latest/gentoo-cloudinit-amd64.qcow2` | 2G | 1 | 20G | bios |
-| CirrOS (test) | `cirros` | `https://s3.kube-dc.cloud/cdi-os-images/cirros/0.5.2/latest/cirros-0.5.2-x86_64-disk.img` | 512M | 1 | 5G | bios |
-| Windows 11 (Golden) | `kube-dc` | `https://s3.kube-dc.cloud/cdi-os-images/windows/11/latest/windows11-x64-golden.qcow2` | 8G | 2 | 70G | efi |
-| Windows 11 (Fresh ISO) | `Administrator` | `https://s3.kube-dc.cloud/cdi-os-images/windows/11/latest/win11-x64.iso` | 8G | 4 | 70G | efi |
-
-### Multi-version selection (advanced)
-
-Most Linux families now mirror up to 4 historical versions. Take
-**`/latest/`** by default — the cluster repoints it weekly. Pin a
-specific version only when you need reproducibility against a known
-build (e.g. troubleshooting a regression, locking a test fleet to a
-specific kernel).
-
-Versioned URLs follow this shape:
-- Ubuntu (streams): `.../ubuntu/24.04/<YYYYMMDD>/<file>` (e.g. `20260321`)
-- Debian: `.../debian/12/<YYYYMMDD-buildN>/<file>` (e.g. `20260518-2482`)
-- CentOS Stream: `.../centos-stream/9/<YYYYMMDD.N>/<file>` (e.g. `20260513.0`)
-- Alpine: `.../alpine/3.21/<X.Y.Z-rN>/<file>` (e.g. `3.21.7-r0`)
-- openSUSE Leap: `.../opensuse-leap/15.6/<release-BuildN.M>/<file>` (e.g. `15.6.0-19.146`)
-- Fedora: `.../fedora/42/<release-minor>/<file>` (e.g. `42-1.1`)
-- Gentoo: `.../gentoo/amd64/<YYYYMMDDTHHMMSSZ>/<file>` (e.g. `20260517T170110Z`)
-- CirrOS / Ubuntu 26.04 / Windows: `.../<family>/<release>/<YYYY-MM-DD-sha8>/<file>`
-
-To see the full version list a cluster has on hand, query:
-
-```bash
-kubectl -n kube-dc get cm cdi-os-catalog -o jsonpath='{.data.catalog\.json}' \
-  | jq '.families[] | {id, versions: [.versions[].tag]}'
-```
-
-### OS-Specific Cloud-Init
-
-Each OS requires specific cloud-init to install and enable the QEMU guest agent. See @os-cloud-init.yaml for the full cloud-init per OS.
-
-**Linux (Ubuntu, Debian, openSUSE)** — simple:
-```yaml
-#cloud-config
-package_update: true
-package_upgrade: true
-packages:
-  - qemu-guest-agent
-runcmd:
-  - systemctl enable --now qemu-guest-agent
-```
-
-**CentOS/Fedora** — needs SELinux config:
-```yaml
-#cloud-config
-package_update: true
-package_upgrade: true
-packages:
-  - qemu-guest-agent
-  - policycoreutils-python-utils
-runcmd:
-  - setenforce 0
-  - sed -i 's/SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
-  - setsebool -P virt_qemu_ga_manage_ssh 1
-  - setsebool -P virt_qemu_ga_exec 1
-  - setsebool -P virt_qemu_ga_file_transfer 1
-  - restorecon -R /usr/bin/qemu-ga
-  - systemctl enable --now qemu-guest-agent
-```
-
-**Alpine** — uses rc-service:
-```yaml
-#cloud-config
-package_update: true
-packages:
-  - qemu-guest-agent
-runcmd:
-  - rc-service qemu-guest-agent restart
-  - rc-update add qemu-guest-agent default
-```
-
-**Windows (Golden Image)** — no cloud-init needed (pre-configured with QEMU Guest Agent).
-
-## Verification
-
-After creating the VM, run these checks:
-
-```bash
-# 1. Check VM is running
-kubectl get vm {vm-name} -n {project-namespace} -o jsonpath='{.status.printableStatus}'
-# Expected: Running
-
-# 2. Check VMI exists and has IP
-kubectl get vmi {vm-name} -n {project-namespace} -o jsonpath='{.status.interfaces[0].ipAddress}'
-# Expected: 10.x.x.x (VPC internal IP)
-
-# 3. Check guest agent is reporting (readiness probe)
-kubectl get vmi {vm-name} -n {project-namespace} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
-# Expected: True
-
-# 4. Check DataVolume import completed
-kubectl get dv {vm-name}-disk -n {project-namespace} -o jsonpath='{.status.phase}'
-# Expected: Succeeded
-```
-
-**Success**: VM status is `Running`, VMI has an IP, Ready condition is `True`.
-**Failure**: If status is `Provisioning` or `Stopped`:
-- Check DataVolume: `kubectl describe dv {vm-name}-disk -n {project-namespace}`
-- Check VM events: `kubectl describe vm {vm-name} -n {project-namespace}`
-- If no IP: guest agent may not be installed — verify cloud-init includes `qemu-guest-agent`
+Check image reachability, disk size, storage-class capabilities, quota,
+firmware, and placement. These checks do not require pod exec.
 
 ## Safety
-- For a Dedicated GPU VM, follow [references/dedicated-gpu.md](references/dedicated-gpu.md); enforce `evictionStrategy: None` and never bypass backend preflight
-- ALWAYS include `qemu-guest-agent` in cloud-init — without it, IP reporting and SSH key injection won't work
-- ALWAYS use `networkName: {namespace}/default` — other networks don't exist in the VPC
-- Use `storageClassName: local-path` for DataVolumes
-- FIP and LoadBalancer on the same VM are mutually exclusive
-- Use the correct firmware type: `bios` for most Linux and Gentoo; `efi` only for Windows
-- Windows VMs need machine type `pc-q35-rhel8.6.0` and HyperV features
-- Registry DataVolume URLs MUST be digest-pinned (`@sha256:...`) — never a bare tag or `latest`; take refs from the platform catalog (UI "OS Images")
-- For HTTP fallback imports, prefer `/latest/` URLs from the cluster S3 mirror over upstream CDN URLs — survives upstream rotations and is the only source the refresh CronJob keeps fresh
+
+- Use live catalog data; do not copy an old image URL or default user.
+- Pin registry sources by digest.
+- Never expose a VM only because SSH is convenient; confirm the required
+  network path and public IPv4 quota.
+- Keep the generated private key out of logs and long-lived shared files.
+- Do not combine FIP and LoadBalancer exposure for the same VM without a
+  deliberate network design.
+- Use the gated product flow for Dedicated GPU.

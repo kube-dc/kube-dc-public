@@ -1,20 +1,20 @@
-# Managed Kubernetes etcd-at-rest Encryption
+# Managed Cluster etcd Encryption at Rest
 
-How tenant `KdcCluster` resources opt into encryption-at-rest for their
+How `KdcCluster` resources enable encryption at rest for a Managed Cluster's
 control-plane etcd, what cluster operators need to provide on the
 platform, and how rotation + backup interplay.
 
 This page is for **operators and SREs running a Kube-DC cluster**. For
-the tenant-facing toggle (`spec.encryption.etcd.enabled: true` on a
+the Project user-facing toggle (`spec.encryption.etcd.enabled: true` on a
 `KdcCluster`), see [Provisioning a Cluster](/cloud/provisioning-cluster).
 
 ---
 
 ## What this protects
 
-When a tenant flips `spec.encryption.etcd.enabled: true` on their
-`KdcCluster`, the **wire format of every value** the tenant's
-Kubernetes apiserver writes into its etcd (Secrets and ConfigMaps by
+When a Project user enables `spec.encryption.etcd.enabled: true` on a
+`KdcCluster`, the **wire format of every value** the Managed Cluster's
+Kubernetes API server writes into its etcd (Secrets and ConfigMaps by
 default) becomes:
 
 ```
@@ -28,23 +28,23 @@ requires unwrapping the DEK through OpenBao — i.e. anyone with raw
 disk access to the etcd PVC sees only ciphertext.
 
 This is independent of the **backup envelope** described in
-[Managed Kubernetes etcd Backup & Restore](managed-k8s-etcd-backup-restore.md):
-both layers exist together when a tenant opts in. The backup envelope
+[Managed Cluster etcd Backup and Restore](managed-k8s-etcd-backup-restore.md):
+both layers exist together when encryption is enabled. The backup envelope
 re-encrypts whole snapshots before upload to S3 using the same KEK,
 so anyone with bucket-level read access still cannot decrypt without
 OpenBao.
 
 ## What this does NOT protect
 
-- **Tenant workload data on PVCs.** Application state, database tables,
-  uploaded files — none of that goes through this path. Tenants who need
+- **Managed Cluster workload data on PVCs.** Application state, database tables,
+  uploaded files — none of that goes through this path. Project users who need
   application-level encryption use their own mechanisms (LUKS-backed
   StorageClass, application-side encryption, Velero with restic).
-- **The management cluster's own etcd.** This page covers tenant
-  `KdcCluster` etcd only. Platform-side encryption is a separate
+- **The management cluster's own etcd.** This page covers Managed Cluster
+  control-plane etcd only. Platform-side encryption is a separate
   consideration handled at the install time.
 - **Kubernetes resources outside the encrypted list.** Phase-1 default
-  is `[secrets]`; tenants can opt into `[secrets, configmaps]`. Other
+  is `[secrets]`; Project users can select `[secrets, configmaps]`. Other
   resources (`leases`, `events`, `endpoints`, `pods`) remain in
   plaintext — they have high write rates and low sensitivity, so
   encrypting them would multiply apiserver and KMS load without a
@@ -54,7 +54,7 @@ OpenBao.
 
 ## Platform prerequisites
 
-For tenant opt-in to actually work, the following must be true on the
+For self-service encryption to work, the following must be true on the
 management cluster:
 
 | Prerequisite | How to check | Where it's configured |
@@ -64,11 +64,11 @@ management cluster:
 | `openbao_url` in master-config | `kubectl -n kube-dc get secret master-config -o jsonpath='{.data.openbao_url}' \| base64 -d` | Chart values `openBao.url: https://bao.<DOMAIN>` |
 | `kube-dc-k8-manager` has `KMS_PLUGIN_IMAGE` env | `kubectl -n kube-dc get deploy kube-dc-k8-manager -o jsonpath='{.spec.template.spec.containers[0].env}' \| jq '.[] \| select(.name=="KMS_PLUGIN_IMAGE")'` | Chart values `k8Manager.kmsPluginImage` |
 | `kube-dc-k8-manager` has `OPENBAO_URL` env | Same as above with `OPENBAO_URL` | Chart values `k8Manager.openBaoUrl` |
-| Per-Org OpenBao Transit engine exists | `bao secrets list -namespace=<org>` shows `transit/` | Provisioned by the M3 KMSKey controller on first key request |
+| Per-Organization OpenBao Transit engine exists | `bao secrets list -namespace=<org>` shows `transit/` | Provisioned by the M3 KMSKey controller on first key request |
 
 If any of these are missing, the kdccluster reconciler refuses to
 provision the sidecar with a clear `EncryptionConfigError` condition
-on the `KdcCluster` and the tenant cluster's apiserver continues to
+on the `KdcCluster` and the Managed Cluster's apiserver continues to
 run **without** encryption. There is no silent fallback.
 
 ---
@@ -127,13 +127,13 @@ One Go binary in the kube-dc-manager (NOT the same as k8-manager):
 
 ---
 
-## Enabling encryption on a tenant cluster
+## Enabling encryption on a Managed Cluster
 
-Tenants enable it themselves through the `KdcCluster` spec. The
+Project users enable it through the `KdcCluster` spec. The
 operator's role is to ensure the platform prerequisites are met (above)
 and then verify the reconciler did its job.
 
-### What the tenant submits
+### What the Project user submits
 
 ```yaml
 apiVersion: k8s.kube-dc.com/v1alpha1
@@ -165,7 +165,7 @@ spec:
 If everything is green the cluster is encrypted. To prove it
 bit-for-bit, an operator with platform-admin etcdctl access can read
 a fresh row from the Kamaji DataStore — every encrypted value carries
-the `k8s:enc:kms:v2:bao:` wire prefix. Tenant exec into the etcd pod
+the `k8s:enc:kms:v2:bao:` wire prefix. Project-user exec into the etcd Pod
 is blocked by the cluster's `restrict-pod-exec-in-projects`
 ValidatingAdmissionPolicy, so this verification is operator-only.
 
@@ -174,12 +174,12 @@ ValidatingAdmissionPolicy, so this verification is operator-only.
 ## KEK rotation
 
 The Key Encryption Key — the OpenBao Transit key that wraps every DEK —
-rotates on a schedule the **tenant** chooses. The platform owns nothing
+rotates on a schedule the **Project user** chooses. The platform owns nothing
 here except OpenBao itself; rotation is driven by the M3 KMSKey
 reconciler in the kube-dc-manager, which we lean on rather than ship a
 separate CronJob.
 
-### Tenant spec
+### Project user spec
 
 ```yaml
 spec:
@@ -214,9 +214,9 @@ Validation bounds (rejected at reconcile time with a clear
    "Advancing `min_decryption_version`" below — that's a manual +
    irreversible operator gesture.
 
-### Tenant-side observability
+### Project observability
 
-The tenant sees rotation state at `status.encryption.kekRotation`:
+The Project user sees rotation state at `status.encryption.kekRotation`:
 
 ```yaml
 status:
@@ -230,13 +230,13 @@ status:
 ```
 
 The same data is on the underlying `KMSKey/<cluster>-etcd` —
-the KdcCluster mirror is for tenant convenience.
+the `KdcCluster` mirror makes the state available to Project users.
 
 ### Operator-initiated rotation outside the schedule
 
 Three paths, in order of preference:
 
-1. **Schedule the rotation via the tenant CR.** Set
+1. **Schedule the rotation through the `KdcCluster` resource.** Set
    `spec.encryption.etcd.kekRotation.interval` to whatever cadence is
    desired; the M3 reconciler picks it up on its next loop.
 2. **Direct Transit call as a platform admin.** Use the platform-root
@@ -249,7 +249,7 @@ Three paths, in order of preference:
 
 3. **NEVER grant the kms-plugin SA `rotate` capability.** Its
    `tcp-<cluster>` policy intentionally has only `encrypt`, `decrypt`,
-   `keys` (read). Granting rotate would widen the tenant-side blast
+   `keys` (read). Granting rotate would widen the workload-side blast
    radius if a TCP pod is compromised.
 
 ---
@@ -299,11 +299,11 @@ The kms-plugin sidecar caches DEKs locally for ~5 minutes (the
 apiserver's KMS v2 cache TTL). Short OpenBao outages are invisible;
 long ones surface as apiserver errors on encrypted resource reads/writes.
 
-| Outage duration | Tenant apiserver effect | Recovery |
+| Outage duration | Managed Cluster API server effect | Recovery |
 |---|---|---|
 | < 5 min | None (cache covers it) | Auto-recovers when OpenBao returns |
 | 5 min – 1 h | Reads of recently-encrypted resources start to fail with `transformation failed` | sidecar re-logins automatically when OpenBao returns; apiserver retries succeed within ~60s |
-| > 1 h | Same as above; tenant operators may file tickets | Same auto-recovery; no manual intervention required |
+| > 1 h | Same as above; Project users may file support tickets | Same auto-recovery; no manual intervention required |
 
 If the apiserver does NOT auto-recover after OpenBao returns, restart
 the TCP pod (`kubectl -n <ns> delete pod -l kamaji.clastix.io/name=<cluster>-cp`).
@@ -371,5 +371,5 @@ annotation is audit-flagged on every reconcile.
 
 ## Cross-references
 
-- [Provisioning a Cluster](/cloud/provisioning-cluster) — tenant-facing toggle
-- [Managed Kubernetes etcd Backup & Restore](managed-k8s-etcd-backup-restore.md) — backup envelope encryption companion
+- [Provisioning a Cluster](/cloud/provisioning-cluster) — Project user-facing toggle
+- [Managed Cluster etcd Backup and Restore](managed-k8s-etcd-backup-restore.md) — backup envelope encryption companion

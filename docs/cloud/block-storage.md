@@ -1,6 +1,6 @@
 # Block Storage
 
-Kube-DC provides persistent block storage through two Kubernetes-native mechanisms: **DataVolumes** for virtual machines and **PersistentVolumeClaims (PVCs)** for containers. Both are managed through the Volumes view in the dashboard or via kubectl.
+Kube-DC provides persistent block storage through Kubernetes **PersistentVolumeClaims (PVCs)**. The Containerized Data Importer (CDI) adds **DataVolumes**, which create and populate PVCs from sources such as VM images. Both resource types are managed through the Volumes view in the dashboard or via kubectl.
 
 ## Volumes Dashboard
 
@@ -17,15 +17,17 @@ Click on any volume to expand its details:
 The detail panel shows:
 - **Volume Information** — Name, type, capacity, and storage class
 - **Status** — Attachment status and which VM/pod the volume is attached to
-- **Actions** — Detach, Clone, or View YAML
+- **Actions** — Detach from a VM, Clone, or View YAML, when the action is supported for that volume
 
 ## Understanding Volume Types
 
-### DataVolumes (Virtual Machines)
+### DataVolumes (VM Disk Imports)
 
 A **DataVolume** is a KubeVirt resource provided by the [Containerized Data Importer (CDI)](https://kubevirt.io/user-guide/storage/containerized_data_importer/). It automates creating a PVC and populating it with data from a source — typically an OS image for a VM root disk.
 
-When you create a VM, the platform automatically creates a DataVolume as the root disk. DataVolumes can import data from:
+When the VM wizard imports an image, it creates a DataVolume for the root disk. For a prepared image with snapshot support, the wizard can instead restore a PVC directly from a `VolumeSnapshot`. In both cases, the VM ultimately uses a PVC-backed disk.
+
+DataVolumes can populate storage from:
 
 - **HTTP/HTTPS URL** — Download a cloud image (e.g., Debian, Ubuntu)
 - **Container Registry** — Pull a disk image from a container registry
@@ -38,7 +40,7 @@ apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
 metadata:
   name: debian-root
-  namespace: shalb-jumbolot
+  namespace: acme-production
 spec:
   source:
     http:
@@ -61,7 +63,7 @@ apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
 metadata:
   name: data-disk
-  namespace: shalb-jumbolot
+  namespace: acme-production
 spec:
   source:
     blank: {}
@@ -74,9 +76,9 @@ spec:
     storageClassName: local-path
 ```
 
-### PersistentVolumeClaims (Containers)
+### PersistentVolumeClaims (VMs and Containers)
 
-A **PVC** is a standard Kubernetes resource for requesting persistent storage. Use PVCs when your containerized workloads (Deployments, StatefulSets, Pods) need data that persists across restarts.
+A **PVC** is the standard Kubernetes resource for requesting persistent storage. VMs use PVC-backed disks, and containerized workloads such as Deployments, StatefulSets, and Pods mount PVCs when their data must persist across restarts.
 
 **Example: PVC for a database**
 
@@ -85,7 +87,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: postgres-data
-  namespace: shalb-jumbolot
+  namespace: acme-production
 spec:
   accessModes:
     - ReadWriteOnce
@@ -102,11 +104,14 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: postgres
-  namespace: shalb-jumbolot
+  namespace: acme-production
 spec:
   containers:
     - name: postgres
       image: postgres:16
+      env:
+        - name: POSTGRES_PASSWORD
+          value: change-this-example-password
       volumeMounts:
         - name: data
           mountPath: /var/lib/postgresql/data
@@ -120,8 +125,8 @@ spec:
 
 | Feature | DataVolume | PVC |
 |---------|-----------|-----|
-| **Primary use** | VM root and data disks | Container storage |
-| **Data import** | Automatic (HTTP, registry, blank) | Manual (empty on creation) |
+| **Primary use** | Create and populate VM disks | Backing storage for VMs and containers |
+| **Data population** | CDI source such as HTTP, registry, blank, or another volume | Empty on creation, or clone/snapshot when the storage driver supports it |
 | **Created by** | VM provisioning or manually | Directly by user |
 | **Backed by** | Creates a PVC internally | Directly binds to a PersistentVolume |
 | **Visible in UI** | Yes (Volumes tab, type: DataVolume) | Yes (Volumes tab, type: PVC) |
@@ -130,7 +135,7 @@ spec:
 
 A **StorageClass** defines what type of storage backs your volumes. The available storage classes depend on the infrastructure provider.
 
-### Current Default: `local-path`
+### Kube-DC Cloud Default: `local-path`
 
 ```
 $ kubectl get storageclass
@@ -160,7 +165,7 @@ Check your available storage classes with `kubectl get storageclass`. Always spe
 
 1. Navigate to your project → **Volumes** tab
 2. Click **+ Create Volume**
-3. Choose the volume type, size, and storage class
+3. Choose the volume type, size, storage class, access mode, and volume mode
 4. Click **Create**
 
 ### Via kubectl
@@ -173,7 +178,7 @@ apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
 metadata:
   name: my-data-disk
-  namespace: shalb-jumbolot
+  namespace: acme-production
 spec:
   source:
     blank: {}
@@ -195,7 +200,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: my-pvc
-  namespace: shalb-jumbolot
+  namespace: acme-production
 spec:
   accessModes:
     - ReadWriteOnce
@@ -212,47 +217,49 @@ EOF
 
 ```bash
 # List all PVCs
-kubectl get pvc -n shalb-jumbolot
+kubectl get pvc -n acme-production
 
 # List all DataVolumes
-kubectl get datavolumes -n shalb-jumbolot
+kubectl get datavolumes -n acme-production
 
 # Get volume details
-kubectl describe pvc debian-root -n shalb-jumbolot
+kubectl describe pvc debian-root -n acme-production
 ```
 
 ### Clone a Volume
 
-From the Volumes dashboard, expand a volume and click **Clone** to create an identical copy. This is useful for creating backups or testing with production data.
+From the Volumes dashboard, expand a volume and click **Clone** to request a separate copy. PVC cloning requires CSI clone support from the selected StorageClass; DataVolume cloning can use CDI's copy strategy. For example, `local-path` does not provide CSI cloning, so a direct PVC clone can remain pending.
+
+Check the cloned DataVolume or PVC status and events before attaching it. A clone is not a replacement for a tested backup or snapshot policy.
 
 ### Detach a Volume
 
-Click **Detach** to disconnect a volume from its VM or pod without deleting the data. The volume can be reattached later.
+Click **Detach** to disconnect a volume from an attached VM without deleting the data. The volume can be reattached later. To detach a PVC from a Pod, Deployment, or StatefulSet, update that workload's manifest or controller instead.
 
 ### Delete a Volume
 
 ```bash
 # Delete a DataVolume (also deletes the underlying PVC)
-kubectl delete datavolume my-data-disk -n shalb-jumbolot
+kubectl delete datavolume my-data-disk -n acme-production
 
 # Delete a PVC directly
-kubectl delete pvc my-pvc -n shalb-jumbolot
+kubectl delete pvc my-pvc -n acme-production
 ```
 
 :::warning
-Deleting a volume permanently removes the data. With the `Delete` reclaim policy (default), there is no recovery after deletion.
+Deleting a claim removes the Kubernetes storage resource. What happens to the underlying data depends on the StorageClass reclaim policy. The hosted `local-path` class uses `Delete`, so deleting its PVC removes the backing data; do not rely on recovery after deletion.
 :::
 
 ## Quick Reference
 
 | Action | Command |
 |--------|---------|
-| List PVCs | `kubectl get pvc -n my-project` |
-| List DataVolumes | `kubectl get datavolumes -n my-project` |
+| List PVCs | `kubectl get pvc -n acme-production` |
+| List DataVolumes | `kubectl get datavolumes -n acme-production` |
 | List StorageClasses | `kubectl get storageclass` |
-| Describe volume | `kubectl describe pvc <name> -n my-project` |
-| Delete DataVolume | `kubectl delete datavolume <name> -n my-project` |
-| Delete PVC | `kubectl delete pvc <name> -n my-project` |
+| Describe volume | `kubectl describe pvc <name> -n acme-production` |
+| Delete DataVolume | `kubectl delete datavolume <name> -n acme-production` |
+| Delete PVC | `kubectl delete pvc <name> -n acme-production` |
 
 ## Next Steps
 

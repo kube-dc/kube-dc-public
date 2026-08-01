@@ -34,11 +34,11 @@ func auditCmd() *cobra.Command {
 		Use:   "audit",
 		Short: "Query the structured audit trail (Loki-backed).",
 		Long: `Read the kube-dc audit stream emitted by the backend on every
-/api/secrets/* call (and surrounding ops like org-admin elevation).
+/api/secrets/* call (and related operations such as Organization admin elevation).
 
-Project-scoped queries are open to any project member; org-wide
+Project-scoped queries are open to any Project member; Organization-wide
 queries (--org alone) and CSV exports (--csv, implies --org) are
-org-admin only.`,
+restricted to Organization admins.`,
 	}
 	cmd.AddCommand(auditListCmd())
 	return cmd
@@ -50,16 +50,16 @@ func auditListCmd() *cobra.Command {
 	var orgWide, csvMode bool
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "Query audit events (project-scoped by default; --org for org-wide).",
+		Short: "Query audit events (Project-scoped by default; --org for Organization-wide).",
 		Long: `Examples:
 
-  # Last hour of secret reads in this project:
-  kube-dc audit list --service secrets --since 1h
+  # Secret reads in this project's default query window:
+  kube-dc audit list --service secrets
 
-  # Cross-project audit for an org-admin reviewing an incident:
+  # Cross-Project audit for an Organization admin reviewing an incident:
   kube-dc audit list --org --since 2026-05-21T13:00:00Z
 
-  # Drop the org-wide stream to a CSV file (org-admin only):
+  # Write the Organization-wide stream to a CSV file (Organization admin only):
   kube-dc audit list --csv --output-file incident-2026-05-21.csv
 
 Flag semantics:
@@ -162,16 +162,16 @@ Flag semantics:
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&orgWide, "org", false, "Query org-wide audit (org-admin only)")
-	cmd.Flags().StringVar(&orgFlag, "org-name", "", "Organization name (default: current context's org)")
+	cmd.Flags().BoolVar(&orgWide, "org", false, "Query Organization-wide audit (Organization admin only)")
+	cmd.Flags().StringVar(&orgFlag, "org-name", "", "Organization name (default: current context's Organization)")
 	cmd.Flags().StringVar(&project, "project", "", "Project (default: current context's project; ignored with --org, rejected with --csv)")
 	cmd.Flags().StringVar(&service, "service", "", "Filter: secrets|certificates|kms|db-credentials|org-admin|audit")
 	cmd.Flags().StringVar(&actor, "actor", "", "Filter: substring match against actor email / preferred_username")
 	cmd.Flags().StringVar(&result, "result", "", "Filter: allowed|denied|error")
-	cmd.Flags().StringVar(&since, "since", "", "Lower bound (epoch seconds OR RFC3339; e.g. 1h ago = backend default)")
-	cmd.Flags().StringVar(&until, "until", "", "Upper bound (epoch seconds OR RFC3339; default = now)")
+	cmd.Flags().StringVar(&since, "since", "", "Lower bound (epoch seconds or RFC3339; omit for the backend default window)")
+	cmd.Flags().StringVar(&until, "until", "", "Upper bound (epoch seconds or RFC3339; default = now)")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Max events to return (backend default 500, max 5000)")
-	cmd.Flags().BoolVar(&csvMode, "csv", false, "Stream the org-wide audit as CSV (org-admin only)")
+	cmd.Flags().BoolVar(&csvMode, "csv", false, "Stream the Organization-wide audit as CSV (Organization admin only)")
 	cmd.Flags().StringVar(&csvPath, "output-file", "", "With --csv: write to this file instead of stdout")
 	cmd.Flags().StringVarP(&outFlag, "output", "o", "table", "Output format (non-CSV): table|json|yaml")
 	return cmd

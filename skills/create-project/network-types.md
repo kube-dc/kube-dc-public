@@ -1,31 +1,24 @@
 # Project Network Types
 
-## Cloud (Recommended Default)
+Every installation supports `cloud`. A `public` Project is available only
+when the provider enables it.
 
-- Shared NAT gateway — more secure, cost-effective
-- Default EIPs allocated from `ext-cloud` subnet
-- Can still request public EIPs when needed (`externalNetworkType: public` on EIp resource)
-- Best for: web apps, APIs, microservices, most workloads
+## Cloud
+
+- The Project gateway uses the configured cloud address pool.
+- Outbound traffic is SNATed through the Project gateway.
+- Cloud addresses are not internet-routable; they are reachable only from
+  configured platform networks.
+- The Project can still request a public EIP when the provider exposes that
+  pool and Organization quota is available.
 
 ## Public
 
-- Dedicated public IP on the project gateway
-- Default EIPs allocated from `ext-public` subnet
-- Direct public IP access without NAT
-- Best for: game servers, custom protocols requiring dedicated IP
+- The Project gateway uses the configured public address pool.
+- The gateway address is internet-routable subject to firewall and provider
+  policy.
+- Public address quota still applies.
 
-## Key Difference
-
-Both types support Gateway Routes (Envoy) and EIP+LoadBalancer exposure.
-The difference is only in the **default gateway** — cloud uses shared NAT, public uses a dedicated IP.
-
-Cloud projects can always get public EIPs on-demand by creating:
-```yaml
-apiVersion: kube-dc.com/v1
-kind: EIp
-metadata:
-  name: my-public-eip
-  namespace: {project-namespace}
-spec:
-  externalNetworkType: public
-```
+Both Project types can use Gateway routes, EIP-backed LoadBalancers, FIPs,
+applications, and VMs. The main difference is the pool used for the default
+gateway address, not the set of workload APIs available.

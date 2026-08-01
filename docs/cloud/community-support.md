@@ -1,99 +1,71 @@
-# Community & Support
+# Community and Support
 
-Kube-DC has multiple channels for support, community engagement, and professional services. Choose the option that best fits your needs.
+Use community channels for general questions and the support contact associated
+with your account for private, billing, availability, or security-sensitive
+issues.
 
-## Community Support
+## Self-Service
 
-### GitHub Discussions
+Start with:
 
-- Ask questions and engage with the community
-- Share your experiences and solutions
-- Report bugs and request features
-- Access to public roadmap and project updates
-- [Visit GitHub Discussions](https://github.com/kube-dc/kube-dc-public/discussions)
+1. Search this documentation for the resource and error message.
+2. Check the relevant resource status and events in your Project.
+3. Search existing [GitHub issues](https://github.com/kube-dc/kube-dc-public/issues).
+4. Ask a general question in [GitHub Discussions](https://github.com/kube-dc/kube-dc-public/discussions).
 
-### Slack Community
-Join our active Slack community to:
+The [Kube-DC Slack community](https://join.slack.com/t/kube-dc/shared_invite/zt-31mr5c6ci-W3kYQ7qGDULlGQ5QJjsxmA)
+is available for community conversation. Do not post credentials, kubeconfigs,
+tokens, private logs, customer data, or security reports in a public channel.
 
-- Get real-time help from community members
-- Connect with other Kube-DC users
-- Share your use cases and solutions
-- Stay updated on latest developments
-- [Join Kube-DC Slack](https://join.slack.com/t/kube-dc/shared_invite/zt-31mr5c6ci-W3kYQ7qGDULlGQ5QJjsxmA)
+## Open an Issue
 
-### Documentation
-- Comprehensive guides and tutorials
-- API reference documentation
-- Best practices and examples
-- [Browse Documentation](https://docs.kube-dc.com)
+Use GitHub for reproducible bugs in public components. Include:
 
-## Professional Services
+- expected and actual behavior
+- the smallest reproducible example
+- Kube-DC CLI and relevant Kubernetes versions
+- timestamps with timezone
+- sanitized error messages and events
+- whether the issue affects a Project or a Managed Cluster
 
-### Commercial Support
+Before posting, remove Organization names if private, Project data, IP addresses,
+tokens, Secret values, kubeconfigs, and customer information.
 
-We offer various tiers of commercial support:
+## Contact Support
 
-#### Basic Support
+For account-specific help, use the support channel included with your
+subscription or email [support@kube-dc.com](mailto:support@kube-dc.com).
+Response targets and coverage are defined by your subscription or support
+agreement; this page does not add an SLA.
 
-- Business hours support (9/5)
-- Email support
-- 24-hour response time
-- Bug fixes and security updates
-- Access to knowledge base
+Include:
 
-#### Enterprise Support
-- 24/7 support coverage
-- Priority response (2-hour SLA for critical issues)
-- Direct access to engineering team
-- Custom feature development
-- Dedicated support engineer
-- Regular health checks and reviews
+- Organization and Project names
+- affected resource type and name
+- impact and start time
+- recent change, if known
+- request or correlation ID, if the UI shows one
+- sanitized status, conditions, and events
+- a safe way to reproduce the problem
 
-### Professional Services
+Never send a bearer token, password, private key, kubeconfig, or unredacted
+Secret. Support can request a safer diagnostic through the authenticated
+channel when needed.
 
-#### Implementation Services
-- Architecture design and review
-- Production deployment assistance
-- Migration planning and execution
-- Performance optimization
-- Security hardening
+## Route the Request
 
-#### Training
-- Admin and operator training
-- Developer workshops
-- Custom training programs
-- Certification programs
+| Request | Best channel |
+|---------|--------------|
+| How-to or design question | Documentation, Discussions, or Slack |
+| Reproducible public-component bug | GitHub Issues |
+| Billing or subscription | Account support |
+| Production availability | Account support |
+| Suspected security vulnerability | Private support channel; do not open a public issue |
+| Feature idea | GitHub Discussions or account contact |
 
-#### Consulting
-- Technical architecture consulting
-- Scalability planning
-- High availability design
-- Security assessment
-- Performance optimization
-- Custom integration development
+## Contributions
 
-## Getting Support
-
-### For Community Support
-
-1. Check the [documentation](https://docs.kube-dc.com)
-2. Search existing [GitHub Issues](https://github.com/kube-dc/kube-dc-public/issues)
-3. Join our [Slack community](https://join.slack.com/t/kube-dc/shared_invite/zt-31mr5c6ci-W3kYQ7qGDULlGQ5QJjsxmA)
-4. Post on [GitHub Discussions](https://github.com/kube-dc/kube-dc-public/discussions)
-
-### For Commercial Support
-
-Contact our sales team:
-
-- Email: support@kube-dc.com
-- Website: [https://kube-dc.com/](https://kube-dc.com/)
-- Phone: +380632441621
-
-## Contributing
-
-We welcome contributions from the community! Check our [Contributing Guide](https://github.com/kube-dc/kube-dc-public/blob/main/CONTRIBUTING.md) to learn how you can:
-
-- Submit bug reports and feature requests
-- Contribute code
-- Improve documentation
-- Share use cases and examples
+Contributions and documentation feedback are welcome through the
+[kube-dc-public repository](https://github.com/kube-dc/kube-dc-public). Open an
+issue or discussion before a large change so maintainers can confirm scope and
+the appropriate repository.

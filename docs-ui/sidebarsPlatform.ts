@@ -15,7 +15,7 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Architecture',
-      collapsed: false,
+      collapsed: true,
       items: [
         'architecture-overview',
         'architecture-networking',
@@ -28,7 +28,7 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Networking',
-      collapsed: false,
+      collapsed: true,
       items: [
         'networking-external',
         'tenant-vlan-attachment',
@@ -38,12 +38,13 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Security & Identity',
-      collapsed: false,
+      collapsed: true,
       items: [
         'security-model',
         'sso-google-auth',
         'certificates',
         'private-ca-enterprise-install',
+        'smtp-gmail-app-password',
       ],
     },
     {
@@ -71,7 +72,7 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'Managed Kubernetes',
+      label: 'Managed Clusters',
       collapsed: true,
       items: [
         'managed-k8s-etcd-backup-restore',
@@ -89,13 +90,11 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Day-2 Operations',
-      collapsed: false,
+      collapsed: true,
       items: [
         'observability',
         'upgrading-management-cluster',
-        'project-resources',
         'billing-plans-configuration',
-        'smtp-gmail-app-password',
       ],
     },
     {
@@ -109,7 +108,7 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Cluster Operator CLI',
-      collapsed: false,
+      collapsed: true,
       items: [
         'cluster-cli-overview',
         'cluster-cli-fleet',
@@ -117,6 +116,14 @@ const sidebars: SidebarsConfig = {
         'cluster-cli-context-manager',
         'cluster-cli-break-glass',
         'cluster-cli-troubleshooting',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Reference',
+      collapsed: true,
+      items: [
+        'project-resources',
       ],
     },
     'roadmap',

@@ -1,547 +1,261 @@
 # Networking Architecture
 
-Kube-DC provides enterprise-grade networking through Kube-OVN and Envoy Gateway, enabling multi-tenant isolation, flexible service exposure, and automatic TLS management.
+Kube-DC uses Kube-OVN for Project VPCs and external-address routing, Multus for additional interfaces, and Envoy Gateway for HTTP, HTTPS, and gRPC exposure.
 
 ## Quick Navigation
 
 | Section | Description |
 |---------|-------------|
-| [Network Types](#network-types) | Cloud vs Public networks |
+| [Network Types](#external-network-types) | Cloud vs Public networks |
 | [Physical Layer](#physical-network-layer) | VLANs and provider bridges |
 | [OVN Architecture](#ovn-logical-network) | VPCs, subnets, routers |
 | [Service Exposure](#service-exposure) | LoadBalancers, Gateway Routes |
-| [Tenant VLAN attachment](#attaching-a-project-to-a-physical-vlan) | Putting a project on a datacenter VLAN |
+| [Datacenter VLAN attachment](#attaching-a-project-to-a-datacenter-vlan) | Putting a project on a datacenter VLAN |
 | [Envoy Gateway](#envoy-gateway) | HTTP/HTTPS/gRPC routing |
 
 ---
 
-## Network Types
+## External network types
 
-Kube-DC supports two external network types:
+Kube-DC supports two external network types. Their CIDRs, VLANs, gateways, and
+provider interfaces are installation-specific.
 
-| Type | Subnet | IP Range | Internet Routable | Use Case |
-|------|--------|----------|-------------------|----------|
-| **Cloud** | `ext-cloud` | 100.65.0.0/16 | ❌ No (NAT pool) | Web apps, APIs, cost-effective |
-| **Public** | `ext-public` | 168.119.17.48/28 | ✅ Yes | VMs, game servers, direct access |
+| Type | Default logical name | Address reachability | Typical use |
+|---|---|---|---|
+| **Cloud** | `ext-cloud` | Private datacenter or cloud fabric; normally not internet-routable from outside | Project gateways, private EIPs, private LoadBalancer Services |
+| **Public** | `ext-public` | Internet-routable when the datacenter routes the pool | Public EIPs, FIPs, and LoadBalancer Services |
 
----
+A Cloud address can still provide outbound internet access through the
+datacenter gateway and Project SNAT. A Public address is not automatically safe
+or exposed: routing, firewall policy, quota, and the workload listener still
+apply.
 
-## Physical Network Layer
+:::note Example addresses
+Examples in this guide use documentation ranges such as `198.51.100.0/24` and
+sample private space. Replace them with the ranges configured in your Fleet
+overlay. They are not Kube-DC defaults.
+:::
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         PHYSICAL NETWORK                                    │
-│                                                                             │
-│  ┌─────────────────────────┐              ┌─────────────────────────┐       │
-│  │      VLAN 4011          │              │      VLAN 4013          │       │
-│  │      ext-public         │              │      ext-cloud          │       │
-│  │   168.119.17.48/28      │              │   100.65.0.0/16         │       │
-│  │                         │              │                         │       │
-│  │   Gateway: 168.119.17.49│              │   Gateway: 100.65.0.1   │       │
-│  │   Internet-routable     │              │   Internal-only         │       │
-│  └───────────┬─────────────┘              └───────────┬─────────────┘       │
-│              │                                        │                     │
-│              └────────────────┬───────────────────────┘                     │
-│                               │                                             │
-│                     ┌─────────┴─────────┐                                   │
-│                     │   Provider Bridge │                                   │
-│                     │   br-ext-cloud    │                                   │
-│                     │   (on each node)  │                                   │
-│                     └─────────┬─────────┘                                   │
-└───────────────────────────────┼─────────────────────────────────────────────┘
-                                │
-                                ▼
-┌───────────────────────────────────────────────────────────────────────────────┐
-│                              OVN NETWORK                                      │
-└───────────────────────────────────────────────────────────────────────────────┘
+## Physical network layer
+
+Provider networks attach Kube-OVN to datacenter Layer 2 or routed segments.
+Depending on the installation, a provider network can use a VLAN on a shared
+trunk, a dedicated interface, or an existing OVS bridge.
+
+```mermaid
+flowchart LR
+  accTitle: External provider network types
+  accDescr: Optional private and public provider segments connect through Kube-OVN provider networks to external IP resources and Project workloads.
+  Cloud[Optional private provider segment] --> Provider[Kube-OVN ProviderNetwork]
+  Public[Optional public provider segment] --> Provider
+  Provider --> OVS[OVS bridge on eligible nodes]
+  OVS --> OVN[OVN logical routers]
 ```
 
----
+The operator must ensure that every eligible node receives the expected VLANs
+or routed segments. Kube-OVN and OVS own the logical attachment; do not assume a
+Linux VLAN subinterface with a particular name will exist.
 
-## OVN Logical Network
+## OVN logical network
 
-### Management VPC (ovn-cluster)
+The management VPC hosts platform networking. Each Project receives a separate
+VPC and workload subnet.
 
-```
-┌────────────────────────────────────────────────────────────────────────────────┐
-│                          ovn-cluster VPC (Management)                          │
-│                                                                                │
-│   ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  ┌───────────┐ │
-│   │   ovn-default   │  │    ext-cloud    │  │   ext-public    │  │   join    │ │
-│   │  10.100.0.0/16  │  │  100.65.0.0/16  │  │168.119.17.48/28 │  │172.30.0.0 │ │
-│   │                 │  │                 │  │                 │  │   /22     │ │
-│   │ • kube-system   │  │ • Cloud LB VIPs │  │ • Public LB VIPs│  │ • Node IPs│ │
-│   │ • envoy-gateway │  │ • Cloud EIPs    │  │ • Public EIPs   │  │           │ │
-│   └────────┬────────┘  └────────┬────────┘  └────────┬────────┘  └─────┬─────┘ │
-│            │                    │                    │                 │       │
-│            └────────────────────┼────────────────────┼─────────────────┘       │
-│                                 │                    │                         │
-│                       ┌─────────┴────────────────────┴─────────┐               │
-│                       │         ovn-cluster Router             │               │
-│                       │                                        │               │
-│                       │  Ports:                                │               │
-│                       │  • ovn-default: 10.100.0.1             │               │
-│                       │  • ext-cloud: 100.65.0.101             │               │
-│                       │  • join: 172.30.0.1                    │               │
-│                       │                                        │               │
-│                       │  SNAT: 10.100.0.0/16 → 100.65.0.101    │               │
-│                       └────────────────────────────────────────┘               │
-└────────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+  accTitle: Management and Project network isolation
+  accDescr: The management VPC hosts platform services, while each Project has a separate VPC and workload subnet connected through controlled routing and egress.
+  subgraph Management["Management VPC"]
+    Platform[Platform Pods and Services]
+    Cloud[ext-cloud, when configured]
+    Public[ext-public, when configured]
+  end
+
+  subgraph Project["Project VPC"]
+    Subnet[Project workload subnet<br/>spec.cidrBlock]
+    Router[Project logical router]
+    Workloads[Pods and VMs]
+  end
+
+  Workloads --> Subnet --> Router
+  Router -->|default EIp and SNAT| Cloud
+  Router -.->|optional public EIp, FIp, or Service| Public
 ```
 
-### Project VPCs
+The Project's `spec.cidrBlock` is required input supplied by the creator or UI;
+the controller does not allocate it from an external-network CIDR. The Project's
+immutable `spec.egressNetworkType` selects the external network used by its
+default gateway.
 
-```
-┌─────────────────────────────────┐  ┌─────────────────────────────────┐
-│   Cloud Project VPC             │  │   Public Project VPC            │
-│   (egressNetworkType: cloud)    │  │   (egressNetworkType: public)   │
-│                                 │  │                                 │
-│   ┌─────────────────────────┐   │  │   ┌─────────────────────────┐   │
-│   │  project-a-default      │   │  │   │  project-b-default      │   │
-│   │     10.0.10.0/24        │   │  │   │     10.0.20.0/24        │   │
-│   │                         │   │  │   │                         │   │
-│   │  • Customer pods        │   │  │   │  • Customer pods        │   │
-│   │  • Customer VMs         │   │  │   │  • Customer VMs         │   │
-│   └───────────┬─────────────┘   │  │   └───────────┬─────────────┘   │
-│               │                 │  │               │                 │
-│   ┌───────────┴─────────────┐   │  │   ┌───────────┴─────────────┐   │
-│   │  project-a Router       │   │  │   │  project-b Router       │   │
-│   │                         │   │  │   │                         │   │
-│   │  EIP: 100.65.0.102      │   │  │   │  EIP: 168.119.17.51     │   │
-│   │  (ext-cloud)            │   │  │   │  (ext-public)           │   │
-│   │                         │   │  │   │                         │   │
-│   │  SNAT: 10.0.10.0/24     │   │  │   │  SNAT: 10.0.20.0/24     │   │
-│   │       → 100.65.0.102    │   │  │   │       → 168.119.17.51   │   │
-│   └─────────────────────────┘   │  │   └─────────────────────────┘   │
-└─────────────────────────────────┘  └─────────────────────────────────┘
-```
+### Policy routing for secondary external networks
 
-### Subnet Summary
+When a workload uses an EIP from a different external network than its
+Project's default, Kube-DC programs source-based OVN logical-router policies so
+reply traffic returns through the matching gateway. This is required for FIPs
+and LoadBalancer Services on secondary provider networks.
 
-| Subnet | VPC | CIDR | Purpose |
-|--------|-----|------|---------|
-| `ovn-default` | ovn-cluster | 10.100.0.0/16 | Management pods |
-| `ext-cloud` | ovn-cluster | 100.65.0.0/16 | Cloud LB VIPs, EIPs |
-| `ext-public` | ovn-cluster | 168.119.17.48/28 | Public LB VIPs, EIPs |
-| `join` | ovn-cluster | 172.30.0.0/22 | Node-to-OVN connectivity |
-| `{project}-default` | `{project}` | 10.x.x.x/24 | Customer pods/VMs |
+The policy priorities are an implementation detail. Inspect the Project VPC and
+the owning EIP or Service status when troubleshooting; do not reproduce these
+routes manually.
 
-### Policy Routing for Secondary External Networks
+## Service exposure
 
-When an EIP is allocated from a **secondary external network** (different from the project's default), kube-dc automatically creates **policy routes** to ensure return traffic uses the correct gateway.
+Choose an exposure method by protocol and reachability:
 
-**Example**: A cloud project (`egressNetworkType: cloud`) with a public EIP:
+| Method | Protocols | Address behavior | Use when |
+|---|---|---|---|
+| Gateway route | HTTP, HTTPS, gRPC, and supported TLS routes | Shares the configured Envoy Gateway listener and hostname | The application has a hostname-based protocol and should use Gateway API routing or managed TLS |
+| LoadBalancer Service | TCP or UDP | Uses the Project default EIP or a named EIP and an OVN load balancer | The application needs a direct port or non-HTTP protocol |
+| FIP | IP protocols supported by the OVN NAT path | Maps one EIP to a VM interface or explicit internal IP | A single workload needs a stable 1:1 NAT address |
 
-```
-Project: my-project (default: ext-cloud)
-├── Default Route: 0.0.0.0/0 → 100.65.0.1 (cloud gateway)
-├── Public FIP: 91.224.11.10 → 10.0.0.7 (pod IP)
-└── Policy Route: ip4.src == 10.0.0.7 → 91.224.11.1 (public gateway)
-```
+A Cloud address is reachable only through the configured private provider
+network. A Public address is internet-routable only when the datacenter routes
+the pool and applicable firewalls allow the traffic. The diagrams and resource
+status cannot establish external reachability on their own.
 
-Without the policy route, return traffic from the pod would use the default cloud gateway, causing SNAT to fail and packets to be dropped.
+### EIP resources
 
-**Priority levels**:
-| Priority | Purpose |
-|----------|---------|
-| 31000 | Allow internal subnet traffic |
-| 30010 | SvcLB source-based reroute |
-| 30000 | FIP source-based reroute |
-
-<!-- See Secondary External Network PRD for implementation details. -->
-
----
-
-## Service Exposure
-
-Kube-DC provides multiple ways to expose services:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         SERVICE EXPOSURE OPTIONS                                │
-│                                                                                 │
-│   ┌─────────────────────────────────────────────────────────────────────────┐   │
-│   │                      1. Gateway Routes (Recommended)                    │   │
-│   │                                                                         │   │
-│   │   Internet → Envoy Gateway (203.0.113.250:443) → HTTPRoute → Service     │   │
-│   │                                                                         │   │
-│   │   -  Automatic TLS certificates                                         │   │
-│   │   -  Auto-generated hostnames                                           │   │
-│   │   -  Shared infrastructure (cost-effective)                             │   │
-│   │   -  HTTP/HTTPS/gRPC support                                            │   │
-│   │                                                                         │   │
-│   │   Annotations:                                                          │   │
-│   │   • expose-route: https                                                 │   │
-│   │   • route-hostname: custom.domain.com (optional)                        │   │
-│   └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                 │
-│   ┌─────────────────────────────────────────────────────────────────────────┐   │
-│   │                      2. EIP + LoadBalancer                              │   │
-│   │                                                                         │   │
-│   │   Internet → EIP (dedicated IP) → OVN LB → Service → Pods/VMs           │   │
-│   │                                                                         │   │
-│   │   -  Dedicated IP address                                               │   │
-│   │   -  Any TCP/UDP protocol                                               │   │
-│   │   -  Direct VM access                                                   │   │
-│   │                                                                         │   │
-│   │   Annotations:                                                          │   │
-│   │   • bind-on-default-gw-eip: "true"                                      │   │
-│   │   • bind-on-eip: "my-eip"                                               │   │
-│   └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                 │
-│   ┌─────────────────────────────────────────────────────────────────────────┐   │
-│   │                      3. Floating IP (FIP)                               │   │
-│   │                                                                         │   │
-│   │   Internet → EIP → 1:1 NAT → Internal IP (VM/Pod)                       │   │
-│   │                                                                         │   │
-│   │   -  Direct IP mapping                                                  │   │
-│   │   -  VM sees public IP                                                  │   │
-│   └─────────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
-
-## Network Elements
-
-### User-Visible Network Resources
-
-#### External IP (EIP)
-
-External IPs provide connectivity from the public internet to resources within Kube-DC. Each EIP is allocated from the provider network.
-
-**Example EIP YAML:**
+An `EIp` reserves an address from either the `cloud` or `public` external
+network:
 
 ```yaml
 apiVersion: kube-dc.com/v1
 kind: EIp
 metadata:
-  name: ssh-arti
-  namespace: shalb-demo
-spec: {}  
+  name: application-address
+  namespace: acme-production
+spec:
+  externalNetworkType: cloud
 ```
 
-#### Floating IP (FIP)
+Omitting `externalNetworkType` uses the platform's configured EIP default. Set
+it explicitly in operator examples when the network choice matters.
 
-Floating IPs map an internal IP address (of a VM or pod) to an External IP, enabling direct access to specific resources.
+### FIP resources
 
-**Example FIP YAML:**
+A `FIp` creates 1:1 NAT from an EIP to either an explicit internal address or a
+selected VM interface. The target retains its internal IP.
 
 ```yaml
 apiVersion: kube-dc.com/v1
 kind: FIp
 metadata:
-  name: fedora-arti
-  namespace: shalb-demo
+  name: application-fip
+  namespace: acme-production
 spec:
-  ipAddress: 10.0.10.171
-  eip: ssh-arti
+  ipAddress: 10.40.0.20
+  eip: application-address
 ```
 
-#### Kubernetes Service
+Use `vmTarget` instead of `ipAddress` when the controller should resolve a
+KubeVirt VM interface.
 
-Standard Kubernetes Services for in-cluster service discovery and load balancing.
+### LoadBalancer Services
 
-#### Service Type LoadBalancer
+Kube-DC's Service controller binds a `type: LoadBalancer` Service to an EIP and
+Kube-OVN programs the OVN load balancer. Select the address with one of these
+annotations:
 
-Creates and maps an EIP to a service that routes traffic to pods or VMs. Can use either a dedicated EIP or the project's default EIP.
+- `service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"` uses the Project
+  gateway EIP;
+- `service.nlb.kube-dc.com/bind-on-eip: "<name>"` uses a named EIP.
 
-**Example Service LoadBalancer YAML with default gateway EIP:**
+The controller also maintains a companion `<service>-ext` headless Service and
+Endpoints object for a stable cluster DNS name. That DNS record tracks the
+external IP; it does **not** create cross-Project routing or authorize traffic.
+The source Project still needs a reachable provider-network path and applicable
+router-policy allow rules.
 
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: nginx-service-lb
-  namespace: shalb-demo
-  annotations:
-    service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"
-spec:
-  type: LoadBalancer
-  selector:
-    app: nginx
-  ports:
-    - name: http
-      protocol: TCP
-      port: 80
-      targetPort: 80
-    - name: https
-      protocol: TCP
-      port: 443
-      targetPort: 443
-```
+## Project network provisioning
 
-**Example Service LoadBalancer for VM SSH access:**
+When a Project is created:
 
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: vm-ssh
-  namespace: shalb-demo
-  annotations:
-    service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"
-spec:
-  type: LoadBalancer
-  selector:
-    vm.kubevirt.io/name: debian
-  ports:
-    - name: ssh
-      protocol: TCP
-      port: 2222
-      targetPort: 22
-```
+1. the creator supplies `spec.cidrBlock` and `spec.egressNetworkType`;
+2. the controller creates a VPC, workload subnet, and default
+   NetworkAttachmentDefinition;
+3. the controller allocates the default gateway EIP and programs outbound SNAT;
+4. VPC DNS and enabled ingress/egress router policies reconcile.
 
-### Internal Network Resources
-
-#### DNAT Rule
-
-Destination Network Address Translation rules proxy requests from the internet through an EIP to resources within the VPC network. These are created automatically when an EIP is associated with a resource.
-
-#### SNAT
-
-Source Network Address Translation is used for outbound connections from VPC subnets through EIPs, allowing resources within the VPC to communicate with the internet.
-
-## Project Network Provisioning
-
-When a new project is created in Kube-DC:
-
-1. The project is allocated a dedicated subnet from the VPC CIDR range
-2. Each project connected to the internet receives an EIP
-3. All project outbound traffic is routed through its assigned EIP
-4. Project-specific network policies are applied for isolation
-
-**Example project creation with CIDR allocation:**
+Project VPC CIDRs may overlap because the VPCs are separate. Choose
+non-overlapping ranges when Projects may later be routed together, attached to
+a shared underlay, or connected to the same external network.
 
 ```yaml
 apiVersion: kube-dc.com/v1
 kind: Project
 metadata:
-  name: demo
-  namespace: shalb
+  name: production
+  namespace: acme
 spec:
-  cidrBlock: "10.0.10.0/24"
+  cidrBlock: 10.40.0.0/20
+  egressNetworkType: cloud
 ```
 
-## Load Balancer Implementation
+A `public` Project additionally requires `allow_public_projects` and a
+configured public external network. Creating an arbitrary namespace does not
+run this workflow.
 
-Kube-DC uses a specialized implementation for Service LoadBalancers:
+## Overlay and underlay networks
 
-- When a Service with type `LoadBalancer` is created, an OVS-based LoadBalancer routes traffic to service endpoints
-- Endpoints can be Kubernetes pods or KubeVirt VMs
-- The LoadBalancer can use either:
-  - The project's default gateway EIP (with annotation `service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"`)
-  - A dedicated EIP (with annotation `service.nlb.kube-dc.com/bind-on-eip: "eip-name"`)
+The default Project network is a Kube-OVN overlay VPC. It is independent of the
+physical VLAN layout and supplies the Project's primary interface and default
+route.
 
-### Automatic External Endpoints (v0.1.34+)
+An underlay attachment connects an additional workload interface to a physical
+broadcast domain. The physical network, address plan, and node cabling become
+part of the isolation boundary. The Project's VPC policies do not isolate
+traffic carried on that secondary underlay interface.
 
-Kube-DC automatically creates external endpoints for LoadBalancer services to enable cross-VPC communication.
+### Attaching a Project to a datacenter VLAN
 
-When a LoadBalancer receives an external IP, the controller creates:
-- **External Service** (`<service-name>-ext`): Headless service
-- **Endpoints** (`<service-name>-ext`): Points to the LoadBalancer's external IP
+An operator declares a physical `FabricSegment` and allocates it to an
+Organization. An Organization administrator can then bind the allocation to a
+Project. Kube-DC publishes a generated NetworkAttachmentDefinition after the
+segment and eligible nodes are ready.
 
-This solves cross-VPC access by providing stable DNS names (e.g., `etcd-lb-ext.shalb-envoy.svc.cluster.local`) instead of hardcoded IPs. Endpoints are automatically updated when IPs change and deleted with the LoadBalancer service.
+- **Operators:** [Datacenter VLAN attachment](tenant-vlan-attachment.md)
+- **Users:** [Datacenter VLANs](/cloud/datacenter-vlans)
 
-External endpoints are labeled with `kube-dc.com/managed-by: service-lb-controller`.
+## Network security
 
-## Kube-OVN for VPC Management
+- A dedicated Kube-OVN VPC and workload subnet provide the primary Project
+  network boundary.
+- Optional ingress and egress logical-router policies restrict traffic on
+  shared cloud and public external networks.
+- Kubernetes NetworkPolicy can provide additional application-level Pod
+  controls, but no standard Project Role grants NetworkPolicy authoring.
+- Datacenter VLAN attachments inherit the isolation and visibility of the
+  physical segment.
 
-Kube-OVN is a key component of Kube-DC's networking architecture, providing the foundation for multi-tenant network isolation through VPC networks.
-
-### VPC Isolation
-
-Different VPC networks are independent of each other and can be separately configured with:
-- Subnet CIDRs
-- Routing policies
-- Security policies
-- Outbound gateways
-- EIP allocations
-
-## Overlay vs. Underlay Networks
-
-Kube-DC supports both networking approaches:
-
-### Overlay Networks
-
-- Software-defined networks that encapsulate packets
-- Provide maximum flexibility for network segmentation
-- Independent of physical network topology
-- Managed entirely by Kube-OVN
-- Ideal for multi-tenant environments
-
-### Underlay Networks
-
-- Direct mapping to physical network infrastructure
-- Better performance with reduced encapsulation overhead
-- Requires coordination with physical network infrastructure
-- Physical switches handle data-plane forwarding
-- Cannot be isolated by VPCs as they are managed by physical switches
-
-### Attaching a project to a physical VLAN
-
-Underlay attachment is exposed to tenants as **datacenter VLANs**: an operator
-declares a physical segment, allocates it to an organization, and the
-organization's own administrator assigns it to one of their projects. Workloads
-in that project then attach directly to the physical wire while keeping their
-default route on the project VPC.
-
-Because the segment is underlay, the isolation guarantees above apply — traffic
-on that wire is bounded by the physical network, not by the project's VPC.
-
-- **Operators:** [Tenant VLAN attachment](tenant-vlan-attachment.md) — declaring
-  segments, allocating them to organizations, the assignment lifecycle, and the
-  node-readiness model.
-- **Tenants:** [Datacenter VLANs](/cloud/datacenter-vlans) — assigning an
-  allocated VLAN to a project and attaching pods and VMs to it.
-
-## Network Security
-
-Kube-DC implements multiple layers of network security:
-
-**Project Isolation**
-
-   - Each project receives its own subnet
-   - Traffic between projects is controlled by network policies
-
-**VPC Segmentation**
-
-   - Projects can be placed in different VPCs for stricter isolation
-   - Each VPC has its own network stack and routing tables
-
-**Kubernetes Network Policies**
-
-   - Fine-grained control over ingress and egress traffic
-   - Can be applied at the namespace, pod, or service level
-
-**Subnet ACLs**
-
-   - Control traffic at the subnet level
-   - Provide an additional layer of security beyond network policies
-
----
+See the [Security model](security-model.md) for router-policy behavior,
+allowlists, admission controls, and residual risk.
 
 ## Envoy Gateway
 
-Envoy Gateway provides HTTP/HTTPS/gRPC routing with automatic TLS management.
+Envoy Gateway provides hostname-based HTTP, HTTPS, gRPC, and supported TLS
+routing for Services. Fleet and the chart own the Gateway, listener addresses,
+routes for platform services, and certificate configuration.
 
-### Architecture
-
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                         ENVOY GATEWAY ARCHITECTURE                           │
-│                                                                              │
-│   ┌───────────────────────────────────────────────────────────────────────┐  │
-│   │                    envoy-gateway-system namespace                     │  │
-│   │                    (in ovn-default subnet: 10.100.0.0/16)             │  │
-│   │                                                                       │  │
-│   │   ┌────────────────────────┐     ┌────────────────────────────────┐   │  │
-│   │   │  Envoy Gateway         │     │  Envoy Proxy Pod               │   │  │
-│   │   │  Controller            │     │                                │   │  │
-│   │   │                        │     │  Listens on:                   │   │  │
-│   │   │  • Watches Gateway,    │     │  • :443 (HTTPS)                │   │  │
-│   │   │    HTTPRoute, TLSRoute │     │  • :80 (HTTP)                  │   │  │
-│   │   │  • Manages certs       │     │                                │   │  │
-│   │   └────────────────────────┘     └────────────────────────────────┘   │  │
-│   │                                                   │                   │  │
-│   │   ┌───────────────────────────────────────────────┴───────────────┐   │  │
-│   │   │  Gateway: eg                                                  │   │  │
-│   │   │                                                               │   │  │
-│   │   │  Listeners:                                                   │   │  │
-│   │   │  • http (80)    - Redirect to HTTPS / ACME challenges         │   │  │
-│   │   │  • https (443)  - Dynamic per-service listeners               │   │  │
-│   │   │  • tls (443)    - TLS passthrough for Kubernetes API          │   │  │
-│   │   └───────────────────────────────────────────────────────────────┘   │  │
-│   └───────────────────────────────────────────────────────────────────────┘  │
-│                                                                              │
-│                                        │                                     │
-│                                        │ externalIPs: 203.0.113.250           │
-│                                        ▼                                     │
-│   ┌───────────────────────────────────────────────────────────────────────┐  │
-│   │                         TRAFFIC FLOW                                  │  │
-│   │                                                                       │  │
-│   │   Client (https://my-app.stage.kube-dc.com)                           │  │
-│   │         │                                                             │  │
-│   │         ▼                                                             │  │
-│   │   DNS → 203.0.113.250 (Gateway external IP)                            │  │
-│   │         │                                                             │  │
-│   │         ▼                                                             │  │
-│   │   Envoy Gateway (TLS termination with auto-cert)                      │  │
-│   │         │                                                             │  │
-│   │         ▼ HTTPRoute matches hostname                                  │  │
-│   │   Backend Service (in customer namespace)                             │  │
-│   └───────────────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+  accTitle: Envoy Gateway request flow
+  accDescr: A client reaches an Envoy Gateway listener, which matches a Gateway API route and forwards the request through a Kubernetes Service to a Project workload.
+  Client[Client] -->|DNS and reachable provider path| Listener[Envoy Gateway listener]
+  Listener -->|hostname and route match| Route[Gateway API route]
+  Route --> Service[Kubernetes Service]
+  Service --> Workload[Project workload]
 ```
 
-### Gateway Route Flow
+A Service can request a generated route through Kube-DC's supported annotations,
+including `service.nlb.kube-dc.com/expose-route` and an optional custom route
+hostname. The route controller publishes status on the Service. Verify DNS,
+certificate readiness, Gateway route status, backend health, and external
+routing separately.
 
-When a service with `expose-route: https` annotation is created:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     GATEWAY ROUTE CREATION FLOW                             │
-│                                                                             │
-│   1. Service Created                                                        │
-│      └─► annotations:                                                       │
-│            service.nlb.kube-dc.com/expose-route: "https"                    │
-│                                                                             │
-│   2. Controller Creates:                                                    │
-│      ├─► Certificate (cert-manager)                                         │
-│      │     name: my-app-tls                                                 │
-│      │     issuer: letsencrypt                                              │
-│      │                                                                      │
-│      ├─► Gateway Listener (patched into Gateway)                            │
-│      │     name: https-my-app-namespace                                     │
-│      │     port: 443                                                        │
-│      │     hostname: my-app-namespace.stage.kube-dc.com                     │
-│      │     certificateRef: my-app-tls                                       │
-│      │                                                                      │
-│      ├─► HTTPRoute                                                          │
-│      │     parentRef: Gateway/eg (listener: https-my-app-namespace)         │
-│      │     backendRef: Service/my-app                                       │
-│      │                                                                      │
-│      └─► ReferenceGrant (if cross-namespace)                                │
-│                                                                             │
-│   3. Status Updated:                                                        │
-│      └─► route-hostname-status: my-app-namespace.stage.kube-dc.com          │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Route Types
-
-| Type | Port | TLS Handling | Use Case |
-|------|------|--------------|----------|
-| `http` | 80 | None | Plain HTTP traffic |
-| `https` | 443 | Gateway terminates (auto-cert) | Web apps, APIs |
-| `tls-passthrough` | 443 | App terminates | Kubernetes API, end-to-end encryption |
-
-### MetalLB Integration
-
-In the management cluster, Envoy Gateway uses **MetalLB in L2 mode** to provide a floating IP with automatic failover across control-plane nodes.
-
-```
-                         Internet
-                            │
-                            ▼
-                   X.X.X.X (floating IP)
-                            │
-           ┌────────────────┼────────────────┐
-           │                │                │
-      master-0          master-1        master-2
-     (control-plane)   (control-plane)  (control-plane)
-           │                │                │
-           └────────────────┼────────────────┘
-                            │
-                   MetalLB L2 (ARP)
-                            │
-                            ▼
-                   Envoy Gateway Pod
-```
-
-MetalLB speaker runs on all control-plane nodes. One speaker wins the leader election for the floating IP and sends gratuitous ARP to claim it. If that node fails, another speaker takes over automatically. MetalLB is configured with `loadBalancerClass: metallb` to avoid interfering with the kube-dc LoadBalancer controller that manages project services via EIPs.
-
-See [Deploy MetalLB HA](deploy-metallb-ha.md) for full configuration, deployment steps, and IaC integration.
-
----
+MetalLB can provide a stable listener address on Layer 2 topologies. Other
+installations can use a cloud load balancer or a topology-specific address.
+Envoy Gateway itself does not make a private Cloud address reachable from the
+internet.
 
 ## Related Documentation
 

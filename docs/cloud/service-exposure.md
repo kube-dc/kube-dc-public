@@ -1,63 +1,71 @@
 # Service Exposure Guide
 
-This guide explains how to expose services in Kube-DC projects. The method you use depends on your **project's network type** and your requirements.
+This guide explains how to expose workloads in a Kube-DC Project. Choose the
+method by protocol and reachability: use a Gateway route for hostname-based web
+traffic, a LoadBalancer Service for selected TCP or UDP ports, and a Floating IP
+for direct access to a VM. Both Project network types support these methods.
 
-> **Managed Kubernetes clusters**: every annotation below also works on
-> `LoadBalancer` services **inside** a managed tenant cluster — the cloud
-> controller manager copies them to the management cluster at service creation
+> **Managed Clusters**: every annotation below also works on
+> `LoadBalancer` services **inside** a Managed Cluster — the cloud
+> controller manager copies them to the platform cluster at Service creation
 > time. See [Cluster Management](cluster-management.md#exposing-services-loadbalancer)
-> for the tenant-cluster specifics (Issuer prerequisite, hostname pinning,
+> for the Managed Cluster specifics (Issuer prerequisite, hostname pinning,
 > public-IP quota).
 
 ## Quick Reference
 
-| Network Type | Default EIP Source | Best For | Recommended Method |
-|--------------|-------------------|----------|-------------------|
-| **Cloud** | `ext-cloud` subnet | Web apps, APIs | Gateway Routes (`expose-route`) |
-| **Public** | `ext-public` subnet | VMs, custom protocols | EIP + LoadBalancer |
+| Need | Recommended method | Result |
+|------|--------------------|--------|
+| HTTP or HTTPS hostname | Gateway route (`expose-route`) | Shared gateway, DNS name, optional automatic TLS |
+| Selected TCP or UDP ports | LoadBalancer Service + EIP | Address and ports dedicated to the Service |
+| Direct VM access | Floating IP | One-to-one NAT to the VM |
 
 > **Note**: Both network types support EIPs and LoadBalancers. The difference is where EIPs are allocated from.
 
 ## Understanding Project Network Types
 
-When creating a project, you choose an `egressNetworkType`:
+Every installation supports the `cloud` type. The `public` Project type is
+available only when the provider enables it; otherwise the dashboard hides it
+and the API rejects it. When both are offered, choose an `egressNetworkType`:
 
 ```yaml
 apiVersion: kube-dc.com/v1
 kind: Project
 metadata:
-  name: my-project
-  namespace: my-org
+  name: production
+  namespace: acme
 spec:
   egressNetworkType: cloud  # or "public"
 ```
 
+This creates Project `production` in Organization `acme`. Kubernetes stores that Project's workload resources in the backing namespace `acme-production`.
+
 ### Cloud Network (`egressNetworkType: cloud`)
 
-- **Default EIPs** allocated from `ext-cloud` subnet (shared/NAT IPs)
-- Outbound traffic goes through a **shared NAT gateway**
-- **Can create public EIPs** by specifying `externalNetworkType: public`
+- **Default EIPs** allocated from the cloud address pool
+- Outbound traffic is SNATed through the Project gateway EIP
+- **Can create public EIPs** by specifying `externalNetworkType: public` when the provider exposes that pool and quota is available
 - **Gateway Routes** provide easy HTTPS exposure with auto-certificates
 - Supports VMs, pods, and all workload types
-- **Best for**: Web applications, APIs, microservices, cost-optimized workloads
-- **Cost**: Lower (shared infrastructure, cloud IPs often included)
+- **Best for**: Web applications, APIs, microservices, and internal platform connectivity
+- **Cost**: Provider- and plan-dependent
 
 ### Public Network (`egressNetworkType: public`)
 
-- **Default EIPs** allocated from `ext-public` subnet (dedicated public IPs)
-- Direct internet connectivity without NAT
-- Each EIP is a dedicated public IP address
+- **Default EIPs** allocated from the configured public address pool
+- Outbound traffic is SNATed through the Project gateway EIP
+- The default gateway EIP is allocated from the public address pool
 - Supports any TCP/UDP protocol
 - Supports VMs, pods, and all workload types
 - **Best for**: Game servers, custom protocols, direct IP requirements
-- **Cost**: Higher (dedicated public IPs)
+- **Cost**: Provider- and plan-dependent; public address quota still applies
 
 ### Feature Comparison
 
 | Feature | Cloud Project | Public Project |
 |---------|---------------|----------------|
-| **Default EIP source** | `ext-cloud` | `ext-public` |
-| **Can get public EIPs** | ✅ Yes (specify `externalNetworkType: public`) | ✅ Yes (default) |
+| **Default EIP source** | Configured cloud address pool | Configured public address pool |
+| **Can get public EIPs** | When the provider exposes the pool and quota is available | Yes by default, subject to quota |
 | **Can use Gateway Routes** | ✅ Yes | ✅ Yes |
 | **Can use EIP + LB** | ✅ Yes | ✅ Yes |
 | **Can run VMs** | ✅ Yes | ✅ Yes |
@@ -65,9 +73,10 @@ spec:
 
 ---
 
-## Part 1: Cloud Network Projects
+## Part 1: Gateway Routes
 
-For projects with `egressNetworkType: cloud`, use Gateway Routes to expose services.
+Use Gateway routes for hostname-based HTTP, HTTPS, or TLS passthrough in either
+Project network type.
 
 ### All Service Annotations Reference
 
@@ -87,10 +96,16 @@ For projects with `egressNetworkType: cloud`, use Gateway Routes to expose servi
 |------------|-------------|----------------|
 | `bind-on-default-gw-eip` | Use project's default EIP | `"true"` |
 | `bind-on-eip` | Use a specific EIP by name | `my-eip` |
-| `autodelete` | Auto-delete EIP when service deleted | `"true"` |
+| `autodelete` | Delete the Service if it remains without endpoints; advanced recovery behavior, not EIP lifecycle | `"true"` |
 | `create-gateway-backend` | Create Envoy Gateway backend | `"true"` |
 
 > **Note**: Prefix is `service.nlb.kube-dc.com/`
+
+:::warning
+`autodelete` does not manage EIP cleanup. It can delete the Service when the
+Service remains without endpoints. Leave it unset for normal workload
+lifecycle.
+:::
 
 #### Network Type Annotation
 
@@ -130,7 +145,10 @@ Add these annotations to your `LoadBalancer` Service.
 
 #### Multi-Port Services
 
-When using `expose-route`, the gateway routes traffic to a **single port** on your service — by default, the first port listed in `spec.ports`. This means services that define multiple ports (e.g., both HTTP on 80 and HTTPS on 443) work correctly out of the box — only the intended port receives gateway traffic.
+When using `expose-route`, the gateway routes traffic to a **single port** on
+your Service. By default this is the first port in `spec.ports`. For every
+multi-port Service, set `route-port` explicitly so a manifest reorder cannot
+silently change the routed backend.
 
 If your application listens on a non-standard port, use the `route-port` annotation to specify which port the gateway should target:
 
@@ -147,21 +165,21 @@ annotations:
 | Route Type | Port | TLS | App Serves | Use Case |
 |------------|------|-----|------------|----------|
 | `http` | 80 | None | HTTP | Plain HTTP traffic |
-| `https` | 443 | Gateway terminates | HTTP | ⭐ **Recommended** - Auto TLS certs |
+| `https` | 443 | Gateway terminates | HTTP | Recommended for web traffic; automatic TLS |
 | `tls-passthrough` | 443 | App terminates | HTTPS | End-to-end encryption |
 
 ### Example: HTTPS Web Application (Recommended)
 
 The simplest way to expose a web app with automatic TLS:
 
-#### Step 1: Create the Issuer (once per namespace)
+#### Step 1: Create the Issuer (once per Project)
 
 ```yaml
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: letsencrypt
-  namespace: my-project
+  namespace: acme-production
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
@@ -185,7 +203,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: my-app
-  namespace: my-project
+  namespace: acme-production
 spec:
   replicas: 2
   selector:
@@ -210,7 +228,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: my-app
-  namespace: my-project
+  namespace: acme-production
   annotations:
     # Expose via HTTPS with auto-provisioned certificate
     service.nlb.kube-dc.com/expose-route: "https"
@@ -227,15 +245,15 @@ spec:
 
 ```bash
 # Check assigned hostname
-kubectl get svc my-app -n my-project -o jsonpath='{.metadata.annotations.service\.nlb\.kube-dc\.com/route-hostname-status}'
-# Output: my-app-my-project.kube-dc.cloud
+kubectl get svc my-app -n acme-production -o jsonpath='{.metadata.annotations.service\.nlb\.kube-dc\.com/route-hostname-status}'
+# Output: my-app-acme-production.kube-dc.cloud
 
 # Check certificate status
-kubectl get certificate -n my-project
-kubectl get challenge -n my-project
+kubectl get certificate -n acme-production
+kubectl get challenge -n acme-production
 
 # Test access
-curl https://my-app-my-project.kube-dc.cloud
+curl https://my-app-acme-production.kube-dc.cloud
 ```
 
 For HTTPS routes, hostname status is set after the certificate and route are ready. This can take a few minutes. If the command returns an empty value, check the certificate and ACME challenge status first.
@@ -249,7 +267,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: my-app
-  namespace: my-project
+  namespace: acme-production
   annotations:
     service.nlb.kube-dc.com/expose-route: "http"
 spec:
@@ -261,7 +279,7 @@ spec:
     targetPort: 80
 ```
 
-Access via: `http://my-app-my-project.kube-dc.cloud`
+Access via: `http://my-app-acme-production.kube-dc.cloud`
 
 ### Example: TLS Passthrough (Kubernetes API)
 
@@ -272,7 +290,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: cluster-api
-  namespace: my-project
+  namespace: acme-production
   annotations:
     service.nlb.kube-dc.com/expose-route: "tls-passthrough"
 spec:
@@ -284,7 +302,19 @@ spec:
     targetPort: 6443
 ```
 
-Access via: `https://cluster-api-my-project.kube-dc.cloud:6443`
+The Gateway listens publicly on port 443 and forwards to Service port 6443:
+`https://cluster-api-acme-production.kube-dc.cloud`.
+
+:::caution Configure backend TLS first
+TLS passthrough does not issue a certificate or terminate TLS. The `TLSRoute`
+selects a backend from the SNI hostname in the client's initial TLS handshake.
+The client must therefore connect by the published hostname, and the backend
+must present a certificate whose SANs include that hostname. For this example,
+add `cluster-api-acme-production.kube-dc.cloud` to the API server certificate
+before exposing it. Use a dedicated LoadBalancer address when the protocol does
+not start with a TLS handshake or the backend certificate cannot cover the
+Gateway hostname.
+:::
 
 ### Example: Custom Hostname
 
@@ -295,7 +325,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: my-app
-  namespace: my-project
+  namespace: acme-production
   annotations:
     service.nlb.kube-dc.com/expose-route: "https"
     service.nlb.kube-dc.com/route-hostname: "api.mycompany.com"
@@ -319,7 +349,7 @@ Use your own TLS certificate instead of auto-provisioning:
 kubectl create secret tls my-tls-secret \
   --cert=path/to/tls.crt \
   --key=path/to/tls.key \
-  -n my-project
+  -n acme-production
 ```
 
 ```yaml
@@ -327,7 +357,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: my-app
-  namespace: my-project
+  namespace: acme-production
   annotations:
     service.nlb.kube-dc.com/expose-route: "https"
     service.nlb.kube-dc.com/tls-secret: "my-tls-secret"
@@ -341,28 +371,12 @@ spec:
     targetPort: 80
 ```
 
-### Example: gRPC Service
+The certificate in `my-tls-secret` must include `secure.mycompany.com` in its
+SANs and chain to a CA trusted by your clients.
 
-gRPC services work with HTTPS routes (HTTP/2):
+### gRPC
 
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: grpc-api
-  namespace: my-project
-  annotations:
-    service.nlb.kube-dc.com/expose-route: "https"
-    service.nlb.kube-dc.com/route-port: "50051"
-spec:
-  type: LoadBalancer
-  selector:
-    app: grpc-server
-  ports:
-  - name: grpc
-    port: 50051
-    targetPort: 50051
-```
+The `expose-route` annotation currently creates an `HTTPRoute`, even when a Service port sets `appProtocol: kubernetes.io/h2c`. It does not create a `GRPCRoute` or configure an HTTP/2 backend. For gRPC today, use a dedicated LoadBalancer Service or work with your platform operator to provide explicit Gateway API `GRPCRoute` and backend protocol resources.
 
 ---
 
@@ -374,22 +388,23 @@ Both cloud and public projects can use EIPs and LoadBalancer services.
 
 | Project Type | Default EIP Source | Can Request |
 |--------------|-------------------|-------------|
-| Cloud | `ext-cloud` subnet | Both `cloud` and `public` EIPs |
-| Public | `ext-public` subnet | Both `cloud` and `public` EIPs |
+| Cloud | Configured cloud address pool | `cloud`; `public` when the provider exposes that pool and quota is available |
+| Public | Configured public address pool | `public`; other types depend on provider configuration and quota |
 
 > **When to use EIPs vs Gateway Routes:**
-> - Use **Gateway Routes** for HTTP/HTTPS/gRPC (simpler, auto-TLS)
-> - Use **EIPs** for TCP/UDP protocols, VMs, or when you need a dedicated IP
+> - Use **Gateway Routes** for HTTP/HTTPS/TLS passthrough (automatic TLS for HTTPS)
+> - Use **EIPs** for gRPC and other TCP/UDP protocols, VMs, or when you need a dedicated IP
 
 ## Understanding EIPs
 
-External IPs (EIPs) provide IP addresses for your project from the configured external network.
+External IPs (EIPs) provide addresses for your Project from a provider-configured external network.
 
 ### Default Gateway EIP
 
-Every project automatically gets a default EIP (`default-gw`) that acts as:
-- NAT gateway for outbound traffic
-- Default endpoint for LoadBalancer services
+Every Project automatically gets a default EIP (`default-gw`) for outbound
+SNAT. A LoadBalancer Service uses it only when you set
+`bind-on-default-gw-eip: "true"`; otherwise the platform can allocate a
+Service-specific EIP.
 
 ### Creating Additional EIPs
 
@@ -400,7 +415,7 @@ apiVersion: kube-dc.com/v1
 kind: EIp
 metadata:
   name: web-server-eip
-  namespace: my-project
+  namespace: acme-production
 spec:
   externalNetworkType: public  # or "cloud"
 ```
@@ -409,10 +424,10 @@ spec:
 
 | `externalNetworkType` | Description | Use Case |
 |-----------------------|-------------|----------|
-| `cloud` | Shared/NAT pool IP | Cost-effective, outbound NAT |
+| `cloud` | Address from the cloud network | Internal platform connectivity and outbound SNAT |
 | `public` | Dedicated public IP | Direct access, static IP, VMs |
 
-> **Tip**: Cloud projects can request public EIPs for services that need dedicated IPs (e.g., game servers, VMs with direct access).
+> **Tip**: When your provider offers public addresses to cloud Projects, request a public EIP for workloads that need a dedicated internet-routable IP.
 
 ## LoadBalancer Service Annotations
 
@@ -428,7 +443,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: nginx-lb
-  namespace: my-project
+  namespace: acme-production
   annotations:
     service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"
 spec:
@@ -452,7 +467,7 @@ apiVersion: kube-dc.com/v1
 kind: EIp
 metadata:
   name: api-eip
-  namespace: my-project
+  namespace: acme-production
 spec:
   externalNetworkType: public
 ---
@@ -461,7 +476,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: api-lb
-  namespace: my-project
+  namespace: acme-production
   annotations:
     service.nlb.kube-dc.com/bind-on-eip: "api-eip"
 spec:
@@ -482,7 +497,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: vm-ssh
-  namespace: my-project
+  namespace: acme-production
   annotations:
     service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"
 spec:
@@ -502,18 +517,19 @@ Floating IPs map an internal IP directly to an EIP, providing 1:1 NAT. For detai
 ### When to Use FIPs
 
 - Direct IP mapping for VMs
-- Services that need to see their public IP
-- Protocols that don't work behind NAT
+- Whole-VM exposure across many ports
+- Protocols that are awkward to model as individual Service ports
 
 ### Creating a FIP for a VM
 
-Use `vmTarget` to point a FIP at a VM — the internal IP is resolved automatically via the QEMU guest agent:
+Use `vmTarget` to point a FIP at a VM. The controller reads the named interface address from the running VirtualMachineInstance status, so the VM must be running and that interface must report an IP:
 
 ```yaml
 apiVersion: kube-dc.com/v1
 kind: FIp
 metadata:
   name: vm-fip
+  namespace: acme-production
 spec:
   externalNetworkType: public
   vmTarget:
@@ -567,12 +583,12 @@ Pod IP: 10.0.0.30
 
 ### Comparison Table
 
-| Feature | Gateway Routes (Cloud) | EIP + LoadBalancer (Public) |
+| Feature | Gateway route (any Project) | EIP + LoadBalancer (any Project) |
 |---------|------------------------|----------------------------|
 | **IP Address** | Shared Gateway IP | Dedicated per EIP |
-| **Protocols** | HTTP, HTTPS, gRPC | Any TCP/UDP |
+| **Protocols** | HTTP, HTTPS, TLS passthrough | Any TCP/UDP |
 | **TLS Termination** | Gateway (auto-cert) | Application |
-| **Cost** | Lower | Higher |
+| **Cost** | Provider- and plan-dependent | Provider- and plan-dependent |
 | **Setup** | Simple annotation | EIP + Service config |
 | **DNS** | Auto hostname | Manual |
 | **Best For** | Web apps, APIs | VMs, game servers |
@@ -583,18 +599,20 @@ Pod IP: 10.0.0.30
 
 ### Envoy Gateway Backend
 
-Use the `create-gateway-backend` annotation to register a service as an Envoy Gateway Backend for advanced routing scenarios:
+Use the `create-gateway-backend` annotation on a **LoadBalancer** Service to
+register an Envoy Gateway Backend for advanced routing scenarios. Prefer
+`expose-route` unless you are also managing the route yourself.
 
 ```yaml
 apiVersion: v1
 kind: Service
 metadata:
   name: my-backend
-  namespace: my-project
+  namespace: acme-production
   annotations:
     service.nlb.kube-dc.com/create-gateway-backend: "true"
 spec:
-  type: ClusterIP
+  type: LoadBalancer
   selector:
     app: my-app
   ports:
@@ -607,22 +625,15 @@ This creates an Envoy Gateway `Backend` resource, enabling:
 - Custom backend policies
 - Advanced load balancing configurations
 
-### Automatic External Endpoints
-
-For every LoadBalancer service, Kube-DC creates external endpoints for cross-VPC DNS access:
-
-- **External Service**: `<service-name>-ext`
-- **DNS**: `<service>-ext.<namespace>.svc.cluster.local`
-
-```bash
-# Verify external endpoints
-kubectl get svc,endpoints -n my-project my-app-ext
-```
 
 ### Namespace-Scoped Ingress Controller
 
 For advanced HTTP routing beyond Gateway capabilities, deploy a dedicated ingress-nginx:
 
+This chart creates namespace-scoped Roles and RoleBindings, so installation
+requires the Project `admin` role. A `developer` can operate supported workload
+resources but cannot install this RBAC. Render and validate the chart against
+the server before installing it.
 ```yaml
 # ingress-values.yaml
 controller:
@@ -630,7 +641,7 @@ controller:
     enabled: false
   scope:
     enabled: true
-    namespace: my-project
+    namespace: acme-production
   admissionWebhooks:
     enabled: false
   service:
@@ -645,7 +656,7 @@ defaultBackend:
 
 ```bash
 helm install ingress ingress-nginx/ingress-nginx \
-  --namespace my-project \
+  --namespace acme-production \
   --values ingress-values.yaml
 ```
 
@@ -653,38 +664,37 @@ helm install ingress ingress-nginx/ingress-nginx \
 
 ## Troubleshooting
 
-### Gateway Routes (Cloud Projects)
+### Gateway Routes
 
 ```bash
 # Check route hostname was assigned
 kubectl get svc my-app -o yaml | grep route-hostname-status
 
 # Check certificate status
-kubectl get certificate -n my-project
-kubectl describe certificate my-app-tls -n my-project
+kubectl get certificate -n acme-production
+kubectl describe certificate my-app-tls -n acme-production
 
 # Check HTTPRoute created
-kubectl get httproute -n my-project
+kubectl get httproute -n acme-production
 
-# Check Gateway listener
-kubectl get gateway eg -n envoy-gateway-system -o yaml | grep -A5 "https-my-app"
-
-# Controller logs
-kubectl logs -n kube-dc deployment/kube-dc-manager | grep my-app
 ```
 
-### EIP/LoadBalancer (Public Projects)
+The platform Gateway and controller run outside your Project permissions. If
+the Project resources above are healthy but the route still fails, provide the
+Service name and Project name to support.
+
+### EIP and LoadBalancer
 
 ```bash
 # Check EIP status
-kubectl get eip -n my-project
-kubectl describe eip my-eip -n my-project
+kubectl get eip -n acme-production
+kubectl describe eip my-eip -n acme-production
 
 # Check LoadBalancer external IP
-kubectl get svc -n my-project
+kubectl get svc -n acme-production
 
 # Check service events
-kubectl describe svc my-lb -n my-project
+kubectl describe svc my-lb -n acme-production
 ```
 
 ### Common Issues
@@ -692,7 +702,7 @@ kubectl describe svc my-lb -n my-project
 | Issue | Cause | Solution |
 |-------|-------|----------|
 | No hostname assigned | Missing `expose-route` annotation | Add annotation |
-| Hostname status empty for HTTPS | Certificate is still pending | Check `kubectl get certificate,challenge -n my-project` |
+| Hostname status empty for HTTPS | Certificate is still pending | Check `kubectl get certificate,challenge -n acme-production` |
 | Certificate not ready | Issuer not created, ACME challenge pending, or quota prevents solver pod creation | Create Issuer first and make sure the project has free CPU/memory for cert-manager HTTP-01 solver pods |
 | 503 error | Backend not ready | Check pod status |
 | EIP pending | No available IPs | Check subnet capacity |
@@ -703,11 +713,11 @@ kubectl describe svc my-lb -n my-project
 
 ## Summary
 
-| Project Type | Service Type | Annotation | Result |
-|--------------|--------------|------------|--------|
-| Cloud | LoadBalancer | `expose-route: https` | Auto HTTPS with cert |
-| Cloud | LoadBalancer | `expose-route: http` | HTTP only |
-| Cloud | LoadBalancer | `expose-route: tls-passthrough` | App handles TLS |
-| Public | LoadBalancer | `bind-on-default-gw-eip: "true"` | Use default EIP |
-| Public | LoadBalancer | `bind-on-eip: "name"` | Use specific EIP |
-| Public | FIp | N/A | 1:1 NAT mapping |
+| Need | Resource or annotation | Result |
+|------|------------------------|--------|
+| Automatic HTTPS | LoadBalancer + `expose-route: https` | Gateway terminates TLS and assigns a hostname |
+| Plain HTTP | LoadBalancer + `expose-route: http` | Gateway serves HTTP |
+| End-to-end TLS | LoadBalancer + `expose-route: tls-passthrough` | Application terminates TLS; public listener is 443 |
+| Reuse Project gateway EIP | LoadBalancer + `bind-on-default-gw-eip: "true"` | Selected ports share the gateway address |
+| Use a selected EIP | LoadBalancer + `bind-on-eip: "name"` | Selected ports use that address |
+| Direct VM mapping | `FIp` | One-to-one NAT to the VM |

@@ -562,7 +562,7 @@ billing:
             - "60 GB NVMe Storage"
             - "20 GB Object Storage included"
             - "1 Dedicated IPv4"
-            - "Nested Clusters (KubeVirt)"
+            - "Managed Clusters"
             - "Unlimited 1Gbit/s Bandwidth"
           # Dev Pool: fully guaranteed (burstRatio=1.0). The advertised
           # 4 vCPU / 8 GB are the requests *and* the limits. KubeVirt VMs
@@ -606,7 +606,7 @@ billing:
             - "160 GB NVMe Storage"
             - "100 GB Object Storage included"
             - "1 Dedicated IPv4"
-            - "Nested Clusters (KubeVirt)"
+            - "Managed Clusters"
             - "Unlimited 1Gbit/s Bandwidth"
           # Pro Pool: fully guaranteed (burstRatio=1.0). Advertised
           # 8 vCPU / 24 GB RAM are the requests *and* the limits; no
@@ -649,7 +649,7 @@ billing:
             - "320 GB NVMe Storage"
             - "500 GB Object Storage included"
             - "3 Dedicated IPv4"
-            - "Nested Clusters (KubeVirt)"
+            - "Managed Clusters"
             - "Unlimited 1Gbit/s Bandwidth"
           # Scale Pool: fully guaranteed (burstRatio=1.0). Advertised
           # 16 vCPU / 56 GB RAM are the requests *and* the limits; no

@@ -1,13 +1,13 @@
 apiVersion: kube-dc.com/v1
 kind: OrganizationGroup
 metadata:
-  name: {group-name}
-  namespace: {org}                # MUST be in the organization namespace
+  name: "{group}"
+  namespace: "{organization}"          # Organization API namespace
 spec:
   permissions:
-    - project: {project-name}
+    - project: "{project}"             # Project name, not backing namespace
       roles:
-        - developer               # admin | developer | project-manager | user
-    - project: {another-project}
+        - developer                  # admin | developer | project-manager | user
+    - project: "{another-project}"
       roles:
-        - admin
+        - project-manager

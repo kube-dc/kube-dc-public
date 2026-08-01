@@ -11,29 +11,28 @@ The platform ships a **shared, multi-tenant observability stack** covering metri
 and alerting for all Kube-DC Organizations on a cluster. The key properties from an
 operator perspective:
 
-- **Single deployment, full tenant isolation.** One Grafana, one Mimir (metrics), one
-  Loki (logs), one Alertmanager — all multi-tenant. Each Kube-DC Organization sees only
-  its own data.
-- **Namespace = tenant.** Every Kubernetes namespace is automatically a metrics and logs
-  tenant. No registration, no mapping table. A new Project namespace begins appearing in
-  its Organization's dashboards within a few minutes of creation.
-- **GitOps managed.** All configuration (component versions, dashboards, alert rules,
-  capacity limits) lives in `kube-dc-fleet`. Apply changes by committing and letting Flux
-  reconcile.
-- **Tenant isolation is automatic.** When `kube-dc-manager` reconciles an Organization,
-  it provisions that Org's Grafana workspace with the correct scope. Operators do not
-  need to configure per-tenant anything — it is managed by the controller.
+- **Shared services with tenant-aware scoping.** Grafana, Mimir, Loki, and
+  Alertmanager are shared. Identity claims, datasource headers, and backend tenant IDs
+  scope each request; operators must keep those controls aligned and test them.
+- **Organizations are tenants; Projects are data scopes.** Metrics and logs are stored
+  under namespace-derived backend tenant IDs. An Organization view federates its
+  Organization namespace and accessible Project backing namespaces.
+- **GitOps managed.** Component versions, dashboards, alert rules, and capacity limits
+  live in `kube-dc-fleet`. Apply durable changes through Git and Flux.
+- **Controller managed.** Organization reconciliation provisions Grafana state and
+  datasource scope. Readiness still depends on Keycloak, the authorization path, storage,
+  and the observability backends.
 
 ### 1.1 Component overview
 
 | Component | Role |
 |---|---|
-| **Mimir** | Multi-tenant time-series store. Metrics are stored per namespace-tenant and queryable with cross-namespace federation for Org admins. |
-| **Loki** | Multi-tenant log store. Pod logs from every node are automatically routed to the correct tenant. |
-| **Alertmanager** (Mimir's) | Multi-tenant alerting. Each Org manages its own alert routes via the Grafana UI. |
-| **Grafana** | Single deployment with one Grafana Organization per Kube-DC Org. Platform admins log in via SSO; tenant users via the kube-dc console. |
-| **kube-prometheus-stack** | Prometheus hot tier (365 d local retention) plus all cluster-level alerting rules and Grafana deployment. |
-| **Alloy** | Agent DaemonSet (logs) and Deployment (metrics scraper). Runs on every node. |
+| **Mimir** | Multi-tenant time-series store. Metrics use namespace-derived backend tenant IDs and Organization views query the authorized IDs through tenant federation. |
+| **Loki** | Multi-tenant log store. Pod logs from eligible nodes are routed to the backend tenant ID derived from their source namespace. |
+| **Alertmanager** (Mimir's) | Multi-tenant alerting. Each Organization manages its alert routes through Grafana. |
+| **Grafana** | Single deployment with one Grafana Organization per Kube-DC Organization. Platform admins log in through SSO; Organization users enter through the Kube-DC console. |
+| **kube-prometheus-stack** | Prometheus hot tier, cluster-level alerting rules, and Grafana. Retention is configured per cluster. |
+| **Alloy** | The log collector runs as a DaemonSet on eligible nodes; the metrics scraper runs as a Deployment. |
 
 ### 1.2 Fleet repo layout
 
@@ -52,59 +51,68 @@ platform/monitoring/
   routes/                 # Grafana ingress HTTPRoute
   dashboards/             # Platform dashboards (JSON + kustomize)
 
-clusters/cloud/platform/
-  kustomization.yaml      # Per-cluster overlay (grafana.ini, secrets)
+clusters/<cluster>/platform/
+  kustomization.yaml      # Per-cluster overlay (Grafana settings, secrets)
 ```
 
 ---
 
-## 2. Tenant model
+## 2. Product and backend identity model
 
-### 2.1 How tenants map to data
+### 2.1 Product and storage identities
 
-| Identity | What it sees |
+| Identity | Effective view |
 |---|---|
-| Kube-DC Organization | All metrics and logs from all its project namespaces, federated into one view |
-| Project namespace | Metrics and logs scoped to that namespace only |
-| `system` tenant | Platform infrastructure namespaces (`monitoring`, `kube-system`, etc.) — visible to platform admins only |
+| Kube-DC Organization | Federated metrics and logs from the Organization namespace and its authorized Projects |
+| Project | Metrics and logs for the Project backing namespace, named `{organization}-{project}` |
+| `system` backend tenant ID | Explicitly allowlisted platform namespaces and cluster-scoped data; platform-administrator use only |
 
-Tenant routing is **automatic**:
-- Metrics: the `namespace` label on every scraped series determines which tenant receives it.
-- Logs: pod log streams are tagged by namespace at collection time.
-- System namespaces (`monitoring`, `kube-system`, `kube-dc`, `cnpg-system`, `kubevirt`, etc.)
-  are collapsed into the `system` tenant. User-created namespaces that happen to share a name
-  with a system namespace cannot land in the `system` tenant — the system namespace list is
-  an explicit allowlist, not a regex.
+The observability backends use namespace-derived **backend tenant IDs** as storage
+and request-routing keys. They are implementation details, not additional product
+tenants: the product tenant is the Organization, and a Project is its governed
+workload boundary.
 
-### 2.2 Adding/removing a project
+Routing is automatic after the collectors and controller reconcile:
 
-No action required. When a Project is created or deleted, the `kube-dc-manager` controller
-automatically updates the Organization's Grafana datasource scope. The new project namespace
-appears in the Org's metrics/logs within seconds.
+- metrics use the Kubernetes `namespace` label to select a backend tenant ID;
+- logs are tagged with their source namespace during collection;
+- an explicit allowlist collapses platform namespaces such as `monitoring`,
+  `kube-system`, and `kube-dc` into the `system` backend tenant ID;
+- metrics without a namespace label and cluster-wide Kubernetes events also route
+  to `system`;
+- Organization datasource configuration federates the relevant backend tenant IDs.
 
----
+### 2.2 Adding or removing a Project
+
+No separate observability registration is required. When a Project changes,
+`kube-dc-manager` updates the Organization's Grafana datasource scope. Allow for
+controller reconciliation, collector discovery, and the next scrape or log
+batch before expecting data.
 
 ## 3. Dashboards
 
 ### 3.1 How dashboards work
 
 Platform dashboards are stored as JSON files in
-`kube-dc-fleet/platform/monitoring/dashboards/` and deployed as Kubernetes ConfigMaps via
-Kustomize. The `kube-dc-manager` controller distributes them into the appropriate Grafana
-Organization(s) on every reconcile.
+`kube-dc-fleet/platform/monitoring/dashboards/` and deployed as Kubernetes
+ConfigMaps through Kustomize. The `kube-dc-manager` controller distributes them
+to the appropriate Grafana Organizations on every reconciliation.
 
 Dashboards are **declarative**: the Git JSON is the source of truth. Manual edits made in the
-Grafana UI are overwritten on the next reconcile. Tenants who want custom dashboards should
-create new ones within their Grafana Org (those are persisted in the Grafana DB and are
-not touched by the controller).
+Grafana UI are overwritten on the next reconcile. Organizations that need custom
+dashboards should create new ones in their Grafana Organization. Those dashboards
+are persisted in the Grafana database and are not touched by the controller.
 
 ### 3.2 Currently shipped dashboards
 
 | Dashboard | Grafana folder | Shown to |
 |---|---|---|
-| Namespace Resource Usage | Tenant | All tenant Orgs (home dashboard) |
-| Logs Explorer | Tenant | All tenant Orgs |
-| Active Alerts | Tenant | All tenant Orgs |
+| Namespace Resource Usage | Platform | All Organizations (home dashboard) |
+| Logs Explorer | Platform | All Organizations |
+| Active Alerts | Platform | All Organizations |
+| Shared GPU Workloads | Platform / Accelerators | All Organizations |
+| Storage / Ceph | Storage | Platform administrators only |
+| GPU Operations | Platform / Accelerators | Platform administrators only |
 
 ### 3.3 Adding a platform dashboard
 
@@ -113,8 +121,8 @@ not touched by the controller).
    Requirements:
    - Must have a stable, unique `uid` field (e.g. `kube-dc-my-new-dashboard`).
    - Use the well-known datasource UIDs — do not embed a datasource name:
-     - `mimir` — federated metrics (queries across all Org namespaces)
-     - `mimir-alerts` — alert rule management (single-tenant)
+     - `mimir` — federated metrics (queries across all Organization backend tenant IDs)
+     - `mimir-alerts` — alert rule management for one backend tenant ID at a time
      - `loki` — federated logs
      - `alertmanager` — Alertmanager API
    - Use `$namespace` template variable populated via
@@ -138,15 +146,14 @@ not touched by the controller).
        labels:
          kube-dc.com/grafana-dashboard: "true"
        annotations:
-         kube-dc.com/grafana-folder: "Tenant"
+         kube-dc.com/grafana-folder: "Platform"
          kube-dc.com/grafana-scope: "all-tenants"   # see §3.4
    ```
 
-4. **Commit and push.** Flux reconciles the ConfigMap into the cluster (usually < 1 min).
-   The controller picks it up on the next Org reconcile (usually within 30 s of the
-   ConfigMap becoming visible).
+4. **Commit and push.** Watch the Flux Kustomization and the Organization
+   controller logs until both reconciliation loops have observed the change.
 
-5. **Force immediate distribution** if needed:
+5. **Request a new Organization reconcile** if needed:
    ```bash
    kubectl annotate organization <org-name> reconcile-trigger="$(date)" --overwrite -n <org-name>
    ```
@@ -158,9 +165,9 @@ Control which Grafana Organizations receive a dashboard via the
 
 | Value | Distributed to |
 |---|---|
-| `all-tenants` (default) | Every tenant Grafana Org |
-| `main-only` | Grafana Org 1 only (platform admin view) |
-| `tenants:acme,foo,bar` | Explicit list of Kube-DC Org slugs |
+| `all-tenants` (default) | Every Kube-DC Organization's Grafana Organization |
+| `main-only` | Grafana Organization 1 only (platform admin view) |
+| `tenants:acme,foo,bar` | Explicit list of Kube-DC Organization slugs |
 
 ### 3.5 Setting a home dashboard
 
@@ -173,7 +180,7 @@ wins (alphabetical ConfigMap order).
 Edit the JSON file in `kube-dc-fleet/platform/monitoring/dashboards/`, commit, and push.
 Keep the `uid` field unchanged — changing the UID causes a new dashboard to be created
 and the old one to remain (orphaned). If you need to retire a dashboard, delete the JSON
-and ConfigMap entry; then manually delete it from Grafana Orgs or wait for the next full
+and ConfigMap entry; then manually delete it from Grafana Organizations or wait for the next full
 re-provision.
 
 ---
@@ -185,14 +192,14 @@ re-provision.
 | Rule type | Storage location | Who manages |
 |---|---|---|
 | **Platform rules** (cluster health, node, kube-system) | Prometheus PrometheusRules, evaluated by kube-prometheus-stack Prometheus | Managed via `prom-operator/values-configmap.yaml` or additional PrometheusRule CRDs |
-| **Tenant alert rules** | Mimir Ruler, stored per-tenant in S3 | Tenant users (Grafana Alert Rules UI) or operators via `mimirtool` |
+| **Organization alert rules** | Mimir Ruler, stored under backend tenant IDs in S3 | Organization users (Grafana Alert Rules UI) or operators via `mimirtool` |
 
 ### 4.2 Adding or changing platform alert rules
 
 Platform alerting rules are part of the `kube-prometheus-stack` chart. Add a
 `PrometheusRule` manifest in `kube-dc-fleet/platform/monitoring/prom-operator/` (or via a
-kustomize overlay) and commit. The kube-prometheus-stack sidecar picks up the CRD within
-seconds.
+kustomize overlay) and commit. The Prometheus Operator observes the resource and updates the selected rule
+configuration through its normal reconciliation loop.
 
 Example — adding a custom platform rule:
 ```yaml
@@ -218,20 +225,20 @@ spec:
             summary: "High restart count in kube-dc"
 ```
 
-### 4.3 Managing tenant alert rules via `mimirtool`
+### 4.3 Managing backend alert rules via `mimirtool`
 
-For bulk operations across tenants (e.g. pushing a common baseline rule set):
+For bulk operations across backend tenant IDs (for example, pushing a common baseline rule set):
 
 ```bash
-# List all rule groups for a tenant
+# List all rule groups for one backend tenant ID
 mimirtool rules list \
   --address https://mimir-ruler.kube-dc.cloud \
-  --id <tenant-namespace>
+  --id <backend-tenant-id>
 
-# Upload rule groups for a tenant
+# Upload rule groups for one backend tenant ID
 mimirtool rules load ./rules/my-rules.yaml \
   --address https://mimir-ruler.kube-dc.cloud \
-  --id <tenant-namespace>
+  --id <backend-tenant-id>
 ```
 
 Authentication requires a valid Keycloak access token from the `master` realm (platform
@@ -239,115 +246,88 @@ admin group). See the `kube-dc` CLI docs for obtaining tokens.
 
 ### 4.4 Default Alertmanager routing
 
-Each Kube-DC Org has its own Alertmanager configuration managed via the Grafana UI
+Each Kube-DC Organization has its own Alertmanager configuration managed through Grafana
 (Contact Points and Notification Policies). Platform-level Alertmanager config (for the
-`system` tenant) is set in `prom-operator/values-configmap.yaml` under
+`system` backend tenant ID) is set in `prom-operator/values-configmap.yaml` under
 `alertmanager.config`.
 
 ---
 
-## 5. Capacity tuning
+## 5. Capacity and retention
 
-### 5.1 Mimir per-tenant limits
+Capacity values are deployment configuration, not product constants. Read the
+base values and the selected cluster overlay together before changing them:
 
-Limits are configured in `kube-dc-fleet/platform/monitoring/mimir/values-configmap.yaml`
-under `mimir.structuredConfig.limits`. Changes apply on HelmRelease upgrade (Flux
-reconcile).
+| Area | Fleet source |
+|---|---|
+| Mimir limits and retention | `platform/monitoring/mimir/values-configmap.yaml` plus the cluster overlay |
+| Loki limits and retention | `platform/monitoring/loki/values-configmap.yaml` plus the cluster overlay |
+| Prometheus hot-tier retention | `platform/monitoring/prom-operator/` plus the cluster overlay |
+| Object-store quotas | `clusters/<cluster>/cluster-config.env` and the rendered OBC resources |
 
-Current operational values and their meaning:
+Important dimensions include active series, ingestion rate and burst, block
+retention, log ingestion rate and burst, stream cardinality, and log retention.
+Increase them only after checking object-store capacity, compaction, query
+latency, and failure recovery. A backend tenant ID normally represents one
+namespace, not an entire Organization.
 
-| Limit key | Current value | What it controls |
-|---|---|---|
-| `max_global_series_per_user` | 250 000 | Maximum active time series per tenant. A tenant hitting this sees ingestion rejections. |
-| `ingestion_rate` | 50 000 | Samples per second per tenant. |
-| `ingestion_burst_size` | 200 000 | Burst ceiling over `ingestion_rate`. |
-| `compactor_blocks_retention_period` | `30d` | How long metric data is retained in cold storage. |
-| `max_label_names_per_series` | 30 | Label cardinality per series. |
+### 5.1 Grafana database
 
-To set a per-tenant override (e.g. raise the series limit for a high-cardinality Org):
-
-```yaml
-# in mimir/values-configmap.yaml, under mimir.structuredConfig:
-overrides:
-  shalb-docs:
-    max_global_series_per_user: 500000
-```
-
-Commit, push, and Flux will roll out the updated Mimir config.
-
-### 5.2 Loki per-tenant limits
-
-In `kube-dc-fleet/platform/monitoring/loki/values-configmap.yaml` under
-`loki.limits_config`:
-
-| Limit key | Current value | What it controls |
-|---|---|---|
-| `ingestion_rate_mb` | 10 | MB/s log ingestion per tenant. |
-| `ingestion_burst_size_mb` | 20 | Burst ceiling. |
-| `max_streams_per_user` | 10 000 | Maximum concurrent label-set streams per tenant. |
-| `retention_period` | `30d` | How long log data is retained. |
-
-Per-tenant Loki overrides follow the same pattern as Mimir:
-```yaml
-# in loki/values-configmap.yaml, under loki.limits_config.per_tenant_override_config or
-# via loki.runtimeConfig (preferred in newer Loki versions)
-```
-
-### 5.3 Grafana database
-
-Grafana uses a PostgreSQL backend (`grafana-pg` CNPG cluster in `monitoring/`). The PVC
-is sized at `10Gi`. At current tenant scale (~60 Orgs × 10 dashboards × 50 users),
-actual usage is well under 100 MB. No operator action is needed for routine growth.
-
-Backup schedule: daily at 02:00 UTC, 14-day retention, stored in S3 (same cluster Ceph
-object store). To trigger a manual backup:
-```bash
-kubectl annotate -n monitoring scheduledbackup grafana-pg-backup \
-  cnpg.io/immediateBackup="true"
-```
-
-### 5.4 Storage buckets
-
-Mimir and Loki use dedicated S3 buckets via Ceph RGW. Bucket names and quotas are
-provisioned via OBC resources in `kube-dc-fleet`. To check current usage:
+Grafana uses the `grafana-pg` CloudNativePG cluster in the `monitoring`
+namespace. Confirm the live PVC size and backup policy rather than relying on a
+copied estimate:
 
 ```bash
-# List all observability OBC buckets
-kubectl get obc -n monitoring
-
-# Check a specific bucket
-kubectl get obc -n monitoring mimir-blocks -o yaml
+kubectl -n monitoring get cluster grafana-pg
+kubectl -n monitoring get scheduledbackup grafana-pg-daily -o yaml
+kubectl -n monitoring get backup --sort-by=.metadata.creationTimestamp
 ```
 
-System-level bucket quotas are configured in `clusters/cloud/cluster-config.env`:
-```
-SYSTEM_QUOTA_MIMIR_BLOCKS=200G
-SYSTEM_QUOTA_LOKI_CHUNKS=200G
+The current base Fleet manifest schedules `grafana-pg-daily` at 02:30 UTC and
+retains backups for 30 days. A cluster overlay can change that. To request an
+immediate run through the scheduled policy:
+
+```bash
+kubectl -n monitoring annotate scheduledbackup grafana-pg-daily   cnpg.io/immediateBackup="true" --overwrite
 ```
 
----
+### 5.2 Metrics and log object storage
+
+Mimir and Loki use S3-compatible buckets provisioned through ObjectBucketClaims.
+Inspect the live claims and their backing storage before raising retention:
+
+```bash
+kubectl -n monitoring get obc
+kubectl -n monitoring describe obc mimir-blocks
+kubectl -n monitoring describe obc loki-chunks
+```
+
+Do not copy quota values from another cluster: storage topology, ingestion, and
+retention differ between installations.
 
 ## 6. Grafana administration
 
 ### 6.1 Logging in as a platform admin
 
-Navigate to `https://grafana.<domain>/login` and click **Sign in with Keycloak**. This
-uses the `master` realm. Platform admins (members of the `kube-dc-admin` group) receive
-`GrafanaAdmin` role and can switch into any tenant Grafana Organization via the
-**Org switcher** in the top navigation bar.
+Navigate to `https://grafana.<domain>/login` and click **Sign in with Keycloak**.
+This uses the `master` realm. In the current Grafana configuration, members of
+the master-realm `admin` group receive `GrafanaAdmin`. The Envoy observability
+authorization policy must recognize the same platform-admin claim; verify both
+paths after identity or monitoring changes.
 
-### 6.2 Inspecting a tenant's Grafana Org
+### 6.2 Inspecting an Organization's Grafana space
 
 1. Log in as platform admin (§6.1).
 2. Open the **Organization switcher** (top-left globe icon or via `Admin → Organizations`).
-3. Switch to the target Org. You now see the tenant's dashboards, datasources, and alert
-   rules exactly as they do.
-4. **Switch back** to `Main Org.` when finished to avoid accidental edits in the tenant
-   space.
+3. Switch to the target Grafana Organization. You now see its dashboards,
+   datasources, and alert rules as its users do.
+4. **Switch back** to `Main Org.` when finished to avoid accidental edits in
+   the Organization's space.
 
-### 6.3 Manually triggering Org re-provision
+### 6.3 Manually triggering Organization reconciliation
 
-If a Org's dashboards, datasources, or membership is stale, force a reconcile:
+If an Organization's dashboards, datasources, or membership is stale, force a
+reconcile:
 
 ```bash
 kubectl annotate organization <org-slug> \
@@ -361,39 +341,43 @@ kubectl logs -n kube-dc deployment/kube-dc-manager -c manager --follow | grep <o
 
 ### 6.4 Token lifetime
 
-Keycloak access tokens are set to **15 minutes** for both the `master` realm and all
-per-Organization realms. This value is configured in:
-- `kube-dc-fleet/scripts/bootstrap-keycloak.sh` (master realm, applied at bootstrap)
-- `internal/organization/helpers.go` `DefaultKeycloakAccessTokenLifespan` constant
-  (per-org realms, applied on Organization reconcile)
+Per-Organization realms default to 15-minute access tokens in
+`internal/organization/helpers.go`. The Fleet bootstrap workflow ensures that
+the master realm is at least 15 minutes through
+`bootstrap/setup-keycloak-oidc.sh`. Inspect the live realm before assuming an
+exact value because an operator can configure a longer lifetime.
 
-Increasing the TTL reduces Keycloak load but widens the window for a stolen token.
-Decreasing it below 5 minutes causes noticeable friction for kubectl users.
+Shorter tokens reduce the replay window but increase refresh and login pressure.
+Treat a lifetime change as identity configuration and test the console, Grafana,
+CLI, and long-running API clients.
 
 ---
 
 ## 7. Troubleshooting
 
-### 7.1 Tenant sees no data in dashboards
+### 7.1 Organization users see no data in dashboards
 
-1. **Verify they are in the right Org.** In Grafana, the Org name appears in the top-left.
-   It should match their Kube-DC Organization slug. If it doesn't, the user's Org
-   membership was not provisioned — trigger a re-provision (§6.3).
+1. **Verify the Grafana Organization.** Its name appears in the top-left and
+   should match the user's Kube-DC Organization slug. If it does not, the
+   membership was not provisioned; trigger reconciliation (§6.3).
 
-2. **Check the Mimir datasource.** As platform admin, switch to the tenant Org and open
+2. **Check the Mimir datasource.** As platform admin, switch to the affected
+   Grafana Organization and open
    **Configuration → Datasources**. The `Mimir` datasource should exist and the
    **Custom HTTP Headers** section should show an `X-Scope-OrgID` value containing the
-   Org name and its project namespaces (e.g. `shalb|shalb-docs|shalb-jumbolot`).
-   If it shows only the Org name and no projects, the datasource header hasn't been
-   updated since the projects were created — trigger a re-provision (§6.3).
+   Organization ID and its Project backing namespace IDs (for example,
+   `shalb|shalb-docs|shalb-jumbolot`). If it shows only the Organization ID,
+   trigger reconciliation (§6.3) after confirming the Projects exist.
 
-3. **Check metrics are being written.** Look for the tenant in `kube-dc-manager` logs:
+3. **Check the metrics write path.** Look for rejected writes or tenant-header
+   errors for the backing namespace in Mimir distributor logs:
    ```bash
    kubectl logs -n monitoring \
      -l app.kubernetes.io/component=distributor \
-     --tail=100 | grep <namespace>
+     --tail=100 | grep <backing-namespace>
    ```
-   No lines → metrics from that namespace are not reaching Mimir. Check Alloy:
+   No matching error does not prove ingestion. Check the Alloy metrics collector
+   next:
    ```bash
    kubectl logs -n monitoring \
      -l app.kubernetes.io/name=alloy-metrics --tail=100
@@ -401,29 +385,29 @@ Decreasing it below 5 minutes causes noticeable friction for kubectl users.
 
 ### 7.2 Alert Rules tab shows 404 or is empty
 
-This happens when the `Mimir Alerts` datasource (the single-tenant alerting datasource)
+This happens when the `Mimir Alerts` datasource (the per-backend-tenant alerting datasource)
 is missing or misconfigured. As platform admin:
 
-1. Switch to the affected tenant Org.
+1. Switch to the affected Grafana Organization.
 2. Open **Configuration → Datasources** and confirm `Mimir Alerts` exists alongside `Mimir`.
-3. If it's missing, trigger a re-provision (§6.3).
+3. If it's missing, trigger reconciliation (§6.3).
 
 Also verify the `mimir-ruler` deployment is running:
 ```bash
 kubectl get pods -n monitoring -l app.kubernetes.io/component=ruler
 ```
 
-### 7.3 Dashboards missing from a tenant Org
+### 7.3 Dashboards missing from a Grafana Organization
 
-Dashboards are distributed on every Org reconcile. If they're missing after a new
-dashboard was added to the fleet repo:
+Dashboards are distributed on every Organization reconciliation. If they are
+missing after a new dashboard was added to the Fleet repository:
 
 1. Confirm Flux has reconciled the ConfigMap:
    ```bash
    flux get kustomization platform -n flux-system
    kubectl get cm -n monitoring -l kube-dc.com/grafana-dashboard=true
    ```
-2. Trigger a re-provision (§6.3).
+2. Trigger reconciliation (§6.3).
 3. Check `kube-dc-manager` logs for `ensureDashboards` errors — the most common cause is
    a dashboard JSON missing the `uid` field.
 
@@ -456,9 +440,10 @@ kubectl logs -n monitoring -l app.kubernetes.io/name=cortex-tenant --tail=50
 kubectl get pods -n monitoring -l app.kubernetes.io/component=distributor
 ```
 
-If `cortex-tenant` is OOMKilled, increase its memory limit in
-`platform/monitoring/cortex-tenant/values-configmap.yaml`. The observed steady-state
-is ~150-200 MiB; allow at least 1Gi to absorb pipeline restarts.
+If `cortex-tenant` is OOMKilled, inspect its current working set and restart
+behavior, then adjust the memory request and limit in
+`platform/monitoring/cortex-tenant/values-configmap.yaml`. Verify the pipeline after
+Flux applies the change.
 
 ### 7.6 Mimir ring health alerts
 
@@ -475,8 +460,8 @@ Look for `Pending` or `CrashLoopBackOff` pods.
 
 ## 8. Component upgrades
 
-All component versions are pinned in `clusters/cloud/cluster-config.env`. Upgrade
-procedure for each component:
+Component versions are pinned per cluster in
+`clusters/<cluster>/cluster-config.env`. Upgrade procedure for each component:
 
 | Component | Variable | Notes |
 |---|---|---|
@@ -498,16 +483,17 @@ Do **not** bump multiple stateful components (Mimir, Loki, CNPG) in the same com
 
 ## 9. Keycloak bootstrap
 
-The `kube-dc-fleet/scripts/bootstrap-keycloak.sh` script sets up the Grafana OIDC client
-in the `master` realm. It is idempotent and safe to re-run. It also bumps the master
-realm's `accessTokenLifespan` to 900 s if currently lower.
+The Fleet `bootstrap/setup-keycloak-oidc.sh` workflow reconciles the Grafana
+OIDC client and other platform clients in the `master` realm. Run the script
+that belongs to the checked-out Fleet version:
 
-To re-run after a Keycloak reinstall:
 ```bash
-KUBECONFIG=<cluster-kubeconfig> ./scripts/bootstrap-keycloak.sh
+cd <fleet-repository>
+KUBECONFIG=<management-cluster-kubeconfig>   bash bootstrap/setup-keycloak-oidc.sh <cluster>
 ```
 
----
+Review and push any generated encrypted Fleet changes, then verify both direct
+Grafana login and datasource queries.
 
 ## 10. Reference
 
@@ -517,4 +503,4 @@ KUBECONFIG=<cluster-kubeconfig> ./scripts/bootstrap-keycloak.sh
 | Loki HelmRelease + values | `platform/monitoring/loki/` |
 | Grafana / Prometheus (kube-prom-stack) | `platform/monitoring/prom-operator/` |
 | Dashboard JSON sources | `platform/monitoring/dashboards/` |
-| Per-cluster version pins | `clusters/cloud/cluster-config.env` |
+| Per-cluster version pins | `clusters/<cluster>/cluster-config.env` |

@@ -1,6 +1,6 @@
-# Kubernetes Projects
+# Projects
 
-A **Kubernetes Project** is Kube-DC's default deployment environment. It gives your team a Project-scoped kubeconfig, namespace, RBAC, private network (VPC) and optional quota — so you deploy applications and virtual machines directly, without provisioning a cluster first.
+A **Project** is Kube-DC's default deployment environment. It gives your team a Project kubeconfig, a dedicated backing namespace, RBAC, a private network (VPC), and optional quota — so you can deploy applications and virtual machines directly without provisioning a cluster first.
 
 The distinction to keep in mind: **a Project is where you deploy; an app is what you deploy.** One Project typically holds several apps, their databases and storage — and VMs, side by side.
 
@@ -17,12 +17,12 @@ A Project is a governed environment on the shared platform cluster. It is not a 
 | **Virtual machines** | Full KubeVirt Linux and Windows guests, on the same network as your containers |
 | **Private networking** | A VPC with load balancers, external IPs and floating IPs where you need them |
 | **Persistent data** | Block volumes (PVCs) and S3-compatible object buckets |
-| **Managed services** | Databases, certificates, secrets, database credentials and KMS keys — created as Kubernetes resources in your namespace |
+| **Managed services** | Databases, certificates, secrets, database credentials, and KMS keys created in your Project |
 | **Governance** | Per-role RBAC for your team and an optional resource quota |
 
-Identity stays scoped to your Organization; billing is aggregated there too. The Project supplies the namespace, authorization, network and governance boundaries for everything in it.
+Identity and billing stay scoped to your Organization. The Project supplies the workload, authorization, network, and governance boundaries; Kubernetes stores its resources in the Project's backing namespace.
 
-Use `kubectl logs` and `kubectl top` for containers. `kubectl exec`/`attach` are blocked in project namespaces by design — run administrative tasks as **Jobs** mounting the same volumes (the [WordPress guide](deploy-wordpress-stack.md) shows the pattern), and use the console/VNC for VMs.
+Use `kubectl logs` and `kubectl top` for containers. `kubectl exec`/`attach` are blocked in Project backing namespaces by design — run administrative tasks as **Jobs** mounting the same volumes (the [WordPress guide](deploy-wordpress-stack.md) shows the pattern), and use the console/VNC for VMs.
 
 ## Deploy in about 60 seconds
 
@@ -44,7 +44,8 @@ kubectl rollout status deployment/my-app
 helm upgrade --install my-app ./chart --wait
 ```
 
-See [Deploy Your First Application](deploy-first-app.md) for a complete walkthrough including HTTPS exposure with automatic certificates.
+See [Deploy Your First Application](deploy-first-app.md) for the first HTTP
+deployment, then [Service Exposure](service-exposure.md) to configure HTTPS.
 
 ## What "compatible" means
 
@@ -93,7 +94,7 @@ kubectl auth can-i create customresourcedefinitions.apiextensions.k8s.io   # no 
 
 ## When to choose a Managed Cluster instead
 
-Choose a [Managed Kubernetes Cluster](provisioning-cluster.md) when your software:
+Choose a [Managed Cluster](provisioning-cluster.md) when your software:
 
 - Installs an operator or CRDs
 - Creates cluster-scoped RBAC or admission webhooks
@@ -113,4 +114,4 @@ A Project is a standard Kubernetes API target: point an externally hosted Argo C
 - [Connect with a Project kubeconfig](cli-kubeconfig.md)
 - [Deploy your first application](deploy-first-app.md)
 - [Project compatibility and restrictions](security-restrictions.md)
-- [Provision a Managed Kubernetes Cluster](provisioning-cluster.md)
+- [Provision a Managed Cluster](provisioning-cluster.md)

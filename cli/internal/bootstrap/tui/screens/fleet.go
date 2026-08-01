@@ -275,7 +275,7 @@ func (m *FleetModel) dispatchFixAction(name string, action *discover.FixAction) 
 		})
 	case discover.FixActionTenantLogin:
 		// Tenant org-prompt isn't wired yet — surface the exact command.
-		m.err = fmt.Errorf("tenant login from the TUI is not yet implemented — run `kube-dc login --domain %s --org <your-org>` directly", action.Domain)
+		m.err = fmt.Errorf("Organization login from the TUI is not yet implemented — run `kube-dc login --domain %s --org <organization>` directly", action.Domain)
 		return nil
 	default:
 		m.err = fmt.Errorf("unknown FixAction kind %q for %q", action.Kind, name)
@@ -297,7 +297,7 @@ func (m *FleetModel) execLoginCmd(admin bool) tea.Cmd {
 		return nil
 	}
 	if !admin {
-		m.err = fmt.Errorf("tenant login from the TUI is not yet implemented — run `kube-dc login --domain %s --org <your-org>` directly", c.Domain)
+		m.err = fmt.Errorf("Organization login from the TUI is not yet implemented — run `kube-dc login --domain %s --org <organization>` directly", c.Domain)
 		return nil
 	}
 	m.pendingActionFor = c.Name

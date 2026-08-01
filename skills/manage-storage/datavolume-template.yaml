@@ -1,52 +1,53 @@
-# DataVolume — registry import (primary path for VM boot disks)
-# URL MUST be digest-pinned (@sha256:...) — never a bare tag or :latest.
-# Ready refs: platform catalog (UI "OS Images"); quay.io/containerdisks/<os> for standard images.
+# Registry import: select a digest-pinned ref from the live OS catalog.
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
 metadata:
-  name: {disk-name}
-  namespace: {project-namespace}
+  name: "{disk-name}"
+  namespace: "{backing-namespace}"
 spec:
   source:
     registry:
-      url: "docker://quay.io/containerdisks/ubuntu:24.04@sha256:ec914ce2270fd5e0e729a98a91664dbac50a3c5c15d744da9c6fb51bc25e81f8"
-      pullMethod: node    # pull via the node's containerd — faster, cached, works from any tenant VPC
+      url: "docker://{registry-image}@sha256:{digest}"
+      pullMethod: node
   pvc:
-    accessModes: [ReadWriteOnce]
+    accessModes:
+    - ReadWriteOnce
     resources:
       requests:
-        storage: 20Gi
-    storageClassName: local-path
+        storage: "{size}"
+    storageClassName: "{vm-storage-class}"
 ---
-# DataVolume — import from URL (fallback: Windows/ISO, custom images)
+# HTTP import: use for provider-supported custom images or installation media.
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
 metadata:
-  name: {disk-name}
-  namespace: {project-namespace}
+  name: "{disk-name}-http"
+  namespace: "{backing-namespace}"
 spec:
   source:
     http:
       url: "{image-url}"
   storage:
-    accessModes: [ReadWriteOnce]
+    accessModes:
+    - ReadWriteOnce
     resources:
       requests:
-        storage: 20Gi
-    storageClassName: local-path
+        storage: "{size}"
+    storageClassName: "{vm-storage-class}"
 ---
-# DataVolume — blank disk (for additional data)
+# Blank additional data disk.
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
 metadata:
-  name: {disk-name}-data
-  namespace: {project-namespace}
+  name: "{disk-name}-data"
+  namespace: "{backing-namespace}"
 spec:
   source:
     blank: {}
   storage:
-    accessModes: [ReadWriteOnce]
+    accessModes:
+    - ReadWriteOnce
     resources:
       requests:
-        storage: 50Gi
-    storageClassName: local-path
+        storage: "{size}"
+    storageClassName: "{vm-storage-class}"

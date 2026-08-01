@@ -1,41 +1,31 @@
 # Networking Decision Guide
 
-## EIP vs FIP
+| Requirement | Recommended path |
+|---|---|
+| HTTP or HTTPS hostname | Gateway route with the `expose-service` skill |
+| TLS passthrough with a valid backend certificate | Gateway TLSRoute |
+| Arbitrary TCP or UDP ports | EIP-backed LoadBalancer Service |
+| SSH or direct access to one VM interface | FIP |
+| Managed database from a workstation | `KdcDatabase.spec.expose.type: loadbalancer` |
+| Internal application-to-database traffic | Engine Service on the Project VPC |
 
-| Aspect | EIp (External IP) | FIp (Floating IP) |
-|--------|-------------------|-------------------|
-| **Mechanism** | Allocated IP bound to LoadBalancer Service | 1:1 NAT directly to VM/pod |
-| **Target** | Service (any pods matching selector) | Single VM interface |
-| **Protocols** | Any (via Service ports) | All traffic (all ports) |
-| **Load balancing** | Yes (across pod replicas) | No (single target) |
-| **Multiple services** | Yes (one EIP, many services) | No (one FIP per VM) |
-| **Use case** | Services, apps, SSH via port mapping | Direct VM access, all ports |
+## EIP or FIP?
 
-## When to Use What
+| Aspect | EIP with LoadBalancer | FIP |
+|---|---|---|
+| Target | Service selector | One internal IP or VM interface |
+| Exposed traffic | Declared Service ports | Direct one-to-one NAT |
+| Load balancing | Yes | No |
+| Typical use | Applications, TCP/UDP services, databases | VM administration or all-port direct access |
 
-### Web App (HTTP/HTTPS)
-→ **Gateway Route** (`expose-route: https`) — simplest, auto TLS, auto DNS
+Standard Project roles do not grant pod port-forward, so port-forward is not a
+tenant database or VM access method.
 
-### SSH to VM
-→ **FIp** (simplest — direct IP to VM, all ports) OR
-→ **EIp + LoadBalancer** (if you need port mapping or multiple VMs)
+## Public or Cloud Address?
 
-### Game Server
-→ **EIp + LoadBalancer** with UDP ports
+- `public` is internet-routable subject to firewall and provider policy.
+- `cloud` is reachable only from networks configured by the provider.
 
-### Database External Access
-→ **Gateway** (`spec.expose.type: gateway` on KdcDatabase) — TLS passthrough
-→ Or **port-forward** for dev/ad-hoc access
-
-### Multiple VMs with Public Access
-→ **One FIp per VM** (each gets a dedicated IP)
-→ Or **One EIp + multiple LoadBalancer services** with different ports
-
-## Network Type: Cloud vs Public
-
-| `externalNetworkType` | Pool | Use |
-|----------------------|------|-----|
-| `public` | Internet-routable IPs | External access from internet |
-| `cloud` | NAT pool IPs | Internal/cloud-only access |
-
-Cloud projects can still request `public` EIPs — the project network type only affects the **default** pool.
+Pool availability is installation-specific. A cloud Project can request a
+public EIP only when the provider exposes that pool and Organization quota is
+available.

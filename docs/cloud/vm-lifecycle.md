@@ -11,7 +11,7 @@ This guide covers VM lifecycle operations — starting, stopping, restarting, pa
 
 ## Start, Stop, and Restart
 
-### Via Console UI
+### Start, stop, or restart via the console
 
 1. Navigate to **Virtual Machines** in your project
 2. Click on your VM name to open the details page
@@ -22,7 +22,7 @@ This guide covers VM lifecycle operations — starting, stopping, restarting, pa
 
 The UI shows the current VM status (`Running`, `Stopped`, `Starting`, etc.) and updates automatically.
 
-### Via kubectl
+### Start, stop, or restart via kubectl
 
 #### Start a VM
 
@@ -53,7 +53,7 @@ virtctl restart ubuntu
 This performs a graceful reboot — sends ACPI shutdown signal to the guest OS, waits for it to terminate, then starts it again.
 
 :::tip Restart vs Stop+Start
-`virtctl restart` maintains the VM's state and is faster than manually stopping and starting. Use it for applying kernel updates or recovering from hung processes.
+`virtctl restart` reboots the guest. Persistent disks survive, but memory and process state do not. Use **Pause** when you need to preserve memory state temporarily.
 :::
 
 :::warning Dedicated GPU VMs
@@ -77,7 +77,7 @@ kubectl get vm ubuntu -w
 ```
 
 Common statuses:
-- `Running` — VM is fully booted and ready
+- `Running` — the virtual machine instance is running; use guest-agent or application health checks to determine guest readiness
 - `Stopped` — VM is powered off
 - `Starting` — VM is booting up
 - `Stopping` — VM is shutting down
@@ -89,7 +89,7 @@ Common statuses:
 
 Pausing a VM freezes its state in memory — useful for temporarily suspending a VM without fully shutting it down. Resume is instant.
 
-### Via Console UI
+### Pause or unpause via the console
 
 From the VM details page:
 - **Pause** — freeze the VM (CPU stops, memory preserved)
@@ -99,10 +99,10 @@ From the VM details page:
 
 ```bash
 # Pause a running VM
-virtctl pause ubuntu
+virtctl pause vm ubuntu
 
 # Resume a paused VM
-virtctl unpause ubuntu
+virtctl unpause vm ubuntu
 ```
 
 Check if a VM is paused:
@@ -122,14 +122,14 @@ kubectl get vmi ubuntu -o jsonpath='{.status.conditions[?(@.type=="Paused")].sta
 
 Deleting a VM removes the VirtualMachine resource and terminates the running instance. DataVolumes are preserved by default.
 
-### Via Console UI
+### Delete via the console
 
 1. Navigate to **Virtual Machines**
 2. Click on the VM name
 3. Click **Delete**
 4. Confirm the deletion
 
-### Via kubectl
+### Delete via kubectl
 
 ```bash
 # Delete the VM
@@ -150,51 +150,34 @@ kubectl get dv
 # Delete the VM's root disk
 kubectl delete dv ubuntu-root
 
-# Delete all DataVolumes for a VM
-kubectl delete dv -l vm.name=ubuntu
+# Delete each additional disk only after confirming its name and ownership
+kubectl delete dv ubuntu-data
 ```
 
 :::warning Data Loss
 Deleting DataVolumes is permanent. Ensure you have backups before removing disk images.
 :::
 
-### Force Delete a Stuck VM
+### A VM Is Stuck Deleting
 
-If a VM won't delete due to finalizers:
-
-```bash
-# Remove finalizers
-kubectl patch vm ubuntu -p '{"metadata":{"finalizers":null}}' --type=merge
-
-# Force delete
-kubectl delete vm ubuntu --force --grace-period=0
-```
+Collect `kubectl describe vm <name>`, the related VMI and DataVolume status, and recent events before escalating to your platform operator. Do not remove finalizers from a Project account: bypassing controller cleanup can orphan disks, launcher pods, or network resources.
 
 ---
 
-## Lifecycle via KubeVirt Subresources
+## Lifecycle with virtctl
 
-Kube-DC uses KubeVirt's subresources API for VM operations. You can interact with these directly:
+Use `virtctl` for KubeVirt lifecycle operations in the current Project:
 
 ```bash
-# Start (API endpoint)
-kubectl get --raw "/apis/subresources.kubevirt.io/v1/namespaces/my-project/virtualmachines/ubuntu/start" -X PUT
-
-# Stop (API endpoint)
-kubectl get --raw "/apis/subresources.kubevirt.io/v1/namespaces/my-project/virtualmachines/ubuntu/stop" -X PUT
-
-# Restart (API endpoint)
-kubectl get --raw "/apis/subresources.kubevirt.io/v1/namespaces/my-project/virtualmachines/ubuntu/restart" -X PUT
-
-# Pause (VMI subresource)
-kubectl get --raw "/apis/subresources.kubevirt.io/v1/namespaces/my-project/virtualmachineinstances/ubuntu/pause" -X PUT
-
-# Unpause (VMI subresource)
-kubectl get --raw "/apis/subresources.kubevirt.io/v1/namespaces/my-project/virtualmachineinstances/ubuntu/unpause" -X PUT
+virtctl start ubuntu -n acme-production
+virtctl stop ubuntu -n acme-production
+virtctl restart ubuntu -n acme-production
+virtctl pause vm ubuntu -n acme-production
+virtctl unpause vm ubuntu -n acme-production
 ```
 
 :::note
-Most users should use `virtctl` instead of raw API calls — it handles errors better and provides clearer output.
+These commands use KubeVirt subresources and require the corresponding Project role permission.
 :::
 
 ---
@@ -233,8 +216,9 @@ kubectl describe vm ubuntu
 # Check DataVolume readiness
 kubectl get dv
 
-# View VMI logs
-virtctl logs ubuntu
+# Find the launcher pod, then inspect its compute-container log
+kubectl get pods -l kubevirt.io/domain=ubuntu
+kubectl logs <virt-launcher-pod> -c compute
 ```
 
 Common causes:
@@ -244,16 +228,17 @@ Common causes:
 
 ### VM Won't Stop
 
+Request a normal stop and watch both resources:
+
 ```bash
-# Check if VMI still exists
-kubectl get vmi ubuntu
-
-# Force stop by deleting VMI
-kubectl delete vmi ubuntu --force --grace-period=0
-
-# Then patch VM to stopped state
 kubectl patch vm ubuntu --type merge -p '{"spec":{"running":false}}'
+kubectl get vm,vmi ubuntu -w
 ```
+
+If the VMI remains after the guest shutdown timeout, inspect `kubectl describe
+vm ubuntu` and `kubectl describe vmi ubuntu`, then contact support. Force-deleting
+a VMI can abruptly terminate the guest, lose unwritten data, and conflict with
+KubeVirt reconciliation; it is an operator recovery action, not a routine stop.
 
 ### VM Stuck in "Starting"
 
@@ -264,9 +249,12 @@ kubectl get pods -l vm.kubevirt.io/name=ubuntu
 # View pod events
 kubectl describe pod virt-launcher-ubuntu-xxxxx
 
-# Check node capacity
-kubectl describe node <node-name>
+# Review Project-visible scheduling events
+kubectl get events --sort-by=.lastTimestamp
 ```
+
+Project roles cannot inspect cluster Nodes. If events report insufficient host
+capacity or a platform scheduling failure, send the VM and event details to support.
 
 ---
 

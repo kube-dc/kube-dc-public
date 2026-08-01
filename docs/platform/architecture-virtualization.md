@@ -1,280 +1,112 @@
-# Virtualization (KubeVirt)
+# Virtualization Architecture
 
-Kube-DC leverages KubeVirt to provide powerful virtual machine capabilities alongside traditional container workloads. This document covers the virtualization architecture, features, and how VMs are managed within the platform.
+Kube-DC runs virtual machines on the same Kubernetes platform as container workloads. KubeVirt provides the VM lifecycle, CDI manages disk images and DataVolumes, and Kube-OVN connects each VM to its Project network.
 
-## Virtualization Architecture
-
-Kube-DC's virtualization layer is built on KubeVirt, which extends Kubernetes to support virtual machine workloads. This architecture enables consistent management of both containers and VMs through the same API and tooling.
+## Resource Model
 
 ```mermaid
 graph TD
-    K8s[Kubernetes API] --> KV[KubeVirt Controller]
-    K8s --> CDI[Containerized Data Importer]
-    
-    KV --> VMI[VM Instances]
-    CDI --> DV[Data Volumes]
-    
-    VMI --> POD[VM Pods]
-    DV --> PVC[Persistent Volumes]
-    
-    subgraph "VM Management"
-        KV
-        VMI
-        POD
-    end
-    
-    subgraph "Storage Management"
-        CDI
-        DV
-        PVC
-    end
+    accTitle: Kube-DC virtual machine resource flow
+    accDescr: A user creates a VirtualMachine in a Project. KubeVirt runs a VirtualMachineInstance in a launcher Pod, CDI provisions its disk, and Kube-OVN connects it to the Project VPC.
 
-    UI[Kube-DC Dashboard] --> K8s
-    CLI[kubectl/virtctl] --> K8s
+    User[Console, kubectl, or virtctl] --> VM[VirtualMachine]
+    VM --> VMI[VirtualMachineInstance]
+    VMI --> Launcher[virt-launcher Pod]
+    Launcher --> QEMU[QEMU and guest OS]
+
+    VM --> DV[DataVolume]
+    DV --> PVC[PersistentVolumeClaim]
+    CDI[CDI] --> DV
+
+    VM --> NAD[Project default network]
+    NAD --> VPC[Project VPC]
+    KV[KubeVirt controllers] --> VM
+    KV --> VMI
 ```
 
-## Core Components
+The important boundaries are:
 
-### KubeVirt Controller
+- **Organization** owns identity, membership, and billing.
+- **Project** is the workload boundary. Kube-DC creates a backing namespace named `{organization}-{project}`.
+- **VirtualMachine** is the desired configuration and lifecycle object in that Project's backing namespace.
+- **VirtualMachineInstance** represents a running instance of the VM.
+- **virt-launcher Pod** hosts the QEMU process on a Kubernetes node.
+- **DataVolume and PVC** hold persistent VM disks.
+- **Project VPC** provides private addressing and platform-managed isolation.
 
-The KubeVirt controller manages the lifecycle of virtual machines by:
+Project users work with the VM resources. Platform operators manage the cluster-scoped KubeVirt, CDI, storage, and network components underneath them.
 
-- Translating VM specifications into Kubernetes resources
-- Scheduling VMs on appropriate nodes
-- Managing VM state (start, stop, pause, resume)
-- Providing VM migration capabilities
-- Handling VM monitoring and health checks
+## VM Lifecycle
 
-### Containerized Data Importer (CDI)
+A VirtualMachine can be started, stopped, restarted, paused, or deleted through the console, `virtctl`, or KubeVirt subresources. A `Running` VMI means the virtualization process is active; it does not prove that the guest OS or application is ready.
 
-CDI handles storage provisioning for VMs by:
+Install and enable `qemu-guest-agent` in supported guests when you need:
 
-- Creating and managing Data Volumes
-- Importing disk images from HTTP/S3 sources
-- Converting disk formats as needed
-- Cloning existing volumes
+- reliable guest IP discovery;
+- guest-agent readiness checks;
+- coordinated shutdown;
+- SSH key injection and other guest integration.
 
-### Data Volumes
+A restart reboots the guest and does not preserve memory state. Pause and unpause preserve memory while the VM continues to consume its assigned capacity.
 
-Data Volumes serve as the storage backbone for VMs, providing:
+## Storage and Migration
 
-- Storage allocation for VM disks
-- Integration with Kubernetes storage classes
-- Automated provisioning and cleanup
+Kube-DC supports two broad root-disk patterns:
 
-## VM Management in Kube-DC
+| Storage | Characteristics | Live migration |
+|---|---|---|
+| Node-local storage | Lower latency and tied to one node | No |
+| Shared RBD storage | Accessible from compatible nodes; supports shared storage workflows | Available when the VM and node pool meet migration requirements |
 
-### VM Creation and Configuration
+CDI imports or clones the selected operating-system image into a DataVolume. The catalog and prepared golden images are platform configuration, so the current console catalog is the source of truth for available operating systems and versions.
 
-Kube-DC allows users to create VMs through YAML definitions or the web UI. VM configurations include:
+Live migration can move an eligible running VM between compatible nodes without a planned guest shutdown. It is not an application availability guarantee: storage health, network health, CPU compatibility, capacity, guest behavior, and migration progress all matter. Dedicated GPU devices cannot be live-migrated.
 
-**Example VM Definition:**
+See [VM storage tiers and live migration](vm-storage-tiers.md) for requirements and operator configuration.
 
-```yaml
-apiVersion: kubevirt.io/v1
-kind: VirtualMachine
-metadata:
-  name: ubuntu-vm
-  namespace: demo
-spec:
-  running: true
-  template:
-    spec:
-      networks:
-      - name: vpc_net_0
-        multus:
-          default: true
-          networkName: default/ovn-demo
-      domain:
-        devices:
-          interfaces:
-            - name: vpc_net_0
-              bridge: {}
-          disks:
-          - disk: 
-              bus: virtio
-            name: root-volume
-        cpu:
-          cores: 2
-        memory:
-          guest: 4G
-      volumes:
-      - dataVolume:
-          name: ubuntu-base-img
-        name: root-volume
-```
+## Networking
 
-### Supported Operating Systems
+A VM normally attaches to the `default` NetworkAttachmentDefinition in its Project's backing namespace. Kube-OVN assigns a private address from the Project CIDR and connects the interface to the Project VPC.
 
-Kube-DC provides templates for a variety of operating systems:
+Inbound access is explicit:
 
-- Ubuntu (20.04, 22.04, 24.04)
-- Debian
-- CentOS/RHEL
-- Fedora
-- Alpine Linux
-- FreeBSD
-- openSUSE
-- Minimal images (cirros)
+- use a Floating IP for one-to-one NAT to a VM;
+- use a LoadBalancer Service to publish selected TCP or UDP ports;
+- use a Gateway Route for hostname-based application traffic.
 
-### Network Integration
+A Floating IP does not replace the address inside the guest. The guest keeps its private address while OVN translates traffic at the platform edge.
 
-VMs in Kube-DC are integrated with the same network architecture as containers:
+Project isolation is enforced primarily by the Project VPC and platform-managed OVN routing policy. Do not describe user-authored Kubernetes NetworkPolicy as the Project boundary.
 
-- Each VM can connect to VPC networks via Multus CNI
-- VMs receive IP addresses from the project's CIDR block
-- Network policies apply to VMs just like containers
-- VMs can use floating IPs and load balancer services
+## Images and Guest Configuration
 
-### Storage Management
+The console creates VM manifests from the platform image catalog. Operators manage that catalog and its import or mirror lifecycle; users select an available image and provide sizing, storage, networking, and cloud-init settings.
 
-Kube-DC provides flexible storage options for VMs:
+Use cloud-init for initial users, SSH keys, packages, and guest-agent setup. Keep credentials in Secrets or the platform secret service rather than embedding passwords in VM manifests.
 
-- Support for multiple storage classes
-- Persistent storage using Kubernetes PVCs
-- Live volume resizing
-- Volume snapshots and cloning
+Operator guides:
 
-### VM Customization
+- [Managing operating-system images](managing-os-images.md)
+- [Operating image imports and mirrors](os-image-operations.md)
+- [Windows VM setup](windows-vm-setup.md)
 
-VMs can be customized through cloud-init configurations:
+User guides:
 
-```yaml
-cloudInitNoCloud:
-  userData: |-
-    #cloud-config
-    chpasswd: { expire: False }
-    password: securepassword
-    ssh_pwauth: True
-    package_update: true
-    package_upgrade: true
-    packages:
-    - qemu-guest-agent
-    runcmd:
-    - [ systemctl, start, qemu-guest-agent ]
-```
+- [Create a virtual machine](/cloud/creating-vm)
+- [Connect to a virtual machine](/cloud/connecting-vm)
+- [Manage VM lifecycle](/cloud/vm-lifecycle)
 
-This allows for:
-- Setting initial passwords
-- SSH key distribution
-- Software installation
-- Custom scripts execution
-- Network configuration
+## Security and Capacity
 
-### Health Monitoring
+Project RBAC controls who can create VMs, open consoles, or read related Secrets. Quota accounts for VM CPU, memory, and storage alongside other Project workloads.
 
-VMs in Kube-DC support health checks through:
+Platform operators should also plan for:
 
-```yaml
-readinessProbe:
-  guestAgentPing: {}
-  failureThreshold: 10
-  initialDelaySeconds: 20
-  periodSeconds: 10
-```
+- node CPU and hardware compatibility;
+- storage capacity and failure domains;
+- migration headroom;
+- image provenance and refresh;
+- GPU device ownership and node mode;
+- monitoring of KubeVirt, CDI, and guest-agent conditions.
 
-Health checks ensure:
-- VM is properly booted
-- Guest agent is responsive
-- Cloud-init has completed
-- Custom health check scripts pass
-
-## Web UI Management
-
-Kube-DC provides an intuitive web interface for VM management:
-
-![VM Management UI](images/vm-details-view.png)
-
-### VM Dashboard Features
-
-The VM dashboard provides:
-
-- **VM Status Monitoring**: Running status, uptime, and conditions
-- **Performance Metrics**: Real-time CPU, memory, and storage usage
-- **VM Details**: OS version, network configuration, and node placement
-- **Console Access**: Direct web-based console access to VMs
-- **SSH Terminal**: Direct SSH access from the browser
-- **Network Information**: IP addresses and VPC subnet details
-
-### VM Lifecycle Management
-
-Through the UI, administrators and users can:
-
-- Create VMs from templates or custom images
-- Start, stop, pause, and restart VMs
-- Adjust resource allocations (CPU, memory)
-- Take snapshots for backup purposes
-- Clone VMs to create new instances
-- Migrate VMs between nodes
-
-## Advanced Features
-
-### GPU Passthrough
-
-Kube-DC supports GPU passthrough for high-performance computing and AI workloads:
-
-```yaml
-domain:
-  devices:
-    gpus:
-    - deviceName: nvidia.com/GP102GL_Tesla_P40
-      name: gpu1
-```
-
-### Live Migration
-
-VMs can be migrated between nodes without downtime:
-
-```yaml
-spec:
-  strategy:
-    type: LiveMigrate
-```
-
-### VM Snapshots
-
-Kube-DC supports VM snapshots for point-in-time recovery:
-
-```yaml
-apiVersion: snapshot.kubevirt.io/v1alpha1
-kind: VirtualMachineSnapshot
-metadata:
-  name: my-vm-snapshot
-spec:
-  source:
-    apiGroup: kubevirt.io
-    kind: VirtualMachine
-    name: my-vm
-```
-
-### VM Templates
-
-Organization administrators can create standardized VM templates for their users, ensuring consistent deployments and reducing configuration errors.
-
-## Integration with Multi-Tenancy
-
-VMs in Kube-DC operate within the same multi-tenant architecture as containers:
-
-- VMs are created within specific projects
-- Organization and project permissions control VM access
-- Network isolation is enforced between projects
-- VM metrics are included in project billing and quotas
-
-## Best Practices
-
-### Resource Allocation
-
-- Allocate sufficient memory for the guest OS (minimum 1GB for most Linux distributions)
-- Consider CPU overcommit ratios when planning node capacity
-- Use appropriate storage classes for VM performance requirements
-
-### VM Optimization
-
-- Install guest agents for improved integration
-- Use cloud-init for automated VM configuration
-- Configure readiness probes for proper health monitoring
-- Use virtio drivers for improved performance
-
-## Conclusion
-
-Kube-DC's integration of KubeVirt provides a seamless experience for managing both VMs and containers in a single platform. This unified approach simplifies infrastructure management, improves resource utilization, and enables hybrid application architectures that combine the benefits of both virtualization and containerization.
+For dedicated GPU operations, begin with [GPU capacity reservations](gpu-capacity-reservations.md) and the [GPU threat model](gpu-threat-model.md).

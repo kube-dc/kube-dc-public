@@ -1,313 +1,136 @@
 ---
 name: manage-cluster
-description: Manage Kube-DC managed Kubernetes clusters — scale worker pools, upgrade versions, access kubeconfig, and monitor status. Covers day-2 operations via kubectl patch.
+description: "Operate a Kube-DC Managed Cluster: download its external kubeconfig, scale or autoscale worker pools, perform supported upgrades, and inspect status."
 ---
 
 ## Prerequisites
-- KdcCluster must exist and be Ready
-- Project namespace: `{org}-{project}`
-- **Quota**: when scaling up worker pools, verify CPU, memory, and storage capacity first — use the `check-quota` skill (each worker node consumes its full `cpuCores`, `memory`, and `diskSize`)
 
-## Worker Pool Defaults
+- The `KdcCluster` is Ready in a Kube-DC Project.
+- Know the Project's backing namespace: `{organization}-{project}`.
+- Check Organization and Project quota before adding workers.
+- Use values offered by the live dashboard/catalog for versions, worker images,
+  infrastructure providers, and storage.
 
-All KdcCluster workers use **DataVolume storage** by default. Key fields per pool:
+## Access the Managed Cluster
 
-| Field | Default / Required | Description |
-|-------|-------------------|-------------|
-| `name` | **required** | Pool name (e.g. `workers`) |
-| `replicas` | 1 | Number of worker nodes |
-| `cpuCores` | 1 | vCPUs per worker |
-| `memory` | 3Gi | RAM per worker |
-| `diskSize` | 20Gi | Root disk size |
-| `image` | **required** | Container disk image matching K8s version |
-| `storageType` | `datavolume` | **Always use `datavolume`** (default) |
-| `infrastructureProvider` | `kubevirt` | Infrastructure backend |
-
-Current image: `docker.io/shalb/ubuntu-2404-container-disk:v1.35.2`
-
-## Common Operations
-
-### Scale Worker Pool (JSON Patch — Recommended)
-
-Use `--type=json` to patch specific fields without affecting others:
+For workstation access, read the dedicated external kubeconfig Secret:
 
 ```bash
-# Scale pool at index 0 to 5 replicas
-kubectl patch kdccluster {cluster} -n {namespace} --type=json \
+umask 077
+kubectl get secret {cluster}-cp-admin-kubeconfig-external \
+  -n {backing-namespace} \
+  -o jsonpath='{.data.admin\.conf}' | base64 -d > /tmp/{cluster}-kubeconfig
+chmod 600 /tmp/{cluster}-kubeconfig
+
+kubectl --kubeconfig=/tmp/{cluster}-kubeconfig get nodes
+```
+
+The Secret exists only when external API exposure is enabled. If it is absent,
+use the console to enable exposure or an operator-approved private network path.
+Do not rewrite the kubeconfig server field and do not use the internal Kamaji or
+Cluster API Secrets as workstation substitutes.
+
+See [kubeconfig-access.md](kubeconfig-access.md).
+
+## Scale a Worker Pool
+
+Inspect the current pool list before patching:
+
+```bash
+kubectl get kdccluster {cluster} -n {backing-namespace} \
+  -o jsonpath='{.spec.workers}' | jq
+```
+
+Patch only the intended replica field:
+
+```bash
+kubectl patch kdccluster {cluster} -n {backing-namespace} --type=json \
   -p '[{"op":"replace","path":"/spec/workers/0/replicas","value":5}]'
 ```
 
-### Scale Worker Pool (Merge Patch)
+A merge patch replaces the entire `workers` list and can silently discard
+pool settings. Use JSON Patch for individual fields. To append a pool, add a
+complete pool object at `/spec/workers/-`; copy the provider, storage, and
+image shape offered by the platform instead of inventing defaults.
 
-**Warning**: `--type merge` replaces the **entire** `workers` array. You MUST include ALL pools with ALL fields.
+A pool can scale to zero only while another pool has Ready workers. The API
+prevents removal of the last Ready worker pool.
 
-```bash
-kubectl patch kdccluster {cluster} -n {namespace} --type merge -p '{
-  "spec": {
-    "workers": [
-      {"name": "workers", "replicas": 5, "cpuCores": 2, "memory": "8Gi",
-       "diskSize": "20Gi",
-       "image": "docker.io/shalb/ubuntu-2404-container-disk:v1.35.2",
-       "infrastructureProvider": "kubevirt", "storageType": "datavolume"},
-      {"name": "highmem", "replicas": 2, "cpuCores": 4, "memory": "16Gi",
-       "diskSize": "40Gi",
-       "image": "docker.io/shalb/ubuntu-2404-container-disk:v1.35.2",
-       "infrastructureProvider": "kubevirt", "storageType": "datavolume"}
-    ]
-  }
-}'
-```
+See [scale-workers.md](scale-workers.md).
 
-### Scale to Zero (Pause Workers)
+## Autoscale Up
+
+Autoscaling increases `replicas` for unschedulable pods whose requests fit
+the pool. It does not remove nodes.
 
 ```bash
-kubectl patch kdccluster {cluster} -n {namespace} --type=json \
-  -p '[{"op":"replace","path":"/spec/workers/0/replicas","value":0}]'
-```
-
-Control plane keeps running; only workers are removed.
-
-### Autoscale a Worker Pool
-
-Add nodes automatically when pods cannot be scheduled. `replicas` keeps its
-meaning — the desired count — and the platform moves it between
-`minReplicas` and `maxReplicas`, the same model as an EKS node group.
-
-```bash
-kubectl patch kdccluster {cluster} -n {namespace} --type=json -p '[
+kubectl patch kdccluster {cluster} -n {backing-namespace} --type=json -p '[
   {"op":"add","path":"/spec/workers/0/autoscaling",
    "value":{"enabled":true,"minReplicas":2,"maxReplicas":8}}
 ]'
 ```
 
-`replicas` must be within `[minReplicas, maxReplicas]` while enabled — set
-it in the same patch if the current value is outside the new bounds:
+Keep `replicas` within `minReplicas` and `maxReplicas`. Inspect
+`.status.workerPools[].autoscaling` for the last scale reason and any limit
+such as quota, placement, maximum size, or a rolling update.
+
+## Upgrade Kubernetes
+
+Use the dashboard's version selector as the source of truth. Upgrade one minor
+version at a time, never downgrade, and update every worker pool to the catalog
+image paired with the target control-plane version.
 
 ```bash
-kubectl patch kdccluster {cluster} -n {namespace} --type=json -p '[
-  {"op":"add","path":"/spec/workers/0/autoscaling",
-   "value":{"enabled":true,"minReplicas":3,"maxReplicas":8}},
-  {"op":"replace","path":"/spec/workers/0/replicas","value":3}
+kubectl patch kdccluster {cluster} -n {backing-namespace} --type=json -p '[
+  {"op":"replace","path":"/spec/version","value":"{target-version}"},
+  {"op":"replace","path":"/spec/workers/0/image","value":"{paired-worker-image}"}
 ]'
 ```
 
-**What triggers a scale-up:** a pod is Pending and unschedulable, and its
-CPU/memory requests would fit a new node of this pool. Pods that a new node
-cannot help — waiting on a PersistentVolumeClaim, requesting more than one
-node of this pool provides, or pinned by node affinity to somewhere else —
-do not trigger scaling.
+Include one image operation per worker pool. Do not derive an image tag from the
+Kubernetes version; use the exact live catalog value.
 
-**Scale-down is not performed.** Nodes are only added. Remove them by
-lowering `replicas` (or `maxReplicas`) yourself.
+See [upgrade-version.md](upgrade-version.md).
 
-Optional tuning — omit for sensible defaults (120s stabilization, at most 2
-nodes per step, 300s between scale-ups):
+## Managed Cluster etcd Encryption
+
+Enable the standard integration on `KdcCluster` rather than creating a key
+manually:
 
 ```yaml
-autoscaling:
-  enabled: true
-  minReplicas: 2
-  maxReplicas: 8
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 120   # sustained demand before acting
-      maxNodesPerStep: 2                # never add more than this at once
-      cooldownSeconds: 300              # minimum gap between scale-ups
-```
-
-Disable without losing the settings:
-
-```bash
-kubectl patch kdccluster {cluster} -n {namespace} --type=json \
-  -p '[{"op":"replace","path":"/spec/workers/0/autoscaling/enabled","value":false}]'
-```
-
-#### Check what autoscaling is doing
-
-```bash
-kubectl get kdccluster {cluster} -n {namespace} \
-  -o jsonpath='{.status.workerPools[0].autoscaling}' | jq
-```
-
-```json
-{
-  "mode": "PendingPods",
-  "minReplicas": 2,
-  "maxReplicas": 8,
-  "lastScaleTime": "2026-07-31T13:49:24Z",
-  "lastScaleReason": "3 unschedulable pod(s) fit this pool; +1 node(s)",
-  "limitedBy": ""
-}
-```
-
-`limitedBy` is the field to read when the pool did **not** grow although
-pods are pending:
-
-| Value | Meaning |
-|---|---|
-| `Max` | At `maxReplicas` — raise it if more capacity is wanted |
-| `Quota` | Organization/project quota would be exceeded |
-| `Placement` | The infrastructure could not place another node |
-| `RollingUpdate` | A rollout is in progress; scaling resumes after it |
-| *(empty)* | Not constrained |
-
-The same information appears on the cluster's Workers tab in the console,
-where autoscaling can also be enabled and tuned without kubectl.
-
-### Upgrade Kubernetes Version
-
-```bash
-kubectl patch kdccluster {cluster} -n {namespace} --type=json -p '[
-  {"op":"replace","path":"/spec/version","value":"v1.35.0"},
-  {"op":"replace","path":"/spec/workers/0/image","value":"docker.io/shalb/ubuntu-2404-container-disk:v1.35.2"}
-]'
-```
-
-See @upgrade-version.md for constraints and procedures.
-
-### Access Kubeconfig
-
-The kubeconfig secret contains multiple keys for different access methods:
-
-| Key | Endpoint | Use |
-|-----|---------|-----|
-| `admin.conf` | `https://{cluster}-cp-{ns}.kube-dc.cloud:443` | **External public URL** (recommended) |
-| `super-admin.conf` | `https://{internal-ip}:6443` | Internal VPC IP |
-| `super-admin.svc` | `https://{cluster}-cp.{ns}.svc:6443` | Internal Service (mgmt cluster only) |
-
-```bash
-# Extract kubeconfig with external public endpoint (recommended)
-kubectl get secret {cluster}-cp-admin-kubeconfig -n {namespace} \
-  -o jsonpath='{.data.admin\.conf}' | base64 -d > /tmp/{cluster}-kubeconfig
-chmod 600 /tmp/{cluster}-kubeconfig
-
-# Use it
-kubectl --kubeconfig=/tmp/{cluster}-kubeconfig get nodes
-kubectl --kubeconfig=/tmp/{cluster}-kubeconfig get pods -A
-```
-
-See @kubeconfig-access.md for details.
-
-### Monitor Status
-
-```bash
-# Watch cluster phase
-kubectl get kdccluster {cluster} -n {namespace} -w
-
-# Check worker node status (via tenant kubeconfig)
-kubectl --kubeconfig=/tmp/{cluster}-kubeconfig get nodes
-
-# Check cluster events
-kubectl describe kdccluster {cluster} -n {namespace}
-```
-
-## Verification
-
-After cluster operations, verify:
-
-### After Scale
-```bash
-# 1. Check worker count matches desired
-kubectl get kdccluster {cluster} -n {namespace} -o jsonpath='{.spec.workers[0].replicas}'
-kubectl --kubeconfig=/tmp/{cluster}-kubeconfig get nodes
-# Expected: Node count matches total replicas across all pools
-
-# 2. All nodes Ready
-kubectl --kubeconfig=/tmp/{cluster}-kubeconfig get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}'
-# Expected: All True
-```
-
-### After Upgrade
-```bash
-# 1. Check cluster version updated
-kubectl get kdccluster {cluster} -n {namespace} -o jsonpath='{.spec.version}'
-
-# 2. Verify nodes are running new version
-kubectl --kubeconfig=/tmp/{cluster}-kubeconfig get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.nodeInfo.kubeletVersion}{"\n"}{end}'
-# Expected: All nodes on new version
-
-# 3. Check cluster phase
-kubectl get kdccluster {cluster} -n {namespace} -o jsonpath='{.status.phase}'
-# Expected: Ready
-```
-
-**Success**: Node count matches, all nodes Ready, version updated.
-**Failure**: `kubectl describe kdccluster {cluster} -n {namespace}` — check conditions and events.
-
-## Etcd encryption-at-rest + KEK rotation
-
-When a managed K8s cluster opts into etcd encryption-at-rest, the
-platform auto-creates a `<cluster>-etcd` `KMSKey` (purpose=etcd) in
-the project namespace and attaches a sidecar to the cluster's
-control-plane pods that wraps every etcd Secret with that KEK via
-OpenBao Transit.
-
-### Enable encryption + KEK rotation at create time
-
-```yaml
-apiVersion: k8s.kube-dc.com/v1alpha1
-kind: KdcCluster
-metadata:
-  name: {cluster-name}
-  namespace: {project-namespace}
 spec:
-  # ... usual fields ...
   encryption:
     etcd:
       enabled: true
       kekRotation:
         enabled: true
-        interval: 90d                # 7d..730d; reconciler rejects intervals < backup retention
+        interval: 90d
 ```
 
-The platform mirrors `kekRotation` onto the auto-managed
-`<cluster>-etcd` `KMSKey`'s `spec.rotation` block. The M3 KMSKey
-controller schedules the rotations; old key versions remain alive
-for decryption indefinitely (advancing `min_decryption_version` is
-manual + irreversible — never do it casually).
+When no explicit key reference is set, the platform creates and manages
+`{cluster}-etcd` in the same Project. Change its rotation policy through the
+`KdcCluster` spec. Do not delete or schedule deletion of this key while the
+Managed Cluster or its encrypted backups depend on it.
 
-### Change the rotation schedule on an existing cluster
+## Monitor and Verify
 
 ```bash
-kubectl patch kdccluster {cluster} -n {project-namespace} --type=merge -p '{
-  "spec": {
-    "encryption": {
-      "etcd": {
-        "kekRotation": {
-          "enabled": true,
-          "interval": "180d"
-        }
-      }
-    }
-  }
-}'
+kubectl get kdccluster {cluster} -n {backing-namespace} -w
+kubectl describe kdccluster {cluster} -n {backing-namespace}
+kubectl --kubeconfig=/tmp/{cluster}-kubeconfig get nodes
 ```
 
-### Inspect rotation state
-
-```bash
-kubectl get kdccluster {cluster} -n {project-namespace} \
-  -o jsonpath='{.status.encryption.kekRotation}{"\n"}'
-# Expected: {enabled, currentVersion, lastRotatedTime, nextRotationTime, minDecryptionVersion}
-```
-
-### What NOT to do
-
-- **Don't patch the `<cluster>-etcd` `KMSKey` directly.** The platform reconciles its `spec.rotation` from the `KdcCluster` every pass; direct edits get reverted. Set the policy on the `KdcCluster`.
-- **Don't delete or schedule-deletion of the auto-managed `<cluster>-etcd` `KMSKey`.** Every etcd row + every encrypted backup envelope wraps a DEK with this key. The KMSKey is provisioned with `deletionPolicy: retain` for this reason.
-- **Don't advance `min_decryption_version`.** It's irreversible — anything below the new floor becomes unrecoverable, including older backups still wrapped with that version.
+After scaling, compare Ready nodes with the sum of desired replicas. After an
+upgrade, verify both `spec.version` and each node's
+`.status.nodeInfo.kubeletVersion`. Completion time depends on images,
+placement, draining, and workload disruption budgets.
 
 ## Safety
-- Sequential minor version upgrades only (v1.34 → v1.35, no skipping)
-- No downgrades supported
-- Worker image MUST match the Kubernetes version
-- **Always use `storageType: datavolume`** — this is the production default
-- Rolling update: new worker Ready before old one removed (zero downtime)
-- Prefer `--type=json` patch over merge patch to avoid dropping fields
-- Autoscaling only ADDS nodes; it never removes them. Shrink a pool yourself
-- While autoscaling is enabled, `replicas` must stay within
-  `[minReplicas, maxReplicas]` — patch both together when changing bounds
-- Never expose kubeconfig contents in chat output
-- Write kubeconfig to temp file with `chmod 600`
-- Clean up temporary kubeconfig files after use
-- For etcd encryption-at-rest: never patch / delete / advance min_decryption_version on the `<cluster>-etcd` KMSKey directly — manage policy via `KdcCluster.spec.encryption.etcd.kekRotation`
+
+- Never print kubeconfig contents; write them with mode `0600` and remove the
+  temporary file after use.
+- Check quota before scaling up.
+- Use JSON Patch for list entries.
+- Keep the last Ready worker pool.
+- Use only supported version and image pairs.
+- Manage an auto-created etcd KMS key through the `KdcCluster` spec.

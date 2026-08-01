@@ -254,11 +254,9 @@ func (p *ClusterProbe) Run(ctx context.Context) ProbeResult {
 	// to this cluster, surface that with the right command to copy/paste.
 	// Pin to the master realm — the fleet view is a platform-operator
 	// tool whose canonical identity is `kube-dc login --admin`. Without
-	// this pin, GetCredential falls back to the legacy single-file
-	// path or the first realm-suffixed file it finds, which on a system
-	// with both a tenant and an admin cached returns the (wrong)
-	// tenant token and the apiserver answers 401. (See installer-prd
-	// §16.5 — admin = master realm, tenant = per-org realm.)
+	// this pin, a legacy single-file cache can contain the wrong identity;
+	// realm-specific caches deliberately reject unqualified lookup. (See
+	// installer-prd §16.5: admin = master realm, Organization = per-org realm.)
 	cred, err := p.provider.GetCredentialForRealm(p.apiURL, "master")
 	if err != nil {
 		hint, action := hintLogin(p.apiURL)
@@ -887,7 +885,7 @@ func hintLogin(apiURL string) (string, *FixAction) {
 		}
 		domain = rest
 	}
-	hint := fmt.Sprintf("run `kube-dc login --domain %s --admin`  (or --org <your-org> for tenant)", domain)
+	hint := fmt.Sprintf("run `kube-dc login --domain %s --admin` (or --org <organization> for Organization access)", domain)
 	return hint, &FixAction{Kind: FixActionAdminLogin, Domain: domain}
 }
 

@@ -75,8 +75,9 @@ This deletes every cached token in `~/.kube-dc/credentials/` and every `kube-dc/
 The exec plugin can't find a valid cached token. Run the matching login again:
 
 ```bash
-# tenant
+# Organization login, followed by an explicit Project selection
 kube-dc login --domain <domain> --org <org>
+kube-dc use <domain>/<org>/<project>
 
 # admin
 kube-dc login --domain <domain> --admin
@@ -94,7 +95,7 @@ The OAuth flow worked but Keycloak says you're not a platform admin. Ask someone
 
 ### Browser shows "We are sorry... Client not found" (and the CLI hangs)
 
-The cluster's master realm doesn't have the `kube-dc-admin` PKCE OIDC client yet. Run the setup script — it's idempotent and won't disturb the existing flux-web client:
+The cluster's master realm does not have the `kube-dc-admin` PKCE OIDC client yet. Review and run the setup script from the Fleet version deployed to this cluster:
 
 ```bash
 cd <fleet-repo-path>
@@ -103,7 +104,7 @@ export KUBECONFIG=~/.kube/<cluster>_config
 bash bootstrap/setup-keycloak-oidc.sh <cluster>
 ```
 
-Then retry `kube-dc login --domain <domain> --admin`. The script auto-fixes a known stale-config case where early versions registered the client with port-less localhost redirects (Keycloak silently accepts these but rejects them at auth time). It's safe to re-run anytime.
+Then retry `kube-dc login --domain <domain> --admin`. The script reconciles known stale loopback-callback configurations. Review identity changes before applying them to a production realm and verify the existing platform clients afterward.
 
 Verify the client now exists by probing the auth endpoint:
 
@@ -116,9 +117,14 @@ curl -s -o /dev/null -w "%{http_code}\n" \
 
 ### Browser shows "Invalid parameter: redirect_uri"
 
-The `kube-dc-admin` client exists but its `redirectUris` registration is too narrow. Re-run `setup-keycloak-oidc.sh <cluster>` — recent versions PUT the canonical config (`redirectUris: ["*"]`) over any stale entry.
+The `kube-dc-admin` client and the CLI disagree about the loopback callback.
+Re-run the version-matched `bootstrap/setup-keycloak-oidc.sh <cluster>`, then
+inspect the client in Keycloak and retry the login.
 
-Why universal `*`? Keycloak's wildcard matching is path-only, not port — `http://localhost/*` doesn't match `http://localhost:55432/callback`. PKCE's code-verifier (which never leaves the CLI process) is the real security boundary, so `*` is acceptable for native CLIs. Same pattern the tenant `kube-dc` client has shipped since v0.1.
+Do not add an unrestricted redirect URI as an ad hoc workaround. PKCE protects
+the authorization code, but it does not make redirect-URI validation optional.
+Keep this public client limited to loopback callbacks supported by the shipped
+CLI, and do not add web origins or production hostnames to it.
 
 ### `kubectl get nodes` says forbidden under `--admin`
 
@@ -126,16 +132,25 @@ The OIDC chain is fine but the cluster-side RBAC isn't wired. Check ["Is my admi
 
 ### A cluster row shows `Drifted`
 
-The image tag pinned in `cluster-config.env` differs from what's actually running. The right pane shows which Deployment is drifted and what tag is expected. Either:
+The image reference pinned in `cluster-config.env` differs from what is
+running. Treat the Fleet repository as desired state:
 
-- The `cluster-config.env` is stale (an operator forgot to bump it after a `kubectl set image`) — bump and commit.
-- Flux hasn't reconciled yet — `flux reconcile kustomization platform --with-source`.
+1. Confirm the intended immutable tag or digest in `cluster-config.env`.
+2. Commit and push the correction.
+3. Run `flux reconcile kustomization platform --with-source`.
+4. Verify that the Deployment and Fleet pin converge.
+
+A direct `kubectl set image` is incident-only drift. Record it, then either
+commit the same reference to Fleet or let Flux restore the reviewed value.
 
 ### My `~/.kube/config` got broken
 
-The CLI never overwrites or removes contexts it didn't create. If you see a kube-dc bug here, restore from your most recent kubeconfig backup and file an issue with the diff.
+Login and logout operations target Kube-DC context-name patterns. The Contexts
+tab is broader: pressing `d` deliberately deletes whichever row is selected,
+including an `EXTERNAL` context, and does not ask for confirmation.
 
-That said, your `kubectx`-managed contexts and any vendor exec plugins are safe by design — only `kube-dc/*`, `kube-dc-*`, and `kube-dc@*` entries are touched.
+Restore your most recent kubeconfig backup, identify the operation that changed
+the file, and include a redacted before/after diff when reporting a CLI issue.
 
 ### "I logged in but kubectx doesn't show the new context"
 
@@ -223,11 +238,8 @@ docker manifest inspect --verbose <registry>/<image>:<tag> \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['Descriptor']['digest'])"
 ```
 
-If they differ, the deployment has `imagePullPolicy: IfNotPresent` and a node had a stale image cached against that tag. The fix is to pin the deployment to the digest, which always forces a fresh pull:
-
-```bash
-kubectl set image -n kube-dc deployment/kube-dc-manager \
-  manager=<registry>/<image>@sha256:<digest-from-registry>
-```
-
-Bumping the tag (e.g. `vX.Y.Z-devN+1`) and pushing again works too — but digest-pinning is cheaper and more reliable when the tag was reused.
+If they differ, the Deployment uses `imagePullPolicy: IfNotPresent` and the
+tag was reused on a node. Publish a new immutable tag or select the reviewed
+digest, update the corresponding Fleet pin, commit, push, and reconcile Flux.
+Do not make `kubectl set image` the durable fix: it creates drift and Flux can
+replace it on the next reconciliation.

@@ -1,12 +1,12 @@
 # Kube-DC Cloud
 
-Welcome to Kube-DC Cloud — a managed cloud platform where you deploy applications, virtual machines and Kubernetes clusters without operating the infrastructure underneath.
+Welcome to Kube-DC Cloud — a managed cloud platform where you deploy applications, virtual machines, and Managed Clusters without operating the infrastructure underneath.
 
 ## What You Can Do
 
 - **Deploy to Projects** — Take your Project's kubeconfig and deploy applications, compatible Helm charts and VMs directly — no cluster to provision → [Projects](kubernetes-projects.md)
 - **Run Virtual Machines** — Launch Linux and Windows VMs with a few clicks or via kubectl
-- **Provision Managed Kubernetes Clusters** — A tenant-controlled cluster of your own, for operators, CRDs and cluster-scoped software
+- **Provision Managed Clusters** — A tenant-controlled cluster of your own, for operators, CRDs and cluster-scoped software
 - **Connect and Expose Workloads** — Private networks per Project, public and floating IPs, load balancers, HTTPS ingress
 - **Store and Protect Data** — Block storage (PVC), S3-compatible object storage, managed databases, backups
 - **Manage Teams and Billing** — Users, roles and billing across your organization

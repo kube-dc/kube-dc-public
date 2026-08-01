@@ -5,8 +5,10 @@ on:
     branches:
       - main
     paths:
+      - '.github/workflows/deploy-docs.yml'
       - 'docs/**'
       - 'docs-ui/**'
+      - 'static/diagrams/**'
   workflow_dispatch:
 
 permissions:
@@ -36,6 +38,10 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+        working-directory: docs-ui
+
+      - name: Typecheck Docusaurus
+        run: npm run typecheck
         working-directory: docs-ui
 
       - name: Build Docusaurus

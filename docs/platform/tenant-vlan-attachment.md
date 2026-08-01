@@ -1,8 +1,8 @@
-# Tenant attachment to a physical VLAN
+# Attaching a Project to a physical VLAN
 
-Kube-DC can put a tenant's workloads on a customer-owned physical VLAN, so they
+Kube-DC can put a Project's workloads on a customer-owned physical VLAN, so they
 are layer-2 adjacent to that customer's own hardware while their default route
-stays on the tenant VPC interface.
+stays on the Project VPC interface.
 
 There are two things to operate here, and keeping them apart is the whole point:
 
@@ -10,21 +10,21 @@ There are two things to operate here, and keeping them apart is the whole point:
   (`ProviderNetwork`, VLAN ID) pair. You declare it once, after the switch really
   delivers the tag to the nodes.
 - **Who may use it.** A `FabricSegmentAllocation` offers that wire to one
-  **organization**. Their own admin then binds it to one of their **projects**,
+  **Organization**. An Organization admin then binds it to one of their **Projects**,
   and can unassign and re-bind it without involving you.
 
 ```
    FabricSegment          FabricSegmentAllocation        ProjectNetwork
-   (the wire)             (which org may use it)         (which project holds it)
+   (the wire)             (which Organization may use it)         (which Project holds it)
    ───────────────        ───────────────────────        ────────────────────────
-   platform admin    ──►  platform admin            ──►  ORG ADMIN, reversibly
+   platform admin    ──►  platform admin            ──►  ORGANIZATION ADMIN
    pn-ext-4014            org: acme                      project: production
 ```
 
 The user-facing half of this is documented in
-[Datacenter VLANs](/cloud/datacenter-vlans) on the tenant docs. For where this
+[Datacenter VLANs](/cloud/datacenter-vlans) in the Cloud guide. For where this
 sits in the wider network design — overlay vs. underlay, VPCs, provider bridges
-— see [Networking Architecture](architecture-networking.md#attaching-a-project-to-a-physical-vlan).
+— see [Networking Architecture](architecture-networking.md#attaching-a-project-to-a-datacenter-vlan).
 
 ---
 
@@ -36,11 +36,11 @@ Deliberately narrow. Anything outside this is refused at admission:
 - `ProjectNetwork.spec.mode: l2`
 - a real IPv4 gateway on the customer segment
 - no logical gateway, U2O interconnection, custom-VPC routing, or live VMI hotplug
-- controller-assigned IP/MAC/route state; tenant Multus runtime overrides and
+- controller-assigned IP/MAC/route state; user-supplied Multus runtime overrides and
   provider-scoped IPAM overrides are refused
 - the reserved segment may be attached only through the generated NAD, never as a
   workload or Namespace primary `logical_switch`
-- **one project per physical broadcast domain**, and one organization per wire
+- **one Project per physical broadcast domain**, and one Organization per wire
 
 ## Enabling the feature
 
@@ -79,14 +79,14 @@ Confirm all of the following before declaring a segment:
    documented reservations and any range the customer plans to grow into. Kube-DC
    allocates freely from whatever you leave open, and a collision lands on
    equipment you do not operate and cannot see.
-4. The VLAN CIDR does **not overlap** the tenant's project VPC subnet, nor any
-   other VLAN the same project holds. Nothing validates this today — an overlap
+4. The VLAN CIDR does **not overlap** the Project's VPC subnet, nor any
+   other VLAN the same Project holds. Nothing validates this today — an overlap
    produces ambiguous connected routes inside the workload and is very hard to
    diagnose from the outside.
-5. The VLAN is dedicated to one Kube-DC project. A second project on the same
+5. The VLAN is dedicated to one Kube-DC Project. A second Project on the same
    broadcast domain is refused even under another Subnet or NAD name.
 6. At least two schedulable manager nodes are available.
-7. If a tenant will attach one workload to several VLANs, at least one node
+7. If a Project user will attach one workload to several VLANs, at least one node
    carries **all** of them. Admission adds a required node constraint per VLAN and
    Kubernetes ANDs them, so disjoint ready-node sets leave the pod unschedulable.
 
@@ -130,7 +130,7 @@ kubectl get fabricsegment pn-ext-4014 \
 `status.ready` must be `true`, `readyNodes` must match the intended nodes, and
 `foreignObjects` must be empty. `foreignObjects` lists kube-ovn objects sitting on
 this wire that Kube-DC did not create — an alias Subnet or duplicate Vlan can
-bridge a second tenant onto the same broadcast domain, so it blocks admission.
+bridge an unintended Project onto the same broadcast domain, so it blocks admission.
 
 Segments and their allocations are visible under **Infrastructure → VLANs** in
 the admin console.
@@ -139,14 +139,14 @@ the admin console.
 
 ---
 
-## Step 2 — allocate the wire to an organization
+## Step 2 — allocate the wire to an Organization
 
-This is what delegates day-to-day assignment to the tenant. Use **Infrastructure →
-VLANs → Allocations → Allocate to organization**.
+This is what delegates day-to-day assignment to an Organization admin. Use **Infrastructure →
+VLANs → Allocations → Allocate to Organization**.
 
 ![Allocations tab](images/vlan-admin-2-allocations.png)
 
-![Allocating a segment to an organization](images/vlan-admin-3-allocate-modal.png)
+![Allocating a segment to an Organization](images/vlan-admin-3-allocate-modal.png)
 
 Or by manifest:
 
@@ -169,14 +169,14 @@ Two things about this object are load-bearing:
 
 **Its name is the segment name.** There is no `segmentRef` field, and adding one
 would be a regression. Naming the allocation after the wire makes "one
-organization per broadcast domain" an atomic property of storage — a second
+Organization per broadcast domain" an atomic property of storage — a second
 allocation collides with `AlreadyExists`. A `segmentRef` field plus a uniqueness
 check in admission is a read-then-write race: two concurrent passes each list,
 each see no conflict, and both proceed.
 
-**The addressing lives here, not on the tenant's binding.** These are physical
-facts about the customer's segment, and admission requires a tenant-created
-`ProjectNetwork` to match them exactly. Without that, an org admin — who holds
+**The addressing lives here, not on the Project binding.** These are physical
+facts about the customer's segment, and admission requires an Organization-admin-created
+`ProjectNetwork` to match them exactly. Without that, an Organization admin — who holds
 `create` on `ProjectNetwork` — could bind their allocated wire with a CIDR
 covering the customer's entire subnet, a gateway pointing at their own workload,
 or empty `excludeIps` that lets IPAM hand out addresses the customer's hardware
@@ -194,15 +194,15 @@ kubectl get fabricsegmentallocation
 
 | Phase | Meaning |
 |---|---|
-| `Allocated` | The organization holds it; no project has taken it. |
-| `InUse` | A project holds it. |
+| `Allocated` | The Organization holds it; no Project has taken it. |
+| `InUse` | A Project holds it. |
 | `Releasing` | The binding is draining. Not yet re-assignable. |
 
 ---
 
-## Step 3 — the tenant binds a project
+## Step 3 — an Organization admin binds a Project
 
-Nothing for you to do. The organization's admin assigns and unassigns from their
+Nothing for you to do. The Organization admin assigns and unassigns from their
 own console, as described in [Datacenter VLANs](/cloud/datacenter-vlans).
 
 The controller claims the segment with a `VlanReservation`, creates the Kube-OVN
@@ -218,7 +218,7 @@ kubectl -n acme-production get network-attachment-definition
 ### Binding directly, as the platform admin
 
 You can still create a `ProjectNetwork` yourself — for a cluster where nobody has
-delegated yet, or to reproduce a tenant's problem:
+delegated yet, or to reproduce a Project user's issue:
 
 ```yaml
 apiVersion: kube-dc.com/v1
@@ -250,27 +250,26 @@ restrictions exist so a binding cannot re-home a wire behind your back.
 
 ## Security model
 
-Delegation means tenants hold cluster-scoped verbs on `ProjectNetwork`. RBAC
+Delegation gives Organization administrators narrowly scoped cluster-level verbs on `ProjectNetwork`. RBAC
 cannot express "only your own organization" for a cluster-scoped kind, so **RBAC
 is only a coarse gate and admission is the real boundary**.
 
-### The tenant ClusterRole
+### The delegated Organization ClusterRole
 
 `kube-dc:projectnetwork-tenant` grants exactly `create` and `delete`, bound
 per-organization to the group `<org>:org-admin`. Do not add verbs to it.
 
-- **No `update`/`patch`.** Every `ProjectNetworkSpec` field is immutable, so a
-  tenant UPDATE can only touch metadata — including the controller's teardown
+- **No `update`/`patch`.** Every `ProjectNetworkSpec` field is immutable, so an Organization administrator UPDATE can only touch metadata — including the controller's teardown
   finalizer. Strip that and delete, and the binding disappears *without draining*:
   the NAD and reservation go while a workload's Multus interface is still on the
   wire, the allocation reads free, and the next assignment puts two projects on
-  one L2 segment. The webhook denies tenant UPDATEs independently, but do not rely
+  one L2 segment. The webhook denies user UPDATEs independently, but do not rely
   on that alone.
 - **No `get`.** Binding names are predictable (`<segment>-<project>`) and
   admission cannot filter a read at all, so a cluster-scoped `get` would let any
-  org admin read another organization's project names, subnets and gateways.
+  Organization admin read another Organization's Project names, subnets and gateways.
 
-The cost is that tenants can `kubectl create -f` and `kubectl delete <name>` but
+The cost is that Organization admins can `kubectl create -f` and `kubectl delete <name>` but
 not `apply` or `get`; the console serves their reads, filtered.
 
 ### What admission enforces
@@ -279,20 +278,20 @@ On `ProjectNetwork` CREATE / UPDATE / DELETE:
 
 1. the caller is a platform admin, or carries `<spec.org>:org-admin`;
 2. the live `Organization` UID matches the one pinned on the allocation;
-3. an allocation exists for the segment, is not being reclaimed, and names that org;
+3. an allocation exists for the segment, is not being reclaimed, and names that Organization;
 4. the binding's addressing matches the allocation exactly;
-5. the project exists in that organization;
+5. the Project exists in that Organization;
 6. the segment is not already bound;
-7. no tenant UPDATE, ever.
+7. no user UPDATE, ever.
 
 Identity comes from `AdmissionRequest.UserInfo.Groups`, which the API server
 derives from the authenticated token. Per-organization OIDC stamps the realm name
 onto every group, so `acme:org-admin` can only be issued by the `acme` realm — a
-tenant cannot mint a group naming somebody else's organization.
+user cannot mint a group naming somebody else's Organization.
 
 DELETE is validated too, and this is easy to miss: a cluster-scoped `delete` takes
-a *name*, and other orgs' binding names are guessable. Without the rule, any org
-admin could tear down any other organization's VLAN grant.
+a *name*, and other Organizations' binding names are guessable. Without the rule, any Organization
+admin could tear down another Organization's VLAN grant.
 
 ### Organization names are not identities
 
@@ -308,11 +307,11 @@ explicitly. The console shows a warning icon on such a row.
 ### Limits worth knowing
 
 - **In-cluster ServiceAccounts cannot assign VLANs.** Authorization derives from
-  the realm-prefixed OIDC group, which only human org admins carry. GitOps driven
-  from inside a project namespace cannot bind a wire; assignment is a human,
+  the realm-prefixed OIDC group, which only human Organization admins carry. GitOps driven
+  from inside a Project backing namespace cannot bind a wire; assignment is a human,
   audited action.
 - **Anyone holding `impersonate` on groups can forge `<org>:org-admin`.** That is
-  cluster-admin territory and no tenant role grants it, but the group check is
+  cluster-admin territory and no Project Role grants it, but the group check is
   exactly as strong as the set of principals allowed to impersonate.
 - **Deleting the CRD** removes stored allocations without per-object admission.
 
@@ -332,9 +331,9 @@ kubectl delete fabricsegmentallocation pn-ext-4014
 # project "production"; unassign it and let the wire drain first
 ```
 
-Ask the tenant to unassign, or delete the `ProjectNetwork` yourself, wait for
-teardown, then reclaim. In the console, **Reclaim** is disabled while a project
-holds the wire and the tooltip names that project.
+Ask the Organization admin to unassign, or delete the `ProjectNetwork` yourself, wait for
+teardown, then reclaim. In the console, **Reclaim** is disabled while a Project
+holds the wire and the tooltip names that Project.
 
 ---
 
@@ -412,7 +411,7 @@ kubectl get projectnetwork -o custom-columns='NAME:.metadata.name,UID:.metadata.
 
 ## Attaching workloads
 
-Tenant-facing detail is in [Datacenter VLANs](/cloud/datacenter-vlans). What
+Project-user instructions are in [Datacenter VLANs](/cloud/datacenter-vlans). What
 matters operationally:
 
 Admission injects required node affinity and provider-scoped port security,
@@ -423,12 +422,13 @@ VMs this happens on the generated `virt-launcher` Pod, not on the
 
 A live Pod/VMI attachment set is immutable. Recreate the Pod, or stop the VM and
 update its template, so admission and CNI run in order. Live VMI network hotplug
-to a new tenant VLAN is refused, and live migration is not supported for
+to a new Project VLAN is refused, and live migration is not supported for
 VLAN-attached VMs.
 
-Refusals name which of three problems occurred — another project's namespace, a
-VLAN not assigned to this project (listing the ones that are), or genuinely
-unsupported custom networking — so a tenant ticket usually answers itself.
+Refusals name which of three problems occurred: a namespace backing another
+Project, a VLAN not assigned to this Project (with the valid assignments listed),
+or unsupported custom networking. A support ticket from a Project user usually
+contains enough detail to identify the cause.
 
 ---
 
@@ -436,34 +436,67 @@ unsupported custom networking — so a tenant ticket usually answers itself.
 
 ### A runnable smoke test
 
-Use a diagnostic image — `busybox` lacks `ip -br` and `ping -M do`.
+Project admission blocks `kubectl exec`, including for platform OIDC
+administrators. Run the checks inside a short-lived Job and read the results
+from its logs. The command discovers the VLAN interface from the target route;
+it does not assume the attachment is `net1`.
 
 ```bash
 NS=acme-production
-NET=pn-ext-4014-production          # the binding/NAD name
+kubectl delete job -n "$NS" vlan-check --ignore-not-found
 
-kubectl run vlan-check -n "$NS" --restart=Never --image=nicolaka/netshoot   --overrides="{\"metadata\":{\"annotations\":{\"k8s.v1.cni.cncf.io/networks\":\"$NS/$NET\"}}}"   --command -- sleep 3600
+kubectl apply -f - <<'EOF'
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vlan-check
+  namespace: acme-production
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      annotations:
+        k8s.v1.cni.cncf.io/networks: acme-production/pn-ext-4014-production
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: check
+          image: nicolaka/netshoot
+          env:
+            - name: TARGET
+              value: 192.0.2.1
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              IFACE="$(ip route get "$TARGET" | awk '{for (i=1; i<=NF; i++) if ($i == "dev") {print $(i+1); exit}}')"
+              test -n "$IFACE"
+              echo "VLAN interface: $IFACE"
+              ip -4 -br addr show dev "$IFACE"
+              ping -c3 -I "$IFACE" "$TARGET"
+              ping -c1 -M do -s 1372 -I "$IFACE" "$TARGET"
+              if ping -c1 -M do -s 1500 -I "$IFACE" "$TARGET"; then
+                echo "unexpected success above the configured MTU" >&2
+                exit 1
+              fi
+              echo "oversized DF packet failed as expected"
+EOF
 
-kubectl wait --for=condition=Ready pod/vlan-check -n "$NS" --timeout=120s
-
-# which interface actually carries the VLAN
-kubectl get pod vlan-check -n "$NS"   -o jsonpath='{.metadata.annotations.k8s\.v1\.cni\.cncf\.io/network-status}'
-
-# reachability and MTU (substitute the interface from above)
-kubectl exec -n "$NS" vlan-check -- ip -4 -br addr
-kubectl exec -n "$NS" vlan-check -- ping -c3 -I net1 192.0.2.1
-kubectl exec -n "$NS" vlan-check -- ping -c1 -M do -s 1372 -I net1 192.0.2.1   # passes
-kubectl exec -n "$NS" vlan-check -- ping -c1 -M do -s 1500 -I net1 192.0.2.1   # fails
-
-kubectl delete pod vlan-check -n "$NS"
+kubectl wait -n "$NS" --for=condition=Complete job/vlan-check --timeout=120s
+kubectl logs -n "$NS" job/vlan-check
+kubectl get pod -n "$NS" -l job-name=vlan-check \
+  -o jsonpath='{.items[0].metadata.annotations.k8s\.v1\.cni\.cncf\.io/network-status}'
+echo
+kubectl delete job -n "$NS" vlan-check
 ```
 
-Repeat on a second VLAN-capable node with `--overrides` adding a `nodeName`, to
-prove cross-node traffic on the segment.
+Run the same Job on a second VLAN-capable node by adding `nodeName` under the
+Pod template's `spec`. Use a target on the other node to prove cross-node
+traffic on the segment.
 
 :::warning
-Delete the test pod before unassigning the wire. Teardown blocks on any remaining
-attachment intent, and a leftover pod will look like a stuck unassign.
+Delete the test Job before unassigning the wire. Teardown blocks on any
+remaining attachment intent, and its leftover Pod will look like a stuck
+unassign.
 :::
 
 ### Full checklist
@@ -480,7 +513,7 @@ Before presenting the feature as operational on a cluster, prove all of these:
 - removing the network annotation from a live Pod/VMI is denied;
 - a second `ProjectNetwork` cannot claim the segment, and a direct
   `VlanReservation` mutation or deletion is denied;
-- **an org admin cannot bind a segment allocated to another organization, delete
+- **an Organization admin cannot bind a segment allocated to another organization, delete
   another organization's binding, allocate a wire to themselves, alter the
   addressing, or bind a wire that is already held;**
 - **unassign followed by re-assign to a different project succeeds, and the
@@ -497,6 +530,6 @@ Before presenting the feature as operational on a cluster, prove all of these:
 
 ## Related
 
-- [Datacenter VLANs](/cloud/datacenter-vlans) — the tenant-facing half
+- [Datacenter VLANs](/cloud/datacenter-vlans) — the Project-user guide
 - [External Networking](networking-external.md) — provider networks and platform VLANs
 - [Networking Architecture](architecture-networking.md) — how Kube-OVN is laid out

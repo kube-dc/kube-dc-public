@@ -2,7 +2,9 @@
 
 The `kube-dc` CLI ships two surfaces:
 
-- **Tenant-facing** — `kube-dc login`, `kube-dc use`, `kube-dc ns`. Browser-based OIDC for tenants of a Kube-DC cluster. Documented in the user guide under [CLI – Console & IDE Access](/cloud/cli-kubeconfig).
+- **Organization-facing** — `kube-dc login` authenticates with browser-based
+  OIDC and `kube-dc use` selects a named Project context. `kube-dc ns` remains
+  a compatibility selector for backing namespaces. See [CLI, Console, and IDE Access](/cloud/cli-kubeconfig).
 - **Operator-facing** (this section) — `kube-dc bootstrap …`. Bubble Tea TUIs and subcommands for cluster operators: browse a fleet of clusters, log in as a platform admin, manage kubeconfig contexts safely, recover via break-glass when OIDC is broken.
 
 This chapter set is a hands-on guide to the operator surface. Skim the headings; run the commands you need.
@@ -27,7 +29,12 @@ bootstrap/                      # one-shot setup scripts (Keycloak OIDC, Flux in
 .sops.yaml                      # age recipients
 ```
 
-Flux on each cluster reconciles `clusters/<name>/` to the cluster's actual state. The CLI never edits live clusters directly — it edits the fleet repo (via your local clone) or talks to the apiserver via OIDC. This keeps every change reviewable and reversible.
+Flux on each cluster reconciles `clusters/<name>/` to the cluster's actual
+state. Most configuration changes go through the Fleet repository, but the CLI
+also performs controlled live operations for bootstrap, RKE2 installation,
+node removal, endpoint anchors, authentication, and break-glass recovery.
+Preview supported operations where a dry-run is available and keep durable
+configuration in Git.
 
 If you don't have a fleet repo yet, see [Installation Guide](installation-guide.md) for greenfield setup.
 
@@ -37,22 +44,14 @@ If you don't have a fleet repo yet, see [Installation Guide](installation-guide.
 
 ### From a release (recommended)
 
-The CLI is one Go binary (~16 MB). Pre-built binaries are published on every release of [kube-dc-public](https://github.com/kube-dc/kube-dc-public/releases):
+Pre-built binaries and `checksums.txt` are published with each
+[kube-dc-public release](https://github.com/kube-dc/kube-dc-public/releases).
+Select an approved immutable version, download the matching platform asset, and
+verify it against that release's checksum before installing it. Do not build an
+operator workflow around the mutable `latest` URL.
 
-```bash
-# Linux (amd64)
-curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_linux_amd64 \
-  -o /usr/local/bin/kube-dc
-chmod +x /usr/local/bin/kube-dc
-
-# macOS (amd64)
-curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_darwin_amd64 \
-  -o /usr/local/bin/kube-dc
-chmod +x /usr/local/bin/kube-dc
-
-kube-dc version
-kube-dc --help
-```
+The [Installation Guide](installation-guide.md#phase-1--server-preparation)
+contains the complete Linux and macOS checksum procedure.
 
 ### From source
 
@@ -61,11 +60,13 @@ git clone https://github.com/kube-dc/kube-dc-public.git
 cd kube-dc-public/cli
 go build -o /tmp/kdc-bin/kube-dc ./cmd/kube-dc
 export PATH=/tmp/kdc-bin:$PATH
-
 kube-dc version
 ```
 
-No runtime dependencies beyond what `kubectl` already needs (network, OIDC, optional `gh` for GitHub auth on `bootstrap install`).
+Organization login uses the CLI binary, a browser, and network access.
+Operator bootstrap workflows additionally use tools such as `kubectl`, `flux`,
+`helm`, `sops`, `age`, `git`, `gh`, and `ssh`. Run
+`kube-dc bootstrap doctor --no-tty` before an installation workflow.
 
 ---
 
@@ -75,7 +76,7 @@ The `kube-dc bootstrap` commands need to know where the fleet repo lives on disk
 
 1. `--repo <path>` flag
 2. `KUBE_DC_FLEET` environment variable
-3. `~/.kube-dc/fleet` (default — owned by `bootstrap fleet init` once that ships)
+3. `~/.kube-dc/fleet` (default)
 
 Most operators set the env var once and forget about it:
 

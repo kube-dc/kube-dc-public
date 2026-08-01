@@ -1,146 +1,181 @@
 ---
 name: manage-secrets
-description: Create and manage Kube-DC ManagedSecrets — project-scoped secrets backed by OpenBao, optionally projected into a Kubernetes Secret via External Secrets Operator. Use this for storing API tokens, OAuth client secrets, signing keys, third-party credentials. For rotated database passwords use manage-database-credentials (the parent KdcDatabase comes from create-database). For encryption keys use manage-kms. For TLS certificates use manage-certificates.
+description: Store Project application secrets in Kube-DC's managed secret service, optionally sync them into Kubernetes Secrets, and manage their lifecycle with the kube-dc CLI.
 ---
 
+# Manage Project Secrets
+
+A `ManagedSecret` carries metadata and sync intent in Kubernetes. Secret values
+do not live in its spec; the Kube-DC backend stores them in the Project's
+encrypted OpenBao KV space. When sync is enabled, External Secrets Operator
+projects selected values into a regular Kubernetes Secret.
+
+Use this feature for stored values such as API tokens and OAuth client secrets.
+Use `manage-database-credentials` for rotated database users,
+`manage-certificates` for x509 lifecycle, and `manage-kms` for Transit
+encrypt/decrypt operations.
+
 ## Prerequisites
-- Target project must exist and be Ready
-- Project namespace: `{org}-{project}`
-- OpenBao must be enabled on the cluster (check with `kubectl -n kube-dc get secret master-config -o jsonpath='{.data.enable_openbao}' | base64 -d` → expect `true`)
 
-## Key Concepts
+- Select the Project with `kube-dc use {domain}/{organization}/{project}`.
+- The installation advertises Secrets Manager as available.
+- The caller has the required Project role.
+- Never pass real values in chat or commit them to a manifest.
 
-- **ManagedSecret** — Project-scoped CRD describing *intent*: name, type, optional sync to a Kubernetes Secret. Values are stored in OpenBao under `<org>/kv-<project>/<name>` and never live in the CRD.
-- **Sync** — When enabled (default), the platform projects the values into a regular Kubernetes Secret your workloads mount via `envFrom` / `volumeMounts`. The Secret is rewritten in place on every value update.
-- **Types** — `opaque` (default), `password`, `api-key`, `tls`, `db-static`. The shape drives UI rendering and permission policy.
+## Permissions
 
-## Create a Secret
+| Role | ManagedSecret lifecycle | Read/write values | Change sync | Destroy history |
+|---|---|---|---|---|
+| `user` | Read metadata | No | No | No |
+| `developer` | Create, read, update, delete | Yes | Yes | No |
+| `project-manager` | Read and update existing resources | Yes | Yes, on existing resources | No |
+| `admin` | Full lifecycle | Yes | Yes | Yes |
 
-### Empty secret with default sync (target Secret name = ManagedSecret name)
+The Project is the access boundary. `developer` and `project-manager` can also
+read Kubernetes Secrets in the backing namespace.
+
+## 1. Create and seed a secret
+
+The CLI enables sync by default and uses the ManagedSecret name as the target
+Kubernetes Secret:
+
+```bash
+kube-dc secrets create {name} \
+  --type opaque \
+  --description "Credential used by {application}" \
+  --from-env-file ./application.env
+```
+
+Other input forms are repeatable `--from-literal=KEY=VALUE` and
+`--from-file=KEY=path`. Prefer files or an env file so sensitive values do not
+remain in shell history.
+
+Creating the CR and writing its first value are two sequential operations, not
+one transaction. If the value write fails, the CLI leaves the empty
+ManagedSecret in place and reports retry/cleanup commands.
+
+Keep values only in OpenBao when no Kubernetes workload needs them:
+
+```bash
+kube-dc secrets create {name} --sync-disabled
+```
+
+A Git-safe intent manifest contains no data:
 
 ```yaml
 apiVersion: security.kube-dc.com/v1alpha1
 kind: ManagedSecret
 metadata:
-  name: {secret-name}
-  namespace: {project-namespace}      # {org}-{project}
+  name: "{name}"
+  namespace: "{project-backing-namespace}"
 spec:
-  type: opaque                        # opaque | password | api-key | tls | db-static
-  description: "What this secret is for"
+  type: opaque
+  description: "Credential used by {application}"
   sync:
-    enabled: true                     # project into a Kubernetes Secret
-    refreshInterval: 1h               # ESO poll interval; 1h is fine for most uses
+    enabled: true
+    targetSecretName: "{name}"
+    refreshInterval: 1h
 ```
 
-See @managed-secret-template.yaml for a fully-annotated template.
+See [managed-secret-template.yaml](managed-secret-template.yaml).
 
-### Seed initial values (CLI is the only way; CRD never holds values)
-
-```bash
-# Inline literals
-kube-dc secrets create {secret-name} \
-  --from-literal=API_KEY={value} \
-  --from-literal=API_SECRET={value}
-
-# From a .env file
-kube-dc secrets create {secret-name} --from-env-file=./app.env
-
-# No sync — values readable only via `kube-dc secrets get --value`
-kube-dc secrets create {secret-name} --sync-disabled
-```
-
-## Read / Update Values
+## 2. Read metadata or values
 
 ```bash
-# List secrets in the project
 kube-dc secrets list
-
-# Reveal current values
-kube-dc secrets get {secret-name} --value
-
-# Update a key (writes a new version atomically)
-kube-dc secrets put {secret-name} --from-literal=API_KEY={new-value}
-
-# Delete a specific key
-kube-dc secrets unset {secret-name} --key=OLD_KEY
+kube-dc secrets get {name}
+kube-dc secrets get {name} --value
 ```
 
-Updates trigger an ESO refresh; the synced Kubernetes Secret reflects the change within ~`refreshInterval`. For instant rollout, kick the workload (`kubectl rollout restart deploy/{name}`).
+`--value` prints the current plaintext values. Use it only in a trusted
+terminal, never pipe it into logs, and do not include its output in chat.
 
-## Use in a Workload
+## 3. Update values or sync
 
-The synced Secret name defaults to the ManagedSecret name. Mount it like any Secret:
+```bash
+kube-dc secrets put {name} --from-env-file ./application.env
+kube-dc secrets unset {name} --key OLD_KEY
+
+kube-dc secrets sync {name} --enabled=true --target={target-secret} --refresh=1h
+```
+
+External Secrets Operator updates the target on its reconciliation schedule.
+Values injected into container environment variables do not change in an
+already-running Pod; perform an application-aware rollout after the synced
+Secret changes. File-mounted Secret volumes update eventually, but the
+application must reread them.
+
+Do not edit the projected Kubernetes Secret directly. ESO will reconcile it
+back to the managed value.
+
+## 4. Use the synced Secret
 
 ```yaml
-spec:
-  containers:
-  - name: app
-    image: my-app
-    envFrom:
-    - secretRef:
-        name: {secret-name}
+envFrom:
+  - secretRef:
+      name: "{target-secret}"
 ```
 
-Or selectively:
-
-```yaml
-env:
-- name: API_KEY
-  valueFrom:
-    secretKeyRef:
-      name: {secret-name}
-      key: API_KEY
-```
-
-## Import an Existing Kubernetes Secret
+Before a destructive operation, inspect all known consumers:
 
 ```bash
-kube-dc secrets import {secret-name} --from-secret={existing-k8s-secret}
+kube-dc secrets consumers {name}
 ```
 
-The platform takes over lifecycle. The original Secret is rewritten with the synced values; existing references continue to work.
-
-## Verification
-
-After creating a ManagedSecret:
+## 5. Import an existing Kubernetes Secret
 
 ```bash
-# 1. ManagedSecret is Ready
-kubectl get managedsecret {name} -n {project-namespace} \
-  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
-# Expected: True
-
-# 2. Synced Kubernetes Secret exists
-kubectl get secret {name} -n {project-namespace}
-# Expected: type=Opaque (or kubernetes.io/tls for type=tls), with the keys
-
-# 3. ExternalSecret is in sync
-kubectl get externalsecret -n {project-namespace} | grep {name}
-# Expected: SyncedToTarget=True
+kube-dc secrets import {managed-name} --from {source-secret}
 ```
 
-**Success**: ManagedSecret Ready, Kubernetes Secret present with values, ExternalSecret reports SyncedToTarget.
-**Failure**:
-- Stuck `Ready=False / OpenBaoUnavailable`: cluster doesn't have OpenBao enabled or the platform reconciler can't reach it. Check `kubectl -n kube-dc get deploy kube-dc-manager` is Running.
-- Synced Secret never appears: External Secrets Operator may be down; check `kubectl get pods -n external-secrets-system`.
+The source defaults to the current Project's backing namespace. A
+cross-namespace import requires `--from-namespace`, `--cross-namespace`, and
+permission to read the source; the operation is audit-visible.
 
-## Delete
+## Verify
 
 ```bash
-# Keep stored values in OpenBao but remove the CRD + synced Secret
+kubectl get managedsecret {name} \
+  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}{"\n"}'
+kubectl get managedsecret {name} -o yaml
+kubectl get secret {target-secret}
+kubectl get externalsecret
+```
+
+When sync is disabled, absence of a target Secret is expected. When it is
+enabled, verify `status.syncedSecretName` and the ExternalSecret conditions.
+Troubleshoot `Ready=False` through ManagedSecret conditions, Project security
+status, and the platform operator; do not try to read internal OpenBao
+credentials.
+
+## Delete or destroy
+
+Soft delete removes the ManagedSecret and projected Kubernetes Secret but
+preserves stored value history:
+
+```bash
 kube-dc secrets delete {name}
+```
 
-# Destroy: drop the CRD, the synced Secret, AND the OpenBao values
+Permanent destruction is admin-only and irreversible:
+
+```bash
+kube-dc secrets consumers {name}
 kube-dc secrets delete {name} --destroy
 ```
 
-`--destroy` is irreversible — there is no platform recovery path for destroyed values. Confirm with the user before invoking.
+Confirm with the user immediately before `--destroy`. Destroy ordering and
+audit are owned by the backend; do not reproduce the operation with raw
+OpenBao commands.
 
 ## Safety
 
-- ManagedSecret values NEVER live in the CRD spec — only intent does. Don't put a `data` field in there; it's not a Secret.
-- Don't `kubectl edit` the synced Kubernetes Secret directly. The next ESO reconcile (~`refreshInterval`) will overwrite your edits.
-- Before deleting with `--destroy`, run `kube-dc secrets consumers {name}` to list every workload mounting the synced Secret. Their pods will fail to restart after destruction.
-- For TLS certificates use the `manage-certificates` skill instead — it owns renewal lifecycle.
-- For rotated database passwords use the `manage-database-credentials` skill — it sets up `DatabaseCredentialPolicy` CRs that rotate the DB user's password on a schedule and project credentials into a K8s Secret. (Create the underlying `KdcDatabase` first via `create-database`.)
-- For encryption keys (encrypt/decrypt opaque payloads, envelope encryption) use the `manage-kms` skill — those are NOT secrets-to-store.
+- Values never belong in `ManagedSecret.spec`.
+- Prefer file-based CLI inputs over literals for sensitive data.
+- Do not reveal values unless the user explicitly needs them and the terminal
+  is trusted.
+- Treat Project membership and roles as access to all Secrets the role permits
+  in that Project.
+- Check consumers before delete, rotation, sync-target changes, or destroy.
+- Use the purpose-built database, certificate, and KMS resources for those
+  lifecycles.

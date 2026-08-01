@@ -1,6 +1,6 @@
 # Internal Platform Endpoints
 
-Tenant pods in a Kube-DC cluster need to reach the platform's own public hostnames — `kube-api.<DOMAIN>`, `login.<DOMAIN>` (Keycloak), `console.<DOMAIN>` (UI), `backend.<DOMAIN>` (kube-dc API), `billing.<DOMAIN>`. On some cluster topologies that path works "naturally" through the cluster's public IP. On others, the same packet black-holes at the upstream NAT box. **Internal Platform Endpoints** is the optional Kube-DC feature that provides a cluster-internal path to those hostnames regardless of upstream topology.
+Project Pods in a Kube-DC cluster need to reach the platform's own public hostnames — `kube-api.<DOMAIN>`, `login.<DOMAIN>` (Keycloak), `console.<DOMAIN>` (UI), `backend.<DOMAIN>` (kube-dc API), `billing.<DOMAIN>`. On some cluster topologies that path works "naturally" through the cluster's public IP. On others, the same packet black-holes at the upstream NAT box. **Internal Platform Endpoints** is the optional Kube-DC feature that provides a cluster-internal path to those hostnames regardless of upstream topology.
 
 This page tells you whether your installation needs the feature, how to decide, and how to enable and operate it.
 
@@ -51,7 +51,7 @@ If the classifier returns Class A/B/C with `confidence: high`, you can skip the 
 
 | Symptom | Decision |
 |---|---|
-| Cluster has **one** public IP, NAT'd at an upstream router to one or more internal node IPs. Tenant pods trying to reach `https://login.<DOMAIN>` get a TCP timeout. External `kubectl` against `kube-api.<DOMAIN>:6443` works (the same NAT, observed from outside). | **You MUST enable internal platform endpoints**. Without it, tenant pods cannot reach Keycloak, the console, or `kube-api.<DOMAIN>:6443` — the OIDC login flow, the in-cluster console pod, and managed-K8s tenants all break. |
+| Cluster has **one** public IP, NAT'd at an upstream router to one or more internal node IPs. Project Pods trying to reach `https://login.<DOMAIN>` get a TCP timeout. External `kubectl` against `kube-api.<DOMAIN>:6443` works (the same NAT, observed from outside). | **You MUST enable internal platform endpoints**. Without it, Project Pods cannot reach Keycloak, the console, or `kube-api.<DOMAIN>:6443` — the OIDC login flow, the in-cluster console pod, and Managed Cluster control planes all break. |
 
 Typical hardware: a single colo'd public IP routed to a private bare-metal cluster via 1:1 NAT on an edge router. The hairpin failure happens because the NAT box won't reflect a packet back through itself.
 
@@ -59,7 +59,7 @@ Typical hardware: a single colo'd public IP routed to a private bare-metal clust
 
 | Symptom | Decision |
 |---|---|
-| Each control-plane node has a **public IP** directly bound on its `br-ext-cloud` (or equivalent external bridge), and all CP nodes share the same `/<N>` broadcast domain that includes the platform's public hostname IPs. Tenant pods reach `https://login.<DOMAIN>` today without any extra config. | **You DO NOT need internal platform endpoints**. Tenant traffic is SNAT'd through the per-tenant ext-cloud egress IP, the destination resolves L2-locally on `br-ext-cloud`, no upstream NAT box is involved in the hairpin. |
+| Each control-plane node has a **public IP** directly bound on its `br-ext-cloud` (or equivalent external bridge), and all CP nodes share the same `/<N>` broadcast domain that includes the platform's public hostname IPs. Project Pods reach `https://login.<DOMAIN>` today without any extra config. | **You DO NOT need internal platform endpoints**. Project traffic is SNAT'd through the per-Project ext-cloud egress IP, the destination resolves L2-locally on `br-ext-cloud`, no upstream NAT box is involved in the hairpin. |
 
 Typical hardware: a colo or hosted environment that delivers a small public `/<N>` to your CP nodes directly, with Envoy binding `externalIPs:` per node.
 
@@ -67,18 +67,18 @@ Typical hardware: a colo or hosted environment that delivers a small public `/<N
 
 | Symptom | Decision |
 |---|---|
-| The platform's public hostnames are served by a cloud-provider LoadBalancer (AWS NLB, GCP LB, Azure LB, Hetzner LB, etc.) that handles hairpin natively. Tenant pods reach `https://login.<DOMAIN>` today. | **You DO NOT need internal platform endpoints**. The provider LB does the right thing. |
+| The platform's public hostnames are served by a cloud-provider LoadBalancer (AWS NLB, GCP LB, Azure LB, Hetzner LB, etc.) that handles hairpin natively. Project Pods reach `https://login.<DOMAIN>` today. | **You DO NOT need internal platform endpoints**. The provider LB does the right thing. |
 
 ### Quick decision aid
 
-If you're not sure which class you have, run this from a tenant pod:
+If you're not sure which class you have, run this from a diagnostic Pod in a Project backing namespace:
 
 ```bash
 # Get the public IP of your platform's login hostname
 PUBLIC_IP=$(getent hosts login.<DOMAIN> | awk '{print $1}')
 echo "Public IP: $PUBLIC_IP"
 
-# From inside the tenant pod, try to reach it
+# From inside the Project Pod, try to reach it
 curl -sk -m 6 -o /dev/null -w "HTTP=%{http_code}\n" https://login.<DOMAIN>/realms/master/.well-known/openid-configuration
 ```
 
@@ -87,7 +87,7 @@ curl -sk -m 6 -o /dev/null -w "HTTP=%{http_code}\n" https://login.<DOMAIN>/realm
 | `HTTP=200` (or any 2xx/3xx/4xx response in well under 6s) | **Class B or C** — you do not need this feature. |
 | Hangs and times out at 6s | **Class A** — you need this feature. |
 
-If you can't exec into tenant pods (e.g. you have a `restrict-pod-exec-in-projects` admission policy), the equivalent **structural** check is:
+If you cannot run the diagnostic inside a Project Pod, use this equivalent **structural** check:
 
 ```bash
 # On any control-plane node:
@@ -110,7 +110,7 @@ The feature uses one architectural pattern, **Fork E** in the engineering record
 │                          ext-cloud subnet                               │
 │                                                                         │
 │   ┌────────────────────────────────────────┐                            │
-│   │  MetalLB-announced VIP (e.g. 100.65.0.30) │ ← tenant pods target    │
+│   │  MetalLB-announced VIP (e.g. 100.65.0.30) │ ← Project Pods target    │
 │   │  ┌────────────────────────────────────┐ │   this address            │
 │   │  │ Selectorless Service               │ │                           │
 │   │  │ (no pod selector — manager owns    │ │                           │
@@ -152,7 +152,7 @@ Anchors are seeded by `kube-dc bootstrap anchors apply` and verified by `kube-dc
 >   ovn-nbctl --columns=name,networks list logical_router_port | grep '<your EXT_NET_CIDR>'
 > ```
 >
-> Most critically: do not collide with the `ovn-cluster-ext-cloud` LRP — that's the management-VPC pod-egress SNAT IP, and a collision there manifests as ~80-min recurring outages of every controller's reach to tenant EIPs. The rule is: **anchors must come from a subset of `EXT_NET_EXCLUDE_IPS` that is disjoint from existing OVN LRP IPs**, not literally "always `.11/.12/.13`". An empty-OVN cluster can use any anchors; on a cluster with existing tenant VPCs / LRPs, audit first. Live-fix of a collided cluster requires `promote_secondaries=1` + ADD-new-before-DEL-old + per-node `ovs-ovn` restart — coordinate with the platform team before attempting (see `docs/internal/internal-platform-endpoints-runbook.md`).
+> Most critically: do not collide with the `ovn-cluster-ext-cloud` LRP — that's the management-VPC pod-egress SNAT IP, and a collision there manifests as ~80-min recurring outages of every controller's reach to Project EIPs. The rule is: **anchors must come from a subset of `EXT_NET_EXCLUDE_IPS` that is disjoint from existing OVN LRP IPs**, not literally "always `.11/.12/.13`". An empty-OVN cluster can use any anchors; on a cluster with existing Project VPCs / LRPs, audit first. Live-fix of a collided cluster requires `promote_secondaries=1` + ADD-new-before-DEL-old + per-node `ovs-ovn` restart — coordinate with the platform team before attempting (see `docs/internal/internal-platform-endpoints-runbook.md`).
 
 ### The `kubeAPI` endpoint
 
@@ -163,7 +163,7 @@ Anchors are seeded by `kube-dc bootstrap anchors apply` and verified by `kube-dc
 | Backend mode | `node-control-plane` — manager populates the slice with CP `InternalIP`s |
 | Probe target | `https://<nodeIP>:6443/readyz` |
 | Probe SNI | none (bare IP — apiserver cert SANs are validated via `insecureSkipVerify: true`) |
-| Tenant resolution | vpc-dns Corefile: `<VIP> kube-api.<DOMAIN>` |
+| Project resolution | vpc-dns Corefile: `<VIP> kube-api.<DOMAIN>` |
 
 ### The `envoyGateway` endpoint (generic front-door)
 
@@ -176,7 +176,7 @@ The single `envoyGateway` VIP covers **all** Envoy-routed platform hostnames at 
 | Backend mode | `node-control-plane` — Envoy is hostNetwork on CP nodes |
 | Probe target | `https://<nodeIP>:443/` |
 | Probe SNI | **REQUIRED** — `console.<DOMAIN>` (any HTTPRoute hostname; see SNI gotcha below) |
-| Tenant resolution | vpc-dns Corefile: `<VIP> login.<DOMAIN> backend.<DOMAIN> console.<DOMAIN> billing.<DOMAIN>` |
+| Project resolution | vpc-dns Corefile: `<VIP> login.<DOMAIN> backend.<DOMAIN> console.<DOMAIN> billing.<DOMAIN>` |
 
 #### Critical SNI gotcha
 
@@ -186,7 +186,7 @@ Envoy rejects HTTPS handshakes whose SNI doesn't match a configured Gateway list
 
 ### vpc-dns Corefile rewrite
 
-The tenant-side resolver (`vpc-dns-<project>` Deployment) is configured per-cluster with a CoreDNS `hosts` block that maps the platform hostnames to the internal VIPs:
+The per-Project resolver (`vpc-dns-<project>` Deployment) is configured for each Project with a CoreDNS `hosts` block that maps the platform hostnames to the internal VIPs:
 
 ```corefile
 hosts {
@@ -196,13 +196,13 @@ hosts {
 }
 ```
 
-`s3.${DOMAIN}` (the cluster's Rook-Ceph RGW front-door) sits in the same list because per-tenant managed-K8s etcd-backup CronJobs upload snapshots there — without an internal-DNS override they hit the public IP and hairpin-fail on Class A topologies.
+`s3.${DOMAIN}` (the cluster's Rook-Ceph RGW front-door) sits in the same list because per-Managed-Cluster etcd backup CronJobs upload snapshots there — without an internal-DNS override they hit the public IP and hairpin-fail on Class A topologies.
 
-External resolution (laptop `kubectl`, browser hitting `console.<DOMAIN>`) is unaffected — public DNS still points at the cluster's public IP, the public path keeps working for non-tenant clients.
+External resolution (laptop `kubectl`, browser hitting `console.<DOMAIN>`) is unaffected — public DNS still points at the cluster's public IP, the public path keeps working for external clients.
 
-### Required tenant LR allowlists
+### Required Project logical-router allowlists
 
-Tenant logical routers default-deny traffic to anything in the `ext-cloud` subnet that isn't a known platform IP. The VIPs must be present in both `INGRESS_GLOBAL_ALLOWLIST` (so return traffic flows) and `EGRESS_GLOBAL_ALLOWLIST` (so outbound packets aren't dropped at priority-29000):
+Project logical routers default-deny traffic to anything in the `ext-cloud` subnet that isn't a known platform IP. The VIPs must be present in both `INGRESS_GLOBAL_ALLOWLIST` (so return traffic flows) and `EGRESS_GLOBAL_ALLOWLIST` (so outbound packets aren't dropped at priority-29000):
 
 ```
 INGRESS_GLOBAL_ALLOWLIST=[<system_SNAT_IPs>, <KUBE_API_VIP>, <ENVOY_GATEWAY_VIP>]
@@ -221,21 +221,21 @@ This section assumes a Class A cluster (you need the feature). For Class B and C
 
 Pick two IPs that are:
 - In your `ext-cloud` subnet (typically `100.64.0.0/16` or `100.65.0.0/16`).
-- Not already in use by a tenant EIp or system SNAT.
+- Not already in use by a Project EIp or system SNAT.
 - Adjacent if possible (keeps allowlists tidy).
 
 Typical choice: `100.64.0.30` for `kubeAPI`, `100.64.0.31` for `envoyGateway`.
 
 ### 2. Exclude them from kube-ovn IPAM
 
-Add the VIPs to `EXT_NET_EXCLUDE_IPS` so kube-ovn doesn't hand them out to tenants:
+Add the VIPs to `EXT_NET_EXCLUDE_IPS` so kube-ovn doesn't hand them out to Projects:
 
 ```bash
 # In your cluster's cluster-config.env (Fleet) or values.yaml (direct Helm):
 EXT_NET_EXCLUDE_IPS="100.64.0.10,100.64.0.30,100.64.0.31,100.64.0.21,100.64.0.11..100.64.0.31"
 ```
 
-### 3. Add them to both tenant allowlists
+### 3. Add them to both Project logical-router allowlists
 
 ```bash
 INGRESS_GLOBAL_ALLOWLIST=["<existing>", "100.64.0.30", "100.64.0.31"]
@@ -272,9 +272,9 @@ hosts {
 }
 ```
 
-### 6. Restart per-tenant vpc-dns Deployments
+### 6. Restart per-Project vpc-dns Deployments
 
-CoreDNS doesn't watch ConfigMaps for changes — force-restart so each per-tenant resolver picks up the new Corefile:
+CoreDNS doesn't watch ConfigMaps for changes — force-restart so each per-Project resolver picks up the new Corefile:
 
 ```bash
 kubectl -n kube-system get deploy -o name | grep '^deployment.apps/vpc-dns-' | \
@@ -297,7 +297,7 @@ This binds the anchor IPs to each CP node's `br-ext-cloud` interface via a small
 
 ## Verifying
 
-From a tenant pod (any namespace with a Project):
+From a Pod in any Project backing namespace:
 
 ```bash
 # Resolves via vpc-dns to the internal VIP, not the public IP
@@ -340,7 +340,7 @@ kubectl -n envoy-gateway-system describe svc envoy-gateway-platform | tail -30
 
 ### Adding a new platform hostname behind `envoyGateway`
 
-Any new HTTPRoute hostname your cluster serves through Envoy (e.g. a new admin UI at `admin.<DOMAIN>`) automatically works from tenant pods — `envoyGateway` is generic.
+Any new HTTPRoute hostname your cluster serves through Envoy (e.g. a new admin UI at `admin.<DOMAIN>`) automatically works from Project Pods — `envoyGateway` is generic.
 
 But you still need to tell `vpc-dns` to resolve the new name internally. Edit the per-cluster Corefile hosts block:
 
@@ -353,7 +353,7 @@ But you still need to tell `vpc-dns` to resolve the new name internally. Edit th
  }
 ```
 
-Then restart per-tenant vpc-dns Deployments (same `rollout restart` loop as enablement step 6).
+Then restart per-Project vpc-dns Deployments (same `rollout restart` loop as enablement step 6).
 
 ### Draining a control-plane node
 
@@ -363,8 +363,8 @@ The data path is resilient to single-node drains. With Envoy running 3 replicas 
 kubectl drain <cp-node> --ignore-daemonsets --delete-emptydir-data
 # expect: completes within seconds; PDB blocks if it would take Envoy below 2 replicas
 
-# Tenant traffic during drain:
-#   - kubectl from tenant pods: 1–2 reconnect blips during MetalLB speaker re-election (~6s)
+# Project traffic during drain:
+#   - kubectl from Project Pods: 1–2 reconnect blips during MetalLB speaker re-election (~6s)
 #   - Sustained HTTP probe: all 200 except for the same ~6s window
 ```
 
@@ -385,7 +385,7 @@ Note: anchor IPs do not appear in `INGRESS_GLOBAL_ALLOWLIST` / `EGRESS_GLOBAL_AL
 
 If a cluster was misclassified as Class A and you want to turn the feature off, or you're decommissioning a cluster, the rollback is the enablement steps in reverse — and unlike the enablement, it's order-sensitive:
 
-1. **First, restore the public-DNS path for tenant pods.** Remove the platform hostnames from the per-cluster vpc-dns Corefile `hosts` block (and keep `fallthrough` so resolution falls back to public DNS):
+1. **First, restore the public-DNS path for Project Pods.** Remove the platform hostnames from the per-cluster vpc-dns Corefile `hosts` block (and keep `fallthrough` so resolution falls back to public DNS):
    ```diff
     hosts {
    -    100.64.0.30 kube-api.example.com
@@ -393,9 +393,9 @@ If a cluster was misclassified as Class A and you want to turn the feature off, 
         fallthrough
     }
    ```
-   Restart per-tenant `vpc-dns-*` Deployments (same `rollout restart` loop as enablement step 6). **Wait at least 5 minutes** after the rollout so any client process caches re-resolve to the public IPs.
+   Restart per-Project `vpc-dns-*` Deployments (same `rollout restart` loop as enablement step 6). **Wait at least 5 minutes** after the rollout so any client process caches re-resolve to the public IPs.
 
-2. **Verify tenant pods now reach platform hostnames via the public path** (Class B/C requirement). If they don't, you have a real Class A topology and rollback would break tenant traffic — STOP and revert step 1.
+2. **Verify Project Pods now reach platform hostnames via the public path** (Class B/C requirement). If they don't, you have a real Class A topology and rollback would break Project traffic — STOP and revert step 1.
 
 3. **Disable the chart switches**:
    ```yaml
@@ -407,9 +407,9 @@ If a cluster was misclassified as Class A and you want to turn the feature off, 
    ```
    Push, let Flux reconcile. The chart-rendered `IPAddressPool` / `L2Advertisement` / `Service` / `EndpointSlice` resources are removed; the manager stops probing CP node InternalIPs.
 
-4. **Remove the VIPs from both allowlists** (`INGRESS_GLOBAL_ALLOWLIST` / `EGRESS_GLOBAL_ALLOWLIST` in `cluster-config.env`). Same pattern as the Phase D.6 `.11` retirement procedure: tenant LR `lr-policy-list` should drop the VIPs from priority-32000 + 29500 allow rules on the next manager reconcile.
+4. **Remove the VIPs from both allowlists** (`INGRESS_GLOBAL_ALLOWLIST` / `EGRESS_GLOBAL_ALLOWLIST` in `cluster-config.env`). Same pattern as the Phase D.6 `.11` retirement procedure: Project logical router `lr-policy-list` should drop the VIPs from priority-32000 + 29500 allow rules on the next manager reconcile.
 
-5. **Narrow `EXT_NET_EXCLUDE_IPS`** back to the pre-Fork-E range if you want kube-ovn to be able to hand out the previously-reserved VIP addresses to tenants. Safe to leave widened too — it just costs you 2 unused IPs in the ext-cloud pool.
+5. **Narrow `EXT_NET_EXCLUDE_IPS`** back to the pre-Fork-E range if you want kube-ovn to be able to hand out the previously-reserved VIP addresses to Projects. Safe to leave widened too — it just costs you 2 unused IPs in the ext-cloud pool.
 
 6. **Per-node MetalLB L3 anchors** (`kube-dc-anchor.service` systemd units bound to `br-ext-cloud`) — keep them as long as the cluster runs MetalLB for ANY other Service type=LoadBalancer. They're not Fork-E-specific. Only remove if you're decommissioning MetalLB entirely.
 
@@ -421,10 +421,10 @@ If a cluster was misclassified as Class A and you want to turn the feature off, 
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Tenant pod gets `connection refused` to VIP | EndpointSlice has no ready backends. Manager probe is failing. | Check manager logs: `kubectl -n kube-dc logs deploy/kube-dc-manager \| grep platform-endpoint`. Common causes: NetworkPolicy blocking manager → CP `:443`, or wrong `health.host` SNI. |
-| Tenant pod gets `connection reset by peer` to envoyGateway VIP | `health.host` is set to a TLSRoute hostname (most commonly `kube-api.<DOMAIN>`). Envoy resets the probe handshake. | Set `health.host: "console.<DOMAIN>"` or another HTTPRoute hostname. |
-| Tenant pod gets timeout to VIP, but apiserver/Envoy is healthy | VIP is missing from `INGRESS_GLOBAL_ALLOWLIST` / `EGRESS_GLOBAL_ALLOWLIST`. Tenant LR drops the packet at priority-29000. | Add VIP to both allowlists, push. Verify with `kubectl ko nbctl lr-policy-list <tenant-lr>` — VIP should appear in priority-32000 + 29500 allow rules. |
-| `nslookup login.<DOMAIN>` from tenant pod returns the public IP, not the internal VIP | Per-tenant `vpc-dns-<project>` Deployment hasn't picked up the new Corefile. | `kubectl rollout restart deploy/vpc-dns-<project> -n kube-system` and wait. |
+| Project Pod gets `connection refused` to VIP | EndpointSlice has no ready backends. Manager probe is failing. | Check manager logs: `kubectl -n kube-dc logs deploy/kube-dc-manager \| grep platform-endpoint`. Common causes: NetworkPolicy blocking manager → CP `:443`, or wrong `health.host` SNI. |
+| Project Pod gets `connection reset by peer` to envoyGateway VIP | `health.host` is set to a TLSRoute hostname (most commonly `kube-api.<DOMAIN>`). Envoy resets the probe handshake. | Set `health.host: "console.<DOMAIN>"` or another HTTPRoute hostname. |
+| Project Pod gets timeout to VIP, but apiserver/Envoy is healthy | VIP is missing from `INGRESS_GLOBAL_ALLOWLIST` / `EGRESS_GLOBAL_ALLOWLIST`. Project logical router drops the packet at priority-29000. | Add VIP to both allowlists, push. Verify with `kubectl ko nbctl lr-policy-list <project-lr>` — VIP should appear in priority-32000 + 29500 allow rules. |
+| `nslookup login.<DOMAIN>` from Project Pod returns the public IP, not the internal VIP | Per-Project `vpc-dns-<project>` Deployment hasn't picked up the new Corefile. | `kubectl rollout restart deploy/vpc-dns-<project> -n kube-system` and wait. |
 | MetalLB doesn't announce the VIP (no GARP) | Anchor not bound on any CP node. | Run `kube-dc bootstrap doctor anchors`. Re-apply with `kube-dc bootstrap anchors apply` if any fail. |
 | EndpointSlice has only one backend even though 3 CP nodes exist | Envoy is running single-replica (typically pinned to one node). Probes for other CP IPs correctly fail because there's no Envoy bound there. | Ship Envoy data-plane HA: `replicas=3` + pod anti-affinity + PDB `minAvailable=2`. See the chart's `platformEndpoints` reference. |
 | Single-replica controller restarts cause data-plane config drift | xDS controller is single-replica. | Set `envoy-gateway` chart `deployment.replicas=2` with leader election. PDB `minAvailable=1`. |
@@ -442,7 +442,7 @@ and the result of `kube-dc bootstrap doctor anchors`.
 ```yaml
 platformEndpoints:
 
-  # kubeAPI — internal VIP for tenant kubectl against kube-api.<DOMAIN>:6443
+  # kubeAPI — internal VIP for Project-user `kubectl` against kube-api.<DOMAIN>:6443
   kubeAPI:
     enabled: false                    # opt-in per cluster
     name: kube-api-platform
@@ -468,7 +468,7 @@ platformEndpoints:
         successThreshold: 1
         insecureSkipVerify: true      # apiserver cert SAN won't include the node IP
 
-  # envoyGateway — internal VIP for tenant traffic to every Envoy-routed hostname
+  # envoyGateway — internal VIP for Project traffic to every Envoy-routed hostname
   envoyGateway:
     enabled: false                    # opt-in per cluster
     name: envoy-gateway-platform
@@ -503,7 +503,7 @@ platformEndpoints:
 # Exclude VIPs from kube-ovn IPAM
 EXT_NET_EXCLUDE_IPS=...,100.64.0.30,100.64.0.31
 
-# Tenant allowlists (must include both VIPs in both lists)
+# Project logical-router allowlists (must include both VIPs in both lists)
 INGRESS_GLOBAL_ALLOWLIST=[...,"100.64.0.30","100.64.0.31"]
 EGRESS_GLOBAL_ALLOWLIST =[...,"100.64.0.30","100.64.0.31"]
 

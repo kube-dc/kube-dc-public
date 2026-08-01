@@ -1,10 +1,11 @@
 apiVersion: kube-dc.com/v1
 kind: FIp
 metadata:
-  name: {fip-name}
-  namespace: {project-namespace}
+  name: "{fip-name}"
+  namespace: "{backing-namespace}"
 spec:
+  # The FIP controller creates and owns the required EIP.
   externalNetworkType: public
   vmTarget:
-    vmName: {vm-name}
-    interfaceName: default    # Must match the VM's network interface name
+    vmName: "{vm-name}"
+    interfaceName: default

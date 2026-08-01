@@ -108,7 +108,7 @@ profile-pool Git change lock and capture:
 kubectl get nodes \
   -L kube-dc.com/gpu.workload-mode,kube-dc.com/gpu.expected-workload-mode
 kubectl get organizations.kube-dc.com -A \
-  -o custom-columns=ORG:.metadata.name,ACCELERATORS:.status.quotaUsage.accelerators
+  -o custom-columns=ORGANIZATION:.metadata.name,ACCELERATORS:.status.quotaUsage.accelerators
 kubectl get hierarchicalresourcequotas.hnc.x-k8s.io -A
 kubectl get virtualmachineinstances.kubevirt.io -A
 ```

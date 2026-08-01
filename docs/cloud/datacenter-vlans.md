@@ -6,7 +6,7 @@ pod or VM has to reach equipment that cannot be routed to: a storage array, a
 license dongle, a PLC, a legacy appliance that only speaks to its own subnet.
 
 This is different from everything else in [VPC & Private Networking](private-networking.md).
-Your project VPC is an overlay that Kube-DC creates for you. A datacenter VLAN is
+Your Project VPC is an overlay that Kube-DC creates for you. A datacenter VLAN is
 a real wire that already exists, that your organization already owns, and that
 your platform administrator hands to you.
 
@@ -15,26 +15,27 @@ your platform administrator hands to you.
 ## How it works
 
 Your platform administrator allocates a VLAN to your **organization**. From then
-on you decide, without raising a ticket, which of your **projects** uses it — and
+on you decide, without raising a ticket, which of your **Projects** uses it — and
 you can change your mind later.
 
 ```
     Platform administrator                You (organization admin)
     ─────────────────────                 ────────────────────────
-    allocates VLAN 4014      ──────►      assign to project "production"
+    allocates VLAN 4014      ──────►      assign to Project "production"
     to organization "acme"                        │
                                                   │  later, freely
                                                   ▼
                                           unassign → assign to "staging"
 ```
 
-A workload on that project then gets a **second network interface**:
+A workload in that Project then gets a **second network interface**:
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│  Pod or VM in project acme-production                    │
+│  Pod or VM in Project "production"                       │
+│  Backing namespace: acme-production                      │
 │                                                          │
-│    eth0            10.0.0.15/24    ← project VPC         │
+│    eth0            10.0.0.15/24    ← Project VPC         │
 │                                      DEFAULT ROUTE       │
 │                                                          │
 │    net1            192.0.2.30/24   ← datacenter VLAN     │
@@ -61,46 +62,46 @@ carries only traffic to that segment.
 
 | | |
 |---|---|
-| **One project per VLAN** | A physical segment is a shared broadcast domain. Only one project may hold it at a time — that is what stops another tenant seeing your traffic at layer 2. |
-| **Several VLANs per project** | A project can hold more than one VLAN, and one workload can attach to several — provided at least one node carries *all* of them (see below). |
+| **One Project per VLAN** | A physical segment is a shared broadcast domain. Only one Project may hold it at a time; this prevents users in another Project from seeing your layer 2 traffic. |
+| **Several VLANs per Project** | A Project can hold more than one VLAN, and one workload can attach to several, provided at least one node carries *all* of them (see below). |
 | **The addressing is fixed** | Subnet, gateway and reserved addresses are set by your platform administrator from what your network team told them. You cannot change them, and you should not want to — they describe real equipment. |
-| **Reversible, not instant** | Unassigning drains the workloads that are still attached before the VLAN can go to another project. |
+| **Reversible, not instant** | Unassigning drains the workloads that are still attached before the VLAN can go to another Project. |
 | **Layer 2 only** | The VLAN is not routed into your VPC. Only workloads that explicitly attach can reach it. |
 
 ---
 
-## Assign a VLAN to a project
+## Assign a VLAN to a Project
 
 Go to **Organization Management → Datacenter VLANs**. Every VLAN allocated to
 your organization is listed with its subnet, gateway and current state.
 
 ![Datacenter VLANs in Organization Management](images/vlan-1-org-tab.png)
 
-Pick a project from the dropdown on an **Available** row and press **Assign**.
+Pick a Project from the dropdown on an **Available** row and press **Assign**.
 
-![Assigning a VLAN to a project](images/vlan-2-assign.png)
+![Assigning a VLAN to a Project](images/vlan-2-assign.png)
 
-The row moves to **Assigned** once the network is published into the project,
+The row moves to **Assigned** once the network is published into the Project,
 usually within a few seconds.
 
 | State | Meaning |
 |---|---|
-| **Available** | Allocated to your organization, not in use. Assign it to a project. |
+| **Available** | Allocated to your organization, not in use. Assign it to a Project. |
 | **Provisioning** / **Pending** | The network is being created. Wait. |
-| **Assigned** | Ready. Workloads in that project can attach. |
+| **Assigned** | Ready. Workloads in that Project can attach. |
 | **Releasing** | Being unassigned. Attached workloads are draining; the count is shown. Not yet re-assignable. |
-| **Error** | The binding could not be realised. The most common cause is that the VLAN is already held by another project. Contact your platform administrator. |
+| **Error** | The binding could not be realised. The most common cause is that the VLAN is already held by another Project. Contact your platform administrator. |
 | **segment not ready** | Your platform administrator has not finished delivering this VLAN to the cluster's nodes. Nothing you can do — ask them. |
 
 ### Unassign and re-assign
 
 Press **Unassign** to return the VLAN to your organization's pool. It stays
-yours; only the project binding goes away, so you can give it to a different
-project afterwards.
+yours; only the Project binding goes away, so you can give it to a different
+Project afterwards.
 
 The row shows **Releasing** with the number of workloads still attached until
 teardown finishes. That wait is deliberate: the VLAN is not handed to another
-project while anything is still on the wire.
+Project while anything is still on the wire.
 
 :::warning
 **Unassigning does not move your workloads for you.** Attached workloads keep
@@ -121,21 +122,21 @@ is genuinely clear.
 
 ## Attach a workload
 
-Assigning the VLAN makes it *available* to the project. Each pod or VM still has
+Assigning the VLAN makes it *available* to the Project. Each pod or VM still has
 to ask for it.
 
-Open **Organization Management → Projects** and click the project. Its details
-panel has a **Datacenter VLANs** card listing every VLAN the project holds, with
+Open **Organization Management → Projects** and click the Project. Its details
+panel has a **Datacenter VLANs** card listing every VLAN the Project holds, with
 the segment, the network name, and the exact string to attach with.
 
-![VLAN details in the project panel](images/vlan-3-project-card.png)
+![VLAN details in the Project panel](images/vlan-3-project-card.png)
 
 Copy the value shown under **Attach with** — that is the annotation value below,
 already in the right form.
 
 ### Attach a pod
 
-Add one annotation. The value is `<project-namespace>/<network-name>`, and the
+Add one annotation. The value is `<backing-namespace>/<network-name>`, and the
 console shows you the exact string — copy it from there rather than assembling it
 by hand. When a VLAN is assigned from the console the network is named
 `<segment>-<project>`, so the examples below use `pn-ext-4014-production`.
@@ -170,13 +171,13 @@ cannot land somewhere the wire does not reach.
 ### Attach a virtual machine
 
 **From the console.** When you create a VM, Step 1 shows a **Datacenter VLANs**
-section listing every VLAN this project holds. Tick the ones you want and the
+section listing every VLAN this Project holds. Tick the ones you want and the
 generated manifest gets the network and its matching interface, correctly paired —
 review it on the next step before creating.
 
 ![Selecting a datacenter VLAN when creating a VM](images/vlan-4-create-vm.png)
 
-The section only appears when this project actually holds a VLAN, and only lists
+The section only appears when this Project actually holds a VLAN, and only lists
 VLANs that are ready to attach. Ticking more than one warns you that the VM will
 be pinned to nodes carrying **all** of them.
 
@@ -253,29 +254,63 @@ land on `net1`, `net2` or later, and inside a VM the guest names it however its 
 chooses. Always match by the network name or the address, as above.
 :::
 
-Then test from inside, substituting the interface you just identified. The
-`busybox` image used earlier does **not** have these tools — use a diagnostic
-image such as `nicolaka/netshoot` for this:
+`kubectl exec` is blocked in Project backing namespaces. Run the checks as a
+short-lived diagnostic Job and read its logs instead. This Job discovers the
+VLAN interface from the route to your target, so it does not assume `net1`.
+Replace the network annotation and target address with your values:
 
 ```bash
-ip -4 -br addr                          # confirm the address
-ping -c3 -I net1 192.0.2.1              # the VLAN gateway answers
-ping -c3 -I net1 192.0.2.10             # your own hardware answers
-ip route get 1.1.1.1                    # default route is still the VPC interface
+NS=acme-production
+kubectl delete job -n "$NS" vlan-check --ignore-not-found
+
+kubectl apply -f - <<'EOF'
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vlan-check
+  namespace: acme-production
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      annotations:
+        k8s.v1.cni.cncf.io/networks: acme-production/pn-ext-4014-production
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: check
+          image: nicolaka/netshoot
+          env:
+            - name: TARGET
+              value: 192.0.2.10
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              IFACE="$(ip route get "$TARGET" | awk '{for (i=1; i<=NF; i++) if ($i == "dev") {print $(i+1); exit}}')"
+              test -n "$IFACE"
+              echo "VLAN interface: $IFACE"
+              ip -4 -br addr show dev "$IFACE"
+              ping -c3 -I "$IFACE" "$TARGET"
+              ip route get 1.1.1.1
+              ping -c1 -M do -s 1372 -I "$IFACE" "$TARGET"
+              if ping -c1 -M do -s 1500 -I "$IFACE" "$TARGET"; then
+                echo "unexpected success above the configured MTU" >&2
+                exit 1
+              fi
+              echo "oversized DF packet failed as expected"
+EOF
+
+kubectl wait -n "$NS" --for=condition=Complete job/vlan-check --timeout=120s
+kubectl logs -n "$NS" job/vlan-check
+kubectl get pod -n "$NS" -l job-name=vlan-check \
+  -o jsonpath='{.items[0].metadata.annotations.k8s\.v1\.cni\.cncf\.io/network-status}'
+echo
+kubectl delete job -n "$NS" vlan-check
 ```
 
-### MTU
-
-The VLAN interface uses the MTU your platform administrator configured for the
-segment, commonly **1400**. If an application sends larger frames with
-don't-fragment set, it will fail silently while ping still works. Check with:
-
-```bash
-ping -c1 -M do -s 1372 -I net1 192.0.2.10     # 1372 + 28 = 1400, should pass
-ping -c1 -M do -s 1500 -I net1 192.0.2.10     # should fail
-```
-
-Again: a diagnostic image, and whichever interface carries the VLAN subnet.
+The example checks a 1400-byte MTU: a 1372-byte ICMP payload plus headers should
+pass, while a 1500-byte payload with don't-fragment set should fail. Adjust both
+sizes if your platform administrator configured a different MTU.
 
 ---
 
@@ -289,10 +324,10 @@ These are refused at admission, with a message explaining why:
   IPAM — `ip_address`, `ip_pool`, `mac_address`, `routes`, `gateway`, `cidr` and
   `default_route` on the VLAN's provider key. (Port security and security groups
   are set for you and validated.)
-- **Attach a VLAN your project does not hold**, including one held by another
-  project in your own organization.
+- **Attach a VLAN your Project does not hold**, including one held by another
+  Project in your own Organization.
 - **Change the subnet or gateway** on a VLAN assigned to you.
-- **Edit a VLAN assignment in place.** To move a VLAN between projects, unassign
+- **Edit a VLAN assignment in place.** To move a VLAN between Projects, unassign
   and assign again.
 
 ### Working from the command line
@@ -335,11 +370,11 @@ change it.
 ## Troubleshooting
 
 **"network … is not a datacenter VLAN assigned to this project"**
-The name is wrong, or the VLAN is assigned to a different project. The message
-lists the VLANs this project actually holds — compare against it.
+The name is wrong, or the VLAN is assigned to a different Project. The message
+lists the VLANs this Project actually holds — compare against it.
 
 **"network … is in another project's namespace"**
-You referenced a VLAN belonging to a different project. Each project can only
+You referenced a VLAN belonging to a different Project. Each Project can only
 attach the VLANs assigned to it.
 
 **Pod stuck in `Pending` / `ContainerCreating`**
@@ -360,6 +395,6 @@ those workloads to detach. Delete them, or wait for the controller to finish.
 
 ## Related
 
-- [VPC & Private Networking](private-networking.md) — your project's own network
+- [VPC & Private Networking](private-networking.md) — your Project's own network
 - [Networking Overview](networking-overview.md) — how the pieces fit together
 - [Public & Floating IPs](public-floating-ips.md) — reaching workloads from the internet

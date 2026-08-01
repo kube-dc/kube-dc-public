@@ -71,21 +71,36 @@ Use one full root+intermediate PEM bundle and verify every consumer:
 | Consumer | Current mechanism | Symptom when missing |
 |---|---|---|
 | install workstation / bastion | OS trust store used by `curl`, `flux`, and bootstrap scripts | Keycloak discovery/bootstrap times out or fails `unknown authority` |
+| **cluster nodes** (containerd, kubelet, RKE2) | `bootstrap install --trusted-ca-bundle` writes the CA into the host trust store **before RKE2 starts** | **Air-gapped: every image pull fails.** No pod-level trust can fix this — it happens before any pod exists |
+| **Project workloads / CDI / any in-cluster TLS client** | The manager injects the bundle into every ConfigMap labelled `kube-dc.com/inject-trusted-ca=true`; each Project backing namespace gets `kube-dc-trusted-ca` | VM image import fails `x509: certificate signed by unknown authority` against the cluster's own mirror |
 | kube-dc manager (Go) | `manager.trustedCA.configMapName` → read-only mount + `SSL_CERT_DIR` | Organization/Keycloak reconciliation fails |
 | UI backend (Node.js) | `backend.trustedCA.configMapName` + `fileName` → `NODE_EXTRA_CA_CERTS` | admin pages, Grafana/OpenBao/S3, or cloud-shell token refresh fails |
 | Kubernetes OIDC authenticator | manager copies the validated PEM into every `OpenIDConnect.spec.caBundle` | every browser JWT is rejected by the API server with 401 |
-| OpenBao OIDC discovery | manager forwards the same bundle as `oidc_discovery_ca_pem` | org auth setup reports discovery TLS/400 errors |
+| OpenBao OIDC discovery | manager forwards the same bundle as `oidc_discovery_ca_pem` | Organization authentication setup reports discovery TLS/400 errors |
 | CNPG/barman S3 client | database `endpointCA` when the API supports it; otherwise the restricted internal HTTP workaround in §4 | continuous archiving fails certificate verification |
 
-For a greenfield install, pass the same certificate-only bundle to the CLI:
+For a greenfield install, pass the same certificate-only bundle to the CLI —
+**to both commands**:
 
 ```bash
+# 1. the nodes: OS trust store, before RKE2 starts. Air-gapped installs REQUIRE
+#    this, or the first image pull fails before anything else runs.
+kube-dc bootstrap install --ssh-host root@node1 ... \
+  --trusted-ca-bundle=corp-ca.pem
+
+# 2. the platform: the fleet scaffold, chart consumers, and pod-level
+#    distribution to every Project backing namespace.
 kube-dc bootstrap init ... \
   --tls-mode=byo-wildcard \
   --tls-cert=wildcard-fullchain.pem \
   --tls-key=wildcard-key.pem \
   --trusted-ca-bundle=corp-ca.pem
 ```
+
+Two commands because there are two trust layers: a CA in a ConfigMap is invisible
+to containerd, and a CA on the node is invisible to a pod. `bootstrap install`
+prints the CA's subject and fingerprint in its plan before touching the host, and
+refuses a bundle containing a private key or a non-CA leaf.
 
 `--trusted-ca-bundle` is the trust contract; `--tls-*` is the served-certificate
 contract. They are deliberately separate. The CLI refuses private-key or leaf
@@ -164,14 +179,14 @@ Acceptance must test both boundaries:
 - **OpenBao OIDC discovery**: OpenBao verifies the Keycloak discovery URL with
   its *own* trust store; the manager forwards its private-CA bundle as
   `oidc_discovery_ca_pem` automatically (from `SSL_CERT_DIR` extras). Without
-  it every org sync logs `400 error checking oidc discovery URL`.
+  it every Organization sync logs `400 error checking oidc discovery URL`.
 - `OPENBAO_URL=http://openbao.openbao.svc:8200` (internal service) — the
   public `bao.${DOMAIN}` host is generally unreachable from
   `external-secrets-system` and from db-manager's engine registration;
   without this, SecretStores show `unable to create client` and
   DatabaseCredentialPolicies stay `engine-not-ready`.
 
-## 5. Tenant-cluster addons (managed K8s)
+## 5. Managed Cluster add-ons
 
 Wire `platform/tenant-addons` into a Flux Kustomization (`tenant-addons`,
 dependsOn platform). Without it managed clusters get **no CNI**: worker nodes
@@ -180,7 +195,7 @@ stay NotReady → `kubelet-csr-approver` Pending → MachineDeployments stuck
 `kube-dc.com/tenant-addons=enabled`:
 
 - `cilium-cni` — the CNI (UI addon toggle: `cni=disabled` opts out)
-- `coredns` — tenant-cluster DNS (`coredns=disabled` opts out)
+- `coredns` — Managed Cluster DNS (`coredns=disabled` opts out)
 - `kubevirt-csi` — tenant-side CSI node driver + default StorageClass
   (`csi=disabled` opts out). **Scope its selector with
   `tenant-addons In [enabled]`** — the management cluster is itself a
@@ -194,7 +209,7 @@ node. What you get, and what it needs:
 
 - **spegel** — RKE2 embedded registry (§1 note; nodes P2P-share image content).
 - **tenant-addons** — Sveltos ClusterProfiles (Cilium CNI, CoreDNS) for
-  managed/nested tenant clusters. Without this a tenant cluster gets **no
+  managed/nested Managed Clusters. Without this a Managed Cluster gets **no
   CNI**: nodes stay NotReady, `kubelet-csr-approver` never schedules, and the
   worker MachineDeployment wedges at `ScalingUp 0/1`.
 - **registry-depot (zot)** — S3-backed local container registry; `init` mints

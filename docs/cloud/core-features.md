@@ -1,183 +1,148 @@
-# Core Features
+# Platform Capabilities
 
-Kube-DC extends Kubernetes with a robust set of features designed for enterprise data center operations. This page provides detailed technical specifications and use cases for each of Kube-DC's core capabilities.
+Kube-DC gives teams a governed place to run applications, virtual machines,
+databases, and Managed Clusters without exposing the platform cluster itself.
 
-> Looking for a Architectural details? Visit our [architectural overview](/platform/architecture-overview).
+The customer model is:
 
-## Organization Management
+```text
+Organization
+└── Project
+    ├── Applications
+    ├── Virtual machines
+    ├── Managed databases
+    └── Managed Clusters
+```
 
-!!! info "Foundation for Multi-Tenancy"
-    Organization Management provides the foundation for Kube-DC's multi-tenant capabilities, providing organization-scoped identity and project-scoped workload isolation between different users and groups.
+An **Organization** owns identity, billing, and shared quota. A **Project** is
+the day-to-day workload boundary. In Kubernetes, that Project is implemented as a
+backing namespace named `{organization}-{project}`, with Project RBAC and isolated VPC
+networking. A **Managed Cluster** is different: it has its own Kubernetes API
+and is the right place for CRDs, operators, multiple namespaces, and
+cluster-scoped administration.
 
-Kube-DC's multi-tenant architecture allows service providers to host multiple organizations with layered isolation — separate identity realms, projects and networks — and per-organization customization.
+See [Core Concepts](core-concepts.md) for the complete resource model.
 
-**Capabilities:**
+## Projects
 
-- **Multi-Organization Support**: Host multiple organizations on a single Kube-DC installation with complete logical separation
-- **Custom SSO Integration**: Each organization can configure its own identity provider:
-    - Google Workspace / Gmail
-    - Microsoft Active Directory / Azure AD
-    - GitHub
-    - GitLab
-    - LDAP
-    - SAML 2.0 providers
-    - OpenID Connect providers
-- **Hierarchical Group Management**: Create and manage groups within organizations with inheritance of permissions
-- **Flexible RBAC**: Assign fine-grained permissions to groups for specific projects or resources
-- **Organizational Quotas**: Set resource limits at the organization level to ensure fair resource allocation
+A Project provides a focused Kubernetes environment for application teams:
 
-!!! example "Real-World Applications"
-    - **Managed Service Providers**: Host multiple client organizations with separate authentication systems
-    - **Enterprise IT**: Separate departments with different authentication requirements
-    - **Educational Institutions**: Provide isolated environments for different departments or research groups
+- Deployments, StatefulSets, Jobs, Services, and autoscaling
+- KubeVirt virtual machines
+- Persistent and object storage
+- Managed PostgreSQL and MariaDB
+- Project-scoped identities, roles, secrets, certificates, and encryption keys
+- Cloud or public gateway networking with explicit inbound exposure
+- Optional Project quota within the Organization's shared plan
 
-## Namespace as a Service
+Project users cannot create namespaces, CRDs, ClusterRoles, or StorageClasses.
+Container exec and attach are blocked, CronJobs are read-only, and
+NetworkPolicy is not a self-service Project control. These boundaries protect
+the shared platform.
 
-!!! info "Projects and Workloads"
-    Namespaces in Kube-DC function as projects, providing isolated environments for deploying and managing diverse workloads.
+Read [Projects](kubernetes-projects.md) before adapting a Helm chart
+or operator for a Project.
 
-Every project in Kube-DC is allocated its own Kubernetes namespace with extended capabilities for running both containers and virtual machines.
+## Managed Clusters
 
-**Capabilities:**
+A Managed Cluster gives you a separate Kubernetes API and control plane while
+Kube-DC operates its lifecycle. Use one when your workload needs:
 
-- **Unified Management**: Deploy and manage both VMs and containers from a single interface
-- **Project Isolation**: Complete network and resource isolation between projects
-- **Resource Quotas**: Set limits on CPU, memory, storage, and other resources per project
-- **Integrated Dashboard**: View and manage all workloads through a unified web interface
-- **Custom Templates**: Create and use templates for quick deployment of common workloads
+- CRDs or Kubernetes operators
+- Multiple namespaces
+- ClusterRoles or other cluster-scoped resources
+- Scheduled controllers such as GitOps agents
+- Kubernetes version and worker-pool control
+- Privileged platform software that cannot run in a shared Project
 
-!!! example "Real-World Applications"
-    - **Application Modernization**: Run legacy VMs alongside containerized microservices
-    - **Development Environments**: Provide isolated environments for development, testing, and staging
-    - **Mixed Workloads**: Support teams that require both traditional and cloud-native infrastructure
+Managed Cluster workers run as virtual machines inside the parent Project and
+consume its quota. Start with [Provision a Managed Cluster](provisioning-cluster.md).
 
-## Network Management
+## Applications
 
-!!! info "Advanced Connectivity"
-    Kube-DC's network capabilities enable sophisticated connectivity options while maintaining isolation between projects.
+Projects support ordinary container workloads and Helm charts that stay within
+the Project boundary. Kube-DC applies resource defaults when a container omits
+requests or limits, and the Project network keeps private workload traffic
+isolated.
 
-Kube-DC provides advanced networking capabilities that bridge traditional data center networking with cloud-native concepts.
+- [Deploy Your First Application](deploy-first-app.md)
+- [Service Exposure](service-exposure.md)
+- [GitOps](gitops.md)
 
-**Capabilities:**
+## Virtual Machines
 
-- **Dedicated VPC per Project**: Each project gets its own virtual network environment
-- **VLAN Integration**: Connect to physical network infrastructure using VLANs
-- **Software-Defined Networking**: Create overlay networks with software-defined control
-- **Network Peering**: Connect project networks with each other or with external networks
-- **NAT and Internet Gateway**: Control outbound and inbound internet access per project
-- **External IP Assignment**: Assign public IPs directly to VMs or Kubernetes services
-- **Load Balancer Integration**: Create and manage load balancers for services and VMs
-- **Platform-Managed Traffic Controls**: Each project's VPC is isolated by platform-managed rules — cross-project routing is blocked by default. (Tenant-authored `NetworkPolicy` resources are not currently supported in projects.)
-- **DNS Management**: Automatic DNS for services and VMs with custom domain support
+KubeVirt provides VM lifecycle, console access, persistent disks, and Project
+networking alongside container workloads. Public access remains explicit: use a
+LoadBalancer Service for selected ports or a Floating IP for direct VM access.
 
-!!! example "Real-World Applications"
-    - **Hybrid Cloud Deployments**: Extend on-premises networks to containerized workloads
-    - **Multi-Tier Applications**: Create complex network topologies for enterprise applications
-    - **Secure Isolation**: Create zero-trust network environments with fine-grained control
+- [Create a Virtual Machine](creating-vm.md)
+- [Connect to a Virtual Machine](connecting-vm.md)
+- [VM Lifecycle](vm-lifecycle.md)
 
-## Virtualization
+## Managed Databases
 
-!!! info "KubeVirt Integration"
-    Built on KubeVirt, Kube-DC provides enterprise-grade virtualization capabilities fully integrated with Kubernetes.
+Kube-DC can provision and operate PostgreSQL and MariaDB inside a Project.
+Database configuration can include replication, scheduled backups, restore
+workflows, and Project-scoped credentials. Availability depends on the replica
+count and the application connection strategy; a single replica is not highly
+available.
 
-Built on KubeVirt, Kube-DC provides enterprise-grade virtualization capabilities integrated with Kubernetes.
+See [Managed Databases](managed-databases.md).
 
-**Capabilities:**
+## Networking
 
-- **Hardware Vendor Support**: Compatible with major hardware vendors' servers and components
-- **GPU Passthrough**: Support for Nvidia GPU passthrough to virtual machines
-- **ARM Support**: Run VMs on ARM-based infrastructure
-- **Web Console**: Access VM consoles directly through the web UI
-- **SSH Integration**: SSH access management with key authentication
-- **Live Migration**: Move running VMs between nodes without downtime
-- **Snapshots**: Create point-in-time snapshots of VM volumes
-- **VM Templates**: Create and use templates for rapid VM provisioning
-- **Custom Boot Options**: Configure boot order, firmware settings, and UEFI support
-- **VM Import/Export**: Import existing VMs from other platforms
+Every Project has an isolated VPC and a gateway EIP. The Project network type
+selects the default external address pool; it does not decide which workload
+types the Project can run.
 
-!!! example "Real-World Applications"
-    - **Legacy Application Support**: Run applications that require traditional VMs
-    - **Windows Workloads**: Host Windows servers alongside Linux containers
-    - **GPU-Accelerated Computing**: Provide GPU resources for AI/ML or rendering workloads
-    - **Specialized Operating Systems**: Run operating systems not supported in containers
+Use:
 
-## Infrastructure as Code
+- Gateway routes for hostname-based HTTP, HTTPS, or TLS passthrough
+- LoadBalancer Services for selected TCP or UDP ports
+- Floating IPs for one-to-one VM address mapping
 
-!!! info "API-Driven Architecture"
-    Kube-DC's API-driven approach enables automation and integration with popular infrastructure tools.
+An EIP may be cloud-internal or public. Do not assume that every external
+address is reachable from the internet.
 
-Kube-DC leverages and extends the Kubernetes API to enable comprehensive infrastructure automation.
+- [Networking Overview](networking-overview.md)
+- [Service Exposure](service-exposure.md)
+- [External and Floating IPs](public-floating-ips.md)
 
-**Capabilities:**
+## Storage and Data Protection
 
-- **Native Kubernetes API**: Manage all Kube-DC resources using standard Kubernetes tools
-- **Custom Resource Definitions (CRDs)**: Extended Kubernetes objects for managing organizations, projects, VMs, and more
-- **GitOps Compatible**: Deploy and manage infrastructure using GitOps workflows
+Projects can use block storage for VMs and containers and S3-compatible object
+storage for application data. Backup behavior belongs to the service that owns
+the data: managed database backup, Managed Cluster etcd snapshots, and
+application-level file or object backup are separate workflows.
 
-!!! example "Real-World Applications"
-    - **Automated Infrastructure**: Create fully automated infrastructure provisioning workflows
-    - **Self-Service Portals**: Build custom self-service interfaces using the Kube-DC API
-    - **CI/CD Integration**: Include infrastructure provisioning in CI/CD pipelines
-    - **Multi-Cloud Management**: Manage Kube-DC resources alongside other cloud resources
+- [Block Storage](block-storage.md)
+- [Object Storage](object-storage.md)
+- [Data Protection and Recovery](backups-snapshots.md)
 
-## Integrated Flexible Billing
+## Identity and Security
 
-!!! info "Cost Management"
-    Track, allocate, and manage costs across all resources with Kube-DC's comprehensive billing capabilities.
+Organization membership controls who can see the environment. Organization
+Groups grant a standard or custom Project role to a team. Project admission
+policies then enforce the shared-platform boundary independently of the UI.
 
-Kube-DC includes comprehensive resource tracking and billing capabilities suitable for both service providers and internal IT organizations.
+- [User and Group Management](team-management.md)
+- [Security Restrictions](security-restrictions.md)
+- [Secrets Manager](secrets-manager.md)
+- [Key Management](kms.md)
+- [Certificate Management](certificate-manager.md)
 
-**Capabilities:**
+## Billing and Quota
 
-- **Resource Metering**: Track usage of CPU, memory, storage, GPU, and network resources
-- **Custom Pricing Models**: Define pricing tiers for different resource types and customers
-- **Project-Based Billing**: Track and bill resource usage at the project level
-- **Cost Allocation**: Assign costs to organizational units, projects, or individual resources
-- **Quota Enforcement**: Automatically enforce resource limits based on billing status
-- **Usage Reporting**: Generate detailed usage reports for analysis and billing
-- **Billing API**: Integrate with external billing systems through a comprehensive API
-- **Chargeback Models**: Support for various internal chargeback models for enterprise use
+An Organization's plan is shared across its Projects. Organization admins can
+add a Project cap when one team needs a smaller budget, but Project users cannot
+edit the platform-managed ResourceQuota objects directly. Plan values and
+optional capabilities can vary by installation; use the console's Billing page
+as the source of truth.
 
-!!! example "Real-World Applications"
-    - **Managed Service Providers**: Bill customers for exact resource usage
-    - **Enterprise IT**: Implement internal chargeback or showback for departmental resource usage
-    - **Resource Optimization**: Identify resource usage patterns and optimize costs
+See [Billing and Usage](billing-usage.md).
 
-## Management Services
-
-!!! info "Value-Added Services"
-    Extend Kube-DC's capabilities by offering managed services on top of the core platform.
-
-Kube-DC provides a platform for delivering managed services on top of its infrastructure.
-
-**Capabilities:**
-
-**Database as a Service**: Deploy and manage databases with automated operations
-
-  - PostgreSQL
-  - MySQL/MariaDB
-  - Microsoft SQL Server
-  - And more
-
-**Object Storage**: S3-compatible storage with multi-tenancy support
-
-**NoSQL Databases**: Managed NoSQL database offerings
-
-  - Redis
-  - MongoDB
-  - Elasticsearch/OpenSearch
-
-**AI/ML Platform**: Infrastructure for deploying and serving AI/ML models
-
-  - LLM serving
-  - Model training infrastructure
-  - GPU resource allocation
-
-**Backup Services**: Automated backup solutions for VMs and containers
-**Monitoring as a Service**: Multi-tenant monitoring solutions
-**Service Catalog**: Self-service provisioning of common services
-
-!!! example "Real-World Applications"
-    - **Internal Platform Team**: Provide managed services to development teams
-    - **Managed Service Providers**: Offer value-added services beyond basic infrastructure
-    - **AI/ML Operations**: Provide specialized infrastructure for data science teams
+:::info Product status
+A page should describe a capability as available only when it is exposed in the
+current console or documented API. Preview, Pilot, provider-specific, and
+roadmap capabilities must be labeled explicitly.
+:::

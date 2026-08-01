@@ -1,178 +1,174 @@
-# Kube-DC Installation Overview
+# Installation Overview
 
-Kube-DC transforms bare-metal servers into a fully managed cloud platform. This page covers the reference architecture, hardware and network prerequisites, and the high-level deployment workflow. For step-by-step instructions, proceed to the [Installation Guide](installation-guide.md).
+This page helps platform operators choose a supported topology and understand
+what the installer changes. Use the [Installation Guide](installation-guide.md)
+for commands and verification.
 
-## Reference Architecture
+## Before you begin
 
-A production Kube-DC deployment consists of **three server nodes** forming a highly available management cluster, plus an optional **bastion host** for out-of-band administration.
+A Kube-DC installation has two stages:
 
-```
-                         Internet
-                            │
-                    ┌───────┴───────┐
-                    │  Provider GW  │  (public IPv4 subnet)
-                    └───────┬───────┘
-                            │
-              ┌─────────────┼─────────────┐
-              │             │             │
-         master-1      master-2      master-3
-       (control-plane) (control-plane) (control-plane)
-              │             │             │
-   ┌───────── │─────────────│─────────────│──── Management VLAN ──────┐
-   │          │             │             │                           │
-   │     ┌────┴────┐   ┌────┴────┐   ┌────┴────┐                      │
-   │     │ RKE2    │   │ RKE2    │   │ RKE2    │                      │
-   │     │ Kube-DC │   │ KubeVirt│   │ Kamaji  │                      │
-   │     │ OVN-DB  │   │ OVN-DB  │   │ OVN-DB  │              [bastion]
-   │     └─────────┘   └─────────┘   └─────────┘              (optional)
-   │          │             │             │                           │
-   └───────── │─────────────│─────────────│───────────────────────────┘
-              │             │             │
-   ┌───────── │─────────────│─────────────│──── Cloud VLAN ──────────┐
-   │     Project VPCs, NAT gateways, VM traffic                      │
-   └─────────────────────────────────────────────────────────────────┘
-              │             │             │
-   ┌───────── │─────────────│─────────────│──── Provider VLAN ───────┐
-   │     Public IPs: EIPs, FIPs, Service LoadBalancers               │
-   │     MetalLB floating IP for Envoy Gateway (HA)                  │
-   └─────────────────────────────────────────────────────────────────┘
-```
+1. build or adopt the Kubernetes **management cluster**;
+2. bootstrap Flux and let the Fleet repository reconcile Kube-DC.
 
-All three nodes run both the Kubernetes control plane and Kube-DC workloads. Worker nodes can be added later — either manually or via **Metal3 bare-metal provisioning** — for additional compute capacity.
+The management cluster runs the platform controllers and shared services.
+**Managed Clusters** are created later from Projects; they are not the same
+cluster.
 
-## Hardware Prerequisites
+## Choose a topology
 
-| Role | Qty | CPU | RAM | Storage | Notes |
-|------|-----|-----|-----|---------|-------|
-| **Server node** | 3 | 16+ cores | 64+ GB | 500 GB+ SSD | Control plane + workloads |
-| **Bastion** | 0–1 | 2+ cores | 4+ GB | 50 GB | SSH jump host, administration |
+The CLI exposes topology presets so network requirements are explicit:
 
-**Minimum for evaluation:** 3 nodes with 8 cores / 32 GB each.
-**Operating system:** Ubuntu 24.04 LTS on all nodes.
+| Preset | External networks | Typical use |
+|---|---|---|
+| `internal-only` | No dedicated external VLAN | Evaluation or a private environment with an existing reachable ingress path |
+| `cloud-vlan` | Private cloud provider network | Private external addresses and outbound SNAT |
+| `cloud+public-vlan` | Private cloud and public provider networks | Separate private and internet-routable address pools |
+| `custom` | Operator-defined | Existing clusters or datacenter-specific routing |
 
-Each server node must have at least **one VLAN-capable network interface** connected to a switch (or virtual switch) that carries the three required VLANs.
+These presets describe networking, not cluster size. A private environment can
+still be highly available, and a public-network lab can still be single-node.
 
-## Network Architecture
+A common production profile uses three RKE2 server nodes for control-plane and
+etcd quorum plus separate worker nodes for capacity. Smaller evaluation and
+larger dedicated-worker layouts are also possible. Size nodes from the
+components and workloads you enable; GPU, Ceph, observability, and virtualization
+change the requirements substantially.
 
-Kube-DC requires **three isolated Layer 2 networks**, typically delivered as VLANs on a shared trunk interface:
+## Network model
 
-| Network | Example CIDR | VLAN | Purpose |
-|---------|-------------|------|---------|
-| **Management** | `192.168.0.0/18` | native or tagged | Node-to-node communication, Kubernetes API, etcd, bastion access |
-| **Cloud** | `10.64.0.0/16` | tagged | Internal cloud fabric — project VPCs, NAT gateways, VM-to-VM traffic |
-| **Provider** | `<your-public-subnet>/24` | tagged | Public IPv4 — EIPs, Floating IPs, Service LoadBalancers |
+```mermaid
+flowchart TB
+  accTitle: Kube-DC installation network model
+  accDescr: Nodes use a management network for platform traffic and can optionally connect provider networks that expose Project workloads through external IP resources.
+  Management[Management network<br/>node, API, etcd, and SSH traffic]
+  Provider[Optional provider networks<br/>ext-cloud and ext-public]
+  OVN[Kube-OVN]
+  Project[Project VPC and workload subnet]
+  Workloads[Pods, VMs, and Managed Cluster workers]
 
-### Management Network
-
-The management network carries all Kubernetes cluster traffic:
-
-- **RKE2 API server** (port 6443, 9345)
-- **etcd** replication between control-plane nodes
-- **OVN Southbound/Northbound** databases
-- **SSH** access from the bastion host
-
-Assign a static IP to each node on this network. Do **not** use DHCP — static addressing is required for stable etcd and OVN operation.
-
-### Cloud Network (Kube-OVN Underlay)
-
-The cloud network is an underlay VLAN managed by Kube-OVN. It provides:
-
-- **Per-project VPC isolation** — each project gets its own virtual subnet
-- **NAT gateways** — projects share outbound connectivity via OVN NAT
-- **VM traffic** — KubeVirt VMs communicate over this fabric
-
-This is a **large private range** (e.g., `/16`) because every project VPC, NAT gateway, and logical router port consumes addresses from it.
-
-### Provider Network (Public IPv4)
-
-The provider network is a **routable public subnet** obtained from your ISP, data center, or hosting provider. Kube-DC uses it for:
-
-- **External IPs (EIPs)** — dedicated public IPs assigned to projects
-- **Floating IPs (FIPs)** — portable IPs that can move between VMs and services
-- **Service LoadBalancers** — Kubernetes `LoadBalancer` services get IPs from this range
-- **MetalLB floating IP** — a single IP for Envoy Gateway HA across all three nodes
-
-:::tip
-Both the cloud and provider networks share the **same physical interface** via different VLAN IDs. Kube-OVN automatically creates VLAN subinterfaces and manages OVS bridges.
-:::
-
-### Network Diagram
-
-```
-Physical Server NIC (e.g., eth1)
-├── VLAN 100 (Management)  ─── 192.168.0.0/18   ─── Node IPs, Kubernetes API, etcd
-├── VLAN 200 (Cloud)       ─── 10.64.0.0/16     ─── Kube-OVN underlay, project VPCs
-└── VLAN 300 (Provider)    ─── x.x.x.0/24       ─── Public IPs for EIP/FIP/LB
+  Management --> OVN
+  Provider --> OVN
+  OVN --> Project --> Workloads
 ```
 
-## Components Deployed by the Installer
+- The **management network** connects nodes and carries Kubernetes control-plane
+  traffic. Use stable node addresses and working routing.
+- `ext-cloud` is an optional private external provider network. It supplies
+  addresses for Project gateways, private EIPs, and LoadBalancer Services.
+- `ext-public` is an optional internet-routable provider network. Enable it
+  only when the datacenter routes the address pool and the platform permits
+  public Projects.
+- Every Project receives its own overlay VPC and creator-supplied workload
+  CIDR. Project workload subnets are not carved from the external VLAN CIDRs.
 
-The `kube-dc` CLI (`kube-dc bootstrap init`) scaffolds a GitOps **fleet
-repository** and bootstraps Flux against it; Flux then reconciles all
-platform components onto your RKE2 cluster. The fleet repo stays the
-source of truth for versions and configuration:
+Provider networks may use VLANs on a shared physical trunk, dedicated
+interfaces, or topology-specific existing bridges. Kube-OVN and OVS program the
+attachment; do not assume Linux `bond0.<vlan>` interfaces are created.
 
-> **Versions below are indicative, as of Kube-DC v0.5.34.** Component versions
-> are pinned per cluster in the GitOps fleet repository
-> (`clusters/<name>/cluster-config.env`), which is the authoritative source. A
-> given cluster may differ. **Kamaji** is a kube-dc fork carrying
-> platform-specific patches.
+<details>
+<summary>View the reference architecture diagram</summary>
 
-| Component | Version | Purpose |
-|-----------|---------|---------|
-| **Kube-OVN** | v1.15.10 | Core CNI — overlay/underlay networking, VPC isolation, NAT gateways |
-| **Multus CNI** | v4.1.0 | Multi-interface support for pods and VMs |
-| **KubeVirt** | v1.8.1 | Virtual machine management on Kubernetes |
-| **KubeVirt CDI** | v1.65.0 | VM disk image import and management |
-| **Keycloak** | 24.3.0 | Identity provider — SSO, OIDC, multi-tenant realms |
-| **Cert-Manager** | v1.20.1 | Automatic TLS certificate provisioning (Let's Encrypt) |
-| **Envoy Gateway** | v1.7.1 | API gateway — HTTPS ingress, routing, rate limiting |
-| **Kamaji** | 1.0.8-kube-dc | Managed Kubernetes control planes (tenant clusters) |
-| **Cluster API** | v1.8.x | Declarative cluster lifecycle management |
-| **Sveltos** | v0.57.2 | GitOps-style addon management for tenant clusters |
-| **Kyverno** | v1.17.1 | Policy engine — admission control, resource validation |
-| **HNC** | v1.1.0 | Hierarchical namespaces for multi-tenancy |
-| **Prometheus + Grafana** | 67.x | Monitoring, alerting, dashboards |
-| **Loki + Alloy** | 6.x | Log aggregation and collection |
-| **Kube-DC Core** | latest | Management controllers, API, web console |
-| **NoVNC** | — | Browser-based VM console access |
+This broader topology illustrates a common three-server RKE2 control-plane
+profile with separate workers. It is an example architecture, not a validated
+capacity plan or a universal deployment requirement.
 
-## Deployment Phases
+<figure className="diagram-comparison" data-diagram="reference-architecture" tabIndex="0" aria-label="Scrollable reference architecture diagram">
+  <img
+    src="/diagrams/generated/reference-architecture.svg"
+    alt="Illustrative Kube-DC reference architecture with operators and Flux, three RKE2 server nodes, a management network, separate workers, platform services, optional provider networks, Project networks, workloads, and distinct Managed Cluster control planes."
+  />
+  <figcaption>Illustrative production topology; actual node count and capacity depend on enabled services and workloads.</figcaption>
+</figure>
 
-The end-to-end installation consists of five phases:
+[Open the full-size SVG for zooming or printing.](/diagrams/generated/reference-architecture.svg)
 
-### Phase 1 — Server Preparation
+</details>
 
-Provision three servers with Ubuntu 24.04 LTS. Configure networking (static IPs on the management VLAN), kernel parameters, and system prerequisites.
+For NAT or routed environments where Project workloads cannot hairpin through
+the platform's public address, enable
+[internal platform endpoints](internal-platform-endpoints.md).
 
-### Phase 2 — RKE2 Cluster Bootstrap
+## What the Fleet installs
 
-Install RKE2 on all three nodes as a highly available control plane (3 server nodes). Apply required node labels (`kube-ovn/role=master`, `kube-dc-manager=true`) and disable the built-in ingress controller (replaced by Envoy Gateway).
+The exact versions are pinned in
+`clusters/<cluster>/cluster-config.env`. Depending on the selected
+configuration, Flux reconciles:
 
-### Phase 3 — Kube-DC Deployment
+- Kube-DC controllers, backend, console, and admin console;
+- Kube-OVN and Multus networking;
+- KubeVirt and CDI virtualization;
+- Keycloak identity and OIDC integration;
+- Envoy Gateway and cert-manager;
+- Kamaji, Cluster API, and supported worker providers;
+- HNC and admission policy;
+- Grafana, Mimir, Loki, and collection agents;
+- optional OpenBao, Rook Ceph, GPU, Metal3, and billing integrations.
 
-Install the [`kube-dc` CLI](cluster-cli-overview.md), point wildcard DNS
-at your public IP, and run `kube-dc bootstrap init`. It creates a GitOps
-fleet repo, bootstraps Flux, and hands off to Flux to reconcile all
-components in ~10–20 minutes. Two one-time post-install steps wire the
-Keycloak OIDC clients and OpenBao. See the Installation Guide Phase 3.
+Consult the Fleet pin rather than a copied version table when planning an
+upgrade.
 
-### Phase 4 — Post-Deployment Configuration
+## Installation journey
 
-After the base installation:
+### 1. Qualify the environment
 
-1. **MetalLB** — Deploy MetalLB with a floating public IP for Envoy Gateway HA
-2. **Provider network** — Configure ProviderNetwork patches if nodes have different NIC names
-3. **External networks** — Create the cloud VLAN and provider VLAN subnets in Kube-OVN
-4. **DNS** — Point `*.yourdomain.com` wildcard DNS to the MetalLB floating IP
+- choose the topology preset;
+- plan Pod, Service, Project, and external-network ranges; Project VPCs may
+  overlap, but overlapping ranges prevent straightforward future routing between
+  them;
+- reserve DNS names and any LoadBalancer or internal endpoint VIPs;
+- verify node time, DNS, kernel, storage, and interface requirements;
+- decide how SOPS/age recovery keys and OpenBao unseal material are held.
 
-### Phase 5 — Optional Add-ons
+### 2. Build the management cluster
 
-- **Rook Ceph** — S3-compatible object storage
-- **SSO** — Google OAuth or other identity provider via Keycloak
-- **Metal3** — [Bare-metal provisioning](deploy-metal3-bare-metal-workers.md) for automated worker node scaling
-- **Billing** — Stripe integration for usage-based billing
+Use `kube-dc bootstrap install` for RKE2 nodes, or adopt a compatible existing
+cluster through the documented adoption checks. Three server nodes are the
+reference HA control-plane profile, not a universal installer requirement.
 
----
+### 3. Bootstrap Kube-DC
 
-For the complete step-by-step deployment walkthrough, proceed to the **[Installation Guide](installation-guide.md)**.
+Install a pinned, checksummed CLI release and run
+`kube-dc bootstrap doctor --no-tty`. Then use `kube-dc bootstrap init` to
+create the per-cluster Fleet overlay, commit it, bootstrap Flux, and converge
+the platform.
+
+The generated configuration includes the chosen provider-network and ingress
+model. Review the plan before applying it; do not maintain a second, manual copy
+of those resources.
+
+### 4. Complete identity and security setup
+
+Run the version-matched post-install workflows for Keycloak OIDC and, when
+enabled, OpenBao. Commit generated encrypted configuration through the Fleet
+workflow. Configure DNS and certificate issuance for the hostnames users will
+open.
+
+### 5. Verify before onboarding Organizations
+
+Confirm:
+
+- all management-cluster nodes are Ready;
+- Flux sources, Kustomizations, and HelmReleases are healthy;
+- platform hostnames respond with the expected TLS identity;
+- Keycloak login and platform-admin authorization work;
+- a test Organization and Project reach Ready;
+- the test Project has working DNS and the expected egress path;
+- enabled storage, backup, observability, and public exposure paths pass their
+  own checks.
+
+Do not infer health from every Pod being `Running`: completed Jobs and
+component-specific readiness conditions are valid states.
+
+## Optional capabilities
+
+Enable these only after their prerequisites and recovery paths are understood:
+
+- [Rook Ceph object storage](deploy-rook-ceph-object-storage.md)
+- [Google SSO](sso-google-auth.md)
+- [Metal3 bare-metal workers](deploy-metal3-bare-metal-workers.md)
+- public external networking and delegated datacenter VLANs
+- GPU workload profiles
+- Stripe or WHMCS billing integration
+
+Continue with the [Installation Guide](installation-guide.md).

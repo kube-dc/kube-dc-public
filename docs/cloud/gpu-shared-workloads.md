@@ -39,7 +39,7 @@ tune memory and compute freely.
 Your GPU entitlement appears in your project quota as a line per product:
 
 ```bash
-kubectl get resourcequota -n {project-namespace} -o yaml | grep deviceclass
+kubectl get resourcequota -n acme-ai -o yaml | grep deviceclass
 # kube-dc-nvidia-v100-shared-8g.deviceclass.resource.k8s.io/devices: "1"
 ```
 
@@ -49,7 +49,7 @@ The number is how many concurrent slices of that product you may hold.
 
 A Shared GPU workload is two objects: a `ResourceClaimTemplate` describing the
 fixed product, and a `Deployment` that references it. Copy the manifest below,
-replace **`{workload-name}`** and the **container image**, and apply it. Keep
+replace `gpu-demo`, `acme-ai`, and the container image, then apply it. Keep
 everything else exactly as shown — the platform validates the shape on admission
 (see [The contract](#the-contract) below).
 
@@ -57,9 +57,9 @@ everything else exactly as shown — the platform validates the shape on admissi
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaimTemplate
 metadata:
-  name: {workload-name}-gpu
+  name: gpu-demo-gpu
   labels: &labels
-    app.kubernetes.io/name: {workload-name}
+    app.kubernetes.io/name: gpu-demo
     app.kubernetes.io/managed-by: kube-dc
     kube-dc.com/gpu-backend: dra
     kube-dc.com/gpu-profile: nvidia-v100-hami
@@ -87,9 +87,9 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {workload-name}
+  name: gpu-demo
   labels: &labels
-    app.kubernetes.io/name: {workload-name}
+    app.kubernetes.io/name: gpu-demo
     app.kubernetes.io/managed-by: kube-dc
     kube-dc.com/gpu-backend: dra
     kube-dc.com/gpu-profile: nvidia-v100-hami
@@ -103,7 +103,7 @@ spec:
     type: Recreate               # release the slice before reacquiring one
   selector:
     matchLabels:
-      app.kubernetes.io/name: {workload-name}
+      app.kubernetes.io/name: gpu-demo
   template:
     metadata:
       labels: *labels
@@ -117,7 +117,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: workload
-          image: {your-cuda-image}@sha256:{digest}   # digest-pinned, glibc-based
+          image: "REGISTRY/IMAGE@sha256:DIGEST"   # digest-pinned, glibc-based
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -129,13 +129,13 @@ spec:
           args: ["nvidia-smi -L; sleep 3600"]
       resourceClaims:
         - name: gpu
-          resourceClaimTemplateName: {workload-name}-gpu
+          resourceClaimTemplateName: gpu-demo-gpu
 ```
 
 Apply it into your project:
 
 ```bash
-kubectl apply -n {project-namespace} -f shared-gpu.yaml
+kubectl apply -n acme-ai -f shared-gpu.yaml
 ```
 
 > Each document defines its own `&labels` / `&annotations` and reuses them
@@ -147,15 +147,15 @@ kubectl apply -n {project-namespace} -f shared-gpu.yaml
 ## Verify
 
 ```bash
-kubectl get deployment,pod -n {project-namespace} \
-  -l app.kubernetes.io/name={workload-name}
+kubectl get deployment,pod -n acme-ai \
+  -l app.kubernetes.io/name=gpu-demo
 
 # GPU allocated and quota consumed:
-kubectl get resourceclaim -n {project-namespace} \
-  -l app.kubernetes.io/name={workload-name}
+kubectl get resourceclaim -n acme-ai \
+  -l app.kubernetes.io/name=gpu-demo
 
 # The GPU is visible inside the container (note the sliced memory):
-kubectl logs -n {project-namespace} deploy/{workload-name}
+kubectl logs -n acme-ai deploy/gpu-demo
 # GPU 0: Tesla V100-PCIE-32GB (UUID: ...)
 ```
 
@@ -171,7 +171,7 @@ Delete the workload to return the slice. Delete the whole set, not just the pod
 — deleting only the pod lets the Deployment respawn it and keep the slice:
 
 ```bash
-kubectl delete -n {project-namespace} -f shared-gpu.yaml
+kubectl delete -n acme-ai -f shared-gpu.yaml
 ```
 
 Watch the product's quota line return to its previous value.
@@ -190,7 +190,7 @@ drifts from the fixed product is rejected. If `kubectl apply` returns a
 - **Labels** `app.kubernetes.io/managed-by: kube-dc`, `kube-dc.com/gpu-backend:
   dra`, `kube-dc.com/gpu-profile`, and `app.kubernetes.io/name`, identical on the
   object, its `spec.metadata`, and the Deployment's pod template.
-- **Name** of the `ResourceClaimTemplate` must be `{workload-name}-gpu`.
+- **Name** of the `ResourceClaimTemplate` must be `gpu-demo-gpu`.
 - **`strategy: Recreate`**, one container, and the container's
   `resources.claims[0].name` = `gpu` = the pod's `resourceClaims[0].name`.
 - **No** `schedulerName`, `nodeSelector`, `nodeName`, node affinity, host

@@ -517,6 +517,41 @@ article img {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
+/* D2 review diagrams keep their intrinsic detail in a labelled,
+   keyboard-focusable horizontal viewport instead of shrinking text below a
+   useful reading size. */
+article figure.diagram-comparison {
+  margin: 1.5rem 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable;
+}
+
+article figure.diagram-comparison img {
+  margin: 0 0 0.75rem;
+  box-shadow: none;
+}
+
+article figure.diagram-comparison:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 3px;
+}
+
+article figure.diagram-comparison[data-diagram='fip-to-vm'] img {
+  width: 1430px;
+  max-width: none;
+}
+
+article figure.diagram-comparison[data-diagram='architectural-layers'] img {
+  width: 2370px;
+  max-width: none;
+}
+
+article figure.diagram-comparison[data-diagram='reference-architecture'] img {
+  width: 1120px;
+  max-width: none;
+}
+
 /* Opt-in: hold a small decorative image back from filling the column. */
 article img.screenshot-narrow {
   max-width: 480px;

@@ -1,51 +1,27 @@
 apiVersion: security.kube-dc.com/v1alpha1
 kind: DatabaseCredentialPolicy
 metadata:
-  name: {dbcp-name}
-  namespace: {project-namespace}          # {org}-{project}
+  name: "{policy-name}"
+  namespace: "{backing-namespace}"
 spec:
-  # The KdcDatabase this policy rotates credentials on. Must exist in
-  # the same namespace; cross-namespace refs are rejected by API shape.
-  # Create the database first via the create-database skill.
+  # The KdcDatabase must exist in the same Project backing namespace.
   databaseRef:
-    name: {kdcdatabase-name}
+    name: "{database-name}"
 
-  # static-rotated = long-lived credentials, password rotates on
-  # schedule, same username throughout (Phase 1, supported).
-  # dynamic       = short-lived per-lease (Phase 2 preview; controller
-  #                 returns DeferredFeature until phase 2 ships).
+  # dynamic is reserved and returns Ready=False/DynamicModeDeferred.
   mode: static-rotated
 
-  # The database user the policy will manage. MUST already exist in the
-  # database — the platform does NOT create users in static-rotated
-  # mode (DBA owns identity; platform owns credentials).
-  #
-  # RESERVED (admission webhook rejects): kdc_rotator, postgres (PG),
-  # root (MariaDB). Use a dedicated application user, never the
-  # platform-internal rotator or break-glass identity.
+  # The user must exist. kdc_rotator, postgres, and root are reserved.
   username: app
 
   rotation:
-    # KubeDC duration (e.g. 1h, 12h, 7d, 30d). Minutes for testing,
-    # days for production — short intervals pound the DB with
-    # ALTER USER calls.
     interval: 30d
-
-    # rolling   = OpenBao briefly accepts both old and new passwords
-    #             during changeover. Safe for rolling Deployments.
-    # immediate = atomic swap; clients must reconnect on auth-error.
-    strategy: rolling
+    # Both accepted values currently use one-password cutover. Applications
+    # must reload the projected credential before reconnecting.
+    strategy: rolling # rolling | immediate
 
   sync:
-    # When true, the platform projects credentials into a regular
-    # Kubernetes Secret (type: Opaque) your workloads mount. The Secret
-    # carries these keys verbatim (matches the controller's secretData()):
-    #   username password host port database engine dsn
-    # `dsn` is a ready-to-use connection string. `engine` is
-    # 'postgresql' or 'mariadb' so engine-aware clients can branch.
-    # The Secret is rewritten in place on every rotation.
+    # Omit sync to accept the static-rotated default (enabled).
     enabled: true
-
-    # Kubernetes Secret name. Defaults to the DBCP name. Override when
-    # an existing workload expects a specific secretRef.
-    targetSecretName: {target-secret-name}
+    # Defaults to metadata.name.
+    targetSecretName: "{target-secret-name}"

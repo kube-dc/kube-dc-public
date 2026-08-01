@@ -3,9 +3,8 @@ sidebar_label: Dashboard Overview
 title: Navigating the Kube-DC Dashboard
 ---
 
-# Navigating the Kube-DC Dashboard
 
-The Kube-DC dashboard is your central interface for managing projects, workloads, virtual machines, Kubernetes clusters, and account settings. This guide walks you through the key areas of the UI.
+The Kube-DC dashboard is the central interface for managing Projects, workloads, virtual machines, Managed Clusters, and your account.
 
 ## Projects View
 
@@ -36,10 +35,6 @@ Click your name in the top-right corner to open the user menu with the following
 
 Selecting **Manage Workloads** or clicking **Go to Project** takes you to the main workloads dashboard.
 
-<div style={{width: '100%', maxWidth: 'none'}}>
-![Kube-DC workloads dashboard](images/kube-dc-workloads-view.png)
-</div>
-
 The workloads dashboard provides:
 
 ### Quick Actions
@@ -48,34 +43,27 @@ Three action cards at the top let you jump straight into common tasks:
 
 - **Get CLI Access** — download your kubeconfig for programmatic access via `kubectl`
 - **Deploy Virtual Server** — create a new Linux or Windows virtual machine
-- **Create K8s Cluster** — provision a managed Kubernetes cluster with automated scaling
+- **Create Managed Cluster** — provision a Managed Cluster with its own Kubernetes API
 
 ### Sidebar Navigation
 
 The left sidebar shows a tree view of all resources in the current project:
 
 - **Virtual Machines** — grouped by OS (e.g., `debian`, `ubuntu`, `win`)
-- **Kubernetes Clusters** — nested clusters with their worker nodes
+- **Managed Clusters** — clusters and their worker pools
 
 ### Project Overview
 
-The center panel displays a summary of your project resources:
+The center panel adapts to the provider's billing mode:
 
-- **Pods** — running and total pod count
-- **Virtual Machines** — running and total VM count
-- **Storage** — number of volumes and total size
-- **Network** — load balancers and public IPs in use
+- **Subscription plans** show running and total Pods and VMs, storage volume count and size, LoadBalancers, and public IPs.
+- **Metered plans** show running compute usage and the current billing-period totals.
 
 ### Resource Quotas
 
-Progress bars show your current usage against the project limits for:
+When quota data is available, **Quota Usage** compares Project use with either its Project cap or the Organization's shared pool. It can include CPU, memory, storage, Pods, public IPv4, object storage, and provider-enabled accelerators.
 
-- **CPU** — cores used vs. allocated
-- **Memory** — memory used vs. allocated
-- **Storage** — disk space used vs. allocated
-- **Object Storage** — S3-compatible storage used vs. allocated
-
-Click **View Organization Billing** to see usage and cost details for the entire organization.
+Organization Admins can select **View Organization Billing** to open plan, usage, and cost details. Other Project members do not see that action.
 
 ---
 
@@ -97,13 +85,13 @@ Below the top navigation bar, a row of icon tabs lets you switch between differe
 
 The tabs from left to right are:
 
-| Icon | Resource Category | What You'll Find |
-|---|---|---|
-| 📋 | **Compute** | Pods, Deployments, StatefulSets, DaemonSets, Jobs |
-| ⚙️ | **K8s Resources** | ConfigMaps, Secrets, ServiceAccounts, CRDs |
-| ☸ | **Volumes** | PersistentVolumeClaims, storage usage |
-| 🖥️ | **Network** | Services, Ingresses, Load Balancers, IPs |
-| 🔗 | **Object Storage** | S3-compatible buckets and access credentials |
+| Resource Area | What You Will Find |
+|---|---|
+| **Compute** | Pods, Deployments, StatefulSets, DaemonSets, Jobs |
+| **Kubernetes Resources** | ConfigMaps, Secrets, ServiceAccounts, and platform-provided custom resources |
+| **Volumes** | PersistentVolumeClaims, storage usage |
+| **Network** | Services, Ingresses, Load Balancers, IPs |
+| **Object Storage** | S3-compatible buckets and access credentials |
 
 ---
 
@@ -129,11 +117,9 @@ The left sidebar provides access to:
 
 Select **Project console** from the user menu to launch a browser-based terminal. The console provides a pre-authenticated `kubectl` session scoped to the projects in your organization.
 
-![Web-based project console](images/project-web-console.png)
-
 From the console you can:
 
-- List available namespaces with `kube-dc ns`
+- List and switch Project contexts with `kube-dc use`
 - Run `kubectl` commands (aliased as `kgp`, `kgs`, etc.)
 - Manage resources directly without installing any CLI tools locally
 

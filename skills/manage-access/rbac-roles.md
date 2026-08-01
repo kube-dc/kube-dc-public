@@ -1,54 +1,72 @@
-# Kube-DC RBAC Roles
+# Project RBAC Roles
 
-## Standard Roles (Auto-Created Per Project)
+Kube-DC creates four standard Kubernetes `Role` objects in every Project's
+backing namespace.
 
-| Role | Description | Typical Use |
-|------|-------------|-------------|
-| `admin` | Full admin access to all project resources | Team leads, project owners |
-| `developer` | CRUD on VMs, workloads, databases, networking | Developers, DevOps |
-| `project-manager` | Read-only access + console/VNC for VMs | Managers, stakeholders |
-| `user` | Basic read access | Observers, auditors |
+| Role | Intended use | Important boundaries |
+|---|---|---|
+| `admin` | Project administration | Manages supported namespaced resources and namespaced RBAC; not controller-owned quota or cluster scope |
+| `developer` | Workload delivery | Manages workloads, VMs, volumes, Services, and managed services; no RBAC management |
+| `project-manager` | Operations and oversight | Reads and monitors resources, uses the VM console, and updates selected managed-security resources |
+| `user` | Read-only visibility | No raw Secret access or VM console |
 
-## How Roles Work
+The exact Kubernetes rules installed on a cluster are authoritative:
 
-1. When a **Project** is created, standard Kubernetes `Role` resources are auto-created in the project namespace
-2. When an **OrganizationGroup** references a role, a `RoleBinding` is created linking the Keycloak group to the Role
-3. Keycloak SSO tokens include group memberships, which Kubernetes maps to RBAC permissions
+```bash
+kubectl -n {project-backing-namespace} get role admin developer project-manager user
+kubectl -n {project-backing-namespace} get role developer -o yaml
+```
 
-## Custom Roles
+No standard role grants pod exec, attach, port-forward, VM/VMI port-forward, or
+NetworkPolicy management. Project admission blocks pod exec and attach even if
+a custom Role attempts to grant those subresources.
 
-You can create custom Kubernetes `Role` resources in a project namespace and reference them from OrganizationGroup:
+## How Organization Groups use roles
+
+For each Project/role pair in an `OrganizationGroup`, the controller creates a
+RoleBinding in that Project's backing namespace:
+
+- binding name: `{role}-{organization-group}`
+- role reference: the requested namespaced `Role`
+- group subject: `{organization}:{organization-group}`
+
+The Project controller separately binds the Organization's built-in
+`org-admin` group to `admin` and its `user` group to `user` in every Project.
+
+## Custom role example
+
+A Project `admin` can define a narrower Role:
 
 ```yaml
-# Step 1: Create custom role in project namespace
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: vm-operator
-  namespace: {org}-{project}
+  name: release-reader
+  namespace: "{project-backing-namespace}"
 rules:
-  - apiGroups: ["kubevirt.io"]
-    resources: ["virtualmachines", "virtualmachineinstances"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: ["cdi.kubevirt.io"]
-    resources: ["datavolumes"]
-    verbs: ["get", "list", "watch", "create", "delete"]
----
-# Step 2: Reference from OrganizationGroup
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "configmaps"]
+    verbs: ["get", "list", "watch"]
+```
+
+Reference it by name from the Organization API namespace:
+
+```yaml
 apiVersion: kube-dc.com/v1
 kind: OrganizationGroup
 metadata:
-  name: vm-team
-  namespace: {org}
+  name: release-auditors
+  namespace: "{organization}"
 spec:
   permissions:
-    - project: {project}
+    - project: production
       roles:
-        - vm-operator    # References the custom Role above
+        - release-reader
 ```
 
-## Permission Inheritance
-
-- Organization admin → access to all projects (via Keycloak realm admin)
-- OrganizationGroup → scoped to specific projects + roles
-- Direct RoleBinding → Kubernetes-native, bypasses OrganizationGroup (not recommended)
+Kubernetes Roles are namespace-scoped. Create the custom Role separately in
+every Project where it is used. Prefer Organization Groups over unmanaged
+direct RoleBindings so identity-group lifecycle remains declarative.

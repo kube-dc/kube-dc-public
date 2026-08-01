@@ -1,94 +1,76 @@
 # Database Connection Patterns
 
+Use these examples from workloads that can reach the Project network. Replace
+`{backing-namespace}` with the selected Project's Kubernetes backing
+namespace.
+
 ## PostgreSQL
 
-### Internal Connection String
-```
-postgresql://app:{password}@{db-name}-rw.{namespace}.svc:5432/{database}
+```text
+postgresql://app:{password}@{database-name}-rw.{backing-namespace}.svc:5432/{application-database}
 ```
 
-### Secret Name
-`{db-name}-app` — key: `password`
+The bootstrap password is in Secret `{database-name}-app`, key `password`.
+If a DatabaseCredentialPolicy manages `app`, use that policy's projected
+Secret instead.
 
-### Environment Variables for Workloads
 ```yaml
 env:
-  - name: DB_PASSWORD
-    valueFrom:
-      secretKeyRef:
-        name: {db-name}-app
-        key: password
-  - name: DB_HOST
-    value: "{db-name}-rw.{namespace}.svc"
-  - name: DB_PORT
-    value: "5432"
-  - name: DB_USER
-    value: "app"
-  - name: DB_NAME
-    value: "{database}"
-  - name: DATABASE_URL
-    value: "postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)"
+- name: DB_HOST
+  value: "{database-name}-rw.{backing-namespace}.svc"
+- name: DB_PORT
+  value: "5432"
+- name: DB_NAME
+  value: "{application-database}"
+- name: DB_USER
+  value: "app"
+- name: DB_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: "{database-name}-app"
+      key: password
 ```
-
-### Port-Forward
-```bash
-kubectl port-forward svc/{db-name}-rw 5432:5432 -n {namespace}
-psql "host=localhost port=5432 dbname={database} user=app"
-```
-
-### Gateway Access
-```bash
-psql "host={db-name}-db-{namespace}.kube-dc.cloud port=5432 dbname={database} user=app sslmode=require"
-```
-
----
 
 ## MariaDB
 
-### Internal Connection String
-```
-mysql://app:{password}@{db-name}.{namespace}.svc:3306/{database}
-```
+The write endpoint depends on replica count:
 
-### Secret Name
-`{db-name}-password` — key: `password`
+| Shape | Host |
+|---|---|
+| One replica | `{database-name}.{backing-namespace}.svc` |
+| Two or more replicas | `{database-name}-primary.{backing-namespace}.svc` |
 
-### Environment Variables for Workloads
+The bootstrap password is in Secret `{database-name}-password`, key
+`password`. Use the policy-projected Secret after a DatabaseCredentialPolicy
+starts managing the user.
+
 ```yaml
 env:
-  - name: DB_PASSWORD
-    valueFrom:
-      secretKeyRef:
-        name: {db-name}-password
-        key: password
-  - name: DB_HOST
-    value: "{db-name}.{namespace}.svc"
-  - name: DB_PORT
-    value: "3306"
-  - name: DB_USER
-    value: "app"
-  - name: DB_NAME
-    value: "{database}"
+- name: DB_HOST
+  value: "{mariadb-write-host}"
+- name: DB_PORT
+  value: "3306"
+- name: DB_NAME
+  value: "{application-database}"
+- name: DB_USER
+  value: "app"
+- name: DB_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: "{database-name}-password"
+      key: password
 ```
 
-### Port-Forward
+## External Clients
+
+Use `spec.expose.type: loadbalancer` for the supported workstation path, then
+read `.status.externalEndpoint`.
+
+Gateway is a narrow, manifest-only option for PostgreSQL 17 direct TLS:
+
 ```bash
-kubectl port-forward svc/{db-name} 3306:3306 -n {namespace}
-mysql -h localhost -P 3306 -u app -p {database}
+psql "host={database-name}-db-{backing-namespace}.{platform-domain} port=443 dbname={application-database} user=app sslmode=require sslnegotiation=direct"
 ```
 
-### Gateway Access
-```bash
-mysql -h {db-name}-db-{namespace}.kube-dc.cloud -P 3306 -u app -p --ssl {database}
-```
-
----
-
-## Key Differences
-
-| Aspect | PostgreSQL | MariaDB |
-|--------|-----------|---------|
-| Service name | `{db-name}-rw` | `{db-name}` |
-| Secret name | `{db-name}-app` | `{db-name}-password` |
-| Default port | 5432 | 3306 |
-| Gateway port | 5432 | 3306 |
+Do not use this Gateway path for PostgreSQL 14-16 or MariaDB. Standard Project
+roles do not grant pod port-forward.

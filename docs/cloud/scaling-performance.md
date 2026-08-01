@@ -1,98 +1,172 @@
-# Scaling & Performance Guide
+# Scaling and Performance
 
-This guide helps you estimate how much performance you can achieve with Kube-DC Cloud resources. These estimates assume an optimized deployment using Helm charts, Envoy load balancing, and managed database services.
+Capacity planning starts with your workload, not a plan-name-to-user-count
+formula. Request rate, cache behavior, database queries, payload size, and
+latency targets can change resource needs by orders of magnitude. Kube-DC does
+not assign a guaranteed number of users or requests per second to a plan.
 
-## Core Technical Stack
+Use this guide to measure a baseline, add headroom, and scale the correct layer.
 
-* **Ingress:** Envoy-based Gateway (optimized for high-throughput SSL offloading)
-* **Compute:** High-performance vCPU nodes on a low-latency network
-* **Storage:** NVMe-backed Persistent Volumes + S3-compatible Object Storage
-* **Database:** Decoupled Managed Database (PostgreSQL/MariaDB) to free up compute resources
+## Start with the Effective Quota
 
----
+An Organization's CPU, memory, storage, Pod, public IPv4, and object-storage
+quota is shared by all its Projects. Open **Manage Organization -> Billing** for
+the current limits and usage. Plan names and values can vary by installation.
 
-## Plan Overview & Resource Pools
+A Project can have a smaller cap, but it cannot exceed the Organization's
+remaining quota. Keep capacity for rollouts, failed-node recovery, certificate
+solver Pods, Jobs, and temporary scaling.
 
-| Feature | **Starter Pool** | **Pro Pool** | **Scale Pool** |
-| :--- | :--- | :--- | :--- |
-| **vCPU** | 4 Cores | 8 Cores | 16 Cores |
-| **RAM** | 8 GB | 24 GB | 56 GB |
-| **NVMe Storage** | 60 GB | 160 GB | 320 GB |
-| **Object Storage** | 20 GB | 100 GB | 500 GB |
-| **Dedicated IPv4** | 1 (Shared Ingress) | 1 (Shared Ingress) | **3 Dedicated IPs** |
+See [Billing and Usage](billing-usage.md).
 
----
+## Define the Target
 
-## WordPress Performance Estimates
+Write down the workload objective before choosing a size:
 
-WordPress performance on Kubernetes is driven by **PHP-FPM worker density** and **Object Caching (Redis)**. By offloading the database and images (S3), the vCPU is dedicated entirely to page rendering.
+- latency target, such as p95 response time
+- sustained and peak request rate
+- concurrent background jobs
+- data size and expected growth
+- recovery time and availability requirement
+- acceptable CPU throttling and memory pressure
 
-| Metric | **Starter (4/8)** | **Pro (8/24)** | **Scale (16/56)** |
-| :--- | :--- | :--- | :--- |
-| **Concurrent Users (Peak)** | 80 – 120 | 250 – 400 | 800 – 1,200 |
-| **Daily Active Users (DAU)** | 15,000 | 45,000 | 120,000+ |
-| **Monthly Active Users (MAU)** | 450,000 | 1.3 Million | 4 Million+ |
-| **Best For** | High-traffic blogs, SMEs | Large communities, WooCommerce | Enterprise news, Viral portals |
+A production estimate should come from a representative load test. Treat a
+development benchmark as a comparison point, not a capacity promise.
 
-:::tip Optimization Tip
-Use the **Scale Pool's** 56GB RAM to allocate a large Redis cache. This allows WordPress to serve "Hot" data from memory, reducing database latency to &lt;10ms.
+## Size Containers Deliberately
+
+Resource **requests** reserve scheduling capacity and are the basis for CPU
+autoscaling. **Limits** bound consumption; a container that exceeds its memory
+limit can be restarted.
+
+Begin with measured values, then inspect actual use:
+
+```bash
+kubectl top pods
+kubectl get pods
+kubectl describe pod <pod-name>
+```
+
+Look for sustained CPU near the request, memory growth, restarts, throttling,
+and Pods that remain Pending. Adjust one variable at a time and repeat the same
+test.
+
+The Project LimitRange supplies defaults when a container omits resources, but
+those defaults are a safety net rather than workload sizing.
+
+## Horizontal Pod Autoscaling
+
+Projects support the HorizontalPodAutoscaler. HPA is not created automatically
+for every Helm chart; define it for a stateless workload after setting realistic
+resource requests.
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+  namespace: acme-production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+```
+
+HPA can add replicas only while the Organization and Project have quota. It
+also cannot repair a bottleneck in a database, storage path, external API, or
+single-threaded application.
+
+:::tip Test the whole scaling path
+Generate a controlled load, watch HPA and Pod readiness, then confirm the
+Gateway or LoadBalancer routes traffic to the new replicas. Also test scale-down
+behavior and connection draining.
 :::
 
----
+## Keep Applications Horizontally Scalable
 
-## SaaS Startup Performance Estimates
+Replicas help only when they can serve independently:
 
-SaaS workloads (Node.js, Go, Python) are typically "Logic-Heavy." These pools allow for horizontal scaling where the application is split into **API Pods** and **Background Workers**.
+- keep session state outside the Pod
+- make Jobs idempotent
+- use readiness probes that represent real serving health
+- spread replicas when the storage and topology allow it
+- define a PodDisruptionBudget for applications that need controlled eviction
+- use image digests and predictable startup times
 
-| Metric | **Starter (4/8)** | **Pro (8/24)** | **Scale (16/56)** |
-| :--- | :--- | :--- | :--- |
-| **Concurrent API Req/sec** | 150 – 300 | 600 – 1,000 | 2,500 – 4,000+ |
-| **Daily Active Users (DAU)** | 1,200 | 5,500 | 20,000+ |
-| **Monthly Active Users (MAU)** | 8,000 | 35,000 | 150,000+ |
-| **Architecture** | Single-service CRUD | Microservices (HA) | High Availability + AI/Data Jobs |
+A ReadWriteOnce volume can constrain replicas to one node. Choose storage and
+application architecture together.
 
-### Workload Split Recommendation (Scale Pool)
+## Size the Data Layer Separately
 
-In the **Scale Pool (16 vCPU / 56 GB)**, we recommend the following resource distribution:
+A managed database does not scale automatically with an application Deployment.
+Measure query latency, connections, working-set memory, storage growth, and
+backup duration. Add replicas for the availability model described in
+[Managed Databases](managed-databases.md); one replica is not highly available.
 
-* **Web/API Pods (8 vCPU):** Handles user-facing traffic via Envoy
-* **Background Workers (6 vCPU):** Processes tasks, emails, and data exports
-* **System/Caching (2 vCPU):** Local Redis/Memcached for session management
+For application files, decide whether block storage or
+[Object Storage](object-storage.md) matches the access pattern. Storage class,
+volume mode, and access mode affect both performance and placement.
 
----
+## Virtual Machines
 
-## Scaling Mechanics on Kube-DC
+For a VM, measure guest CPU, memory pressure, disk latency, and network
+throughput. Increasing vCPU or memory consumes Organization quota and may
+require a restart. Keep enough capacity to reschedule important VMs after host
+maintenance.
 
-### Horizontal Pod Autoscaling (HPA)
+Use [VM Lifecycle](vm-lifecycle.md) for supported resize and restart behavior.
 
-Your Helm chart is pre-configured to monitor CPU/Memory utilization. When a threshold (e.g., 70% CPU) is met:
+## Managed Clusters
 
-1. Kubernetes spins up additional Pods within your resource pool
-2. Envoy automatically detects new Pods and begins routing traffic to them
-3. The **Managed Database** scales independently, ensuring your app logic never waits for a query
+Managed Cluster control planes and workers consume the parent Project's quota.
+Worker autoscaling can add a node only when the parent Project has capacity for
+the worker VM. Application availability during upgrades or worker replacement
+still depends on replicas, disruption budgets, and storage topology.
 
-### The Scale Pool Advantage
+See [Cluster Management](cluster-management.md).
 
-The **Scale Pool** includes **3 Dedicated IPv4 addresses**. This is critical for:
+## Network Performance
 
-* **Outbound Reputation:** Dedicated IPs for mail relays or 3rd party API integrations
-* **Traffic Isolation:** One IP for the Main App, one for the Admin/Backoffice, and one for Webhook listeners to prevent "Head-of-Line" blocking
-* **B2B Whitelisting:** Providing your enterprise clients with a static IP for their firewall rules
+Use a Gateway route for HTTP or HTTPS and a LoadBalancer Service for selected
+TCP or UDP ports. A public IP does not increase application throughput by
+itself, and multiple public IPs do not remove an application bottleneck.
 
----
+Measure from the client path that matters, including TLS, DNS, payload size, and
+upstream dependencies. See [Service Exposure](service-exposure.md).
 
-## Comparison Summary for Decision Making
+## A Repeatable Test Loop
 
-| Need | Recommendation |
-| :--- | :--- |
-| **"I'm launching a new product or blog."** | **Starter Pool.** Most cost-effective way to get high-performance NVMe and Managed DB. |
-| **"I have a growing user base and need 99.9% uptime."** | **Pro Pool.** Extra RAM allows for multi-replica "High Availability" deployments. |
-| **"I have millions of visitors or heavy data processing."** | **Scale Pool.** The 16 vCPU capacity and Dedicated IPs provide enterprise-grade stability. |
+1. Record the current manifest, image digest, dataset, and quota.
+2. Warm the application if production traffic will hit a warm cache.
+3. Increase load gradually and hold each level long enough to stabilize.
+4. Capture latency, errors, saturation, restarts, database metrics, and storage latency.
+5. Find the first limiting layer and change only that layer.
+6. Repeat the test and document the new safe operating point.
+7. Reserve rollout and failure headroom below the measured maximum.
 
----
+## Production Checklist
+
+- Capacity is based on a reproducible test, not a generic user estimate.
+- Requests, limits, probes, and HPA behavior are verified.
+- The database and storage path were included in the test.
+- Quota includes rollout and recovery headroom.
+- At least one failure or restart scenario was exercised.
+- Backup restore time fits the recovery objective.
+- Alerts are tied to an owner and an action.
 
 ## Next Steps
 
-- Learn how to [deploy your first app](deploy-first-app.md) with automatic scaling
-- Explore [managed databases](managed-databases.md) for decoupled data storage
-- Check [billing and usage](billing-usage.md) to monitor your resource consumption
+- [Deploy Your First Application](deploy-first-app.md)
+- [Billing and Usage](billing-usage.md)
+- [Managed Databases](managed-databases.md)
+- [Data Protection and Recovery](backups-snapshots.md)

@@ -7,43 +7,39 @@ This page explains Kube-DC networking concepts — how your project connects to 
 | Resource | What It Does |
 |----------|-------------|
 | **VPC** | Isolated virtual network for your project — all VMs and pods get private IPs here |
-| **Subnet** | IP range within your VPC (e.g., `10.0.0.0/24`) — auto-assigned when the project is created |
-| **EIP** (External IP) | Public or cloud IP address that can be bound to a LoadBalancer service |
-| **FIP** (Floating IP) | 1:1 NAT mapping between an external IP and a specific VM or pod |
+| **Subnet** | Private IP range chosen for the Project when it is created |
+| **EIP** (External IP) | Cloud-internal or public address used by a Project gateway or LoadBalancer Service |
+| **FIP** (Floating IP) | One-to-one NAT mapping from an external address to a VM or another selected internal IP |
 | **LoadBalancer** | Kubernetes Service that routes external traffic to pods or VMs via an EIP |
-| **Gateway Route** | HTTPS/HTTP route through the shared Envoy Gateway — auto TLS certificates |
+| **Gateway Route** | HTTP or HTTPS route through the shared Envoy Gateway; HTTPS uses a configured Project Issuer |
 
 ---
 
 ## Project Network Types
 
-When a project is created, it gets one of two network types:
+A Project selects the address pool for its default gateway when it is created. Both network types keep workloads on private Project addresses and use source NAT (SNAT) for outbound traffic. The choice does not, by itself, expose a workload.
 
 ### Cloud Network (`egressNetworkType: cloud`)
 
-- Default EIP from a **shared NAT pool** (not internet-routable directly)
-- Outbound traffic goes through a shared gateway
-- **Gateway Routes** provide easy HTTPS with auto-certificates
-- Can still create **public EIPs** when direct access is needed
-- **Best for**: Web apps, APIs, microservices — cost-effective
+- The default gateway receives an internal cloud address.
+- Internet-bound traffic continues through platform upstream networking.
+- The gateway address is not directly reachable from the public internet.
+- Use a Gateway Route, or allocate a public EIP or FIP when your provider and quota allow it.
 
 ### Public Network (`egressNetworkType: public`)
 
-- Default EIP is a **dedicated public IP** (internet-routable)
-- Direct internet connectivity without NAT
-- Any TCP/UDP protocol supported
-- **Best for**: VMs with direct SSH, game servers, custom protocols
+- The default gateway receives an internet-routable address.
+- Outbound traffic is SNATed to that address.
+- Inbound traffic still requires an explicit Gateway Route, LoadBalancer Service, or FIP and remains subject to platform and workload policy.
 
 ### Comparison
 
 | Feature | Cloud | Public |
 |---------|-------|--------|
-| **Default EIP** | Shared NAT pool | Dedicated public IP |
-| **Gateway Routes (HTTPS)** | ✅ Yes | ✅ Yes |
-| **EIP + LoadBalancer** | ✅ Yes | ✅ Yes |
-| **Floating IPs** | ✅ Yes | ✅ Yes |
-| **VMs and Pods** | ✅ Yes | ✅ Yes |
-| **Cost** | Lower | Higher |
+| **Default gateway address** | Cloud-internal | Internet-routable |
+| **Outbound internet through SNAT** | Yes | Yes |
+| **Gateway Routes** | Supported | Supported |
+| **LoadBalancer Services and FIPs** | Subject to provider configuration and quota | Subject to provider configuration and quota |
 
 ---
 
@@ -55,18 +51,19 @@ When a project is created, it gets one of two network types:
 VM/Pod (10.0.0.x)  →  Project Router  →  SNAT via EIP  →  Internet
 ```
 
-Every project has a default EIP that handles outbound NAT. All VMs and pods can reach the internet automatically.
+Every Project has a default EIP for outbound SNAT. Internet access remains subject to platform egress policy and upstream availability.
 
 ### Inbound via Gateway Route (HTTPS)
 
 ```
-Client  →  DNS (*.kube-dc.cloud)  →  Envoy Gateway (shared IP, port 443)
-        →  TLS termination (auto Let's Encrypt cert)
+Client  →  DNS (*.<configured-base-domain>)  →  Envoy Gateway (shared IP, port 443)
+        →  TLS termination (certificate from the Project's `letsencrypt` Issuer)
         →  HTTPRoute matches hostname
         →  Backend Service  →  Pod
 ```
 
-One shared Envoy Gateway handles all HTTPS traffic. Each service gets a unique hostname like `my-app-my-project.kube-dc.cloud`.
+One shared Envoy Gateway handles HTTPS traffic. By default, each Service receives a hostname in the form `<service>-<workload-namespace>.<base-domain>`. Before creating an HTTPS route, create the namespaced `letsencrypt`
+Issuer described in [Service Exposure](service-exposure.md#step-1-create-the-issuer-once-per-project).
 
 ### Inbound via EIP + LoadBalancer
 
@@ -74,7 +71,7 @@ One shared Envoy Gateway handles all HTTPS traffic. Each service gets a unique h
 Client  →  EIP (dedicated IP, any port)  →  OVN LoadBalancer  →  Pod/VM
 ```
 
-The EIP is bound to a LoadBalancer service. Supports any TCP/UDP protocol on any port.
+The EIP is bound to a LoadBalancer Service and supports any declared TCP or UDP service port.
 
 ### Inbound via Floating IP
 
@@ -82,13 +79,35 @@ The EIP is bound to a LoadBalancer service. Supports any TCP/UDP protocol on any
 Client  →  External IP  →  1:1 NAT  →  VM internal IP (all ports)
 ```
 
-A FIP maps all ports from an external IP directly to a VM. The VM is fully accessible as if it had a public IP.
+A FIP maps an external address to a VM or selected internal IP. Reachability remains subject to platform controls and the guest or workload firewall.
+
+<details>
+<summary>View the Floating IP traffic diagram</summary>
+
+The Floating IP belongs to Project `production` in Organization `acme`. Its
+resource is stored in the Project's `acme-production` backing namespace, while
+the public address remains mapped at the platform edge rather than configured
+inside the guest.
+
+<figure className="diagram-comparison" data-diagram="fip-to-vm" tabIndex="0" aria-label="Scrollable Floating IP traffic diagram">
+  <img
+    src="/diagrams/generated/fip-to-vm.svg"
+    alt="External traffic reaches a Floating IP in Organization acme and Project production, where one-to-one NAT maps example public address 203.0.113.10 to the running VM's private address with all ports forwarded."
+  />
+  <figcaption>A Floating IP maps an external address to the VM's existing private interface through bidirectional one-to-one NAT.</figcaption>
+</figure>
+
+[Open the full-size SVG for zooming or printing.](/diagrams/generated/fip-to-vm.svg)
+
+</details>
 
 ---
 
 ## Network MTU (1400)
 
-Kube-DC project networks use an encapsulated overlay, so the usable MTU inside a project is **1400 bytes**, not the 1500 you may be used to. Your VMs and pods are configured with this automatically — a VM's interface picks up 1400 over DHCP, and pods get it from the network plugin. You normally never need to think about it.
+Kube-DC Cloud Project networks use an encapsulated overlay, so the usable MTU inside a project is **1400 bytes**, not the 1500 you may be used to. Your VMs and pods are configured with this automatically — a VM's interface picks up 1400 over DHCP, and pods get it from the network plugin. You normally never need to think about it.
+
+Self-managed installations may use a different overlay MTU. Check the workload interface with `ip link show` and use your installation's actual value before hard-coding runtime settings.
 
 **The exception is software that assumes 1500 and doesn't inherit the MTU from its host — most commonly Docker.** If you install Docker inside a VM, its default bridge is created with an MTU of 1500. Containers on that bridge then send packets too large for the 1400 network, and those packets are silently dropped.
 
@@ -166,13 +185,13 @@ What are you exposing?
 │
 ├── Web app or API?
 │   └── Use Gateway Route (expose-route: https)
-│       → Auto TLS, auto hostname, shared infrastructure
+│       → Automatic hostname and TLS after the one-time Issuer setup
 │
 ├── VM with direct SSH/RDP access?
 │   └── Use Floating IP (FIP)
 │       → Dedicated IP, all ports, 1:1 NAT
 │
-├── Custom TCP/UDP service?
+├── Custom TCP/UDP service, including gRPC?
 │   └── Use EIP + LoadBalancer
 │       → Dedicated IP, any protocol, specific ports
 │
@@ -183,7 +202,7 @@ What are you exposing?
 
 | Method | Protocols | TLS | IP Type | Best For |
 |--------|-----------|-----|---------|----------|
-| **Gateway Route** | HTTP, HTTPS, gRPC | Auto (Let's Encrypt) | Shared | Web apps, APIs |
+| **Gateway Route** | HTTP, HTTPS, TLS passthrough | Automatic for HTTPS through the configured Issuer | Shared | Web apps, APIs |
 | **Floating IP** | All TCP/UDP (all ports) | None | Dedicated | VM direct access |
 | **EIP + LoadBalancer** | Any TCP/UDP | Application handles | Dedicated or shared | Custom services |
 

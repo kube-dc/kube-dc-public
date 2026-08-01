@@ -41,13 +41,16 @@ func certificatesCmd() *cobra.Command {
 is delegated to cert-manager under the hood:
 
   type=private   signs through the Organization's OpenBao intermediate CA
-                 via a namespaced cert-manager Issuer (kube-dc-pki) in
-                 the project namespace
+                 via a cert-manager Issuer (kube-dc-pki) in the Project's
+                 backing namespace
   type=public    flows through the shared cluster ACME ClusterIssuer
                  (letsencrypt-prod-http) unchanged
 
-Permissions follow your project role: viewers list and read, developers
-request and renew, admins delete.`,
+Permissions follow the exact standard Project roles:
+  user               list and read
+  developer          request, renew, and delete
+  project-manager    list, read, and renew
+  admin              full lifecycle`,
 		Aliases: []string{"certs", "certificate"},
 	}
 	cmd.AddCommand(certsListCmd())
@@ -64,7 +67,7 @@ func certsListCmd() *cobra.Command {
 	var namespace, outFlag string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List ManagedCertificates in the project namespace",
+		Short: "List ManagedCertificates in the current Project",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out, err := parseOutput(outFlag)
@@ -91,7 +94,7 @@ func certsListCmd() *cobra.Command {
 			return printCertificatesTable(list.Items)
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	cmd.Flags().StringVarP(&outFlag, "output", "o", "table", "Output format: table|json|yaml")
 	return cmd
 }
@@ -131,7 +134,7 @@ func certsGetCmd() *cobra.Command {
 			return printCertificateDetail(cert)
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	cmd.Flags().StringVarP(&outFlag, "output", "o", "table", "Output format: table|json|yaml")
 	return cmd
 }
@@ -150,12 +153,12 @@ func certsRequestCmd() *cobra.Command {
 provisioning chain — Organization PKI + per-Project role + namespaced
 Issuer — on the first --type=private cert, and reuses everything for
 subsequent requests.`,
-		Example: `  # Private cert for an internal API:
+		Example: `  # Private cert for an internal API in Project "docs":
   kube-dc certificates request internal-api \
     --dns api.docs.internal \
     --dns docs.internal
 
-  # Public cert via Let's Encrypt:
+  # Public cert (requires an Organization allowlist entry for the DNS name):
   kube-dc certificates request public-api \
     --type public \
     --dns api.docs.example.com
@@ -197,7 +200,7 @@ subsequent requests.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	cmd.Flags().StringVar(&certType, "type", "private", "Certificate type: private|public")
 	cmd.Flags().StringVar(&purpose, "purpose", "server", "Cert purpose: server|client|mtls|code-signing")
 	cmd.Flags().StringSliceVar(&dnsNames, "dns", nil, "DNS name (SAN) to include — repeatable")
@@ -239,7 +242,7 @@ CertificateRequest churn happens unless renewal is actually due.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	return cmd
 }
 
@@ -281,7 +284,7 @@ across every cert in the project — Project deletion cleans those).`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	cmd.Flags().BoolVar(&yes, "yes", false, "Confirm the deletion")
 	return cmd
 }

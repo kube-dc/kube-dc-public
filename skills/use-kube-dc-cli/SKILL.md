@@ -1,161 +1,136 @@
 ---
 name: use-kube-dc-cli
-description: Use the kube-dc CLI for authentication, context switching, and namespace management. Covers login, use, ns, config, and kubectl integration.
+description: Install and use the kube-dc CLI for Organization login, Project context switching, kubeconfig integration, and logout.
 ---
 
-# Use Kube-DC CLI
+# Use the Kube-DC CLI
 
-The `kube-dc` CLI provides browser-based OAuth authentication and context management for Kube-DC clusters. It integrates as a kubectl exec credential plugin.
+`kube-dc` uses browser-based OAuth with PKCE, caches tokens locally, and writes
+one kubeconfig context for every accessible Project. The context keeps the
+user-facing Project and its backing namespace aligned.
 
-## Installation
+## Install
+
+Prefer the command shown by **Get CLI Access** in the Kube-DC console. For a
+GitHub release, select the correct asset and verify the published checksum:
 
 ```bash
-# Linux (amd64)
-sudo curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_linux_amd64 -o /usr/local/bin/kube-dc && sudo chmod +x /usr/local/bin/kube-dc
+asset=kube-dc_linux_amd64
+tmpdir="$(mktemp -d)"
 
-# Linux (arm64)
-sudo curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_linux_arm64 -o /usr/local/bin/kube-dc && sudo chmod +x /usr/local/bin/kube-dc
+curl --fail --location "https://github.com/kube-dc/kube-dc-public/releases/latest/download/$asset" --output "$tmpdir/$asset"
+curl --fail --location "https://github.com/kube-dc/kube-dc-public/releases/latest/download/checksums.txt" --output "$tmpdir/checksums.txt"
 
-# macOS (Apple Silicon)
-sudo curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_darwin_arm64 -o /usr/local/bin/kube-dc && sudo chmod +x /usr/local/bin/kube-dc
+if command -v sha256sum >/dev/null; then
+  (cd "$tmpdir" && grep " $asset$" checksums.txt | sha256sum -c -)
+else
+  (cd "$tmpdir" && grep " $asset$" checksums.txt | shasum -a 256 -c -)
+fi
 
-# macOS (Intel)
-sudo curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_darwin_amd64 -o /usr/local/bin/kube-dc && sudo chmod +x /usr/local/bin/kube-dc
+sudo install -m 0755 "$tmpdir/$asset" /usr/local/bin/kube-dc
+rm -rf "$tmpdir"
+kube-dc version
 ```
 
-## Commands
+Replace the example asset with `kube-dc_linux_arm64`,
+`kube-dc_darwin_amd64`, or `kube-dc_darwin_arm64` as appropriate. A Windows
+amd64 `.exe` asset is also published.
 
-### Login
+## Log in to an Organization
 
 ```bash
-kube-dc login --domain kube-dc.cloud --org {org-name}
-kube-dc login --domain stage.kube-dc.com --org {org-name}
-kube-dc login --domain internal.example.com --org {org-name} --ca-cert /path/to/ca.crt
+kube-dc login --domain {platform-domain} --org {organization}
 ```
 
-Opens browser for Keycloak OAuth login. Tokens cached for ~30 days with auto-refresh.
+`--org` takes the Organization name, which is also the identity realm. Do not
+pass a Project name or `{organization}-{project}` backing namespace.
 
-### Switch Context (org/project)
+The CLI derives:
 
-```bash
-kube-dc use {org}/{project}    # Switch to specific project
-kube-dc use                    # Interactive selection
+- Kubernetes API: `https://kube-api.{platform-domain}:6443`
+- identity endpoint: `https://login.{platform-domain}`
+
+It opens a browser, caches the OAuth session under `~/.kube-dc/credentials/`,
+and creates contexts named:
+
+```text
+kube-dc/{platform-domain}/{organization}/{project}
 ```
 
-Context names follow pattern: `kube-dc/{domain}/{org}/{project}`
+Use `--ca-cert /path/to/ca.crt` for a private CA. `--insecure` disables TLS
+verification and should be limited to controlled diagnostics. The exposed
+`--device-code` flag is not implemented in the current CLI.
 
-### List / Switch Namespace
-
-```bash
-kube-dc ns                     # List available namespaces (from JWT claims)
-kube-dc ns {namespace}         # Switch to specific namespace
-```
-
-### Show Configuration
+## Select a Project
 
 ```bash
-kube-dc config show            # Current context, server, cached credentials
-kube-dc config get-contexts    # List all kube-dc contexts
-```
+# List Kube-DC contexts
+kube-dc use
 
-### Logout
+# Select one Project
+kube-dc use {platform-domain}/{organization}/{project}
 
-```bash
-kube-dc logout                 # Remove credentials for current server
-kube-dc logout --all           # Remove all cached credentials
-```
-
-## Determine Current Context
-
-Before creating resources, always check the current context:
-
-```bash
-# Quick check
+# Confirm context and backing namespace
 kubectl config current-context
-
-# Detailed info (server, namespace, token status)
-kube-dc config show
-
-# Available namespaces for current user
-kube-dc ns
+kubectl config view --minify -o jsonpath='{.contexts[0].context.namespace}{"\n"}'
 ```
 
-The namespace tells you the project: namespace `{org}-{project}` → org=`{org}`, project=`{project}`.
+`kube-dc use` is the normal Project switcher. `kube-dc ns` is a compatibility
+command that rewrites only the namespace field of the current context; using it
+can leave the context name and selected Project out of sync.
 
-## How kubectl Integration Works
+## Use kubectl
 
-After `kube-dc login`, the CLI configures kubectl with an exec credential plugin:
-
-```yaml
-users:
-- name: kube-dc@{org}
-  user:
-    exec:
-      apiVersion: client.authentication.k8s.io/v1
-      command: kube-dc
-      args: ["credential", "--server", "https://kube-api.{domain}:6443"]
-```
-
-Every kubectl command automatically:
-1. Returns cached token if valid
-2. Refreshes token using refresh_token if expired
-3. Prompts re-login only when refresh_token expires (~30 days)
-
-## kubectx / kubens Compatibility
+The kubeconfig user invokes `kube-dc credential` as an exec credential plugin.
+It returns a valid cached access token or refreshes it when possible:
 
 ```bash
-kubectx                            # Lists all contexts including kube-dc ones
-kubectx kube-dc/shalb/demo        # Switch to Kube-DC context
+kubectl auth whoami
+kubectl get pods
+kube-dc config show
 ```
 
-## File Locations
+Do not assume a fixed session lifetime. The identity provider controls token
+expiry. When it reports no finite refresh expiry, the CLI records a 30-day
+local refresh window.
+
+The CLI honors the active kubeconfig path. If `KUBECONFIG` points somewhere
+other than `~/.kube/config`, login asks before writing contexts there.
+
+## Log out
+
+```bash
+# Remove credentials for the active Kube-DC server
+kube-dc logout
+
+# Also remove its generated kubeconfig contexts
+kube-dc logout --remove-contexts
+
+# Remove all cached server credentials
+kube-dc logout --all --remove-contexts
+```
+
+Without `--remove-contexts`, logout leaves the contexts in kubeconfig, but
+kubectl cannot authenticate through them.
+
+## Files and local security
 
 | Path | Purpose |
-|------|---------|
-| `~/.kube/config` | Kubeconfig (Kube-DC entries merged, never overwrites others) |
+|---|---|
+| Active kubeconfig path | Clusters, users, and Project contexts |
+| `~/.kube-dc/credentials/` | Cached OAuth tokens, protected with owner-only permissions |
 | `~/.kube-dc/config.yaml` | CLI configuration |
-| `~/.kube-dc/credentials/` | Cached OAuth tokens (0600 permissions) |
 
-## Verification
+The credential cache is not encrypted at rest. Protect the local account and
+disk, never print tokens into logs, and use logout when a workstation or
+session is no longer trusted.
 
-After CLI operations:
+## Troubleshooting
 
-### After Login
-```bash
-# 1. Check credentials are cached
-kube-dc config show
-# Expected: shows server, user, org, valid access/refresh tokens
-
-# 2. Verify kubectl works
-kubectl get ns
-# Expected: lists namespaces you have access to
-```
-
-### After Context Switch
-```bash
-# 1. Verify active context
-kubectl config current-context
-# Expected: kube-dc/{domain}/{org}/{project}
-
-# 2. Verify namespace
-kubectl config view --minify -o jsonpath='{.contexts[0].context.namespace}'
-# Expected: {org}-{project}
-```
-
-### After Namespace Switch
-```bash
-# 1. Verify namespace changed
-kube-dc ns
-# Expected: asterisk (*) next to the active namespace
-```
-
-**Success**: Config shows valid tokens, kubectl commands return data.
-**Failure**:
-- "not logged in": run `kube-dc login --domain {domain} --org {org}`
-- "session expired": refresh token expired (~30 days), re-run login
-- "Forbidden": user doesn't have access to the requested namespace/resource
-## Safety
-- The CLI never stores passwords — only OAuth tokens with auto-refresh
-- Tokens are cached with 0600 permissions (owner-read-only)
-- Never log or display token contents in chat output
-- If token is expired, suggest `kube-dc login` rather than trying to extract tokens manually
+- **Unknown realm / 404**: pass the Organization name to `--org`.
+- **No Project contexts**: confirm Organization membership and sign in again
+  after group changes.
+- **Context missing from kubectx**: compare `KUBECONFIG` with the file kubectx
+  reads.
+- **Forbidden**: authentication succeeded; check the selected Project role.
+- **Refresh token expired**: run `kube-dc login` again.

@@ -1,64 +1,50 @@
-# Accessing Managed Cluster Kubeconfig
+# Access a Managed Cluster Kubeconfig
 
-## Secret Pattern
+A Project kubeconfig manages platform resources in one Project. A Managed
+Cluster kubeconfig targets the separate Kubernetes API created by a
+`KdcCluster`. Do not confuse the two.
 
-When a KdcCluster reaches Ready state, Kube-DC creates a Kamaji kubeconfig secret:
+## External Workstation Access
 
-| Secret Name | Data Key | Endpoint | Use |
-|-------------|----------|----------|-----|
-| `{cluster}-cp-admin-kubeconfig` | `admin.conf` | `https://{cluster}-cp-{ns}.kube-dc.cloud:443` | **External public URL** (recommended) |
-| `{cluster}-cp-admin-kubeconfig` | `super-admin.conf` | `https://{internal-ip}:6443` | Internal VPC IP |
-| `{cluster}-cp-admin-kubeconfig` | `super-admin.svc` | `https://{cluster}-cp.{ns}.svc:6443` | Internal Service (mgmt cluster only) |
-| `{cluster}-cp-admin-kubeconfig` | `admin.svc` | `https://{cluster}-cp.{ns}.svc:6443` | Internal Service (admin, not super-admin) |
+When external API exposure is enabled, Kube-DC creates:
 
-There is also a CAPI-generated secret:
-
-| Secret Name | Data Key | Endpoint |
-|-------------|----------|----------|
-| `{cluster}-kubeconfig` | `value` | `https://{cluster}-cp-{ns}.kube-dc.cloud:443` |
-
-## Extract Kubeconfig (External Public URL)
+| Secret | Data key |
+|---|---|
+| `{cluster}-cp-admin-kubeconfig-external` | `admin.conf` |
 
 ```bash
-# Recommended: admin.conf has the external public endpoint
-kubectl get secret {cluster}-cp-admin-kubeconfig -n {namespace} \
+umask 077
+kubectl get secret {cluster}-cp-admin-kubeconfig-external \
+  -n {backing-namespace} \
   -o jsonpath='{.data.admin\.conf}' | base64 -d > /tmp/{cluster}-kubeconfig
 chmod 600 /tmp/{cluster}-kubeconfig
-```
 
-Alternative via CAPI secret:
-```bash
-kubectl get secret {cluster}-kubeconfig -n {namespace} \
-  -o jsonpath='{.data.value}' | base64 -d > /tmp/{cluster}-kubeconfig
-chmod 600 /tmp/{cluster}-kubeconfig
-```
-
-## Use Kubeconfig
-
-```bash
-# List nodes
 kubectl --kubeconfig=/tmp/{cluster}-kubeconfig get nodes
-
-# List all pods
 kubectl --kubeconfig=/tmp/{cluster}-kubeconfig get pods -A
-
-# Deploy to tenant cluster
-kubectl --kubeconfig=/tmp/{cluster}-kubeconfig apply -f manifest.yaml
 ```
 
-## Cluster API Endpoint
+The cluster detail view's **Kubeconfig** action downloads the same external
+configuration.
 
-All clusters are exposed externally via TLS passthrough:
+## If the External Secret Is Missing
 
-```
-https://\{cluster\}-cp-\{namespace\}.kube-dc.cloud:443
-```
+The Managed Cluster API is private. Enable external API exposure in the
+supported Kube-DC workflow or connect through an operator-approved private
+network path. Do not:
 
-## Security Notes
+- extract `admin.conf` from `{cluster}-cp-admin-kubeconfig` and assume it is
+  externally reachable;
+- replace the server URL by hand;
+- use the Cluster API `{cluster}-kubeconfig` Secret as an external contract.
 
-- `admin.conf` and `super-admin.conf` are **cluster-admin** credentials
-- Never expose kubeconfig contents in chat output
-- Write to temporary file with restricted permissions (`chmod 600`)
-- Clean up after use: `rm /tmp/{cluster}-kubeconfig`
-- The kubeconfig can also be downloaded via the Kube-DC console UI
-- **Do NOT use `super-admin.svc`** unless running from within the management cluster
+Those internal Secrets and endpoints are for platform controllers and
+management-network access.
+
+## Security
+
+- Treat the kubeconfig as a privileged credential.
+- Never paste it into chat, logs, tickets, or source control.
+- Store temporary files with mode `0600`.
+- Remove the file when the task is complete.
+- If access should be revoked, follow the platform's Managed Cluster access
+  procedure; deleting a local copy is not credential revocation.

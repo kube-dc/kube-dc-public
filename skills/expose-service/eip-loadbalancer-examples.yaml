@@ -1,38 +1,43 @@
-# Public EIP for direct access
+# Direct public EIP examples. Confirm the provider offers public EIPs and check
+# Organization publicIPv4 quota before applying.
 apiVersion: kube-dc.com/v1
 kind: EIp
 metadata:
-  name: {eip-name}
-  namespace: {project-namespace}
+  name: "{eip}"
+  namespace: "{project-backing-namespace}"
 spec:
   externalNetworkType: public
 ---
-# SSH service bound to EIP
+# SSH Service bound to the named EIP.
 apiVersion: v1
 kind: Service
 metadata:
-  name: {vm-name}-ssh
-  namespace: {project-namespace}
+  name: "{vm}-ssh"
+  namespace: "{project-backing-namespace}"
   annotations:
-    service.nlb.kube-dc.com/bind-on-eip: "{eip-name}"
+    service.nlb.kube-dc.com/bind-on-eip: "{eip}"
 spec:
   type: LoadBalancer
-  ports:
-    - port: 22
-      targetPort: 22
   selector:
-    kubevirt.io/domain: {vm-name}
+    vm.kubevirt.io/name: "{vm}"
+  ports:
+    - name: ssh
+      port: 22
+      targetPort: 22
+      protocol: TCP
 ---
-# Game server (UDP) bound to EIP
+# Mixed UDP/TCP game-server ports sharing the same EIP.
 apiVersion: v1
 kind: Service
 metadata:
-  name: gameserver
-  namespace: {project-namespace}
+  name: game-server
+  namespace: "{project-backing-namespace}"
   annotations:
-    service.nlb.kube-dc.com/bind-on-eip: "{eip-name}"
+    service.nlb.kube-dc.com/bind-on-eip: "{eip}"
 spec:
   type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: game-server
   ports:
     - name: game
       port: 27015
@@ -42,25 +47,25 @@ spec:
       port: 27016
       targetPort: 27016
       protocol: TCP
-  selector:
-    app: gameserver
 ---
-# Multi-port TCP service
+# Multi-port TCP Service.
 apiVersion: v1
 kind: Service
 metadata:
   name: custom-tcp
-  namespace: {project-namespace}
+  namespace: "{project-backing-namespace}"
   annotations:
-    service.nlb.kube-dc.com/bind-on-eip: "{eip-name}"
+    service.nlb.kube-dc.com/bind-on-eip: "{eip}"
 spec:
   type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: custom-app
   ports:
     - name: primary
       port: 5000
       targetPort: 5000
+      protocol: TCP
     - name: secondary
       port: 5001
       targetPort: 5001
-  selector:
-    app: custom-app
+      protocol: TCP

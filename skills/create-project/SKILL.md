@@ -1,94 +1,108 @@
 ---
 name: create-project
-description: Create a new Kube-DC project with isolated VPC networking inside an existing organization. Handles network type selection (cloud vs public), organization verification, and project manifest generation.
+description: Create a Kube-DC Project inside an existing Organization. Covers network selection, quota preflight, the Project manifest, and readiness verification.
 ---
 
+# Create a Project
+
+A Project is the governed workload boundary for applications, VMs, databases,
+and Managed Clusters. Kube-DC implements it with a backing namespace named
+`{organization}-{project}`, but users work with the Project name.
+
 ## Prerequisites
-- Organization must exist and be Ready
-- User must have admin access to the organization
-- Check org quota for project limits before creating
 
-## Steps
+- The Organization exists and reports `status.ready: true`.
+- The caller can create `Project` resources in the Organization API namespace.
+- Organization quota has enough capacity for the planned workloads.
+- The Project name is a valid lowercase Kubernetes name.
 
-### 1. Verify Organization Exists
+Confirm the Organization and current identity before making changes:
 
 ```bash
-kubectl get organization {org-name} -n {org-name}
+kubectl -n {organization} get organization {organization} -o custom-columns='NAME:.metadata.name,READY:.status.ready'
+kubectl auth can-i create projects.kube-dc.com -n {organization}
 ```
 
-The organization namespace is the same as the organization name.
+## Choose the network type
 
-### 2. Choose Network Type
+`spec.egressNetworkType` is required and immutable.
 
-| Type | When to Use |
-|------|-------------|
-| `cloud` (recommended) | Web apps, APIs, microservices — shared NAT gateway, more secure |
-| `public` | Game servers, direct IP needs — dedicated public gateway IP |
+| Value | Meaning | Use it when |
+|---|---|---|
+| `cloud` | The default gateway uses the provider's cloud-internal external network | Normal application and private-workload Projects |
+| `public` | The default gateway uses the provider's public external network | A public source address at the Project gateway is required |
 
-Default to `cloud` unless the user explicitly needs dedicated public IPs.
+Prefer `cloud`. A `public` Project is available only when the platform operator
+has configured a public network and enabled public Project creation. Neither
+choice exposes a workload for inbound traffic; use a Gateway Route,
+LoadBalancer Service, EIP, or FIP for that.
 
-### 3. Apply Project Manifest
+See [network-types.md](network-types.md) for the decision details.
+
+## Choose the CIDR
+
+`spec.cidrBlock` is required. Select a private subnet that does not overlap any
+network the workloads must reach through routing, VPN, peering, or attached
+networks. Do not assume `10.0.0.0/16` is appropriate for every environment.
+
+## Create the Project
 
 ```yaml
 apiVersion: kube-dc.com/v1
 kind: Project
 metadata:
-  name: {project-name}
-  namespace: {org-name}
+  name: "{project}"
+  namespace: "{organization}"
 spec:
-  cidrBlock: 10.0.0.0/16        # required — internal VPC subnet for this project
-  egressNetworkType: cloud      # or: public
+  cidrBlock: "{project-cidr}"
+  egressNetworkType: cloud
 ```
 
-`cidrBlock` is **required** (CRD validation enforces it). Use `10.0.0.0/16` unless
-you have a specific reason to overlap with another network — each project gets
-its own VPC, so the same CIDR can be reused across projects.
-
-See @project-template.yaml for the full template.
-
-### 4. Wait for Ready
+Apply [project-template.yaml](project-template.yaml), then wait on the actual
+readiness field:
 
 ```bash
-kubectl get project {project-name} -n {org-name} -w
+kubectl apply -f project.yaml
+kubectl -n {organization} wait --for=jsonpath='{.status.ready}'=true project/{project} --timeout=10m
 ```
 
-The project creates namespace `{org-name}-{project-name}` with:
-- Isolated VPC subnet (Kube-OVN)
-- Default network `{org-name}-{project-name}/default`
-- SSH keypair secrets (`ssh-keypair-default`, `authorized-keys-default`)
-- Default gateway EIP
+## Verify
 
-### 5. Verify Resources
+Read the generated namespace from status instead of reconstructing it in
+automation:
 
 ```bash
-kubectl get project {project-name} -n {org-name}
-kubectl get secret ssh-keypair-default -n {org-name}-{project-name}
-kubectl get eip -n {org-name}-{project-name}
+PROJECT_NS="$(kubectl -n {organization} get project {project} -o jsonpath='{.status.namespace}')"
+
+printf 'Backing namespace: %s\n' "$PROJECT_NS"
+kubectl -n {organization} get project {project} -o custom-columns='NAME:.metadata.name,READY:.status.ready,NAMESPACE:.status.namespace'
+kubectl get namespace "$PROJECT_NS"
+kubectl -n "$PROJECT_NS" get network-attachment-definition default
+kubectl -n "$PROJECT_NS" get eip default-gw
+kubectl -n "$PROJECT_NS" get secret ssh-keypair-default authorized-keys-default
 ```
 
-## Verification
+`status.ready: true` means the core Project resources reconciled. Optional
+services have their own readiness and must be checked separately.
 
-After applying, run these checks to confirm the project was created successfully:
+If readiness does not become true:
 
 ```bash
-# 1. Check project phase (expect: Ready)
-kubectl get project {project-name} -n {org-name} -o jsonpath='{.status.phase}'
-
-# 2. Verify project namespace was created
-kubectl get ns {org-name}-{project-name}
-
-# 3. Verify SSH keypair exists in project namespace
-kubectl get secret ssh-keypair-default -n {org-name}-{project-name}
-
-# 4. Verify default gateway EIP was created
-kubectl get eip -n {org-name}-{project-name}
+kubectl -n {organization} describe project {project}
+kubectl -n {organization} get project {project} -o yaml
 ```
 
-**Success**: Phase is `Ready`, namespace exists, SSH keypair and EIP present.
-**Failure**: If phase is `Pending` or `Failed`, check events: `kubectl describe project {project-name} -n {org-name}`
+Inspect the Project conditions and events. For a rejected `public` Project,
+use `cloud` or ask the platform operator whether public Projects are supported.
 
 ## Safety
-- Always verify org exists before creating project
-- Default to `cloud` network type
-- Project names must be lowercase, alphanumeric with hyphens
-- One project = one VPC = one subnet — this is the isolation boundary
+
+- Treat the Project as the user-facing isolation and governance boundary; call
+  `{organization}-{project}` the backing namespace only when a Kubernetes
+  command needs it.
+- Do not change `egressNetworkType` after creation; the API makes it immutable.
+- Check quota before creating workloads. A new empty Project consumes little,
+  but its workloads consume the Organization's shared quota.
+- Delete a Project through its `Project` resource. Do not delete only its
+  backing namespace or strip finalizers; coordinated cleanup releases network,
+  identity, storage, and security state.

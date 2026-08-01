@@ -74,6 +74,11 @@ From the details page you can:
 
 ## Creating a VM via kubectl
 
+The resources below are created in your active Project. Multus requires a
+Kubernetes-qualified network name, so replace `<project-backing-namespace>`
+with the current Project's backing namespace. You can print it with
+`kubectl config view --minify -o jsonpath='{..namespace}'`.
+
 ### Ubuntu 24.04
 
 <details>
@@ -108,7 +113,7 @@ spec:
       - name: vpc_net_0
         multus:
           default: true
-          networkName: your-namespace/default  # Replace 'your-namespace' with your actual project namespace
+          networkName: <project-backing-namespace>/default
       domain:
         cpu:
           cores: 1
@@ -174,7 +179,7 @@ Once the VM is running, you can SSH into it using the private key stored in your
 
 ```bash
 # Extract the private key from the secret
-kubectl get secret ssh-keypair-default -n <your-namespace> -o jsonpath='{.data.id_rsa}' | base64 -d > /tmp/vm_ssh_key
+kubectl get secret ssh-keypair-default -n <project-backing-namespace> -o jsonpath='{.data.id_rsa}' | base64 -d > /tmp/vm_ssh_key
 chmod 600 /tmp/vm_ssh_key
 ```
 
@@ -183,13 +188,13 @@ chmod 600 /tmp/vm_ssh_key
 For VMs with a Floating IP (FIP):
 ```bash
 # Get the external IP from the FIP resource
-kubectl get fip -n <your-namespace>
+kubectl get fip -n <project-backing-namespace>
 ```
 
 For VMs without FIP (internal access only):
 ```bash
 # Get the internal IP from the VMI
-kubectl get vmi <vm-name> -n <your-namespace> -o jsonpath='{.status.interfaces[0].ipAddress}'
+kubectl get vmi <vm-name> -n <project-backing-namespace> -o jsonpath='{.status.interfaces[0].ipAddress}'
 ```
 
 #### Step 3: Connect via SSH
@@ -243,7 +248,7 @@ spec:
       - name: vpc_net_0
         multus:
           default: true
-          networkName: your-namespace/default  # Replace 'your-namespace' with your actual project namespace
+          networkName: <project-backing-namespace>/default
       domain:
         cpu:
           cores: 1
@@ -345,7 +350,7 @@ spec:
       - name: vpc_net_0
         multus:
           default: true
-          networkName: your-namespace/default  # Replace 'your-namespace' with your actual project namespace
+          networkName: <project-backing-namespace>/default
       domain:
         cpu:
           cores: 2
@@ -451,8 +456,7 @@ CPU-headroom rule) are in [VM storage tiers & live migration](/platform/vm-stora
    **Migration pool** to pin to.
 4. Review the summary, click **Next → Finish**.
 
-That's it — the VM comes up live-migratable. During node maintenance Kube-DC moves it
-to another node in the pool with no downtime.
+That's it — the VM comes up live-migratable. During node maintenance, Kube-DC can live-migrate it to another compatible node. Application availability still depends on guest, storage, network, and migration health.
 
 :::warning CPU headroom for migration
 A live migration briefly runs **two copies** of the VM (source + target) while memory
@@ -493,7 +497,7 @@ spec:
   dataSource:
     apiGroup: snapshot.storage.k8s.io
     kind: VolumeSnapshot
-    name: ubuntu-24.04-golden-block   # the per-project Block golden snapshot
+    name: golden-ubuntu-24-04-block   # the per-project Block golden snapshot
 ---
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
@@ -511,7 +515,7 @@ spec:
       - name: vpc_net_0
         multus:
           default: true
-          networkName: your-namespace/default
+          networkName: <project-backing-namespace>/default
       domain:
         cpu:
           cores: 1
@@ -559,7 +563,7 @@ The three facts that make it migratable are the PVC's `ReadWriteMany` + `Block` 
 with:
 
 ```bash
-kubectl get vmi ubuntu -n <your-namespace> \
+kubectl get vmi ubuntu -n <project-backing-namespace> \
   -o jsonpath='{range .status.conditions[*]}{.type}={.status} {end}'
 # LiveMigratable=True StorageLiveMigratable=True → good
 ```
@@ -581,7 +585,7 @@ kubectl get vmi
 
 ## Exposing VMs with Floating IPs
 
-Floating IPs (FIPs) provide direct public IP access to a VM. The FIP automatically resolves the VM's internal IP via the QEMU guest agent — no need to look up IP addresses manually.
+Floating IPs (FIPs) map a public address to a VM through one-to-one NAT. The FIP automatically resolves the VM's internal IP via the QEMU guest agent — no need to look up IP addresses manually.
 
 ```yaml
 apiVersion: kube-dc.com/v1
@@ -675,8 +679,9 @@ kubectl get events --sort-by=.lastTimestamp
 # Access VM console directly
 virtctl console ubuntu
 
-# View VM serial console logs
-virtctl logs ubuntu
+# Find the launcher pod, then inspect its compute-container log
+kubectl get pods -l kubevirt.io/domain=ubuntu
+kubectl logs <virt-launcher-pod> -c compute
 ```
 
 ## Next Steps

@@ -1,6 +1,8 @@
 # Context Manager
 
-The **Contexts** tab of the integrated bootstrap TUI is a kubectx-aware view that lists every kubeconfig context, tags each with its identity, shows you who you actually are on the selected cluster, and lets you switch / delete contexts safely.
+The **Contexts** tab of the integrated bootstrap TUI lists every kubeconfig
+context, tags its identity, shows the active credentials, and lets you switch or
+delete entries. Deletion is immediate, including for non-Kube-DC contexts.
 
 ```bash
 # Open the integrated TUI directly on the Contexts tab
@@ -12,7 +14,7 @@ kube-dc bootstrap
 
 Press `]` / `[` to cycle to other tabs (e.g. **Fleet**), or `1` / `2` to jump directly. Top-tab keys are deliberately distinct from `Tab` / `Shift+Tab`, which mean pane focus *inside* the Contexts view.
 
-## Pane focus & arrow scoping (BIOS-style)
+## Navigate the panes
 
 Same vocabulary as the [Fleet view](cluster-cli-fleet.md): two panes, one focused at a time, marked by a highlighted border.
 
@@ -27,7 +29,7 @@ Same vocabulary as the [Fleet view](cluster-cli-fleet.md): two panes, one focuse
 | Badge | What it means |
 |---|---|
 | `ADMIN` (purple) | `kube-dc login --admin` context — master realm, `cluster-admin` |
-| `TENANT` (blue) | `kube-dc login --org X` context — per-org realm, namespace-scoped |
+| `TENANT` (blue) | Organization-authenticated Project context created by `kube-dc login --org X`; its namespace field selects the Project's backing namespace |
 | `BREAK-GLASS` (red) | static-token kubeconfig pointing at a kube-api server (decrypted break-glass) |
 | `EXTERNAL` (grey) | every other context — `kubectx`-managed, vendor exec plugins, manual entries |
 
@@ -44,10 +46,10 @@ The help bar at the bottom only lists keys that are **actionable in the current 
 | `]` / `[` | Cycle to other top tabs (Fleet ↔ Contexts) |
 | `Esc` | Return focus to the list |
 | `↵` | Activate (set `current-context`) |
-| `L` | **Re-login for the selected context's cluster** — admin context → `kube-dc login --admin`; tenant context → `kube-dc login --org <realm>`. Runs as a subprocess (browser opens for OIDC), then the kubeconfig is re-read so updates show inline. |
-| `l` | Tenant login (only meaningful on a TENANT row; uses the row's realm). |
+| `L` | **Re-login for the selected context's Kube-DC installation** — admin context → `kube-dc login --admin`; Organization context → `kube-dc login --org <realm>`. Runs as a subprocess (browser opens for OIDC), then the kubeconfig is re-read so updates show inline. |
+| `l` | Organization login (only meaningful on a `TENANT` row; uses the row's Organization realm). |
 | `t` | **Test auth right now** — issues a single GET `/readyz` against the cluster API using the operator's currently-cached token. Result lands in the right pane: `200 OK` (auth works), `401` (token expired — re-login), `403` (RBAC). |
-| `d` | Delete just the selected context (cluster + user GC'd only if no other context references them; non-kube-dc contexts can be deleted too). |
+| `d` | Delete the selected context immediately. This also works on `EXTERNAL` rows; there is no confirmation dialog. Cluster and user entries are removed only when no other context references them. |
 | `r` | Re-read kubeconfig |
 | `q` | Quit |
 
@@ -55,10 +57,13 @@ The help bar at the bottom only lists keys that are **actionable in the current 
 
 The right pane shows:
 
-- Cluster, server, user, namespace, realm.
+- Cluster, server, user, Project backing namespace, and Organization realm.
 - Auth method (exec plugin or static token).
 - For ADMIN/TENANT: the cached JWT's email + group claims + token expiry. Read this first when something's not working — usually the answer is "oh, the token expired hours ago".
 
-:::tip Safe-delete
-Pressing `d` removes only the selected context plus any cluster/user it solely references. Other kube-dc contexts on the same cluster stay put. The screen never modifies `EXTERNAL` contexts beyond setting `current-context` — your `kubectx`-managed entries, AWS-EKS exec plugins, and manual contexts are safe by design.
+:::warning Context deletion
+Pressing `d` removes the selected row without a confirmation dialog, including
+an `EXTERNAL` context. Shared cluster and user records remain while another
+context references them. Keep a kubeconfig backup and use `r` only to reload
+from disk; it does not undo a deletion.
 :::

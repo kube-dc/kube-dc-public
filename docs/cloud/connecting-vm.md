@@ -1,6 +1,6 @@
 # Connecting to Your VM
 
-This guide covers all methods for accessing your virtual machines in Kube-DC — from browser-based consoles to SSH and direct network access.
+This guide covers supported ways to access a virtual machine in Kube-DC: browser consoles, direct SSH, and serial or VNC sessions.
 
 ## Prerequisites
 
@@ -140,17 +140,7 @@ The `virtctl` CLI provides direct serial console access without network connecti
 
 ### Install virtctl
 
-```bash
-# Linux
-curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.1.0/virtctl-v1.1.0-linux-amd64
-chmod +x virtctl
-sudo mv virtctl /usr/local/bin/
-
-# macOS
-curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.1.0/virtctl-v1.1.0-darwin-amd64
-chmod +x virtctl
-sudo mv virtctl /usr/local/bin/
-```
+Install a `virtctl` release compatible with the platform KubeVirt version. Follow the [official KubeVirt installation guide](https://kubevirt.io/user-guide/user_workloads/virtctl_client_tool/), which covers release binaries and the Krew plugin.
 
 ### Serial Console
 
@@ -158,55 +148,31 @@ sudo mv virtctl /usr/local/bin/
 # Open interactive console (press Ctrl+] to exit)
 virtctl console ubuntu
 
-# View console logs without interaction
-virtctl logs ubuntu
 ```
 
 ### VNC Session
 
 ```bash
-# Open VNC session (requires VNC client)
+# Open the session in the configured VNC viewer
 virtctl vnc ubuntu
 ```
 
-This forwards the VNC connection to `localhost:5900` — connect with a VNC client like TigerVNC or RealVNC.
-
-### SSH via virtctl
+To connect a viewer yourself, keep a proxy open on a known local port:
 
 ```bash
-# SSH through virtctl port-forward
-virtctl ssh ubuntu@ubuntu
+virtctl vnc ubuntu --proxy-only --port 5900
 ```
 
-This works even if the VM doesn't have a public IP — virtctl tunnels through the Kubernetes API.
+Then connect the viewer to `localhost:5900`.
 
----
+### Kubernetes API tunneling
 
-## kubectl Port-Forward
-
-For accessing VM services without exposing them externally, use `kubectl port-forward` to tunnel traffic through the Kubernetes API server:
-
-```bash
-# Forward VM's SSH port to localhost
-kubectl port-forward vmi/ubuntu 2222:22
-
-# In another terminal, connect via localhost
-ssh -p 2222 ubuntu@localhost
-```
-
-This works for any service running inside the VM:
-
-```bash
-# Forward HTTP server
-kubectl port-forward vmi/ubuntu 8080:80
-
-# Access in browser
-curl http://localhost:8080
-```
-
-:::note
-Port-forwarding requires the VirtualMachineInstance (VMI) to be running. Use `kubectl get vmi` to verify.
-:::
+Standard Project roles do not include
+`virtualmachineinstances/portforward`. Consequently, `virtctl ssh` and
+`virtctl port-forward` are not tenant access methods on Kube-DC. Use the
+browser SSH terminal, a Floating IP, or a LoadBalancer Service instead.
+Platform operators can use API tunneling only when they hold a separate
+diagnostic role that grants the subresource explicitly.
 
 ---
 
@@ -220,8 +186,6 @@ Port-forwarding requires the VirtualMachineInstance (VMI) to be running. Use `ku
 | **LoadBalancer** | Shared IP, custom port | Yes | Optional |
 | **virtctl console** | Serial console, boot access | No | No |
 | **virtctl vnc** | VNC via API tunnel | No | No |
-| **virtctl ssh** | SSH via API tunnel | No | No |
-| **kubectl port-forward** | Access any VM service | No | No |
 
 ---
 

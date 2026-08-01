@@ -1,249 +1,201 @@
 ---
 name: create-database
-description: Create a managed PostgreSQL or MariaDB database in a Kube-DC project, configure access for workloads via environment variables and secrets, optionally expose externally via Gateway or LoadBalancer, and back up / restore via kubectl.
+description: Create a managed PostgreSQL or MariaDB database in a Kube-DC Project, connect workloads with Kubernetes Secrets, configure supported external access, and prepare backup or restore workflows.
 ---
 
 ## Prerequisites
-- Target project must exist and be Ready
-- Project namespace: `{org}-{project}`
-- **Quota**: verify sufficient storage and pod capacity — use the `check-quota` skill
 
-## Steps
+- The target Project exists and is Ready.
+- Know its backing namespace: `{organization}-{project}`.
+- Check storage, CPU, memory, and pod quota with the `check-quota` skill.
 
-### 1. Create KdcDatabase
+## 1. Choose the Database Shape
 
-Apply the template with user's parameters:
-- **Engine**: `postgresql` (default) or `mariadb`
-- **Version**: PostgreSQL 14-17, MariaDB 10.11/11.4
-- **Replicas**: 2+ for HA (recommended for production)
-- **Expose**: `internal` (default), `gateway` (TLS passthrough), or `loadbalancer`
+| Engine | Supported versions | Internal write endpoint |
+|---|---|---|
+| PostgreSQL | 14, 15, 16, 17 | `{name}-rw.{backing-namespace}.svc:5432` |
+| MariaDB, one replica | 10.11, 11.4 | `{name}.{backing-namespace}.svc:3306` |
+| MariaDB, two or more replicas | 10.11, 11.4 | `{name}-primary.{backing-namespace}.svc:3306` |
 
-See @pg-template.yaml for PostgreSQL and @mariadb-template.yaml for MariaDB.
+Use two or more replicas when the engine and workload require failover. Start
+with internal exposure unless the user explicitly needs workstation access.
+
+## 2. Create the Database
+
+Use [pg-template.yaml](pg-template.yaml) or
+[mariadb-template.yaml](mariadb-template.yaml), or apply this PostgreSQL
+example:
 
 ```yaml
 apiVersion: db.kube-dc.com/v1alpha1
 kind: KdcDatabase
 metadata:
-  name: {db-name}
-  namespace: {project-namespace}
+  name: "{database-name}"
+  namespace: "{backing-namespace}"
 spec:
   engine: postgresql
   version: "16"
+  databaseName: "{application-database}"
+  username: app
   replicas: 2
   cpu: "1"
   memory: 2Gi
-  storage: 10Gi
-  databaseName: {database-name}
-  username: app
-```
-
-### 2. Wait for Ready
-
-```bash
-kubectl get kdcdb {db-name} -n {project-namespace} -w
-```
-
-### 3. Configure Application Access
-
-The database auto-creates a credential secret. Mount it in your workload:
-
-**PostgreSQL** — secret: `{db-name}-app`, key: `password`
-```yaml
-env:
-  - name: DB_PASSWORD
-    valueFrom:
-      secretKeyRef:
-        name: {db-name}-app
-        key: password
-  - name: DB_HOST
-    value: "{db-name}-rw.{project-namespace}.svc"
-  - name: DB_PORT
-    value: "5432"
-  - name: DB_USER
-    value: "app"
-  - name: DB_NAME
-    value: "{database-name}"
-```
-
-**MariaDB** — secret: `{db-name}-password`, key: `password`
-```yaml
-env:
-  - name: DB_PASSWORD
-    valueFrom:
-      secretKeyRef:
-        name: {db-name}-password
-        key: password
-  - name: DB_HOST
-    value: "{db-name}.{project-namespace}.svc"
-  - name: DB_PORT
-    value: "3306"
-  - name: DB_USER
-    value: "app"
-  - name: DB_NAME
-    value: "{database-name}"
-```
-
-See @db-connection-patterns.md for full connection string examples.
-
-#### Bridging the auto-secret to a Helm chart's expected key name
-
-The auto-secret stores the password under key `password`. Many off-the-shelf
-Helm charts hard-code a different key name for their `existingSecret`
-parameter and offer no override. When that's the case, create a small bridge
-Secret aliasing the password to the chart's expected key name, and pass that
-bridge as `existingSecret`:
-
-```bash
-PASSWORD=$(kubectl get secret {db-name}-password -n {project-namespace} \
-  -o jsonpath='{.data.password}' | base64 -d)
-kubectl create secret generic {app}-db-bridge \
-  --namespace {project-namespace} \
-  --from-literal={chart-expected-key}="$PASSWORD" \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-Known chart key requirements:
-
-| Chart | Expected key in `existingSecret` |
-|-------|---------------------------------|
-| Bitnami WordPress | `mariadb-password` |
-| Bitnami Discourse, Bitnami Joomla | `db-password` |
-| Bitnami NextCloud | `mariadb-password` (when `mariadb.enabled=false`) |
-
-Modern charts often expose `externalDatabase.existingSecretPasswordKey` (or a
-similar parameter) — check `helm show values {chart}` for that field before
-falling back to the bridge-Secret pattern. PostgreSQL `KdcDatabase` also
-auto-creates `{db-name}-app` with key `password`; the same bridge pattern
-applies for charts (e.g. some Discourse images) that expect a key like
-`postgresql-password`.
-
-### 4. External Access (Optional)
-
-**Gateway** (recommended for production external access):
-```yaml
-spec:
+  storage: 20Gi
   expose:
-    type: gateway
+    type: internal
 ```
-→ Endpoint: `{db-name}-db-{project-namespace}.kube-dc.cloud:{port}`
-→ Connect: `psql "host={db-name}-db-{project-namespace}.kube-dc.cloud port=5432 dbname={database-name} user=app sslmode=require"`
 
-**Port-forward** (development/ad-hoc):
+Wait for the resource:
+
 ```bash
-kubectl port-forward svc/{db-name}-rw {port}:{port} -n {project-namespace}
-# Then connect to localhost:{port}
+kubectl get kdcdb {database-name} -n {backing-namespace} -w
 ```
 
-**LoadBalancer** (dedicated IP):
+Treat `.status.phase=Ready` as the readiness signal. Provisioning time depends
+on image availability, storage, placement, and quota.
+
+## 3. Connect an Application
+
+The engine creates a bootstrap credential Secret:
+
+| Engine | Secret | Password key |
+|---|---|---|
+| PostgreSQL | `{name}-app` | `password` |
+| MariaDB | `{name}-password` | `password` |
+
+PostgreSQL example:
+
+```yaml
+env:
+- name: DB_HOST
+  value: "{database-name}-rw.{backing-namespace}.svc"
+- name: DB_PORT
+  value: "5432"
+- name: DB_NAME
+  value: "{application-database}"
+- name: DB_USER
+  value: "app"
+- name: DB_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: "{database-name}-app"
+      key: password
+```
+
+For MariaDB, use `{database-name}.{backing-namespace}.svc` with one replica
+or `{database-name}-primary.{backing-namespace}.svc` with two or more, port
+`3306`, and Secret `{database-name}-password`.
+
+If a `DatabaseCredentialPolicy` manages this user, stop reading the engine
+Secret. It remains at the provisioning-time value after the first rotation.
+Use the policy's projected Secret or the authorized `kube-dc db credentials`
+command instead.
+
+Some Helm charts expect a different password key. Prefer a chart setting such
+as `existingSecretPasswordKey`. If none exists, create a small bridge Secret
+from the current source-of-truth Secret and point the chart at it. Recreate that
+bridge after every credential rotation unless automation keeps it synchronized.
+
+See [db-connection-patterns.md](db-connection-patterns.md) for connection
+examples.
+
+## 4. Configure External Access Only When Needed
+
+### LoadBalancer: supported workstation path
+
+The dashboard supports **Internal** and **LoadBalancer**. To request a
+dedicated address in a manifest:
+
 ```yaml
 spec:
   expose:
     type: loadbalancer
 ```
-→ Check `status.externalEndpoint` for the allocated IP
 
-### 5. Configure Backups (Optional, Recommended for Production)
+Read the allocated endpoint from status:
 
-Scheduled backups are off by default. Add `spec.backup` to enable a daily backup
-to the project's auto-provisioned S3 bucket (`{project-namespace}-db-backups`):
+```bash
+kubectl get kdcdb {database-name} -n {backing-namespace} \
+  -o jsonpath='{.status.externalEndpoint}{"\n"}'
+```
+
+Remove external exposure when it is no longer needed.
+
+### Gateway: PostgreSQL 17 direct TLS only
+
+Gateway exposure is an advanced, manifest-only compatibility path. It works
+only when PostgreSQL 17 and the client both start with a standard TLS
+ClientHello and the client sets `sslnegotiation=direct`:
+
+```yaml
+spec:
+  engine: postgresql
+  version: "17"
+  expose:
+    type: gateway
+```
+
+Connect to public port `443`, not the engine port reported in status:
+
+```bash
+psql "host={database-name}-db-{backing-namespace}.{platform-domain} port=443 dbname={application-database} user=app sslmode=require sslnegotiation=direct"
+```
+
+This path is not compatible with PostgreSQL 14-16 protocol negotiation or the
+MariaDB server-first handshake. It passes through the database certificate and
+does not issue one for the public hostname. Use LoadBalancer for those engines
+or when verified server identity is required.
+
+Standard Project roles do not grant pod port-forward. Do not present
+`kubectl port-forward` as a tenant database access method.
+
+## 5. Back Up the Database
+
+Scheduled backups are disabled unless configured:
 
 ```yaml
 spec:
   backup:
     enabled: true
-    schedule: "0 2 * * *"   # daily at 02:00
+    schedule: "0 2 * * *"
     retentionDays: 7
 ```
 
-PostgreSQL also enables continuous WAL archiving when `backup.enabled: true`,
-which is what powers PITR. See @backup-restore-patterns.md for on-demand backups,
-restore (new-name and in-place flows), and PostgreSQL point-in-time recovery.
-
-### 6. Retrieve Password
-
-```bash
-# PostgreSQL
-kubectl get secret {db-name}-app -n {project-namespace} \
-  -o jsonpath='{.data.password}' | base64 -d
-
-# MariaDB
-kubectl get secret {db-name}-password -n {project-namespace} \
-  -o jsonpath='{.data.password}' | base64 -d
-```
+Backups use the Project backup bucket configured by the platform. PostgreSQL
+also uses continuous WAL archiving for point-in-time recovery when backup is
+enabled. Follow [backup-restore-patterns.md](backup-restore-patterns.md) for
+on-demand backups and both restore paths.
 
 ## Verification
 
-After creating the database, run these checks:
-
 ```bash
-# 1. Check database phase (expect: Ready)
-kubectl get kdcdb {db-name} -n {project-namespace} -o jsonpath='{.status.phase}'
+# Database state and endpoints
+kubectl get kdcdb {database-name} -n {backing-namespace} -o yaml
 
-# 2. Check endpoint is assigned
-kubectl get kdcdb {db-name} -n {project-namespace} -o jsonpath='{.status.endpoint}'
-# PostgreSQL: {db-name}-rw.{project-namespace}.svc:5432
-# MariaDB: {db-name}.{project-namespace}.svc:3306
+# Engine Service and ready endpoints
+kubectl get service,endpointslice -n {backing-namespace}
 
-# 3. Verify credential secret exists
-# PostgreSQL:
-kubectl get secret {db-name}-app -n {project-namespace}
-# MariaDB:
-kubectl get secret {db-name}-password -n {project-namespace}
-
-# 4. Test connectivity (from a temporary pod)
-# PostgreSQL:
-kubectl run pg-test --rm -it --restart=Never --image=postgres:16 -n {project-namespace} -- \
-  pg_isready -h {db-name}-rw.{project-namespace}.svc -p 5432
-# MariaDB:
-kubectl run mysql-test --rm -it --restart=Never --image=mysql:8.0 -n {project-namespace} -- \
-  mysqladmin ping -h {db-name}.{project-namespace}.svc --ssl-mode=DISABLED
+# Bootstrap Secret, only when no DBCP manages the user
+kubectl get secret {database-name}-app -n {backing-namespace} # PostgreSQL
 ```
 
-**Success**: Phase is `Ready`, endpoint assigned, secret exists, connectivity test passes.
-**Failure**: If phase is `Provisioning`, wait and recheck. If `Failed`:
-- `kubectl describe kdcdb {db-name} -n {project-namespace}` — check conditions and events
-
-## Backup & Restore
-
-For day-2 backup operations — on-demand backups, restoring (new-name and
-in-place flows), and PostgreSQL point-in-time recovery — see
-@backup-restore-patterns.md.
-
-Quick reference:
+Success means the `KdcDatabase` is Ready, the expected Service has endpoints,
+and the correct source-of-truth credential Secret exists. On failure, inspect
+conditions and events:
 
 ```bash
-# List restore-eligible backups
-kubectl get backup.postgresql.cnpg.io -n {project-namespace}        # PostgreSQL
-kubectl get physicalbackup -n {project-namespace}                   # MariaDB
-
-# In-place restore (destructive — deletes engine PVCs and re-bootstraps)
-kubectl annotate kdcdb {db-name} -n {project-namespace} \
-  kube-dc.com/restore-from={backup-name} --overwrite
-
-# PostgreSQL PITR — add target time alongside
-kubectl annotate kdcdb {db-name} -n {project-namespace} \
-  kube-dc.com/restore-from={backup-name} \
-  kube-dc.com/restore-target-time={rfc3339-instant} --overwrite
-
-# Watch restore progress (annotation clears when phase=Succeeded)
-kubectl get kdcdb {db-name} -n {project-namespace} \
-  -o jsonpath='{.status.restore.phase} — {.status.restore.message}{"\n"}'
+kubectl describe kdcdb {database-name} -n {backing-namespace}
 ```
-
-For non-destructive restore, create a new `KdcDatabase` with `spec.restoreFrom`
-instead of using the annotation — see @backup-restore-patterns.md for the full
-recipe.
 
 ## Safety
-- Never log database passwords in chat output
-- Default to `internal` exposure unless user explicitly requests external
-- Recommend 2+ replicas for production workloads
-- PostgreSQL endpoint uses `-rw` suffix; MariaDB does not
-- **In-place restore is destructive** — engine PVCs are deleted and recreated
-  from the chosen backup. Live data is gone for the duration of the restore.
-  Prefer the new-name path (`spec.restoreFrom` on a fresh `KdcDatabase`) for
-  production-critical data; verify and swap apps over once you're sure.
-- For MariaDB on-demand `PhysicalBackup` always set `target: PreferReplica` —
-  the default `Replica` strict mode loops forever when replication has not
-  converged. Backups created via the dashboard or `spec.backup` are already
-  configured correctly.
+
+- Never print or log passwords.
+- Default to internal exposure.
+- Use the correct MariaDB endpoint for the replica count.
+- Do not use an engine bootstrap Secret after a credential policy rotates that
+  user.
+- Prefer a new-name restore. In-place restore deletes engine resources and
+  PVCs before rebuilding from the selected backup.
+- MariaDB manual `PhysicalBackup` resources should use
+  `target: PreferReplica`; strict `Replica` can wait indefinitely when no
+  replica is available.

@@ -1,186 +1,161 @@
-# Multi-Tenancy & RBAC
+# Multi-Tenancy and Access Control
 
-Kube-DC implements a comprehensive multi-tenant architecture that leverages Kubernetes namespaces and Keycloak for identity and access management. This document explains how organizations, projects, and groups in Kube-DC are mapped to Kubernetes and Keycloak objects.
+Kube-DC presents three product concepts to users: **Organizations**, **Projects**,
+and **Organization Groups**. Kubernetes namespaces, RBAC objects, and Keycloak
+resources implement those concepts; they are not separate products that users
+must assemble themselves.
 
-## Core Components and Mapping Structure
-
-The following diagram illustrates the mapping between Kube-DC structures and the underlying Kubernetes and Keycloak components:
+## Product model
 
 ```mermaid
-graph TD
-    User[User 1] -->|Authenticates| KC[Keycloak Realm]
-    User -->|Obtains Group and Role| KCG[Keycloak Group]
-    User -->|Obtains Group and Role| KCR[Keycloak Role]
-    
-    ORG[Organization] -->|Maps to| ORGNS[Organization Namespace]
-    
-    ORGNS -->|Contains| ORGGRP[Organization Group]
-    
-    PROJ[Project A] -->|Maps to| PNS[Project A NS]
-    PROJ2[Project B] -->|Maps to| PNS2[Project B NS]
-    
-    ORGGRP -->|Maps to| K8GRPCRD[Group CRD]
-    ORGGRP -->|Maps to| KCGRP[Keycloak Group]
-    
-    KCGRP -->|Maps to| K8SROLE[K8s RoleBinding]
-    KCR -->|Maps to| K8SROLE
-    
-    K8GRPCRD -->|Defines permissions for| PNS
-    K8GRPCRD -->|Defines permissions for| PNS2
+flowchart TB
+  accTitle: Kube-DC identity and tenancy model
+  accDescr: A user signs in through Keycloak, receives group-based access to an Organization and its Projects, and can operate Managed Clusters within an authorized Project.
+  User[User] -->|signs in| Identity[Keycloak]
+  Identity -->|group claims| API[Kubernetes API]
 
-    KK[Keycloak Client Role] -->|KK to K8s Role Mapping| K8R[K8s Role]
+  Organization --> ProjectA[Project: production]
+  Organization --> ProjectB[Project: development]
+  Organization --> Group[Organization Group]
+  Group -->|role in production| ProjectA
+  Group -->|role in development| ProjectB
+
+  ProjectA --> WorkloadsA[VMs, Pods, databases, and Managed Clusters]
+  ProjectB --> WorkloadsB[VMs, Pods, databases, and Managed Clusters]
 ```
 
-## Organization Structure
+| Product concept | Purpose | Kubernetes implementation |
+|---|---|---|
+| Organization | Tenant boundary for identity, membership, billing, shared quota, and policy | An `Organization` resource and an Organization namespace with the same name |
+| Project | Governed workload boundary inside an Organization | A `Project` resource in the Organization namespace and a generated backing namespace named `{organization}-{project}` |
+| Organization Group | Assigns people one or more roles in selected Projects | An `OrganizationGroup`, a Keycloak group, and RoleBindings in the selected Project backing namespaces |
+| Managed Cluster | Separate Kubernetes API, control plane, and workers | A `KdcCluster` and related resources inside a Project |
 
-### Organization
+Use the product names in user-facing instructions. Use **backing namespace**
+only when an operator needs the underlying Kubernetes name, for example when
+running `kubectl -n acme-production`.
 
-An Organization is the top-level entity in Kube-DC that represents a company, department, or team.
+## Organization
 
-**Example Organization YAML:**
+An Organization commonly represents a company, department, or internal
+business unit. It owns Projects, identity groups, quota, and billing state.
 
 ```yaml
 apiVersion: kube-dc.com/v1
 kind: Organization
 metadata:
-  name: shalb
-  namespace: shalb
-spec: 
-  description: "Shalb organization"
-  email: "alice@example.com"
+  name: acme
+  namespace: acme
+spec:
+  description: "Acme engineering"
+  email: "platform@example.com"
 ```
 
-**Mapping:**
+The controller creates and reconciles the corresponding identity and platform
+resources. The Organization is the tenant boundary; its namespace is an
+implementation and quota-aggregation boundary.
 
-- Each Organization maps to a dedicated Kubernetes namespace with the same name
-- A corresponding Keycloak Client is created for the organization
-- The Organization serves as a logical grouping for Projects and OrganizationGroups
+## Project
 
-### Project
-
-A Project represents a logical grouping of resources within an Organization. Projects help segregate workloads and manage access control.
-
-**Example Project YAML:**
+A Project is the normal place for users to create workloads. Every Project has
+its own Kube-OVN VPC, subnet, default egress path, backing namespace, and RBAC.
 
 ```yaml
 apiVersion: kube-dc.com/v1
 kind: Project
 metadata:
-  name: demo
-  namespace: shalb
+  name: production
+  namespace: acme
 spec:
-  cidrBlock: "10.0.10.0/24"
+  cidrBlock: 10.40.0.0/20
+  egressNetworkType: cloud
 ```
 
-**Mapping:**
+Both fields are required:
 
-- Each Project maps to a dedicated Kubernetes namespace in the format: `{organization}-{project}` (e.g., `shalb-demo`)
-- Projects receive their own network CIDR block for resource isolation
-- Kubernetes namespaces provide the boundary for resource quotas and access control
+- `cidrBlock` is the Project workload subnet. Choose a range that does not
+  overlap other networks the workloads must reach.
+- `egressNetworkType` is immutable and is either `cloud` or `public`.
+  `cloud` uses the private external provider network. `public` requires the
+  platform operator to enable public Projects and configure the public external
+  network.
 
-### OrganizationGroup
+The generated backing namespace for this example is `acme-production`. A
+namespace alone is not a Project: creating one manually does not provision the
+VPC, identity, quota, DNS, or platform services.
 
-An OrganizationGroup maps users to roles within specific projects, defining what actions they can perform.
+## Organization Groups
 
-**Example OrganizationGroup YAML:**
+An Organization Group assigns roles to a set of users on a Project-by-Project
+basis. One group can have different roles in different Projects. RoleBindings
+materialize those assignments in each Project's backing namespace.
 
 ```yaml
 apiVersion: kube-dc.com/v1
 kind: OrganizationGroup
 metadata:
-  name: "app-manager"
-  namespace: shalb
+  name: application-team
+  namespace: acme
 spec:
   permissions:
-  - project: "demo"
-    roles:
-    - admin
-  - project: "prod"
-    roles:
-    - resource-manager
+    - project: production
+      roles:
+        - developer
+    - project: development
+      roles:
+        - project-manager
 ```
 
-**Mapping:**
+Kube-DC ships four Kubernetes Roles in every Project backing namespace:
 
-- OrganizationGroups are implemented as Kubernetes Custom Resource Definitions (CRDs)
-- Each OrganizationGroup maps to a Keycloak Group
-- The permissions defined in OrganizationGroups determine the Kubernetes RoleBindings that grant access to resources
-- Different roles can be assigned for different projects
+| Role | Intended use |
+|---|---|
+| `admin` | Broad lifecycle access to supported Project resources plus namespaced Roles and RoleBindings; quota is read-only |
+| `project-manager` | Read and monitor Project resources and use the VM console; update or patch existing managed secrets, certificates, and database credential policies; create, update, or patch KMS keys; no Project, membership, or quota administration |
+| `developer` | Manage supported workloads, Services, VMs, and managed services; raw Kubernetes Secrets are get/list only |
+| `user` | Read-only Project visibility without raw Secret or VM-console access |
 
-## Authentication and Authorization Flow
+These are standard `rbac.authorization.k8s.io/v1` Roles, populated from the
+platform's default role templates. There is no Kube-DC `Role` custom resource.
+Operators can inspect the effective rules with:
 
-**User Authentication:**
-
-   - Users authenticate through Keycloak
-   - Upon successful authentication, users receive JSON Web Tokens (JWTs)
-
-**Group and Role Assignment:**
-
-   - Users are assigned to Keycloak Groups based on their OrganizationGroup membership
-   - Keycloak maps these groups to corresponding roles
-
-**Kubernetes Authorization:**
-
-   - The Kubernetes API server validates the user's JWT
-   - RoleBindings determine what actions the user can perform within each namespace
-   - Resource access is controlled at the Project (namespace) level
-
-**Resource Access:**
-
-   - Users can only access resources in projects where they have appropriate role assignments
-   - Actions are restricted based on the permissions defined in their roles
-
-## Role-Based Access Control
-
-Kube-DC provides several built-in roles that can be assigned to users via OrganizationGroups:
-
-- **Admin:** Full access to all resources within a project
-- **Resource Manager:** Can create and manage resources, but cannot modify project settings
-- **Viewer:** Read-only access to project resources
-
-**Example Role YAML:**
-
-```yaml
-apiVersion: kube-dc.com/v1
-kind: Role
-metadata:
-  name: resource-manager
-  namespace: shalb
-spec:
-  rules:
-  - apiGroups: ["*"]
-    resources: ["pods", "services", "deployments", "statefulsets"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: ["kubevirt.io"]
-    resources: ["virtualmachines", "virtualmachineinstances"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+```bash
+kubectl -n <backing-namespace> get role admin developer project-manager user
 ```
 
-## Implementation Details
+## Authentication and authorization flow
 
-### Kubernetes Components
+1. The user signs in through the Organization's Keycloak realm.
+2. Keycloak issues an OIDC token containing the user's group claims.
+3. The Kubernetes API server authenticates the token.
+4. RoleBindings in each Project backing namespace map those groups to Kube-DC's
+   standard Roles.
+5. Kubernetes RBAC authorizes each API request.
 
-- **Namespaces:** Used to isolate Organizations and Projects
-- **RBAC:** Role-Based Access Control for managing permissions
-- **CRDs:** Custom Resource Definitions for Kube-DC specific resources
-- **NetworkPolicies:** Ensure network isolation between Projects
+Authentication answers **who the user is**. Organization Groups and Kubernetes
+RBAC answer **what the user can do in each Project**.
 
-### Keycloak Integration
+## Isolation boundaries
 
-- **Realm:** Represents the authentication domain
-- **Clients:** Each Organization has a dedicated client
-- **Groups:** Map to OrganizationGroups in Kube-DC
-- **Roles:** Define permissions that can be assigned to users
-- **Role Mappings:** Connect Keycloak roles to Kubernetes RBAC
+Project isolation is layered:
 
-## Practical Application
+- The backing namespace scopes namespaced resources and RBAC.
+- HNC connects Project backing namespaces to their Organization for
+  hierarchical quota and selected policy propagation.
+- A dedicated Kube-OVN VPC and subnet provide the primary network boundary.
+- Ingress and egress logical-router policies restrict traffic on shared
+  external networks when those controls are enabled.
+- Kubernetes NetworkPolicy is an optional workload-level control. It is not the
+  mechanism that creates the Project VPC boundary, and the default Project Roles
+  do not grant NetworkPolicy authoring.
 
-When a user is added to an organization group in Kube-DC:
+Platform administrators remain privileged across Organizations. Workloads that
+need their own Kubernetes administrative boundary should run in a **Managed
+Cluster**, rather than treating a Project as a separate physical cluster.
 
-1. The corresponding Keycloak group membership is created
-2. The user inherits roles based on the group's permissions
-3. When the user accesses the Kubernetes API, their JWT contains the group and role information
-4. Kubernetes RBAC evaluates the JWT against RoleBindings to determine access
-5. The user can operate only within the boundaries of their assigned permissions
+## Related documentation
 
-This multi-layered approach ensures secure isolation between tenants while providing fine-grained access control within each project.
+- [Architecture overview](architecture-overview.md)
+- [Project resources](project-resources.md)
+- [Networking architecture](architecture-networking.md)
+- [Security model](security-model.md)

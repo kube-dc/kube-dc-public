@@ -2,19 +2,20 @@
 
 Kube-DC uses **Organizations** and **Projects** to connect identity, authorization, networking, resource governance and billing to the workloads you deploy. Understanding this model — and the upfront choice between running a workload *in your Project* or *in a Managed Cluster* — is most of what you need to use the platform well.
 
-<div style={{width: '100%', maxWidth: 'none'}}>
-![Kube-DC Organization, Project, and resource model](images/core-concept.png)
-</div>
 
 ## The resource model
 
-```text
-Organization
-└── Project
-    ├── Applications and Kubernetes resources
-    ├── Virtual machines
-    ├── Networking, storage, and managed services
-    └── Managed Kubernetes Clusters
+```mermaid
+flowchart TB
+    accTitle: Kube-DC resource model
+    accDescr: An Organization contains Projects. Each Project contains application workloads, virtual machines, networking, storage, managed services, and optional Managed Clusters.
+    org[Organization: identity, membership, billing, shared quota]
+    project[Project: working boundary and backing namespace]
+    org --> project
+    project --> apps[Applications and namespaced Kubernetes resources]
+    project --> vms[Virtual machines]
+    project --> services[Networking, storage, and managed services]
+    project --> clusters[Managed Clusters with a separate Kubernetes API]
 ```
 
 ### Organization — identity and billing scope
@@ -34,13 +35,13 @@ A **Project** is a governed Kubernetes application environment on the shared pla
 
 Each Project provides:
 
-- A dedicated Kubernetes namespace
+- A dedicated backing namespace named `{organization}-{project}`
 - Project-scoped RBAC (Admin, Developer, Project Manager, User — plus custom roles)
 - A private network (VPC) with platform-managed traffic controls
 - An optional quota for CPU, memory, storage and other resources
 - A kubeconfig for direct Kubernetes API access
 
-A Project is **not** a tenant Kubernetes cluster: its users share the platform API server and platform-operated controllers, working within the namespace, RBAC, network and security boundaries assigned to the Project. What makes it valuable is the flip side of that fact — it is ready the moment it exists, with no cluster to provision or operate. See [Kubernetes Projects](kubernetes-projects.md).
+A Project is **not** a tenant Kubernetes cluster: its users share the platform API server and platform-operated controllers, working within the backing namespace, RBAC, network and security boundaries assigned to the Project. What makes it valuable is the flip side of that fact — it is ready the moment it exists, with no cluster to provision or operate. See [Projects](kubernetes-projects.md).
 
 ### Resources — what belongs to a Project
 
@@ -51,22 +52,22 @@ A Project is **not** a tenant Kubernetes cluster: its users share the platform A
 - External IPs, floating IPs and load balancers
 - Managed PostgreSQL and MariaDB databases
 - Certificates, secrets, KMS keys and database credential policies
-- Backups and Managed Kubernetes Clusters
+- Managed Clusters and platform-managed protection services
 
 ## Choose a deployment mode
 
 Kube-DC gives you two ways to run Kubernetes workloads. Choose per workload, before deploying:
 
-| | **Kubernetes Project** (default) | **Managed Kubernetes Cluster** |
+| | **Project** (default) | **Managed Cluster** |
 |---|---|---|
-| Control boundary | One governed namespace on the shared platform cluster | A tenant-controlled Kubernetes control plane |
+| Control boundary | One governed backing namespace on the shared platform cluster | A tenant-controlled Kubernetes control plane |
 | Best for | Applications, services, storage, jobs and VMs using supported namespaced APIs | Operators, platform stacks, multiple namespaces, cluster-level customization |
-| Access | Project kubeconfig — available as soon as the Project exists | Cluster kubeconfig — after the control plane and workers are provisioned (minutes) |
+| Access | Project kubeconfig — available as soon as the Project exists | Cluster kubeconfig — after the control plane and workers are ready |
 | Extensibility | Platform-installed APIs and supported namespaced resources | Full Kubernetes: CRDs, webhooks, operators, cluster RBAC |
 | You operate | Nothing below your workloads | Worker pool sizing and upgrade timing |
 
 :::tip Selection rule
-**Choose a Kubernetes Project** for application deployments and VMs whose manifests use supported namespaced APIs and unprivileged pods.
+**Choose a Project** for application deployments and VMs whose manifests use supported namespaced APIs and unprivileged pods.
 **Choose a Managed Cluster** when the software installs operators or CRDs, creates cluster-scoped resources, spans multiple namespaces, or requires privileged or host-level access.
 :::
 
@@ -79,7 +80,7 @@ Isolation in Kube-DC is layered, and each layer has a precise scope:
 | Layer | Scope | Mechanism |
 |---|---|---|
 | Identity | Organization | Organization-scoped SSO realm; Projects grant roles within it |
-| Authorization | Project | Dedicated namespace with per-role RBAC |
+| Authorization | Project | Dedicated backing namespace with per-role RBAC |
 | Network | Project | A VPC per Project on the platform SDN |
 | Capacity | Project / Organization | Optional per-Project quotas within your plan |
 | Billing | Organization | One plan and invoice across all Projects |
@@ -105,12 +106,12 @@ A Project can be managed with:
 - An externally operated Argo CD or Flux targeting the Project kubeconfig
 - AI coding assistants, via [agent skills](ai-ide-integration.md)
 
-A **compatible** Helm chart renders resources that (1) use Kubernetes APIs supported in the Project, (2) stay within the Project namespace, (3) require only verbs granted to the installing user, and (4) comply with Project pod-security policy. Charts that create CRDs, cluster-scoped RBAC, admission webhooks, StorageClasses, NetworkPolicies, CronJobs, or privileged/host-access workloads are not supported in Projects — use a Managed Cluster for those. See [Kubernetes Projects](kubernetes-projects.md) for the full boundary and how to check a chart before installing.
+A **compatible** Helm chart renders resources that (1) use Kubernetes APIs supported in the Project, (2) stay within the Project's backing namespace, (3) require only verbs granted to the installing user, and (4) comply with Project pod-security policy. Charts that create CRDs, cluster-scoped RBAC, admission webhooks, StorageClasses, NetworkPolicies, CronJobs, or privileged/host-access workloads are not supported in Projects — use a Managed Cluster for those. See [Projects](kubernetes-projects.md) for the full boundary and how to check a chart before installing.
 
-`kubectl exec` and `kubectl attach` are blocked in project namespaces by design — use `kubectl logs` and run administrative tasks as Jobs. Project administrators can define custom namespaced Roles within their authority — but a namespaced Role can never grant cluster-scoped resources, and the exec restriction is enforced by admission policy even for custom roles.
+`kubectl exec` and `kubectl attach` are blocked in Project backing namespaces by design — use `kubectl logs` and run administrative tasks as Jobs. Project administrators can define custom namespaced Roles within their authority — but a namespaced Role can never grant cluster-scoped resources, and the exec restriction is enforced by admission policy even for custom roles.
 
 ## Next steps
 
-- [Kubernetes Projects](kubernetes-projects.md) — the default way to deploy
+- [Projects](kubernetes-projects.md) — the default way to deploy
 - [Creating Your First Project](first-project.md)
-- [Provision a Managed Kubernetes Cluster](provisioning-cluster.md)
+- [Provision a Managed Cluster](provisioning-cluster.md)

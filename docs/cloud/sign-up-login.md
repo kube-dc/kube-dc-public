@@ -18,8 +18,6 @@ To get started with Kube-DC Cloud, you need to register a new account.
    - **First name** — Your first name
    - **Last name** — Your last name
 
-![Registration form](images/sign-up-1.png)
-
 4. Click **Register** to create your account
 5. Check your email for a verification link and confirm your account
 
@@ -29,22 +27,20 @@ If you sign up with Google, your account is automatically verified and you can p
 
 ## Set Up Your Organization
 
-After registration, you'll be prompted to set up or join an Organization. Organizations are the top-level container for all your projects, users, and resources.
+After registration, you'll be prompted to set up or join an Organization. An Organization is the identity, membership, billing, and shared-quota boundary for its Projects.
 
 ### Create a New Organization
 
-If you're starting fresh or want to create a new workspace:
+If you are starting fresh or need a separate Organization:
 
 1. Enter a unique **Organization name** (e.g., your company or team name)
 2. The system validates availability — a green checkmark indicates the name is available
-3. Set an **Organization password** (minimum 8 characters)
+3. Set your **Organization login password** (minimum 8 characters)
 4. Confirm your password
 5. Click **Continue**
 
-![Create new organization](images/sign-up-2.png)
-
 :::note Organization Admin
-When you create an organization, you automatically become the Organization Admin with full access to manage users, projects, and settings. **Save your organization password** — you'll need it to log in as the org admin.
+When you create an organization, you automatically become the Organization Admin with full access to manage users, projects, and settings. Keep your Organization login password secure. It belongs to your user account and is not a password shared by Organization members.
 :::
 
 ### Join an Existing Organization
@@ -55,8 +51,6 @@ If your team already has an organization:
 2. The system detects the organization exists and shows "Organization exists. You can request to join."
 3. Click **Request to join**
 4. Wait for an Organization Admin to approve your request
-
-![Join existing organization](images/sign-up-3.png)
 
 :::info Approval Required
 Join requests must be approved by an Organization Admin. You'll receive an email notification once your request is processed.
@@ -69,7 +63,7 @@ Once your account is set up, you can log in to access your dashboard.
 1. Navigate to [console.kube-dc.cloud](https://console.kube-dc.cloud)
 2. Enter your **Organization** name
 3. Choose your login method:
-   - **Log in** — Enter your organization password
+   - **Log in** — Enter your Organization login password
    - **Sign in with Google** — Use Google SSO (if configured)
 
 ![Login page](images/sign-up-4.png)
@@ -78,27 +72,18 @@ Once your account is set up, you can log in to access your dashboard.
 Bookmark your organization's direct login URL for faster access: `https://console.kube-dc.cloud/?realm=your-org-name`
 :::
 
-## Subscribe to a Plan
+## Choose a Plan or Trial
 
-New organizations receive a **14-day free trial** with no payment required. After creating your first project, you'll be prompted to select a subscription plan.
+Subscription and trial options depend on the Kube-DC deployment and its billing provider. Some providers offer a first-subscription trial; a valid promo code or an administrator can also enable trial access. The Billing screen shows your exact eligibility and duration before checkout.
 
-![Subscription plans](images/sign-up-5.png)
+After the Organization is created, open **Billing** to:
 
-### Available Plans
+- choose from the plans currently offered by your provider;
+- redeem a promo code, when you have one;
+- review the exact CPU, memory, storage, IP, and accelerator quota before checkout;
+- see the subscription state and remaining trial time, when applicable.
 
-| Plan | Best For | CPU | Memory | NVMe Storage | Object Storage |
-|------|----------|-----|--------|--------------|----------------|
-| **Dev Pool** | Sandbox / Dev | 4 cores | 8 GB | 60 GB | 20 GB |
-| **Pro Pool** | Production / Teams | 8 cores | 24 GB | 160 GB | 100 GB |
-| **Scale Pool** | High Load / VDC | 16 cores | 56 GB | 320 GB | 500 GB |
-
-All plans include:
-
-- Dedicated IPv4 addresses
-- Nested clusters (KubeVirt)
-- Unlimited 1Gbit/s bandwidth
-
-Click **Start 14-Day Free Trial** to begin using Kube-DC immediately.
+The Billing screen is the source of truth for current plan capacity and commercial terms. See [Billing and Usage](billing-usage.md) for quota and subscription details.
 
 ## Next Steps
 

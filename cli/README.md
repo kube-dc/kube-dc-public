@@ -1,12 +1,16 @@
 # Kube-DC CLI
 
-Browser-based authentication CLI for Kube-DC clusters, following patterns from AWS CLI, GCloud, and DigitalOcean CLI.
+Browser-based authentication CLI for Kube-DC installations, following patterns
+from AWS CLI, Google Cloud CLI, and DigitalOcean CLI.
 
 ## Features
 
 - **Browser-based OAuth login** - No passwords in terminal
-- **Automatic token refresh** - Seamless kubectl usage for ~30 days
-- **kubectx/kubens compatible** - Works with popular tools
+- **Automatic token refresh** - Short-lived access tokens refresh while the
+  cached session remains valid
+- **Project context switching** - Keep the selected Project and backing
+  namespace aligned
+- **kubectx compatible** - Works with existing context workflows
 - **Preserves existing kubeconfig** - Never overwrites non-Kube-DC entries
 - **Cross-platform** - Linux, macOS, Windows
 
@@ -54,13 +58,10 @@ kube-dc login --domain stage.kube-dc.com --org shalb
 kube-dc login --domain kube-dc.cloud --org myorg
 
 # Switch project context
-kube-dc use shalb/demo
+kube-dc use stage.kube-dc.com/shalb/demo
 
 # Use kubectl normally
 kubectl get pods
-
-# Switch namespace
-kube-dc ns shalb-dev
 ```
 
 ## Commands
@@ -87,20 +88,22 @@ kube-dc logout --all
 
 ### `kube-dc use`
 
-Switch between organization/project contexts.
+Switch between Organization and Project contexts.
 
 ```bash
-kube-dc use shalb/demo        # Switch to specific project
-kube-dc use                   # Interactive selection
+kube-dc use stage.kube-dc.com/shalb/demo  # Switch to a specific Project
+kube-dc use                               # Interactive selection
 ```
 
 ### `kube-dc ns`
 
-Switch or list namespaces (from JWT claims).
+Compatibility selector for Project backing namespaces. It changes the namespace
+on the current context without changing that context's name, so prefer
+`kube-dc use` for normal Project switching.
 
 ```bash
-kube-dc ns                    # List available namespaces
-kube-dc ns shalb-dev          # Switch to namespace
+kube-dc ns                    # List accessible backing namespaces
+kube-dc ns shalb-dev          # Legacy: change only the current namespace
 ```
 
 ### `kube-dc config`
@@ -149,21 +152,23 @@ users:
 Every kubectl command triggers the credential plugin, which:
 1. Returns cached token if still valid
 2. Automatically refreshes token using refresh_token if expired
-3. Prompts for re-login only when refresh_token expires (~30 days)
+3. Prompts for login again when the identity-provider session can no longer
+   refresh
 
 ### kubectx Compatibility
 
-Contexts are named `kube-dc/{org}/{project}` for clear identification:
+Contexts are named `kube-dc/{domain}/{organization}/{project}` so installations
+with the same Organization and Project names remain unambiguous:
 
 ```bash
 $ kubectx
 minikube
 production-aws
-kube-dc/shalb/demo     # Kube-DC contexts
-kube-dc/shalb/dev
+kube-dc/stage.kube-dc.com/shalb/demo
+kube-dc/stage.kube-dc.com/shalb/dev
 
-$ kubectx kube-dc/shalb/demo
-Switched to context "kube-dc/shalb/demo".
+$ kubectx kube-dc/stage.kube-dc.com/shalb/demo
+Switched to context "kube-dc/stage.kube-dc.com/shalb/demo".
 ```
 
 ## File Locations
@@ -192,19 +197,24 @@ go test ./...
 
 ### Creating a New Release
 
-1. Make changes in `shalb/kube-dc` repository
-2. Commit and push to `main` branch
-3. Sync workflow automatically pushes CLI to `kube-dc/kube-dc-public`
-4. Create and push tag on `kube-dc-public`:
+The CLI source is maintained in the product repository and deliberately mirrored
+to `kube-dc/kube-dc-public`. There is no automatic source-sync workflow. The CLI,
+its version-matched starter, and the cloud-shell image are one release sequence:
 
-```bash
-cd kube-dc-public
-git pull origin main
-git tag v0.2.3  # increment version
-git push origin v0.2.3
-```
+1. Update and test `cli/` in the product repository.
+2. Bump the coordinated CLI and cloud-shell inputs in
+   `cicd/release/release-set.yaml`.
+3. Mirror the release script's allowlisted public surface, commit both
+   repositories, and make sure both clean `main` branches match their origins.
+4. Run `cicd/release/release --cli` from the product repository and review the
+   dry-run preflight. After release approval, run the corresponding command with
+   `--publish`; it publishes the version-matched starter and pushes the public
+   CLI tag.
+5. Wait for GoReleaser to publish the binaries, then rebuild and pin the
+   cloud-shell image against that immutable CLI release.
 
-5. GoReleaser workflow builds and publishes binaries automatically
+The release preflight refuses dirty or divergent mirror trees and existing tags.
+Do not create the normal release tag by hand ahead of it.
 
 ### Release Artifacts
 

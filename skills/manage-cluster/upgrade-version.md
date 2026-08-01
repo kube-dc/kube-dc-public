@@ -1,56 +1,52 @@
-# Upgrading Kubernetes Version
+# Upgrade a Managed Cluster
 
 ## Constraints
 
-1. **Sequential minor versions only** — v1.34 → v1.35 is OK, v1.34 → v1.36 is NOT
-2. **No downgrades** — once upgraded, you cannot go back
-3. **Worker image must match version** — the container disk image contains matching kubelet/kubeadm
-4. **Rolling update** — new worker is created and becomes Ready before old one is removed
+- Upgrade one Kubernetes minor version at a time.
+- Downgrades are not supported.
+- Update the control-plane version and every worker pool's image together.
+- Use the exact version/image pair offered by the live Kube-DC dashboard or
+  catalog.
+- Do not infer the worker image tag from the Kubernetes version.
 
 ## Procedure
 
-### 1. Check Current Version
+1. Record the current version and pools:
 
 ```bash
-kubectl get kdccluster {cluster} -n {namespace} -o jsonpath='{.spec.version}'
+kubectl get kdccluster {cluster} -n {backing-namespace} \
+  -o jsonpath='{.spec.version}{"\n"}{.spec.workers}{"\n"}'
 ```
 
-### 2. Determine Target Version
+2. Choose the next supported minor version and its paired worker image.
 
-Only +1 minor version from current. If current is `v1.34.x`, target must be `v1.35.x`.
-
-### 3. Apply Upgrade Patch
-
-Use `--type=json` to update version + worker image in a single patch:
+3. Patch all fields in one JSON Patch:
 
 ```bash
-kubectl patch kdccluster {cluster} -n {namespace} --type=json -p '[
+kubectl patch kdccluster {cluster} -n {backing-namespace} --type=json -p '[
   {"op":"replace","path":"/spec/version","value":"{target-version}"},
-  {"op":"replace","path":"/spec/workers/0/image","value":"docker.io/shalb/ubuntu-2404-container-disk:{image-tag}"}
+  {"op":"replace","path":"/spec/workers/0/image","value":"{paired-worker-image}"},
+  {"op":"replace","path":"/spec/workers/1/image","value":"{paired-worker-image}"}
 ]'
 ```
 
-For multiple worker pools, patch each pool's image:
+Remove or add worker-image operations to match the actual number of pools.
+
+4. Monitor the rolling operation:
 
 ```bash
-kubectl patch kdccluster {cluster} -n {namespace} --type=json -p '[
-  {"op":"replace","path":"/spec/version","value":"{target-version}"},
-  {"op":"replace","path":"/spec/workers/0/image","value":"docker.io/shalb/ubuntu-2404-container-disk:{image-tag}"},
-  {"op":"replace","path":"/spec/workers/1/image","value":"docker.io/shalb/ubuntu-2404-container-disk:{image-tag}"}
-]'
+kubectl get kdccluster {cluster} -n {backing-namespace} -w
+kubectl --kubeconfig=/tmp/{cluster}-kubeconfig get nodes -w
 ```
 
-### 4. Monitor Upgrade
+5. Verify the declared version and the kubelet version on every node:
 
 ```bash
-kubectl get kdccluster {cluster} -n {namespace} -w
-# Wait for phase to return to Ready
+kubectl get kdccluster {cluster} -n {backing-namespace} \
+  -o jsonpath='{.spec.version}{"\n"}'
+kubectl --kubeconfig=/tmp/{cluster}-kubeconfig get nodes \
+  -o custom-columns='NAME:.metadata.name,VERSION:.status.nodeInfo.kubeletVersion,READY:.status.conditions[?(@.type=="Ready")].status'
 ```
 
-## Image Naming Convention
-
-Image tag format: `v{kubelet-version}` — e.g., `v1.35.2` for Kubernetes v1.35.0+
-
-```
-docker.io/shalb/ubuntu-2404-container-disk:v1.35.2
-```
+Do not promise zero disruption. Availability depends on replica counts,
+PodDisruptionBudgets, storage topology, and application scheduling.

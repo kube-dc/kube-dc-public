@@ -1,200 +1,188 @@
 ---
 name: expose-service
-description: Expose a Kube-DC service externally via Gateway Route (HTTP/HTTPS/gRPC with auto TLS) or Direct EIP + LoadBalancer (any TCP/UDP). Includes decision guide for choosing the right exposure method.
+description: Expose a Service from a Kube-DC Project with a hostname-based HTTP/HTTPS/TLS Gateway route or a dedicated EIP-backed LoadBalancer for selected TCP/UDP ports.
 ---
 
 ## Prerequisites
-- Target service or deployment must exist in a project namespace
-- For HTTPS: cert-manager `Issuer` must exist in the namespace
 
-## Decision Guide
+- The workload and Service selector exist in a Ready Project.
+- Know the Project's backing namespace: `{organization}-{project}`.
+- Check public IPv4 quota before requesting a public EIP.
+- For `expose-route: "https"`, create the Project's cert-manager `Issuer`
+  once before exposing the Service.
 
-| Need | → Method | Annotation |
-|------|----------|------------|
-| HTTP/HTTPS web app | Gateway Route | `expose-route: "https"` |
-| Auto TLS certificate | Gateway Route | `expose-route: "https"` |
-| gRPC service | Gateway Route | `expose-route: "https"` + `route-port` |
-| TLS passthrough (app handles TLS) | Gateway Route | `expose-route: "tls-passthrough"` |
-| SSH to VM | Direct EIP | `bind-on-eip: "{eip-name}"` |
-| Game server (UDP) | Direct EIP | `bind-on-eip: "{eip-name}"` |
-| Database external access | Direct EIP or Gateway | See create-database skill |
-| Custom TCP protocol | Direct EIP | `bind-on-eip: "{eip-name}"` |
+## Choose an Exposure Method
 
-## Path A: Gateway Route (HTTP/HTTPS/gRPC)
+| Need | Method |
+|---|---|
+| HTTP hostname | Gateway route with `expose-route: "http"` |
+| HTTPS with Gateway TLS termination | Gateway route with `expose-route: "https"` |
+| SNI-based TLS passthrough | Gateway route with `expose-route: "tls-passthrough"` |
+| Selected TCP or UDP ports | EIP-backed `LoadBalancer` Service |
+| Direct access to one VM interface | `FIp`; use the `manage-networking` skill |
 
-Traffic flows through shared Envoy Gateway with auto DNS + TLS.
+The Gateway controller creates HTTPRoute or TLSRoute resources. It does not
+create a GRPCRoute. Validate the application's HTTP/2 behavior before putting
+gRPC behind an HTTPS HTTPRoute; use a dedicated LoadBalancer when that
+compatibility is unknown.
 
-### HTTPS (most common)
+## Gateway Route
 
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: {service-name}
-  namespace: {project-namespace}
-  annotations:
-    service.nlb.kube-dc.com/expose-route: "https"
-spec:
-  type: LoadBalancer
-  ports:
-    - port: {port}
-      targetPort: {port}
-  selector:
-    app: {app-name}
-```
-
-→ Auto hostname: `{service-name}-{project-namespace}.kube-dc.cloud`
-→ Auto TLS: Let's Encrypt certificate provisioned automatically
-
-### Custom Hostname
-
-```yaml
-annotations:
-  service.nlb.kube-dc.com/expose-route: "https"
-  service.nlb.kube-dc.com/route-hostname: "myapp.example.com"
-```
-
-You must configure DNS (CNAME or A record) to point to the gateway IP.
-
-### Custom TLS Certificate
-
-```yaml
-annotations:
-  service.nlb.kube-dc.com/expose-route: "https"
-  service.nlb.kube-dc.com/tls-secret: "my-tls-secret"
-```
-
-### gRPC Service
-
-```yaml
-annotations:
-  service.nlb.kube-dc.com/expose-route: "https"
-  service.nlb.kube-dc.com/route-port: "50051"
-```
-
-### TLS Passthrough
-
-Application terminates TLS itself:
-
-```yaml
-annotations:
-  service.nlb.kube-dc.com/expose-route: "tls-passthrough"
-```
-
-### Issuer Setup (Required for HTTPS)
+### Create the HTTPS Issuer Once Per Project
 
 ```yaml
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: letsencrypt
-  namespace: {project-namespace}
+  namespace: "{backing-namespace}"
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: {email}
+    email: "{valid-email}"
     privateKeySecretRef:
-      name: letsencrypt-key
+      name: letsencrypt-account-key
     solvers:
-      - http01:
-          ingress:
-            ingressClassName: envoy
+    - http01:
+        gatewayHTTPRoute:
+          parentRefs:
+          - group: gateway.networking.k8s.io
+            kind: Gateway
+            name: eg
+            namespace: envoy-gateway-system
 ```
 
-See @envoy-gateway-examples.yaml for complete examples.
+This Issuer is a prerequisite, not something the Service creates.
 
-## Path B: Direct EIP + LoadBalancer (Any TCP/UDP)
-
-Dedicated public IP, no Envoy. Application handles its own TLS/DNS.
-
-### Step 1: Create EIP
-
-```yaml
-apiVersion: kube-dc.com/v1
-kind: EIp
-metadata:
-  name: {eip-name}
-  namespace: {project-namespace}
-spec:
-  externalNetworkType: public    # or: cloud
-```
-
-### Step 2: Bind Service
+### Annotate a LoadBalancer Service
 
 ```yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: {service-name}
-  namespace: {project-namespace}
+  name: "{service-name}"
+  namespace: "{backing-namespace}"
+  annotations:
+    service.nlb.kube-dc.com/expose-route: "https"
+    # Set this for a multi-port Service:
+    service.nlb.kube-dc.com/route-port: "{service-port}"
+    # Optional:
+    # service.nlb.kube-dc.com/route-hostname: "app.example.com"
+    # service.nlb.kube-dc.com/tls-issuer: "letsencrypt"
+spec:
+  type: LoadBalancer
+  selector:
+    app: "{application-label}"
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+```
+
+The controller assigns a hostname under the installation's configured domain
+unless `route-hostname` is set. Read it from
+`service.nlb.kube-dc.com/route-hostname-status`; do not construct a provider
+domain in automation.
+
+For `https`, the Gateway terminates TLS and forwards HTTP to the selected
+Service port. For `tls-passthrough`, the backend terminates TLS and must
+present a certificate valid for the public SNI hostname.
+
+To use an existing TLS Secret with an HTTPS route, set
+`service.nlb.kube-dc.com/tls-secret`. The Secret must contain a certificate
+valid for the route hostname.
+
+See [envoy-gateway-examples.yaml](envoy-gateway-examples.yaml).
+
+## Dedicated EIP and LoadBalancer
+
+Create an address, then bind the Service:
+
+```yaml
+apiVersion: kube-dc.com/v1
+kind: EIp
+metadata:
+  name: "{eip-name}"
+  namespace: "{backing-namespace}"
+spec:
+  externalNetworkType: public
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "{service-name}"
+  namespace: "{backing-namespace}"
   annotations:
     service.nlb.kube-dc.com/bind-on-eip: "{eip-name}"
 spec:
   type: LoadBalancer
-  ports:
-    - port: {port}
-      targetPort: {port}
-      protocol: TCP    # or: UDP
   selector:
-    app: {app-name}
+    app: "{application-label}"
+  ports:
+  - name: protocol
+    port: 8080
+    targetPort: 8080
+    protocol: TCP # or UDP
 ```
 
-See @eip-loadbalancer-examples.yaml for SSH, game server, and multi-port examples.
+A `public` address is internet-routable subject to firewall policy. A
+`cloud` address is reachable only from networks configured by the provider.
+The availability of either pool is installation-specific.
 
-## Annotations Quick Reference
+See [eip-loadbalancer-examples.yaml](eip-loadbalancer-examples.yaml).
 
-| Annotation | Values | Effect |
-|------------|--------|--------|
-| `service.nlb.kube-dc.com/expose-route` | `http`, `https`, `tls-passthrough` | Create Gateway Route |
-| `service.nlb.kube-dc.com/route-hostname` | FQDN | Override auto hostname |
-| `service.nlb.kube-dc.com/route-port` | port number | Target port for gateway |
-| `service.nlb.kube-dc.com/tls-issuer` | issuer name | cert-manager Issuer (default: `letsencrypt`) |
-| `service.nlb.kube-dc.com/tls-secret` | secret name | User-provided TLS cert |
-| `service.nlb.kube-dc.com/bind-on-eip` | EIP name | Bind LB to specific EIP |
-| `service.nlb.kube-dc.com/autodelete` | `"true"` | Auto-delete EIP when service deleted |
+## Annotation Reference
+
+All route/LB annotations below use the
+`service.nlb.kube-dc.com/` prefix.
+
+| Suffix | Meaning |
+|---|---|
+| `expose-route` | `http`, `https`, or `tls-passthrough` |
+| `route-hostname` | Optional explicit FQDN |
+| `route-port` | One selected Service port; set it on multi-port Services |
+| `tls-issuer` | Issuer name; default `letsencrypt` |
+| `tls-secret` | User-provided TLS Secret |
+| `bind-on-eip` | Bind a LoadBalancer to a named EIP |
+| `bind-on-default-gw-eip` | Bind to the Project gateway EIP |
+| `autodelete` | Advanced recovery: delete a Service that remains without endpoints |
+
+`autodelete` does not manage EIP cleanup. Leave it unset for ordinary
+workload lifecycle.
+
+Set `network.kube-dc.com/external-network-type: public|cloud` when creating a
+LoadBalancer that should allocate its own EIP. The network type is immutable
+after allocation.
 
 ## Verification
 
-After exposing the service, run these checks:
+Gateway route:
 
-### Gateway Route
 ```bash
-# 1. Check hostname was assigned
-kubectl get svc {service-name} -n {project-namespace} -o jsonpath='{.metadata.annotations.service\.nlb\.kube-dc\.com/route-hostname-status}'
-# Expected: {service-name}-{project-namespace}.kube-dc.cloud
-
-# 2. Check TLS certificate is issued (for HTTPS)
-kubectl get certificate -n {project-namespace}
-# Expected: READY=True
-
-# 3. Test endpoint
-curl -s -o /dev/null -w "%{http_code}" https://\{service-name\}-\{project-namespace\}.kube-dc.cloud
-# Expected: HTTP status from your app (200, 301, etc.)
+kubectl get service {service-name} -n {backing-namespace} \
+  -o jsonpath='{.metadata.annotations.service\.nlb\.kube-dc\.com/route-hostname-status}{"\n"}'
+kubectl get httproute,tlsroute,certificate -n {backing-namespace}
 ```
 
-### Direct EIP
+Dedicated address:
+
 ```bash
-# 1. Check EIP has allocated IP
-kubectl get eip {eip-name} -n {project-namespace} -o jsonpath='{.status.ipAddress}'
-# Expected: public IP address
-
-# 2. Check service has external IP
-kubectl get svc {service-name} -n {project-namespace} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-# Expected: same IP as EIP
-
-# 3. Test connectivity
-nc -zv {external-ip} {port}
-# Expected: Connection succeeded
+kubectl get eip {eip-name} -n {backing-namespace} \
+  -o jsonpath='{.status.ready}{"\t"}{.status.ipAddress}{"\n"}'
+kubectl get service {service-name} -n {backing-namespace} \
+  -o jsonpath='{.status.loadBalancer.ingress[0].ip}{"\n"}'
 ```
 
-**Success**: Hostname assigned (Gateway) or external IP allocated (EIP), endpoint reachable.
-**Failure**:
-- No hostname: check Issuer exists, service type is LoadBalancer
-- No EIP IP: `kubectl describe eip {eip-name} -n {project-namespace}`
-- Connection refused: verify selector matches pods, targetPort is correct
+If no address or hostname appears, inspect the Service, EIP, route, Certificate,
+Issuer, and endpoints. A LoadBalancer cannot route to pods that do not match its
+selector.
+
 ## Safety
-- Never mix Gateway Route and Direct EIP on the same service
-- FIP and LoadBalancer on the same target are mutually exclusive
-- Verify Issuer exists before using `expose-route: https`
-- Prefer Gateway Route for HTTP workloads (cost-effective, auto TLS)
-- Use Direct EIP only when you need raw TCP/UDP access
+
+- Do not promise a fixed hostname, public IP, price, or provisioning time.
+- Use Gateway routes for compatible hostname-based web traffic.
+- Use an EIP-backed LoadBalancer for arbitrary TCP/UDP or uncertain protocol
+  compatibility.
+- A VM/pod cannot simultaneously be a public FIP target and a cloud
+  LoadBalancer backend.
+- TLS passthrough provides no certificate; validate the backend certificate.

@@ -24,7 +24,7 @@ The progress bars change color as usage rises: green → yellow → red. A resou
 From the Overview you can also:
 - **View Plans** — Browse and switch subscription plans
 - **Manage Add-ons** — Add or remove Turbo capacity packages
-- **Manage Payment** — Open the Stripe customer portal to update billing details
+- **Manage Payment** — Open the configured billing provider to update billing details
 
 ---
 
@@ -32,7 +32,9 @@ From the Overview you can also:
 
 ![Available plans](images/billing-subsciption-plans.png)
 
-Kube-DC offers three subscription plans. All resources are provisioned across your organization's projects on high-performance NVMe storage.
+Kube-DC Cloud currently offers the plans below. Plan names, prices, and
+entitlements can vary by installation; the **Available Plans** tab in your
+console is the source of truth.
 
 | | **Dev Pool** | **Pro Pool** | **Scale Pool** |
 |---|---|---|---|
@@ -44,10 +46,12 @@ Kube-DC offers three subscription plans. All resources are provisioned across yo
 | **Object Storage** | 20 GB | 100 GB | 500 GB |
 | **Dedicated IPv4** | 1 | 1 | 3 |
 | **Max Pods** | 100 | 200 | 500 |
-| **Nested Clusters** | ✅ | ✅ | ✅ |
+| **Managed Clusters** | Included | Included | Included |
 | **Bandwidth** | Unlimited 1Gbit/s | Unlimited 1Gbit/s | Unlimited 1Gbit/s |
 
-All plans include Nested Kubernetes clusters (KubeVirt), unlimited bandwidth, and full platform access with no feature restrictions.
+All plans can run Project workloads and Managed Clusters. Features marked
+Preview, Pilot, or provider-specific in the console may require a separate
+entitlement.
 
 ### Plans with a GPU
 
@@ -74,11 +78,11 @@ If you do not see the switch, this installation does not sell GPU as part of a
 plan. GPU may still be available as an add-on — check the **Add-ons** section of
 your Billing page, or ask your provider.
 
-:::tip Estimate Performance for Your Workload
-Not sure which plan fits your needs? See the [Scaling & Performance Guide](scaling-performance.md) for detailed estimates:
-- **WordPress**: Concurrent users, DAU, MAU by plan
-- **SaaS apps**: Requests/sec capacity and recommended workload splits
-- **Scaling mechanics**: How HPA and Envoy handle traffic spikes
+:::tip Plan with measurements
+Use the [Scaling and Performance Guide](scaling-performance.md) to define a
+latency target, load-test the complete application, configure autoscaling, and
+reserve rollout and recovery headroom. Generic user-count estimates are not a
+capacity guarantee.
 :::
 
 ---
@@ -87,41 +91,41 @@ Not sure which plan fits your needs? See the [Scaling & Performance Guide](scali
 
 All resources in your plan are **shared across all projects** in your organization. The quota is applied at the organization level, and any combination of usage across your projects counts toward it.
 
-**Example:** An organization on the Pro Pool (8 vCPU, 24 GB RAM) with three projects — `acme-dev`, `acme-staging`, and `acme-prod`:
+**Example:** Organization `acme` has an 8 vCPU, 24 GiB Pro Pool shared by
+Projects `development`, `staging`, and `production`:
 
-```
-Organization total quota: 8 vCPU  /  24 GB RAM
+| Project | Backing namespace | CPU used | Memory used |
+|---|---|---:|---:|
+| `development` | `acme-development` | 2 vCPU | 4 GiB |
+| `staging` | `acme-staging` | 2 vCPU | 8 GiB |
+| `production` | `acme-production` | 3 vCPU | 10 GiB |
+| **Total** | | **7 vCPU** | **22 GiB** |
 
-  acme-dev      uses: 2 vCPU  /  4 GB   →  remaining:
-  acme-staging  uses: 2 vCPU  /  8 GB   →  remaining:
-  acme-prod     uses: 3 vCPU  /  10 GB  →  remaining:
-                       ─────       ────
-  Total used:          7 vCPU  /  22 GB  →  1 vCPU / 2 GB still available
-```
+The Organization still has 1 vCPU and 2 GiB available.
 
-There is no per-project quota split by default — projects draw from the same shared pool. If one project is idle, another can use all available resources. Organization admins can optionally set per-project limits to prevent one project from consuming everything; see [Per-Project Resource Limits](#per-project-resource-limits).
+There is no per-Project quota split by default — Projects draw from the same shared pool. If one Project is idle, another can use all available resources. Organization admins can optionally set per-Project limits to prevent one Project from consuming everything; see [Per-Project Resource Limits](#per-project-resource-limits).
 
-### Burst Capacity
+The **Public IPv4** dimension counts only `EIp` resources with `externalNetworkType: public` across the Organization namespace and all Project backing namespaces. Cloud/private External IPs do not consume this public-address quota. A Floating IP that automatically creates a public `EIp` consumes one slot through that `EIp`.
 
-Each plan includes a **burst allowance** — the ability for your workloads to temporarily use more CPU and memory than the base plan quota, as long as capacity is available on the underlying infrastructure. Burst does not increase your quota; it allows short-term peaks above your reserved baseline.
+### Guaranteed Capacity
 
-| Plan | Burst Multiplier | Base CPU | Max CPU burst |
-|------|-----------------|----------|---------------|
-| Dev Pool | 3× | 4 vCPU | up to 12 vCPU |
-| Pro Pool | 2× | 8 vCPU | up to 16 vCPU |
-| Scale Pool | 1.5× | 16 vCPU | up to 24 vCPU |
-
-Dev Pool has the highest burst ratio because development workloads tend to be bursty and intermittent. Scale Pool has a lower ratio to favor predictability for production loads.
+The current Kube-DC Cloud plans use a 1.0 allocation ratio: the CPU and memory
+shown in the plan are the organization quota, not a smaller reservation backed
+by an advertised burst multiplier. Scheduling still depends on available
+cluster capacity.
 
 :::info
-Burst applies to CPU and memory. Storage, pods, and public IP quotas are fixed limits with no burst.
+Use the Billing page for the effective quota on your organization. Do not plan
+capacity around temporary usage above that value.
 :::
 
 ---
 
 ## Resource Limits for Workloads
 
-When Kubernetes enforces resource quotas across your organization, every running container must declare how much CPU and memory it needs. This is required for the platform to track usage accurately and schedule workloads fairly.
+Kubernetes enforces organization quota from workload resource requests and
+limits. When a container omits them, the Project's LimitRange applies the
+defaults shown below.
 
 ### Automatic Defaults
 
@@ -133,13 +137,14 @@ When Kubernetes enforces resource quotas across your organization, every running
 | **Default memory request** | 128 Mi | 256 Mi | 512 Mi |
 | **Default CPU limit** | 500m | 500m | 1 core |
 | **Default memory limit** | 512 Mi | 512 Mi | 1 Gi |
-| **Max CPU per container** | 2 cores | 4 cores | 8 cores |
-| **Max memory per container** | 4 Gi | 12 Gi | 32 Gi |
+| **Max CPU per container** | 4 cores | 8 cores | 16 cores |
+| **Max memory per container** | 8 Gi | 24 Gi | 56 Gi |
 | **Max CPU per pod** | 4 cores | 8 cores | 16 cores |
 | **Max memory per pod** | 8 Gi | 24 Gi | 56 Gi |
 | **Max PVC storage** | 60 Gi | 160 Gi | 320 Gi |
 
-**Requests** represent guaranteed resources reserved for your workload. **Limits** are the maximum a workload can use before it is throttled (CPU) or restarted (memory).
+**Requests** reserve schedulable capacity. **Limits** cap runtime use: CPU is
+throttled, while exceeding a memory limit can terminate the container for OOM.
 
 ### What This Means in Practice
 
@@ -152,7 +157,7 @@ When Kubernetes enforces resource quotas across your organization, every running
 Once your organization's quota is fully consumed, new workloads will fail to start with an error such as:
 
 ```
-0/3 nodes are available: exceeded quota: plan-quota, requested: requests.cpu=500m, used: requests.cpu=8, limited: requests.cpu=8
+Error from server (Forbidden): pods "api" is forbidden: exceeded quota: plan-quota, requested: requests.cpu=500m, used: requests.cpu=8, limited: requests.cpu=8
 ```
 
 To resolve this:
@@ -176,7 +181,7 @@ Turbo Add-ons let you boost your organization's resources without switching plan
 | **Additional Storage** | +20 GB | +40 GB |
 
 **Example:** Scale Pool + 3× Turbo x1 + 2× Turbo x2 = €99 + €27 + €32 = **€158/month**, providing:
-- CPU: 16 + 6 + 8 = **30 vCPU** (plus burst)
+- CPU: 16 + 6 + 8 = **30 vCPU**
 - RAM: 56 + 12 + 16 = **84 GB**
 - Storage: 320 + 60 + 80 = **460 GB**
 
@@ -186,7 +191,8 @@ This matches the Overview screenshot above where Monthly Cost shows €158.
 
 1. Navigate to **Manage Organization → Billing → Turbo Add-ons**
 2. Click **Add Another** on the desired package
-3. The add-on is billed immediately and quota is available within seconds
+3. Wait for the billing provider to confirm the purchase and for the updated
+   quota to appear in the Billing overview
 
 ### Removing a Turbo Add-on
 
@@ -205,8 +211,8 @@ Before removing an add-on, ensure your current resource usage fits within the re
 
 1. Navigate to **Manage Organization → Billing → Available Plans**
 2. Click **Subscribe** on your desired plan
-3. You will be redirected to the Stripe checkout page to enter payment details
-4. After payment, you are returned to the Billing overview. The subscription is active immediately.
+3. Complete checkout with the billing provider configured for your installation
+4. Return to the Billing overview and wait for the subscription to show **Active** before deploying
 
 ### Changing Plans
 
@@ -215,7 +221,8 @@ You can upgrade or downgrade at any time from the **Available Plans** tab.
 1. Click **Switch to [Plan Name]** on the target plan
 2. Confirm the change in the dialog
 
-**On upgrade:** The new quota is available immediately. Stripe prorates the billing amount for the current period.
+**On upgrade:** Quota is updated after the billing provider confirms the
+change. Any proration is shown during checkout or in the provider portal.
 
 **On downgrade:** The system checks whether your current resource usage fits within the new plan before allowing the change. If you are over the target plan's limits, you will need to scale down workloads first.
 
@@ -225,7 +232,10 @@ You can upgrade or downgrade at any time from the **Available Plans** tab.
 2. Click **Cancel Subscription**
 3. Confirm in the dialog
 
-Cancellation takes effect at the **end of the current billing period**. Your subscription enters `canceling` status and your full resources remain available until the period ends.
+The cancellation date and any proration depend on the configured billing
+provider. The console shows the effective date and subscription state. While
+the subscription remains `canceling`, its quota stays available until the
+provider confirms the terminal state.
 
 ---
 
@@ -259,14 +269,16 @@ If your subscription is suspended or canceled, click **Subscribe** from the **Av
 
 ## Managing Payment
 
-Click **Manage Payment** from the Billing Overview to open the **Stripe Customer Portal**. From there you can:
+Click **Manage Payment** from the Billing Overview to open the payment portal
+configured for your installation. Available actions depend on that provider and
+can include:
 
 - **Update payment method** — Change credit card or SEPA details
 - **Download invoices** — Access billing history and PDF receipts
 - **View upcoming charges** — Preview the next billing cycle
 - **Update billing address** — Change the address shown on invoices
 
-The Stripe portal opens in the same tab. Click **Return** in the portal to come back to the Kube-DC console.
+Use the provider's **Return** action to come back to the Kube-DC console.
 
 ---
 
@@ -283,45 +295,24 @@ By default, all projects share the organization quota with no individual caps. O
 
 The panel shows the organization's total quota alongside the per-project fields so you can see what is available.
 
-### Setting Limits with kubectl
+### How Limits Are Applied
 
-Create (or update) a `ResourceQuota` named `project-quota` in the project namespace:
+The effective limit for a resource is the lower of the Project cap and the
+organization's remaining quota. Remove the cap from the **Resource Quotas**
+panel to return that dimension to the shared organization pool.
 
-```bash
-kubectl apply -f - <<EOF
-apiVersion: v1
-kind: ResourceQuota
-metadata:
-  name: project-quota
-  namespace: myorg-dev          # Project namespace: {org}-{project}
-  labels:
-    billing.kube-dc.com/per-project: "true"
-spec:
-  hard:
-    requests.cpu: "2"
-    requests.memory: "4Gi"
-    requests.storage: "20Gi"
-    pods: "50"
-EOF
-```
-
-The effective limit for any resource is the **lower** of the per-project cap and the organization's remaining quota. To remove a per-project limit and return the project to the shared pool:
-
-```bash
-kubectl delete resourcequota project-quota -n myorg-dev
-```
-
-The organization-admin quota API uses patch-style updates: omitted fields keep
-their current value, while an explicit empty string removes a classic
-CPU/memory/storage/pods cap. Accelerator profiles use product IDs; omitting a
-profile keeps it in the shared organization pool, while an explicit value of
-`0` denies that accelerator profile for the project.
+Project `ResourceQuota` objects are platform-managed and read-only through a
+Project kubeconfig. Do not create, patch, or delete `project-quota` directly;
+the organization-admin UI validates the requested values and applies them
+through the platform service.
 
 ---
 
 ## Tracking Usage with kubectl
 
-The platform exposes resource usage directly on the `Organization` and `Project` custom resources so you can query quota state from the command line without logging into the UI. Values are refreshed every 5–7 minutes by the platform controller.
+The platform exposes resource usage directly on the `Organization` and `Project` custom resources so you can query quota state from the command line without logging into the UI. Usage updates are asynchronous. Organization quota is event-driven; Project
+quota also reacts to `ResourceQuota` changes and has a periodic 5–7 minute
+fallback. Check each resource status timestamp before comparing values.
 
 ### Organization-level usage
 
@@ -359,7 +350,7 @@ kubectl get organization <org> -n <org> -o jsonpath='{.status.quotaUsage.cpu}' |
 
 ### Project-level usage
 
-Each project reports its own namespace usage:
+Each Project reports usage for its backing namespace:
 
 ```bash
 kubectl get project <project> -n <org> -o jsonpath='{.status.quotaUsage}' | jq .
@@ -384,7 +375,7 @@ Example output:
 ### All projects at a glance
 
 ```bash
-# Print project name + CPU used/hard for all projects in an org
+# Print Project name and CPU used/hard for all Projects in an Organization
 kubectl get projects -n <org> \
   -o custom-columns='PROJECT:.metadata.name,CPU_USED:.status.quotaUsage.cpu.used,CPU_HARD:.status.quotaUsage.cpu.hard,MEM_USED:.status.quotaUsage.memory.used'
 ```
@@ -394,11 +385,11 @@ kubectl get projects -n <org> \
 The `quotaUsage` status is a controller summary refreshed every few minutes. For real-time enforcement state, query the underlying `ResourceQuota` objects directly:
 
 ```bash
-# All quotas in a project namespace
-kubectl get resourcequota -n myorg-dev
+# All quotas in a Project backing namespace
+kubectl get resourcequota -n acme-production
 
 # Detailed usage breakdown
-kubectl describe resourcequota -n myorg-dev
+kubectl describe resourcequota -n acme-production
 ```
 
 The `hrq.hnc.x-k8s.io` quota is the organization-wide HNC propagated limit. The `project-quota` quota (if present) is the per-project cap set by an admin.
@@ -416,12 +407,12 @@ The `hrq.hnc.x-k8s.io` quota is the organization-wide HNC propagated limit. The 
 
 **Pods fail to start with "must specify resource limits"**
 - This can happen if resource defaults are not yet applied in a newly created project
-- Wait 30–60 seconds for the defaults to propagate and retry
+- Check the Project status and LimitRange, then retry after reconciliation
 - If it persists, confirm your organization has an active subscription
 
 **Turbo Add-on added but quota did not increase**
-- The quota update is near-instant but may take up to 60 seconds to reflect in the Overview
-- Refresh the page; if still not updated, check the subscription status is `active`
+- Confirm that the provider reports the add-on and the subscription is `active`
+- Refresh the page after the Organization quota has reconciled
 
 **Cannot switch to a lower plan ("usage exceeds target plan")**
 - The Overview shows current usage for each resource

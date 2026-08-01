@@ -1,11 +1,17 @@
 # Deploying Rook Ceph Object Storage (S3) for Kube-DC
 
-S3-compatible object storage backed by Rook Ceph RGW, integrated with Kube-DC billing, quotas, and the UI.
+S3-compatible object storage backed by Rook Ceph RGW, integrated with Kube-DC
+Organizations, Project buckets, plans, quotas, and the console.
+
+This guide includes direct Helm and manifest examples for a standalone or lab
+installation. On a Fleet-managed cluster, express the same desired state in the
+Fleet repository so Flux remains authoritative. Do not apply a second live copy
+of resources already owned by Fleet.
 
 ## Prerequisites
 
 - Kubernetes cluster with Kube-DC installed
-- A worker node with available block storage (dedicated disk or loop device)
+- Dedicated raw block devices on the intended storage nodes; loop devices are evaluation-only
 - [Envoy Gateway](https://gateway.envoyproxy.io/) for external S3 endpoint (optional)
 - [cert-manager](https://cert-manager.io/) with `--enable-gateway-api` for TLS (optional)
 - DNS record for your S3 endpoint (e.g., `s3.example.com`)
@@ -19,8 +25,10 @@ s3.example.com (HTTPS)
       → Ceph OSD (block device on worker)
 ```
 
-| Component | Purpose | Resources |
-|-----------|---------|-----------|
+The following requests are an evaluation starting point, not production sizing:
+
+| Component | Purpose | Example resources |
+|-----------|---------|-------------------|
 | Rook Operator | Manages Ceph lifecycle | 200m CPU / 256Mi |
 | MON | Cluster monitor | 100m CPU / 384Mi |
 | MGR | Cluster manager | 200m CPU / 512Mi |
@@ -37,9 +45,11 @@ kubectl create namespace rook-ceph
 helm repo add rook-release https://charts.rook.io/release
 helm repo update rook-release
 
+# Use the chart version reviewed in your Fleet or release manifest.
+ROOK_CHART_VERSION=<approved-version>
 helm install rook-ceph rook-release/rook-ceph \
   --namespace rook-ceph \
-  --version v1.19.1 \
+  --version "$ROOK_CHART_VERSION" \
   --set crds.enabled=true \
   --set allowLoopDevices=true \
   --set resources.requests.cpu=200m \
@@ -60,13 +70,23 @@ kubectl set env deployment/rook-ceph-operator -n rook-ceph ROOK_ALLOW_LOOP_DEVIC
 
 ## Step 2: Prepare Storage
 
-### Option A: Dedicated Disk (Production)
+### Option A: Dedicated raw devices
 
-If your worker node has a dedicated disk (e.g., `/dev/sdb`), skip to Step 3 and reference it directly in the `CephCluster` spec.
+Use dedicated devices such as `/dev/sdb` and reference them explicitly in the
+`CephCluster`. A production design also needs multiple failure domains,
+replication, capacity headroom, monitoring, and a tested restore procedure; a
+single dedicated disk is not by itself a production topology.
 
-### Option B: Loop Device (Dev/Test)
+### Option B: Loop device (evaluation only)
 
-For testing on nodes without a spare disk, create a sparse file-backed loop device:
+:::danger
+A file-backed loop device is not a durable production storage design. Node
+filesystem loss, loop-number reuse, or service-ordering changes can make the
+OSD unavailable. Use it only in a disposable evaluation environment.
+:::
+
+For a disposable test on a node without a spare disk, create a sparse
+file-backed loop device:
 
 ```yaml
 # 01-loop-device-setup.yaml
@@ -454,7 +474,9 @@ Set `S3_ENDPOINT` to your actual S3 domain in the backend deployment.
 
 ### 7.3 Billing Plans
 
-Object storage quotas are defined per billing plan in `values.yaml`:
+Object storage quotas are defined per billing plan in the `billing-plans`
+ConfigMap. The chart can seed this document from Fleet values, but the live
+ConfigMap is the controller input:
 
 ```yaml
 plans:
@@ -466,7 +488,7 @@ plans:
     objectStorage: 500     # 500 GB, auto: 50 buckets
 ```
 
-The Go controller automatically creates a `CephObjectStoreUser` per organization with these quotas when the org is reconciled.
+The Go controller automatically creates a `CephObjectStoreUser` per organization with these quotas when the Organization is reconciled.
 
 ### 7.4 Backend Service Account RBAC
 
@@ -484,7 +506,7 @@ The backend service account needs read access to rook-ceph resources. The Kube-D
 
 ### 7.5 Project Role Permissions
 
-Users need `objectbucketclaims` permissions in their project namespace. The default project roles already include:
+Users need `objectbucketclaims` permissions in their Project's backing namespace. The default Project Roles already include:
 
 ```yaml
 # In default-project-admin-role (and developer role)
@@ -508,7 +530,7 @@ Once deployed, the following features are automatically available:
 ### UI Backend API
 - **Bucket Management**: Create/delete buckets via `ObjectBucketClaim`, list with usage stats
 - **File Browser**: Upload, download (presigned URLs), delete, create folders
-- **S3 Access Keys**: View org-level credentials, generate additional keys, revoke keys
+- **S3 Access Keys**: View Organization-level credentials, generate additional keys, revoke keys
 - **Quota & Usage**: Real-time storage usage via RGW Admin API, quota limits from `CephObjectStoreUser`
 - **Bucket Policies**: Toggle public-read / private access per bucket
 
@@ -551,7 +573,7 @@ kubectl -n rook-ceph exec deploy/rook-ceph-operator -- \
   ceph -c /var/lib/rook/rook-ceph/rook-ceph.config status
 ```
 
-### Verify Org User Created
+### Verify the Organization Object-Storage User
 
 ```bash
 kubectl get cephobjectstoreuser -n rook-ceph
@@ -560,21 +582,21 @@ kubectl get cephobjectstoreuser -n rook-ceph
 
 ---
 
-## Cleanup
+## Decommissioning
 
-```bash
-# Delete object store
-kubectl delete cephobjectstore my-store -n rook-ceph
+:::danger
+Decommissioning the object store destroys Project buckets and can invalidate
+Managed Cluster backups. Do not use a generic host-directory removal command.
+Inventory and export required data, stop new bucket creation, obtain change
+approval, and follow the Rook procedure for the exact installed version.
+:::
 
-# Delete cluster
-kubectl delete cephcluster rook-ceph -n rook-ceph
-
-# Wait for cleanup, then uninstall operator
-helm uninstall rook-ceph -n rook-ceph
-
-# Clean host data (on worker node)
-rm -rf /var/lib/rook/*
-```
+Before removing any Ceph resource, verify that ObjectBucketClaims,
+CephObjectStoreUsers, backup jobs, and applications no longer depend on it.
+Confirm the Ceph cluster is healthy enough to complete deletion, then follow the
+upstream cleanup sequence and validate each finalizer. Wiping a device is a
+separate, host-specific action performed only after Kubernetes and Rook no
+longer reference it.
 
 ---
 
@@ -584,4 +606,4 @@ rm -rf /var/lib/rook/*
 - [Rook CephObjectStore](https://rook.io/docs/rook/latest/Storage-Configuration/Object-Storage-RGW/object-storage/)
 - [Rook ObjectBucketClaim](https://rook.io/docs/rook/latest/Storage-Configuration/Object-Storage-RGW/ceph-object-bucket-claim/)
 - [Ceph RGW Admin API](https://docs.ceph.com/en/latest/radosgw/adminops/)
-- [Rook External Cluster](https://rook.io/docs/rook/latest/CRDs/Cluster/external-cluster/) (for remote Ceph)
+- [Rook External Cluster](https://rook.io/docs/rook/latest-release/CRDs/Cluster/external-cluster/external-cluster/) (for remote Ceph)

@@ -1,148 +1,74 @@
-# Envelope Encryption — Python helper
+# Envelope Encryption Helper for Python
 
-Self-contained Python helper that uses a Kube-DC `KMSKey` to envelope-
-encrypt arbitrary-sized payloads. Mirrors the wire format Kube-DC's own
-managed-K8s etcd backup uses:
+This sample encrypts payloads locally with AES-256-GCM and accepts explicit
+wrap/unwrap callbacks. It does not authenticate to OpenBao.
 
-```
-ciphertext = NONCE (12B) || CIPHERTEXT || GCM_TAG (16B)
-+ wrappedDek = "vault:vN:..." (small; store next to the ciphertext)
-```
+Kube-DC does not provision a general-purpose Transit role for application
+ServiceAccounts. Implement the callbacks only after an operator provides an
+approved workload authentication path or supported service integration.
 
-Uses `hvac` (wire-compatible with OpenBao) + `cryptography` for AES-GCM.
-
-## Pod requirements
-
-Same as the [Go helper](./envelope-encryption-go.md) — mount a
-projected SA token at `/var/run/secrets/openbao/token` with
-`audience: openbao`. The pod's `ServiceAccount` needs the developer
-OrganizationGroup binding so OpenBao accepts the login.
-
-## Code
-
-`requirements.txt`:
+## Dependency
 
 ```text
-hvac>=2.1.0
 cryptography>=42.0.0
 ```
 
-`envelope.py`:
+## Code
 
 ```python
-"""
-Envelope encryption helpers for Kube-DC KMS.
-
-Wire format matches the platform managed-K8s etcd backup envelope:
-    nonce (12B) || ciphertext || tag (16B)
-+ a sidecar wrappedDek "vault:vN:..." stored next to the ciphertext.
-
-The DEK is generated locally; only the wrapped DEK is round-tripped
-through OpenBao. Plaintext key material never leaves the process.
-"""
 from __future__ import annotations
 
-import base64
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 
-import hvac
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
-@dataclass
-class KMSConfig:
-    addr: str                # https://bao.kube-dc.cloud
-    namespace: str           # your Org name
-    # Transit mount is at the root of the Org namespace; only the key
-    # name varies. Convention: "<org>-<project>-<KMSKey>".
-    key_name: str            # e.g. "my-org-my-project-app-secrets"
-    role: str                # OpenBao K8s-auth role, e.g. "developer-<org>"
-    token_file: str = "/var/run/secrets/openbao/token"
+WrapDEK = Callable[[bytes], str]
+UnwrapDEK = Callable[[str], bytes]
 
 
-def _client(cfg: KMSConfig) -> hvac.Client:
-    """Login to OpenBao via the projected SA token. Returns an
-    authenticated hvac.Client scoped to the Org namespace."""
-    cli = hvac.Client(url=cfg.addr, namespace=cfg.namespace)
-    with open(cfg.token_file) as f:
-        cli.auth.kubernetes.login(role=cfg.role, jwt=f.read(), mount_point="k8s-host")
-    return cli
+@dataclass(frozen=True)
+class Envelope:
+    ciphertext: bytes  # nonce || ciphertext || GCM tag
+    wrapped_dek: str   # opaque Transit ciphertext, for example vault:v2:...
 
 
-def encrypt_envelope(cfg: KMSConfig, plaintext: bytes) -> tuple[bytes, str]:
-    """Generate a fresh DEK, wrap it via the KMSKey, encrypt the
-    plaintext locally with AES-256-GCM. Returns
-    (nonce||ciphertext||tag, wrappedDek)."""
-    cli = _client(cfg)
-
-    # 1. Fresh 32-byte DEK
-    dek = os.urandom(32)
-
-    # 2. Wrap via Transit
-    wrap_resp = cli.write(
-        f"transit/encrypt/{cfg.key_name}",
-        plaintext=base64.b64encode(dek).decode(),
-    )
-    wrapped = wrap_resp["data"]["ciphertext"]
-
-    # 3. AES-256-GCM encrypt
-    nonce = os.urandom(12)
-    aead = AESGCM(dek)
-    ct = aead.encrypt(nonce, plaintext, None)   # ct = ciphertext || tag
-    return nonce + ct, wrapped
+def encrypt(plaintext: bytes, wrap_dek: WrapDEK) -> Envelope:
+    dek = bytearray(os.urandom(32))
+    try:
+        wrapped = wrap_dek(bytes(dek))
+        nonce = os.urandom(12)
+        ciphertext = AESGCM(bytes(dek)).encrypt(nonce, plaintext, None)
+        return Envelope(nonce + ciphertext, wrapped)
+    finally:
+        for index in range(len(dek)):
+            dek[index] = 0
 
 
-def decrypt_envelope(cfg: KMSConfig, blob: bytes, wrapped_dek: str) -> bytes:
-    """Reverse of encrypt_envelope."""
-    cli = _client(cfg)
-
-    # 1. Unwrap the DEK
-    unwrap_resp = cli.write(
-        f"transit/decrypt/{cfg.key_name}",
-        ciphertext=wrapped_dek,
-    )
-    dek = base64.b64decode(unwrap_resp["data"]["plaintext"])
-
-    # 2. AES-256-GCM decrypt
-    nonce, ct = blob[:12], blob[12:]
-    return AESGCM(dek).decrypt(nonce, ct, None)
+def decrypt(envelope: Envelope, unwrap_dek: UnwrapDEK) -> bytes:
+    dek = bytearray(unwrap_dek(envelope.wrapped_dek))
+    try:
+        if len(dek) != 32:
+            raise ValueError("unwrapped DEK must be 32 bytes")
+        if len(envelope.ciphertext) < 12 + 16:
+            raise ValueError("ciphertext is too short")
+        nonce = envelope.ciphertext[:12]
+        ciphertext = envelope.ciphertext[12:]
+        return AESGCM(bytes(dek)).decrypt(nonce, ciphertext, None)
+    finally:
+        for index in range(len(dek)):
+            dek[index] = 0
 ```
 
-## Smoke test
+## Integration Contract
 
-```python
-from envelope import KMSConfig, encrypt_envelope, decrypt_envelope
-
-cfg = KMSConfig(
-    addr="https://bao.kube-dc.cloud",
-    namespace="my-org",
-    key_name="my-org-my-project-app-secrets",
-    role="developer-my-org",
-)
-
-payload = b"this is a multi-megabyte file in real life"
-ct, wrapped = encrypt_envelope(cfg, payload)
-print("wrappedDek:", wrapped)
-print("ciphertext bytes:", len(ct))
-
-pt = decrypt_envelope(cfg, ct, wrapped)
-print("plaintext:", pt.decode())
-```
-
-## Notes
-
-- AES-256-GCM via `cryptography.hazmat...AESGCM` is authenticated —
-  tampering with the ciphertext or wrappedDek causes
-  `InvalidTag` (a subclass of `Exception`). Don't blanket-catch.
-- For very large payloads (multi-GB), use the `Cipher(algorithms.AES,
-  modes.GCM)` builder with chunked `update()` calls rather than
-  loading the whole plaintext into memory. The wire format stays the
-  same — Kube-DC's own etcd-backup helper does exactly this in
-  [envelope.py](https://github.com/shalb/kube-dc/blob/main/images/etcd-backup/envelope.py)
-  inside the etcd-backup image.
-- The `wrappedDek` is small (~150 bytes for AES-256). Store it
-  anywhere the ciphertext lives.
-- After a KEK rotation, new envelopes use the new key version
-  automatically. Old envelopes keep decrypting via their captured
-  version until `min_decryption_version` is manually advanced.
+- `wrap_dek` sends only the 32-byte DEK to the approved KMS encrypt operation
+  and returns the complete `vault:vN:...` value.
+- `unwrap_dek` sends the opaque value to the matching decrypt operation and
+  returns exactly 32 bytes.
+- Store any encryption context alongside the envelope and require it on unwrap.
+- Do not catch and ignore `InvalidTag`; it means authentication failed.
+- Python cannot guarantee that every immutable copy is erased from memory. The
+  bytearray cleanup is best effort, not a formal memory-erasure guarantee.

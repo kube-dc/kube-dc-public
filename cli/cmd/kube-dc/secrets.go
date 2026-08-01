@@ -66,12 +66,15 @@ type secretsScope struct {
 func secretsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "secrets",
-		Short: "Manage project secrets",
-		Long: `Manage project secrets stored in the platform's secrets store and
-optionally synced to a Kubernetes Secret in the project namespace.
+		Short: "Manage Project secrets",
+		Long: `Manage secrets stored for the current Project and optionally sync them
+to a Kubernetes Secret in the Project's backing namespace.
 
-Permissions follow your project role: viewers see metadata, developers
-can read and write values, admins can permanently destroy.`,
+Permissions follow the exact standard Project roles:
+  user               list and read metadata
+  developer          create and manage secrets and stored values
+  project-manager    read and write values; update sync configuration
+  admin              full lifecycle, including permanent destruction`,
 	}
 	cmd.AddCommand(secretsCreateCmd())
 	cmd.AddCommand(secretsListCmd())
@@ -157,7 +160,7 @@ func resolveScope(nsOverride string) (*secretsScope, error) {
 		ns = ctxNamespace
 	}
 	if ns == "" {
-		return nil, fmt.Errorf("namespace required — pass -n / --namespace or run `kube-dc ns <ns>` first")
+		return nil, fmt.Errorf("Project context has no backing namespace — run `kube-dc use` and select a Project (or pass --namespace for compatibility)")
 	}
 	// Domain is parsed from the API-server URL:
 	// https://kube-api.<DOMAIN>:6443 → <DOMAIN>.
@@ -346,7 +349,7 @@ func secretsCreateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Create a new managed secret (optionally with the first version inline).",
-		Long: `Create a new managed secret in the project namespace.
+		Long: `Create a new managed secret in the current Project.
 
 Sync to a Kubernetes Secret is enabled by default and the target name
 defaults to the secret name itself; pass --sync-disabled to keep the
@@ -444,7 +447,7 @@ Examples:
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	cmd.Flags().StringVar(&secretType, "type", "opaque", "Secret type: opaque|password|api-key|tls|db-static")
 	cmd.Flags().StringVar(&description, "description", "", "Free-text description")
 	cmd.Flags().BoolVar(&syncDisabled, "sync-disabled", false, "Don't sync to a Kubernetes Secret (default: sync enabled)")
@@ -463,7 +466,7 @@ func secretsListCmd() *cobra.Command {
 	var namespace, outFlag string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List secrets in the project namespace",
+		Short: "List secrets in the current Project",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out, err := parseOutput(outFlag)
@@ -507,7 +510,7 @@ func secretsListCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	cmd.Flags().StringVarP(&outFlag, "output", "o", "table", "Output format: table|json|yaml")
 	return cmd
 }
@@ -520,7 +523,7 @@ func secretsGetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "get <name>",
 		Aliases: []string{"describe", "show"},
-		Short:   "Show one secret. --value also reveals the stored values (requires developer role).",
+		Short:   "Show one secret. --value also reveals stored values (requires developer, project-manager, or admin).",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
@@ -568,9 +571,9 @@ func secretsGetCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context)")
 	cmd.Flags().StringVarP(&outFlag, "output", "o", "table", "Output format: table|json|yaml")
-	cmd.Flags().BoolVar(&withValue, "value", false, "Also fetch the stored values (requires developer role)")
+	cmd.Flags().BoolVar(&withValue, "value", false, "Also fetch stored values (requires developer, project-manager, or admin)")
 	return cmd
 }
 
@@ -582,7 +585,7 @@ func secretsPutCmd() *cobra.Command {
 	var envFile string
 	cmd := &cobra.Command{
 		Use:   "put <name>",
-		Short: "Write or update a secret's values (requires developer role).",
+		Short: "Write or update stored values (requires developer, project-manager, or admin).",
 		Long: `Write a new version of the secret. Provide one or more keys with
 --from-literal=KEY=VAL, --from-file=KEY=path, or --from-env-file=path.
 File contents become the value as a UTF-8 string.
@@ -633,7 +636,7 @@ Examples:
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace")
 	cmd.Flags().StringArrayVar(&literals, "from-literal", nil, "KEY=VALUE pair (repeatable)")
 	cmd.Flags().StringArrayVar(&files, "from-file", nil, "KEY=path; file contents become VALUE (repeatable)")
 	cmd.Flags().StringVar(&envFile, "from-env-file", "", "Path to a .env file (KEY=VALUE lines) to seed values")
@@ -796,7 +799,7 @@ func secretsSyncCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace")
 	cmd.Flags().StringVar(&enabledFlag, "enabled", "", "true|false (omit to leave unchanged)")
 	cmd.Flags().StringVar(&target, "target", "", "Target K8s Secret name")
 	cmd.Flags().StringVar(&refresh, "refresh", "", "ESO refresh interval (e.g. 1m)")
@@ -811,7 +814,7 @@ func secretsImportCmd() *cobra.Command {
 	var allowCross bool
 	cmd := &cobra.Command{
 		Use:   "import <name>",
-		Short: "Import an existing Kubernetes Secret as a managed secret.",
+		Short: "Import an existing Kubernetes Secret into Secrets Manager.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
@@ -841,12 +844,12 @@ func secretsImportCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Target project namespace")
-	cmd.Flags().StringVar(&fromName, "from", "", "Source K8s Secret name (required)")
-	cmd.Flags().StringVar(&fromNs, "from-namespace", "", "Source namespace (default: target namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Target Project backing namespace")
+	cmd.Flags().StringVar(&fromName, "from", "", "Source Kubernetes Secret name (required)")
+	cmd.Flags().StringVar(&fromNs, "from-namespace", "", "Source Project backing namespace (default: current Project)")
 	cmd.Flags().StringVar(&secretType, "type", "opaque", "Secret type: opaque|password|api-key|tls|db-static")
 	cmd.Flags().StringVar(&desc, "description", "", "Free-text description")
-	cmd.Flags().BoolVar(&allowCross, "cross-namespace", false, "Allow source from a different namespace (audit-visible)")
+	cmd.Flags().BoolVar(&allowCross, "cross-namespace", false, "Allow import from another Project (audit-visible)")
 	_ = cmd.MarkFlagRequired("from")
 	return cmd
 }
@@ -896,7 +899,7 @@ func secretsDeleteCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace")
 	cmd.Flags().BoolVar(&destroy, "destroy", false, "Also permanently destroy every stored version (irreversible, admin only)")
 	return cmd
 }
@@ -933,7 +936,7 @@ func secretsDestroyVersionCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace")
 	cmd.Flags().IntVar(&version, "version", 0, "Version number to destroy (required, > 0)")
 	_ = cmd.MarkFlagRequired("version")
 	return cmd
@@ -989,7 +992,7 @@ func secretsConsumersCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace")
 	cmd.Flags().StringVarP(&outFlag, "output", "o", "table", "Output format: table|json|yaml")
 	return cmd
 }
@@ -1017,7 +1020,7 @@ func fmtCoalesce(values ...string) string {
 
 func printSecretSummary(s *backend.SecretSummary, withValue bool) {
 	fmt.Printf("Name:        %s\n", s.Name)
-	fmt.Printf("Namespace:   %s\n", s.Namespace)
+	fmt.Printf("Backing namespace: %s\n", s.Namespace)
 	fmt.Printf("Type:        %s\n", s.Type)
 	if s.Description != "" {
 		fmt.Printf("Description: %s\n", s.Description)
@@ -1043,7 +1046,7 @@ func printSecretSummary(s *backend.SecretSummary, withValue bool) {
 
 func printManagedSecret(ms *k8sapi.ManagedSecret) {
 	fmt.Printf("Name:        %s\n", ms.Metadata.Name)
-	fmt.Printf("Namespace:   %s\n", ms.Metadata.Namespace)
+	fmt.Printf("Backing namespace: %s\n", ms.Metadata.Namespace)
 	fmt.Printf("Type:        %s\n", ms.Spec.Type)
 	if ms.Spec.Description != "" {
 		fmt.Printf("Description: %s\n", ms.Spec.Description)

@@ -1,6 +1,10 @@
 # Metal3 Bare-Metal Worker Nodes
 
-This guide covers deploying and managing bare-metal worker nodes for Kube-DC using [Metal3](https://metal3.io/) — the Cluster API infrastructure provider for bare metal. Metal3 automates server discovery, OS provisioning, Kubernetes node joining, and lifecycle management through standard CAPI resources.
+This guide covers a qualified bare-metal worker workflow for the Kube-DC
+management cluster using [Metal3](https://metal3.io/), Bare Metal Operator,
+Ironic, and Cluster API Provider Metal3. The workflow controls power and can
+erase or reprovision enrolled hosts. Validate hardware support, network
+reachability, image compatibility, and rollback in a non-production pool first.
 
 ## Architecture
 
@@ -45,10 +49,10 @@ This guide covers deploying and managing bare-metal worker nodes for Kube-DC usi
 
 Network Connectivity:
 ─────────────────────
-  Management VLAN ──── All nodes (masters + workers): Kubernetes API, etcd, SSH
-  Cloud VLAN      ──── All nodes: Kube-OVN underlay, project VPCs, VM traffic
-  Provider VLAN   ──── All nodes: Public IPs (EIPs, FIPs, Service LoadBalancers)
-  BMC Network     ──── Masters → Worker BMCs: IPMI/Redfish for power management
+  Management network ── Nodes: Kubernetes API, node traffic, and administration
+  Cloud provider net ──── Eligible nodes only when ext-cloud is configured
+  Public provider net ─── Eligible nodes only when ext-public is configured
+  BMC network ─────────── Metal3/Ironic services → host BMCs
 ```
 
 ### How It Works
@@ -68,7 +72,7 @@ Network Connectivity:
 | **BMC access** | Each worker server must have a Baseboard Management Controller (IPMI, Redfish, iDRAC, iLO) reachable from the management cluster |
 | **PXE or Virtual Media boot** | Servers must support network boot (PXE) or Redfish Virtual Media for OS provisioning |
 | **Boot mode** | UEFI recommended (legacy BIOS supported but not recommended) |
-| **Network interfaces** | Minimum 2 NICs: one for management, one trunk for cloud/provider VLANs |
+| **Network interfaces** | Interfaces required by the selected management and provider-network topology; a trunk is needed only when that topology carries VLANs |
 | **Storage** | At least one disk for OS installation (SSD recommended, 100 GB+) |
 
 ### Network Requirements
@@ -81,13 +85,17 @@ The management cluster nodes must be able to reach:
 | Worker PXE NICs | DHCP + TFTP | 67-69, 6180 | PXE boot (if not using virtual media) |
 | Worker management NICs | SSH | 22 | Post-provisioning verification |
 
-Workers must have the **same VLAN trunk access** as the master nodes — they need connectivity to the management, cloud, and provider VLANs. See [Network Architecture](installation-overview.md#network-architecture) for VLAN details.
+Workers need management-cluster connectivity and every provider network used
+by workloads scheduled on them. They do not require an unused public or cloud
+VLAN merely because a control-plane node has it. Match Kube-OVN
+ProviderNetwork node selection and interface configuration to the actual
+cabling. See the [network model](installation-overview.md#network-model).
 
 ### Software Requirements
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| **Kube-DC management cluster** | Required | 3-node HA cluster per [Installation Guide](installation-guide.md) |
+| **Kube-DC management cluster** | Required | Compatible installed cluster; three server nodes are the reference HA profile in the [Installation Guide](installation-guide.md) |
 | **cert-manager** | Already installed | Deployed by the kube-dc installer (Flux) |
 | **Cluster API core** | Already installed | Deployed by the kube-dc installer (Flux) |
 | **CAPM3 + BMO + Ironic** | To be installed | This guide covers installation |
@@ -164,7 +172,7 @@ kubectl apply -f ironic.yaml
 ```
 
 :::warning PXE vs Virtual Media
-If your hardware supports **Redfish Virtual Media** (most modern servers do), you can skip the DHCP configuration entirely. Virtual Media mounts the boot ISO directly via BMC, avoiding PXE network complexity. Use BMC addresses like `redfish-virtualmedia://192.168.1.101/redfish/v1/Systems/1` in your BareMetalHost specs.
+If your qualified hardware supports **Redfish Virtual Media**, you can skip the PXE DHCP configuration. Virtual Media mounts the boot ISO directly via BMC, avoiding PXE network complexity. Use BMC addresses like `redfish-virtualmedia://192.168.1.101/redfish/v1/Systems/1` in your BareMetalHost specs.
 :::
 
 ### 1.3 Verify Metal3 Stack
@@ -496,7 +504,7 @@ Replace `<RKE2_JOIN_TOKEN>` with the actual token from `master-1`:
 ```bash
 sudo cat /var/lib/rancher/rke2/server/node-token
 ```
-For production, consider using a Kubernetes Secret reference or sealed secret instead of embedding the token directly.
+Do not commit the join token or this rendered Secret to Git. Deliver it through the platform's approved encrypted-secret workflow, restrict read access to the provisioning controllers, and rotate it after suspected exposure.
 :::
 
 ```bash
@@ -557,7 +565,7 @@ kubectl get machines -n baremetal-operator-system
 kubectl get nodes -w
 ```
 
-Provisioning typically takes **10–20 minutes** per server (depending on hardware, network speed, and image size).
+Provisioning time depends on firmware, cleaning policy, image size, and network throughput. Watch the BareMetalHost and Machine conditions and establish a timeout from measurements on the qualified hardware pool.
 
 ---
 
@@ -720,8 +728,9 @@ When a worker node becomes unhealthy:
 4. Server reboots → RKE2 agent reconnects → Node becomes Ready
          │
          ▼
-5. If still unhealthy after retryLimit, Machine is deleted and
-   a new one is provisioned from the available BMH pool
+5. If recovery still fails after retryLimit, the remediation reports failure.
+   Inspect the Machine and Metal3Remediation status before choosing a reviewed
+   reprovision or replacement workflow; do not assume automatic replacement.
 ```
 
 ### 6.4 Monitor Health Checks
@@ -803,9 +812,9 @@ CAPM3 will:
 
 ### ProviderNetwork Consistency
 
-- If all worker servers are the **same hardware model**, they will have consistent NIC names — use `defaultInterface` in the ProviderNetwork
-- For **mixed hardware**, use `customInterfaces` to map each node to its correct trunk NIC
-- Always verify workers appear in `provider-networks ext-cloud` status after joining
+- Use `defaultInterface` only after verifying the provider interface name on every eligible node; firmware and slot layout can change names even on the same hardware model.
+- Use `customInterfaces` when a node's provider interface differs from the default.
+- Verify each worker appears in the relevant ProviderNetwork status after joining.
 
 ---
 
@@ -858,4 +867,4 @@ Common cause: Worker's trunk NIC not matched in ProviderNetwork. Fix by adding a
 - [Networking Architecture](architecture-networking.md) — Kube-OVN, VLANs, VPCs, service exposure
 - [Deploy MetalLB HA](deploy-metallb-ha.md) — Floating IP for Envoy Gateway
 - [Metal3 User Guide](https://book.metal3.io/) — Upstream Metal3 documentation
-- [CAPM3 Remediation](https://book.metal3.io/capm3/remediaton) — Health check and remediation details
+- [CAPM3 Remediation](https://book.metal3.io/capm3/remediaton.html) — Health check and remediation details

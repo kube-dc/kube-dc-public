@@ -5,7 +5,7 @@ Dedicated GPU VM.
 
 ## Preconditions
 
-1. Query `GET /api/capabilities/{project-namespace}/gpus` with the caller's
+1. Query `GET /api/capabilities/{project-backing-namespace}/gpus` with the caller's
    Kube-DC bearer token or open the VM wizard.
 2. Continue only when `vmCreationEnabled` is `true` and the selected
    Dedicated GPU VM profile has `canCreate: true`.
@@ -50,13 +50,13 @@ For an API client, submit the complete review YAML to the authenticated
 validation route before creating any root volume:
 
 ```http
-POST /api/create-vm/{project-namespace}/vmi/validate
+POST /api/create-vm/{project-backing-namespace}/vmi/validate
 Authorization: Bearer {kube-dc-jwt}
 Content-Type: application/yaml
 ```
 
 Then use the existing Kube-DC VM create transaction, ending with the same YAML
-at `POST /api/create-vm/{project-namespace}/vmi`. The authoritative create
+at `POST /api/create-vm/{project-backing-namespace}/vmi`. The authoritative create
 route repeats preflight and canonicalizes the stable alias immediately before
 Kubernetes submission. Do not replace this flow with a direct KubeVirt create.
 
@@ -75,7 +75,7 @@ Kubernetes submission. Do not replace this flow with a direct KubeVirt create.
 After the VM reaches Running:
 
 ```bash
-kubectl get vm,vmi -n {project-namespace} {vm-name}
+kubectl get vm,vmi -n {project-backing-namespace} {vm-name}
 ```
 
 Inside a qualified Linux guest:

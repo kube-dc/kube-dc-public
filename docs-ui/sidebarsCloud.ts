@@ -18,13 +18,12 @@ const sidebars: SidebarsConfig = {
         'sign-up-login',
         'dashboard-overview',
         'first-project',
-        'ai-ide-integration',
       ],
     },
     {
       type: 'category',
       label: 'Projects',
-      collapsed: false,
+      collapsed: true,
       items: [
         {
           type: 'doc',
@@ -45,8 +44,8 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'Deploying Applications',
-      collapsed: false,
+      label: 'Applications & Automation',
+      collapsed: true,
       items: [
         {
           type: 'doc',
@@ -64,11 +63,12 @@ const sidebars: SidebarsConfig = {
           label: 'Run Shared GPU Workloads',
         },
         'gitops',
+        'ai-ide-integration',
       ],
     },
     {
       type: 'category',
-      label: 'Managed Kubernetes Clusters',
+      label: 'Managed Clusters',
       collapsed: true,
       items: [
         'provisioning-cluster',
@@ -104,6 +104,7 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       items: [
         'managed-databases',
+        'database-credentials',
       ],
     },
     {
@@ -124,7 +125,6 @@ const sidebars: SidebarsConfig = {
         'secrets-manager',
         'kms',
         'certificate-manager',
-        'database-credentials',
       ],
     },
     {

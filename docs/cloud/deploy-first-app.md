@@ -1,185 +1,143 @@
-# Deploy Your First K8s Application
+# Deploy Your First Kubernetes Application
 
-This guide walks you through deploying a production-ready WordPress site on Kube-DC using Helm and exposing it to the internet with automatic HTTPS — all in under 5 minutes.
+This guide deploys a small web service to a Kube-DC Project and publishes it
+through the shared HTTP gateway. It uses only namespaced resources supported by Projects.
 
 ## Prerequisites
 
-- A Kube-DC Cloud [project](first-project.md) with `egressNetworkType: cloud`
-- [CLI access](cli-kubeconfig.md) configured — `kubectl` working against your project
-- [Helm](https://helm.sh/docs/intro/install/) installed locally
+- A [Project](first-project.md) with available CPU, memory, Pod, and IP quota
+- [CLI access](cli-kubeconfig.md) with `kubectl` connected to that Project
+- The `developer` or `admin` role
 
-Verify your setup:
-
-```bash
-# Confirm you're connected to the right project
-kube-dc ns
-```
-
----
-
-## Step 1: Create a TLS Certificate Issuer
-
-Before deploying, set up a Let's Encrypt issuer so your app gets a free HTTPS certificate automatically.
+Confirm the current context and backing namespace:
 
 ```bash
-cat <<EOF | kubectl apply -f -
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: letsencrypt
-spec:
-  acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
-    email: your-email@example.com
-    privateKeySecretRef:
-      name: letsencrypt-account-key
-    solvers:
-    - http01:
-        gatewayHTTPRoute:
-          parentRefs:
-          - group: gateway.networking.k8s.io
-            kind: Gateway
-            name: eg
-            namespace: envoy-gateway-system
-EOF
+kubectl config current-context
+kubectl config view --minify -o jsonpath='{..namespace}'
 ```
 
-:::note One-time setup
-You only need to create the Issuer once per project. All services in the project can reuse it.
-:::
+The backing namespace normally follows `{organization}-{project}`, for example `acme-demo`.
 
----
+## 1. Deploy the Workload
 
-## Step 2: Install WordPress with Helm
-
-Create a `values.yaml` file for the Helm chart:
+Create a two-replica web Deployment. The image listens on port 8080 and does not require root privileges.
 
 ```yaml
-service:
-  type: LoadBalancer
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hello
+  template:
+    metadata:
+      labels:
+        app: hello
+    spec:
+      containers:
+        - name: web
+          image: nginxinc/nginx-unprivileged:stable-alpine
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello
   annotations:
-    service.nlb.kube-dc.com/expose-route: "https"
-
-networkPolicy:
-  enabled: false
-
-mariadb:
-  networkPolicy:
-    enabled: false
+    service.nlb.kube-dc.com/expose-route: "http"
+spec:
+  type: LoadBalancer
+  selector:
+    app: hello
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
 ```
 
-:::tip Hostname Pattern
-The auto-generated hostname follows: `<service-name>-<namespace>.<domain>`
-
-Since project namespaces use the format `<org>-<project>`, the full hostname becomes:
-- Organization: `acme`, Project: `demo`
-- Service: `wordpress`, Namespace: `acme-demo`
-- Hostname: `wordpress-acme-demo.kube-dc.cloud`
-:::
-
-Install WordPress using the Bitnami Helm chart:
+Save the manifest as `hello.yaml`, then apply it:
 
 ```bash
-helm install wordpress oci://registry-1.docker.io/bitnamicharts/wordpress \
-  --values values.yaml
+kubectl apply -f hello.yaml
+kubectl rollout status deployment/hello
 ```
 
-Wait for the pods to become ready:
+## 2. Check the Application
+
+Verify the Pods and Service:
 
 ```bash
-kubectl get pods -w
+kubectl get pods -l app=hello
+kubectl get service hello
 ```
 
-You should see two pods running — `wordpress` and `wordpress-mariadb`:
+A Pod in `Running` state is not automatically proof that the application is healthy. The rollout command waits for the Deployment readiness condition.
 
-```
-NAME                         READY   STATUS    RESTARTS   AGE
-wordpress-6b4c8f9d7b-x2k5l  1/1     Running   0          90s
-wordpress-mariadb-0          1/1     Running   0          90s
-```
+## 3. Open the Endpoint
 
----
-
-## Step 3: Access Your WordPress Site
-
-The `expose-route: https` annotation automatically:
-1. Allocates an EIP for the LoadBalancer service
-2. Creates a Gateway HTTPS route
-3. Provisions a Let's Encrypt TLS certificate
-4. Assigns a default hostname
-
-Check the assigned hostname:
+The Service annotation asks the platform to create a Gateway Route and DNS
+name. Read the assigned hostname from the Service:
 
 ```bash
-kubectl get svc wordpress -o jsonpath='{.metadata.annotations.service\.nlb\.kube-dc\.com/route-hostname-status}'
+kubectl get service hello \
+  -o jsonpath='{.metadata.annotations.service\.nlb\.kube-dc\.com/route-hostname-status}'
 ```
 
-The output will be your site's URL, for example:
+Open `http://<assigned-hostname>` after the route is ready. DNS propagation can
+finish after the Pods become ready.
 
-```
-wordpress-acme-demo.kube-dc.cloud
-```
-
-Open it in your browser:
-
-```
-https://wordpress-acme-demo.kube-dc.cloud
-```
-
-:::tip Certificate provisioning
-The TLS certificate may take 1–2 minutes to be issued. You can check its status with:
-```bash
-kubectl get certificate
-```
-:::
-
----
-
-## Step 4: Log in to WordPress Admin
-
-Retrieve the auto-generated admin password:
+If no hostname appears, inspect the Service status and events:
 
 ```bash
-echo "Username: user"
-echo "Password: $(kubectl get secret wordpress -o jsonpath='{.data.wordpress-password}' | base64 -d)"
+kubectl describe service hello
+kubectl get events --sort-by=.lastTimestamp
 ```
 
-Navigate to `https://<your-hostname>/wp-admin` to access the WordPress dashboard.
+See [Service Exposure](service-exposure.md) to add HTTPS with the required
+Issuer, or to use custom hostnames, TCP/UDP services, EIPs, and FIPs.
 
----
+## Update the Application
 
-## What Just Happened?
+Change the image or configuration in `hello.yaml`, then apply it again:
 
-With two commands (`kubectl apply` + `helm install`) you deployed a full WordPress stack with:
+```bash
+kubectl apply -f hello.yaml
+kubectl rollout status deployment/hello
+kubectl rollout history deployment/hello
+```
 
-- **WordPress** application server
-- **MariaDB** database with persistent storage
-- **LoadBalancer** service with a dedicated external IP
-- **HTTPS** with an auto-provisioned Let's Encrypt certificate
-- **Public hostname** on the default `kube-dc.cloud` domain
-
-All of this runs inside your isolated project namespace with network-level separation from other tenants.
-
----
+Kubernetes rolls out the new ReplicaSet according to the Deployment strategy. Availability depends on readiness checks, capacity, and application behavior.
 
 ## Clean Up
 
-To remove the WordPress deployment and its persistent data:
-
 ```bash
-helm uninstall wordpress
-kubectl delete pvc data-wordpress-mariadb-0 wordpress
+kubectl delete -f hello.yaml
 ```
 
-:::note
-Helm does not delete PersistentVolumeClaims on uninstall. The `kubectl delete pvc` command removes the MariaDB and WordPress storage volumes so a fresh reinstall starts clean.
-:::
-
----
+This deletes the Deployment and Service. Confirm that the Service and its route have finished cleanup before reusing any dedicated address associated with it.
 
 ## Next Steps
 
-- [Service Exposure Guide](service-exposure.md) — Learn about custom domains, TLS passthrough, and EIP-based exposure
-- [Virtual Machines](creating-vm.md) — Deploy VMs alongside containers
-- [Public & Floating IPs](public-floating-ips.md) — Manage IP addresses
-- [Object Storage](object-storage.md) — Add S3-compatible storage to your apps
+- [Deploy a WordPress stack](deploy-wordpress-stack.md)
+- [Choose a service exposure method](service-exposure.md)
+- [Use block storage](block-storage.md)
+- [Connect CI or an external GitOps controller](gitops.md)

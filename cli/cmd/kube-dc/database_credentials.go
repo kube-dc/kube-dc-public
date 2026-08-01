@@ -17,14 +17,13 @@
 //
 // `-o env` emits `KUBE_DC_DB_*=value` lines suitable for shell
 // `eval "$(...)"` sourcing. For `get`, requires --show-password
-// (a masked env is useless for eval). For `issue`, includes the
-// lease ID / duration so the consumer can drive renew/revoke.
+// (a masked env is useless for eval). The reserved `issue` command
+// will use the same format after dynamic issuance is implemented.
 //
-// Phase-1 (M4): dynamic mode (--mode dynamic + `issue`) is the
-// CLI/API-only surface — UI ships static-rotated only per dev-scope
-// §13. The controller currently returns 501/DynamicModeDeferred on
-// /issue; the CLI command is wired so the surface doesn't shift when
-// the controller catches up.
+// Dynamic mode (--mode dynamic + `issue`) is a reserved CLI/API
+// surface. The controller sets Ready=False/DynamicModeDeferred and
+// /issue returns 501; the command remains wired so the interface does
+// not shift when the controller implementation ships.
 
 package main
 
@@ -51,15 +50,18 @@ func dbCmd() *cobra.Command {
 		Use:   "db",
 		Short: "Database operations (credentials, backups — credentials in M4)",
 		Long: `Database operations against KdcDatabase + DatabaseCredentialPolicy.
-Phase 1 covers credentials (rotation, reveal, dynamic issue); backups
-are reachable today via kubectl edit kdcdatabase. A future CLI verb
-will likely wrap that flow once the UX is stable.
+The current release supports static-rotated credential lifecycle. Dynamic
+policy fields and the issue command are reserved for compatibility; dynamic
+policies remain Ready=False/DynamicModeDeferred and issue returns HTTP 501.
+Backups are reachable today via kubectl edit kdcdatabase.
 
-Permissions follow your project role (cap matrix in dev-scope §6.1):
-  user/viewer        list + describe only
-  developer          + create / delete; can issue dynamic leases
-  project-manager    + rotate + read static password
-  project-admin      + rotate-root (rotates the engine's privileged user)`,
+Permissions follow the exact standard Project roles:
+  user               list + describe
+  developer          list + describe + create + delete
+  project-manager    list + describe + rotate + read static password
+  admin              all supported lifecycle operations
+
+The --root rotation flag is retired and the backend returns HTTP 410.`,
 	}
 	cmd.AddCommand(dbCredentialsCmd())
 	return cmd
@@ -86,7 +88,7 @@ func dbCredentialsListCmd() *cobra.Command {
 	var namespace, outFlag string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List DatabaseCredentialPolicies in the project namespace",
+		Short: "List DatabaseCredentialPolicies in the current Project",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out, err := parseOutput(outFlag)
@@ -113,7 +115,7 @@ func dbCredentialsListCmd() *cobra.Command {
 			return printDBCPTable(list.Items)
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	cmd.Flags().StringVarP(&outFlag, "output", "o", "table", "Output format: table|json|yaml")
 	return cmd
 }
@@ -153,7 +155,7 @@ func dbCredentialsDescribeCmd() *cobra.Command {
 			return printDBCPDetail(p)
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	cmd.Flags().StringVarP(&outFlag, "output", "o", "table", "Output format: table|json|yaml")
 	return cmd
 }
@@ -178,9 +180,8 @@ func dbCredentialsCreateCmd() *cobra.Command {
     --database docs-pg --username reporting \
     --rotate 7d --sync-secret reporting-db-creds
 
-  # Dynamic credentials (lease-based; phase-1 controller returns
-  # DynamicModeDeferred — the CR is created but ready=False until
-  # the dynamic surface ships):
+  # Reserved dynamic shape: creates Ready=False/DynamicModeDeferred;
+  # credential issuance is not implemented:
   kube-dc db credentials create docs-pg-readonly \
     --database docs-pg --mode dynamic --role readonly \
     --ttl 1h --max-ttl 24h`,
@@ -233,15 +234,15 @@ func dbCredentialsCreateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
-	cmd.Flags().StringVar(&database, "database", "", "KdcDatabase name in the same project (required)")
-	cmd.Flags().StringVar(&mode, "mode", "static-rotated", "Credential mode: static-rotated|dynamic")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
+	cmd.Flags().StringVar(&database, "database", "", "KdcDatabase name in the same Project (required)")
+	cmd.Flags().StringVar(&mode, "mode", "static-rotated", "Credential mode: static-rotated|dynamic (dynamic is reserved and not implemented)")
 	cmd.Flags().StringVar(&username, "username", "", "DB user to manage (default: app — must already exist on the engine)")
 	cmd.Flags().StringVar(&rotation, "rotate", "", "Rotation interval (e.g. 30d, 12h). Default: 30d when omitted.")
-	cmd.Flags().StringVar(&strategy, "rotate-strategy", "", "Rotation strategy: rolling|immediate (default: rolling)")
-	cmd.Flags().StringVar(&role, "role", "", "OpenBao DB role for dynamic mode (required when --mode=dynamic)")
-	cmd.Flags().StringVar(&ttl, "ttl", "", "Lease TTL for dynamic mode (e.g. 1h)")
-	cmd.Flags().StringVar(&maxTTL, "max-ttl", "", "Maximum lease TTL incl. renewals (e.g. 24h)")
+	cmd.Flags().StringVar(&strategy, "rotate-strategy", "", "Rotation strategy retained for compatibility: rolling|immediate (both currently use a single-password cutover)")
+	cmd.Flags().StringVar(&role, "role", "", "Reserved dynamic-mode role field (required when --mode=dynamic)")
+	cmd.Flags().StringVar(&ttl, "ttl", "", "Reserved dynamic-mode lease TTL field (e.g. 1h)")
+	cmd.Flags().StringVar(&maxTTL, "max-ttl", "", "Reserved dynamic-mode maximum lease TTL field (e.g. 24h)")
 	cmd.Flags().StringVar(&syncSecret, "sync-secret", "", "Project Secret name to receive the rotated credentials (default: <name>)")
 	cmd.Flags().BoolVar(&syncDisabled, "no-sync", false, "Disable automatic project Secret sync (rotated creds only via `db credentials get`)")
 	return cmd
@@ -260,9 +261,10 @@ the target K8s Secret on the next reconciler tick (~5min) — the
 backend nudges the controller via an annotation, so the wait is
 usually a few seconds.
 
---root reassigns the engine's privileged user (the one db-manager
-itself uses to drive rotations). Project-admin only; destructive
-enough that you should be sure before running it.`,
+--root is retained for command-line compatibility, but root rotation is retired
+because it can desynchronize the engine credential held by db-manager. The
+backend returns HTTP 410. Use KdcDatabase break-glass superuser access for an
+operator emergency instead.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
@@ -293,8 +295,8 @@ enough that you should be sure before running it.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
-	cmd.Flags().BoolVar(&rotateRoot, "root", false, "Rotate the engine's privileged user (project-admin only; destructive)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
+	cmd.Flags().BoolVar(&rotateRoot, "root", false, "Retired compatibility flag; the backend returns HTTP 410")
 	return cmd
 }
 
@@ -365,7 +367,7 @@ into terminal scrollback.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	cmd.Flags().StringVarP(&outFlag, "output", "o", "table", "Output format: table|json|yaml|env (env requires --show-password)")
 	cmd.Flags().BoolVar(&showPassword, "show-password", false, "Print the actual password (default: masked)")
 	return cmd
@@ -408,7 +410,7 @@ Requires --yes to proceed.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	cmd.Flags().BoolVar(&yes, "yes", false, "Confirm deletion")
 	return cmd
 }
@@ -419,16 +421,15 @@ func dbCredentialsIssueCmd() *cobra.Command {
 	var namespace, outFlag string
 	cmd := &cobra.Command{
 		Use:   "issue <name>",
-		Short: "Issue a short-lived dynamic credential lease (mode=dynamic only)",
-		Long: `Mints a fresh username + password from OpenBao's dynamic role
-machinery and returns the lease ID + TTL. Static-rotated policies
-return 400 (use 'kube-dc db credentials get' instead).
+		Short: "Reserved dynamic credential command (currently returns HTTP 501)",
+		Long: `Dynamic credential issuance is not implemented in the current release.
+Policies created with mode=dynamic remain Ready=False with reason
+DynamicModeDeferred, and this command returns HTTP 501 without minting a
+username, password, or lease.
 
-NOTE: Phase-1 the controller returns 501/DynamicModeDeferred because
-the dynamic-role plumbing isn't wired yet. The CLI surface is
-shipped now so it doesn't shift when the controller catches up. The
-backend will surface a clear "dynamic credential issuance is not yet
-implemented" error in the meantime.`,
+The command is retained as a forward-compatible interface. Use a
+static-rotated policy and 'kube-dc db credentials get' for a supported
+credential workflow.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
@@ -469,7 +470,7 @@ implemented" error in the meantime.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	cmd.Flags().StringVarP(&outFlag, "output", "o", "table", "Output format: table|json|yaml|env (env emits `KEY=value` for shell `eval`)")
 	return cmd
 }

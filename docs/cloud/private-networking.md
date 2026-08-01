@@ -1,6 +1,6 @@
 # VPC & Private Networking
 
-Every Kube-DC project gets its own isolated Virtual Private Cloud (VPC) powered by [Kube-OVN](https://kubeovn.github.io/docs/). This provides network isolation between projects — VMs and pods in one project cannot communicate with those in another project.
+Every Kube-DC Project gets its own Virtual Private Cloud (VPC) powered by [Kube-OVN](https://kubeovn.github.io/docs/). Private addresses are not routed between Projects by default; cross-Project connectivity requires explicit exposure or an operator-approved routing change.
 
 ---
 
@@ -8,15 +8,15 @@ Every Kube-DC project gets its own isolated Virtual Private Cloud (VPC) powered 
 
 When a project is created, Kube-DC automatically provisions:
 
-1. **A dedicated VPC** — isolated network namespace
+1. **A dedicated VPC** — isolated virtual routing domain
 2. **A default subnet** — private IP range (e.g., `10.0.0.0/24`)
 3. **A VPC router** — handles routing between the subnet and external networks
-4. **A default gateway EIP** — enables outbound internet access via NAT
+4. **A default gateway EIP** — provides outbound NAT when platform egress policy and upstream networking allow it
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  Project: my-org-my-project                         │
-│                                                     │
+│  Project: production                                │
+│  Backing namespace: acme-production                 │
 │  ┌─────────────────────────────────┐                │
 │  │  Subnet: 10.0.0.0/24            │                │
 │  │                                 │                │
@@ -41,14 +41,14 @@ When a project is created, Kube-DC automatically provisions:
 
 ## Project Isolation
 
-Each project is a fully isolated network environment:
+Each Project receives a dedicated VPC and platform-managed traffic controls:
 
-- **VMs and pods** in one project **cannot reach** resources in another project
-- Each project has its own **subnet, router, and EIP**
-- **DNS** resolves only within the project namespace
-- Traffic between projects must go through external IPs (EIP/FIP/LoadBalancer)
+- Cross-Project traffic is blocked by default
+- Each Project has its own **subnet, router, and default gateway EIP**
+- Kubernetes DNS may resolve Service names outside the Project's backing namespace, but name resolution does not grant network reachability
+- Cross-Project connectivity requires an operator-approved routing or allowlist change, or an explicitly exposed service
 
-This isolation is enforced at the OVN level — it's not just Kubernetes network policies, but actual network separation in the virtual switch layer.
+The primary network boundary is the Project VPC and its platform-managed OVN routing policy. Project users do not manage this boundary with tenant-authored `NetworkPolicy` resources.
 
 ---
 
@@ -68,19 +68,14 @@ kubectl get pods -o wide
 
 ### Subnet Details
 
-```bash
-# View your project's subnet
-kubectl get subnet -l project=my-project
-```
-
-Each project subnet is typically a `/24` block (254 usable addresses). The subnet CIDR is configured when the project is created:
+The subnet CIDR is configured when the Project is created. Choose a range sized for the expected VMs, Pods, and Managed Cluster infrastructure. Separate Project VPCs can reuse a CIDR, but avoid overlap when you expect an operator to route those networks together later. The underlying Kube-OVN `Subnet` is a platform resource and is not exposed through a Project kubeconfig. You can inspect the selected CIDR in the Project details or definition:
 
 ```yaml
 apiVersion: kube-dc.com/v1
 kind: Project
 metadata:
-  name: my-project
-  namespace: my-org
+  name: production
+  namespace: acme
 spec:
   cidrBlock: "10.0.0.0/24"
   egressNetworkType: cloud  # or "public"
@@ -88,23 +83,23 @@ spec:
 
 ### Network Name
 
-VMs connect to the project network using `networkName: default`:
+VMs use the fully qualified `{backing-namespace}/default` NetworkAttachmentDefinition name. For Project `production` in Organization `acme`:
 
 ```yaml
 networks:
 - name: vpc_net_0
   multus:
     default: true
-    networkName: default
+    networkName: acme-production/default
 ```
 
-This refers to the project's default subnet — Kube-DC resolves it to the correct VPC network automatically.
+This selects the default VPC network owned by that Project.
 
 ---
 
 ## Outbound Internet Access (NAT)
 
-All VMs and pods can access the internet through the project's default gateway EIP:
+VMs and pods send internet-bound traffic through the Project's default gateway EIP when egress is allowed:
 
 ```
 Pod (10.0.0.20)  →  VPC Router  →  SNAT to EIP  →  Internet
@@ -123,9 +118,9 @@ NAME         EXTERNAL IP      NETWORK TYPE   READY
 default-gw   100.65.0.115     Cloud          true
 ```
 
-### No Configuration Needed
+### Automatic Platform Configuration
 
-Outbound internet access works automatically for all VMs and pods — no additional configuration required. DNS resolution also works out of the box.
+Kube-DC configures the Project route, SNAT, and cluster DNS. Workloads need no extra NAT configuration, but internet reachability still depends on installation-wide egress policy, upstream availability, and any workload firewall.
 
 ---
 
@@ -137,7 +132,7 @@ By default, your VMs and pods are **not accessible from the internet**. To enabl
 |--------|----------|-------|
 | **Floating IP** | Direct access to a VM on all ports | [External & Floating IPs](public-floating-ips.md) |
 | **LoadBalancer + EIP** | Expose specific ports | [Service Exposure](service-exposure.md) |
-| **Gateway Route** | HTTPS with auto TLS certificate | [Service Exposure](service-exposure.md) |
+| **Gateway Route** | HTTPS with a configured Project Issuer | [Service Exposure](service-exposure.md) |
 
 ---
 
@@ -145,7 +140,7 @@ By default, your VMs and pods are **not accessible from the internet**. To enabl
 
 ### Within a Project
 
-All VMs and pods within the same project can communicate freely over private IPs:
+VMs and pods within the same Project can communicate over private IPs unless a guest firewall or workload policy blocks the traffic:
 
 ```bash
 # From one VM, ping another
@@ -173,14 +168,17 @@ spec:
     targetPort: 80
 ```
 
-Access via DNS: `my-service.my-org-my-project.svc.cluster.local`
+Access via DNS: `my-service.acme-production.svc.cluster.local`. Here,
+`acme-production` is the backing namespace for Project `production`.
 
 ### Cross-Project Communication
 
 Projects are isolated by default. To communicate between projects:
 
-- Use **LoadBalancer services** with EIPs — each project accesses the other via external IP
-- Use **external endpoints** — Kube-DC auto-creates `<service>-ext` DNS entries for LoadBalancer services
+- Expose the destination explicitly with a **Gateway Route** or **LoadBalancer Service**, then use its published hostname or address.
+- Ask the platform operator for a private routing and allowlist change when traffic must stay between Project VPCs.
+
+Do not depend on a `<service>-ext` Service name. Some older deployments create that internal alias for specific legacy backends, but it is not the cross-Project service-discovery contract and can be retired automatically.
 
 ---
 

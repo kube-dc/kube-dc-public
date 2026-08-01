@@ -1,123 +1,105 @@
 ---
 name: manage-networking
-description: Manage Kube-DC networking resources — create External IPs (EIp), Floating IPs (FIp), and understand VPC networking. Includes decision guide for choosing between EIP and FIP.
+description: Manage a Kube-DC Project's VPC addresses with EIp and FIp resources, and choose between Service-level exposure and direct VM access.
 ---
 
 ## Prerequisites
-- Target project must exist and be Ready
-- Project namespace: `{org}-{project}`
-- **Quota**: when creating `externalNetworkType: public` EIPs, check `publicIPv4` quota first — use the `check-quota` skill (no burst; hard limit per plan)
+
+- The target Project is Ready.
+- Know its backing namespace: `{organization}-{project}`.
+- Check Organization public IPv4 quota before requesting a public address.
+- Confirm the provider offers the requested `public` or `cloud` pool.
 
 ## Concepts
 
-### EIp (External IP)
-An IP address allocated from an external network pool. Used with LoadBalancer services to expose apps.
+- **Project VPC**: the isolated network created with the Project. Its default
+  Multus network is `{backing-namespace}/default`.
+- **EIp**: an address allocated from an external pool. Bind it to one or more
+  LoadBalancer Services that expose selected ports.
+- **FIp**: one-to-one NAT to an internal IP or VM interface. It exposes the
+  target directly and does not load-balance.
 
-### FIp (Floating IP)
-A 1:1 NAT mapping from a public IP directly to a VM or pod. Traffic goes straight to the target — no LoadBalancer needed.
+| Need | Use |
+|---|---|
+| HTTP/HTTPS hostname | Gateway route via the `expose-service` skill |
+| Selected TCP/UDP ports | EIP-backed LoadBalancer |
+| Direct access to one VM interface | FIP with `vmTarget` |
+| Managed database workstation access | `spec.expose.type: loadbalancer` |
 
-### VPC Network
-Every project gets `{namespace}/default` — an isolated Kube-OVN subnet. All VMs and pods connect here.
-
-## Decision Guide
-
-| Need | → Use |
-|------|-------|
-| Expose a Service (HTTP/TCP/UDP) | EIp + LoadBalancer (or Gateway Route) |
-| Direct IP access to a VM | FIp with `vmTarget` |
-| Multiple services on one IP | EIp + multiple LoadBalancer services |
-| Dedicated IP per VM | FIp (one FIP per VM interface) |
-| SSH to a VM | FIp OR EIp + LoadBalancer port 22 |
-
-## Create EIp
+## Create an EIP
 
 ```yaml
 apiVersion: kube-dc.com/v1
 kind: EIp
 metadata:
-  name: {eip-name}
-  namespace: {project-namespace}
+  name: "{eip-name}"
+  namespace: "{backing-namespace}"
 spec:
-  externalNetworkType: public    # public = routable internet IP
-                                  # cloud = shared NAT pool IP
+  externalNetworkType: public # or cloud
 ```
 
-See @eip-template.yaml
-
-### Use EIp with a Service
+Bind it to a LoadBalancer Service with:
 
 ```yaml
-annotations:
-  service.nlb.kube-dc.com/bind-on-eip: "{eip-name}"
+metadata:
+  annotations:
+    service.nlb.kube-dc.com/bind-on-eip: "{eip-name}"
 ```
 
-## Create FIp (Floating IP for VM)
+`externalNetworkType` is immutable after allocation.
+
+## Create a Floating IP for a VM
 
 ```yaml
 apiVersion: kube-dc.com/v1
 kind: FIp
 metadata:
-  name: {fip-name}
-  namespace: {project-namespace}
+  name: "{fip-name}"
+  namespace: "{backing-namespace}"
 spec:
   externalNetworkType: public
   vmTarget:
-    vmName: {vm-name}
+    vmName: "{vm-name}"
     interfaceName: default
 ```
 
-See @fip-template.yaml
+When `externalNetworkType` is set, the FIP controller creates and owns its
+required EIP. Do not create a second EIP for the same FIP. Alternatively, an
+advanced manifest can reference an existing EIP with `spec.eip`, but
+`spec.eip` and `spec.externalNetworkType` are mutually exclusive.
 
-### Check FIp Status
-
-```bash
-kubectl get fip {fip-name} -n {project-namespace}
-# Shows allocated external IP in status
-```
-
-## List Networking Resources
+## Inspect Status
 
 ```bash
-kubectl get eip -n {project-namespace}
-kubectl get fip -n {project-namespace}
-kubectl get svc -n {project-namespace}
+# EIP readiness and allocated address
+kubectl get eip {eip-name} -n {backing-namespace} \
+  -o jsonpath='{.status.ready}{"\t"}{.status.ipAddress}{"\n"}'
+
+# FIP readiness, external address, and resolved target
+kubectl get fip {fip-name} -n {backing-namespace} \
+  -o jsonpath='{.status.ready}{"\t"}{.status.externalIP}{"\t"}{.status.resolvedTargetIP}{"\n"}'
+
+kubectl describe eip {eip-name} -n {backing-namespace}
+kubectl describe fip {fip-name} -n {backing-namespace}
 ```
 
-## Verification
+A Ready EIP has a non-empty `.status.ipAddress`. A Ready FIP has non-empty
+`.status.externalIP` and `.status.resolvedTargetIP`.
 
-After creating networking resources:
+## Network Types
 
-### EIp
-```bash
-# 1. Check EIP has allocated IP
-kubectl get eip {eip-name} -n {project-namespace} -o jsonpath='{.status.ipAddress}'
-# Expected: allocated IP address
+- `public`: internet-routable subject to firewall and provider policy.
+- `cloud`: not internet-routable; reachable only from configured cloud or
+  platform networks.
 
-# 2. Check EIP phase
-kubectl get eip {eip-name} -n {project-namespace} -o jsonpath='{.status.phase}'
-# Expected: Active
-```
+A Project's `egressNetworkType` chooses its default gateway address pool. It
+does not by itself prevent a cloud Project from requesting a public EIP when
+the provider enables that pool and quota is available.
 
-### FIp
-```bash
-# 1. Check FIP has allocated IP
-kubectl get fip {fip-name} -n {project-namespace} -o jsonpath='{.status.ipAddress}'
-# Expected: allocated public IP
-
-# 2. Check FIP is bound to target
-kubectl get fip {fip-name} -n {project-namespace} -o jsonpath='{.status.phase}'
-# Expected: Active
-
-# 3. Test connectivity to VM via FIP
-ping -c 3 {fip-external-ip}
-ssh -i /tmp/vm_ssh_key {os-user}@{fip-external-ip}
-```
-
-**Success**: IP allocated, phase Active.
-**Failure**: `kubectl describe eip|fip {name} -n {project-namespace}` — check events.
 ## Safety
-- **FIP + LoadBalancer conflict**: A VM CANNOT simultaneously be a FIP target AND a cloud-network LoadBalancer backend
-- FIPs with `externalNetworkType: public` auto-create an EIP — don't manually create both
-- Each project gets a default gateway EIP automatically
-- Prefer `externalNetworkType: public` when you need internet-routable IPs
-- Use `externalNetworkType: cloud` for internal/NAT-only access
+
+- Never infer address-pool availability from the network type alone.
+- A public FIP target cannot also be a cloud LoadBalancer backend.
+- Prefer Service exposure when only selected ports should be reachable.
+- Use an FIP only when direct one-to-one access is intended.
+- Delete unused public addresses to release quota.

@@ -1,16 +1,14 @@
 # Managed Databases
 
-Kube-DC provides fully managed **PostgreSQL** and **MariaDB** databases as a built-in service. Each database runs as a high-availability cluster with automated backups, connection management, and live configuration — all managed through the dashboard or via kubectl.
+Kube-DC provides managed **PostgreSQL** and **MariaDB** databases through the dashboard and Kubernetes API. A one-replica database is standalone; configure two or more replicas when the engine and workload require failover.
 
 ## Databases Overview
 
-![Managed Databases overview](images/db-manager-overview.png)
-
-The Databases view shows all databases in your project. The left sidebar organizes databases by engine type (**PostgreSQL** and **MariaDB**). Each database shows its name, engine, version, status, replica count, and age.
+The Databases view shows all databases in your Project. The left sidebar organizes databases by engine type (**PostgreSQL** and **MariaDB**). Each database shows its name, engine, version, status, replica count, and age.
 
 Click on any database to expand its details:
 
-- **General Information** — Name, engine, version, namespace, CPU/memory, storage, status, and creation date
+- **General Information** — Name, engine, version, backing namespace, CPU/memory, storage, status, and creation date
 - **Connection** — Internal endpoint, port, database name, replica count, and a quick-connect command
 - **Credentials** — Username with copy button and password with reveal/rotate options
 - **Actions** — View Details or Delete the database
@@ -24,9 +22,9 @@ Click on any database to expand its details:
 
 ## Create a Database
 
-### Via Dashboard
+### Create via Dashboard
 
-1. Navigate to your project → **Databases** → **Overview**
+1. Navigate to your Project → **Databases** → **Overview**
 2. Click **+ Create Database**
 3. Fill in the creation wizard:
    - **Name** — A unique name for your database (lowercase, alphanumeric, hyphens)
@@ -39,18 +37,18 @@ Click on any database to expand its details:
    - **Replicas** — Number of instances (1 = standalone, 2+ = high availability)
 4. Review the summary and click **Create**
 
-The database will transition through `Pending` → `Provisioning` → `Ready` status. This typically takes 1–2 minutes.
+The database will transition through `Pending` → `Provisioning` → `Ready` status. Completion time depends on engine startup, storage provisioning, image availability, and replica count.
 
-### Via kubectl
+### Create via kubectl
 
-Create a `KdcDatabase` resource in your project namespace:
+Create a `KdcDatabase` resource in the Project's backing namespace:
 
 ```yaml
 apiVersion: db.kube-dc.com/v1alpha1
 kind: KdcDatabase
 metadata:
   name: my-postgres
-  namespace: my-project
+  namespace: acme-production
 spec:
   engine: postgresql
   version: "16"
@@ -64,7 +62,7 @@ spec:
 
 ```bash
 kubectl apply -f my-postgres.yaml
-kubectl get kdcdatabases -n my-project
+kubectl get kdcdatabases -n acme-production
 ```
 
 ## Database Detail View
@@ -83,36 +81,35 @@ The Summary tab provides a quick overview of your database:
 
 ### Connection
 
-![Database connection tab](images/postgres-connections.png)
-
 The Connection tab shows everything you need to connect to your database:
 
-- **Endpoint** — Internal cluster endpoint (ClusterIP). Use this from pods in the same namespace or via port-forward
-- **Admin Credentials** — Username, password (click to reveal or rotate), database name, and port
+- **Endpoint** — Internal Project endpoint (`ClusterIP`). Use it from a workload that can reach the Project Service, or configure LoadBalancer exposure for a workstation
+- **Database credentials** — Application username, password (click to reveal or rotate), database name, and port
 - **Credential Policies footer** — Shows the count of credential policies managing this database and links to the Credentials tab for policy-driven rotation (see [Credential Policies](#credential-policies) below)
 
 :::note
-When a credential policy manages the **Admin Credentials** user (typically `app`), the Connection tab disables the Reveal/Rotate buttons and points you at the Credentials tab. The policy's projected Kubernetes Secret is the source-of-truth for the current rotated password — the engine's static `<db>-app` Secret stays at the provisioning-time value and should not be used directly.
+When a credential policy manages the **application user** (typically
+`app`), the Connection tab disables the Reveal/Rotate buttons and points you at
+the Credentials tab. If Secret sync is enabled for that policy, its projected
+Kubernetes Secret is the source of truth for the current password. If sync is
+disabled, an authorized `project-manager` or `admin` retrieves the current value
+through `kube-dc db credentials get --show-password`. The engine Secret
+(`<db>-app` for PostgreSQL or `<db>-password` for MariaDB) stays at its
+provisioning-time value after the first policy rotation and should not be used
+directly.
 :::
 
-**Connecting from a pod in the same namespace:**
+**Connecting from an application workload in the same Project:**
 
 ```bash
 # PostgreSQL
-psql -h my-postgres-rw.my-project.svc -p 5432 -U app -d myapp
+psql -h my-postgres-rw.acme-production.svc -p 5432 -U app -d myapp
 
-# MariaDB
-mysql -h my-mariadb.my-project.svc -P 3306 -u app -p myapp
-```
+# MariaDB, standalone (replicas: 1)
+mysql -h my-mariadb.acme-production.svc -P 3306 -u app -p myapp
 
-**Connecting via port-forward:**
-
-```bash
-# Forward PostgreSQL port to localhost
-kubectl port-forward svc/my-postgres-rw 5432:5432 -n my-project
-
-# Then connect locally
-psql -h localhost -p 5432 -U app -d myapp
+# MariaDB, high availability (replicas: 2+)
+mysql -h my-mariadb-primary.acme-production.svc -P 3306 -u app -p myapp
 ```
 
 :::tip
@@ -120,10 +117,10 @@ The password is auto-generated and stored in a Kubernetes Secret. You can view i
 
 ```bash
 # PostgreSQL
-kubectl get secret my-postgres-app -n my-project -o jsonpath='{.data.password}' | base64 -d
+kubectl get secret my-postgres-app -n acme-production -o jsonpath='{.data.password}' | base64 -d
 
 # MariaDB
-kubectl get secret my-mariadb-password -n my-project -o jsonpath='{.data.password}' | base64 -d
+kubectl get secret my-mariadb-password -n acme-production -o jsonpath='{.data.password}' | base64 -d
 ```
 
 **Important**: read these engine Secrets only when **no credential policy manages the user**. If a `DatabaseCredentialPolicy` exists for this database's user (typically `app`), the engine Secret stays at the provisioning-time password and falls out of sync after the first rotation. In that case, read the DBCP-projected Secret named on the **Credentials** tab instead.
@@ -143,7 +140,7 @@ env:
         name: my-postgres-app      # Secret: {db-name}-app
         key: password
   - name: DB_HOST
-    value: "my-postgres-rw.my-project.svc"
+    value: "my-postgres-rw.acme-production.svc"
   - name: DB_PORT
     value: "5432"
   - name: DB_USER
@@ -164,7 +161,8 @@ env:
         name: my-mariadb-password   # Secret: {db-name}-password
         key: password
   - name: DB_HOST
-    value: "my-mariadb.my-project.svc"
+    # Use my-mariadb.acme-production.svc for a one-replica database.
+    value: "my-mariadb-primary.acme-production.svc"
   - name: DB_PORT
     value: "3306"
   - name: DB_USER
@@ -182,23 +180,64 @@ These engine Secrets are created at provisioning time. **They are NOT updated wh
 
 ### External Access
 
-By default, databases are only accessible within the cluster (ClusterIP). There are three ways to access a database externally:
+By default, the database Service is a `ClusterIP` on the Project network. It is
+intended for workloads that can reach the Project's internal Service address; it
+is not a workstation or internet endpoint.
 
-#### Option 1: Gateway (TLS Passthrough) — Recommended for Production
+The dashboard creation wizard offers **Internal** and **LoadBalancer** exposure.
+Use LoadBalancer for the supported console-to-workstation path. Gateway exposure
+is an advanced, manifest-only compatibility option for a narrow PostgreSQL 17
+client mode.
 
-Expose the database via Envoy Gateway with TLS passthrough. This provides a public hostname with TLS encryption handled by the database engine (PostgreSQL/MariaDB native TLS).
+#### LoadBalancer + EIP (supported external path)
 
-Set `spec.expose.type: gateway` when creating the database:
+Set **Exposure** to **LoadBalancer** in the creation wizard, or declare
+`spec.expose.type: loadbalancer`:
+
+```yaml
+spec:
+  expose:
+    type: loadbalancer
+```
+
+The platform provisions a LoadBalancer Service and EIP. Read the endpoint from
+the database status:
+
+```bash
+kubectl get kdcdatabase my-postgres -n acme-production \
+  -o jsonpath='{.status.externalEndpoint}'
+# Example: 100.65.0.42:5432
+```
+
+Use that IP and the engine port from a workstation database client. Remove
+external exposure when it is no longer needed.
+
+#### Gateway (advanced PostgreSQL 17 compatibility)
+
+A Gateway database endpoint is an SNI-based `TLSRoute`, not a general-purpose
+TCP proxy. It can select a backend only when the connection starts with a
+standard TLS handshake containing SNI. Current compatibility is narrow:
+
+- PostgreSQL 17 works when both the server and client support direct TLS and
+  the client sets `sslnegotiation=direct`.
+- PostgreSQL 14-16 clients use PostgreSQL's protocol-specific SSL negotiation,
+  which the `TLSRoute` cannot inspect.
+- MariaDB sends its server handshake before TLS starts, so it is not compatible
+  with this Gateway path.
+
+Use a LoadBalancer for PostgreSQL 14-16, MariaDB, or any client that cannot
+start with a TLS ClientHello. To use the compatible PostgreSQL 17 path, create
+the database by manifest with `spec.expose.type: gateway`:
 
 ```yaml
 apiVersion: db.kube-dc.com/v1alpha1
 kind: KdcDatabase
 metadata:
   name: my-postgres
-  namespace: my-project
+  namespace: acme-production
 spec:
   engine: postgresql
-  version: "16"
+  version: "17"
   databaseName: myapp
   username: app
   cpu: "1"
@@ -209,75 +248,53 @@ spec:
     type: gateway
 ```
 
-Once ready, the external endpoint appears in the status and on the **Connection** tab:
+The public listener is port `443`:
 
-```
-my-postgres-db-my-project.kube-dc.cloud:5432
+```text
+my-postgres-db-acme-production.kube-dc.cloud:443
 ```
 
-Connect using TLS:
+Use a PostgreSQL 17 or newer client and request direct TLS negotiation:
 
 ```bash
-psql "host=my-postgres-db-my-project.kube-dc.cloud port=5432 dbname=myapp user=app sslmode=require"
+psql "host=my-postgres-db-acme-production.kube-dc.cloud port=443 dbname=myapp user=app sslmode=require sslnegotiation=direct"
 ```
 
-You can also select **Gateway (TLS Passthrough)** in the creation wizard UI.
+:::warning Endpoint and certificate limitations
+The current controller reports the engine port (`5432`) in
+`status.externalEndpoint`, and the **Connection** tab displays that value. Keep
+the hostname but use public port `443` for Gateway exposure.
 
-#### Option 2: LoadBalancer + EIP — Direct IP Access
+This path passes through the database engine's certificate; it does not issue a
+certificate for the public hostname. `sslmode=require` encrypts the connection
+but does not verify that hostname. Use a LoadBalancer on a trusted network, or
+an operator-configured database certificate that covers the public hostname,
+when server identity must be verified.
+:::
 
-Expose the database via a dedicated LoadBalancer service with an External IP. This gives you a direct IP:port for the database.
+| Method | Use Case | Requires |
+|--------|----------|----------|
+| **Internal** | Application workloads on the Project network | No external exposure |
+| **LoadBalancer** | Workstation, database GUI, or direct client access | `spec.expose.type: loadbalancer` |
+| **Gateway** | Advanced PostgreSQL 17 direct-TLS compatibility | Manifest, PG 17+, `sslnegotiation=direct` |
 
-Set `spec.expose.type: loadbalancer`:
-
-```yaml
-spec:
-  expose:
-    type: loadbalancer
-```
-
-Once an EIP is allocated, the external endpoint appears in the status:
-
-```bash
-# Check the external endpoint
-kubectl get kdcdatabase my-postgres -n my-project -o jsonpath='{.status.externalEndpoint}'
-# Example: 100.65.0.42:5432
-```
-
-#### Option 3: Port-Forward — Development / Ad-Hoc Access
-
-For quick local access without exposing the database externally:
-
-```bash
-# PostgreSQL — engine Secret password (only when no credential policy manages `app`;
-# if a policy manages it, substitute the DBCP-projected Secret name).
-kubectl port-forward svc/my-postgres-rw 5432:5432 -n my-project
-PGPASSWORD=$(kubectl get secret my-postgres-app -n my-project -o jsonpath='{.data.password}' | base64 -d) \
-  psql -h 127.0.0.1 -p 5432 -U app -d myapp
-
-# MariaDB
-kubectl port-forward svc/my-mariadb 3306:3306 -n my-project
-mysql -h 127.0.0.1 -P 3306 -u app -p myapp
-```
-
-This is ideal for connecting from a local IDE, database GUI tool, or one-off queries.
-
-| Method | Use Case | Requires | Persistent |
-|--------|----------|----------|------------|
-| **Gateway** | Production external access | `spec.expose.type: gateway` | Yes |
-| **LoadBalancer** | Direct IP access | `spec.expose.type: loadbalancer` | Yes |
-| **Port-forward** | Dev / ad-hoc queries | `kubectl` access | No (session-only) |
+Standard Project roles do not include Kubernetes pod port-forward. Platform
+operators may grant separate diagnostic RBAC, but port-forward is not a tenant
+database connection method.
 
 ### Credential Policies
 
-The Credentials tab manages **DatabaseCredentialPolicy** (DBCP) resources — automatic password rotation for a database user, with the current credentials always available in a project Kubernetes Secret. Tenants point workloads at the projected Secret and never have to manually rotate or copy passwords.
+The Credentials tab manages **DatabaseCredentialPolicy** (DBCP) resources for automatic password rotation. When Secret sync is enabled, the platform projects the current credential into a stable Kubernetes Secret in the Project. When sync is disabled, authorized users retrieve it through the CLI or API. Applications still need to reload mounted files or restart Pods that consume credentials through environment variables after rotation, and an authorized user can trigger an on-demand rotation when needed.
 
-The default is **no policy** — at provisioning time a database has a fixed password on the engine's primary user (`app`) and rotates only when an operator clicks Rotate or runs the CLI. Enabling a policy switches that user to managed rotation.
+The default is **no policy**: at provisioning time the engine's primary user (`app`) receives a fixed password. It changes only after an authorized user explicitly rotates it. Enabling a policy switches that user to managed rotation.
 
 #### When to enable
 
 - Workloads run for months and you want passwords to roll on a schedule (compliance, defence-in-depth).
 - Many workloads share a database user and pinning a fixed password in image config would be disruptive on every rotation &mdash; the projected Secret name stays stable across rotations. Pods pick up the new value on restart (env-vars sourced via `valueFrom.secretKeyRef` are resolved at pod start and don't live-update); workloads that mount the Secret as files can re-read on rotation via their connection-pool's reload path.
-- You want a separate, fully-managed Kubernetes Secret for application workloads, distinct from the engine's static `<db>-app` Secret used by operator-only tooling.
+- You want a separate, fully managed Kubernetes Secret for application
+  workloads, distinct from the engine Secret (`<db>-app` for PostgreSQL or
+  `<db>-password` for MariaDB).
 
 #### Create via the Dashboard
 
@@ -291,14 +308,14 @@ The wizard creates the policy as a follow-on call after the database is provisio
 
 Once a database exists, open its detail view → **Credentials** tab → **Create policy** to add a policy to an existing database. From here you can also rotate / reveal / delete existing policies and see the last-rotated timestamp + status.
 
-#### Create via kubectl
+#### Create a credential policy via kubectl
 
 ```yaml
 apiVersion: security.kube-dc.com/v1alpha1
 kind: DatabaseCredentialPolicy
 metadata:
   name: my-postgres-app-rotated
-  namespace: my-project
+  namespace: acme-production
 spec:
   databaseRef:
     name: my-postgres
@@ -315,12 +332,12 @@ spec:
 kubectl apply -f dbcp.yaml
 
 # Wait for Ready
-kubectl -n my-project get dbcp my-postgres-app-rotated \
+kubectl -n acme-production get dbcp my-postgres-app-rotated \
   -o jsonpath='{.status.conditions[?(@.type=="Ready")].reason}{"\n"}'
 # expect: StaticRotated
 
 # Inspect the projected Secret (keys: database, dsn, engine, host, port, username, password)
-kubectl -n my-project get secret my-postgres-app-credentials -o yaml
+kubectl -n acme-production get secret my-postgres-app-credentials -o yaml
 ```
 
 #### Use the projected Secret from workloads
@@ -331,7 +348,13 @@ kind: Deployment
 metadata:
   name: orders-api
 spec:
+  selector:
+    matchLabels:
+      app: orders-api
   template:
+    metadata:
+      labels:
+        app: orders-api
     spec:
       containers:
         - name: api
@@ -360,18 +383,24 @@ Workloads pick up rotated passwords on the next pod restart (or via your app's `
 #### Force a rotation now
 
 ```bash
-# from any workstation with your project kubeconfig (exec into pods is blocked in projects):
+# From any workstation with your Project kubeconfig; pod exec is blocked in Projects:
 kube-dc db credentials rotate my-postgres-app-rotated
 ```
 
-…or via the **Rotate** button in the Credentials tab. Manual rotation is audited and updates the projected Secret within ~15s.
+The **Rotate** button in the Credentials tab performs the same audited action. The backend normally nudges reconciliation within seconds; the periodic fallback can take up to five minutes before a synced Secret is refreshed.
 
 #### Delete a policy
 
-Deleting the DBCP re-syncs the engine's static `<db>-app` Secret to OpenBao's current password (so operator-only tooling that reads the engine Secret directly keeps working), then removes the projected Secret if it was owned by the controller.
+Deleting a DBCP removes its projected Secret when the controller owns it. For
+PostgreSQL's default `app` user, the finalizer first attempts to copy OpenBao's
+current password back to `<db>-app`. MariaDB's engine Secret is named
+`<db>-password`, which the current finalizer does not re-sync. Before deleting a
+MariaDB policy, ask your cluster operator to copy the current password into a
+replacement Secret or reset the database user to a known password, then migrate
+the workloads. Deleting the policy first can leave no usable credential Secret.
 
 ```bash
-kubectl delete dbcp my-postgres-app-rotated -n my-project
+kubectl delete dbcp my-postgres-app-rotated -n acme-production
 # OR via CLI:
 kube-dc db credentials delete my-postgres-app-rotated --yes
 ```
@@ -381,7 +410,7 @@ kube-dc db credentials delete my-postgres-app-rotated --yes
 | Mode | What it does | Phase 1 status |
 |---|---|---|
 | `static-rotated` | OpenBao rotates the password of an EXISTING user on a fixed schedule | Default, fully supported (UI + CLI + kubectl) |
-| `dynamic` | OpenBao mints a short-lived TTL'd user per `issue` call | CLI/API only; UI shows `Ready=False/DynamicModeDeferred` until the dynamic-issue surface ships |
+| `dynamic` | Reserved for short-lived credentials | Not supported; the controller reports `Ready=False/DynamicModeDeferred` and the issue API returns `501` |
 
 Operator-level concerns (break-glass superuser, OpenBao policy refresh, troubleshooting `28P01` authentication errors) are handled by your cluster operator. If your project hits one of these states — typically symptoms like every pod failing to connect with `password authentication failed for user "app"` after a rotation — open a support ticket with the cluster operator rather than trying to recover by hand from the engine Secret.
 
@@ -396,11 +425,14 @@ The Backups tab manages both scheduled and on-demand backups:
 - **Destination** — S3 bucket path where backups are stored, with a direct link to browse in S3
 - **Last Completed** — Timestamp and name of the most recent successful backup
 
-**Backup History** shows all backups with their name, type (Backup or Scheduled), status (Completed, Active, Failed), creation time, completion time, and schedule expression.
+**Backup History** shows each backup's name, engine-specific type, status,
+creation time, completion time, and schedule. PostgreSQL uses `Backup` and
+`Scheduled`; MariaDB uses `Physical` and `Job`.
 
 #### On-Demand Backups
 
-Click **Create Backup** to trigger an immediate backup. The backup will appear in the history with type `Backup` and update its status as it progresses.
+Click **Create Backup** to trigger an immediate backup. It appears as `Backup`
+for PostgreSQL or `Physical` for MariaDB and updates as it progresses.
 
 #### Scheduled Backups
 
@@ -410,13 +442,13 @@ Configure automatic backups by setting a cron schedule and retention period, the
 |----------|-------------|
 | `0 2 * * *` | Daily at 2:00 AM |
 | `0 0 * * 0` | Weekly on Sunday at midnight |
-| `0 3 */6 * *` | Every 6 hours starting at 3 AM |
+| `0 */6 * * *` | Every 6 hours |
 
 All backups are stored in S3-compatible object storage and can be browsed from the **View in S3** link.
 
 ### Configure
 
-The Configure tab lets you adjust database resources, scaling, and engine parameters without downtime.
+The Configure tab lets you adjust database resources, scaling, and engine parameters. Some changes restart instances or trigger failover; applications should reconnect and retry.
 
 **PostgreSQL Configuration:**
 
@@ -442,10 +474,20 @@ The Configure tab lets you adjust database resources, scaling, and engine parame
 #### Engine & Version
 
 - **Engine** — Read-only. The engine type (PostgreSQL or MariaDB) cannot be changed after creation
-- **Version** — Select a newer version to upgrade. Version upgrades trigger a rolling restart of all instances
+- **Version** — Select a newer supported version. Treat every version change as
+  a maintenance operation and verify a current backup first.
 
 :::warning
-**Version upgrades** will cause a rolling restart. If running with 2+ replicas (HA mode), the database remains available during the upgrade. With a single replica, expect brief downtime.
+Kube-DC exposes PostgreSQL versions by major number (`14` through `17`). A
+PostgreSQL version change is therefore a **major upgrade**: CloudNativePG shuts
+down the entire cluster and runs an offline in-place `pg_upgrade`. All replicas
+are unavailable until it completes. Test application and extension
+compatibility, take a full backup before the change, and take a new base backup
+afterward; point-in-time recovery cannot cross a major-version boundary.
+
+MariaDB version changes also restart database instances. Plan a maintenance
+window even with replicas because availability depends on replication health
+and operator progress.
 :::
 
 #### Parameters
@@ -463,7 +505,7 @@ The YAML tab shows the raw `KdcDatabase` resource definition. You can use this t
 
 ## Backup and Restore via kubectl
 
-The dashboard wraps the same primitives that you can drive directly with `kubectl`. Both engines store backups in your project's S3 bucket (`<namespace>-db-backups`, auto-created on first use). Recovery uses the engines' native bootstrap-time mechanisms — CNPG's `bootstrap.recovery` and mariadb-operator's `bootstrapFrom` — wired through Kube-DC's `KdcDatabase` so you don't manage them by hand.
+The dashboard wraps the same primitives that you can drive directly with `kubectl`. Both engines store backups in the Project's S3 bucket (`<backing-namespace>-db-backups`, created on first use). Recovery uses the engines' native bootstrap-time mechanisms — CNPG's `bootstrap.recovery` and mariadb-operator's `bootstrapFrom` — wired through Kube-DC's `KdcDatabase` so you don't manage them by hand.
 
 ### Configure scheduled backups
 
@@ -474,7 +516,7 @@ apiVersion: db.kube-dc.com/v1alpha1
 kind: KdcDatabase
 metadata:
   name: my-postgres
-  namespace: my-project
+  namespace: acme-production
 spec:
   engine: postgresql
   version: "16"
@@ -496,19 +538,19 @@ Apply, then verify the backup pipeline is healthy:
 kubectl apply -f my-postgres.yaml
 
 # PostgreSQL: scheduled CNPG ScheduledBackup + the recoverability window
-kubectl get scheduledbackup -n my-project
-kubectl get cluster.postgresql.cnpg.io my-postgres -n my-project \
+kubectl get scheduledbackup -n acme-production
+kubectl get cluster.postgresql.cnpg.io my-postgres -n acme-production \
   -o jsonpath='{.status.firstRecoverabilityPoint}{"\n"}'
 
 # MariaDB: scheduled PhysicalBackup
-kubectl get physicalbackup -n my-project
+kubectl get physicalbackup -n acme-production
 ```
 
 ### Take an on-demand backup
 
 A scheduled backup runs on its cron, but you can take a snapshot any time by creating a one-off CR alongside the `KdcDatabase`. These are the same CRs the **Take snapshot now** button creates.
 
-Names must be unique within the namespace; the recipes below pipe the timestamp through `envsubst` so each invocation gets a fresh name.
+Names must be unique within the Project's backing namespace; the recipes below pipe the timestamp through `envsubst` so each invocation gets a fresh name.
 
 **PostgreSQL** — create a `cnpg.io/Backup`:
 
@@ -518,7 +560,7 @@ apiVersion: postgresql.cnpg.io/v1
 kind: Backup
 metadata:
   name: my-postgres-snap-${TS}
-  namespace: my-project
+  namespace: acme-production
   labels:
     kube-dc.com/database: my-postgres
     kube-dc.com/backup-type: manual
@@ -537,7 +579,7 @@ apiVersion: k8s.mariadb.com/v1alpha1
 kind: PhysicalBackup
 metadata:
   name: my-mariadb-snap-${TS}
-  namespace: my-project
+  namespace: acme-production
   labels:
     kube-dc.com/database: my-mariadb
     kube-dc.com/backup-type: manual
@@ -548,7 +590,7 @@ spec:
   backoffLimit: 3
   storage:
     s3:
-      bucket: my-project-db-backups
+      bucket: acme-production-db-backups
       prefix: databases/my-mariadb
       endpoint: s3.kube-dc.cloud
       tls:
@@ -570,13 +612,13 @@ Always set `target: PreferReplica` on a MariaDB `PhysicalBackup`. The mariadb-op
 
 ```bash
 # PostgreSQL — completed barman backups (the names you reference for recovery)
-kubectl get backup.postgresql.cnpg.io -n my-project \
+kubectl get backup.postgresql.cnpg.io -n acme-production \
   -l '!cnpg.io/scheduled-backup' \
   -o 'custom-columns=NAME:.metadata.name,PHASE:.status.phase,BEGIN:.status.beginWal,END:.status.endWal,STOPPED:.status.stoppedAt'
 
 # MariaDB — physical backups
-kubectl get physicalbackup -n my-project \
-  -o 'custom-columns=NAME:.metadata.name,COMPLETE:.status.conditions[0].status,LAST_RUN:.status.lastScheduleTime'
+kubectl get physicalbackup -n acme-production \
+  -o 'custom-columns=NAME:.metadata.name,COMPLETE:.status.conditions[?(@.type=="Complete")].status,LAST_RUN:.status.lastScheduleTime'
 ```
 
 ### Choose a restore path
@@ -597,7 +639,7 @@ apiVersion: db.kube-dc.com/v1alpha1
 kind: KdcDatabase
 metadata:
   name: my-postgres-restored
-  namespace: my-project
+  namespace: acme-production
 spec:
   engine: postgresql
   version: "16"
@@ -611,17 +653,17 @@ spec:
     backupName: my-postgres-snap-1778356023118   # cnpg.io/Backup CR name
     sourceDatabaseName: my-postgres              # audit/UI display
     # Optional PostgreSQL PITR — replay WAL up to this RFC 3339 instant.
-    # MariaDB targetTime is honored by the API but needs continuous binlog
-    # archival, which is not yet wired in Kube-DC v0.3.x.
+    # MariaDB targetTime requires continuous binlog archival, which the
+    # platform does not currently provide.
     # targetTime: "2026-05-09T19:30:00Z"
 ```
 
 ```bash
 kubectl apply -f my-postgres-restored.yaml
-kubectl get kdcdatabase my-postgres-restored -n my-project -w
+kubectl get kdcdatabase my-postgres-restored -n acme-production -w
 ```
 
-The new database goes through `Pending` → `Provisioning` → `Ready`. Once Ready, point your app at `my-postgres-restored-rw.my-project.svc` and delete the original whenever you're satisfied.
+The new database goes through `Pending` → `Provisioning` → `Ready`. Once Ready, point your app at `my-postgres-restored-rw.acme-production.svc` and delete the original whenever you're satisfied.
 
 For MariaDB the shape is the same:
 
@@ -640,11 +682,11 @@ Set the trigger annotation on the existing `KdcDatabase`. db-manager will delete
 
 ```bash
 # PostgreSQL: restore my-postgres in place from a known-good backup
-kubectl annotate kdcdatabase my-postgres -n my-project \
+kubectl annotate kdcdatabase my-postgres -n acme-production \
   kube-dc.com/restore-from=my-postgres-snap-1778356023118 --overwrite
 
 # Optional PostgreSQL PITR — same annotation set, plus a target time
-kubectl annotate kdcdatabase my-postgres -n my-project \
+kubectl annotate kdcdatabase my-postgres -n acme-production \
   kube-dc.com/restore-from=my-postgres-snap-1778356023118 \
   kube-dc.com/restore-target-time=2026-05-09T19:30:00Z --overwrite
 ```
@@ -655,15 +697,15 @@ The controller clears both annotations once `status.restore.phase` reaches `Succ
 
 ```bash
 # Phase + last message — set by db-manager
-kubectl get kdcdatabase my-postgres -n my-project \
+kubectl get kdcdatabase my-postgres -n acme-production \
   -o jsonpath='{.status.restore.phase} — {.status.restore.message}{"\n"}'
 
 # RestoreReady condition — True when finished, False with a reason while running
-kubectl get kdcdatabase my-postgres -n my-project \
+kubectl get kdcdatabase my-postgres -n acme-production \
   -o jsonpath='{.status.conditions[?(@.type=="RestoreReady")].status}{"  "}{.status.conditions[?(@.type=="RestoreReady")].message}{"\n"}'
 
 # Engine-side progress — CNPG/MariaDB conditions
-kubectl get cluster.postgresql.cnpg.io my-postgres -n my-project \
+kubectl get cluster.postgresql.cnpg.io my-postgres -n acme-production \
   -o jsonpath='{range .status.conditions[*]}{.type}={.status} ({.message}){"\n"}{end}'
 ```
 
@@ -674,7 +716,7 @@ Phases you'll see while the in-place flow runs: an empty `restore` becomes `InPr
 CNPG ships continuous WAL archives alongside base backups. Read the recoverable window straight off the `Cluster`:
 
 ```bash
-kubectl get cluster.postgresql.cnpg.io my-postgres -n my-project \
+kubectl get cluster.postgresql.cnpg.io my-postgres -n acme-production \
   -o jsonpath='floor: {.status.firstRecoverabilityPoint}{"\n"}last: {.status.lastSuccessfulBackup}{"\n"}'
 # floor: 2026-05-02T02:00:08Z
 # last: 2026-05-09T02:00:10Z
@@ -688,7 +730,7 @@ Kube-DC sets `archive_timeout=5min` on every PostgreSQL cluster by default, whic
 
 ```bash
 # Verify continuous archiving is healthy before you rely on PITR
-kubectl get cluster.postgresql.cnpg.io my-postgres -n my-project \
+kubectl get cluster.postgresql.cnpg.io my-postgres -n acme-production \
   -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")].status}{"\n"}'
 # True
 ```
@@ -711,17 +753,17 @@ When running with **2 or more replicas**, your database operates in high-availab
 
 ## Deleting a Database
 
-### Via Dashboard
+### Delete via Dashboard
 
 1. Navigate to your database in the sidebar
 2. Click the database row to expand details
 3. Click **Delete**
 4. Confirm the deletion
 
-### Via kubectl
+### Delete via kubectl
 
 ```bash
-kubectl delete kdcdatabase my-postgres -n my-project
+kubectl delete kdcdatabase my-postgres -n acme-production
 ```
 
 :::danger
@@ -735,16 +777,16 @@ Deleting a database permanently removes all data, replicas, and associated resou
 The database may be waiting for storage provisioning or resource allocation. Check events:
 
 ```bash
-kubectl describe kdcdatabase my-postgres -n my-project
-kubectl get events -n my-project --field-selector involvedObject.name=my-postgres
+kubectl describe kdcdatabase my-postgres -n acme-production
+kubectl get events -n acme-production --field-selector involvedObject.name=my-postgres
 ```
 
 ### Cannot connect to database
 
 1. Verify the database status is **Ready** with all replicas running
-2. Ensure you are connecting from within the same namespace or using port-forward
+2. From the same Project, use the internal Service; from outside it, use a configured Gateway or LoadBalancer endpoint
 3. Check that the endpoint, port, username, and password are correct (use the **Connection** tab)
-4. For cross-namespace access, use the full service name: `<db-name>-rw.<namespace>.svc:5432`
+4. A full Service DNS name only identifies the Service; it does not create cross-Project reachability. Cross-Project access requires explicit exposure or operator-approved private routing
 
 ### Backup failed
 

@@ -1,74 +1,68 @@
-# Scaling Worker Pools
+# Scale Managed Cluster Worker Pools
 
-## Key Concepts
-
-- **Prefer `--type=json` patch** — safer, only changes targeted fields
-- `--type merge` replaces the **entire** `workers` array — include ALL pools with ALL fields
-- Scaling to 0 keeps control plane running (cost savings)
-- Rolling update: new worker Ready before old one removed
-- **Always use `storageType: datavolume`** (production default)
-
-## Scale Single Pool (JSON Patch — Recommended)
+## Read Before Writing
 
 ```bash
-# Scale pool at index 0 to 5 replicas
-kubectl patch kdccluster {cluster} -n {namespace} --type=json \
+kubectl get kdccluster {cluster} -n {backing-namespace} \
+  -o jsonpath='{.spec.workers}' | jq
+```
+
+Worker pools are a list. A merge patch replaces that whole list. Prefer JSON
+Patch so unrelated provider, image, storage, label, taint, drain, and
+autoscaling settings remain intact.
+
+## Change a Replica Count
+
+```bash
+kubectl patch kdccluster {cluster} -n {backing-namespace} --type=json \
   -p '[{"op":"replace","path":"/spec/workers/0/replicas","value":5}]'
 ```
 
-## Scale with Multiple Pools (Merge Patch)
+Confirm index `0` is the intended pool before applying.
 
-MUST include all pools with all fields:
+## Append a Pool
+
+Use `/spec/workers/-` and include every field required by the live provider
+and catalog:
 
 ```bash
-kubectl patch kdccluster {cluster} -n {namespace} --type merge -p '{
-  "spec": {
-    "workers": [
-      {"name": "workers", "replicas": 3, "cpuCores": 2, "memory": "8Gi",
-       "diskSize": "20Gi",
-       "image": "docker.io/shalb/ubuntu-2404-container-disk:v1.35.2",
-       "infrastructureProvider": "kubevirt", "storageType": "datavolume"},
-      {"name": "highmem", "replicas": 2, "cpuCores": 4, "memory": "16Gi",
-       "diskSize": "40Gi",
-       "image": "docker.io/shalb/ubuntu-2404-container-disk:v1.35.2",
-       "infrastructureProvider": "kubevirt", "storageType": "datavolume"}
-    ]
-  }
-}'
+kubectl patch kdccluster {cluster} -n {backing-namespace} --type=json -p '[
+  {"op":"add","path":"/spec/workers/-","value":{
+    "name":"{pool-name}",
+    "replicas":2,
+    "cpuCores":{cpu-cores},
+    "memory":"{memory}",
+    "diskSize":"{disk-size}",
+    "image":"{catalog-worker-image}",
+    "architecture":"{architecture}",
+    "infrastructureProvider":"{provider}",
+    "storageType":"{storage-type}"
+  }}
+]'
 ```
 
-## Scale Specific Pool (JSON Patch — Safer)
+Copy provider-specific values from an existing pool or the creation dashboard.
+Do not hard-code a globally current image or storage type.
+
+## Scale a Pool to Zero
+
+A pool may reach zero only while another pool has Ready workers:
 
 ```bash
-# Scale pool at index 0 to 5 replicas
-kubectl patch kdccluster {cluster} -n {namespace} --type=json \
-  -p '[{"op":"replace","path":"/spec/workers/0/replicas","value":5}]'
-```
-
-## Scale to Zero
-
-```bash
-kubectl patch kdccluster {cluster} -n {namespace} --type=json \
+kubectl patch kdccluster {cluster} -n {backing-namespace} --type=json \
   -p '[{"op":"replace","path":"/spec/workers/0/replicas","value":0}]'
 ```
 
-## Add a New Worker Pool
+The control plane remains available, but the guard prevents removal of the last
+Ready worker pool.
 
-Must use merge patch (adds to array):
+## Verify
 
 ```bash
-kubectl patch kdccluster {cluster} -n {namespace} --type merge -p '{
-  "spec": {
-    "workers": [
-      {"name": "workers", "replicas": 3, "cpuCores": 2, "memory": "8Gi",
-       "diskSize": "20Gi",
-       "image": "docker.io/shalb/ubuntu-2404-container-disk:v1.35.2",
-       "infrastructureProvider": "kubevirt", "storageType": "datavolume"},
-      {"name": "gpu-pool", "replicas": 1, "cpuCores": 8, "memory": "32Gi",
-       "diskSize": "40Gi",
-       "image": "docker.io/shalb/ubuntu-2404-container-disk:v1.35.2",
-       "infrastructureProvider": "kubevirt", "storageType": "datavolume"}
-    ]
-  }
-}'
+kubectl get kdccluster {cluster} -n {backing-namespace} -w
+kubectl --kubeconfig=/tmp/{cluster}-kubeconfig get nodes
 ```
+
+Wait for the `KdcCluster` to return to Ready and confirm the expected nodes
+are Ready. Provisioning time depends on quota, placement, image availability,
+and workload drain behavior.

@@ -1,6 +1,6 @@
 interface:
-  display_name: Manage Kubernetes Cluster
-  short_description: Scale, upgrade, and access managed Kubernetes clusters
+  display_name: Operate Managed Clusters
+  short_description: Scale, upgrade, and access Managed Clusters
   brand_color: '#2563EB'
 policy:
   allow_implicit_invocation: true

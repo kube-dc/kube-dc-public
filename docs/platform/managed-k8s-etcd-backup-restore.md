@@ -1,48 +1,50 @@
-# Managed Kubernetes etcd Backup & Restore
+# Managed Cluster etcd backup and restore
 
-How to back up and restore the control-plane etcd of tenant Kubernetes
-clusters that Kube-DC manages via `KdcCluster`. This page is for
-operators and SREs running a Kube-DC cluster — not for tenants.
+This page documents the operator internals behind scheduled etcd snapshots and
+the customer-facing **Take snapshot now** and **Restore** actions in a Managed
+Cluster's danger zone. Customers should use
+[Data Protection and Recovery](/cloud/backups-snapshots#managed-cluster-snapshots)
+as the canonical workflow.
 
-Both flows are operated through standard `kubectl` against the
-**management cluster**. Tenants have no direct interaction with the
-backup or restore pipeline.
+Operators inspect and recover the pipeline with `kubectl` against the
+**management cluster**. The underlying API object is a `KdcCluster`; use that
+name only for API fields, manifests, and commands that address the custom
+resource directly.
 
 ---
 
 ## What's protected, what isn't
 
-This pipeline backs up the **control-plane etcd** of each managed
-tenant cluster. That's the API state — Nodes, Deployments, Pods,
-ConfigMaps, Secrets, CRDs — everything `kubectl get` on the tenant
-would return.
+This pipeline backs up the **control-plane etcd** of each Managed Cluster. That
+is the Kubernetes API state, including Nodes, Deployments, Pods, ConfigMaps,
+Secrets, and custom resources returned by the Managed Cluster API.
 
 It does **not** back up:
 
-- **Tenant workload data** (PVC contents, application state). For that,
-  use Velero or a workload-specific tool deployed on the tenant.
+- **Workload data** (PVC contents and application state). Use a
+  consistency-aware, workload-specific backup method inside the Managed
+  Cluster.
 - **Cluster CAs** or kubeconfigs. Those live in `<datastore>-etcd-certs`
-  Secrets in the tenant's project namespace and are managed by the
-  KdcClusterDatastore certificate lifecycle. A control-plane restore
-  preserves them as-is — which is what you want; a snapshot from
-  before a CA rotation will work fine after restore.
+  Secrets in the Managed Cluster's Project backing namespace and are managed by the
+  `KdcClusterDatastore` certificate lifecycle. Verify certificate, endpoint,
+  and kubeconfig compatibility after restoring across a certificate rotation.
 - **Kube-DC platform state** (the management cluster's own etcd, MetalLB,
-  Rook-Ceph, monitoring). Those are protected separately via Velero on
-  the management cluster.
+  Rook Ceph, and monitoring). Follow the management cluster's separate backup
+  and disaster-recovery procedures.
 
-The recovery pattern is **disaster recovery**, not "rollback the last 10
-minutes of changes." Restoring rolls a cluster's API state back to the
-snapshot moment. Pods that the controllers think shouldn't exist may be
-deleted or evicted; pods on workers stay running on disk until evaluated.
+The recovery pattern is **disaster recovery**, not a general-purpose undo
+operation. Restoring rolls API state back to the selected snapshot. Processes
+on workers can continue while the API is unavailable, then controllers and
+kubelets reconcile them against the restored state.
 
 ---
 
 ## How backups work
 
-For every `KdcCluster` whose namespace has a working
-`managed-k8s-backups` S3 ObjectBucketClaim (auto-provisioned when
-Rook-Ceph is available on the platform), the controller creates a
-`<cluster>-etcd-backup` CronJob in the project namespace.
+For every Managed Cluster whose Project backing namespace has a working
+`managed-k8s-backups` S3 ObjectBucketClaim, the controller creates a
+`<cluster>-etcd-backup` CronJob. The platform provisions the claim automatically
+when Rook Ceph object storage is available.
 
 | Default | Configurable via |
 |---|---|
@@ -51,14 +53,13 @@ Rook-Ceph is available on the platform), the controller creates a
 | Bucket: `<projectNamespace>-managed-k8s-backups` | `KdcCluster.spec.backup.destinationPath` |
 | Object key (plaintext): `<cluster>/<cluster>-<ts>.db` | (not configurable) |
 | Object key (envelope-encrypted): `<cluster>/<cluster>-<ts>/` (directory of 3 objects — see Encrypted backups below) | (not configurable) |
-| S3 endpoint: `S3_ENDPOINT` controller env (e.g. `https://s3.stage.kube-dc.com`) | `KdcCluster.spec.backup.s3Endpoint` |
+| S3 endpoint: `S3_ENDPOINT` controller environment (for example, `https://s3.<domain>`) | `KdcCluster.spec.backup.s3Endpoint` |
 
-A snapshot is roughly **20 MB per cluster** (etcd 3.5, default
-quota-backend-bytes=8GB), and the upload to Rook-Ceph S3 takes ~10–25s
-inside the management cluster. The CronJob is gated on the OBC being
-`Bound` and on `KdcCluster.status.dataStoreName` being set, so newly
-provisioned clusters don't try to take backups before their etcd
-exists.
+Snapshot size and upload duration depend on the Managed Cluster's API state,
+etcd history, object storage, and network path. The CronJob is gated on the OBC
+being `Bound` and on `KdcCluster.status.dataStoreName` being set, so a newly
+provisioned Managed Cluster does not try to take a snapshot before its etcd
+datastore exists.
 
 ### Encrypted backups (envelope mode)
 
@@ -66,8 +67,8 @@ When the owning `KdcCluster` has
 [etcd-at-rest encryption](managed-k8s-etcd-encryption.md) enabled
 (`spec.encryption.etcd.enabled: true`), the backup CronJob switches
 into **envelope mode**: it wraps the snapshot before upload using the
-same per-cluster KEK that the kms-plugin sidecar uses for live etcd.
-Plaintext mode is unchanged for clusters that don't opt in — both
+same KEK assigned to that Managed Cluster for live etcd.
+Plaintext mode is unchanged for Managed Clusters that do not opt in — both
 modes coexist on the same platform.
 
 For each snapshot under envelope mode, three sibling objects land in
@@ -83,35 +84,35 @@ s3://<projectNS>-managed-k8s-backups/<cluster>/<cluster>-<ts>/
 ```
 
 The wire format is locked at `schemaVersion=1` and `algorithm=AES-256-GCM`.
-The `wrappedDek` is duplicated inside `metadata.json` for operators who
-prefer file-side recovery; `metadata.json` alone is enough to restore
-because it includes the SHA-256 of the original snapshot for post-decrypt
-verification.
+The `wrappedDek` is duplicated inside `metadata.json`. The encrypted snapshot
+and `metadata.json` can therefore be restored without the separate
+`dek.wrapped` object. The metadata also includes the original snapshot's SHA-256
+for verification after decryption.
 
-**Anyone with bucket-level read access cannot decrypt** — the wrapped
-DEK is useless without the OpenBao Transit key, and that key never
-leaves OpenBao in plaintext. This is the data-at-rest companion to the
-etcd-at-rest layer documented in
+Bucket read access alone is insufficient to decrypt an envelope snapshot: the
+wrapped DEK also requires the corresponding OpenBao Transit key. Protect object
+storage credentials and OpenBao access as separate recovery dependencies. This
+is the data-at-rest companion to the etcd-at-rest layer documented in
 [managed-k8s-etcd-encryption.md](managed-k8s-etcd-encryption.md).
 
-The restore controller auto-detects layout from the snapshot key
-shape: a trailing slash signals envelope mode and triggers the
-unwrap + decrypt path; a plain `.db` key signals the legacy plaintext
-path. Operators normally don't pass these keys by hand — the
-`kube-dc.com/restore-from` annotation flow (see "Performing a restore"
-below) handles both layouts transparently.
+The restore controller detects the layout from the snapshot key shape: a
+trailing slash signals envelope mode and triggers the unwrap-and-decrypt path;
+a plain `.db` key signals the plaintext path. Customers select a snapshot in
+the Managed Cluster danger zone; the underlying `kube-dc.com/restore-from`
+annotation carries its key to the controller. The controller handles both
+layouts transparently.
 
 ### Quick checks
 
 ```bash
-# Are backups configured for every tenant cluster?
+# Are backups configured for every Managed Cluster?
 kubectl get kdccluster -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}: {.status.conditions[?(@.type=="BackupReady")].status} {.status.conditions[?(@.type=="BackupReady")].reason}{"\n"}{end}'
 
-# Last 24h of CronJob runs across the cluster
+# Most recent backup Jobs across the management cluster
 kubectl get jobs -A --sort-by=.metadata.creationTimestamp | grep etcd-backup | tail -20
 
-# Snapshot files for one tenant
-NS=<project-ns>
+# Snapshot objects for one Managed Cluster
+NS=<backing-namespace>
 SECRET=$(kubectl -n $NS get obc managed-k8s-backups -o jsonpath='{.spec.secretName}')
 BUCKET=$(kubectl -n $NS get obc managed-k8s-backups -o jsonpath='{.spec.bucketName}')
 ENDPOINT=$(kubectl -n kube-dc get cm cluster-config -o jsonpath='{.data.S3_HOSTNAME}' \
@@ -126,57 +127,59 @@ kubectl -n $NS run s3 --rm -i --restart=Never \
 
 | Symptom | Likely cause | Resolution |
 |---|---|---|
-| `BackupReady=False reason=S3NotAvailable` | Rook-Ceph OBC not Bound yet | Wait for `kubectl -n $NS get obc managed-k8s-backups` to reach `Bound`. Check Rook health on mgmt cluster. |
-| `BackupReady=False reason=DataStoreUnknown` | Cluster newly created, etcd not yet ready | Resolves itself once `KdcCluster.status.dataStoreName` is set. |
-| Job stuck in `Failed` | Common: etcd unreachable (TLS, DNS), S3 unreachable from project namespace | `kubectl logs job/<cluster>-etcd-backup-<unix-time>` — exit 2 = snapshot too small (etcd write failed); other exits = check container output. |
-| No CronJob exists | `KdcCluster.spec.backup.enabled: false`, OR project lacks the OBC | Re-enable in spec; provision OBC. |
+| `BackupReady=False reason=S3NotAvailable` | Rook Ceph OBC not Bound yet | Wait for `kubectl -n $NS get obc managed-k8s-backups` to reach `Bound`. Check Rook health on the management cluster. |
+| `BackupReady=False reason=DataStoreUnknown` | Managed Cluster newly created, etcd not yet ready | Resolves itself once `KdcCluster.status.dataStoreName` is set. |
+| Backup Job reports `Failed` | etcd, TLS, DNS, or S3 connectivity failed | Inspect `kubectl logs job/<cluster>-etcd-backup-<job-suffix>` and verify both the datastore and object-storage path from the Project backing namespace. |
+| No CronJob exists | `KdcCluster.spec.backup.enabled: false`, or the Project lacks the OBC | Re-enable in spec; provision OBC. |
 
-A sample CronJob, by name, you can copy:
+Inspect the generated CronJob by name:
 
 ```bash
-kubectl -n <project-ns> get cronjob <cluster-name>-etcd-backup -o yaml
+kubectl -n <backing-namespace> get cronjob <cluster-name>-etcd-backup -o yaml
 ```
 
 ---
 
 ## Performing a restore
 
-You trigger a restore by setting **one annotation** on the `KdcCluster`:
+Customers should select and restore the snapshot from the Managed Cluster's
+danger zone as described in the Cloud guide. Internally, that workflow sets the
+following annotation on the `KdcCluster`. Use the direct command only in an
+approved operator runbook because restore is disruptive:
 
 ```bash
-kubectl -n <project-ns> annotate kdccluster <cluster-name> \
-  kube-dc.com/restore-from="<cluster-name>/<cluster-name>-<timestamp>.db" \
+kubectl -n <backing-namespace> annotate kdccluster <cluster-name> \
+  kube-dc.com/restore-from="<snapshot-key>" \
   --overwrite
 ```
 
-The controller then walks an eight-step state machine. Total runtime is
-typically 60–120 seconds for a snapshot under ~30 MB.
+The controller then advances through a restore state machine. Duration depends
+on snapshot contents, storage, scheduling, and control-plane readiness.
 
 ### What happens, step by step (operator view)
 
-| Phase | Wait time | Visible effect |
+| Phase | Completion signal | Operator-visible effect |
 |---|---|---|
-| `Validating` | 1 reconcile | Snapshot key prefix matched, etcd replica count == 1 |
-| `DrainingControlPlane` | ~10s | `<cluster>-cp` Deployment scaled to 0 (Kamaji may immediately recreate apiserver pods — that's fine, they can't talk to etcd) |
-| `StoppingEtcd` | ~10–30s | `<datastore>-etcd` StatefulSet scaled to 0; etcd-0 Pod terminates |
-| `RestoringSnapshot` | ~25s for 19MB | Job `<cluster>-etcd-restore` runs: pulls .db from S3, runs `etcdutl snapshot restore`, replaces contents of `/var/run/etcd/default.etcd` |
-| `StartingEtcd` | ~10–20s | STS scaled back to 1; etcd-0 boots from restored data |
-| `StartingControlPlane` | ~30s | `<cluster>-cp` Deployment scaled back to spec replicas; apiserver becomes Ready |
-| `Succeeded` | terminal | Annotations cleared; `status.latestRestoreKey` + `status.latestRestoreTime` stamped; restore Job deleted |
+| `Validating` | The restore state advances after the snapshot key and supported etcd topology pass validation | No workload resources are changed |
+| `DrainingControlPlane` | The scale patch is accepted; this phase does not wait for the Deployment to settle | Kamaji may recreate API Pods, so stopping etcd provides the write barrier |
+| `StoppingEtcd` | The etcd StatefulSet reports zero current and ready replicas | The datastore Pod is gone before the restore Job mounts its PVC |
+| `RestoringSnapshot` | Job `<cluster>-etcd-restore` reaches `Complete=True` | The Job downloads the snapshot, runs `etcdutl snapshot restore`, and replaces `/var/run/etcd/default.etcd` |
+| `StartingEtcd` | The etcd StatefulSet reports its expected ready replica count | etcd starts from the restored data |
+| `StartingControlPlane` | The control-plane Deployment reaches its expected ready replica count | The Managed Cluster API can return; verify `/readyz` after the controller succeeds |
+| `Succeeded` | `RestoreReady=True` with reason `Succeeded` | Trigger annotations are cleared and latest-restore status is recorded |
 
-The tenant cluster's API is **unreachable for the entire restore
-window**. Workload pods on tenant worker nodes keep running on disk
-during this — only the API plane is offline. Once the apiserver comes
-back, kubelets re-register their node and the cluster catches up.
+The Managed Cluster API is unavailable while its control plane is stopped and
+restarted. Workloads on worker nodes may continue running, but they cannot rely
+on control-plane operations until the API and controllers recover.
 
 ### What the SRE sees in `kubectl get`
 
 ```bash
-kubectl -n <project-ns> get kdccluster <cluster-name> \
+kubectl -n <backing-namespace> get kdccluster <cluster-name> \
   -o jsonpath='{range .status.conditions[?(@.type=="RestoreReady")]}{.status} {.reason}: {.message}{"\n"}{end}'
 
 # Live progress (state annotation tracks the current step):
-kubectl -n <project-ns> get kdccluster <cluster-name> \
+kubectl -n <backing-namespace> get kdccluster <cluster-name> \
   -o jsonpath='{.metadata.annotations.kube-dc\.com/restore-state}{"\n"}'
 ```
 
@@ -187,7 +190,7 @@ kubectl -n <project-ns> get kdccluster <cluster-name> \
 | `metadata.annotations[kube-dc.com/restore-from]` | (cleared) |
 | `metadata.annotations[kube-dc.com/restore-state]` | (cleared) |
 | `status.conditions[type=RestoreReady]` | `True / Succeeded / Restore from "<key>" complete` |
-| `status.latestRestoreKey` | `<cluster>/<cluster>-<timestamp>.db` |
+| `status.latestRestoreKey` | The selected plaintext object key or encrypted snapshot directory key |
 | `status.latestRestoreTime` | `<UTC timestamp>` |
 
 A second restore can be requested by re-applying the annotation; the
@@ -202,112 +205,122 @@ complete, or scaling errored), the controller writes:
 RestoreReady=False reason=Failed message="Restore from \"<key>\" failed (<reason>): <detail>"
 ```
 
-and clears the trigger annotations. The tenant control plane is left
-in whatever state the failure occurred at — if etcd was already wiped
-(step 4 onwards), the cluster needs another restore attempt, or a
-fall-back to the manual runbook (see "When the controller is
-unavailable" below).
+and clears the trigger annotations. The Managed Cluster control plane remains
+in the state where the failure occurred. If snapshot replacement had started,
+follow the installed-version recovery runbook before retrying or making further
+changes.
 
 Common failures:
 
 | Reason | What to do |
 |---|---|
-| `MultiReplicaUnsupported` | The cluster is running HA etcd (replicas > 1). Phase 1 only supports single-replica. Use the manual runbook or wait for Phase 2. |
-| `ForeignKey` | Snapshot key doesn't start with this cluster's name. Use `<cluster-name>/...` paths only. |
-| `RestoreJobFailed` | Inspect `kubectl logs job/<cluster>-etcd-restore` — common causes: S3 credentials invalid, snapshot integrity check failed, network to S3 from project namespace blocked. |
-| `EtcdStartFailed` / `ControlPlaneStartFailed` | Restored etcd didn't come up. Check `kubectl logs <datastore>-etcd-etcd-0` — usually a cert mismatch (peer URL changed since snapshot) or a corrupted snapshot. Cert mismatch → re-trigger Kamaji's certificate reconcile by annotating the TenantControlPlane. |
+| `MultiReplicaUnsupported` | The Managed Cluster uses more than one etcd replica. The current controller restore flow supports one replica only; follow the installed-version manual recovery runbook. |
+| `ForeignKey` | The snapshot key does not start with this Managed Cluster's name. Use `<cluster-name>/...` paths only. |
+| `RestoreJobFailed` | Inspect `kubectl logs job/<cluster>-etcd-restore` — common causes: S3 credentials invalid, snapshot integrity check failed, network to S3 from the Project backing namespace blocked. |
+| `EtcdStartFailed` / `ControlPlaneStartFailed` | Restored etcd did not become ready. Inspect the etcd Pod logs and the Kamaji `TenantControlPlane` custom-resource status; validate snapshot integrity, peer URLs, and certificates before retrying. |
 
 ---
 
 ## Verifying a restore is complete
 
 ```bash
-# 1. Condition + status fields
-kubectl -n <project-ns> get kdccluster <cluster-name> -o yaml | grep -A2 RestoreReady
-kubectl -n <project-ns> get kdccluster <cluster-name> \
+# 1. Confirm controller completion and the recorded snapshot key.
+kubectl -n <backing-namespace> get kdccluster <cluster-name> \
+  -o jsonpath='{range .status.conditions[?(@.type=="RestoreReady")]}{.status}{" "}{.reason}{": "}{.message}{"\n"}{end}'
+kubectl -n <backing-namespace> get kdccluster <cluster-name> \
   -o jsonpath='lastKey={.status.latestRestoreKey}{"\n"}lastTime={.status.latestRestoreTime}{"\n"}'
 
-# 2. Tenant API responds
-kubectl -n <project-ns> get secret <cluster-name>-kubeconfig \
-  -o jsonpath='{.data.value}' | base64 -d > /tmp/kc.yaml
-kubectl --kubeconfig /tmp/kc.yaml get nodes
-kubectl --kubeconfig /tmp/kc.yaml get pods -A | head
+# 2. Load the external admin kubeconfig and verify API readiness.
+KUBECONFIG_FILE=$(mktemp)
+trap 'rm -f "$KUBECONFIG_FILE"' EXIT
+kubectl -n <backing-namespace> get secret \
+  <cluster-name>-cp-admin-kubeconfig-external \
+  -o jsonpath='{.data.admin\.conf}' | base64 -d > "$KUBECONFIG_FILE"
+chmod 0600 "$KUBECONFIG_FILE"
+kubectl --kubeconfig "$KUBECONFIG_FILE" get --raw=/readyz
+kubectl --kubeconfig "$KUBECONFIG_FILE" get nodes
 
-# 3. Pod ages preserved (sanity — not 0m old which would mean fresh-bootstrap, not restore)
-kubectl --kubeconfig /tmp/kc.yaml -n kube-system get pods -o wide
+# 3. Verify an object known to exist in the selected snapshot, then inspect
+#    controller status for the workloads that should recover.
+kubectl --kubeconfig "$KUBECONFIG_FILE" -n <expected-namespace> \
+  get <expected-kind> <expected-name> -o yaml
+kubectl --kubeconfig "$KUBECONFIG_FILE" get deployments,statefulsets -A
 ```
 
-If the tenant pods show ages similar to the cluster's ORIGINAL ages
-(e.g. several days, matching when they were last redeployed), the
-restore preserved data. If they're all freshly-created (within minutes),
-something went wrong — etcd booted on empty data, not on the snapshot.
+Before restore, record at least one named resource and meaningful field that is
+known to exist in the selected snapshot. After restore, compare that object with
+the recovery record and verify that expected Nodes and workload controllers
+report healthy status. Pod age is not evidence of a successful restore: Pods
+can be recreated after a valid restore, and worker processes can survive an API
+outage.
 
 ---
 
-## Constraints
+## Current constraints
 
-| | Phase 1 (today) |
+| Constraint | Current behavior |
 |---|---|
-| Etcd replica count | 1 only |
-| Cross-cluster restore | rejected (snapshot key must belong to target cluster's bucket) |
-| Concurrent restores on same cluster | the second annotation overwrites the first; controller doesn't queue — admission webhook rejection is on the Phase 2 roadmap |
-| RPO | 24 hours (daily 02:00 UTC backup) |
-| RTO | 60–120 seconds (controller-driven), 30–60 minutes (manual runbook) |
+| etcd replica count | The controller-driven restore supports one replica only |
+| Restore to another Managed Cluster | Rejected; the snapshot key must belong to the target Managed Cluster |
+| Concurrent restores | Not queued; do not submit a second restore annotation while one is active |
+| Effective RPO | Determined by the configured schedule and the latest verified successful snapshot |
+| Restore duration | No fixed RTO; measure restore tests on the installed storage, network, and control-plane topology |
 
-If a tenant runs HA etcd (`KdcClusterDatastore.spec.etcd.replicas`>1)
-and you need to restore, use the manual runbook below. Phase 2 will
-add multi-replica support.
-
-If a tenant needs sub-24h RPO, the path forward is delta snapshots —
-also planned for Phase 2/3.
+For a Managed Cluster with more than one etcd replica, use the manual recovery
+runbook that matches the installed controller version and topology. To reduce
+RPO, configure a supported snapshot schedule or take an on-demand snapshot from
+the danger zone, then validate object-storage capacity and restore behavior.
 
 ---
 
 ## When the controller is unavailable
 
-Sometimes you can't use the annotation flow — the management
-cluster's `kube-dc-k8-manager` is down, or the controller has a bug,
-or you're recovering during a dependency outage. Use the manual
-runbook in `kube-dc-k8-manager/docs/RESTORE.md`. It covers the same
-8-step flow but with `kubectl scale` + a debug Pod that runs
-`etcdutl snapshot restore` against the etcd member-0 PVC.
+If `kube-dc-k8-manager` or one of its dependencies is unavailable, use the
+manual runbook in `kube-dc-k8-manager/docs/RESTORE.md` from the installed
+version. It covers the restore sequence with controlled scaling and a debug Pod
+that runs `etcdutl snapshot restore` against the member-0 PVC.
 
-In short:
+The following commands show the shape of the single-replica procedure. They are
+not a substitute for the complete runbook, snapshot validation, and change
+approval:
 
 ```bash
-NS=<project-ns>
+NS=<backing-namespace>
 CLUSTER=<cluster-name>
 DS=<datastore-name>   # usually <CLUSTER>-etcd
+CP_REPLICAS=$(kubectl -n "$NS" get deployment "${CLUSTER}-cp" \
+  -o jsonpath='{.spec.replicas}')
 
-# 1. Pause the control plane and etcd
-kubectl -n $NS scale deploy ${CLUSTER}-cp --replicas=0
-kubectl -n $NS scale sts ${DS}-etcd --replicas=0
+# 1. Pause the control plane and etcd.
+kubectl -n "$NS" scale deployment "${CLUSTER}-cp" --replicas=0
+kubectl -n "$NS" scale statefulset "${DS}-etcd" --replicas=0
 
 # 2. Run a one-shot Pod that mounts the etcd-data-${DS}-etcd-0 PVC
 #    and runs etcdutl snapshot restore against /var/run/etcd/default.etcd
 #    (full Pod spec in the runbook)
 
-# 3. Bring etcd back up
-kubectl -n $NS scale sts ${DS}-etcd --replicas=1
-kubectl -n $NS wait --for=condition=Ready pod/${DS}-etcd-0 --timeout=120s
+# 3. Bring etcd back and wait for its StatefulSet to report ready.
+kubectl -n "$NS" scale statefulset "${DS}-etcd" --replicas=1
+kubectl -n "$NS" rollout status statefulset/"${DS}-etcd"
 
-# 4. Bring the control plane back up
-kubectl -n $NS scale deploy ${CLUSTER}-cp --replicas=1
+# 4. Restore the recorded control-plane replica count and verify it.
+kubectl -n "$NS" scale deployment "${CLUSTER}-cp" --replicas="$CP_REPLICAS"
+kubectl -n "$NS" rollout status deployment/"${CLUSTER}-cp"
 ```
 
-The trickiest part is the PVC mount path: the restore data dir must
-be `/var/run/etcd/default.etcd` (the etcd container's `--data-dir`),
-NOT the PVC mount root.
+The critical filesystem detail is the PVC mount path: restore into
+`/var/run/etcd/default.etcd`, which is the etcd container's `--data-dir`,
+not the PVC mount root.
 
 ---
 
 ## Architecture context
 
-For the bigger picture of how managed Kubernetes clusters fit into
+For the bigger picture of how Managed Clusters fit into
 Kube-DC's networking, control-plane, and storage layers:
 
 - [Architecture: multi-tenancy](architecture-multi-tenancy.md)
 - [Architecture: networking](architecture-networking.md)
 - Storage: ObjectBucketClaims are provisioned per-Project by the
-  same Rook-Ceph object store that backs the management cluster's
+  same Rook Ceph object store that backs the management cluster's
   S3 endpoint.

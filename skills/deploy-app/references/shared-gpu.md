@@ -6,7 +6,7 @@ Use this workflow only when the user explicitly requests a Shared GPU workload.
 
 1. Keep the generic CPU Deployment path for ordinary apps.
 2. Open the project's **Accelerators** card or call
-   `GET /api/capabilities/{project-namespace}/gpus` with the caller's Kube-DC
+   `GET /api/capabilities/{project-backing-namespace}/gpus` with the caller's Kube-DC
    bearer token.
 3. Continue only when:
    - `creationEnabled` is `true`;
@@ -26,7 +26,7 @@ caller's Kubernetes identity.
 Submit this JSON shape to the preview endpoint:
 
 ```http
-POST /api/capabilities/{project-namespace}/gpus/shared-workloads/preview
+POST /api/capabilities/{project-backing-namespace}/gpus/shared-workloads/preview
 Authorization: Bearer {kube-dc-jwt}
 Content-Type: application/json
 ```
@@ -50,7 +50,7 @@ shares. Require explicit confirmation before queueing.
 After confirmation, send the same payload to:
 
 ```http
-POST /api/capabilities/{project-namespace}/gpus/shared-workloads
+POST /api/capabilities/{project-backing-namespace}/gpus/shared-workloads
 ```
 
 Set `allowQueue: true` only when the user accepted queueing. The backend
@@ -75,8 +75,8 @@ creation flag immediately before it creates the Deployment.
 A workload can legitimately remain Pending when `willQueue` is true. Otherwise:
 
 ```bash
-kubectl get deployment,pod -n {project-namespace} -l app.kubernetes.io/name={app-name}
-kubectl describe pod -n {project-namespace} -l app.kubernetes.io/name={app-name}
+kubectl get deployment,pod -n {project-backing-namespace} -l app.kubernetes.io/name={app-name}
+kubectl describe pod -n {project-backing-namespace} -l app.kubernetes.io/name={app-name}
 ```
 
 Verify the application through its normal CUDA framework. Do not expose or rely
@@ -86,7 +86,7 @@ Release the holder through the gated API so the Deployment is removed rather
 than deleting only its current Pod:
 
 ```http
-DELETE /api/capabilities/{project-namespace}/gpus/shared-workloads/{app-name}
+DELETE /api/capabilities/{project-backing-namespace}/gpus/shared-workloads/{app-name}
 Authorization: Bearer {kube-dc-jwt}
 ```
 

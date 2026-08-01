@@ -1,155 +1,186 @@
 # Security Model
 
-Kube-DC enforces a multi-layered security model across all project namespaces. This page describes the security enforcement mechanisms, how to manage exemptions, and how to configure per-project exceptions.
+Kube-DC combines identity, Kubernetes authorization, admission policy, and
+Kube-OVN routing controls. No single layer is a complete tenant boundary, and
+platform administrators remain privileged across Organizations.
 
-GPU workloads add privileged drivers, device plugins, quota/billing flows, and
-two different isolation models. See the dedicated [GPU security threat
-model](gpu-threat-model.md) for its invariants, threat register, evidence, and
-approval gates.
+This page describes the controls applied to **Projects** on the management
+cluster. A **Managed Cluster** has its own Kubernetes API, RBAC, and workload
+security configuration.
 
-## Overview
+GPU workloads add privileged node components and deployment-specific isolation
+assumptions. See the [GPU security threat model](gpu-threat-model.md) before
+enabling a GPU profile.
 
-The platform uses Kubernetes-native admission policies to enforce security boundaries in project namespaces. These policies run in-process in the API server — no external dependencies are required.
+## Control layers
 
-| Layer | What it protects | Scope |
-|-------|-----------------|-------|
-| **Pod Security** | Blocks dangerous pod specs (privileged, hostPath, hostNetwork, etc.) | All project namespaces |
-| **Annotation Protection** | Prevents users from modifying system annotations on Organizations, Projects, and OrganizationGroups | Organization and project namespaces |
-| **Network Isolation** | Prevents cross-project traffic at the SDN level | Per-project VPC |
-| **Egress Isolation** | Restricts outbound traffic to project's own external IPs | Per-project VPC |
-| **RBAC** | Role-based access control with org-level and project-level roles | Per-namespace |
+| Layer | Protects | Scope |
+|---|---|---|
+| OIDC and Keycloak | User identity and group claims | Platform and Organization realms |
+| Kubernetes RBAC | Which resources a user can read or change | Organization namespaces and Project backing namespaces |
+| ValidatingAdmissionPolicy | Dangerous Pod fields, exec/attach, protected annotations, quota, and selected accelerator rules | Resources selected by each policy or binding |
+| Kube-OVN VPCs | Primary Project network separation | One VPC and workload subnet per Project |
+| Router-policy isolation | Traffic on shared cloud/public external networks | Project VPCs when ingress or egress isolation is enabled |
+| Workload policy | Application-specific traffic rules | Optional operator-provided Kubernetes NetworkPolicy; default Project Roles cannot author it |
 
-## Pod Security Enforcement
+## Pod admission
 
-All project namespaces are automatically labeled for security policy enforcement. The following pod specifications are **blocked for all user-created pods**:
+Project backing namespaces carry the `kube-dc.com/project` label. The
+`restrict-pod-security-in-projects` policy denies user-created or user-updated
+Pods that request:
 
-| Blocked Feature | Risk | Alternative |
-|----------------|------|-------------|
-| `hostPath` volumes | Direct access to node filesystem | Use `PersistentVolumeClaim`, `ConfigMap`, `Secret`, or `emptyDir` |
-| `privileged` containers | Full node-level access | Run containers with minimal capabilities |
-| `hostNetwork` | Access to node's network stack | Use standard pod networking or `Service` resources |
-| `hostPID` | Visibility into all node processes | Use standard process isolation |
-| `hostIPC` | Access to node's IPC namespace | Use standard IPC isolation |
+- `hostPath` volumes;
+- privileged containers or init containers;
+- `hostNetwork`;
+- `hostPID`;
+- `hostIPC`.
 
-### System Workloads
+Trusted platform service-account namespaces, node identities, and
+`system:masters` are excluded because controllers such as KubeVirt and Kamaji
+must create infrastructure Pods in Project backing namespaces. Those exclusions are
+part of the platform trust boundary; they are not a user-configurable bypass.
 
-System controllers that manage infrastructure within project namespaces (e.g., virtual machine launchers, cloud controller managers, control plane components) are **automatically exempted**. These workloads are created by trusted system service accounts and are not subject to the pod security restrictions.
+Users can still run ordinary Pods, Deployments, StatefulSets, Jobs, and
+DaemonSets, mount supported volume sources, and expose workloads through
+Services or Gateway routes.
 
-No manual exemption configuration is required for system workloads.
+## Exec and attach
 
-### What Users Can Still Do
+Pod exec and attach are unsupported in Projects. Current standard Role
+templates omit `pods/exec` and `pods/attach`, and
+`restrict-pod-exec-in-projects` denies CONNECT requests even if a custom or
+stale Role grants the subresource.
 
-- Create standard pods, deployments, statefulsets, daemonsets, jobs
-- Use PersistentVolumeClaims for storage
-- Mount ConfigMaps and Secrets
-- Use emptyDir volumes
-- Access pod logs via `kubectl logs`
-- Create and manage services, ingresses, and network policies
+Run administrative container tasks as a purpose-built Job that mounts the
+required volume. Use the VM console or VNC for virtual machines. Platform
+service accounts, nodes, and `system:masters` are exempt and must be protected
+accordingly.
 
-## Annotation Protection
+## Protected annotations
 
-System annotations on **Project**, **Organization**, and **OrganizationGroup** resources are protected from user modification. This prevents users from:
+The `protect-kube-dc-resource-annotations` policy prevents non-platform users
+from changing annotations on `Organization`, `Project`, and
+`OrganizationGroup` resources during UPDATE. Users can still perform the
+specification changes allowed by their RBAC.
 
-- Modifying billing metadata on Organizations
-- Changing network isolation settings on Projects
-- Tampering with controller-managed annotations
-
-### What Users Can Still Do
-
-- Create and delete Projects (org-admins)
-- Update Project and OrganizationGroup spec fields
-- Manage OrganizationGroup permissions
-
-### Modifying Annotations as Administrator
-
-Cluster administrators (`system:masters` group) retain full access to modify annotations. To set a per-project annotation:
-
-```bash
-kubectl annotate project <project-name> -n <org-namespace> \
-  <annotation-key>="<value>"
-```
-
-For example, to configure a per-project egress allowlist:
+Cluster administrators can set controller-consumed annotations. For example:
 
 ```bash
-kubectl annotate project my-project -n my-org \
-  network.kube-dc.com/egress-allowlist="100.65.0.200,10.8.0.0/24"
+kubectl -n <organization> annotate project <project> \
+  network.kube-dc.com/egress-allowlist="10.8.0.0/24" \
+  --overwrite
 ```
 
-## Egress Network Isolation
+Treat annotations as privileged configuration: admission protects changes, but
+does not validate the business reason for an allowlist entry.
 
-When enabled, egress network isolation restricts outbound traffic from each project's VPC. Only traffic to the project's own external IPs (EIPs) is allowed; all other external traffic is blocked at the SDN level.
+## External-network isolation
 
-### Allow Rule Sources
+Project VPC separation is the primary east-west boundary. Optional ingress and
+egress router policies add protection when multiple tenants share an external
+cloud or public subnet.
 
-| Source | Scope | How to configure |
-|--------|-------|-----------------|
-| **Auto-collected EIPs** | Per-project (automatic) | No action needed — the controller discovers all EIPs in the project |
-| **Global allowlist** | All projects | Set `egress_global_allowlist` in the `master-config` Secret |
-| **Per-project allowlist** | Single project | Set `network.kube-dc.com/egress-allowlist` annotation on the Project |
+### Egress isolation
 
-### Configuring the Global Allowlist
+When `egress_network_isolation` is enabled, Kube-DC drops Project traffic whose
+**destination** is another address on a configured external subnet, except for:
 
-The global allowlist applies to all projects. Add IP addresses or CIDRs to the `master-config` Secret:
+- the external subnet gateway, which is needed for SNAT and internet access;
+- external addresses owned by the Project;
+- the global egress allowlist;
+- the Project's `network.kube-dc.com/egress-allowlist` entries.
+
+This control does **not** block all outbound traffic. Internet destinations do
+not match the external-subnet drop rule and continue through the Project's SNAT
+path.
+
+### Ingress isolation
+
+When `ingress_network_isolation` is enabled, Kube-DC drops traffic whose
+**source** is a configured external subnet, except for:
+
+- the external subnet gateway, needed for return traffic;
+- the global ingress allowlist;
+- the Project's `network.kube-dc.com/ingress-allowlist` entries.
+
+Ingress allowlists describe trusted source addresses. Unlike egress rules, they
+are not populated from Project EIPs automatically.
+
+### Platform configuration
+
+The master configuration holds cluster-wide switches and allowlists:
 
 ```json
 {
   "egress_network_isolation": true,
-  "egress_global_allowlist": ["100.65.0.200", "10.8.0.0/24"]
+  "egress_global_allowlist": ["10.8.0.0/24"],
+  "ingress_network_isolation": true,
+  "ingress_global_allowlist": ["192.0.2.10"]
 }
 ```
 
-### Configuring a Per-Project Allowlist
-
-To allow a specific project to reach additional external IPs:
+Project-specific values are comma-separated IP addresses or CIDRs:
 
 ```bash
-kubectl annotate project my-project -n my-org \
-  network.kube-dc.com/egress-allowlist="100.65.0.200,10.8.0.0/24" \
+kubectl -n <organization> annotate project <project> \
+  network.kube-dc.com/ingress-allowlist="192.0.2.10,198.51.100.0/28" \
+  network.kube-dc.com/egress-allowlist="10.8.0.0/24" \
   --overwrite
 ```
 
-Changes take effect on the next controller reconcile (typically within seconds).
+Changes apply when the Project reconciles. Validate the resulting behavior from
+both directions; an allowlist does not replace application authentication,
+TLS, or a workload NetworkPolicy.
 
-:::warning
-Per-project allowlist annotations are protected — only cluster administrators can set or modify them. This prevents users from bypassing network isolation by whitelisting arbitrary external IPs.
-:::
+## Project RBAC
 
-## RBAC Model
+Kube-DC creates four standard Roles in every Project backing namespace:
 
-Kube-DC uses a hierarchical RBAC model with organization-level and project-level roles. See [User and Group Management](/cloud/team-management) for the full RBAC reference.
+| Role | Intended access |
+|---|---|
+| `admin` | Broad lifecycle access to supported Project resources plus namespaced Roles and RoleBindings; quota is read-only |
+| `project-manager` | Read and monitor Project resources and use the VM console; update or patch existing managed secrets, certificates, and database credential policies; create, update, or patch KMS keys; no Project, membership, or quota administration |
+| `developer` | Manage supported workloads, Services, VMs, and managed services; raw Kubernetes Secrets are get/list only |
+| `user` | Read-only Project visibility without raw Secret or VM-console access |
 
-### Key Security Properties
-
-- **No `pods/exec` or `pods/attach`** — None of the standard roles grant shell access to running pods. This prevents users from accessing secrets or credentials inside containers at runtime.
-- **RBAC write is admin-only** — Only the `admin` project role can create or modify Roles and RoleBindings. Developer, project-manager, and user roles cannot escalate their own permissions.
-- **Namespace isolation** — Users cannot modify namespace resources (labels, annotations). Namespace lifecycle is managed exclusively by the platform controller.
-- **No ClusterRole access** — Users can only create namespace-scoped Roles, not ClusterRoles. Self-escalation is limited to the user's own project namespace.
-
-## Security Policy Lifecycle
-
-### Adding a New System Namespace
-
-If a new system controller is deployed that creates pods in project namespaces, its service account namespace must be added to the pod security policy exemptions. Update the exemption list in the `vap-pod-security.yaml` Helm chart template and redeploy.
-
-### Disabling Pod Security Enforcement
-
-To temporarily disable pod security enforcement for debugging:
+The exact rules come from the platform's default Role templates. Review live
+rules rather than inferring privileges from the role name:
 
 ```bash
-kubectl delete validatingadmissionpolicybinding restrict-pod-security-in-projects
+kubectl -n <backing-namespace> get role \
+  admin developer project-manager user -o yaml
 ```
 
-To re-enable:
+Namespaced RBAC does not grant access to cluster-scoped resources. Organization
+Groups create RoleBindings only for the selected Projects. See
+[Multi-tenancy and access control](architecture-multi-tenancy.md).
+
+## Operating admission policy
+
+Admission policy and bindings are installed through the Fleet GitOps path.
+Inspect them with:
 
 ```bash
-helm upgrade kube-dc charts/kube-dc -n kube-dc
+kubectl get validatingadmissionpolicy
+kubectl get validatingadmissionpolicybinding
+kubectl describe validatingadmissionpolicy restrict-pod-security-in-projects
 ```
 
-:::danger
-Disabling pod security enforcement allows users to create privileged pods with full node access. Only do this temporarily for debugging and re-enable immediately after.
-:::
+Change exemptions or enforcement in the Fleet source, review the impact, and
+let Flux reconcile it. Deleting a live binding creates an immediate enforcement
+gap and Flux may recreate it; it is not a normal debugging procedure.
 
-### Monitoring Policy Denials
+Policy denials appear in API responses and, when audit logging is enabled, in
+the API-server audit log. Capture the denied request, user, policy name, and
+message before changing policy.
 
-Policy denials are logged in the API server audit log. Look for `ValidatingAdmissionPolicy` entries with `deny` action to identify blocked requests and the reason for denial.
+## Boundaries and residual risk
+
+- Platform controllers and `system:masters` can cross Project boundaries.
+- Compromise of a trusted service account can bypass the admission exclusions
+  granted to that account.
+- Underlay VLAN attachments inherit the physical network's isolation model.
+- Network isolation does not replace encryption, application authorization, or
+  backup.
+- A Project is not a separate Kubernetes cluster. Use a Managed Cluster when a
+  tenant needs its own cluster-scoped administration boundary.

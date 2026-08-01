@@ -1,10 +1,11 @@
 # Creating Your First Project
 
-A **Project** is the fundamental workspace in Kube-DC. It acts as a container for your applications, Virtual Machines, and Clusters, providing them with a dedicated, isolated network.
+A **Project** is the working boundary for applications, virtual machines, databases, and Managed Clusters. Kube-DC backs it with a namespace named `{organization}-{project}`, Project RBAC, a private network, optional quota, and a Project kubeconfig. The namespace is an implementation detail, so the console and this guide call the environment by its Project name.
 
 ## Prerequisites
 
 - A Kube-DC Cloud account ([Sign Up](sign-up-login.md))
+- Organization Admin access
 - Basic understanding of [Core Concepts](core-concepts.md)
 
 ## Create a New Project
@@ -17,7 +18,7 @@ Click the **Create New Project** button in the top right corner. The creation wi
 
 ## Configure Project Settings
 
-In the Project Configuration step, define the basic properties of your workspace:
+In the Project Configuration step, define the Project's basic properties:
 
 - **Project Name** — Enter a unique name (e.g., `dev`, `staging`, `production`)
 - **CIDR Block** — Define the internal IP range for this project's private network (e.g., `10.0.0.0/16`)
@@ -25,21 +26,16 @@ In the Project Configuration step, define the basic properties of your workspace
 
 ### Which network type should I choose?
 
-| Type | Gateway | Use Case |
-|------|---------|----------|
-| ☁️ **Cloud (NAT Gateway)** | Private gateway IP (shared, more secure) | Web servers, databases, backend microservices, general cloud infrastructure |
-| 🌐 **Public (Direct Access)** | Dedicated external IP (billable) | Direct port forwarding, dedicated load balancing, apps requiring a fixed public gateway |
+The network type selects the address pool for the Project default gateway. Both types keep workloads on private addresses and use source NAT (SNAT) for outbound traffic. This choice is immutable after creation.
 
-**Key difference:** Both project types can expose workloads to the internet. The main difference is the gateway:
+Every provider offers **Cloud**. **Public** appears only when the provider has enabled Public Project creation.
 
-- **Cloud** — Your project gets a private gateway IP. Workloads access the internet through a secure, shared NAT. More cost-effective and secure for most use cases.
-- **Public** — Your project gets a dedicated external IP as its gateway. This IP can be used for direct port forwarding or load balancing. The dedicated gateway IP is billable.
+| Type | Default gateway | Choose it when |
+|------|-----------------|----------------|
+| **Cloud** | Cloud-internal address | The normal choice for applications exposed through Gateway Routes or separately allocated EIPs |
+| **Public** | Internet-routable address | The Project needs a public source address at its default gateway |
 
-:::tip Recommended
-For most applications, choose **Cloud (NAT Gateway)**. It provides better security, is more cost-effective, and is the standard approach for cloud infrastructure.
-:::
-
-![Project configuration](images/project-2.png)
+Neither option exposes a workload by itself. Create a Gateway Route, LoadBalancer Service, or FIP for inbound access. Address availability and cost depend on your provider and quota. See [How Networking Works](networking-overview.md).
 
 ## Review & Create
 
@@ -64,7 +60,7 @@ By default, a Project shares the full resource pool of your Organization. To pre
    - **CPU** — Max CPU cores
    - **Memory** — Max RAM (in GiB)
    - **Storage** — Max disk space (in GiB)
-   - **Pods** — Max number of containers
+   - **Pods** — Maximum number of Pods
 4. Click **Save Quota**
 
 ![Resource quotas](images/project-5.png)

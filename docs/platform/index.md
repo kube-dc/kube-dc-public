@@ -1,33 +1,39 @@
 # Kube-DC Platform
 
-Kube-DC is an open-source platform that transforms Kubernetes into a comprehensive Data Center solution. This documentation covers installation, architecture, and operations for platform administrators.
+Kube-DC is a Kubernetes-based platform for Organizations to run virtual
+machines, containers, managed data services, object storage, and Managed
+Clusters. This section is for the operators who install, secure, and
+run the management cluster.
 
-## Overview
+## Start here
 
-Kube-DC extends Kubernetes with multi-tenancy, virtualization (KubeVirt), advanced networking (Kube-OVN), and integrated billing. It can be deployed on bare-metal servers or existing Kubernetes clusters.
+| Goal | Documentation |
+|---|---|
+| Understand the product model | [Architecture overview](architecture-overview.md) |
+| Plan an installation | [Installation overview](installation-overview.md) |
+| Install the platform | [Installation guide](installation-guide.md) |
+| Understand Organizations, Projects, and access | [Multi-tenancy and access control](architecture-multi-tenancy.md) |
+| Design provider and Project networks | [Networking architecture](architecture-networking.md) |
+| Operate internal platform endpoints | [Internal platform endpoints](internal-platform-endpoints.md) |
+| Review platform controls and trust boundaries | [Security model](security-model.md) |
+| Operate metrics, logs, alerts, and dashboards | [Observability](observability.md) |
 
-## Quick Links
+## Product vocabulary
 
-- **Install Kube-DC** — Start with the [Installation Overview](installation-overview.md)
-- **Step-by-Step Deployment** — Follow the [Installation Guide](installation-guide.md)
-- **Architecture** — Understand the [Architecture Overview](architecture-overview.md)
-- **Networking** — Deep dive into [Networking Architecture](architecture-networking.md)
-- **Internal Platform Endpoints** — Optional feature for clusters where tenant pods can't reach the platform's own public hostnames; see [Internal Platform Endpoints](internal-platform-endpoints.md) for the topology decision rule and enablement steps.
+- An **Organization** is the tenant boundary for identity, membership, billing,
+  shared quota, and policy.
+- A **Project** is the governed workload boundary inside an Organization.
+  Kubernetes implements it with a backing namespace named
+  `{organization}-{project}` and a dedicated Kube-OVN VPC.
+- A **Managed Cluster** is a separate Kubernetes API and control plane created
+  from a Project. It has its own authorization boundary.
 
-## Key Components
-
-- **Multi-Tenancy** — Organizations, Projects, and RBAC via Keycloak
-- **Virtualization** — KubeVirt-based VM management with cloud-init
-- **Networking** — Kube-OVN with VPC-per-project, EIPs, FIPs, and LoadBalancers
-- **Billing** — Configurable billing plans with resource quotas
-- **Storage** — Block storage (PVC) and S3-compatible object storage (Rook Ceph)
-- **Observability** — [Multi-tenant metrics, logs, and alerting](observability.md)
+Use *backing namespace* only when an operator must work with the underlying
+Kubernetes object. Use *cluster* only for the management cluster or a Managed
+Cluster.
 
 ## Community
 
-- [GitHub](https://github.com/kube-dc/kube-dc-public) — Source code and issues
-- [Slack](https://join.slack.com/t/kube-dc/shared_invite/zt-31mr5c6ci-W3kYQ7qGDULlGQ5QJjsxmA) — Community chat
-
----
-
-Looking for the cloud user guide? See the [Cloud Guide](/).
+- [GitHub](https://github.com/kube-dc/kube-dc-public)
+- [Slack](https://join.slack.com/t/kube-dc/shared_invite/zt-31mr5c6ci-W3kYQ7qGDULlGQ5QJjsxmA)
+- [Cloud user guide](/)

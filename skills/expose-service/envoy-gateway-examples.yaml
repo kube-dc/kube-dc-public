@@ -1,83 +1,74 @@
-# Issuer (required once per namespace for HTTPS)
+# Create once per Project backing namespace for HTTPS routes.
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: letsencrypt
-  namespace: {project-namespace}
+  namespace: "{backing-namespace}"
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: {email}
+    email: "{valid-email}"
     privateKeySecretRef:
-      name: letsencrypt-key
+      name: letsencrypt-account-key
     solvers:
-      - http01:
-          ingress:
-            ingressClassName: envoy
+    - http01:
+        gatewayHTTPRoute:
+          parentRefs:
+          - group: gateway.networking.k8s.io
+            kind: Gateway
+            name: eg
+            namespace: envoy-gateway-system
 ---
-# HTTPS Service (auto TLS + auto hostname)
+# HTTPS: Gateway terminates TLS and forwards HTTP.
 apiVersion: v1
 kind: Service
 metadata:
-  name: {service-name}
-  namespace: {project-namespace}
+  name: "{service-name}"
+  namespace: "{backing-namespace}"
   annotations:
     service.nlb.kube-dc.com/expose-route: "https"
+    service.nlb.kube-dc.com/route-port: "8080"
 spec:
   type: LoadBalancer
-  ports:
-    - port: 80
-      targetPort: 8080
   selector:
-    app: {app-name}
-# → hostname: {service-name}-{project-namespace}.kube-dc.cloud
+    app: "{application-label}"
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
 ---
-# HTTPS with custom hostname
+# HTTPS with an explicit hostname. Configure DNS for custom domains.
 apiVersion: v1
 kind: Service
 metadata:
-  name: {service-name}-custom
-  namespace: {project-namespace}
+  name: "{service-name}-custom"
+  namespace: "{backing-namespace}"
   annotations:
     service.nlb.kube-dc.com/expose-route: "https"
-    service.nlb.kube-dc.com/route-hostname: "myapp.example.com"
+    service.nlb.kube-dc.com/route-hostname: "app.example.com"
 spec:
   type: LoadBalancer
-  ports:
-    - port: 80
-      targetPort: 8080
   selector:
-    app: {app-name}
+    app: "{application-label}"
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
 ---
-# gRPC service
+# TLS passthrough: the backend must terminate TLS and present a certificate
+# valid for the public SNI hostname.
 apiVersion: v1
 kind: Service
 metadata:
-  name: {service-name}-grpc
-  namespace: {project-namespace}
-  annotations:
-    service.nlb.kube-dc.com/expose-route: "https"
-    service.nlb.kube-dc.com/route-port: "50051"
-spec:
-  type: LoadBalancer
-  ports:
-    - port: 50051
-      targetPort: 50051
-  selector:
-    app: {app-name}
----
-# TLS passthrough (app handles TLS)
-apiVersion: v1
-kind: Service
-metadata:
-  name: {service-name}-tls
-  namespace: {project-namespace}
+  name: "{service-name}-tls"
+  namespace: "{backing-namespace}"
   annotations:
     service.nlb.kube-dc.com/expose-route: "tls-passthrough"
 spec:
   type: LoadBalancer
-  ports:
-    - port: 443
-      targetPort: 8443
   selector:
-    app: {app-name}
+    app: "{application-label}"
+  ports:
+  - name: tls
+    port: 443
+    targetPort: 8443

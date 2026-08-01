@@ -1,24 +1,17 @@
 # Database Credentials
 
-Kube-DC's Database Credentials feature gives every project a way to
-issue, rotate, and revoke database passwords without ever putting one
-in a YAML file. The platform owns the password lifecycle — your
-workloads consume credentials through a regular Kubernetes `Secret`,
-and the values rotate underneath them on a schedule you choose.
+Kube-DC's Database Credentials feature rotates a database user's password and,
+when Secret sync is enabled, projects the current value into a Kubernetes
+`Secret`. The password does not
+appear in the `DatabaseCredentialPolicy` manifest.
 
-Two modes are supported:
+Static rotated is the only active mode. The username stays the same and OpenBao
+changes its password on the configured interval. The API also accepts `dynamic`,
+but the controller reports `Ready=False` with `DynamicModeDeferred` and the
+`issue` command does not mint credentials yet.
 
-- **Static rotated** — long-lived credentials whose password rotates
-  on schedule. The username stays the same; only the password changes.
-  Safe for legacy apps that can't handle short-lived leases. **Phase 1
-  ships static-rotated.**
-- **Dynamic** — short-lived credentials minted on demand for each
-  client lease. Each lease has its own unique username + password,
-  expires after a TTL, and is revoked on lease close. **Phase 2 — the
-  field exists in the spec, but `kube-dc db credentials issue`
-  returns a deferred-state notice for now.**
-
-Database Credentials are scoped to a `KdcDatabase` in your project.
+The Kubernetes resources for Database Credentials are scoped to a
+`KdcDatabase` in your Project.
 Bring a `KdcDatabase` first (see [Managed Databases](managed-databases.md));
 once you have one, attach as many `DatabaseCredentialPolicy` CRs to
 it as you need.
@@ -32,15 +25,14 @@ apiVersion: security.kube-dc.com/v1alpha1
 kind: DatabaseCredentialPolicy
 metadata:
   name: api-app
-  namespace: my-project
+  namespace: acme-production
 spec:
   databaseRef:
-    name: api-db                   # KdcDatabase in the same namespace
+    name: api-db                   # KdcDatabase in the same Project
   mode: static-rotated
   username: app
   rotation:
     interval: 30d
-    strategy: rolling              # rolling | immediate
   sync:
     enabled: true
     targetSecretName: api-app-creds
@@ -48,59 +40,77 @@ spec:
 
 Key fields:
 
-- **databaseRef** — `KdcDatabase` in the same project namespace.
-  Cross-namespace references are impossible by API shape; an
+- **databaseRef** — `KdcDatabase` in the same Project.
+  Cross-Project references cannot be expressed by this namespaced API; an
   admission webhook verifies the referenced database actually exists.
-- **mode** — `static-rotated` (Phase 1) or `dynamic` (Phase 2).
+- **mode** — use `static-rotated`. The reserved `dynamic` value is
+  admitted but remains deferred.
 - **username** — the database username to manage. Must already exist
   in the database (Kube-DC does NOT create users in static-rotated
   mode — that prevents the platform from owning user identities and
   keeps the DBA in control). Defaults to `app`.
 - **rotation.interval** — how often the password rotates (e.g. `30d`,
   `7d`).
-- **rotation.strategy** — `rolling` (write the new password, the
-  underlying OpenBao role keeps the previous one accepted briefly so
-  in-flight deploys overlap) or `immediate` (atomic swap; clients
-  must reconnect right away).
+- **rotation.strategy** — retained in the API for compatibility, but the current
+  controller does not implement dual-password overlap. Treat either value as a
+  password cutover and make clients reload credentials before reconnecting.
 - **sync.enabled** — projects the username + password into a
   Kubernetes `Secret` your pods can mount. The Secret is rewritten
   in place on every rotation.
 
 ## Permissions
 
-| Role | DatabaseCredentialPolicy CRD | Read current password | Rotate now | Delete |
-|---|---|---|---|---|
-| Project Manager | full | ✅ | ✅ | ✅ |
-| Developer | read | ✅ | ✅ | ✅ |
-| Viewer | read | — | — | — |
+| Role | `DatabaseCredentialPolicy` resource | Read current password through API | Rotate through API |
+|---|---|---|---|
+| `admin` | Full lifecycle | Yes | Yes |
+| `developer` | Create, read, update, delete | No | No |
+| `project-manager` | Read and update existing resources | Yes | Yes |
+| `user` | Read | No | No |
 
-The platform-side OpenBao policy that backs each project grants
-`database/static-creds/*` (read) + `database/rotate-role/*` (update)
-to the developer tier, so application code can read and force a
-rotation without project-manager credentials.
+The OpenBao data plane grants static-password read and rotation to
+`project-manager` and `admin`. The `developer` tier can manage the policy
+resource but does not receive those OpenBao capabilities.
 
-### Trust model (read this if you share a project)
+The `admin`, `developer`, and `project-manager` roles can read Kubernetes
+`Secret` objects in the Project's backing namespace. When sync is enabled, all
+three roles can therefore read the projected password. For Kubernetes Secret
+access, treat the Project as the credential boundary.
 
-> **On Kube-DC, anyone with `developer` or `manager` role on a
-> project namespace has effective superuser access to databases
-> owned by that project.** Tenant separation is enforced at the
-> **project boundary** — not within the project. To restrict who can
-> read database credentials, restrict who is granted `developer` or
-> `manager` on the project.
+### Current Organization-wide OpenBao boundary
 
-This applies to every database in your project (PostgreSQL and
-MariaDB alike). The underlying mechanism is K8s default RBAC: both
-roles include `get, list` on Secrets in the project namespace, and
-Kube-DC's database engines (CNPG's `<db>-rotator` for PostgreSQL,
-mariadb-operator's `<db>-root` for MariaDB) live as Secrets in that
-namespace. Anyone who can read those Secrets can connect as a
-database superuser.
+`DatabaseCredentialPolicy` resources, database references, and projected Secrets
+are Project-scoped. The underlying OpenBao Database engine is mounted once per
+Organization, however, and the current human policies grant capabilities on a
+complete role-name path segment. They cannot safely distinguish Project names
+such as `prod` and `prod-west` with a prefix glob.
 
-If you need a SOC2 / compliance posture where Secret readers ≠ DB
-superusers, today's answer is "don't give them developer/manager."
-A future release will offer a sub-superuser rotator option for
-compliance environments; until it lands, the project boundary IS
-the trust boundary.
+As a result, an `admin` or `project-manager` who has database credential access
+in one Project can read or rotate another Project's static database role in the
+same Organization if they learn its internal role name. The dashboard and CLI
+first resolve a policy in the selected Project, but that supported workflow does
+not narrow the underlying OpenBao authorization.
+
+Treat the **Organization as the current trust boundary for direct OpenBao
+database operations**. Put mutually untrusted teams in separate Organizations.
+True per-Project isolation requires a future database-mount or role-name
+migration; it is not part of this release.
+
+### Trust model (read this if you share a Project)
+
+> **On Kube-DC, anyone with `admin`, `developer`, or `project-manager` in a
+> Project has effective superuser access to databases owned by that Project.**
+> Tenant separation is enforced at the **Project boundary**, not between users
+> inside one Project. Grant these roles only where that database access is
+> acceptable.
+
+This applies to every database in the Project, PostgreSQL and MariaDB alike.
+The underlying mechanism is Kubernetes RBAC: all three roles can `get` and
+`list` Secrets in the Project's backing namespace. Kube-DC's database engines
+keep privileged credentials there in CNPG's `<db>-rotator` Secret for
+PostgreSQL and mariadb-operator's `<db>-root` Secret for MariaDB. Anyone who can
+read those Secrets can connect as a database superuser.
+
+If separation of duties requires Secret readers not to be database administrators, place those workloads in separate Projects and grant `developer` or `project-manager` only where that access is acceptable. This release does not provide credential isolation within one Project.
 
 ## How rotation actually works (mental model)
 
@@ -111,9 +121,9 @@ Every PostgreSQL `KdcDatabase` automatically gets a dedicated
 **`kdc_rotator`** PostgreSQL role at creation time. This is the
 identity OpenBao logs in as to run the `ALTER USER ... PASSWORD`
 that rotates your application user's password. Its own credential
-lives in a `<db>-rotator` Kubernetes Secret in your project
-namespace and **is never rotated** — that's a deliberate invariant
-that keeps point-in-time recovery safe (if we rotated the rotator,
+lives in a `<db>-rotator` Kubernetes Secret in the Project's backing
+namespace. The normal DBCP lifecycle does not rotate it; that invariant
+keeps point-in-time recovery safe (if we rotated the rotator,
 a PITR back to before the rotation would lock OpenBao out of the
 database it just restored).
 
@@ -131,17 +141,17 @@ role to worry about.
 Before creating a policy, the underlying database user must exist:
 
 ```bash
-# Connect to your managed database however you normally would
-# (port-forward, your IDE, a client Job, etc.) and run:
+# Connect through the internal Project Service from an application or migration
+# workload, or through a configured LoadBalancer endpoint, then run:
 psql -c "CREATE USER app WITH LOGIN PASSWORD 'temporary-bootstrap';"
 psql -c "GRANT ALL PRIVILEGES ON DATABASE mydb TO app;"
 # (Or the MariaDB equivalent.)
 ```
 
-The bootstrap password gets immediately rotated to something only
-OpenBao knows once the DatabaseCredentialPolicy reconciles. From that
-point on, you never see the password in plaintext anywhere except in
-the synced Secret.
+Once the DatabaseCredentialPolicy reconciles, OpenBao replaces the bootstrap
+password and becomes the source of truth. Authorized users can retrieve the
+current password with `kube-dc db credentials get --show-password` or from the
+synced Secret; the value is not stored in the CRD or audit records.
 
 ## Create a policy
 
@@ -155,12 +165,12 @@ kube-dc db credentials create api-app \
   --username=app \
   --rotate=30d
 
-# With rolling strategy (overlapping passwords during deploy)
+# Custom username, interval, and projected Secret name
 kube-dc db credentials create batch-app \
   --database=api-db \
   --username=batch \
   --rotate=7d \
-  --rotate-strategy=rolling
+  --sync-secret=batch-db-creds
 ```
 
 ### Via kubectl
@@ -170,7 +180,7 @@ apiVersion: security.kube-dc.com/v1alpha1
 kind: DatabaseCredentialPolicy
 metadata:
   name: api-app
-  namespace: my-project
+  namespace: acme-production
 spec:
   databaseRef:
     name: api-db
@@ -178,7 +188,6 @@ spec:
   username: app
   rotation:
     interval: 30d
-    strategy: rolling                # rolling | immediate
   sync:
     enabled: true
     targetSecretName: api-app-creds
@@ -207,16 +216,17 @@ kubectl get secret api-app-creds -o yaml
 # data:
 #   username: <base64 "app">
 #   password: <base64 "rotated password">
-#   host:     <base64 "api-db-rw.my-project.svc.cluster.local">
+#   host:     <base64 "api-db-rw.acme-production.svc.cluster.local">
 #   port:     <base64 "5432">
 #   database: <base64 "mydb">
 #   engine:   <base64 "postgresql">     # postgresql | mariadb
 #   dsn:      <base64 "postgres://app:...@host:5432/mydb?sslmode=require">
 ```
 
-Mount it like any Secret — the platform rewrites it in place on each
-rotation, so a pod that fetches the value on each connection picks
-up the new password automatically:
+Mount it like any Secret. The platform rewrites the Secret on each rotation,
+but a running container does not automatically reload environment variables.
+The example below is convenient for startup; roll out the workload after a
+rotation so new Pods receive the new values:
 
 ```yaml
 spec:
@@ -228,32 +238,21 @@ spec:
         name: api-app-creds
 ```
 
-For workloads that hold connections open across rotations, you have
-two strategies:
+After a rotation:
 
-1. **Reconnect on auth error** — your client code catches an auth
-   failure, re-reads the Secret, reconnects. Works with rotation
-   strategy `immediate`.
-2. **Use `rolling` strategy** — OpenBao briefly accepts both the old
-   and new passwords during the changeover, so a standard rolling
-   Deployment can churn pods in that window without anyone seeing an
-   auth failure. Long-running pods reload the Secret via the kubelet
-   inotify path and pick up the new password naturally.
+- Secret volume files eventually refresh, but the application must reread them.
+- Values injected through `env` or `envFrom` never change in a running
+  container; restart or roll out the workload.
+- New database connections must use the new password. Existing sessions depend
+  on the engine and client and should not be used as a recovery mechanism.
 
-> **How long the Secret can be stale (two hops, not one).** When
-> OpenBao rotates the database role, the new password lands in the
-> projected Kubernetes Secret on the next DBCP reconcile, then in
-> mounted pod volumes on the next kubelet inotify pass.
->
-> - **OpenBao → K8s Secret**: ~15s for short rotation intervals
->   (rotation-aware requeue), up to 5 min for long intervals
->   (steady-state reconcile ceiling). The platform also re-reads
->   if anything edits the projected Secret directly.
-> - **K8s Secret → pod volume**: kubelet propagates within ~60s
->   for mounted files; `envFrom` env vars require a pod restart.
->
-> For 30s-1m rotation intervals the total round-trip is typically
-> under 30s. For 30d intervals it can be up to 5min + kubelet lag.
+The current controller performs a single-password cutover; `rolling` does not
+keep two passwords valid. Choose an interval that leaves time to reload or roll
+out clients, then verify a fresh connection with the new credential.
+
+For long intervals, the DBCP reconciler can take up to five minutes to copy a
+rotation from OpenBao into the Project Secret. Kubelet propagation adds delay
+for mounted volumes. Design for this lag rather than assuming instant rotation.
 
 ## Read the current credentials
 
@@ -261,7 +260,7 @@ two strategies:
 kube-dc db credentials get api-app
 # Username: app
 # Password: ******** (use --show-password to print)
-# Host:     api-db-rw.my-project.svc.cluster.local
+# Host:     api-db-rw.acme-production.svc.cluster.local
 # Port:     5432
 # DB:       mydb
 
@@ -282,11 +281,10 @@ projection is lagging or sync is disabled.
 kube-dc db credentials rotate api-app
 ```
 
-This calls OpenBao's `database/rotate-role/<role>` endpoint, which
-generates a new password, updates the database, then writes it back
-to the synced Secret. With `strategy: rolling`, OpenBao briefly keeps
-the previous password accepted alongside the new one so in-flight
-clients can finish reconnecting.
+This calls OpenBao's `database/rotate-role/<role>` endpoint and creates one new
+password. The backend then prompts the controller to refresh the synced Secret.
+Reload or roll out clients before they open new connections; there is no
+dual-password overlap.
 
 ## Inspect
 
@@ -326,58 +324,29 @@ admin path after deleting the DBCP.
 
 ## Audit
 
-Every `Create`, `Rotate`, `RotateFailed`, and `Delete` emits an audit
-event:
+Calls made through the dashboard, CLI, or backend API emit structured audit
+events. Automatic controller work is reported through resource status,
+conditions, Kubernetes Events, and platform logs rather than the caller audit
+stream.
 
 ```bash
-kube-dc audit list --resource=DatabaseCredentialPolicy --since=24h
+kube-dc audit list --service db-credentials
 ```
 
-Logs the calling identity, the database, the username, and the policy
-operation. Rotation events also log the OpenBao lease ID for
-correlation with platform-side audit.
+Audit records include the caller and operation metadata, never the password.
 
-## Dynamic mode (Phase 2 preview)
+## Dynamic mode is deferred
 
-Dynamic mode mints a short-lived lease for every consumer:
-
-```yaml
-spec:
-  databaseRef:
-    name: api-db
-  mode: dynamic
-  role: my-app-readonly             # OpenBao Database role name
-  ttl: 1h
-  maxTtl: 24h
-```
-
-When this lands, your code will fetch a fresh lease per invocation
-(or per connection pool initialization) via:
-
-```bash
-kube-dc db credentials issue api-app
-# username: v-token-my-app-r-xxxx
-# password: ...
-# lease_id: database/creds/my-app-readonly/abcd
-# lease_duration: 3600
-```
-
-Each lease has a unique username, so revocation is per-client.
-Workloads use the OpenBao SDK directly (similar to the
-[KMS](kms.md) examples) to issue leases on demand. The role itself
-must be declared by the project-manager via `spec.role` in the DBCP.
-
-Phase-2 ships the lease-issue path; the policy lifecycle is the same
-as static-rotated today, with `kube-dc db credentials issue`
-returning a `DeferredFeature` notice until then. Phase-1 production
-clusters are all static-rotated.
+The `dynamic` mode and lease fields are reserved for API compatibility. A
+dynamic policy remains `Ready=False` with reason `DynamicModeDeferred`, and
+`kube-dc db credentials issue` does not mint a lease. Use `static-rotated` until
+the capability is listed as available in the release notes for your installation.
 
 ## Break-glass: direct superuser access (PostgreSQL)
 
-Sometimes you need direct DBA access to a tenant database — running
-a schema migration tool from your laptop, debugging an
-unrescheduable production query, or recovering after OpenBao is
-temporarily unreachable. The `KdcDatabase.spec.breakGlass`
+Sometimes you need direct DBA access to a Project database — running
+an approved schema migration, investigating a production incident, or
+recovering after OpenBao is temporarily unreachable. The `KdcDatabase.spec.breakGlass`
 opt-in surfaces a stable `<db>-superuser` Kubernetes Secret with the
 `postgres` superuser identity for exactly that:
 
@@ -386,7 +355,7 @@ apiVersion: db.kube-dc.com/v1alpha1
 kind: KdcDatabase
 metadata:
   name: api-db
-  namespace: my-project
+  namespace: acme-production
 spec:
   engine: postgresql
   # ... usual fields ...
@@ -396,7 +365,7 @@ spec:
 
 When enabled, CNPG provisions a `<db>-superuser` Secret containing
 the `postgres` user's password. Anyone with `get, list` on Secrets
-in the project namespace (developer/manager) can read it and run
+in the Project's backing namespace (`admin`, `developer`, or `project-manager`) can read it and run
 `psql -U postgres ...`.
 
 Notes:
@@ -442,7 +411,7 @@ apiVersion: db.kube-dc.com/v1alpha1
 kind: KdcDatabase
 metadata:
   name: api-db-restored               # NEW name — not the same as source
-  namespace: my-project
+  namespace: acme-production
 spec:
   engine: postgresql
   version: "16"
@@ -451,7 +420,7 @@ spec:
   username: app
   storage: 20Gi
   restoreFrom:
-    backupName: api-db-scheduled-20260623100000   # Backup CR in same namespace
+    backupName: api-db-scheduled-20260623100000   # Backup CR in the same Project
     sourceDatabaseName: api-db                    # original KdcDatabase
     # Optional PITR (PostgreSQL only):
     # targetTime: "2026-06-23T10:30:00Z"
@@ -472,18 +441,20 @@ lost.**
 
 ```bash
 # 1. Pick a completed Backup CR
-kubectl get backups.postgresql.cnpg.io -n my-project
-# (or: kubectl get physicalbackups -n my-project for MariaDB)
+kubectl get backups.postgresql.cnpg.io -n acme-production
+# (or: kubectl get physicalbackups -n acme-production for MariaDB)
 
-# 2. Trigger the in-place restore
+# 2a. Restore exactly to the completed backup
 kubectl annotate kdcdatabase api-db \
   kube-dc.com/restore-from=api-db-scheduled-20260623100000 \
   --overwrite
 
-# Optional PITR (PostgreSQL only):
-# kubectl annotate kdcdatabase api-db \
-#   kube-dc.com/restore-target-time=2026-06-23T10:30:00Z \
-#   --overwrite
+# 2b. Or choose PostgreSQL PITR. Send both annotations in one request;
+#     restore-from starts destructive reconciliation immediately.
+kubectl annotate kdcdatabase api-db \
+  kube-dc.com/restore-from=api-db-scheduled-20260623100000 \
+  kube-dc.com/restore-target-time=2026-06-23T10:30:00Z \
+  --overwrite
 ```
 
 What happens:
@@ -581,10 +552,10 @@ Service endpoints. Most other cases want new-name.
 - **One policy per database role.** Two DBCPs for the same
   `databaseRef + username` would race; the admission webhook rejects
   duplicates.
-- **Synced Secret is at most 1 minute stale.** Kubelet refreshes
-  Secret mounts on inotify; long-running pods see the rotation
-  within ~60s. Use `rolling` strategy or app-level reconnect to
-  bridge the gap.
+- **Credential propagation is not instantaneous.** For long intervals, the
+  controller can take up to five minutes to refresh the Project Secret. Mounted
+  files then follow kubelet's normal Secret propagation; environment variables
+  require a Pod restart. There is no dual-password overlap during this window.
 
 ## Reference
 

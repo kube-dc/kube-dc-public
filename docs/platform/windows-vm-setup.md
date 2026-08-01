@@ -1,5 +1,49 @@
 # Windows 11 VM Setup — Operator Guide (building the golden)
 
+## The QEMU Guest Agent is REQUIRED (not optional)
+
+Install `qemu-guest-agent` in the golden **before** sysprep/export, and verify it
+after: KubeVirt injects the Project's SSH public key *through* the agent and reads
+`guestOSInfo` from it. A golden without a running agent still boots and serves
+RDP, but **Project key injection silently does nothing** — this is exactly the
+defect the 2026-07-31 gate run found in the previously published golden.
+
+In the commands below, replace `<backing-namespace>` with the generated `{organization}-{project}` namespace for the operator Project used to build and validate the image.
+
+Verify before publishing (must print `AgentConnected ... True`):
+
+```sh
+./hack/windows/automated/validate-clone.sh <backing-namespace>
+# PHASE 1 proves Windows booted (RDP), PHASE 2 proves the agent is live.
+```
+
+## Licensing model — BYOL (bring your own license)
+
+Kube-DC ships the Windows golden image as an **evaluation-based starter build**:
+it is produced from the Microsoft Windows 11 Enterprise **Evaluation** ISO and is
+intended to let a Project user start working immediately (instant clone, drivers,
+guest-agent and SSH/RDP pre-configured).
+
+**The platform does not provide a Windows license.** The customer is responsible
+for licensing every Windows VM they run:
+
+- Activate with your own key inside the VM (`slmgr /ipk <product-key>` then
+  `slmgr /ato`), or point the VM at your organisation's KMS
+  (`slmgr /skms kms.example.com` + `slmgr /ato`).
+- Evaluation builds are time-limited by Microsoft (90 days). Assign a license
+  before the evaluation window ends; an expired evaluation shuts down hourly.
+- Operators: never publish a pre-activated or volume-licensed image as the
+  shared golden — the shared image must remain the neutral evaluation base so
+  each customer applies their own entitlement.
+- The golden and installer media live in the **anonymously readable**
+  `cdi-os-images` bucket (CDI imports without credentials). That is an accepted,
+  documented posture *because* the media is evaluation-grade and key-free — see
+  "Windows media in the public image bucket" in
+  [OS-image operations](os-image-operations.md). It is exactly why the rule above
+  is absolute: publishing an activated or licensed image there would turn an
+  accepted exposure into a redistribution problem.
+
+
 This is the **one-time operator task** that produces the Windows 11 golden image for a
 cluster. Once the golden is built and published to the cluster's S3 OS-image mirror
 (`s3.<your-domain>/cdi-os-images/windows/11/latest/windows11-x64-golden.qcow2`), it
@@ -120,11 +164,16 @@ data:
 apiVersion: v1
 kind: Service
 metadata:
-  name: nginx-iso-server
+  # NB: the Service is `iso-server` (NOT nginx-iso-server) — the Ingress and the
+  # export Job both address iso-server.iso.svc.cluster.local. Keep in sync with
+  # hack/windows/nginx-iso-server-iso-ns.yaml.
+  name: iso-server
   namespace: iso
+  labels:
+    app: iso-server
 spec:
   selector:
-    app: nginx-iso-server
+    app: iso-server
   ports:
   - port: 80
     targetPort: 80
@@ -230,20 +279,20 @@ Use the complete VM manifest that includes all required DataVolumes:
 kubectl apply -f hack/windows/windows11-vm.yaml
 
 # Monitor DataVolume download progress
-kubectl get dv -n <project-namespace>
+kubectl get dv -n <backing-namespace>
 
 # Check VM status
-kubectl get vm,vmi -n <project-namespace> | grep windows11
+kubectl get vm,vmi -n <backing-namespace> | grep windows11
 ```
 
 ### 3.2 Windows Installation Process
 
 ```bash
 # Access VM console via VNC
-virtctl vnc windows11-vm -n <project-namespace>
+virtctl vnc windows11-vm -n <backing-namespace>
 
 # Or use VNC proxy
-virtctl vnc windows11-vm -n <project-namespace> --proxy-only --port 5900
+virtctl vnc windows11-vm -n <backing-namespace> --proxy-only --port 5900
 # Then connect VNC client to localhost:5900
 ```
 
@@ -296,13 +345,16 @@ PowerShell -ExecutionPolicy Bypass -Command "Invoke-Expression (Invoke-WebReques
 ### 4.1 Prepare VM for Golden Image
 
 ```bash
-# 1. Inside Windows VM, run Sysprep (optional but recommended)
+# 1. Inside Windows VM, run Sysprep — REQUIRED, not optional.
+#    Microsoft requires generalization before an installation is cloned to other
+#    machines: without it every cloned VM inherits the same machine SID/identity
+#    and the image is unsupported (codex review HIGH).
 # Navigate to: C:\Windows\System32\Sysprep\sysprep.exe
 # Options: Generalize, Enter System Out-of-Box Experience (OOBE), Shutdown
 
 # 2. Stop the source VM (CRITICAL for export)
-kubectl patch vm windows11-vm -n <project-namespace> --type merge -p '{"spec":{"runStrategy":"Halted"}}'
-kubectl wait --for=delete vmi/windows11-vm -n <project-namespace> --timeout=300s
+kubectl patch vm windows11-vm -n <backing-namespace> --type merge -p '{"spec":{"runStrategy":"Halted"}}'
+kubectl wait --for=delete vmi/windows11-vm -n <backing-namespace> --timeout=300s
 ```
 
 ### 4.2 Export to QCOW2 Golden Image
@@ -313,7 +365,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: export-golden-image
-  namespace: <project-namespace>
+  namespace: <backing-namespace>
 spec:
   restartPolicy: Never
   containers:
@@ -358,20 +410,20 @@ spec:
 ```bash
 # Export golden image
 kubectl apply -f hack/windows/export-golden-image.yaml
-kubectl wait --for=condition=Ready pod/export-golden-image -n <project-namespace> --timeout=120s
+kubectl wait --for=condition=Ready pod/export-golden-image -n <backing-namespace> --timeout=120s
 
 # Monitor export progress
-kubectl logs -n <project-namespace> export-golden-image -f
+kubectl logs -n <backing-namespace> export-golden-image -f
 
 # Manual copy to ISO server (if curl upload fails)
-kubectl cp <project-namespace>/export-golden-image:/pvc/windows11-x64-golden.qcow2 /tmp/
+kubectl cp <backing-namespace>/export-golden-image:/pvc/windows11-x64-golden.qcow2 /tmp/
 kubectl cp /tmp/windows11-x64-golden.qcow2 iso/iso-upload-pod:/storage/
 
 # Verify golden image is available
 curl -I https://iso.example.com/windows11-x64-golden.qcow2
 
 # Clean up export pod
-kubectl delete pod export-golden-image -n <project-namespace> --wait=true
+kubectl delete pod export-golden-image -n <backing-namespace> --wait=true
 ```
 
 ## Step 5: Deploy from Golden Image
@@ -385,13 +437,13 @@ kubectl apply -f hack/windows/win11-x64.yaml
 # Create SSH key secret for key injection
 kubectl create secret generic authorized-keys-default \
   --from-file=key1=~/.ssh/id_rsa.pub \
-  -n <project-namespace>
+  -n <backing-namespace>
 
 # Monitor deployment
-kubectl get vm,vmi,dv -n <project-namespace> | grep win11-x64
+kubectl get vm,vmi,dv -n <backing-namespace> | grep win11-x64
 
 # Get VM IP when ready
-kubectl get vmi win11-x64 -n <project-namespace> -o jsonpath='{.status.interfaces[0].ipAddress}'
+kubectl get vmi win11-x64 -n <backing-namespace> -o jsonpath='{.status.interfaces[0].ipAddress}'
 
 # SSH to VM (once guest agent is ready)
 ssh kube-dc@<vm-ip>

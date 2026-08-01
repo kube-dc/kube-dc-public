@@ -1,347 +1,143 @@
-# GitOps & Automation
+# GitOps
 
-:::info Native Integration Coming
-First-class ArgoCD and Flux CD integration is on the Kube-DC roadmap — with one-click install and automatic project discovery from the console. Until then, you can self-host either tool inside one of your projects today and use it to manage the rest of your workloads.
+GitOps works with Kube-DC, but the controller must run in the right place.
+
+A Project is a governed workload environment on the shared platform, backed by
+one Kubernetes namespace. It cannot install the CRDs, webhooks, ClusterRoles, or additional namespaces required by Argo CD or
+Flux. Do not bootstrap either controller inside a Project.
+
+Choose one of these supported patterns:
+
+| Where the controller runs | What it manages | Use when |
+|---------------------------|-----------------|----------|
+| External CI or GitOps platform | One or more Kube-DC Projects through Project-scoped credentials | You already operate a central delivery platform |
+| A Kube-DC Managed Cluster | That cluster, and optionally registered external targets | You need Argo CD or Flux inside Kube-DC |
+| Manual CI reconciliation | One Project with `kubectl diff/apply` or Helm | You need a small, auditable delivery path without another controller |
+
+## Pattern 1: External Controller to a Project
+
+Configure the external controller with a credential scoped to the target
+Project. Do not let the tool bootstrap a cluster-admin account or create
+cluster-scoped resources on the Kube-DC platform cluster.
+
+Keep each target explicit:
+
+```text
+delivery-platform
+├── Project development  -> backing namespace acme-development
+├── Project staging      -> backing namespace acme-staging
+└── Project production   -> backing namespace acme-production
+```
+
+The Project kubeconfig sets the namespace, but manifests should still declare
+the intended Project backing namespace. A delivery job must fail if a manifest targets
+another namespace or includes a cluster-scoped object.
+
+:::warning Credentials for automation
+The interactive `kube-dc login` credential is a user session, not a permanent
+CI secret. Use the automation identity and credential flow approved by your
+Kube-DC administrator. Scope it to one Project, store it in the CI secret store,
+and rotate it regularly.
 :::
 
-GitOps is the practice of keeping all Kubernetes manifests in a Git repository and letting an automated operator apply changes to the cluster whenever you push. Kube-DC's fully standard Kubernetes API means any GitOps tool works out of the box.
+## Pattern 2: GitOps in a Managed Cluster
 
----
+A [Managed Cluster](provisioning-cluster.md) has its own Kubernetes API, so its
+administrator can install Argo CD, Flux, CRDs, and cluster-wide RBAC using the
+tool's official installation instructions.
 
-## Architecture: GitOps Project
+Install the controller with the Managed Cluster kubeconfig, not the parent
+Project kubeconfig. The controller can then manage namespaces and applications
+inside that cluster. Registering an external Project as another target remains
+a separate security decision and requires Project-scoped credentials.
 
-The recommended pattern is a dedicated project for your GitOps tooling that watches your other projects:
+## Pattern 3: Reconcile from CI
 
-```
-Git Repository
-      │
-      │  push / PR merge
-      ▼
- ┌──────────────────────┐
- │  acme-gitops         │  ← dedicated GitOps project
- │  (ArgoCD or Flux)    │
- └──────────┬───────────┘
-            │  deploys to
-  ┌─────────┼──────────────┐
-  ▼         ▼              ▼
-acme-dev  acme-staging  acme-prod
-```
-
-All namespaces follow the `{org}-{project}` pattern (e.g. `acme-dev`). You create the `gitops` project from the Kube-DC console, install your GitOps tool into it, then grant it permission to reconcile your other project namespaces.
-
----
-
-## Option 1: ArgoCD
-
-### Install ArgoCD into a dedicated project
-
-1. Create a project called `gitops` in the Kube-DC console
-
-2. Install ArgoCD into that project's namespace:
+For a small deployment, a CI job can render, review, and apply Project-scoped
+manifests without a resident controller:
 
 ```bash
-# Replace 'acme' with your organization name
-GITOPS_NS=acme-gitops
+helm template my-app ./chart -f environments/production.yaml > rendered.yaml
 
-kubectl create namespace $GITOPS_NS --dry-run=client -o yaml | kubectl apply -f -
+# kubectl diff uses exit 1 for expected differences and >1 for errors.
+set +e
+kubectl diff -f rendered.yaml
+diff_status=$?
+set -e
+if [ "$diff_status" -gt 1 ]; then
+  exit "$diff_status"
+fi
 
-kubectl apply -n $GITOPS_NS \
-  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl apply -f rendered.yaml
+kubectl rollout status deployment/my-app --timeout=5m
 ```
 
-3. Wait for ArgoCD to be ready:
+Use a fixed Project context. Treat `kubectl diff` exit code `1` as a normal
+change preview; stop on values greater than `1`, and on rendering, apply, or
+rollout errors.
+For higher assurance, promote the same image digest and rendered configuration
+between environments rather than rebuilding them.
 
-```bash
-kubectl wait --for=condition=available deployment/argocd-server \
-  -n $GITOPS_NS --timeout=120s
+## Repository Structure
+
+Keep reusable configuration separate from environment ownership:
+
+```text
+apps/
+└── payments/
+    ├── base/
+    └── overlays/
+        ├── development/
+        ├── staging/
+        └── production/
 ```
 
-4. Expose the ArgoCD UI via a LoadBalancer (or use port-forward for local access):
+A Project overlay should contain only resources supported in a Project. Put
+operators, CRDs, namespaces, and cluster add-ons in a Managed Cluster repository.
 
-```bash
-# Local access only
-kubectl port-forward svc/argocd-server -n $GITOPS_NS 8080:443
-```
+## Project Compatibility Checklist
 
-5. Get the initial admin password:
+Before enabling reconciliation, confirm that the rendered output:
 
-```bash
-kubectl -n $GITOPS_NS get secret argocd-initial-admin-secret \
-  -o jsonpath="{.data.password}" | base64 -d
-```
+- targets exactly one Project backing namespace
+- contains no `Namespace`, CRD, ClusterRole, or StorageClass objects
+- does not require `kubectl exec` or `attach`
+- uses Jobs instead of CronJobs in a Project
+- disables chart-managed NetworkPolicies
+- declares realistic CPU, memory, and storage requests
+- keeps Secret values in a secret manager, not Git
+- waits for rollout health before promotion
 
-Open `https://localhost:8080` and log in with `admin` / the password above.
+Use `helm template` or the tool's dry-run mode in CI to enforce this check.
 
-### Grant ArgoCD access to other projects
+## Rollback and Recovery
 
-ArgoCD needs permission to create and manage resources in your other project namespaces. Create a ClusterRole and binding for each target project:
+Git gives you the desired-state history, not a data backup. Reverting a commit
+can restore Kubernetes configuration, but it does not roll back a database,
+object bucket, or persistent volume. Pair GitOps with the service-specific
+recovery plan in [Data Protection and Recovery](backups-snapshots.md).
 
-```bash
-TARGET_NS=acme-prod   # repeat for each project you want ArgoCD to manage
+## Troubleshooting
 
-kubectl create rolebinding argocd-manager \
-  --clusterrole=admin \
-  --serviceaccount=$GITOPS_NS:argocd-application-controller \
-  -n $TARGET_NS
-```
+**The controller cannot create a resource**
 
-### Add your cluster to ArgoCD
+Check whether the chart contains a cluster-scoped resource or a resource that
+is read-only in Projects. Move that workload to a Managed Cluster or disable
+the unsupported chart component.
 
-```bash
-# Install argocd CLI
-curl -sSL -o /usr/local/bin/argocd \
-  https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-chmod +x /usr/local/bin/argocd
+**The controller tries to manage every namespace**
 
-# Log in
-argocd login localhost:8080 --username admin --insecure
+The target credential or controller configuration is too broad. Restrict its
+namespace scope to the Project and rotate any credential that had wider access.
 
-# Register the in-cluster server (ArgoCD managing the same cluster it runs on)
-argocd cluster add --in-cluster --name kube-dc
-```
+**The deployment is healthy but the application is unreachable**
 
-### Create an Application pointing at your Git repo
+GitOps reconciles the workload, not its public entry point. Check the
+LoadBalancer Service, EIP, or Gateway route in [Service Exposure](service-exposure.md).
 
-```bash
-argocd app create my-app \
-  --repo https://github.com/your-org/your-repo \
-  --path manifests/prod \
-  --dest-server https://kubernetes.default.svc \
-  --dest-namespace acme-prod \
-  --sync-policy automated \
-  --auto-prune \
-  --self-heal
-```
+## Next Steps
 
-Or declare the same thing as a YAML manifest (recommended — store this in Git too):
-
-```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: my-app
-  namespace: acme-gitops
-spec:
-  project: default
-  source:
-    repoURL: https://github.com/your-org/your-repo
-    targetRevision: main
-    path: manifests/prod
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: acme-prod
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-```
-
-```bash
-kubectl apply -f app.yaml
-```
-
-Every push to `main` is now automatically applied to `acme-prod`.
-
----
-
-## Option 2: Flux CD
-
-Flux is a lightweight GitOps operator that runs as a set of controllers in your cluster. Unlike ArgoCD it has no UI — configuration is entirely declarative.
-
-### Prerequisites
-
-Install the Flux CLI:
-
-```bash
-curl -s https://fluxcd.io/install.sh | sudo bash
-```
-
-Verify:
-
-```bash
-flux --version
-```
-
-### Bootstrap Flux into a dedicated project
-
-Flux bootstrap installs the controllers and commits its own manifests back to your repository:
-
-```bash
-GITOPS_NS=acme-gitops
-
-# GitHub example
-flux bootstrap github \
-  --owner=your-org \
-  --repository=your-repo \
-  --branch=main \
-  --path=clusters/kube-dc \
-  --namespace=$GITOPS_NS \
-  --personal   # remove this flag for org tokens
-```
-
-For GitLab:
-
-```bash
-flux bootstrap gitlab \
-  --owner=your-group \
-  --repository=your-repo \
-  --branch=main \
-  --path=clusters/kube-dc \
-  --namespace=$GITOPS_NS
-```
-
-Flux will push a `clusters/kube-dc/` directory to your repo containing its own manifests and start watching that path.
-
-### Grant Flux access to other projects
-
-```bash
-TARGET_NS=acme-prod   # repeat for each project
-
-kubectl create rolebinding flux-manager \
-  --clusterrole=admin \
-  --serviceaccount=$GITOPS_NS:kustomize-controller \
-  -n $TARGET_NS
-
-kubectl create rolebinding flux-manager-helm \
-  --clusterrole=admin \
-  --serviceaccount=$GITOPS_NS:helm-controller \
-  -n $TARGET_NS
-```
-
-### Declare a Kustomization targeting another project
-
-Add this file to your Git repo under `clusters/kube-dc/`:
-
-```yaml
-# clusters/kube-dc/acme-prod.yaml
----
-apiVersion: source.toolkit.fluxcd.io/v1
-kind: GitRepository
-metadata:
-  name: my-app
-  namespace: acme-gitops
-spec:
-  interval: 1m
-  url: https://github.com/your-org/your-repo
-  ref:
-    branch: main
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: my-app-prod
-  namespace: acme-gitops
-spec:
-  interval: 5m
-  sourceRef:
-    kind: GitRepository
-    name: my-app
-  path: ./manifests/prod
-  prune: true
-  targetNamespace: acme-prod   # deploy into this project
-```
-
-Push this file to Git and Flux will reconcile `manifests/prod` into `acme-prod` within 1 minute.
-
-### Check reconciliation status
-
-```bash
-flux get kustomizations -n acme-gitops
-flux logs -n acme-gitops
-```
-
----
-
-## Typical Repository Layout
-
-A clean layout for managing multiple Kube-DC projects from one repo:
-
-```
-your-repo/
-├── clusters/
-│   └── kube-dc/              # Flux bootstrap manifests (auto-generated)
-├── manifests/
-│   ├── dev/
-│   │   ├── deployment.yaml
-│   │   └── service.yaml
-│   ├── staging/
-│   │   └── kustomization.yaml
-│   └── prod/
-│       └── kustomization.yaml
-└── base/
-    ├── deployment.yaml        # shared base manifests
-    └── kustomization.yaml
-```
-
-Use Kustomize overlays to keep environment-specific differences minimal:
-
-```yaml
-# manifests/prod/kustomization.yaml
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - ../../base
-patches:
-  - patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 3
-    target:
-      kind: Deployment
-```
-
----
-
-## CI/CD Integration
-
-### GitHub Actions — build and let GitOps deploy
-
-```yaml
-# .github/workflows/build.yml
-name: Build and Push
-on:
-  push:
-    branches: [main]
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build and push image
-        run: |
-          docker build -t registry.kube-dc.cloud/acme/my-app:${{ github.sha }} .
-          docker push registry.kube-dc.cloud/acme/my-app:${{ github.sha }}
-      - name: Update image tag in manifests
-        run: |
-          sed -i "s|image: .*|image: registry.kube-dc.cloud/acme/my-app:${{ github.sha }}|" \
-            manifests/prod/deployment.yaml
-          git config user.email "ci@acme.com"
-          git config user.name "CI"
-          git commit -am "ci: update image to ${{ github.sha }}"
-          git push
-```
-
-The push triggers your GitOps controller (ArgoCD or Flux) to reconcile the new image tag into the cluster automatically.
-
----
-
-## Resource Considerations
-
-Both ArgoCD and Flux run as pods inside your `gitops` project and count toward your organization's quota:
-
-| Tool | Approximate resource usage |
-|------|---------------------------|
-| ArgoCD (full install) | ~1 vCPU / 512 Mi baseline |
-| Flux (controllers only) | ~200m CPU / 256 Mi baseline |
-
-On **Dev Pool** (4 vCPU / 8 GB), Flux is the better fit. On **Pro Pool** or **Scale Pool**, either tool works comfortably alongside your workloads.
-
----
-
-## Further Reading
-
-- [ArgoCD documentation](https://argo-cd.readthedocs.io)
-- [Flux CD documentation](https://fluxcd.io/flux)
-- [Kustomize documentation](https://kustomize.io)
-- [AI IDE Integration](ai-ide-integration.md) — use Claude Code or Cursor to write and apply manifests
-- [CLI & Kubeconfig](cli-kubeconfig.md) — set up `kubectl` for Kube-DC
+- [Projects](kubernetes-projects.md)
+- [Managed Clusters](provisioning-cluster.md)
+- [Security Restrictions](security-restrictions.md)
+- [Service Exposure](service-exposure.md)

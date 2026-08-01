@@ -1,183 +1,121 @@
 ---
 name: check-quota
-description: Check organization and project resource quota usage before deploying workloads. Covers org-level quota (CPU, memory, storage, pods, public IPv4, object storage) and per-project usage via Organization and Project status fields. Use this before creating VMs, apps, databases, clusters, or EIPs to avoid quota-exceeded errors.
+description: Check Kube-DC Organization and Project quota before creating workloads, VMs, databases, Managed Clusters, public IPs, or storage.
 ---
 
-## When to Use This Skill
+# Check Quota
 
-Run a quota check **before**:
-- Creating a VM (CPU + memory + storage consumption)
-- Deploying an application (CPU + memory + pods)
-- Creating a managed Kubernetes cluster (large CPU + memory + storage)
-- Provisioning a database (storage + pods)
-- Allocating a public EIP (publicIPv4 limit)
+Quota is governed at the Organization level and can be narrowed for an
+individual Project. Do not embed plan names, prices, or limits in automation;
+read the active values from status or the billing console.
 
-Also use for **troubleshooting** when workloads fail with `exceeded quota` errors.
-
----
-
-## Organization-Level Quota
-
-The `Organization` resource exposes aggregated usage across all projects in `.status.quotaUsage`. Values are refreshed every 5–7 minutes by the platform controller.
+## 1. Confirm context and scope
 
 ```bash
-kubectl get organization {org} -n {org} \
-  -o jsonpath='{.status.quotaUsage}' | jq .
+kubectl config current-context
+kubectl config view --minify -o jsonpath='{.contexts[0].context.namespace}{"\n"}'
 ```
 
-Expected output:
+A Project context should name the selected Project and set its backing namespace.
+Use `kube-dc use {domain}/{organization}/{project}` if they do not agree.
 
-```json
-{
-  "cpu":           { "used": "18.975", "hard": "26" },
-  "memory":        { "used": "63.6Gi", "hard": "70Gi" },
-  "storage":       { "used": "443.2Gi","hard": "460Gi" },
-  "pods":          { "used": "33",     "hard": "500" },
-  "publicIPv4":    { "used": "3",      "hard": "3" },
-  "objectStorage": { "used": "",       "hard": "500Gi" },
-  "lastUpdated":   "2026-04-07T20:55:42Z"
-}
-```
-
-**Field reference:**
-- `cpu` — cores (decimal). e.g. `"18.975"` = 18,975 millicores
-- `memory` / `storage` — GiB consumed vs plan hard limit
-- `publicIPv4` — count of `externalNetworkType: public` EIPs across all org namespaces
-- `objectStorage` — hard limit from plan; `used` is populated asynchronously
-- `lastUpdated` — timestamp of last controller refresh (up to 7 min old)
-
-Check a single field:
+## 2. Read Organization quota
 
 ```bash
-# CPU remaining
-kubectl get organization {org} -n {org} \
-  -o jsonpath='{.status.quotaUsage.cpu}' | jq .
-# → { "hard": "26", "used": "18.975" }
+kubectl -n {organization} get organization {organization} -o jsonpath='{.status.quotaUsage}' | jq .
 ```
 
----
+The status can contain:
 
-## Project-Level Quota
+- `cpu`, `memory`, `storage`, and `pods` with `used` and `hard` values;
+- `publicIPv4`, counted across the Organization's Projects;
+- `objectStorage`;
+- `accelerators` when GPU profiles are configured;
+- `lastUpdated`, the observation timestamp.
 
-Each `Project` resource exposes per-namespace usage in `.status.quotaUsage`:
+CPU is normalized to cores and memory/storage to GiB. For CPU and memory, the
+reported pair follows whichever requests or limits axis is closest to its cap.
+
+An empty `objectStorage.used` value means usage is not available from the
+in-cluster controller. It is not zero; consult the provider's object-storage
+usage surface before provisioning a large bucket.
+
+## 3. Read Project quota
 
 ```bash
-kubectl get project {project} -n {org} \
-  -o jsonpath='{.status.quotaUsage}' | jq .
+kubectl -n {organization} get project {project} -o jsonpath='{.status.quotaUsage}' | jq .
 ```
 
-Expected output:
+`perProjectQuotaSet: true` means an explicit `project-quota` ResourceQuota is
+active. Otherwise, the Project status reflects the inherited Organization
+limit. Organization usage is still the sum across Projects, so headroom shown
+on one Project is not reserved for it.
 
-```json
-{
-  "cpu":               { "used": "6.72",    "hard": "26" },
-  "memory":            { "used": "16.824Gi","hard": "70Gi" },
-  "storage":           { "used": "147.4Gi", "hard": "460Gi" },
-  "pods":              { "used": "12",      "hard": "500" },
-  "perProjectQuotaSet": false,
-  "lastUpdated":       "2026-04-07T20:55:00Z"
-}
-```
-
-- `hard` shows the **org-wide limit** when `perProjectQuotaSet: false`, or the **per-project cap** when set by an admin
-- `perProjectQuotaSet: true` means this project has an explicit `ResourceQuota/project-quota` that may be tighter than the org limit
-
-All projects at a glance:
+Compare all Projects when deciding where capacity is being consumed:
 
 ```bash
-kubectl get projects -n {org} \
-  -o custom-columns='PROJECT:.metadata.name,CPU_USED:.status.quotaUsage.cpu.used,CPU_HARD:.status.quotaUsage.cpu.hard,MEM_USED:.status.quotaUsage.memory.used,MEM_HARD:.status.quotaUsage.memory.hard'
+kubectl -n {organization} get projects -o custom-columns='PROJECT:.metadata.name,CPU:.status.quotaUsage.cpu.used,MEMORY:.status.quotaUsage.memory.used,STORAGE:.status.quotaUsage.storage.used,PODS:.status.quotaUsage.pods.used,UPDATED:.status.quotaUsage.lastUpdated'
 ```
 
----
+## 4. Inspect Kubernetes enforcement state
 
-## Real-Time Enforcement State
-
-`quotaUsage` is refreshed every 5–7 min. For the live enforcement state (what Kubernetes is actively enforcing right now), query the underlying `ResourceQuota` objects:
+Status is a normalized product view. When a create is being rejected, inspect
+the ResourceQuota objects the API server is enforcing in the Project's backing
+namespace:
 
 ```bash
-# All quotas in a project namespace
-kubectl get resourcequota -n {org}-{project}
-
-# Detailed breakdown with usage bars
-kubectl describe resourcequota -n {org}-{project}
+kubectl -n {project-backing-namespace} get resourcequota
+kubectl -n {project-backing-namespace} describe resourcequota
 ```
 
-The `hrq.hnc.x-k8s.io` quota is the organization-wide HNC propagated limit. The `project-quota` quota (if present) is the per-project cap set by an admin.
+The expected sources are:
 
-> **Note**: `kubectl describe resourcequota` shows raw Kubernetes units — millicores for CPU (e.g. `6720m`) and bytes for memory/storage (e.g. `18064129473`). Use `.status.quotaUsage` on the `Project` or `Organization` resource for human-readable values.
+| ResourceQuota | Meaning |
+|---|---|
+| `hrq.hnc.x-k8s.io` | Organization quota propagated into the Project |
+| `project-quota` | Optional tighter Project cap |
 
----
+This view covers native Kubernetes resources such as CPU, memory, storage,
+pods, and configured accelerator resource names. Public IPv4 and object-storage
+accounting use separate platform/provider paths and do not appear as ordinary
+ResourceQuota dimensions.
 
-## Interpreting Results
+## 5. Estimate the request
 
-### Sufficient capacity
+Add the workload's requested capacity, not only its apparent idle usage:
 
-```
-cpu:     used=6.72  / hard=26    → 19.28 cores free ✅
-memory:  used=16Gi  / hard=70Gi  → 54Gi free        ✅
-storage: used=147Gi / hard=460Gi → 313Gi free       ✅
-```
+- Deployment or StatefulSet: replica count multiplied by each container request.
+- VM: vCPU, memory, and requested disk size.
+- Database: every database instance or replica plus its storage.
+- Managed Cluster: control-plane and worker-pool resources.
+- Public exposure: each new public EIP that will be allocated.
+- GPU: every quota dimension reported for the selected live profile.
 
-Proceed with the deployment.
+Leave operational headroom for rollouts, node maintenance, database failover,
+and autoscaling. A workload at exactly the hard limit can fail when Kubernetes
+temporarily creates a replacement Pod.
 
-### Near limit — warn user
+## Troubleshoot quota rejection
 
-Any field where `used / hard > 0.8` (80%) is worth flagging before proceeding with large workloads.
+A typical API error names the ResourceQuota and exhausted resource. Capture it,
+then inspect both scopes:
 
-### At or over limit — action required
-
-```
-publicIPv4: used=3 / hard=3  → 0 free ❌
-```
-
-Options:
-- **Free existing resources**: delete unused EIPs, VMs, or pods
-- **Add a Turbo Add-on**: navigate to Manage Organization → Billing → Turbo Add-ons
-- **Upgrade plan**: for publicIPv4, upgrade to Scale Pool (3 IPs) or higher
-
----
-
-## Troubleshooting: "exceeded quota" Errors
-
-When a workload fails with:
-
-```
-exceeded quota: plan-quota, requested: requests.cpu=500m,
-used: requests.cpu=25500m, limited: requests.cpu=26
+```bash
+kubectl -n {organization} get organization {organization} -o yaml
+kubectl -n {organization} get project {project} -o yaml
+kubectl -n {project-backing-namespace} describe resourcequota
 ```
 
-1. Run org quota check to find the exhausted resource:
-   ```bash
-   kubectl get organization {org} -n {org} -o jsonpath='{.status.quotaUsage}' | jq .
-   ```
-2. Run project quota check to see which project is consuming the most:
-   ```bash
-   kubectl get projects -n {org} \
-     -o custom-columns='PROJECT:.metadata.name,CPU:.status.quotaUsage.cpu.used,MEM:.status.quotaUsage.memory.used'
-   ```
-3. Free capacity or expand quota before retrying.
-
----
-
-## Quota Limits by Plan
-
-| Resource | Dev Pool | Pro Pool | Scale Pool |
-|----------|----------|----------|------------|
-| CPU (requests) | 4 cores | 8 cores | 16 cores |
-| Memory | 8 Gi | 24 Gi | 56 Gi |
-| Storage | 60 Gi | 160 Gi | 320 Gi |
-| Pods | 100 | 200 | 500 |
-| Public IPv4 | 1 | 1 | 3 |
-| Object Storage | 20 Gi | 100 Gi | 500 Gi |
-
-Turbo x1 adds: +2 CPU, +4 Gi RAM, +20 Gi storage (€9/mo).
-Turbo x2 adds: +4 CPU, +8 Gi RAM, +40 Gi storage (€16/mo).
-
----
+Resolve the exhausted dimension by deleting unused resources, reducing the
+request, moving work only when governance permits, or requesting a quota or
+plan change from the Organization administrator. Do not retry unchanged
+manifests in a loop.
 
 ## Safety
 
-- Always check quota **before** creating resource-heavy workloads (clusters, VMs with large disks)
-- `publicIPv4` quota is hard — no burst. Check before allocating any `externalNetworkType: public` EIP
-- `quotaUsage.lastUpdated` may be up to 7 minutes stale; use `kubectl describe resourcequota` for real-time data when timing matters
+- Treat `lastUpdated` as an observation timestamp and use ResourceQuota for a
+  current admission failure.
+- Do not treat an absent or empty usage field as zero.
+- Check shared Organization headroom as well as a Project cap.
+- Confirm public IPv4 and GPU entitlement separately before creating those
+  resources.

@@ -1,18 +1,20 @@
 # Kube-DC Documentation
 
-This documentation site is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
+This directory contains the Docusaurus site published at
+[docs.kube-dc.com](https://docs.kube-dc.com). The documentation source is split
+between the user-facing Cloud Guide and the operator-facing Platform Docs.
 
 ## Prerequisites
 
-- Node.js version 18.0 or above
+- Node.js version 20.0 or above
 - npm (comes with Node.js)
 
 ## Installation
 
-Install dependencies:
+Install the locked dependency set:
 
 ```bash
-npm install
+npm ci
 ```
 
 ## Local Development
@@ -23,45 +25,60 @@ Start the development server:
 npm run start
 ```
 
-This command starts a local development server at `http://localhost:3000` and opens it in your browser. Most changes are reflected live without having to restart the server.
+This starts a local development server at `http://localhost:3000`. Most changes
+appear without restarting the server.
 
-## Build
+## Validation
 
-Generate static content for production:
+Run the complete local validation before opening a pull request:
 
 ```bash
+npm run typecheck
 npm run build
 ```
 
-This command generates static content into the `build` directory that can be served using any static hosting service.
+The production build validates internal links and writes static content to
+`build`. Broken internal links fail the build.
 
-## Serve Production Build Locally
-
-To test the production build locally:
+To inspect the production build locally:
 
 ```bash
 npm run serve
 ```
 
-This serves the `build` directory at `http://localhost:3000`.
-
-## Features
-
-- **Search**: Full-text search across all documentation (Ctrl+K / Cmd+K)
-- **Code Highlighting**: Syntax highlighting for multiple languages
-- **Mermaid Diagrams**: Support for flowcharts and diagrams
-- **PatternFly Styling**: Custom theme matching PatternFly design system
-- **Responsive**: Mobile-friendly navigation and layout
-
 ## Project Structure
 
-```
+```text
+docs/
+|-- cloud/                    # User-facing Cloud Guide
+`-- platform/                 # Operator-facing Platform Docs
 docs-ui/
-├── docs/              # Documentation markdown files
-├── static/            # Static assets (images, etc.)
-├── src/
-│   ├── css/          # Custom CSS
-│   └── pages/        # Custom pages
-├── docusaurus.config.ts  # Docusaurus configuration
-└── sidebars.ts       # Sidebar navigation structure
+|-- static/                   # Site-wide static assets
+|-- src/                      # Theme, components, styles, and pages
+|-- docusaurus.config.ts      # Site and content-plugin configuration
+|-- sidebarsCloud.ts          # Cloud Guide navigation
+`-- sidebarsPlatform.ts       # Platform Docs navigation
 ```
+
+## Publishing
+
+The public source mirror and GitHub Pages target are
+[`kube-dc/kube-dc-public`](https://github.com/kube-dc/kube-dc-public). For a
+documentation release, mirror `README.md`, `docs/cloud/`, `docs/platform/`,
+`docs-ui/`, and `static/diagrams/` byte-for-byte from the product source. Keep
+public-owned `.github/` workflows and `skills/` content in the public repository.
+
+A push to `main` that changes `docs/**` or `docs-ui/**` starts the
+[Deploy Docs to GitHub Pages](https://github.com/kube-dc/kube-dc-public/actions/workflows/deploy-docs.yml)
+workflow. It installs the locked dependencies, type-checks and builds Docusaurus,
+uploads
+`docs-ui/build` as a Pages artifact, and deploys it to the `github-pages`
+environment. The same workflow can be started manually from GitHub Actions.
+
+GitHub Pages serves the artifact at `docs.kube-dc.com` using the CNAME in
+`docs-ui/static/CNAME`. The Dagger `docs-check` function performs the
+non-publishing governance, dependency, type, and build checks in an isolated
+Node.js 20 container.
+
+Do not use `npm run deploy` for normal releases. That Docusaurus command
+writes the legacy `gh-pages` branch and bypasses the reviewed Pages workflow.

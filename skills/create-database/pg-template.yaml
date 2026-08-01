@@ -1,23 +1,21 @@
 apiVersion: db.kube-dc.com/v1alpha1
 kind: KdcDatabase
 metadata:
-  name: {db-name}
-  namespace: {project-namespace}
+  name: "{database-name}"
+  namespace: "{backing-namespace}"
 spec:
   engine: postgresql
   version: "16"
-  replicas: 2             # 2+ for HA with automatic failover
+  replicas: 2
   cpu: "1"
   memory: 2Gi
-  storage: 10Gi
-  databaseName: {database-name}
+  storage: 20Gi
+  databaseName: "{application-database}"
   username: app
   expose:
-    type: internal          # internal | gateway | loadbalancer
-  # Scheduled backups land in the project's auto-provisioned S3 bucket
-  # (`{project-namespace}-db-backups`). Continuous WAL archiving is enabled
-  # whenever `backup.enabled: true`, which is what powers PITR.
+    type: internal # internal | loadbalancer
+                   # gateway is manifest-only for PostgreSQL 17 direct TLS
   backup:
     enabled: true
-    schedule: "0 2 * * *"   # daily at 02:00
+    schedule: "0 2 * * *"
     retentionDays: 7

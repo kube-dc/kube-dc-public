@@ -1,169 +1,159 @@
-# Kube-DC — AI Agent Instructions
+# Kube-DC AI Agent Instructions
 
-Kube-DC is an open-source Kubernetes-native data center platform providing multi-tenancy, virtual machines (KubeVirt), managed Kubernetes clusters (Kamaji + Cluster API), managed databases (PostgreSQL, MariaDB), OVN networking with public/floating IPs, S3 object storage, block storage, backups, SSO (Keycloak), and RBAC.
+Kube-DC is a Kubernetes-native cloud platform for governed application,
+virtual-machine, data, and Managed Cluster workloads.
 
-## Architecture
+## Product Model
 
-- **Organizations** → **Projects** → **Resources** (VMs, clusters, databases, services)
-- Namespace pattern: org namespace = `{org}`, project namespace = `{org}-{project}`
-- All user resources MUST be created in project namespaces
-- Each project gets an isolated VPC (Kube-OVN) with its own subnet
+- An **Organization** owns identity, membership, billing, and shared quota.
+- A **Project** is the governed workload boundary for a team or environment.
+- Kubernetes stores a Project's resources in its **backing namespace**,
+  `{organization}-{project}`. This name is an implementation detail, not a
+  separate product object.
+- A **Managed Cluster** is created inside a Project and has its own
+  Kubernetes API, control plane, namespaces, CRDs, and cluster-scoped policy.
 
-## Custom Resources (CRDs)
+Use a Project for supported namespaced applications, VMs, databases, storage,
+and platform services. Use a Managed Cluster when software needs CRDs,
+operators, multiple namespaces, cluster-scoped RBAC, admission webhooks,
+StorageClasses, NetworkPolicies, CronJobs, or privileged/host access.
 
-| Resource | API Group | Version | Short | Namespaced | Purpose |
-|----------|-----------|---------|-------|------------|---------|
-| `Organization` | `kube-dc.com` | `v1` | — | Yes¹ | Tenant account (billing, users, quotas) |
-| `OrganizationGroup` | `kube-dc.com` | `v1` | — | Yes | Maps groups → K8s roles per project |
-| `Project` | `kube-dc.com` | `v1` | — | Yes | Isolated workspace with VPC |
-| `EIp` | `kube-dc.com` | `v1` | — | Yes | External IP (cloud or public) |
-| `FIp` | `kube-dc.com` | `v1` | — | Yes | Floating IP (1:1 NAT to VM/pod) |
-| `KdcCluster` | `k8s.kube-dc.com` | `v1alpha1` | `kdc-cl` | Yes | Managed Kubernetes cluster |
-| `KdcDatabase` | `db.kube-dc.com` | `v1alpha1` | `kdcdb` | Yes | Managed PostgreSQL / MariaDB |
-| `VirtualMachine` | `kubevirt.io` | `v1` | `vm` | Yes | KubeVirt VM definition |
-| `DataVolume` | `cdi.kubevirt.io` | `v1beta1` | `dv` | Yes | VM disk (import/blank) |
-| `ObjectBucketClaim` | `objectbucket.io` | `v1alpha1` | `obc` | Yes | S3 bucket claim |
+## Resource Scope
 
-¹ Organizations live in a namespace with the same name as the organization.
+| Resource | API group/version | Scope and purpose |
+|---|---|---|
+| `Organization` | `kube-dc.com/v1` | Organization namespace; identity, billing, quota |
+| `OrganizationGroup` | `kube-dc.com/v1` | Organization namespace; maps groups to Project roles |
+| `Project` | `kube-dc.com/v1` | Organization namespace; creates a governed workload boundary |
+| `EIp`, `FIp` | `kube-dc.com/v1` | Project backing namespace; external/floating addresses |
+| `KdcCluster` | `k8s.kube-dc.com/v1alpha1` | Project backing namespace; Managed Cluster |
+| `KdcDatabase` | `db.kube-dc.com/v1alpha1` | Project backing namespace; PostgreSQL or MariaDB |
+| `ManagedSecret` | `security.kube-dc.com/v1alpha1` | Project backing namespace; OpenBao-backed secret intent |
+| `ManagedCertificate` | `security.kube-dc.com/v1alpha1` | Project backing namespace; managed X.509 certificate |
+| `KMSKey` | `security.kube-dc.com/v1alpha1` | Project backing namespace; OpenBao Transit key |
+| `DatabaseCredentialPolicy` | `security.kube-dc.com/v1alpha1` | Project backing namespace; static password rotation |
+| `VirtualMachine` | `kubevirt.io/v1` | Project backing namespace; KubeVirt VM |
+| `DataVolume` | `cdi.kubevirt.io/v1beta1` | Project backing namespace; VM disk |
+| `ObjectBucketClaim` | `objectbucket.io/v1alpha1` | Project backing namespace; S3 bucket claim |
 
-## Key Constraints & Safety Rules
+## Standard Project Roles
 
-1. **Namespace scope** — All user resources MUST be in the project namespace (`{org}-{project}`)
-2. **Network reference** — VMs MUST use `networkName: {namespace}/default` with Multus bridge
-3. **StorageClass** — Default is `local-path`; always specify `storageClassName`
-4. **Guest agent** — VMs MUST include `qemu-guest-agent` in cloud-init for IP reporting and SSH key injection
-5. **EIP before FIP** — FIPs with `externalNetworkType: public` auto-create EIPs; don't create both manually
-6. **FIP + LB conflict** — A pod/VM CANNOT simultaneously be a public FIP target AND a cloud-network LB backend
-7. **Issuer before HTTPS** — A cert-manager `Issuer` must exist in the namespace before using `expose-route: https`
-8. **OBC label** — ObjectBucketClaims MUST have `kube-dc.com/organization: {org}` label
-9. **KdcCluster ports** — Each cluster's `dataStore.port` must be unique within the project
-10. **Users — UI only** — No User CRD exists. Users are managed via Kube-DC console (Keycloak). Direct users to the UI for user management.
+The exact role names are `admin`, `developer`, `project-manager`, and `user`.
 
-## Naming Conventions
+| Role | Summary |
+|---|---|
+| `admin` | Manage supported Project resources and namespaced RBAC; quota objects remain read-only |
+| `developer` | Manage supported workloads, volumes, Services, and managed services |
+| `project-manager` | Read resources and use approved VM and managed-security operations |
+| `user` | Read supported resources and logs |
 
-| Entity | Pattern | Example |
-|--------|---------|---------|
-| Org namespace | `{org}` | `shalb` |
-| Project namespace | `{org}-{project}` | `shalb-docs` |
-| Auto hostname | `{svc}-{namespace}.{domain}` | `wordpress-shalb-docs.kube-dc.cloud` |
-| S3 bucket name | `{namespace}-{bucket}` | `shalb-docs-my-bucket` |
-| VM network | `{namespace}/default` | `shalb-docs/default` |
-| DB endpoint (PG) | `{name}-rw.{ns}.svc:5432` | `docs-pg-rw.shalb-docs.svc:5432` |
-| DB endpoint (Maria) | `{name}.{ns}.svc:3306` | `my-mariadb.shalb-docs.svc:3306` |
-| DB secret (PG) | `{name}-app` | `docs-pg-app` |
-| DB secret (Maria) | `{name}-password` | `my-mariadb-password` |
-| DB gateway endpoint | `{name}-db-{ns}.kube-dc.cloud:{port}` | `docs-pg-db-shalb-docs.kube-dc.cloud:5432` |
-| SSH keypair secret | `ssh-keypair-default` | per project namespace |
-| SSH auth keys secret | `authorized-keys-default` | per project namespace |
-| Cluster kubeconfig | `{cluster}-cp-admin-kubeconfig` | data key: `admin.conf` (external URL) |
-| Cluster API endpoint | `https://{cluster}-cp-{ns}.{domain}:443` | `https://dev-cp-shalb-docs.kube-dc.cloud:443` |
+No standard Project role grants pod exec, attach, port-forward, or
+NetworkPolicy authoring. Pod exec and attach are also admission-blocked in
+Project backing namespaces. Use Jobs for one-off application administration.
 
-## Service Exposure — Two Distinct Paths
+Users are managed in the Kube-DC console through Keycloak. There is no User
+custom resource. Only Organization Admins manage members, Projects, billing,
+shared quota, and Organization Groups.
 
-### Path A: Gateway Routes via Envoy (HTTP/HTTPS/gRPC)
+## Safety and Naming
 
-Traffic flows through shared Envoy Gateway. Auto TLS certificates and DNS hostnames.
+1. Create workload resources in the selected Project's backing namespace.
+2. Before creating VMs, applications, databases, Managed Clusters, storage, or
+   public addresses, inspect Organization and Project quota.
+3. A VM's default Multus network is `{backing-namespace}/default`.
+4. Install `qemu-guest-agent` in supported VM guests and use the Project's
+   `authorized-keys-default` Secret for SSH key injection.
+5. A public `FIp` creates and owns its required `EIp`; do not create both.
+6. Do not make one VM/pod both a public FIP target and a cloud LoadBalancer
+   backend.
+7. For HTTPS routes, create the Project's cert-manager `Issuer` first.
+8. Give manually created ObjectBucketClaims the
+   `kube-dc.com/organization: {organization}` label so dashboard and
+   Organization usage attribution remain correct.
+9. Keep each `KdcCluster.spec.dataStore.port` unique within a Project.
+10. Treat provider domains, pools, plans, versions, and StorageClasses as
+    installation-specific. Read live configuration instead of inventing them.
+
+## Service Exposure
+
+### Hostname-based web traffic
+
+Use a `LoadBalancer` Service with a Gateway route for HTTP, HTTPS, or TLS
+passthrough:
 
 ```yaml
-annotations:
-  service.nlb.kube-dc.com/expose-route: "https"   # http | https | tls-passthrough
-  # Optional:
-  # service.nlb.kube-dc.com/route-hostname: "myapp.example.com"
-  # service.nlb.kube-dc.com/route-port: "8080"
-  # service.nlb.kube-dc.com/tls-issuer: "letsencrypt"
+metadata:
+  annotations:
+    service.nlb.kube-dc.com/expose-route: "https" # http | https | tls-passthrough
+    # service.nlb.kube-dc.com/route-hostname: "app.example.com"
+    # service.nlb.kube-dc.com/route-port: "8080"
+    # service.nlb.kube-dc.com/tls-issuer: "letsencrypt"
 ```
 
-Best for: web apps, APIs, microservices.
+`https` creates an HTTPRoute and terminates TLS at the shared Gateway.
+`tls-passthrough` creates a TLSRoute and requires the backend to present a
+certificate valid for the public hostname. These annotations do not create a
+GRPCRoute; validate HTTP/2/gRPC compatibility for the application or use a
+dedicated LoadBalancer.
 
-### Path B: Direct EIP + LoadBalancer (Any TCP/UDP)
+### Selected TCP or UDP ports
 
-Dedicated External IP bound to LoadBalancer service. No Envoy, no auto-TLS.
+Create an `EIp`, then bind a `LoadBalancer` Service:
 
 ```yaml
-# Step 1: Create a public EIP
 apiVersion: kube-dc.com/v1
 kind: EIp
 metadata:
-  name: my-eip
-  namespace: {project-namespace}
+  name: app-ip
+  namespace: {backing-namespace}
 spec:
   externalNetworkType: public
 ---
-# Step 2: Bind service to the EIP
 apiVersion: v1
 kind: Service
 metadata:
-  name: my-service
-  namespace: {project-namespace}
+  name: app
+  namespace: {backing-namespace}
   annotations:
-    service.nlb.kube-dc.com/bind-on-eip: "my-eip"
+    service.nlb.kube-dc.com/bind-on-eip: app-ip
 spec:
   type: LoadBalancer
   ports:
-  - port: 22
-    targetPort: 22
+  - port: 443
+    targetPort: 8443
   selector:
-    app: my-app
+    app: app
 ```
 
-Best for: SSH, game servers, databases, custom TCP/UDP protocols.
+The `service.nlb.kube-dc.com/autodelete: "true"` annotation is advanced
+recovery behavior: it can delete an endpoint-less Service. It does not delete
+an EIP when the Service is deleted.
 
-### Decision Guide
+## Important Product Truths
 
-| Need | → Use |
-|------|-------|
-| HTTP/HTTPS web app | Gateway Route (`expose-route: https`) |
-| Auto TLS cert | Gateway Route (`expose-route: https`) |
-| SSH to VM | Direct EIP (`bind-on-eip`) |
-| Game server (UDP) | Direct EIP (`bind-on-eip`) |
-| Custom TCP protocol | Direct EIP (`bind-on-eip`) |
-| gRPC service | Gateway Route (`expose-route: https` + `route-port`) |
+- The supported external Managed Cluster kubeconfig is Secret
+  `{cluster}-cp-admin-kubeconfig-external`, key `admin.conf`. It exists only
+  when external API exposure is enabled.
+- Managed database wizard exposure is `internal` or `loadbalancer`. Gateway is
+  manifest-only and compatible only with PostgreSQL 17 direct TLS; it is not a
+  MariaDB or PostgreSQL 14-16 path. Standard roles cannot use port-forward.
+- `DatabaseCredentialPolicy` supports `static-rotated`. `dynamic` remains
+  `Ready=False/DynamicModeDeferred`, and credential issuance returns HTTP 501.
+- Gateway HTTPS creates a raw cert-manager `Certificate`, not a
+  `ManagedCertificate`.
+- KMS key material never leaves OpenBao, but direct encrypt plaintext travels
+  through the Kube-DC backend to OpenBao and decrypted plaintext returns the
+  same way. Kube-DC does not provide a general workload ServiceAccount login
+  for Transit; application integrations need an operator-approved auth path.
+- A bound ObjectBucketClaim gets its own Secret and ConfigMap. Use those
+  per-bucket credentials for that bucket; Organization account keys do not
+  automatically grant access to all OBC buckets.
 
-## Service Annotations Reference
+## References
 
-| Annotation | Values | Effect |
-|------------|--------|--------|
-| `service.nlb.kube-dc.com/expose-route` | `http`, `https`, `tls-passthrough` | Create Gateway HTTPRoute/TLSRoute |
-| `service.nlb.kube-dc.com/route-hostname` | FQDN | Override auto hostname |
-| `service.nlb.kube-dc.com/route-port` | port number | Target port for gateway |
-| `service.nlb.kube-dc.com/tls-issuer` | issuer name | cert-manager Issuer (default: `letsencrypt`) |
-| `service.nlb.kube-dc.com/tls-secret` | secret name | User-provided TLS cert |
-| `service.nlb.kube-dc.com/bind-on-eip` | EIP name | Bind LB to specific EIP |
-| `service.nlb.kube-dc.com/bind-on-default-gw-eip` | `"true"` | Bind LB to project default EIP |
-| `service.nlb.kube-dc.com/autodelete` | `"true"` | Auto-delete EIP when service deleted |
-| `network.kube-dc.com/external-network-type` | `cloud`, `public` | EIP type for auto-created EIP |
-| `k8s.kube-dc.com/expose-route` | `"true"` | Expose K8s API via TLSRoute |
-
-## Project Network Types
-
-**Cloud (`egressNetworkType: cloud`) is the recommended default.**
-
-| Aspect | Cloud (Recommended) | Public |
-|--------|---------------------|--------|
-| Gateway | Shared NAT (more secure) | Dedicated public IP |
-| Default EIPs | From `ext-cloud` | From `ext-public` |
-| Can get public EIPs | Yes (specify `externalNetworkType: public`) | Yes (default) |
-| Best for | Web apps, APIs | Game servers, direct IP |
-
-## Resources Reference
-
-- **Docs**: See `docs/cloud/` — full documentation per resource domain
-- **Examples**: See `examples/` — ready-to-use YAML manifests
-- **Skills**: See `skills/` — step-by-step procedures with templates
-- **Knowledge**: See `knowledge/` — compiled CRD references and patterns
-- **Full docs dump**: See https://docs.kube-dc.com/llms-full.txt
-
-## Quota Awareness (Important)
-
-Before deploying any resource-consuming workload (VM, cluster, database, app, public EIP), always check available quota using the `check-quota` skill (`skills/check-quota/SKILL.md`).
-
-Quick check:
-```bash
-# Org-level: CPU, memory, storage, pods, publicIPv4, objectStorage
-kubectl get organization {org} -n {org} -o jsonpath='{.status.quotaUsage}' | jq .
-
-# Project-level: per-namespace breakdown
-kubectl get project {project} -n {org} -o jsonpath='{.status.quotaUsage}' | jq .
-```
-
-`publicIPv4` is a hard limit with no burst — always check before allocating `externalNetworkType: public` EIPs.
+- [Cloud documentation](docs/cloud/index.md)
+- [Projects](docs/cloud/kubernetes-projects.md)
+- [Service exposure](docs/cloud/service-exposure.md)
+- [Managed databases](docs/cloud/managed-databases.md)
+- [Managed Cluster operations](docs/cloud/cluster-management.md)
+- [Full documentation for agents](https://docs.kube-dc.com/llms-full.txt)

@@ -1,6 +1,6 @@
 # Secrets Manager
 
-Kube-DC's Secrets Manager gives every project a built-in, audit-grade place to keep sensitive values — API tokens, database credentials, TLS keys — without scattering them across raw Kubernetes `Secret` objects or stuffing them into git. Values live in the platform's encrypted store (OpenBao) and can be projected into a Kubernetes `Secret` automatically when your workloads need them.
+Kube-DC's Secrets Manager gives each Project a managed place to keep sensitive values, such as API tokens and application credentials, without putting them in Git. Values live in the platform's encrypted OpenBao store and can be projected into a Kubernetes `Secret` when a workload needs them.
 
 You can manage secrets through the **dashboard**, the **`kube-dc` CLI**, or the **HTTP API**. All three surfaces talk to the same backend, so changes made in one show up immediately in the others.
 
@@ -22,15 +22,15 @@ In your project's sidebar, click the **key icon** to open the Secrets Manager. Y
 
 The sidebar tree under **Secrets** lists every secret in the project. The status dot next to each name tells you at a glance:
 
-- 🟢 **green** — sync is enabled and the Kubernetes `Secret` has been projected
-- 🟡 **amber** — sync is enabled but the projection isn't ready yet (initial reconcile, or ESO is retrying)
-- ⚪ **grey** — sync is disabled; values are platform-store only
+- **Ready** (green) — sync is enabled and the Kubernetes `Secret` has been projected
+- **Pending** (amber) — sync is enabled but the projection is not ready yet
+- **Sync disabled** (gray) — values remain in the platform store only
 
 Click a secret in the tree (or click its name in the table) to open the detail view with full metadata, a **Reveal values** button, and a **Used by** panel listing every Deployment, StatefulSet, DaemonSet, Job, CronJob, and Pod in the project that references the synced `Secret`.
 
 ## Create a secret
 
-### Via the dashboard
+### Create via the dashboard
 
 1. Open the **Secrets Manager** view in your project.
 2. Click **Create secret**.
@@ -45,7 +45,7 @@ Click a secret in the tree (or click its name in the table) to open the detail v
 
 If you provided initial values, the secret is created and its first version is written in one round trip. Otherwise the secret starts empty and you can populate it later with the CLI (`kube-dc secrets put …`).
 
-### Via the CLI
+### Create via the CLI
 
 ```bash
 # Empty secret, sync enabled, target defaults to the secret name:
@@ -65,19 +65,23 @@ kube-dc secrets create api-keys --sync-disabled
 
 ## Import an existing Kubernetes Secret
 
-Already have a raw `Secret` in your project namespace? Import it so the platform takes over its lifecycle.
+Already have a raw `Secret` in your Project's backing namespace? Import it so the platform takes over its lifecycle.
 
-### Via the dashboard
+### Import via the dashboard
 
 1. Open the **Secrets Manager** view.
 2. Click **Import existing Secret**.
-3. Enter the **source Kubernetes Secret name**. Same-namespace by default; tick **Cross-namespace import** and enter the source namespace if it lives elsewhere (audit-visible).
+3. Enter the **source Kubernetes Secret name**. The source defaults to the current Project's backing namespace.
 4. Optionally rename the managed secret (defaults to the source name) and pick a type.
 5. Click **Import**.
 
+The cross-namespace option appears only when your identity can list eligible
+namespaces. It still requires permission to read the source `Secret`, and the
+request is recorded in the audit stream.
+
 The import reads every key from the source `Secret`, writes them to the platform store, creates the matching `ManagedSecret` CR, and turns on sync so the original `Secret` keeps existing (now owned by the platform). Failures roll back cleanly — no orphan KV paths are left behind.
 
-### Via the CLI
+### Import via the CLI
 
 ```bash
 kube-dc secrets import app-config --from legacy-app-credentials
@@ -103,7 +107,13 @@ kind: Deployment
 metadata:
   name: my-app
 spec:
+  selector:
+    matchLabels:
+      app: my-app
   template:
+    metadata:
+      labels:
+        app: my-app
     spec:
       containers:
       - name: app
@@ -137,7 +147,9 @@ spec:
     targetSecretName: app-password
 ```
 
-The first version is written when the resource is created. Subsequent versions appear on the schedule. Workloads pick up the new value on the next ESO refresh (default 1 hour; configurable via `spec.sync.refreshInterval`).
+The first version is written when the resource is created. Subsequent versions appear on the schedule. ESO then updates the projected Kubernetes `Secret` on its refresh interval (one hour by default; set `spec.sync.refreshInterval` to change it).
+
+A Secret volume is refreshed eventually, but the application must reread or reload the file. Values injected through `env` or `envFrom` never change in a running container; roll out the workload after rotation.
 
 The Kube-DC CLI's `kube-dc secrets get app-password --value` always shows the current version. Older versions remain readable via the API for the secret's KV history window.
 
@@ -152,32 +164,42 @@ The dashboard's delete action soft-deletes by default; destroy must be done via 
 
 ## Permissions
 
-Secret operations follow your project role:
+Secret operations combine Kubernetes RBAC on the `ManagedSecret` with OpenBao
+policy on the stored values:
 
-| Role | List | Read metadata | Reveal values | Write | Delete | Destroy |
-|---|---|---|---|---|---|---|
-| `user` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `developer` | ✅ | ✅ | ✅ (own project) | ✅ | ✅ (soft) | ❌ |
-| `project-manager` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `admin` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (destroy) |
+| Role | `ManagedSecret` lifecycle | Read or write values | Change sync | Destroy history |
+|---|---|---|---|---|
+| `user` | Read metadata | No | No | No |
+| `developer` | Create, read, update, delete | Yes | Yes | No |
+| `project-manager` | Read and update existing resources | Yes | Yes, on existing resources | No |
+| `admin` | Full lifecycle | Yes | Yes | Yes |
 
-**Organization admins** see metadata across every project in the org by default but can't reveal values without first calling:
+`developer` and `project-manager` can also read Kubernetes `Secret` objects in
+the Project's backing namespace. Treat the Project, rather than an individual secret, as
+the access-control boundary.
+
+An installation can require Organization admins to open a short, audited
+elevation window before reading values in a Project where they have no Project
+role:
 
 ```bash
 kube-dc orgs elevate <project> --reason "incident IR-2026-05-12"
 ```
 
-This opens a 15-minute audit-tagged window where the org-admin can read values. The reason is stored on every value-read audit event during the window so compliance review can correlate. Close the window early with `kube-dc orgs release <project>`.
+The window lasts 15 minutes and can be closed early with `kube-dc orgs release
+<project>`. Ask the platform operator whether elevation enforcement is enabled;
+when it is not enabled, the window still tags matching audit events but is not
+an authorization gate.
 
 ## Audit
 
 The audit stream captures every operation:
 
 ```bash
-# All secret events in this project in the last hour:
-kube-dc audit list --service secrets --since 1h
+# Secret events in this project's default query window:
+kube-dc audit list --service secrets
 
-# Org-wide view (org-admin only):
+# Organization-wide view (org-admin only):
 kube-dc audit list --org --service secrets
 
 # CSV export for compliance review:
@@ -190,7 +212,7 @@ Every event includes `actor`, `actor_email`, `action`, `result`, `resource`, `re
 
 - **Cross-project copies** — to move a secret between projects, `kube-dc secrets get --value -o yaml` in the source project, then `kube-dc secrets create … --from-literal=…` in the target. The platform deliberately doesn't expose a one-step cross-project copy to keep the audit trail unambiguous.
 - **Diff before destroy** — `kube-dc secrets consumers <name>` lists every workload referencing the synced `Secret`. Always check this before `--destroy`.
-- **Org-admin reading own projects** — if you're org-admin and also a member of a project's developer/admin group, you can read values directly without elevation. Elevation is only required when accessing projects you don't otherwise have project-level access to.
+- **Organization admin access** — a Project role grants direct access according to the table above. Elevation applies only when the installation enforces it and the Organization admin has no qualifying Project role.
 
 ## When to use Secrets Manager vs. other features
 
@@ -200,7 +222,7 @@ distinct needs:
 
 | Feature | Use when |
 |---|---|
-| [KMS](kms.md) | You want to encrypt opaque payloads or wrap your own data keys on the fly (not store them). The platform never sees plaintext. |
+| [KMS](kms.md) | You want to encrypt opaque payloads or wrap your own data keys on the fly (not store them). The Transit service processes each plaintext or ciphertext request, while non-exportable key material remains inside OpenBao. |
 | [Certificate Manager](certificate-manager.md) | You need x509 certs (TLS server, mTLS, code signing). Cert renewal is automatic. |
 | [Database Credentials](database-credentials.md) | The "secret" is a database password whose lifecycle is tied to an actual DB user. The platform rotates the password on schedule. |
 

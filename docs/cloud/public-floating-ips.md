@@ -1,9 +1,11 @@
 # External & Floating IPs
 
-Kube-DC provides two types of external IP addresses for connecting your resources to the internet:
+Kube-DC provides two address resources for Project egress and inbound access:
 
-- **External IP (EIP)** — an IP address that can be bound to a LoadBalancer service or used as a project gateway
-- **Floating IP (FIP)** — a 1:1 NAT mapping between a public IP and a specific VM or pod
+- **External IP (EIP)** — a cloud-internal or public address that can back a
+  Project gateway or LoadBalancer Service
+- **Floating IP (FIP)** — a 1:1 NAT mapping between an external address and a
+  specific VM or Pod
 
 ---
 
@@ -32,8 +34,10 @@ Every project gets a **default gateway EIP** (`default-gw`) automatically. This 
 
 | `externalNetworkType` | Description | Use Case |
 |-----------------------|-------------|----------|
-| `cloud` | Shared NAT pool IP (not internet-routable) | Cost-effective, outbound NAT |
-| `public` | Dedicated public IP (internet-routable) | Direct access, VMs, static IP |
+| `cloud` | Private address allocated from the platform's shared cloud pool; not internet-routable | Outbound NAT and private platform routing |
+| `public` | Public address allocated to this EIP; internet-routable where provider policy allows | Direct access, VMs, static IP |
+
+“Shared pool” describes where a `cloud` address is allocated from; it does not mean multiple Projects use the same allocated address at the same time. Each `EIp` owns one allocation until the resource is deleted.
 
 ### Create an EIP
 
@@ -85,7 +89,7 @@ annotations:
 ```
 
 :::note Cloud Projects
-In cloud projects (`egressNetworkType: cloud`), the default gateway is a shared NAT IP — not publicly routable. Create a dedicated public EIP and use `bind-on-eip` instead.
+In cloud Projects (`egressNetworkType: cloud`), the default gateway receives a private address from the shared cloud pool. That address belongs to the Project while the EIP exists, but it is not publicly routable. Create a public EIP and use `bind-on-eip` for direct inbound access.
 :::
 
 ### Delete an EIP
@@ -102,13 +106,16 @@ Deleting an EIP that is bound to a service or FIP will disrupt connectivity. Rem
 
 ## Floating IPs (FIPs)
 
-Floating IPs provide **direct 1:1 NAT** between an external IP and a VM's internal IP. All ports are mapped — the VM is fully accessible as if it had a public IP.
+Floating IPs provide **1:1 NAT** between an external IP and a VM's internal
+IP. All ports are mapped, while the guest keeps its private address.
 
 ### When to Use FIPs
 
-- **VM direct access** — SSH, RDP, or any protocol on any port
-- **Protocols that don't work behind NAT** — some applications need to see their own public IP
-- **Simple setup** — no LoadBalancer service needed, just point the FIP at a VM
+- **Direct VM access** — SSH, RDP, or another inbound protocol
+- **All-port mapping** — appliances or services that need more ports than a
+  practical LoadBalancer definition
+- **Service-free setup** — point the FIP at a VM without creating a
+  LoadBalancer Service
 
 ### Create a FIP for a VM
 

@@ -1,91 +1,136 @@
-# Overall Architecture
+# Architecture Overview
 
-Kube-DC provides a comprehensive multi-tenant cloud infrastructure platform built on Kubernetes and enhanced with enterprise-grade features like virtualization, networking, and identity management.
+Kube-DC turns one Kubernetes management cluster into a multi-tenant platform
+for virtual machines, containers, managed databases, object storage, and
+Managed Clusters. Users work with **Organizations** and **Projects**;
+controllers translate those product objects into Kubernetes, identity,
+networking, storage, and observability resources.
 
-## Core Components
-
-The Kube-DC architecture consists of several key components that work together to deliver a complete cloud platform:
-
-![Kube-DC Architecture Overview](images/project-overview.png)
-
-## Architectural Layers
-Kube-DC is organized into main architectural layers:
-
+## Start with the product model
 
 ```mermaid
-graph TD
-    K8s[Kubernetes] --> KubeVirt[KubeVirt]    
-    K8s --> KubeOVN[Kube-OVN]    
-    K8s --> Keycloak[Keycloak]    
-    K8s --> LBController[Kube-DC LB Controller]    
-    K8s --> MultiTenant[Multi-Tenant Controller]
-    
-    KubeVirt -->|Provides| VMs[Virtual Machines]
-    KubeOVN -->|Manages| Networking[Network VLANs/VPCs]
-    Keycloak -->|Controls| IAM[Identity & Access]
-    LBController -->|Enables| LoadBalancing[Load Balancing, Floating IPs]
-    MultiTenant -->|Organizes| Resources[Organization and Projects]
+flowchart TB
+  accTitle: Kube-DC product hierarchy
+  accDescr: A management cluster contains Organizations, each Organization contains Projects, and Projects contain workloads and Managed Clusters.
+  Platform[Management cluster]
+  Platform --> OrgA[Organization: acme]
+  Platform --> OrgB[Organization: example]
+
+  OrgA --> ProjectA[Project: production]
+  OrgA --> ProjectB[Project: development]
+
+  ProjectA --> VM[Virtual machines]
+  ProjectA --> Apps[Container workloads]
+  ProjectA --> Data[Databases and object storage]
+  ProjectA --> Managed[Managed Cluster]
 ```
 
+- An **Organization** is the tenant boundary for identity, membership, billing,
+  shared quota, and policy.
+- A **Project** is the governed workload boundary inside an Organization. Its
+  Kubernetes implementation is a backing namespace named
+  `{organization}-{project}` plus a dedicated Kube-OVN VPC.
+- A **Managed Cluster** is a separate Kubernetes API and control plane
+  provisioned from a Project. Do not use *cluster* when the underlying object is
+  only a Project or backing namespace.
 
-**Infrastructure Layer**
+## Management plane
 
-   - Bare metal servers or cloud infrastructure
-   - Kubernetes core services
-   - Storage subsystems
+```mermaid
+flowchart LR
+  accTitle: Kube-DC management plane
+  accDescr: Users reach Kubernetes and backend APIs through the console or CLI, while controllers and Fleet reconcile identity, networking, compute, storage, and observability services.
+  Users[Users and operators] --> UI[Console, admin console, and CLI]
+  UI --> API[Kubernetes and backend APIs]
 
-**Virtualization Layer**
+  subgraph Management[Management cluster]
+    API --> Controllers[Kube-DC controllers]
+    Controllers --> Identity[Keycloak]
+    Controllers --> Network[Kube-OVN, Multus, and Envoy Gateway]
+    Controllers --> Compute[KubeVirt, Kamaji, and Cluster API]
+    Controllers --> Storage[CSI and Rook Ceph]
+    Controllers --> Security[OpenBao, External Secrets, and cert-manager]
+    Controllers --> Observe[Grafana, Mimir, and Loki]
+  end
 
-   - KubeVirt for VM provisioning and management
-   - Container workloads
-   - Hybrid application support
+  Git[Fleet repository] --> Flux[Flux]
+  Flux --> Management
+```
 
-**Networking Layer**
+Flux continuously reconciles installation configuration from the Fleet
+repository. Kube-DC controllers continuously reconcile product resources such
+as Organizations, Projects, External IP (`EIp`) resources, and Managed
+Clusters. These are different control loops: Flux installs and configures the
+platform, while the controllers operate Organization and Project resources.
 
-   - Kube-OVN for software-defined networking
-   - Multi-tenant network isolation
-   - External IP addressing and service exposure
+<details>
+<summary>View the architectural layers diagram</summary>
 
-**Management Layer**
+This layered view connects the access surface, Organization and Project
+governance, workload capabilities, management-cluster foundation, and
+underlying infrastructure. Managed Clusters retain their own API,
+authorization, and CNI boundaries.
 
-   - Multi-tenancy resource organization
-   - Identity and access management via Keycloak
-   - User interface and API access
+<figure className="diagram-comparison" data-diagram="architectural-layers" tabIndex="0" aria-label="Scrollable architectural layers diagram">
+  <img
+    src="/diagrams/generated/architectural-layers.svg"
+    alt="Kube-DC architectural layers from users and access surfaces through Organization and Project governance, workload capabilities, the management cluster, and physical or cloud infrastructure."
+  />
+  <figcaption>Architectural layers and the boundaries between platform governance, Project workloads, and Managed Clusters.</figcaption>
+</figure>
 
-## Multi-Tenant Organization
+[Open the full-size SVG for zooming or printing.](/diagrams/generated/architectural-layers.svg)
 
-Kube-DC introduces a hierarchical resource organization model:
+</details>
 
-- **Organizations** - Top-level entities representing companies or teams
-- **Projects** - Logical groupings of resources within an organization
-- **Groups** - Collections of users with defined roles and permissions
+## Main subsystems
 
-This multi-tenant structure maps to Kubernetes and Keycloak components to provide isolation and access control. For detailed information on the multi-tenancy architecture, see the [Multi-Tenancy & RBAC](architecture-multi-tenancy.md) documentation.
+| Area | Responsibility | Principal components |
+|---|---|---|
+| Identity and access | Login, Organization membership, Project permissions | Keycloak, OIDC, Kubernetes RBAC |
+| Tenancy and quota | Organization and Project lifecycle, plan limits, usage status | Kube-DC controllers, HNC, ResourceQuota |
+| Networking | Project VPCs, egress, external addresses, Services, ingress | Kube-OVN, Multus, MetalLB, Envoy Gateway |
+| Virtualization | VM lifecycle, images, console access, live-migration-capable storage paths | KubeVirt, CDI, CSI |
+| Managed Clusters | Control-plane and worker lifecycle | Kamaji, Cluster API, provider controllers |
+| Data services | Managed databases, block volumes, and S3-compatible buckets | CloudNativePG, MariaDB operator, CSI, Rook Ceph |
+| Security services | Managed secrets, certificates, and encryption keys | OpenBao, External Secrets, cert-manager |
+| Observability | Organization- and Project-scoped metrics, logs, alerts, and dashboards | Grafana, Mimir, Loki, Prometheus Operator |
 
-## Network Architecture
+Not every subsystem is required on every installation. Storage, external
+networking, public certificate, GPU, and bare-metal capabilities depend on the
+cluster topology and enabled Fleet components.
 
-Kube-DC leverages Kube-OVN to provide advanced networking capabilities:
+## Management cluster and Managed Clusters
 
-- Virtual Private Clouds (VPCs) for network isolation
-- External and Floating IPs for service exposure
-- Load balancing and service routing
+The management cluster runs the Kube-DC platform and stores its custom
+resources. A Managed Cluster has its own Kubernetes API and authorization
+boundary, even when its control-plane pods or workers run on infrastructure
+owned by the management cluster.
 
-For detailed information on the networking architecture, see the [Networking (Kube-OVN, VLANs)](architecture-networking.md) documentation.
+Use the management-cluster kubeconfig for platform operations. Use a Managed
+Cluster kubeconfig for workloads and cluster-scoped operations inside that
+Managed Cluster. A Project role does not grant cluster-admin access inside a
+Managed Cluster.
 
-## Virtualization Architecture
+## Isolation model
 
-Kube-DC integrates KubeVirt to enable VM workloads alongside containers:
+Kube-DC combines several controls rather than relying on a single boundary:
 
-- VM lifecycle management through Kubernetes APIs
-- Hardware passthrough capabilities
-- Mixed container and VM environments
+- namespace-scoped RBAC for Project resources;
+- Organization-level hierarchical quota across Project backing namespaces;
+- one Kube-OVN VPC and workload subnet per Project;
+- ingress and egress router policies for shared external networks;
+- admission policies for protected platform resources;
+- per-Organization identity, observability, and security-service mappings.
 
-For detailed information on the virtualization architecture, see the [Virtualization (KubeVirt)](architecture-virtualization.md) documentation.
+Platform administrators and management-cluster components remain inside the
+trusted platform boundary. See the security documentation for assumptions and
+residual risks.
 
-## Key Benefits
+## Read next
 
-- **Multi-tenant isolation**: Secure separation between organizations and projects
-- **Unified management**: Single platform for VMs and containers
-- **Network flexibility**: Advanced SDN capabilities with Kube-OVN
-- **Enterprise security**: Integrated identity management with Keycloak
-- **API-driven architecture**: Consistent interfaces for automation and integration
+- [Multi-tenancy and access control](architecture-multi-tenancy.md)
+- [Networking architecture](architecture-networking.md)
+- [Virtualization architecture](architecture-virtualization.md)
+- [Controller map](controller-diagram.md)
+- [Security model](security-model.md)

@@ -7,8 +7,8 @@ This guide explains how to enable Google OAuth authentication for Kube-DC using 
 Kube-DC supports Google OAuth authentication via a central `sso` Keycloak realm that brokers authentication to organization-specific realms. This allows:
 
 - **Single Google OAuth configuration** - One Google client ID/secret for all organizations
-- **Per-organization isolation** - Tokens issued by org realms with org-specific permissions
-- **Multi-org support** - Users can belong to multiple organizations
+- **Per-organization isolation** - Tokens issued by Organization realms with Organization-specific permissions
+- **Multi-Organization support** - Users can belong to multiple organizations
 - **Self-service registration** - Users can sign up and create organizations
 - **Feature flag** - Enable/disable per deployment
 
@@ -55,12 +55,12 @@ Kube-DC supports Google OAuth authentication via a central `sso` Keycloak realm 
 │  │ (No password yet!)  │       └─────────────────────┘                      │
 │  └─────────────────────┘                 │                                  │
 │                                          ▼                                  │
-│  3. CREATE OR JOIN ORG         4. SET PASSWORD                              │
-│  ┌─────────────────────┐       ┌─────────────────────┐                      │
-│  │ Choose:             │       │ Set password        │                      │
-│  │ • Create new org    │ ───►  │ (only when creating │                      │
-│  │ • Join existing org │       │  organization)      │                      │
-│  └─────────────────────┘       └─────────────────────┘                      │
+│  3. CHOOSE ORGANIZATION          4. SET PASSWORD                            │
+│  ┌──────────────────────────┐    ┌─────────────────────┐                    │
+│  │ Choose:                  │    │ Set password        │                    │
+│  │ • Create Organization    │ ─► │ (only when creating │                    │
+│  │ • Join Organization      │    │  an Organization)   │                    │
+│  └──────────────────────────┘    └─────────────────────┘                    │
 │                                          │                                  │
 │                                          ▼                                  │
 │                                ┌─────────────────────┐                      │
@@ -77,17 +77,17 @@ Kube-DC supports Google OAuth authentication via a central `sso` Keycloak realm 
 │                                                                             │
 │  User clicks              Google OAuth              Auto-link by email      │
 │  "Login with Google"      authentication            (no extra prompts)      │
-│  ┌─────────────┐         ┌─────────────┐           ┌─────────────┐          │
-│  │   Console   │ ──────► │   Google    │ ────────► │  Keycloak   │          │
-│  │  (org page) │         │   Sign-in   │           │  SSO Realm  │          │
-│  └─────────────┘         └─────────────┘           └─────────────┘          │
-│                                                           │                 │
-│                                                           ▼                 │
-│                          Broker to org realm       Token issued             │
-│                          ┌─────────────┐           ┌─────────────┐          │
-│                          │  Org Realm  │ ────────► │  Console    │          │
-│                          │  (via SSO)  │           │  (logged in)│          │
-│                          └─────────────┘           └─────────────┘          │
+│  ┌─────────────────┐     ┌─────────────┐       ┌─────────────┐              │
+│  │     Console     │ ───► │   Google    │ ─────► │  Keycloak   │            │
+│  │ (Organization)  │     │   Sign-in   │       │  SSO Realm  │              │
+│  └─────────────────┘     └─────────────┘       └─────────────┘              │
+│                                                             │               │
+│                                                             ▼               │
+│                     Broker to Organization realm       Token issued         │
+│                     ┌────────────────────┐         ┌─────────────┐          │
+│                     │ Organization Realm │ ─────► │  Console    │           │
+│                     │     (via SSO)      │         │ (logged in) │          │
+│                     └────────────────────┘         └─────────────┘          │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -163,12 +163,12 @@ export CONSOLE_URL="https://console.your-domain.com"  # Defaults to https://cons
 | Component | Description |
 |-----------|-------------|
 | **SSO Realm** | Central realm for authentication brokering |
-| **Passwordless Registration** | Users sign up without password (set during org creation) |
+| **Passwordless Registration** | Users sign up without password (set during Organization creation) |
 | **Email Verification** | Required before organization setup |
 | **Auto-link Flow** | Automatically links Google accounts by email |
 | **Google IdP** | Configured with your OAuth credentials |
 | **Console Client** | `kube-dc` client with PKCE for frontend |
-| **Broker Client** | `sso-broker` for org realm federation |
+| **Broker Client** | `sso-broker` for Organization realm federation |
 | **Organization Groups** | `/orgs` group structure for membership |
 
 ### Step 3: Configure Kube-DC
@@ -266,7 +266,7 @@ When SSO is enabled, the controller automatically configures each organization r
 1. **SSO IdP** - OIDC identity provider pointing to the `sso` realm
 2. **Auto-link flow** - Authentication flow that links existing users by email
 3. **IdP mappers** - Maps email, firstName, lastName from Google
-4. **Org group** - Creates `/orgs/<org-slug>` group in SSO realm
+4. **Organization group** - Creates `/orgs/<org-slug>` group in SSO realm
 
 ## User Experience
 
@@ -278,11 +278,11 @@ New users can sign up and create their own organization:
 2. Enters email, first name, and last name (no password required)
 3. Receives verification email and clicks the link
 4. After verification, chooses to:
-   - **Create a new organization** - Sets password and becomes org admin
+   - **Create a new organization** - Sets password and becomes Organization admin
    - **Join existing organization** - Submits join request for admin approval
 5. Redirected to the console, fully authenticated
 
-> 💡 **Why passwordless registration?** Users set their password only when creating an organization. This simplifies the signup flow and ensures passwords are only needed for org-level access.
+> 💡 **Why passwordless registration?** Users set their password only when creating an organization. This simplifies the signup flow and ensures passwords are only needed for Organization-level access.
 
 ### Login Flow (Existing Users)
 
@@ -404,8 +404,8 @@ Users will fall back to direct organization login with username/password.
 
 ## Security Considerations
 
-- **Token isolation** - SSO realm tokens are only used for authentication; final tokens come from org realms
-- **Org membership verification** - Users cannot access organizations they're not members of
+- **Token isolation** - SSO realm tokens are only used for authentication; final tokens come from Organization realms
+- **Organization membership verification** - Users cannot access organizations they're not members of
 - **Secrets management** - All credentials stored in Kubernetes secrets, never in code
 - **TLS required** - All Keycloak endpoints must use HTTPS
 

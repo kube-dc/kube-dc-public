@@ -1,15 +1,18 @@
-# CLI - Console & IDE Access
+# CLI, Console, and IDE Access
 
-This guide explains how to install and use the `kube-dc` CLI tool for command-line access, web console, and IDE integration with Kubernetes clusters.
+This guide explains how to install and use the `kube-dc` CLI tool for command-line access, web console, and IDE integration with Projects and Managed Clusters.
 
 ## Overview
 
 The `kube-dc` CLI provides secure, browser-based authentication for Kubernetes access. It handles:
 
-- **Browser-based login** - No passwords in terminal
-- **Automatic token refresh** - 30-day session with seamless refresh
-- **Multi-cluster support** - Manage multiple organizations and projects
-- **Namespace switching** - Easy namespace management based on your permissions
+- **Browser-based login** — no password is entered in the terminal
+- **Automatic token refresh** — short-lived access tokens refresh while the
+  cached session remains valid
+- **Multi-cluster support** — manage more than one Kube-DC installation,
+  Organization, and Project
+- **Project context switching** — select a named context for an accessible
+  Project while keeping its identity and backing namespace aligned
 
 ## Get CLI Access from Console UI
 
@@ -25,37 +28,45 @@ The Console UI provides platform-specific installation commands and your authent
 
 - Authenticate you via browser
 - Generate your kubeconfig automatically
-- Save credentials securely to `~/.kube-dc/`
+- Save cached credentials with user-only file permissions under `~/.kube-dc/`
 - Configure kubectl contexts for your projects
 
 ```bash
 # Example workflow shown in Console UI
 kube-dc login --domain kube-dc.cloud --org your-org
-kube-dc ns your-project
+kube-dc use kube-dc.cloud/your-org/your-project
 kubectl get pods
 ```
 
 ## Installation
 
-### macOS
+### macOS and Linux
 
 ```bash
-curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_darwin_amd64 -o /usr/local/bin/kube-dc
-chmod +x /usr/local/bin/kube-dc
-```
-
-### Linux
-
-```bash
-curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_linux_amd64 -o /usr/local/bin/kube-dc
-chmod +x /usr/local/bin/kube-dc
+os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+case "$(uname -m)" in
+  x86_64) arch="amd64" ;;
+  arm64|aarch64) arch="arm64" ;;
+  *) printf 'Unsupported architecture: %s\n' "$(uname -m)" >&2; exit 1 ;;
+esac
+tmp="$(mktemp)"
+curl --fail --location \
+  "https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_${os}_${arch}" \
+  --output "$tmp"
+sudo install -m 0755 "$tmp" /usr/local/bin/kube-dc
+rm -f "$tmp"
 ```
 
 ### Windows
 
 ```powershell
-# Download from releases page
-Invoke-WebRequest -Uri "https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_windows_amd64.exe" -OutFile "$env:USERPROFILE\bin\kube-dc.exe"
+$installDir = "$env:USERPROFILE\bin"
+New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+$url = "https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_windows_amd64.exe"
+Invoke-WebRequest -Uri $url -OutFile "$installDir\kube-dc.exe"
+$env:Path = "$installDir;$env:Path"
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($userPath -notlike "*$installDir*") { [Environment]::SetEnvironmentVariable("Path", "$installDir;$userPath", "User") }
 ```
 
 ## Quick Start
@@ -63,22 +74,22 @@ Invoke-WebRequest -Uri "https://github.com/kube-dc/kube-dc-public/releases/lates
 ### 1. Login to your organization
 
 ```bash
-kube-dc login --domain kube-dc.cloud --org shalb
+kube-dc login --domain kube-dc.cloud --org acme
 ```
 
 This opens your browser for secure authentication. After login:
 - Your kubeconfig is automatically configured
 - Contexts are created for each project you have access to
-- Tokens are securely cached (~/.kube-dc/credentials/)
+- Tokens are cached with user-only file permissions (`~/.kube-dc/credentials/`)
 
-### 2. Switch namespace/project
+### 2. Switch Projects
 
 ```bash
-# List available namespaces
-kube-dc ns
+# List available Project contexts
+kube-dc use
 
-# Switch to a project
-kube-dc ns shalb-demo
+# Switch to a Project
+kube-dc use kube-dc.cloud/acme/production
 ```
 
 ### 3. Use kubectl normally
@@ -99,7 +110,7 @@ Authenticate with a kube-dc platform.
 kube-dc login --domain <domain> --org <organization>
 
 # Examples
-kube-dc login --domain kube-dc.cloud --org shalb
+kube-dc login --domain kube-dc.cloud --org acme
 kube-dc login --domain stage.kube-dc.com --org mycompany
 ```
 
@@ -110,26 +121,29 @@ kube-dc login --domain stage.kube-dc.com --org mycompany
 
 ### `kube-dc ns`
 
-Switch between namespaces you have access to.
+Compatibility selector for Project backing namespaces. It rewrites the
+namespace field on the current context without changing the context name, so
+the two can become misleadingly different. Prefer `kube-dc use` for normal
+Project switching.
 
 ```bash
-# List available namespaces (shows * for current)
+# List accessible Project backing namespaces
 kube-dc ns
 
-# Switch to a namespace
-kube-dc ns shalb-demo
+# Select a backing namespace on the current context (legacy behavior)
+kube-dc ns acme-production
 ```
 
 ### `kube-dc use`
 
-Switch between kube-dc contexts.
+Switch between Kube-DC contexts. This is the preferred Project switcher.
 
 ```bash
 # List all kube-dc contexts
 kube-dc use
 
 # Switch to a specific context
-kube-dc use shalb/demo
+kube-dc use kube-dc.cloud/acme/production
 ```
 
 ### `kube-dc logout`
@@ -162,8 +176,12 @@ kube-dc config get-contexts
 
 1. **Login**: Browser opens to Keycloak login page
 2. **OAuth2 PKCE**: Secure token exchange without exposing credentials
-3. **Token Storage**: Encrypted tokens stored in `~/.kube-dc/credentials/`
+3. **Token Storage**: Token files stored in `~/.kube-dc/credentials/` with owner-only filesystem permissions
 4. **kubectl Integration**: Acts as credential plugin for kubectl
+
+:::note Local credential storage
+The credential cache is not encrypted at rest. It is protected with owner-only file permissions (`0600`); protect your local account and disk accordingly.
+:::
 
 ### Kubeconfig Integration
 
@@ -171,14 +189,14 @@ After login, your kubeconfig contains entries like:
 
 ```yaml
 contexts:
-- name: kube-dc/shalb/demo
+- name: kube-dc/kube-dc.cloud/acme/production
   context:
-    cluster: kube-dc-kube-dc.cloud-shalb
-    user: kube-dc@kube-dc.cloud/shalb
-    namespace: shalb-demo
+    cluster: kube-dc-kube-dc.cloud-acme
+    user: kube-dc@kube-dc.cloud/acme
+    namespace: acme-production
 
 users:
-- name: kube-dc@kube-dc.cloud/shalb
+- name: kube-dc@kube-dc.cloud/acme
   user:
     exec:
       apiVersion: client.authentication.k8s.io/v1
@@ -187,13 +205,19 @@ users:
         - credential
         - --server
         - https://kube-api.kube-dc.cloud:6443
+        - --realm
+        - acme
 ```
 
 ### Token Lifecycle
 
-- **Access Token**: Short-lived (5 minutes), automatically refreshed
-- **Refresh Token**: 30-day validity with offline_access scope
-- **Auto-refresh**: Tokens refresh transparently when kubectl runs
+- **Access token** — short-lived (15 minutes by the platform default)
+- **Refresh token** — requested with the `offline_access` scope
+- **Local session window** — the CLI records a 30-day refresh window when the
+  identity provider reports no finite refresh expiry; successful refreshes
+  extend that local window
+- **Automatic refresh** — the kubeconfig credential plugin refreshes the access
+  token when `kubectl` runs
 
 ## Shell Completions
 
@@ -214,7 +238,8 @@ kube-dc completion fish > ~/.config/fish/completions/kube-dc.fish
 
 ### Session Expired
 
-If you see "session expired", your refresh token has expired (after 30 days of inactivity):
+If you see `session expired`, the cached refresh credential is missing,
+expired, or no longer accepted by the identity provider. Sign in again:
 
 ```bash
 kube-dc login --domain <domain> --org <org>
@@ -222,14 +247,14 @@ kube-dc login --domain <domain> --org <org>
 
 ### Context Not Found
 
-If `kube-dc ns` shows "not a kube-dc context":
+If a command reports that the current context is not a Kube-DC context:
 
 ```bash
 # Check current context
 kubectl config current-context
 
 # Switch to a kube-dc context
-kube-dc use shalb/demo
+kube-dc use kube-dc.cloud/acme/production
 ```
 
 ### Clear All Credentials
@@ -241,12 +266,15 @@ kube-dc logout --all
 rm -rf ~/.kube-dc/credentials/
 ```
 
-### Debug Mode
+### Diagnose Access
 
-For troubleshooting connection issues:
+Confirm the selected context and test the permission needed for your next
+command:
 
 ```bash
-kube-dc login --domain kube-dc.cloud --org shalb --debug
+kubectl config current-context
+kubectl auth can-i get pods
+kube-dc login --help
 ```
 
 ## Security Best Practices
@@ -254,7 +282,7 @@ kube-dc login --domain kube-dc.cloud --org shalb --debug
 - **Never share** your `~/.kube-dc/credentials/` directory
 - Use `--insecure` only for development/testing
 - Logout when finished: `kube-dc logout`
-- Credentials are stored with 600 permissions
+- Credentials are stored with `0600` permissions
 
 ## Project Console (Web Terminal)
 

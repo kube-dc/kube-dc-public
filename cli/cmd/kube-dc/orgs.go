@@ -24,7 +24,7 @@ func orgsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "orgs",
 		Short: "Manage organization-level controls (elevation, audit)",
-		Long: `Organization-scoped controls reserved to org-admins. Use these
+		Long: `Organization-scoped controls reserved for Organization admins. Use these
 when an admin needs short-lived cross-project access (15-minute
 elevation window) so secret-value reads are explicitly logged with a
 reason instead of being silently picked up by routine admin
@@ -50,9 +50,9 @@ func orgFromContextOrFlag(flagOrg string) (string, error) {
 	realm := readCurrentRealm()
 	switch realm {
 	case "":
-		return "", fmt.Errorf("could not determine org from current context — pass --org")
+		return "", fmt.Errorf("could not determine Organization from current context — pass --org")
 	case "master":
-		return "", fmt.Errorf("admin context has no org; pass --org <org>")
+		return "", fmt.Errorf("admin context has no Organization; pass --org <organization>")
 	default:
 		return realm, nil
 	}
@@ -117,7 +117,7 @@ func orgsElevateCmd() *cobra.Command {
 	var org, reason string
 	cmd := &cobra.Command{
 		Use:   "elevate <project>",
-		Short: "Open a 15-minute elevation window for secret-value reads in a project (org-admin only).",
+		Short: "Open a 15-minute elevation window for secret-value reads in a Project (Organization admin only).",
 		Long: `Open a 15-minute elevation window. Every secret-value read during
 the window carries the elevation_id in the audit trail, so an auditor
 can correlate sensitive reads back to the reason you provided.
@@ -149,7 +149,7 @@ current grant with a new one (and a fresh audit event). Use
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&org, "org", "", "Organization (default: current context's org)")
+	cmd.Flags().StringVar(&org, "org", "", "Organization (default: current context's Organization)")
 	cmd.Flags().StringVar(&reason, "reason", "", "Reason for elevation (required, audited)")
 	_ = cmd.MarkFlagRequired("reason")
 	return cmd
@@ -160,7 +160,7 @@ func orgsReleaseCmd() *cobra.Command {
 	var org string
 	cmd := &cobra.Command{
 		Use:   "release <project>",
-		Short: "End the elevation window early (org-admin only).",
+		Short: "End the elevation window early (Organization admin only).",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			project := args[0]
@@ -182,7 +182,7 @@ func orgsReleaseCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&org, "org", "", "Organization (default: current context's org)")
+	cmd.Flags().StringVar(&org, "org", "", "Organization (default: current context's Organization)")
 	return cmd
 }
 
@@ -191,7 +191,7 @@ func orgsStatusCmd() *cobra.Command {
 	var org string
 	cmd := &cobra.Command{
 		Use:   "status <project>",
-		Short: "Show the current elevation state for a project (org-admin only).",
+		Short: "Show the current elevation state for a Project (Organization admin only).",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			project := args[0]
@@ -217,7 +217,7 @@ func orgsStatusCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&org, "org", "", "Organization (default: current context's org)")
+	cmd.Flags().StringVar(&org, "org", "", "Organization (default: current context's Organization)")
 	return cmd
 }
 
@@ -226,7 +226,7 @@ func orgsElevationsCmd() *cobra.Command {
 	var org string
 	cmd := &cobra.Command{
 		Use:   "elevations",
-		Short: "List all active elevations in the org (org-admin only).",
+		Short: "List all active elevations in the Organization (Organization admin only).",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o, err := orgFromContextOrFlag(org)
@@ -260,6 +260,6 @@ func orgsElevationsCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&org, "org", "", "Organization (default: current context's org)")
+	cmd.Flags().StringVar(&org, "org", "", "Organization (default: current context's Organization)")
 	return cmd
 }

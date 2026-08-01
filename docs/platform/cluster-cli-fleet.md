@@ -54,7 +54,7 @@ The help bar at the bottom only lists keys that are **actionable in the current 
 | `↵` | List: run row's FixAction (admin login) when present, else step into details. Details: open Kustomization drill-down. |
 | `Esc` | Close drill-down / return focus to list |
 | `L` | **Admin login for the selected cluster** — suspends the TUI, runs `kube-dc login --domain X --admin` (browser opens), then resumes and re-probes the row. Works on any row regardless of FixAction. |
-| `l` | Tenant login (org-prompt is v1.1 — for now run `kube-dc login --org` outside the TUI). |
+| `l` | Organization login (the Organization prompt is not yet available here; run `kube-dc login --org` outside the TUI). |
 | `r` | Refresh (re-runs probes against every cluster) |
 | `?` | Toggle full help |
 | `q` | Quit |
@@ -88,7 +88,7 @@ kubectl get nodes        # cluster-admin
 # Preview without modifying anything
 kube-dc bootstrap kubeconfig <cluster> --dry-run
 
-# Tenant-flavored (rarely needed; prefer `kube-dc login --org` directly)
+# Organization-realm override (rarely needed; prefer `kube-dc login --org` directly)
 kube-dc bootstrap kubeconfig <cluster> --realm <org-name>
 
 # Also commit the synthesised kubeconfig.template.yaml back to the fleet
@@ -99,14 +99,14 @@ What it does:
 
 - Reads `clusters/<cluster>/cluster-config.env` from the fleet.
 - Probes the API server's TLS handshake to fetch the cluster CA (or skips when system trust covers it).
-- Writes ONE new context — `kube-dc/<cluster>/admin` (default) or `kube-dc/<cluster>/<realm>` (tenant override) — into your `~/.kube/config`, leaving every other context alone.
+- Writes ONE new context — `kube-dc/<cluster>/admin` (default) or `kube-dc/<cluster>/<realm>` (Organization-realm override) — into your `~/.kube/config`, leaving every other context alone.
 - The user entry's exec plugin **always pins `--realm`** in args, so kubectl never silently picks up the wrong cached identity.
 
 Flags:
 
 | Flag | Purpose |
 |---|---|
-| `--realm <name>` | Realm to wire the kubeconfig for. Empty / unset → `master` (admin). Pass an org name for tenant. |
+| `--realm <name>` | Realm to wire the kubeconfig for. Empty / unset → `master` (admin). Pass an Organization name for an Organization-realm context. |
 | `--dry-run` | Print what would change; touch nothing |
 | `--commit` | Also write a `kubeconfig.template.yaml` back to `clusters/<cluster>/` (does not push) |
 | `--ca-cert <path>` | Bring your own CA file (skips the TLS-handshake fetch) |
@@ -114,5 +114,5 @@ Flags:
 | `--set-current` (default true) | Switch `current-context` to the new context |
 
 :::tip
-Tenants rarely need this command — `kube-dc login --domain X --org Y` writes its own per-namespace contexts in one step. `bootstrap kubeconfig` is mostly an operator convenience for getting kubectl wired up before / outside of an admin login.
+Organization users rarely need this command. `kube-dc login --domain X --org Y` writes one named context per accessible Project, and `kube-dc use X/Y/<project>` selects the intended Project context. `bootstrap kubeconfig` is mostly an operator convenience for wiring kubectl before or outside an admin login.
 :::
