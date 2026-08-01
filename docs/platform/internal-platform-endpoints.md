@@ -109,8 +109,8 @@ The feature uses one architectural pattern, **Fork E** in the engineering record
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                          ext-cloud subnet                               │
 │                                                                         │
-│   ┌────────────────────────────────────────┐                            │
-│   │  MetalLB-announced VIP (e.g. 100.65.0.30) │ ← Project Pods target    │
+│   ┌─────────────────────────────────────────┐                           │
+│   │  MetalLB VIP (e.g. 100.65.0.30)         │ ← Project Pods target     │
 │   │  ┌────────────────────────────────────┐ │   this address            │
 │   │  │ Selectorless Service               │ │                           │
 │   │  │ (no pod selector — manager owns    │ │                           │
@@ -120,7 +120,7 @@ The feature uses one architectural pattern, **Fork E** in the engineering record
 │   │  │ Manager-owned EndpointSlice        │ │                           │
 │   │  │ [192.168.110.11, .12, .13] ready=T │ │ ← updated every 5s from   │
 │   │  └────────────────────────────────────┘ │   live health probes      │
-│   └────────────────────────────────────────┘                            │
+│   └─────────────────────────────────────────┘                           │
 │                          ↓                                              │
 │   kube-proxy DNATs to one of the healthy backend IPs                    │
 │                          ↓                                              │

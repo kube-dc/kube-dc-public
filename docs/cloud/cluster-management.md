@@ -25,12 +25,12 @@ When you create a `Service` of type `LoadBalancer` inside your Managed Cluster, 
 ### How LoadBalancer Services Work
 
 ```
-┌──── Managed Cluster ─────┐        ┌──── Platform Cluster ────────────┐
-│  Cluster: dev            │        │  Project: production              │
+┌──── Managed Cluster ────┐        ┌──── Platform Cluster ─────────────┐
+│  Cluster: dev           │        │  Project: production              │
 │  Service (LoadBalancer) │───────▶│  Backing namespace:               │
 │  my-app:3000            │  CCM   │  acme-production                  │
-│                         │        │  Service + external IP             │
-└─────────────────────────┘        └────────────────────────────────────┘
+│                         │        │  Service + external IP            │
+└─────────────────────────┘        └───────────────────────────────────┘
 ```
 
 1. You create a `Service` of type `LoadBalancer` in the Managed Cluster
@@ -211,12 +211,12 @@ For a KubeVirt-backed Managed Cluster with KubeVirt CSI enabled, the node driver
 ### How KubeVirt CSI Works
 
 ```
-┌──── Managed Cluster ─────┐        ┌──── Platform Cluster ────────────┐
+┌──── Managed Cluster ────┐        ┌──── Platform Cluster ─────────────┐
 │                         │        │  Project: production              │
-│  PVC: my-data (5Gi)     │───────▶│  DataVolume → PVC (5Gi)            │
-│  StorageClass: kubevirt │  CSI   │  StorageClass: local-path          │
-│                         │        │  (hotplugged to worker VM)         │
-└─────────────────────────┘        └────────────────────────────────────┘
+│  PVC: my-data (5Gi)     │───────▶│  DataVolume → PVC (5Gi)           │
+│  StorageClass: kubevirt │  CSI   │  StorageClass: local-path         │
+│                         │        │  (hotplugged to worker VM)        │
+└─────────────────────────┘        └───────────────────────────────────┘
 ```
 
 1. You create a PVC in the Managed Cluster using the `kubevirt` StorageClass

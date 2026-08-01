@@ -505,7 +505,7 @@ data:
     addons:
       turbo-x1:
         displayName: "Turbo x1"
-        description: "+4 GB RAM • +2 vCPU (Burst)"
+        description: "+4 GB RAM • +2 vCPU"
         price: 9
         currency: "EUR"
         cpu: "2"
@@ -762,20 +762,20 @@ checkout.session.completed
         │
         ▼
     ┌──────────┐   cancel at period end   ┌───────────┐
-    │  active   │ ───────────────────────► │ canceling  │
-    └──────────┘                           └───────────┘
+    │  active  │ ───────────────────────► │ canceling │
+    └──────────┘                          └───────────┘
         │                                       │
         │ subscription.deleted                  │ period ends → subscription.deleted
         │ (payment failure, manual cancel)       │
         ▼                                       ▼
     ┌───────────┐    7-day grace period    ┌───────────┐
-    │ suspended  │ ──────────────────────► │  canceled  │
+    │ suspended │ ───────────────────────► │ canceled  │
     └───────────┘                          └───────────┘
         │                                       │
         │ re-subscribe                          │ re-subscribe
         ▼                                       ▼
     ┌──────────┐                           ┌──────────┐
-    │  active   │                          │  active   │
+    │  active  │                           │  active  │
     └──────────┘                           └──────────┘
 ```
 

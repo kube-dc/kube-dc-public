@@ -367,6 +367,21 @@ pre {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
+/* Preserve code and ASCII-diagram geometry. Long lines scroll inside the code
+   block instead of wrapping and breaking boxes, arrows, trees, or commands. */
+.theme-doc-markdown pre,
+.theme-doc-markdown pre code,
+.theme-code-block pre,
+.theme-code-block pre code {
+  white-space: pre !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+
+.theme-doc-markdown pre {
+  overflow-x: auto;
+}
+
 /* Fix code block background in light theme for better readability */
 html[data-theme='light'] pre,
 html[data-theme='light'] pre[class*='language-'],
@@ -525,6 +540,10 @@ article figure.diagram-comparison {
   overflow-x: auto;
   overscroll-behavior-inline: contain;
   scrollbar-gutter: stable;
+}
+
+article figure.diagram-comparison > p {
+  margin: 0;
 }
 
 article figure.diagram-comparison img {

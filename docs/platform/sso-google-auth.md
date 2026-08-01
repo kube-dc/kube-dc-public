@@ -78,14 +78,14 @@ Kube-DC supports Google OAuth authentication via a central `sso` Keycloak realm 
 │  User clicks              Google OAuth              Auto-link by email      │
 │  "Login with Google"      authentication            (no extra prompts)      │
 │  ┌─────────────────┐     ┌─────────────┐       ┌─────────────┐              │
-│  │     Console     │ ───► │   Google    │ ─────► │  Keycloak   │            │
+│  │     Console     │ ───►│   Google    │ ─────►│  Keycloak   │              │
 │  │ (Organization)  │     │   Sign-in   │       │  SSO Realm  │              │
 │  └─────────────────┘     └─────────────┘       └─────────────┘              │
 │                                                             │               │
 │                                                             ▼               │
 │                     Broker to Organization realm       Token issued         │
 │                     ┌────────────────────┐         ┌─────────────┐          │
-│                     │ Organization Realm │ ─────► │  Console    │           │
+│                     │ Organization Realm │ ──────► │  Console    │          │
 │                     │     (via SSO)      │         │ (logged in) │          │
 │                     └────────────────────┘         └─────────────┘          │
 └─────────────────────────────────────────────────────────────────────────────┘
