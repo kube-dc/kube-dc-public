@@ -58,10 +58,10 @@ prevents removal of the last Ready worker pool.
 
 See [scale-workers.md](scale-workers.md).
 
-## Autoscale Up
+## Autoscale
 
-Autoscaling increases `replicas` for unschedulable pods whose requests fit
-the pool. It does not remove nodes.
+Default mode adds `replicas` for unschedulable pods whose requests fit the
+pool; it never removes nodes:
 
 ```bash
 kubectl patch kdccluster {cluster} -n {backing-namespace} --type=json -p '[
@@ -70,7 +70,24 @@ kubectl patch kdccluster {cluster} -n {backing-namespace} --type=json -p '[
 ]'
 ```
 
-Keep `replicas` within `minReplicas` and `maxReplicas`. Inspect
+`mode: ClusterAutoscaler` hands the node count fully to the platform: nodes
+are added for pending pods AND removed after sitting idle (drained safely,
+PodDisruptionBudgets respected). Requires `minReplicas >= 1`; do not set
+`replicas` by hand in this mode — the platform owns it:
+
+```bash
+kubectl patch kdccluster {cluster} -n {backing-namespace} --type=json -p '[
+  {"op":"add","path":"/spec/workers/0/autoscaling",
+   "value":{"enabled":true,"mode":"ClusterAutoscaler",
+            "minReplicas":2,"maxReplicas":8,
+            "behavior":{"scaleDown":{"enabled":true}}}}
+]'
+```
+
+`behavior.scaleDown.enabled: false` keeps a pool grow-only even in this mode
+(per pool — one pool may shrink while a sibling never does).
+
+Keep `replicas` within `minReplicas` and `maxReplicas` (default mode). Inspect
 `.status.workerPools[].autoscaling` for the last scale reason and any limit
 such as quota, placement, maximum size, or a rolling update.
 
