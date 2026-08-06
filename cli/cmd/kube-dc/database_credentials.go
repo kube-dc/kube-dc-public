@@ -57,7 +57,7 @@ Backups are reachable today via kubectl edit kdcdatabase.
 
 Permissions follow the exact standard Project roles:
   user               list + describe
-  developer          list + describe + create + delete
+  developer          list + describe + create + rotate + read static password + delete
   project-manager    list + describe + rotate + read static password
   admin              all supported lifecycle operations
 

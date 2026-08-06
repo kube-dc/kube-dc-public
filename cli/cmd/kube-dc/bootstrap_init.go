@@ -274,6 +274,19 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 					tlsMaterial.Subject, tlsMaterial.NotAfter.Format("2006-01-02"), tlsMaterial.Fingerprint[:16])
 			}
 
+			// acme-dns01-route53 loads + validates through the same pattern:
+			// dry-run fails on bad shapes with zero files written, and the
+			// plan binds the exact credential via its fingerprint. Only the
+			// zone + access key ID are printed — never the secret.
+			if dns01, err := loadDNS01FromOptions(o); err != nil {
+				return err
+			} else if dns01 != nil {
+				o.DNS01Route53Region = dns01.Region // canonicalized (default filled)
+				o.DNS01SecretKeyFingerprint = dns01.Fingerprint
+				fmt.Fprintf(cmd.OutOrStdout(), "[preflight] acme-dns01-route53 validated: zone=%s accessKeyID=%s secret sha256=%s (cert-manager renews automatically)\n",
+					dns01.ZoneID, dns01.AccessKeyID, dns01.Fingerprint[:16])
+			}
+
 			if caMaterial, err := loadTrustedCAFromOptions(o); err != nil {
 				return err
 			} else if caMaterial != nil {
@@ -489,7 +502,15 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 	cmd.Flags().BoolVar(&o.ImageAcceleration, "image-acceleration", true,
 		"Wire the on-cluster image path (tenant-addons + cdi-os-mirror + registry-depot zot) into the scaffold; spegel (RKE2 embedded registry) is enabled per node by bootstrap install (default: true)")
 	cmd.Flags().StringVar(&o.TLSMode, "tls-mode", clusterinit.TLSModeACME,
-		"Platform TLS mode: 'acme' (cert-manager issues via the ACME ClusterIssuer) or 'byo-wildcard' (operator-supplied *.<domain> certificate, SOPS-committed, ACME Certificates suppressed; requires --tls-cert/--tls-key). See docs/platform/certificates.md")
+		"Platform TLS mode: 'acme' (cert-manager via the ACME ClusterIssuer, HTTP-01 through the Gateway), 'acme-dns01-route53' (same issuer, DNS-01 via Route53 — for private/VPN-only clusters; requires --dns01-route53-*), or 'byo-wildcard' (operator-supplied *.<domain> certificate, SOPS-committed, ACME Certificates suppressed; requires --tls-cert/--tls-key). See docs/platform/certificates.md")
+	cmd.Flags().StringVar(&o.DNS01Route53ZoneID, "dns01-route53-zone-id", "",
+		"Route53 hosted-zone ID (Z…) the DNS-01 solver writes challenge records into; acme-dns01-route53 only")
+	cmd.Flags().StringVar(&o.DNS01Route53Region, "dns01-route53-region", "",
+		"AWS region for the Route53 API calls (default us-east-1); acme-dns01-route53 only")
+	cmd.Flags().StringVar(&o.DNS01Route53AccessKeyID, "dns01-route53-access-key-id", "",
+		"Static IAM access key ID (AKIA…) scoped to the hosted zone; acme-dns01-route53 only")
+	cmd.Flags().StringVar(&o.DNS01Route53SecretKeyFile, "dns01-route53-secret-key-file", "",
+		"Path to a file holding the AWS secret access key (alternatively set "+clusterinit.KubeDCDNS01SecretKeyEnv+"); read once, committed only SOPS-encrypted, never logged; acme-dns01-route53 only")
 	cmd.Flags().StringVar(&o.TLSCert, "tls-cert", "",
 		"Path to the wildcard certificate chain, leaf first (PEM); byo-wildcard only")
 	cmd.Flags().StringVar(&o.TLSKey, "tls-key", "",
@@ -1278,6 +1299,21 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 			plan.TLSCertFingerprint, wildcardTLS.Fingerprint)
 	}
 
+	dns01, err := loadDNS01FromOptions(o)
+	if err != nil {
+		return err
+	}
+	switch {
+	case dns01 != nil && plan.TLSMode != clusterinit.TLSModeACMEDNS01Route53:
+		return fmt.Errorf("init: --tls-mode=acme-dns01-route53 supplied but the plan under review was generated without it — re-run the plan")
+	case dns01 == nil && plan.TLSMode == clusterinit.TLSModeACMEDNS01Route53:
+		return fmt.Errorf("init: the reviewed plan requires acme-dns01-route53 but no solver credentials were supplied")
+	case dns01 != nil && plan.DNS01SecretKeyFingerprint != dns01.Fingerprint:
+		return fmt.Errorf(
+			"init: the secret access key supplied is NOT the one the reviewed plan approved (plan sha256=%.16s, supplied sha256=%.16s) — re-run the plan against the current material",
+			plan.DNS01SecretKeyFingerprint, dns01.Fingerprint)
+	}
+
 	trustedCA, err := loadTrustedCAFromOptions(o)
 	if err != nil {
 		return err
@@ -1303,6 +1339,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		VMStorage:      o.VMStorage(),
 		ImageAccel:     o.ImageAccel(),
 		WildcardTLS:    wildcardTLS,
+		DNS01Route53:   dns01,
 		TrustedCA:      trustedCA,
 		GPU:            o.GPU(),
 		Runner:         session.Scripts,
@@ -1684,6 +1721,15 @@ func initEnvPrefill() map[string]string {
 			continue
 		}
 		name, val := e[:eq], e[eq+1:]
+		// Secrets never enter the prefill flow: an imported key ends up in
+		// Sets and then IN CLEARTEXT in cluster-config.env / --save-config
+		// output (codex review 2026-08-06, P0). The dedicated secret channels
+		// (KUBE_DC_DNS01_ROUTE53_SECRET_KEY, GITHUB_TOKEN) live outside the
+		// KUBE_DC_INIT_ namespace; this guard catches operator habit pasting
+		// one inside it anyway.
+		if strings.Contains(name, "SECRET") || strings.Contains(name, "TOKEN") || strings.Contains(name, "PASSWORD") {
+			continue
+		}
 		if orch[name] {
 			out[name] = val
 		} else {
@@ -1869,6 +1915,7 @@ func assertRequiredFlagsRegistered(fs *pflag.FlagSet) error {
 		"s3-hostname", "no-s3-exposure",
 		"vm-storage-mode", "vm-golden", "vm-golden-block",
 		"tls-mode", "tls-cert", "tls-key", "trusted-ca-bundle",
+		"dns01-route53-zone-id", "dns01-route53-region", "dns01-route53-access-key-id", "dns01-route53-secret-key-file",
 		"gpu-platform", "gpu-driver-source", "gpu-operator-version", "nvidia-driver-version", "nvidia-toolkit-version",
 		"hami-enabled", "gpu-shared-allocator", "hami-version", "hami-scheduler-version", "gpu-node-mode", "gpu-ssh-host-map", "gpu-kubeconfig", "gpu-profile",
 		"allow-unassigned-gpus", "vgpu-secret-ready",
@@ -2038,6 +2085,19 @@ func loadWildcardTLSFromOptions(o *clusterinit.InitOptions) (*clusterinit.Wildca
 		return nil, nil
 	}
 	return clusterinit.LoadWildcardTLS(o.TLSCert, o.TLSKey, o.Domain)
+}
+
+// loadDNS01FromOptions loads + validates the acme-dns01-route53 solver
+// config named by the operator's flags (secret key from file or environment),
+// or returns (nil, nil) in other TLS modes. Both the RunE preflight and
+// runApplyEngine go through this one door.
+func loadDNS01FromOptions(o *clusterinit.InitOptions) (*clusterinit.DNS01Route53Material, error) {
+	if o.TLSMode != clusterinit.TLSModeACMEDNS01Route53 {
+		return nil, nil
+	}
+	return clusterinit.LoadDNS01Route53(
+		o.DNS01Route53ZoneID, o.DNS01Route53Region, o.DNS01Route53AccessKeyID,
+		o.DNS01Route53SecretKeyFile, os.Getenv(clusterinit.KubeDCDNS01SecretKeyEnv))
 }
 
 // loadTrustedCAFromOptions validates the public CA material named by the

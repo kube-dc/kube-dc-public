@@ -230,6 +230,20 @@ type InitOptions struct {
 	// material and refuses a fingerprint mismatch — without this, a
 	// different-but-also-valid pair could ship under the reviewed plan hash.
 	TLSCertFingerprint string
+	// --- acme-dns01-route53 solver config (dns01.go) ---
+	// ZoneID/Region/AccessKeyID are configuration, not secrets — they land in
+	// the ClusterIssuer patch in cleartext. The secret access key never has a
+	// field here: it is read at load time from --dns01-route53-secret-key-file
+	// or the KUBE_DC_DNS01_ROUTE53_SECRET_KEY environment variable and
+	// only ever ships SOPS-encrypted.
+	DNS01Route53ZoneID        string
+	DNS01Route53Region        string
+	DNS01Route53AccessKeyID   string
+	DNS01Route53SecretKeyFile string
+	// DNS01SecretKeyFingerprint is NOT a flag: stamped by the RunE preflight
+	// (hex SHA-256 of the validated secret key) so the plan binds the exact
+	// credential, mirroring TLSCertFingerprint.
+	DNS01SecretKeyFingerprint string
 	// TrustedCABundle is a local certificate-only PEM path. Its validated
 	// canonical fingerprint is plan-pinned; the public CA material is written
 	// to a ConfigMap, never to a Secret.
@@ -463,6 +477,9 @@ func (o *InitOptions) Validate() error {
 	errs = append(errs, validateNodeNICs(o.NodeNICs)...)
 	errs = append(errs, validateSets(o.Sets)...)
 	if err := ValidateTLSMode(o.TLSMode, o.TLSCert, o.TLSKey); err != nil {
+		errs = append(errs, err.Error())
+	}
+	if err := validateDNS01Flags(o); err != nil {
 		errs = append(errs, err.Error())
 	}
 
@@ -734,6 +751,12 @@ func validateObjectStorage(o *InitOptions) []string {
 		if o.RookOSDSizeGB <= 0 {
 			errs = append(errs, "--object-storage-mode=rook-ceph-local requires --rook-osd-size-gb > 0")
 		}
+		// Canonicalize the obvious operator spelling: lsblk shows bare
+		// names but muscle memory types /dev/… (field report 2026-07-23
+		// — three rejected devices on a live install). Strip the prefix
+		// instead of rejecting it; the writer then emits the bare name
+		// the fleet template expects.
+		o.RookOSDDevice = strings.TrimPrefix(o.RookOSDDevice, "/dev/")
 		if o.RookOSDDevice != "" && !deviceNameRegex.MatchString(o.RookOSDDevice) {
 			errs = append(errs, fmt.Sprintf("--rook-osd-device %q is not a valid device name (e.g. sdb, nvme0n1, loop0)", o.RookOSDDevice))
 		}
@@ -744,6 +767,12 @@ func validateObjectStorage(o *InitOptions) []string {
 		// 2-host topologies hand-patch slot 3 in their overlay).
 		if len(o.CephNodes) != 3 {
 			errs = append(errs, fmt.Sprintf("--object-storage-mode=rook-ceph-multi-node requires exactly 3 --ceph-node NODE=DEVICE entries (got %d; the fleet mode template is 3-slot — 2-host topologies hand-patch slot 3 in their object-storage overlay)", len(o.CephNodes)))
+		}
+		// Canonicalize /dev/-prefixed devices (same rationale as
+		// --rook-osd-device above) before validation + the scaffold
+		// writer consume the map.
+		for n, d := range o.CephNodes {
+			o.CephNodes[n] = strings.TrimPrefix(d, "/dev/")
 		}
 		// Deterministic error order: sorted node names.
 		nodes := make([]string, 0, len(o.CephNodes))

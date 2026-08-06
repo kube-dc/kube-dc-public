@@ -15,15 +15,10 @@ limitations under the License.
 */
 
 // Image-acceleration scaffolding — the on-cluster image path that keeps VM
-// and container pulls off the WAN. Three pieces, all default-on for new
+// and container pulls off the WAN. Two pieces, both default-on for new
 // clusters (a real install without them re-pulls every containerdisk from
 // the internet and leaves tenant OS-image imports at upstream mirror speed):
 //
-//   - tenant-addons    Sveltos ClusterProfiles (Cilium CNI, CoreDNS, …) for
-//     managed/nested tenant clusters. Without the wiring a
-//     tenant cluster gets NO CNI: worker nodes stay
-//     NotReady, kubelet-csr-approver never schedules and
-//     MachineDeployments wedge at ScalingUp 0/1.
 //   - cdi-os-mirror    S3 (RGW) mirror of tenant OS images + weekly refresh
 //     CronJob, so CDI HTTP-source imports stay on-cluster.
 //   - registry-depot   zot: an S3-backed container registry (anonymous read,
@@ -31,8 +26,13 @@ limitations under the License.
 //     mirror (spegel, default-on in bootstrap install)
 //     P2P-shares across nodes.
 //
-// The shared manifests ship in the fleet-starter (platform/tenant-addons,
-// platform/cdi-os-mirror, platform/registry-depot); this writer adds the
+// tenant-addons USED to be a third piece here. It is not an accelerator — it
+// carries the tenant CNI — and gating it behind this flag shipped managed
+// clusters with no CNI at all. It now has its own unconditional writer,
+// WriteTenantBaseline, below.
+//
+// The shared manifests ship in the fleet-starter (platform/cdi-os-mirror,
+// platform/registry-depot); this writer adds the
 // per-cluster Flux Kustomizations and generates the one secret the starter
 // cannot carry: registry-depot's push credential (SOPS blobs are excluded
 // from the starter, so a fresh fleet must mint its own).
@@ -74,9 +74,66 @@ var imageAccelPieces = []struct {
 	needSecret bool // registry-depot: mint the push credential
 	needsS3    bool // depends on infra-object-storage (skipped when absent)
 }{
-	{"tenant-addons", "platform/tenant-addons", tenantAddonsYAML, false, false},
+	// tenant-addons is NOT here on purpose — see WriteTenantBaseline.
 	{"cdi-os-mirror", "platform/cdi-os-mirror", cdiOSMirrorYAML, false, true},
 	{"registry-depot", "platform/registry-depot", registryDepotYAML, true, true},
+}
+
+// WriteTenantBaseline scaffolds `clusters/<name>/tenant-addons.yaml`, the Flux
+// Kustomization that carries the managed-cluster BASELINE into tenant clusters
+// via Sveltos: Cilium CNI, CoreDNS, and metrics-server.
+//
+// UNCONDITIONAL, and that is the whole point of this function existing. This
+// wiring used to be the first entry in imageAccelPieces, so an install that
+// turned image-acceleration off silently got no tenant-addons Kustomization —
+// and therefore no CNI. Tenant nodes then come up NotReady with csr-approver
+// stuck Pending, which is not recognisable as "the image-acceleration flag was
+// off". That has already happened on an on-prem install whose managed
+// clusters shipped with no CNI at all — it is not a hypothetical.
+//
+// A CNI is not an accelerator. Neither is DNS, and neither is the Metrics API
+// that `kubectl top` and the worker-autoscaler utilisation trigger both need.
+// These are the floor a managed cluster has to stand on, so they are wired for
+// every cluster and are not reachable by any feature flag.
+//
+// NOTE ON PLACEMENT: this stays a SEPARATE Flux Kustomization that dependsOn
+// `platform` rather than moving into platform/kustomization.yaml, because its
+// contents are Sveltos ClusterProfile CRs. `platform` is dry-run atomically, so
+// a ClusterProfile rendered there before platform/sveltos/ has registered its
+// CRDs fails "no matches for kind ClusterProfile" and aborts the ENTIRE platform
+// apply on a fresh cluster (the CRD-before-CR convention at the top of
+// platform/kustomization.yaml, installer-bugs D1).
+func WriteTenantBaseline(fleetRepo, clusterName string, out io.Writer) error {
+	if out == nil {
+		out = io.Discard
+	}
+	const shared = "platform/tenant-addons"
+	fi, err := os.Stat(filepath.Join(fleetRepo, shared))
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("tenant-baseline: stat %s: %w", shared, err)
+		}
+		// An older starter that predates the shared tree. Say so loudly: the
+		// cluster will come up without a tenant CNI and that must not be a
+		// silent condition.
+		fmt.Fprintf(out, "[scaffold] WARNING: %s is not in this starter — tenant clusters will have NO CNI, NO CoreDNS and NO Metrics API\n", shared)
+		return nil
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("tenant-baseline: %s exists but is not a directory", shared)
+	}
+
+	clusterDir := filepath.Join(fleetRepo, "clusters", clusterName)
+	file := filepath.Join(clusterDir, "tenant-addons.yaml")
+	if err := os.WriteFile(file, []byte(tenantAddonsYAML(clusterName)), 0o644); err != nil {
+		return fmt.Errorf("tenant-baseline: write %s: %w", file, err)
+	}
+	if err := patchFileLines(filepath.Join(clusterDir, "kustomization.yaml"),
+		patchKustomizationResource("tenant-addons.yaml")); err != nil {
+		return fmt.Errorf("tenant-baseline: patch kustomization.yaml: %w", err)
+	}
+	fmt.Fprintf(out, "[scaffold] tenant baseline wired (tenant-addons: cilium CNI, coredns, metrics-server)\n")
+	return nil
 }
 
 // ImageAccel derives the writer spec from the validated options.

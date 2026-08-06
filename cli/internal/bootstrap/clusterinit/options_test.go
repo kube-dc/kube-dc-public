@@ -635,3 +635,20 @@ func TestParseSetPairs(t *testing.T) {
 		})
 	}
 }
+
+func TestValidate_CephDeviceDevPrefixNormalized(t *testing.T) {
+	// Field report 2026-07-23: operators type /dev/nvme0n1 (what lsblk
+	// muscle memory produces); the CLI must strip the prefix, not
+	// reject three devices on a live install.
+	o := validBase()
+	o.RookMode = RookCephMultiNode
+	o.CephNodes = map[string]string{
+		"master-1": "/dev/nvme0n1", "master-2": "nvme0n1", "master-3": "/dev/sdb",
+	}
+	if err := o.Validate(); err != nil {
+		t.Fatalf("dev-prefixed devices must validate after normalization: %v", err)
+	}
+	if o.CephNodes["master-1"] != "nvme0n1" || o.CephNodes["master-3"] != "sdb" {
+		t.Errorf("devices not normalized: %+v", o.CephNodes)
+	}
+}

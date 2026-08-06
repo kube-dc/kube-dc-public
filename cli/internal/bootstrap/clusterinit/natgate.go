@@ -385,4 +385,5 @@ var ownedPlatformPatchMarkers = []string{
 	gatewayVIPMarker,              // Gateway address = MetalLB VIP
 	gatewayServiceVIPMarker,       // Envoy Service explicitly requests VIP
 	byoWildcardTLSMarker,          // byo-wildcard ACME Certificate suppression
+	dns01Route53Marker,            // ClusterIssuer solvers → Route53 DNS-01
 }

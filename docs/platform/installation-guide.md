@@ -655,6 +655,14 @@ This is what makes `console.`, `login.`, `grafana.`, `flux.`, and every
 per-tenant hostname resolve. After Phase 4 (MetalLB HA) you re-point the
 wildcard at the floating IP.
 
+:::tip Private ingress IP (internal DC, VPN-only)?
+The wildcard can point at a **private** address — a public zone with private
+A records is fine. But Let's Encrypt then cannot reach `:80` for HTTP-01, so
+pass `--tls-mode acme-dns01-route53` (zone in Route53 — certificates still
+auto-renew) or `--tls-mode byo-wildcard`.
+See [Platform TLS certificates](certificates.md).
+:::
+
 :::tip Behind a 1:1 NAT / floating IP?
 On clouds where the node never sees its own public IP locally (a
 kube-dc FIP, an EC2 elastic IP, an OpenStack/Hetzner floating IP), pass
@@ -767,6 +775,7 @@ kube-dc bootstrap init \
 | `--set=METALLB_FLOATING_IP` / `METALLB_INTERFACE` | Dedicated ingress VIP and the host interface that carries its L2 segment. For an L2 VIP inside `EXT_PUBLIC_CIDR`, the current CLI selects the fleet-managed `ext-pub-anchor`; elsewhere the operator supplies the real interface |
 | `--set=INGRESS_MODE` | `metallb-lb` (default — Envoy Service `type: LoadBalancer` via MetalLB). `hostnetwork` (Envoy binds `:443` on the host) is a real topology but **not yet automated — `init` rejects it**; scaffold with `metallb-lb` and apply the EnvoyProxy hostNetwork patch manually if you need it |
 | `--set=METALLB_MODE` | `l2` (default — ARP on a shared L2 segment) or `bgp` (announce VIPs as `/32` BGP routes — routed/L3-only fabrics; see §4.3 “BGP mode and mode changes”). `bgp` requires `METALLB_BGP_LOCAL_ASN`, `METALLB_BGP_PEER_ASN`, `METALLB_BGP_PEER_ADDRESS` (all validated) |
+| `--tls-mode` | `acme` (default — HTTP-01 through the Gateway; needs inbound `:80`), `acme-dns01-route53` (same issuer, proves control via Route53 DNS records — for private/VPN-only clusters whose zone is in Route53; auto-renews; requires `--dns01-route53-zone-id` + `--dns01-route53-access-key-id`, secret key via `--dns01-route53-secret-key-file` or `KUBE_DC_DNS01_ROUTE53_SECRET_KEY`), or `byo-wildcard` (operator-supplied certificate; requires `--tls-cert`/`--tls-key`; nothing renews it). See [Platform TLS certificates](certificates.md) |
 | `--trusted-ca-bundle` | Certificate-only root/intermediate PEM for a private-CA platform. The CLI creates the durable ConfigMap and wires manager, backend, OIDC and OpenBao from one plan-pinned source |
 | `--openbao-shares-out` | Additional off-git `0600` custody copy of the five Shamir shares. The automatic post-apply finalizer honors this path; never place it inside a Git tree |
 

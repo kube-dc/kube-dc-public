@@ -74,6 +74,15 @@ type InstallOptions struct {
 
 	// RKE2Version overrides defaultRKE2Version.
 	RKE2Version string
+	// TrustedCA is the platform's private CA, installed into this node's OS
+	// trust store before RKE2 starts. Nil = public CAs only.
+	//
+	// This is the NODE half of trust (docs/prd/platform-trust-bundle.md); the
+	// manager handles the pod half. An air-gapped install needs both, and needs
+	// this one first: the registry is internal and served by this CA, so the
+	// first image pull happens before any pod could carry trust.
+	TrustedCA *TrustedCAMaterial
+
 	// DisableEmbeddedRegistry opts out of RKE2's embedded spegel mirror.
 	// The zero value preserves the product default (enabled). This is a
 	// negative option deliberately: non-Cobra/API callers that predate
@@ -139,6 +148,19 @@ func buildInstallEnv(o InstallOptions) map[string]string {
 	}
 	if o.DisableEmbeddedRegistry {
 		env["EMBEDDED_REGISTRY"] = "false"
+	}
+	if o.TrustedCA != nil {
+		// Only the PATH rides in the environment; the bundle itself is pushed
+		// as a file. A multi-KB PEM on the command line would be fragile and
+		// would show up in process listings on the host.
+		env[trustedCAEnv] = remoteTrustedCAPath
+		// The fingerprint binds what the script installs to what THIS code
+		// validated. The Go parser enforces certificates-only, CA-only and a
+		// size bound; the shell can only look for PEM markers. Between the two
+		// the file sits at a predictable path any local user can reach, so
+		// without this the weaker parser decides what becomes a trust anchor on
+		// every node. A hash is small enough to ride in the environment safely.
+		env[trustedCASHAEnv] = o.TrustedCA.Fingerprint
 	}
 	// A non-default supervisor port only applies to a control-plane join;
 	// otherwise let the script's own 9345 default stand (mirrors the
@@ -255,6 +277,20 @@ func Install(ctx context.Context, o InstallOptions) error {
 	if wasActive {
 		if err := ensureNoRunningVMs(ctx, o.SSH, o.Host); err != nil {
 			return fmt.Errorf("rke2 install: pre-restart VM safety gate: %w", err)
+		}
+	}
+
+	// Push the CA bundle first: the installer refuses to continue if the file
+	// it was told about is missing, which is the right failure but a confusing
+	// one to hit because of ordering.
+	if o.TrustedCA != nil {
+		fmt.Fprintf(out, "[install] pushing platform CA bundle to %s\n", remoteTrustedCAPath)
+		// 0600: the staging path is predictable and lives in a world-writable
+		// directory. The content is public trust material, but a readable file
+		// there is still a collision target, and the installer removes it once
+		// the anchors are in place.
+		if err := o.SSH.Put(ctx, o.Host, remoteTrustedCAPath, o.TrustedCA.PEM, 0o600); err != nil {
+			return fmt.Errorf("rke2 install: push trusted CA bundle: %w", err)
 		}
 	}
 
@@ -481,6 +517,7 @@ func renderPlan(out io.Writer, o InstallOptions, env map[string]string) {
 		fmt.Fprintf(out, "== RKE2 install plan — node %q (%s) ==\n", o.NodeName, sshHostArg(o.Host))
 	}
 	fmt.Fprintf(out, "  RKE2 version:      %s\n", env["RKE2_VERSION"])
+	fmt.Fprintf(out, "  node trust anchor: %s\n", o.TrustedCA.Summary())
 	fmt.Fprintf(out, "  node-ip / advertise-address: %s\n", env["NODE_IP"])
 	fmt.Fprintf(out, "  node-external-ip:  %s\n", env["EXTERNAL_IP"])
 	fmt.Fprintf(out, "  cluster-cidr:      %s\n", env["POD_CIDR"])

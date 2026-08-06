@@ -90,11 +90,16 @@ type Plan struct {
 	// TLSMode ("" = acme) + the reviewed leaf's hex SHA-256. Surfaced on the
 	// plan header so the reviewer sees WHICH certificate ships; apply refuses
 	// material whose fingerprint differs. Both also participate in InputHash.
-	TLSMode              string `json:"tlsMode,omitempty"`
-	TLSCertFingerprint   string `json:"tlsCertFingerprint,omitempty"`
-	TrustedCAFingerprint string `json:"trustedCaFingerprint,omitempty"`
-	Preset               Preset `json:"preset"`
-	Mode                 Mode   `json:"mode"`
+	TLSMode            string `json:"tlsMode,omitempty"`
+	TLSCertFingerprint string `json:"tlsCertFingerprint,omitempty"`
+	// DNS01SecretKeyFingerprint (hex SHA-256 of the AWS secret access key)
+	// binds an acme-dns01-route53 plan to the exact credential that ships,
+	// mirroring TLSCertFingerprint. High-entropy input, so the digest is safe
+	// to surface.
+	DNS01SecretKeyFingerprint string `json:"dns01SecretKeyFingerprint,omitempty"`
+	TrustedCAFingerprint      string `json:"trustedCaFingerprint,omitempty"`
+	Preset                    Preset `json:"preset"`
+	Mode                      Mode   `json:"mode"`
 
 	// --- Detected from the fleet state ---
 	// PriorClusters lists sibling cluster names when fleet-mode is
@@ -325,27 +330,33 @@ type inputsForHash struct {
 	// TLSCertFingerprint (hex SHA-256 of the leaf DER — public material) binds
 	// the plan to the CERTIFICATE the operator reviewed, not merely the mode:
 	// apply refuses material whose fingerprint differs from the approved plan.
-	TLSCertFingerprint      string                 `json:"tlsCertFingerprint,omitempty"`
-	TrustedCAFingerprint    string                 `json:"trustedCaFingerprint,omitempty"`
-	ImageAcceleration       bool                   `json:"imageAcceleration,omitempty"`
-	VMGoldens               []string               `json:"vmGoldens,omitempty"`
-	VMGoldensBlock          []string               `json:"vmGoldensBlock,omitempty"`
-	GPUPlatform             GPUPlatformMode        `json:"gpuPlatform,omitempty"`
-	GPUDriverSource         GPUDriverSource        `json:"gpuDriverSource,omitempty"`
-	GPUOperatorVersion      string                 `json:"gpuOperatorVersion,omitempty"`
-	NVIDIADriverVersion     string                 `json:"nvidiaDriverVersion,omitempty"`
-	NVIDIAToolkitVersion    string                 `json:"nvidiaToolkitVersion,omitempty"`
-	HAMiEnabled             bool                   `json:"hamiEnabled,omitempty"`
-	GPUSharedAllocator      GPUSharedAllocator     `json:"gpuSharedAllocator,omitempty"`
-	HAMiVersion             string                 `json:"hamiVersion,omitempty"`
-	HAMiSchedulerVersion    string                 `json:"hamiSchedulerVersion,omitempty"`
-	GPUNodeModes            map[string]GPUNodeMode `json:"gpuNodeModes,omitempty"`
-	GPUProfiles             []string               `json:"gpuProfiles,omitempty"`
-	AllowUnassignedGPUs     bool                   `json:"allowUnassignedGpus,omitempty"`
-	VGPUSecretReady         bool                   `json:"vgpuSecretReady,omitempty"`
-	Addons                  []string               `json:"addons,omitempty"`
-	AllowDNSNotReady        bool                   `json:"allowDnsNotReady"`
-	AllowNoKubevirtEligible bool                   `json:"allowNoKubevirtEligible"`
+	TLSCertFingerprint string `json:"tlsCertFingerprint,omitempty"`
+	// The dns01 solver config is shape (it changes the ClusterIssuer patch
+	// and the SOPS artifact identity), so all four participate in the hash.
+	DNS01Route53ZoneID        string                 `json:"dns01Route53ZoneId,omitempty"`
+	DNS01Route53Region        string                 `json:"dns01Route53Region,omitempty"`
+	DNS01Route53AccessKeyID   string                 `json:"dns01Route53AccessKeyId,omitempty"`
+	DNS01SecretKeyFingerprint string                 `json:"dns01SecretKeyFingerprint,omitempty"`
+	TrustedCAFingerprint      string                 `json:"trustedCaFingerprint,omitempty"`
+	ImageAcceleration         bool                   `json:"imageAcceleration,omitempty"`
+	VMGoldens                 []string               `json:"vmGoldens,omitempty"`
+	VMGoldensBlock            []string               `json:"vmGoldensBlock,omitempty"`
+	GPUPlatform               GPUPlatformMode        `json:"gpuPlatform,omitempty"`
+	GPUDriverSource           GPUDriverSource        `json:"gpuDriverSource,omitempty"`
+	GPUOperatorVersion        string                 `json:"gpuOperatorVersion,omitempty"`
+	NVIDIADriverVersion       string                 `json:"nvidiaDriverVersion,omitempty"`
+	NVIDIAToolkitVersion      string                 `json:"nvidiaToolkitVersion,omitempty"`
+	HAMiEnabled               bool                   `json:"hamiEnabled,omitempty"`
+	GPUSharedAllocator        GPUSharedAllocator     `json:"gpuSharedAllocator,omitempty"`
+	HAMiVersion               string                 `json:"hamiVersion,omitempty"`
+	HAMiSchedulerVersion      string                 `json:"hamiSchedulerVersion,omitempty"`
+	GPUNodeModes              map[string]GPUNodeMode `json:"gpuNodeModes,omitempty"`
+	GPUProfiles               []string               `json:"gpuProfiles,omitempty"`
+	AllowUnassignedGPUs       bool                   `json:"allowUnassignedGpus,omitempty"`
+	VGPUSecretReady           bool                   `json:"vgpuSecretReady,omitempty"`
+	Addons                    []string               `json:"addons,omitempty"`
+	AllowDNSNotReady          bool                   `json:"allowDnsNotReady"`
+	AllowNoKubevirtEligible   bool                   `json:"allowNoKubevirtEligible"`
 	// AllowUnpinnedAdopt IS substantive (like its Allow* siblings): it
 	// changes whether the --mode=adopt safety gate blocks or merely
 	// warns. Dry-run + apply MUST agree, or an operator could review a
@@ -410,9 +421,10 @@ var hashExcludedFields = map[string]string{
 	// directory while proving nothing (the same path can hold different
 	// bytes). LoadWildcardTLS re-validates the actual material at BOTH
 	// dry-run and apply, which is the real drift guard.
-	"TLSCert":         "machine-local path to secret material; validated at load, never planned",
-	"TLSKey":          "machine-local path to secret material; validated at load, never planned",
-	"TrustedCABundle": "machine-local path to public CA material; canonical bundle fingerprint is hashed instead",
+	"TLSCert":                   "machine-local path to secret material; validated at load, never planned",
+	"TLSKey":                    "machine-local path to secret material; validated at load, never planned",
+	"DNS01Route53SecretKeyFile": "machine-local path to secret material; fingerprint is hashed instead",
+	"TrustedCABundle":           "machine-local path to public CA material; canonical bundle fingerprint is hashed instead",
 
 	// Transient OUTPUT — filled by the post-apply phase (end-of-install
 	// access block); never an input to the plan.
@@ -448,54 +460,58 @@ func (o *InitOptions) inputsForHash() inputsForHash {
 		// semantic change. Only non-default providers surface in
 		// the hash. Combined with `json:"provider,omitempty"` the
 		// canonical JSON omits the field for the default case.
-		Provider:                normalizeProviderForHash(o.Provider),
-		GitHubOwner:             o.GitHubOwner,
-		GitHubRepo:              o.GitHubRepo,
-		Sets:                    o.Sets,
-		NodeNICs:                o.NodeNICs,
-		RookMode:                o.RookMode,
-		RookOSDNode:             o.RookOSDNode,
-		RookOSDSizeGB:           o.RookOSDSizeGB,
-		RookOSDDevice:           o.RookOSDDevice,
-		CephNodes:               o.CephNodes,
-		CephStorageClass:        o.CephStorageClass,
-		CephOSDCount:            o.CephOSDCount,
-		CephOSDVolumeSizeGB:     o.CephOSDVolumeSizeGB,
-		S3Hostname:              o.S3Hostname,
-		NoS3Exposure:            o.NoS3Exposure,
-		VMStorageMode:           o.VMStorageMode,
-		ImageAcceleration:       o.ImageAcceleration,
-		TLSMode:                 canonicalTLSMode(o.TLSMode),
-		TLSCertFingerprint:      o.TLSCertFingerprint,
-		TrustedCAFingerprint:    o.TrustedCAFingerprint,
-		VMGoldens:               canonicalGoldens(o.VMGoldens),
-		VMGoldensBlock:          canonicalGoldens(o.VMGoldensBlock),
-		GPUPlatform:             o.GPUPlatform,
-		GPUDriverSource:         o.GPUDriverSource,
-		GPUOperatorVersion:      o.GPUOperatorVersion,
-		NVIDIADriverVersion:     o.NVIDIADriverVersion,
-		NVIDIAToolkitVersion:    o.NVIDIAToolkitVersion,
-		HAMiEnabled:             o.HAMiEnabled,
-		GPUSharedAllocator:      o.GPUSharedAllocator,
-		HAMiVersion:             o.HAMiVersion,
-		HAMiSchedulerVersion:    o.HAMiSchedulerVersion,
-		GPUNodeModes:            o.GPUNodeModes,
-		GPUProfiles:             canonicalGPUProfiles(o.GPUProfiles),
-		AllowUnassignedGPUs:     o.AllowUnassignedGPUs,
-		VGPUSecretReady:         o.VGPUSecretReady,
-		Addons:                  o.Addons,
-		AllowDNSNotReady:        o.AllowDNSNotReady,
-		AllowNoKubevirtEligible: o.AllowNoKubevirtEligible,
-		AllowUnpinnedAdopt:      o.AllowUnpinnedAdopt,
-		NoPush:                  o.NoPush,
-		SSHHost:                 o.SSHHost,
-		NoSSH:                   o.NoSSH,
-		NoInstallPrereqs:        o.NoInstallPrereqs,
-		NoCreateRepo:            o.NoCreateRepo,
-		StarterRef:              o.StarterRef,
-		MirrorRegistry:          o.MirrorRegistry,
-		BundlePullSecret:        o.BundlePullSecret,
-		OpenBaoSharesOut:        o.OpenBaoSharesOut,
+		Provider:                  normalizeProviderForHash(o.Provider),
+		GitHubOwner:               o.GitHubOwner,
+		GitHubRepo:                o.GitHubRepo,
+		Sets:                      o.Sets,
+		NodeNICs:                  o.NodeNICs,
+		RookMode:                  o.RookMode,
+		RookOSDNode:               o.RookOSDNode,
+		RookOSDSizeGB:             o.RookOSDSizeGB,
+		RookOSDDevice:             o.RookOSDDevice,
+		CephNodes:                 o.CephNodes,
+		CephStorageClass:          o.CephStorageClass,
+		CephOSDCount:              o.CephOSDCount,
+		CephOSDVolumeSizeGB:       o.CephOSDVolumeSizeGB,
+		S3Hostname:                o.S3Hostname,
+		NoS3Exposure:              o.NoS3Exposure,
+		VMStorageMode:             o.VMStorageMode,
+		ImageAcceleration:         o.ImageAcceleration,
+		TLSMode:                   canonicalTLSMode(o.TLSMode),
+		TLSCertFingerprint:        o.TLSCertFingerprint,
+		DNS01Route53ZoneID:        o.DNS01Route53ZoneID,
+		DNS01Route53Region:        o.DNS01Route53Region,
+		DNS01Route53AccessKeyID:   o.DNS01Route53AccessKeyID,
+		DNS01SecretKeyFingerprint: o.DNS01SecretKeyFingerprint,
+		TrustedCAFingerprint:      o.TrustedCAFingerprint,
+		VMGoldens:                 canonicalGoldens(o.VMGoldens),
+		VMGoldensBlock:            canonicalGoldens(o.VMGoldensBlock),
+		GPUPlatform:               o.GPUPlatform,
+		GPUDriverSource:           o.GPUDriverSource,
+		GPUOperatorVersion:        o.GPUOperatorVersion,
+		NVIDIADriverVersion:       o.NVIDIADriverVersion,
+		NVIDIAToolkitVersion:      o.NVIDIAToolkitVersion,
+		HAMiEnabled:               o.HAMiEnabled,
+		GPUSharedAllocator:        o.GPUSharedAllocator,
+		HAMiVersion:               o.HAMiVersion,
+		HAMiSchedulerVersion:      o.HAMiSchedulerVersion,
+		GPUNodeModes:              o.GPUNodeModes,
+		GPUProfiles:               canonicalGPUProfiles(o.GPUProfiles),
+		AllowUnassignedGPUs:       o.AllowUnassignedGPUs,
+		VGPUSecretReady:           o.VGPUSecretReady,
+		Addons:                    o.Addons,
+		AllowDNSNotReady:          o.AllowDNSNotReady,
+		AllowNoKubevirtEligible:   o.AllowNoKubevirtEligible,
+		AllowUnpinnedAdopt:        o.AllowUnpinnedAdopt,
+		NoPush:                    o.NoPush,
+		SSHHost:                   o.SSHHost,
+		NoSSH:                     o.NoSSH,
+		NoInstallPrereqs:          o.NoInstallPrereqs,
+		NoCreateRepo:              o.NoCreateRepo,
+		StarterRef:                o.StarterRef,
+		MirrorRegistry:            o.MirrorRegistry,
+		BundlePullSecret:          o.BundlePullSecret,
+		OpenBaoSharesOut:          o.OpenBaoSharesOut,
 	}
 }
 
@@ -604,19 +620,20 @@ func BuildPlan(o *InitOptions, fleet FleetState) (*Plan, error) {
 	}
 
 	p := &Plan{
-		Version:              PlanSchemaVersion,
-		InputHash:            inputHash,
-		GeneratedAt:          time.Now().UTC().Truncate(time.Second),
-		ClusterName:          o.Name,
-		Domain:               o.Domain,
-		FleetMode:            o.FleetMode,
-		StarterRef:           o.StarterRef,
-		OpenBaoSharesOut:     o.OpenBaoSharesOut,
-		Preset:               o.Preset,
-		Mode:                 o.Mode,
-		TLSMode:              canonicalTLSMode(o.TLSMode),
-		TLSCertFingerprint:   o.TLSCertFingerprint,
-		TrustedCAFingerprint: o.TrustedCAFingerprint,
+		Version:                   PlanSchemaVersion,
+		InputHash:                 inputHash,
+		GeneratedAt:               time.Now().UTC().Truncate(time.Second),
+		ClusterName:               o.Name,
+		Domain:                    o.Domain,
+		FleetMode:                 o.FleetMode,
+		StarterRef:                o.StarterRef,
+		OpenBaoSharesOut:          o.OpenBaoSharesOut,
+		Preset:                    o.Preset,
+		Mode:                      o.Mode,
+		TLSMode:                   canonicalTLSMode(o.TLSMode),
+		TLSCertFingerprint:        o.TLSCertFingerprint,
+		DNS01SecretKeyFingerprint: o.DNS01SecretKeyFingerprint,
+		TrustedCAFingerprint:      o.TrustedCAFingerprint,
 	}
 
 	if o.FleetMode == FleetExistingFleet {
@@ -773,6 +790,14 @@ func filesForOptions(o *InitOptions, fleet FleetState) []PlanFile {
 				Description: "operator wildcard under every platform TLS secret name (SOPS)", Action: "+"},
 			PlanFile{Path: "clusters/" + base + "platform.yaml",
 				Description: "ACME Certificate suppression patches (byo-wildcard)", Action: "~"},
+		)
+	}
+	if canonicalTLSMode(o.TLSMode) == TLSModeACMEDNS01Route53 {
+		files = append(files,
+			PlanFile{Path: "clusters/" + base + dns01SecretsFileName,
+				Description: "Route53 secret access key for the cert-manager DNS-01 solver (SOPS)", Action: "+"},
+			PlanFile{Path: "clusters/" + base + "platform.yaml",
+				Description: "ClusterIssuer solver patch → Route53 DNS-01 (acme-dns01-route53)", Action: "~"},
 		)
 	}
 	if o.TrustedCAFingerprint != "" {

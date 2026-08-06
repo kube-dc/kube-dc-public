@@ -29,12 +29,14 @@ var version = "dev"
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "kube-dc",
-		Short: "Kube-DC CLI - Kubernetes authentication for Kube-DC clusters",
-		Long: `Kube-DC CLI provides browser-based authentication for Kube-DC clusters.
+		Short: "Authenticate to Organizations and select Project contexts",
+		Long: `Kube-DC CLI provides browser-based Organization authentication and
+Project-scoped kubeconfig contexts.
 
 It follows the same patterns as AWS CLI, GCloud, and other cloud provider CLIs:
 - Browser-based OAuth login
 - Automatic token refresh
+- Project context selection with kube-dc use
 - Seamless kubectl integration`,
 	}
 
@@ -119,18 +121,19 @@ The domain is used to derive the API and login URLs:
   - Keycloak:   https://login.{domain}
 
 Two identity modes:
-  --org <name>   Tenant login against the per-org realm. Writes contexts
-                 named kube-dc/<domain>/<org>/<project>, one per namespace
-                 the user has access to. RBAC is namespace-scoped.
+  --org <name>   Organization login against the per-Organization realm. Writes
+                 one context named kube-dc/<domain>/<org>/<project> for each
+                 accessible Project. Each context selects that Project's
+                 backing namespace and pins the Organization realm.
 
   --admin        Platform-admin login against the master realm and the
                  'kube-dc-admin' OIDC client. Writes a single context
                  named kube-dc/<domain>/admin with cluster-wide RBAC
-                 (via the platform:kube-dc-admin group claim).`,
-		Example: `  # Tenant login (existing behavior)
+                 (via the platform:admin group claim).`,
+		Example: `  # Organization login
   kube-dc login --domain stage.kube-dc.com --org shalb
 
-  # Platform-admin login (new)
+  # Platform-admin login
   kube-dc login --domain kube-dc.cloud --admin
 
   # With CA certificate (for self-hosted)
@@ -176,12 +179,12 @@ func runLogin(domain, org, caCertFile string, insecure, deviceCode bool) error {
 
 	// Prompt for organization if not provided
 	if org == "" {
-		fmt.Print("Enter organization (Keycloak realm): ")
+		fmt.Print("Enter Organization name: ")
 		input, _ := reader.ReadString('\n')
 		org = strings.TrimSpace(input)
 	}
 	if org == "" {
-		return fmt.Errorf("organization is required")
+		return fmt.Errorf("Organization is required")
 	}
 
 	// Derive URLs from domain
@@ -203,7 +206,7 @@ func runLogin(domain, org, caCertFile string, insecure, deviceCode bool) error {
 		return fmt.Errorf("device code flow not yet implemented")
 	}
 
-	fmt.Printf("\n🔐 Logging in to %s (org: %s)\n", domain, org)
+	fmt.Printf("\n🔐 Logging in to %s (Organization: %s)\n", domain, org)
 	fmt.Printf("   API Server: %s\n", server)
 	fmt.Printf("   Keycloak:   %s\n\n", keycloakURL)
 
@@ -252,7 +255,7 @@ func runLogin(domain, org, caCertFile string, insecure, deviceCode bool) error {
 	fmt.Printf("  User: %s\n", claims.Email)
 	fmt.Printf("  Organization: %s\n", claims.Org)
 	if len(claims.Namespaces) > 0 {
-		fmt.Printf("  Available namespaces: %s\n", strings.Join(claims.Namespaces, ", "))
+		fmt.Printf("  Accessible Projects (backing namespaces): %s\n", strings.Join(claims.Namespaces, ", "))
 	}
 
 	// Save credentials
@@ -312,34 +315,13 @@ func runLogin(domain, org, caCertFile string, insecure, deviceCode bool) error {
 		return fmt.Errorf("failed to initialize kubeconfig manager: %w", err)
 	}
 
-	// Create contexts for each namespace
+	// Create one context for each accessible Project.
 	// Include domain in names to support multiple kube-dc installations
-	clusterName := fmt.Sprintf("kube-dc-%s-%s", domain, org)
-	userName := fmt.Sprintf("kube-dc@%s/%s", domain, org)
-
 	for i, ns := range claims.Namespaces {
-		// Extract project name from namespace (org-project -> project)
-		projectName := ns
-		if strings.HasPrefix(ns, org+"-") {
-			projectName = strings.TrimPrefix(ns, org+"-")
-		}
-
-		// Context name includes domain to distinguish between installations
-		contextName := fmt.Sprintf("kube-dc/%s/%s/%s", domain, org, projectName)
-
-		params := kubeconfig.AddContextParams{
-			Server:      server,
-			ClusterName: clusterName,
-			UserName:    userName,
-			ContextName: contextName,
-			Namespace:   ns,
-			CACert:      caCertPEM,
-			Insecure:    insecure,
-			SetCurrent:  i == 0, // Set first namespace as current
-		}
+		params := tenantContextParams(domain, org, server, ns, caCertPEM, insecure, i == 0)
 
 		if err := kubeMgr.AddKubeDCContext(params); err != nil {
-			fmt.Printf("  Warning: failed to add context %s: %v\n", contextName, err)
+			fmt.Printf("  Warning: failed to add context %s: %v\n", params.ContextName, err)
 		}
 	}
 
@@ -356,6 +338,27 @@ func runLogin(domain, org, caCertFile string, insecure, deviceCode bool) error {
 	}
 
 	return nil
+}
+
+// tenantContextParams keeps the security-sensitive relationship between a
+// Project context and its Organization realm in one testable place.
+func tenantContextParams(domain, org, server, namespace, caCertPEM string, insecure, setCurrent bool) kubeconfig.AddContextParams {
+	projectName := namespace
+	if strings.HasPrefix(namespace, org+"-") {
+		projectName = strings.TrimPrefix(namespace, org+"-")
+	}
+
+	return kubeconfig.AddContextParams{
+		Server:      server,
+		ClusterName: fmt.Sprintf("kube-dc-%s-%s", domain, org),
+		UserName:    fmt.Sprintf("kube-dc@%s/%s", domain, org),
+		ContextName: fmt.Sprintf("kube-dc/%s/%s/%s", domain, org, projectName),
+		Namespace:   namespace,
+		CACert:      caCertPEM,
+		Insecure:    insecure,
+		SetCurrent:  setCurrent,
+		Realm:       org,
+	}
 }
 
 func logoutCmd() *cobra.Command {
@@ -471,13 +474,14 @@ func runLogout(server string, all, removeContexts bool) error {
 
 func useCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "use [org/project]",
-		Short: "Switch to a different organization/project context",
-		Long: `Switch to a different organization/project context.
+		Use:   "use [domain/org/project|context]",
+		Short: "Switch to a different Organization or Project context",
+		Long: `Switch to a different Kube-DC context.
 
-If no argument is provided, lists available kube-dc contexts.`,
+Pass domain/org/project or a full kube-dc/<domain>/<org>/<project> context
+name. If no argument is provided, available Kube-DC contexts are listed.`,
 		Example: `  # Switch to specific project
-  kube-dc use shalb/demo
+  kube-dc use kube-dc.cloud/shalb/demo
 
   # List available contexts
   kube-dc use`,
@@ -529,7 +533,7 @@ func runUse(args []string) error {
 	// Switch to specified context
 	target := args[0]
 
-	// Allow short form (org/project) or full form (kube-dc/org/project)
+	// Allow domain/org/project or the full kube-dc/domain/org/project name.
 	contextName := target
 	if !strings.HasPrefix(target, "kube-dc/") {
 		contextName = "kube-dc/" + target
@@ -557,16 +561,20 @@ func runUse(args []string) error {
 
 func nsCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "ns [namespace]",
-		Short: "Switch or list namespaces",
-		Long: `Switch or list namespaces from your access token.
+		Use:   "ns [project-namespace]",
+		Short: "Select or list legacy Project backing namespaces",
+		Long: `Compatibility command for selecting a Project's backing namespace.
 
-If no argument is provided, shows available namespaces.
-Namespaces are derived from your JWT token claims.`,
-		Example: `  # List available namespaces
+This rewrites the namespace field of the current context; it does not switch
+the context name. Prefer "kube-dc use <domain>/<org>/<project>" so the context
+name and selected Project stay aligned.
+
+If no argument is provided, accessible Project backing namespaces from the
+current Organization token are listed.`,
+		Example: `  # List accessible Project backing namespaces
   kube-dc ns
 
-  # Switch namespace
+  # Select a backing namespace (compatibility behavior)
   kube-dc ns shalb-dev`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -614,15 +622,22 @@ func runNs(args []string) error {
 		return fmt.Errorf("could not find server URL for current context")
 	}
 
-	// Load credentials to get available namespaces
+	// Load credentials for the realm encoded in the current context. A machine
+	// can cache Organization and platform-admin identities for the same server;
+	// an unqualified load could otherwise select the wrong token.
 	credMgr, err := config.NewCredentialsManager()
 	if err != nil {
 		return fmt.Errorf("failed to load credentials: %w", err)
 	}
 
-	creds, err := credMgr.Load(serverURL)
+	realm := realmFromContext(kubeConfig.CurrentContext)
+	creds, err := credMgr.LoadForRealm(serverURL, realm)
 	if err != nil {
-		return fmt.Errorf("not logged in. Run: kube-dc login --server %s", serverURL)
+		loginMode := fmt.Sprintf("--org %s", realm)
+		if realm == "master" {
+			loginMode = "--admin"
+		}
+		return fmt.Errorf("not logged in. Run: kube-dc login --domain %s %s", domainFromAPI(serverURL), loginMode)
 	}
 
 	namespaces := creds.User.Namespaces
@@ -635,12 +650,12 @@ func runNs(args []string) error {
 	}
 
 	if len(namespaces) == 0 {
-		return fmt.Errorf("no namespaces found in credentials")
+		return fmt.Errorf("no accessible Projects found in credentials")
 	}
 
-	// If no argument, list namespaces
+	// If no argument, list Project backing namespaces.
 	if len(args) == 0 {
-		fmt.Println("Available namespaces:")
+		fmt.Println("Accessible Project backing namespaces:")
 		for _, ns := range namespaces {
 			marker := "  "
 			if ns == currentNamespace {
@@ -651,7 +666,7 @@ func runNs(args []string) error {
 		return nil
 	}
 
-	// Switch namespace
+	// Select a Project backing namespace on the current context.
 	targetNs := args[0]
 
 	// Validate namespace is in allowed list
@@ -663,7 +678,7 @@ func runNs(args []string) error {
 		}
 	}
 	if !found {
-		return fmt.Errorf("namespace '%s' not in your allowed namespaces: %v", targetNs, namespaces)
+		return fmt.Errorf("Project backing namespace '%s' is not in your accessible Projects: %v", targetNs, namespaces)
 	}
 
 	// Update kubeconfig
@@ -671,7 +686,7 @@ func runNs(args []string) error {
 		return fmt.Errorf("failed to set namespace: %w", err)
 	}
 
-	fmt.Printf("Switched to namespace: %s\n", targetNs)
+	fmt.Printf("Selected Project backing namespace: %s\n", targetNs)
 	return nil
 }
 
@@ -719,10 +734,10 @@ func runConfigShow() error {
 	fmt.Println("=== Current Context ===")
 	fmt.Printf("Context: %s\n", kubeConfig.CurrentContext)
 
-	// Find current namespace
+	// Find the current Project's backing namespace.
 	for _, ctx := range kubeConfig.Contexts {
 		if ctx.Name == kubeConfig.CurrentContext {
-			fmt.Printf("Namespace: %s\n", ctx.Context.Namespace)
+			fmt.Printf("Backing namespace: %s\n", ctx.Context.Namespace)
 			for _, cluster := range kubeConfig.Clusters {
 				if cluster.Name == ctx.Context.Cluster {
 					fmt.Printf("Server: %s\n", cluster.Cluster.Server)
@@ -757,7 +772,7 @@ func runConfigShow() error {
 		fmt.Printf("  User: %s\n", c.User.Email)
 		fmt.Printf("  Organization: %s\n", c.User.Org)
 		fmt.Printf("  Groups: %v\n", c.User.Groups)
-		fmt.Printf("  Namespaces: %v\n", c.User.Namespaces)
+		fmt.Printf("  Accessible Project backing namespaces: %v\n", c.User.Namespaces)
 
 		// Token status
 		if c.IsAccessTokenValid() {
@@ -800,10 +815,10 @@ func credentialCmd() *cobra.Command {
 				return err
 			}
 
-			// Realm-aware lookup when the kubeconfig context provides
-			// it (admin contexts always do). Tenant kubeconfigs that
-			// pre-date this change call without --realm and hit the
-			// legacy single-file fallback in credentials.Manager.
+			// Realm-aware lookup when the kubeconfig context provides it (all
+			// newly generated contexts do). Older tenant kubeconfigs call
+			// without --realm and use the fail-closed legacy lookup in
+			// credentials.Manager.
 			cred, err := provider.GetCredentialForRealm(server, realm)
 			if err != nil {
 				return err
@@ -814,7 +829,7 @@ func credentialCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&server, "server", "", "Kube-DC API server URL")
-	cmd.Flags().StringVar(&realm, "realm", "", "Keycloak realm (admin: master; tenant: org name). Optional; legacy kubeconfigs omit this.")
+	cmd.Flags().StringVar(&realm, "realm", "", "Keycloak realm (admin: master; Organization identity: Organization name). Optional; legacy kubeconfigs omit this.")
 	cmd.MarkFlagRequired("server")
 
 	return cmd
@@ -1031,12 +1046,13 @@ func verifyRealmExists(keycloakURL, realm, caCertPEM string) error {
 Keycloak has no realm %q, so the browser would just show a 404.
 
 `+"`kube-dc login`"+` wants the ORGANIZATION, which is not the same as the
-project you work in. Project namespaces are named <org>-<project>, so if you
+Project you work in. Project backing namespaces are named <org>-<project>, so if you
 work in something like "acme-web" the organization is usually "acme".
 
-  - the organization is the top-level tenant (the Keycloak realm)
-  - the project lives inside it and is selected AFTER login, with:
-        kube-dc ns <project>
+  - the Organization is the top-level identity boundary (the Keycloak realm)
+  - the Project lives inside it and is selected AFTER login, with:
+        kube-dc use
+        kube-dc use <domain>/<org>/<project>
 
 Check the organization name in the console, or with:
     kubectl get organizations -A`, realm, realm)

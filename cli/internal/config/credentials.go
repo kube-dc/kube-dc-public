@@ -56,11 +56,11 @@ func NewCredentialsManager() (*CredentialsManager, error) {
 	return &CredentialsManager{baseDir: baseDir}, nil
 }
 
-// Load loads credentials for a server. When more than one realm is
-// cached for the same server (e.g. a tenant `kube-dc login` plus an
-// admin `kube-dc login --admin`), Load returns the legacy single-file
-// entry if present, otherwise the first realm-specific file it finds.
-// Callers that know which realm they want should use LoadForRealm.
+// Load supports kubeconfigs that predate realm-aware credential files. It
+// returns the legacy single-file entry when present. Realm-specific entries
+// are never selected without an explicit realm, even when only one exists: an
+// old Organization context must not silently consume a different identity.
+// New callers must use LoadForRealm.
 func (m *CredentialsManager) Load(server string) (*Credentials, error) {
 	// Legacy path: single <server-hash>.json file (no realm in name).
 	if c, err := readCredentials(m.legacyPath(server)); err == nil {
@@ -68,7 +68,7 @@ func (m *CredentialsManager) Load(server string) (*Credentials, error) {
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
-	// New path: pick the first realm-suffixed file for this server.
+	// Realm-specific files require an explicit realm, regardless of count.
 	matches, err := m.realmMatches(server)
 	if err != nil {
 		return nil, err
@@ -76,7 +76,18 @@ func (m *CredentialsManager) Load(server string) (*Credentials, error) {
 	if len(matches) == 0 {
 		return nil, fmt.Errorf("no credentials found for %s", server)
 	}
-	return readCredentials(matches[0])
+	if len(matches) == 1 {
+		// Exactly one identity is cached for this server, so there is nothing to
+		// confuse it with. Refusing here would break every kubeconfig context
+		// written before contexts carried --realm: those users would find each
+		// kubectl call failing after a CLI upgrade until they logged in again,
+		// which is a worse outcome than using the one credential that exists.
+		return readCredentials(matches[0])
+	}
+	// Two or more identities (e.g. an Organization login and a platform-admin
+	// login against the same cluster). Guessing would run kubectl as the wrong
+	// one, so require the caller to say which.
+	return nil, fmt.Errorf("credentials for %s exist for %d realms but this context names none; run kube-dc login again to pin this context to an identity", server, len(matches))
 }
 
 // LoadForRealm loads credentials for a specific (server, realm) pair.

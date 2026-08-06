@@ -576,7 +576,7 @@ func canonicalTLSMode(mode string) string {
 // ValidateTLSMode rejects an unknown mode and the missing-material case.
 func ValidateTLSMode(mode, certPath, keyPath string) error {
 	switch mode {
-	case "", TLSModeACME:
+	case "", TLSModeACME, TLSModeACMEDNS01Route53:
 		if certPath != "" || keyPath != "" {
 			return fmt.Errorf("--tls-cert/--tls-key are only valid with --tls-mode=%s", TLSModeBYOWildcard)
 		}
@@ -587,6 +587,6 @@ func ValidateTLSMode(mode, certPath, keyPath string) error {
 		}
 		return nil
 	default:
-		return fmt.Errorf("invalid --tls-mode %q (valid: %s, %s)", mode, TLSModeACME, TLSModeBYOWildcard)
+		return fmt.Errorf("invalid --tls-mode %q (valid: %s, %s, %s)", mode, TLSModeACME, TLSModeBYOWildcard, TLSModeACMEDNS01Route53)
 	}
 }

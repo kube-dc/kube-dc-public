@@ -51,17 +51,17 @@ func kmsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "kms",
 		Short: "Manage project encryption keys (KMSKey)",
-		Long: `Manage project encryption keys backed by OpenBao Transit. Keys are
-symmetric (aes256-gcm96 or chacha20-poly1305), Phase-1 non-exportable;
-material never leaves OpenBao. Encrypt/decrypt go through the kube-dc
-backend so the 64 KiB plaintext cap, audit emission, and per-role
-policy gate are enforced uniformly across UI/CLI users.
+		Long: `Manage Project encryption keys backed by OpenBao Transit. Keys are
+symmetric (aes256-gcm96 or chacha20-poly1305), non-exportable, and their key
+material stays in OpenBao. Plaintext sent to encrypt or returned by decrypt
+passes through the Kube-DC backend and OpenBao Transit. Use client-side envelope
+encryption when the service must not see application plaintext.
 
-Permissions follow your project role (cap matrix in UX PRD §4.3):
-  viewer            encrypt only (no decrypt)
-  developer         encrypt + decrypt
-  project-manager   + rotate, set-min-decryption-version, schedule-delete
-  project-admin     + destroy`,
+Permissions follow the exact standard Project roles:
+  user               list/read metadata and encrypt; no decrypt
+  developer          list/read metadata, encrypt, and decrypt
+  project-manager    create, encrypt/decrypt, rotate, and set minimum version
+  admin              full lifecycle, including delete and deletion scheduling`,
 	}
 	cmd.AddCommand(kmsKeysCmd())
 	cmd.AddCommand(kmsEncryptCmd())
@@ -91,7 +91,7 @@ func kmsKeysListCmd() *cobra.Command {
 	var namespace, outFlag string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List KMSKeys in the project namespace",
+		Short: "List KMSKeys in the current Project",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out, err := parseOutput(outFlag)
@@ -118,7 +118,7 @@ func kmsKeysListCmd() *cobra.Command {
 			return printKMSKeysTable(list.Items)
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	cmd.Flags().StringVarP(&outFlag, "output", "o", "table", "Output format: table|json|yaml")
 	return cmd
 }
@@ -158,7 +158,7 @@ func kmsKeysDescribeCmd() *cobra.Command {
 			return printKMSKeyDetail(k)
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	cmd.Flags().StringVarP(&outFlag, "output", "o", "table", "Output format: table|json|yaml")
 	return cmd
 }
@@ -215,10 +215,10 @@ func kmsKeysCreateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	cmd.Flags().StringVar(&purpose, "purpose", "application", "Key purpose: application|backup|etcd")
 	cmd.Flags().StringVar(&algorithm, "algorithm", "aes256-gcm96", "Symmetric algorithm: aes256-gcm96|chacha20-poly1305")
-	cmd.Flags().StringVar(&deletionPolicy, "deletion-policy", "retain", "Deletion policy: retain|schedule")
+	cmd.Flags().StringVar(&deletionPolicy, "deletion-policy", "retain", "Deletion policy: retain|schedule (schedule requires admin)")
 	cmd.Flags().StringVar(&rotation, "rotation", "", "Auto-rotate interval (e.g. 30d, 12h). Empty = disabled")
 	cmd.Flags().BoolVar(&enableRotation, "enable-rotation", false, "Enable rotation (--rotation also enables when set)")
 	return cmd
@@ -255,7 +255,7 @@ min-decryption-version with kube-dc kms keys set-min-decryption-version.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	return cmd
 }
 
@@ -267,7 +267,7 @@ func kmsKeysDeleteCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "delete <name>",
 		Aliases: []string{"rm"},
-		Short:   "Delete a KMSKey",
+		Short:   "Delete a KMSKey (admin only)",
 		Long: `Delete a KMSKey. Default deletionPolicy=retain leaves the Transit
 key in place; schedule starts a 30d countdown handled by the controller.`,
 		Args: cobra.ExactArgs(1),
@@ -295,7 +295,7 @@ key in place; schedule starts a 30d countdown handled by the controller.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	cmd.Flags().BoolVar(&yes, "yes", false, "Confirm the deletion")
 	return cmd
 }
@@ -306,7 +306,7 @@ func kmsKeysScheduleDeleteCmd() *cobra.Command {
 	var namespace string
 	cmd := &cobra.Command{
 		Use:   "schedule-delete <name>",
-		Short: "Flip spec.deletionPolicy to schedule (30d countdown)",
+		Short: "Schedule key deletion after 30 days (admin only)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
@@ -329,7 +329,7 @@ func kmsKeysScheduleDeleteCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	return cmd
 }
 
@@ -337,7 +337,7 @@ func kmsKeysCancelDeleteCmd() *cobra.Command {
 	var namespace string
 	cmd := &cobra.Command{
 		Use:   "cancel-delete <name>",
-		Short: "Cancel a scheduled deletion (flip back to retain)",
+		Short: "Cancel a scheduled key deletion (admin only)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
@@ -359,7 +359,7 @@ func kmsKeysCancelDeleteCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	return cmd
 }
 
@@ -372,7 +372,7 @@ func kmsKeysSetMinDecryptionVersionCmd() *cobra.Command {
 		Short: "Set the minimum key version still allowed to decrypt",
 		Long: `Advance min_decryption_version on the Transit key. Lowering is
 allowed; raising above current_version is rejected by OpenBao. Requires
-project-manager+ role (transit/keys/+/config policy).`,
+the project-manager or admin role (transit/keys/+/config policy).`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
@@ -399,7 +399,7 @@ project-manager+ role (transit/keys/+/config policy).`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	return cmd
 }
 
@@ -451,7 +451,7 @@ version prefix is required at decrypt time.`,
 			return writeOutput(outFile, []byte(res.Ciphertext))
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	cmd.Flags().StringVar(&plaintext, "plaintext", "", "Inline plaintext (mutually exclusive with --plaintext-file)")
 	cmd.Flags().StringVar(&plaintextFile, "plaintext-file", "", "File to read plaintext from. '-' = stdin")
 	cmd.Flags().StringVar(&context, "context", "", "Optional encryption context (base64)")
@@ -506,7 +506,7 @@ func kmsDecryptCmd() *cobra.Command {
 			return writeOutput(outFile, raw)
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project namespace (default: current context's namespace)")
+	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
 	cmd.Flags().StringVar(&ciphertext, "ciphertext", "", "Inline ciphertext (mutually exclusive with --ciphertext-file)")
 	cmd.Flags().StringVar(&ciphertextFile, "ciphertext-file", "", "File to read ciphertext from. '-' = stdin")
 	cmd.Flags().StringVar(&context, "context", "", "Optional encryption context (must match the encrypt-time value)")

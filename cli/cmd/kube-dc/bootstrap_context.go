@@ -15,7 +15,7 @@ import (
 // kubectx-aware context picker described in installer-prd.md §16.6.
 //
 // Reads ~/.kube/config (or $KUBECONFIG), classifies every context as
-// ADMIN / TENANT / BREAK-GLASS / EXTERNAL, lets the operator activate
+// ADMIN / ORGANIZATION / BREAK-GLASS / EXTERNAL, lets the operator activate
 // or delete one, and shows JWT introspection (email + group claims +
 // expiry) for kube-dc OIDC contexts so "who am I on this cluster?" is
 // answerable without leaving the TUI.
@@ -30,7 +30,7 @@ func bootstrapContextCmd() *cobra.Command {
 		Short: "Browse and switch kubeconfig contexts (kubectx + identity-aware)",
 		Long: `Open the Kube-DC context manager: a kubectx-aware TUI that lists every
 context in ~/.kube/config (or whatever KUBECONFIG resolves to), tags each
-with its identity (ADMIN, TENANT, BREAK-GLASS, EXTERNAL), shows the
+with its identity (ADMIN, ORGANIZATION, BREAK-GLASS, EXTERNAL), shows the
 operator their effective identity (email + groups from the cached JWT)
 on the selected cluster, and lets you switch contexts with [enter].
 

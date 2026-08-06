@@ -354,6 +354,47 @@ func (r *Runner) supervise(ctx context.Context, name ports.ScriptKind, cmd *exec
 		sentinelHandled = true
 	case <-drainersDone:
 		// Drainers finished naturally.
+	case <-ctx.Done():
+		// Cancellation has asked the group to stop (cmd.Cancel sent SIGTERM).
+		// Bound the wait for EOF rather than trusting it.
+		//
+		// WaitDelay CANNOT save us here, which is the subtle part: Go only
+		// enforces it while cmd.Wait() is running, and Wait is deliberately
+		// ordered after this select so the drainers never race a pipe close.
+		// So if a grandchild outlives the group SIGTERM it keeps the write end
+		// of our stdout open, the drainers never EOF, and supervise blocks
+		// before it can reach the one mechanism designed to bound it — the
+		// channel is never closed and every caller ranging over it hangs for
+		// ever. Measured at ~13% of cancellations in this runner's own test.
+		select {
+		case <-drainersDone:
+		case <-time.After(killGrace):
+			// SIGTERM was not enough. SIGKILL cannot be trapped or ignored, so
+			// this releases the pipes and the drainers EOF immediately after.
+			killProcessGroup(cmd)
+			select {
+			case <-drainersDone:
+			case <-time.After(killGrace):
+				// Even SIGKILL did not free the pipes, so a holder is OUTSIDE the
+				// group we can signal — a grandchild that called setsid, or any
+				// surviving child on Windows, where there is no process group to
+				// target at all. Waiting longer would restore the very deadlock
+				// this escalation exists to break.
+				//
+				// Fall through to cmd.Wait WITHOUT the drainers: the process is
+				// dead, so Wait returns promptly and CLOSES the pipes, which is
+				// what finally unblocks them. This deliberately accepts the pipe
+				// race the phase ordering normally avoids — a drainer may see a
+				// read-on-closed error instead of a clean EOF — because a torn
+				// last line is strictly better than never closing the channel.
+				out <- ports.Line{
+					Stream: ports.StreamStderr,
+					Text: fmt.Sprintf("kube-dc: %s pipes still held after SIGKILL; "+
+						"continuing without a clean EOF", name),
+					Time: time.Now(),
+				}
+			}
+		}
 	}
 
 	// Phase 2: drainers have finished reading. Safe to call Wait now —

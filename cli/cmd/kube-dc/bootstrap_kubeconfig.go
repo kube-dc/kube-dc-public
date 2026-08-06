@@ -26,9 +26,9 @@ import (
 // identity (the bug that 13(e) feedback caught in v1).
 //
 // Default identity: admin (the fleet view is a platform-operator tool,
-// so this command's audience is platform admins). Tenants typically run
-// `kube-dc login --domain X --org Y` directly, which writes its own
-// per-namespace contexts.
+// so this command's audience is platform admins). Organization users normally
+// run `kube-dc login --domain X --org Y` directly, which creates one context
+// for each accessible Project.
 func bootstrapKubeconfigCmd(repoFlag *string) *cobra.Command {
 	var (
 		realmFlag       string
@@ -56,21 +56,21 @@ Identity:
   args). Run 'kube-dc login --domain <cluster-domain> --admin' once to
   mint OIDC tokens, then kubectl works as cluster-admin.
 
-  Pass --realm <name> to wire the kubeconfig for a tenant realm
-  instead — but in practice tenants should just run
-  'kube-dc login --domain X --org Y', which creates per-namespace
-  contexts in one step.
+  Pass --realm <name> to wire the kubeconfig for an Organization identity.
+  Organization users should normally run
+  'kube-dc login --domain X --org Y' instead. That authenticates to the
+  Organization and creates one context for each accessible Project.
 
 When clusters/<name>/kubeconfig.template.yaml exists in the fleet,
 it's used as-is. Otherwise the command synthesises one from
 cluster-config.env. CA cert is fetched from the API server's TLS
 handshake unless the chain is already publicly-trusted.`,
-		Example: `  # Default: admin-flavored kubeconfig for the cloud cluster
+		Example: `  # Default: admin kubeconfig for the cloud cluster
   kube-dc bootstrap kubeconfig cloud
   kube-dc login --domain kube-dc.cloud --admin
   kubectl get nodes
 
-  # Tenant-flavored (rarely needed; prefer 'kube-dc login --org' directly)
+  # Organization identity (rarely needed; prefer 'kube-dc login --org')
   kube-dc bootstrap kubeconfig stage --realm shalb
 
   # Commit a synthesised template back to the fleet
@@ -107,7 +107,7 @@ handshake unless the chain is already publicly-trusted.`,
 	}
 
 	cmd.Flags().StringVar(&realmFlag, "realm", "",
-		"Keycloak realm to wire the kubeconfig for. Empty → 'master' (admin). Pass an org name to wire a tenant kubeconfig.")
+		"Keycloak realm to wire the kubeconfig for. Empty → 'master' (admin). Pass an Organization name for an Organization identity.")
 	cmd.Flags().BoolVar(&insecureSkipTLS, "insecure-skip-tls-verify", false,
 		"Skip TLS verification when fetching the API server CA (not recommended)")
 	cmd.Flags().StringVar(&caCertFile, "ca-cert", "",
@@ -125,7 +125,7 @@ handshake unless the chain is already publicly-trusted.`,
 type runKubeconfigOpts struct {
 	RepoRoot        string
 	ClusterName     string
-	Realm           string // "master" → admin; org name → tenant
+	Realm           string // "master" → admin; Organization name → Organization identity
 	InsecureSkipTLS bool
 	CACertFile      string
 	SetCurrent      bool
@@ -196,7 +196,7 @@ func runBootstrapKubeconfig(ctx context.Context, opts runKubeconfigOpts) error {
 	// Print the resolved template details.
 	identityLabel := "admin (master realm)"
 	if tmpl.Realm != "master" {
-		identityLabel = "tenant (realm: " + tmpl.Realm + ")"
+		identityLabel = "Organization (realm: " + tmpl.Realm + ")"
 	}
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintf(os.Stderr, "  identity: %s\n", identityLabel)
@@ -243,13 +243,13 @@ func runBootstrapKubeconfig(ctx context.Context, opts runKubeconfigOpts) error {
 	}
 	fmt.Println()
 	// Identity-specific next step. Default (admin) tells the operator to
-	// run --admin login; tenant flow points at --org login.
+	// run --admin login; the Organization flow points at --org login.
 	domain := domainFromAPI(tmpl.Server)
 	if tmpl.Realm == "master" {
 		fmt.Printf("Next: run `kube-dc login --domain %s --admin` to mint admin OIDC tokens, then kubectl works as cluster-admin.\n", domain)
 	} else {
-		fmt.Printf("Next: run `kube-dc login --domain %s --org %s` to mint tenant OIDC tokens.\n", domain, tmpl.Realm)
-		fmt.Println("(Or skip this kubeconfig step entirely — `kube-dc login --org` writes its own per-namespace contexts.)")
+		fmt.Printf("Next: run `kube-dc login --domain %s --org %s` to authenticate to the Organization.\n", domain, tmpl.Realm)
+		fmt.Println("Then run `kube-dc use` to select a Project context.")
 	}
 
 	if opts.CommitTemplate {

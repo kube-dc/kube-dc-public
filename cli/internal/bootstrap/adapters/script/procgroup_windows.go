@@ -12,3 +12,12 @@ import "os/exec"
 // and this seam only keeps them building (the unix-only syscalls broke
 // the v0.5.0 GoReleaser cross-compile).
 func configureProcessGroup(_ *exec.Cmd) {}
+
+// killProcessGroup has no group to target on Windows; kill the direct child,
+// which is the same scope configureProcessGroup manages there.
+func killProcessGroup(cmd *exec.Cmd) {
+	if cmd.Process == nil {
+		return
+	}
+	_ = cmd.Process.Kill()
+}

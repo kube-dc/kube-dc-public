@@ -119,6 +119,11 @@ type ScaffoldOptions struct {
 	// effects. See wildcardtls.go.
 	WildcardTLS *WildcardTLSMaterial
 
+	// DNS01Route53 is the validated acme-dns01-route53 solver config (nil =
+	// other TLS modes, nothing scaffolded). Same contract as WildcardTLS:
+	// loaded + validated by the cobra layer before any file is written.
+	DNS01Route53 *DNS01Route53Material
+
 	// TrustedCA is validated public CA material for manager/backend/OIDC/OpenBao.
 	TrustedCA *TrustedCAMaterial
 
@@ -314,9 +319,17 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 		return fmt.Errorf("scaffold: %w", err)
 	}
 
-	// (9b) Image-acceleration trio (tenant-addons + cdi-os-mirror +
-	// registry-depot). Default-on; pieces absent from an older starter are
-	// skipped with a warning. See imageaccel.go.
+	// (9b) Tenant-cluster BASELINE — cilium CNI, coredns, metrics-server.
+	// Unconditional: these are the floor a managed cluster stands on, not a
+	// feature. Wired before the accelerators so an error here surfaces first.
+	if err := WriteTenantBaseline(opts.FleetRepo, opts.Plan.ClusterName, out); err != nil {
+		return fmt.Errorf("scaffold: %w", err)
+	}
+
+	// (9c) Image-acceleration pair (cdi-os-mirror + registry-depot).
+	// Default-on; pieces absent from an older starter are skipped with a
+	// warning. tenant-addons deliberately no longer rides here — see (9b)
+	// and the WriteTenantBaseline doc comment.
 	if err := WriteImageAccel(opts.FleetRepo, opts.Plan.ClusterName, opts.ImageAccel, out); err != nil {
 		return fmt.Errorf("scaffold: %w", err)
 	}
@@ -335,6 +348,14 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// Certificates suppressed and cert-manager would fight the operator's
 	// material. Nil material = acme mode = no-op.
 	if err := WriteWildcardTLS(opts.FleetRepo, opts.Plan.ClusterName, opts.Plan.Domain, opts.WildcardTLS, out); err != nil {
+		return fmt.Errorf("scaffold: %w", err)
+	}
+
+	// (11b) acme-dns01-route53 — the ClusterIssuer solver patch + SOPS
+	// credential. Independent of (11): the two modes are mutually exclusive
+	// (ValidateTLSMode), so at most one of the writers fires. Needs only
+	// platform.yaml, which add-cluster.sh writes unconditionally.
+	if err := WriteDNS01Route53(opts.FleetRepo, opts.Plan.ClusterName, opts.DNS01Route53, out); err != nil {
 		return fmt.Errorf("scaffold: %w", err)
 	}
 

@@ -100,8 +100,10 @@ type ApplyOptions struct {
 	ImageAccel ImageAccelSpec
 
 	// WildcardTLS is the validated byo-wildcard material (Scaffold step 11).
+	// DNS01Route53 is the validated dns01 solver config (step 11b).
 	// nil = acme mode. Loaded by the cobra layer before Apply starts.
-	WildcardTLS *WildcardTLSMaterial
+	WildcardTLS  *WildcardTLSMaterial
+	DNS01Route53 *DNS01Route53Material
 
 	// TrustedCA is validated public CA material (Scaffold step 12).
 	TrustedCA *TrustedCAMaterial
@@ -240,6 +242,7 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 		VMStorage:      opts.VMStorage,
 		ImageAccel:     opts.ImageAccel,
 		WildcardTLS:    opts.WildcardTLS,
+		DNS01Route53:   opts.DNS01Route53,
 		TrustedCA:      opts.TrustedCA,
 		GPU:            opts.GPU,
 		SingleIPNAT:    opts.SingleIPNAT,
@@ -277,6 +280,37 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 		rep.Done(StepScaffold, nil)
 	}
 
+	// Phase 3b: TLS material against a RESUMED overlay. Skipping scaffold
+	// wholesale made the DOCUMENTED rotation flow ("re-run init with the new
+	// material") a silent no-op: apply reported success while the old
+	// credential/certificate stayed in Git (codex review 2026-08-06, P1).
+	// When the operator supplied TLS material, run just those writers — they
+	// are content-aware idempotent (unchanged material → no writes, so a
+	// plain resume stays a plain resume) — and commit whatever changed; the
+	// resume push below carries it.
+	rotated := false
+	if resuming && (opts.WildcardTLS != nil || opts.DNS01Route53 != nil) {
+		if err := WriteWildcardTLS(opts.FleetRepo, opts.Plan.ClusterName, opts.Plan.Domain, opts.WildcardTLS, out); err != nil {
+			return fmt.Errorf("apply: rotate wildcard-tls on resumed overlay: %w", err)
+		}
+		if err := WriteDNS01Route53(opts.FleetRepo, opts.Plan.ClusterName, opts.DNS01Route53, out); err != nil {
+			return fmt.Errorf("apply: rotate dns01-route53 on resumed overlay: %w", err)
+		}
+		rotDiff, derr := opts.Git.Diff(ctx, opts.FleetRepo)
+		if derr != nil {
+			return fmt.Errorf("apply: diff after TLS rotation: %w", derr)
+		}
+		if len(rotDiff.Files) > 0 {
+			msg := fmt.Sprintf("chore(%s): rotate platform TLS material via kube-dc CLI", opts.Plan.ClusterName)
+			sha, cerr := opts.Git.Commit(ctx, opts.FleetRepo, msg)
+			if cerr != nil {
+				return fmt.Errorf("apply: commit TLS rotation: %w", cerr)
+			}
+			fmt.Fprintf(out, "[apply] TLS material rotated on existing overlay — commit=%s\n", sha)
+			rotated = true
+		}
+	}
+
 	// Phase 4: commit + push (atomic with rollback on push failure).
 	// On resume the overlay is already COMMITTED (the clean-tree gate
 	// proved nothing is uncommitted, and an untracked overlay would have
@@ -295,6 +329,16 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 			rep.Start(StepCommitPush)
 			if perr := opts.Git.Push(ctx, opts.FleetRepo, opts.GitHubToken); perr != nil {
 				rep.Done(StepCommitPush, perr)
+				if rotated {
+					// Mirror the non-resume branch's atomicity: a rotation
+					// commit this run created must not survive a failed push
+					// (codex pass-2, P1). preSHA predates it; a PRIOR run's
+					// unpushed overlay commit is below preSHA and untouched.
+					fmt.Fprintf(out, "[apply] resume push failed; rolling back this run's TLS rotation commit to %s\n", preSHA)
+					if rerr := opts.Git.ResetHard(ctx, opts.FleetRepo, preSHA); rerr != nil {
+						return fmt.Errorf("apply: resume push failed AND rotation rollback failed (manual recovery needed): push=%w; rollback=%v", perr, rerr)
+					}
+				}
 				return fmt.Errorf("apply: resume push (overlay committed locally may be unpushed — cannot confirm the remote Flux reconciles has it): %w", perr)
 			}
 			rep.Done(StepCommitPush, nil)

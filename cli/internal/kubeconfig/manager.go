@@ -254,17 +254,17 @@ type AddContextParams struct {
 	SetCurrent  bool
 
 	// Realm, when non-empty, is passed to the exec plugin so it can
-	// pick the right cached credentials when more than one identity
-	// is logged in to the same cluster (tenant + admin). Tenant logins
-	// have historically omitted this — those kubeconfigs continue to
-	// work via the legacy single-file lookup in credentials.Manager.
+	// pick the right cached credentials when more than one identity is logged
+	// in to the same cluster (Organization + platform admin). Older Organization
+	// logins omitted this; a fresh login updates their shared user entry, while
+	// kubeconfigs backed by the legacy single-file cache keep working.
 	Realm string
 }
 
 // execArgs builds the args slice for the kubeconfig user's exec plugin.
 // Layout: ["credential", "--server", <url>, "--realm", <realm>?].
-// Tenant logins have historically omitted --realm; those kubeconfigs
-// keep working via credentials.Manager's legacy fallback.
+// Older Organization logins omitted --realm; kubeconfigs backed by the legacy
+// single-file cache keep working via credentials.Manager's fallback.
 func execArgs(p AddContextParams) []string {
 	args := []string{"credential", "--server", p.Server}
 	if p.Realm != "" {

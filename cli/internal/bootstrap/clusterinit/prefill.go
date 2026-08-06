@@ -83,6 +83,10 @@ var denyImportExact = map[string]bool{
 	// Strictly worse than a crash. The rest of the INFRA_ATTACHMENT_* keys are
 	// universal and safe to carry.
 	"NODE_CIDR": true, "INFRA_ATTACHMENT_ROUTES": true,
+	// Secret material has dedicated channels (file flag or the
+	// KUBE_DC_DNS01_ROUTE53_SECRET_KEY env var) — a config file carrying it
+	// must never prefill Sets, where it would be re-persisted in cleartext.
+	"DNS01_ROUTE53_SECRET_KEY": true, "DNS01_ROUTE53_SECRET_ACCESS_KEY": true,
 	// Public-anchor map is derived from THIS cluster's VIP + gateway-node
 	// names (derivePublicAnchorEnv); a sibling's map carries the sibling's
 	// node names and VIP block, so a clone must re-derive, not inherit.
@@ -133,6 +137,7 @@ var specOrder = []string{
 	"CEPH_NODE_3", "CEPH_NODE_3_DEVICE",
 	"CEPH_OSD_STORAGE_CLASS", "CEPH_OSD_COUNT", "CEPH_OSD_VOLUME_SIZE_GB",
 	"S3_HOSTNAME",
+	"TLS_MODE", "DNS01_ROUTE53_ZONE_ID", "DNS01_ROUTE53_REGION", "DNS01_ROUTE53_ACCESS_KEY_ID",
 	KeyVMStorageMode, KeyVMGolden, KeyVMGoldenBlock,
 	KeyGPUPlatform, "GPU_DRIVER_SOURCE", "GPU_OPERATOR_VERSION",
 	"NVIDIA_DRIVER_VERSION", "NVIDIA_TOOLKIT_VERSION", "HAMI_ENABLED", "GPU_SHARED_ALLOCATOR",
@@ -197,6 +202,16 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 	str("CEPH_LOCAL_OSD_DEVICE", "rook-osd-device", &o.RookOSDDevice)
 	str("CEPH_OSD_STORAGE_CLASS", "ceph-storage-class", &o.CephStorageClass)
 	str("S3_HOSTNAME", "s3-hostname", &o.S3Hostname)
+	// TLS_MODE + the dns01 solver config are DEDICATED fields, not generic
+	// Sets: left generic, a cloned/sibling env claiming acme-dns01-route53
+	// would ride through without the mode's validation or scaffolding ever
+	// firing (codex review 2026-08-06, P2). Promoted, a re-run against a
+	// dns01 cluster restores the mode and Validate demands coherent flags
+	// (and the secret via its dedicated channel) — loud, not silent.
+	str("TLS_MODE", "tls-mode", &o.TLSMode)
+	str("DNS01_ROUTE53_ZONE_ID", "dns01-route53-zone-id", &o.DNS01Route53ZoneID)
+	str("DNS01_ROUTE53_REGION", "dns01-route53-region", &o.DNS01Route53Region)
+	str("DNS01_ROUTE53_ACCESS_KEY_ID", "dns01-route53-access-key-id", &o.DNS01Route53AccessKeyID)
 	intKey := func(key, flag string, dst *int) {
 		v, ok := src[key]
 		if !ok {
@@ -398,6 +413,15 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 // config keys + KUBE_DC_INIT_* orchestration). Only non-empty values are
 // emitted, so a partial draft (save-to-decide-later) stays partial. The
 // git TOKEN is never exported (it comes from gh/glab auth). Pure.
+func promotedTLS(k string) bool {
+	for _, p := range promotedTLSKeys {
+		if k == p {
+			return true
+		}
+	}
+	return false
+}
+
 func ExportMap(o *InitOptions) map[string]string {
 	m := map[string]string{}
 	put := func(k, v string) {
@@ -423,6 +447,14 @@ func ExportMap(o *InitOptions) map[string]string {
 		put("CEPH_OSD_VOLUME_SIZE_GB", strconv.Itoa(o.CephOSDVolumeSizeGB))
 	}
 	put("S3_HOSTNAME", o.S3Hostname)
+	// TLS mode + dns01 solver config (promoted fields; the secret key has
+	// no field and no export — its channels are the file flag and the
+	// KUBE_DC_DNS01_ROUTE53_SECRET_KEY env var). "acme" is the flag default,
+	// canonicalized away so a default spec stays minimal.
+	put("TLS_MODE", canonicalTLSMode(o.TLSMode))
+	put("DNS01_ROUTE53_ZONE_ID", o.DNS01Route53ZoneID)
+	put("DNS01_ROUTE53_REGION", o.DNS01Route53Region)
+	put("DNS01_ROUTE53_ACCESS_KEY_ID", o.DNS01Route53AccessKeyID)
 	// multi-node slots → CEPH_NODE_N (host) + CEPH_NODE_N_DEVICE (device),
 	// deterministic by sorted node name — matches the scaffold writer.
 	nodes := make([]string, 0, len(o.CephNodes))
@@ -445,6 +477,12 @@ func ExportMap(o *InitOptions) map[string]string {
 	for k, v := range o.Sets {
 		if k == "EXT_NET_NODE_EGRESS_ENABLED" {
 			put(KeyNodeEgress, v)
+			continue
+		}
+		if promotedTLS(k) {
+			// Owned by dedicated fields (exported above); Validate rejects
+			// these in --set, this guard keeps a programmatic caller from
+			// clobbering the dedicated export (codex pass-2, P2).
 			continue
 		}
 		put(k, v)

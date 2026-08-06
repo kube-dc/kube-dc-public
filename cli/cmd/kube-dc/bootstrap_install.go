@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -38,6 +39,7 @@ func bootstrapInstallCmd(fleetRepo *string) *cobra.Command {
 		externalIP       string
 		rke2Version      string
 		embeddedRegistry bool
+		trustedCABundle  string
 		force            bool
 		dryRun           bool
 		// Join mode (--join-server): worker by default, or an additional
@@ -147,6 +149,19 @@ UNKNOWN key; a MISMATCH is still refused).`,
 			// --join-server (SSH to a CP, read token + internal IP), OR both
 			// --join-token and --cp-host directly.
 			joinComplete := isWorkerJoinMode(joinServer, joinToken, cpHost)
+			// Validate the CA bundle BEFORE contacting any host: this becomes a
+			// trust anchor on every node, and discovering a bad file halfway
+			// through a fleet install is the worst time to discover it.
+			nodeTrustedCA, err := rke2.LoadTrustedCAForNodes(trustedCABundle)
+			if err != nil {
+				return err
+			}
+			if expiring := nodeTrustedCA.ExpiringSoon(90*24*time.Hour, time.Now()); len(expiring) > 0 {
+				for _, e := range expiring {
+					fmt.Fprintf(cmd.ErrOrStderr(), "[warn] node trust anchor expires soon: %s\n", e)
+				}
+			}
+
 			joinIntent := joinServer != "" || joinToken != "" || cpHost != "" || cpPort != 0
 
 			// Fail CLOSED on a partial join shape. Any join-only flag with
@@ -212,6 +227,7 @@ UNKNOWN key; a MISMATCH is still refused).`,
 					CPHost:                  cpHost,
 					CPPort:                  cpPort,
 					RKE2Version:             rke2Version,
+					TrustedCA:               nodeTrustedCA,
 					DisableEmbeddedRegistry: !embeddedRegistry,
 					Force:                   force,
 					DryRun:                  dryRun,
@@ -263,6 +279,7 @@ UNKNOWN key; a MISMATCH is still refused).`,
 				NodeIP:                  nodeIP,
 				ExternalIP:              externalIP,
 				RKE2Version:             rke2Version,
+				TrustedCA:               nodeTrustedCA,
 				DisableEmbeddedRegistry: !embeddedRegistry,
 				Force:                   force,
 				DryRun:                  dryRun,
@@ -292,6 +309,11 @@ UNKNOWN key; a MISMATCH is still refused).`,
 	cmd.Flags().StringVar(&externalIP, "external-ip", "", "RKE2 node-external-ip (default: same as --node-ip; first-server only)")
 	cmd.Flags().StringVar(&rke2Version, "rke2-version", "", "RKE2 version (default: the pinned kube-dc default)")
 	cmd.Flags().BoolVar(&embeddedRegistry, "embedded-registry", true, "Enable the RKE2 embedded spegel registry mirror; use --embedded-registry=false to opt out")
+	cmd.Flags().StringVar(&trustedCABundle, "trusted-ca-bundle", "",
+		"PEM bundle of private CA certificates to install into this node's OS trust store before RKE2 starts. "+
+			"REQUIRED for an air-gapped install: containerd verifies the internal registry against the host trust "+
+			"store, so the first image pull fails without it. Certificates only — a private key or a leaf is refused. "+
+			"Pass the same bundle given to `bootstrap init --trusted-ca-bundle`.")
 	cmd.Flags().BoolVar(&force, "force", false, "Re-run even if rke2 is already active on the node (restarts to apply config)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Resolve + print the plan (incl. read-only SSH probes); change nothing")
 	// Join mode.

@@ -97,7 +97,7 @@ func DefaultKeyMap() KeyMap {
 		Discover:   key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "discover")),
 
 		LoginAdmin: key.NewBinding(key.WithKeys("L"), key.WithHelp("L", "admin login")),
-		LoginOrg:   key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "tenant login")),
+		LoginOrg:   key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "Organization login")),
 		OpenBao:    key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "openbao")),
 		Unseal:     key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "unseal")),
 		Reconcile:  key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "reconcile")),

@@ -52,6 +52,12 @@ type JoinWorkerOptions struct {
 	CPPort int
 
 	RKE2Version string
+	// TrustedCA is the platform's private CA, installed into this worker's OS
+	// trust store before rke2-agent starts. A worker pulls its own images, so it
+	// needs node trust exactly as much as a server does — omitting it here would
+	// give an air-gapped cluster servers that work and workers that cannot pull.
+	TrustedCA *TrustedCAMaterial
+
 	// DisableEmbeddedRegistry opts this worker out of participation in
 	// the RKE2 embedded spegel mirror. Zero value keeps the default on.
 	DisableEmbeddedRegistry bool
@@ -130,6 +136,11 @@ func JoinWorker(ctx context.Context, o JoinWorkerOptions) error {
 	}
 
 	fmt.Fprintf(out, "[join] pushing RKE2 agent installer to %s\n", remoteAgentScriptPath)
+	if o.TrustedCA != nil {
+		if err := o.SSH.Put(ctx, o.Worker, remoteTrustedCAPath, o.TrustedCA.PEM, 0o600); err != nil {
+			return fmt.Errorf("rke2 join: push trusted CA bundle: %w", err)
+		}
+	}
 	if err := o.SSH.Put(ctx, o.Worker, remoteAgentScriptPath, installAgentScript, 0o755); err != nil {
 		return fmt.Errorf("rke2 join: push agent installer: %w", err)
 	}
@@ -146,6 +157,15 @@ func JoinWorker(ctx context.Context, o JoinWorkerOptions) error {
 	}
 	if o.RKE2Version != "" {
 		env["RKE2_VERSION"] = o.RKE2Version
+	}
+	if o.TrustedCA != nil {
+		env[trustedCAEnv] = remoteTrustedCAPath
+		// Workers need the same integrity binding as servers: the staged file
+		// sits at a predictable path in a world-writable directory, and without
+		// the fingerprint the script's marker-only parser decides what becomes a
+		// trust anchor on this node. A worker pulls its own images, so a
+		// substituted CA here is exactly as damaging as on a server.
+		env[trustedCASHAEnv] = o.TrustedCA.Fingerprint
 	}
 	if o.DisableEmbeddedRegistry {
 		env["EMBEDDED_REGISTRY"] = "false"
@@ -257,6 +277,7 @@ func renderJoinPlan(out io.Writer, o JoinWorkerOptions) {
 	fmt.Fprintf(out, "  join server:       %s:%d\n", o.CPHost, o.CPPort)
 	fmt.Fprintf(out, "  join token:        (from control-plane, redacted)\n")
 	fmt.Fprintf(out, "  RKE2 version:      %s\n", ver)
+	fmt.Fprintf(out, "  node trust anchor: %s\n", o.TrustedCA.Summary())
 	if o.DisableEmbeddedRegistry {
 		fmt.Fprintln(out, "  embedded registry: disabled (explicit opt-out)")
 	} else {

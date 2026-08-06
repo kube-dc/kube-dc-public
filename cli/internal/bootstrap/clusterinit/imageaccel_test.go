@@ -67,7 +67,7 @@ func TestWriteImageAccel_WiresPresentPieces_SkipsAbsent(t *testing.T) {
 	}
 	clusterDir := filepath.Join(fleet, "clusters", "c1")
 
-	for _, f := range []string{"tenant-addons.yaml", "cdi-os-mirror.yaml"} {
+	for _, f := range []string{"cdi-os-mirror.yaml"} {
 		b, err := os.ReadFile(filepath.Join(clusterDir, f))
 		if err != nil {
 			t.Fatalf("%s not written: %v", f, err)
@@ -84,7 +84,7 @@ func TestWriteImageAccel_WiresPresentPieces_SkipsAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"  - tenant-addons.yaml", "  - cdi-os-mirror.yaml"} {
+	for _, want := range []string{"  - cdi-os-mirror.yaml"} {
 		if !strings.Contains(string(kust), want) {
 			t.Fatalf("kustomization missing %q:\n%s", want, kust)
 		}
@@ -101,7 +101,7 @@ func TestWriteImageAccel_WiresPresentPieces_SkipsAbsent(t *testing.T) {
 		t.Fatalf("second run: %v", err)
 	}
 	kust2, _ := os.ReadFile(filepath.Join(clusterDir, "kustomization.yaml"))
-	if strings.Count(string(kust2), "  - tenant-addons.yaml") != 1 {
+	if strings.Count(string(kust2), "  - cdi-os-mirror.yaml") != 1 {
 		t.Fatalf("kustomization entry duplicated:\n%s", kust2)
 	}
 }
@@ -145,12 +145,72 @@ func TestWriteImageAccel_NoObjectStorage_SkipsS3Pieces(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	clusterDir := filepath.Join(fleet, "clusters", "c1")
-	if _, err := os.Stat(filepath.Join(clusterDir, "tenant-addons.yaml")); err != nil {
-		t.Fatalf("tenant-addons must not depend on object storage: %v", err)
+	// tenant-addons is no longer written here at all — it is the unconditional
+	// baseline (WriteTenantBaseline), so it cannot depend on object storage or
+	// on this writer running.
+	if _, err := os.Stat(filepath.Join(clusterDir, "tenant-addons.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("tenant-addons must not be written by the image-accel writer")
 	}
 	for _, f := range []string{"cdi-os-mirror.yaml", "registry-depot.yaml"} {
 		if _, err := os.Stat(filepath.Join(clusterDir, f)); !os.IsNotExist(err) {
 			t.Fatalf("%s must be skipped without object storage", f)
 		}
+	}
+}
+
+// --- tenant baseline ------------------------------------------------------
+//
+// The regression these pin is a real outage: tenant-addons used to be the first
+// entry in imageAccelPieces, so `--image-acceleration=false` produced a fleet
+// with no tenant-addons Kustomization, hence no Cilium ClusterProfile, hence
+// tenant nodes NotReady with csr-approver stuck Pending. Nothing in that chain
+// points back at an image-acceleration flag.
+
+func TestTenantBaseline_WiredEvenWhenImageAccelDisabled(t *testing.T) {
+	fleet := tempFleet(t, "c1", "platform/tenant-addons")
+
+	// Exactly the configuration that shipped clusters with no CNI.
+	if err := WriteImageAccel(fleet, "c1", ImageAccelSpec{Enabled: false}, nil); err != nil {
+		t.Fatalf("image-accel disabled: %v", err)
+	}
+	if err := WriteTenantBaseline(fleet, "c1", nil); err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+
+	clusterDir := filepath.Join(fleet, "clusters", "c1")
+	b, err := os.ReadFile(filepath.Join(clusterDir, "tenant-addons.yaml"))
+	if err != nil {
+		t.Fatalf("tenant baseline MUST be wired regardless of image acceleration: %v", err)
+	}
+	if !strings.Contains(string(b), "kind: Kustomization") {
+		t.Fatalf("tenant-addons.yaml is not a Flux Kustomization:\n%s", b)
+	}
+	// It must run AFTER platform: its contents are Sveltos ClusterProfile CRs
+	// and platform/sveltos/ registers those CRDs.
+	if !strings.Contains(string(b), "dependsOn") {
+		t.Fatalf("tenant-addons must dependOn platform (Sveltos CRDs):\n%s", b)
+	}
+	kust, err := os.ReadFile(filepath.Join(clusterDir, "kustomization.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(kust), "  - tenant-addons.yaml") {
+		t.Fatalf("kustomization must reference the baseline:\n%s", kust)
+	}
+}
+
+func TestTenantBaseline_MissingSharedTreeWarnsLoudly(t *testing.T) {
+	// An older starter without the shared tree must not fail the install, but
+	// silence here is what let the CNI gap ship unnoticed.
+	fleet := tempFleet(t, "c1")
+	var log strings.Builder
+	if err := WriteTenantBaseline(fleet, "c1", &log); err != nil {
+		t.Fatalf("missing tree must not be fatal: %v", err)
+	}
+	if !strings.Contains(log.String(), "NO CNI") {
+		t.Fatalf("a missing tenant baseline must warn about the consequence, got:\n%s", log.String())
+	}
+	if _, err := os.Stat(filepath.Join(fleet, "clusters", "c1", "tenant-addons.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("must not write a Kustomization pointing at an absent tree")
 	}
 }

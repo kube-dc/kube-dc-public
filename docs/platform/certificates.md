@@ -8,17 +8,68 @@ This is about the certificate the platform **serves**. For trusting a private
 CA on the *outbound* side (the manager and backend calling Keycloak, OpenBao or
 S3 over TLS), see [private-CA enterprise install](private-ca-enterprise-install.md).
 
-## Two modes
+## Three modes
 
 `TLS_MODE` in `clusters/<name>/cluster-config.env` records the choice.
 
 | Mode | What issues the certificate | Use when |
 |---|---|---|
-| `acme` (default) | cert-manager, via the `letsencrypt-prod-http` ClusterIssuer | The domain is publicly resolvable **and** reachable on `:80` for the HTTP-01 challenge |
-| `byo-wildcard` | You do. One wildcard for `*.<DOMAIN>`, committed SOPS-encrypted | Internal/air-gapped domains, corporate PKI, or any cluster ACME cannot validate |
+| `acme` (default) | cert-manager, via the `letsencrypt-prod-http` ClusterIssuer (HTTP-01 through the Gateway) | The domain is publicly resolvable **and** reachable on `:80` for the HTTP-01 challenge |
+| `acme-dns01-route53` | cert-manager, same ClusterIssuer, but proving control via **Route53 DNS records** | The zone lives in Route53 but the cluster itself is private/VPN-only (Let's Encrypt cannot reach it) — certificates still **renew automatically** |
+| `byo-wildcard` | You do. One wildcard for `*.<DOMAIN>`, committed SOPS-encrypted | Internal/air-gapped domains, corporate PKI, or any cluster ACME cannot validate — **nothing renews this for you** |
 
-`acme` is the default and needs no configuration. Everything below is about
-`byo-wildcard`.
+`acme` is the default and needs no configuration.
+
+## `acme-dns01-route53`
+
+The default issuer solves HTTP-01, which requires Let's Encrypt to reach the
+platform on `:80`. A cluster whose `NODE_EXTERNAL_IP` is a private address can
+never pass that — but if its public DNS zone is hosted in Route53, DNS-01
+proves domain control by writing TXT records instead, and the cluster only
+needs *outbound* internet. Renewal stays fully automatic, which is why this
+mode beats `byo-wildcard` whenever it is available.
+
+Prepare a **least-privilege IAM user** scoped to the one zone:
+`route53:ChangeResourceRecordSets` + `route53:ListResourceRecordSets` on the
+hosted zone, `route53:GetChange` on `*`. Then:
+
+```bash
+# the secret key never goes on the command line: file or environment
+export KUBE_DC_DNS01_ROUTE53_SECRET_KEY='<secret access key>'
+
+kube-dc bootstrap init … \
+  --tls-mode acme-dns01-route53 \
+  --dns01-route53-zone-id Z0EXAMPLE12345TEST \
+  --dns01-route53-access-key-id AKIAEXAMPLETEST00000
+```
+
+What the CLI scaffolds (it never calls AWS itself):
+
+- `clusters/<name>/dns01-route53-credentials.enc.yaml` — the secret access
+  key, SOPS-encrypted, for cert-manager's `secretAccessKeySecretRef`;
+- a `platform.yaml` patch swapping the `letsencrypt-prod-http` ClusterIssuer's
+  solvers to `dns01: {route53: …}` (the issuer keeps its historical name —
+  every platform Certificate references it, so nothing else changes);
+- `TLS_MODE` + the non-secret solver config in `cluster-config.env`.
+
+The plan pins the credential's SHA-256, so the key that ships at apply is the
+key the reviewed plan approved. Temporary STS keys (`ASIA…`) are rejected —
+the solver's static-secret shape cannot carry a session token.
+
+Verify after the platform converges:
+
+```bash
+kubectl get certificate -A            # all Ready=True within ~2-5 min
+kubectl get challenge -A              # empty when done; stuck "pending" =
+                                      # wrong zone ID or key — check
+                                      # cert-manager logs for the AWS error
+```
+
+**Rotation:** create a new IAM key, re-run `init` with the new material (the
+SOPS artifact and env records update in place), commit, then disable the old
+key in AWS.
+
+Everything below is about `byo-wildcard`.
 
 ## Why a BYO certificate needs the ACME Certificates suppressed
 

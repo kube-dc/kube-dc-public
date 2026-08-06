@@ -103,11 +103,9 @@ func NewProvider() (*Provider, error) {
 	return &Provider{credMgr: credMgr}, nil
 }
 
-// GetCredential returns a valid access token for the given server. It
-// finds whichever realm is cached for that server (legacy single-file
-// path or any realm-suffixed file). New code that knows the realm
-// should call GetCredentialForRealm so multiple identities cached for
-// the same cluster (tenant + admin) don't collide.
+// GetCredential returns a valid access token from a legacy single-file
+// credential cache. Realm-aware contexts must call GetCredentialForRealm;
+// unqualified realm-specific lookup fails closed so identities cannot collide.
 func (p *Provider) GetCredential(server string) (*ExecCredential, error) {
 	return p.getCredential(server, "")
 }
@@ -123,9 +121,9 @@ func (p *Provider) GetCredentialForRealm(server, realm string) (*ExecCredential,
 // Public callers that need more than just the bearer token — e.g.
 // CACert + Insecure for in-process HTTPS clients — use this instead
 // of GetCredential/GetCredentialForRealm (which return the kubectl
-// exec-plugin ExecCredential shape). Pass realm="" for the legacy
-// any-realm load path; new callers should pass the realm parsed from
-// the kubeconfig context name.
+// exec-plugin ExecCredential shape). Pass realm="" only for the legacy
+// single-file load path; new callers should pass the realm parsed from the
+// kubeconfig context name.
 func (p *Provider) LoadAndRefresh(server, realm string) (*config.Credentials, error) {
 	return p.loadAndRefresh(server, realm)
 }

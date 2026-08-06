@@ -394,12 +394,60 @@ node of this pool. Pods a new node cannot help are ignored — a pod waiting
 on a PersistentVolumeClaim, a pod requesting more resources than one node of
 this pool provides, or a pod pinned by node affinity elsewhere.
 
-**Nodes are only added, never removed.** To shrink a pool, lower `replicas`
-(or `maxReplicas`) yourself.
+**In the default mode, nodes are only added, never removed.** To shrink a
+pool, lower `replicas` (or `maxReplicas`) yourself — or switch the pool to
+full autoscaling, below.
 
-Scale-ups are deliberately unhurried: demand must persist for about two
-minutes, at most two nodes are added per step, and there is a cooldown of
-five minutes between steps. Tune per pool if needed:
+#### Removing idle nodes (full autoscaling)
+
+Set `mode: ClusterAutoscaler` to hand the pool's node count entirely to the
+platform. It still adds nodes for pending pods, and additionally **removes a
+node** after it has been idle for the stabilization window — pods are drained
+safely (respecting PodDisruptionBudgets) before the node is deleted. In the
+console this is the **"Add & remove nodes"** choice on the pool card, with a
+**"Remove idle nodes"** switch.
+
+```bash
+kubectl patch kdccluster dev -n acme-production --type=json -p '[
+  {"op":"add","path":"/spec/workers/0/autoscaling",
+   "value":{"enabled":true,"mode":"ClusterAutoscaler",
+            "minReplicas":2,"maxReplicas":8,
+            "behavior":{"scaleDown":{"enabled":true,
+                                     "stabilizationWindowSeconds":600}}}}
+]'
+```
+
+Things to know in this mode:
+
+- **The node count is platform-managed.** Do not set `replicas` by hand — the
+  platform owns it and will move it between the bounds. The console disables
+  the manual scale control for such pools.
+- **`minReplicas` must be at least 1.** Scale-to-zero is not available.
+- **Scale-down is per pool, and OFF until you ask for it.** Selecting this mode
+  does not by itself remove anything: `behavior.scaleDown.enabled` must be set
+  to `true`. Left false (or with the block omitted) the pool is grow-only — it
+  still ADDS nodes for pending pods, which is what distinguishes this from
+  pinning `minReplicas = maxReplicas`, where nothing moves in either direction.
+  One pool can shrink while a sibling never does.
+- `behavior.scaleDown.stabilizationWindowSeconds` is how long a node must sit
+  below the threshold before removal (default 10 minutes);
+  `behavior.scaleDown.utilizationThreshold` is that threshold as a percentage
+  (default 50); `cooldownSeconds` sets the quiet period after a scale-up before
+  any removal is considered.
+- **"Idle" means requests, not live load.** A node qualifies when the CPU and
+  memory *reserved by its pods* fall below the threshold, so a node running at
+  5% CPU whose pods reserve 80% of it is not removable.
+
+**Scale-up tuning does not apply in this mode.** `metrics[]` and
+`behavior.scaleUp` are read only by `mode: Builtin`. Under
+`ClusterAutoscaler`, nodes are added when pods cannot be scheduled — upstream
+has no utilisation trigger and no per-step cap, so the stabilization window,
+`maxNodesPerStep` and the scale-up cooldown below are ignored here. Use
+`mode: Builtin` if you want CPU/memory-driven scale-up.
+
+Under `mode: Builtin`, scale-ups are deliberately unhurried: demand must
+persist for about two minutes, at most two nodes are added per step, and there
+is a cooldown of five minutes between steps. Tune per pool if needed:
 
 ```yaml
 autoscaling:
@@ -838,6 +886,7 @@ default storage class.
 | Check endpoint | `kubectl get kdccluster dev -n acme-production -o jsonpath='{.status.endpoint}'` |
 | Scale workers | `kubectl patch kdccluster dev -n acme-production --type=json -p '[{"op":"replace","path":"/spec/workers/0/replicas","value":5}]'` |
 | Enable autoscaling | `kubectl patch kdccluster dev -n acme-production --type=json -p '[{"op":"add","path":"/spec/workers/0/autoscaling","value":{"enabled":true,"minReplicas":2,"maxReplicas":8}}]'` |
+| Enable autoscaling with node removal | `kubectl patch kdccluster dev -n acme-production --type=json -p '[{"op":"add","path":"/spec/workers/0/autoscaling","value":{"enabled":true,"mode":"ClusterAutoscaler","minReplicas":2,"maxReplicas":8,"behavior":{"scaleDown":{"enabled":true}}}}]'` |
 | Check autoscaling state | `kubectl get kdccluster dev -n acme-production -o jsonpath='{.status.workerPools[0].autoscaling}'` |
 | Delete cluster | `kubectl delete kdccluster dev -n acme-production` |
 | Check datastore | `kubectl get kdcclusterdatastores -n acme-production` |

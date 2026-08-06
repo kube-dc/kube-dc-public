@@ -32,10 +32,10 @@ import (
 type Identity string
 
 const (
-	IdentityAdmin      Identity = "ADMIN"       // kube-dc/<domain>/admin via master realm
-	IdentityTenant     Identity = "TENANT"      // kube-dc/<domain>/<org>/<project>
-	IdentityBreakGlass Identity = "BREAK-GLASS" // static token, kube-dc-* cluster, no exec plugin
-	IdentityExternal   Identity = "EXTERNAL"    // anything else (kubectx, cloud-tunnel, default, …)
+	IdentityAdmin      Identity = "ADMIN"        // kube-dc/<domain>/admin via master realm
+	IdentityTenant     Identity = "ORGANIZATION" // kube-dc/<domain>/<org>/<project>
+	IdentityBreakGlass Identity = "BREAK-GLASS"  // static token, kube-dc-* cluster, no exec plugin
+	IdentityExternal   Identity = "EXTERNAL"     // anything else (kubectx, cloud-tunnel, default, …)
 )
 
 // ContextEntry is the model's view of one row in the kubeconfig context
@@ -48,7 +48,7 @@ type ContextEntry struct {
 	Server    string
 	Namespace string
 	Identity  Identity
-	Realm     string // populated for OIDC contexts (ADMIN / TENANT)
+	Realm     string // populated for OIDC contexts (ADMIN / ORGANIZATION)
 	IsCurrent bool
 	UsesExec  bool // true when the user entry carries an exec plugin
 }
@@ -175,7 +175,7 @@ func (m *ContextModel) load() error {
 
 // classifyContext maps a (name, cluster, user) triple to an Identity.
 // The classification is deliberately conservative: we only tag a row
-// ADMIN or TENANT when the kube-dc-aware exec-plugin pattern is
+// ADMIN or ORGANIZATION when the kube-dc-aware exec-plugin pattern is
 // present, never on name alone.
 func classifyContext(name string, cl kubeconfig.Cluster, us kubeconfig.User) (Identity, string) {
 	hasKubeDCExec := us.Exec != nil &&
@@ -393,7 +393,7 @@ func (m *ContextModel) execLoginCmd(admin bool) tea.Cmd {
 	case e.Identity == IdentityTenant && e.Realm != "":
 		args = []string{"login", "--domain", domain, "--org", e.Realm}
 	default:
-		m.err = fmt.Errorf("can't run tenant login for %q (Identity=%s, Realm=%q) — pick a TENANT row or use --admin", e.Name, e.Identity, e.Realm)
+		m.err = fmt.Errorf("can't run Organization login for %q (Identity=%s, Realm=%q) — pick an ORGANIZATION row or use --admin", e.Name, e.Identity, e.Realm)
 		return nil
 	}
 	cmd := exec.Command(os.Args[0], args...)
@@ -783,7 +783,7 @@ func identityBadge(id Identity) string {
 }
 
 // refreshDetails renders the right pane for the selected context. For
-// OIDC contexts (ADMIN / TENANT) it parses the cached JWT so the
+// OIDC contexts (ADMIN / ORGANIZATION) it parses the cached JWT so the
 // operator sees who they actually are before they touch the cluster.
 func (m *ContextModel) refreshDetails() {
 	if len(m.entries) == 0 {

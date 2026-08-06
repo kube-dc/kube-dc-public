@@ -691,3 +691,55 @@ exit 0
 	}
 }
 
+// The escalation that stops a cancelled run from hanging for ever.
+//
+// supervise waits for the drainers to EOF BEFORE calling cmd.Wait(), so the
+// drainers never race a pipe close. But Go only enforces cmd.WaitDelay while
+// Wait is running. So if anything still holds the write end of our stdout after
+// cancellation — a grandchild that ignored the group SIGTERM — the drainers
+// never EOF, supervise never reaches Wait, WaitDelay never applies, and the
+// channel is never closed. Every caller ranging over it blocks for ever.
+//
+// Measured in this package: the sibling SIGTERM test hits that state in roughly
+// 10-13% of runs. Here it is made deterministic — Cancel is a no-op, so nothing
+// stops the child and only supervise's own SIGKILL escalation can free it.
+// WaitDelay is set far beyond the test's patience so that a pass cannot be
+// credited to the runtime instead of the escalation.
+func TestRun_CancelEscalatesToSIGKILLWhenSIGTERMIsIgnored(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	r := newTestRunner(t, func(c context.Context, _ ports.ScriptKind, _ map[string]string, _ []string) (*exec.Cmd, error) {
+		cmd := exec.CommandContext(c, "/bin/bash", "-c", "echo running; sleep 120")
+		configureProcessGroup(cmd)
+		// Cancellation cannot stop this process: the group signal is dropped.
+		cmd.Cancel = func() error { return nil }
+		cmd.WaitDelay = 10 * time.Minute
+		return cmd, nil
+	})
+
+	ch, err := r.Run(ctx, ports.ScriptInstallPrereqs, nil)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if first := <-ch; first.Text != "running" {
+		t.Fatalf("unexpected first line: %v", first)
+	}
+
+	start := time.Now()
+	cancel()
+	done := make(chan struct{})
+	go func() {
+		for range ch { //nolint:revive // draining to completion IS the assertion
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		if elapsed := time.Since(start); elapsed < killGrace {
+			t.Fatalf("channel closed after %v, before the %v grace — the escalation was not what freed it", elapsed, killGrace)
+		}
+	case <-time.After(killGrace + 20*time.Second):
+		t.Fatal("channel never closed: nothing released the pipe, so the drainers never EOFd and " +
+			"supervise never reached cmd.Wait — exactly the deadlock the escalation exists to break")
+	}
+}

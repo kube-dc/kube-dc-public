@@ -135,7 +135,15 @@ net.ipv4.ip_local_port_range = 1024 65535
 net.ipv4.tcp_max_syn_backlog = 8192
 vm.max_map_count = 262144
 SYSCTL_EOF
-sysctl --system >/dev/null
+# Apply ONLY our file — never `sysctl --system`. --system reloads every
+# sysctl.d file on the host, so a PRE-EXISTING malformed entry in a
+# base-image/operator tuning file (field incident 2026-07-23: a worker
+# carried a broken net.ipv4.tcp_rmem/tcp_wmem tuple; EINVAL made sysctl
+# exit 1 and set -e killed the whole join) fails an install for values
+# that are none of our business. Our values still apply strictly — a
+# failure HERE is a real error. Runtime state is owned by the fleet's
+# node-tuning DaemonSet anyway.
+sysctl -p /etc/sysctl.d/99-kube-dc.conf >/dev/null
 
 # OIDC authn was driven by /etc/rancher/auth-conf.yaml until kube-dc v0.3.0
 # (commit shalb/kube-dc 7877184). We now use the gardener
@@ -190,6 +198,240 @@ log_info "  system-reserved=${KUBELET_SYS_RESERVED}"
 log_info "  kube-reserved=${KUBELET_KUBE_RESERVED}"
 log_info "  eviction-hard=${KUBELET_EVICTION_HARD}"
 log_info "  max-pods=${KUBELET_MAX_PODS}"
+
+# --- Private-CA trust for the NODE (docs/prd/platform-trust-bundle.md) ---
+#
+# The platform distributes its CA into ConfigMaps so PODS can verify internal
+# endpoints. That does nothing for this host: containerd, kubelet and rke2 read
+# the OS trust store. On an air-gapped install the registry is internal and
+# served by the org's own CA, so without this the FIRST image pull fails —
+# before any pod exists, and therefore before pod-layer trust could help.
+#
+# Runs before rke2 starts, deliberately. TRUSTED_CA_FILE empty = public CAs
+# only, which is correct for an ACME/internet-connected cluster.
+install_node_trusted_ca() {
+    local src="${1}"
+
+    # Resolve the distro anchor directory up front: it is needed both to install
+    # and to report what a node already trusts when no bundle was supplied.
+    local anchor_dir suffix
+    local -a update_cmd
+    if [[ -d /usr/local/share/ca-certificates ]]; then
+        # Debian/Ubuntu. The .crt extension is REQUIRED: update-ca-certificates
+        # ignores any other suffix, so a .pem lands in the directory, reports
+        # success, and is never trusted.
+        anchor_dir=/usr/local/share/ca-certificates
+        suffix=crt
+        update_cmd=(update-ca-certificates)
+    elif [[ -d /etc/pki/ca-trust/source/anchors ]]; then
+        anchor_dir=/etc/pki/ca-trust/source/anchors
+        suffix=pem
+        update_cmd=(update-ca-trust extract)
+    else
+        anchor_dir=""
+        suffix=""
+        update_cmd=()
+    fi
+
+    if [[ -z "${src}" ]]; then
+        # No bundle requested. Anchors from an EARLIER install are deliberately
+        # left in place — silently untrusting a CA could cut a running node off
+        # from its registry. But staying silent would let a re-run advertised as
+        # "public CAs only" leave a private CA trusted with no mention of it, so
+        # say what this host actually trusts.
+        if [[ -n "${anchor_dir}" ]] && compgen -G "${anchor_dir}/kube-dc-platform-ca-*.${suffix}" >/dev/null 2>&1; then
+            log_warn "No CA bundle was supplied, but this node STILL TRUSTS a kube-dc CA from an earlier install:"
+            local existing
+            for existing in "${anchor_dir}"/kube-dc-platform-ca-*."${suffix}"; do
+                log_warn "  ${existing} — $(openssl x509 -in "${existing}" -noout -subject 2>/dev/null || echo unreadable)"
+            done
+            log_warn "To stop trusting it: remove those files and run ${update_cmd[0]}."
+        fi
+        return 0
+    fi
+
+    if [[ ! -s "${src}" ]]; then
+        log_error "TRUSTED_CA_FILE=${src} is missing or empty"
+        return 1
+    fi
+    if ! grep -q "BEGIN CERTIFICATE" "${src}"; then
+        log_error "TRUSTED_CA_FILE=${src} contains no PEM certificate"
+        return 1
+    fi
+    # Refuse to install anything carrying a private key onto a fleet of hosts.
+    if grep -qE "BEGIN (RSA |EC |DSA |OPENSSH |ENCRYPTED |)PRIVATE KEY" "${src}"; then
+        log_error "TRUSTED_CA_FILE=${src} contains a PRIVATE KEY — refusing to install it as a node trust anchor"
+        return 1
+    fi
+
+    # Bind what we install to what the CLI validated.
+    #
+    # The Go side parses the bundle properly (certificates only, CA only, size
+    # bounded); this script only looks for PEM markers. Between the two, the file
+    # sits at a predictable path that any local user can reach, so without this
+    # the weaker parser decides what becomes a fleet-wide trust anchor. The CLI
+    # passes the SHA-256 it validated; a mismatch means the bytes changed after
+    # validation and is fatal, never a warning.
+    local actual_fp
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual_fp="$(sha256sum < "${src}" | cut -d' ' -f1)"
+    elif command -v openssl >/dev/null 2>&1; then
+        actual_fp="$(openssl dgst -sha256 "${src}" | awk '{print $NF}')"
+    fi
+    if [[ -n "${TRUSTED_CA_SHA256:-}" ]]; then
+        if [[ -z "${actual_fp}" ]]; then
+            log_error "Cannot hash ${src} (no sha256sum or openssl); refusing to install an unverified trust anchor"
+            return 1
+        fi
+        if [[ "${actual_fp}" != "${TRUSTED_CA_SHA256}" ]]; then
+            log_error "TRUSTED_CA_FILE=${src} does NOT match the bundle the installer validated"
+            log_error "  expected sha256 ${TRUSTED_CA_SHA256}"
+            log_error "  found    sha256 ${actual_fp}"
+            log_error "The staged file changed between validation and install; refusing to trust it."
+            return 1
+        fi
+    fi
+
+    if [[ -z "${anchor_dir}" ]]; then
+        log_error "No CA anchor directory found (looked for /usr/local/share/ca-certificates and /etc/pki/ca-trust/source/anchors)"
+        log_error "This host's distribution is not supported for automatic node trust; install the CA manually before re-running."
+        return 1
+    fi
+    if ! command -v "${update_cmd[0]}" >/dev/null 2>&1; then
+        log_error "${update_cmd[0]} not found; cannot refresh the node trust store"
+        return 1
+    fi
+    if ! command -v openssl >/dev/null 2>&1; then
+        # Without openssl nothing can confirm the CA became usable, and an
+        # unverifiable air-gapped install fails at the first image pull instead.
+        log_error "openssl not found; cannot verify that the node trust store accepted the CA"
+        return 1
+    fi
+
+    # ONE CERTIFICATE PER FILE.
+    #
+    # Debian's update-ca-certificates only creates CApath hash symlinks for
+    # single-certificate files — measured on debian:12: two certs in one .crt
+    # produced ZERO new links, the same two certs in two files produced two. The
+    # multi-cert file still reaches ca-certificates.crt, so CAfile consumers (Go,
+    # and therefore containerd) are fine, but anything using SSL_CERT_DIR alone
+    # silently would not trust it.
+    local work total i
+    work="$(mktemp -d)"
+    awk -v dir="${work}" '
+        /BEGIN CERTIFICATE/ { n++ }
+        n > 0 { print > (dir "/cert-" n ".pem") }
+    ' "${src}"
+    total="$(find "${work}" -name 'cert-*.pem' | wc -l)"
+    if [[ "${total}" -eq 0 ]]; then
+        rm -rf "${work}"
+        log_error "No certificates could be extracted from ${src}"
+        return 1
+    fi
+
+    # Keep the previous anchors so a failed update can be rolled back rather than
+    # leaving the node with neither the old nor the new trust configuration.
+    local backup
+    backup="$(mktemp -d)"
+    if compgen -G "${anchor_dir}/kube-dc-platform-ca-*.${suffix}" >/dev/null 2>&1; then
+        cp -a "${anchor_dir}"/kube-dc-platform-ca-*."${suffix}" "${backup}/" 2>/dev/null || true
+    fi
+
+    local changed=0 dest
+    for (( i = 1; i <= total; i++ )); do
+        dest="${anchor_dir}/kube-dc-platform-ca-${i}.${suffix}"
+        if [[ -f "${dest}" ]] && [[ "$(sha256sum < "${work}/cert-${i}.pem" | cut -d' ' -f1)" == "$(sha256sum < "${dest}" | cut -d' ' -f1)" ]]; then
+            continue
+        fi
+        if ! install -m 0644 "${work}/cert-${i}.pem" "${dest}"; then
+            # errexit does not apply here: the function runs inside `if !`, which
+            # disables it for everything it calls, so an unchecked failure would
+            # sail on to the updater and report success.
+            log_error "Failed to install ${dest}"
+            rm -rf "${work}" "${backup}"
+            return 1
+        fi
+        changed=1
+    done
+    # Remove anchors left by a LARGER previous bundle, or they stay trusted for ever.
+    local stale n
+    for stale in "${anchor_dir}"/kube-dc-platform-ca-*."${suffix}"; do
+        [[ -e "${stale}" ]] || continue
+        n="${stale##*kube-dc-platform-ca-}"
+        n="${n%%.*}"
+        if [[ "${n}" =~ ^[0-9]+$ ]] && (( n > total )); then
+            rm -f "${stale}"
+            changed=1
+        fi
+    done
+    rm -rf "${work}"
+
+    if (( changed )); then
+        if ! "${update_cmd[@]}" >/dev/null 2>&1; then
+            log_error "${update_cmd[0]} failed; rolling back to the previous anchors"
+            rm -f "${anchor_dir}"/kube-dc-platform-ca-*."${suffix}"
+            if compgen -G "${backup}/kube-dc-platform-ca-*.${suffix}" >/dev/null 2>&1; then
+                cp -a "${backup}"/kube-dc-platform-ca-*."${suffix}" "${anchor_dir}/" 2>/dev/null || true
+                "${update_cmd[@]}" >/dev/null 2>&1 || true
+            fi
+            rm -rf "${backup}"
+            return 1
+        fi
+    fi
+    rm -rf "${backup}"
+
+    # Prove it landed rather than trusting the exit code. update-ca-certificates
+    # exits 0 while silently SKIPPING any file it does not like — most notably one
+    # whose name does not end .crt — so a "successful" run can leave the CA
+    # completely untrusted. Measured on debian:12: the .pem case exits 0 and the
+    # CA is absent from the bundle.
+    #
+    # Verified even when nothing changed: a previous run could have written the
+    # anchor and then failed to rebuild the store, and byte-equality alone would
+    # call that success for ever afterwards.
+    #
+    # -no_check_time because an EXPIRED root is legitimate here: a rotation bundle
+    # carries the outgoing CA alongside the incoming one, and that overlap is what
+    # makes rotation safe. Measured: without it, `openssl verify` rejects the
+    # expired anchor and this function would abort an install that is entirely
+    # correct. -partial_chain so an intermediate-only bundle verifies against the
+    # installed intermediate rather than demanding a root we were never given.
+    local bundle probe rc=1
+    for bundle in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/cert.pem; do
+        [[ -f "${bundle}" ]] || continue
+        rc=0
+        # EVERY certificate is probed. Checking only the first would report
+        # success whenever that one happened to be trusted already, while the
+        # anchors that actually matter were skipped.
+        for (( i = 1; i <= total; i++ )); do
+            probe="${anchor_dir}/kube-dc-platform-ca-${i}.${suffix}"
+            if ! openssl verify -no_check_time -partial_chain -CAfile "${bundle}" "${probe}" >/dev/null 2>&1; then
+                log_error "${update_cmd[0]} reported success but the CA is NOT trusted via ${bundle}"
+                log_error "  not trusted: $(openssl x509 -in "${probe}" -noout -subject 2>/dev/null || echo "${probe}")"
+                log_error "On Debian/Ubuntu the anchor MUST end in .crt or update-ca-certificates ignores it silently."
+                rc=1
+                break
+            fi
+        done
+        break
+    done
+    if (( rc != 0 )); then
+        return 1
+    fi
+    log_info "Node trust store updated and verified (${total} CA certificate(s) in ${anchor_dir})"
+    return 0
+}
+
+if ! install_node_trusted_ca "${TRUSTED_CA_FILE:-}"; then
+    # Remove the staged copy even on failure: it is at a predictable path in a
+    # world-writable directory, and leaving it behind is a collision target for
+    # the next run.
+    [[ -n "${TRUSTED_CA_FILE:-}" ]] && rm -f "${TRUSTED_CA_FILE}"
+    log_error "Node trust setup failed; refusing to continue."
+    log_error "An air-gapped install WILL fail at the first image pull without it."
+    exit 1
+fi
+[[ -n "${TRUSTED_CA_FILE:-}" ]] && rm -f "${TRUSTED_CA_FILE}"
 
 # --- Embedded registry mirror (spegel) — vm-startup-acceleration Phase A ---
 # Every node serves/pulls image content P2P from its containerd store (RKE2
