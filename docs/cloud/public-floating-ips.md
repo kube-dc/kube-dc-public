@@ -58,7 +58,7 @@ kubectl get eip
 ```
 NAME         EXTERNAL IP      READY   AGE
 default-gw   100.65.0.115     true    37d
-my-eip       91.224.11.20     true    5s
+my-eip       198.51.100.20     true    5s
 ```
 
 ### Bind an EIP to a LoadBalancer Service
@@ -140,13 +140,13 @@ kubectl get fip
 
 ```
 NAME          TARGET IP    EXTERNAL IP    VM       INTERFACE   READY
-ubuntu-fip    10.0.0.153   91.224.11.5    ubuntu   vpc_net_0   true
+ubuntu-fip    10.0.0.153   198.51.100.5    ubuntu   vpc_net_0   true
 ```
 
 Now SSH directly to the VM:
 
 ```bash
-ssh ubuntu@91.224.11.5
+ssh ubuntu@198.51.100.5
 ```
 
 :::tip Automatic EIP

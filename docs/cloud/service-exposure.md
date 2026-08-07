@@ -548,7 +548,7 @@ This is because public FIPs create source-based policy routes that redirect ALL 
 **Example conflict:**
 ```
 Pod IP: 10.0.0.30
-├── Public FIP → Routes all traffic to public gateway (91.224.11.1)
+├── Public FIP → Routes all traffic to public gateway (198.51.100.1)
 └── Cloud LoadBalancer → Expects traffic via cloud gateway (100.65.0.1) ❌ BROKEN
 ```
 

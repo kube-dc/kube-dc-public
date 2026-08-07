@@ -204,7 +204,7 @@ kubectl get vmi <vm-name> -n <project-backing-namespace> -o jsonpath='{.status.i
 ssh -i /tmp/vm_ssh_key <username>@<ip-address>
 
 # Examples:
-# Ubuntu VM: ssh -i /tmp/vm_ssh_key ubuntu@91.224.11.9
+# Ubuntu VM: ssh -i /tmp/vm_ssh_key ubuntu@198.51.100.9
 # Debian VM: ssh -i /tmp/vm_ssh_key debian@10.0.0.131
 ```
 
@@ -611,13 +611,13 @@ kubectl get fip
 
 ```
 NAME         TARGET IP    EXTERNAL IP    VM       INTERFACE   READY
-debian-fip   10.0.0.131   91.224.11.16   debian   vpc_net_0   true
+debian-fip   10.0.0.131   198.51.100.16   debian   vpc_net_0   true
 ```
 
 You can now SSH directly to the VM:
 
 ```bash
-ssh debian@91.224.11.16
+ssh debian@198.51.100.16
 ```
 
 :::tip No EIP Required

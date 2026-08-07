@@ -59,7 +59,7 @@ kubectl get fip my-vm-fip
 Once the FIP is Ready, SSH directly to the external IP:
 
 ```bash
-ssh ubuntu@91.224.11.16
+ssh ubuntu@198.51.100.16
 ```
 
 See [Deploying VMs](creating-vm.md#exposing-vms-with-floating-ips) for complete FIP configuration.

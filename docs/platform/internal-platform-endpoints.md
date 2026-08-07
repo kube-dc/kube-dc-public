@@ -55,6 +55,18 @@ If the classifier returns Class A/B/C with `confidence: high`, you can skip the 
 
 Typical hardware: a single colo'd public IP routed to a private bare-metal cluster via 1:1 NAT on an edge router. The hairpin failure happens because the NAT box won't reflect a packet back through itself.
 
+:::warning Classification changes with the ingress rework
+`doctor topology` currently infers your class from how Envoy is exposed
+(`externalIPs`, Service type). The ingress rework makes that shape **the same
+on every cluster**, so on a reworked cluster the tool reports low confidence
+and says it cannot tell — deliberately, rather than guessing wrong. The
+question it is really asking does not change: **is the platform address
+reachable from inside the cluster (on a node's NIC), or translated by an
+upstream router?** Answer that with the manual smoke test below, which stays
+valid either way. Details: `docs/prd/internal-platform-endpoints-implementation.md`
+§6.E alignment note.
+:::
+
 ### Class B — Flat-L2 with per-node externalIPs
 
 | Symptom | Decision |
