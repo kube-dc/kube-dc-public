@@ -73,8 +73,12 @@ RUN set -e && \
     ttydArch="$(uname -m)" && \
     curl -L -o /usr/local/bin/ttyd https://github.com/cloudtty/ttyd/releases/download/${TTYD_VERSION}/ttyd.${ttydArch} && \
     chmod +x /usr/local/bin/ttyd && \
-    curl -sL https://github.com/kube-dc/kube-dc-public/releases/latest/download/kube-dc_linux_amd64 -o /usr/local/bin/kube-dc && \
-    chmod +x /usr/local/bin/kube-dc && \
+    test -n "${KUBE_DC_VERSION}" && test "${KUBE_DC_VERSION}" != "latest" && \
+    curl -fsSL "https://github.com/kube-dc/kube-dc-public/releases/download/${KUBE_DC_VERSION}/kube-dc_linux_amd64" -o /tmp/kube-dc_linux_amd64 && \
+    curl -fsSL "https://github.com/kube-dc/kube-dc-public/releases/download/${KUBE_DC_VERSION}/checksums.txt" -o /tmp/checksums.txt && \
+    (cd /tmp && sha256sum -c --ignore-missing checksums.txt) && \
+    install -m 0755 /tmp/kube-dc_linux_amd64 /usr/local/bin/kube-dc && \
+    rm /tmp/kube-dc_linux_amd64 /tmp/checksums.txt && \
     curl -sL https://github.com/derailed/k9s/releases/download/${K9S_VERSION}/k9s_Linux_amd64.tar.gz | tar xz -C /usr/local/bin k9s && \
     chmod +x /usr/local/bin/k9s
 
