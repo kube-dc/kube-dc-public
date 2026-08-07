@@ -501,6 +501,11 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"Skip the S3 exposure layer (Certificate + HTTPRoute) — cluster-internal S3 only")
 	cmd.Flags().BoolVar(&o.ImageAcceleration, "image-acceleration", true,
 		"Wire the on-cluster image path (tenant-addons + cdi-os-mirror + registry-depot zot) into the scaffold; spegel (RKE2 embedded registry) is enabled per node by bootstrap install (default: true)")
+	cmd.Flags().StringVar(&o.IngressAddressLayer, "ingress-address-layer", clusterinit.AddressLayerNone,
+		fmt.Sprintf("Who owns the address clients dial: %s. The data plane is the same everywhere (host-bind Envoy DaemonSet on nodes labelled kube-dc.com/ingress); 'none' reaches those nodes' own IPs and installs no MetalLB, the metallb-* layers claim a floating VIP (requires --set METALLB_FLOATING_IP). See docs/platform/installation-guide.md",
+			strings.Join(clusterinit.AllAddressLayers, " | ")))
+	cmd.Flags().StringSliceVar(&o.IngressNodes, "ingress-node", nil,
+		"Node that should carry the ingress label and bind :80/:443 (repeatable). Two or more for production. With a VIP layer these nodes must also run a MetalLB speaker and reach the VIP's L2/BGP fabric")
 	cmd.Flags().StringVar(&o.TLSMode, "tls-mode", clusterinit.TLSModeACME,
 		"Platform TLS mode: 'acme' (cert-manager via the ACME ClusterIssuer, HTTP-01 through the Gateway), 'acme-dns01-route53' (same issuer, DNS-01 via Route53 — for private/VPN-only clusters; requires --dns01-route53-*), or 'byo-wildcard' (operator-supplied *.<domain> certificate, SOPS-committed, ACME Certificates suppressed; requires --tls-cert/--tls-key). See docs/platform/certificates.md")
 	cmd.Flags().StringVar(&o.DNS01Route53ZoneID, "dns01-route53-zone-id", "",
@@ -1914,6 +1919,7 @@ func assertRequiredFlagsRegistered(fs *pflag.FlagSet) error {
 		"ceph-node", "ceph-storage-class", "ceph-osd-count", "ceph-osd-volume-size-gb",
 		"s3-hostname", "no-s3-exposure",
 		"vm-storage-mode", "vm-golden", "vm-golden-block",
+		"ingress-address-layer", "ingress-node",
 		"tls-mode", "tls-cert", "tls-key", "trusted-ca-bundle",
 		"dns01-route53-zone-id", "dns01-route53-region", "dns01-route53-access-key-id", "dns01-route53-secret-key-file",
 		"gpu-platform", "gpu-driver-source", "gpu-operator-version", "nvidia-driver-version", "nvidia-toolkit-version",

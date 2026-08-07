@@ -67,6 +67,11 @@ var bannedPatterns = []struct {
 }{
 	{re: regexp.MustCompile(`217\.117\.26\.`), reason: "real public IP block of a production cluster — use RFC 5737 (203.0.113.x)"},
 	{re: regexp.MustCompile(`88\.99\.29\.`), reason: "real bare-metal public IP — use RFC 5737 (198.51.100.x)"},
+	// 2026-08-08 sweep: these two blocks had slipped through — the cloud
+	// cluster's node-public /23 was hardcoded in cli mock fixtures + DNS
+	// probe tests, and the tenant-EIP /24 in docs/cloud tutorial outputs.
+	{re: regexp.MustCompile(`213\.111\.`), reason: "real node-public IP block of a production cluster — use RFC 5737 (203.0.113.x)"},
+	{re: regexp.MustCompile(`91\.224\.`), reason: "real tenant-EIP block of a production cluster — use RFC 5737 (198.51.100.x)"},
 	{re: regexp.MustCompile(`(?i)acropolis`), reason: "real customer/cluster name — use a fictional cluster name"},
 	{re: regexp.MustCompile(`(?i)srv[0-9]+-kub`), reason: "real node hostname scheme — use HOST5-A / host5-a shapes"},
 	{

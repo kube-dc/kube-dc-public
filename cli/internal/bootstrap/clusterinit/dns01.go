@@ -341,6 +341,10 @@ func WriteDNS01Route53(fleetRepo, clusterName string, m *DNS01Route53Material, o
 // break ImportMap/ExportMap symmetry (codex pass-2, P2).
 var promotedTLSKeys = []string{
 	"TLS_MODE", "DNS01_ROUTE53_ZONE_ID", "DNS01_ROUTE53_REGION", "DNS01_ROUTE53_ACCESS_KEY_ID",
+	// Front door: the address layer has a dedicated flag + field, so
+	// accepting it via --set too would give the generic Sets export a
+	// second, conflicting source of truth for the same value.
+	"INGRESS_ADDRESS_LAYER",
 }
 
 func validateDNS01Flags(o *InitOptions) error {

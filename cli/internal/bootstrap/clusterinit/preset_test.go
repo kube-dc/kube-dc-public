@@ -1031,13 +1031,36 @@ func TestValidatePresetValues_IngressAndMetalLBModes(t *testing.T) {
 		{"defaults valid", nil, false, ""},
 		{"explicit metallb-lb + l2", map[string]string{
 			"INGRESS_MODE": "metallb-lb", "METALLB_MODE": "l2"}, false, ""},
-		// hostnetwork EXISTS as a topology but init can't scaffold it yet
-		// (no EnvoyProxy patch written) — accepting it would validate a
-		// cluster whose front door never comes up. Rejected with an
-		// actionable message until D'''''.1 automates the variant
-		// (review finding 2026-07-10, P1).
-		{"hostnetwork rejected until automated", map[string]string{
-			"INGRESS_MODE": "hostnetwork"}, true, "not yet automated"},
+		// v2 (design §5a): the data plane is host-bind on EVERY cluster,
+		// so INGRESS_MODE no longer selects anything. The legacy value is
+		// ACCEPTED (old config files must keep round-tripping) and the
+		// real choice moved to INGRESS_ADDRESS_LAYER.
+		{"legacy hostnetwork accepted", map[string]string{
+			"INGRESS_MODE": "hostnetwork"}, false, ""},
+		// ── address layer ────────────────────────────────────────────
+		{"address layer none is the default", map[string]string{
+			"INGRESS_ADDRESS_LAYER": "none"}, false, ""},
+		{"bad address layer", map[string]string{
+			"INGRESS_ADDRESS_LAYER": "cloud-lb"}, true, "INGRESS_ADDRESS_LAYER"},
+		// A VIP layer with no VIP leaves the Service pending forever.
+		{"l2 layer without a VIP", map[string]string{
+			"INGRESS_ADDRESS_LAYER": "metallb-l2"}, true, "METALLB_FLOATING_IP: required"},
+		{"l2 layer with a VIP", map[string]string{
+			"INGRESS_ADDRESS_LAYER": "metallb-l2",
+			"METALLB_FLOATING_IP":   "192.0.2.10",
+			"ENVOY_SERVICE_TYPE":    "LoadBalancer",
+			"ENVOY_LB_CLASS":        "metallb"}, false, ""},
+		// An empty selector matches EVERY node — a host-binding Envoy on
+		// every worker.
+		{"empty ingress label", map[string]string{
+			"INGRESS_NODE_LABEL": ""}, true, "must not be empty"},
+		{"malformed ingress label", map[string]string{
+			"INGRESS_NODE_LABEL": "kube-dc.com/"}, true, "not a valid Kubernetes label key"},
+		// The ENVOY_* scalars are derived, never hand-set: a ClusterIP
+		// Service carrying loadBalancerClass is rejected by the API server.
+		{"scalars contradicting the layer", map[string]string{
+			"INGRESS_ADDRESS_LAYER": "none",
+			"ENVOY_SERVICE_TYPE":    "LoadBalancer"}, true, "contradicts INGRESS_ADDRESS_LAYER"},
 		{"bad ingress mode", map[string]string{
 			"INGRESS_MODE": "nodeport"}, true, "INGRESS_MODE"},
 		{"bad metallb mode", map[string]string{

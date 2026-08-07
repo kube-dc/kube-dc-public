@@ -94,7 +94,7 @@ func TestPrinter_CloudScenario_AllGreen(t *testing.T) {
 		{Category: CategoryVerifiesSuggests, Name: "wildcard-dns", Result: ports.Result{
 			Status:   ports.StatusInstalled,
 			Severity: ports.SeverityInfo,
-			Detail:   "wildcard *.acme.example.com → 213.111.154.233",
+			Detail:   "wildcard *.acme.example.com → 203.0.113.50",
 		}},
 	}
 	out, code := runPrinter(t, results, "")

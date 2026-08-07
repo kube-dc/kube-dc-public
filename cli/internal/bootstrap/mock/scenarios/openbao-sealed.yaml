@@ -109,7 +109,7 @@ fleet:
         - { name: addons,               ready: false, message: "waiting on platform" }
 
 dns:
-  "*.kube-dc.cloud": [213.111.154.233]
+  "*.kube-dc.cloud": [203.0.113.50]
 
 scripts:
   # Unseal-flow scenarios rarely drive scripts — the M5-T02 unseal path

@@ -90,6 +90,13 @@ so a refresh is a *switch*, not a gap:
 With no `golden-active` label anywhere, behaviour is exactly as before (first
 ready golden wins), so single-golden clusters need no changes.
 
+⚠️ **Exactly one golden per family may carry `golden-active=true`.** Sorting is
+not an atomic pointer: if a flip leaves two goldens active (or none), which one
+wins falls back to list order, and different projects can end up seeded from
+different images. The seeder therefore *reports* a conflict as a reconcile error
+rather than silently picking one — so do step 3 as a single change (set the new,
+clear the old) and check the manager logs afterwards.
+
 **Rebuild a stuck mirror family** — check the mirror Job's `summary |` log line;
 per-family failures keep the previous catalog pin (nothing breaks, it goes
 stale). Re-run: `kubectl -n kube-dc create job --from=cronjob/cdi-os-mirror-refresh <name>`.

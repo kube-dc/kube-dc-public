@@ -49,6 +49,10 @@ const (
 	// site-specific internet-gateway escape hatch.
 	KeyNodeEgress = InitPrefix + "NODE_EGRESS_ENABLED"
 	KeyNodeNICs   = InitPrefix + "NODE_NICS"
+	// KeyIngressNodes is install-only on purpose: it is a list of node
+	// NAMES, so a clone-from-sibling that inherited them would label
+	// nodes that do not exist in the new cluster.
+	KeyIngressNodes = InitPrefix + "INGRESS_NODES"
 	// VM root-disk storage (install-only: selects which rbd-vm fleet
 	// manifests get scaffolded — never reconciled into cluster-config.env).
 	// Goldens are comma-joined lists.
@@ -128,7 +132,7 @@ var specOrder = []string{
 	"EXT_NET_VLAN_ID", "EXT_NET_INTERFACE", "EXT_NET_MTU", "KUBE_OVN_MASTER_NODES",
 	"KUBE_OVN_GW_NODES", "EXT_NET_ANCHOR_IPS", "EXT_NET_ANCHOR_INTERFACE",
 	"EXT_NET_ANCHOR_REQUIRED", "EXT_NET_ANCHOR_SSH_HOSTS", KeyNodeEgress,
-	KeyNodeNICs,
+	KeyNodeNICs, KeyIngressNodes,
 	"EXT_PUBLIC_VLAN_ID", "EXT_PUBLIC_CIDR", "EXT_PUBLIC_GATEWAY",
 	"EXT_NET_PUBLIC_ANCHOR_INTERFACE",
 	"OBJECT_STORAGE_MODE",
@@ -137,6 +141,7 @@ var specOrder = []string{
 	"CEPH_NODE_3", "CEPH_NODE_3_DEVICE",
 	"CEPH_OSD_STORAGE_CLASS", "CEPH_OSD_COUNT", "CEPH_OSD_VOLUME_SIZE_GB",
 	"S3_HOSTNAME",
+	"INGRESS_ADDRESS_LAYER", "INGRESS_NODE_LABEL",
 	"TLS_MODE", "DNS01_ROUTE53_ZONE_ID", "DNS01_ROUTE53_REGION", "DNS01_ROUTE53_ACCESS_KEY_ID",
 	KeyVMStorageMode, KeyVMGolden, KeyVMGoldenBlock,
 	KeyGPUPlatform, "GPU_DRIVER_SOURCE", "GPU_OPERATOR_VERSION",
@@ -208,6 +213,12 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 	// firing (codex review 2026-08-06, P2). Promoted, a re-run against a
 	// dns01 cluster restores the mode and Validate demands coherent flags
 	// (and the secret via its dedicated channel) — loud, not silent.
+	// Front door: the address layer is a DEDICATED field, not a generic
+	// Set. Left generic, a --save-config of a flag-chosen layer would be
+	// dropped (the flag never reaches o.Sets) and the next run would
+	// silently fall back to "none" — turning an intended VIP cluster into
+	// a ClusterIP one.
+	str("INGRESS_ADDRESS_LAYER", "ingress-address-layer", &o.IngressAddressLayer)
 	str("TLS_MODE", "tls-mode", &o.TLSMode)
 	str("DNS01_ROUTE53_ZONE_ID", "dns01-route53-zone-id", &o.DNS01Route53ZoneID)
 	str("DNS01_ROUTE53_REGION", "dns01-route53-region", &o.DNS01Route53Region)
@@ -258,6 +269,12 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 	str(KeyRepo, "repo", &o.Repo)
 	str(KeyGitHubOwner, "github-owner", &o.GitHubOwner)
 	str(KeyGitHubRepo, "github-repo", &o.GitHubRepo)
+	if v, ok := src[KeyIngressNodes]; ok {
+		seen[KeyIngressNodes] = true
+		if !flagChanged("ingress-node") {
+			o.IngressNodes = splitCSVList(v)
+		}
+	}
 	if v, ok := src[KeyNodeNICs]; ok {
 		seen[KeyNodeNICs] = true
 		if !flagChanged("node-nic") {
@@ -451,6 +468,7 @@ func ExportMap(o *InitOptions) map[string]string {
 	// no field and no export — its channels are the file flag and the
 	// KUBE_DC_DNS01_ROUTE53_SECRET_KEY env var). "acme" is the flag default,
 	// canonicalized away so a default spec stays minimal.
+	put("INGRESS_ADDRESS_LAYER", o.IngressAddressLayer)
 	put("TLS_MODE", canonicalTLSMode(o.TLSMode))
 	put("DNS01_ROUTE53_ZONE_ID", o.DNS01Route53ZoneID)
 	put("DNS01_ROUTE53_REGION", o.DNS01Route53Region)
@@ -508,6 +526,9 @@ func ExportMap(o *InitOptions) map[string]string {
 			pairs = append(pairs, node+"="+o.NodeNICs[node])
 		}
 		put(KeyNodeNICs, strings.Join(pairs, ","))
+	}
+	if len(o.IngressNodes) > 0 {
+		put(KeyIngressNodes, strings.Join(canonicalIngressNodes(o.IngressNodes), ","))
 	}
 	if o.AllowDNSNotReady {
 		m[KeyAllowDNS] = "true"

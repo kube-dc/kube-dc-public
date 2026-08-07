@@ -34,6 +34,22 @@ func TestClassify(t *testing.T) {
 			wantReasonHas:  "currently enabled",
 		},
 		{
+			// Ingress v2: the shape probe returns a hint-less low-confidence
+			// signal on a migrated cluster (PRD §6.E alignment note). The
+			// classifier must NOT turn that into a confident Class A —
+			// telling a cloud-class operator to enable Fork E would add
+			// MetalLB VIPs, allowlists and Corefile churn for nothing.
+			name: "ingress-v2 uniform shape yields no confident class",
+			signals: []Signal{
+				{Probe: probeNameEnvoyExtIPs, Detail: "ingress-v2 data plane (envoyDaemonSet, type=ClusterIP lb-class=default): the Envoy shape is uniform fleet-wide", Confidence: "low"},
+				{Probe: probeNameHostNetwork, Detail: "hostNetwork: true", Hint: ClassA, Confidence: "medium"},
+			},
+			wantClass:      ClassA,
+			wantVerdict:    VerdictRequired,
+			wantConfidence: "medium",
+			wantReasonHas:  "",
+		},
+		{
 			name: "Fork E partial (only kube-api-platform) — still already-enabled",
 			signals: []Signal{
 				{Probe: probeNameForkE, Detail: "kube-api-platform deployed (envoy-gateway-platform not yet)", Hint: ClassA, Confidence: "high"},
@@ -58,7 +74,7 @@ func TestClassify(t *testing.T) {
 			signals: []Signal{
 				{Probe: probeNameForkE, Detail: "neither platform-endpoint Service present", Confidence: "high"},
 				{Probe: probeNameCloudProvider, Detail: "no providerID on any node", Confidence: "high"},
-				{Probe: probeNameEnvoyExtIPs, Detail: "externalIPs=[213.111.154.229]", Hint: ClassB, Confidence: "high"},
+				{Probe: probeNameEnvoyExtIPs, Detail: "externalIPs=[203.0.113.229]", Hint: ClassB, Confidence: "high"},
 				{Probe: probeNameHostNetwork, Detail: "false or unset"},
 			},
 			wantClass:      ClassB,

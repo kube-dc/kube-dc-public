@@ -40,7 +40,7 @@ type DNSClient interface {
 // (M1-T05) renders these as a copy-paste block in the operator's
 // terminal:
 //
-//	A     *.acme-prod.example.com    213.111.154.233    300
+//	A     *.acme-prod.example.com    203.0.113.50    300
 //
 // **Type is always "A" in v1**. The struct admits AAAA for forward-compat
 // but M1-T03 never emits AAAA records until v2 lands dual-stack stack
@@ -49,7 +49,7 @@ type DNSClient interface {
 type DNSRecord struct {
 	Type  string // "A" only in v1
 	Name  string // e.g. "*.acme-prod.example.com"
-	Value string // e.g. "213.111.154.233"
+	Value string // e.g. "203.0.113.50"
 	TTL   int    // seconds; doctor defaults to 300
 }
 

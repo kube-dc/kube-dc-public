@@ -263,7 +263,11 @@ func probeEnvoyExternalIPs(ctx context.Context, k *kubectl) Signal {
 		Spec struct {
 			Provider struct {
 				Kubernetes struct {
-					EnvoyService struct {
+					// EnvoyDaemonSet present == the ingress-v2 data plane
+					// (one host-bind Envoy per labelled node). Its presence
+					// makes the SHAPE probes below blind — see the guard.
+					EnvoyDaemonSet map[string]any `json:"envoyDaemonSet"`
+					EnvoyService   struct {
 						Type  string `json:"type"`
 						Patch struct {
 							Value struct {
@@ -287,6 +291,29 @@ func probeEnvoyExternalIPs(ctx context.Context, k *kubectl) Signal {
 	lbClass := ""
 	if c := cr.Spec.Provider.Kubernetes.EnvoyService.Patch.Value.Spec.LoadBalancerClass; c != nil {
 		lbClass = *c
+	}
+
+	// ── ingress-v2 guard ──────────────────────────────────────────────
+	// v2 (docs/prd/ingress-mode-hostnetwork-design.md §5a) makes the Envoy
+	// shape UNIFORM across the fleet: externalIPs is always null (the field
+	// is API-deprecated) and every cluster is either ClusterIP or
+	// LoadBalancer+metallb. The shape-based cases below would therefore
+	// report "Class A, Fork E required" for EVERY migrated cluster —
+	// including cloud-class installs where the feature is correctly OFF.
+	// Until the classifier is re-based on the ADDRESS (is the platform
+	// address on-link on a node, or translated upstream?), say so instead
+	// of guessing: an explicit "cannot tell" is safe, a confident wrong
+	// answer is not.
+	if len(cr.Spec.Provider.Kubernetes.EnvoyDaemonSet) > 0 && len(extIPs) == 0 {
+		return Signal{
+			Probe: probeNameEnvoyExtIPs,
+			Detail: fmt.Sprintf(
+				"ingress-v2 data plane (envoyDaemonSet, type=%s lb-class=%s): the Envoy shape is uniform "+
+					"fleet-wide and no longer distinguishes Class A from B — classify by whether the platform "+
+					"address is on-link on a node (see PRD §6.E alignment note)",
+				ifBlank(svcType, "default"), ifBlank(lbClass, "default")),
+			Confidence: "low",
+		}
 	}
 
 	switch {

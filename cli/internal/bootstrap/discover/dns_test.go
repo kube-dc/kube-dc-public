@@ -35,10 +35,10 @@ func (f *fakeDNS) Resolve(_ context.Context, name, recordType string) ([]string,
 func TestWildcardDNSProbe_Resolves_MatchesIP(t *testing.T) {
 	dns := &fakeDNS{
 		answers: map[string][]string{
-			"kdc-dns-test-abcd1234.acme.example.com": {"213.111.154.233"},
+			"kdc-dns-test-abcd1234.acme.example.com": {"203.0.113.50"},
 		},
 	}
-	p := NewWildcardDNSProbe("acme.example.com", "213.111.154.233", dns)
+	p := NewWildcardDNSProbe("acme.example.com", "203.0.113.50", dns)
 	p.SetSubLabel("abcd1234")
 
 	r := p.Run(context.Background())
@@ -52,7 +52,7 @@ func TestWildcardDNSProbe_Resolves_MatchesIP(t *testing.T) {
 
 func TestWildcardDNSProbe_NXDOMAIN_Blocker(t *testing.T) {
 	dns := &fakeDNS{answers: map[string][]string{}}
-	p := NewWildcardDNSProbe("acme.example.com", "213.111.154.233", dns)
+	p := NewWildcardDNSProbe("acme.example.com", "203.0.113.50", dns)
 	p.SetSubLabel("nx")
 
 	r := p.Run(context.Background())
@@ -66,7 +66,7 @@ func TestWildcardDNSProbe_NXDOMAIN_Blocker(t *testing.T) {
 		t.Errorf("FixHint should carry the wildcard record: %+v", r.FixHint)
 	}
 	rec := r.FixHint.Records[0]
-	if rec.Name != "*.acme.example.com" || rec.Value != "213.111.154.233" || rec.Type != "A" || rec.TTL != 300 {
+	if rec.Name != "*.acme.example.com" || rec.Value != "203.0.113.50" || rec.Type != "A" || rec.TTL != 300 {
 		t.Errorf("FixHint record wrong: %+v", rec)
 	}
 }
@@ -77,14 +77,14 @@ func TestWildcardDNSProbe_WrongIP_Blocker(t *testing.T) {
 			"kdc-dns-test-bad.acme.example.com": {"203.0.113.99"},
 		},
 	}
-	p := NewWildcardDNSProbe("acme.example.com", "213.111.154.233", dns)
+	p := NewWildcardDNSProbe("acme.example.com", "203.0.113.50", dns)
 	p.SetSubLabel("bad")
 
 	r := p.Run(context.Background())
 	if r.Status != ports.StatusPartial || r.Severity != ports.SeverityBlocker {
 		t.Errorf("status=%v severity=%v want partial+blocker", r.Status, r.Severity)
 	}
-	if !strings.Contains(r.Detail, "203.0.113.99") || !strings.Contains(r.Detail, "213.111.154.233") {
+	if !strings.Contains(r.Detail, "203.0.113.99") || !strings.Contains(r.Detail, "203.0.113.50") {
 		t.Errorf("Detail should call out both IPs: %q", r.Detail)
 	}
 }
@@ -94,10 +94,10 @@ func TestWildcardDNSProbe_MultipleA_OneMatches_OK(t *testing.T) {
 	// One match should be sufficient.
 	dns := &fakeDNS{
 		answers: map[string][]string{
-			"kdc-dns-test-multi.acme.example.com": {"203.0.113.99", "213.111.154.233"},
+			"kdc-dns-test-multi.acme.example.com": {"203.0.113.99", "203.0.113.50"},
 		},
 	}
-	p := NewWildcardDNSProbe("acme.example.com", "213.111.154.233", dns)
+	p := NewWildcardDNSProbe("acme.example.com", "203.0.113.50", dns)
 	p.SetSubLabel("multi")
 
 	r := p.Run(context.Background())
@@ -165,9 +165,9 @@ func TestRandomSubLabel_Length(t *testing.T) {
 func TestExplicitFQDNDNSProbe_AllResolveCorrectly_Installed(t *testing.T) {
 	answers := map[string][]string{}
 	for _, sub := range requiredFQDNs {
-		answers[sub+".acme.example.com"] = []string{"213.111.154.233"}
+		answers[sub+".acme.example.com"] = []string{"203.0.113.50"}
 	}
-	p := NewExplicitFQDNDNSProbe("acme.example.com", "213.111.154.233", &fakeDNS{answers: answers})
+	p := NewExplicitFQDNDNSProbe("acme.example.com", "203.0.113.50", &fakeDNS{answers: answers})
 
 	r := p.Run(context.Background())
 	if r.Status != ports.StatusInstalled {
@@ -180,10 +180,10 @@ func TestExplicitFQDNDNSProbe_AllResolveCorrectly_Installed(t *testing.T) {
 
 func TestExplicitFQDNDNSProbe_MissingSome_Blocker(t *testing.T) {
 	answers := map[string][]string{
-		"kube-api.acme.example.com": {"213.111.154.233"},
-		"console.acme.example.com":  {"213.111.154.233"},
+		"kube-api.acme.example.com": {"203.0.113.50"},
+		"console.acme.example.com":  {"203.0.113.50"},
 	}
-	p := NewExplicitFQDNDNSProbe("acme.example.com", "213.111.154.233", &fakeDNS{answers: answers})
+	p := NewExplicitFQDNDNSProbe("acme.example.com", "203.0.113.50", &fakeDNS{answers: answers})
 
 	r := p.Run(context.Background())
 	if r.Status != ports.StatusMissing || r.Severity != ports.SeverityBlocker {
@@ -202,7 +202,7 @@ func TestExplicitFQDNDNSProbe_AllResolveWrongIP_Blocker(t *testing.T) {
 	for _, sub := range requiredFQDNs {
 		answers[sub+".acme.example.com"] = []string{"203.0.113.99"} // wrong IP
 	}
-	p := NewExplicitFQDNDNSProbe("acme.example.com", "213.111.154.233", &fakeDNS{answers: answers})
+	p := NewExplicitFQDNDNSProbe("acme.example.com", "203.0.113.50", &fakeDNS{answers: answers})
 
 	r := p.Run(context.Background())
 	if r.Status != ports.StatusPartial || r.Severity != ports.SeverityBlocker {

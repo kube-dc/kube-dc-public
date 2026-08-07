@@ -31,7 +31,7 @@ func writeFleetFixture(t *testing.T, entries map[string]string) string {
 }
 
 const minimalEnv = `DOMAIN=acme.example.com
-NODE_EXTERNAL_IP=213.111.154.233
+NODE_EXTERNAL_IP=203.0.113.50
 KUBE_API_EXTERNAL_URL=https://kube-api.acme.example.com:6443
 KEYCLOAK_HOSTNAME=login.acme.example.com
 EXT_NET_NAME=ext-cloud

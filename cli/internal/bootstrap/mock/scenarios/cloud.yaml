@@ -127,7 +127,7 @@ fleet:
       apiURL: https://kube-api.kdc.eu-dc1.example.net:6443
 
 dns:
-  "*.kube-dc.cloud": [213.111.154.233]
+  "*.kube-dc.cloud": [203.0.113.50]
 
 scripts:
   "rke2/install-server.sh":

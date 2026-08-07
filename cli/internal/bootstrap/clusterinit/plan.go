@@ -236,6 +236,27 @@ var ErrNoConsent = errors.New("init: --no-tty without --yes / --apply-plan / mat
 // preserved which is fine because struct definitions don't change at
 // runtime), no trailing newline, no escape-html. Used by both
 // ComputeInputHash and the Plan.computeHash internal flow.
+// canonicalIngressNodes sorts + de-duplicates the ingress-node set so the
+// plan hash depends on WHICH nodes were chosen, never on the order the
+// operator typed them.
+func canonicalIngressNodes(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, n := range in {
+		n = strings.TrimSpace(n)
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func canonicalJSON(v any) ([]byte, error) {
 	// json.Marshal already sorts map keys but applies HTML escaping
 	// by default; switch to Encoder so we can disable it (HTML escapes
@@ -326,7 +347,13 @@ type inputsForHash struct {
 	// same as not passing the flag. The cert/key PATHS are deliberately NOT
 	// in the plan: they are machine-local inputs, and the material itself is
 	// data (the SOPS artifact), not shape.
-	TLSMode string `json:"tlsMode,omitempty"`
+	// Front door (design v2 §5a): the address layer changes the Envoy Service
+	// shape the fleet renders and the ingress-node set changes which hosts
+	// bind :80/:443 — both are scaffold shape, so both are hashed. Nodes are
+	// sorted so flag order cannot change the hash.
+	IngressAddressLayer string   `json:"ingressAddressLayer,omitempty"`
+	IngressNodes        []string `json:"ingressNodes,omitempty"`
+	TLSMode             string   `json:"tlsMode,omitempty"`
 	// TLSCertFingerprint (hex SHA-256 of the leaf DER — public material) binds
 	// the plan to the CERTIFICATE the operator reviewed, not merely the mode:
 	// apply refuses material whose fingerprint differs from the approved plan.
@@ -477,6 +504,8 @@ func (o *InitOptions) inputsForHash() inputsForHash {
 		NoS3Exposure:              o.NoS3Exposure,
 		VMStorageMode:             o.VMStorageMode,
 		ImageAcceleration:         o.ImageAcceleration,
+		IngressAddressLayer:       o.IngressAddressLayer,
+		IngressNodes:              canonicalIngressNodes(o.IngressNodes),
 		TLSMode:                   canonicalTLSMode(o.TLSMode),
 		TLSCertFingerprint:        o.TLSCertFingerprint,
 		DNS01Route53ZoneID:        o.DNS01Route53ZoneID,

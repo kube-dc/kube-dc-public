@@ -37,7 +37,7 @@ func (f *fakeDNS) Resolve(_ context.Context, name, recordType string) ([]string,
 // eyeball inspection; nothing magical about the domain.
 const (
 	testDomain = "acme.example.com"
-	testNodeIP = "213.111.154.233"
+	testNodeIP = "203.0.113.50"
 	testSub    = "abcd1234"
 	testWildQ  = "kdc-dns-test-abcd1234.acme.example.com"
 )

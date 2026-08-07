@@ -13,18 +13,18 @@ import (
 func TestResolve_HappyPath(t *testing.T) {
 	r := New()
 	r.testLookup = func(ctx context.Context, res *net.Resolver, name string) ([]net.IP, error) {
-		if name != "kube-dc.cloud" {
+		if name != "example.com" {
 			t.Fatalf("unexpected name %q", name)
 		}
-		return []net.IP{net.IPv4(213, 111, 154, 233)}, nil
+		return []net.IP{net.IPv4(203, 0, 113, 50)}, nil
 	}
 
-	got, err := r.Resolve(context.Background(), "kube-dc.cloud", ports.DNSRecordTypeA)
+	got, err := r.Resolve(context.Background(), "example.com", ports.DNSRecordTypeA)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if len(got) != 1 || got[0] != "213.111.154.233" {
-		t.Errorf("got %v, want [213.111.154.233]", got)
+	if len(got) != 1 || got[0] != "203.0.113.50" {
+		t.Errorf("got %v, want [203.0.113.50]", got)
 	}
 }
 
@@ -71,7 +71,7 @@ func TestResolve_SystemFails_FallbackSucceeds(t *testing.T) {
 		return []net.IP{net.IPv4(1, 2, 3, 4)}, nil
 	}
 
-	got, err := r.Resolve(context.Background(), "kube-dc.cloud", ports.DNSRecordTypeA)
+	got, err := r.Resolve(context.Background(), "example.com", ports.DNSRecordTypeA)
 	if err != nil {
 		t.Fatalf("expected fallback to recover, got %v", err)
 	}
@@ -89,7 +89,7 @@ func TestResolve_SystemFailsTransport_FallbackAlsoFails_OriginalSurfaced(t *test
 		return nil, errors.New("read udp 1.1.1.1:53: also blocked")
 	}
 
-	_, err := r.Resolve(context.Background(), "kube-dc.cloud", ports.DNSRecordTypeA)
+	_, err := r.Resolve(context.Background(), "example.com", ports.DNSRecordTypeA)
 	if err == nil {
 		t.Fatal("want error, got nil")
 	}
@@ -100,7 +100,7 @@ func TestResolve_SystemFailsTransport_FallbackAlsoFails_OriginalSurfaced(t *test
 
 func TestResolve_RejectsAAAA(t *testing.T) {
 	r := New()
-	_, err := r.Resolve(context.Background(), "kube-dc.cloud", "AAAA")
+	_, err := r.Resolve(context.Background(), "example.com", "AAAA")
 	if err == nil {
 		t.Fatal("want error for AAAA")
 	}

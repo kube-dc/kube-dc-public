@@ -213,6 +213,21 @@ type InitOptions struct {
 	// enables it per node.
 	ImageAcceleration bool
 
+	// --- Front door (docs/prd/ingress-mode-hostnetwork-design.md §5a) ---
+	// IngressAddressLayer picks WHO OWNS the address clients dial:
+	// "none" (the ingress nodes' own IPs; MetalLB not installed),
+	// "metallb-l2" or "metallb-bgp" (a MetalLB-owned floating VIP).
+	// The DATA PLANE does not vary — every cluster runs the same
+	// host-bind Envoy DaemonSet — so this is the only front-door choice
+	// an operator makes.
+	IngressAddressLayer string
+	// IngressNodes are the nodes that will carry the ingress label and
+	// therefore bind :80/:443. Empty = the CLI suggests the gateway set.
+	// With a VIP layer these nodes must ALSO run a MetalLB speaker and
+	// reach the VIP's segment (design §5a A1) or the VIP is
+	// unannounceable.
+	IngressNodes []string
+
 	// --- Platform TLS (docs/platform/certificates.md) ---
 	// TLSMode selects who issues the platform certificates: "acme" (default,
 	// cert-manager via the ACME ClusterIssuer) or "byo-wildcard" (operator-
@@ -482,6 +497,7 @@ func (o *InitOptions) Validate() error {
 	if err := validateDNS01Flags(o); err != nil {
 		errs = append(errs, err.Error())
 	}
+	errs = append(errs, validateIngressNodes(o)...)
 
 	if len(errs) > 0 {
 		return fmt.Errorf("%w: %s", ErrValidation, strings.Join(errs, "; "))
@@ -883,6 +899,43 @@ func validateAddons(addons []string) []string {
 			continue
 		}
 		seen[a] = true
+	}
+	return errs
+}
+
+// validateIngressNodes checks the front-door node selection (design v2
+// §5a). Duplicates and blanks are operator typos worth catching before a
+// scaffold; the address-layer value is re-checked here so `--ingress-node`
+// users get the error even on a code path that skips the env validator.
+//
+// One ingress node is ALLOWED but weak: with a no-VIP layer each node
+// address is a DNS A record, so one node is a single point of failure;
+// with a VIP layer MetalLB can only move the VIP to another node holding a
+// ready local endpoint (§5a A1), so one node means no failover either. The
+// plan surfaces that; it is not an error, because small pilots legitimately
+// start with one.
+func validateIngressNodes(o *InitOptions) []string {
+	var errs []string
+	seen := map[string]bool{}
+	for _, n := range o.IngressNodes {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			errs = append(errs, "--ingress-node: empty node name")
+			continue
+		}
+		if seen[n] {
+			errs = append(errs, fmt.Sprintf("--ingress-node: %q listed twice", n))
+		}
+		seen[n] = true
+	}
+	if o.IngressAddressLayer != "" {
+		switch o.IngressAddressLayer {
+		case AddressLayerNone, AddressLayerMetalLBL2, AddressLayerMetalLBBGP:
+		default:
+			errs = append(errs, fmt.Sprintf(
+				"--ingress-address-layer %q is not valid (%s)",
+				o.IngressAddressLayer, strings.Join(AllAddressLayers, " | ")))
+		}
 	}
 	return errs
 }

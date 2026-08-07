@@ -75,7 +75,7 @@ via lipgloss. Honours NO_COLOR=1 per no-color.org.`,
 
   # Real run with host probes enabled (treat the laptop as install target)
   kube-dc bootstrap doctor --host-probes --domain acme.example.com \\
-    --node-external-ip 213.111.154.233`,
+    --node-external-ip 203.0.113.50`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			session, err := bootstrap.NewSession(bootstrap.Options{
 				FleetRepoPath: *fleetRepo,

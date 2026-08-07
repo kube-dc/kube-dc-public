@@ -773,7 +773,9 @@ kube-dc bootstrap init \
 | `--node-nic=NODE=IFACE` | Per-node override when a node's provider/trunk NIC differs from `EXT_NET_INTERFACE` (repeatable; also exposed in TUI/config) |
 | `--set=EXT_PUBLIC_*` | Public VLAN/CIDR/gateway for `cloud+public-vlan`. When the VIP is in this CIDR, the CLI derives the minimum gateway/VIP/anchor exclusions; widen them for any other reserved addresses |
 | `--set=METALLB_FLOATING_IP` / `METALLB_INTERFACE` | Dedicated ingress VIP and the host interface that carries its L2 segment. For an L2 VIP inside `EXT_PUBLIC_CIDR`, the current CLI selects the fleet-managed `ext-pub-anchor`; elsewhere the operator supplies the real interface |
-| `--set=INGRESS_MODE` | `metallb-lb` (default — Envoy Service `type: LoadBalancer` via MetalLB). `hostnetwork` (Envoy binds `:443` on the host) is a real topology but **not yet automated — `init` rejects it**; scaffold with `metallb-lb` and apply the EnvoyProxy hostNetwork patch manually if you need it |
+| `--ingress-address-layer` | **Who owns the address your users dial.** `none` (default) — clients reach the ingress nodes' own IPs via wildcard DNS, and MetalLB is not installed at all; `metallb-l2` — a floating VIP announced by ARP on a shared L2 segment (also needs `--set METALLB_FLOATING_IP`); `metallb-bgp` — the same VIP announced as a `/32` to a routed fabric. The **data plane does not vary**: every cluster runs one host-bind Envoy DaemonSet. See "Choosing an address layer" below |
+| `--ingress-node` | A node that should bind `:80`/`:443` (repeatable; carries the `kube-dc.com/ingress` label). Two or more for production. With a VIP layer these nodes must also run a MetalLB speaker and reach the VIP's segment |
+| `--set=INGRESS_MODE` | **Deprecated** — kept for one release so older config files round-trip. `metallb-lb` and `hostnetwork` both now select the same universal host-bind data plane; use `--ingress-address-layer` instead |
 | `--set=METALLB_MODE` | `l2` (default — ARP on a shared L2 segment) or `bgp` (announce VIPs as `/32` BGP routes — routed/L3-only fabrics; see §4.3 “BGP mode and mode changes”). `bgp` requires `METALLB_BGP_LOCAL_ASN`, `METALLB_BGP_PEER_ASN`, `METALLB_BGP_PEER_ADDRESS` (all validated) |
 | `--tls-mode` | `acme` (default — HTTP-01 through the Gateway; needs inbound `:80`), `acme-dns01-route53` (same issuer, proves control via Route53 DNS records — for private/VPN-only clusters whose zone is in Route53; auto-renews; requires `--dns01-route53-zone-id` + `--dns01-route53-access-key-id`, secret key via `--dns01-route53-secret-key-file` or `KUBE_DC_DNS01_ROUTE53_SECRET_KEY`), or `byo-wildcard` (operator-supplied certificate; requires `--tls-cert`/`--tls-key`; nothing renews it). See [Platform TLS certificates](certificates.md) |
 | `--trusted-ca-bundle` | Certificate-only root/intermediate PEM for a private-CA platform. The CLI creates the durable ConfigMap and wires manager, backend, OIDC and OpenBao from one plan-pinned source |
@@ -1114,10 +1116,53 @@ matches the generated resources before moving DNS.
 | repeated `--node-nic=NODE=IFACE` or the TUI **Per-node NIC overrides** field | one label-safe, deterministic `ProviderNetwork.spec.customInterfaces` patch in `infra-core` |
 | `--preset=cloud+public-vlan` + complete `EXT_PUBLIC_*` values | `infra-public-network` Flux layer and the `ext-public` Kube-OVN VLAN/Subnet |
 | L2 `METALLB_FLOATING_IP` inside `EXT_PUBLIC_CIDR` + `KUBE_OVN_GW_NODES` | `ext-pub-anchor` access port, one derived per-node anchor, VIP return-policy routing, and minimum IPAM exclusions |
-| `INGRESS_MODE=metallb-lb` | MetalLB operator plus an ordered, health-gated config layer |
+| `--ingress-address-layer=metallb-l2\|metallb-bgp` | MetalLB operator plus an ordered, health-gated config layer, and the Envoy Service rendered as `type: LoadBalancer` with `externalTrafficPolicy: Local` |
+| `--ingress-address-layer=none` | **no MetalLB at all** — the Envoy Service stays `ClusterIP` and the host-bind data plane answers on the ingress nodes' own addresses |
+| `--ingress-node=NODE` (repeatable) | the `kube-dc.com/ingress` label on those nodes, which is what the Envoy DaemonSet and the platform-endpoint backend discovery both select on |
 | `METALLB_MODE=l2` | `IPAddressPool` + `L2Advertisement` on `METALLB_INTERFACE` |
 | `METALLB_MODE=bgp` | `IPAddressPool` + `BGPPeer` + `/32` `BGPAdvertisement` |
 | `METALLB_FLOATING_IP` | explicit Envoy Service `loadBalancerIPs` request (the pool has `autoAssign: false`) and, when different from the node address, the Gateway address patch |
+
+### 4.1a Choosing an address layer
+
+There is only one question, and it is about the address — never about the
+data plane. Every cluster runs the same front door: a host-bind Envoy
+DaemonSet on the nodes you label, which is both the shortest path (no
+kube-proxy DNAT, no overlay hop) and the only shape that preserves the real
+client IP, without which per-client rate limits and IP allowlists cannot
+work.
+
+| Your situation | Use | Why |
+|---|---|---|
+| You have a spare routable IP and the nodes share an L2 segment with the router | `metallb-l2` | A floating VIP that MetalLB moves automatically |
+| You have a spare routable IP but the fabric is routed / L3-only | `metallb-bgp` | Same VIP, announced as a `/32` over BGP |
+| You have no spare IP — the public address is already on a node | `none` | Wildcard DNS points at the ingress nodes; nothing extra to install |
+| Your public address is 1:1 NAT'd upstream and never appears on a NIC | `none` | Nothing in-cluster can claim that address, so host bind is the only shape that answers |
+
+Two things to know before choosing a VIP layer:
+
+- **Failover is automatic but not instant.** BGP withdrawal waits for the
+  hold timer (`METALLB_BGP_HOLD_TIME`, default `90s`); L2 recovery is
+  memberlist failure detection plus ARP convergence — seconds to tens of
+  seconds. With `none`, recovery is client-driven instead: publish every
+  ingress node as an A record with a short TTL and clients retry the next
+  one.
+- **Ingress nodes must be able to announce.** With `externalTrafficPolicy:
+  Local`, MetalLB advertises the VIP only from a node that holds a ready
+  local endpoint — which here means a node running Envoy. So your
+  `--ingress-node` set must also run MetalLB speakers and sit on the VIP's
+  segment/fabric. Labelling a node that cannot reach the segment produces a
+  VIP nobody announces.
+
+:::tip Tenant Kubernetes API on `:6443`
+Envoy's `:6443` SNI-passthrough listener cannot bind on a node that also
+runs `kube-apiserver` — the apiserver owns the port, and the listener sits
+silently dead while the Gateway still reports `Programmed=True`. Put your
+ingress nodes on **workers** and tenant kube-API SNI routing works; put them
+on control-plane nodes (normal for small clusters) and tenant clusters use
+the `:443` expose-route instead, which is what every live tenant already
+does.
+:::
 
 The installer rejects missing public-network reservations, a missing L2
 interface, incomplete BGP peer data, unsupported IPv6 VIPs, malformed/range-

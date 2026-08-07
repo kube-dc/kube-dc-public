@@ -197,37 +197,103 @@ var universalPublicAnchorDefaults = map[string]string{
 	"EXT_NET_PUBLIC_ANCHOR_IPS":       "",
 }
 
-// universalIngressDefaults are the ingress-topology + MetalLB
-// announcement-mode knobs every preset inherits.
+// universalIngressDefaults are the front-door knobs every preset inherits.
 //
-// INGRESS_MODE — how the Envoy gateway front-door is exposed:
-//   - "metallb-lb" (default): EnvoyProxy Service type=LoadBalancer +
-//     loadBalancerClass=metallb (the fleet base
-//     platform/gateway-config/envoyproxy.yaml). Production default on
-//     every current cluster except one legacy hostNetwork deployment.
-//   - "hostnetwork": Envoy data-plane pods on the host network binding
-//     :443 directly (requires the useListenerPortAsContainerPort +
-//     hostNetwork EnvoyProxy patch on the cluster's platform
-//     Kustomization). Legacy/appliance topologies only. NOTE: init
-//     REJECTS this value today — the scaffold can't write that patch
-//     yet (D””'.1), so accepting it would produce a cluster with an
-//     unreachable front door. See validateIngressAndMetalLB.
+// Ingress design v2 (docs/prd/ingress-mode-hostnetwork-design.md §5a): the
+// DATA PLANE no longer varies per cluster. Every cluster converges on one
+// shape — a hostNetwork DaemonSet Envoy on nodes labelled
+// kube-dc.com/ingress — because it has the fewest hops AND preserves the
+// true client IP, which every IP-based guardrail (rate limits, allowlists)
+// depends on. What varies is only the ADDRESS layer.
 //
-// METALLB_MODE — how MetalLB announces LoadBalancer VIPs:
-//   - "l2" (default): ARP/GARP L2Advertisement on METALLB_INTERFACE;
-//     requires a shared L2 segment between the announcing nodes and
-//     the upstream router (fleet addons/metallb-config).
-//   - "bgp": BGPAdvertisement — VIPs announced as /32 routes over BGP
-//     sessions to the DC fabric (fleet addons/metallb-config-bgp);
-//     requires METALLB_BGP_LOCAL_ASN + METALLB_BGP_PEER_ASN +
-//     METALLB_BGP_PEER_ADDRESS (validated below). For routed/L3-only
-//     datacenters with no shared L2 broadcast domain.
+// INGRESS_ADDRESS_LAYER — who owns the address clients dial:
+//   - "none": clients reach the ingress nodes' own IPs (DNS multi-A).
+//     MetalLB is not installed at all. For sites with no spare routable
+//     IP, and the only workable shape when the public IP is 1:1 NAT'd
+//     upstream and therefore never present on a NIC.
+//   - "metallb-l2": a MetalLB-owned floating VIP announced by ARP on a
+//     shared L2 segment.
+//   - "metallb-bgp": the same VIP announced as a /32 over BGP sessions to
+//     a routed fabric (no shared broadcast domain required).
 //
-// Both default-safe: the cluster boots with the defaults and an
-// operator flips modes consciously per docs/platform/installation-guide.
+// INGRESS_MODE is RETIRED as a data-plane selector. It is still accepted
+// (and mapped) for one release so existing config files and saved specs
+// keep working; see validateIngressAndMetalLB.
+//
+// METALLB_MODE remains for the fleet's advertisement templates, derived
+// from the address layer rather than set independently.
+//
+// The defaults are the NO-VIP shape on purpose: a cluster that declares
+// nothing gets a working front door on its node addresses rather than a
+// Service pending forever on a VIP nobody assigned.
 var universalIngressDefaults = map[string]string{
-	"INGRESS_MODE": "metallb-lb",
-	"METALLB_MODE": "l2",
+	// v2 address layer. INGRESS_MODE is retained (deprecated) so a
+	// cluster-config.env written by an older CLI still round-trips.
+	"INGRESS_ADDRESS_LAYER": AddressLayerNone,
+	"INGRESS_MODE":          "metallb-lb",
+	"METALLB_MODE":          "l2",
+	// Envoy service shape, consumed by platform/gateway-config-hostbind.
+	// These four are the ENTIRE per-cluster surface of the address layer.
+	"ENVOY_SERVICE_TYPE":   "ClusterIP",
+	"ENVOY_LB_CLASS":       "null",
+	"ENVOY_TRAFFIC_POLICY": "Local",
+	"INGRESS_NODE_LABEL":   "kube-dc.com/ingress",
+}
+
+// Address-layer values. Named constants because three packages compare
+// against them (preset validation, scaffold wiring, the plan renderer).
+const (
+	// AddressLayerNone — no VIP; clients reach the ingress nodes' own IPs.
+	AddressLayerNone = "none"
+	// AddressLayerMetalLBL2 — MetalLB VIP announced by ARP on a shared L2.
+	AddressLayerMetalLBL2 = "metallb-l2"
+	// AddressLayerMetalLBBGP — MetalLB VIP announced as a /32 over BGP.
+	AddressLayerMetalLBBGP = "metallb-bgp"
+)
+
+// AllAddressLayers is the validation set + help enumeration.
+var AllAddressLayers = []string{AddressLayerNone, AddressLayerMetalLBBGP, AddressLayerMetalLBL2}
+
+// addressLayerEnv returns the Envoy service scalars + MetalLB mode implied
+// by an address layer. One place decides the shape, so the fleet template,
+// the plan preview and the validator can never disagree.
+//
+// The VIP layers set externalTrafficPolicy=Local deliberately: it keeps the
+// DNAT on the VIP-holding node, whose hostNetwork Envoy is the local
+// endpoint, so the packet never leaves the host and the client IP survives.
+// It also makes MetalLB announce ONLY from nodes with a ready local
+// endpoint — which is why the ingress-node set must also carry MetalLB
+// speakers and reach the VIP's segment (design §5a A1).
+func addressLayerEnv(layer string) map[string]string {
+	switch layer {
+	case AddressLayerMetalLBL2:
+		return map[string]string{
+			"ENVOY_SERVICE_TYPE":   "LoadBalancer",
+			"ENVOY_LB_CLASS":       "metallb",
+			"ENVOY_TRAFFIC_POLICY": "Local",
+			"METALLB_MODE":         "l2",
+			"INGRESS_MODE":         "metallb-lb",
+		}
+	case AddressLayerMetalLBBGP:
+		return map[string]string{
+			"ENVOY_SERVICE_TYPE":   "LoadBalancer",
+			"ENVOY_LB_CLASS":       "metallb",
+			"ENVOY_TRAFFIC_POLICY": "Local",
+			"METALLB_MODE":         "bgp",
+			"INGRESS_MODE":         "metallb-lb",
+		}
+	default: // AddressLayerNone
+		return map[string]string{
+			// null (not "") — the API server rejects loadBalancerClass on a
+			// ClusterIP Service, and rejects "" too; in the fleet's
+			// strategic-merge value `null` also means "delete this key".
+			"ENVOY_SERVICE_TYPE":   "ClusterIP",
+			"ENVOY_LB_CLASS":       "null",
+			"ENVOY_TRAFFIC_POLICY": "Local",
+			"METALLB_MODE":         "l2",
+			"INGRESS_MODE":         "metallb-lb",
+		}
+	}
 }
 
 // universalEmail is a placeholder — the operator's --email flag
@@ -446,6 +512,27 @@ func EnvMapFor(p Preset, sets map[string]string) (map[string]string, error) {
 		sort.Strings(missing)
 		return nil, fmt.Errorf("%w: preset=%s; missing %s (pass via --set KEY=VALUE)",
 			ErrPresetMissingRequired, p, strings.Join(missing, ", "))
+	}
+
+	// Derive the Envoy service shape from the address layer (v2). These
+	// four scalars are the ENTIRE per-cluster surface of the front door;
+	// deriving them here means the fleet template, the plan preview and
+	// the validator can never disagree about what the layer implies.
+	//
+	// An explicit --set of one of them is honoured but then validated for
+	// coherence (validateIngressAndMetalLB) — hand-editing them into
+	// disagreement renders a Service the API server rejects.
+	if p != PresetCustom {
+		layer := strings.TrimSpace(out["INGRESS_ADDRESS_LAYER"])
+		if layer == "" {
+			layer = AddressLayerNone
+			out["INGRESS_ADDRESS_LAYER"] = layer
+		}
+		for k, v := range addressLayerEnv(layer) {
+			if _, set := sets[k]; !set {
+				out[k] = v
+			}
+		}
 	}
 
 	// Fill the public-anchor keys that follow mechanically from the
@@ -707,29 +794,126 @@ func validateOVNDbIPs(envMap map[string]string, errs *[]string) {
 	}
 }
 
+// isSimpleLabelKey reports whether s is a bare (prefix-less) Kubernetes
+// label key. Keys WITH a "/" prefix are accepted by the caller without
+// further checks — the fleet's own key is kube-dc.com/ingress.
+func isSimpleLabelKey(s string) bool {
+	if s == "" || len(s) > 63 {
+		return false
+	}
+	for i, r := range s {
+		alnum := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+		if !alnum && r != '-' && r != '_' && r != '.' {
+			return false
+		}
+		if (i == 0 || i == len(s)-1) && !alnum {
+			return false
+		}
+	}
+	return true
+}
+
+// isLabelKey reports whether s is a valid Kubernetes label key, with or
+// without a DNS-subdomain prefix (the fleet's own key is
+// kube-dc.com/ingress).
+func isLabelKey(s string) bool {
+	name := s
+	if i := strings.Index(s, "/"); i >= 0 {
+		prefix, rest := s[:i], s[i+1:]
+		if prefix == "" || rest == "" || len(prefix) > 253 || strings.Contains(rest, "/") {
+			return false
+		}
+		name = rest
+	}
+	if name == "" || len(name) > 63 {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		alnum := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+		if !alnum && c != '-' && c != '_' && c != '.' {
+			return false
+		}
+		if (i == 0 || i == len(name)-1) && !alnum {
+			return false
+		}
+	}
+	return true
+}
+
 func validateIngressAndMetalLB(envMap map[string]string, errs *[]string) {
 	ingressMode := strings.TrimSpace(envMap["INGRESS_MODE"])
 	switch ingressMode {
 	case "", "metallb-lb":
 		// default / explicit default — fine.
 	case "hostnetwork":
-		// The mode EXISTS (one legacy production cluster runs it via a
-		// hand-authored EnvoyProxy patch) but init cannot produce a
-		// working hostnetwork cluster yet — the shared gateway-config
-		// base stays type=LoadBalancer and the scaffold writes no
-		// EnvoyProxy patch. Accepting it would validate a config whose
-		// front door never comes up (review finding 2026-07-10, P1).
-		// Reject loudly until the D'''''.1 per-mode variants land.
-		*errs = append(*errs,
-			"INGRESS_MODE: \"hostnetwork\" is not yet automated by init — the scaffold "+
-				"would leave the Envoy front door unreachable. Use metallb-lb (default); "+
-				"if you genuinely need hostNetwork ingress, scaffold with metallb-lb and "+
-				"apply the EnvoyProxy hostNetwork+useListenerPortAsContainerPort patch to "+
-				"the cluster's platform.yaml manually (see the fleet's add-cluster.sh "+
-				"INGRESS_MODE comment), then set the key for the record")
+		// v2: the data plane is host-bind on EVERY cluster, so this value
+		// no longer selects anything — it is accepted and folded into the
+		// address layer for one release so old config files keep working.
+		// (v1 rejected it because the scaffold could not write the
+		// EnvoyProxy patch; platform/gateway-config-hostbind now carries
+		// that shape as a shared overlay.)
 	default:
 		*errs = append(*errs, fmt.Sprintf(
-			"INGRESS_MODE: %q is not a valid mode (metallb-lb; hostnetwork pending automation)", ingressMode))
+			"INGRESS_MODE: %q is not valid (metallb-lb | hostnetwork; both now select the "+
+				"universal host-bind data plane — set INGRESS_ADDRESS_LAYER to choose the "+
+				"address layer)", ingressMode))
+	}
+
+	// ── address layer (v2) ────────────────────────────────────────────
+	layer := strings.TrimSpace(envMap["INGRESS_ADDRESS_LAYER"])
+	if layer == "" {
+		layer = AddressLayerNone
+	}
+	switch layer {
+	case AddressLayerNone, AddressLayerMetalLBL2, AddressLayerMetalLBBGP:
+	default:
+		*errs = append(*errs, fmt.Sprintf(
+			"INGRESS_ADDRESS_LAYER: %q is not valid (%s)", layer,
+			strings.Join(AllAddressLayers, " | ")))
+	}
+
+	// The ingress-node label is load-bearing twice over: the Envoy
+	// DaemonSet selects on it, AND the platform-endpoint controller finds
+	// its backends with the same selector. An empty value would make the
+	// DaemonSet match EVERY node (a nodeSelector with no keys selects all)
+	// — putting a host-binding Envoy on workers with no route to the
+	// fabric.
+	if lbl := strings.TrimSpace(envMap["INGRESS_NODE_LABEL"]); lbl == "" {
+		*errs = append(*errs,
+			"INGRESS_NODE_LABEL: must not be empty — an empty node selector puts a "+
+				"host-binding Envoy on every node in the cluster")
+	} else if !isLabelKey(lbl) {
+		*errs = append(*errs, fmt.Sprintf(
+			"INGRESS_NODE_LABEL: %q is not a valid Kubernetes label key", lbl))
+	}
+
+	// A VIP layer requires a VIP. Without this the Envoy Service is
+	// type=LoadBalancer with no address annotation and no pool — it hangs
+	// in <pending> and the front door never answers.
+	if layer == AddressLayerMetalLBL2 || layer == AddressLayerMetalLBBGP {
+		if v := strings.TrimSpace(envMap["METALLB_FLOATING_IP"]); v == "" || strings.HasPrefix(v, "CHANGEME") {
+			*errs = append(*errs, fmt.Sprintf(
+				"METALLB_FLOATING_IP: required by INGRESS_ADDRESS_LAYER=%s — a VIP layer "+
+					"with no VIP leaves the Envoy Service pending forever", layer))
+		}
+	}
+
+	// Coherence: the ENVOY_* service scalars are DERIVED from the address
+	// layer (addressLayerEnv). A hand-edited disagreement renders either a
+	// Service the API server rejects (loadBalancerClass is forbidden unless
+	// type=LoadBalancer — verified by server-side dry-run 2026-08-06) or a
+	// VIP nobody announces.
+	for k, want := range addressLayerEnv(layer) {
+		if !strings.HasPrefix(k, "ENVOY_") {
+			continue // METALLB_MODE/INGRESS_MODE are legacy mirrors
+		}
+		if got := strings.TrimSpace(envMap[k]); got != "" && got != want {
+			*errs = append(*errs, fmt.Sprintf(
+				"%s: %q contradicts INGRESS_ADDRESS_LAYER=%s (expects %q) — the Envoy "+
+					"service shape is derived from the address layer, not set by hand",
+				k, got, layer, want))
+		}
 	}
 
 	mode := strings.TrimSpace(envMap["METALLB_MODE"])

@@ -139,7 +139,7 @@ func TestNewSession_AllScenariosExerciseEveryPort(t *testing.T) {
 			case "fresh":
 				wildcardSuffix, wantIP = "fresh.example", "192.168.1.10"
 			default:
-				wildcardSuffix, wantIP = "kube-dc.cloud", "213.111.154.233"
+				wildcardSuffix, wantIP = "kube-dc.cloud", "203.0.113.50"
 			}
 			// Randomised sub-label — exactly what M1-T03 will do.
 			ips, err := s.DNS.Resolve(ctx, "kdc-dns-test-abc123."+wildcardSuffix, "A")
