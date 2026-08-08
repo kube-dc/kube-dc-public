@@ -1,3 +1,5 @@
+import {AiMcpFlowDiagram} from '@site/src/components/Diagram/CloudFlowDiagrams';
+
 # AI IDE Integration
 
 :::tip Agent Skills
@@ -12,6 +14,9 @@ Modern AI coding assistants — Claude Code, Cursor, Devin Desktop (formerly Win
 
 The **Model Context Protocol (MCP)** is an open standard that gives AI assistants structured access to external tools and data sources. A Kubernetes MCP server acts as a bridge between your AI IDE and the Kube-DC management cluster:
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
 AI IDE (Claude/Cursor/Devin Desktop)
          │
@@ -23,6 +28,10 @@ Kubernetes MCP Server
          ▼
 Kube-DC management cluster (Project context via kubeconfig)
 ```
+
+</details>
+
+<AiMcpFlowDiagram />
 
 The AI can then answer questions like *"Why is my deployment not scaling?"* or execute commands like *"Scale the nginx deployment to 3 replicas in Project `production` in Organization `acme`"*, subject to the permissions in your kubeconfig.
 

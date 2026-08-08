@@ -1,3 +1,5 @@
+import {RookObjectStorageFlowDiagram} from '@site/src/components/Diagram/PlatformFlowDiagrams';
+
 # Deploying Rook Ceph Object Storage (S3) for Kube-DC
 
 S3-compatible object storage backed by Rook Ceph RGW, integrated with Kube-DC
@@ -18,12 +20,19 @@ of resources already owned by Fleet.
 
 ## Architecture
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
 s3.example.com (HTTPS)
   → Gateway (TLS termination)
     → rook-ceph-rgw-<store-name>:80 (RGW)
       → Ceph OSD (block device on worker)
 ```
+
+</details>
+
+<RookObjectStorageFlowDiagram />
 
 The following requests are an evaluation starting point, not production sizing:
 

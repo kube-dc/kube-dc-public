@@ -1,3 +1,9 @@
+import {
+  EnvoyGatewayDiagram,
+  OvnLogicalNetworkDiagram,
+  PhysicalNetworkDiagram,
+} from '@site/src/components/Diagram/NetworkingArchitectureDiagrams';
+
 # Networking Architecture
 
 Kube-DC uses Kube-OVN for Project VPCs and external-address routing, Multus for additional interfaces, and Envoy Gateway for HTTP, HTTPS, and gRPC exposure.
@@ -42,6 +48,9 @@ Provider networks attach Kube-OVN to datacenter Layer 2 or routed segments.
 Depending on the installation, a provider network can use a VLAN on a shared
 trunk, a dedicated interface, or an existing OVS bridge.
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```mermaid
 flowchart LR
   accTitle: External provider network types
@@ -52,6 +61,10 @@ flowchart LR
   OVS --> OVN[OVN logical routers]
 ```
 
+</details>
+
+<PhysicalNetworkDiagram />
+
 The operator must ensure that every eligible node receives the expected VLANs
 or routed segments. Kube-OVN and OVS own the logical attachment; do not assume a
 Linux VLAN subinterface with a particular name will exist.
@@ -60,6 +73,9 @@ Linux VLAN subinterface with a particular name will exist.
 
 The management VPC hosts platform networking. Each Project receives a separate
 VPC and workload subnet.
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```mermaid
 flowchart TB
@@ -81,6 +97,10 @@ flowchart TB
   Router -->|default EIp and SNAT| Cloud
   Router -.->|optional public EIp, FIp, or Service| Public
 ```
+
+</details>
+
+<OvnLogicalNetworkDiagram />
 
 The Project's `spec.cidrBlock` is required input supplied by the creator or UI;
 the controller does not allocate it from an external-network CIDR. The Project's
@@ -236,6 +256,9 @@ Envoy Gateway provides hostname-based HTTP, HTTPS, gRPC, and supported TLS
 routing for Services. Fleet and the chart own the Gateway, listener addresses,
 routes for platform services, and certificate configuration.
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```mermaid
 flowchart LR
   accTitle: Envoy Gateway request flow
@@ -245,6 +268,10 @@ flowchart LR
   Route --> Service[Kubernetes Service]
   Service --> Workload[Project workload]
 ```
+
+</details>
+
+<EnvoyGatewayDiagram />
 
 A Service can request a generated route through Kube-DC's supported annotations,
 including `service.nlb.kube-dc.com/expose-route` and an optional custom route

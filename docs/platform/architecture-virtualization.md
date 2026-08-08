@@ -1,8 +1,13 @@
+import {VirtualizationResourceDiagram} from '@site/src/components/Diagram/ResourceModelDiagrams';
+
 # Virtualization Architecture
 
 Kube-DC runs virtual machines on the same Kubernetes platform as container workloads. KubeVirt provides the VM lifecycle, CDI manages disk images and DataVolumes, and Kube-OVN connects each VM to its Project network.
 
 ## Resource Model
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```mermaid
 graph TD
@@ -23,6 +28,10 @@ graph TD
     KV[KubeVirt controllers] --> VM
     KV --> VMI
 ```
+
+</details>
+
+<VirtualizationResourceDiagram />
 
 The important boundaries are:
 

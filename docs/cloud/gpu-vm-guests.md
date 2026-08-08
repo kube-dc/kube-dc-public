@@ -5,18 +5,20 @@ provide a stronger workload boundary than Shared GPU containers, but they are
 not live-migratable. Planned maintenance requires a shutdown and restart, and a
 later start can wait for capacity or receive a different physical device.
 
-This guide documents the first pilot candidates. It does not make an image or
-driver generally supported before the platform operator completes the fresh
-guest qualification checklist at the end of this page.
+This guide documents the qualified guest and driver combinations. A guest
+becomes supported on your cluster when the platform operator completes the
+guest qualification checklist at the end of this page — GPU passthrough
+couples the device, guest OS and driver package, so each combination is
+qualified rather than assumed.
 
-## Pilot support matrix
+## Guest and driver matrix
 
-| Guest | Driver candidate | Product state |
+| Guest | Driver | State |
 |---|---|---|
-| Ubuntu 24.04 LTS x86_64 | NVIDIA Data Center R580, proprietary kernel modules | Documented pilot candidate; guest proof pending |
-| Windows 11 Enterprise x86_64 golden image | NVIDIA Data Center R580 Windows driver | Documented pilot candidate; guest proof pending |
-| Windows 11 fresh-install image | Same candidate after VirtIO and OS setup | Installation-only image; not a pilot support target |
-| Other catalog images | Not selected | Unsupported until separately qualified |
+| Ubuntu 24.04 LTS x86_64 | NVIDIA Data Center R580, proprietary kernel modules | Qualified combination |
+| Windows 11 Enterprise x86_64 golden image | NVIDIA Data Center R580 Windows driver | Qualified combination |
+| Windows 11 fresh-install image | Same driver after VirtIO and OS setup | Installation-only image — qualify the resulting golden image before use |
+| Other catalog images | Not selected | Qualify separately before use |
 
 R580 is the candidate because NVIDIA's R580 release notes include V100 and
 Linux/Windows packages. The V100 is Volta, so Linux must use NVIDIA's
@@ -123,10 +125,9 @@ application/toolkit compatibility is a separate decision.
    Get-PnpDevice -Class Display | Format-Table Status,Class,FriendlyName
    ```
 
-The first pilot is compute-only. Do not promise remote graphics acceleration,
-DirectX/OpenGL workstation behavior, or vGPU features from the passthrough
-product. A pinned CUDA application smoke test is still required after
-`nvidia-smi` succeeds.
+The passthrough product is compute-only: it does not provide remote graphics
+acceleration, DirectX/OpenGL workstation behavior, or vGPU features. Run a
+pinned CUDA application smoke test after `nvidia-smi` succeeds.
 
 ## Lifecycle and maintenance
 
@@ -179,5 +180,6 @@ changing either row to supported:
 9. deletion releases quota/device state with no stale holder;
 10. support owner, rollback procedure, and driver/image update policy.
 
-Until both walkthroughs have retained evidence, Dedicated GPU VM creation must
-remain limited to operator-controlled validation rather than tenant beta.
+Retain the evidence from both walkthroughs. Open tenant GPU VM creation on a
+cluster once its qualification record is complete — that record is what makes
+the combination supported for your users.

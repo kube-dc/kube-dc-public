@@ -1,3 +1,5 @@
+import {CloudResourceModelDiagram} from '@site/src/components/Diagram/ResourceModelDiagrams';
+
 # What is Kube-DC?
 
 **Kube-DC** is an open-source, Kubernetes-native cloud platform that delivers multi-tenant compute, networking, storage, and data services on shared infrastructure. It gives Organizations one consistent API and web console for governed **Projects**, virtual machines, Managed Clusters, databases, and the cloud resources around them.
@@ -18,6 +20,9 @@
 
 Kube-DC organizes everything in two levels:
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```text
 Organization                 ← identity, members, billing
 └── Project                  ← workload boundary + RBAC + VPC + quota + kubeconfig
@@ -25,6 +30,10 @@ Organization                 ← identity, members, billing
     └── Managed Cluster      ← your own Kubernetes, when you need cluster scope
         └── Cluster workloads
 ```
+
+</details>
+
+<CloudResourceModelDiagram />
 
 An **Organization** is the account boundary: it owns an organization-scoped identity realm (SSO), membership and billing.
 

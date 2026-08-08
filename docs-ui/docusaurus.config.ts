@@ -1,6 +1,7 @@
 import { themes as prismThemes } from 'prism-react-renderer';
 import type { Config } from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
+import stripGithubOnly from './src/remark/stripGithubOnly';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
@@ -27,7 +28,6 @@ const config: Config = {
   onBrokenAnchors: 'throw',
 
   markdown: {
-    mermaid: true,
     hooks: {
       onBrokenMarkdownLinks: 'throw',
     },
@@ -40,11 +40,10 @@ const config: Config = {
 
   clientModules: [
     require.resolve('./src/clientModules/retinaImages.ts'),
-    require.resolve('./src/clientModules/diagramComparison.ts'),
+    require.resolve('./src/clientModules/diagramViewport.ts'),
   ],
 
   themes: [
-    '@docusaurus/theme-mermaid',
     [
       require.resolve('@easyops-cn/docusaurus-search-local'),
       {
@@ -79,6 +78,7 @@ const config: Config = {
           path: '../docs/cloud',
           routeBasePath: '/cloud',
           sidebarPath: './sidebarsCloud.ts',
+          beforeDefaultRemarkPlugins: [stripGithubOnly],
           editUrl: ({docPath}) => 'https://github.com/kube-dc/kube-dc-public/edit/main/docs/cloud/' + docPath,
         },
         blog: false,
@@ -138,6 +138,7 @@ const config: Config = {
         path: '../docs/platform',
         routeBasePath: '/platform',
         sidebarPath: './sidebarsPlatform.ts',
+        beforeDefaultRemarkPlugins: [stripGithubOnly],
         editUrl: ({docPath}) => 'https://github.com/kube-dc/kube-dc-public/edit/main/docs/platform/' + docPath,
       },
     ],
@@ -239,7 +240,11 @@ const config: Config = {
             const files = fs.readdirSync(dir).filter((f: string) => f.endsWith('.md')).sort();
             for (const file of files) {
               const source = fs.readFileSync(path.join(dir, file), 'utf-8');
-              const document = parseDocument(source);
+              const websiteSource = source.replace(
+                /<details\s+data-github-only>\s*<summary>[\s\S]*?<\/summary>[\s\S]*?<\/details>/g,
+                '',
+              );
+              const document = parseDocument(websiteSource);
               const slug = file.replace('.md', '');
               const url = `${siteUrl}${routeBase}/${slug === 'index' ? '' : slug}`;
               const title = document.title || slug;
@@ -397,18 +402,6 @@ const config: Config = {
       theme: prismThemes.github,
       darkTheme: prismThemes.dracula,
       additionalLanguages: ['bash', 'yaml', 'json', 'typescript', 'go'],
-    },
-    mermaid: {
-      theme: { light: 'default', dark: 'dark' },
-      options: {
-        themeVariables: {
-          primaryColor: '#e3f2fd',
-          primaryTextColor: '#151515',
-          primaryBorderColor: '#1976d2',
-          lineColor: '#1976d2',
-          fontSize: '16px',
-        },
-      },
     },
   } satisfies Preset.ThemeConfig,
 };

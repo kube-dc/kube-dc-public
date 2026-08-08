@@ -1,3 +1,8 @@
+import {
+  BillingPlanControllerDiagram,
+  SubscriptionLifecycleDiagram,
+} from '@site/src/components/Diagram/PlatformTopologyDiagrams';
+
 # Billing Plans & Resource Quota Configuration
 
 This guide explains how to configure billing plans, resource quotas, and EIP limits for Kube-DC organizations using the `billing-plans` ConfigMap.
@@ -44,6 +49,9 @@ kubectl annotate organization/<org-name> -n <org-namespace> \
 
 ### How It Works
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
 billing-plans ConfigMap (kube-dc namespace)
         │
@@ -61,6 +69,10 @@ Organization Controller (watches ConfigMap for changes)
         └─► CephObjectStoreUser (rook-ceph namespace)
                 └─► S3 storage quota enforced server-side by Ceph RGW
 ```
+
+</details>
+
+<BillingPlanControllerDiagram />
 
 When a billing plan is assigned to an organization (via annotations), the controller:
 
@@ -757,6 +769,9 @@ kubectl logs deployment/kube-dc-manager -n kube-dc | grep -i "billing-plans\|pla
 
 Organizations transition through the following subscription states:
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
 checkout.session.completed
         │
@@ -778,6 +793,10 @@ checkout.session.completed
     │  active  │                           │  active  │
     └──────────┘                           └──────────┘
 ```
+
+</details>
+
+<SubscriptionLifecycleDiagram />
 
 ### State Details
 

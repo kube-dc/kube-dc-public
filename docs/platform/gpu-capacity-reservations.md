@@ -11,9 +11,9 @@ GPU quota and GPU reservation are different products in kube-dc:
 The normal **Manage add-ons** action does not create a capacity reservation.
 Do not promise guaranteed capacity from an add-on assignment alone.
 
-## Pilot decision
+## Reservation model
 
-The MVP may offer manual, fungible whole-device reservations only. It does not
+Reservations are manual and fungible whole-device allocations. They do not
 promise a particular PCI address, device UUID, or host. The guarantee is that
 the named organization can consume the reserved number of healthy devices from
 the named profile pool, subject to an announced maintenance or hardware-failure
@@ -47,7 +47,7 @@ dedicated entitlement is oversold, a reservation cannot be guaranteed even
 when the pool is idle at assignment time.
 
 The initial operator spare is one device for pools larger than one device, and
-zero only for an explicitly approved single-device pilot. Product and SRE must
+zero only for an explicitly approved single-device pool. Product and SRE must
 approve any smaller spare and record the resulting maintenance availability.
 
 ## Required ledger record
@@ -156,7 +156,7 @@ ledger/HRQ state agree.
 
 ## Release and cancellation
 
-1. Close new VM creation for the affected pilot pool and set the ledger state
+1. Close new VM creation for the affected pool and set the ledger state
    to `releasing`.
 2. Identify every Pod/VMI holder attributed to the organization/profile. Ask
    the owner to stop the VM normally. Never rebind or delete a running holder

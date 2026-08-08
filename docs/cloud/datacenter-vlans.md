@@ -1,3 +1,6 @@
+import {VlanAllocationDiagram} from '@site/src/components/Diagram/CloudFlowDiagrams';
+import {VlanWorkloadTopologyDiagram} from '@site/src/components/Diagram/CloudTopologyDiagrams';
+
 # Datacenter VLANs
 
 A datacenter VLAN puts your workloads **directly on a physical network segment**
@@ -18,6 +21,9 @@ Your platform administrator allocates a VLAN to your **organization**. From then
 on you decide, without raising a ticket, which of your **Projects** uses it — and
 you can change your mind later.
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
     Platform administrator                You (organization admin)
     ─────────────────────                 ────────────────────────
@@ -28,7 +34,14 @@ you can change your mind later.
                                           unassign → assign to "staging"
 ```
 
+</details>
+
+<VlanAllocationDiagram />
+
 A workload in that Project then gets a **second network interface**:
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -51,6 +64,10 @@ A workload in that Project then gets a **second network interface**:
         │  Your appliance      192.0.2.11   │
         └───────────────────────────────────┘
 ```
+
+</details>
+
+<VlanWorkloadTopologyDiagram />
 
 **Your default route does not move.** Internet access, DNS and everything else
 keep working exactly as before, over the VPC interface. The VLAN interface

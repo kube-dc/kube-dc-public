@@ -1,3 +1,5 @@
+import {InternalEndpointDiagram} from '@site/src/components/Diagram/PlatformTopologyDiagrams';
+
 # Internal Platform Endpoints
 
 Project Pods in a Kube-DC cluster need to reach the platform's own public hostnames — `kube-api.<DOMAIN>`, `login.<DOMAIN>` (Keycloak), `console.<DOMAIN>` (UI), `backend.<DOMAIN>` (kube-dc API), `billing.<DOMAIN>`. On some cluster topologies that path works "naturally" through the cluster's public IP. On others, the same packet black-holes at the upstream NAT box. **Internal Platform Endpoints** is the optional Kube-DC feature that provides a cluster-internal path to those hostnames regardless of upstream topology.
@@ -117,6 +119,9 @@ The feature uses one architectural pattern, **Fork E** in the engineering record
 
 ### The Fork E pattern
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                          ext-cloud subnet                               │
@@ -139,6 +144,10 @@ The feature uses one architectural pattern, **Fork E** in the engineering record
 │   Backend (kube-apiserver on :6443 OR Envoy on :443)                    │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
+
+<InternalEndpointDiagram />
 
 `kube-dc-manager` probes each control-plane node's `InternalIP` directly:
 - For `kubeAPI`: `GET https://<nodeIP>:6443/readyz` — apiserver is alive if it returns any non-5xx.

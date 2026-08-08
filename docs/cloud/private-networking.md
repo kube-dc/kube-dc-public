@@ -1,3 +1,6 @@
+import {OutboundTrafficDiagram} from '@site/src/components/Diagram/CloudFlowDiagrams';
+import {ProjectPrivateNetworkDiagram} from '@site/src/components/Diagram/CloudTopologyDiagrams';
+
 # VPC & Private Networking
 
 Every Kube-DC Project gets its own Virtual Private Cloud (VPC) powered by [Kube-OVN](https://kubeovn.github.io/docs/). Private addresses are not routed between Projects by default; cross-Project connectivity requires explicit exposure or an operator-approved routing change.
@@ -12,6 +15,9 @@ When a project is created, Kube-DC automatically provisions:
 2. **A default subnet** — private IP range (e.g., `10.0.0.0/24`)
 3. **A VPC router** — handles routing between the subnet and external networks
 4. **A default gateway EIP** — provides outbound NAT when platform egress policy and upstream networking allow it
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -36,6 +42,10 @@ When a project is created, Kube-DC automatically provisions:
 │  └─────────────────────────────────┘                │
 └─────────────────────────────────────────────────────┘
 ```
+
+</details>
+
+<ProjectPrivateNetworkDiagram />
 
 ---
 
@@ -101,9 +111,16 @@ This selects the default VPC network owned by that Project.
 
 VMs and pods send internet-bound traffic through the Project's default gateway EIP when egress is allowed:
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
 Pod (10.0.0.20)  →  VPC Router  →  SNAT to EIP  →  Internet
 ```
+
+</details>
+
+<OutboundTrafficDiagram />
 
 The VPC router performs **Source NAT (SNAT)** — it rewrites the source IP of outgoing packets from the private subnet IP to the project's gateway EIP. Return traffic is automatically routed back.
 

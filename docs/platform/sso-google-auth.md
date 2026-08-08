@@ -1,3 +1,8 @@
+import {
+  SsoArchitectureDiagram,
+  SsoUserJourneyDiagram,
+} from '@site/src/components/Diagram/PlatformTopologyDiagrams';
+
 # Google SSO Authentication Setup
 
 This guide explains how to enable Google OAuth authentication for Kube-DC using a central SSO Keycloak realm.
@@ -13,6 +18,9 @@ Kube-DC supports Google OAuth authentication via a central `sso` Keycloak realm 
 - **Feature flag** - Enable/disable per deployment
 
 ## Architecture
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -40,7 +48,14 @@ Kube-DC supports Google OAuth authentication via a central `sso` Keycloak realm 
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
+<SsoArchitectureDiagram />
+
 ## User Journey
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -90,6 +105,10 @@ Kube-DC supports Google OAuth authentication via a central `sso` Keycloak realm 
 │                     └────────────────────┘         └─────────────┘          │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
+
+<SsoUserJourneyDiagram />
 
 ## Prerequisites
 

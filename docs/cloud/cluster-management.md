@@ -1,3 +1,8 @@
+import {
+  ManagedClusterLoadBalancerDiagram,
+  ManagedClusterStorageDiagram,
+} from '@site/src/components/Diagram/CloudFlowDiagrams';
+
 # Manage a Managed Cluster
 
 Once your Managed Cluster is running, you can deploy workloads, expose Services, use persistent storage, scale worker pools, and manage its lifecycle.
@@ -24,6 +29,9 @@ When you create a `Service` of type `LoadBalancer` inside your Managed Cluster, 
 
 ### How LoadBalancer Services Work
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
 ┌──── Managed Cluster ────┐        ┌──── Platform Cluster ─────────────┐
 │  Cluster: dev           │        │  Project: production              │
@@ -32,6 +40,10 @@ When you create a `Service` of type `LoadBalancer` inside your Managed Cluster, 
 │                         │        │  Service + external IP            │
 └─────────────────────────┘        └───────────────────────────────────┘
 ```
+
+</details>
+
+<ManagedClusterLoadBalancerDiagram />
 
 1. You create a `Service` of type `LoadBalancer` in the Managed Cluster
 2. The per-cluster CCM in the Project's backing namespace watches the Managed Cluster Service
@@ -210,6 +222,9 @@ For a KubeVirt-backed Managed Cluster with KubeVirt CSI enabled, the node driver
 
 ### How KubeVirt CSI Works
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
 ┌──── Managed Cluster ────┐        ┌──── Platform Cluster ─────────────┐
 │                         │        │  Project: production              │
@@ -218,6 +233,10 @@ For a KubeVirt-backed Managed Cluster with KubeVirt CSI enabled, the node driver
 │                         │        │  (hotplugged to worker VM)        │
 └─────────────────────────┘        └───────────────────────────────────┘
 ```
+
+</details>
+
+<ManagedClusterStorageDiagram />
 
 1. You create a PVC in the Managed Cluster using the `kubevirt` StorageClass
 2. The infrastructure-side CSI controller in the Project's backing namespace creates a DataVolume on the platform cluster

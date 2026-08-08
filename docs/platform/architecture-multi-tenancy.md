@@ -1,3 +1,5 @@
+import {IdentityTenancyDiagram} from '@site/src/components/Diagram/ResourceModelDiagrams';
+
 # Multi-Tenancy and Access Control
 
 Kube-DC presents three product concepts to users: **Organizations**, **Projects**,
@@ -6,6 +8,9 @@ resources implement those concepts; they are not separate products that users
 must assemble themselves.
 
 ## Product model
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```mermaid
 flowchart TB
@@ -23,6 +28,10 @@ flowchart TB
   ProjectA --> WorkloadsA[VMs, Pods, databases, and Managed Clusters]
   ProjectB --> WorkloadsB[VMs, Pods, databases, and Managed Clusters]
 ```
+
+</details>
+
+<IdentityTenancyDiagram />
 
 | Product concept | Purpose | Kubernetes implementation |
 |---|---|---|

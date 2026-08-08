@@ -1,3 +1,5 @@
+import {ImageCatalogDiagram} from '@site/src/components/Diagram/PlatformTopologyDiagrams';
+
 # Managing OS Images in Kube-DC
 
 This guide is for **cluster operators**. It explains how Kube-DC's
@@ -29,6 +31,9 @@ dropdown, choosing OS+version when creating a VM), see
   health.
 
 ## Architecture
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```
 ┌────────────────────────┐
@@ -73,6 +78,10 @@ dropdown, choosing OS+version when creating a VM), see
                                   │ + Version dropdown       │
                                   └──────────────────────────┘
 ```
+
+</details>
+
+<ImageCatalogDiagram />
 
 ## Bucket layout (v2)
 

@@ -1,3 +1,5 @@
+import {TenantVlanLifecycleDiagram} from '@site/src/components/Diagram/PlatformFlowDiagrams';
+
 # Attaching a Project to a physical VLAN
 
 Kube-DC can put a Project's workloads on a customer-owned physical VLAN, so they
@@ -13,6 +15,9 @@ There are two things to operate here, and keeping them apart is the whole point:
   **Organization**. An Organization admin then binds it to one of their **Projects**,
   and can unassign and re-bind it without involving you.
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
    FabricSegment          FabricSegmentAllocation        ProjectNetwork
    (the wire)             (which Organization may use it)         (which Project holds it)
@@ -20,6 +25,10 @@ There are two things to operate here, and keeping them apart is the whole point:
    platform admin    ──►  platform admin            ──►  ORGANIZATION ADMIN
    pn-ext-4014            org: acme                      project: production
 ```
+
+</details>
+
+<TenantVlanLifecycleDiagram />
 
 The user-facing half of this is documented in
 [Datacenter VLANs](/cloud/datacenter-vlans) in the Cloud guide. For where this

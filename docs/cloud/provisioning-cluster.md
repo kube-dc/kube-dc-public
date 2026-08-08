@@ -1,3 +1,5 @@
+import {ManagedClusterTopologyDiagram} from '@site/src/components/Diagram/CloudTopologyDiagrams';
+
 # Provision a Managed Cluster
 
 A **Managed Cluster** is a Kubernetes cluster with its own API, control plane, worker nodes, and networking. Kube-DC keeps its infrastructure resources in the owning Project's backing namespace (`{organization}-{project}`), while you administer cluster workloads through a separate Managed Cluster kubeconfig.
@@ -13,6 +15,9 @@ When you create a Managed Cluster, Kube-DC orchestrates several components:
 - **Cluster add-ons** — Cilium CNI, CoreDNS, and a provider-compatible CSI driver are deployed automatically via [Sveltos](https://projectsveltos.github.io/sveltos/).
 
 The diagram below shows a KubeVirt-backed example for Project `production`, whose backing namespace is `acme-production`.
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```
 ┌───────────────────── Management cluster ───────────────────────────┐
@@ -38,6 +43,10 @@ The diagram below shows a KubeVirt-backed example for Project `production`, whos
 │  Your workloads: Deployments, Services, PVCs                      │
 └───────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
+
+<ManagedClusterTopologyDiagram />
 
 ## Prerequisites
 

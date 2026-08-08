@@ -1,3 +1,6 @@
+import {Metal3RemediationDiagram} from '@site/src/components/Diagram/PlatformFlowDiagrams';
+import {Metal3TopologyDiagram} from '@site/src/components/Diagram/PlatformTopologyDiagrams';
+
 # Metal3 Bare-Metal Worker Nodes
 
 This guide covers a qualified bare-metal worker workflow for the Kube-DC
@@ -7,6 +10,9 @@ erase or reprovision enrolled hosts. Validate hardware support, network
 reachability, image compatibility, and rollback in a non-production pool first.
 
 ## Architecture
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -54,6 +60,10 @@ Network Connectivity:
   Public provider net ─── Eligible nodes only when ext-public is configured
   BMC network ─────────── Metal3/Ironic services → host BMCs
 ```
+
+</details>
+
+<Metal3TopologyDiagram />
 
 ### How It Works
 
@@ -711,6 +721,9 @@ kubectl apply -f machinehealthcheck.yaml
 
 When a worker node becomes unhealthy:
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
 1. MachineHealthCheck detects unhealthy condition (Ready=Unknown for 5 min)
          │
@@ -732,6 +745,10 @@ When a worker node becomes unhealthy:
    Inspect the Machine and Metal3Remediation status before choosing a reviewed
    reprovision or replacement workflow; do not assume automatic replacement.
 ```
+
+</details>
+
+<Metal3RemediationDiagram />
 
 ### 6.4 Monitor Health Checks
 

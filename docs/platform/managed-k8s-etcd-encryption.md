@@ -1,3 +1,5 @@
+import {EtcdEncryptionDiagram} from '@site/src/components/Diagram/PlatformTopologyDiagrams';
+
 # Managed Cluster etcd Encryption at Rest
 
 How `KdcCluster` resources enable encryption at rest for a Managed Cluster's
@@ -75,6 +77,9 @@ run **without** encryption. There is no silent fallback.
 
 ## Architecture
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
 ┌────────────────────────────────────────────────────────────────┐
 │  Kamaji TenantControlPlane pod (one per KdcCluster)            │
@@ -95,6 +100,10 @@ run **without** encryption. There is no silent fallback.
 │   └────────────────┘                  └──────────────────┘     │
 └────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
+
+<EtcdEncryptionDiagram />
 
 Two binaries the platform ships:
 

@@ -1,3 +1,5 @@
+import {OsImageOperationsDiagram} from '@site/src/components/Diagram/PlatformTopologyDiagrams';
+
 # OS-image operations — canonical operator guide
 
 This is the **single entry point** for operating the Kube-DC OS-image platform:
@@ -6,6 +8,9 @@ containerdisk registry, the Admin **OS Images** page, and the Windows lifecycle.
 Component READMEs link here; when procedures conflict, this page wins.
 
 ## Architecture at a glance
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```
 upstream cloud images ──► cdi-os-mirror CronJob (weekly) ──► s3://<s3-host>/cdi-os-images
@@ -21,6 +26,10 @@ upstream cloud images ──► cdi-os-mirror CronJob (weekly) ──► s3://<s
                           ▼
               per-project seeder (manager, 15m resync) ──► instant clone / live migration
 ```
+
+</details>
+
+<OsImageOperationsDiagram />
 
 | Piece | Where | Doc |
 |---|---|---|

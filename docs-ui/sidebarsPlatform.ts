@@ -8,6 +8,7 @@ const sidebars: SidebarsConfig = {
       label: 'Installation',
       collapsed: false,
       items: [
+        'quickstart',
         'installation-overview',
         'installation-guide',
       ],

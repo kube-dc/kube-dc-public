@@ -1,3 +1,11 @@
+import {
+  ControllerNetworkFlowDiagram,
+  ControllerSecurityFlowDiagram,
+  ControllerTopologyDiagram,
+  PlatformEndpointFlowDiagram,
+  ProjectLifecycleDiagram,
+} from '@site/src/components/Diagram/ControllerDiagrams';
+
 # Controller Architecture
 
 This page shows how Kube-DC controllers turn platform custom resources into
@@ -6,6 +14,9 @@ view: resource names and component responsibilities are shown, but source-code
 paths and implementation details are intentionally omitted.
 
 ## High-Level Topology
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```mermaid
 flowchart TB
@@ -70,6 +81,10 @@ flowchart TB
   class Keycloak,OpenBao,KubeOVN,KubeVirt,Gateway,Observability platform;
 ```
 
+</details>
+
+<ControllerTopologyDiagram />
+
 ## Controller Groups
 
 | Controller group | Watches | Main responsibility |
@@ -81,6 +96,9 @@ flowchart TB
 | Status aggregation | Project security and platform state | Roll child-resource readiness into higher-level Project and Organization status so operators and UI users see one clear state. |
 
 ## Project Lifecycle
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```mermaid
 sequenceDiagram
@@ -115,7 +133,14 @@ sequenceDiagram
   Product->>API: Create Project RoleBindings
 ```
 
+</details>
+
+<ProjectLifecycleDiagram />
+
 ## Network Flow
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```mermaid
 flowchart LR
@@ -156,6 +181,10 @@ flowchart LR
   Public --> DNAT --> Workload
 ```
 
+</details>
+
+<ControllerNetworkFlowDiagram />
+
 Kube-DC has two address concepts:
 
 - **EIp** is the allocated external address object. It can back a Project
@@ -168,6 +197,9 @@ The controller keeps ownership and status on the Kube-DC resources while
 Kube-OVN owns the low-level routing, NAT, and load-balancer programming.
 
 ## Security Flow
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```mermaid
 flowchart TB
@@ -213,12 +245,19 @@ flowchart TB
   DBPolicyCtl --> StatusCtl
 ```
 
+</details>
+
+<ControllerSecurityFlowDiagram />
+
 Security controllers validate and reconcile Project-scoped requests while
 keeping backend credentials and privileged operations in platform service
 accounts. Ready conditions on child resources are aggregated so the Project
 status can show whether its security dependencies are usable.
 
 ## Platform Endpoint Flow
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```mermaid
 flowchart LR
@@ -249,6 +288,10 @@ flowchart LR
   Slice --> Service
   Client --> DNS --> VIP --> Service
 ```
+
+</details>
+
+<PlatformEndpointFlowDiagram />
 
 The chart and Fleet configuration own the MetalLB pool, advertisement,
 LoadBalancer Service, Gateway resources, routes, and certificates. The

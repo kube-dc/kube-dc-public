@@ -1,3 +1,7 @@
+import ProductModelDiagram from '@site/src/components/Diagram/ProductModelDiagram';
+import ManagementPlaneDiagram from '@site/src/components/Diagram/ManagementPlaneDiagram';
+import ArchitecturalLayersDiagram from '@site/src/components/Diagram/ArchitecturalLayersDiagram';
+
 # Architecture Overview
 
 Kube-DC turns one Kubernetes management cluster into a multi-tenant platform
@@ -7,6 +11,9 @@ controllers translate those product objects into Kubernetes, identity,
 networking, storage, and observability resources.
 
 ## Start with the product model
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```mermaid
 flowchart TB
@@ -25,6 +32,13 @@ flowchart TB
   ProjectA --> Managed[Managed Cluster]
 ```
 
+</details>
+
+The product model uses an art-directed layout, PatternFly-aligned styling,
+responsive scrolling, and a print-safe light theme.
+
+<ProductModelDiagram />
+
 - An **Organization** is the tenant boundary for identity, membership, billing,
   shared quota, and policy.
 - A **Project** is the governed workload boundary inside an Organization. Its
@@ -35,6 +49,9 @@ flowchart TB
   only a Project or backing namespace.
 
 ## Management plane
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```mermaid
 flowchart LR
@@ -57,30 +74,48 @@ flowchart LR
   Flux --> Management
 ```
 
+</details>
+
+This diagram preserves the established relationships while making
+the two control loops explicit. Local, repository-approved SVG icons identify
+the access surfaces and management services without becoming the primary
+carrier of meaning.
+
+<ManagementPlaneDiagram />
+
 Flux continuously reconciles installation configuration from the Fleet
 repository. Kube-DC controllers continuously reconcile product resources such
 as Organizations, Projects, External IP (`EIp`) resources, and Managed
 Clusters. These are different control loops: Flux installs and configures the
 platform, while the controllers operate Organization and Project resources.
 
-<details>
-<summary>View the architectural layers diagram</summary>
-
 This layered view connects the access surface, Organization and Project
 governance, workload capabilities, management-cluster foundation, and
 underlying infrastructure. Managed Clusters retain their own API,
 authorization, and CNI boundaries.
 
-<figure className="diagram-comparison" data-diagram="architectural-layers" tabIndex="0" aria-label="Scrollable architectural layers diagram">
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
-![Kube-DC architectural layers from users and access surfaces through Organization and Project governance, workload capabilities, the management cluster, and physical or cloud infrastructure.](images/architectural-layers.svg)
-
-  <figcaption>Architectural layers and the boundaries between platform governance, Project workloads, and Managed Clusters.</figcaption>
-</figure>
-
-[Open the full-size SVG for zooming or printing.](images/architectural-layers.svg)
+```mermaid
+flowchart TB
+  accTitle: Kube-DC architectural layers
+  accDescr: Users reach platform APIs, controllers reconcile governance and platform integrations, Projects govern workload capabilities, and all platform services run on the Kubernetes management cluster and underlying infrastructure.
+  Users[Users and operators] --> Surfaces[Console · admin console · CLI] --> APIs[Kubernetes and backend APIs]
+  APIs --> Controllers[Kube-DC controllers]
+  Controllers -.-> Governance[Organizations · Projects · RBAC · VPC]
+  Controllers -.-> Integrations[Identity · security · observability]
+  Controllers -.-> Capabilities[Networking · compute · data services]
+  Governance --> Workloads[Project workloads]
+  Governance --> Managed[Managed Clusters<br/>separate API · authorization · CNI]
+  Capabilities --> Management[Kubernetes management cluster]
+  Management --> Infrastructure[Physical or cloud infrastructure]
+  Fleet[Fleet repository · Flux] -.-> Management
+```
 
 </details>
+
+<ArchitecturalLayersDiagram />
 
 ## Main subsystems
 

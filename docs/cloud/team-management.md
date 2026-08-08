@@ -1,3 +1,6 @@
+import {TeamAuthenticationDiagram} from '@site/src/components/Diagram/CloudFlowDiagrams';
+import {OrganizationGroupLifecycleDiagram} from '@site/src/components/Diagram/CloudTopologyDiagrams';
+
 # User and Group Management
 
 Kube-DC separates Organization administration from Project access. Organization Admins manage members and Organization Groups, while Project roles control what those groups can do in each Project. Custom roles cover narrower requirements.
@@ -11,6 +14,9 @@ Each Organization in Kube-DC has a **dedicated identity domain**:
 - **Separate Token Authentication** — Each realm has its own signing keys, token policies, and session management. Credentials and sessions are scoped to their issuing organization.
 - **Kubernetes RBAC Integration** — JWT group claims are mapped to Kubernetes RoleBindings automatically. Access is enforced at the API server level, independent of the UI layer.
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
 User authenticates  →  Organization Realm (OIDC)  →  JWT with Organization groups
                                                            ↓
@@ -18,6 +24,10 @@ User authenticates  →  Organization Realm (OIDC)  →  JWT with Organization g
                                                            ↓
                                           RoleBindings grant Project access
 ```
+
+</details>
+
+<TeamAuthenticationDiagram />
 
 This model separates Organization identity and membership from Project workload access. Kubernetes RBAC is the authorization boundary; Project networking, quotas, and platform policy add workload isolation.
 
@@ -199,6 +209,9 @@ When this resource is created, Kube-DC automatically:
 
 ### Controller Lifecycle
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
 OrganizationGroup created
     ├── Keycloak group created in organization realm
@@ -213,6 +226,10 @@ OrganizationGroup deleted
     ├── Keycloak group removed
     └── All associated RoleBindings removed
 ```
+
+</details>
+
+<OrganizationGroupLifecycleDiagram />
 
 ## Custom Project Roles
 
@@ -315,5 +332,4 @@ spec:
 **Custom role not appearing in Organization Group editor**
 - The role must exist in the target Project's backing namespace before it can be referenced
 - Create the role with `kubectl apply` first, then reference it from the OrganizationGroup
-
 

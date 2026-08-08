@@ -1,8 +1,27 @@
+import ReferenceArchitectureDiagram from '@site/src/components/Diagram/ReferenceArchitectureDiagram';
+import {InstallationNetworkDiagram} from '@site/src/components/Diagram/ResourceModelDiagrams';
+
 # Installation Overview
 
 This page helps platform operators choose a supported topology and understand
-what the installer changes. Use the [Installation Guide](installation-guide.md)
-for commands and verification.
+what the installer changes. It names commands but contains **no copy-paste
+sequences** — once you have chosen,
+go to the [Quickstart](quickstart.md) to install, or the
+[Installation Guide](installation-guide.md) for the full option reference.
+
+:::info Which installation page do I need?
+Three pages, three jobs — read them in this order only if you need all three.
+
+| Page | Answers | Read it when |
+|---|---|---|
+| **[Quickstart](quickstart.md)** | *What do I type?* | You are installing for the first time. One linear path, one topology, one config file, a checkpoint per phase. |
+| **[Installation Overview](installation-overview.md)** | *What am I choosing, and what will it change?* | Before the quickstart, to pick a topology and understand the network model and what Flux installs. Concepts, not copy-paste. |
+| **[Installation Guide](installation-guide.md)** | *What are all the options, and what if it goes wrong?* | For alternative topologies, the manual RKE2 fallback, per-flag reference, day-2 migrations, and recovery. |
+
+All three describe the **same installer**. Where they overlap, the Quickstart is
+the tested happy path — it is verified against the real command tree on every
+build, so its commands and config keys cannot drift.
+:::
 
 ## Before you begin
 
@@ -37,6 +56,9 @@ change the requirements substantially.
 
 ## Network model
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```mermaid
 flowchart TB
   accTitle: Kube-DC installation network model
@@ -52,6 +74,10 @@ flowchart TB
   OVN --> Project --> Workloads
 ```
 
+</details>
+
+<InstallationNetworkDiagram />
+
 - The **management network** connects nodes and carries Kubernetes control-plane
   traffic. Use stable node addresses and working routing.
 - `ext-cloud` is an optional private external provider network. It supplies
@@ -66,23 +92,32 @@ Provider networks may use VLANs on a shared physical trunk, dedicated
 interfaces, or topology-specific existing bridges. Kube-OVN and OVS program the
 attachment; do not assume Linux `bond0.<vlan>` interfaces are created.
 
-<details>
-<summary>View the reference architecture diagram</summary>
-
 This broader topology illustrates a common three-server RKE2 control-plane
 profile with separate workers. It is an example architecture, not a validated
 capacity plan or a universal deployment requirement.
 
-<figure className="diagram-comparison" data-diagram="reference-architecture" tabIndex="0" aria-label="Scrollable reference architecture diagram">
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
-![Illustrative Kube-DC reference architecture with operators and Flux, three RKE2 server nodes, a management network, separate workers, platform services, optional provider networks, Project networks, workloads, and distinct Managed Cluster control planes.](images/reference-architecture.svg)
-
-  <figcaption>Illustrative production topology; actual node count and capacity depend on enabled services and workloads.</figcaption>
-</figure>
-
-[Open the full-size SVG for zooming or printing.](images/reference-architecture.svg)
+```mermaid
+flowchart TB
+  accTitle: Illustrative Kube-DC reference architecture
+  accDescr: Three RKE2 servers form the control-plane and etcd quorum, a separate worker pool runs platform services, and those services connect provider networks to Project networks, workloads, and separate Managed Cluster control planes.
+  Operators[Operators and automation] --> Servers[Three RKE2 servers<br/>control plane + etcd]
+  Fleet[Fleet repository · Flux] -.-> Platform[Platform services]
+  Servers --> Network[Management network]
+  Network --> Workers[Separate RKE2 worker pool]
+  Workers --> Platform
+  Provider[Optional provider networks<br/>ext-cloud · ext-public] <--> Platform
+  Platform -.-> Projects[Project networks<br/>one VPC + subnet per Project]
+  Platform -.-> Managed[Managed Cluster control planes<br/>separate API · authorization · CNI]
+  Projects --> Workloads[Project workloads]
+  Projects --> Managed
+```
 
 </details>
+
+<ReferenceArchitectureDiagram />
 
 For NAT or routed environments where Project workloads cannot hairpin through
 the platform's public address, enable
@@ -138,26 +173,45 @@ of those resources.
 
 ### 4. Complete identity and security setup
 
-Run the version-matched post-install workflows for Keycloak OIDC and, when
+**Point the API servers at the OIDC webhook.** This is not optional and nothing
+reports that it was skipped. RKE2 starts with certificate-only authentication,
+because the authenticator does not exist until Flux brings it up — so until this
+runs, every Keycloak token is rejected and the cluster is unusable while looking
+completely healthy. One command wires every control-plane node
+(`kube-dc bootstrap oidc-cutover`); see
+[Installation Guide §3.5.1](installation-guide.md) for what it checks and why it
+refuses a partial run.
+
+Then run the version-matched post-install workflows for Keycloak OIDC and, when
 enabled, OpenBao. Commit generated encrypted configuration through the Fleet
 workflow. Configure DNS and certificate issuance for the hostnames users will
-open.
+open, and record the age key and OpenBao recovery shares somewhere independent of
+this cluster and its Git repository.
 
 ### 5. Verify before onboarding Organizations
 
-Confirm:
+`kube-dc bootstrap accept <cluster>` checks the machine-checkable part of this and
+distinguishes three states that are easy to confuse: **reconciling** (Flux has not settled), **converged**
+(components are up but something a user would hit is broken), and **usable**.
+Only the last is a candidate for finished — `usable` proves the WIRING (Flux
+settled, every apiserver calling the OIDC webhook, the console answering over a
+trusted certificate, tenancy installed). It does not authenticate a real token or
+check storage, so the human confirmations below still matter.
 
-- all management-cluster nodes are Ready;
-- Flux sources, Kustomizations, and HelmReleases are healthy;
-- platform hostnames respond with the expected TLS identity;
-- Keycloak login and platform-admin authorization work;
-- a test Organization and Project reach Ready;
+The distinction matters because *converged* is what every other signal reports.
+Do not infer health from every Pod being `Running` — completed Jobs and
+component-specific readiness conditions are valid states, and a cluster where
+nobody can log in has Running pods and a green Flux.
+
+Beyond what `accept` automates, confirm by hand the things only a human can:
+
+- a test Organization **and Project** reach Ready — an Organization alone gives a
+  tenant token no namespaces, so their login succeeds and creates no context;
 - the test Project has working DNS and the expected egress path;
 - enabled storage, backup, observability, and public exposure paths pass their
-  own checks.
-
-Do not infer health from every Pod being `Running`: completed Jobs and
-component-specific readiness conditions are valid states.
+  own checks;
+- the front door answers from the network your **users** are on, not only from
+  the workstation that installed it.
 
 ## Optional capabilities
 

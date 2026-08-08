@@ -1,9 +1,14 @@
+import {CloudResourceModelDiagram} from '@site/src/components/Diagram/ResourceModelDiagrams';
+
 # Platform Capabilities
 
 Kube-DC gives teams a governed place to run applications, virtual machines,
 databases, and Managed Clusters without exposing the platform cluster itself.
 
 The customer model is:
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```text
 Organization
@@ -13,6 +18,10 @@ Organization
     ├── Managed databases
     └── Managed Clusters
 ```
+
+</details>
+
+<CloudResourceModelDiagram />
 
 An **Organization** owns identity, billing, and shared quota. A **Project** is
 the day-to-day workload boundary. In Kubernetes, that Project is implemented as a

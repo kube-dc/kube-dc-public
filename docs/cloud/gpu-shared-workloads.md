@@ -6,9 +6,9 @@ the right choice when a job needs GPU acceleration but not a whole card — mode
 inference, notebooks, small training runs, batch scoring. You run it the same
 way you run any other workload: a Kubernetes manifest applied with `kubectl`.
 
-Shared GPU is a **preview capability**. Your operator enables it per project and
-grants a per-model entitlement (a GPU quota). If your project has no GPU quota,
-it is not enabled for you yet — ask your operator.
+Your operator enables Shared GPU per project and grants a per-model entitlement
+(a GPU quota). If your project has no GPU quota, it is not enabled for you yet —
+ask your operator.
 
 For a stronger isolation boundary — one whole physical GPU bound to one guest —
 use a [Dedicated GPU VM](gpu-vm-guests.md) instead. Shared GPU trades that
@@ -202,7 +202,8 @@ claim, and your project quota bounds how many slices you can hold at once.
 
 ## Limits and guarantees
 
-- Shared GPU is a **preview** capability, enabled per project by your operator.
+- Shared GPU is enabled per project by your operator, who grants the
+  entitlement for each GPU model.
 - The memory slice is a hard cap; the compute share is a cooperative target.
 - Quota is an entitlement; workloads queue when GPUs are busy.
 - For whole-device isolation or a workload that must not share silicon with

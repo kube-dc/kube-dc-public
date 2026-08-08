@@ -1,3 +1,5 @@
+import {MetalLbHaDiagram} from '@site/src/components/Diagram/PlatformTopologyDiagrams';
+
 # Deploy MetalLB HA for Envoy Gateway
 
 MetalLB provides a floating IP with automatic failover for the management cluster's Envoy Gateway ingress.
@@ -11,6 +13,9 @@ Without MetalLB, the Envoy Gateway service uses a static `externalIPs` configura
 - **Manual configuration** — IP must be hardcoded in the service spec
 
 ## Architecture
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```
                          Internet
@@ -32,6 +37,10 @@ Without MetalLB, the Envoy Gateway service uses a static `externalIPs` configura
                    Envoy Gateway Pod
                    (kube-proxy forwards)
 ```
+
+</details>
+
+<MetalLbHaDiagram />
 
 ### How It Works
 

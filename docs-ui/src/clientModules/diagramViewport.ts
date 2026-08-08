@@ -1,8 +1,7 @@
 /**
- * Center a readable, horizontally scrollable D2 diagram the first time its
- * temporary comparison disclosure opens. The full canvas remains reachable in
- * both directions, while the initial view shows the architectural center
- * instead of an empty ELK margin.
+ * Center a readable, horizontally scrollable diagram on first display. The
+ * full canvas remains reachable in both directions, while the initial narrow
+ * view shows the architectural center instead of an arbitrary left edge.
  */
 
 function center(figure: HTMLElement): void {
@@ -10,11 +9,13 @@ function center(figure: HTMLElement): void {
     return;
   }
   window.requestAnimationFrame(() => {
-    const overflow = figure.scrollWidth - figure.clientWidth;
+    const viewport = figure.querySelector<HTMLElement>('[data-diagram-scroll]')
+      ?? figure;
+    const overflow = viewport.scrollWidth - viewport.clientWidth;
     if (overflow <= 0) {
       return;
     }
-    figure.scrollLeft = Math.round(overflow / 2);
+    viewport.scrollLeft = Math.round(overflow / 2);
     figure.dataset.diagramCentered = 'true';
   });
 }
@@ -23,7 +24,9 @@ function wire(details: HTMLDetailsElement): void {
   if (details.dataset.diagramWired) {
     return;
   }
-  const figure = details.querySelector<HTMLElement>('figure.diagram-comparison');
+  const figure = details.querySelector<HTMLElement>(
+    'figure[data-diagram-explainer]',
+  );
   if (!figure) {
     return;
   }
@@ -47,4 +50,9 @@ function wire(details: HTMLDetailsElement): void {
 export function onRouteDidUpdate(): void {
   if (typeof document === 'undefined') return;
   document.querySelectorAll<HTMLDetailsElement>('article details').forEach(wire);
+  document
+    .querySelectorAll<HTMLElement>('article figure[data-diagram-explainer]')
+    .forEach((figure) => {
+      if (!figure.closest('details')) center(figure);
+    });
 }

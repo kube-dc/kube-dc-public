@@ -1,3 +1,5 @@
+import {ExternalNetworksDiagram} from '@site/src/components/Diagram/PlatformTopologyDiagrams';
+
 # Additional External Network Configuration
 
 This guide explains how to add additional external networks to Kube-DC alongside the default cloud network.
@@ -29,11 +31,18 @@ The configuration demonstrates how to add a second external network (public) to 
 
 ## Architecture
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
 Physical Interface (bond0)
 ├── VLAN 200 (Cloud Network) - 100.65.0.0/16 (ext-cloud)
 └── VLAN 300 (Public Network) - 192.0.2.0/28 (ext-public)
 ```
+
+</details>
+
+<ExternalNetworksDiagram />
 
 > **Routed / L3-only datacenters**: the external networks above are L2
 > segments (tagged or untagged — `EXT_NET_VLAN_ID=0` is supported when the

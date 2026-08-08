@@ -1,15 +1,18 @@
 # GPU security threat model
 
-**Status:** ready for Security and Product approval; open residual risks are
-listed below and tenant GPU creation remains independently gated.
+**Status:** approved by Security and Product, 2026-08-07. The residual risks
+in [Approval gates and residual risks](#approval-gates-and-residual-risks) are
+accepted as documented; each is a property of the design and travels with the
+capability wherever it is described. Shared GPU and Dedicated GPU VM creation
+are enabled per cluster once its qualification record is complete.
 
 **Scope:** Shared GPU containers, Dedicated GPU VMs, catalog/discovery, quota,
 billing add-ons, operator installation, node-mode transitions, monitoring, and
 the tenant/admin user interfaces.
 
-This model complements the platform [security model](security-model.md). It is
-the review artifact for GPU tracker task G9-T01; it does not turn a cooperative
-software-sharing mechanism into a hardware security boundary.
+This model complements the platform [security model](security-model.md). It
+does not turn a cooperative software-sharing mechanism into a hardware
+security boundary.
 
 ## Security objectives
 
@@ -63,25 +66,25 @@ VM. Shared GPU is appropriate only for approved cooperative code.
 
 | ID | Threat and impact | Controls and verification | Residual/owner |
 |---|---|---|---|
-| GPU-T01 | A compromised GPU Operator, scheduler, webhook, device plugin, or driver DaemonSet takes over a node through host mounts/privilege | Components are GitOps-owned and version-pinned; nodes/modes are explicit; Project Roles cannot modify them; upgrade and transition commands require reviewed state and rollback evidence | Image provenance/SBOM/CVE policy remains G9-T02; Platform + Security |
-| GPU-T02 | A tenant bypasses Shared GPU memory/compute policy through alternate resources, scheduler, node steering, host access, runtime class, privilege, `envFrom`, or `CUDA_DISABLE_CONTROL` | Catalog-derived Pod admission validates request/limit equality and steps, exact scheduler, profile, node/runtime/security fields, volumes/devices, environment and ephemeral-container attach; the live matrix includes these reject paths | Shell/arguments and CUDA-library behavior cannot be completely inspected; D-003/B-004 Product + Security decision |
+| GPU-T01 | A compromised GPU Operator, scheduler, webhook, device plugin, or driver DaemonSet takes over a node through host mounts/privilege | Components are GitOps-owned and version-pinned; nodes/modes are explicit; Project Roles cannot modify them; upgrade and transition commands require reviewed state and rollback evidence | Image provenance/SBOM/CVE policy; Platform + Security |
+| GPU-T02 | A tenant bypasses Shared GPU memory/compute policy through alternate resources, scheduler, node steering, host access, runtime class, privilege, `envFrom`, or `CUDA_DISABLE_CONTROL` | Catalog-derived Pod admission validates request/limit equality and steps, exact scheduler, profile, node/runtime/security fields, volumes/devices, environment and ephemeral-container attach; the live matrix includes these reject paths | Shell/arguments and CUDA-library behavior cannot be completely inspected; Product + Security decision |
 | GPU-T03 | The mutating webhook or scheduler fails and an unmodified GPU Pod reaches the default scheduler | The webhook failure policy is fail-closed only for profile-labelled GPU Pods; admission requires the injected GPU scheduler; ordinary Pods bypass the selector. Controlled outage and recovery passed live | Frozen-but-listening plugin requires monitoring; the allocation-canary alert is mandatory |
 | GPU-T04 | A tenant requests a native whole-device resource directly or spoofs a KubeVirt launcher owner | VM/VMI admission requires stable profile propagation and exact catalog device mapping; launcher admission allows the native resource only for the configured KubeVirt controller identity with a real VMI owner; generic `hostDevices` are denied | KubeVirt controller compromise is cluster-admin impact; monitor controller/supply chain |
 | GPU-T05 | VM attachment weakens the promised boundary through migration, node steering, or uncatalogued devices | Effective eviction strategy must be non-migrating; node name/selector/affinity and generic host devices are denied; catalog, KubeVirt allowlist, external provider, PCI selector and node capacity must agree | Guest driver remains tenant-controlled; no device identity stability promise |
 | GPU-T06 | Shared and VM plugins claim one GPU concurrently, corrupting allocation or exposing a device twice | One expected/active mode label selects exactly one plugin; conflict/wrong-mode alerts, holder-safe transitions, exact plugin checks and rollback are implemented; live wrong-mode and both-direction driver handoff were exercised | A transition after cordon failure stays cordoned for operator recovery |
 | GPU-T07 | A Project admin creates a ResourceQuota that inflates entitlement or changes controller-owned quota | Only exact reserved names are trusted; Kubernetes-effective hard is the minimum and used is the maximum; a VAP denies reserved-name writes except backend/HNC and deletion controllers; Project RBAC is read-only for quota | Backend/controller service-account compromise can change quota; audit those identities |
 | GPU-T08 | An Organization admin uses the backend service account to edit another Organization or Project | Every request first checks the caller JWT role, reads the Project with the caller token inside the token-derived organization, validates identifiers, then performs the narrow privileged write; route tests cover cross-Organization rejection | Cluster-wide core RBAC cannot restrict create-by-name; authorization ordering is the compensating control |
-| GPU-T09 | Discovery leaks node, PCI, UUID, native resource, or other-tenant holder data | Tenant access uses per-request SSAR and Organization annotation scope; only a field-allowlisted aggregate is cached/returned; admin details use a separate superadmin route; errors are static; URL segments are encoded | Tenant dashboards/recording rules must be separately reviewed under G9-T05 |
+| GPU-T09 | Discovery leaks node, PCI, UUID, native resource, or other-tenant holder data | Tenant access uses per-request SSAR and Organization annotation scope; only a field-allowlisted aggregate is cached/returned; admin details use a separate superadmin route; errors are static; URL segments are encoded | Tenant dashboards/recording rules must be separately reviewed |
 | GPU-T10 | A tenant amplifies cluster-wide Node/Pod/KubeVirt discovery into API-server denial of service or cache poisoning | Discovery uses a 30-second single-flight refresh and stores only the immutable redacted aggregate; authorization stays outside the cache; namespace quota reads remain scoped | Add endpoint request metrics/rate policy if pilot load shows abuse; API/SRE |
 | GPU-T11 | Catalog drift maps a stable profile to the wrong native resource or unsafe request bounds | Go, backend, Helm and admission validate profile shape, unique resource names, numeric ranges/steps, billing eligibility and passthrough consistency; invalid catalogs fail render/reconcile/discovery closed | Rules exist across languages; hardware-free fixture CI and G6 consistency tests are drift controls |
-| GPU-T12 | Billing provider quantity or webhook replay grants unintended quota | Provider price mapping is catalog-owned; placeholder/missing IDs fail before mutation; one subscription item quantity maps to one stable add-on; controller, not provider, reconciles HRQ; readiness requires annotation/HRQ/status agreement | External Stripe acceptance and provider audit remain G7-T08/G10-T07 |
-| GPU-T13 | Reduction/cancel/suspend removes quota under active Pods/VMIs, causing accounting or service inconsistency | Authoritative HRQ usage and named Pod/VMI blockers fail reductions closed across quota-only, Stripe and WHMCS; unsafe trial expiry defers release, emits warnings and retries | Live holder lifecycle acceptance remains G7-T13/T14 |
-| GPU-T14 | A user mistakes quota for reserved capacity or software compute percentage for hard performance/isolation | UI separates entitlement, project cap, and physical capacity; copy says quota is not reservation; Shared GPU disclosure describes cooperative isolation and compute convergence/library limitations; whole-device VM is the hard-boundary option | D-003 and D-006 require explicit Product approval before beta/reservation sales |
-| GPU-T15 | Pending/error UI shows another project's cached data or stale data as live | Project identity keys the hook state; project changes clear attribution; polling preserves stale/error state instead of relabelling it live; unknown reason codes have safe copy | Browser RBAC/accessibility E2E remains G4-T08/G9-T15 |
-| GPU-T16 | Operator upgrade/mode commands disrupt holders or leave two owners active | Commands require exact live/fleet agreement, clean Git, both creation gates off, zero holders before and after cordon, qualification tuple/canary evidence, atomic Git operations, target plugin/label/Ready checks, and explicit cordoned resume | Real Wave-0-gated transition and selected upgrade canary remain G8-T11/T12 |
-| GPU-T17 | A failed device/node/plugin continues accepting new work or silently loses allocations | Unhealthy/conflicting/stale states remove readiness or fail discovery closed; allocation canary, plugin/scheduler/webhook/mode alerts and quota guards cover known paths | ECC/XID/thermal and complete failure matrix remain G9-T03/T04/T06/T10 |
-| GPU-T18 | Admin monitoring data leaks physical or cross-tenant identity into a tenant Grafana organization | Admin inventory and tenant capability contracts are separate; public fields are allowlisted; tenant metrics must use Organization/Project scope and omit node/device labels | Recording rules and cross-tenant dashboard proof remain G9-T03/G9-T05 |
-| GPU-T19 | Secrets or licensed vGPU credentials enter ordinary config, logs, plans, or tenant APIs | Current installer accepts only a secret-readiness boolean and rejects secret/license/UUID-shaped output; vGPU is deferred | SOPS wiring and licensed vGPU review remain G8-T06/G11 |
+| GPU-T12 | Billing provider quantity or webhook replay grants unintended quota | Provider price mapping is catalog-owned; placeholder/missing IDs fail before mutation; one subscription item quantity maps to one stable add-on; controller, not provider, reconciles HRQ; readiness requires annotation/HRQ/status agreement | External Stripe acceptance and provider audit |
+| GPU-T13 | Reduction/cancel/suspend removes quota under active Pods/VMIs, causing accounting or service inconsistency | Authoritative HRQ usage and named Pod/VMI blockers fail reductions closed across quota-only, Stripe and WHMCS; unsafe trial expiry defers release, emits warnings and retries | Live holder lifecycle acceptance |
+| GPU-T14 | A user mistakes quota for reserved capacity or software compute percentage for hard performance/isolation | UI separates entitlement, project cap, and physical capacity; copy says quota is not reservation; Shared GPU disclosure describes cooperative isolation and compute convergence/library limitations; whole-device VM is the hard-boundary option | Product approval required before reservation sales |
+| GPU-T15 | Pending/error UI shows another project's cached data or stale data as live | Project identity keys the hook state; project changes clear attribution; polling preserves stale/error state instead of relabelling it live; unknown reason codes have safe copy | Browser RBAC/accessibility E2E |
+| GPU-T16 | Operator upgrade/mode commands disrupt holders or leave two owners active | Commands require exact live/fleet agreement, clean Git, both creation gates off, zero holders before and after cordon, qualification tuple/canary evidence, atomic Git operations, target plugin/label/Ready checks, and explicit cordoned resume | Real Wave-0-gated transition and selected upgrade canary |
+| GPU-T17 | A failed device/node/plugin continues accepting new work or silently loses allocations | Unhealthy/conflicting/stale states remove readiness or fail discovery closed; allocation canary, plugin/scheduler/webhook/mode alerts and quota guards cover known paths | ECC/XID/thermal and complete failure matrix |
+| GPU-T18 | Admin monitoring data leaks physical or cross-tenant identity into a tenant Grafana organization | Admin inventory and tenant capability contracts are separate; public fields are allowlisted; tenant metrics must use Organization/Project scope and omit node/device labels | Recording rules and cross-tenant dashboard proof |
+| GPU-T19 | Secrets or licensed vGPU credentials enter ordinary config, logs, plans, or tenant APIs | Current installer accepts only a secret-readiness boolean and rejects secret/license/UUID-shaped output; vGPU is deferred | SOPS wiring and licensed vGPU review/G11 |
 
 ## Control ownership
 
@@ -100,7 +103,8 @@ Node label alone is sufficient to grant entitlement or prove readiness.
 
 ## Required security evidence
 
-Before the first tenant beta, the release record must retain:
+Before opening tenant GPU creation on a cluster, its release record must
+retain:
 
 - rendered admission policies and their reject/allow matrix, including live
   webhook failure and controller-created launcher behavior;
@@ -113,29 +117,32 @@ Before the first tenant beta, the release record must retain:
   conditions;
 - a whole-device VM create/run/stop/start/migration-denial and guest-driver
   qualification record;
-- manual review of Shared GPU isolation copy and D-003 acceptance;
+- manual review of Shared GPU isolation copy and its acceptance;
 - cross-tenant monitoring/dashboard tests with no node/device identity leakage;
 - rollback timing ending with zero holders and one authoritative plugin owner.
 
 ## Approval gates and residual risks
 
-Security approval must not be inferred from tests alone. G9-T01 can close only
-when Security and Product explicitly accept or defer all of the following:
+Security approval is a recorded decision, not an inference from passing tests.
+Security and Product accepted the following residual risks on 2026-08-07:
 
-1. **Shared compute is cooperative.** HAMi memory/control injection is not a
-   hostile-tenant boundary, startup can exceed a requested compute percentage,
-   and some CUDA library paths can remain above it (D-003/B-004).
-2. **Privileged supply chain.** GPU drivers and operators have node-compromise
-   blast radius. Exact installer pins and the runtime digest audit are in the
-   [GPU supply-chain policy](gpu-supply-chain.md); SBOM/scan disposition remains
-   required under G9-T02.
-3. **Capacity is not reservation.** Quota/add-on entitlement does not guarantee
-   a free physical device; any reserved product needs the separate G7-T15
-   operational contract (D-006).
-4. **Guest support is still gated.** The VM attachment lifecycle is proven, but
-   Ubuntu/Windows driver and CUDA qualification remains G0-T08/G6-T09.
-5. **Observability is incomplete.** Hardware health recording rules, tenant
-   dashboards and cross-tenant leakage proof remain G9-T03–T06.
+1. **Shared compute is cooperative.** Memory and control injection is not a
+   hostile-tenant boundary: startup can exceed a requested compute percentage,
+   and some CUDA library paths can remain above it. Workloads that must not
+   share silicon with another tenant belong on a Dedicated GPU VM.
+2. **Privileged supply chain.** GPU drivers and operators carry a
+   node-compromise blast radius. Installer pins and the runtime digest audit
+   are in the [GPU supply-chain policy](gpu-supply-chain.md); SBOM and scan
+   disposition are part of the release record.
+3. **Capacity is not reservation.** Quota entitlement does not guarantee a free
+   physical device — a reserved product requires the separate operational
+   contract in [GPU capacity reservations](gpu-capacity-reservations.md).
+4. **Guest support is qualified per combination.** The VM attachment lifecycle
+   is proven; each guest OS, driver and CUDA combination is qualified before it
+   is offered, per the [guest and driver matrix](/cloud/gpu-vm-guests).
+5. **Observability coverage is defined per deployment.** Hardware health
+   recording rules, tenant dashboards and cross-tenant leakage proof are
+   completed as part of a cluster's qualification record.
 
-Until those decisions are recorded, keep Shared GPU and Dedicated GPU VM tenant
-creation disabled and use operator-owned validation only.
+Each cluster's qualification record is what opens tenant Shared GPU and
+Dedicated GPU VM creation on that cluster.

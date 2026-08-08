@@ -1,3 +1,11 @@
+import FloatingIpToVmDiagram from '@site/src/components/Diagram/FloatingIpToVmDiagram';
+import {
+  GatewayIngressDiagram,
+  LoadBalancerIngressDiagram,
+  OutboundTrafficDiagram,
+} from '@site/src/components/Diagram/CloudFlowDiagrams';
+import {ExposureDecisionDiagram} from '@site/src/components/Diagram/CloudTopologyDiagrams';
+
 # How Networking Works
 
 This page explains Kube-DC networking concepts — how your project connects to the internet, how traffic flows, and which tools are available to expose your services.
@@ -47,13 +55,23 @@ A Project selects the address pool for its default gateway when it is created. B
 
 ### Outbound (VM/Pod → Internet)
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
 VM/Pod (10.0.0.x)  →  Project Router  →  SNAT via EIP  →  Internet
 ```
 
+</details>
+
+<OutboundTrafficDiagram />
+
 Every Project has a default EIP for outbound SNAT. Internet access remains subject to platform egress policy and upstream availability.
 
 ### Inbound via Gateway Route (HTTPS)
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```
 Client  →  DNS (*.<configured-base-domain>)  →  Envoy Gateway (shared IP, port 443)
@@ -62,43 +80,67 @@ Client  →  DNS (*.<configured-base-domain>)  →  Envoy Gateway (shared IP, po
         →  Backend Service  →  Pod
 ```
 
+</details>
+
+<GatewayIngressDiagram />
+
 One shared Envoy Gateway handles HTTPS traffic. By default, each Service receives a hostname in the form `<service>-<workload-namespace>.<base-domain>`. Before creating an HTTPS route, create the namespaced `letsencrypt`
 Issuer described in [Service Exposure](service-exposure.md#step-1-create-the-issuer-once-per-project).
 
 ### Inbound via EIP + LoadBalancer
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
 Client  →  EIP (dedicated IP, any port)  →  OVN LoadBalancer  →  Pod/VM
 ```
+
+</details>
+
+<LoadBalancerIngressDiagram />
 
 The EIP is bound to a LoadBalancer Service and supports any declared TCP or UDP service port.
 
 ### Inbound via Floating IP
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
 Client  →  External IP  →  1:1 NAT  →  VM internal IP (all ports)
 ```
 
-A FIP maps an external address to a VM or selected internal IP. Reachability remains subject to platform controls and the guest or workload firewall.
+</details>
 
-<details>
-<summary>View the Floating IP traffic diagram</summary>
+A FIP maps an external address to a VM or selected internal IP. Reachability remains subject to platform controls and the guest or workload firewall.
 
 The Floating IP belongs to Project `production` in Organization `acme`. Its
 resource is stored in the Project's `acme-production` backing namespace, while
 the public address remains mapped at the platform edge rather than configured
 inside the guest.
 
-<figure className="diagram-comparison" data-diagram="fip-to-vm" tabIndex="0" aria-label="Scrollable Floating IP traffic diagram">
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
-![External traffic reaches a Floating IP in Organization acme and Project production, where one-to-one NAT maps example public address 203.0.113.10 to the private address of the running VM with all ports forwarded.](images/fip-to-vm.svg)
-
-  <figcaption>A Floating IP maps an external address to the VM's existing private interface through bidirectional one-to-one NAT.</figcaption>
-</figure>
-
-[Open the full-size SVG for zooming or printing.](images/fip-to-vm.svg)
+```mermaid
+flowchart LR
+  accTitle: Floating IP to virtual machine relationship
+  accDescr: External traffic reaches Floating IP ubuntu-fip, which maps example public address 203.0.113.10 bidirectionally to private address 10.0.0.153 on VM ubuntu through one-to-one NAT across all ports.
+  External[External network]
+  subgraph Organization[Organization: acme]
+    subgraph Project[Project: production · backing namespace acme-production]
+      FIP[FIP ubuntu-fip<br/>203.0.113.10 · PUBLIC]
+      VM[VM ubuntu<br/>10.0.0.153 · vpc_net_0]
+      FIP <-->|1:1 NAT · all ports| VM
+    end
+  end
+  External <--> FIP
+```
 
 </details>
+
+<FloatingIpToVmDiagram />
 
 ---
 
@@ -179,6 +221,9 @@ Use the **+ Create External IP** button to allocate a new EIP for your project.
 
 ## Which Method Should I Use?
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
 What are you exposing?
 │
@@ -198,6 +243,10 @@ What are you exposing?
     └── Use default gateway EIP + LoadBalancer
         → Shared IP, different ports per service
 ```
+
+</details>
+
+<ExposureDecisionDiagram />
 
 | Method | Protocols | TLS | IP Type | Best For |
 |--------|-----------|-----|---------|----------|

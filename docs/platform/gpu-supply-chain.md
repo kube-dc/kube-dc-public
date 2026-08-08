@@ -9,7 +9,7 @@ This runbook implements the repository-owned portion of G9-T02. Fleet owns the
 Helm sources and component values; kube-dc owns the qualified installer tuple,
 runtime audit, promotion gate, and evidence contract.
 
-## Released pilot tuple
+## Released qualified tuple
 
 An enabled installer accepts one indivisible qualified tuple:
 

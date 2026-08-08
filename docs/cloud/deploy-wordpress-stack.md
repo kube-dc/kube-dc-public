@@ -1,3 +1,5 @@
+import WordPressStackDiagram from '@site/src/components/Diagram/WordPressStackDiagram';
+
 # Deploy a Full WordPress Stack
 
 This guide deploys a complete WordPress stack directly in a Kube-DC Project, using platform-managed data, storage, security, and exposure services:
@@ -9,6 +11,9 @@ This guide deploys a complete WordPress stack directly in a Kube-DC Project, usi
 - **HTTPS exposure with a certificate issued through the Project's ACME Issuer**
 - **Autoscaling** with a HorizontalPodAutoscaler
 - Headless WordPress installation with **WP-CLI running as a Job**
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```mermaid
 flowchart LR
@@ -26,6 +31,10 @@ flowchart LR
     DB -->|"daily backups"| S3[("Project S3 bucket")]
     J -->|"wp-content archive"| S3B[("wordpress-files bucket")]
 ```
+
+</details>
+
+<WordPressStackDiagram />
 
 ## Prerequisites
 

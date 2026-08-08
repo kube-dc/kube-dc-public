@@ -1,9 +1,14 @@
+import {CloudResourceModelDiagram} from '@site/src/components/Diagram/ResourceModelDiagrams';
+
 # Core Concepts
 
 Kube-DC uses **Organizations** and **Projects** to connect identity, authorization, networking, resource governance and billing to the workloads you deploy. Understanding this model — and the upfront choice between running a workload *in your Project* or *in a Managed Cluster* — is most of what you need to use the platform well.
 
 
 ## The resource model
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```mermaid
 flowchart TB
@@ -17,6 +22,10 @@ flowchart TB
     project --> services[Networking, storage, and managed services]
     project --> clusters[Managed Clusters with a separate Kubernetes API]
 ```
+
+</details>
+
+<CloudResourceModelDiagram />
 
 ### Organization — identity and billing scope
 

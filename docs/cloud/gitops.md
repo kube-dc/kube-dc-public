@@ -1,3 +1,5 @@
+import {GitOpsProjectMappingDiagram} from '@site/src/components/Diagram/CloudTopologyDiagrams';
+
 # GitOps
 
 GitOps works with Kube-DC, but the controller must run in the right place.
@@ -22,12 +24,19 @@ cluster-scoped resources on the Kube-DC platform cluster.
 
 Keep each target explicit:
 
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```text
 delivery-platform
 ├── Project development  -> backing namespace acme-development
 ├── Project staging      -> backing namespace acme-staging
 └── Project production   -> backing namespace acme-production
 ```
+
+</details>
+
+<GitOpsProjectMappingDiagram />
 
 The Project kubeconfig sets the namespace, but manifests should still declare
 the intended Project backing namespace. A delivery job must fail if a manifest targets

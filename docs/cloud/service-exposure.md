@@ -1,3 +1,8 @@
+import {
+  ExposureConflictDiagram,
+  ExposureDecisionDiagram,
+} from '@site/src/components/Diagram/CloudTopologyDiagrams';
+
 # Service Exposure Guide
 
 This guide explains how to expose workloads in a Kube-DC Project. Choose the
@@ -546,11 +551,19 @@ spec:
 This is because public FIPs create source-based policy routes that redirect ALL outbound traffic from that IP to the public gateway, breaking cloud-network services.
 
 **Example conflict:**
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
 ```
 Pod IP: 10.0.0.30
 ├── Public FIP → Routes all traffic to public gateway (198.51.100.1)
 └── Cloud LoadBalancer → Expects traffic via cloud gateway (100.65.0.1) ❌ BROKEN
 ```
+
+</details>
+
+<ExposureConflictDiagram />
 
 **Workarounds:**
 - Use separate pods for FIP targets and cloud-service backends
@@ -562,6 +575,9 @@ Pod IP: 10.0.0.30
 ## Part 3: Choosing the Right Approach
 
 ### Decision Tree
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -580,6 +596,10 @@ Pod IP: 10.0.0.30
    │   : https   │   │(public IP)│   │  (any proto)  │
    └─────────────┘   └───────────┘   └───────────────┘
 ```
+
+</details>
+
+<ExposureDecisionDiagram />
 
 ### Comparison Table
 

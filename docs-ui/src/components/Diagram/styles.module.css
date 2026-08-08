@@ -1,0 +1,347 @@
+.figure {
+  --diagram-paper: #f6f7f9;
+  --diagram-surface: #ffffff;
+  --diagram-surface-raised: #fefefe;
+  --diagram-surface-muted: #eef0f4;
+  --diagram-ink: #151515;
+  --diagram-ink-secondary: #3c3f42;
+  --diagram-muted: #6a6e73;
+  --diagram-rule: #d2d2d2;
+  --diagram-rule-soft: #e5e8ed;
+  --diagram-signal: #0066cc;
+  --diagram-signal-soft: #e7f1fa;
+  --diagram-data: #2b9af3;
+  --diagram-storage: #3e8635;
+  --diagram-source: #3e8635;
+  --diagram-source-soft: #f1f8ef;
+  --diagram-warning: #f0ab00;
+  --diagram-danger: #c9190b;
+  margin: 1.5rem 0;
+  break-inside: avoid;
+}
+
+:global([data-theme='dark']) .figure {
+  --diagram-paper: #0d1117;
+  --diagram-surface: #141a22;
+  --diagram-surface-raised: #1b232d;
+  --diagram-surface-muted: #202832;
+  --diagram-ink: #e6eaf0;
+  --diagram-ink-secondary: #b6c0cd;
+  --diagram-muted: #8b97a6;
+  --diagram-rule: #3d3d3d;
+  --diagram-rule-soft: #2a333f;
+  --diagram-signal: #4a90e2;
+  --diagram-signal-soft: #17304b;
+  --diagram-data: #4cb8d4;
+  --diagram-storage: #5fc98a;
+  --diagram-source: #5fc98a;
+  --diagram-source-soft: #17291d;
+  --diagram-warning: #e0a94a;
+  --diagram-danger: #f2799a;
+}
+
+.viewport {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable;
+  background: var(--diagram-surface);
+  border: 1px solid var(--diagram-rule);
+  border-radius: 6px;
+  padding: 1.25rem 1rem 0.875rem;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+
+.viewport:focus-visible {
+  outline: 2px solid var(--diagram-signal);
+  outline-offset: 3px;
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  margin: 0 auto;
+  overflow: visible;
+  color: var(--diagram-ink);
+  font-family: var(--ifm-font-family-base), sans-serif;
+  text-rendering: geometricPrecision;
+}
+
+.caption {
+  max-width: 76ch;
+  margin-top: 0.75rem;
+  color: var(--diagram-muted);
+  font-family: var(--ifm-font-family-base), sans-serif;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.node rect,
+.boundary rect,
+.callout rect,
+.edge path,
+.sectionLabel line {
+  vector-effect: non-scaling-stroke;
+}
+
+.node rect {
+  fill: var(--diagram-surface-raised);
+  stroke: var(--diagram-rule);
+  stroke-width: 1.25;
+}
+
+.nodeAccent rect {
+  fill: var(--diagram-signal-soft);
+  stroke: var(--diagram-signal);
+  stroke-width: 1.75;
+}
+
+.nodeMuted rect {
+  fill: var(--diagram-surface-muted);
+  stroke: var(--diagram-rule);
+}
+
+.nodeStorage rect {
+  fill: var(--diagram-surface-raised);
+  stroke: var(--diagram-rule);
+}
+
+.nodeSource rect {
+  fill: var(--diagram-source-soft);
+  stroke: var(--diagram-source);
+  stroke-width: 1.5;
+}
+
+.nodeExternal rect {
+  fill: var(--diagram-surface-muted);
+  stroke: var(--diagram-muted);
+}
+
+.nodeTitle {
+  fill: var(--diagram-ink);
+  font-family: var(--ifm-font-family-base), sans-serif;
+  font-size: var(--diagram-title-size, 17px);
+  font-weight: 650;
+}
+
+.nodeDetail {
+  fill: var(--diagram-muted);
+  font-family: var(--ifm-font-family-monospace), monospace;
+  font-size: var(--diagram-detail-size, 13.5px);
+  font-weight: 400;
+}
+
+.nodeIcon {
+  color: var(--diagram-signal);
+  overflow: visible;
+}
+
+.nodeIcon path,
+.nodeIcon circle,
+.nodeIcon rect,
+.nodeIcon polygon,
+.nodeIcon polyline {
+  fill: currentColor;
+}
+
+.nodeMuted .nodeIcon,
+.nodeExternal .nodeIcon {
+  color: var(--diagram-muted);
+}
+
+.nodeStorage .nodeIcon {
+  color: var(--diagram-signal);
+}
+
+.nodeSource .nodeIcon {
+  color: var(--diagram-source);
+}
+
+.nodeBadge {
+  fill: var(--diagram-signal);
+  font-family: var(--ifm-font-family-monospace), monospace;
+  font-size: var(--diagram-detail-size, 13.5px);
+  font-weight: 650;
+}
+
+.edge path {
+  fill: none;
+  stroke: var(--diagram-signal);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.edgeAsynchronous path {
+  stroke-dasharray: 6 5;
+}
+
+.edgeData path {
+  stroke: var(--diagram-data);
+  stroke-width: 2;
+}
+
+.edgeControl path {
+  stroke: var(--diagram-muted);
+  stroke-dasharray: 5 4;
+}
+
+.markerPrimary path,
+.markerAsynchronous path {
+  fill: var(--diagram-signal);
+}
+
+.markerData path {
+  fill: var(--diagram-data);
+}
+
+.markerControl path {
+  fill: var(--diagram-muted);
+}
+
+.edgeLabel rect {
+  fill: var(--diagram-surface);
+  opacity: 0.96;
+}
+
+.edgeLabel text {
+  fill: var(--diagram-muted);
+  font-family: var(--ifm-font-family-monospace), monospace;
+  font-size: var(--diagram-detail-size, 13.5px);
+}
+
+.boundary rect {
+  fill: transparent;
+  stroke: var(--diagram-rule);
+  stroke-width: 1.25;
+  stroke-dasharray: 6 5;
+}
+
+.boundary text {
+  fill: var(--diagram-muted);
+  font-family: var(--ifm-font-family-base), sans-serif;
+  font-size: var(--diagram-detail-size, 13.5px);
+  font-weight: 650;
+  letter-spacing: 1.4px;
+}
+
+.boundary .boundaryLabelBackground {
+  fill: var(--diagram-surface);
+  stroke: none;
+}
+
+.boundaryNetwork rect {
+  stroke: var(--diagram-signal);
+}
+
+.boundaryNetwork text {
+  fill: var(--diagram-signal);
+}
+
+.sectionLabel text {
+  fill: var(--diagram-muted);
+  stroke: var(--diagram-surface);
+  stroke-width: 7px;
+  stroke-linejoin: round;
+  paint-order: stroke fill;
+  font-family: var(--ifm-font-family-base), sans-serif;
+  font-size: var(--diagram-detail-size, 13.5px);
+  font-weight: 650;
+  letter-spacing: 2.2px;
+}
+
+.sectionLabel line {
+  stroke: var(--diagram-rule-soft);
+  stroke-width: 1;
+}
+
+.callout rect {
+  fill: transparent;
+  stroke: var(--diagram-signal);
+  stroke-width: 1.4;
+  stroke-dasharray: 6 4;
+}
+
+.calloutWarning rect {
+  stroke: var(--diagram-warning);
+}
+
+.calloutDanger rect {
+  stroke: var(--diagram-danger);
+}
+
+.calloutTitle {
+  fill: var(--diagram-signal);
+  font-family: var(--ifm-font-family-base), sans-serif;
+  font-size: var(--diagram-callout-title-size, 14px);
+  font-weight: 650;
+}
+
+.calloutWarning .calloutTitle {
+  fill: var(--diagram-warning);
+}
+
+.calloutDanger .calloutTitle {
+  fill: var(--diagram-danger);
+}
+
+.calloutDetail {
+  fill: var(--diagram-muted);
+  font-family: var(--ifm-font-family-monospace), monospace;
+  font-size: var(--diagram-detail-size, 13.5px);
+}
+
+@media (max-width: 700px) {
+  .viewport {
+    padding: 1rem 0.75rem 0.625rem;
+  }
+
+  .caption {
+    font-size: 0.8rem;
+  }
+
+  .canvas {
+    min-width: var(--diagram-min-width);
+  }
+}
+
+@media print {
+  .figure {
+    --diagram-paper: #ffffff;
+    --diagram-surface: #ffffff;
+    --diagram-surface-raised: #ffffff;
+    --diagram-surface-muted: #f0f0f0;
+    --diagram-ink: #151515;
+    --diagram-ink-secondary: #3c3f42;
+    --diagram-muted: #5a6675;
+    --diagram-rule: #b8b8b8;
+    --diagram-rule-soft: #d8d8d8;
+    --diagram-signal: #0066cc;
+    --diagram-signal-soft: #e7f1fa;
+    --diagram-data: #0d7490;
+    --diagram-storage: #3e8635;
+    --diagram-source: #3e8635;
+    --diagram-source-soft: #f1f8ef;
+    --diagram-warning: #a1620a;
+    --diagram-danger: #a4143c;
+  }
+
+  .viewport {
+    overflow: visible;
+    padding: 8px;
+    border-color: var(--diagram-rule);
+    box-shadow: none;
+  }
+
+  .canvas {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viewport {
+    scroll-behavior: auto;
+  }
+}
