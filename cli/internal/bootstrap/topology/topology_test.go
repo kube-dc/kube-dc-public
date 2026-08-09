@@ -22,7 +22,7 @@ func TestClassify(t *testing.T) {
 		wantReasonHas  string // substring expected in Reasoning
 	}{
 		{
-			name: "Fork E already deployed → already-enabled wins over everything",
+			name: "platform endpoints already deployed → already-enabled wins over everything",
 			signals: []Signal{
 				{Probe: probeNameForkE, Detail: "both kube-api-platform + envoy-gateway-platform deployed", Hint: ClassA, Confidence: "high"},
 				{Probe: probeNameCloudProvider, Detail: "providerID scheme: aws", Hint: ClassC, Confidence: "medium"},
@@ -37,7 +37,7 @@ func TestClassify(t *testing.T) {
 			// Ingress v2: the shape probe returns a hint-less low-confidence
 			// signal on a migrated cluster (PRD §6.E alignment note). The
 			// classifier must NOT turn that into a confident Class A —
-			// telling a cloud-class operator to enable Fork E would add
+			// telling a cloud-class operator to enable internal endpoints would add
 			// MetalLB VIPs, allowlists and Corefile churn for nothing.
 			name: "ingress-v2 uniform shape yields no confident class",
 			signals: []Signal{
@@ -50,7 +50,7 @@ func TestClassify(t *testing.T) {
 			wantReasonHas:  "",
 		},
 		{
-			name: "Fork E partial (only kube-api-platform) — still already-enabled",
+			name: "platform endpoints partial (only kube-api-platform) — still already-enabled",
 			signals: []Signal{
 				{Probe: probeNameForkE, Detail: "kube-api-platform deployed (envoy-gateway-platform not yet)", Hint: ClassA, Confidence: "high"},
 			},
@@ -157,7 +157,7 @@ func TestClassify(t *testing.T) {
 }
 
 // TestClassifyForkEDetailMatching verifies the probe-name-based
-// foundEnabled detection in classify(). The "Fork E Services" probe
+// foundEnabled detection in classify(). The "platform endpoints" probe
 // name is matched case-sensitively; the detail string is searched
 // for "kube-api-platform" / "envoy-gateway-platform" substrings.
 func TestClassifyForkEDetailMatching(t *testing.T) {

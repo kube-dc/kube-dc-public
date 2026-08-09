@@ -1,0 +1,10 @@
+apiVersion: hnc.x-k8s.io/v1alpha2
+kind: HierarchicalResourceQuota
+metadata:
+  name: gpu-accounting-validation
+  namespace: gpu-hrq-validation
+spec:
+  hard:
+    requests.nvidia.com/gpu: "2"
+    requests.nvidia.com/gpumem: "4096"
+    requests.nvidia.com/gpucores: "50"

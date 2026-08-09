@@ -1,0 +1,76 @@
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: dra-live-test-gpu
+  labels: &labels
+    app.kubernetes.io/name: dra-live-test
+    app.kubernetes.io/managed-by: kube-dc
+    kube-dc.com/gpu-backend: dra
+    kube-dc.com/gpu-profile: nvidia-v100-hami
+  annotations: &annotations
+    kube-dc.com/gpu-workload-hash: 6db174727182f67cb9bb1d8f84bcef365331ac6f4aeeb41a23ab6a25dfd0a938
+    kube-dc.com/gpu-memory-mib: "8192"
+    kube-dc.com/gpu-core-percent: "25"
+spec:
+  metadata:
+    labels: *labels
+    annotations: *annotations
+  spec:
+    devices:
+      requests:
+        - name: gpu
+          exactly:
+            deviceClassName: kube-dc-nvidia-v100-shared-8g
+            allocationMode: ExactCount
+            count: 1
+            capacity:
+              requests:
+                memory: 8192Mi
+                cores: 25
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dra-live-test
+  labels: &deploymentLabels
+    app.kubernetes.io/name: dra-live-test
+    app.kubernetes.io/managed-by: kube-dc
+    kube-dc.com/gpu-backend: dra
+    kube-dc.com/gpu-profile: nvidia-v100-hami
+  annotations: &deploymentAnnotations
+    kube-dc.com/gpu-workload-hash: 6db174727182f67cb9bb1d8f84bcef365331ac6f4aeeb41a23ab6a25dfd0a938
+    kube-dc.com/gpu-memory-mib: "8192"
+    kube-dc.com/gpu-core-percent: "25"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dra-live-test
+  template:
+    metadata:
+      labels: *deploymentLabels
+      annotations: *deploymentAnnotations
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workload
+          image: nvcr.io/nvidia/cuda@sha256:520292dbb4f755fd360766059e62956e9379485d9e073bbd2f6e3c20c270ed66
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            claims:
+              - name: gpu
+          command: ["/bin/sh", "-ec"]
+          args: ["nvidia-smi -L; sleep 600"]
+      resourceClaims:
+        - name: gpu
+          resourceClaimTemplateName: dra-live-test-gpu

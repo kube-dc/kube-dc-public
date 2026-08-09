@@ -58,6 +58,10 @@ func validAtlantisArgs() []string {
 		"--set=KUBE_OVN_MASTER_NODES=192.0.2.11",
 		"--set=METALLB_FLOATING_IP=100.65.0.20",
 		"--set=METALLB_INTERFACE=br-ext-cloud",
+		// A declared floating IP with NO address layer is now AMBIGUOUS and
+		// refused: the installer will not guess whether that address is a real
+		// floating VIP (cs/next reserves one its fabric does not deliver).
+		"--ingress-address-layer=metallb-l2",
 		"--dry-run",
 		"--no-tty",
 	}
@@ -552,6 +556,10 @@ func TestBootstrapInit_DryRun_GitLab_Allowed(t *testing.T) {
 		"--set=KUBE_OVN_MASTER_NODES=192.0.2.11",
 		"--set=METALLB_FLOATING_IP=100.65.0.20",
 		"--set=METALLB_INTERFACE=br-ext-cloud",
+		// A declared floating IP with NO address layer is now AMBIGUOUS and
+		// refused: the installer will not guess whether that address is a real
+		// floating VIP (cs/next reserves one its fabric does not deliver).
+		"--ingress-address-layer=metallb-l2",
 		"--dry-run",
 		"--no-tty",
 	}
@@ -968,9 +976,17 @@ func TestBootstrapInit_ObjectStorageMode_RookDryRunRendersWiring(t *testing.T) {
 			t.Errorf("rook dry-run render missing %q\nFULL:\n%s", want, body)
 		}
 	}
-	// No warnings at all for a real mode.
-	if strings.Contains(body, "== WARNINGS ==") {
-		t.Errorf("rook mode should not carry any warning block\nFULL:\n%s", body)
+	// A real object-storage mode carries no OBJECT-STORAGE warning. Scoped
+	// deliberately: the plan legitimately warns about the FRONT DOOR (this
+	// fixture declares METALLB_FLOATING_IP, so the address layer is inferred
+	// and its failover characteristics are surfaced), and asserting "no
+	// warnings at all" would make every future advisory a false failure.
+	for _, unwanted := range []string{
+		"object storage disabled", "Mimir + Loki are SUSPENDED",
+	} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("rook mode must not warn about object storage (%q)\nFULL:\n%s", unwanted, body)
+		}
 	}
 }
 

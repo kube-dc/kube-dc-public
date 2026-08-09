@@ -12,20 +12,20 @@ import (
 
 // Credentials stores the cached authentication tokens for a server
 type Credentials struct {
-	Server              string    `json:"server"`
-	KeycloakURL         string    `json:"keycloak_url"`
-	Realm               string    `json:"realm"`
-	ClientID            string    `json:"client_id"`
-	AccessToken         string    `json:"access_token"`
-	RefreshToken        string    `json:"refresh_token"`
-	IDToken             string    `json:"id_token,omitempty"`
-	AccessTokenExpiry   time.Time `json:"access_token_expiry"`
-	RefreshTokenExpiry  time.Time `json:"refresh_token_expiry"`
-	User                UserInfo  `json:"user"`
-	CACert              string    `json:"ca_cert,omitempty"`
-	Insecure            bool      `json:"insecure,omitempty"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	Server             string    `json:"server"`
+	KeycloakURL        string    `json:"keycloak_url"`
+	Realm              string    `json:"realm"`
+	ClientID           string    `json:"client_id"`
+	AccessToken        string    `json:"access_token"`
+	RefreshToken       string    `json:"refresh_token"`
+	IDToken            string    `json:"id_token,omitempty"`
+	AccessTokenExpiry  time.Time `json:"access_token_expiry"`
+	RefreshTokenExpiry time.Time `json:"refresh_token_expiry"`
+	User               UserInfo  `json:"user"`
+	CACert             string    `json:"ca_cert,omitempty"`
+	Insecure           bool      `json:"insecure,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 // UserInfo contains user details extracted from the JWT token

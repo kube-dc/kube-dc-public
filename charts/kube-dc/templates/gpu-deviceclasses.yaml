@@ -1,0 +1,56 @@
+{{- if .Values.gpu.enabled -}}
+{{- $classes := dict -}}
+{{- $selectors := list -}}
+{{- range $profile := .Values.gpu.profiles -}}
+{{- if and $profile.enabled (eq ($profile.allocationBackend | default "") "dra") $profile.dra -}}
+{{- $dra := $profile.dra -}}
+{{- $className := required (printf "gpu profile %s requires dra.deviceClassName" $profile.id) $dra.deviceClassName -}}
+{{- $driver := required (printf "gpu profile %s requires dra.driver" $profile.id) $dra.driver -}}
+{{- if hasKey $classes $className -}}
+{{- fail (printf "gpu profiles %s and %s share DRA DeviceClass %s" (get $classes $className) $profile.id $className) -}}
+{{- end -}}
+{{- $_ := set $classes $className $profile.id -}}
+{{- if not $dra.attributes -}}
+{{- fail (printf "gpu profile %s requires at least one DRA attribute selector" $profile.id) -}}
+{{- end -}}
+{{- range $key, $value := $dra.attributes -}}
+{{- if not (regexMatch "^[A-Za-z_][A-Za-z0-9_]*$" $key) -}}
+{{- fail (printf "gpu profile %s DRA attribute %s is not a CEL identifier" $profile.id $key) -}}
+{{- end -}}
+{{- $_ = required (printf "gpu profile %s DRA attribute %s requires a value" $profile.id $key) $value -}}
+{{- end -}}
+{{- range $previous := $selectors -}}
+{{- if eq $previous.driver $driver -}}
+{{- $disjoint := dict "value" false -}}
+{{- range $key, $value := $dra.attributes -}}
+{{- if and (hasKey $previous.attributes $key) (ne (get $previous.attributes $key) $value) -}}
+{{- $_ := set $disjoint "value" true -}}
+{{- end -}}
+{{- end -}}
+{{- if not (get $disjoint "value") -}}
+{{- fail (printf "gpu profiles %s and %s have overlapping DRA attribute selectors" $previous.id $profile.id) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- $selectors = append $selectors (dict "id" $profile.id "driver" $driver "attributes" $dra.attributes) -}}
+{{- if or (not (regexMatch "^[A-Za-z_][A-Za-z0-9_]*$" (required (printf "gpu profile %s requires dra.memoryCapacity" $profile.id) $dra.memoryCapacity))) (not (regexMatch "^[A-Za-z_][A-Za-z0-9_]*$" (required (printf "gpu profile %s requires dra.coreCapacity" $profile.id) $dra.coreCapacity))) -}}
+{{- fail (printf "gpu profile %s DRA capacity names must be CEL identifiers" $profile.id) -}}
+{{- end }}
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  name: {{ $className }}
+  labels:
+    app.kubernetes.io/managed-by: kube-dc
+    kube-dc.com/gpu-profile: {{ $profile.id | quote }}
+spec:
+  selectors:
+    - cel:
+        expression: >-
+          device.driver == {{ $driver | quote }} &&
+          device.allowMultipleAllocations == true{{ range $key, $value := $dra.attributes }} &&
+          device.attributes[{{ $driver | quote }}].{{ $key }} == {{ $value | quote }}{{ end }}
+---
+{{- end -}}
+{{- end -}}
+{{- end -}}

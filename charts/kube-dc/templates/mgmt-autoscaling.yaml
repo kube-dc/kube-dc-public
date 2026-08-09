@@ -1,0 +1,399 @@
+{{- /*
+Management-cluster worker autoscaling (docs/prd/mgmt-worker-autoscaling.md,
+private repo). GATED OFF by default: everything below renders only with
+k8Manager.mgmtAutoscaling.enabled=true, and even then nothing provisions
+until a platform admin creates a MgmtWorkerPool CR.
+
+Components: mTLS material (dedicated issuer chain - the adapter REFUSES
+plaintext and verifies the client CN), the adapter Service, the management
+cluster-autoscaler Deployment carrying every review-mandated flag, its RBAC,
+a ValidatingAdmissionPolicy refusing taint-less pool-node registration, and
+the paging alerts.
+*/}}
+{{- if and .Values.k8Manager.enabled .Values.k8Manager.mgmtAutoscaling.enabled }}
+{{- $ns := .Release.Namespace }}
+{{- $ma := .Values.k8Manager.mgmtAutoscaling }}
+---
+# Issuer chain: a dedicated CA so the client-CA bundle contains EXACTLY the
+# authority that signs the autoscaler's client cert - a shared cluster CA
+# would authorize every client cert it ever signed (review finding).
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: mgmt-autoscaler-selfsigned
+  namespace: {{ $ns }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: mgmt-autoscaler-ca
+  namespace: {{ $ns }}
+spec:
+  isCA: true
+  commonName: mgmt-autoscaler-ca
+  secretName: mgmt-autoscaler-ca
+  duration: 87600h # 10y; rotation = coordinated CA rollout, see PRD
+  issuerRef: {name: mgmt-autoscaler-selfsigned, kind: Issuer}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: mgmt-autoscaler-ca-issuer
+  namespace: {{ $ns }}
+spec:
+  ca: {secretName: mgmt-autoscaler-ca}
+---
+# Adapter serving cert (k8-manager side).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: mgmt-adapter-server
+  namespace: {{ $ns }}
+spec:
+  secretName: mgmt-adapter-server-tls
+  # One-year leaves, renewed 90d early. The ADAPTER reloads its serving pair
+  # per TLS handshake, so its renewal needs no restart. The cluster-autoscaler
+  # CLIENT loads its cert once at startup (upstream behavior, review finding):
+  # after cert-manager renews, the CA Deployment must be rollout-restarted
+  # within the 90-day renewBefore window or mTLS dies when the OLD leaf
+  # expires — the MgmtClusterAutoscalerDown alert is the backstop, the
+  # rotation runbook in docs/prd/mgmt-worker-autoscaling.md is the procedure.
+  duration: 8760h
+  renewBefore: 2160h
+  dnsNames:
+    - mgmt-autoscaler-adapter
+    - mgmt-autoscaler-adapter.{{ $ns }}.svc
+  issuerRef: {name: mgmt-autoscaler-ca-issuer, kind: Issuer}
+---
+# Client cert for the cluster-autoscaler. The CN is the AUTHORIZATION: the
+# adapter requires it verbatim (MGMT_ADAPTER_CLIENT_CN).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: mgmt-autoscaler-client
+  namespace: {{ $ns }}
+spec:
+  secretName: mgmt-autoscaler-client-tls
+  # Same duration/renewal contract (and the same client-side restart
+  # requirement) as the serving cert above.
+  duration: 8760h
+  renewBefore: 2160h
+  commonName: mgmt-cluster-autoscaler
+  issuerRef: {name: mgmt-autoscaler-ca-issuer, kind: Issuer}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mgmt-autoscaler-adapter
+  namespace: {{ $ns }}
+spec:
+  # Must match the k8-manager DEPLOYMENT's real pod labels
+  # (app.kubernetes.io/name, NOT a bare `app` key) — the original selector
+  # matched nothing, the Service had zero endpoints, and every CA dial hit
+  # i/o timeout (found live on cs/next enablement 2026-08-06).
+  selector:
+    app.kubernetes.io/name: kube-dc-k8-manager
+  ports:
+    - name: grpc
+      port: 8095
+      targetPort: 8095
+---
+# externalgrpc cloud-config: address + the client's mTLS material.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mgmt-autoscaler-cloud-config
+  namespace: {{ $ns }}
+data:
+  cloud-config.yaml: |
+    address: "mgmt-autoscaler-adapter.{{ $ns }}.svc:8095"
+    key: /etc/ca-client-tls/tls.key
+    cert: /etc/ca-client-tls/tls.crt
+    cacert: /etc/ca-client-tls/ca.crt
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mgmt-cluster-autoscaler
+  namespace: {{ $ns }}
+---
+# Standard upstream cluster-autoscaler read surface + leases. NO delete verbs
+# on nodes anywhere: scale-down is disabled and the adapter refuses
+# DeleteNodes, but least privilege means the credential cannot do it either.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mgmt-cluster-autoscaler
+rules:
+  - apiGroups: [""]
+    resources: [nodes, pods, services, replicationcontrollers, persistentvolumes, persistentvolumeclaims, namespaces]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  - apiGroups: [apps]
+    resources: [daemonsets, replicasets, statefulsets]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [get, list, watch]
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses, csinodes, csidrivers, csistoragecapacities, volumeattachments]
+    verbs: [get, list, watch]
+  # CA 1.35 starts DRA informers unconditionally; without these read-only
+  # surfaces the informer sync loops forbidden BEFORE the externalgrpc
+  # provider ever dials (found live on cs/next enablement 2026-08-06 —
+  # same live-only-RBAC class as the M7 tenant-CA fixes). Read-only, no
+  # delete verbs anywhere, unchanged posture.
+  - apiGroups: [resource.k8s.io]
+    resources: [resourceslices, deviceclasses, resourceclaims, resourceclaimtemplates]
+    verbs: [get, list, watch]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [create, get, update]
+---
+# CA writes its status ConfigMap in its own namespace; without this it logs
+# a forbidden every 10s (found live on cs/next — non-fatal, but noise that
+# buries real errors). create cannot be name-scoped; get/update are.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mgmt-cluster-autoscaler-status
+  namespace: {{ $ns }}
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [cluster-autoscaler-status]
+    verbs: [get, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mgmt-cluster-autoscaler-status
+  namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mgmt-cluster-autoscaler-status
+subjects:
+  - kind: ServiceAccount
+    name: mgmt-cluster-autoscaler
+    namespace: {{ $ns }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mgmt-cluster-autoscaler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mgmt-cluster-autoscaler
+subjects:
+  - kind: ServiceAccount
+    name: mgmt-cluster-autoscaler
+    namespace: {{ $ns }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mgmt-cluster-autoscaler
+  namespace: {{ $ns }}
+  labels: {app: mgmt-cluster-autoscaler}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: mgmt-cluster-autoscaler}
+  template:
+    metadata:
+      labels: {app: mgmt-cluster-autoscaler}
+      annotations:
+        # Roll the CA whenever the k8-manager image moves: its grpc client
+        # holds a backed-off subchannel to the OLD adapter pod after a
+        # k8-manager roll and can sit on i/o timeouts for many minutes
+        # (observed live on cs/next enablement day). A pod-template change
+        # here forces a fresh dial.
+        # EXACTLY the k8-manager Deployment's image expression — no invented
+        # default (that template has none; Chart.AppVersion is the MANAGER's
+        # convention, review finding): any divergence would miss the roll.
+        kube-dc.com/adapter-image: {{ .Values.k8Manager.image.tag | quote }}
+    spec:
+      serviceAccountName: mgmt-cluster-autoscaler
+      # The autoscaler must survive the very capacity shortage it fixes:
+      # keep it off the workers it manages.
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: "true"
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/etcd
+          operator: Exists
+          effect: NoExecute
+      containers:
+        - name: cluster-autoscaler
+          # Digest-pinned when provided: proto/wire compatibility is per-tag
+          # (1.35 changed the externalgrpc template format), so the tag MUST
+          # match the vendored protos in k8-manager.
+          image: "{{ $ma.ca.image }}:{{ $ma.ca.tag }}{{ if $ma.ca.digest }}@{{ $ma.ca.digest }}{{ end }}"
+          command:
+            - /cluster-autoscaler
+            - --cloud-provider=externalgrpc
+            - --cloud-config=/etc/ca-cloud-config/cloud-config.yaml
+            # SCALE-UP ONLY - the primary control (review round 2: CA taints
+            # and DRAINS before provider deletion is attempted, so the
+            # adapter's Unimplemented DeleteNodes is only defense in depth).
+            # This flag is deprecated in CA 1.35: its presence is part of the
+            # CA upgrade gate; do not bump the tag without re-verifying.
+            - --scale-down-enabled=false
+            # Status ConfigMap + events live in OUR namespace; the upstream
+            # default is kube-system, where the RBAC (correctly) forbids us.
+            - --namespace={{ $ns }}
+            # New nodes carry the pending taint until the acceptance gate
+            # passes; without this flag CA would simulate them unusable and
+            # never scale (fail-closed by design, this flag is the "open").
+            - --startup-taint=kube-dc.com/mgmt-node-pending
+            # Makes advertised node-group minima a provisioning target for
+            # pools with enforceMin (advertised MinSize=0 otherwise).
+            - --enforce-node-group-min-size=true
+            # Must EXCEED the pool joinTimeout (20m default) so our ledger
+            # times out first and CA never abandons an attempt we still track.
+            - --max-node-provision-time=25m
+            - --leader-elect=false
+            - --record-duplicated-events=false
+          volumeMounts:
+            - {name: cloud-config, mountPath: /etc/ca-cloud-config, readOnly: true}
+            - {name: client-tls, mountPath: /etc/ca-client-tls, readOnly: true}
+          resources:
+            requests: {cpu: 50m, memory: 300Mi}
+      volumes:
+        - name: cloud-config
+          configMap: {name: mgmt-autoscaler-cloud-config}
+        - name: client-tls
+          secret: {secretName: mgmt-autoscaler-client-tls}
+---
+# Defense at admission: a node claiming pool membership must either carry the
+# controller-stamped accepted label (NodeRestriction prefix — a kubelet cannot
+# forge it) or the EXACT pending startup taint. Covers UPDATE as well as
+# CREATE: the pool label itself is kubelet-mutable, so without UPDATE coverage
+# a node could register unlabelled (passing the policy trivially) and add the
+# label afterwards (review finding). Value and effect are matched exactly —
+# value=false or PreferNoSchedule passes a key-only check while keeping the
+# node schedulable (review finding). The controller's promotion adds the
+# accepted label and removes the taint in ONE update, so it always satisfies
+# the first branch; quarantined nodes keep the taint and satisfy the second.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: mgmt-worker-pending-taint
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [nodes]
+  validations:
+    - expression: >-
+        !has(object.metadata.labels)
+        || !('kube-dc.com/mgmt-pool' in object.metadata.labels)
+        || ('kube-dc.com.node-restriction.kubernetes.io/accepted' in object.metadata.labels)
+        || (has(object.spec.taints) && object.spec.taints.exists(t, t.key == 'kube-dc.com/mgmt-node-pending' && t.value == 'true' && t.effect == 'NoSchedule'))
+      message: "nodes claiming a kube-dc mgmt pool must carry the accepted label or register with the exact kube-dc.com/mgmt-node-pending=true:NoSchedule startup taint"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: mgmt-worker-pending-taint
+spec:
+  policyName: mgmt-worker-pending-taint
+  validationActions: [Deny]
+{{- if .Values.k8Manager.metricsEnabled }}
+---
+# Paging, not just status (review round 2): gauges are exported by the
+# k8-manager provisioner via its metrics endpoint, so the alerts gate on the
+# same flag that exposes it.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: mgmt-autoscaling-alerts
+  namespace: {{ $ns }}
+  labels: {release: monitoring}
+spec:
+  groups:
+    - name: mgmt-worker-autoscaling
+      rules:
+        - alert: MgmtWorkerProvisioningStuck
+          expr: kube_dc_mgmt_pool_timed_out_attempts > 0
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "Management worker pool {{`{{ $labels.pool }}`}} has stopped, unacknowledged VM(s)"
+            description: "A provisioning attempt timed out; the VM was stopped but holds a ceiling slot AND keeps billing storage/IP. Follow the acknowledge/cleanup runbook in docs/prd/mgmt-worker-autoscaling.md."
+        - alert: MgmtWorkerDependencyOutage
+          expr: kube_dc_mgmt_pool_dependency_outage > 0
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: "Management worker pool {{`{{ $labels.pool }}`}} cannot provision"
+            description: "Provider client or token broker unavailable - the pool is fail-closed and will not grow."
+        - alert: MgmtClusterAutoscalerDown
+          # The absent() branch covers the WORST failure — Deployment (or its
+          # metric series) gone entirely, where a bare ==0 never fires
+          # (review finding).
+          expr: >-
+            (kube_deployment_status_replicas_available{deployment="mgmt-cluster-autoscaler",namespace="{{ $ns }}"} == 0)
+            or absent(kube_deployment_status_replicas_available{deployment="mgmt-cluster-autoscaler",namespace="{{ $ns }}"})
+          for: 10m
+          labels: {severity: critical}
+          annotations:
+            summary: "Management cluster-autoscaler is down"
+            description: "No scale-up decisions are being made; an adapter outage also blocks CA's Refresh loop entirely."
+{{- end }}
+{{- end }}
+{{- if and .Values.k8Manager.enabled .Values.k8Manager.mgmtAutoscaling.enabled }}
+---
+# Token broker: the ONLY extra privilege is bootstrap-token Secrets in
+# kube-system. Create/get/delete — NO list: the token id is derived
+# deterministically from the attempt ID, so the broker addresses its Secret
+# by name, and `list` would have disclosed every kube-system Secret to a
+# compromised k8-manager credential (review finding). RBAC cannot express
+# "bootstrap tokens only", so delete remains namespace-wide by verb — the
+# broker's own type+label check is the guard, and the blast radius has no
+# read primitive to pair with.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kube-dc-mgmt-token-broker
+  namespace: kube-system
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create, get, delete]
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [kube-root-ca.crt]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kube-dc-mgmt-token-broker
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kube-dc-mgmt-token-broker
+subjects:
+  - kind: ServiceAccount
+    name: kube-dc-k8-manager
+    namespace: {{ .Release.Namespace }}
+{{- end }}

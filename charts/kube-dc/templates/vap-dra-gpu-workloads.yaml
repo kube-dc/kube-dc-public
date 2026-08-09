@@ -1,0 +1,308 @@
+{{- $draProfiles := list -}}
+{{- range $profile := .Values.gpu.profiles -}}
+{{- if and $profile.enabled (eq ($profile.allocationBackend | default "") "dra") -}}
+{{- $request := required (printf "gpu profile %s requires request bounds" $profile.id) $profile.request -}}
+{{- if or (not (hasKey $request "allowCustom")) (not (kindIs "bool" $request.allowCustom)) $request.allowCustom -}}
+{{- fail (printf "gpu profile %s allocationBackend dra requires request.allowCustom=false" $profile.id) -}}
+{{- end -}}
+{{- if ne (len ($request.presets | default (list))) 1 -}}
+{{- fail (printf "gpu profile %s allocationBackend dra requires exactly one request preset" $profile.id) -}}
+{{- end -}}
+{{- $unit := index $request.presets 0 -}}
+{{- if ne ($unit.default | default false) true -}}
+{{- fail (printf "gpu profile %s allocationBackend dra requires its fixed request preset to be the default" $profile.id) -}}
+{{- end -}}
+{{- if or (le (int $unit.memoryMiB) 0) (gt (int $unit.memoryMiB) (int $profile.memoryMiB)) (le (int $unit.corePercent) 0) (gt (int $unit.corePercent) 100) -}}
+{{- fail (printf "gpu profile %s fixed DRA request must fit physical memory and core capacity" $profile.id) -}}
+{{- end -}}
+{{- $draProfiles = append $draProfiles $profile -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.gpu.enabled (gt (len $draProfiles) 0) }}
+{{- $profileLabel := required "gpu.profileLabel is required when a DRA profile is active" .Values.gpu.profileLabel -}}
+{{- $profileIDs := list -}}
+{{- range $profile := $draProfiles -}}
+{{- $profileIDs = append $profileIDs $profile.id -}}
+{{- end -}}
+# Canonical fixed product contract for backend-owned templates. Selectors,
+# alternatives, constraints, config, admin access, and arbitrary capacity are
+# absent by construction and fail closed here if introduced.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: kube-dc-dra-gpu-claim-templates
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["resource.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["resourceclaimtemplates"]
+  validations:
+    - expression: >-
+        has(object.metadata.labels) &&
+        object.metadata.labels['app.kubernetes.io/managed-by'] == 'kube-dc' &&
+        object.metadata.labels['kube-dc.com/gpu-backend'] == 'dra' &&
+        {{ $profileLabel | quote }} in object.metadata.labels &&
+        object.metadata.labels[{{ $profileLabel | quote }}] in {{ $profileIDs | toJson }} &&
+        'app.kubernetes.io/name' in object.metadata.labels &&
+        object.metadata.name == object.metadata.labels['app.kubernetes.io/name'] + '-gpu'
+      message: "DRA GPU claim templates require canonical kube-dc ownership and naming."
+    - expression: >-
+        has(object.spec.spec.devices) &&
+        has(object.spec.metadata) && has(object.spec.metadata.labels) &&
+        object.spec.metadata.labels == object.metadata.labels &&
+        has(object.spec.spec.devices.requests) &&
+        size(object.spec.spec.devices.requests) == 1 &&
+        (!has(object.spec.spec.devices.constraints) || size(object.spec.spec.devices.constraints) == 0) &&
+        (!has(object.spec.spec.devices.config) || size(object.spec.spec.devices.config) == 0)
+      message: "DRA GPU claim templates require exactly one request and no tenant constraints or config."
+{{ range $profile := $draProfiles }}
+{{ $unit := index $profile.request.presets 0 }}
+    - expression: >-
+        object.metadata.labels[{{ $profileLabel | quote }}] != {{ $profile.id | quote }} ||
+        (object.spec.spec.devices.requests[0].name == 'gpu' &&
+         has(object.spec.spec.devices.requests[0].exactly) &&
+         !has(object.spec.spec.devices.requests[0].firstAvailable) &&
+         object.spec.spec.devices.requests[0].exactly.deviceClassName == {{ $profile.dra.deviceClassName | quote }} &&
+         object.spec.spec.devices.requests[0].exactly.allocationMode == 'ExactCount' &&
+         object.spec.spec.devices.requests[0].exactly.count == 1 &&
+         (!has(object.spec.spec.devices.requests[0].exactly.adminAccess) ||
+          object.spec.spec.devices.requests[0].exactly.adminAccess == false) &&
+         (!has(object.spec.spec.devices.requests[0].exactly.selectors) ||
+          size(object.spec.spec.devices.requests[0].exactly.selectors) == 0) &&
+         has(object.spec.spec.devices.requests[0].exactly.capacity) &&
+         has(object.spec.spec.devices.requests[0].exactly.capacity.requests) &&
+         size(object.spec.spec.devices.requests[0].exactly.capacity.requests) == 2 &&
+         {{ $profile.dra.memoryCapacity | quote }} in object.spec.spec.devices.requests[0].exactly.capacity.requests &&
+         {{ $profile.dra.coreCapacity | quote }} in object.spec.spec.devices.requests[0].exactly.capacity.requests &&
+         quantity(object.spec.spec.devices.requests[0].exactly.capacity.requests[{{ $profile.dra.memoryCapacity | quote }}]).compareTo(quantity({{ printf "%dMi" (int64 $unit.memoryMiB) | quote }})) == 0 &&
+         quantity(object.spec.spec.devices.requests[0].exactly.capacity.requests[{{ $profile.dra.coreCapacity | quote }}]).compareTo(quantity({{ printf "%d" (int64 $unit.corePercent) | quote }})) == 0)
+      message: "DRA GPU claim capacity and DeviceClass must match the selected fixed product."
+{{ end }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: kube-dc-dra-gpu-claim-templates
+spec:
+  policyName: kube-dc-dra-gpu-claim-templates
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+---
+# The Deployment carries only a stable product profile and template reference;
+# native DeviceClass and capacity identity remain in the protected template.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: kube-dc-dra-gpu-deployments
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments"]
+  matchConditions:
+    - name: has-dra-contract
+      expression: >-
+        has(object.spec.template.spec.resourceClaims) ||
+        (has(object.metadata.labels) &&
+         'kube-dc.com/gpu-backend' in object.metadata.labels &&
+         object.metadata.labels['kube-dc.com/gpu-backend'] == 'dra')
+  variables:
+    - name: podSpec
+      expression: object.spec.template.spec
+    - name: container
+      expression: object.spec.template.spec.containers[0]
+  validations:
+    - expression: >-
+        has(object.metadata.labels) && has(object.spec.template.metadata.labels) &&
+        has(object.metadata.annotations) && has(object.spec.template.metadata.annotations) &&
+        'kube-dc.com/gpu-workload-hash' in object.metadata.annotations &&
+        object.spec.template.metadata.annotations['kube-dc.com/gpu-workload-hash'] ==
+          object.metadata.annotations['kube-dc.com/gpu-workload-hash'] &&
+        object.metadata.labels['app.kubernetes.io/managed-by'] == 'kube-dc' &&
+        object.metadata.labels['kube-dc.com/gpu-backend'] == 'dra' &&
+        object.spec.template.metadata.labels == object.metadata.labels &&
+        {{ $profileLabel | quote }} in object.metadata.labels &&
+        object.metadata.labels[{{ $profileLabel | quote }}] in {{ $profileIDs | toJson }}
+      message: "DRA GPU Deployments require canonical kube-dc ownership and an enabled profile."
+{{ range $profile := $draProfiles }}
+{{ $unit := index $profile.request.presets 0 }}
+    - expression: >-
+        object.metadata.labels[{{ $profileLabel | quote }}] != {{ $profile.id | quote }} ||
+        ('kube-dc.com/gpu-memory-mib' in object.metadata.annotations &&
+         'kube-dc.com/gpu-core-percent' in object.metadata.annotations &&
+         object.spec.template.metadata.annotations['kube-dc.com/gpu-memory-mib'] ==
+           object.metadata.annotations['kube-dc.com/gpu-memory-mib'] &&
+         object.spec.template.metadata.annotations['kube-dc.com/gpu-core-percent'] ==
+           object.metadata.annotations['kube-dc.com/gpu-core-percent'] &&
+         object.metadata.annotations['kube-dc.com/gpu-memory-mib'] == {{ printf "%d" (int64 $unit.memoryMiB) | quote }} &&
+         object.metadata.annotations['kube-dc.com/gpu-core-percent'] == {{ printf "%d" (int64 $unit.corePercent) | quote }})
+      message: "DRA GPU Deployment product annotations must match the selected fixed product."
+{{ end }}
+    - expression: >-
+        size(variables.podSpec.containers) == 1 &&
+        (!has(variables.podSpec.initContainers) || size(variables.podSpec.initContainers) == 0) &&
+        (!has(variables.podSpec.ephemeralContainers) || size(variables.podSpec.ephemeralContainers) == 0) &&
+        has(variables.podSpec.resourceClaims) && size(variables.podSpec.resourceClaims) == 1 &&
+        variables.podSpec.resourceClaims[0].name == 'gpu' &&
+        has(variables.podSpec.resourceClaims[0].resourceClaimTemplateName) &&
+        variables.podSpec.resourceClaims[0].resourceClaimTemplateName == object.metadata.name + '-gpu' &&
+        !has(variables.podSpec.resourceClaims[0].resourceClaimName) &&
+        has(variables.container.resources) && has(variables.container.resources.claims) &&
+        size(variables.container.resources.claims) == 1 &&
+        variables.container.resources.claims[0].name == 'gpu'
+      message: "DRA GPU Deployments require one canonical claim template and one GPU workload container."
+    - expression: >-
+        has(object.spec.strategy) && object.spec.strategy.type == 'Recreate'
+      message: "DRA GPU Deployments must use Recreate so quota is released before a replacement claim is requested."
+    - expression: >-
+        (!has(variables.podSpec.schedulerName) || variables.podSpec.schedulerName in ['', 'default-scheduler']) &&
+        (!has(variables.podSpec.nodeName) || variables.podSpec.nodeName == '') &&
+        (!has(variables.podSpec.nodeSelector) || size(variables.podSpec.nodeSelector) == 0) &&
+        (!has(variables.podSpec.affinity) || !has(variables.podSpec.affinity.nodeAffinity)) &&
+        (!has(variables.podSpec.runtimeClassName) || variables.podSpec.runtimeClassName == '')
+      message: "DRA GPU Deployments cannot select nodes or a runtime class."
+    - expression: >-
+        (!has(variables.podSpec.hostNetwork) || variables.podSpec.hostNetwork == false) &&
+        (!has(variables.podSpec.hostPID) || variables.podSpec.hostPID == false) &&
+        (!has(variables.podSpec.hostIPC) || variables.podSpec.hostIPC == false) &&
+        (!has(variables.podSpec.volumes) || variables.podSpec.volumes.all(v, !has(v.hostPath)))
+      message: "DRA GPU Deployments cannot use host namespaces or hostPath volumes."
+    - expression: >-
+        (!has(variables.container.securityContext) ||
+         ((!has(variables.container.securityContext.privileged) || variables.container.securityContext.privileged == false) &&
+          (!has(variables.container.securityContext.allowPrivilegeEscalation) || variables.container.securityContext.allowPrivilegeEscalation == false) &&
+          (!has(variables.container.securityContext.capabilities) ||
+           !has(variables.container.securityContext.capabilities.add) ||
+           size(variables.container.securityContext.capabilities.add) == 0)))
+      message: "DRA GPU Deployments cannot use privileged or added-capability containers."
+    - expression: >-
+        (!has(variables.container.volumeDevices) || size(variables.container.volumeDevices) == 0) &&
+        (!has(variables.container.envFrom) || size(variables.container.envFrom) == 0)
+      message: "DRA GPU Deployments cannot use raw volume devices or imported environments."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: kube-dc-dra-gpu-deployments
+spec:
+  policyName: kube-dc-dra-gpu-deployments
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+---
+# Pods are generated by the ReplicaSet controller. Direct tenant Pods and Pods
+# referencing foreign/raw claims fail closed; lifecycle UPDATEs remain possible.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: kube-dc-dra-gpu-pods
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods", "pods/ephemeralcontainers"]
+  matchConditions:
+    - name: has-dra-contract
+      expression: >-
+        has(object.spec.resourceClaims) ||
+        (has(object.metadata.labels) &&
+         'kube-dc.com/gpu-backend' in object.metadata.labels &&
+         object.metadata.labels['kube-dc.com/gpu-backend'] == 'dra')
+  variables:
+    - name: container
+      expression: object.spec.containers[0]
+  validations:
+    - expression: >-
+        has(object.metadata.labels) &&
+        has(object.metadata.annotations) &&
+        object.metadata.labels['app.kubernetes.io/managed-by'] == 'kube-dc' &&
+        object.metadata.labels['kube-dc.com/gpu-backend'] == 'dra' &&
+        {{ $profileLabel | quote }} in object.metadata.labels &&
+        object.metadata.labels[{{ $profileLabel | quote }}] in {{ $profileIDs | toJson }}
+      message: "DRA GPU Pods require canonical kube-dc ownership and an enabled profile."
+    - expression: >-
+        has(object.metadata.ownerReferences) &&
+        object.metadata.ownerReferences.exists(o,
+          o.kind == 'ReplicaSet' && has(o.controller) && o.controller == true)
+      message: "DRA GPU Pods must have a controlling ReplicaSet owner."
+    - expression: >-
+        request.operation != 'CREATE' || request.userInfo.username in [
+          'system:kube-controller-manager',
+          'system:serviceaccount:kube-system:replicaset-controller'
+        ]
+      message: "DRA GPU Pods must be created by the ReplicaSet controller."
+{{ range $profile := $draProfiles }}
+{{ $unit := index $profile.request.presets 0 }}
+    - expression: >-
+        object.metadata.labels[{{ $profileLabel | quote }}] != {{ $profile.id | quote }} ||
+        ('kube-dc.com/gpu-memory-mib' in object.metadata.annotations &&
+         'kube-dc.com/gpu-core-percent' in object.metadata.annotations &&
+         object.metadata.annotations['kube-dc.com/gpu-memory-mib'] == {{ printf "%d" (int64 $unit.memoryMiB) | quote }} &&
+         object.metadata.annotations['kube-dc.com/gpu-core-percent'] == {{ printf "%d" (int64 $unit.corePercent) | quote }})
+      message: "DRA GPU Pod product annotations must match the selected fixed product."
+{{ end }}
+    - expression: >-
+        size(object.spec.containers) == 1 &&
+        (!has(object.spec.initContainers) || size(object.spec.initContainers) == 0) &&
+        (!has(object.spec.ephemeralContainers) || size(object.spec.ephemeralContainers) == 0) &&
+        has(object.spec.resourceClaims) && size(object.spec.resourceClaims) == 1 &&
+        object.spec.resourceClaims[0].name == 'gpu' &&
+        has(object.spec.resourceClaims[0].resourceClaimTemplateName) &&
+        object.spec.resourceClaims[0].resourceClaimTemplateName == object.metadata.labels['app.kubernetes.io/name'] + '-gpu' &&
+        !has(object.spec.resourceClaims[0].resourceClaimName) &&
+        has(variables.container.resources) && has(variables.container.resources.claims) &&
+        size(variables.container.resources.claims) == 1 &&
+        variables.container.resources.claims[0].name == 'gpu'
+      message: "DRA GPU Pods must reference the canonical generated claim."
+    - expression: >-
+        (!has(object.spec.schedulerName) || object.spec.schedulerName in ['', 'default-scheduler']) &&
+        (request.operation != 'CREATE' || !has(object.spec.nodeName) || object.spec.nodeName == '') &&
+        (!has(object.spec.nodeSelector) || size(object.spec.nodeSelector) == 0) &&
+        (!has(object.spec.affinity) || !has(object.spec.affinity.nodeAffinity)) &&
+        (!has(object.spec.runtimeClassName) || object.spec.runtimeClassName == '')
+      message: "DRA GPU Pods cannot select nodes or a runtime class."
+    - expression: >-
+        (!has(object.spec.hostNetwork) || object.spec.hostNetwork == false) &&
+        (!has(object.spec.hostPID) || object.spec.hostPID == false) &&
+        (!has(object.spec.hostIPC) || object.spec.hostIPC == false) &&
+        (!has(object.spec.volumes) || object.spec.volumes.all(v, !has(v.hostPath)))
+      message: "DRA GPU Pods cannot use host namespaces or hostPath volumes."
+    - expression: >-
+        (!has(variables.container.securityContext) ||
+         ((!has(variables.container.securityContext.privileged) || variables.container.securityContext.privileged == false) &&
+          (!has(variables.container.securityContext.allowPrivilegeEscalation) || variables.container.securityContext.allowPrivilegeEscalation == false) &&
+          (!has(variables.container.securityContext.capabilities) ||
+           !has(variables.container.securityContext.capabilities.add) ||
+           size(variables.container.securityContext.capabilities.add) == 0)))
+      message: "DRA GPU Pods cannot use privileged or added-capability containers."
+    - expression: >-
+        (!has(variables.container.volumeDevices) || size(variables.container.volumeDevices) == 0) &&
+        (!has(variables.container.envFrom) || size(variables.container.envFrom) == 0)
+      message: "DRA GPU Pods cannot use raw volume devices or imported environments."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: kube-dc-dra-gpu-pods
+spec:
+  policyName: kube-dc-dra-gpu-pods
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+{{- end }}

@@ -1,0 +1,102 @@
+{{- if .Values.platformComponentAlerts.enabled }}
+# Health of PLATFORM components that run inside tenant project namespaces
+# (tenant control plane, CCM, CSI controller, cluster-autoscaler, etcd).
+#
+# These live in a customer's namespace but are ours to run, and their failures
+# do not look like failures to the customer: when the per-cluster
+# cluster-autoscaler could not reach the management apiserver it
+# CrashLoopBackOffed for NINE HOURS and the only symptom anyone saw was "idle
+# nodes are never removed" (cloud, 2026-08-07).
+#
+# Admission now fails closed on a component that declares a network role the
+# platform cannot provide, which catches that class at DEPLOY time. These
+# alerts are the runtime backstop for everything else: image pull failures,
+# OOM, a dependency that breaks after the pod started.
+#
+# Deliberately NOT driven by the component's own metrics: a process that
+# cannot start exports nothing. kube-state-metrics observes it from outside.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kube-dc-platform-components
+  namespace: {{ .Release.Namespace }}
+  labels:
+    release: {{ .Values.platformComponentAlerts.prometheusReleaseLabel | default "monitoring" }}
+spec:
+  groups:
+    - name: kube-dc.platform-components-in-projects
+      rules:
+        - alert: KubeDCPlatformComponentUnavailable
+          # Any Deployment we own in a project namespace with no available
+          # replica. The name regexes follow the controllers' naming: the
+          # tenant control plane (<cluster>-cp), CCM, CSI controller and the
+          # cluster-autoscaler.
+          expr: |
+            max by (namespace, deployment) (
+              kube_deployment_status_replicas_available{
+                deployment=~".*-cluster-autoscaler|.*-kubevirt-csi-controller|kccm-.*|csccm-.*|.*-cp"
+              } == 0
+              and on (namespace, deployment)
+              kube_deployment_spec_replicas{
+                deployment=~".*-cluster-autoscaler|.*-kubevirt-csi-controller|kccm-.*|csccm-.*|.*-cp"
+              } > 0
+            )
+          for: 15m
+          labels:
+            severity: critical
+            kube-dc.com/runbook: managed-k8s-troubleshooting.md
+          annotations:
+            summary: "Platform component {{ "{{ $labels.deployment }}" }} is down in {{ "{{ $labels.namespace }}" }}"
+            description: |
+              {{ "{{ $labels.deployment }}" }} has had no available replica for 15
+              minutes. It runs in a tenant project namespace, so the customer sees
+              only the symptom — a control plane that does not answer, volumes that
+              do not attach, or a pool that never autoscales.
+
+              First check the pod's network attachments: a platform component in a
+              project namespace needs the dual-home infra NIC to reach the
+              management apiserver.
+                kubectl -n {{ "{{ $labels.namespace }}" }} get pod -l app.kubernetes.io/name -o jsonpath='{.items[*].metadata.annotations.k8s\.v1\.cni\.cncf\.io/network-status}'
+              Two entries (kube-ovn 100.66.x plus the tenant default) is healthy.
+              One entry means the infra-attachment webhook did not classify it —
+              see internal/infraattachment/pod_role.go.
+
+        - alert: KubeDCPlatformComponentCrashLooping
+          # Faster signal than Unavailable, and the one that would have caught
+          # the autoscaler: restarts climbing on a platform pod.
+          expr: |
+            increase(
+              kube_pod_container_status_restarts_total{
+                pod=~".*-cluster-autoscaler-.*|.*-kubevirt-csi-controller-.*|kccm-.*|csccm-.*"
+              }[15m]
+            ) > 3
+          for: 5m
+          labels:
+            severity: warning
+            kube-dc.com/runbook: managed-k8s-troubleshooting.md
+          annotations:
+            summary: "Platform component {{ "{{ $labels.pod }}" }} is crash-looping"
+            description: |
+              {{ "{{ $labels.pod }}" }} in {{ "{{ $labels.namespace }}" }} restarted more
+              than 3 times in 15 minutes. Check `kubectl -n {{ "{{ $labels.namespace }}" }}
+              logs {{ "{{ $labels.pod }}" }} --previous`; a "dial tcp <ClusterIP>:443 i/o
+              timeout" against the management apiserver means the pod is missing its
+              infra NIC.
+
+        - alert: KubeDCTenantEtcdNotReady
+          # The datastore behind a tenant control plane.
+          expr: |
+            kube_statefulset_status_replicas_ready{statefulset=~".*-etcd-etcd"}
+              < kube_statefulset_replicas{statefulset=~".*-etcd-etcd"}
+          for: 15m
+          labels:
+            severity: critical
+            kube-dc.com/runbook: managed-k8s-troubleshooting.md
+          annotations:
+            summary: "Tenant etcd {{ "{{ $labels.statefulset }}" }} is degraded"
+            description: |
+              {{ "{{ $labels.statefulset }}" }} in {{ "{{ $labels.namespace }}" }} has fewer
+              ready replicas than desired for 15 minutes. Tenant etcd is node-pinned
+              (local-path): check whether its node is under DiskPressure before
+              anything else.
+{{- end }}

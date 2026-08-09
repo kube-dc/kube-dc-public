@@ -174,6 +174,10 @@ type fakeSetupK8s struct {
 	caErr  error
 }
 
+func (f *fakeSetupK8s) PodContainerArgs(context.Context, string, string) (map[string][]string, error) {
+	return nil, nil
+}
+
 func (f *fakeSetupK8s) GetConfigMapData(_ context.Context, ns, name, key string) (string, error) {
 	if f.caErr != nil {
 		return "", f.caErr
@@ -190,6 +194,10 @@ func (f *fakeSetupK8s) GetConfigMapData(_ context.Context, ns, name, key string)
 func (f *fakeSetupK8s) DiscoverFluxGraph(context.Context) (ports.Graph, error) {
 	panic("fakeSetupK8s: DiscoverFluxGraph not stubbed")
 }
+func (f *fakeSetupK8s) NodeInternalIPs(context.Context) (map[string]string, error) {
+	return map[string]string{}, nil
+}
+
 func (f *fakeSetupK8s) NodeLabels(context.Context) (map[string]map[string]string, error) {
 	panic("fakeSetupK8s: NodeLabels not stubbed")
 }
@@ -513,4 +521,10 @@ func TestEmbeddedHCL_HasExpectedPaths(t *testing.T) {
 		t.Errorf("SnapshotPolicyHCL must grant only Raft snapshot read: %q", SnapshotPolicyHCL)
 	}
 
+}
+
+// SetNodeLabel is unused by these tests; the ingress-label step is covered in
+// clusterinit/ingresslabels_test.go.
+func (f *fakeSetupK8s) SetNodeLabel(context.Context, string, string, string) error {
+	return nil
 }

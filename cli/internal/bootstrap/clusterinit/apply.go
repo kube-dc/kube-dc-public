@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
+	"strings"
 )
 
 // M4-T12 — apply.
@@ -80,11 +81,27 @@ type ApplyOptions struct {
 	// Scaffold (step 8: 6443-listener removal patch).
 	SingleIPNAT bool
 
+	// ControlPlaneNodes are the real control-plane node NAMES, resolved from
+	// the live cluster when one is reachable. Empty means "unknown", which
+	// makes the :6443 set-intersection derivation stand down in favour of the
+	// address heuristic. It must never be filled with KUBE_OVN_GW_NODES: the
+	// gateway set is not the control-plane set (the reference cluster has a
+	// gateway node that is an ordinary worker), and substituting it inverts
+	// the listener decision for exactly those nodes.
+	ControlPlaneNodes []string
+
 	// Sets + NodeNICs are the operator's resolved --set / --node-nic
 	// maps. They must match what was in the plan when it was built
 	// (VerifyApplyPlanInput enforces this for --apply-plan; the
 	// default-flow path builds Plan + opts from the SAME InitOptions
 	// in one go, so they're guaranteed-coherent there).
+	// RequestedIngressLayer is the operator's EXPLICIT --ingress-address-layer,
+	// empty when they passed none. Deliberately NOT Plan.IngressAddressLayer,
+	// which is the RESOLVED layer and therefore never empty: comparing the
+	// resolved value would refuse every ordinary resume of a VIP cluster,
+	// because "flag absent" resolves to "none" and looks like a change request.
+	RequestedIngressLayer string
+
 	Sets     map[string]string
 	NodeNICs map[string]string
 
@@ -143,6 +160,16 @@ type ApplyOptions struct {
 	// flux-install is also skipped because Flux can't reconcile
 	// from a non-pushed commit.
 	NoPush bool
+
+	// K8s, when set, lets Apply label the front-door ingress nodes before the overlay
+	// is committed (StepIngressNodes). The generated overlay selects the host-bind
+	// component, whose nodeSelector is INGRESS_NODE_LABEL, so without the label every
+	// Envoy replica is unschedulable and a brand-new cluster has no front door while
+	// every manifest is correct and Flux is green.
+	//
+	// Nil means the step is skipped — and it is deliberately skipped for --no-push,
+	// which produces a local-only overlay and must not mutate a live cluster.
+	K8s ports.K8sClient
 
 	// Out is the operator-facing log writer. nil = ioutil.Discard.
 	Out io.Writer
@@ -212,6 +239,61 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 		return fmt.Errorf("%w (dirty paths: %v)", ErrDirtyWorkingTree, paths)
 	}
 
+	// Phase 2b: label the front-door ingress nodes.
+	//
+	// Deliberately BEFORE scaffold/commit: the overlay this run is about to write
+	// selects the host-bind component, which places Envoy by INGRESS_NODE_LABEL. If the
+	// label cannot be established, committing that overlay hands Flux a front door that
+	// can never schedule. Failing here leaves the fleet repo untouched.
+	//
+	// Skipped for --no-push (local-only overlay must not mutate a cluster) and when no
+	// K8s client was supplied.
+	if opts.K8s == nil {
+		rep.Skip(StepIngressNodes, "no cluster connection")
+	} else if opts.NoPush {
+		rep.Skip(StepIngressNodes, "--no-push: not mutating a live cluster")
+	} else {
+		rep.Start(StepIngressNodes)
+		ingressNodes := opts.Plan.IngressNodes
+		if err := EnsureIngressNodeLabels(ctx, opts.K8s, ingressNodes, opts.Plan.IngressNodeLabel, out); err != nil {
+			rep.Done(StepIngressNodes, err)
+			return fmt.Errorf("apply: label ingress nodes: %w", err)
+		}
+		// Same step, same node set: derive the prefix the platform NetworkPolicies must
+		// admit. Envoy is hostNetwork, so it reaches OpenBao and the Flux UI with a NODE
+		// address that no namespaceSelector can match; without this value those upstreams
+		// are denied. Nothing in the installer computed it, and the scaffold could only
+		// discover it when handed a kubeconfig it is not normally given — so a normal
+		// `bootstrap init` left it empty.
+		//
+		// An explicit --set INGRESS_HOST_CIDR always wins: an operator who knows their
+		// nodes source from a different NIC than their InternalIP must be able to say so.
+		if _, pinned := opts.Sets["INGRESS_HOST_CIDR"]; pinned {
+			fmt.Fprintf(out, "  ingress host CIDR: %s (operator-supplied, not derived)\n",
+				opts.Sets["INGRESS_HOST_CIDR"])
+		} else if cidr, addrs, err := IngressHostCIDRFor(ctx, opts.K8s, ingressNodes); err != nil {
+			// Do NOT fail the install: the value is also validated by the fleet render
+			// gate and by frontdoor-check.sh preflight, and refusing here would block an
+			// install for a cluster whose addressing simply cannot be expressed as one
+			// prefix (dual-stack). Say exactly what to do instead.
+			fmt.Fprintf(out, "  WARNING: could not derive INGRESS_HOST_CIDR: %v\n", err)
+			fmt.Fprintf(out, "           Set it explicitly (--set INGRESS_HOST_CIDR=...) to the prefix\n")
+			fmt.Fprintf(out, "           carrying the ingress nodes' upstream source addresses, or the\n")
+			fmt.Fprintf(out, "           platform NetworkPolicies will DENY the host-bound Envoy and\n")
+			fmt.Fprintf(out, "           OpenBao and the Flux UI will answer 503.\n")
+		} else {
+			opts.Plan.IngressHostCIDR = cidr
+			fmt.Fprintf(out, "  ingress host CIDR: %s (derived from %d ingress node address(es): %s)\n",
+				cidr, len(addrs), strings.Join(addrs, ", "))
+			if cidrIsWiderThanNeeded(cidr, len(addrs)) {
+				fmt.Fprintf(out, "           note: that prefix is wider than those addresses need — it is the\n")
+				fmt.Fprintf(out, "           smallest SINGLE prefix covering them, and the policies render one\n")
+				fmt.Fprintf(out, "           ipBlock. Override with --set INGRESS_HOST_CIDR=... to narrow it.\n")
+			}
+		}
+		rep.Done(StepIngressNodes, nil)
+	}
+
 	// Phase 3: scaffold (T10 script + T11 customInterfaces).
 	//
 	// **Cleanup on Scaffold failure** (M4-T12 review-pass — P2):
@@ -232,24 +314,32 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 	resuming := false
 	rep.Start(StepScaffold)
 	if err := Scaffold(ctx, ScaffoldOptions{
-		Plan:           opts.Plan,
-		FleetRepo:      opts.FleetRepo,
-		NodeExternalIP: opts.NodeExternalIP,
-		NodeCIDR:       opts.NodeCIDR,
-		Sets:           opts.Sets,
-		NodeNICs:       opts.NodeNICs,
-		ObjectStorage:  opts.ObjectStorage,
-		VMStorage:      opts.VMStorage,
-		ImageAccel:     opts.ImageAccel,
-		WildcardTLS:    opts.WildcardTLS,
-		DNS01Route53:   opts.DNS01Route53,
-		TrustedCA:      opts.TrustedCA,
-		GPU:            opts.GPU,
-		SingleIPNAT:    opts.SingleIPNAT,
-		Runner:         opts.Runner,
-		Out:            out,
+		Plan:              opts.Plan,
+		FleetRepo:         opts.FleetRepo,
+		NodeExternalIP:    opts.NodeExternalIP,
+		NodeCIDR:          opts.NodeCIDR,
+		Sets:              opts.Sets,
+		NodeNICs:          opts.NodeNICs,
+		ObjectStorage:     opts.ObjectStorage,
+		VMStorage:         opts.VMStorage,
+		ImageAccel:        opts.ImageAccel,
+		WildcardTLS:       opts.WildcardTLS,
+		DNS01Route53:      opts.DNS01Route53,
+		TrustedCA:         opts.TrustedCA,
+		GPU:               opts.GPU,
+		SingleIPNAT:       opts.SingleIPNAT,
+		ControlPlaneNodes: opts.ControlPlaneNodes,
+		Runner:            opts.Runner,
+		Out:               out,
 	}); err != nil {
 		if errors.Is(err, ErrScaffoldTargetExists) {
+			// Before declaring a resume: a resume writes NOTHING, so an
+			// operator asking for a different front door must be told, not
+			// quietly ignored.
+			if fdErr := CheckFrontDoorMatchesOverlay(opts.FleetRepo, opts.Plan.ClusterName, opts.RequestedIngressLayer); fdErr != nil {
+				rep.Done(StepScaffold, fdErr)
+				return fdErr
+			}
 			// RESUME (retry/restart): the overlay already exists from a
 			// prior apply. Rather than fail, skip re-scaffolding and
 			// continue — the Phase-2 clean-tree gate already confirmed

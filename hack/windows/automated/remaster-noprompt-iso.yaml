@@ -1,0 +1,138 @@
+# remaster-noprompt-iso.yaml — rebuild the Windows installer ISO so it boots WITHOUT
+# "Press any key to boot from CD or DVD", then publish it back to the image bucket.
+#
+# WHY: driving that prompt with synthetic keypresses is a race we lose expensively.
+# The prompt lasts ~5 seconds; `virtctl vnc --proxy-only` serves a single connection
+# so taps are sparse; a late tap lands on "Press any key to enter the Boot Manager
+# Menu" and parks the VM in the edk2 menu for hours while Kubernetes reports the VMI
+# Running and Ready. On 2026-08-08 it missed nine attempts in a row.
+#
+# Microsoft ships the answer on the media itself. The ISO contains
+# efi/microsoft/boot/efisys_noprompt.bin — an El Torito EFI boot image identical to
+# efisys.bin except that it uses cdboot_noprompt.efi and boots straight through. Swap
+# the boot image and the prompt is gone for good.
+#
+# SOURCE IS S3, NOT A PVC. Reading the stock ISO straight from the bucket keeps this
+# runnable on any cluster with no prerequisites — otherwise the installer DataVolume
+# would have to exist first, and that DataVolume wants to point at the remastered ISO
+# this Job produces. Pulling from S3 breaks that circle.
+#
+# RUN ONCE per ISO revision, per cluster (or once, and copy the object):
+#   kubectl apply -f hack/windows/automated/remaster-noprompt-iso.yaml
+#   kubectl -n golden-images-build logs -f job/win11-iso-remaster
+#
+# The cdi-os-images credentials live in the `kube-dc` namespace; copy them first:
+#   kubectl -n kube-dc get secret cdi-os-images -o yaml \
+#     | sed 's/namespace: kube-dc/namespace: golden-images-build/' \
+#     | kubectl -n golden-images-build apply -f -
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: golden-images-build
+  labels:
+    kube-dc.com/system: "true"
+    kube-dc.com/system-component: windows-bake
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: iso-remaster-scratch
+  namespace: golden-images-build
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: rbd-vm
+  resources:
+    requests:
+      # source ISO + extracted tree + output ISO, each ~5.4 GB, plus slack.
+      storage: 40Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: win11-iso-remaster
+  namespace: golden-images-build
+  annotations:
+    # A completed Job's pod template is immutable; let Flux leave it alone.
+    kustomize.toolkit.fluxcd.io/ssa: IfNotPresent
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: remaster
+          image: debian:12-slim
+          securityContext:
+            # Needed for the loop mount below. The namespace is labelled
+            # pod-security.kubernetes.io/enforce: privileged for exactly this.
+            privileged: true
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom: { secretKeyRef: { name: cdi-os-images, key: AWS_ACCESS_KEY_ID } }
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: cdi-os-images, key: AWS_SECRET_ACCESS_KEY } }
+            - name: S3_ENDPOINT
+              value: http://rook-ceph-rgw-my-store.rook-ceph.svc
+            - name: SRC_KEY
+              value: windows/11/latest/win11-x64.iso
+            - name: DST_KEY
+              value: windows/11/latest/win11-x64-noprompt.iso
+          command: ["bash", "-euo", "pipefail", "-c"]
+          args:
+            - |
+              apt-get update -qq
+              apt-get install -y -qq xorriso awscli >/dev/null
+
+              SRC=/scratch/src.iso
+              WORK=/scratch/extract
+              OUT=/scratch/out.iso
+              S3="aws --endpoint-url $S3_ENDPOINT s3"
+
+              echo "== fetching s3://cdi-os-images/$SRC_KEY =="
+              $S3 cp "s3://cdi-os-images/$SRC_KEY" "$SRC"
+
+              # LOOP MOUNT, NOT `xorriso -extract`. A Windows installer ISO is an
+              # ISO9660+UDF hybrid and the real file tree lives in the UDF filesystem.
+              # xorriso only understands ISO9660/Rock Ridge/Joliet, so extracting with
+              # it silently yields a single 135-byte stub and the build then fails
+              # claiming efisys_noprompt.bin is missing when it is right there.
+              # The kernel has a UDF driver; use it.
+              echo "== extracting via loop mount (ISO is ISO9660+UDF) =="
+              mkdir -p "$WORK" /mnt/src
+              mount -o ro,loop "$SRC" /mnt/src
+              cp -a /mnt/src/. "$WORK"/
+              umount /mnt/src
+
+              # Confirm the no-prompt boot image is actually there before rebuilding.
+              # If a future ISO revision drops it, fail here with a clear message
+              # rather than producing an ISO that still prompts.
+              test -f "$WORK/efi/microsoft/boot/efisys_noprompt.bin" \
+                || { echo "FATAL: efisys_noprompt.bin missing from this ISO revision"; exit 1; }
+
+              # xorriso extracts read-only; make the tree writable so mkisofs can read it.
+              chmod -R u+w "$WORK"
+
+              echo "== rebuilding with the no-prompt EFI boot image =="
+              # BIOS boot stays on etfsboot.com so the media remains dual-boot; the EFI
+              # entry is the one that carries the prompt, and that is what we replace.
+              xorriso -as mkisofs \
+                -iso-level 4 -full-iso9660-filenames -volid "CCCOMA_X64FRE_EN-US_DV9" \
+                -b boot/etfsboot.com -no-emul-boot -boot-load-size 8 -hide boot.catalog \
+                -eltorito-alt-boot \
+                -e efi/microsoft/boot/efisys_noprompt.bin -no-emul-boot \
+                -o "$OUT" "$WORK" 2>&1 | tail -3
+
+              ls -l "$OUT"
+              echo "== publishing s3://cdi-os-images/$DST_KEY =="
+              $S3 cp --no-progress "$OUT" "s3://cdi-os-images/$DST_KEY"
+              aws --endpoint-url "$S3_ENDPOINT" s3api head-object \
+                --bucket cdi-os-images --key "$DST_KEY" \
+                --query ContentLength --output text
+              echo "== done =="
+          volumeMounts:
+            - { name: scratch, mountPath: /scratch }
+      volumes:
+        - name: scratch
+          persistentVolumeClaim: { claimName: iso-remaster-scratch }

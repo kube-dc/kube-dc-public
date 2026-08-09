@@ -28,15 +28,20 @@ package clusterinit
 type StepID string
 
 const (
-	StepPrepare         StepID = "prepare"
-	StepStarter         StepID = "fleet-starter"
-	StepInstallPrereqs  StepID = "install-prereqs"
-	StepDNS             StepID = "dns"
-	StepKubeVirt        StepID = "kubevirt-eligibility"
-	StepAdoptGate       StepID = "adopt-gate"
-	StepNATProbe        StepID = "nat-probe"
-	StepCreateRepo      StepID = "create-repo"
-	StepRemote          StepID = "configure-remote"
+	StepPrepare        StepID = "prepare"
+	StepStarter        StepID = "fleet-starter"
+	StepInstallPrereqs StepID = "install-prereqs"
+	StepDNS            StepID = "dns"
+	StepKubeVirt       StepID = "kubevirt-eligibility"
+	StepAdoptGate      StepID = "adopt-gate"
+	StepNATProbe       StepID = "nat-probe"
+	StepCreateRepo     StepID = "create-repo"
+	StepRemote         StepID = "configure-remote"
+	// StepIngressNodes labels the front-door nodes. It runs BEFORE scaffold, so a
+	// cluster whose ingress set cannot be satisfied never gets a committed overlay
+	// that selects the host-bind component — the component's nodeSelector is that
+	// label, and without it every Envoy replica is unschedulable.
+	StepIngressNodes    StepID = "ingress-nodes"
 	StepScaffold        StepID = "scaffold"
 	StepCommitPush      StepID = "commit-push"
 	StepFluxInstall     StepID = "flux-install"

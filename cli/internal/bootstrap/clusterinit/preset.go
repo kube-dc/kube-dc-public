@@ -227,16 +227,30 @@ var universalPublicAnchorDefaults = map[string]string{
 // nothing gets a working front door on its node addresses rather than a
 // Service pending forever on a VIP nobody assigned.
 var universalIngressDefaults = map[string]string{
-	// v2 address layer. INGRESS_MODE is retained (deprecated) so a
-	// cluster-config.env written by an older CLI still round-trips.
-	"INGRESS_ADDRESS_LAYER": AddressLayerNone,
-	"INGRESS_MODE":          "metallb-lb",
-	"METALLB_MODE":          "l2",
+	// v2 address layer. INGRESS_MODE is NOT emitted: a new cluster must not be
+	// born carrying the retired key (it would then round-trip forever and keep
+	// the legacy bridge alive). An IMPORTED legacy key is still honoured — see
+	// the bridge in prefill.go — but nothing synthesises one (codex 2026-08-07).
+	// INGRESS_ADDRESS_LAYER is deliberately NOT defaulted here: EnvMapFor must
+	// be able to tell "operator said nothing" from "operator chose none", so it
+	// can INFER a VIP layer when a floating IP is declared instead of silently
+	// ignoring it. See resolveAddressLayer.
+	"METALLB_MODE": "l2",
 	// Envoy service shape, consumed by platform/gateway-config-hostbind.
 	// These four are the ENTIRE per-cluster surface of the address layer.
-	"ENVOY_SERVICE_TYPE":   "ClusterIP",
-	"ENVOY_LB_CLASS":       "null",
-	"ENVOY_TRAFFIC_POLICY": "Local",
+	"ENVOY_SERVICE_TYPE": "ClusterIP",
+	"ENVOY_LB_CLASS":     "null",
+	// null, NOT "Local". Verified by server-side dry-run: the API server
+	// rejects externalTrafficPolicy on a ClusterIP Service —
+	//   spec.externalTrafficPolicy: Invalid value: "Local": may only be set
+	//   for externally-accessible services
+	// so the pair (ClusterIP, Local) renders a Service that cannot be applied
+	// at all. The live host-bind cluster confirms the correct shape: its
+	// ClusterIP Envoy Service carries no externalTrafficPolicy. Under
+	// ClusterIP the setting is meaningless anyway — there is no external hop
+	// to keep node-local, and host-bind already preserves the client IP
+	// because the packet never traverses a Service.
+	"ENVOY_TRAFFIC_POLICY": "null",
 	"INGRESS_NODE_LABEL":   "kube-dc.com/ingress",
 }
 
@@ -253,6 +267,56 @@ const (
 
 // AllAddressLayers is the validation set + help enumeration.
 var AllAddressLayers = []string{AddressLayerNone, AddressLayerMetalLBBGP, AddressLayerMetalLBL2}
+
+// addressLayerRequiresVIP reports whether the layer needs a MetalLB VIP (and
+// therefore the MetalLB addon layers). Empty/unknown → false: the safe
+// no-VIP shape, matching addressLayerEnv's fallback.
+// resolveAddressLayer decides the front-door address layer from what the
+// operator actually expressed. The third return value reports that the input
+// is AMBIGUOUS and the operator must choose.
+//
+// UX contract ("one question, and ask it rather than guess wrong"):
+//   - an EXPLICIT layer always wins — never second-guessed;
+//   - nothing declared → `none`, the fail-safe: it needs nothing from the
+//     network and always yields a working front door, whereas defaulting to a
+//     VIP layer would leave the Envoy Service <pending> forever on a site with
+//     no spare address (broken beats suboptimal);
+//   - a declared METALLB_FLOATING_IP with NO layer → AMBIGUOUS, refuse.
+//
+// The ambiguity is real, not pedantic. Inferring a MetalLB layer from a
+// declared floating IP looks safe — surely reserving an address is intent? —
+// but auditing a live fleet of production clusters disproved it. Of the FOUR
+// that declared METALLB_FLOATING_IP, only TWO were actually serving on it
+// (checked by resolving each cluster's own wildcard hostname, not by reading
+// its config back to itself):
+//   - one reserved a spare address while its real front door was host-bind on
+//     the nodes' own IPs;
+//   - one reserved an address its provider fabric does not deliver at all, and
+//     kept serving through a different path entirely.
+//
+// Inferring would have been right once and would have rewired two production
+// front doors to addresses that cannot carry them. So the key means "an
+// address is reserved", never "this is my front door".
+func resolveAddressLayer(explicit, floatingIP, metallbMode string) (layer string, ambiguous bool) {
+	if l := strings.TrimSpace(explicit); l != "" {
+		return l, false
+	}
+	vip := strings.TrimSpace(floatingIP)
+	if vip != "" && !strings.HasPrefix(vip, "CHANGEME") {
+		// Cannot tell a front-door VIP from a spare/undeliverable reservation.
+		return AddressLayerNone, true
+	}
+	return AddressLayerNone, false
+}
+
+func addressLayerRequiresVIP(layer string) bool {
+	switch strings.TrimSpace(layer) {
+	case AddressLayerMetalLBL2, AddressLayerMetalLBBGP:
+		return true
+	default:
+		return false
+	}
+}
 
 // addressLayerEnv returns the Envoy service scalars + MetalLB mode implied
 // by an address layer. One place decides the shape, so the fleet template,
@@ -272,7 +336,6 @@ func addressLayerEnv(layer string) map[string]string {
 			"ENVOY_LB_CLASS":       "metallb",
 			"ENVOY_TRAFFIC_POLICY": "Local",
 			"METALLB_MODE":         "l2",
-			"INGRESS_MODE":         "metallb-lb",
 		}
 	case AddressLayerMetalLBBGP:
 		return map[string]string{
@@ -280,18 +343,24 @@ func addressLayerEnv(layer string) map[string]string {
 			"ENVOY_LB_CLASS":       "metallb",
 			"ENVOY_TRAFFIC_POLICY": "Local",
 			"METALLB_MODE":         "bgp",
-			"INGRESS_MODE":         "metallb-lb",
 		}
 	default: // AddressLayerNone
 		return map[string]string{
 			// null (not "") — the API server rejects loadBalancerClass on a
 			// ClusterIP Service, and rejects "" too; in the fleet's
 			// strategic-merge value `null` also means "delete this key".
-			"ENVOY_SERVICE_TYPE":   "ClusterIP",
-			"ENVOY_LB_CLASS":       "null",
-			"ENVOY_TRAFFIC_POLICY": "Local",
-			"METALLB_MODE":         "l2",
-			"INGRESS_MODE":         "metallb-lb",
+			"ENVOY_SERVICE_TYPE": "ClusterIP",
+			"ENVOY_LB_CLASS":     "null",
+			// Also null: externalTrafficPolicy is REJECTED on a ClusterIP
+			// Service ("may only be set for externally-accessible services"),
+			// so emitting Local here produced an unappliable Service on every
+			// no-VIP cluster — the fail-safe layer breaking the front door
+			// outright. Both values verified by server-side dry-run.
+			"ENVOY_TRAFFIC_POLICY": "null",
+			// METALLB_MODE is still emitted so the fleet's advertisement
+			// templates have a value under strict envsubst, but with layer
+			//=none no MetalLB layer is installed at all, so it is inert.
+			"METALLB_MODE": "l2",
 		}
 	}
 }
@@ -482,6 +551,29 @@ func SpecFor(p Preset) (PresetSpec, bool) {
 // Special case for PresetCustom: no defaults applied; --set values
 // pass through verbatim; no RequiredKeys check (operator vouches by
 // picking `custom`).
+// ResolvedEnvFor is the CANONICAL env resolver: EnvMapFor plus the dedicated
+// front-door fields that do NOT live in Sets. Every consumer — validation,
+// plan preview, plan hash, scaffold — must go through this, or they compute
+// DIFFERENT front doors from the same operator input.
+//
+// That is not hypothetical: validation used to call EnvMapFor(o.Preset,
+// o.Sets) directly, so an explicit --ingress-address-layer was invisible to
+// it. An explicit metallb-l2 with no VIP validated as `none` (no error) and
+// then scaffolded a LoadBalancer that hangs <pending>; an explicit `none`
+// plus a VIP validated as inferred-MetalLB and then scaffolded the very
+// combination the coherence guard exists to refuse (codex 2026-08-07, P1).
+func ResolvedEnvFor(o *InitOptions) (map[string]string, error) {
+	sets := o.Sets
+	if strings.TrimSpace(o.IngressAddressLayer) != "" {
+		sets = make(map[string]string, len(o.Sets)+1)
+		for k, v := range o.Sets {
+			sets[k] = v
+		}
+		sets["INGRESS_ADDRESS_LAYER"] = strings.TrimSpace(o.IngressAddressLayer)
+	}
+	return EnvMapFor(o.Preset, sets)
+}
+
 func EnvMapFor(p Preset, sets map[string]string) (map[string]string, error) {
 	spec, ok := SpecFor(p)
 	if !ok {
@@ -523,10 +615,29 @@ func EnvMapFor(p Preset, sets map[string]string) (map[string]string, error) {
 	// coherence (validateIngressAndMetalLB) — hand-editing them into
 	// disagreement renders a Service the API server rejects.
 	if p != PresetCustom {
-		layer := strings.TrimSpace(out["INGRESS_ADDRESS_LAYER"])
-		if layer == "" {
-			layer = AddressLayerNone
-			out["INGRESS_ADDRESS_LAYER"] = layer
+		layer, _ := resolveAddressLayer(out["INGRESS_ADDRESS_LAYER"],
+			out["METALLB_FLOATING_IP"], out["METALLB_MODE"])
+		// Ambiguity is reported by the VALIDATOR (which can produce an
+		// actionable error); the env map just carries the fail-safe value.
+		out["INGRESS_ADDRESS_LAYER"] = layer
+		// METALLB_MODE follows the RESOLVED layer, even against an explicit
+		// --set. WriteAddons picks the L2-vs-BGP addon tree from this key, so
+		// letting it disagree with the layer produced an L2-reviewed plan with
+		// BGP wiring (or the inverse) — the plan and the cluster would differ
+		// on the one thing the operator was shown (codex 2026-08-07, P1).
+		// The legacy key still SEEDS the layer above when no layer was given;
+		// it just cannot outrank the resolved answer afterwards.
+		if want, ok := map[string]string{
+			AddressLayerMetalLBL2:  "l2",
+			AddressLayerMetalLBBGP: "bgp",
+		}[layer]; ok {
+			// The layer wins, because WriteAddons picks the L2-vs-BGP addon
+			// tree from it. The DISCARDED request is reported by
+			// validateMetalLBModeRequest, which reads o.Sets directly — no
+			// carrier key in this map, which would otherwise be written
+			// verbatim into cluster-config.env (nothing strips the
+			// KUBE_DC_INIT_ prefix on the way out).
+			out["METALLB_MODE"] = want
 		}
 		for k, v := range addressLayerEnv(layer) {
 			if _, set := sets[k]; !set {
@@ -556,14 +667,210 @@ func ValidatePresetRequiredKeys(o *InitOptions) error {
 	if o == nil {
 		return fmt.Errorf("ValidatePresetRequiredKeys: nil options")
 	}
-	envMap, err := EnvMapFor(o.Preset, o.Sets)
+	envMap, err := ResolvedEnvFor(o)
 	if err != nil {
 		return err
 	}
 	if err := ValidatePresetValues(o.Preset, envMap); err != nil {
 		return err
 	}
+	if err := validateMetalLBModeRequest(o, envMap); err != nil {
+		return err
+	}
+	if err := validateIngressAnnouncerCoLocation(o, envMap); err != nil {
+		return err
+	}
+	if err := validateIngressPlacementNotMixed(o, envMap); err != nil {
+		return err
+	}
 	return validateCompleteInstallerValues(o.Preset, envMap)
+}
+
+// validateIngressPlacementNotMixed refuses an ingress set that straddles
+// control-plane and worker nodes.
+//
+// Whether Envoy can bind :6443 is a PER-NODE fact — kube-apiserver owns the port
+// on a control-plane node and not elsewhere — but the listener that carries
+// kube-api.<domain> is a single GLOBAL Gateway listener. A mixed set therefore has
+// no correct answer: keep the listener and it silently never binds on the
+// control-plane members (while the Gateway still reports Programmed=True); remove
+// it and the worker members lose a listener they could have served.
+//
+// The previous behaviour was worse than either: a single intersection removed the
+// listener globally, taking it away from the nodes that were fine.
+//
+// Only reachable when the caller knows the real control-plane node names, so an
+// operator who has not told us cannot be blocked by it.
+func validateIngressPlacementNotMixed(o *InitOptions, envMap map[string]string) error {
+	// The RESOLVED set, not just the explicit one. An operator who passes no
+	// --ingress-node still gets an ingress set — the gateway nodes — and that set
+	// can be mixed: the reference stage cluster's KUBE_OVN_GW_NODES is one master
+	// plus two workers. Checking only explicit nodes let exactly that cluster
+	// through, after which the plan resolved the mixed set anyway and the scaffold
+	// removed the listener globally on the first intersection: the precise
+	// behaviour this refusal claims to prevent.
+	resolved, _ := ResolveIngressNodes(o, envMap)
+	onCP, offCP, derivable := ClassifyIngressPlacement(resolved, o.ControlPlaneNodes)
+	if !derivable || len(onCP) == 0 || len(offCP) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: preset=%s; control-plane ingress node(s) %s and worker ingress node(s) %s. "+
+		"Envoy can bind :6443 only where kube-apiserver does not, but the listener carrying "+
+		"kube-api.%s is a single cluster-wide listener — so either it silently fails to bind on %s, "+
+		"or removing it strips %s of a listener they could have served. "+
+		"Choose one: put ingress entirely on workers (keeps the listener), or entirely on "+
+		"control-plane nodes (the listener is dropped and each apiserver serves :6443 itself). "+
+		"Managed tenant clusters are unaffected either way — they are on :443",
+		ErrMixedIngressPlacement, o.Preset,
+		strings.Join(onCP, ","), strings.Join(offCP, ","),
+		strings.TrimSpace(envMap["DOMAIN"]),
+		strings.Join(onCP, ","), strings.Join(offCP, ","))
+}
+
+// validateMetalLBModeRequest reports a METALLB_MODE the address layer overrode,
+// instead of discarding half the operator's request in silence.
+//
+// The derivation in EnvMapFor makes the layer win, and it must: WriteAddons
+// picks the L2-vs-BGP addon tree from the layer, so honouring a contradicting
+// raw mode would wire one tree and announce with the other. But the rewrite
+// happens BEFORE validation sees the map, which made the ENVOY_*-style
+// coherence guard structurally unable to fire for this key —
+// `--ingress-address-layer=metallb-bgp --set METALLB_MODE=l2` succeeded as BGP
+// and never said that the l2 request had been dropped.
+//
+// This reads o.Sets, the operator's raw input, so no marker has to survive
+// inside the env map (a carrier key there would be written straight into
+// cluster-config.env — nothing strips the KUBE_DC_INIT_ prefix on the way out).
+func validateMetalLBModeRequest(o *InitOptions, envMap map[string]string) error {
+	raw, set := o.Sets["METALLB_MODE"]
+	if !set {
+		return nil
+	}
+	raw = strings.TrimSpace(raw)
+	resolved := strings.TrimSpace(envMap["METALLB_MODE"])
+	if raw == "" || raw == resolved {
+		return nil
+	}
+	layer, _ := resolveAddressLayer(o.IngressAddressLayer,
+		envMap["METALLB_FLOATING_IP"], raw)
+	return fmt.Errorf("%w: preset=%s; METALLB_MODE=%q contradicts INGRESS_ADDRESS_LAYER=%s "+
+		"(which implies %q) — the announcement mode follows the address layer, because the addon tree that "+
+		"gets wired is chosen from it. Pass --ingress-address-layer=metallb-%s if that is what you meant, "+
+		"or drop the METALLB_MODE override",
+		ErrPresetInvalidValue, o.Preset, raw, layer, resolved, raw)
+}
+
+// validateIngressAnnouncerCoLocation enforces the invariant that makes a VIP
+// front door actually reachable, and it is the one front-door mistake that
+// fails SILENTLY — the install completes, MetalLB reports the VIP assigned,
+// and nothing ever answers on it.
+//
+// Two independent node sets are in play:
+//
+//	MetalLB announces the VIP only from nodes it is allowed to announce from
+//	  → addons/metallb-config pins nodeSelectors to ovn.kubernetes.io/external-gw
+//	    ("true"), i.e. the KUBE_OVN_GW_NODES set. Verified live: the reference
+//	    cluster labels exactly its four declared gw nodes.
+//	Envoy answers only on the ingress nodes
+//	  → the v2 data plane is a DaemonSet with a kube-dc.com/ingress nodeSelector.
+//
+// The address layer sets externalTrafficPolicy: Local on the Envoy Service so
+// the true client IP survives (a per-client rate limit or an audit log is
+// worthless behind a SNAT). Under Local, MetalLB announces from a node ONLY
+// while that node has a READY LOCAL ENDPOINT. So the announcing node must be
+// in BOTH sets, and if the sets are disjoint the VIP is never announced from
+// anywhere. Nothing in the cluster reports this as an error: the Service has
+// its external IP, the pods are Ready, and the address is simply dark.
+//
+// Both sets are known at plan time, so this is checkable before anything is
+// written rather than discovered by an operator curling a black hole.
+func validateIngressAnnouncerCoLocation(o *InitOptions, envMap map[string]string) error {
+	layer, _ := resolveAddressLayer(o.IngressAddressLayer,
+		envMap["METALLB_FLOATING_IP"], envMap["METALLB_MODE"])
+	if !addressLayerRequiresVIP(layer) {
+		// No VIP, no announcement, no invariant: clients reach the ingress
+		// nodes' own addresses directly.
+		return nil
+	}
+	ingress := canonicalIngressNodes(o.IngressNodes)
+	if len(ingress) == 0 {
+		// Undeclared is CORRECT and is the recommended shape: the ingress set
+		// defaults to the gw nodes (see ResolveIngressNodes), which satisfies
+		// the invariant by construction.
+		return nil
+	}
+	gw := canonicalIngressNodes(strings.Split(envMap["KUBE_OVN_GW_NODES"], ","))
+	if len(gw) == 0 {
+		// Nothing to check against — KUBE_OVN_GW_NODES is validated elsewhere.
+		return nil
+	}
+	gwSet := make(map[string]bool, len(gw))
+	for _, n := range gw {
+		gwSet[n] = true
+	}
+	var both, ingressOnly []string
+	for _, n := range ingress {
+		if gwSet[n] {
+			both = append(both, n)
+		} else {
+			ingressOnly = append(ingressOnly, n)
+		}
+	}
+	if len(both) == 0 {
+		return fmt.Errorf("%w: preset=%s; the %s front door would NEVER be announced: "+
+			"MetalLB announces %s only from external-gateway nodes (KUBE_OVN_GW_NODES=%s), "+
+			"but Envoy would run only on the ingress nodes you named (%s), and the two sets are DISJOINT. "+
+			"Because the Envoy Service uses externalTrafficPolicy=Local (to preserve the client IP), "+
+			"a node announces the VIP only while it has a local Envoy endpoint — so no node could announce it. "+
+			"Fix by naming ingress nodes that are also gateway nodes, by adding them to KUBE_OVN_GW_NODES, "+
+			"or by dropping --ingress-node entirely (the gateway nodes are then used, which is the recommended shape)",
+			ErrPresetInvalidValue, o.Preset, layer, strings.TrimSpace(envMap["METALLB_FLOATING_IP"]),
+			strings.Join(gw, ","), strings.Join(ingress, ","))
+	}
+	// A PARTIAL overlap is refused too, for VIP layers.
+	//
+	// It used to be accepted with a warning, on the reasoning that one node in both sets
+	// can announce. It can — and that node is then a single point of failure that looks
+	// like an HA deployment. With ingress {gw1, worker2, worker3} against
+	// KUBE_OVN_GW_NODES {gw1, gw2, gw3}, only gw1 both announces the VIP and holds a local
+	// Envoy, so losing gw1 darkens the address while five other healthy components report
+	// nothing wrong. The surviving ingress nodes cannot announce (not gateways) and the
+	// surviving gateways have no local Envoy endpoint to satisfy externalTrafficPolicy
+	// Local.
+	//
+	// It is also an INCONSISTENCY that fails installs late: scripts/frontdoor-check.sh
+	// preflight rejects any ingress set that is not a subset of the announcer set, so a
+	// plan the CLI accepted here would be refused by the cluster's own preflight after the
+	// fleet was already committed. The two must agree, and the strict rule is the correct
+	// one.
+	if len(ingressOnly) > 0 {
+		return fmt.Errorf("%w: preset=%s; ingress nodes %s are NOT external-gateway nodes "+
+			"(KUBE_OVN_GW_NODES=%s), so under the %s layer they can never announce %s. Only %s "+
+			"could, which makes that node a single point of failure dressed as HA: MetalLB "+
+			"announces from a gateway node only while it holds a READY LOCAL Envoy endpoint "+
+			"(externalTrafficPolicy=Local), so losing it darkens the address while every other "+
+			"component still reports healthy. The ingress set must be a SUBSET of the gateway "+
+			"set — add %s to KUBE_OVN_GW_NODES, name only gateway nodes with --ingress-node, or "+
+			"drop --ingress-node entirely (the gateway nodes are then used, which is the "+
+			"recommended shape). scripts/frontdoor-check.sh preflight enforces the same rule "+
+			"against the live cluster",
+			ErrPresetInvalidValue, o.Preset, strings.Join(ingressOnly, ","),
+			strings.Join(gw, ","), layer, strings.TrimSpace(envMap["METALLB_FLOATING_IP"]),
+			strings.Join(both, ","), strings.Join(ingressOnly, ","))
+	}
+	return nil
+}
+
+// ResolveIngressNodes returns the nodes that will carry the ingress label and
+// bind :80/:443. An undeclared set falls back to the kube-ovn external-gateway
+// nodes, which is both the recommended shape and the only set that can
+// announce a MetalLB VIP under externalTrafficPolicy=Local — see
+// validateIngressAnnouncerCoLocation. Returned sorted + de-duplicated.
+func ResolveIngressNodes(o *InitOptions, envMap map[string]string) (nodes []string, derivedFromGateway bool) {
+	if declared := canonicalIngressNodes(o.IngressNodes); len(declared) > 0 {
+		return declared, false
+	}
+	return canonicalIngressNodes(strings.Split(envMap["KUBE_OVN_GW_NODES"], ",")), true
 }
 
 // validateCompleteInstallerValues enforces inputs that are required for a complete
@@ -590,8 +897,12 @@ func validateCompleteInstallerValues(p Preset, envMap map[string]string) error {
 		require("EXT_PUBLIC_EXCLUDE_IPS_2")
 	}
 
-	ingressMode := strings.TrimSpace(envMap["INGRESS_MODE"])
-	if ingressMode == "" || ingressMode == ingressModeMetalLB {
+	// The ADDRESS LAYER decides whether a VIP is required — not the retired
+	// INGRESS_MODE. Keying this on INGRESS_MODE made the documented no-VIP
+	// default (layer=none) demand METALLB_FLOATING_IP and fail init, because
+	// the derivation used to write INGRESS_MODE=metallb-lb for every layer
+	// (codex 2026-08-07, P1).
+	if addressLayerRequiresVIP(strings.TrimSpace(envMap["INGRESS_ADDRESS_LAYER"])) {
 		require("METALLB_FLOATING_IP")
 		mode := strings.TrimSpace(envMap["METALLB_MODE"])
 		if mode == "" || mode == "l2" {
@@ -888,14 +1199,79 @@ func validateIngressAndMetalLB(envMap map[string]string, errs *[]string) {
 			"INGRESS_NODE_LABEL: %q is not a valid Kubernetes label key", lbl))
 	}
 
-	// A VIP layer requires a VIP. Without this the Envoy Service is
-	// type=LoadBalancer with no address annotation and no pool — it hangs
-	// in <pending> and the front door never answers.
+	// The front door must be coherent in BOTH directions, because each
+	// incoherence is a silent trap:
+	//
+	//   VIP layer + no VIP  → the Envoy Service is type=LoadBalancer with no
+	//                         address and no pool: it hangs <pending> forever
+	//                         and the front door never answers.
+	//   VIP set + no VIP layer → the operator reserved and excluded an address,
+	//                         expects a floating front door, and would instead
+	//                         get host-bind on node IPs with their VIP simply
+	//                         ignored. Refusing is the whole point of "one
+	//                         question": an answered question must not be
+	//                         silently overridden by a default.
+	layerVIP := strings.TrimSpace(envMap["METALLB_FLOATING_IP"])
+	vipDeclared := layerVIP != "" && !strings.HasPrefix(layerVIP, "CHANGEME")
 	if layer == AddressLayerMetalLBL2 || layer == AddressLayerMetalLBBGP {
-		if v := strings.TrimSpace(envMap["METALLB_FLOATING_IP"]); v == "" || strings.HasPrefix(v, "CHANGEME") {
+		if !vipDeclared {
 			*errs = append(*errs, fmt.Sprintf(
 				"METALLB_FLOATING_IP: required by INGRESS_ADDRESS_LAYER=%s — a VIP layer "+
 					"with no VIP leaves the Envoy Service pending forever", layer))
+		}
+		if want := map[string]string{AddressLayerMetalLBL2: "l2", AddressLayerMetalLBBGP: "bgp"}[layer]; want != "" {
+			if got := strings.TrimSpace(envMap["METALLB_MODE"]); got != "" && !strings.EqualFold(got, want) {
+				*errs = append(*errs, fmt.Sprintf(
+					"METALLB_MODE=%q contradicts INGRESS_ADDRESS_LAYER=%s (expects %q) — the announcement "+
+						"mode is part of the layer; pass --ingress-address-layer=metallb-%s instead of setting "+
+						"METALLB_MODE by hand", got, layer, want, strings.ToLower(got)))
+			}
+		}
+	} else if vipDeclared {
+		// AMBIGUOUS: an address is reserved but nobody said whether it is the
+		// front door. Ask, with both answers spelled out — guessing rewires
+		// production front doors (see resolveAddressLayer).
+		hint := AddressLayerMetalLBL2
+		if strings.EqualFold(strings.TrimSpace(envMap["METALLB_MODE"]), "bgp") {
+			hint = AddressLayerMetalLBBGP
+		}
+		if node := strings.TrimSpace(envMap["NODE_EXTERNAL_IP"]); node != "" && node == layerVIP {
+			// NODE_EXTERNAL_IP is the cluster's WILDCARD DNS TARGET. When it
+			// equals the reserved address, DNS already points at that address —
+			// which is evidence FOR it being the front door, not against. Two
+			// live clusters are in exactly this state (VIP == wildcard target,
+			// MetalLB wired, no layer declared), and telling them to "remove
+			// METALLB_FLOATING_IP" would delete a load-bearing VIP. So lead
+			// with the VIP reading and offer the other only second.
+			*errs = append(*errs, fmt.Sprintf(
+				"METALLB_FLOATING_IP=%s is also NODE_EXTERNAL_IP, i.e. your wildcard DNS already resolves to "+
+					"that address — but no address layer claims it, so nothing would announce it. If it is a "+
+					"MetalLB VIP, pass --ingress-address-layer=%s. If instead it is simply an ingress node's own "+
+					"address, pass --ingress-address-layer=none and remove METALLB_FLOATING_IP (under 'none' the "+
+					"front door already answers on the ingress nodes' own IPs)", layerVIP, hint))
+		} else {
+			*errs = append(*errs, fmt.Sprintf(
+				"METALLB_FLOATING_IP=%s is declared but no address layer uses it (the front door resolves to "+
+					"%q, which installs no MetalLB), so that address would never be announced. Say which you "+
+					"want: --ingress-address-layer=%s to make %s the front door, or --ingress-address-layer=none "+
+					"to serve on the ingress nodes' own addresses (then remove METALLB_FLOATING_IP). A reserved "+
+					"address is not assumed to be the front door — spare and undeliverable reservations exist",
+				layerVIP, layer, hint, layerVIP))
+		}
+	}
+
+	// METALLB_MODE is DERIVED from the layer, not an independent knob: it is
+	// what WriteAddons reads to pick the L2 vs BGP addon tree, so a mismatch
+	// reviews one announcement mode and wires the other — an L2-reviewed plan
+	// with BGP addons, or the inverse (codex 2026-08-07, P1).
+	if addressLayerRequiresVIP(layer) {
+		want := addressLayerEnv(layer)["METALLB_MODE"]
+		if got := strings.TrimSpace(envMap["METALLB_MODE"]); got != "" && !strings.EqualFold(got, want) {
+			*errs = append(*errs, fmt.Sprintf(
+				"METALLB_MODE=%q contradicts INGRESS_ADDRESS_LAYER=%s (which announces via %q) — the "+
+					"announcement mode is derived from the address layer, so choose the layer "+
+					"(--ingress-address-layer=metallb-l2 or metallb-bgp) rather than setting METALLB_MODE by hand",
+				got, layer, want))
 		}
 	}
 
@@ -1528,13 +1904,15 @@ func validateManagementAPI(envMap map[string]string, errs *[]string) {
 	case "external":
 		// KUBE_API_EXTERNAL_URL is already part of the installer contract.
 	case "platformVIP":
-		if envMap["PLATFORM_ENDPOINT_KUBE_API_ENABLED"] != "true" {
-			*errs = append(*errs, "MANAGEMENT_API_MODE=platformVIP requires PLATFORM_ENDPOINT_KUBE_API_ENABLED=true")
-		}
-		vip := net.ParseIP(strings.TrimSpace(envMap["KUBE_API_INTERNAL_VIP"]))
-		if vip == nil || vip.To4() == nil {
-			*errs = append(*errs, "MANAGEMENT_API_MODE=platformVIP requires KUBE_API_INTERNAL_VIP to be an IPv4 address")
-		}
+		// RETIRED 2026-08-07 (front-door simplification §1.1). It meant "dial
+		// the Fork-E kube-api MetalLB VIP:6443"; no cluster ever used it and
+		// service mode reaches the apiserver's own ClusterIP over the
+		// dual-home infra NIC — no VIP, no hairpin. Refuse with the migration
+		// path rather than scaffolding a cluster around a retired datapath.
+		*errs = append(*errs,
+			"MANAGEMENT_API_MODE=platformVIP is RETIRED — use service (apiserver ClusterIP over the "+
+				"dual-home infra NIC; needs INFRA_ATTACHMENT_ENABLED=true, K8S_SERVICE_IP, SVC_CIDR) "+
+				"or external (public kube-api hostname)")
 	case "service":
 		if envMap["INFRA_ATTACHMENT_ENABLED"] != "true" {
 			*errs = append(*errs, "MANAGEMENT_API_MODE=service requires INFRA_ATTACHMENT_ENABLED=true")
@@ -1562,7 +1940,7 @@ func validateManagementAPI(envMap map[string]string, errs *[]string) {
 			}
 		}
 	default:
-		*errs = append(*errs, fmt.Sprintf("MANAGEMENT_API_MODE=%q must be external, platformVIP, or service", mode))
+		*errs = append(*errs, fmt.Sprintf("MANAGEMENT_API_MODE=%q must be external or service (platformVIP is retired)", mode))
 	}
 }
 

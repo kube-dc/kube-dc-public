@@ -992,9 +992,18 @@ func TestEnvMapFor_IngressDefaults_AllPresets(t *testing.T) {
 		if err != nil {
 			t.Fatalf("preset %s: EnvMapFor unexpected err: %v", p, err)
 		}
-		if got := envMap["INGRESS_MODE"]; got != "metallb-lb" {
-			t.Errorf("preset %s: INGRESS_MODE = %q, want %q", p, got, "metallb-lb")
+		// v2: a NEW cluster must not be born carrying the retired
+		// INGRESS_MODE — it would round-trip forever and keep the legacy
+		// bridge alive. The ADDRESS LAYER is the driver.
+		if got, ok := envMap["INGRESS_MODE"]; ok {
+			t.Errorf("preset %s: INGRESS_MODE must not be synthesised, got %q", p, got)
 		}
+		if got := envMap["INGRESS_ADDRESS_LAYER"]; got != AddressLayerNone {
+			t.Errorf("preset %s: address layer = %q, want the safe no-VIP default %q", p, got, AddressLayerNone)
+		}
+		// METALLB_MODE is still emitted so the fleet's advertisement templates
+		// resolve under strict envsubst; with layer=none no MetalLB layer is
+		// installed, so the value is inert.
 		if got := envMap["METALLB_MODE"]; got != "l2" {
 			t.Errorf("preset %s: METALLB_MODE = %q, want %q", p, got, "l2")
 		}
@@ -1067,8 +1076,13 @@ func TestValidatePresetValues_IngressAndMetalLBModes(t *testing.T) {
 			"METALLB_MODE": "arp"}, true, "METALLB_MODE"},
 		{"floating ip invalid", map[string]string{
 			"METALLB_FLOATING_IP": "not-an-ip"}, true, "METALLB_FLOATING_IP"},
-		{"floating ip valid", map[string]string{
-			"METALLB_FLOATING_IP": "192.0.2.10"}, false, ""},
+		// A VIP is only "valid" together with a layer that announces it — a
+		// bare reservation is ambiguous and refused by design.
+		{"floating ip valid with its layer", map[string]string{
+			"INGRESS_ADDRESS_LAYER": AddressLayerMetalLBL2,
+			"METALLB_FLOATING_IP":   "192.0.2.10"}, false, ""},
+		{"floating ip alone is ambiguous", map[string]string{
+			"METALLB_FLOATING_IP": "192.0.2.10"}, true, "no address layer uses it"},
 		{"bgp missing trio", map[string]string{
 			"METALLB_MODE": "bgp"}, true, "required when METALLB_MODE=bgp"},
 		{"bgp complete valid", map[string]string{

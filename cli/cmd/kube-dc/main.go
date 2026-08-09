@@ -27,6 +27,28 @@ import (
 var version = "dev"
 
 func main() {
+	rootCmd := newRootCmd()
+
+	// Cobra prints "Error: <err>" itself, and the handler below prints the same
+	// error again — so every failure has always been emitted twice. It went
+	// unnoticed while messages were one-liners; a multi-line explanation makes
+	// it obvious. main() is the single place that knows about the doctor's exit
+	// codes, so it stays the printer and cobra stays quiet.
+	rootCmd.SilenceErrors = true
+
+	if err := rootCmd.Execute(); err != nil {
+		code, msg := classifyExecuteErr(err)
+		if msg != "" {
+			fmt.Fprintln(os.Stderr, msg)
+		}
+		os.Exit(code)
+	}
+}
+
+// newRootCmd assembles the whole command tree. Split out of main() so tests can
+// walk it — in particular so the operator-facing quickstart can be checked to
+// only reference commands and flags that actually exist.
+func newRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "kube-dc",
 		Short: "Authenticate to Organizations and select Project contexts",
@@ -55,21 +77,7 @@ It follows the same patterns as AWS CLI, GCloud, and other cloud provider CLIs:
 	rootCmd.AddCommand(orgsCmd())
 	rootCmd.AddCommand(auditCmd())
 	rootCmd.AddCommand(versionCmd())
-
-	// Cobra prints "Error: <err>" itself, and the handler below prints the same
-	// error again — so every failure has always been emitted twice. It went
-	// unnoticed while messages were one-liners; a multi-line explanation makes
-	// it obvious. main() is the single place that knows about the doctor's exit
-	// codes, so it stays the printer and cobra stays quiet.
-	rootCmd.SilenceErrors = true
-
-	if err := rootCmd.Execute(); err != nil {
-		code, msg := classifyExecuteErr(err)
-		if msg != "" {
-			fmt.Fprintln(os.Stderr, msg)
-		}
-		os.Exit(code)
-	}
+	return rootCmd
 }
 
 // classifyExecuteErr decides the process exit code and what (if anything)
@@ -96,6 +104,21 @@ func classifyExecuteErr(err error) (code int, msg string) {
 	var de *doctorExitCodeErr
 	if errors.As(err, &de) {
 		return de.ExitCode(), ""
+	}
+	// Our OWN exit-code error type, matched by concrete type rather than by an
+	// anonymous interface. That distinction is the whole point: *exec.ExitError
+	// also has ExitCode(), so an interface match silently propagated every
+	// failing child process's status with no output at all — see
+	// TestClassifyExecuteErr, which pins that regression. Opting in by type
+	// means only errors we author participate.
+	//
+	// Needed because commands like `bootstrap accept` distinguish "not usable
+	// yet" (1) from "cannot even read the cluster" (2), which is the reason to
+	// script against them; collapsing both to 1 erases it. Unlike the doctor,
+	// these DO print their message.
+	var ce *exitCodeError
+	if errors.As(err, &ce) {
+		return ce.ExitCode(), ce.Error()
 	}
 	return 1, err.Error()
 }
@@ -159,7 +182,7 @@ Two identity modes:
 	cmd.Flags().BoolVar(&admin, "admin", false, "Login as a platform admin against the master realm (cluster-wide RBAC)")
 	cmd.Flags().StringVar(&caCertFile, "ca-cert", "", "Path to CA certificate file")
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "Skip TLS verification (not recommended)")
-	cmd.Flags().BoolVar(&deviceCode, "device-code", false, "Use device code flow for headless environments")
+	cmd.Flags().BoolVar(&deviceCode, "device-code", false, "NOT IMPLEMENTED — returns an error. On a headless machine, either run `kube-dc login` on a workstation WITH a browser and copy the resulting ~/.kube/config, or use the client-certificate kubeconfig from `kube-dc bootstrap fetch-kubeconfig` (which needs no browser and no OIDC)")
 
 	return cmd
 }
@@ -203,7 +226,11 @@ func runLogin(domain, org, caCertFile string, insecure, deviceCode bool) error {
 	}
 
 	if deviceCode {
-		return fmt.Errorf("device code flow not yet implemented")
+		return fmt.Errorf("device code flow is not implemented. " +
+			"On a headless machine use one of these instead:\n" +
+			"  - run `kube-dc login` on a workstation WITH a browser, then copy ~/.kube/config over; or\n" +
+			"  - use the client-certificate kubeconfig from `kube-dc bootstrap fetch-kubeconfig`, " +
+			"which needs neither a browser nor OIDC")
 	}
 
 	fmt.Printf("\n🔐 Logging in to %s (Organization: %s)\n", domain, org)
@@ -323,6 +350,31 @@ func runLogin(domain, org, caCertFile string, insecure, deviceCode bool) error {
 		if err := kubeMgr.AddKubeDCContext(params); err != nil {
 			fmt.Printf("  Warning: failed to add context %s: %v\n", params.ContextName, err)
 		}
+	}
+
+	// An Organization with NO Project yields a token with no namespaces claim.
+	// The loop above then writes zero contexts while everything still reports
+	// success — authentication really did work, the token is valid and cached —
+	// so the operator is left with a working login and a kubectl that has
+	// nothing to talk to, and no hint as to why. Say it plainly instead of
+	// printing "Kubeconfig updated" over an empty change.
+	if len(claims.Namespaces) == 0 {
+		fmt.Println()
+		fmt.Println("  Authenticated, but NO kubectl context was created.")
+		fmt.Printf("  Your token carries no Projects for organization %q, and tenant\n", org)
+		fmt.Println("  contexts are created per Project — one Kubernetes namespace each.")
+		fmt.Println()
+		fmt.Println("  Ask an administrator to create a Project in your organization, or if")
+		fmt.Println("  you administer it yourself:")
+		fmt.Printf("    kubectl apply -f - <<'EOF'\n")
+		fmt.Printf("    apiVersion: kube-dc.com/v1\n")
+		fmt.Printf("    kind: Project\n")
+		fmt.Printf("    metadata:\n      name: web\n      namespace: %s\n", org)
+		fmt.Printf("    spec:\n      egressNetworkType: cloud\n")
+		fmt.Printf("    EOF\n")
+		fmt.Println()
+		fmt.Println("  Then run this login again to pick up the new context.")
+		return nil
 	}
 
 	fmt.Println("  Kubeconfig updated in ~/.kube/config")

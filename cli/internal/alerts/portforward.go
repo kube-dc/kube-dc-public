@@ -19,13 +19,13 @@ import (
 // a direct Mimir client; until then, the kubeconfig-based forward is the
 // simplest secure path to in-cluster Alertmanager.
 type PortForward struct {
-	Namespace string
-	Service   string
+	Namespace  string
+	Service    string
 	RemotePort int
 
-	cmd        *exec.Cmd
-	LocalPort  int
-	cancel     context.CancelFunc
+	cmd       *exec.Cmd
+	LocalPort int
+	cancel    context.CancelFunc
 }
 
 // NewAlertmanagerPortForward returns a PortForward targeting the standard

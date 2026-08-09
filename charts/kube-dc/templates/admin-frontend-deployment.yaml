@@ -19,7 +19,8 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "kube-dc.adminFrontend.labels" . | nindent 8 }}
+        {{- include "kube-dc.adminFrontend.selectorLabels" . | nindent 8 }}
+        {{- include "kube-dc.podVersionLabel" . | nindent 8 }}
     spec:
       {{- with .Values.adminFrontend.imagePullSecrets }}
       imagePullSecrets:
@@ -40,27 +41,34 @@ spec:
             - name: http
               containerPort: 80
               protocol: TCP
-          # The admin image's docker-entrypoint generates /usr/share/nginx/html/env.js
-          # from these env vars at startup (window._env_), so no env.js ConfigMap mount
-          # is needed (it would be overwritten anyway).
+          # Runtime config (window._env_) is mounted from the -config ConfigMap over
+          # the image's baked-in env.js (see admin-frontend-configmap.yaml). The admin
+          # image has NO entrypoint that regenerates env.js from env vars, so the mount
+          # below — not env: — is authoritative for BACKEND_URL/KEYCLOAK_URL/etc.
+          {{- with .Values.adminFrontend.extraEnv }}
           env:
-            - name: BACKEND_URL
-              value: "https://{{ required "adminFrontend needs backend.gateway.hostname" .Values.backend.gateway.hostname }}"
-            - name: KEYCLOAK_URL
-              value: "{{ .Values.adminFrontend.keycloakUrl | default .Values.manager.keycloakSecret.url }}"
-            - name: KEYCLOAK_REALM
-              value: {{ .Values.adminFrontend.keycloakRealm | default "master" | quote }}
-            - name: KEYCLOAK_CLIENT_ID
-              value: {{ .Values.adminFrontend.keycloakClientId | default "kube-dc-admin-console" | quote }}
-            {{- with .Values.adminFrontend.extraEnv }}
             {{- toYaml . | nindent 12 }}
-            {{- end }}
+          {{- end }}
           livenessProbe:
             {{- toYaml .Values.adminFrontend.livenessProbe | nindent 12 }}
           readinessProbe:
             {{- toYaml .Values.adminFrontend.readinessProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.adminFrontend.resources | nindent 12 }}
+          volumeMounts:
+            - mountPath: /usr/share/nginx/html/env.js
+              name: env-js
+              subPath: env.js
+          {{- with .Values.adminFrontend.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: env-js
+          configMap:
+            name: {{ include "kube-dc.adminFrontend.fullname" . }}-config
+      {{- with .Values.adminFrontend.volumes }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.adminFrontend.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

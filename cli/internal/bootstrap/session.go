@@ -34,7 +34,7 @@ type Session struct {
 	Probes discover.Factory
 
 	// Ports — the contract surface. All non-nil after NewSession.
-	Probe     ports.Probe         // factory pattern: discover layer creates concrete Probes; the bag holds a default reference
+	Probe     ports.Probe // factory pattern: discover layer creates concrete Probes; the bag holds a default reference
 	Scripts   ports.ScriptRunner
 	Flux      ports.FluxClient
 	K8s       ports.K8sClient

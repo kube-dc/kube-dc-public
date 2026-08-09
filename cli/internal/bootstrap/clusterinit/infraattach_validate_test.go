@@ -57,15 +57,18 @@ func TestValidateManagementAPI_ExplicitModes(t *testing.T) {
 	if got := managementAPIErrs(map[string]string{"MANAGEMENT_API_MODE": "external"}); got != "" {
 		t.Fatalf("external mode rejected: %s", got)
 	}
+	// platformVIP is RETIRED (front-door simplification §1.1) — even a FULLY
+	// populated config must now be refused, with the migration path in the
+	// message. Previously this exact map was the "valid" case.
 	if got := managementAPIErrs(map[string]string{
 		"MANAGEMENT_API_MODE": "platformVIP", "PLATFORM_ENDPOINT_KUBE_API_ENABLED": "true", "KUBE_API_INTERNAL_VIP": "100.66.0.31",
-	}); got != "" {
-		t.Fatalf("valid platformVIP mode rejected: %s", got)
+	}); !strings.Contains(got, "RETIRED") {
+		t.Fatalf("fully-populated platformVIP config must still be refused as RETIRED, got %q", got)
 	}
-	if got := managementAPIErrs(map[string]string{"MANAGEMENT_API_MODE": "platformVIP"}); got == "" {
-		t.Fatal("platformVIP mode accepted without an enabled IPv4 VIP")
+	if got := managementAPIErrs(map[string]string{"MANAGEMENT_API_MODE": "platformVIP"}); !strings.Contains(got, "RETIRED") {
+		t.Fatalf("platformVIP must be refused as RETIRED, got %q", got)
 	}
-	if got := managementAPIErrs(map[string]string{"MANAGEMENT_API_MODE": "automatic"}); !strings.Contains(got, "external, platformVIP, or service") {
+	if got := managementAPIErrs(map[string]string{"MANAGEMENT_API_MODE": "automatic"}); !strings.Contains(got, "external or service") {
 		t.Fatalf("unknown mode did not fail clearly: %q", got)
 	}
 }

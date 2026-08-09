@@ -49,6 +49,36 @@ func (c *K8sClient) DiscoverFluxGraph(ctx context.Context) (ports.Graph, error) 
 	return ports.Graph{Nodes: nodes}, nil
 }
 
+// NodeInternalIPs mirrors the adapter: node name -> InternalIP. Scenarios that do not
+// declare addresses get a deterministic 192.0.2.0/24 address per node (RFC 5737
+// documentation space), so tests exercising the INGRESS_HOST_CIDR derivation do not need
+// every scenario updated, and no test can accidentally assert a real network.
+func (c *K8sClient) NodeInternalIPs(ctx context.Context) (map[string]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if c.scenario == nil || c.scenario.Cluster == nil {
+		return map[string]string{}, nil
+	}
+	if len(c.scenario.Cluster.NodeInternalIPs) > 0 {
+		out := make(map[string]string, len(c.scenario.Cluster.NodeInternalIPs))
+		for k, v := range c.scenario.Cluster.NodeInternalIPs {
+			out[k] = v
+		}
+		return out, nil
+	}
+	names := make([]string, 0, len(c.scenario.Cluster.NodeLabels))
+	for n := range c.scenario.Cluster.NodeLabels {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	out := make(map[string]string, len(names))
+	for i, n := range names {
+		out[n] = fmt.Sprintf("192.0.2.%d", i+10)
+	}
+	return out, nil
+}
+
 func (c *K8sClient) NodeLabels(ctx context.Context) (map[string]map[string]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -65,6 +95,26 @@ func (c *K8sClient) NodeLabels(ctx context.Context) (map[string]map[string]strin
 		out[node] = cp
 	}
 	return out, nil
+}
+
+// SetNodeLabel writes into the scenario's node-label map, so a later NodeLabels read
+// observes it. That is what makes EnsureIngressNodeLabels' verify-after-write assertion
+// testable without a cluster.
+func (c *K8sClient) SetNodeLabel(ctx context.Context, node, key, value string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.scenario == nil || c.scenario.Cluster == nil {
+		return fmt.Errorf("mock: no cluster scenario, cannot label node %s", node)
+	}
+	if c.scenario.Cluster.NodeLabels == nil {
+		c.scenario.Cluster.NodeLabels = map[string]map[string]string{}
+	}
+	if _, ok := c.scenario.Cluster.NodeLabels[node]; !ok {
+		return fmt.Errorf("mock: node %s not found", node)
+	}
+	c.scenario.Cluster.NodeLabels[node][key] = value
+	return nil
 }
 
 func (c *K8sClient) DeploymentImages(ctx context.Context, ns string) (map[string]string, error) {
@@ -97,6 +147,13 @@ func (c *K8sClient) ListNamespaces(ctx context.Context) ([]string, error) {
 		out = append(out, ns)
 	}
 	return out, nil
+}
+
+// PodContainerArgs reports the scenario's apiserver flags. The mock returns an
+// empty map, which the acceptance check reads as "cannot verify" rather than
+// "not wired" — a mock must never be able to assert a real cluster is healthy.
+func (c *K8sClient) PodContainerArgs(_ context.Context, _, _ string) (map[string][]string, error) {
+	return map[string][]string{}, nil
 }
 
 func (c *K8sClient) ListPodNames(ctx context.Context, ns, _ string) ([]string, error) {

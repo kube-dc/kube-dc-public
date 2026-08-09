@@ -52,6 +52,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -341,4 +342,59 @@ func DefaultKubeconfigPath() string {
 		return ""
 	}
 	return filepath.Join(home, ".kube", "config")
+}
+
+// HaveUsableKubeconfig reports whether client-go can LOAD a kubeconfig on this
+// machine — the precondition for building the Kubernetes session.
+//
+// Deliberately "can load", not "can reach": the session only constructs
+// clients, so a cluster that is temporarily unreachable must not trigger an SSH
+// re-fetch (which would rewrite the operator's current context for no reason).
+// What this catches is the genuinely fresh bastion with no kubeconfig at all.
+func HaveUsableKubeconfig() bool {
+	_, ok := currentKubeconfigServer()
+	return ok
+}
+
+// currentKubeconfigServer returns the server URL of the current context.
+func currentKubeconfigServer() (string, bool) {
+	rules := clientcmd.NewDefaultClientConfigLoadingRules()
+	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		rules, &clientcmd.ConfigOverrides{}).ClientConfig()
+	if err != nil || cfg == nil || cfg.Host == "" {
+		return "", false
+	}
+	return cfg.Host, true
+}
+
+// KubeconfigTargetsCluster reports whether the CURRENT context points at the
+// cluster identified by domain / nodeIP.
+//
+// This is the difference between "a kubeconfig exists" and "the right
+// kubeconfig exists", and getting it wrong is the worst outcome in the whole
+// installer: with any unrelated-but-valid current context, the pre-session
+// fetch is skipped, the session builds clients against THAT cluster, and the
+// fleet scripts inherit the same KUBECONFIG — so `init` can bootstrap Flux, or
+// run adopt's version pinning, against somebody else's cluster. Nothing in the
+// output would say so.
+//
+// Matching is deliberately generous (any of the cluster's own identifiers
+// appearing in the server URL counts) because a legitimate operator kubeconfig
+// may address the cluster by FQDN, by node IP, or through a local tunnel. When
+// nothing matches we do not guess: the caller fetches a fresh kubeconfig for the
+// cluster being installed, which is authoritative by construction.
+func KubeconfigTargetsCluster(domain, nodeIP string) (server string, targets bool) {
+	server, ok := currentKubeconfigServer()
+	if !ok {
+		return "", false
+	}
+	for _, id := range []string{
+		strings.TrimSpace(domain),
+		strings.TrimSpace(nodeIP),
+	} {
+		if id != "" && strings.Contains(server, id) {
+			return server, true
+		}
+	}
+	return server, false
 }

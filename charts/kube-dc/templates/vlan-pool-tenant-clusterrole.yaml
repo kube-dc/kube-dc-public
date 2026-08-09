@@ -1,0 +1,66 @@
+{{- if .Values.projectNetwork.enabled }}
+# Tenant-side ClusterRole for per-org VLAN pools
+# (docs/prd/tenant-vlan-org-pool.md).
+#
+# An organization administrator assigns one of the datacenter VLANs allocated to
+# their org to one of their own projects, and can unassign and re-assign it
+# freely. That is a ProjectNetwork create/delete, and ProjectNetwork is
+# CLUSTER-SCOPED, so a namespaced Role cannot express the grant at all.
+#
+# THIS ROLE IS NOT THE AUTHORIZATION BOUNDARY. It grants the same verbs to every
+# org admin on the cluster. What confines an administrator to their OWN
+# organization's wires is the fail-closed validating webhook
+# `vprojectnetworkgrant.kube-dc.com`, which compares the caller's realm-prefixed
+# group ("<org>:org-admin", stamped by the per-org OIDC registration and
+# therefore unforgeable by another realm) against spec.org on CREATE, UPDATE and
+# DELETE, and additionally requires a FabricSegmentAllocation offering that wire
+# to that org.
+#
+# NO list/watch, deliberately
+# ---------------------------
+# Admission can judge a single object but cannot filter a LIST — the API server
+# returns the collection without consulting a validating webhook. A tenant
+# holding `list` would therefore read every other organization's VLAN bindings:
+# which orgs exist, which projects they run, and what customer subnets and
+# gateways they are attached to. The console reads a tenant's own bindings
+# through the backend, which filters; `kubectl get projectnetwork <name>` works
+# by name for anyone who legitimately knows it.
+#
+# The bindings to this role are created per-organization by the Organization
+# reconciler (internal/organization/res_kube_vlan_pool_binding.go), because the
+# set of organizations is not known at chart-render time.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-dc:projectnetwork-tenant
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+#
+# CREATE AND DELETE ONLY — the verb list here is load-bearing
+# ----------------------------------------------------------
+# NO update/patch. ProjectNetworkSpec is immutable in every field, so a tenant
+# UPDATE could never change anything legitimate — it could only touch metadata,
+# and one piece of metadata is the controller's teardown finalizer. An org admin
+# holding `patch` could strip that finalizer and then delete the binding, which
+# completes immediately WITHOUT the drain-first teardown: the NAD and the
+# VlanReservation are torn down or orphaned while a workload's Multus interface
+# is still on the wire. The allocation then reads as free, the next assignment
+# succeeds, and two projects end up on one physical broadcast domain — exactly
+# the breach this whole feature exists to prevent. (Found by adversarial review
+# of docs/prd/tenant-vlan-org-pool.md, 2026-07-31.)
+#
+# NO get, either. Binding names are predictable ("<segment>-<project>"), so a
+# cluster-scoped `get` would let one org admin read another org's binding —
+# their project name and the customer subnet and gateway on that wire. Admission
+# cannot filter a read at all. Tenants read their own bindings through the
+# console, which authorizes and filters. `kubectl create -f` and
+# `kubectl delete <name>` still work; `kubectl apply` and `kubectl get` do not.
+#
+# The webhook independently denies tenant UPDATEs, so re-adding a verb here does
+# not by itself reopen the finalizer vector — but do not rely on that: keep this
+# list minimal.
+rules:
+  - apiGroups: ["kube-dc.com"]
+    resources: ["projectnetworks"]
+    verbs: ["create", "delete"]
+{{- end }}

@@ -299,10 +299,25 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# Ensure DNS resolution works (fix for servers with systemd-resolved)
-if ! host get.rke2.io >/dev/null 2>&1; then
-    log_warn "DNS resolution failed, configuring fallback DNS..."
-    # Disable systemd-resolved if active (prevents DNS conflicts)
+# Ensure DNS resolution works.
+#
+# Probed with `getent hosts`, which is glibc and therefore always present. This
+# used to run `host get.rke2.io` — a binary from bind9-host/dnsutils that minimal
+# Ubuntu cloud images do NOT ship. On such a host the probe failed with
+# "command not found", which was read as "DNS is broken", and the fallback below
+# then disabled systemd-resolved and replaced /etc/resolv.conf with public
+# resolvers. On a corporate network that breaks every internal name AND sends
+# every subsequent query to a third party — from a node whose DNS was fine.
+if ! getent hosts get.rke2.io >/dev/null 2>&1; then
+    log_warn "Cannot resolve get.rke2.io — falling back to public DNS."
+    log_warn "This REPLACES this node's resolver configuration. If this node is"
+    log_warn "supposed to use an internal DNS server, stop and fix DNS instead:"
+    log_warn "the platform will later need to resolve your own domain from here."
+    # Preserve whatever was there so the change is reversible.
+    if [[ -e /etc/resolv.conf && ! -e /etc/resolv.conf.pre-kube-dc ]]; then
+        cp -a /etc/resolv.conf /etc/resolv.conf.pre-kube-dc 2>/dev/null || true
+        log_warn "Previous resolver saved to /etc/resolv.conf.pre-kube-dc"
+    fi
     if systemctl is-active systemd-resolved >/dev/null 2>&1; then
         log_warn "Disabling systemd-resolved..."
         systemctl stop systemd-resolved
@@ -310,6 +325,12 @@ if ! host get.rke2.io >/dev/null 2>&1; then
         rm -f /etc/resolv.conf
     fi
     echo -e "nameserver 8.8.8.8\nnameserver 1.1.1.1" > /etc/resolv.conf
+    if ! getent hosts get.rke2.io >/dev/null 2>&1; then
+        log_error "Still cannot resolve get.rke2.io after the DNS fallback."
+        log_error "This node has no working DNS or no egress. Fix that first —"
+        log_error "every later phase (image pulls, ACME, your own domain) needs it."
+        exit 1
+    fi
 fi
 
 # Create config directory
@@ -459,6 +480,20 @@ for i in {1..12}; do
     echo -n "."
 done
 echo ""
+
+# ASSERT. The loop falls through after 120s, so without this the script printed
+# "Installation Complete" for an agent that never started — and the node then
+# simply never appears in `kubectl get nodes`, with the operator having been told
+# the join succeeded.
+if ! systemctl is-active rke2-agent.service >/dev/null 2>&1; then
+    log_error "rke2-agent did not become active within 120s."
+    log_error "The node has NOT joined. Inspect the cause here:"
+    log_error "  journalctl -u rke2-agent -n 200 --no-pager"
+    log_error "  systemctl status rke2-agent"
+    log_error "Most common causes: wrong join token, the server URL is not reachable"
+    log_error "on :9345 from this node, or a clock skew large enough to fail TLS."
+    exit 1
+fi
 
 log_info "=== Installation Complete ==="
 log_info ""

@@ -25,13 +25,15 @@ func (f *fakePGBao) GetAnnotation(_ context.Context, _, key string) (string, err
 	}
 	return f.annotations[key], nil
 }
-func (f *fakePGBao) PodList(_ context.Context) ([]string, error)                 { return nil, nil }
-func (f *fakePGBao) Status(_ context.Context, _ string) (ports.BaoStatus, error) { return ports.BaoStatus{}, nil }
-func (f *fakePGBao) Unseal(_ context.Context, _ string, _ []byte) error          { return nil }
-func (f *fakePGBao) RaftJoin(_ context.Context, _, _ string) error               { return nil }
-func (f *fakePGBao) GenerateRoot(_ context.Context, _ [][]byte) ([]byte, error)  { return nil, nil }
-func (f *fakePGBao) RevokeSelf(_ context.Context, _ []byte) error                { return nil }
-func (f *fakePGBao) ApplyPolicy(_ context.Context, _ []byte, _, _ string) error   { return nil }
+func (f *fakePGBao) PodList(_ context.Context) ([]string, error) { return nil, nil }
+func (f *fakePGBao) Status(_ context.Context, _ string) (ports.BaoStatus, error) {
+	return ports.BaoStatus{}, nil
+}
+func (f *fakePGBao) Unseal(_ context.Context, _ string, _ []byte) error         { return nil }
+func (f *fakePGBao) RaftJoin(_ context.Context, _, _ string) error              { return nil }
+func (f *fakePGBao) GenerateRoot(_ context.Context, _ [][]byte) ([]byte, error) { return nil, nil }
+func (f *fakePGBao) RevokeSelf(_ context.Context, _ []byte) error               { return nil }
+func (f *fakePGBao) ApplyPolicy(_ context.Context, _ []byte, _, _ string) error { return nil }
 func (f *fakePGBao) EnableAuthPath(_ context.Context, _ []byte, _, _ string) error {
 	return nil
 }
@@ -41,8 +43,10 @@ func (f *fakePGBao) ConfigureKubernetesAuth(_ context.Context, _ []byte, _ strin
 func (f *fakePGBao) WriteAuthRole(_ context.Context, _ []byte, _, _ string, _ map[string]string) error {
 	return nil
 }
-func (f *fakePGBao) SetAnnotation(_ context.Context, _, _, _ string) error                 { return nil }
-func (f *fakePGBao) SetAnnotations(_ context.Context, _ string, _ map[string]string) error { return nil }
+func (f *fakePGBao) SetAnnotation(_ context.Context, _, _, _ string) error { return nil }
+func (f *fakePGBao) SetAnnotations(_ context.Context, _ string, _ map[string]string) error {
+	return nil
+}
 
 // TestPolicyGenerationProbe_Installed — annotation matches compile-time.
 func TestPolicyGenerationProbe_Installed(t *testing.T) {

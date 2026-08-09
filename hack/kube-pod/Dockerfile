@@ -4,7 +4,7 @@ ARG STERN_VERSION=1.32.0
 ARG VIRTCTL_VERSION=v1.6.0
 ARG TTYD_VERSION=1.7.8
 ARG K9S_VERSION=v0.50.4
-ARG KUBE_DC_VERSION=latest
+ARG KUBE_DC_VERSION
 
 # Add a named builder stage for cloudshell
 FROM ghcr.io/cloudtty/cloudshell:${CLOUDSHELL_VERSION} AS cloudshell
@@ -73,7 +73,7 @@ RUN set -e && \
     ttydArch="$(uname -m)" && \
     curl -L -o /usr/local/bin/ttyd https://github.com/cloudtty/ttyd/releases/download/${TTYD_VERSION}/ttyd.${ttydArch} && \
     chmod +x /usr/local/bin/ttyd && \
-    test -n "${KUBE_DC_VERSION}" && test "${KUBE_DC_VERSION}" != "latest" && \
+    test -n "${KUBE_DC_VERSION}" && \
     curl -fsSL "https://github.com/kube-dc/kube-dc-public/releases/download/${KUBE_DC_VERSION}/kube-dc_linux_amd64" -o /tmp/kube-dc_linux_amd64 && \
     curl -fsSL "https://github.com/kube-dc/kube-dc-public/releases/download/${KUBE_DC_VERSION}/checksums.txt" -o /tmp/checksums.txt && \
     (cd /tmp && sha256sum -c --ignore-missing checksums.txt) && \
@@ -107,7 +107,7 @@ COPY --from=cloudshell /usr/lib/ttyd/index.html /usr/lib/ttyd/index.html
 COPY ./script/startup.sh  /scripts/
 COPY ./script/kubeconfig.tmpl /usr/local/etc/kubeconfig.tmpl
 COPY ./script/.bashrc /root/.bashrc
-COPY ./script/kubectl_console /usr/local/bin/kubectl_console    
+COPY ./script/kubectl_console /usr/local/bin/kubectl_console
 COPY ./script/ssh_console /usr/local/bin/ssh_console
 
 # Make scripts executable after they're copied

@@ -17,9 +17,9 @@ import (
 // callers and tests are not regressed.
 //
 // Resolution precedence at the call site:
-//   1. --ssh-host-map flag (per-invocation override)
-//   2. EXT_NET_ANCHOR_SSH_HOSTS in cluster-config.env (fleet default)
-//   3. ssh_config alias (legacy path)
+//  1. --ssh-host-map flag (per-invocation override)
+//  2. EXT_NET_ANCHOR_SSH_HOSTS in cluster-config.env (fleet default)
+//  3. ssh_config alias (legacy path)
 //
 // Validation happens at preset.go (validateAnchorSSHHosts) for the
 // fleet value AND at flag parse time for --ssh-host-map. Both feed

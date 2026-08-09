@@ -4,14 +4,14 @@ import "testing"
 
 func TestNormaliseDomain(t *testing.T) {
 	cases := map[string]string{
-		"kube-dc.cloud":             "kube-dc.cloud",
-		"https://kube-dc.cloud":     "kube-dc.cloud",
-		"http://kube-dc.cloud":      "kube-dc.cloud",
-		"https://kube-dc.cloud/":    "kube-dc.cloud",
-		"  kube-dc.cloud  ":         "kube-dc.cloud",
-		"https://kube-dc.cloud///":  "kube-dc.cloud",
-		"":                              "",
-		" ":                             "",
+		"kube-dc.cloud":            "kube-dc.cloud",
+		"https://kube-dc.cloud":    "kube-dc.cloud",
+		"http://kube-dc.cloud":     "kube-dc.cloud",
+		"https://kube-dc.cloud/":   "kube-dc.cloud",
+		"  kube-dc.cloud  ":        "kube-dc.cloud",
+		"https://kube-dc.cloud///": "kube-dc.cloud",
+		"":                         "",
+		" ":                        "",
 	}
 	for in, want := range cases {
 		if got := normaliseDomain(in); got != want {

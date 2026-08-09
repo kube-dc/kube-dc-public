@@ -24,12 +24,28 @@ rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["create", "get", "list", "watch", "delete"]
+  # cronjobs (get/list): the admin OS-Images view reads the cdi-os-mirror-refresh
+  # CronJob for the mirror schedule / last-run.
+  - apiGroups: ["batch"]
+    resources: ["cronjobs"]
+    verbs: ["get", "list"]
+  # volumesnapshots (get/list): the admin OS-Images view lists golden images
+  # cluster-wide (golden-images + golden-images-block) with the backend SA.
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshots"]
+    verbs: ["get", "list"]
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["create", "get", "list", "watch", "delete"]
   - apiGroups: [""]
     resources: ["*"]
     verbs: ["get", "list"]
+  # The org-admin quota API verifies the caller and Project ownership with the
+  # caller's JWT, then uses this identity for the controller-owned write. Direct
+  # tenant Kubernetes access to ResourceQuota remains read-only.
+  - apiGroups: [""]
+    resources: ["resourcequotas"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["customresourcedefinitions"]
     verbs: ["get", "list"]
@@ -58,6 +74,9 @@ rules:
   - apiGroups: ["kubevirt.io"]
     resources: ["virtualmachines", "virtualmachineinstances"]
     verbs: ["*"]
+  - apiGroups: ["kubevirt.io"]
+    resources: ["kubevirts"]
+    verbs: ["get", "list"]
   - apiGroups: ["subresources.kubevirt.io"]
     resources: ["*"]
     verbs: ["*"]
@@ -73,6 +92,20 @@ rules:
   - apiGroups: ["scheduling.k8s.io"]
     resources: ["priorityclasses"]
     verbs: ["get", "list"]
+  # Tenant-safe GPU capability discovery aggregates stable-v1 DRA inventory
+  # and allocations once, then caches only redacted per-profile totals.
+  - apiGroups: ["resource.k8s.io"]
+    resources: ["resourceslices", "deviceclasses"]
+    verbs: ["get", "list"]
+  # DRA tenant workloads are written only through the authenticated backend
+  # API. The controller creates fixed ResourceClaimTemplates; Kubernetes owns
+  # the generated ResourceClaims and their allocation subresources.
+  - apiGroups: ["resource.k8s.io"]
+    resources: ["resourceclaimtemplates"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: ["resource.k8s.io"]
+    resources: ["resourceclaims"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["autoscaling"]
     resources: ["horizontalpodautoscalers"]
     verbs: ["*"]
@@ -115,6 +148,35 @@ rules:
   - apiGroups: ["kube-dc.com"]
     resources: ["eips", "fips"]
     verbs: ["get", "list", "delete"]
+  # Tenant-VLAN fabric (controllers/admin/vlanController.js). All three kinds
+  # are CLUSTER-SCOPED, so a namespaced tenant Role cannot grant them and a
+  # ClusterRole would necessarily be cluster-wide — either way a tenant cannot
+  # be given a namespace-limited view of them. The backend therefore reads them
+  # with THIS identity and authorizes the caller separately: the admin API
+  # behind requirePlatformAdmin/requireSuperadmin, and the tenant project view
+  # behind a SelfSubjectAccessReview against the caller's own token
+  # (controllers/networkModule.js project-networks). Granting a tenant direct
+  # access instead would leak every other org's VLAN grants — see the tenant
+  # Role contract in internal/chartcontract/project_network_test.go.
+  - apiGroups: ["kube-dc.com"]
+    resources: ["fabricsegments", "projectnetworks"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  # Per-org VLAN pools (docs/prd/tenant-vlan-org-pool.md). The allocation decides
+  # which ORGANIZATION may bind a wire, so writing one is a platform-admin act:
+  # the admin console does it with this identity behind requireSuperadmin, and
+  # the org-facing console only ever READS allocations here (filtered to the
+  # caller's own organization by name AND pinned UID) because tenants
+  # deliberately hold no direct access to the kind at all.
+  - apiGroups: ["kube-dc.com"]
+    resources: ["fabricsegmentallocations"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  # Read-only: the reservation is the controller's proof of exclusive ownership
+  # of a wire. The console shows who holds a segment; it must never write one,
+  # because a hand-written reservation would defeat the storage-atomic
+  # exclusivity that keeps two projects off the same broadcast domain.
+  - apiGroups: ["kube-dc.com"]
+    resources: ["vlanreservations"]
+    verbs: ["get", "list"]
   # Admin Workloads page lists and deletes tenant databases (KdcDatabase)
   # (controllers/admin/organizationController.js deleteDatabase).
   - apiGroups: ["db.kube-dc.com"]

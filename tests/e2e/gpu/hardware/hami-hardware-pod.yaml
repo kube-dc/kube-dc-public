@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-hardware-probe
+  namespace: gpu-hardware-validation
+  labels:
+    app.kubernetes.io/name: kube-dc-gpu-hardware-suite
+    kube-dc.com/gpu-profile: nvidia-v100-hami
+spec:
+  automountServiceAccountToken: false
+  restartPolicy: Never
+  terminationGracePeriodSeconds: 5
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: cuda-probe
+      image: nvcr.io/nvidia/cuda@sha256:520292dbb4f755fd360766059e62956e9379485d9e073bbd2f6e3c20c270ed66
+      imagePullPolicy: IfNotPresent
+      command:
+        - /bin/sh
+        - -ec
+      args:
+        - nvidia-smi --query-gpu=uuid,name,memory.total --format=csv,noheader; sleep 600
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+          nvidia.com/gpu: "1"
+          nvidia.com/gpumem: "4096"
+          nvidia.com/gpucores: "25"
+        limits:
+          cpu: 100m
+          memory: 128Mi
+          nvidia.com/gpu: "1"
+          nvidia.com/gpumem: "4096"
+          nvidia.com/gpucores: "25"
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+        readOnlyRootFilesystem: true
+      volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+  volumes:
+    - name: tmp
+      emptyDir:
+        sizeLimit: 16Mi

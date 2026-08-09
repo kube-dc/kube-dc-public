@@ -74,6 +74,14 @@ type ToolProbe struct {
 	versionFn func(ctx context.Context, exec execHook) (Semver, string, error)
 	extraFn   func(ctx context.Context, exec execHook) *extraResult
 	exec      execHook
+
+	// optional marks a tool that is NICE to have locally but that the CLI
+	// never executes itself. A missing optional tool reports Info, not
+	// Blocker — otherwise doctor refuses to proceed on a perfectly capable
+	// workstation, and the offered remediation script cannot even install it.
+	optional bool
+	// optionalDetail explains, at the probe site, why it is not required.
+	optionalDetail string
 }
 
 // extraResult is the `gh auth status`-style post-version check.
@@ -100,6 +108,13 @@ func (p *ToolProbe) Run(ctx context.Context) ports.Result {
 		// "binary present but version-probe failed" so the FixHint
 		// is precise.
 		if isNotFound(err) {
+			if p.optional {
+				return ports.Result{
+					Status:   ports.StatusMissing,
+					Severity: ports.SeverityInfo,
+					Detail:   fmt.Sprintf("%s not found in PATH — not required: %s", p.name, p.optionalDetail),
+				}
+			}
 			return ports.Result{
 				Status:   ports.StatusMissing,
 				Severity: ports.SeverityBlocker,
@@ -340,10 +355,18 @@ func newSSHProbe(e execHook) *ToolProbe {
 	}
 }
 
+// newBaoProbe reports the LOCAL OpenBao CLI, which the kube-dc CLI never
+// executes: every `bao` invocation goes through PodExec inside the OpenBao pod
+// (see internal/bootstrap/adapters/openbao/client.go). Requiring it locally
+// blocked doctor on a clean workstation for a binary nothing would run — and
+// scripts/install-prerequisites.sh cannot install it either, so the blocker was
+// unresolvable by the remediation doctor itself recommends.
 func newBaoProbe(e execHook) *ToolProbe {
 	return &ToolProbe{
-		name: "bao",
-		exec: e,
+		name:           "bao",
+		optional:       true,
+		optionalDetail: "the CLI runs bao inside the OpenBao pod, never on this machine",
+		exec:           e,
 		versionFn: func(ctx context.Context, e execHook) (Semver, string, error) {
 			// `bao --version` -> "OpenBao v2.5.3 ('xxx')"
 			stdout, stderr, err := e(ctx, "bao", "--version")

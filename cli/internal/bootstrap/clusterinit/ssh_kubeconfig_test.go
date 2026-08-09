@@ -446,3 +446,89 @@ func keysOf[T any](m map[string]*T) []string {
 }
 func keysOfAuth[T any](m map[string]*T) []string { return keysOf(m) }
 func keysOfCtx[T any](m map[string]*T) []string  { return keysOf(m) }
+
+// HaveUsableKubeconfig gates the pre-session SSH fetch, so its contract is
+// "can client-go LOAD one", never "is the cluster reachable" — re-fetching
+// because a cluster is briefly down would rewrite the operator's current
+// context for no reason.
+func TestHaveUsableKubeconfig(t *testing.T) {
+	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "does-not-exist"))
+	if HaveUsableKubeconfig() {
+		t.Error("a nonexistent kubeconfig must report unusable — this is the fresh-bastion case")
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config")
+	// A syntactically valid kubeconfig pointing at an address nothing answers:
+	// still USABLE for the purpose of building clients.
+	body := `apiVersion: v1
+kind: Config
+clusters:
+- name: c
+  cluster:
+    server: https://192.0.2.1:6443
+contexts:
+- name: ctx
+  context:
+    cluster: c
+    user: u
+current-context: ctx
+users:
+- name: u
+  user: {}
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KUBECONFIG", path)
+	if !HaveUsableKubeconfig() {
+		t.Error("a loadable kubeconfig must report usable even when the cluster is unreachable")
+	}
+}
+
+// The worst outcome the installer can produce: bootstrapping Flux against
+// SOMEBODY ELSE'S cluster because the operator happened to have an unrelated
+// current context. "A kubeconfig exists" is not "the right kubeconfig exists".
+func TestKubeconfigTargetsCluster(t *testing.T) {
+	write := func(t *testing.T, server string) {
+		t.Helper()
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config")
+		body := "apiVersion: v1\nkind: Config\nclusters:\n- name: c\n  cluster:\n    server: " + server +
+			"\ncontexts:\n- name: ctx\n  context:\n    cluster: c\n    user: u\ncurrent-context: ctx\n" +
+			"users:\n- name: u\n  user: {}\n"
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("KUBECONFIG", path)
+	}
+
+	t.Run("matches by domain", func(t *testing.T) {
+		write(t, "https://kube-api.dc.example.com:6443")
+		if _, ok := KubeconfigTargetsCluster("dc.example.com", "203.0.113.10"); !ok {
+			t.Error("a context addressing the cluster by FQDN must match")
+		}
+	})
+	t.Run("matches by node IP", func(t *testing.T) {
+		write(t, "https://203.0.113.10:6443")
+		if _, ok := KubeconfigTargetsCluster("dc.example.com", "203.0.113.10"); !ok {
+			t.Error("a context addressing the cluster by node IP must match")
+		}
+	})
+	t.Run("an unrelated cluster must NOT match", func(t *testing.T) {
+		write(t, "https://kube-api.someone-elses-cluster.example.net:6443")
+		server, ok := KubeconfigTargetsCluster("dc.example.com", "203.0.113.10")
+		if ok {
+			t.Error("an unrelated context must not be accepted — this is the wrong-cluster hazard")
+		}
+		if server == "" {
+			t.Error("the server must be reported so the operator is told what was rejected")
+		}
+	})
+	t.Run("no kubeconfig at all", func(t *testing.T) {
+		t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "nope"))
+		if server, ok := KubeconfigTargetsCluster("dc.example.com", "203.0.113.10"); ok || server != "" {
+			t.Errorf("expected (\"\", false), got (%q, %v)", server, ok)
+		}
+	})
+}

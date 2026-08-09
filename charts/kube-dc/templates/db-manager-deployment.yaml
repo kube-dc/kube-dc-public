@@ -18,7 +18,8 @@ spec:
       annotations:
         kubectl.kubernetes.io/default-container: manager
       labels:
-        {{- include "kube-dc.dbmanager.labels" . | nindent 8 }}
+        {{- include "kube-dc.dbmanager.selectorLabels" . | nindent 8 }}
+        {{- include "kube-dc.podVersionLabel" . | nindent 8 }}
         control-plane: db-manager
     spec:
       serviceAccountName: {{ include "kube-dc.dbmanager.fullname" . }}
@@ -56,7 +57,7 @@ spec:
         {{- end }}
         env:
         - name: INFRA_API_ENDPOINT
-          value: {{ .Values.dbManager.infraAPIEndpoint | default "" | quote }}
+          value: {{ include "kube-dc.managementAPIEndpoint" (list $ .Values.dbManager.infraAPIEndpoint) | quote }}
         # Cluster-level S3 endpoint, used by KdcDatabase backups when
         # `spec.backup.s3Endpoint` is not set per-resource. db-manager
         # has no hardcoded fallback — empty value means backups

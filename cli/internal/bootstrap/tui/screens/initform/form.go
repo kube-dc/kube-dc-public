@@ -66,20 +66,27 @@ type State struct {
 	PubGateway         string
 	PubExclude1        string
 	PubExclude2        string
-	MetalLBMode        string
-	MetalLBVIP         string
-	MetalLBInterface   string
-	MetalLBLocalASN    string
-	MetalLBPeerASN     string
-	MetalLBPeerAddress string
-	MetalLBPeerPort    string
-	MetalLBHoldTime    string
+	// IngressAddressLayer is THE front-door question: who owns the address
+	// users dial. Everything else about the front door is derived from it.
+	IngressAddressLayer string
+	MetalLBMode         string
+	MetalLBVIP          string
+	MetalLBInterface    string
+	MetalLBLocalASN     string
+	MetalLBPeerASN      string
+	MetalLBPeerAddress  string
+	MetalLBPeerPort     string
+	MetalLBHoldTime     string
 	// network POINTING (operator hardware/topology → o.Sets). GWNodes is
 	// the OVN external-gateway node list (KUBE_OVN_GW_NODES; anchors must be
 	// a subset — the preset cross-checks it); GWType is centralized|
 	// distributed (KUBE_OVN_GW_TYPE).
 	GWNodes string
-	GWType  string
+	// IngressNodes names the machines that bind :80/:443. Empty is the
+	// RECOMMENDED answer: the gateway nodes are used, which is the only set
+	// that can announce a MetalLB VIP under externalTrafficPolicy=Local.
+	IngressNodes string
+	GWType       string
 	// object storage (OS-5)
 	OSMode    string
 	OSDNode   string
@@ -194,6 +201,11 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 	setIf("EXT_NET_VLAN_ID", s.NetVLANID)
 	setIf("EXT_NET_INTERFACE", s.NetInterface)
 	setIf("KUBE_OVN_MASTER_NODES", s.KubeOVNMasterNodes)
+	// The address layer is a DEDICATED option field, not a --set key (Validate
+	// rejects it in Sets so there is exactly one source of truth).
+	if v := strings.TrimSpace(s.IngressAddressLayer); v != "" {
+		o.IngressAddressLayer = v
+	}
 	setIf("METALLB_MODE", s.MetalLBMode)
 	setIf("METALLB_FLOATING_IP", s.MetalLBVIP)
 	setIf("METALLB_INTERFACE", s.MetalLBInterface)
@@ -203,6 +215,18 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 	setIf("METALLB_BGP_PEER_PORT", s.MetalLBPeerPort)
 	setIf("METALLB_BGP_HOLD_TIME", s.MetalLBHoldTime)
 	setIf("KUBE_OVN_GW_NODES", s.GWNodes)
+	// --ingress-node is a repeatable flag → a dedicated slice field, not a
+	// --set key. Empty stays nil so the gateway-node derivation applies.
+	o.IngressNodes = nil
+	seenIngress := map[string]bool{}
+	for _, n := range strings.Split(s.IngressNodes, ",") {
+		// De-duplicate here, not just in the plan: a repeated name would
+		// otherwise print twice in the equivalent command.
+		if n = strings.TrimSpace(n); n != "" && !seenIngress[n] {
+			seenIngress[n] = true
+			o.IngressNodes = append(o.IngressNodes, n)
+		}
+	}
 	setIf("KUBE_OVN_GW_TYPE", s.GWType)
 	setIf("CEPH_REPLICATION_SIZE", s.CephReplicationSize)
 	// Public-VLAN keys ONLY for the public preset — switching away drops the
@@ -359,6 +383,7 @@ func (s *State) FromOptions(o *clusterinit.InitOptions) {
 		set(&s.NetInterface, o.Sets["EXT_NET_INTERFACE"])
 		set(&s.KubeOVNMasterNodes, o.Sets["KUBE_OVN_MASTER_NODES"])
 		set(&s.GWNodes, o.Sets["KUBE_OVN_GW_NODES"])
+		set(&s.IngressNodes, strings.Join(o.IngressNodes, ","))
 		set(&s.GWType, o.Sets["KUBE_OVN_GW_TYPE"])
 		set(&s.CephReplicationSize, o.Sets["CEPH_REPLICATION_SIZE"])
 		set(&s.PubVLANID, o.Sets["EXT_PUBLIC_VLAN_ID"])
@@ -366,6 +391,7 @@ func (s *State) FromOptions(o *clusterinit.InitOptions) {
 		set(&s.PubGateway, o.Sets["EXT_PUBLIC_GATEWAY"])
 		set(&s.PubExclude1, o.Sets["EXT_PUBLIC_EXCLUDE_IPS_1"])
 		set(&s.PubExclude2, o.Sets["EXT_PUBLIC_EXCLUDE_IPS_2"])
+		set(&s.IngressAddressLayer, o.IngressAddressLayer)
 		set(&s.MetalLBMode, o.Sets["METALLB_MODE"])
 		set(&s.MetalLBVIP, o.Sets["METALLB_FLOATING_IP"])
 		set(&s.MetalLBInterface, o.Sets["METALLB_INTERFACE"])
@@ -469,6 +495,13 @@ func (s *State) EquivalentFlags(o *clusterinit.InitOptions) string {
 	add("github-owner", o.GitHubOwner)
 	add("github-repo", o.GitHubRepo)
 	add("preset", string(o.Preset))
+	// Front door. Both are dedicated flags rather than --set keys, so the
+	// generic Sets loop below cannot emit them — and an equivalent command
+	// missing the layer would silently re-run as "none".
+	add("ingress-address-layer", o.IngressAddressLayer)
+	for _, n := range o.IngressNodes {
+		add("ingress-node", n)
+	}
 	keys := make([]string, 0, len(o.Sets))
 	for k := range o.Sets {
 		keys = append(keys, k)

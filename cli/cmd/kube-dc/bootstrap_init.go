@@ -169,6 +169,41 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 			if o.Repo == "" && fleetRepo != nil {
 				o.Repo = *fleetRepo
 			}
+			// Still empty means the operator passed no --repo, no
+			// KUBE_DC_INIT_REPO, and no $KUBE_DC_FLEET. Apply the DOCUMENTED
+			// default rather than carrying "" forward: the fleet starter is
+			// extracted into this directory and the overlay written there, so an
+			// empty value let a new-repo dry run pass and then failed the apply
+			// at "starter: RepoPath is required" — after the operator had
+			// already reviewed and approved the plan.
+			// NOT for existing-fleet: that mode reads sibling clusters, age
+			// recipients and version pins from the checkout, so silently
+			// defaulting the path would render a plan with an empty "prior
+			// clusters" list that looks authoritative. It is refused at
+			// validation instead, which is the right behaviour and is pinned by
+			// TestBootstrapInit_ExistingFleetRequiresRepo.
+			if o.Repo == "" && o.FleetMode != clusterinit.FleetExistingFleet {
+				if home, herr := os.UserHomeDir(); herr == nil {
+					o.Repo = filepath.Join(home, ".kube-dc", "fleet")
+					fmt.Fprintf(cmd.OutOrStdout(),
+						"[init] no --repo given; using the default fleet path %s\n", o.Repo)
+				}
+			}
+
+			// Real control-plane node names, for the ingress-placement checks.
+			// Resolved before validation so a mixed control-plane/worker ingress
+			// set is refused up front rather than discovered at scaffold time.
+			//
+			// ONLY when the current kubeconfig context actually addresses THIS
+			// cluster. Otherwise an operator with an unrelated current context
+			// would have that cluster's control-plane names used to judge this
+			// one's ingress set — blocking a correct topology, or blessing a
+			// mixed one, on evidence from somebody else's cluster. Empty means
+			// the placement checks stand down, which is the right failure
+			// direction for a rule we cannot evaluate.
+			if _, targets := clusterinit.KubeconfigTargetsCluster(o.Domain, o.NodeExternalIP); targets {
+				o.ControlPlaneNodes = controlPlaneNodeNames(cmd.Context())
+			}
 
 			// Prefill: seed o from --config (a cluster-config.env-format
 			// file) + KUBE_DC_INIT_* env BEFORE the wizard/validation, so
@@ -501,8 +536,8 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"Skip the S3 exposure layer (Certificate + HTTPRoute) — cluster-internal S3 only")
 	cmd.Flags().BoolVar(&o.ImageAcceleration, "image-acceleration", true,
 		"Wire the on-cluster image path (tenant-addons + cdi-os-mirror + registry-depot zot) into the scaffold; spegel (RKE2 embedded registry) is enabled per node by bootstrap install (default: true)")
-	cmd.Flags().StringVar(&o.IngressAddressLayer, "ingress-address-layer", clusterinit.AddressLayerNone,
-		fmt.Sprintf("Who owns the address clients dial: %s. The data plane is the same everywhere (host-bind Envoy DaemonSet on nodes labelled kube-dc.com/ingress); 'none' reaches those nodes' own IPs and installs no MetalLB, the metallb-* layers claim a floating VIP (requires --set METALLB_FLOATING_IP). See docs/platform/installation-guide.md",
+	cmd.Flags().StringVar(&o.IngressAddressLayer, "ingress-address-layer", "",
+		fmt.Sprintf("Who owns the address your users dial: %s. 'metallb-l2' is the recommended shape — one floating VIP (--set METALLB_FLOATING_IP) that moves between ingress nodes, which is what DNS wants. Use 'none' when your fabric cannot deliver a floating address: clients reach the ingress nodes' own IPs and no MetalLB is installed. Left UNSET this resolves to 'none' — a reserved METALLB_FLOATING_IP is NOT assumed to be your front door (spare and undeliverable reservations exist), so declaring one without a layer is refused rather than guessed. The data plane is identical either way, so this choice cannot make the front door faster — only reachable or not. See docs/platform/installation-guide.md",
 			strings.Join(clusterinit.AllAddressLayers, " | ")))
 	cmd.Flags().StringSliceVar(&o.IngressNodes, "ingress-node", nil,
 		"Node that should carry the ingress label and bind :80/:443 (repeatable). Two or more for production. With a VIP layer these nodes must also run a MetalLB speaker and reach the VIP's L2/BGP fabric")
@@ -1007,6 +1042,44 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	// Provider info now flows through `ApplyOptions` (see
 	// `runFluxInstall`).
 
+	// FETCH BEFORE SESSION. The session builds a Kubernetes client, which needs
+	// a kubeconfig to LOAD (not to reach) — so on a genuinely fresh bastion,
+	// where the operator has SSH to a control-plane node and nothing else, init
+	// used to die here with "build session" while the kubeconfig auto-fetch it
+	// advertises ran hundreds of lines later, in the post-apply finalizer. The
+	// documented Phase-2-to-Phase-3 handoff was therefore impossible to follow
+	// as written.
+	//
+	// This runs only when there is no usable kubeconfig AND the operator gave us
+	// --ssh-host. It is best-effort: a failure here falls through to the session
+	// error below, which is the same outcome as before, plus an explanation.
+	if o.SSHHost != "" && !o.NoSSH {
+		server, targets := clusterinit.KubeconfigTargetsCluster(o.Domain, o.NodeExternalIP)
+		switch {
+		case targets:
+			fmt.Fprintf(out, "[apply] using the current kubeconfig context (%s)\n", server)
+		case server == "":
+			fmt.Fprintf(out, "[apply] no usable kubeconfig found — fetching it from %s over SSH first\n", o.SSHHost)
+			if ferr := autoFetchKubeconfig(ctx, out, o); ferr != nil {
+				fmt.Fprintf(out, "[apply] WARNING: pre-session kubeconfig fetch failed (%v)\n", ferr)
+			}
+		default:
+			// A kubeconfig exists but points SOMEWHERE ELSE. Continuing would
+			// bootstrap Flux against that cluster — the worst possible outcome
+			// of this command — so fetch the right one instead of inheriting a
+			// stranger's current context.
+			fmt.Fprintf(out, "[apply] the current kubeconfig context points at %s, which is not %s — "+
+				"fetching this cluster's kubeconfig from %s over SSH instead\n", server, o.Domain, o.SSHHost)
+			if ferr := autoFetchKubeconfig(ctx, out, o); ferr != nil {
+				return fmt.Errorf("apply: the current kubeconfig points at %s, not at %s, and fetching "+
+					"the right one from %s failed: %w\n\n"+
+					"Refusing to continue: bootstrapping Flux against the wrong cluster is not recoverable "+
+					"by re-running. Fix SSH access, or point KUBECONFIG at %s yourself",
+					server, o.Domain, o.SSHHost, ferr, o.Domain)
+			}
+		}
+	}
+
 	var session *bootstrap.Session
 	if err := step(rep, clusterinit.StepPrepare, func() error {
 		var e error
@@ -1015,6 +1088,13 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		})
 		return e
 	}); err != nil {
+		if o.SSHHost == "" && !clusterinit.HaveUsableKubeconfig() {
+			return fmt.Errorf("apply: build session: %w\n\n"+
+				"There is no usable kubeconfig on this machine, and no --ssh-host was given for me to "+
+				"fetch one. Either point KUBECONFIG at the cluster from Phase 2, or pull it first:\n"+
+				"  kube-dc bootstrap fetch-kubeconfig %s --ssh-host <user@control-plane> --domain %s --set-current",
+				err, o.Name, o.Domain)
+		}
 		// Mock-mode + non-kubeconfig real flows both return errors
 		// here; the engine NEEDS a real session for the apply
 		// path, so surface the failure directly. (Mock-mode apply
@@ -1338,24 +1418,34 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		NodeExternalIP: applyNodeIP,
 		NodeCIDR:       nodeCIDR,
 		SingleIPNAT:    singleIPNAT,
-		Sets:           o.Sets,
-		NodeNICs:       o.NodeNICs,
-		ObjectStorage:  o.ObjectStorage(),
-		VMStorage:      o.VMStorage(),
-		ImageAccel:     o.ImageAccel(),
-		WildcardTLS:    wildcardTLS,
-		DNS01Route53:   dns01,
-		TrustedCA:      trustedCA,
-		GPU:            o.GPU(),
-		Runner:         session.Scripts,
-		Git:            session.Git,
-		GitHubToken:    token,
-		Provider:       o.Provider,
-		GitHubOwner:    o.GitHubOwner,
-		GitHubRepo:     o.GitHubRepo,
-		NoPush:         o.NoPush,
-		Out:            out,
-		Reporter:       rep,
+		// The EXPLICIT flag — see ApplyOptions.RequestedIngressLayer.
+		RequestedIngressLayer: o.IngressAddressLayer,
+		// Real control-plane names, or nil when the cluster is unreachable —
+		// see controlPlaneNodeNames for why the gateway set is not a substitute.
+		ControlPlaneNodes: controlPlaneNodeNames(ctx),
+		Sets:              o.Sets,
+		NodeNICs:          o.NodeNICs,
+		ObjectStorage:     o.ObjectStorage(),
+		VMStorage:         o.VMStorage(),
+		ImageAccel:        o.ImageAccel(),
+		WildcardTLS:       wildcardTLS,
+		DNS01Route53:      dns01,
+		TrustedCA:         trustedCA,
+		GPU:               o.GPU(),
+		Runner:            session.Scripts,
+		Git:               session.Git,
+		// Lets Apply label the front-door ingress nodes before the overlay is
+		// committed. session.K8s is nil when the cluster is unreachable, and Apply
+		// skips the step in that case rather than failing — an unreachable cluster is
+		// already reported by the earlier gates.
+		K8s:         session.K8s,
+		GitHubToken: token,
+		Provider:    o.Provider,
+		GitHubOwner: o.GitHubOwner,
+		GitHubRepo:  o.GitHubRepo,
+		NoPush:      o.NoPush,
+		Out:         out,
+		Reporter:    rep,
 	}); err != nil {
 		return err
 	}
@@ -1699,6 +1789,10 @@ func applyInitPrefill(cmd *cobra.Command, o *clusterinit.InitOptions, configPath
 		fmt.Fprintf(out, "[prefill] ignored %d non-input key(s) (versions/derived/feature): %s\n",
 			len(ignored), strings.Join(ignored, ", "))
 	}
+	// Legacy-key translations change what gets BUILT, so they are never silent.
+	for _, note := range o.PrefillNotes {
+		fmt.Fprintf(out, "[prefill] %s\n", note)
+	}
 	return nil
 }
 
@@ -1715,6 +1809,12 @@ func initEnvPrefill() map[string]string {
 		clusterinit.KeyRepo: true, clusterinit.KeySSHHost: true,
 		clusterinit.KeyAllowDNS: true, clusterinit.KeyAllowNoKVM: true,
 		clusterinit.KeyAllowUnpin: true, clusterinit.KeyNoS3Exposure: true,
+		// Orchestration, NOT a native config key: the ingress-node set is a
+		// dedicated option (--ingress-node), never a cluster-config.env value.
+		// Without this entry the prefix was STRIPPED to INGRESS_NODES, which
+		// the prefill scanner does not look for — so the env var was accepted
+		// and silently dropped, and the stripped key leaked into --set space.
+		clusterinit.KeyIngressNodes: true,
 	}
 	out := map[string]string{}
 	for _, e := range os.Environ() {
@@ -2060,6 +2160,32 @@ func resolveStarterRef(override string) string {
 // probe-driven prefill (T6 polish). STRICTLY best-effort: 3s budget,
 // ambient kubeconfig resolution, and ANY failure returns nil — the
 // panel must open identically on a laptop with no cluster in reach.
+// controlPlaneNodeNames resolves the control-plane node NAMES from the live
+// cluster, for the :6443 passthrough-listener decision.
+//
+// Nothing in cluster-config.env carries these names — KUBE_OVN_MASTER_NODES
+// holds control-plane IPs, and KUBE_OVN_GW_NODES is a DIFFERENT set (verified
+// live: the reference cluster has an external-gateway node that is an ordinary
+// worker). Substituting the gateway set inverts the listener decision for
+// exactly those nodes, so when the cluster cannot be reached this returns nil
+// and the derivation stands down in favour of the address heuristic.
+func controlPlaneNodeNames(ctx context.Context) []string {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	facts, err := k8sadapter.GatherNodeNetworkFacts(ctx, "")
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, f := range facts {
+		if f.ControlPlane && f.Name != "" {
+			names = append(names, f.Name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
 // Nil is also returned when there are no facts, so the panel never
 // renders an empty "probed from live cluster" hint.
 func gatherPanelProbe(ctx context.Context) *initform.ProbePrefill {

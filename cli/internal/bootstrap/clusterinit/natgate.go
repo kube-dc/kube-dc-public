@@ -33,9 +33,11 @@ package clusterinit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"sort"
 
 	"path/filepath"
 	"strings"
@@ -168,6 +170,113 @@ const natPlatformPatchEntry = `    ` + natPlatformPatchesMarker + `
           value: tls-passthrough
         - op: remove
           path: /spec/listeners/12`
+
+// IngressCollidesWithAPIServer reports whether Envoy will share a node with
+// kube-apiserver, which is what decides the :6443 TLS-passthrough listener's
+// fate under the v2 host-bind data plane.
+//
+// This SUPERSEDES address-based guessing for clusters that declare their
+// ingress nodes. Envoy binds the listener ports on the nodes carrying the
+// ingress label, so the question is set intersection — "is any ingress node a
+// control-plane node?" — not "does NODE_EXTERNAL_IP happen to equal a
+// control-plane address" (codex 2026-08-07, P1). Getting it wrong is
+// bidirectional harm: keep the listener on a control-plane ingress node and it
+// silently never binds (the apiserver owns the port) while the Gateway still
+// reports Programmed=True; remove it on a dedicated-worker ingress set and
+// kube-api.<domain>:6443 loses its route.
+//
+// What that listener actually carries, verified live 2026-08-08: ONE TLSRoute,
+// kube-api.<domain> -> the `kubernetes` Service — i.e. the MANAGEMENT cluster's
+// own API. Managed (Kamaji) tenant clusters do NOT use :6443: their kubeconfigs
+// point at https://<cluster>-cp-<namespace>.<domain>:443 and are served by the
+// separate `tls-passthrough-wildcard` listener on :443. So removing the :6443
+// listener does not touch managed clusters, and is safe whenever the front-door
+// address belongs to a node running an apiserver (which then serves :6443
+// itself). It is NOT safe when the front door is a VIP that may land on a node
+// without an apiserver.
+//
+// ingressNodes empty = the operator did not declare a set, so we cannot
+// derive; the caller falls back to the address heuristic.
+func IngressCollidesWithAPIServer(ingressNodes, controlPlaneNodes []string) (collides, derivable bool) {
+	if len(ingressNodes) == 0 {
+		return false, false
+	}
+	cp := make(map[string]bool, len(controlPlaneNodes))
+	for _, n := range controlPlaneNodes {
+		if n = strings.TrimSpace(n); n != "" {
+			cp[n] = true
+		}
+	}
+	if len(cp) == 0 {
+		return false, false // no control-plane knowledge → cannot derive
+	}
+	var onCP, offCP []string
+	for _, n := range ingressNodes {
+		if n = strings.TrimSpace(n); n == "" {
+			continue
+		}
+		if cp[n] {
+			onCP = append(onCP, n)
+		} else {
+			offCP = append(offCP, n)
+		}
+	}
+	return len(onCP) > 0, true
+}
+
+// ErrMixedIngressPlacement fires when the ingress set straddles control-plane
+// and non-control-plane nodes.
+//
+// The :6443 listener is a GLOBAL Gateway listener, but whether Envoy can bind it
+// is a PER-NODE fact — the apiserver owns the port on a control-plane node and
+// does not elsewhere. So a mixed set has no correct global answer:
+//
+//   - Keep the listener and it silently never binds on the control-plane
+//     members, while the Gateway still reports Programmed=True.
+//   - Remove it and the non-control-plane members lose a listener they could
+//     have served, so kube-api.<domain>:6443 has no route through them.
+//
+// Removing it globally on a single intersection — which is what this code used
+// to do — takes the listener away from the nodes that were fine. Refuse the
+// topology instead of picking a wrong answer for half the fleet.
+//
+// This is not the same question as managed tenant clusters, which are on :443
+// via the wildcard passthrough listener and are unaffected either way.
+var ErrMixedIngressPlacement = errors.New(
+	"init: ingress nodes straddle control-plane and worker nodes, which has no correct :6443 answer")
+
+// ClassifyIngressPlacement splits the ingress set by control-plane membership so
+// the caller can act per topology instead of on a single boolean.
+//
+// Returns onCP and offCP sorted; derivable is false when the control-plane set is
+// unknown (the caller then falls back to the address heuristic).
+func ClassifyIngressPlacement(ingressNodes, controlPlaneNodes []string) (onCP, offCP []string, derivable bool) {
+	if len(ingressNodes) == 0 || len(controlPlaneNodes) == 0 {
+		return nil, nil, false
+	}
+	cp := make(map[string]bool, len(controlPlaneNodes))
+	for _, n := range controlPlaneNodes {
+		if n = strings.TrimSpace(n); n != "" {
+			cp[n] = true
+		}
+	}
+	if len(cp) == 0 {
+		return nil, nil, false
+	}
+	for _, n := range ingressNodes {
+		if n = strings.TrimSpace(n); n == "" {
+			continue
+		}
+		if cp[n] {
+			onCP = append(onCP, n)
+		} else {
+			offCP = append(offCP, n)
+		}
+	}
+	sort.Strings(onCP)
+	sort.Strings(offCP)
+	return onCP, offCP, true
+}
 
 // GatewayCollidesWithAPIServer reports whether the Envoy Service's external
 // address is one of the cluster's OWN node IPs, read from the scaffolded

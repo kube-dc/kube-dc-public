@@ -14,10 +14,10 @@ import (
 // policy-generation tests — only GetAnnotation is meaningful; the
 // other methods satisfy the interface and are never called.
 type fakePGBao struct {
-	annotations   map[string]string
-	getErr        error
-	getCalls      int
-	lastGetKey    string
+	annotations map[string]string
+	getErr      error
+	getCalls    int
+	lastGetKey  string
 }
 
 func (f *fakePGBao) GetAnnotation(_ context.Context, _, key string) (string, error) {
@@ -30,22 +30,26 @@ func (f *fakePGBao) GetAnnotation(_ context.Context, _, key string) (string, err
 }
 
 // Interface stubs.
-func (f *fakePGBao) PodList(_ context.Context) ([]string, error)                     { return nil, nil }
-func (f *fakePGBao) Status(_ context.Context, _ string) (ports.BaoStatus, error)     { return ports.BaoStatus{}, nil }
-func (f *fakePGBao) Unseal(_ context.Context, _ string, _ []byte) error              { return nil }
-func (f *fakePGBao) RaftJoin(_ context.Context, _, _ string) error                   { return nil }
-func (f *fakePGBao) GenerateRoot(_ context.Context, _ [][]byte) ([]byte, error)      { return nil, nil }
-func (f *fakePGBao) RevokeSelf(_ context.Context, _ []byte) error                    { return nil }
-func (f *fakePGBao) ApplyPolicy(_ context.Context, _ []byte, _, _ string) error       { return nil }
-func (f *fakePGBao) EnableAuthPath(_ context.Context, _ []byte, _, _ string) error    { return nil }
+func (f *fakePGBao) PodList(_ context.Context) ([]string, error) { return nil, nil }
+func (f *fakePGBao) Status(_ context.Context, _ string) (ports.BaoStatus, error) {
+	return ports.BaoStatus{}, nil
+}
+func (f *fakePGBao) Unseal(_ context.Context, _ string, _ []byte) error            { return nil }
+func (f *fakePGBao) RaftJoin(_ context.Context, _, _ string) error                 { return nil }
+func (f *fakePGBao) GenerateRoot(_ context.Context, _ [][]byte) ([]byte, error)    { return nil, nil }
+func (f *fakePGBao) RevokeSelf(_ context.Context, _ []byte) error                  { return nil }
+func (f *fakePGBao) ApplyPolicy(_ context.Context, _ []byte, _, _ string) error    { return nil }
+func (f *fakePGBao) EnableAuthPath(_ context.Context, _ []byte, _, _ string) error { return nil }
 func (f *fakePGBao) ConfigureKubernetesAuth(_ context.Context, _ []byte, _ string, _ ports.KubernetesAuthConfig) error {
 	return nil
 }
 func (f *fakePGBao) WriteAuthRole(_ context.Context, _ []byte, _, _ string, _ map[string]string) error {
 	return nil
 }
-func (f *fakePGBao) SetAnnotation(_ context.Context, _, _, _ string) error                 { return nil }
-func (f *fakePGBao) SetAnnotations(_ context.Context, _ string, _ map[string]string) error { return nil }
+func (f *fakePGBao) SetAnnotation(_ context.Context, _, _, _ string) error { return nil }
+func (f *fakePGBao) SetAnnotations(_ context.Context, _ string, _ map[string]string) error {
+	return nil
+}
 
 // TestReadPolicyGenerationInstalled_Absent — canonical "legacy
 // install / never stamped" case. Empty annotation returns (0, nil)
@@ -152,10 +156,10 @@ func TestReadPolicyGenerationInstalled_NilBao_Refuses(t *testing.T) {
 // this cluster earlier).
 func TestStatusResult_HasPolicyGenerationDrift_TruthTable(t *testing.T) {
 	cases := []struct {
-		name             string
-		expected         int
-		installed        int
-		wantDrift        bool
+		name      string
+		expected  int
+		installed int
+		wantDrift bool
 	}{
 		{"legacy-absent", 1, 0, true},
 		{"forward-drift", 2, 1, true},

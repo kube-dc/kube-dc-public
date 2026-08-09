@@ -135,6 +135,68 @@ spec:
                     QuotaUsage contains aggregated resource usage for this project namespace.
                     Populated by the project controller every ~60s. Human-readable values.
                   properties:
+                    accelerators:
+                      additionalProperties:
+                        description: |-
+                          AcceleratorQuotaUsage holds normalized quota for one stable GPU profile ID.
+                          Fields are optional because shared Pod and dedicated VM profiles account for
+                          different dimensions.
+                        properties:
+                          corePercent:
+                            description: CorePercent is aggregate concurrent GPU compute percentage.
+                            properties:
+                              hard:
+                                description: Hard is the maximum allowed amount from the active quota
+                                type: string
+                              used:
+                                description: Used is the currently consumed amount (e.g. "2500m", "7Gi", "3")
+                                type: string
+                            required:
+                              - hard
+                              - used
+                            type: object
+                          devices:
+                            description: Devices is whole-device usage for passthrough, vGPU, MIG, or exclusive profiles.
+                            properties:
+                              hard:
+                                description: Hard is the maximum allowed amount from the active quota
+                                type: string
+                              used:
+                                description: Used is the currently consumed amount (e.g. "2500m", "7Gi", "3")
+                                type: string
+                            required:
+                              - hard
+                              - used
+                            type: object
+                          memoryMiB:
+                            description: MemoryMiB is concurrent reserved GPU framebuffer memory in MiB.
+                            properties:
+                              hard:
+                                description: Hard is the maximum allowed amount from the active quota
+                                type: string
+                              used:
+                                description: Used is the currently consumed amount (e.g. "2500m", "7Gi", "3")
+                                type: string
+                            required:
+                              - hard
+                              - used
+                            type: object
+                          shares:
+                            description: Shares is concurrent logical GPU allocation usage for shared Pod profiles.
+                            properties:
+                              hard:
+                                description: Hard is the maximum allowed amount from the active quota
+                                type: string
+                              used:
+                                description: Used is the currently consumed amount (e.g. "2500m", "7Gi", "3")
+                                type: string
+                            required:
+                              - hard
+                              - used
+                            type: object
+                        type: object
+                      description: Accelerators maps stable GPU profile IDs to their quota dimensions.
+                      type: object
                     cpu:
                       description: CPU usage and limit in cores (e.g. "1.5" / "8")
                       properties:

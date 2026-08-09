@@ -36,6 +36,14 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - endpoints
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - events
   verbs:
   - create
@@ -127,10 +135,39 @@ rules:
   - patch
   - update
   - watch
+# machines update + machinedeployments/scale: held so the manager can GRANT
+# them to the per-cluster cluster-autoscaler Role (autoscaling.mode:
+# ClusterAutoscaler) — RBAC no-escalation means the manager delegates only
+# verbs it holds. `machines update` is how upstream CA stamps the
+# delete-machine annotation so the MachineSet removes the node CA drained. A
+# machines update/patch grant was added and reverted once before (b2daf40a)
+# because its consumer was dead code; this consumer deploys with the mode.
 - apiGroups:
   - cluster.x-k8s.io
   resources:
   - machines
+  verbs:
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - cluster.x-k8s.io
+  resources:
+  - machinedeployments/scale
+  verbs:
+  - get
+  - patch
+  - update
+# machinepools read-only: held ONLY to delegate to the per-cluster
+# cluster-autoscaler Role. The clusterapi provider starts an informer for
+# every discovered CAPI resource and blocks its cache sync forever on a
+# Forbidden machinepools watch — the autoscaler sat at "Initializing"
+# indefinitely (found on a live cluster). Kube-DC never creates MachinePools.
+- apiGroups:
+  - cluster.x-k8s.io
+  resources:
+  - machinepools
   verbs:
   - get
   - list
@@ -407,4 +444,55 @@ rules:
   - list
   - patch
   - watch
+# Worker-autoscaling quota rail: a KubeVirt worker is a VMI pod in the
+# cluster's project namespace, so each node it adds is charged against that
+# namespace's quota (the tenant's billing plan). The autoscaler reads it to
+# refuse a scale-up that quota would reject anyway, reporting limitedBy=Quota
+# instead of piling up Machines that admission rejects. Read-only. CloudSigma
+# pools are account VMs and consume no namespace quota, so they are never
+# charged against this.
+#
+# resourcequotas, NOT hierarchicalresourcequotas: the tenant plan is authored
+# as an HRQ in the ORG-ROOT namespace, but a KdcCluster lives in the PROJECT
+# namespace, so a namespace-scoped HRQ read there matches nothing. HNC projects
+# every HRQ into the subtree as a plain ResourceQuota (`hrq.hnc.x-k8s.io`) with
+# identical hard/used, and that projection is what admission actually enforces.
+# BOTH groups are granted, deliberately, and this is not redundancy: a chart
+# upgrade rolls before or after the operator image, in either order, and a
+# rollback reverses it. The PREVIOUS k8-manager reads hierarchicalresourcequotas;
+# this one reads resourcequotas. Granting only the new resource 403s the old pod
+# for the length of the rollout — and for as long as a rollback lasts — which
+# turns a quota read into a scale-up refusal. Keeping both costs two read-only
+# verbs; drop the HNC one only once no supported version reads it.
+- apiGroups:
+  - hnc.x-k8s.io
+  resources:
+  - hierarchicalresourcequotas
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - resourcequotas
+  verbs:
+  - get
+  - list
+  - watch
+{{- end }}
+
+{{- if .Values.k8Manager.mgmtAutoscaling.enabled }}
+# ── Management-worker autoscaling ──────────────────────────────────────────
+# MgmtWorkerPool is the ledger; nodes are labelled/tainted by the acceptance
+# gate. NO node delete: nothing in this feature ever removes a node.
+- apiGroups: [k8s.kube-dc.com]
+  resources: [mgmtworkerpools]
+  verbs: [get, list, watch]
+- apiGroups: [k8s.kube-dc.com]
+  resources: [mgmtworkerpools/status]
+  verbs: [get, update, patch]
+- apiGroups: [""]
+  resources: [nodes]
+  verbs: [get, list, watch, update, patch]
 {{- end }}

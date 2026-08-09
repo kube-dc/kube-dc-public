@@ -1,5 +1,108 @@
 kubeApiExternalUrl: "" # Required, example: "kube-api.stage.kube-dc.com:6443"
 
+# How infra-side platform controllers in dual-homed project namespaces reach
+# this management cluster API. Empty mode preserves the legacy per-component
+# infraAPIEndpoint values for upgrade compatibility; fleet installs set a mode
+# explicitly. service is opt-in and requires manager.infraAttachment plus the
+# exact kubernetes ServiceIP (not the whole Service CIDR).
+managementAPI:
+  mode: "" # "", external, or service ("" = legacy kubeApiExternalUrl).
+           # platformVIP is RETIRED (2026-08-07) — render fails if set.
+  externalEndpoint: "" # host:port; falls back to kubeApiExternalUrl
+  # platformVIP: RETIRED 2026-08-07. Meant "dial the Fork-E kube-api MetalLB
+  # VIP:6443"; no cluster used it and service mode supersedes it (ClusterIP
+  # over the dual-home infra NIC). The key is intentionally GONE so a stale
+  # value cannot sit here looking meaningful — mode=platformVIP now fails
+  # render with a migration message.
+  serviceIP: "" # exact IPv4 kubernetes.default ServiceIP; service mode only
+  serviceCIDR: "" # IPv4 Service CIDR containing serviceIP; service mode only
+
+# Accelerator product catalog consumed by kube-dc controllers, APIs, billing,
+# and UIs. This does not install drivers, device plugins, HAMi, or VFIO. Keep it
+# disabled until the fleet GPU stack has been qualified and reports matching
+# allocatable resources.
+gpu:
+  enabled: false
+  # Exact authenticated controller identity allowed to create catalogued
+  # KubeVirt launcher Pods carrying whole-GPU native resources.
+  kubevirtControllerUsername: system:serviceaccount:kubevirt:kubevirt-controller
+  # Independent R1 product gate. Read-only discovery remains available when
+  # false; preview/create routes return 404 and the tenant UI hides creation.
+  sharedCreation:
+    enabled: false
+  # Independent R2 product gate. Capability/details discovery stays readable,
+  # while GPU VM preflight/create fail closed and the wizard disables profiles.
+  vmCreation:
+    enabled: false
+  # Tenant self-service for Shared GPU via kubectl. When true, project admin/
+  # developer roles gain RBAC to create the fixed-product DRA ResourceClaimTemplate
+  # + Deployment directly, and the backend-only "protect" admission policies for
+  # those two kinds are not rendered. The DRA *shape* policies still force the
+  # exact fixed product and the per-DeviceClass ResourceQuota still bounds count,
+  # so a tenant can never claim more than their entitlement. Leave false to keep
+  # creation backend-only (the gated preview/create API path).
+  tenantDirectApply: false
+  catalogVersion: 1
+  # Shared HAMi Pods must carry this stable profile ID label. Fleet scopes the
+  # HAMi fail-closed mutating webhook to the same key so ordinary Pods are not
+  # coupled to GPU control-plane availability.
+  profileLabel: kube-dc.com/gpu-profile
+  hamiSchedulerName: hami-scheduler
+  # HAMi-native knobs that are deliberately outside the kube-dc profile
+  # contract. Keep this list aligned with the pinned HAMi device config: memory
+  # percentage could override the catalog MiB bound and priority is not a
+  # tenant product dimension.
+  hamiDeniedResourceNames:
+    - nvidia.com/gpumem-percentage
+    - nvidia.com/priority
+  profiles: []
+  # - id: nvidia-v100-hami
+  #   displayName: NVIDIA Tesla V100 (shared)
+  #   vendor: nvidia
+  #   workload: pod
+  #   allocation: hami
+  #   resourceName: nvidia.com/gpu
+  #   memoryMiB: 32768
+  #   isolation: software
+  #   enabled: true
+  #   billingEligible: false
+  #   liveMigratable: false
+  #   dra:
+  #     driver: hami-core-gpu.project-hami.io
+  #     deviceClassName: hami-core-gpu.project-hami.io
+  #     attributes:
+  #       productName: Tesla V100-PCIE-32GB
+  #     memoryCapacity: memory
+  #     coreCapacity: cores
+  #     maxSharesPerDevice: 10
+  #   request:
+  #     countResource: nvidia.com/gpu
+  #     memoryResource: nvidia.com/gpumem
+  #     coreResource: nvidia.com/gpucores
+  #     minMemoryMiB: 1024
+  #     memoryStepMiB: 1024
+  #     minCorePercent: 10
+  #     coreStepPercent: 5
+  #     allowCustom: true
+  #     presets:
+  #       - id: standard
+  #         displayName: Standard
+  #         memoryMiB: 8192
+  #         corePercent: 25
+  #         default: true
+  # - id: nvidia-v100-passthrough
+  #   displayName: NVIDIA Tesla V100 32 GB
+  #   vendor: nvidia
+  #   workload: vm
+  #   allocation: passthrough
+  #   resourceName: nvidia.com/GV100GL_TESLA_V100_PCIE_32GB
+  #   memoryMiB: 32768
+  #   isolation: device
+  #   enabled: false
+  #   billingEligible: false
+  #   liveMigratable: false
+  #   pciVendorSelector: 10DE:1DB6
+
 # Per-cluster S3 endpoint. Threaded into:
 #   - kube-dc-backend (S3_ENDPOINT env): UI object-storage views,
 #     KdcDatabase endpoint hints, billing/quota responses.
@@ -20,10 +123,125 @@ s3Endpoint: ""  # example: "https://s3.stage.kube-dc.com"
 # rationale as s3Endpoint — no fallback, must be set per-cluster.
 grafanaUrl: ""  # example: "https://grafana.stage.kube-dc.com"
 
+# Platform trust bundle (docs/prd/platform-trust-bundle.md).
+#
+# kube-dc has long had a trust CONTRACT — `kube-dc bootstrap init
+# --trusted-ca-bundle` validates a certificate-only PEM bundle and creates a
+# ConfigMap — but no DISTRIBUTION: the bundle reached only the pods this chart
+# explicitly mounts it into. Every other consumer had to be wired by hand, and
+# missing one produced a distinct, confusing failure (a VM whose image import
+# fails with x509 against the cluster's OWN mirror, for instance).
+#
+# The manager now copies the certificates from this ConfigMap into every
+# ConfigMap labelled `kube-dc.com/inject-trusted-ca: "true"`, in any namespace,
+# under the key `ca-bundle.crt`. Adding a consumer is a label.
+#
+# Defaults to manager.trustedCA.configMapName, so a private-CA install gets
+# distribution without setting anything. Leaving BOTH empty disables injection
+# entirely, which is correct on a public-CA cluster — note that setting only this
+# one back to "" does not disable it while manager.trustedCA.configMapName is
+# still set, because that is the fallback.
+#
+# WITH NO PLATFORM CA, NOTHING IS INJECTED — not even system roots. OpenShift
+# does inject roots-only in that case, but there a ConfigMap carries the label
+# only because a consumer asked for it; kube-dc puts one in EVERY project
+# namespace so CDI has a predictable name to mount, so the same rule would cost
+# ~180 KB per namespace on every public-CA cluster for no benefit. It also means
+# a source that goes missing freezes the last good bundle rather than silently
+# rewriting it down to roots-only and dropping the private CA.
+platformTrustBundle:
+  configMapName: ""
+
+  # Inject a COMPLETE bundle (platform CA + the manager image's system roots)
+  # rather than the platform CA alone. This is OpenShift's behaviour and the
+  # default here.
+  #
+  # Completeness is not strictly required: CDI's certConfigMap, Node's
+  # NODE_EXTRA_CA_CERTS and Go's SSL_CERT_DIR all ADD to system trust, so an
+  # additional-only bundle works for all of them (measured). It is chosen anyway
+  # because it removes a footgun: a consumer whose runtime REPLACES the trust
+  # store (SSL_CERT_FILE, curl --cacert, most "CA file" settings) silently loses
+  # every public root with an additional-only bundle, which presents as "the
+  # internal endpoint works and the public one broke".
+  #
+  # The cost: ~180 KB / ~119 certs copied into every project namespace, each copy
+  # only as fresh as the manager image. Set false on clusters with many projects
+  # where that etcd cost matters more than the footgun.
+  includeSystemRoots: true
+
 manager:
+  # One replica is sufficient for the default feature set. Enabling
+  # projectNetwork requires at least two: its attachment admission path fails
+  # closed, so a single manager would turn every rollout/drain into an outage
+  # for VLAN-attached workloads. The chart enforces the relationship.
+  replicaCount: 1
+
+  # Requests only, deliberately no limits. Without a request the manager runs
+  # BestEffort and is the first pod the kubelet evicts under node memory
+  # pressure -- cloud accumulated 43 Evicted manager pods in ten days that way,
+  # each one a silent reconcile gap. The request is what fixes it: QoS class,
+  # not the number, decides eviction order.
+  #
+  # No limit on purpose. Steady state is ~715Mi, but a large-scale event (the
+  # 2026-07 EIP storm) drove the manager to 36GiB, and an OOMKill loop during
+  # an incident like that is worse than the eviction this prevents.
+  #
+  # Memory only, no cpu request: memory eviction ranks pods on memory usage
+  # against the memory request, so a cpu request buys nothing, while it does
+  # consume schedulable cpu -- on a cpu-tight cluster it left a second manager
+  # replica Pending with "Insufficient cpu" under its topology spread.
+  resources:
+    requests:
+      memory: 1Gi
+
+  # Extra CA roots for clusters whose platform hostnames are served by a
+  # PRIVATE CA (internal domain with no public issuer). The manager calls the
+  # platform's own https endpoints -- notably Keycloak's token endpoint -- so
+  # without these roots every Organization reconcile fails with
+  #   cant login to keycloak: x509: certificate signed by unknown authority
+  #
+  # Point configMapName at a ConfigMap whose keys are PEM files, e.g.
+  #   kubectl -n kube-dc create configmap my-ca --from-file=ca.pem=/path/ca.pem
+  # The chart mounts it read-only and sets SSL_CERT_DIR to mountPath, which
+  # ADDS the roots to Go's system trust store (SSL_CERT_FILE would replace it).
+  trustedCA:
+    configMapName: ""
+    mountPath: /etc/kube-dc/trusted-ca
+
+  # Escape hatches for anything the chart does not model. Standard
+  # corev1.Volume / corev1.VolumeMount lists.
+  extraVolumes: []
+  extraVolumeMounts: []
+
   logLevel: 1 # 5 - Debug
   keycloakDebug: false
   ovnDbIps: "" # Required, example: "tcp:192.168.0.1:6641"
+
+  # Authenticated controller-runtime metrics. The endpoint uses delegated
+  # Kubernetes authentication + authorization; a scraper must present its
+  # ServiceAccount token and be allowed to GET the /metrics non-resource URL.
+  # The standard Prometheus/Alloy roles already carry that grant on the
+  # supported platform. rbac.serviceAccounts is available for installations
+  # whose scraper identity does not.
+  metrics:
+    enabled: true
+    service:
+      port: 8443
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+      scrapeTimeout: 10s
+      additionalLabels:
+        release: prom-operator
+    prometheusRule:
+      enabled: true
+      additionalLabels:
+        release: prom-operator
+    rbac:
+      create: false
+      serviceAccounts: []
+        # - namespace: monitoring
+        #   name: prometheus-k8s
 
   # Admission webhooks for security.kube-dc.com/v1alpha1 (M0-T03).
   # Adds Service + cert-manager Certificate + Mutating/Validating
@@ -36,6 +254,24 @@ manager:
   # defaulting + validation will be bypassed.
   webhook:
     enabled: true
+
+  # Tenant Networking v2 — infra-attachment pod webhook
+  # (docs/prd/tenant-networking-v2.md). Gives pods in opted-in project
+  # namespaces (labelled network.kube-dc.com/infra-attachment=enabled) a second
+  # cluster-unique NIC in the default VPC that becomes status.podIP, so kubelet
+  # and system operators (CNPG, mariadb) reach them by plain routing while the
+  # tenant datapath is unchanged and the NIC is SecurityGroup-locked.
+  #
+  # All values are cluster-specific. When enabled, the manager creates one
+  # SecurityGroup per opted-in project; fleet only provisions the shared subnet.
+  # securityGroup MUST contain {namespace}. routes MUST include the node subnet
+  # or kubelet probe replies are asymmetric and pods never go Ready.
+  infraAttachment:
+    enabled: false
+    subnet: ""          # e.g. infra-net
+    gateway: ""         # e.g. 100.66.0.1
+    securityGroup: ""   # required template, e.g. infra-lock-{namespace}
+    routes: ""          # comma-separated: "<node-subnet>,<join>,<system-pod>" e.g. "192.168.1.0/24,172.30.0.0/22,10.100.0.0/16"
 
   # OpenBao integration (M1+, see docs/prd/openbao-integration*.md).
   # Threaded into master-config as enable_openbao / openbao_url /
@@ -292,6 +528,12 @@ adminFrontend:
   keycloakRealm: "master"
   keycloakClientId: "kube-dc-admin-console"
   extraEnv: []
+  # Extra pod volumes / container volumeMounts, appended after the chart-managed
+  # env-js mount. Fleet supplies the nginx config here (mounting kube-dc-admin-nginx
+  # at /etc/nginx/nginx.conf) so env.js is served no-store instead of the image's
+  # default immutable .js rule — mirrors frontend.volumes/volumeMounts.
+  volumes: []
+  volumeMounts: []
   service:
     type: ClusterIP
     port: 80
@@ -331,6 +573,74 @@ adminFrontend:
   affinity: {}
 
 backend:
+  # Verify TLS certificates on every outbound HTTPS call (API server, Keycloak,
+  # OpenBao, Loki, object storage).
+  #
+  # Default false preserves the historical behaviour, in which NOTHING the
+  # backend called was authenticated. Turning it on requires the trust bundle to
+  # be complete for this installation: the cluster CA is added automatically at
+  # container start, but platform hostnames served by a private CA also need
+  # backend.trustedCA.configMapName set. Verify on a non-production cluster
+  # first — a cluster whose API server is reached by an address its certificate
+  # does not cover will fail every call.
+  tlsVerify: false
+  # Keycloak admin client for the Admin Console.
+  #
+  # The Admin Console's Keycloak-backed pages (Platform Admins, Auth & SSO)
+  # authenticate with a client_credentials grant — NOT the admin
+  # user/password the backend already receives. Leaving this empty makes
+  # those pages report "Keycloak admin client not configured" and Auth & SSO
+  # show 0 realms / 0 users on a cluster that has them.
+  #
+  # `kube-dc bootstrap keycloak init` creates the client
+  # (kube-dc-admin-backend: confidential, service account enabled, holding
+  # view-users/query-users/view-clients/view-realm/query-realms). Put its id
+  # and secret in a Secret and name it here.
+  keycloakAdminClient:
+    secretName: ""
+    clientIdKey: KEYCLOAK_ADMIN_CLIENT_ID
+    clientSecretKey: KEYCLOAK_ADMIN_CLIENT_SECRET
+
+  # Private-CA trust. Set configMapName to a ConfigMap holding the CA bundle
+  # when the platform's own HTTPS endpoints (Keycloak, OpenBao, S3) use a
+  # private CA — otherwise every server-side call the backend makes fails
+  # with "certificate verify failed".
+  #
+  # fileName must match the ConfigMap key: Node's NODE_EXTRA_CA_CERTS takes a
+  # single FILE, unlike the manager's SSL_CERT_DIR which takes a directory.
+  trustedCA:
+    configMapName: ""
+    mountPath: /etc/kube-dc/trusted-ca
+    fileName: ca.pem
+
+  # Per-project VPC CIDR suggestion for the create-project form.
+  #
+  # Historically the form hardcoded one range for every project, so pods
+  # across projects drew identical addresses. That is fine for the OVN data
+  # plane (each project is its own VPC) but kube-ovn's custom-VPC health-check
+  # TProxy maps probe targets to a pod netns by pod IP ALONE, so two probed
+  # pods sharing an IP on one node steal each other's kubelet probes and get
+  # liveness-killed. Upstream documents this and has not fixed it as of
+  # v1.16.x. Suggesting a distinct block per project removes the class for
+  # newly created projects.
+  #
+  # RESERVED IS LOAD-BEARING AND CLUSTER-SPECIFIC. The allocator will hand out
+  # ANY block inside `pool` that no Project already claims — including your
+  # node, management, storage, customer-VLAN or external-network underlays if
+  # they live inside the pool and are not listed here. List every range the
+  # cluster uses, or narrow `pool` to a range you know is dedicated to
+  # projects. Defaults cover only the standard kube-dc in-cluster networks.
+  projectCidr:
+    # Supernet the suggestions are carved from.
+    pool: "10.0.0.0/8"
+    # Block size per project. 22 = 1024 addresses.
+    prefix: 22
+    # Never suggest anything overlapping these. ovn-default (system pod
+    # network) and the Service CIDR by default — ADD YOUR UNDERLAYS.
+    reserved:
+      - "10.100.0.0/16"
+      - "10.101.0.0/16"
+
   # Note: keycloakUrl, consoleUrl, appUrl are read from master-config secret
 
   # M1-T06-FU1: source-IP consistent-hash via Envoy Gateway
@@ -426,6 +736,19 @@ backend:
     #   cpu: 100m
     #   memory: 128Mi
 
+  # The backend does outbound init (billing providers, OIDC/JWKS, CA bundle)
+  # BEFORE binding :3333, and on slower clusters that takes 25-30s — longer
+  # than liveness period*failureThreshold, so without startup grace the
+  # kubelet kills the container just as it comes up and every helm upgrade
+  # crashloops to its timeout (found live 2026-08-05; faster-booting clusters
+  # survived by luck). The startupProbe owns the boot window (up to 3 minutes);
+  # liveness/readiness take over only after the first success.
+  startupProbe:
+    httpGet:
+      path: /
+      port: 3333
+    periodSeconds: 5
+    failureThreshold: 36
   livenessProbe:
     httpGet:
       path: /
@@ -472,6 +795,45 @@ k8Manager:
   enabled: true
   replicaCount: 1
 
+  # Management-cluster worker autoscaling (docs/prd/mgmt-worker-autoscaling.md,
+  # private repo). OFF by default; CloudSigma-backed management clusters only.
+  # Enabling renders the mTLS chain, the adapter Service, the pinned
+  # cluster-autoscaler Deployment (scale-up only) and admission/alerts — but
+  # nothing provisions until a platform admin creates a MgmtWorkerPool CR.
+  # Default StorageClass for NEW tenant-etcd datastores (empty = local-path;
+  # see k8-manager datastore_etcd.go for the measured local-path vs dssd
+  # tradeoff). Per-datastore spec.etcd.storage.storageClassName still wins.
+  etcdDefaultStorageClass: ""
+
+  mgmtAutoscaling:
+    enabled: false
+    # Immutable identity of THIS management cluster; tags every created VM so
+    # pools on different clusters sharing one CloudSigma account cannot
+    # collide. REQUIRED when enabled.
+    clusterID: ""
+    provider:
+      # CloudSigma region, e.g. "zrh". REQUIRED when enabled.
+      region: ""
+      # Secret in the release namespace with keys `username` and `password`
+      # for the CloudSigma API. REQUIRED when enabled.
+      secretName: ""
+      mhzPerCore: "2500"
+    # Override auth-extra-groups for minted bootstrap tokens. The default in
+    # the controller (system:bootstrappers:rke2:default-node-token) was
+    # validated against a live RKE2 supervisor on 2026-08-05.
+    tokenGroups: ""
+    ca:
+      image: registry.k8s.io/autoscaling/cluster-autoscaler
+      # MUST match the k8s minor of THIS management cluster AND the protos
+      # vendored in k8-manager (internal/externalgrpc — generated from this
+      # exact tag; 1.35 changed the wire format). Overriding the tag is an
+      # UPGRADE-GATE action, never a per-cluster tweak: re-verify the vendored
+      # protos and the deprecated --scale-down-enabled flag first (review
+      # finding).
+      tag: v1.35.2
+      # Optional sha256 digest pin, e.g. "sha256:...".
+      digest: ""
+
   image:
     repository: shalb/kube-dc-k8-manager
     pullPolicy: IfNotPresent
@@ -513,13 +875,20 @@ k8Manager:
   # Extra environment variables
   extraEnv: []
 
+  # k8-manager is a controller-runtime operator whose informer caches grow
+  # with the number of managed clusters (KdcCluster/KdcClusterDatastore +
+  # the CAPI/Kamaji/KubeVirt objects each spawns across tenant namespaces).
+  # 128Mi was too small once a cluster hosts several tenants — the manager
+  # OOMKilled (exit 137) → CrashLoopBackOff (observed on cloud at 7 clusters,
+  # 2026-07-07). Platform default raised to 512Mi limit / 128Mi request for
+  # headroom; a re-OOM at 512Mi would indicate a leak, not under-provisioning.
   resources:
     limits:
       cpu: 500m
-      memory: 128Mi
+      memory: 512Mi
     requests:
       cpu: 10m
-      memory: 64Mi
+      memory: 128Mi
 
   nodeSelector: {}
 
@@ -529,14 +898,14 @@ k8Manager:
 
 # Billing configuration
 billing:
-  # Billing provider: "none" (quota-only), "stripe", "whmcs", or "dual"
+  # Billing provider: "none" (quota-only), "stripe", or "whmcs"
   # Default is "none" so a fresh install boots without pre-existing
   # billing secrets (stripe-billing / whmcs-credentials). Installs
   # that want billing flip this via HelmRelease values + provision
   # the matching Secrets.
   provider: "none"
 
-  # Stripe-specific settings (only used when provider=stripe or dual)
+  # Stripe-specific settings (only used when provider=stripe)
   stripe:
     # Name of the K8s Secret created by hack/bootstrap-stripe.sh
     # Contains STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, and STRIPE_PRICE_* keys
@@ -546,6 +915,192 @@ billing:
   # Required by both the Go controller (organization quotas) and the UI backend (plan display)
   plans:
     enabled: true
+    # Seed-once migration wave for existing ConfigMaps. The chart can copy
+    # explicitly unavailable add-ons and synchronize only their availability
+    # flags; it preserves operator-edited price and grants. Bump the version
+    # when adding another explicit migration wave.
+    migration:
+      version: "gpu-v100-shared-8g-v3-disabled"
+      addMissingAddons:
+        - gpu-v100-shared-8g
+      syncAddonAvailability:
+        - gpu-v100-shared-8g
+      # Optional cluster-scoped availability for a versioned migration. Every
+      # override must be listed above and remain disabled or selfService=false.
+      # It is applied to both fresh seeds and existing seed-once ConfigMaps.
+      availabilityOverrides: {}
+      # Plan ids copied from the desired config into an existing seed-once
+      # ConfigMap when they are ABSENT there. Never replaces a live plan, and
+      # back-fills only a missing eipQuota entry (a plan absent from eipQuota
+      # gets no public-IPv4 enforcement at all). Requires `version`.
+      # Empty by default: seeding a priced SKU is a per-cluster decision.
+      addMissingPlans: []
+    # GPU alternatives to the plans below — one per tier, identical on every
+    # non-GPU dimension so base <-> GPU is a toggle rather than a separate SKU
+    # family. Kept OUT of `config` on purpose, and merged into it only when
+    # `enabled`, `gpu.enabled` AND `billing.provider=whmcs` all hold.
+    #
+    # WHMCS-only by design: WHMCS provisions a service by plan id and carries no
+    # Kube-DC add-on quantities, so a WHMCS customer cannot buy the GPU add-on at
+    # all and the entitlement has to be baked into the tier. Stripe has no such
+    # limit — it sells GPU through the add-on catalog, which works and is left
+    # alone. Publishing these plans there would be a second, unbillable way to
+    # buy the same entitlement. The backend enforces the LIVE provider
+    # independently, so flipping a cluster to Stripe withdraws the plans from
+    # purchase and assignment without needing a reseed.
+    #
+    # A plan carrying GPU grants is not inert on a cluster without a catalog:
+    # LoadPlanConfig REJECTS the whole plans.yaml (see hasGPUGrants) when
+    # gpu-profiles is missing, or when the granted profile is not
+    # billingEligible. That takes down every plan, the suspended plan, system
+    # overhead and eipQuota with it, so on a cold manager start with no cached
+    # config every organization fails to reconcile. Plans also have no
+    # `disabled` flag to hide behind the way add-ons do — and adding one would
+    # be worse: a disabled plan loses its BasePlans entry, so any org already
+    # on it silently falls back to the suspended-plan floor. Hence the gate is
+    # at render time, and the template fails closed with the reason named.
+    #
+    # Grants must be exact multiples of the fixed DRA product unit
+    # (8192 MiB / 25% per share) or validateDRAFixedGrant rejects them.
+    # Prices are placeholders: they are per-cluster (a live cluster may run
+    # 29/69/139 against the 19/49/99 defaults below), so set them through the
+    # Flux-substituted values in platform/kube-dc/helmrelease.yaml.
+    gpuVariants:
+      enabled: false
+      eipQuota:
+        dev-pool-gpu: 1
+        pro-pool-gpu: 1
+        scale-pool-gpu: 3
+      plans:
+        dev-pool-gpu:
+          displayName: "Dev Pool + GPU"
+          description: "Best for: Sandbox / Dev with a shared GPU"
+          price: 49
+          currency: "EUR"
+          recommended: false
+          objectStorage: 20
+          ipv4: 1
+          features:
+            - "4 vCPU"
+            - "8 GB RAM"
+            - "60 GB NVMe Storage"
+            - "1 concurrent shared GPU workload"
+            - "8 GB GPU memory • 25% GPU compute"
+            - "20 GB Object Storage included"
+            - "1 Dedicated IPv4"
+            - "Managed Clusters"
+            - "Unlimited 1Gbit/s Bandwidth"
+          requests:
+            cpu: "4"
+            memory: "8Gi"
+            storage: "60Gi"
+          pods: 100
+          servicesLB: 100
+          burstRatio: 1.0
+          gpu:
+            nvidia-v100-hami:
+              shares: 1
+              memoryMiB: 8192
+              corePercent: 25
+          limitRange:
+            defaultCPU: "500m"
+            defaultMemory: "512Mi"
+            defaultRequestCPU: "100m"
+            defaultRequestMem: "128Mi"
+            maxCPU: "4"
+            maxMemory: "8Gi"
+            minCPU: "1m"
+            minMemory: "1Mi"
+            maxPodCPU: "4"
+            maxPodMemory: "8Gi"
+            maxPVCStorage: "60Gi"
+            minPVCStorage: "10Mi"
+        pro-pool-gpu:
+          displayName: "Pro Pool + GPU"
+          description: "Best for: Production / Teams with shared GPUs"
+          price: 109
+          currency: "EUR"
+          recommended: false
+          objectStorage: 100
+          ipv4: 1
+          features:
+            - "8 vCPU"
+            - "24 GB RAM"
+            - "160 GB NVMe Storage"
+            - "2 concurrent shared GPU workloads"
+            - "16 GB GPU memory • 50% GPU compute"
+            - "100 GB Object Storage included"
+            - "1 Dedicated IPv4"
+            - "Managed Clusters"
+            - "Unlimited 1Gbit/s Bandwidth"
+          requests:
+            cpu: "8"
+            memory: "24Gi"
+            storage: "160Gi"
+          pods: 200
+          servicesLB: 100
+          burstRatio: 1.0
+          gpu:
+            nvidia-v100-hami:
+              shares: 2
+              memoryMiB: 16384
+              corePercent: 50
+          limitRange:
+            defaultCPU: "500m"
+            defaultMemory: "512Mi"
+            defaultRequestCPU: "250m"
+            defaultRequestMem: "256Mi"
+            maxCPU: "8"
+            maxMemory: "24Gi"
+            minCPU: "1m"
+            minMemory: "1Mi"
+            maxPodCPU: "8"
+            maxPodMemory: "24Gi"
+            maxPVCStorage: "160Gi"
+            minPVCStorage: "10Mi"
+        scale-pool-gpu:
+          displayName: "Scale Pool + GPU"
+          description: "Best for: High Load / VDC with shared GPUs"
+          price: 219
+          currency: "EUR"
+          recommended: false
+          objectStorage: 500
+          ipv4: 3
+          features:
+            - "16 vCPU"
+            - "56 GB RAM"
+            - "320 GB NVMe Storage"
+            - "4 concurrent shared GPU workloads"
+            - "32 GB GPU memory • 100% GPU compute"
+            - "500 GB Object Storage included"
+            - "3 Dedicated IPv4"
+            - "Managed Clusters"
+            - "Unlimited 1Gbit/s Bandwidth"
+          requests:
+            cpu: "16"
+            memory: "56Gi"
+            storage: "320Gi"
+          pods: 500
+          servicesLB: 100
+          burstRatio: 1.0
+          gpu:
+            nvidia-v100-hami:
+              shares: 4
+              memoryMiB: 32768
+              corePercent: 100
+          limitRange:
+            defaultCPU: "1"
+            defaultMemory: "1Gi"
+            defaultRequestCPU: "500m"
+            defaultRequestMem: "512Mi"
+            maxCPU: "16"
+            maxMemory: "56Gi"
+            minCPU: "1m"
+            minMemory: "1Mi"
+            maxPodCPU: "16"
+            maxPodMemory: "56Gi"
+            maxPVCStorage: "320Gi"
+            minPVCStorage: "10Mi"
     config: |
       plans:
         dev-pool:
@@ -566,12 +1121,12 @@ billing:
             - "Unlimited 1Gbit/s Bandwidth"
           # Dev Pool: fully guaranteed (burstRatio=1.0). The advertised
           # 4 vCPU / 8 GB are the requests *and* the limits. KubeVirt VMs
-          # (used by KdcCluster workers) consume the full requests quota
-          # for their reservation, so a burst-quota dev plan would cap
+          # (used by Managed Cluster worker VMs) consume the full requests
+          # quota for their reservation, so a burst-quota dev plan would cap
           # cluster workers at requests/burstRatio (= 2 vCPU before this
           # change) despite the "4 vCPU" plan tier. Keeping Dev Pool at
           # 1.0× makes the entry tier do exactly what it says. Burst
-          # economics remain on Pro/Scale where customers opt in.
+          # model is consistent across the standard plan catalog.
           requests:
             cpu: "4"
             memory: "8Gi"
@@ -686,20 +1241,52 @@ billing:
       addons:
         turbo-x1:
           displayName: "Turbo x1"
-          description: "+4 GB RAM • +2 vCPU (Burst)"
+          description: "+4 GB RAM • +2 vCPU"
           price: 9
           currency: "EUR"
           cpu: "2"
           memory: "4Gi"
           storage: "20Gi"
+          providers:
+            whmcs:
+              configurableOptionName: "Kube-DC Turbo x1"
         turbo-x2:
           displayName: "Turbo x2"
-          description: "+8 GB RAM • +4 vCPU (Burst)"
+          description: "+8 GB RAM • +4 vCPU"
           price: 16
           currency: "EUR"
           cpu: "4"
           memory: "8Gi"
           storage: "40Gi"
+          providers:
+            whmcs:
+              configurableOptionName: "Kube-DC Turbo x2"
+        # D-005 pilot SKU. Keep both availability controls closed while the
+        # catalog profile is not billing-eligible. A later reviewed migration
+        # may set disabled=false for operator assignment while selfService=false
+        # continues to keep it absent from tenant purchase APIs.
+        gpu-v100-shared-8g:
+          disabled: true
+          selfService: false
+          displayName: "Shared NVIDIA V100 — 8 GB"
+          description: "1 concurrent GPU workload • 8 GB GPU memory • 25% compute"
+          price: 0
+          currency: "EUR"
+          # Stripe Price IDs are public catalog identifiers, not secrets. Set a
+          # real test/live price before selfService is enabled; blank fails
+          # closed and legacy STRIPE_PRICE_<ADDON_ID> remains a fallback.
+          providers:
+            stripe:
+              priceId: ""
+            # Exact, case-sensitive WHMCS quantity-option name. The signed
+            # module sends values; the backend maps names to stable add-on IDs.
+            whmcs:
+              configurableOptionName: "Kube-DC Shared NVIDIA V100 8 GB"
+          gpu:
+            nvidia-v100-hami:
+              shares: 1
+              memoryMiB: 8192
+              corePercent: 25
       eipQuota:
         dev-pool: 1
         pro-pool: 1
@@ -784,6 +1371,14 @@ cdiUploadGc:
 # docs/prd/cdi-os-image-registry.md §9.1.
 cdiMirrorAlerts:
   enabled: true
+
+# Runtime health of platform components that run in tenant project namespaces.
+# Their failures are invisible to the customer (they see a symptom, not a
+# broken pod) and invisible to us without this, because a process that cannot
+# start exports no metrics of its own.
+platformComponentAlerts:
+  enabled: true
+  prometheusReleaseLabel: monitoring
 
 # ServiceMonitor for kubevirt's per-component metrics endpoint
 # (virt-handler, virt-controller, virt-api, virt-operator). Provides
@@ -1026,6 +1621,35 @@ osImages:
           - qemu-guest-agent
         runcmd:
           - systemctl enable --now qemu-guest-agent
+    - osName: "Debian 13"
+      # Debian 13 "Trixie" — current stable. Same shape as Debian 12; the
+      # debian-html adapter discovers dated builds under the trixie index and
+      # the M2-T03 depot path builds our own containerdisk from the mirrored
+      # qcow2 (the quay ref below is the declaration + M1-T03a fallback).
+      cloudUser: debian
+      upstreamURL: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2"
+      mirrorPath: "debian/13/latest/debian-13-generic-amd64.qcow2"
+      containerdiskRepo: "quay.io/containerdisks/debian"
+      containerdiskTag: "13"
+      discovery:
+        type: "debian-html"
+        indexURL: "https://cloud.debian.org/images/cloud/trixie/"
+        release: "13"
+        vendor: "generic"
+        arch: "amd64"
+      minMemory: "1G"
+      minVCPU: "1"
+      minStorage: "20G"
+      firmwareType: "bios"
+      machineType: "q35"
+      cloudInit: |
+        #cloud-config
+        package_update: true
+        package_upgrade: true
+        packages:
+          - qemu-guest-agent
+        runcmd:
+          - systemctl enable --now qemu-guest-agent
     - osName: "Fedora 42"
       # Was Fedora 41 (Fedora-Cloud-Base-Generic-41-1.4) until 2026-05-12;
       # upstream rotated the -1.4 point release and 41 has no
@@ -1166,24 +1790,17 @@ osImages:
       cloudInit: |
         # Windows golden image - pre-configured with SSH, RDP, and VirtIO drivers
         # No cloud-init needed - uses QEMU Guest Agent for SSH key injection
-    - osName: "Windows 11 Enterprise (Fresh Install)"
-      familyId: "windows-11-iso"
-      cloudUser: Administrator
-      upstreamURL: "https://iso.stage.kube-dc.com/win11-x64.iso"
-      mirrorPath: "windows/11/latest/win11-x64.iso"
-      minMemory: "8G"
-      minVCPU: "4"
-      minStorage: "70G"
-      firmwareType: "efi"
-      machineType: "q35"
-      features: "hyperv,acpi,apic,smm,tpm"
-      bootOrder: "cdrom,disk"
-      additionalDisks: "virtio-drivers"
-      cloudInit: |
-        # Fresh Windows installation with VirtIO drivers
-        # Requires manual setup via VNC console
+    # "Windows 11 Enterprise (Fresh Install)" (familyId windows-11-iso) REMOVED
+    # 2026-07-31: the entry advertised cdrom boot + a virtio-drivers disk, but the
+    # Create-VM frontend imports the ISO as the ROOT virtio disk and ignores both
+    # fields -> tenants got a non-booting VM (codex productization review,
+    # docs/prd/windows-productization-review-2026-07-31.md HIGH finding). Windows
+    # ships via the windows-11-golden quick-install path (BYOL: eval-based starter
+    # image, tenant activates with their own license). Reintroduce fresh-install
+    # only after the frontend supports cdrom + additional-disk attachment.
 
-# Internal cluster-local platform endpoints (Fork E2).
+
+# Internal cluster-local platform endpoints.
 #
 # Each enabled endpoint renders:
 #   - a MetalLB IPAddressPool + L2Advertisement reserving the VIP and
@@ -1202,6 +1819,39 @@ osImages:
 #
 # See: docs/prd/internal-platform-endpoints-implementation.md (E2 design)
 #      docs/internal/internal-platform-endpoints-runbook.md (operator)
+# ── Front-door guardrails (ingress design v2 §5a.2) ────────────────────────
+# Abuse control on the platform's own public hostnames. Ships DISABLED: the
+# right ceiling depends on cluster size and whether your operators arrive
+# from a shared NAT, and a limit set too low locks people out of the console.
+#
+# Enable only AFTER the front door preserves the client IP (host-bind data
+# plane, or a VIP with externalTrafficPolicy: Local). Under
+# externalTrafficPolicy: Cluster every client is SNATed to a node address and
+# would share ONE bucket — the first burst throttles everybody.
+#
+# Limits are LOCAL (per Envoy process = per ingress node); the effective
+# ceiling is requests x ingressNodes. Global exactness would require the
+# Envoy ratelimit service + Redis — two components we deliberately avoid.
+ingressGuardrails:
+  rateLimit:
+    enabled: false
+    # /32 = "one bucket per distinct client address".
+    clientCIDR: 0.0.0.0/0
+    requests: 100
+    unit: Minute
+    # HTTPRoute NAMES in this release's namespace (targetRefs has no namespace
+    # field — see the template). Default protects the console/frontend only.
+    #
+    # kube-dc-backend is deliberately EXCLUDED: it already carries a
+    # default-on BackendTrafficPolicy for SourceIP consistent-hash stickiness
+    # (backend-traffic-policy.yaml), and Envoy Gateway attaches only the
+    # OLDEST policy per target — the other is marked Conflicted. Adding the
+    # backend here would silently either lose the rate limit or, worse, lose
+    # the stickiness the org-admin elevation flow depends on. To rate-limit
+    # the backend, merge the limit INTO that policy instead.
+    targetRoutes:
+      - kube-dc-frontend
+
 platformEndpoints:
   kubeAPI:
     enabled: false              # opt-in per cluster
@@ -1213,8 +1863,24 @@ platformEndpoints:
                                 # EGRESS_GLOBAL_ALLOWLIST on every
                                 # tenant LR.
     pool: kube-api-platform     # MetalLB IPAddressPool name
-    interface: br-ext-cloud     # L2Advertisement interface
-    l2AdvNodeSelectors: []      # Constrain MetalLB speaker election to
+    advertisementMode: l2       # "l2" (default) — ARP/GARP L2Advertisement
+                                # on `interface`; needs a shared L2 segment.
+                                # "bgp" — BGPAdvertisement: the VIP is
+                                # announced as a /32 route to the cluster's
+                                # BGPPeers (peers are cluster infra, shipped
+                                # by the fleet layer addons/metallb-config-bgp
+                                # — this chart never creates BGP sessions).
+                                # Use "bgp" on routed/L3-only fabrics
+                                # (METALLB_MODE=bgp in cluster-config.env).
+    interface: br-ext-cloud     # L2Advertisement interface (l2 mode only;
+                                # unused in bgp mode)
+    bgpPeers: []                # bgp mode only: restrict announcement to
+                                # these BGPPeer names. Empty = all peers.
+    advNodeSelectors: []        # Constrain which nodes announce the VIP
+                                # (both modes; falls back to
+                                # l2AdvNodeSelectors for compatibility).
+    l2AdvNodeSelectors: []      # DEPRECATED alias of advNodeSelectors —
+                                # constrain MetalLB speaker election to
                                 # nodes matching these label selectors.
                                 # Empty list = any speaker is eligible
                                 # (correct for 1:1-NAT-class
@@ -1259,7 +1925,7 @@ platformEndpoints:
         # which returns 401 to unauthenticated probes (apiserver
         # process IS alive at that point).
         statusMax: 499
-  # Generic Envoy gateway front-door (Phase D.7 — extends Fork E2 to
+  # Generic Envoy gateway front-door (extends the kubeAPI pattern to
   # cover every public-hostname'd service tenant pods need to reach:
   # Keycloak login, kube-dc-backend, kube-dc-console, billing, …).
   # Same MetalLB + selectorless-Service + manager-EndpointSlice
@@ -1290,8 +1956,16 @@ platformEndpoints:
                                      # in BOTH INGRESS_GLOBAL_ALLOWLIST
                                      # and EGRESS_GLOBAL_ALLOWLIST.
     pool: envoy-gateway-platform     # MetalLB IPAddressPool name
-    interface: br-ext-cloud
-    l2AdvNodeSelectors: []           # Constrain MetalLB speaker election
+    advertisementMode: l2            # "l2" (default) ARP/GARP on `interface`
+                                     # | "bgp" /32 routes to the cluster's
+                                     # BGPPeers (see kubeAPI.advertisementMode)
+    interface: br-ext-cloud          # l2 mode only; unused in bgp mode
+    bgpPeers: []                     # bgp mode only: restrict to named peers
+    advNodeSelectors: []             # Constrain announcing nodes (both
+                                     # modes; falls back to
+                                     # l2AdvNodeSelectors).
+    l2AdvNodeSelectors: []           # DEPRECATED alias — constrain MetalLB
+                                     # speaker election
                                      # (see kubeAPI.l2AdvNodeSelectors).
                                      # Set to control-plane=true on
                                      # heterogeneous-worker clusters.
@@ -1304,6 +1978,25 @@ platformEndpoints:
       # (single-replica today; multi-replica when PRD §6.A Phase A
       # ships). node-control-plane selector hits the right nodes;
       # the probe filters to whichever ones currently have Envoy.
+      #
+      # ⚠ THIS SELECTOR IS COUPLED TO WHERE ENVOY RUNS, and nothing enforces
+      # the coupling. It selects control-plane nodes because that is where the
+      # host-bind data plane happens to sit on every cluster that enables this
+      # endpoint today — and all of them run ingress ON their control-plane
+      # nodes, which is what makes the selector correct there.
+      #
+      # Move Envoy to dedicated ingress workers — which is what
+      # `--ingress-node` on non-CP nodes means, and what the host-bind component
+      # makes easy — and this EndpointSlice keeps selecting control-plane nodes
+      # that no longer run Envoy. It then has zero ready endpoints, and the
+      # symptom is that tenant pods lose their in-VPC route to the platform
+      # while every component reports healthy.
+      #
+      # So when ingress placement changes, THIS must change with it: set
+      # nodeSelector to the same set Envoy is scheduled on (e.g.
+      # kube-dc.com/ingress: "true"). `kube-dc bootstrap accept` reports the
+      # platform endpoint's readiness, which is the check that catches a
+      # mismatch after the fact; there is no admission-time guard.
       mode: node-control-plane
       nodeSelector:
         node-role.kubernetes.io/control-plane: ""
@@ -1330,6 +2023,41 @@ platformEndpoints:
         successThreshold: 1
         insecureSkipVerify: true
         statusMax: 499
+
+
+# KubeVirt tenant-node kubelet reachability.
+#
+# KubeVirt masquerade gives the guest 10.0.2.2 and advertises the outer
+# virt-launcher Pod IP as the Kubernetes Node InternalIP. Remote parent-VPC
+# callers reach that outer address through KubeVirt's prerouting DNAT, but a
+# Konnectivity agent inside the same guest cannot: locally originated traffic
+# never traverses that prerouting rule. kubectl logs/exec/port-forward then fail
+# with `dial tcp <Node InternalIP>:10250: connect: connection refused` while the
+# Node remains Ready.
+#
+# The Sveltos addon mirrors status.hostIP (the advertised outer Node IP) as a
+# /32 on the guest loopback. This makes the existing Konnectivity dial local
+# without changing kubelet, CCM, Cilium, Kamaji, or the VMI network binding.
+# It is selected by BOTH positive labels and must never target CloudSigma:
+# CloudSigma's Node IP already belongs to a physical NIC.
+kubevirtNodeIPAlias:
+  enabled: true
+  image:
+    repository: docker.io/library/busybox
+    # Multi-arch BusyBox 1.36.1 manifest, pinned so this privileged network
+    # helper cannot change underneath a platform release.
+    digest: sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+    pullPolicy: IfNotPresent
+  # Cilium is normally tier 1. The alias uses hostNetwork and could start
+  # without CNI, but ordering it after Cilium keeps addon status predictable.
+  tier: 5
+  resources:
+    requests:
+      cpu: 5m
+      memory: 8Mi
+    limits:
+      cpu: 50m
+      memory: 32Mi
 
 
 # kubelet-csr-approver — Sveltos-distributed addon that auto-approves
@@ -1417,3 +2145,35 @@ osImagePrepull:
   # RKE2 paths; override for other distros.
   containerdSocket: /run/k3s/containerd/containerd.sock
   hostBinDir: /var/lib/rancher/rke2/bin
+
+# Tenant-VLAN attachment (docs/prd/tenant-vlan-attachment-implementation.md).
+#
+# A ProjectNetwork binds one project to one physical datacenter VLAN so the
+# tenant's VMs and pods can reach their own colocated hardware. Off by default,
+# and the default matters: a NetworkAttachmentDefinition is attachable the
+# instant it exists. With this false the controller creates no fabric and
+# publishes no NAD. Only the admin-facing ProjectNetwork CREATE guard remains;
+# the workload, fabric and NAD admission paths are not deployed.
+#
+# Turning this on requires the gate, the RBAC lockdown and the fabric readiness
+# to be in place — enabling it is what makes a wire reachable.
+projectNetwork:
+  enabled: false
+  # Exact service-account identity used by the pinned Kube-OVN chart. The
+  # controller must add the generated Subnet finalizer and normalize its safe
+  # fields; a namespace prefix or admin-group exemption is forbidden.
+  kubeOvnControllerUsername: system:serviceaccount:kube-system:ovn
+
+# Admission policies applied to tenant PROJECT namespaces.
+projectPolicies:
+  # Reserve the pod labels + ServiceAccount names that the infra-attachment
+  # webhook treats as proof of platform identity. Without this a project admin
+  # (who holds `*` on `*` inside their own namespace) can stamp those labels on
+  # their own workload and obtain a route to the management apiserver.
+  #
+  # Deny by default (operator decision 2026-08-07, after the audit-mode pass on
+  # cloud/stage showed no legitimate workload setting these). An existing
+  # cluster that wants a look first can set ["Audit"] to log without blocking.
+  reservePlatformIdentities:
+    enabled: true
+    validationActions: ["Deny"]

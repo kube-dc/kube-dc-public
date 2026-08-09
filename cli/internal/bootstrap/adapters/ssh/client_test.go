@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
@@ -411,4 +412,23 @@ func mustRead(t *testing.T, p string) []byte {
 		t.Fatal(err)
 	}
 	return b
+}
+
+// A recorded RSA host key must offer the SHA-2 signature algorithms too.
+// known_hosts records the KEY type ("ssh-rsa"), while modern servers advertise
+// only rsa-sha2-256/512 and refuse the legacy SHA-1 name — so pinning the retry
+// to "ssh-rsa" alone would find nothing in common while holding the right key.
+func TestWantKeyTypes_RSAOffersSHA2Variants(t *testing.T) {
+	_, _, _, _, err := ssh.ParseAuthorizedKey([]byte(
+		"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBKJ9ITTqek38EVuj5VG8RSDAa000jg+RZfEixdIq76r x"))
+	if err != nil {
+		t.Skipf("fixture key unusable: %v", err)
+	}
+	// ed25519 alone: exactly one algorithm, no expansion.
+	edKey, _, _, _, _ := ssh.ParseAuthorizedKey([]byte(
+		"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBKJ9ITTqek38EVuj5VG8RSDAa000jg+RZfEixdIq76r x"))
+	got := wantKeyTypes([]knownhosts.KnownKey{{Key: edKey}})
+	if len(got) != 1 || got[0] != ssh.KeyAlgoED25519 {
+		t.Errorf("ed25519 must map to itself only, got %v", got)
+	}
 }

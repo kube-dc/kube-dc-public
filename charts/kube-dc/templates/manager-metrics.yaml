@@ -1,0 +1,240 @@
+{{- if .Values.manager.metrics.enabled }}
+{{- $metricsName := printf "%s-metrics" (include "kube-dc.manager.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- $port := int .Values.manager.metrics.service.port }}
+{{- $draMetrics := dict "enabled" false -}}
+{{- range $profile := .Values.gpu.profiles -}}
+{{- if and $.Values.gpu.enabled $profile.enabled (eq ($profile.allocationBackend | default "") "dra") -}}
+{{- $_ := set $draMetrics "enabled" true -}}
+{{- end -}}
+{{- end -}}
+{{- if or (lt $port 1) (gt $port 65535) }}
+{{- fail "manager.metrics.service.port must be between 1 and 65535" }}
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $metricsName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+spec:
+  selector:
+    {{- include "kube-dc.manager.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ $port }}
+      protocol: TCP
+      targetPort: metrics
+---
+{{- if .Values.manager.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $metricsName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+    {{- with .Values.manager.metrics.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      {{- include "kube-dc.manager.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: metrics
+  endpoints:
+    - port: metrics
+      path: /metrics
+      scheme: https
+      interval: {{ .Values.manager.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.manager.metrics.serviceMonitor.scrapeTimeout }}
+      # Each scraper authenticates with its own projected ServiceAccount token.
+      # controller-runtime then performs a SubjectAccessReview for GET /metrics.
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tlsConfig:
+        # controller-runtime generates an ephemeral self-signed serving cert
+        # when no cert directory is configured. Authentication and authorization
+        # still happen before metrics are returned.
+        insecureSkipVerify: true
+---
+{{- end }}
+{{- if .Values.manager.metrics.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ $metricsName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+    {{- with .Values.manager.metrics.prometheusRule.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: kube-dc.organization-quota
+      rules:
+        - record: kube_dc:organization_quota_reconcile_errors:rate5m
+          expr: sum by (stage) (rate(kube_dc_organization_quota_reconcile_total{result="error"}[5m]))
+        - record: kube_dc:organization_quota_reconcile_success:rate5m
+          expr: sum by (stage) (rate(kube_dc_organization_quota_reconcile_total{result="success"}[5m]))
+        - alert: KubeDcOrganizationQuotaConfigInvalid
+          expr: kube_dc_organization_quota_config_valid == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: kube-dc-control-plane
+            owner: control-plane
+          annotations:
+            summary: Kube-DC organization quota configuration is invalid
+            description: Billing plan or GPU catalog validation has failed; keep entitlement changes gated until the configuration reconciles.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/shared-gpu-pilot-runbook.md
+        - alert: KubeDcOrganizationQuotaConfigUnobserved
+          expr: absent(kube_dc_organization_quota_config_valid)
+          for: 15m
+          labels:
+            severity: warning
+            service: kube-dc-control-plane
+            owner: control-plane
+          annotations:
+            summary: Kube-DC organization quota configuration has not been observed
+            description: The manager has not completed plan and GPU catalog validation since starting.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/shared-gpu-pilot-runbook.md
+        - alert: KubeDcOrganizationQuotaReconcileErrors
+          expr: sum by (stage) (increase(kube_dc_organization_quota_reconcile_total{result="error"}[15m])) > 0
+          for: 5m
+          labels:
+            severity: warning
+            service: kube-dc-control-plane
+            owner: control-plane
+          annotations:
+            summary: Kube-DC organization quota reconciliation is failing
+            description: One or more bounded quota reconciliation stages failed during the last 15 minutes; inspect manager events and logs before changing entitlement.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/shared-gpu-pilot-runbook.md
+{{- if get $draMetrics "enabled" }}
+    - name: kube-dc.gpu-dra
+      rules:
+        - record: kube_dc:gpu_dra_claims:sum
+          expr: sum by (profile, state) (kube_dc_gpu_dra_claims)
+        - alert: KubeDcGPUDRADiscoveryFailed
+          expr: >-
+            kube_dc_gpu_dra_discovery_success == 0
+            or kube_dc_gpu_dra_driver_discovery_success == 0
+            or absent(kube_dc_gpu_dra_discovery_success)
+            or absent(kube_dc_gpu_dra_driver_discovery_success)
+          for: 2m
+          labels:
+            severity: critical
+            service: shared-gpu
+            owner: gpu-platform
+          annotations:
+            summary: Kube-DC cannot discover DRA inventory
+            description: ResourceSlice or ResourceClaim discovery failed for a stable GPU profile. Keep Shared GPU creation disabled until discovery recovers.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/hami-gpu-liveness.md
+        - alert: KubeDcGPUDRADriverUnavailable
+          expr: >-
+            (kube_dc_gpu_dra_driver_desired > 0
+            and kube_dc_gpu_dra_driver_ready < kube_dc_gpu_dra_driver_desired)
+            and (kube_dc_gpu_dra_driver_discovery_success == 1)
+          for: 2m
+          labels:
+            severity: critical
+            service: shared-gpu
+            owner: gpu-platform
+          annotations:
+            summary: The HAMi DRA kubelet plugin is not fully ready
+            description: At least one desired DRA driver Pod is missing or unready. Keep Shared creation disabled and distinguish a node restart from a stale driver Pod before recovery.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/hami-gpu-liveness.md
+        - alert: KubeDcGPUDRAStaleDriverPod
+          expr: >-
+            (kube_dc_gpu_dra_unready_driver_pods > 0)
+            and (kube_dc_gpu_dra_driver_ready < kube_dc_gpu_dra_driver_desired)
+            and (sum(kube_dc_gpu_dra_devices) == 0)
+            and (min(kube_dc_gpu_dra_discovery_success) == 1)
+            and (kube_dc_gpu_dra_driver_discovery_success == 1)
+          # The manager first requires ten minutes since the PodReady=False
+          # transition; this final dwell makes the end-to-end threshold 12m.
+          for: 2m
+          labels:
+            severity: critical
+            service: shared-gpu
+            owner: gpu-platform
+          annotations:
+            summary: A stale HAMi DRA driver Pod is keeping GPU inventory unavailable
+            description: A current-DaemonSet-owned driver Pod has remained unready for at least ten minutes on a Ready node while DRA inventory is empty. Run the read-only recovery planner and require explicit operator review before deleting the exact Pod.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/hami-gpu-liveness.md
+        - alert: KubeDcGPUDRAProfileUnavailable
+          expr: kube_dc_gpu_dra_devices == 0
+          for: 2m
+          labels:
+            severity: critical
+            service: shared-gpu
+            owner: gpu-platform
+          annotations:
+            summary: A configured DRA GPU profile has no matching devices
+            description: The stable profile has no matching ResourceSlice devices. Keep new workload creation disabled and inspect driver, model selectors, and node ownership.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/hami-gpu-liveness.md
+        - alert: KubeDcGPUDRADeviceNotShareable
+          expr: kube_dc_gpu_dra_shareable_devices != kube_dc_gpu_dra_devices
+          for: 2m
+          labels:
+            severity: critical
+            service: shared-gpu
+            owner: gpu-platform
+          annotations:
+            summary: A DRA profile contains devices without multi-allocation support
+            description: Fixed fractional GPU products require every matched device to allow multiple allocations. Stop creation until ResourceSlices satisfy the catalog contract.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/hami-gpu-liveness.md
+        - alert: KubeDcGPUDRAClaimsQueued
+          expr: kube_dc_gpu_dra_claims{state="pending"} > 0
+          for: 15m
+          labels:
+            severity: warning
+            service: shared-gpu
+            owner: gpu-platform
+          annotations:
+            summary: DRA GPU claims have remained queued
+            description: One or more fixed GPU claims have been pending for 15 minutes. This may be normal capacity contention; verify entitlement, class health, and expected queueing.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/hami-gpu-liveness.md
+{{- end }}
+---
+{{- end }}
+{{- if .Values.manager.metrics.rbac.create }}
+{{- if eq (len .Values.manager.metrics.rbac.serviceAccounts) 0 }}
+{{- fail "manager.metrics.rbac.serviceAccounts must contain at least one exact scraper identity when manager.metrics.rbac.create=true" }}
+{{- end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $metricsName }}-reader
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+rules:
+  - nonResourceURLs:
+      - /metrics
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $metricsName }}-reader
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $metricsName }}-reader
+subjects:
+  {{- range .Values.manager.metrics.rbac.serviceAccounts }}
+  - kind: ServiceAccount
+    name: {{ required "manager.metrics.rbac.serviceAccounts[].name is required" .name }}
+    namespace: {{ required "manager.metrics.rbac.serviceAccounts[].namespace is required" .namespace }}
+  {{- end }}
+{{- end }}
+{{- end }}

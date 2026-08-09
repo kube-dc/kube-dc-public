@@ -1,3 +1,18 @@
+# Deny `kubectl exec` in project namespaces for everyone except platform
+# system identities. Tenant admin tasks run as Jobs (or via the VM
+# console/VNC for VMs) — see docs/cloud/security-restrictions.md.
+#
+# HISTORY: this policy originally tried to deny exec only into
+# hostPath/hostNetwork/privileged pods, guarding every rule with
+# `oldObject != null`. On CONNECT admission oldObject is ALWAYS null —
+# the API server passes only the PodExecOptions, so a CEL policy cannot
+# see the target pod's spec at all. The conditional design was therefore
+# unimplementable: the null guard made every validation fail, which
+# denied ALL exec (with a misleading hostPath message). The product
+# decision (2026-07-29) is that exec in project namespaces is blocked by
+# design, so the policy now states that intent explicitly. It also
+# backstops RBAC: the standard project roles no longer grant pods/exec,
+# and this policy keeps custom Roles from re-enabling it.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -9,7 +24,7 @@ spec:
       - apiGroups: [""]
         apiVersions: ["v1"]
         operations: ["CONNECT"]
-        resources: ["pods/exec"]
+        resources: ["pods/exec", "pods/attach"]
   matchConditions:
     - name: exclude-system-service-accounts
       expression: >-
@@ -36,39 +51,12 @@ spec:
         !has(request.userInfo) || !has(request.userInfo.groups) ||
         !('system:nodes' in request.userInfo.groups)
   validations:
-    - expression: >-
-        oldObject != null &&
-        (!has(oldObject.spec.volumes) ||
-        oldObject.spec.volumes.all(v, !has(v.hostPath)))
-      message: "Exec into pods with hostPath volumes is not allowed in project namespaces."
-    - expression: >-
-        oldObject != null &&
-        (!has(oldObject.spec.hostNetwork) ||
-        oldObject.spec.hostNetwork == false)
-      message: "Exec into hostNetwork pods is not allowed in project namespaces."
-    - expression: >-
-        oldObject != null &&
-        oldObject.spec.containers.all(c,
-          !has(c.securityContext) ||
-          !has(c.securityContext.privileged) ||
-          c.securityContext.privileged == false)
-      message: "Exec into pods with privileged containers is not allowed in project namespaces."
-    - expression: >-
-        oldObject != null &&
-        (!has(oldObject.spec.initContainers) ||
-        oldObject.spec.initContainers.all(c,
-          !has(c.securityContext) ||
-          !has(c.securityContext.privileged) ||
-          c.securityContext.privileged == false))
-      message: "Exec into pods with privileged init containers is not allowed in project namespaces."
-    - expression: >-
-        oldObject != null &&
-        (!has(oldObject.spec.ephemeralContainers) ||
-        oldObject.spec.ephemeralContainers.all(c,
-          !has(c.securityContext) ||
-          !has(c.securityContext.privileged) ||
-          c.securityContext.privileged == false))
-      message: "Exec into pods with privileged ephemeral containers is not allowed in project namespaces."
+    - expression: "false"
+      message: >-
+        Exec/attach into pods is not allowed in project namespaces.
+        Run administrative tasks as a Job mounting the same volume, or use
+        the VM console/VNC for virtual machines.
+      reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

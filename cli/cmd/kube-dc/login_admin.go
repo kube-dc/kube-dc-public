@@ -53,7 +53,11 @@ func runAdminLogin(domain, caCertFile string, insecure, deviceCode bool) error {
 		return fmt.Errorf("--domain is required for --admin login")
 	}
 	if deviceCode {
-		return fmt.Errorf("device code flow not yet implemented for --admin")
+		return fmt.Errorf("device code flow is not implemented. " +
+			"On a headless machine use one of these instead:\n" +
+			"  - run `kube-dc login` on a workstation WITH a browser, then copy ~/.kube/config over; or\n" +
+			"  - use the client-certificate kubeconfig from `kube-dc bootstrap fetch-kubeconfig`, " +
+			"which needs neither a browser nor OIDC")
 	}
 
 	server := fmt.Sprintf("https://kube-api.%s:6443", domain)

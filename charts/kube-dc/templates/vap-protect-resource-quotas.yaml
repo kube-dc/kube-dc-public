@@ -1,0 +1,61 @@
+# =============================================================================
+# ValidatingAdmissionPolicy: protect controller-owned project ResourceQuotas
+# RBAC is also read-only for tenants, but this policy closes the upgrade gap for
+# project Roles that were copied before that restriction was introduced.
+# =============================================================================
+
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: protect-kube-dc-resource-quotas
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["resourcequotas"]
+  matchConditions:
+    - name: reserved-quota-name
+      expression: >-
+        (request.operation == 'DELETE' ? oldObject.metadata.name : object.metadata.name)
+        in ['hrq.hnc.x-k8s.io', 'project-quota']
+    - name: exclude-quota-controllers
+      expression: >-
+        !(((request.operation == 'DELETE' ? oldObject.metadata.name : object.metadata.name)
+             == 'project-quota' &&
+           request.userInfo.username ==
+             'system:serviceaccount:{{ .Release.Namespace }}:{{ include "kube-dc.backend.serviceAccountName" . }}') ||
+          ((request.operation == 'DELETE' ? oldObject.metadata.name : object.metadata.name)
+             == 'hrq.hnc.x-k8s.io' &&
+           request.userInfo.username.startsWith('system:serviceaccount:hnc-system:')))
+    # Namespace deletion must be able to remove reserved quota objects. Keep
+    # this exemption DELETE-only and limited to the built-in teardown actors.
+    - name: exclude-namespace-teardown-controllers
+      expression: >-
+        !(request.operation == 'DELETE' &&
+          request.userInfo.username in [
+            'system:serviceaccount:kube-system:namespace-controller',
+            'system:serviceaccount:kube-system:generic-garbage-collector',
+            'system:kube-controller-manager'
+          ])
+    - name: exclude-cluster-admins
+      expression: >-
+        !('system:masters' in request.userInfo.groups)
+  validations:
+    - expression: "false"
+      message: "This ResourceQuota is managed by kube-dc and cannot be changed directly."
+
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: protect-kube-dc-resource-quotas
+spec:
+  policyName: protect-kube-dc-resource-quotas
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""

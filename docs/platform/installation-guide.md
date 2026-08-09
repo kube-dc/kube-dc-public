@@ -790,7 +790,7 @@ kube-dc bootstrap init \
 | `--set=EXT_PUBLIC_*` | Public VLAN/CIDR/gateway for `cloud+public-vlan`. When the VIP is in this CIDR, the CLI derives the minimum gateway/VIP/anchor exclusions; widen them for any other reserved addresses |
 | `--set=METALLB_FLOATING_IP` / `METALLB_INTERFACE` | Dedicated ingress VIP and the host interface that carries its L2 segment. For an L2 VIP inside `EXT_PUBLIC_CIDR`, the current CLI selects the fleet-managed `ext-pub-anchor`; elsewhere the operator supplies the real interface |
 | `--ingress-address-layer` | **Who owns the address your users dial** — the one front-door question. `metallb-l2` (recommended) — a floating VIP announced by ARP on a shared L2 segment; `metallb-bgp` — the same VIP announced as a `/32` to a routed fabric; `none` — clients reach the ingress nodes' own IPs via wildcard DNS and MetalLB is not installed at all. Declaring a `METALLB_FLOATING_IP` **does not** select a layer for you: a reserved address is not assumed to be your front door, so declaring one without a layer is refused rather than guessed. Left unset this resolves to `none`. The **data plane does not vary with this choice** — host-bind Envoy on the ingress nodes either way — but the *Service shape* does: `ClusterIP` + `externalIPs` on `none`, `LoadBalancer` + `metallb` + `externalTrafficPolicy: Local` with `externalIPs` cleared on a MetalLB layer. See "Choosing an address layer" below |
-| `--ingress-node` | Node that should carry the `kube-dc.com/ingress` label and bind `:80`/`:443` (repeatable). `init` **applies the label** to this set before committing the overlay, and the front-door component places Envoy on it. Leave it unset and the `KUBE_OVN_GW_NODES` set is used, which is the recommended shape because it keeps the ingress set and the MetalLB announcer set identical. `ENVOY_REPLICAS` is expected to equal the size of this set |
+| `--ingress-node` | Node that should carry the `kube-dc.com/ingress` label and bind `:80`/`:443` (repeatable). `init` **applies the label** to this set before committing the overlay, and the front-door component places Envoy on it. Leave it unset and the `KUBE_OVN_GW_NODES` set is used, which is the recommended shape because it keeps the ingress set and the MetalLB announcer set identical. `ENVOY_REPLICAS` and `INGRESS_HOST_CIDR` are **derived** from this set. Under a VIP layer the set must be a SUBSET of `KUBE_OVN_GW_NODES` — a partial overlap is refused, because the single node in both sets becomes a point of failure that looks like HA |
 | `--set=INGRESS_MODE` | **Deprecated** — kept for one release so older config files round-trip. `metallb-lb` and `hostnetwork` both now select the same universal host-bind data plane; use `--ingress-address-layer` instead |
 | `--set=METALLB_MODE` | **Read-only legacy output — do not set it.** It is DERIVED from `--ingress-address-layer`, and setting it against the layer is refused (the addon tree that gets wired is chosen from the layer). For BGP pass `--ingress-address-layer=metallb-bgp`, which additionally requires `METALLB_BGP_LOCAL_ASN`, `METALLB_BGP_PEER_ASN` and `METALLB_BGP_PEER_ADDRESS` (all validated). See §4.3 |
 | `--tls-mode` | `acme` (default — HTTP-01 through the Gateway; needs inbound `:80`), `acme-dns01-route53` (same issuer, proves control via Route53 DNS records — for private/VPN-only clusters whose zone is in Route53; auto-renews; requires `--dns01-route53-zone-id` + `--dns01-route53-access-key-id`, secret key via `--dns01-route53-secret-key-file` or `KUBE_DC_DNS01_ROUTE53_SECRET_KEY`), or `byo-wildcard` (operator-supplied certificate; requires `--tls-cert`/`--tls-key`; nothing renews it). See [Platform TLS certificates](certificates.md) |
@@ -1199,6 +1199,14 @@ The order in `spec.components` is load-bearing: `address-metallb` must be listed
 that is what clears `externalIPs` on a VIP cluster. The generator emits them in the
 right order and the fleet's render gate asserts it.
 
+**What the layer defaults to.** Omitting `--ingress-address-layer` resolves to `none` —
+the fail-safe: clients reach the ingress nodes' own addresses. It cannot default to
+`metallb-l2`, because that layer needs a VIP and an interface that only you can supply.
+But declaring `METALLB_FLOATING_IP` **without** naming a layer is *refused*, not quietly
+downgraded: a reserved address that no layer claims would never be announced, and the
+install would silently serve on node addresses instead. So either pass
+`--ingress-address-layer=metallb-l2` with the VIP, or pass neither.
+
 `kube-dc bootstrap init` **applies the `kube-dc.com/ingress` label** to the resolved
 ingress set (the `ingress-nodes` step, which runs before the overlay is committed).
 This is a hard prerequisite rather than a nicety: the component places Envoy by that
@@ -1206,11 +1214,27 @@ label with *required* anti-affinity, so an unlabelled cluster renders replicas t
 are all unschedulable — every manifest correct, Flux green, and no front door at all.
 The step is fail-closed; see §4.1.
 
-`ENVOY_REPLICAS` must equal the number of labelled ingress nodes. Fewer, and some
-labelled node has no Envoy — which on a single-address cluster can be exactly the node
-that owns the address. More, and the surplus stays `Pending` forever under required
-anti-affinity. The platform PDB is `minAvailable: 2`, so fewer than three ingress nodes
-makes every voluntary drain block.
+`ENVOY_REPLICAS` **is derived** from the resolved ingress set — you do not set it. It
+must EQUAL the number of labelled nodes: fewer, and some labelled node has no Envoy,
+which on a single-address cluster can be exactly the node that owns the address; more, and
+the surplus stays `Pending` forever under required anti-affinity. The platform PDB is
+`minAvailable: 2`, so fewer than three ingress nodes makes every voluntary drain block.
+An explicit `--set ENVOY_REPLICAS=` still wins if you need it.
+
+`INGRESS_HOST_CIDR` **is also derived**, from those nodes' `InternalIP` addresses, as the
+smallest single prefix that covers them. It is what admits the front door: Envoy runs on
+the host network, so what it proxies to an upstream arrives with a *node* address, and the
+platform NetworkPolicies can only admit that by `ipBlock` — a `namespaceSelector` cannot
+map a node IP back to a pod namespace. Left unset, OpenBao and the Flux UI answer `503`
+while every manifest is correct and Flux is green.
+
+It is deliberately **not** derived from `NODE_CIDR`: those are not always the same network
+(on one real cluster `NODE_CIDR` is a public `/26` taken from an external NIC while the
+nodes' `InternalIP`s are private). If your nodes reach upstreams from a different NIC than
+their `InternalIP`, pass `--set INGRESS_HOST_CIDR=` explicitly. A comma-separated list is
+**not** supported — the policies render one `ipBlock.cidr`, so a list is a single
+malformed CIDR. `scripts/covering_cidr.py` prints the correct single prefix for a set of
+node addresses.
 
 :::
 
@@ -1313,12 +1337,15 @@ Two things to know before choosing a VIP layer:
   IP, the pods are `Ready`, Flux is green, and the address is simply dark. You
   find out by curling it.
 
-  `kube-dc bootstrap init` refuses that combination before writing anything, and
-  naming a node in the ingress set that is not a gateway node produces a warning
-  (it is legal — that node still serves traffic sent to its own address — but it
-  can never carry the VIP). **The simplest correct answer is to pass no
-  `--ingress-node` at all**: the gateway nodes are then used, which satisfies the
-  invariant by construction.
+  `kube-dc bootstrap init` refuses that combination before writing anything — and
+  under a VIP layer it also refuses a *partial* overlap. One node in both sets can
+  announce, and that node is then a single point of failure dressed as HA: losing it
+  darkens the address while every other component still reports healthy. So the
+  ingress set must be a **subset** of `KUBE_OVN_GW_NODES`.
+  `scripts/frontdoor-check.sh preflight` enforces the same rule against the live
+  cluster, so anything looser would only move the failure to after the fleet was
+  committed. **The simplest correct answer is to pass no `--ingress-node` at all**:
+  the gateway nodes are then used, which satisfies the invariant by construction.
 
 :::tip The `:6443` listener serves the MANAGEMENT API, not tenant clusters
 Two SNI-passthrough listeners exist and they carry different traffic:

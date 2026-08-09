@@ -17,6 +17,10 @@ type fakeNodeLabels struct {
 	err    error
 }
 
+func (f *fakeNodeLabels) NodeInternalIPs(context.Context) (map[string]string, error) {
+	return map[string]string{}, nil
+}
+
 func (f *fakeNodeLabels) NodeLabels(_ context.Context) (map[string]map[string]string, error) {
 	if f.err != nil {
 		return nil, f.err

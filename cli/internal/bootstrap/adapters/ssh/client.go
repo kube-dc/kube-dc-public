@@ -402,7 +402,29 @@ func (c *Client) handshakeClient(ctx context.Context, proxy *ssh.Client, hostCfg
 	}
 	addr := net.JoinHostPort(hostCfg.Hostname, strconv.Itoa(hostCfg.Port))
 
+	client, err := c.dialOnce(ctx, proxy, addr, clientCfg)
+	// A host recorded under a DIFFERENT key algorithm is not a trust failure,
+	// it is a negotiation mismatch — and the common one: OpenSSH writes
+	// ed25519 host keys by default while Go's default preference tries ecdsa
+	// first, so a perfectly good host looks like a MITM. Retry once, pinned to
+	// the algorithms known_hosts actually records for this host. This is what
+	// OpenSSH itself does (it derives HostKeyAlgorithms from known_hosts);
+	// x/crypto exposes no helper for it, so the recorded set is learned from
+	// the callback's own KeyError rather than by re-implementing hashed-host
+	// matching.
+	var algoErr *hostKeyAlgoMismatch
+	if err != nil && errors.As(err, &algoErr) && len(algoErr.want) > 0 {
+		retryCfg := *clientCfg
+		retryCfg.HostKeyAlgorithms = algoErr.want
+		return c.dialOnce(ctx, proxy, addr, &retryCfg)
+	}
+	return client, err
+}
+
+// dialOnce performs one TCP dial + SSH handshake.
+func (c *Client) dialOnce(ctx context.Context, proxy *ssh.Client, addr string, clientCfg *ssh.ClientConfig) (*ssh.Client, error) {
 	var conn net.Conn
+	var err error
 	if proxy == nil {
 		conn, err = c.dialContext(ctx, "tcp", addr)
 	} else {
@@ -523,8 +545,23 @@ func (c *Client) hostKeyCallback() (ssh.HostKeyCallback, error) {
 					hostname, remote, path,
 					splitHostForKeyscan(hostname), path)
 			}
-			// Fingerprint MISMATCH is refused even under accept-new — this
-			// is the MITM signal and trust is never relaxed for it.
+			// NOT every non-empty Want is a MITM. When the recorded keys are
+			// all of DIFFERENT algorithms than the one just offered, the file
+			// simply has no entry for this algorithm — which happens on almost
+			// every operator machine: OpenSSH records ed25519 by default, while
+			// Go's default preference negotiates ecdsa first. Reporting that as
+			// "possible MITM" refused healthy hosts and, worse, told people to
+			// `ssh-keygen -R` their good host keys in response to a MITM
+			// warning. Surface it as a distinct, retryable condition instead.
+			if !wantHasKeyType(ke.Want, key.Type()) {
+				return &hostKeyAlgoMismatch{
+					offered: key.Type(),
+					want:    wantKeyTypes(ke.Want),
+				}
+			}
+			// A recorded key of the SAME algorithm that does not match IS the
+			// MITM signal, and trust is never relaxed for it — not even under
+			// accept-new.
 			return fmt.Errorf("ssh host %s (%s) key MISMATCH against %s — refusing connection (possible MITM).\n\tIf the host was legitimately re-installed / re-keyed, remove the stale entry via:\n\t\tssh-keygen -R %s\n\tthen re-add via ssh-keyscan.",
 				hostname, remote, path,
 				splitHostForKeyscan(hostname))
@@ -532,6 +569,61 @@ func (c *Client) hostKeyCallback() (ssh.HostKeyCallback, error) {
 		return err
 	}
 	return c.khCallback, nil
+}
+
+// hostKeyAlgoMismatch means known_hosts HAS this host, but only under other
+// key algorithms than the one the server just offered. It is not a trust
+// failure — it is a negotiation mismatch, and the dialer fixes it by retrying
+// with HostKeyAlgorithms constrained to what the file actually records.
+type hostKeyAlgoMismatch struct {
+	offered string
+	want    []string
+}
+
+func (e *hostKeyAlgoMismatch) Error() string {
+	return fmt.Sprintf("ssh: host key algorithm %q not recorded in known_hosts (recorded: %s)",
+		e.offered, strings.Join(e.want, ", "))
+}
+
+// wantKeyTypes converts the recorded keys into HostKeyAlgorithms values.
+//
+// An RSA host key is recorded in known_hosts as "ssh-rsa", but that string names
+// the KEY type, not the signature algorithm — modern OpenSSH servers advertise
+// only rsa-sha2-256 / rsa-sha2-512 and refuse the legacy SHA-1 "ssh-rsa". Pinning
+// the retry to "ssh-rsa" alone would therefore find no algorithm in common with
+// the server while we hold exactly the right key, so all three names are offered
+// for one recorded RSA key.
+func wantKeyTypes(want []knownhosts.KnownKey) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(alg string) {
+		if alg == "" || seen[alg] {
+			return
+		}
+		seen[alg] = true
+		out = append(out, alg)
+	}
+	for _, k := range want {
+		if k.Key == nil {
+			continue
+		}
+		if k.Key.Type() == ssh.KeyAlgoRSA {
+			// Strongest first; the SHA-1 form last for old servers.
+			add(ssh.KeyAlgoRSASHA512)
+			add(ssh.KeyAlgoRSASHA256)
+		}
+		add(k.Key.Type())
+	}
+	return out
+}
+
+func wantHasKeyType(want []knownhosts.KnownKey, keyType string) bool {
+	for _, k := range want {
+		if k.Key != nil && k.Key.Type() == keyType {
+			return true
+		}
+	}
+	return false
 }
 
 // recordNewHost accepts key for hostname under accept-new. On the FIRST

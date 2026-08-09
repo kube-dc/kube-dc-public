@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dra-policy-ordinary-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dra-policy-ordinary-deployment
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dra-policy-ordinary-deployment
+    spec:
+      containers:
+        - name: workload
+          image: registry.k8s.io/pause:3.10

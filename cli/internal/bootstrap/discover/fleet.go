@@ -31,11 +31,11 @@ type Cluster struct {
 	Env *config.Env
 
 	// Convenience accessors populated from Env at parse time.
-	Domain          string
-	NodeExternalIP  string
-	KubeAPIURL      string
-	KeycloakHost    string
-	ExtNetName      string
+	Domain         string
+	NodeExternalIP string
+	KubeAPIURL     string
+	KeycloakHost   string
+	ExtNetName     string
 
 	// HasInTreeKubeconfig is true when a `kubeconfig*` or `*.kubeconfig`
 	// file is present in the cluster directory. The fleet's convention

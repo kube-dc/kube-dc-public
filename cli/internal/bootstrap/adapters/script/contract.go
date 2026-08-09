@@ -115,6 +115,15 @@ var scriptContracts = map[ports.ScriptKind]scriptContract{
 		minArgs: 3,
 		maxArgs: 4,
 		argDesc: "<name> <domain> <node-external-ip> [<kubeconfig-path>]",
+		// SCAFFOLD_INGRESS_ADDRESS_LAYER carries the operator's REVIEWED address layer
+		// into the scaffold. It matters because add-cluster.sh derives platform.yaml's
+		// spec.components from it, and nothing downstream rewrites that list: when the
+		// script hardcoded the layer and this package rewrote only the scalar afterwards,
+		// a reviewed `none` plan produced an overlay that still selected address-metallb
+		// with ENVOY_LB_CLASS=null — an explicit null on a typed field, which server-side
+		// apply rejects and force: true turns into a DELETION of the EnvoyProxy.
+		// Optional: absent means the script keeps its metallb-l2 default.
+		optionalEnv: []string{"SCAFFOLD_INGRESS_ADDRESS_LAYER"},
 	},
 	ports.ScriptFluxInstall: {
 		// Only KUBECONFIG is universally required. Token env is

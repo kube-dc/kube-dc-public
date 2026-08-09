@@ -21,3 +21,10 @@
 .idea/
 *.tmproj
 .vscode/
+# The chart's CRDs live in templates/crds/ (managed, resource-policy: keep) — see
+# "chart: move CRDs to templates/crds/". `make manifests` still regenerates a
+# top-level crds/ dir for `make install`; keep THAT out of the packaged chart so
+# Helm isn't handed the same CRDs twice (crds/ install-only + templates/crds/
+# managed), which breaks fresh installs. Leading slash anchors to the chart root so
+# this does NOT also exclude templates/crds/.
+/crds/

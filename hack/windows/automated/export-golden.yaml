@@ -1,0 +1,121 @@
+# export-golden.yaml — take the SEALED build disk and publish it to S3.
+#
+# Replaces hack/windows/export-golden-image.yaml, which could not work at all
+# (codex review, docs/prd/windows-bake-review-2026-08-06.md):
+#   - it read shalb-dev/windows11-disk, not this pipeline's PVC
+#   - its image installed qemu-utils but then called curl, which wasn't there
+#   - it HTTP-PUT to a static nginx whose storage mount is read-only (405/403)
+#   - it wrote the converted image back onto the SOURCE PVC (no headroom)
+#   - it was a sleeping Pod, so nothing ever reported success or failure
+#
+# This is a Job (so completion means something), converts into its own scratch
+# volume, uploads with the real S3 credentials, and verifies the object landed.
+#
+# RUN ONLY AFTER the build VM has shut itself down (sysprep sealed the disk) and
+# C:\BUILD_OK exists — a running VM means a half-written disk.
+#
+#   kubectl -n golden-images-build apply -f export-golden.yaml
+#   kubectl -n golden-images-build logs -f job/win11-export-golden
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: win11-export-scratch
+  namespace: golden-images-build
+spec:
+  storageClassName: rbd-vm
+  accessModes: [ReadWriteOnce]
+  volumeMode: Filesystem
+  resources:
+    # The raw disk is 64Gi; a compressed qcow2 of a fresh Windows install lands
+    # around 12-20Gi. 48Gi gives real headroom without doubling the bake cost.
+    requests:
+      storage: 48Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: win11-export-golden
+  namespace: golden-images-build
+  labels:
+    kube-dc.com/system: "true"
+    kube-dc.com/golden-os: windows-11
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 10800     # 3h: convert + upload of a ~20Gi artifact
+  template:
+    metadata:
+      labels: { app: win11-export }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: export
+          image: alpine:3.20
+          command: ["/bin/sh", "-c"]
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom: { secretKeyRef: { name: cdi-os-images, key: AWS_ACCESS_KEY_ID } }
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: cdi-os-images, key: AWS_SECRET_ACCESS_KEY } }
+            - name: BUCKET_HOST
+              valueFrom: { configMapKeyRef: { name: cdi-os-images, key: BUCKET_HOST } }
+            - name: BUCKET_PORT
+              valueFrom: { configMapKeyRef: { name: cdi-os-images, key: BUCKET_PORT } }
+            - name: BUCKET_NAME
+              valueFrom: { configMapKeyRef: { name: cdi-os-images, key: BUCKET_NAME } }
+          args:
+            - |
+              set -eu
+              apk add --no-cache qemu-img aws-cli >/dev/null
+              SRC=/src/disk.img
+              [ -f "$SRC" ] || { echo "ERROR: $SRC missing — is the build PVC correct?"; ls -la /src; exit 1; }
+
+              echo "== source =="
+              qemu-img info "$SRC"
+
+              # Refuse to publish a disk the bake did not seal. bootstrap.ps1
+              # writes C:/BUILD_OK on success and C:/BUILD_FAILED on any failure;
+              # we cannot read NTFS here, so the operator gate is the VM having
+              # shut ITSELF down (sysprep) — documented in README.md. What we can
+              # check cheaply is that the image is not obviously truncated.
+              SZ=$(stat -c %s "$SRC")
+              [ "$SZ" -gt 8000000000 ] || { echo "ERROR: disk.img only $SZ bytes — not a full install"; exit 1; }
+
+              TAG=$(date +%Y-%m-%d)
+              OUT=/work/windows11-x64-golden.qcow2
+              echo "== convert -> compressed qcow2 =="
+              qemu-img convert -p -c -O qcow2 "$SRC" "$OUT"
+              qemu-img info "$OUT"
+              SHA=$(sha256sum "$OUT" | cut -d' ' -f1)
+              echo "sha256=$SHA"
+
+              export AWS_ENDPOINT_URL="http://${BUCKET_HOST}:${BUCKET_PORT}"
+              KEY="windows/11/${TAG}/windows11-x64-golden.qcow2"
+              echo "== upload -> s3://${BUCKET_NAME}/${KEY} =="
+              aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp "$OUT" "s3://${BUCKET_NAME}/${KEY}"
+
+              # Verify the object is really there and the right size before we
+              # claim success — a silent partial upload is exactly the failure
+              # the old exporter hid.
+              REMOTE=$(aws --endpoint-url "$AWS_ENDPOINT_URL" s3api head-object \
+                        --bucket "$BUCKET_NAME" --key "$KEY" --query ContentLength --output text)
+              LOCAL=$(stat -c %s "$OUT")
+              [ "$REMOTE" = "$LOCAL" ] || { echo "ERROR: uploaded $REMOTE bytes, expected $LOCAL"; exit 1; }
+
+              echo "EXPORT_OK key=$KEY bytes=$LOCAL sha256=$SHA"
+              echo "Next: stage the fleet golden at this key, gate it with"
+              echo "      validate-clone.sh, then flip kube-dc.com/golden-active."
+          resources:
+            requests: { cpu: "1", memory: 1Gi }
+            limits:   { cpu: "4", memory: 4Gi }
+          volumeMounts:
+            - { name: src,  mountPath: /src, readOnly: true }
+            - { name: work, mountPath: /work }
+      volumes:
+        - name: src
+          persistentVolumeClaim:
+            claimName: win11-golden-disk
+            readOnly: true
+        - name: work
+          persistentVolumeClaim:
+            claimName: win11-export-scratch

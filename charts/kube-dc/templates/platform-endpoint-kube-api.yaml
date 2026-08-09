@@ -1,5 +1,5 @@
 {{- /*
-Platform endpoint: internal cluster-local kube-api VIP (Fork E2).
+Platform endpoint: internal cluster-local kube-api VIP.
 
 Tenant pods reach the apiserver through a MetalLB-announced VIP
 (`spec.loadBalancerIP`) instead of the cluster's external Envoy/MetalLB
@@ -9,7 +9,13 @@ host IPs.
 
 Renders three resources when `.Values.platformEndpoints.kubeAPI.enabled`:
   1. metallb.io/v1beta1 IPAddressPool   (in metallb-system)
-  2. metallb.io/v1beta1 L2Advertisement (in metallb-system)
+  2. the advertisement for that pool — kind depends on `.advertisementMode`:
+       "l2" (default): metallb.io/v1beta1 L2Advertisement (ARP/GARP on
+                       `.interface`)
+       "bgp":          metallb.io/v1beta1 BGPAdvertisement (/32 routes to
+                       the cluster's BGPPeers; peers themselves are cluster
+                       infrastructure shipped by the fleet layer
+                       (addons/metallb-config-bgp), NOT by this chart)
   3. v1 Service                         (in `.namespace`, selectorless,
                                          type=LoadBalancer, annotated for
                                          the platform-endpoint controller)
@@ -32,6 +38,10 @@ See:
 {{- if not $cfg.loadBalancerClass -}}
 {{- fail "platformEndpoints.kubeAPI.enabled=true but .loadBalancerClass is empty — must match the MetalLB controller's --lb-class flag" -}}
 {{- end -}}
+{{- $advMode := $cfg.advertisementMode | default "l2" -}}
+{{- if not (or (eq $advMode "l2") (eq $advMode "bgp")) -}}
+{{- fail (printf "platformEndpoints.kubeAPI.advertisementMode must be \"l2\" or \"bgp\", got %q" $advMode) -}}
+{{- end -}}
 ---
 apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
@@ -49,6 +59,33 @@ spec:
   # any other LB Service from grabbing the VIP by accident.
   autoAssign: false
 ---
+{{- if eq $advMode "bgp" }}
+# BGP mode: the VIP is announced as a /32 route to the cluster's
+# BGPPeers (shipped by the fleet layer — addons/metallb-config-bgp),
+# from every speaker node unless nodeSelectors constrain it. The
+# `.interface` value is unused in this mode (no ARP announcement).
+apiVersion: metallb.io/v1beta1
+kind: BGPAdvertisement
+metadata:
+  name: {{ $cfg.pool | quote }}
+  namespace: metallb-system
+  labels:
+    app.kubernetes.io/managed-by: kube-dc
+    app.kubernetes.io/component: platform-endpoint
+spec:
+  ipAddressPools:
+    - {{ $cfg.pool | quote }}
+  aggregationLength: 32
+  {{- with $cfg.bgpPeers }}
+  # Restrict announcement to specific BGPPeer names. Empty = all peers.
+  peers:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $cfg.advNodeSelectors | default $cfg.l2AdvNodeSelectors }}
+  nodeSelectors:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- else }}
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
 metadata:
@@ -62,7 +99,7 @@ spec:
     - {{ $cfg.pool | quote }}
   interfaces:
     - {{ $cfg.interface | quote }}
-  {{- with $cfg.l2AdvNodeSelectors }}
+  {{- with $cfg.advNodeSelectors | default $cfg.l2AdvNodeSelectors }}
   # Constrain MetalLB speaker election to nodes matching these label
   # selectors. Needed on heterogeneous clusters where only some nodes
   # have the anchor bridge (e.g. separate CP + workers, mixed NIC
@@ -70,6 +107,7 @@ spec:
   nodeSelectors:
     {{- toYaml . | nindent 4 }}
   {{- end }}
+{{- end }}
 ---
 apiVersion: v1
 kind: Service

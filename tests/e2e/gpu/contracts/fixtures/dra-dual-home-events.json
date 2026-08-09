@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "metadata": {"creationTimestamp": "2026-07-20T11:59:59Z"},
+      "reason": "FailedCreate",
+      "involvedObject": {"kind": "ReplicaSet", "uid": "current-run"},
+      "message": "admission denied: __SHARED_MESSAGE__"
+    },
+    {
+      "metadata": {"creationTimestamp": "2026-07-20T12:00:01Z"},
+      "reason": "FailedCreate",
+      "involvedObject": {"kind": "ReplicaSet", "uid": "previous-run"},
+      "message": "admission denied: __SHARED_MESSAGE__"
+    },
+    {
+      "metadata": {"creationTimestamp": "2026-07-20T12:00:01Z"},
+      "reason": "FailedCreate",
+      "involvedObject": {"kind": "ReplicaSet", "uid": "current-run"},
+      "message": "admission denied for an unrelated reason"
+    },
+    {
+      "metadata": {"creationTimestamp": "2026-07-20T12:00:01Z"},
+      "reason": "FailedCreate",
+      "involvedObject": {"kind": "ReplicaSet", "uid": "current-run"},
+      "message": "admission denied: __SHARED_MESSAGE__"
+    }
+  ]
+}

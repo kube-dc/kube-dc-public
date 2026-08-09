@@ -1,0 +1,57 @@
+{{- /*
+Refuse the only unsafe downgrade: removing the fail-closed webhooks while a
+ProjectNetwork still publishes an attachable NAD. The CRD lookup is the outer
+guard so first installs and clusters that never had these CRDs keep rendering.
+Offline `helm template` has no live objects, so the runtime manager check is the
+second line of defence; Flux/Helm upgrades evaluate this lookup against the
+cluster and fail before deleting any webhook configuration.
+*/ -}}
+{{- if not .Values.projectNetwork.enabled }}
+{{- $pnCRD := lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "projectnetworks.kube-dc.com" }}
+{{- if $pnCRD }}
+{{- $bindings := lookup "kube-dc.com/v1" "ProjectNetwork" "" "" }}
+{{- if $bindings }}
+{{- $items := get $bindings "items" | default (list) }}
+{{- if gt (len $items) 0 }}
+{{- fail "projectNetwork.enabled cannot be disabled while ProjectNetwork bindings exist: delete every binding and wait for drain-first teardown before removing the admission gate" }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if .Values.projectNetwork.enabled }}
+{{- /*
+Tenant-VLAN attachment installs fail-closed admission webhooks on pod CREATE and
+UPDATE. Their matchConditions keep ordinary pods out of the path entirely, but a
+pod that IS attaching to a VLAN cannot be admitted while no manager replica is
+serving. A single-replica manager therefore turns any voluntary disruption —
+a node drain, a rollout, an eviction — into a window where tenant-VLAN workloads
+cannot start.
+
+This platform has already had a manager eviction cause exactly that class of
+outage, so guard it rather than document it.
+*/ -}}
+{{- /*
+The gate lives in the manager's webhook server. With manager.webhook.enabled
+false there is no ValidatingWebhookConfiguration at all, so the controller would
+happily publish NADs onto a physical customer VLAN with NOTHING authorizing
+attachments. That combination is strictly worse than the feature being off.
+*/ -}}
+{{- if not .Values.manager.webhook.enabled }}
+{{- fail "projectNetwork.enabled=true requires manager.webhook.enabled=true: without the webhook server there is no attachment gate, and the controller would publish tenant VLANs with nothing authorizing access to them" }}
+{{- end }}
+{{- if lt ((.Values.manager.replicaCount | default 1) | int) 2 }}
+{{- fail "projectNetwork.enabled=true requires manager.replicaCount >= 2: the attachment gate is a fail-closed webhook on the pod path, and a single replica makes every rollout or drain an outage for VLAN-attached workloads" }}
+{{- end }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "kube-dc.manager.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "kube-dc.manager.selectorLabels" . | nindent 6 }}
+{{- end }}

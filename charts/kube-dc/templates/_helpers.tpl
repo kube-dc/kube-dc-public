@@ -192,3 +192,53 @@ back to the entry's `upstreamURL`.
 {{ .entry.upstreamURL }}
 {{- end -}}
 {{- end -}}
+
+{{- /*
+Pod-template labels. Deliberately NOT the full <component>.labels set:
+helm.sh/chart embeds the chart VERSION, so putting it on pod templates
+forces a rollout of every Deployment on every chart-only version bump
+(no image/config change). Pod templates get the selectorLabels plus the
+appVersion (which only moves when the shipped images move — a roll is
+then correct). helm.sh/chart + managed-by stay on object metadata.
+*/}}
+{{- define "kube-dc.podVersionLabel" -}}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+{{- end }}
+
+
+{{/*
+Resolve the management-cluster API endpoint consumed by an infra-side
+component. The second argument is that component's legacy value so an empty
+mode remains upgrade-neutral. Explicit modes form the new fleet contract.
+*/}}
+{{- define "kube-dc.managementAPIEndpoint" -}}
+{{- $root := index . 0 -}}
+{{- $legacy := index . 1 -}}
+{{- $mode := default "" $root.Values.managementAPI.mode -}}
+{{- if eq $mode "" -}}
+{{- $legacy -}}
+{{- else if eq $mode "external" -}}
+{{- required "managementAPI.externalEndpoint or kubeApiExternalUrl is required in external mode" (default $root.Values.kubeApiExternalUrl $root.Values.managementAPI.externalEndpoint) -}}
+{{- else if eq $mode "platformVIP" -}}
+{{- /*
+  RETIRED 2026-08-07 (front-door simplification, docs/prd/
+  front-door-simplification-implementation.md §1.1). This mode meant "dial the
+  Fork-E kube-api MetalLB VIP:6443". No cluster ever used it, and `service`
+  mode reaches the apiserver's own ClusterIP over the dual-home infra NIC —
+  no VIP, no hairpin, one fewer moving part. Fail loudly rather than silently
+  resolving something else: an operator who set this expects a specific
+  datapath.
+*/ -}}
+{{- fail "managementAPI.mode=platformVIP is RETIRED. Use mode=service (reaches the apiserver ClusterIP over the dual-home infra NIC; requires manager.infraAttachment.enabled=true, managementAPI.serviceIP and .serviceCIDR) or mode=external (public kube-api hostname). See docs/prd/front-door-simplification-implementation.md" -}}
+{{- else if eq $mode "service" -}}
+{{- if not $root.Values.manager.infraAttachment.enabled -}}
+{{- fail "managementAPI.mode=service requires manager.infraAttachment.enabled=true" -}}
+{{- end -}}
+{{- $serviceIP := required "managementAPI.serviceIP is required in service mode" $root.Values.managementAPI.serviceIP -}}
+{{- $serviceCIDR := required "managementAPI.serviceCIDR is required in service mode" $root.Values.managementAPI.serviceCIDR -}}
+{{- else -}}
+{{- fail (printf "managementAPI.mode must be external or service; got %q (platformVIP is retired)" $mode) -}}
+{{- end -}}
+{{- end -}}

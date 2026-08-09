@@ -38,6 +38,33 @@ type K8sClient interface {
 	// is mode-agnostic, just gives us the full label map.
 	NodeLabels(ctx context.Context) (map[string]map[string]string, error)
 
+	// SetNodeLabel adds or updates ONE label on ONE node, by merge patch.
+	//
+	// Needed because the host-bind front-door component selects nodes by
+	// kube-dc.com/ingress, and until something applies that label a fresh install
+	// renders N Envoy replicas that are all unschedulable — a dark front door on
+	// day one, with every manifest correct. Nothing in the installer applied it.
+	//
+	// Deliberately one label on one node rather than a bulk replace: a bulk
+	// label-map write can drop labels another controller owns, and the ingress
+	// label may already be live on nodes this run must not disturb.
+	SetNodeLabel(ctx context.Context, node, key, value string) error
+
+	// NodeInternalIPs returns each Node's InternalIP address, keyed by node name.
+	//
+	// Needed to derive INGRESS_HOST_CIDR. The host-bind front door runs Envoy with
+	// hostNetwork, so what it proxies to an upstream arrives with a NODE address; the
+	// platform NetworkPolicies admit it by ipBlock, and nothing else can (a
+	// namespaceSelector cannot map a node IP back to a pod namespace). Leaving that
+	// value unset silently denied OpenBao and the Flux UI on a production cluster for
+	// ~44h, so the installer must compute it rather than hope an operator supplies it.
+	//
+	// Deliberately the InternalIP and NOT the discovered NODE_CIDR: on at least one
+	// real cluster NODE_CIDR is a PUBLIC /26 discovered from an external NIC while the
+	// nodes' InternalIPs are private — deriving from NODE_CIDR would admit the wrong
+	// network and still deny Envoy.
+	NodeInternalIPs(ctx context.Context) (map[string]string, error)
+
 	// DeploymentImages returns Deployment-name → container-image-tag for
 	// every Deployment in `ns`. Used by `discover.ClusterProbe`-style
 	// image-drift detection (T2a shipped pattern) and M2 status.
@@ -160,6 +187,18 @@ type K8sClient interface {
 	// `bootstrap adopt` can read the version of non-Helm components
 	// (KubeVirt, CDI) from their operator CRs.
 	GetResourceFieldFirst(ctx context.Context, group, version, resource, namespace, name string, fields ...string) (string, error)
+
+	// PodContainerArgs returns the first container's command+args for every
+	// pod in `ns` matching `labelSelector`, keyed by pod name.
+	//
+	// Its reason for existing is verifying the OIDC webhook cutover WITHOUT
+	// SSH: RKE2 runs kube-apiserver as a static pod per control-plane node, and
+	// the flags it is actually running with are visible in the container args
+	// through the API. A Ready oidc-webhook-authenticator pod proves only that
+	// the webhook is alive — it says nothing about whether any apiserver calls
+	// it, which is precisely the failure that makes a healthy-looking cluster
+	// reject every login.
+	PodContainerArgs(ctx context.Context, ns, labelSelector string) (map[string][]string, error)
 }
 
 // Graph is a dependsOn-resolved view of `flux-system`. Nodes are sorted

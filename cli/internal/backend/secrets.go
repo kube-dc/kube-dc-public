@@ -10,15 +10,15 @@ import (
 // SecretSummary is the shape returned by GET /api/secrets/:ns and
 // the per-secret GET when ?includeValue is omitted.
 type SecretSummary struct {
-	Name        string                 `json:"name"`
-	Namespace   string                 `json:"namespace"`
-	Type        string                 `json:"type"`
-	Description string                 `json:"description,omitempty"`
-	Sync        SecretSync             `json:"sync"`
-	Status      SecretStatus           `json:"status"`
-	OpenBao     *SecretOpenBao         `json:"openbao,omitempty"`
-	Value       *SecretValue           `json:"value,omitempty"`
-	ValueMissing bool                  `json:"valueMissing,omitempty"`
+	Name         string         `json:"name"`
+	Namespace    string         `json:"namespace"`
+	Type         string         `json:"type"`
+	Description  string         `json:"description,omitempty"`
+	Sync         SecretSync     `json:"sync"`
+	Status       SecretStatus   `json:"status"`
+	OpenBao      *SecretOpenBao `json:"openbao,omitempty"`
+	Value        *SecretValue   `json:"value,omitempty"`
+	ValueMissing bool           `json:"valueMissing,omitempty"`
 }
 
 type SecretSync struct {
@@ -139,8 +139,8 @@ type ImportSecretOptions struct {
 
 type ImportSecretResult struct {
 	SecretSummary
-	KvVersion    int                    `json:"kvVersion"`
-	ImportedFrom map[string]any         `json:"importedFrom"`
+	KvVersion    int            `json:"kvVersion"`
+	ImportedFrom map[string]any `json:"importedFrom"`
 }
 
 func (c *Client) ImportSecret(ctx context.Context, namespace, name string, opts ImportSecretOptions) (*ImportSecretResult, error) {

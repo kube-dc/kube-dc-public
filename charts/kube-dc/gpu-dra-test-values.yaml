@@ -1,0 +1,40 @@
+gpu:
+  enabled: true
+  sharedCreation:
+    enabled: false
+  profiles:
+    - id: nvidia-v100-hami
+      displayName: Shared NVIDIA V100 — 8 GB
+      vendor: nvidia
+      workload: pod
+      allocation: hami
+      allocationBackend: dra
+      resourceName: nvidia.com/gpu
+      memoryMiB: 32768
+      isolation: software
+      enabled: true
+      billingEligible: false
+      liveMigratable: false
+      request:
+        countResource: nvidia.com/gpu
+        memoryResource: nvidia.com/gpumem
+        coreResource: nvidia.com/gpucores
+        minMemoryMiB: 1024
+        memoryStepMiB: 1024
+        minCorePercent: 5
+        coreStepPercent: 5
+        allowCustom: false
+        presets:
+          - id: shared-8g
+            displayName: Shared 8 GB
+            memoryMiB: 8192
+            corePercent: 25
+            default: true
+      dra:
+        driver: hami-core-gpu.project-hami.io
+        deviceClassName: kube-dc-nvidia-v100-shared-8g
+        attributes:
+          productName: Tesla V100-PCIE-32GB
+        memoryCapacity: memory
+        coreCapacity: cores
+        maxSharesPerDevice: 10

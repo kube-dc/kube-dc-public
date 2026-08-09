@@ -1,3 +1,6 @@
+{{- if and .Values.projectNetwork.enabled (lt (int .Values.manager.replicaCount) 2) }}
+{{- fail "projectNetwork.enabled requires manager.replicaCount >= 2: the tenant-VLAN admission gate is fail-closed on the pod path, so a single manager makes every rollout, node drain and eviction an outage for attaching workloads. Set manager.replicaCount to at least 2 (and label >=2 nodes to satisfy manager.nodeSelector, or the second replica is permanently unschedulable)." }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,7 +11,7 @@ spec:
   selector:
     matchLabels:
       {{- include "kube-dc.manager.selectorLabels" . | nindent 6 }}
-  replicas: 1
+  replicas: {{ .Values.manager.replicaCount }}
   template:
     metadata:
       annotations:
@@ -24,7 +27,8 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
-        {{- include "kube-dc.manager.labels" . | nindent 8 }}
+        {{- include "kube-dc.manager.selectorLabels" . | nindent 8 }}
+        {{- include "kube-dc.podVersionLabel" . | nindent 8 }}
         {{- with .Values.manager.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -37,6 +41,19 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+      {{- if .Values.projectNetwork.enabled }}
+      # The fail-closed tenant-VLAN admission service must survive a node loss.
+      # minDomains=2 is load-bearing: replicaCount=2 without placement can put
+      # both webhook endpoints on one node and only looks highly available.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          minDomains: 2
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              {{- include "kube-dc.manager.selectorLabels" . | nindent 14 }}
+      {{- end }}
       containers:
       - command:
         - /manager
@@ -48,16 +65,104 @@ spec:
           - --zap-log-level={{ .Values.manager.logLevel | default "1" }}
           - --keycloak-debug={{ .Values.manager.keycloakDebug | default "false" }}
           - --grafana-tenant-mode={{ .Values.manager.grafanaTenantMode | default "org" }}
+          {{- if .Values.manager.metrics.enabled }}
+          - --metrics-bind-address=:{{ .Values.manager.metrics.service.port }}
+          - --metrics-secure=true
+          {{- else }}
+          - --metrics-bind-address=0
+          {{- end }}
         env:
           - name: NAMESPACE
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
+          # The manager needs to distinguish "this cluster sells plans" from
+          # "this org has not been assigned one yet". Without it, an empty
+          # planId looks identical in both cases and object storage is skipped
+          # forever on a billing-less install. Passed unconditionally (unlike
+          # the backend, which only receives it when provider != none) because
+          # the absence of the variable is itself ambiguous.
+          - name: BILLING_PROVIDER
+            value: "{{ .Values.billing.provider }}"
+          {{- if .Values.manager.infraAttachment.enabled }}
+          {{- if not (contains "{namespace}" .Values.manager.infraAttachment.securityGroup) }}
+          {{- fail "manager.infraAttachment.securityGroup must contain {namespace}" }}
+          {{- end }}
+          # Tenant Networking v2 — infra-attachment pod webhook config. All
+          # cluster-specific; see docs/prd/tenant-networking-v2.md.
+          - name: INFRA_ATTACHMENT_SUBNET
+            value: {{ required "manager.infraAttachment.subnet is required when infraAttachment is enabled" .Values.manager.infraAttachment.subnet | quote }}
+          - name: INFRA_ATTACHMENT_GATEWAY
+            value: {{ required "manager.infraAttachment.gateway is required when infraAttachment is enabled" .Values.manager.infraAttachment.gateway | quote }}
+          - name: INFRA_ATTACHMENT_SG
+            value: {{ required "manager.infraAttachment.securityGroup is required when infraAttachment is enabled" .Values.manager.infraAttachment.securityGroup | quote }}
+          - name: INFRA_ATTACHMENT_ROUTES
+            value: {{ required "manager.infraAttachment.routes is required when infraAttachment is enabled" .Values.manager.infraAttachment.routes | quote }}
+          {{- if eq .Values.managementAPI.mode "service" }}
+          - name: MANAGEMENT_API_SERVICE_IP
+            value: {{ required "managementAPI.serviceIP is required in service mode" .Values.managementAPI.serviceIP | quote }}
+          - name: MANAGEMENT_API_SERVICE_CIDR
+            value: {{ required "managementAPI.serviceCIDR is required in service mode" .Values.managementAPI.serviceCIDR | quote }}
+          {{- end }}
+          {{- end }}
+          # Tenant-VLAN attachment. False (the default) means the controller
+          # creates no Vlan, Subnet, or NetworkAttachmentDefinition, so no
+          # wire becomes reachable.
+          - name: PROJECT_NETWORK_ENABLED
+            value: {{ .Values.projectNetwork.enabled | quote }}
+          - name: PROJECT_NETWORK_CONTROLLER_USERNAME
+            value: {{ printf "system:serviceaccount:%s:%s" .Release.Namespace (include "kube-dc.manager.serviceAccountName" .) | quote }}
+          - name: PROJECT_NETWORK_KUBE_OVN_CONTROLLER_USERNAME
+            value: {{ required "projectNetwork.kubeOvnControllerUsername is required when projectNetwork is enabled" .Values.projectNetwork.kubeOvnControllerUsername | quote }}
+          # The ADMIN console assigns and reclaims VLANs with the backend's own
+          # service-account token, behind requirePlatformAdmin. Without this the
+          # per-org grant webhook would reject every assignment made through the
+          # admin UI. Tenant-facing VLAN endpoints forward the caller's token
+          # instead, so they are judged as the org admin, not as this account.
+          - name: PROJECT_NETWORK_BACKEND_USERNAME
+            value: {{ printf "system:serviceaccount:%s:%s" .Release.Namespace (include "kube-dc.backend.serviceAccountName" .) | quote }}
+          # Platform trust-bundle distribution (docs/prd/platform-trust-bundle.md).
+          # The manager copies this ConfigMap's certificates into every ConfigMap
+          # labelled kube-dc.com/inject-trusted-ca=true, in any namespace — which
+          # is how CDI, tenant workloads and future components get the private CA
+          # without each needing its own chart value and mount. Defaults to the
+          # same ConfigMap the manager already trusts, so a private-CA install
+          # gets distribution for free.
+          {{- $trustSource := default .Values.manager.trustedCA.configMapName .Values.platformTrustBundle.configMapName }}
+          {{- if $trustSource }}
+          - name: PLATFORM_TRUST_BUNDLE_CONFIGMAP
+            value: {{ $trustSource | quote }}
+          - name: PLATFORM_TRUST_BUNDLE_NAMESPACE
+            value: {{ .Release.Namespace | quote }}
+          {{- end }}
+          - name: PLATFORM_TRUST_BUNDLE_INCLUDE_SYSTEM_ROOTS
+            value: {{ .Values.platformTrustBundle.includeSystemRoots | quote }}
+          {{- if .Values.manager.trustedCA.configMapName }}
+          # Additional CA roots for clusters whose platform hostnames are
+          # served by a PRIVATE CA (internal domain, no public issuer). The
+          # manager calls the platform's own https endpoints -- notably the
+          # Keycloak token endpoint -- and without these roots every
+          # Organization reconcile dies with
+          #   cant login to keycloak: x509: certificate signed by unknown authority
+          #
+          # SSL_CERT_DIR (not SSL_CERT_FILE): Go reads the distro bundle AND
+          # every file in SSL_CERT_DIR, so this ADDS roots instead of
+          # replacing the system trust store.
+          - name: SSL_CERT_DIR
+            value: {{ .Values.manager.trustedCA.mountPath | quote }}
+          {{- end }}
           {{- with .Values.manager.extraEnv }}
           {{- toYaml . | nindent 10 }}
           {{- end }}
 
         image: "{{ .Values.manager.image.repository }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}"
+        # manager.image.pullPolicy existed in values.yaml and was set to Always
+        # by the fleet, but this template never referenced it — so the container
+        # silently took Kubernetes' default (IfNotPresent for a non-:latest tag).
+        # Re-pushing a tag then had no effect on a node that had already cached
+        # it, which reads as "my fix didn't deploy" rather than "the image was
+        # never re-pulled".
+        imagePullPolicy: {{ .Values.manager.image.pullPolicy }}
         name: manager
         securityContext:
           allowPrivilegeEscalation: true
@@ -65,15 +170,34 @@ spec:
             add:
             - "ALL"
           privileged: true
-        {{- if .Values.manager.webhook.enabled }}
+        {{- if or .Values.manager.webhook.enabled .Values.manager.metrics.enabled }}
         ports:
+          {{- if .Values.manager.webhook.enabled }}
           - name: webhook-server
             containerPort: 9443
             protocol: TCP
+          {{- end }}
+          {{- if .Values.manager.metrics.enabled }}
+          - name: metrics
+            containerPort: {{ .Values.manager.metrics.service.port }}
+            protocol: TCP
+          {{- end }}
+        {{- end }}
+        {{- if or .Values.manager.webhook.enabled .Values.manager.trustedCA.configMapName .Values.manager.extraVolumeMounts }}
         volumeMounts:
+          {{- if .Values.manager.webhook.enabled }}
           - name: webhook-cert
             mountPath: /tmp/k8s-webhook-server/serving-certs
             readOnly: true
+          {{- end }}
+          {{- if .Values.manager.trustedCA.configMapName }}
+          - name: trusted-ca
+            mountPath: {{ .Values.manager.trustedCA.mountPath | quote }}
+            readOnly: true
+          {{- end }}
+          {{- with .Values.manager.extraVolumeMounts }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
         {{- end }}
         livenessProbe:
           httpGet:
@@ -95,12 +219,22 @@ spec:
           {{- toYaml .Values.manager.resources | nindent 12 }}
       serviceAccountName: {{ include "kube-dc.manager.serviceAccountName" . }}
       terminationGracePeriodSeconds: 10
-      {{- if .Values.manager.webhook.enabled }}
+      {{- if or .Values.manager.webhook.enabled .Values.manager.trustedCA.configMapName .Values.manager.extraVolumes }}
       volumes:
+        {{- if .Values.manager.webhook.enabled }}
         - name: webhook-cert
           secret:
             secretName: {{ include "kube-dc.manager.fullname" . }}-webhook-serving-cert
             defaultMode: 420
+        {{- end }}
+        {{- if .Values.manager.trustedCA.configMapName }}
+        - name: trusted-ca
+          configMap:
+            name: {{ .Values.manager.trustedCA.configMapName | quote }}
+        {{- end }}
+        {{- with .Values.manager.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- end }}
       {{- with .Values.manager.nodeSelector }}
       nodeSelector:

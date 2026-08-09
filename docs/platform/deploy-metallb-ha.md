@@ -83,7 +83,11 @@ that might recreate the Service. It is a no-op while the Service exists.
   via the configured BGP peer (for `metallb-bgp`).
 - Every node that may announce it runs a MetalLB **speaker** and carries
   `ovn.kubernetes.io/external-gw` — the shared advertisement selects on that label.
-- The ingress set (`kube-dc.com/ingress`) is a **subset** of the announcer set. See
+- The ingress set (`kube-dc.com/ingress`) is a **subset** of the announcer set — now
+  enforced in both directions: `kube-dc bootstrap init` refuses a non-subset set before
+  writing anything, and `frontdoor-check.sh preflight` refuses it against the live
+  cluster. A *partial* overlap is refused too: the single node in both sets can announce,
+  which makes it a point of failure that looks like HA. See
   [the co-location invariant](#when-the-vip-is-announced-by-nobody).
 - On CloudSigma: the masters' public NICs must be in **manual** mode via the CloudSigma
   API, which allows traffic for all subscribed IPs on that NIC including the VIP. Without

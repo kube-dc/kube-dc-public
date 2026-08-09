@@ -1,0 +1,114 @@
+{{- $vmProfiles := list -}}
+{{- range $profile := .Values.gpu.profiles -}}
+{{- if and $profile.enabled (eq $profile.workload "vm") -}}
+{{- $vmProfiles = append $vmProfiles $profile -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.gpu.enabled (gt (len $vmProfiles) 0) }}
+{{- $profileLabel := required "gpu.profileLabel is required when a VM GPU profile is enabled" .Values.gpu.profileLabel -}}
+{{- $profileIDs := list -}}
+{{- range $profile := $vmProfiles -}}
+{{- $profileID := required "enabled VM GPU profiles require id" $profile.id -}}
+{{- $resourceName := required (printf "gpu profile %s requires resourceName" $profileID) $profile.resourceName -}}
+{{- $profileIDs = append $profileIDs $profileID -}}
+{{- end -}}
+# VM and VMI policies are separate so the API server type-checks each native
+# KubeVirt object path. The VM requires the profile label on both the outer
+# object and its template; the latter makes controller-created VMIs enforceable.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: kube-dc-gpu-virtualmachines
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["kubevirt.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["virtualmachines"]
+  matchConditions:
+    - name: exclude-cluster-admins
+      expression: >-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !('system:masters' in request.userInfo.groups)
+  variables:
+    - name: guestSpec
+      expression: object.spec.template.spec
+{{ include "kube-dc.gpuVirtualMachineVariables" (dict "profileLabel" $profileLabel) | nindent 4 }}
+    - name: templateHasProfileLabel
+      expression: >-
+        has(object.spec.template.metadata.labels) &&
+        {{ $profileLabel | quote }} in object.spec.template.metadata.labels
+  validations:
+    - expression: >-
+        !variables.hasGPU ||
+        (variables.hasProfileLabel &&
+         object.metadata.labels[{{ $profileLabel | quote }}] in {{ $profileIDs | toJson }})
+      message: "GPU VMs require an enabled kube-dc GPU profile label."
+    - expression: >-
+        !variables.hasProfileLabel ||
+        (variables.hasGPU && variables.templateHasProfileLabel &&
+         dyn(object.spec.template.metadata).labels[{{ $profileLabel | quote }}] ==
+           object.metadata.labels[{{ $profileLabel | quote }}])
+      message: "The GPU profile label is unknown, missing from the VMI template, or has no GPU device."
+{{ include "kube-dc.gpuVirtualMachineValidations" (dict "profiles" $vmProfiles "profileLabel" $profileLabel) | nindent 4 }}
+
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: kube-dc-gpu-virtualmachines
+spec:
+  policyName: kube-dc-gpu-virtualmachines
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: kube-dc-gpu-virtualmachineinstances
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["kubevirt.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["virtualmachineinstances"]
+  matchConditions:
+    - name: exclude-cluster-admins
+      expression: >-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !('system:masters' in request.userInfo.groups)
+  variables:
+    - name: guestSpec
+      expression: object.spec
+{{ include "kube-dc.gpuVirtualMachineVariables" (dict "profileLabel" $profileLabel) | nindent 4 }}
+  validations:
+    - expression: >-
+        !variables.hasGPU ||
+        (variables.hasProfileLabel &&
+         object.metadata.labels[{{ $profileLabel | quote }}] in {{ $profileIDs | toJson }})
+      message: "GPU VMIs require an enabled kube-dc GPU profile label."
+    - expression: variables.hasGPU == variables.hasProfileLabel
+      message: "The GPU profile label is unknown or the VMI has no GPU device."
+{{ include "kube-dc.gpuVirtualMachineValidations" (dict "profiles" $vmProfiles "profileLabel" $profileLabel) | nindent 4 }}
+
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: kube-dc-gpu-virtualmachineinstances
+spec:
+  policyName: kube-dc-gpu-virtualmachineinstances
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+{{- end }}

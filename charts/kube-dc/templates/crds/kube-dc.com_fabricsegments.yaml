@@ -1,0 +1,291 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.4
+    helm.sh/resource-policy: keep
+  name: fabricsegments.kube-dc.com
+spec:
+  group: kube-dc.com
+  names:
+    kind: FabricSegment
+    listKind: FabricSegmentList
+    plural: fabricsegments
+    shortNames:
+    - fabseg
+    singular: fabricsegment
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.driver
+      name: Driver
+      type: string
+    - jsonPath: .spec.vlanId
+      name: VLAN
+      type: integer
+    - jsonPath: .spec.providerNetwork
+      name: Uplink
+      type: string
+    - jsonPath: .status.ready
+      name: Ready
+      type: boolean
+    - jsonPath: .status.boundTo
+      name: Bound To
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          FabricSegment is the Schema for the fabricsegments API. It is the admin-owned
+          declaration of one physical L2 broadcast domain, and the unit of tenant
+          exclusivity — see FabricSegmentName for why the object's name is derived.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              FabricSegmentSpec declares one physical L2 broadcast domain that the platform
+              admin has trunked to (some of) the cluster nodes.
+            properties:
+              bridge:
+                description: |-
+                  Bridge is the name of a dedicated host Linux bridge that carries this
+                  VLAN. Required for the linux-bridge driver, and it must NOT be an OVS
+                  bridge created by a kube-ovn ProviderNetwork: the bridge plugin cannot
+                  attach to an OVS bridge and one uplink cannot belong to both.
+                maxLength: 15
+                type: string
+                x-kubernetes-validations:
+                - message: bridge is immutable
+                  rule: self == oldSelf
+              driver:
+                description: |-
+                  Driver selects the datapath used to reach this segment. It participates in
+                  the object's name, so it is immutable.
+                enum:
+                - kube-ovn-underlay
+                - ovs-cni
+                - linux-bridge
+                type: string
+                x-kubernetes-validations:
+                - message: driver is immutable
+                  rule: self == oldSelf
+              mtu:
+                default: 1400
+                description: |-
+                  Mtu is the largest frame the segment carries. Attached Subnets and NADs
+                  inherit it, because an MTU mismatch between the overlay and the physical
+                  segment black-holes large packets while every health check stays green.
+                  Defaults to 1400, which is the ceiling imposed by common vSwitch fabrics.
+                format: int32
+                maximum: 9000
+                minimum: 576
+                type: integer
+                x-kubernetes-validations:
+                - message: mtu is immutable; drain bindings before changing the wire
+                  rule: self == oldSelf
+              nodeSelector:
+                description: |-
+                  NodeSelector restricts the segment to the nodes where the VLAN is actually
+                  trunked. This is NOT the same as the ProviderNetwork being ready: a node
+                  can have the OVS bridge initialised on its uplink and still receive no
+                  frames for this VLAN because the fabric never delivers the tag to that
+                  port. Workloads attaching to this segment get a required node affinity
+                  derived from the matching nodes, so admission never succeeds onto a node
+                  where the datapath would silently fail.
+
+                  Empty means every node that the ProviderNetwork reports ready.
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: |-
+                        A label selector requirement is a selector that contains values, a key, and an operator that
+                        relates the key and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: |-
+                            operator represents a key's relationship to a set of values.
+                            Valid operators are In, NotIn, Exists and DoesNotExist.
+                          type: string
+                        values:
+                          description: |-
+                            values is an array of string values. If the operator is In or NotIn,
+                            the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                            the values array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                      map is equivalent to an element of matchExpressions, whose key field is "key", the
+                      operator is "In", and the values array contains only "value". The requirements are ANDed.
+                    type: object
+                type: object
+                x-kubernetes-map-type: atomic
+                x-kubernetes-validations:
+                - message: nodeSelector is immutable; drain bindings before changing
+                    VLAN delivery
+                  rule: self == oldSelf
+              providerNetwork:
+                description: |-
+                  ProviderNetwork is the name of the existing kube-ovn ProviderNetwork whose
+                  uplink NIC carries this VLAN. Required for the kube-ovn-underlay and
+                  ovs-cni drivers. The ProviderNetwork must already exist — this feature
+                  never takes over a host NIC.
+                maxLength: 12
+                type: string
+                x-kubernetes-validations:
+                - message: providerNetwork is immutable
+                  rule: self == oldSelf
+              vlanId:
+                description: VlanId is the 802.1Q tag of the segment.
+                format: int32
+                maximum: 4094
+                minimum: 1
+                type: integer
+                x-kubernetes-validations:
+                - message: vlanId is immutable
+                  rule: self == oldSelf
+            required:
+            - driver
+            - vlanId
+            type: object
+          status:
+            description: FabricSegmentStatus reports whether the segment is usable
+              and where.
+            properties:
+              boundTo:
+                description: |-
+                  BoundTo names the ProjectNetwork that currently holds this segment, or is
+                  empty when the segment is unclaimed. A segment is claimed by at most one
+                  project: separate Subnets and NADs do not isolate two tenants that share a
+                  broadcast domain.
+                type: string
+              conditions:
+                description: Conditions represents the latest available observations
+                  of the segment's current state
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              foreignObjects:
+                description: |-
+                  ForeignObjects lists kube-ovn objects that sit on this wire but were not
+                  created for its owner — a second Subnet, a duplicate Vlan.
+
+                  Admission refuses to create these, and the attachment gate denies workloads
+                  that name them, but neither helps for objects that predate the binding or
+                  were written while the guard was off. Surfacing them is what turns "the
+                  gate is denying something odd" into "an operator can see the alias".
+                items:
+                  type: string
+                type: array
+              ready:
+                default: false
+                description: |-
+                  Ready is true when the underlying uplink is present and at least one node
+                  carries the segment.
+                type: boolean
+              readyNodes:
+                description: |-
+                  ReadyNodes lists the nodes where a workload on this segment can actually
+                  be scheduled: the ProviderNetwork's ready nodes intersected with
+                  spec.nodeSelector.
+                items:
+                  type: string
+                type: array
+            required:
+            - ready
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

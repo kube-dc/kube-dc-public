@@ -154,6 +154,7 @@ func TestPanel_ValidationGate(t *testing.T) {
 	m.st.KubeOVNMasterNodes = "10.77.0.22"
 	m.st.NetInterface = "enp1s0"
 	m.st.NetVLANID = "0"
+	m.st.IngressAddressLayer = clusterinit.AddressLayerMetalLBL2
 	m.st.MetalLBMode = "l2"
 	m.st.MetalLBVIP = "100.65.0.20"
 	m.st.MetalLBInterface = "br-ext-cloud"
@@ -168,7 +169,8 @@ func TestPanel_DisabledNeedsConsent(t *testing.T) {
 		Name: "e2e", Domain: "e2e.kube-dc.cloud", NodeIP: "203.0.113.52",
 		Email: "ops@example.com", KubeOVNMasterNodes: "10.77.0.22",
 		NetInterface: "enp1s0", NetVLANID: "0",
-		MetalLBMode: "l2", MetalLBVIP: "100.65.0.20", MetalLBInterface: "br-ext-cloud",
+		IngressAddressLayer: clusterinit.AddressLayerMetalLBL2,
+		MetalLBMode:         "l2", MetalLBVIP: "100.65.0.20", MetalLBInterface: "br-ext-cloud",
 	}, "")
 	if len(m.validationErrors()) == 0 {
 		t.Error("disabled object storage without consent must block Apply")
@@ -249,7 +251,8 @@ func TestPanel_PresetRequiredKeysSurfaced(t *testing.T) {
 		Mode: "install", Preset: "cloud+public-vlan", OSMode: "rook-ceph-local",
 		Name: "dc1", Domain: "kdc.example.com", NodeIP: "203.0.113.10", Email: "ops@example.com",
 		NetInterface: "bond0", NetVLANID: "100", KubeOVNMasterNodes: "10.0.0.5", OSDNode: "dc1-m1",
-		MetalLBMode: "l2", MetalLBVIP: "100.65.0.20", MetalLBInterface: "br-ext-cloud",
+		IngressAddressLayer: clusterinit.AddressLayerMetalLBL2,
+		MetalLBMode:         "l2", MetalLBVIP: "100.65.0.20", MetalLBInterface: "br-ext-cloud",
 	}, "")
 	if len(m.validationErrors()) == 0 {
 		t.Fatal("cloud+public-vlan with empty EXT_PUBLIC_* must not report ready")
@@ -359,7 +362,8 @@ func TestPanel_ProducesValidInitOptions(t *testing.T) {
 		Mode: "install", FleetMode: "new-repo", Provider: "github",
 		Owner: "kube-dc", RepoName: "e2e-fleet-r5", Preset: "internal-only",
 		NetVLANID: "0", NetInterface: "enp1s0", KubeOVNMasterNodes: "10.77.0.22",
-		MetalLBMode: "l2", MetalLBVIP: "100.65.0.20", MetalLBInterface: "br-ext-cloud",
+		IngressAddressLayer: clusterinit.AddressLayerMetalLBL2,
+		MetalLBMode:         "l2", MetalLBVIP: "100.65.0.20", MetalLBInterface: "br-ext-cloud",
 		OSMode: "rook-ceph-local", OSDNode: "e2e-master-1", OSDSizeGB: "40",
 	}
 	o := &clusterinit.InitOptions{Yes: true}

@@ -21,11 +21,11 @@ const (
 // preserve the raw JSON so `-o yaml` and `-o json` outputs round-trip
 // the full object without us needing to model every field.
 type ManagedSecret struct {
-	APIVersion string                 `json:"apiVersion"`
-	Kind       string                 `json:"kind"`
-	Metadata   ObjectMeta             `json:"metadata"`
-	Spec       ManagedSecretSpec      `json:"spec"`
-	Status     ManagedSecretStatus    `json:"status,omitempty"`
+	APIVersion string              `json:"apiVersion"`
+	Kind       string              `json:"kind"`
+	Metadata   ObjectMeta          `json:"metadata"`
+	Spec       ManagedSecretSpec   `json:"spec"`
+	Status     ManagedSecretStatus `json:"status,omitempty"`
 }
 
 type ObjectMeta struct {
@@ -37,10 +37,10 @@ type ObjectMeta struct {
 }
 
 type ManagedSecretSpec struct {
-	Type        string                 `json:"type"`
-	Description string                 `json:"description,omitempty"`
-	Rotation    map[string]any         `json:"rotation,omitempty"`
-	Sync        ManagedSecretSyncSpec  `json:"sync,omitempty"`
+	Type        string                `json:"type"`
+	Description string                `json:"description,omitempty"`
+	Rotation    map[string]any        `json:"rotation,omitempty"`
+	Sync        ManagedSecretSyncSpec `json:"sync,omitempty"`
 }
 
 type ManagedSecretSyncSpec struct {

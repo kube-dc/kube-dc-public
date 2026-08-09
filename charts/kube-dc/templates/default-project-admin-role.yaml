@@ -16,7 +16,9 @@ rules:
   verbs: ["*"]
 - apiGroups: [""]
   resources: [resourcequotas]
-  verbs: [get, list, watch, create, update, delete]
+  # ResourceQuotas are owned by the HNC and kube-dc quota controllers. Tenant
+  # mutation would let a project admin spoof quota attribution in API/UI data.
+  verbs: [get, list, watch]
 - apiGroups: [""]
   resources: [limitranges]
   verbs: [get, list, watch]
@@ -30,9 +32,6 @@ rules:
   resources: [pods/log]
   verbs: [get, list]
 - apiGroups: [""]
-  resources: [pods/exec]
-  verbs: [create]
-- apiGroups: [""]
   resources: [events]
   verbs: [get, list, watch]
 # Metrics (kubectl top pods)
@@ -43,6 +42,17 @@ rules:
 - apiGroups: [apps]
   resources: [deployments]
   verbs: ["*"]
+{{- if .Values.gpu.tenantDirectApply }}
+# Shared GPU (DRA) self-service. The DRA shape admission policies force the exact
+# fixed product and the per-DeviceClass ResourceQuota bounds count, so this grant
+# cannot exceed the project's GPU entitlement.
+- apiGroups: [resource.k8s.io]
+  resources: [resourceclaimtemplates]
+  verbs: [create, get, list, watch, update, patch, delete]
+- apiGroups: [resource.k8s.io]
+  resources: [resourceclaims]
+  verbs: [get, list, watch]
+{{- end }}
 - apiGroups: [apps]
   resources: [daemonsets, replicasets, statefulsets]
   verbs: [create, get, list, watch, delete]
@@ -212,9 +222,6 @@ rules:
   resources: [pods/log]
   verbs: [get, list]
 - apiGroups: [""]
-  resources: [pods/exec]
-  verbs: [create]
-- apiGroups: [""]
   resources: [events]
   verbs: [get, list, watch]
 # Metrics (kubectl top pods)
@@ -225,6 +232,15 @@ rules:
 - apiGroups: [apps]
   resources: [deployments, daemonsets, replicasets, statefulsets]
   verbs: [create, get, list, watch, delete, update, patch]
+{{- if .Values.gpu.tenantDirectApply }}
+# Shared GPU (DRA) self-service — see admin role note.
+- apiGroups: [resource.k8s.io]
+  resources: [resourceclaimtemplates]
+  verbs: [create, get, list, watch, update, patch, delete]
+- apiGroups: [resource.k8s.io]
+  resources: [resourceclaims]
+  verbs: [get, list, watch]
+{{- end }}
 # Networking
 - apiGroups: [k8s.cni.cncf.io]
   resources: [network-attachment-definitions]
@@ -389,6 +405,12 @@ rules:
 - apiGroups: [apps]
   resources: [deployments, daemonsets, replicasets, statefulsets]
   verbs: [get, list, watch]
+{{- if .Values.gpu.tenantDirectApply }}
+# Shared GPU (DRA) read-only visibility
+- apiGroups: [resource.k8s.io]
+  resources: [resourceclaimtemplates, resourceclaims]
+  verbs: [get, list, watch]
+{{- end }}
 # Networking - read only
 - apiGroups: [k8s.cni.cncf.io]
   resources: [network-attachment-definitions]
@@ -537,6 +559,12 @@ rules:
 - apiGroups: [apps]
   resources: [deployments, daemonsets, replicasets, statefulsets]
   verbs: [get, list]
+{{- if .Values.gpu.tenantDirectApply }}
+# Shared GPU (DRA) read-only visibility
+- apiGroups: [resource.k8s.io]
+  resources: [resourceclaimtemplates, resourceclaims]
+  verbs: [get, list]
+{{- end }}
 # Networking - read only
 - apiGroups: [k8s.cni.cncf.io]
   resources: [network-attachment-definitions]

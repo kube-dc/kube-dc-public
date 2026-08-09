@@ -25,6 +25,16 @@ rules:
 - apiGroups: [""]
   resources: [pods]
   verbs: [get, list, patch, watch]
+# The dual-home gate (db-manager >= v0.1.12) follows the mgmt Service's
+# Endpoints to the backing pod, to prove it actually carries the infra NIC
+# before dropping the `-ext` management endpoint from OpenBao's stored
+# ConnectionURL. Same reasoning as the namespaces rule above: list+watch, not
+# get, or controller-runtime's informer logs "Failed to watch *v1.Endpoints:
+# forbidden" in a loop and the cache never syncs — which is exactly what
+# happened on a live cluster 2026-07-19 when the code shipped without this.
+- apiGroups: [""]
+  resources: [endpoints]
+  verbs: [get, list, watch]
 # PVC delete is required by the in-place restore flow: db-manager removes
 # the engine cluster's PVCs after deleting the engine CR so the new
 # Cluster/MariaDB bootstraps onto fresh volumes (CNPG/mariadb-operator

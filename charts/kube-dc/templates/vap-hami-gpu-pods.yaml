@@ -1,0 +1,328 @@
+{{- $podHamiProfiles := list -}}
+{{- $hamiProfiles := list -}}
+{{- $draProfileIDs := list -}}
+{{- $vmProfiles := list -}}
+{{- range $profile := .Values.gpu.profiles -}}
+{{- if and $profile.enabled (eq $profile.workload "pod") (eq $profile.allocation "hami") -}}
+{{- $podHamiProfiles = append $podHamiProfiles $profile -}}
+{{- if eq ($profile.allocationBackend | default "") "dra" -}}
+{{- $draProfileIDs = append $draProfileIDs $profile.id -}}
+{{- else -}}
+{{- $hamiProfiles = append $hamiProfiles $profile -}}
+{{- end -}}
+{{- end -}}
+{{- if and $profile.enabled (eq $profile.workload "vm") (eq $profile.allocation "passthrough") -}}
+{{- $vmProfiles = append $vmProfiles $profile -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.gpu.enabled (gt (len $podHamiProfiles) 0) }}
+{{- $profileLabel := required "gpu.profileLabel is required when a HAMi profile is enabled" .Values.gpu.profileLabel -}}
+{{- $schedulerName := required "gpu.hamiSchedulerName is required when a HAMi profile is enabled" .Values.gpu.hamiSchedulerName -}}
+{{- $profileIDs := list -}}
+{{- $hamiResourceNames := list -}}
+{{- $vmProfileIDs := list -}}
+{{- $vmResourceNames := list -}}
+{{- $kubevirtControllerUsername := "" -}}
+{{- $deniedHamiResourceNames := .Values.gpu.hamiDeniedResourceNames | default (list) -}}
+{{- range $profile := $hamiProfiles -}}
+{{- $request := required (printf "gpu profile %s requires request bounds" $profile.id) $profile.request -}}
+{{- $countResource := required (printf "gpu profile %s requires request.countResource" $profile.id) $request.countResource -}}
+{{- $memoryResource := required (printf "gpu profile %s requires request.memoryResource" $profile.id) $request.memoryResource -}}
+{{- $coreResource := required (printf "gpu profile %s requires request.coreResource" $profile.id) $request.coreResource -}}
+{{- if ne $countResource $profile.resourceName -}}
+{{- fail (printf "gpu profile %s request.countResource must equal resourceName" $profile.id) -}}
+{{- end -}}
+{{- if ne (len (uniq (list $countResource $memoryResource $coreResource))) 3 -}}
+{{- fail (printf "gpu profile %s request count, memory, and core resources must be distinct" $profile.id) -}}
+{{- end -}}
+{{- if or (le (int $request.minMemoryMiB) 0) (le (int $request.memoryStepMiB) 0) -}}
+{{- fail (printf "gpu profile %s request memory minimum and step must be greater than zero" $profile.id) -}}
+{{- end -}}
+{{- if gt (int $request.minMemoryMiB) (int $profile.memoryMiB) -}}
+{{- fail (printf "gpu profile %s request.minMemoryMiB cannot exceed memoryMiB" $profile.id) -}}
+{{- end -}}
+{{- if or (le (int $request.minCorePercent) 0) (gt (int $request.minCorePercent) 100) (le (int $request.coreStepPercent) 0) (gt (int $request.coreStepPercent) 100) -}}
+{{- fail (printf "gpu profile %s request core minimum and step must be between 1 and 100" $profile.id) -}}
+{{- end -}}
+{{- if and (hasKey $request "allowCustom") (not (kindIs "bool" $request.allowCustom)) -}}
+{{- fail (printf "gpu profile %s request.allowCustom must be a boolean" $profile.id) -}}
+{{- end -}}
+{{- $presetIDs := dict -}}
+{{- $defaultPresetCount := 0 -}}
+{{- range $preset := ($request.presets | default (list)) -}}
+{{- $presetID := required (printf "gpu profile %s request preset requires id" $profile.id) $preset.id -}}
+{{- if or (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $presetID)) (hasKey $presetIDs $presetID) -}}
+{{- fail (printf "gpu profile %s has an invalid or duplicate request preset ID" $profile.id) -}}
+{{- end -}}
+{{- $_ := set $presetIDs $presetID true -}}
+{{- $_ = required (printf "gpu profile %s request preset %s requires displayName" $profile.id $presetID) $preset.displayName -}}
+{{- $presetMemory := int $preset.memoryMiB -}}
+{{- if or (lt $presetMemory (int $request.minMemoryMiB)) (gt $presetMemory (int $profile.memoryMiB)) (ne (mod (sub $presetMemory (int $request.minMemoryMiB)) (int $request.memoryStepMiB)) 0) -}}
+{{- fail (printf "gpu profile %s request preset %s has invalid memoryMiB" $profile.id $presetID) -}}
+{{- end -}}
+{{- $presetCore := int $preset.corePercent -}}
+{{- if or (lt $presetCore (int $request.minCorePercent)) (gt $presetCore 100) (ne (mod (sub $presetCore (int $request.minCorePercent)) (int $request.coreStepPercent)) 0) -}}
+{{- fail (printf "gpu profile %s request preset %s has invalid corePercent" $profile.id $presetID) -}}
+{{- end -}}
+{{- if ($preset.default | default false) -}}
+{{- $defaultPresetCount = add1 $defaultPresetCount -}}
+{{- end -}}
+{{- end -}}
+{{- if gt $defaultPresetCount 1 -}}
+{{- fail (printf "gpu profile %s request presets may contain at most one default" $profile.id) -}}
+{{- end -}}
+{{- $profileIDs = append $profileIDs $profile.id -}}
+{{- $hamiResourceNames = append $hamiResourceNames $countResource -}}
+{{- $hamiResourceNames = append $hamiResourceNames $memoryResource -}}
+{{- $hamiResourceNames = append $hamiResourceNames $coreResource -}}
+{{- end -}}
+{{- $hamiResourceNames = uniq $hamiResourceNames -}}
+{{- range $profile := $vmProfiles -}}
+{{- $vmProfileIDs = append $vmProfileIDs $profile.id -}}
+{{- $vmResourceNames = append $vmResourceNames $profile.resourceName -}}
+{{- end -}}
+{{- $vmResourceNames = uniq $vmResourceNames -}}
+{{- $protectedResourceNames := concat $hamiResourceNames $vmResourceNames | uniq -}}
+{{- range $profile := $podHamiProfiles -}}
+{{- if and (eq ($profile.allocationBackend | default "") "dra") (not (has $profile.resourceName $protectedResourceNames)) -}}
+{{- $deniedHamiResourceNames = append $deniedHamiResourceNames $profile.resourceName -}}
+{{- end -}}
+{{- end -}}
+{{- $deniedHamiResourceNames = uniq $deniedHamiResourceNames -}}
+{{- if gt (len $vmProfiles) 0 -}}
+{{- $kubevirtControllerUsername = required "gpu.kubevirtControllerUsername is required when a VM passthrough profile is enabled" .Values.gpu.kubevirtControllerUsername -}}
+{{- end -}}
+# Catalog-derived guardrails for fractional HAMi Pods. The binding deliberately
+# has no workload-controller exemption: a tenant Deployment must not bypass the
+# policy merely because kube-controller-manager creates its Pods.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: kube-dc-hami-gpu-pods
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods", "pods/ephemeralcontainers"]
+  matchConditions:
+    - name: exclude-cluster-admins
+      expression: >-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !('system:masters' in request.userInfo.groups)
+  variables:
+    - name: workloadContainers
+      expression: object.spec.containers
+    - name: nonWorkloadContainers
+      expression: >-
+        [] +
+        (has(object.spec.initContainers) ? object.spec.initContainers : []) +
+        (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers : [])
+    - name: allContainers
+      expression: >-
+        object.spec.containers +
+        (has(object.spec.initContainers) ? object.spec.initContainers : []) +
+        (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers : [])
+    - name: hasProfileLabel
+      expression: >-
+        has(object.metadata.labels) &&
+        {{ $profileLabel | quote }} in object.metadata.labels
+    - name: hasHamiResources
+      expression: >-
+        variables.allContainers.exists(c,
+          has(c.resources) &&
+          {{ $hamiResourceNames | toJson }}.exists(r,
+            (has(c.resources.requests) && r in c.resources.requests) ||
+            (has(c.resources.limits) && r in c.resources.limits)))
+{{- if gt (len $vmProfiles) 0 }}
+    - name: hasVMResources
+      expression: >-
+        variables.allContainers.exists(c,
+          has(c.resources) &&
+          {{ $vmResourceNames | toJson }}.exists(r,
+            (has(c.resources.requests) && r in c.resources.requests) ||
+            (has(c.resources.limits) && r in c.resources.limits)))
+    - name: hasVMProfileLabel
+      expression: >-
+        variables.hasProfileLabel &&
+        object.metadata.labels[{{ $profileLabel | quote }}] in {{ $vmProfileIDs | toJson }}
+    - name: hasVmiOwner
+      expression: >-
+        has(object.metadata.ownerReferences) &&
+        object.metadata.ownerReferences.exists(o,
+          o.apiVersion.startsWith('kubevirt.io/') &&
+          o.kind == 'VirtualMachineInstance' &&
+          has(o.controller) && o.controller == true)
+{{- end }}
+  validations:
+    - expression: >-
+        !variables.hasHamiResources ||
+        (variables.hasProfileLabel &&
+         object.metadata.labels[{{ $profileLabel | quote }}] in {{ $profileIDs | toJson }})
+      message: "Shared GPU requests require an enabled kube-dc GPU profile label."
+    - expression: >-
+        variables.allContainers.all(c,
+          !has(c.resources) ||
+          {{ $deniedHamiResourceNames | toJson }}.all(r,
+            (!has(c.resources.requests) || !(r in c.resources.requests)) &&
+            (!has(c.resources.limits) || !(r in c.resources.limits))))
+      message: "This HAMi-native resource is not supported by the selected kube-dc GPU profile."
+    - expression: >-
+        !variables.hasProfileLabel ||
+        object.metadata.labels[{{ $profileLabel | quote }}] in {{ $draProfileIDs | toJson }} ||
+        (object.metadata.labels[{{ $profileLabel | quote }}] in {{ $profileIDs | toJson }} &&
+         variables.hasHamiResources){{ if gt (len $vmProfiles) 0 }} ||
+        variables.hasVMProfileLabel{{ end }}
+      message: "The kube-dc GPU profile label is unknown or the Pod does not request that profile."
+{{- if gt (len $vmProfiles) 0 }}
+    - expression: >-
+        !variables.hasVMProfileLabel ||
+        (variables.hasVMResources && variables.hasVmiOwner)
+      message: "GPU VM launcher Pods must carry their VMI owner and selected device resource."
+    - expression: >-
+        !variables.hasVMResources ||
+        (variables.hasVMProfileLabel &&
+         variables.hasVmiOwner &&
+         (request.operation != 'CREATE' ||
+          request.userInfo.username == {{ $kubevirtControllerUsername | quote }}))
+      message: "Whole-GPU VM resources may only be requested by KubeVirt launcher Pods."
+    - expression: >-
+        !variables.hasVMProfileLabel ||
+        !has(object.spec.ephemeralContainers) ||
+        size(object.spec.ephemeralContainers) == 0
+      message: "Ephemeral containers cannot be attached to GPU VM launcher Pods."
+{{- end }}
+    - expression: >-
+        !variables.hasHamiResources ||
+        (!has(object.metadata.labels) ||
+         !('hami.io/webhook' in object.metadata.labels))
+      message: "Shared GPU Pods cannot bypass the HAMi admission webhook."
+    - expression: >-
+        !variables.hasHamiResources ||
+        (has(object.spec.schedulerName) &&
+         object.spec.schedulerName == {{ $schedulerName | quote }})
+      message: "Shared GPU Pods must use the platform GPU scheduler."
+    - expression: >-
+        !variables.hasHamiResources ||
+        ((request.operation != 'CREATE' ||
+          !has(object.spec.nodeName) || object.spec.nodeName == '') &&
+         (!has(object.spec.nodeSelector) || size(object.spec.nodeSelector) == 0) &&
+         (!has(object.spec.affinity) || !has(object.spec.affinity.nodeAffinity)) &&
+         (!has(object.spec.runtimeClassName) || object.spec.runtimeClassName == ''))
+      message: "Shared GPU Pods cannot select a node, node affinity, or custom runtime directly."
+    - expression: >-
+        !variables.hasHamiResources ||
+        ((!has(object.spec.hostNetwork) || object.spec.hostNetwork == false) &&
+         (!has(object.spec.hostPID) || object.spec.hostPID == false) &&
+         (!has(object.spec.hostIPC) || object.spec.hostIPC == false) &&
+         (!has(object.spec.volumes) || object.spec.volumes.all(v, !has(v.hostPath))))
+      message: "Shared GPU Pods cannot use host namespaces or hostPath volumes."
+    - expression: >-
+        !variables.hasHamiResources ||
+        variables.allContainers.all(c,
+          (!has(c.securityContext) ||
+           ((!has(c.securityContext.privileged) || c.securityContext.privileged == false) &&
+            (!has(c.securityContext.allowPrivilegeEscalation) ||
+             c.securityContext.allowPrivilegeEscalation == false) &&
+            (!has(c.securityContext.capabilities) ||
+             !has(c.securityContext.capabilities.add) ||
+             size(c.securityContext.capabilities.add) == 0))) &&
+          (!has(c.volumeDevices) || size(c.volumeDevices) == 0))
+      message: "Shared GPU Pods cannot use privileged, added-capability, device, or DinD-style access."
+    - expression: >-
+        !variables.hasHamiResources ||
+        variables.allContainers.all(c,
+          !has(c.env) || c.env.all(e, e.name != 'CUDA_DISABLE_CONTROL'))
+      message: "CUDA_DISABLE_CONTROL is not allowed for shared GPU Pods."
+    - expression: >-
+        !variables.hasHamiResources ||
+        variables.allContainers.all(c,
+          !has(c.envFrom) || size(c.envFrom) == 0)
+      message: "envFrom is not allowed for shared GPU Pods because imported variables cannot be admission-validated."
+    - expression: >-
+        !variables.hasHamiResources ||
+        variables.nonWorkloadContainers.all(c,
+           !has(c.resources) ||
+           {{ $hamiResourceNames | toJson }}.all(r,
+             (!has(c.resources.requests) || !(r in c.resources.requests)) &&
+             (!has(c.resources.limits) || !(r in c.resources.limits))))
+      message: "Shared GPU resources may only be requested by regular workload containers."
+{{- range $profile := $hamiProfiles }}
+{{- $request := $profile.request }}
+{{- $profileResourceNames := list $request.countResource $request.memoryResource $request.coreResource | uniq }}
+    - expression: >-
+        !variables.hasProfileLabel ||
+        object.metadata.labels[{{ $profileLabel | quote }}] != {{ $profile.id | quote }} ||
+        variables.workloadContainers.all(c,
+          !has(c.resources) ||
+          !{{ $hamiResourceNames | toJson }}.exists(r,
+            (has(c.resources.requests) && r in c.resources.requests) ||
+            (has(c.resources.limits) && r in c.resources.limits)) ||
+          (has(c.resources.requests) && has(c.resources.limits) &&
+           {{ $hamiResourceNames | toJson }}.all(r,
+             ((!has(c.resources.requests) || !(r in c.resources.requests)) &&
+              (!has(c.resources.limits) || !(r in c.resources.limits))) ||
+             r in {{ $profileResourceNames | toJson }}) &&
+           {{ $request.countResource | quote }} in c.resources.requests &&
+           {{ $request.countResource | quote }} in c.resources.limits &&
+           quantity(c.resources.requests[{{ $request.countResource | quote }}]).compareTo(
+             quantity(c.resources.limits[{{ $request.countResource | quote }}])) == 0 &&
+           quantity(c.resources.limits[{{ $request.countResource | quote }}]).isInteger() &&
+           quantity(c.resources.limits[{{ $request.countResource | quote }}]).asInteger() == 1 &&
+           {{ $request.memoryResource | quote }} in c.resources.requests &&
+           {{ $request.memoryResource | quote }} in c.resources.limits &&
+           quantity(c.resources.requests[{{ $request.memoryResource | quote }}]).compareTo(
+             quantity(c.resources.limits[{{ $request.memoryResource | quote }}])) == 0 &&
+           quantity(c.resources.limits[{{ $request.memoryResource | quote }}]).isInteger() &&
+           quantity(c.resources.limits[{{ $request.memoryResource | quote }}]).asInteger() >=
+             {{ $request.minMemoryMiB }} &&
+           quantity(c.resources.limits[{{ $request.memoryResource | quote }}]).asInteger() <=
+             {{ $profile.memoryMiB }} &&
+           (quantity(c.resources.limits[{{ $request.memoryResource | quote }}]).asInteger() -
+             {{ $request.minMemoryMiB }}) % {{ $request.memoryStepMiB }} == 0 &&
+           {{ $request.coreResource | quote }} in c.resources.requests &&
+           {{ $request.coreResource | quote }} in c.resources.limits &&
+           quantity(c.resources.requests[{{ $request.coreResource | quote }}]).compareTo(
+             quantity(c.resources.limits[{{ $request.coreResource | quote }}])) == 0 &&
+           quantity(c.resources.limits[{{ $request.coreResource | quote }}]).isInteger() &&
+           quantity(c.resources.limits[{{ $request.coreResource | quote }}]).asInteger() >=
+             {{ $request.minCorePercent }} &&
+           quantity(c.resources.limits[{{ $request.coreResource | quote }}]).asInteger() <= 100 &&
+           (quantity(c.resources.limits[{{ $request.coreResource | quote }}]).asInteger() -
+             {{ $request.minCorePercent }}) % {{ $request.coreStepPercent }} == 0))
+      message: "Shared GPU requests must use equal requests/limits and the selected profile's memory/core increments."
+{{- end }}
+{{- range $profile := $vmProfiles }}
+    - expression: >-
+        !variables.hasProfileLabel ||
+        object.metadata.labels[{{ $profileLabel | quote }}] != {{ $profile.id | quote }} ||
+        (variables.workloadContainers.exists(c,
+           has(c.resources) &&
+           ((has(c.resources.requests) &&
+             {{ $profile.resourceName | quote }} in c.resources.requests) ||
+            (has(c.resources.limits) &&
+             {{ $profile.resourceName | quote }} in c.resources.limits))) &&
+         variables.allContainers.all(c,
+           !has(c.resources) ||
+           {{ $vmResourceNames | toJson }}.all(r,
+             r == {{ $profile.resourceName | quote }} ||
+             ((!has(c.resources.requests) || !(r in c.resources.requests)) &&
+              (!has(c.resources.limits) || !(r in c.resources.limits))))))
+      message: "GPU VM launcher Pods must request only the selected catalog profile resource."
+{{- end }}
+
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: kube-dc-hami-gpu-pods
+spec:
+  policyName: kube-dc-hami-gpu-pods
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+{{- end }}

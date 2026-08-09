@@ -33,10 +33,10 @@ type OpenBaoClient struct {
 	// M5-T08 controller-auth setup state. Tests inspect via the
 	// EnabledAuthPaths / KubernetesAuthConfigs / Policies / AuthRoles
 	// accessors below.
-	enabledAuthPaths     map[string]string                       // path -> mountType
-	kubernetesAuthCfgs   map[string]ports.KubernetesAuthConfig   // path -> config
-	policies             map[string]string                       // name -> hcl
-	authRoles            map[string]map[string]string            // "mount/role" -> params
+	enabledAuthPaths   map[string]string                     // path -> mountType
+	kubernetesAuthCfgs map[string]ports.KubernetesAuthConfig // path -> config
+	policies           map[string]string                     // name -> hcl
+	authRoles          map[string]map[string]string          // "mount/role" -> params
 }
 
 type podState struct {

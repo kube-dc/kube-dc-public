@@ -263,9 +263,9 @@ func TestRedact_Layer2_ContextDoesNotBleedToSiblings(t *testing.T) {
 func TestRedact_Layer3_EnvMap(t *testing.T) {
 	lg, _, path := newTestLogger(t, Options{})
 	env := map[string]string{
-		"GITHUB_TOKEN":   "ghp_xxx",
-		"FLEET_BRANCH":   "main",
-		"OPENBAO_TOKEN":  "abc.def",
+		"GITHUB_TOKEN":    "ghp_xxx",
+		"FLEET_BRANCH":    "main",
+		"OPENBAO_TOKEN":   "abc.def",
 		"KUBE_DC_RELEASE": "v0.3.62",
 	}
 	lg.Info("script-exec", "env", env)

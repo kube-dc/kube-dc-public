@@ -1,0 +1,18 @@
+{{- if .Values.gpu.enabled }}
+{{- if not .Values.gpu.profiles }}
+{{- fail "gpu.enabled=true requires at least one gpu.profiles entry" }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gpu-profiles
+  namespace: {{ .Release.Namespace }}
+  labels:
+    helm.sh/chart: {{ include "kube-dc.chart" . }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+data:
+  profiles.yaml: |
+    version: {{ .Values.gpu.catalogVersion }}
+    profiles:
+      {{- toYaml .Values.gpu.profiles | nindent 6 }}
+{{- end }}

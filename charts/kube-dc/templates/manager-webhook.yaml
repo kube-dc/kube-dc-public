@@ -121,6 +121,73 @@ webhooks:
         apiVersions: ["v1alpha1"]
         operations: ["CREATE", "UPDATE"]
         resources: ["databasecredentialpolicies"]
+{{- if .Values.manager.infraAttachment.enabled }}
+  # Tenant Networking v2 — infra-attachment pod mutating webhook
+  # (docs/prd/tenant-networking-v2.md). Injects the dual-NIC pattern on pods in
+  # opted-in project namespaces only.
+  #
+  # Fail closed only inside explicitly opted-in namespaces. A pod that misses
+  # this mutation is single-homed and can reopen the system-VPC egress path or
+  # make a controller endpoint unreachable; rejecting CREATE makes the
+  # preparation failure visible and retryable without affecting other tenants.
+  - name: pod-infra-attachment.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    reinvocationPolicy: Never
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchLabels:
+        network.kube-dc.com/infra-attachment: enabled
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate--v1-pod-infra-attachment
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+{{- end }}
+{{- if .Values.projectNetwork.enabled }}
+  # Tenant-VLAN attachment mutator: constrains an attaching pod to the nodes
+  # that actually carry its segment, and stamps port_security on the attached
+  # port. kube-ovn reads port_security from a workload annotation, not from the
+  # Subnet, so without this the VLAN NIC can spoof any address on the customer's
+  # wire.
+  #
+  # reinvocationPolicy: IfNeeded because the infra-attachment mutator above may
+  # ADD the networks annotation after this one has run; without re-invocation a
+  # dual-homed pod's VLAN NIC would go unstamped.
+  - name: mnetworkattach.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    reinvocationPolicy: IfNeeded
+    matchPolicy: Equivalent
+    timeoutSeconds: 5
+    matchConditions:
+      - name: declares-a-network-attachment
+        expression: >-
+          has(object.metadata) && has(object.metadata.annotations) && (
+            'k8s.v1.cni.cncf.io/networks' in object.metadata.annotations ||
+            'v1.multus-cni.io/default-network' in object.metadata.annotations ||
+            object.metadata.annotations.exists(k, k.endsWith('kubernetes.io/logical_switch') && k != 'ovn.kubernetes.io/logical_switch') ||
+            object.metadata.annotations.exists(k, k.endsWith('kubernetes.io/logical_router') && k != 'ovn.kubernetes.io/logical_router') ||
+            object.metadata.annotations.exists(k, k.endsWith('kubernetes.io/vpc') && k != 'ovn.kubernetes.io/vpc')
+          )
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-network-attach
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+{{- end }}
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
@@ -131,6 +198,80 @@ metadata:
   annotations:
     cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "kube-dc.manager.fullname" . }}-webhook-serving-cert
 webhooks:
+  # Cloud-shell Job gate. The console shell earns the management-api-client role
+  # -- a /32 route to the management apiserver plus one SecurityGroup egress
+  # rule -- from the LABEL below, because the backend creates that Job per
+  # session directly in the tenant namespace and there is no platform-owned root
+  # to walk to. Every other route to that role walks a UID-verified owner chain.
+  #
+  # Any tenant who can create a Job can set the label (the default developer and
+  # admin project Roles both grant jobs: create), and a Job the tenant writes may
+  # name ANY ServiceAccount in the namespace and get its token mounted. So the
+  # label cannot be the authorization: admission requires the CREATOR to be the
+  # console backend.
+  #
+  # objectSelector is what makes failurePolicy: Fail safe here. The webhook is
+  # consulted ONLY for Jobs already carrying this label, so a manager outage
+  # cannot block ordinary tenant Jobs -- the blast radius is "the web terminal
+  # does not start", never "the tenant cannot run workloads". That is the
+  # opposite trade-off to the EIP webhook below, and deliberately so: this one
+  # IS a security boundary.
+  - name: cloud-shell-job.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    objectSelector:
+      matchLabels:
+        app.kubernetes.io/component: kube-dc-cloud-shell
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-cloud-shell-job
+    rules:
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs"]
+  # shalb/kube-dc#147 — the external-network-type annotation only ever fed EIP
+  # CREATION, and EIp.spec.externalNetworkType is immutable, so editing it after
+  # an address was allocated was accepted and then silently ignored forever. The
+  # dangerous direction is public -> cloud: the user believes they just made a
+  # Service private while it keeps serving publicly. Reject the write instead.
+  #
+  # failurePolicy: Ignore, deliberately, and it is NOT the same question as the
+  # handler's fail-closed branch. The handler fails CLOSED when it cannot read
+  # the EIPs (the manager is up and answering, it just cannot be sure). This
+  # setting governs the manager being UNREACHABLE, and this webhook intercepts a
+  # CORE resource. With Fail, a manager outage would block every Service create
+  # and update in every project namespace — and this platform has already had a
+  # manager eviction cause exactly that kind of webhook outage. What is being
+  # guarded is a misleading no-op, not a security boundary or data integrity, so
+  # it is not worth trading tenant availability for.
+  #
+  # Scoped to project namespaces (kube-dc.com/project) so kube-system and other
+  # infrastructure Services are never in the path, and to UPDATE only — a CREATE
+  # always sets the value legitimately, and the EIP is derived from it.
+  - name: vservicenetworktype.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Ignore
+    timeoutSeconds: 5
+    namespaceSelector:
+      matchExpressions:
+        - key: kube-dc.com/project
+          operator: Exists
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate--v1-service-network-type
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["services"]
   - name: vmanagedsecret.kube-dc.com
     admissionReviewVersions: ["v1"]
     sideEffects: None
@@ -187,6 +328,24 @@ webhooks:
         apiVersions: ["v1alpha1"]
         operations: ["CREATE", "UPDATE"]
         resources: ["databasecredentialpolicies"]
+  # ProjectNetwork CRDs are always installed, but a disabled feature must be
+  # side-effect-free. This admin-only CREATE guard prevents a declaration from
+  # reserving state while the attachment/fabric webhooks are intentionally off.
+  - name: vprojectnetworkfeature.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 5
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-project-network-feature
+    rules:
+      - apiGroups: ["kube-dc.com"]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["projectnetworks"]
   # Project gate — rejects spec.egressNetworkType=public on CREATE when
   # master-config `allow_public_projects: false`. See
   # docs/prd/public-projects-gate.md. CREATE-only because the CRD's
@@ -206,4 +365,300 @@ webhooks:
         apiVersions: ["v1"]
         operations: ["CREATE"]
         resources: ["projects"]
+{{- if .Values.projectNetwork.enabled }}
+  # Tenant-VLAN attachment gate. A ProjectNetwork puts a tenant's workloads on a
+  # physical datacenter VLAN shared with that customer's own hardware, so this
+  # webhook is the only thing keeping another tenant off that wire:
+  # subnet.spec.namespaces is an IPAM binding and the pod annotation explicitly
+  # overrides it, so nothing below admission enforces anything.
+  #
+  # failurePolicy: Fail, and deliberately NOT namespace-scoped. A namespaceSelector
+  # would be a bypass — the kube-dc.com/project label is controller-set and only
+  # eventually restored, so an actor able to patch the namespace could unmatch the
+  # webhook and then attach freely. The handler instead returns immediately, with
+  # no API read, for any pod that declares no attachment at all, which is nearly
+  # all of them.
+  #
+  # This whole block is gated on projectNetwork.enabled: a cluster that has not
+  # turned tenant VLANs on carries neither the admission path nor its risk.
+  - name: vnetworkattach.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 5
+    matchPolicy: Equivalent
+    # The API server evaluates these before calling us, so a pod that declares
+    # no attachment never reaches the webhook at all. That is what makes a
+    # cluster-wide fail-closed pod webhook survivable: a manager outage cannot
+    # block ordinary pods, only ones that are asking for a VLAN.
+    #
+    # These must stay a SUPERSET of every vector the handler checks. Any
+    # spelling omitted here is not "unmatched", it is unguarded. Note the
+    # suffix matches: kube-ovn's provider-scoped keys are dynamic
+    # ("<nad>.<ns>.ovn.kubernetes.io/logical_switch"), so an exact-key test
+    # would miss them.
+    #
+    # The BARE keys are excluded deliberately, and that exclusion is
+    # load-bearing. kube-ovn writes ovn.kubernetes.io/logical_switch onto EVERY
+    # pod it manages to record the default network. Matching it made every pod
+    # in the cluster hit this fail-closed webhook, which deadlocks: kube-ovn
+    # patches a pod to allocate its address, the patch is intercepted, the
+    # webhook's own manager has no address yet so it is not serving, the patch
+    # fails, no address is allocated, the manager never starts. Observed live on
+    # stage during the B-10 run — every new pod stuck in ContainerCreating with
+    # "no address allocated ... provider ovn". Only the provider-scoped form
+    # signals a secondary attachment.
+    matchConditions:
+      # Second, independent guard on the same deadlock: the CNI's own writes
+      # never reach this gate, whatever the annotations end up saying. kube-ovn
+      # only ever records what admission already allowed on CREATE, so exempting
+      # it costs nothing — and it means a future annotation we did not
+      # anticipate cannot re-introduce the circular dependency.
+      - name: not-the-cni-itself
+        expression: >-
+          request.userInfo.username != '{{ required "projectNetwork.kubeOvnControllerUsername is required when projectNetwork is enabled" .Values.projectNetwork.kubeOvnControllerUsername }}'
+      - name: declares-a-network-attachment
+        expression: >-
+          (has(object.metadata) && has(object.metadata.annotations) && (
+            'k8s.v1.cni.cncf.io/networks' in object.metadata.annotations ||
+            'v1.multus-cni.io/default-network' in object.metadata.annotations ||
+            object.metadata.annotations.exists(k, k.endsWith('kubernetes.io/logical_switch') && k != 'ovn.kubernetes.io/logical_switch') ||
+            object.metadata.annotations.exists(k, k.endsWith('kubernetes.io/logical_router') && k != 'ovn.kubernetes.io/logical_router') ||
+            object.metadata.annotations.exists(k, k.endsWith('kubernetes.io/vpc') && k != 'ovn.kubernetes.io/vpc')
+          ))
+          || (has(object.spec) && has(object.spec.networks)
+              && object.spec.networks.exists(n, has(n.multus) && has(n.multus.networkName)))
+          || (has(object.spec) && has(object.spec.template) && has(object.spec.template.spec)
+              && has(object.spec.template.spec.networks)
+              && object.spec.template.spec.networks.exists(n, has(n.multus) && has(n.multus.networkName)))
+          || (has(object.spec) && has(object.spec.template) && has(object.spec.template.metadata)
+              && has(object.spec.template.metadata.annotations) && (
+                'k8s.v1.cni.cncf.io/networks' in object.spec.template.metadata.annotations ||
+                'v1.multus-cni.io/default-network' in object.spec.template.metadata.annotations ||
+                object.spec.template.metadata.annotations.exists(k, k.endsWith('kubernetes.io/logical_switch')) ||
+                object.spec.template.metadata.annotations.exists(k, k.endsWith('kubernetes.io/logical_router')) ||
+                object.spec.template.metadata.annotations.exists(k, k.endsWith('kubernetes.io/vpc'))
+              ))
+          || (has(object.spec) && has(object.spec.metadata) && has(object.spec.metadata.annotations) && (
+                'k8s.v1.cni.cncf.io/networks' in object.spec.metadata.annotations ||
+                'v1.multus-cni.io/default-network' in object.spec.metadata.annotations ||
+                object.spec.metadata.annotations.exists(k, k.endsWith('kubernetes.io/logical_switch')) ||
+                object.spec.metadata.annotations.exists(k, k.endsWith('kubernetes.io/logical_router')) ||
+                object.spec.metadata.annotations.exists(k, k.endsWith('kubernetes.io/vpc'))
+              ))
+          || (oldObject != null && (
+            (has(oldObject.metadata) && has(oldObject.metadata.annotations) && (
+              "k8s.v1.cni.cncf.io/networks" in oldObject.metadata.annotations ||
+              "v1.multus-cni.io/default-network" in oldObject.metadata.annotations ||
+              oldObject.metadata.annotations.exists(k, k.endsWith("kubernetes.io/logical_switch")) ||
+              oldObject.metadata.annotations.exists(k, k.endsWith("kubernetes.io/logical_router")) ||
+              oldObject.metadata.annotations.exists(k, k.endsWith("kubernetes.io/vpc"))
+            ))
+            || (has(oldObject.spec) && has(oldObject.spec.networks)
+                && oldObject.spec.networks.exists(n, has(n.multus) && has(n.multus.networkName)))
+            || (has(oldObject.spec) && has(oldObject.spec.template) && has(oldObject.spec.template.spec)
+                && has(oldObject.spec.template.spec.networks)
+                && oldObject.spec.template.spec.networks.exists(n, has(n.multus) && has(n.multus.networkName)))
+            || (has(oldObject.spec) && has(oldObject.spec.template) && has(oldObject.spec.template.metadata)
+                && has(oldObject.spec.template.metadata.annotations) && (
+                  "k8s.v1.cni.cncf.io/networks" in oldObject.spec.template.metadata.annotations ||
+                  "v1.multus-cni.io/default-network" in oldObject.spec.template.metadata.annotations ||
+                  oldObject.spec.template.metadata.annotations.exists(k, k.endsWith("kubernetes.io/logical_switch")) ||
+                  oldObject.spec.template.metadata.annotations.exists(k, k.endsWith("kubernetes.io/logical_router")) ||
+                  oldObject.spec.template.metadata.annotations.exists(k, k.endsWith("kubernetes.io/vpc"))
+                ))
+            || (has(oldObject.spec) && has(oldObject.spec.metadata) && has(oldObject.spec.metadata.annotations) && (
+                  "k8s.v1.cni.cncf.io/networks" in oldObject.spec.metadata.annotations ||
+                  "v1.multus-cni.io/default-network" in oldObject.spec.metadata.annotations ||
+                  oldObject.spec.metadata.annotations.exists(k, k.endsWith("kubernetes.io/logical_switch")) ||
+                  oldObject.spec.metadata.annotations.exists(k, k.endsWith("kubernetes.io/logical_router")) ||
+                  oldObject.spec.metadata.annotations.exists(k, k.endsWith("kubernetes.io/vpc"))
+                ))
+          ))
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-network-attach
+    rules:
+      # CREATE *and* UPDATE: interface hotplug and post-create annotation patches
+      # both arrive as UPDATE, so a CREATE-only policy is bypassable.
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+      - apiGroups: ["kubevirt.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["virtualmachines", "virtualmachineinstances"]
+  # A NetworkAttachmentDefinition IS an attachment: a tenant that can write one
+  # pointing at another project's provider needs no pod annotation at all.
+  # Gating only pods would leave that wide open.
+  - name: vnetworkattachnad.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 5
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-network-attach-nad
+    rules:
+      - apiGroups: ["k8s.cni.cncf.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["network-attachment-definitions"]
+  # Kube-OVN uses the Namespace logical_switch annotation as the default subnet
+  # for every Pod that does not carry a more specific selector. Project tenant
+  # Roles cannot patch Namespace objects, but an operator patch would otherwise
+  # redirect an entire tenant without passing the workload gate. Only the exact
+  # configured Kube-OVN controller identity may change these selector keys.
+  - name: vnetworkattachnamespace.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 5
+    matchConditions:
+      - name: network-selectors-present
+        expression: >-
+          (
+            has(object.metadata.annotations) && (
+              'k8s.v1.cni.cncf.io/networks' in object.metadata.annotations ||
+              'v1.multus-cni.io/default-network' in object.metadata.annotations ||
+              object.metadata.annotations.exists(k, k.endsWith('kubernetes.io/logical_switch')) ||
+              object.metadata.annotations.exists(k, k.endsWith('kubernetes.io/logical_router')) ||
+              object.metadata.annotations.exists(k, k.endsWith('kubernetes.io/vpc'))
+            )
+          ) || (
+            oldObject != null && has(oldObject.metadata.annotations) && (
+              'k8s.v1.cni.cncf.io/networks' in oldObject.metadata.annotations ||
+              'v1.multus-cni.io/default-network' in oldObject.metadata.annotations ||
+              oldObject.metadata.annotations.exists(k, k.endsWith('kubernetes.io/logical_switch')) ||
+              oldObject.metadata.annotations.exists(k, k.endsWith('kubernetes.io/logical_router')) ||
+              oldObject.metadata.annotations.exists(k, k.endsWith('kubernetes.io/vpc'))
+            )
+          )
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-network-attach-namespace
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["namespaces"]
+  # Refuse to CREATE an alias onto a reserved wire, rather than only denying the
+  # workloads that name it. A second Subnet or Vlan on a held segment is on the
+  # customer's broadcast domain regardless of its IPAM, and any path the
+  # attachment gate cannot see — a route, a U2O interconnection, an operator
+  # debugging by hand — rides it. Aimed at operator error: these kinds are
+  # cluster-scoped and no tenant Role grants them.
+  # VlanReservation is the API-server-atomic ownership fence. Even a cluster
+  # administrator must use ProjectNetwork lifecycle rather than rewriting or
+  # deleting the claim underneath an attached physical wire.
+  - name: vvlanreservation.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 5
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-fabric-guard
+    rules:
+      - apiGroups: ["kube-dc.com"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["vlanreservations"]
+  - name: vfabricsegment.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 5
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-fabric-segment
+    rules:
+      - apiGroups: ["kube-dc.com"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["fabricsegments"]
+  # Per-org VLAN pools (docs/prd/tenant-vlan-org-pool.md). Org admins are granted
+  # cluster-scoped verbs on ProjectNetwork because RBAC cannot express "only your
+  # own organization" for a cluster-scoped kind. THIS webhook is what makes that
+  # grant tenant-safe, so it is fail-closed and covers DELETE as well as CREATE.
+  #
+  # DELETE is not optional: a cluster-scoped delete takes a NAME, other orgs'
+  # binding names are guessable, and without this rule any org admin could tear
+  # down any other org's VLAN grant.
+  - name: vprojectnetworkgrant.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 5
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-projectnetwork-grant
+    rules:
+      - apiGroups: ["kube-dc.com"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["projectnetworks"]
+  # The allocation decides which tenant may touch a broadcast domain, so writing
+  # one is platform-admin-only, and reclaiming a wire is refused while a project
+  # still holds it.
+  - name: vfabricsegmentallocation.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 5
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-fabric-segment-allocation
+    rules:
+      - apiGroups: ["kube-dc.com"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["fabricsegmentallocations"]
+  - name: vfabricguard.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 5
+    # Only objects that could possibly touch a VLAN reach this webhook. An
+    # ordinary project's overlay Subnet has no spec.vlan, and creating projects
+    # is the single most common Subnet write on the cluster — putting that on a
+    # fail-closed admission path would make a manager outage an outage for
+    # project creation. With this filter the matched set is tiny, so
+    # failurePolicy: Fail costs nothing and cannot be shrugged off by making the
+    # manager unavailable.
+    matchConditions:
+      - name: touches-a-vlan
+        expression: >-
+          request.resource.resource == 'vlans'
+          || (request.operation == 'DELETE'
+              ? (has(oldObject.spec) && has(oldObject.spec.vlan) && oldObject.spec.vlan != '')
+              : ((has(object.spec) && has(object.spec.vlan) && object.spec.vlan != '')
+                 || (request.operation == 'UPDATE' && has(oldObject.spec)
+                     && has(oldObject.spec.vlan) && oldObject.spec.vlan != '')))
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-fabric-guard
+    rules:
+      - apiGroups: ["kubeovn.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["subnets", "vlans"]
+{{- end }}
 {{- end }}

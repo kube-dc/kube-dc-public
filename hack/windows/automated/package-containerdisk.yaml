@@ -1,0 +1,69 @@
+# package-containerdisk.yaml — wrap the exported Windows golden qcow2 as a KubeVirt
+# containerDisk OCI image and push it to the in-cluster zot depot.
+#
+# Runs AFTER build-vm.yaml has produced a generalized golden and it's been exported
+# to S3 (windows/11/latest/windows11-x64-golden.qcow2). Opt-in — Windows tenant VMs
+# stay on the http/S3 golden path (a ~23GiB containerdisk blob is served by spegel
+# from a SINGLE peer; see docs/prd/vm-startup-acceleration.md).
+#
+# Uses the cdi-os-mirror runtime image (curl + tar + python + crane — the same
+# toolchain the M2-T03 depot build uses) and mirrors refresh.py's PROVEN push
+# sequence: crane append --oci-empty-base --platform linux/amd64 against the
+# INTERNAL depot endpoint with --insecure, then crane mutate --set-platform.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: win11-package-containerdisk
+  namespace: golden-images-build
+  labels:
+    kube-dc.com/system: "true"
+    kube-dc.com/golden-os: windows-11
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 14400
+  template:
+    metadata:
+      labels: { app: win11-containerdisk-build }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: package
+          # Same runtime the cdi-os-mirror CronJob runs (curl/tar/python/crane).
+          image: docker.io/shalb/cdi-os-mirror:main-e39be208
+          command: ["/bin/sh", "-c"]
+          env:
+            - name: REGISTRY_INTERNAL_ENDPOINT
+              value: "registry-depot.kube-dc.svc:5000"
+            - name: REGISTRY_PUSH_USER
+              valueFrom: { secretKeyRef: { name: registry-depot-auth, key: REGISTRY_PUSH_USER } }
+            - name: REGISTRY_PUSH_PASSWORD
+              valueFrom: { secretKeyRef: { name: registry-depot-auth, key: REGISTRY_PUSH_PASSWORD } }
+          args:
+            - |
+              set -eu
+              SRC="http://rook-ceph-rgw-my-store.rook-ceph.svc/cdi-os-images/windows/11/latest/windows11-x64-golden.qcow2"
+              TAG="$(date +%Y%m%d)"
+              REF="$REGISTRY_INTERNAL_ENDPOINT/cdi-os/windows-11:$TAG"
+              cd /work
+              echo "== fetch golden qcow2 =="
+              curl -fsS -o disk.qcow2 "$SRC"
+              echo "== layer tar (KubeVirt containerDisk layout: /disk/<image>) =="
+              mkdir -p disk && mv disk.qcow2 disk/windows11-x64-golden.qcow2
+              tar -cf layer.tar disk
+              rm -rf disk                       # keep peak usage ~1x image, not 2x
+              echo "== crane auth + append (internal endpoint, insecure, amd64) =="
+              crane auth login "$REGISTRY_INTERNAL_ENDPOINT" -u "$REGISTRY_PUSH_USER" -p "$REGISTRY_PUSH_PASSWORD" --insecure
+              crane append --oci-empty-base --platform linux/amd64 -f layer.tar -t "$REF" --insecure
+              crane mutate --set-platform linux/amd64 "$REF" --insecure >/dev/null
+              DIGEST=$(crane digest "$REF" --insecure)
+              echo "PUSHED cdi-os/windows-11:$TAG@$DIGEST"
+          volumeMounts:
+            - { name: work, mountPath: /work }
+          resources:
+            requests: { cpu: "500m", memory: 1Gi }
+            limits: { cpu: "2", memory: 4Gi }
+      volumes:
+        - name: work
+          # qcow2 (~23Gi) + layer.tar (~23Gi) coexist briefly before the rm; crane
+          # may also stage blobs. 90Gi bounds it with real headroom (was 40Gi: ENOSPC).
+          emptyDir: { sizeLimit: 90Gi }

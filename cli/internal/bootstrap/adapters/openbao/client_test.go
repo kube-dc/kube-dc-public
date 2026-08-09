@@ -25,6 +25,10 @@ type fakeK8s struct {
 	setAnn      func(ctx context.Context, ns, svc, key, value string) error
 }
 
+func (f *fakeK8s) PodContainerArgs(context.Context, string, string) (map[string][]string, error) {
+	return nil, nil
+}
+
 func (f *fakeK8s) ListPodNames(ctx context.Context, ns, selector string) ([]string, error) {
 	if f.listPods != nil {
 		return f.listPods(ctx, ns, selector)
@@ -1169,4 +1173,16 @@ func TestGenerateRoot_RefusesFileBackend(t *testing.T) {
 	if !errors.Is(err, ErrFileStorageBackend) {
 		t.Fatalf("GenerateRoot on file backend: err = %v, want ErrFileStorageBackend", err)
 	}
+}
+
+// SetNodeLabel is unused by these tests; the ingress-label step is covered in
+// clusterinit/ingresslabels_test.go.
+// NodeInternalIPs is unused by these tests; the front-door CIDR derivation is
+// covered in clusterinit/ingresscidr_test.go.
+func (f *fakeK8s) NodeInternalIPs(context.Context) (map[string]string, error) {
+	return map[string]string{}, nil
+}
+
+func (f *fakeK8s) SetNodeLabel(context.Context, string, string, string) error {
+	return nil
 }

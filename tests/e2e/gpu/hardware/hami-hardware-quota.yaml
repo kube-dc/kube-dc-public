@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: gpu-hardware-suite
+  namespace: gpu-hardware-validation
+spec:
+  hard:
+    requests.nvidia.com/gpu: "1"
+    requests.nvidia.com/gpumem: "4096"
+    requests.nvidia.com/gpucores: "25"

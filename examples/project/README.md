@@ -1,13 +1,13 @@
 # Project Service Exposure Examples
 
-This directory contains examples for exposing services within a Kube-DC project using cloud networking.
+This directory contains examples for exposing services within a Kube-DC Project using cloud networking.
 
 ## Overview
 
 Projects with `egressNetworkType: cloud` use private IP addresses from the `ext-cloud` subnet. To expose services externally, you can use **automatic route creation** via service annotations:
 
 - **HTTP** - Plain HTTP traffic on port 80 (`expose-route: http`)
-- **HTTPS** - Gateway-terminated TLS on port 443 (`expose-route: https`) ⭐ **Recommended**
+- **HTTPS** - Gateway-terminated TLS on port 443 (`expose-route: https`) **(recommended)**
 - **TLS Passthrough** - End-to-end TLS on port 443 (`expose-route: tls-passthrough`)
 
 ## Automatic Route Creation
@@ -19,12 +19,18 @@ apiVersion: v1
 kind: Service
 metadata:
   name: my-app
+  namespace: acme-production
   annotations:
     # Automatically creates: EIP, Backend, Certificate, Gateway Listener, HTTPRoute
     service.nlb.kube-dc.com/expose-route: "https"  # or "http" or "tls-passthrough"
 spec:
   type: LoadBalancer
-  ...
+  selector:
+    app: my-app
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
 ```
 
 The controller will automatically create:
@@ -34,9 +40,9 @@ The controller will automatically create:
 
 ### Auto-Generated Hostname
 
-Format: `{service}-{namespace}.{base_domain}`
+Format: `{service}-{backing-namespace}.{base-domain}`
 
-Example: `my-app-demo.stage.kube-dc.com`
+Example: `my-app-acme-production.stage.kube-dc.com`
 
 ### View Assigned Hostname
 
@@ -44,7 +50,7 @@ After the route is created, check the status annotation:
 
 ```bash
 kubectl get svc my-app -o jsonpath='{.metadata.annotations.service\.nlb\.kube-dc\.com/route-hostname-status}'
-# Output: my-app-demo.stage.kube-dc.com
+# Output: my-app-acme-production.stage.kube-dc.com
 ```
 
 ### Optional Annotations
@@ -75,19 +81,19 @@ annotations:
 └─────────────────────────────────────────────────────────────────────┘
                   ↓ (auto-created)
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Your Project Namespace                                             │
+│  Project: production / backing namespace: acme-production          │
 │  - Deployment/Pod running your app                                  │
 │  - LoadBalancer Service + expose-route annotation                   │
 │  - EIP, Backend, Route (auto-created by controller)                 │
 │  - Certificate + Gateway Listener (for expose-route: https)         │
-│  - Issuer (required for https and tls-passthrough)                  │
+│  - Issuer (required for automatic HTTPS certificates)              │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Prerequisites
 
-1. You have project admin access (inherited from `default-project-admin-role`)
-2. Your project uses cloud networking (`egressNetworkType: cloud`)
+1. You have the standard Project `admin` role
+2. Your Project uses cloud networking (`egressNetworkType: cloud`)
 
 ## Examples
 
@@ -107,8 +113,9 @@ annotations:
 ```bash
 kubectl apply -f 01-http-service.yaml
 
-# Test (hostname auto-generated)
-curl http://my-app-{namespace}.{base_domain}
+# Read the generated hostname, then test it
+HOST="$(kubectl get svc my-app -o jsonpath='{.metadata.annotations.service\\.nlb\\.kube-dc\\.com/route-hostname-status}')"
+curl "http://$HOST"
 ```
 
 ### HTTPS Service with Let's Encrypt
@@ -123,8 +130,9 @@ kubectl apply -f 02-https-service.yaml
 # 3. Verify certificate
 kubectl get certificate
 
-# 4. Test
-curl https://my-secure-app-{namespace}.{base_domain}
+# 4. Read the generated hostname, then test it
+HOST="$(kubectl get svc my-secure-app -o jsonpath='{.metadata.annotations.service\\.nlb\\.kube-dc\\.com/route-hostname-status}')"
+curl "https://$HOST"
 ```
 
 ### Verify Resources
@@ -144,12 +152,12 @@ kubectl get certificate
 1. **Add annotation** `expose-route: https` (or `http` or `tls-passthrough`)
 2. **Controller creates** EIP, Backend, and Route automatically
 3. **For HTTPS**: Also creates Certificate, ReferenceGrant, and Gateway Listener
-4. **Hostname generated** as `{service}-{namespace}.{base_domain}`
+4. **Hostname generated** as `{service}-{backing-namespace}.{base-domain}`
 5. **Gateway routes** traffic to your app via Backend
 
 ### Certificate Issuance (ACME HTTP-01)
 
-1. You create a `Certificate` resource with the auto-generated hostname
+1. The route controller creates a `Certificate` for the selected hostname
 2. cert-manager creates an ACME challenge
 3. The ACME controller auto-creates solver HTTPRoutes
 4. Let's Encrypt verifies via the Gateway
@@ -161,27 +169,21 @@ kubectl get certificate
 | Type | Port | TLS Termination | App Serves | Use Case |
 |------|------|-----------------|------------|----------|
 | `http` | 80 | None | HTTP | Plain HTTP traffic |
-| `https` | 443 | **Gateway** | HTTP | HTTPS with auto-cert ⭐ **Recommended** |
+| `https` | 443 | **Gateway** | HTTP | HTTPS with automatic certificate **(recommended)** |
 | `tls-passthrough` | 443 | App | HTTPS | End-to-end TLS (app terminates) |
 
 **Recommendation**: Use `expose-route: https` for simplest setup - your app just serves HTTP and the Gateway handles TLS with auto-provisioned Let's Encrypt certificates.
 
 **Note**: For `tls-passthrough`, your application must handle TLS termination using a certificate you configure.
 
-## Permissions Required
+## Permissions
 
-Your project admin role (`default-project-admin-role`) includes:
-
-| Resource | API Group | Permissions |
-|----------|-----------|-------------|
-| services | core | * |
-| secrets | core | * |
-| deployments | apps | * |
-| issuers | cert-manager.io | create, get, list, watch, delete |
-| certificates | cert-manager.io | create, get, list, watch, delete |
-| httproutes | gateway.networking.k8s.io | get, list, watch (auto-created) |
-| tlsroutes | gateway.networking.k8s.io | get, list, watch (auto-created) |
-| backends | gateway.envoyproxy.io | get, list, watch (auto-created) |
+Use the standard Project `admin` role for these examples. The manifests create
+Deployments, Services, and an Issuer in the Project's backing namespace; the
+platform creates the route resources. Custom roles need equivalent permissions;
+see
+[Team Management](../../docs/cloud/team-management.md) for the supported role
+model.
 
 ## Troubleshooting
 
@@ -191,8 +193,11 @@ Your project admin role (`default-project-admin-role`) includes:
 # Check service annotations
 kubectl get svc my-app -o yaml | grep -A5 annotations
 
-# Check controller logs
-kubectl logs -n kube-dc deployment/kube-dc-manager | grep my-app
+# Inspect the Service and the Project-visible route resources
+kubectl describe svc my-app
+kubectl get eip,backend,httproute,tlsroute
+
+# If no status explains the failure, contact your platform administrator
 ```
 
 ### Certificate not issuing

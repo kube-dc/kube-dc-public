@@ -88,6 +88,8 @@ KUBE_DC_FLEET environment variable.`,
 	cmd.AddCommand(bootstrapOpenBaoCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapKeycloakCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapAccessCmd(&fleetRepo))
+	cmd.AddCommand(bootstrapOIDCCutoverCmd(&fleetRepo))
+	cmd.AddCommand(bootstrapAcceptCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapAnchorsCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapAddNodeCmd())
 	cmd.AddCommand(bootstrapGPUCmd(&fleetRepo))

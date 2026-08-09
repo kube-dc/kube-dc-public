@@ -18,7 +18,7 @@ func makeNetplanDir(t *testing.T) string {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "00-installer.yaml"), "network: {version: 2}\n")
 	mustWrite(t, filepath.Join(dir, "50-custom.yaml"), "network:\n  ethernets:\n    eno1:\n      dhcp4: true\n")
-	mustWrite(t, filepath.Join(dir, "README"), "ignored")     // non-yaml: skip
+	mustWrite(t, filepath.Join(dir, "README"), "ignored")      // non-yaml: skip
 	mustWrite(t, filepath.Join(dir, "01-dhcp.yml"), "ignored") // not .yaml: skip
 	return dir
 }

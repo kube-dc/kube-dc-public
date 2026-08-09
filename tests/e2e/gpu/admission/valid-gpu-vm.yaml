@@ -1,0 +1,23 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: gpu-vm-valid
+  namespace: gpu-admission-validation
+  labels:
+    kube-dc.com/gpu-profile: nvidia-v100-passthrough
+spec:
+  runStrategy: Halted
+  template:
+    metadata:
+      labels:
+        kube-dc.com/gpu-profile: nvidia-v100-passthrough
+    spec:
+      evictionStrategy: None
+      domain:
+        resources:
+          requests:
+            memory: 128Mi
+        devices:
+          gpus:
+            - name: gpu0
+              deviceName: nvidia.com/GV100GL_TESLA_V100_PCIE_32GB

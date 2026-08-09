@@ -1,0 +1,183 @@
+{{- /*
+KubeVirt masquerade deliberately gives a guest an internal address (normally
+10.0.2.2) and publishes the outer virt-launcher Pod IP as the Node InternalIP.
+Remote callers reach the guest through prerouting DNAT. Traffic originating in
+that same guest does not traverse prerouting, so a Konnectivity agent selected
+for its own Node dials an unforwarded local address and logs/exec/port-forward
+fail even though kubelet is listening and the Node is Ready.
+
+The remote DaemonSet below mirrors status.hostIP as a /32 on loopback. It is
+selected only for CAPI Clusters that k8-manager has positively identified as
+KubeVirt. Do not weaken that selector: on CloudSigma the Node IP already belongs
+to a real NIC and this helper must never claim it on loopback.
+*/ -}}
+{{- if and .Values.kubevirtNodeIPAlias.enabled (.Capabilities.APIVersions.Has "config.projectsveltos.io/v1beta1/ClusterProfile") }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubevirt-node-ip-alias-template
+  namespace: projectsveltos
+  labels:
+    app.kubernetes.io/name: kubevirt-node-ip-alias
+    app.kubernetes.io/component: tenant-addon
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ include "kube-dc.chart" . }}
+data:
+  manifest.yaml: |
+    apiVersion: apps/v1
+    kind: DaemonSet
+    metadata:
+      name: kubevirt-node-ip-alias
+      namespace: kube-system
+      labels:
+        app.kubernetes.io/name: kubevirt-node-ip-alias
+        app.kubernetes.io/component: node-network
+        app.kubernetes.io/part-of: kube-dc
+    spec:
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: kubevirt-node-ip-alias
+      updateStrategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxUnavailable: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: kubevirt-node-ip-alias
+            app.kubernetes.io/component: node-network
+            app.kubernetes.io/part-of: kube-dc
+        spec:
+          # The alias belongs to the guest node namespace, not a Pod namespace.
+          hostNetwork: true
+          dnsPolicy: ClusterFirstWithHostNet
+          automountServiceAccountToken: false
+          priorityClassName: system-node-critical
+          nodeSelector:
+            kubernetes.io/os: linux
+          tolerations:
+            - operator: Exists
+          containers:
+            - name: node-ip-alias
+              image: {{ printf "%s@%s" .Values.kubevirtNodeIPAlias.image.repository (.Values.kubevirtNodeIPAlias.image.digest | required "kubevirtNodeIPAlias.image.digest is required") | quote }}
+              imagePullPolicy: {{ .Values.kubevirtNodeIPAlias.image.pullPolicy }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  add:
+                    - NET_ADMIN
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+                runAsNonRoot: false
+                runAsUser: 0
+                seccompProfile:
+                  type: RuntimeDefault
+              env:
+                # For a hostNetwork Pod, status.hostIP is the Node InternalIP
+                # that the KubeVirt CCM copied from the outer VMI Pod IP.
+                - name: NODE_IP
+                  valueFrom:
+                    fieldRef:
+                      apiVersion: v1
+                      fieldPath: status.hostIP
+              command:
+                - sh
+                - -ec
+              args:
+                - |
+                  cleanup() {
+                    ip address del "${NODE_IP}/32" dev lo 2>/dev/null || true
+                  }
+
+                  # Defence in depth for a selector/configuration error. Never
+                  # move an address that already belongs to a physical NIC.
+                  existing_device="$(ip -4 -o address show | awk -v ip="${NODE_IP}" '
+                    { split($4, address, "/"); if (address[1] == ip) { print $2; exit } }
+                  ')"
+                  if [ -n "${existing_device}" ] && [ "${existing_device}" != "lo" ]; then
+                    printf 'refusing to mirror node IP %s: already assigned to %s\n' "${NODE_IP}" "${existing_device}" >&2
+                    exit 1
+                  fi
+
+                  if [ "${existing_device}" = "lo" ] &&
+                     ! ip -4 -o address show dev lo label lo:kdc-kubelet |
+                       awk -v ip="${NODE_IP}" '{ split($4, address, "/"); if (address[1] == ip) found=1 } END { exit !found }'; then
+                    printf 'refusing to adopt node IP %s: loopback address is not owned by kube-dc\n' "${NODE_IP}" >&2
+                    exit 1
+                  fi
+
+                  trap cleanup EXIT INT TERM
+                  ip address replace "${NODE_IP}/32" dev lo label lo:kdc-kubelet
+                  printf 'node IP alias ready: %s\n' "${NODE_IP}"
+                  while true; do
+                    sleep 3600 &
+                    wait $!
+                  done
+              readinessProbe:
+                exec:
+                  command:
+                    - sh
+                    - -ec
+                    - nc -z -w 2 "${NODE_IP}" 10250
+                initialDelaySeconds: 1
+                periodSeconds: 5
+                timeoutSeconds: 2
+                failureThreshold: 3
+              resources:
+                requests:
+                  cpu: {{ .Values.kubevirtNodeIPAlias.resources.requests.cpu | quote }}
+                  memory: {{ .Values.kubevirtNodeIPAlias.resources.requests.memory | quote }}
+                limits:
+                  cpu: {{ .Values.kubevirtNodeIPAlias.resources.limits.cpu | quote }}
+                  memory: {{ .Values.kubevirtNodeIPAlias.resources.limits.memory | quote }}
+          terminationGracePeriodSeconds: 10
+---
+apiVersion: config.projectsveltos.io/v1beta1
+kind: ClusterProfile
+metadata:
+  name: kubevirt-node-ip-alias
+  labels:
+    app.kubernetes.io/name: kube-dc
+    app.kubernetes.io/component: kubevirt-node-ip-alias
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ include "kube-dc.chart" . }}
+spec:
+  clusterSelector:
+    matchLabels:
+      kube-dc.com/tenant-addons: enabled
+      kube-dc.com/infrastructure-provider: kubevirt
+  syncMode: Continuous
+  policyRefs:
+    - deploymentType: Remote
+      kind: ConfigMap
+      name: kubevirt-node-ip-alias-template
+      namespace: projectsveltos
+      optional: false
+  validateHealths:
+    - name: kubevirt-node-ip-alias-health
+      featureID: Resources
+      group: apps
+      version: v1
+      kind: DaemonSet
+      namespace: kube-system
+      script: |
+        function evaluate()
+          hs = {}
+          hs.healthy = false
+          hs.message = "waiting for kubevirt-node-ip-alias DaemonSet"
+          if obj.metadata.name == "kubevirt-node-ip-alias" then
+            if obj.status ~= nil and obj.status.desiredNumberScheduled ~= nil and
+               obj.status.desiredNumberScheduled > 0 and obj.status.numberReady ~= nil and
+               obj.status.numberReady == obj.status.desiredNumberScheduled then
+              hs.healthy = true
+              hs.message = "all " .. obj.status.numberReady .. " node IP alias pod(s) are ready"
+            end
+          else
+            hs.healthy = true
+            hs.message = "ignored: " .. obj.metadata.name
+          end
+          return hs
+        end
+  tier: {{ .Values.kubevirtNodeIPAlias.tier | default 5 }}
+{{- end }}

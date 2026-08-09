@@ -21,7 +21,7 @@ spec:
       - args:
         - |
           echo "Running external interface capture on Node: $NODE_NAME"
-          tcpdump -e -vvv -n -i enp0s31f6 icmp and host 213.133.100.98 2>&1 | sed "s/^/[EXT:$NODE_NAME] /"
+          tcpdump -e -vvv -n -i enp0s31f6 icmp and host 8.8.4.4 2>&1 | sed "s/^/[EXT:$NODE_NAME] /"
         command:
         - /bin/sh
         - -c
@@ -52,7 +52,7 @@ spec:
             sleep 2
           done
           # Start capture
-          tcpdump -e -vvv -n -i mirror0 host 213.133.100.98 2>&1 | sed "s/^/[MIRROR:$NODE_NAME] /"
+          tcpdump -e -vvv -n -i mirror0 host 8.8.4.4 2>&1 | sed "s/^/[MIRROR:$NODE_NAME] /"
         command:
         - /bin/sh
         - -c

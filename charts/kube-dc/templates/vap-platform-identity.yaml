@@ -1,0 +1,143 @@
+# =============================================================================
+# ValidatingAdmissionPolicy: reserve platform pod identities in project namespaces
+#
+# kube-dc's infra-attachment webhook decides which pods get a second NIC with a
+# route to the MANAGEMENT apiserver, and it classifies them by LABEL
+# (internal/infraattachment/pod_role.go: kamaji, kubevirt-csi, kccm-/csccm-,
+# the per-cluster cluster-autoscaler, tenant etcd). Those labels are the
+# warrant — and a project admin holds `*` on `*` inside their own namespace, so
+# without this policy they can stamp the same labels on their own workload and
+# obtain that route, optionally running it under a platform ServiceAccount that
+# lives in the same namespace.
+#
+# TWO resource sets are matched ON PURPOSE. A pods-only policy is trivially
+# bypassed: pods born from a Deployment are created by
+# system:serviceaccount:kube-system:replicaset-controller, which every policy
+# here must exempt or it would break legitimate controllers. The tenant IS the
+# requester on the workload object, so that is where the check bites; the pod
+# rule then covers bare pods.
+# =============================================================================
+{{- if .Values.projectPolicies.reservePlatformIdentities.enabled }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: reserve-platform-identities-in-projects
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "cronjobs"]
+  matchConditions:
+    # Platform controllers create exactly these shapes legitimately.
+    - name: exclude-system-service-accounts
+      expression: >-
+        !has(request.userInfo) || !has(request.userInfo.username) ||
+        !(['system:serviceaccount:kube-dc:',
+           'system:serviceaccount:kubevirt:',
+           'system:serviceaccount:kamaji-system:',
+           'system:serviceaccount:capi-system:',
+           'system:serviceaccount:capk-system:',
+           'system:serviceaccount:capcs-system:',
+           'system:serviceaccount:capi-kubeadm-bootstrap-system:',
+           'system:serviceaccount:capi-kubeadm-control-plane-system:',
+           'system:serviceaccount:kube-system:'].exists(prefix,
+             request.userInfo.username.startsWith(prefix)))
+    - name: exclude-cluster-admins
+      expression: >-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !('system:masters' in request.userInfo.groups)
+    - name: exclude-node-users
+      expression: >-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !('system:nodes' in request.userInfo.groups)
+  variables:
+    # Annotations that will land on the POD, same shape-resolution as labels.
+    # The labels/SA that will land on the POD, whichever shape was submitted.
+    - name: podMeta
+      expression: >-
+        has(object.spec) && has(object.spec.jobTemplate)
+          ? object.spec.jobTemplate.spec.template
+          : (has(object.spec) && has(object.spec.template)
+              ? object.spec.template
+              : object)
+    - name: labels
+      expression: >-
+        has(variables.podMeta.metadata) && has(variables.podMeta.metadata.labels)
+          ? variables.podMeta.metadata.labels : {}
+    - name: annotations
+      expression: >-
+        has(variables.podMeta.metadata) && has(variables.podMeta.metadata.annotations)
+          ? variables.podMeta.metadata.annotations : {}
+    - name: sa
+      expression: >-
+        has(variables.podMeta.spec) && has(variables.podMeta.spec.serviceAccountName)
+          ? variables.podMeta.spec.serviceAccountName : ''
+  validations:
+    # The requirement declaration is ONE key to guard, which is why it is the
+    # direction of travel: components declare what they need instead of the
+    # platform maintaining an allow-list, and this single clause reserves it.
+    # (The label clauses below cover the classifier's existing branches; they
+    # are NOT exhaustive — the owner-based branches, e.g. a pod forged as
+    # owned by a real CNPG Cluster, need the structural fix described in
+    # docs/internal/, not another label rule.)
+    - expression: >-
+        !('network.kube-dc.com/requires-role' in variables.annotations)
+          || variables.annotations['network.kube-dc.com/requires-role'] == ''
+      message: "annotation network.kube-dc.com/requires-role is reserved for platform components; it declares a privileged network role."
+    - expression: >-
+        !('network.kube-dc.com/infra-attachment' in variables.annotations)
+      message: "annotation network.kube-dc.com/infra-attachment is set by the platform webhook and cannot be pre-declared."
+    # The clauses below mirror the classifier's label-based branches.
+    - expression: >-
+        !('kamaji.clastix.io/name' in variables.labels)
+      message: "label kamaji.clastix.io/name is reserved for the platform's managed control planes and grants management-network access; remove it."
+    - expression: >-
+        !('app' in variables.labels && variables.labels['app'] == 'kubevirt-csi-driver')
+      message: "label app=kubevirt-csi-driver is reserved for the platform's CSI controller and grants management-network access; remove it."
+    - expression: >-
+        !('k8s-app' in variables.labels &&
+          (variables.labels['k8s-app'].startsWith('kccm-') || variables.labels['k8s-app'].startsWith('csccm-')))
+      message: "labels k8s-app=kccm-*/csccm-* are reserved for the platform's cloud-controller-manager and grant management-network access; remove them."
+    - expression: >-
+        !('app.kubernetes.io/managed-by' in variables.labels &&
+          (variables.labels['app.kubernetes.io/managed-by'] == 'kube-dc-k8-manager' ||
+           variables.labels['app.kubernetes.io/managed-by'] == 'kdc-cluster-controller'))
+      message: "label app.kubernetes.io/managed-by=kube-dc-k8-manager|kdc-cluster-controller is reserved for platform-owned workloads and grants management-network access; remove it."
+    - expression: >-
+        !('app' in variables.labels && variables.labels['app'] == 'etcd' &&
+          'kdc.datastore.name' in variables.labels)
+      message: "labels app=etcd + kdc.datastore.name are reserved for platform-managed datastores; remove them."
+    # Credentials, not just the route: a platform ServiceAccount lives in this
+    # same namespace, so borrowing one would pair management reachability with
+    # the platform's own RBAC.
+    - expression: >-
+        variables.sa == '' ||
+        !(variables.sa.endsWith('-cluster-autoscaler') ||
+          variables.sa.startsWith('kccm-') || variables.sa.startsWith('csccm-') ||
+          variables.sa.endsWith('-kubevirt-csi-controller') ||
+          variables.sa.startsWith('kdc-') || variables.sa.endsWith('-etcd'))
+      message: "that ServiceAccount name is reserved for platform components; run your workload under your own ServiceAccount."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: reserve-platform-identities-in-projects
+spec:
+  policyName: reserve-platform-identities-in-projects
+  validationActions: {{ .Values.projectPolicies.reservePlatformIdentities.validationActions | toJson }}
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+{{- end }}

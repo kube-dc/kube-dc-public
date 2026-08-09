@@ -18,6 +18,10 @@ type fakeNodeLabels struct {
 	calls  int
 }
 
+func (f *fakeNodeLabels) NodeInternalIPs(context.Context) (map[string]string, error) {
+	return map[string]string{}, nil
+}
+
 func (f *fakeNodeLabels) NodeLabels(_ context.Context) (map[string]map[string]string, error) {
 	f.calls++
 	if f.err != nil {

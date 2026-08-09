@@ -18,7 +18,8 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "kube-dc.frontend.labels" . | nindent 8 }}
+        {{- include "kube-dc.frontend.selectorLabels" . | nindent 8 }}
+        {{- include "kube-dc.podVersionLabel" . | nindent 8 }}
         {{- with .Values.frontend.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

@@ -269,9 +269,49 @@ func (c *Client) NodeLabels(ctx context.Context) (map[string]map[string]string, 
 	return out, nil
 }
 
+// NodeInternalIPs returns each Node's InternalIP, keyed by node name. Nodes without one
+// are omitted rather than reported as empty, so a caller cannot mistake "no address" for
+// "address is the empty string".
+func (c *Client) NodeInternalIPs(ctx context.Context) (map[string]string, error) {
+	list, err := c.core.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("k8s: list nodes: %w", err)
+	}
+	out := make(map[string]string, len(list.Items))
+	for _, n := range list.Items {
+		for _, a := range n.Status.Addresses {
+			if a.Type == corev1.NodeInternalIP && a.Address != "" {
+				out[n.Name] = a.Address
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
 // GPUNodeRuntimes binds exact Node identity to the active device-plugin owners
 // scheduled there. It uses one Node GET and one field-selected Pod LIST per
 // requested node; unrelated nodes and Pods are never listed or returned.
+// SetNodeLabel adds or updates one label on one node. Merge patch, so labels this
+// installer does not own are left alone.
+func (c *Client) SetNodeLabel(ctx context.Context, node, key, value string) error {
+	// The key contains dots and a slash, both of which are JSON-Pointer significant,
+	// so a merge patch on the labels map is the safe encoding here rather than a
+	// JSON6902 op on /metadata/labels/<key>.
+	body, err := json.Marshal(map[string]any{
+		"metadata": map[string]any{
+			"labels": map[string]string{key: value},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("k8s: encode node label patch: %w", err)
+	}
+	if _, err := c.core.CoreV1().Nodes().Patch(ctx, node, types.MergePatchType, body, metav1.PatchOptions{}); err != nil {
+		return fmt.Errorf("k8s: label node %s %s=%s: %w", node, key, value, err)
+	}
+	return nil
+}
+
 func (c *Client) GPUNodeRuntimes(ctx context.Context, nodes []string) (map[string]ports.GPUNodeRuntime, error) {
 	out := make(map[string]ports.GPUNodeRuntime, len(nodes))
 	for _, name := range nodes {
@@ -477,6 +517,28 @@ func (c *Client) ListPodNames(ctx context.Context, ns, labelSelector string) ([]
 		out = append(out, pod.Name)
 	}
 	sort.Strings(out)
+	return out, nil
+}
+
+// PodContainerArgs implements ports.K8sClient.
+func (c *Client) PodContainerArgs(ctx context.Context, ns, labelSelector string) (map[string][]string, error) {
+	list, err := c.core.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{LabelSelector: labelSelector})
+	if err != nil {
+		return nil, fmt.Errorf("k8s: list pods in %s with selector %q: %w", ns, labelSelector, err)
+	}
+	out := make(map[string][]string, len(list.Items))
+	for _, pod := range list.Items {
+		if len(pod.Spec.Containers) == 0 {
+			continue
+		}
+		c0 := pod.Spec.Containers[0]
+		// command AND args: RKE2 puts the binary in command and every flag in
+		// args, so reading only one of them finds nothing.
+		joined := make([]string, 0, len(c0.Command)+len(c0.Args))
+		joined = append(joined, c0.Command...)
+		joined = append(joined, c0.Args...)
+		out[pod.Name] = joined
+	}
 	return out, nil
 }
 

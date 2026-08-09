@@ -155,14 +155,39 @@ func WriteAddons(fleetRepo, clusterName string, out io.Writer) error {
 		return fmt.Errorf("addons: read cluster-config.env: %w", err)
 	}
 
-	// Absent INGRESS_MODE means the scaffold default, which is MetalLB —
-	// treating "unset" as "no ingress" would reproduce the very silence
-	// this function exists to remove.
-	mode := envValue(string(envBody), "INGRESS_MODE")
-	if mode == "" {
-		mode = ingressModeMetalLB
+	// The ADDRESS LAYER decides whether MetalLB is installed at all (front-door
+	// simplification §1.2). Keying this on the retired INGRESS_MODE installed
+	// MetalLB on every cluster — including layer=none, whose entire promise is
+	// "no MetalLB on sites that have no spare IP" (codex 2026-08-07, P1).
+	//
+	// A cluster-config.env with NO layer key predates the address layer. Fall
+	// back to the legacy INGRESS_MODE reading so an older fleet checkout keeps
+	// its MetalLB layers instead of silently losing its front door.
+	layer := strings.TrimSpace(envValue(string(envBody), "INGRESS_ADDRESS_LAYER"))
+	if layer == "" {
+		legacy := strings.TrimSpace(envValue(string(envBody), "INGRESS_MODE"))
+		if legacy == "" || legacy == ingressModeMetalLB {
+			layer = AddressLayerMetalLBL2 // legacy default was a MetalLB VIP
+		} else {
+			layer = AddressLayerNone
+		}
 	}
-	if mode != ingressModeMetalLB {
+	if !addressLayerRequiresVIP(layer) {
+		// A no-VIP layer installs nothing — but if a PREVIOUS run already
+		// wired the MetalLB layers, returning silently leaves addons.yaml,
+		// addons-config.yaml, their root references and the Gateway VIP patch
+		// in place: the cluster claims layer=none while Flux still reconciles
+		// a MetalLB VIP (codex 2026-08-07). Unwiring those safely means
+		// deleting operator-visible fleet files, so REFUSE and name the
+		// artifacts instead of half-applying a transition.
+		wired := metalLBWiredArtifacts(clusterDir, clusterName)
+		if len(wired) > 0 {
+			return fmt.Errorf(
+				"addons: INGRESS_ADDRESS_LAYER=%s installs no MetalLB, but this overlay already has %s from a previous run — "+
+					"init will not silently leave a MetalLB VIP reconciling under a no-VIP layer. Remove those files and their "+
+					"entries in kustomization.yaml (and the Gateway VIP patch in platform.yaml) by hand, then re-run",
+				layer, strings.Join(wired, " + "))
+		}
 		return nil
 	}
 
@@ -255,6 +280,46 @@ func WriteAddons(fleetRepo, clusterName string, out io.Writer) error {
 	}
 
 	return writeGatewayVIPPatch(clusterDir, string(envBody), out)
+}
+
+// metalLBWiredArtifacts returns the fleet files that PROVE MetalLB was wired
+// for this cluster by a previous run.
+//
+// It deliberately does NOT test for addons.yaml / addons-config.yaml. Those are
+// generic Flux Kustomization layers shared by every addon — rook-ceph, the SSO
+// providers, Stripe billing, the Keycloak client secret — so their mere
+// presence says nothing about MetalLB. Keying the transition refusal on them
+// blocked any layer=none cluster that happened to use ANY addon, which is most
+// of them.
+//
+// The proof is one level down: addons/kustomization.yaml and
+// addons-config/kustomization.yaml are written by WriteAddons and reference the
+// metallb source trees by relative path. A reference to one of those trees can
+// only have come from this writer (or from an operator deliberately doing the
+// same thing), so it is a sound signal in both directions.
+func metalLBWiredArtifacts(clusterDir, clusterName string) []string {
+	var wired []string
+	for _, rel := range []string{"addons/kustomization.yaml", "addons-config/kustomization.yaml"} {
+		body, err := os.ReadFile(filepath.Join(clusterDir, rel))
+		if err != nil {
+			continue
+		}
+		text := string(body)
+		for _, src := range []string{addonPathMetalLB, addonPathConfigL2, addonPathConfigBGP} {
+			if strings.Contains(text, src) {
+				wired = append(wired, "clusters/"+clusterName+"/"+rel)
+				break
+			}
+		}
+	}
+	// The Gateway VIP patch is the third artifact and lives in platform.yaml,
+	// which is NOT MetalLB-specific — so match the marker, never the file.
+	if body, err := os.ReadFile(filepath.Join(clusterDir, "platform.yaml")); err == nil {
+		if strings.Contains(string(body), gatewayVIPMarker) || strings.Contains(string(body), gatewayServiceVIPMarker) {
+			wired = append(wired, "clusters/"+clusterName+"/platform.yaml (Gateway VIP patch)")
+		}
+	}
+	return wired
 }
 
 // gatewayVIPMarker identifies the patch entry so re-runs are no-ops and a

@@ -1,0 +1,261 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.4
+    helm.sh/resource-policy: keep
+  name: fabricsegmentallocations.kube-dc.com
+spec:
+  group: kube-dc.com
+  names:
+    kind: FabricSegmentAllocation
+    listKind: FabricSegmentAllocationList
+    plural: fabricsegmentallocations
+    shortNames:
+    - faballoc
+    singular: fabricsegmentallocation
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.org
+      name: Org
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.boundProject
+      name: Project
+      type: string
+    - jsonPath: .status.segmentReady
+      name: Segment Ready
+      type: boolean
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          FabricSegmentAllocation is the Schema for the fabricsegmentallocations API. It
+          records that a platform admin has offered one physical segment to one
+          organization, after which that organization's admin may bind it to one of
+          their own projects without a ticket.
+
+          The object's name IS the FabricSegment name — see FabricSegmentAllocationSpec.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              FabricSegmentAllocationSpec offers one physical segment to one organization.
+
+              There is deliberately NO segmentRef field: the allocation's NAME is the
+              FabricSegment name. That is what makes "one org per wire" atomic.
+
+              The alternative — a segmentRef field plus a uniqueness check in admission —
+              does not hold. Two allocations for the same wire to different orgs would carry
+              different names, so storage admits both; two concurrent admission passes each
+              list, each see no conflict, and each proceed. The result is one broadcast
+              domain offered to two organizations, which is the exact breach this feature
+              exists to prevent. Naming the object after the segment moves the constraint
+              into etcd, where the loser of the race gets AlreadyExists with no window.
+
+              This is the same reasoning that governs FabricSegmentName.
+            properties:
+              network:
+                description: |-
+                  Network carries the addressing of the customer's segment.
+
+                  It lives on the ALLOCATION, not on the tenant's binding, because these are
+                  physical facts about the customer's wire — their subnet, their router,
+                  the addresses their existing hardware already occupies — that the platform
+                  admin learns from the customer. An org admin choosing them would be
+                  guessing, and a wrong guess is not a validation error but a live address
+                  conflict on equipment we do not own.
+
+                  Admission requires a tenant-created ProjectNetwork to match these values
+                  exactly (see internal/webhook/core/projectnetwork_grant_webhook.go).
+                  Without that check the delegation would be a hole rather than a feature:
+                  an org admin holds `create` on ProjectNetwork, so via kubectl they could
+                  otherwise claim the customer's whole subnet or drop the exclusions that
+                  keep our IPAM off the customer's hardware.
+
+                  Mutable, unlike org: these are a template for the NEXT assignment. An
+                  existing binding copied them at creation and is unaffected, so correcting
+                  a mistyped gateway does not disturb a project already on the wire.
+                properties:
+                  cidrBlock:
+                    description: |-
+                      CidrBlock is the customer's subnet on this segment, e.g. 198.51.100.0/24.
+                      Required for the kube-ovn-underlay driver, where we allocate addresses.
+                    type: string
+                  excludeIps:
+                    description: |-
+                      ExcludeIps are addresses we must never hand out — typically the range the
+                      customer's own hardware already occupies. Ranges use the kube-ovn "a..b"
+                      form.
+                    items:
+                      type: string
+                    type: array
+                  gateway:
+                    description: |-
+                      Gateway is the customer's router on the segment.
+
+                      Kube-OVN silently creates no logical switch for a subnet with an empty
+                      gateway, so an assignment would look healthy in every CR while pods stayed
+                      in ContainerCreating with "not found logical switch".
+                    type: string
+                  gatewayCheck:
+                    description: |-
+                      GatewayCheck lets kube-ovn probe the gateway before declaring the subnet
+                      usable. Defaults to false, which is the safe default on a customer's
+                      segment: their router owes us no ICMP reply and an unanswered probe would
+                      wedge the attachment.
+                    type: boolean
+                  securityGroup:
+                    description: |-
+                      SecurityGroup optionally binds an existing kube-ovn security group to
+                      attached ports. Empty applies anti-spoofing port security only.
+                    type: string
+                type: object
+              org:
+                description: |-
+                  Org is the Organization permitted to bind this segment to one of its own
+                  projects.
+
+                  Immutable: the object's name identifies the wire and the spec identifies
+                  its holder, so re-pointing the org in place would silently transfer a wire
+                  that a project may still be attached to. Moving a wire between
+                  organizations is a delete plus a create, and the delete is refused while a
+                  grant exists.
+                minLength: 1
+                type: string
+                x-kubernetes-validations:
+                - message: org is immutable; delete the allocation and create a new
+                    one to move the wire
+                  rule: self == oldSelf
+            required:
+            - org
+            type: object
+          status:
+            description: |-
+              FabricSegmentAllocationStatus reports whether the org's wire is currently
+              spent on a project.
+            properties:
+              boundNetwork:
+                description: BoundNetwork is the ProjectNetwork realising the current
+                  assignment.
+                type: string
+              boundProject:
+                description: |-
+                  BoundProject names the org's project currently holding the wire, or is
+                  empty when the wire is unassigned and available for the org admin to
+                  assign.
+                type: string
+              conditions:
+                description: Conditions represents the latest available observations
+                  of the allocation's current state
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              orgUid:
+                description: |-
+                  OrgUid pins the identity of the Organization this wire was offered to.
+
+                  Organization NAME is not identity: names are reusable, and a recreated
+                  "acme" belonging to an entirely different customer mints the same
+                  "acme:org-admin" group. Without this pin the new tenant would inherit
+                  every wire allocated to the old one. Admission compares the live
+                  Organization's UID against this and refuses a binding when they differ.
+
+                  Set once, on first reconcile. The controller never rewrites it — instead
+                  it marks the allocation Stale, because silently re-pinning would hand the
+                  wire to the new organization, which is the failure being prevented.
+                type: string
+              phase:
+                default: Allocated
+                description: |-
+                  Phase is the coarse state: Allocated (free for the org to assign), InUse,
+                  or Releasing (a grant is draining and the wire is not yet re-assignable).
+                type: string
+              segmentReady:
+                description: |-
+                  SegmentReady mirrors the referenced FabricSegment's readiness, so the org
+                  admin can tell "the operator has not finished trunking this VLAN" apart
+                  from "my assignment failed". An allocation may legitimately exist for a
+                  segment that is not ready yet.
+                type: boolean
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

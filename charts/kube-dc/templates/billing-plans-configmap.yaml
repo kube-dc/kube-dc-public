@@ -5,16 +5,321 @@
   PRESERVE its live `plans.yaml` instead of overwriting it — plans, add-ons, and
   promo codes are all edited at runtime via the admin console and all live in
   this single key, so without this they'd be reverted on every Flux/Helm
-  reconcile. To re-seed from chart defaults, delete the ConfigMap and let the
-  next reconcile recreate it. (lookup is empty during `helm template`/dry-run and
-  on first install, so the default is used then — exactly what we want.)
+  reconcile.
+
+  A versioned migration wave may copy explicitly allowlisted add-ons that are
+  unavailable for self-service from the desired config when they are missing
+  from a live seed-once ConfigMap. It may also synchronize only their
+  `disabled` and `selfService` availability fields. It never replaces an
+  existing definition or operator-managed price/grants. The completed version
+  is recorded as an annotation, so an operator can subsequently edit or remove
+  the add-on without Helm re-seeding it on every reconcile.
+
+  To fully re-seed from chart defaults, delete the ConfigMap and let the next
+  reconcile recreate it. (lookup is empty during `helm template`/dry-run and on
+  first install, so the default is used then — exactly what we want.)
 */}}
-{{- $config := .Values.billing.plans.config }}
+{{- $desiredConfig := .Values.billing.plans.config }}
+{{- $config := $desiredConfig }}
+{{- $migration := .Values.billing.plans.migration | default dict }}
+{{- $migrationVersion := get $migration "version" | default "" }}
+{{- $migrationAddons := get $migration "addMissingAddons" | default list }}
+{{- $migrationAvailability := get $migration "syncAddonAvailability" | default list }}
+{{- $migrationOverrides := get $migration "availabilityOverrides" | default dict }}
+{{- $migrationPlans := get $migration "addMissingPlans" | default list }}
+{{- $gpuValues := .Values.gpu | default dict }}
+{{- $gpuEnabled := get $gpuValues "enabled" | default false }}
+{{- $gpuProfiles := get $gpuValues "profiles" | default list }}
+{{- $gpuVariants := get .Values.billing.plans "gpuVariants" | default dict }}
+{{- $variantsEnabled := get $gpuVariants "enabled" | default false }}
+{{- $variantPlans := get $gpuVariants "plans" | default dict }}
+{{- $variantEIPQuota := get $gpuVariants "eipQuota" | default dict }}
+{{- if not (kindIs "map" $migrationOverrides) }}
+{{-   fail "billing.plans.migration.availabilityOverrides must be a map" }}
+{{- end }}
+{{- if gt (len $migrationOverrides) 0 }}
+{{-   $overrideConfig := fromYaml $desiredConfig }}
+{{-   if hasKey $overrideConfig "Error" }}
+{{-     fail (printf "cannot parse desired billing.plans.config for availability overrides: %s" (get $overrideConfig "Error")) }}
+{{-   end }}
+{{-   $overrideAddons := get $overrideConfig "addons" | default dict }}
+{{-   if not (kindIs "map" $overrideAddons) }}
+{{-     fail "cannot apply billing plan availability overrides: addons must be a map" }}
+{{-   end }}
+{{-   range $addonID, $availability := $migrationOverrides }}
+{{-     if not (has $addonID $migrationAvailability) }}
+{{-       fail (printf "billing plan availability override %q must be listed in syncAddonAvailability" $addonID) }}
+{{-     end }}
+{{-     if not (hasKey $overrideAddons $addonID) }}
+{{-       fail (printf "billing plan availability override %q is absent from billing.plans.config" $addonID) }}
+{{-     end }}
+{{-     $wantedAddon := index $overrideAddons $addonID }}
+{{-     if not (kindIs "map" $availability) }}
+{{-       fail (printf "billing plan availability override %q must be a map" $addonID) }}
+{{-     end }}
+{{-     if not (kindIs "map" $wantedAddon) }}
+{{-       fail (printf "billing plan availability override %q targets a non-map add-on" $addonID) }}
+{{-     end }}
+{{-     if not (hasKey $availability "selfService") }}
+{{-       fail (printf "billing plan availability override %q must define selfService" $addonID) }}
+{{-     end }}
+{{-     if and (ne (get $availability "disabled" | default false) true) (ne (get $availability "selfService") false) }}
+{{-       fail (printf "billing plan availability override %q must remain disabled or selfService=false" $addonID) }}
+{{-     end }}
+{{-     $_ := set $wantedAddon "disabled" (get $availability "disabled" | default false) }}
+{{-     $_ := set $wantedAddon "selfService" (get $availability "selfService") }}
+{{-     $_ := set $overrideAddons $addonID $wantedAddon }}
+{{-   end }}
+{{-   $_ := set $overrideConfig "addons" $overrideAddons }}
+{{-   $desiredConfig = toYaml $overrideConfig }}
+{{-   $config = $desiredConfig }}
+{{- end }}
+{{- /*
+  GPU plan variants. Merged into the desired config ONLY when both this key and
+  gpu.enabled are on, because a plan carrying GPU grants is NOT inert on a
+  cluster without a catalog: LoadPlanConfig rejects the entire plans.yaml (see
+  hasGPUGrants) when gpu-profiles is absent or the granted profile is not
+  billingEligible — taking every plan, the suspended plan, systemOverhead and
+  eipQuota down with it, so a cold-started manager fails to reconcile any
+  organization. Plans have no `disabled` flag to hide behind the way add-ons do,
+  and adding one would be worse: a plan skipped at parse time loses its
+  BasePlans entry, and any organization already annotated with that plan id
+  falls back to the suspended-plan floor. So the gate is here, and every
+  mistake fails the render with the reason named.
+*/}}
+{{- if $variantsEnabled }}
+{{-   if not $gpuEnabled }}
+{{-     fail "billing.plans.gpuVariants.enabled requires gpu.enabled=true: without a rendered gpu-profiles catalog the manager rejects the whole billing-plans ConfigMap, not just the GPU plans" }}
+{{-   end }}
+{{- /*
+      GPU-as-a-plan exists for ONE provider. WHMCS provisions a service by plan
+      id and carries no Kube-DC add-on quantities, so a WHMCS customer cannot buy
+      the GPU add-on at all and the entitlement has to be baked into the tier.
+      Stripe has no such limit — it sells GPU through the add-on catalog, which
+      works and is deliberately left alone. Seeding these plans on a Stripe
+      install would publish a second, unbillable way to buy the same thing.
+
+      This is the INSTALL-TIME intent; the backend independently enforces the
+      live provider (billing-config ConfigMap, changeable from the console), so
+      flipping a cluster to Stripe later withdraws the plans without a reseed.
+*/}}
+{{-   if ne (printf "%v" (.Values.billing.provider | default "none")) "whmcs" }}
+{{-     fail (printf "billing.plans.gpuVariants.enabled requires billing.provider=whmcs (got %q): GPU is sold as a plan only on WHMCS, which cannot carry add-on quantities; every other provider sells the GPU add-on instead" (printf "%v" (.Values.billing.provider | default "none"))) }}
+{{-   end }}
+{{-   if not (kindIs "map" $variantPlans) }}
+{{-     fail "billing.plans.gpuVariants.plans must be a map" }}
+{{-   end }}
+{{-   if not (kindIs "map" $variantEIPQuota) }}
+{{-     fail "billing.plans.gpuVariants.eipQuota must be a map" }}
+{{-   end }}
+{{-   if eq (len $variantPlans) 0 }}
+{{-     fail "billing.plans.gpuVariants.enabled requires at least one plan in billing.plans.gpuVariants.plans" }}
+{{-   end }}
+{{-   $profileIndex := dict }}
+{{-   range $profile := $gpuProfiles }}
+{{-     if kindIs "map" $profile }}
+{{-       $_ := set $profileIndex (printf "%v" (get $profile "id")) $profile }}
+{{-     end }}
+{{-   end }}
+{{-   $variantConfig := fromYaml $desiredConfig }}
+{{-   if hasKey $variantConfig "Error" }}
+{{-     fail (printf "cannot parse desired billing.plans.config for GPU variants: %s" (get $variantConfig "Error")) }}
+{{-   end }}
+{{-   $mergedPlans := get $variantConfig "plans" | default dict }}
+{{-   $mergedEIPQuota := get $variantConfig "eipQuota" | default dict }}
+{{-   if not (kindIs "map" $mergedPlans) }}
+{{-     fail "cannot merge GPU plan variants: plans must be a map" }}
+{{-   end }}
+{{-   if not (kindIs "map" $mergedEIPQuota) }}
+{{-     fail "cannot merge GPU plan variants: eipQuota must be a map" }}
+{{-   end }}
+{{-   range $planID, $variant := $variantPlans }}
+{{-     if not (kindIs "map" $variant) }}
+{{-       fail (printf "GPU plan variant %q must be a map" $planID) }}
+{{-     end }}
+{{-     if hasKey $mergedPlans $planID }}
+{{-       fail (printf "GPU plan variant %q is already defined in billing.plans.config" $planID) }}
+{{-     end }}
+{{-     range $required := (list "requests" "limitRange" "servicesLB" "gpu") }}
+{{-       if not (hasKey $variant $required) }}
+{{-         fail (printf "GPU plan variant %q must define %s" $planID $required) }}
+{{-       end }}
+{{-     end }}
+{{-     $grants := get $variant "gpu" }}
+{{-     if or (not (kindIs "map" $grants)) (eq (len $grants) 0) }}
+{{-       fail (printf "GPU plan variant %q must grant at least one GPU profile" $planID) }}
+{{-     end }}
+{{-     range $profileID, $grant := $grants }}
+{{-       if not (hasKey $profileIndex $profileID) }}
+{{-         fail (printf "GPU plan variant %q grants profile %q, which is absent from gpu.profiles" $planID $profileID) }}
+{{-       end }}
+{{-       $profile := index $profileIndex $profileID }}
+{{-       if ne (printf "%v" (get $profile "enabled" | default false)) "true" }}
+{{-         fail (printf "GPU plan variant %q grants disabled profile %q" $planID $profileID) }}
+{{-       end }}
+{{-       if ne (printf "%v" (get $profile "billingEligible" | default false)) "true" }}
+{{-         fail (printf "GPU plan variant %q grants profile %q with billingEligible=false; resolveGPUGrants would reject it and the manager would drop the whole billing-plans ConfigMap" $planID $profileID) }}
+{{-       end }}
+{{-     end }}
+{{-     if not (hasKey $variantEIPQuota $planID) }}
+{{-       fail (printf "GPU plan variant %q needs a billing.plans.gpuVariants.eipQuota entry: plans.%s.ipv4 is display-only and a plan absent from eipQuota gets no public-IPv4 enforcement" $planID $planID) }}
+{{-     end }}
+{{-     $_ := set $mergedPlans $planID (deepCopy $variant) }}
+{{-     $_ := set $mergedEIPQuota $planID (index $variantEIPQuota $planID) }}
+{{-   end }}
+{{-   $_ := set $variantConfig "plans" $mergedPlans }}
+{{-   $_ := set $variantConfig "eipQuota" $mergedEIPQuota }}
+{{-   $desiredConfig = toYaml $variantConfig }}
+{{-   $config = $desiredConfig }}
+{{- end }}
+{{- if and (or (gt (len $migrationAddons) 0) (gt (len $migrationAvailability) 0) (gt (len $migrationPlans) 0)) (eq $migrationVersion "") }}
+{{-   fail "billing.plans.migration.version is required when addMissingAddons, syncAddonAvailability or addMissingPlans is non-empty" }}
+{{- end }}
+{{- /*
+  Validate addMissingPlans against the DESIRED config unconditionally — not
+  inside the `if $existing` branch below. `lookup` is empty during
+  `helm template`/dry-run, so an id that is misspelled or gated off (variants
+  disabled) would otherwise render clean in CI and only fail later, as a
+  reconcile error against a live cluster.
+*/}}
+{{- $migrationWantedPlans := dict }}
+{{- $migrationWantedEIPQuota := dict }}
+{{- if gt (len $migrationPlans) 0 }}
+{{-   $desiredParsed := fromYaml $desiredConfig }}
+{{-   if hasKey $desiredParsed "Error" }}
+{{-     fail (printf "cannot parse desired billing.plans.config for plan migration: %s" (get $desiredParsed "Error")) }}
+{{-   end }}
+{{-   $migrationWantedPlans = get $desiredParsed "plans" | default dict }}
+{{-   $migrationWantedEIPQuota = get $desiredParsed "eipQuota" | default dict }}
+{{-   if not (kindIs "map" $migrationWantedPlans) }}
+{{-     fail "cannot migrate billing.plans.config: plans must be a map" }}
+{{-   end }}
+{{-   if not (kindIs "map" $migrationWantedEIPQuota) }}
+{{-     fail "cannot migrate billing.plans.config: eipQuota must be a map" }}
+{{-   end }}
+{{-   range $planID := $migrationPlans }}
+{{-     if not (hasKey $migrationWantedPlans $planID) }}
+{{-       fail (printf "billing plan migration %q is absent from the desired config; define it in billing.plans.config, or enable billing.plans.gpuVariants together with gpu.enabled" $planID) }}
+{{-     end }}
+{{-     $wantedPlan := index $migrationWantedPlans $planID }}
+{{-     if not (kindIs "map" $wantedPlan) }}
+{{-       fail (printf "billing plan migration %q must be a map" $planID) }}
+{{-     end }}
+{{-     range $required := (list "requests" "limitRange" "servicesLB") }}
+{{-       if not (hasKey $wantedPlan $required) }}
+{{-         fail (printf "billing plan migration %q must define %s; LoadPlanConfig requires it for every plan and rejects the whole ConfigMap without it" $planID $required) }}
+{{-       end }}
+{{-     end }}
+{{-     if not (hasKey $migrationWantedEIPQuota $planID) }}
+{{-       fail (printf "billing plan migration %q must have an eipQuota entry; a plan absent from eipQuota gets no public-IPv4 enforcement" $planID) }}
+{{-     end }}
+{{-   end }}
+{{- end }}
 {{- $existing := lookup "v1" "ConfigMap" .Release.Namespace "billing-plans" }}
 {{- if $existing }}
 {{-   $existingData := $existing.data | default dict }}
 {{-   if index $existingData "plans.yaml" }}
-{{-     $config = index $existingData "plans.yaml" }}
+{{-     $liveConfigRaw := index $existingData "plans.yaml" }}
+{{-     $config = $liveConfigRaw }}
+{{-     $existingAnnotations := $existing.metadata.annotations | default dict }}
+{{-     $completedMigration := get $existingAnnotations "billing.kube-dc.com/plan-seed-migration" | default "" }}
+{{-     if and (or (gt (len $migrationAddons) 0) (gt (len $migrationAvailability) 0) (gt (len $migrationPlans) 0)) (ne $completedMigration $migrationVersion) }}
+{{-       $liveConfig := fromYaml $liveConfigRaw }}
+{{-       $wantedConfig := fromYaml $desiredConfig }}
+{{-       if hasKey $liveConfig "Error" }}
+{{-         fail (printf "cannot migrate live billing-plans plans.yaml: %s" (get $liveConfig "Error")) }}
+{{-       end }}
+{{-       if hasKey $wantedConfig "Error" }}
+{{-         fail (printf "cannot parse desired billing.plans.config: %s" (get $wantedConfig "Error")) }}
+{{-       end }}
+{{-       $liveAddons := get $liveConfig "addons" | default dict }}
+{{-       $wantedAddons := get $wantedConfig "addons" | default dict }}
+{{-       if not (kindIs "map" $liveAddons) }}
+{{-         fail "cannot migrate live billing-plans: addons must be a map" }}
+{{-       end }}
+{{-       if not (kindIs "map" $wantedAddons) }}
+{{-         fail "cannot migrate billing.plans.config: addons must be a map" }}
+{{-       end }}
+{{- /*
+      The desired-side plan/eipQuota shape is already validated above, before
+      the lookup, so only the LIVE side is checked here.
+*/}}
+{{-       $livePlans := get $liveConfig "plans" | default dict }}
+{{-       $liveEIPQuota := get $liveConfig "eipQuota" | default dict }}
+{{-       if not (kindIs "map" $livePlans) }}
+{{-         fail "cannot migrate live billing-plans: plans must be a map" }}
+{{-       end }}
+{{-       if not (kindIs "map" $liveEIPQuota) }}
+{{-         fail "cannot migrate live billing-plans: eipQuota must be a map" }}
+{{-       end }}
+{{-       $state := dict "changed" false }}
+{{- /*
+      Plan seeding. Same contract as the add-on wave: copy only what is ABSENT
+      and never replace a live definition, so an operator's price/quota edits
+      survive every reconcile. The eipQuota entry is back-filled even when the
+      plan itself already exists, because that one is not a preference — a plan
+      missing from eipQuota is not "unlimited by choice", it is a plan whose
+      public-IPv4 quota CheckEIPQuota silently skips.
+*/}}
+{{-       range $planID := $migrationPlans }}
+{{-         if not (hasKey $livePlans $planID) }}
+{{-           $_ := set $livePlans $planID (deepCopy (index $migrationWantedPlans $planID)) }}
+{{-           $_ := set $state "changed" true }}
+{{-         end }}
+{{-         if not (hasKey $liveEIPQuota $planID) }}
+{{-           $_ := set $liveEIPQuota $planID (index $migrationWantedEIPQuota $planID) }}
+{{-           $_ := set $state "changed" true }}
+{{-         end }}
+{{-       end }}
+{{-       range $addonID := $migrationAddons }}
+{{-         if not (hasKey $wantedAddons $addonID) }}
+{{-           fail (printf "billing plan migration add-on %q is absent from billing.plans.config" $addonID) }}
+{{-         end }}
+{{-         $addon := index $wantedAddons $addonID }}
+{{-         if not (kindIs "map" $addon) }}
+{{-           fail (printf "billing plan migration add-on %q must be a map" $addonID) }}
+{{-         end }}
+{{-         if and (ne (get $addon "disabled" | default false) true) (or (not (hasKey $addon "selfService")) (ne (get $addon "selfService") false)) }}
+{{-           fail (printf "billing plan migration add-on %q must be disabled or selfService=false" $addonID) }}
+{{-         end }}
+{{-         if not (hasKey $liveAddons $addonID) }}
+{{-           $_ := set $liveAddons $addonID (deepCopy $addon) }}
+{{-           $_ := set $state "changed" true }}
+{{-         end }}
+{{-       end }}
+{{-       range $addonID := $migrationAvailability }}
+{{-         if not (hasKey $wantedAddons $addonID) }}
+{{-           fail (printf "billing plan migration availability add-on %q is absent from billing.plans.config" $addonID) }}
+{{-         end }}
+{{-         if not (hasKey $liveAddons $addonID) }}
+{{-           fail (printf "billing plan migration availability add-on %q is absent from live billing plans" $addonID) }}
+{{-         end }}
+{{-         $wantedAddon := index $wantedAddons $addonID }}
+{{-         $liveAddon := index $liveAddons $addonID }}
+{{-         if not (kindIs "map" $wantedAddon) }}
+{{-           fail (printf "billing plan migration availability add-on %q must be a map in billing.plans.config" $addonID) }}
+{{-         end }}
+{{-         if not (kindIs "map" $liveAddon) }}
+{{-           fail (printf "billing plan migration availability add-on %q must be a map in live billing plans" $addonID) }}
+{{-         end }}
+{{-         if not (hasKey $wantedAddon "selfService") }}
+{{-           fail (printf "billing plan migration availability add-on %q must define selfService" $addonID) }}
+{{-         end }}
+{{-         if and (ne (get $wantedAddon "disabled" | default false) true) (ne (get $wantedAddon "selfService") false) }}
+{{-           fail (printf "billing plan migration availability add-on %q must remain disabled or selfService=false" $addonID) }}
+{{-         end }}
+{{-         $_ := set $liveAddon "disabled" (get $wantedAddon "disabled" | default false) }}
+{{-         $_ := set $liveAddon "selfService" (get $wantedAddon "selfService") }}
+{{-         $_ := set $liveAddons $addonID $liveAddon }}
+{{-         $_ := set $state "changed" true }}
+{{-       end }}
+{{-       if get $state "changed" }}
+{{-         $_ := set $liveConfig "addons" $liveAddons }}
+{{-         $_ := set $liveConfig "plans" $livePlans }}
+{{-         $_ := set $liveConfig "eipQuota" $liveEIPQuota }}
+{{-         $config = toYaml $liveConfig }}
+{{-       end }}
+{{-     end }}
 {{-   end }}
 {{- end }}
 apiVersion: v1
@@ -25,6 +330,10 @@ metadata:
   labels:
     helm.sh/chart: {{ include "kube-dc.chart" . }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- if ne $migrationVersion "" }}
+  annotations:
+    billing.kube-dc.com/plan-seed-migration: {{ $migrationVersion | quote }}
+{{- end }}
 data:
   plans.yaml: |
 {{ $config | indent 4 }}

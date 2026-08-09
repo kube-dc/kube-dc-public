@@ -198,3 +198,62 @@ func TestRemoveContext_ExternalRowIsSafe(t *testing.T) {
 		t.Error("kube-dc/cloud/admin lost — RemoveContext leaked into a sibling")
 	}
 }
+
+// TLS verification must be disabled ONLY on an explicit request.
+//
+// The bug this pins: skipTLS was derived as
+//
+//	params.Insecure || (params.CACert == "" && !params.Insecure)
+//
+// which is true whenever no CA is passed — and an empty CA is the NORMAL case
+// for a publicly-trusted certificate. Every operator and tenant kubeconfig the
+// CLI wrote therefore carried insecure-skip-tls-verify: true, silently removing
+// API-server authentication from every kubectl call the product hands out.
+func TestAddKubeDCContext_TLSVerificationIsOnUnlessExplicitlyWaived(t *testing.T) {
+	cases := []struct {
+		name     string
+		insecure bool
+		caCert   string
+		wantSkip bool
+	}{
+		{"public cert, no CA supplied — the common case", false, "", false},
+		{"private CA supplied", false, "-----BEGIN CERTIFICATE-----\nzz\n-----END CERTIFICATE-----", false},
+		{"explicitly waived", true, "", true},
+		// client-go REJECTS a cluster carrying both a CA and
+		// insecure-skip-tls-verify, so the CA must be dropped rather than
+		// written alongside — otherwise the kubeconfig fails to load at all.
+		{"explicitly waived even with a CA", true, "-----BEGIN CERTIFICATE-----\nzz\n-----END CERTIFICATE-----", true},
+	}
+	for _, c := range cases {
+		m, _ := newTestManager(t)
+		if err := m.AddKubeDCContext(AddContextParams{
+			ClusterName: "c", UserName: "u", ContextName: "ctx",
+			Server: "https://kube-api.example.com:6443",
+			CACert: c.caCert, Insecure: c.insecure,
+		}); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		cfg, err := m.Load()
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		var got bool
+		var haveCA bool
+		for _, cl := range cfg.Clusters {
+			if cl.Name == "c" {
+				got = cl.Cluster.InsecureSkipTLSVerify
+				haveCA = cl.Cluster.CertificateAuthorityData != ""
+			}
+		}
+		if got != c.wantSkip {
+			t.Errorf("%s: insecure-skip-tls-verify = %v, want %v", c.name, got, c.wantSkip)
+		}
+		wantCA := c.caCert != "" && !c.insecure
+		if wantCA != haveCA {
+			t.Errorf("%s: certificate-authority-data present = %v, want %v", c.name, haveCA, wantCA)
+		}
+		if haveCA && got {
+			t.Errorf("%s: wrote BOTH a CA and insecure-skip-tls-verify — client-go rejects that combination", c.name)
+		}
+	}
+}

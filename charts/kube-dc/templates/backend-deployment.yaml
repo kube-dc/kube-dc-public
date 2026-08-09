@@ -25,7 +25,8 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
-        {{- include "kube-dc.backend.labels" . | nindent 8 }}
+        {{- include "kube-dc.backend.selectorLabels" . | nindent 8 }}
+        {{- include "kube-dc.podVersionLabel" . | nindent 8 }}
         {{- with .Values.backend.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -48,10 +49,30 @@ spec:
               containerPort: 3333 #{{ .Values.backend.service.port }}
               protocol: TCP
           env:
+            - name: GPU_SHARED_CREATION_ENABLED
+              value: {{ .Values.gpu.sharedCreation.enabled | quote }}
+            - name: GPU_VM_CREATION_ENABLED
+              value: {{ .Values.gpu.vmCreation.enabled | quote }}
+            - name: GPU_PROFILE_LABEL
+              value: {{ .Values.gpu.profileLabel | quote }}
+            - name: GPU_HAMI_SCHEDULER_NAME
+              value: {{ .Values.gpu.hamiSchedulerName | quote }}
             - name: PROM_URL
               value: "{{ .Values.backend.prometheusUrl | default "http://prom-operator-prometheus.monitoring:9090" }}"
             - name: PROJECT_SHELL_API_URL
               value: "{{ .Values.kubeApiExternalUrl }}"
+            # Under management-API `service` mode the cloud shell must dial the
+            # kubernetes ServiceIP, not the external hostname. Its SecurityGroup
+            # permits exactly one egress rule — tcp <ServiceIP>/32:443 — and the
+            # node LAN the external hostname resolves to is default-deny. Dialling
+            # the hostname yields "session expired", because the credential exec
+            # cannot reach the apiserver at all.
+            # Empty on every other mode, where the shell keeps the external
+            # hostname and reaches it through the tenant VPC as before.
+            {{- if and (eq .Values.managementAPI.mode "service") .Values.managementAPI.serviceIP }}
+            - name: PROJECT_SHELL_API_SERVICE_URL
+              value: "{{ .Values.managementAPI.serviceIP }}:443"
+            {{- end }}
             # S3 endpoint for tenant Object Storage views, KdcDatabase
             # backup wiring, and quota lookups. Per-cluster value —
             # earlier versions of the JS controllers fell back to a
@@ -179,6 +200,25 @@ spec:
                   name: master-config
                   key: allow_public_projects
                   optional: true
+            # Tenant-VLAN attachment. The UI must be ABSENT, not disabled, on a
+            # cluster that has not enabled it, so the frontend needs the same
+            # value the manager reads. Taken straight from the chart value
+            # rather than master-config: this is the switch that decides whether
+            # the manager publishes NADs at all, so the two cannot drift.
+            - name: PROJECT_NETWORK_ENABLED
+              value: {{ .Values.projectNetwork.enabled | quote }}
+            # Per-project VPC CIDR suggestion (see values.yaml backend.projectCidr).
+            # `reserved` must name every underlay inside `pool` that is not a
+            # project network, otherwise the allocator can suggest a block that
+            # overlaps node/management/VLAN ranges.
+            {{- with .Values.backend.projectCidr }}
+            - name: PROJECT_CIDR_POOL
+              value: {{ .pool | quote }}
+            - name: PROJECT_CIDR_PREFIX
+              value: {{ .prefix | quote }}
+            - name: PROJECT_CIDR_RESERVED
+              value: {{ join "," .reserved | quote }}
+            {{- end }}
             {{- if and .Values.manager.openBao .Values.manager.openBao.enabled }}
             # M1-T04: backend exchanges users' Keycloak JWTs against
             # the per-Org auth/oidc-keycloak OpenBao mount. Same URL
@@ -206,7 +246,51 @@ spec:
             - name: LOKI_AUDIT_TENANT
               value: "{{ .Values.backend.audit.tenant | default "system" }}"
             {{- end }}
+            {{- if .Values.backend.keycloakAdminClient.secretName }}
+            # Admin Console pages that read Keycloak (Platform Admins, Auth &
+            # SSO) use a client_credentials grant, NOT the admin user/password
+            # above. Without these the pages report "Keycloak admin client not
+            # configured" and Auth & SSO shows 0 realms on a populated cluster.
+            # `kube-dc bootstrap keycloak init` creates the client
+            # (kube-dc-admin-backend, confidential + service account).
+            - name: KEYCLOAK_ADMIN_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.keycloakAdminClient.secretName | quote }}
+                  key: {{ .Values.backend.keycloakAdminClient.clientIdKey | quote }}
+            - name: KEYCLOAK_ADMIN_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.keycloakAdminClient.secretName | quote }}
+                  key: {{ .Values.backend.keycloakAdminClient.clientSecretKey | quote }}
+            {{- end }}
+            # Outbound TLS verification. OFF by default and deliberately so:
+            # it can only succeed once the trust bundle covers every host this
+            # backend calls — the API server (cluster CA, added by
+            # docker-entrypoint.sh) and the platform's own HTTPS endpoints
+            # (backend.trustedCA below, when they use a private CA). A cluster
+            # that reaches the API server by an address its certificate does not
+            # cover would fail every call the moment this flipped, so it is
+            # proven per installation and then enabled.
+            #
+            # Independent of this, the tenant-VLAN authorization path always
+            # verifies — see ui/backend/util/k8sVerifiedRequest.js.
+            - name: BACKEND_TLS_VERIFY
+              value: {{ .Values.backend.tlsVerify | default false | quote }}
+            {{- if .Values.backend.trustedCA.configMapName }}
+            # Node does NOT read SSL_CERT_DIR (the manager's mechanism). It reads
+            # NODE_EXTRA_CA_CERTS — a single FILE, appended to the bundled roots,
+            # so public CAs keep working. Required when the platform's own HTTPS
+            # endpoints use a private CA, otherwise every server-side call the
+            # backend makes fails with "certificate verify failed".
+            - name: NODE_EXTRA_CA_CERTS
+              value: {{ printf "%s/%s" (trimSuffix "/" .Values.backend.trustedCA.mountPath) .Values.backend.trustedCA.fileName | quote }}
+            {{- end }}
           {{- with .Values.backend.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.backend.startupProbe }}
+          startupProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           livenessProbe:
@@ -215,13 +299,27 @@ spec:
             {{- toYaml .Values.backend.readinessProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
-          {{- with .Values.backend.volumeMounts }}
+          {{- if or .Values.backend.volumeMounts .Values.backend.trustedCA.configMapName }}
           volumeMounts:
+            {{- if .Values.backend.trustedCA.configMapName }}
+            - name: trusted-ca
+              mountPath: {{ .Values.backend.trustedCA.mountPath | quote }}
+              readOnly: true
+            {{- end }}
+            {{- with .Values.backend.volumeMounts }}
             {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- end }}
-      {{- with .Values.backend.volumes }}
+      {{- if or .Values.backend.volumes .Values.backend.trustedCA.configMapName }}
       volumes:
+        {{- if .Values.backend.trustedCA.configMapName }}
+        - name: trusted-ca
+          configMap:
+            name: {{ .Values.backend.trustedCA.configMapName | quote }}
+        {{- end }}
+        {{- with .Values.backend.volumes }}
         {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- end }}
       {{- with .Values.backend.nodeSelector }}
       nodeSelector:

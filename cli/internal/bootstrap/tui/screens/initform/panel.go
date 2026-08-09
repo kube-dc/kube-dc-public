@@ -133,7 +133,21 @@ func panelFields() []panelField {
 			Set: func(s *State, v string) { set(s, v == "yes") }}
 	}
 	isPublic := func(s *State) bool { return s.Preset == string(clusterinit.PresetCloudPublicVLAN) }
-	isL2 := func(s *State) bool { return s.MetalLBMode == "" || s.MetalLBMode == "l2" }
+	// A VIP layer is what makes the MetalLB detail fields meaningful; under
+	// "none" MetalLB is not installed at all, so showing them would invite the
+	// incoherent config the validator refuses.
+	isVIPLayer := func(s *State) bool {
+		return s.IngressAddressLayer == "metallb-l2" || s.IngressAddressLayer == "metallb-bgp"
+	}
+	// isL2 must consider the LAYER, not just the mode: under "none" no MetalLB
+	// is installed, so requiring an L2 interface asked for a value that has no
+	// consumer and blocked Apply on a perfectly valid no-VIP install.
+	isL2 := func(s *State) bool {
+		if !isVIPLayer(s) {
+			return false
+		}
+		return s.MetalLBMode == "" || s.MetalLBMode == "l2"
+	}
 	isBGP := func(s *State) bool { return s.MetalLBMode == "bgp" }
 	osIs := func(mode string) func(*State) bool {
 		return func(s *State) bool { return s.OSMode == mode }
@@ -185,6 +199,8 @@ func panelFields() []panelField {
 			func(s *State) string { return s.KubeOVNMasterNodes }, func(s *State, v string) { s.KubeOVNMasterNodes = v }, nil),
 		txt("Network", "Gateway nodes", "KUBE_OVN_GW_NODES — OVN external-gateway node names, comma-separated (empty = default)", false,
 			func(s *State) string { return s.GWNodes }, func(s *State, v string) { s.GWNodes = v }, nil),
+		txt("Network", "Ingress nodes", "which machines bind :80/:443 — comma-separated (EMPTY IS RECOMMENDED: the gateway nodes are used, the only set that can announce a VIP)", false,
+			func(s *State) string { return s.IngressNodes }, func(s *State, v string) { s.IngressNodes = v }, nil),
 		txt("Network", "Gateway type", "KUBE_OVN_GW_TYPE — centralized | distributed (empty = fleet default)", false,
 			func(s *State) string { return s.GWType }, func(s *State, v string) { s.GWType = v }, nil),
 		txt("Network", "EXT_PUBLIC_VLAN_ID", "public VLAN id", false,
@@ -197,10 +213,16 @@ func panelFields() []panelField {
 			func(s *State) string { return s.PubExclude1 }, func(s *State, v string) { s.PubExclude1 = v }, nil).with(isPublic),
 		txt("Network", "EXT_PUBLIC_EXCLUDE_IPS_2", "second reserved IP or start..end range", true,
 			func(s *State) string { return s.PubExclude2 }, func(s *State, v string) { s.PubExclude2 = v }, nil).with(isPublic),
+		// THE front-door question. Asked before the VIP details, because the
+		// answer decides whether those details apply at all.
+		sel("Network", "Front door", "who owns the address users dial: none = the ingress nodes' own IPs (no MetalLB); metallb-l2 = floating VIP via ARP; metallb-bgp = floating VIP via BGP",
+			[]string{"none", "metallb-l2", "metallb-bgp"},
+			func(s *State) string { return s.IngressAddressLayer },
+			func(s *State, v string) { s.IngressAddressLayer = v }),
 		sel("Network", "MetalLB mode", "L2 ARP/GARP or BGP routed announcement", []string{"l2", "bgp"},
-			func(s *State) string { return s.MetalLBMode }, func(s *State, v string) { s.MetalLBMode = v }),
+			func(s *State) string { return s.MetalLBMode }, func(s *State, v string) { s.MetalLBMode = v }).with(isVIPLayer),
 		txt("Network", "MetalLB VIP", "dedicated IPv4 address for the Envoy front door", true,
-			func(s *State) string { return s.MetalLBVIP }, func(s *State, v string) { s.MetalLBVIP = v }, nil),
+			func(s *State) string { return s.MetalLBVIP }, func(s *State, v string) { s.MetalLBVIP = v }, nil).with(isVIPLayer),
 		txt("Network", "MetalLB L2 interface", "node NIC/bridge carrying the VIP segment", true,
 			func(s *State) string { return s.MetalLBInterface }, func(s *State, v string) { s.MetalLBInterface = v }, nil).with(isL2),
 		txt("Network", "BGP local ASN", "METALLB_BGP_LOCAL_ASN", true,

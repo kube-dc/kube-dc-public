@@ -1,0 +1,177 @@
+# Windows 11 golden BUILD VM — kube-dc automated bake.
+# Rewritten 2026-08-06 per docs/prd/windows-bake-review-2026-08-06.md.
+#
+# BLOCKERS FIXED HERE:
+#  - the golden-images-build namespace is CREATED (nothing created it before)
+#  - ISO sources point at REAL, verified URLs (the old
+#    iso-server.golden-images-build.svc does not exist; the Service is in ns `iso`)
+#  - sysprep volume uses `secret.name` (the schema field) — `secret.secretName`
+#    is rejected by the KubeVirt API
+#  - root disk stays bus: virtio, and the answer file now loads viostor (+vioserial)
+#
+# STAGE (one command — nothing large goes through Kubernetes objects):
+#
+#   envsubst < autounattend.xml > /tmp/autounattend.xml     # WIN_BUILD_ADMIN_PASSWORD
+#   kubectl -n golden-images-build create secret generic win11-sysprep \
+#     --from-file=autounattend.xml=/tmp/autounattend.xml
+#
+# That Secret carries ONLY the per-build answer file (~6 KB) because it embeds a
+# build-time password. Everything bulky — the ~20 MB cloudbase-init MSI and the
+# in-guest scripts — is BAKED into the windows-bake-assets containerDisk below
+# (images/windows-bake-assets), which is digest-pinned and reproducible. Nothing
+# is downloaded inside the guest at bake time.
+#
+# For the MONTHLY REFRESH build, add the updates marker to the same Secret:
+#   --from-literal=apply-updates.enabled=1
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: golden-images-build
+  labels:
+    kube-dc.com/system: "true"
+    kube-dc.com/system-component: windows-bake
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: win11-installer-iso
+  namespace: golden-images-build
+spec:
+  source:
+    http:
+      # Stock Microsoft evaluation ISO from our S3 mirror.
+      #
+      # It stops at "Press any key to boot from CD or DVD" and, with a blank
+      # target disk, falls through to "No bootable option or device was found"
+      # (first bake attempt, 2026-08-07: the VM sat at the firmware boot manager
+      # while Kubernetes reported VMI Running + Ready).
+      #
+      # CORRECTION (2026-08-08): I previously wrote here that efisys_noprompt.bin
+      # was absent from this ISO revision, and used that to justify driving the
+      # prompt with synthetic keypresses. That was WRONG — the ISO contains BOTH
+      # efi/microsoft/boot/efisys_noprompt.bin and efi/microsoft/boot/cdboot_noprompt.efi.
+      # The keypress route is a race: the prompt lasts ~5s, `virtctl vnc --proxy-only`
+      # serves one connection so taps are sparse, and a late tap parks the VM in the
+      # edk2 Boot Manager for hours looking healthy. It cost most of a day.
+      #
+      # THE REAL FIX is to remaster this ISO once with the no-prompt boot image:
+      #   xorriso -as mkisofs -iso-level 4 \
+      #     -b boot/etfsboot.com -no-emul-boot -boot-load-size 8 \
+      #     -eltorito-alt-boot -e efi/microsoft/boot/efisys_noprompt.bin -no-emul-boot \
+      #     -o win11-x64-noprompt.iso <extracted>
+      # and publish it alongside the stock ISO. Then the bake needs no keypress at
+      # all and press-any-key.sh becomes a fallback for un-remastered media.
+      url: "http://rook-ceph-rgw-my-store.rook-ceph.svc/cdi-os-images/windows/11/latest/win11-x64-noprompt.iso"
+  storage: { accessModes: [ReadWriteOnce], volumeMode: Filesystem, storageClassName: rbd-vm, resources: { requests: { storage: 8Gi } } }
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: virtio-win-iso
+  namespace: golden-images-build
+spec:
+  source:
+    http:
+      # Upstream stable virtio-win (verified reachable from a stage pod, 789 MB).
+      # Carries viostor + vioserial + NetKVM + Balloon + the qemu-ga MSI.
+      url: "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso"
+  storage: { accessModes: [ReadWriteOnce], volumeMode: Filesystem, storageClassName: rbd-vm, resources: { requests: { storage: 2Gi } } }
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: win11-golden-disk
+  namespace: golden-images-build
+spec:
+  source: { blank: {} }
+  # 64Gi = the Win11 floor (minimal-image model). Tenant clones onto a larger
+  # disk are grown by cloudbase-init's ExtendVolumesPlugin on first boot.
+  # The fleet golden DataVolume must be >= this.
+  storage: { accessModes: [ReadWriteOnce], volumeMode: Filesystem, storageClassName: rbd-vm, resources: { requests: { storage: 64Gi } } }
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: win11-golden-build
+  namespace: golden-images-build
+  labels:
+    kube-dc.com/system: "true"
+    kube-dc.com/golden-os: windows-11
+spec:
+  # Halted by bootstrap.ps1's sysprep /shutdown. RerunOnFailure (not Always) so a
+  # clean seal STAYS down instead of rebooting the sealed image.
+  runStrategy: RerunOnFailure
+  template:
+    metadata:
+      labels: { kubevirt.io/vm: win11-golden-build }
+    spec:
+      domain:
+        # Keep the build hardware profile CLOSE to the tenant profile: sysprep
+        # /generalize is robust, but a wildly different profile risks first-boot
+        # driver churn on clones (codex flagged /mode:vm assumptions).
+        cpu: { cores: 4 }
+        memory: { guest: 8Gi }
+        machine: { type: q35 }
+        firmware:
+          bootloader:
+            efi: { secureBoot: true }
+        features:
+          smm: { enabled: true }
+          acpi: {}
+        devices:
+          tpm: {}
+          disks:
+            # BOOT ORDER MATTERS MORE THAN IT LOOKS, and it changed meaning when we
+            # moved to the no-prompt ISO. With the CD first, the removed prompt no
+            # longer times out, so every reboot during Setup boots the installer again
+            # and the install restarts from the beginning — an infinite loop that
+            # looks like healthy progress until you notice the percentage going DOWN
+            # (2026-08-08: 57%, then 30%).
+            # Disk first is what physical installs rely on: a blank disk has no EFI
+            # boot entry, so the firmware falls straight through to the CD; once
+            # Windows is installed its entry exists and wins, and Setup's own reboots
+            # land on the new system exactly as intended.
+            - name: rootdisk
+              bootOrder: 1
+              disk: { bus: virtio }     # virtio-blk -> needs viostor (loaded in windowsPE)
+            - name: installer
+              bootOrder: 2
+              cdrom: { bus: sata }
+            - name: virtio
+              cdrom: { bus: sata }
+            - name: sysprep
+              cdrom: { bus: sata }
+            - name: assets
+              cdrom: { bus: sata }
+          interfaces:
+            - name: default
+              masquerade: {}
+              model: virtio
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          dataVolume: { name: win11-golden-disk }
+        - name: installer
+          dataVolume: { name: win11-installer-iso }
+        - name: virtio
+          dataVolume: { name: virtio-win-iso }
+        # KubeVirt sysprep volume — the schema field is `name`, NOT `secretName`.
+        # Every key of the Secret lands on a CDROM; Windows Setup auto-reads
+        # autounattend.xml from it and bootstrap.ps1 finds its scripts by
+        # searching drive letters.
+        - name: sysprep
+          sysprep:
+            secret:
+              name: win11-sysprep
+        # Bake assets: cloudbase-init MSI + the in-guest scripts, baked into an
+        # image at build time (images/windows-bake-assets) rather than pushed
+        # through a ConfigMap/Secret (which caps at ~1 MiB) or downloaded inside
+        # the guest (unreproducible). PIN THE DIGEST before a promotable bake.
+        - name: assets
+          containerDisk:
+            image: shalb/kube-dc-windows-bake-assets:v5@sha256:c12989105835d034f46ba100cc7a29ec08adf32e294db7688a909ac6a9bb4c95
+            imagePullPolicy: IfNotPresent

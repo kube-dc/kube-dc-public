@@ -12,13 +12,13 @@ import (
 
 // Config represents a kubeconfig file structure
 type Config struct {
-	APIVersion     string           `yaml:"apiVersion"`
-	Kind           string           `yaml:"kind"`
-	CurrentContext string           `yaml:"current-context"`
-	Clusters       []NamedCluster   `yaml:"clusters"`
-	Contexts       []NamedContext   `yaml:"contexts"`
-	Users          []NamedUser      `yaml:"users"`
-	Preferences    map[string]any   `yaml:"preferences,omitempty"`
+	APIVersion     string         `yaml:"apiVersion"`
+	Kind           string         `yaml:"kind"`
+	CurrentContext string         `yaml:"current-context"`
+	Clusters       []NamedCluster `yaml:"clusters"`
+	Contexts       []NamedContext `yaml:"contexts"`
+	Users          []NamedUser    `yaml:"users"`
+	Preferences    map[string]any `yaml:"preferences,omitempty"`
 }
 
 // NamedCluster represents a cluster entry in kubeconfig
@@ -147,14 +147,35 @@ func (m *Manager) AddKubeDCContext(params AddContextParams) error {
 	userName := params.UserName
 	contextName := params.ContextName
 
-	// Encode CA cert to base64 if provided
+	// Encode CA cert to base64 if provided.
+	//
+	// NOT when verification is explicitly waived: client-go rejects a cluster
+	// that carries both certificate-authority-data and
+	// insecure-skip-tls-verify, so writing both produces a kubeconfig that
+	// fails to load at all. --insecure is the stronger, explicit instruction,
+	// so it wins and the CA is omitted.
 	var caCertBase64 string
-	if params.CACert != "" {
+	if params.CACert != "" && !params.Insecure {
 		caCertBase64 = base64.StdEncoding.EncodeToString([]byte(params.CACert))
 	}
 
-	// Determine if we should skip TLS verification
-	skipTLS := params.Insecure || (params.CACert == "" && !params.Insecure)
+	// TLS verification is skipped ONLY when the caller explicitly asked for it.
+	//
+	// This used to read `params.Insecure || (params.CACert == "" && !params.Insecure)`,
+	// which is true whenever no CA is supplied — and an empty CA is the NORMAL,
+	// intended case for a cluster with a publicly-trusted certificate ("rely on
+	// the system trust store"). The effect was that essentially every kubeconfig
+	// this writes, for operators and tenants alike, carried
+	// insecure-skip-tls-verify: true. Nobody asked for that, nothing surfaced
+	// it, and it silently removed authentication of the API server from every
+	// kubectl call the product hands out.
+	//
+	// With an empty CA and this false, client-go verifies against the system
+	// roots, which is correct for a public certificate and correctly FAILS for
+	// a private CA whose bundle was not supplied — the operator then passes the
+	// CA (see --trusted-ca-bundle / the private-CA install path) or opts in
+	// explicitly with --insecure.
+	skipTLS := params.Insecure
 
 	// Add or update cluster
 	clusterFound := false
@@ -163,7 +184,7 @@ func (m *Manager) AddKubeDCContext(params AddContextParams) error {
 			config.Clusters[i].Cluster = Cluster{
 				Server:                   params.Server,
 				CertificateAuthorityData: caCertBase64,
-				InsecureSkipTLSVerify:    skipTLS && caCertBase64 == "",
+				InsecureSkipTLSVerify:    skipTLS,
 			}
 			clusterFound = true
 			break
@@ -175,7 +196,7 @@ func (m *Manager) AddKubeDCContext(params AddContextParams) error {
 			Cluster: Cluster{
 				Server:                   params.Server,
 				CertificateAuthorityData: caCertBase64,
-				InsecureSkipTLSVerify:    skipTLS && caCertBase64 == "",
+				InsecureSkipTLSVerify:    skipTLS,
 			},
 		})
 	}
@@ -293,9 +314,9 @@ func (m *Manager) RemoveContext(name string) error {
 	// Find the doomed context and remember which cluster + user it
 	// pointed at so we can decide whether they're now orphaned.
 	var (
-		victim       Context
-		victimFound  bool
-		newContexts  = make([]NamedContext, 0, len(config.Contexts))
+		victim      Context
+		victimFound bool
+		newContexts = make([]NamedContext, 0, len(config.Contexts))
 	)
 	for _, c := range config.Contexts {
 		if c.Name == name {

@@ -41,7 +41,15 @@ spec:
           ls -lh windows11-x64-golden.qcow2
           
           # Upload to ISO server storage (using internal service)
-          curl -T windows11-x64-golden.qcow2 http://iso-server.iso.svc.cluster.local/windows11-x64-golden.qcow2 || echo "Upload failed, manual copy required"
+          # FAIL CLOSED: `|| echo "Upload failed"` used to turn a failed upload into
+          # a SUCCESSFUL pod, so a golden that never reached the server looked
+          # exported (codex review HIGH). -f makes curl fail on HTTP errors and the
+          # explicit exit propagates it to the Job.
+          if ! curl -fsS -T windows11-x64-golden.qcow2 http://iso-server.iso.svc.cluster.local/windows11-x64-golden.qcow2; then
+            echo "ERROR: upload of windows11-x64-golden.qcow2 failed — golden NOT published"
+            exit 1
+          fi
+          echo "UPLOAD_OK windows11-x64-golden.qcow2"
           
           # Show converted image size in GB
           QCOW2_SIZE_BYTES=$(qemu-img info --output=json windows11-x64-golden.qcow2 | grep '"virtual-size"' | cut -d: -f2 | tr -d ' ,')

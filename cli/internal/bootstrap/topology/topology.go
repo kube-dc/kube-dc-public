@@ -4,7 +4,7 @@
 //
 // The classification is a heuristic: probes look at cluster-side
 // configuration (cloud-provider integration, EnvoyProxy CR shape,
-// Fork E Service presence) and combine the per-probe hints into a
+// platform-endpoint Service presence) and combine the per-probe hints into a
 // single verdict + confidence level. It is NOT authoritative — a
 // laptop operator running this against a live cluster will get the
 // right answer in the common cases (A/B/C with clean signals) and
@@ -39,17 +39,17 @@ type Class string
 
 const (
 	// ClassA — 1:1-NAT hairpin. Single public IP NAT'd at upstream
-	// router; tenant pods can't hairpin to it. Requires Fork E.
+	// router; tenant pods can't hairpin to it. Needs internal platform endpoints.
 	ClassA Class = "A"
 
 	// ClassB — Flat-L2 with per-node externalIPs. Each CP node holds
 	// a public IP in a shared broadcast domain. Tenant traffic
-	// reaches platform hostnames L2-locally; Fork E adds overhead
+	// reaches platform hostnames L2-locally; internal endpoints add overhead
 	// for no observable benefit.
 	ClassB Class = "B"
 
 	// ClassC — Cloud-provider LoadBalancer (AWS/GCP/Azure). Provider
-	// LB handles hairpin natively; Fork E is redundant.
+	// LB handles hairpin natively; internal endpoints are redundant.
 	ClassC Class = "C"
 
 	// ClassUnknown — no probe produced a strong-enough signal.
@@ -68,7 +68,7 @@ const (
 	// VerdictNotNeeded — feature would add overhead with no benefit.
 	VerdictNotNeeded Verdict = "not-needed"
 
-	// VerdictAlreadyEnabled — Fork E Services are already deployed;
+	// VerdictAlreadyEnabled — the platform-endpoint Services are already deployed;
 	// the operator has already made the decision.
 	VerdictAlreadyEnabled Verdict = "already-enabled"
 
@@ -80,7 +80,7 @@ const (
 // Signal is one row in the per-probe evidence table.
 //
 // Probe is a short label ("cloud-provider", "Envoy externalIPs",
-// "Fork E Services"). Detail is the human-readable finding from
+// "platform endpoints"). Detail is the human-readable finding from
 // running the probe. Hint, when non-empty, marks which Class this
 // signal points at — the classifier tallies hints to pick the final
 // Class. Confidence captures how strong this individual signal is,
@@ -133,7 +133,7 @@ func Classify(r *Result) { classify(r) }
 // classify combines the per-probe Signals into Class + Verdict +
 // Reasoning + Recommendation. Precedence:
 //
-//  1. Fork E Services already deployed → ClassA / AlreadyEnabled
+//  1. platform-endpoint Services already deployed → ClassA / AlreadyEnabled
 //     (the operator made the call; reflect that)
 //  2. Cloud-provider providerID → ClassC / NotNeeded
 //  3. Envoy externalIPs binding → ClassB / NotNeeded
@@ -165,7 +165,7 @@ func classify(r *Result) {
 		r.Class = ClassA
 		r.Verdict = VerdictAlreadyEnabled
 		r.Confidence = "high"
-		r.Reasoning = "Fork E Services are deployed — internal platform endpoints are currently enabled on this cluster."
+		r.Reasoning = "The platform-endpoint Services are deployed — internal platform endpoints are currently enabled on this cluster."
 		r.Recommendation = "Already configured. Verify health: see docs/platform/internal-platform-endpoints.md §Verifying."
 
 	case hints[ClassC] > 0:
@@ -202,7 +202,7 @@ func classify(r *Result) {
 // also for foundEnabled matching in classify(). Kept as exported
 // constants so tests and printers can reference them stably.
 const (
-	probeNameForkE         = "Fork E Services"
+	probeNameForkE         = "platform endpoints"
 	probeNameCloudProvider = "cloud-provider"
 	probeNameEnvoyExtIPs   = "Envoy externalIPs"
 	probeNameHostNetwork   = "Envoy hostNetwork"
@@ -298,7 +298,7 @@ func probeEnvoyExternalIPs(ctx context.Context, k *kubectl) Signal {
 	// shape UNIFORM across the fleet: externalIPs is always null (the field
 	// is API-deprecated) and every cluster is either ClusterIP or
 	// LoadBalancer+metallb. The shape-based cases below would therefore
-	// report "Class A, Fork E required" for EVERY migrated cluster —
+	// report "Class A, internal endpoints required" for EVERY migrated cluster —
 	// including cloud-class installs where the feature is correctly OFF.
 	// Until the classifier is re-based on the ADDRESS (is the platform
 	// address on-link on a node, or translated upstream?), say so instead

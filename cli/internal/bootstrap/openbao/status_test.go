@@ -49,12 +49,12 @@ func (f *fakeStatusBao) GetAnnotation(_ context.Context, _, key string) (string,
 }
 
 // Interface satisfaction stubs — none of these should be called by Status.
-func (f *fakeStatusBao) Unseal(_ context.Context, _ string, _ []byte) error      { return nil }
-func (f *fakeStatusBao) RaftJoin(_ context.Context, _, _ string) error           { return nil }
+func (f *fakeStatusBao) Unseal(_ context.Context, _ string, _ []byte) error { return nil }
+func (f *fakeStatusBao) RaftJoin(_ context.Context, _, _ string) error      { return nil }
 func (f *fakeStatusBao) GenerateRoot(_ context.Context, _ [][]byte) ([]byte, error) {
 	return nil, nil
 }
-func (f *fakeStatusBao) RevokeSelf(_ context.Context, _ []byte) error                 { return nil }
+func (f *fakeStatusBao) RevokeSelf(_ context.Context, _ []byte) error                  { return nil }
 func (f *fakeStatusBao) ApplyPolicy(_ context.Context, _ []byte, _, _ string) error    { return nil }
 func (f *fakeStatusBao) EnableAuthPath(_ context.Context, _ []byte, _, _ string) error { return nil }
 func (f *fakeStatusBao) ConfigureKubernetesAuth(_ context.Context, _ []byte, _ string, _ ports.KubernetesAuthConfig) error {

@@ -119,6 +119,10 @@ type ClusterFixture struct {
 	// NodeLabels: node-name → label-map. Lets scenarios mimic NFD
 	// labels for the M1-T04 consumer.
 	NodeLabels map[string]map[string]string `yaml:"nodeLabels"`
+	// NodeInternalIPs is optional: node name -> InternalIP. Only scenarios that
+	// exercise the INGRESS_HOST_CIDR derivation need it; otherwise the mock
+	// synthesises RFC 5737 documentation addresses.
+	NodeInternalIPs map[string]string `yaml:"nodeInternalIPs"`
 	// SOPSAgeSecret: presence + recipient pubkey. Empty = absent.
 	SOPSAgeRecipient string `yaml:"sopsAgeRecipient"`
 	// ClusterSecretsPresent reflects whether Secret/cluster-secrets

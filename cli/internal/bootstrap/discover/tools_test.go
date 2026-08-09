@@ -128,7 +128,6 @@ func TestToolProbes_MissingBinary(t *testing.T) {
 		newGitProbe(fakeExec(nil)),
 		newGHProbe(fakeExec(nil)),
 		newSSHProbe(fakeExec(nil)),
-		newBaoProbe(fakeExec(nil)),
 	}
 	for _, p := range probes {
 		r := p.Run(context.Background())
@@ -141,6 +140,26 @@ func TestToolProbes_MissingBinary(t *testing.T) {
 		if !strings.Contains(r.FixHint.Text, "install-prerequisites") {
 			t.Errorf("%s FixHint missing prereq pointer: %q", p.Name(), r.FixHint.Text)
 		}
+	}
+}
+
+// bao is deliberately NOT a blocker: the CLI only ever runs it through PodExec
+// inside the OpenBao pod, and install-prerequisites.sh cannot install it — so a
+// clean workstation used to fail doctor on an unresolvable requirement for a
+// binary nothing would execute.
+func TestToolProbes_MissingBaoIsInformational(t *testing.T) {
+	r := newBaoProbe(fakeExec(nil)).Run(context.Background())
+	if r.Status != ports.StatusMissing {
+		t.Errorf("status=%v want missing", r.Status)
+	}
+	if r.Severity != ports.SeverityInfo {
+		t.Errorf("severity=%v want Info — a missing local bao must not block an install", r.Severity)
+	}
+	if !strings.Contains(r.Detail, "inside the OpenBao pod") {
+		t.Errorf("the detail must say why it is not required, got %q", r.Detail)
+	}
+	if r.FixHint.Text != "" {
+		t.Errorf("an optional tool must not point at a remediation that cannot install it, got %q", r.FixHint.Text)
 	}
 }
 

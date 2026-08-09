@@ -190,7 +190,7 @@ type fakeGit struct {
 }
 
 func (g *fakeGit) Clone(_ context.Context, _, _, _ string) error                     { return nil }
-func (g *fakeGit) Init(_ context.Context, _, _ string) error { return nil }
+func (g *fakeGit) Init(_ context.Context, _, _ string) error                         { return nil }
 func (g *fakeGit) Pull(_ context.Context, _, _ string) error                         { return nil }
 func (g *fakeGit) Diff(_ context.Context, _ string) (ports.Diff, error)              { return g.diff, nil }
 func (g *fakeGit) CreateRepo(_ context.Context, _, _ string, _ bool, _ string) error { return nil }
@@ -1112,6 +1112,10 @@ func TestLoadBufferFromJSON(t *testing.T) {
 // the kube-root-ca.crt lookup the controller-auth setup needs.
 type fakeInitK8s struct{}
 
+func (f *fakeInitK8s) PodContainerArgs(context.Context, string, string) (map[string][]string, error) {
+	return nil, nil
+}
+
 func (f *fakeInitK8s) GetConfigMapData(_ context.Context, ns, name, key string) (string, error) {
 	if ns == "kube-dc" && name == "kube-root-ca.crt" && key == "ca.crt" {
 		return "-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n", nil
@@ -1121,6 +1125,10 @@ func (f *fakeInitK8s) GetConfigMapData(_ context.Context, ns, name, key string) 
 func (f *fakeInitK8s) DiscoverFluxGraph(context.Context) (ports.Graph, error) {
 	panic("fakeInitK8s: DiscoverFluxGraph not stubbed")
 }
+func (f *fakeInitK8s) NodeInternalIPs(context.Context) (map[string]string, error) {
+	return map[string]string{}, nil
+}
+
 func (f *fakeInitK8s) NodeLabels(context.Context) (map[string]map[string]string, error) {
 	panic("fakeInitK8s: NodeLabels not stubbed")
 }
@@ -1702,4 +1710,10 @@ func TestInit_MalformedExitRecords_AreRejectedAndPreserveShares(t *testing.T) {
 			}
 		})
 	}
+}
+
+// SetNodeLabel is unused by these tests; the ingress-label step is covered in
+// clusterinit/ingresslabels_test.go.
+func (f *fakeInitK8s) SetNodeLabel(context.Context, string, string, string) error {
+	return nil
 }

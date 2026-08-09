@@ -86,8 +86,8 @@ func (b *fakeOpenBao) RaftJoin(_ context.Context, pod, _ string) error {
 	return nil
 }
 
-func (b *fakeOpenBao) GenerateRoot(_ context.Context, _ [][]byte) ([]byte, error) { return nil, nil }
-func (b *fakeOpenBao) RevokeSelf(_ context.Context, _ []byte) error               { return nil }
+func (b *fakeOpenBao) GenerateRoot(_ context.Context, _ [][]byte) ([]byte, error)    { return nil, nil }
+func (b *fakeOpenBao) RevokeSelf(_ context.Context, _ []byte) error                  { return nil }
 func (b *fakeOpenBao) ApplyPolicy(_ context.Context, _ []byte, _, _ string) error    { return nil }
 func (b *fakeOpenBao) EnableAuthPath(_ context.Context, _ []byte, _, _ string) error { return nil }
 func (b *fakeOpenBao) ConfigureKubernetesAuth(_ context.Context, _ []byte, _ string, _ ports.KubernetesAuthConfig) error {
@@ -119,7 +119,7 @@ func (s *fakeSOPSDecryptOnly) SetStringData(_ context.Context, _, _ string, _ []
 	return nil
 }
 func (s *fakeSOPSDecryptOnly) Recipients(_ string) ([]string, error) { return nil, nil }
-func (s *fakeSOPSDecryptOnly) DerivePubKey(_ string) (string, error)  { return "", nil }
+func (s *fakeSOPSDecryptOnly) DerivePubKey(_ string) (string, error) { return "", nil }
 
 const canonicalDecryptedSecrets = `apiVersion: v1
 kind: Secret

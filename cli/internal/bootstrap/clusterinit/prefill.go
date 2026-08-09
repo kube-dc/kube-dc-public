@@ -169,6 +169,9 @@ func parsePrefillBool(v string) bool {
 // an explicit --set) are left untouched. Returns the source keys it did
 // not recognize, sorted (for a "N ignored" log). Pure.
 func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag string) bool) []string {
+	// Collected legacy-key translations, surfaced to the operator by the caller
+	// (never silent — a translated value changes what gets built).
+	var legacyIngressModeMapped []string
 	if o.Sets == nil {
 		o.Sets = map[string]string{}
 	}
@@ -219,6 +222,26 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 	// silently fall back to "none" — turning an intended VIP cluster into
 	// a ClusterIP one.
 	str("INGRESS_ADDRESS_LAYER", "ingress-address-layer", &o.IngressAddressLayer)
+	// LEGACY BRIDGE: a config written before the address layer existed carries
+	// only INGRESS_MODE. metallb-lb meant "Envoy Service type=LoadBalancer via
+	// a MetalLB VIP", so it maps to metallb-l2 — NOT to the new default `none`,
+	// which would silently turn an intended VIP cluster into a ClusterIP one
+	// with no error anywhere (codex 2026-08-07, P1). hostnetwork meant the
+	// host-bind data plane with no VIP, which is exactly `none`.
+	if o.IngressAddressLayer == "" && !flagChanged("ingress-address-layer") {
+		switch strings.TrimSpace(src["INGRESS_MODE"]) {
+		case ingressModeMetalLB:
+			o.IngressAddressLayer = AddressLayerMetalLBL2
+			legacyIngressModeMapped = append(legacyIngressModeMapped,
+				"INGRESS_MODE=metallb-lb → --ingress-address-layer=metallb-l2 (a MetalLB VIP); "+
+					"pass the flag explicitly to choose metallb-bgp or none")
+		case "hostnetwork":
+			o.IngressAddressLayer = AddressLayerNone
+			legacyIngressModeMapped = append(legacyIngressModeMapped,
+				"INGRESS_MODE=hostnetwork → --ingress-address-layer=none (no MetalLB; "+
+					"clients reach the ingress nodes' own IPs)")
+		}
+	}
 	str("TLS_MODE", "tls-mode", &o.TLSMode)
 	str("DNS01_ROUTE53_ZONE_ID", "dns01-route53-zone-id", &o.DNS01Route53ZoneID)
 	str("DNS01_ROUTE53_REGION", "dns01-route53-region", &o.DNS01Route53Region)
@@ -423,6 +446,12 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 		}
 	}
 	sort.Strings(ignored)
+	// Translations go on their OWN channel, never into `ignored`: the caller
+	// prints that list as "ignored non-input key(s)" AND subtracts its length
+	// from the loaded-key count, so a translated key would be both mislabelled
+	// and miscounted. A silent translation is the bug being fixed — the caller
+	// prints these separately.
+	o.PrefillNotes = append(o.PrefillNotes, legacyIngressModeMapped...)
 	return ignored
 }
 

@@ -93,10 +93,25 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# Ensure DNS resolution works (fix for servers with systemd-resolved)
-if ! host get.rke2.io >/dev/null 2>&1; then
-    log_warn "DNS resolution failed, configuring fallback DNS..."
-    # Disable systemd-resolved if active (prevents DNS conflicts)
+# Ensure DNS resolution works.
+#
+# Probed with `getent hosts`, which is glibc and therefore always present. This
+# used to run `host get.rke2.io` — a binary from bind9-host/dnsutils that minimal
+# Ubuntu cloud images do NOT ship. On such a host the probe failed with
+# "command not found", which was read as "DNS is broken", and the fallback below
+# then disabled systemd-resolved and replaced /etc/resolv.conf with public
+# resolvers. On a corporate network that breaks every internal name AND sends
+# every subsequent query to a third party — from a node whose DNS was fine.
+if ! getent hosts get.rke2.io >/dev/null 2>&1; then
+    log_warn "Cannot resolve get.rke2.io — falling back to public DNS."
+    log_warn "This REPLACES this node's resolver configuration. If this node is"
+    log_warn "supposed to use an internal DNS server, stop and fix DNS instead:"
+    log_warn "the platform will later need to resolve your own domain from here."
+    # Preserve whatever was there so the change is reversible.
+    if [[ -e /etc/resolv.conf && ! -e /etc/resolv.conf.pre-kube-dc ]]; then
+        cp -a /etc/resolv.conf /etc/resolv.conf.pre-kube-dc 2>/dev/null || true
+        log_warn "Previous resolver saved to /etc/resolv.conf.pre-kube-dc"
+    fi
     if systemctl is-active systemd-resolved >/dev/null 2>&1; then
         log_warn "Disabling systemd-resolved..."
         systemctl stop systemd-resolved
@@ -104,6 +119,12 @@ if ! host get.rke2.io >/dev/null 2>&1; then
         rm -f /etc/resolv.conf
     fi
     echo -e "nameserver 8.8.8.8\nnameserver 1.1.1.1" > /etc/resolv.conf
+    if ! getent hosts get.rke2.io >/dev/null 2>&1; then
+        log_error "Still cannot resolve get.rke2.io after the DNS fallback."
+        log_error "This node has no working DNS or no egress. Fix that first —"
+        log_error "every later phase (image pulls, ACME, your own domain) needs it."
+        exit 1
+    fi
 fi
 
 # Create config directory
@@ -490,6 +511,35 @@ EOF
     log_info "Embedded registry mirror enabled (mirror scope: ${REGISTRY_MIRROR_SCOPE})"
 fi
 
+# PRESERVE an operator-owned kube-apiserver-arg block across a re-install.
+#
+# This script regenerates config.yaml from scratch and deliberately omits
+# kube-apiserver-arg (the OIDC webhook does not exist at bootstrap). That is
+# correct on a FIRST install and destructive on a repair: `kube-dc bootstrap
+# install --force` on a cluster that has completed the OIDC cutover would drop
+# the webhook flags and restart the apiserver, turning every Keycloak JWT back
+# into a 401 — with no error anywhere, because the cluster is otherwise healthy.
+#
+# The same applies to any apiserver flags the operator added themselves (audit
+# logging, feature gates). So capture the existing block verbatim and re-append
+# it after the new config is written.
+PRESERVED_APISERVER_ARGS=""
+if [[ -f "${RANCHER_DIR}/config.yaml" ]]; then
+    PRESERVED_APISERVER_ARGS="$(awk '
+        /^kube-apiserver-arg:[[:space:]]*$/ { inblock=1; print; next }
+        inblock {
+            # A sequence item belongs to the block whether it is indented or
+            # flush with the key (RKE2 writes it flush).
+            if ($0 ~ /^[[:space:]]*-[[:space:]]/) { print; next }
+            if ($0 ~ /^[[:space:]]*$/ || $0 ~ /^[[:space:]]*#/) { next }
+            inblock=0
+        }
+    ' "${RANCHER_DIR}/config.yaml")"
+    if [[ -n "${PRESERVED_APISERVER_ARGS}" ]]; then
+        log_info "Preserving existing kube-apiserver-arg block across re-install"
+    fi
+fi
+
 # Generate config.yaml
 if [[ -n "${JOIN_TOKEN}" && -n "${JOIN_SERVER}" ]]; then
     log_info "Mode: Joining existing cluster at ${JOIN_SERVER}"
@@ -614,6 +664,21 @@ ${EMBEDDED_REGISTRY_BLOCK}
 EOF
 fi
 
+# Re-append the preserved block. Only when the freshly generated config has no
+# kube-apiserver-arg of its own — two top-level occurrences would be duplicate
+# YAML mapping keys, which RKE2 resolves by silently honouring one and
+# discarding the other.
+if [[ -n "${PRESERVED_APISERVER_ARGS}" ]]; then
+    if grep -qE '^kube-apiserver-arg:[[:space:]]*$' "${RANCHER_DIR}/config.yaml"; then
+        log_warn "Generated config already declares kube-apiserver-arg; NOT re-appending the preserved block."
+        log_warn "Preserved content follows — merge it by hand if you need it:"
+        printf '%s\n' "${PRESERVED_APISERVER_ARGS}" >&2
+    else
+        printf '%s\n' "${PRESERVED_APISERVER_ARGS}" >> "${RANCHER_DIR}/config.yaml"
+        log_info "Re-appended preserved kube-apiserver-arg block (OIDC cutover survives this re-install)"
+    fi
+fi
+
 log_info "Config written to ${RANCHER_DIR}/config.yaml"
 
 # Install RKE2
@@ -641,9 +706,53 @@ for i in {1..30}; do
 done
 echo ""
 
+# ASSERT, do not assume. The loop above simply falls through after 300s, so
+# without this the script went on to print "Installation Complete" for a service
+# that never started — the operator then spent the next phase debugging Flux
+# against a cluster that does not exist.
+if ! systemctl is-active rke2-server.service >/dev/null 2>&1; then
+    log_error "rke2-server did not become active within 300s."
+    log_error "Inspect the cause on this node:"
+    log_error "  journalctl -u rke2-server -n 200 --no-pager"
+    log_error "  systemctl status rke2-server"
+    exit 1
+fi
+
+# Service active is NOT the same as apiserver serving. Wait for the API to
+# answer /readyz on LOOPBACK — never the node IP, which Envoy's :6443
+# SNI-passthrough listener can capture on a converged cluster and make a healthy
+# apiserver look dead.
+log_info "Waiting for kube-apiserver to report ready..."
+API_READY=""
+for i in {1..30}; do
+    code="$(curl -sk -o /dev/null -w '%{http_code}' "https://127.0.0.1:${CP_PORT_API:-6443}/readyz" 2>/dev/null || true)"
+    if [[ "${code}" == "200" || "${code}" == "401" || "${code}" == "403" ]]; then
+        # 401/403 still proves the API is up and serving; this early it has no
+        # authorization for an anonymous probe.
+        API_READY=1
+        log_info "kube-apiserver is serving (HTTP ${code})"
+        break
+    fi
+    sleep 5
+    echo -n "."
+done
+echo ""
+if [[ -z "${API_READY}" ]]; then
+    log_error "rke2-server is active but kube-apiserver never answered on https://127.0.0.1:6443/readyz."
+    log_error "The service is up and the cluster is NOT usable. Inspect:"
+    log_error "  journalctl -u rke2-server -n 200 --no-pager"
+    log_error "  ls -l ${RANCHER_DIR}/rke2.yaml"
+    exit 1
+fi
+
 # Setup kubeconfig
 log_info "Setting up kubeconfig..."
 mkdir -p ~/.kube
+if [[ ! -s "${RANCHER_DIR}/rke2.yaml" ]]; then
+    log_error "${RANCHER_DIR}/rke2.yaml is missing or empty even though the apiserver is serving."
+    log_error "Refusing to write an empty ~/.kube/config."
+    exit 1
+fi
 cp "${RANCHER_DIR}/rke2.yaml" ~/.kube/config
 chmod 600 ~/.kube/config
 
@@ -695,22 +804,15 @@ echo "  Quick verification before cutover:"
 echo "    kubectl -n oidc-webhook-authenticator get pods -o wide   # one per CP, all Ready"
 echo "    ls /etc/rancher/oidc-webhook-kubeconfig.yaml              # on each CP node"
 echo ""
-echo "  Per-node cutover (append two flags to /etc/rancher/rke2/config.yaml,"
-echo "  then restart rke2-server, one CP at a time, gated on apiserver Ready):"
-echo "    cat >> /etc/rancher/rke2/config.yaml <<EOF"
-echo "    kube-apiserver-arg:"
-echo "      - authentication-token-webhook-config-file=/etc/rancher/oidc-webhook-kubeconfig.yaml"
-echo "      - authentication-token-webhook-cache-ttl=2m"
-echo "    EOF"
-echo "    systemctl restart rke2-server"
+echo "  Run the cutover with ONE command — it wires every control-plane node,"
+echo "  one at a time, gating each on its apiserver returning, and refuses to"
+echo "  leave the cluster half-wired (which causes intermittent 401s):"
+echo "    kube-dc bootstrap oidc-cutover --dry-run     # review"
+echo "    kube-dc bootstrap oidc-cutover               # apply"
 echo ""
-echo "  Per-CP-node check after cutover:"
-echo "    ssh root@<node> 'ps -ef | grep [k]ube-apiserver | tr \" \" \"\\n\" | grep authentication-token-webhook'"
-echo ""
-echo "  ⚠  If Envoy gateway is single-replica + hostNetwork on a CP node, you"
-echo "  MUST drain it off that node before restarting rke2-server, or"
-echo "  kube-apiserver will fail to come back (bind: address already in use"
-echo "  on port 6443). See the runbook's 'Envoy gateway on a CP node'"
-echo "  pre-flight section."
+echo "  It also checks the things that break a control-plane node by hand:"
+echo "  a pre-existing kube-apiserver-arg block (appending a second one makes"
+echo "  RKE2 silently discard flags), and anything else already holding :6443"
+echo "  (after which kube-apiserver cannot re-bind)."
 echo ""
 echo "======================================================================"

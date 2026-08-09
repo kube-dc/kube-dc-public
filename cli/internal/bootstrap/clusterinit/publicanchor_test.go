@@ -9,7 +9,10 @@ import (
 // gets per-node anchors VIP+1.., the anchor VLAN, the METALLB
 // interface, and IPAM reservation covering VIP..last-anchor.
 func TestDerivePublicAnchor_HappyPath(t *testing.T) {
+	// A VIP is the front door only when a layer says so (a bare reservation is
+	// ambiguous by design — spare/undeliverable reservations exist).
 	env, err := EnvMapFor(PresetCloudPublicVLAN, map[string]string{
+		"INGRESS_ADDRESS_LAYER": AddressLayerMetalLBL2,
 		"EXT_NET_VLAN_ID":       "300",
 		"EXT_NET_INTERFACE":     "bond0",
 		"EXT_PUBLIC_VLAN_ID":    "301",
@@ -206,7 +209,8 @@ func TestValidatePublicAnchor_ShapeErrors(t *testing.T) {
 }
 
 func TestDerivePublicAnchor_CloudVIPLeavesPublicAnchorIdle(t *testing.T) {
-	o := &InitOptions{Preset: PresetCloudPublicVLAN, Sets: map[string]string{
+	o := &InitOptions{Preset: PresetCloudPublicVLAN, IngressAddressLayer: AddressLayerMetalLBL2, Sets: map[string]string{
+		"INGRESS_ADDRESS_LAYER":    AddressLayerMetalLBL2,
 		"EXT_NET_VLAN_ID":          "300",
 		"EXT_NET_INTERFACE":        "bond0",
 		"EXT_PUBLIC_VLAN_ID":       "301",
@@ -237,7 +241,11 @@ func TestDerivePublicAnchor_CloudVIPLeavesPublicAnchorIdle(t *testing.T) {
 }
 
 func TestDerivePublicAnchor_BGPReservesVIPWithoutHostAnchors(t *testing.T) {
-	o := &InitOptions{Preset: PresetCloudPublicVLAN, Sets: map[string]string{
+	// A floating IP now REQUIRES a VIP address layer: setting one under
+	// layer=none means the reserved address would never be announced, which
+	// the validator refuses rather than silently ignore.
+	o := &InitOptions{Preset: PresetCloudPublicVLAN, IngressAddressLayer: AddressLayerMetalLBBGP, Sets: map[string]string{
+		"INGRESS_ADDRESS_LAYER":    AddressLayerMetalLBBGP,
 		"EXT_NET_VLAN_ID":          "300",
 		"EXT_NET_INTERFACE":        "bond0",
 		"EXT_PUBLIC_VLAN_ID":       "301",

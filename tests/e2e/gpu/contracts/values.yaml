@@ -1,0 +1,55 @@
+gpu:
+  enabled: true
+  sharedCreation:
+    enabled: false
+  vmCreation:
+    enabled: false
+  catalogVersion: 1
+  profileLabel: kube-dc.com/gpu-profile
+  hamiSchedulerName: hami-scheduler
+  hamiDeniedResourceNames:
+    - nvidia.com/gpumem-percentage
+    - nvidia.com/priority
+  profiles:
+    - id: nvidia-v100-hami
+      displayName: NVIDIA Tesla V100 (shared)
+      vendor: nvidia
+      workload: pod
+      allocation: hami
+      resourceName: nvidia.com/gpu
+      memoryMiB: 32768
+      isolation: software
+      enabled: true
+      billingEligible: false
+      liveMigratable: false
+      request:
+        countResource: nvidia.com/gpu
+        memoryResource: nvidia.com/gpumem
+        coreResource: nvidia.com/gpucores
+        minMemoryMiB: 1024
+        memoryStepMiB: 1024
+        minCorePercent: 10
+        coreStepPercent: 5
+        allowCustom: true
+        presets:
+          - id: standard
+            displayName: Standard
+            memoryMiB: 8192
+            corePercent: 25
+            default: true
+          - id: full
+            displayName: Full
+            memoryMiB: 32768
+            corePercent: 100
+    - id: nvidia-v100-passthrough
+      displayName: NVIDIA Tesla V100 32 GB
+      vendor: nvidia
+      workload: vm
+      allocation: passthrough
+      resourceName: nvidia.com/GV100GL_TESLA_V100_PCIE_32GB
+      memoryMiB: 32768
+      isolation: device
+      enabled: true
+      billingEligible: false
+      liveMigratable: false
+      pciVendorSelector: 10DE:1DB6

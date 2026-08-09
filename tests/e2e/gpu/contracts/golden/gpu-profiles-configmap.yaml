@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gpu-profiles
+  namespace: default
+  labels:
+    app.kubernetes.io/managed-by: Helm
+data:
+  profiles.yaml: |
+    version: 1
+    profiles:
+      - allocation: hami
+        billingEligible: false
+        displayName: NVIDIA Tesla V100 (shared)
+        enabled: true
+        id: nvidia-v100-hami
+        isolation: software
+        liveMigratable: false
+        memoryMiB: 32768
+        request:
+          allowCustom: true
+          coreResource: nvidia.com/gpucores
+          coreStepPercent: 5
+          countResource: nvidia.com/gpu
+          memoryResource: nvidia.com/gpumem
+          memoryStepMiB: 1024
+          minCorePercent: 10
+          minMemoryMiB: 1024
+          presets:
+          - corePercent: 25
+            default: true
+            displayName: Standard
+            id: standard
+            memoryMiB: 8192
+          - corePercent: 100
+            displayName: Full
+            id: full
+            memoryMiB: 32768
+        resourceName: nvidia.com/gpu
+        vendor: nvidia
+        workload: pod
+      - allocation: passthrough
+        billingEligible: false
+        displayName: NVIDIA Tesla V100 32 GB
+        enabled: true
+        id: nvidia-v100-passthrough
+        isolation: device
+        liveMigratable: false
+        memoryMiB: 32768
+        pciVendorSelector: 10DE:1DB6
+        resourceName: nvidia.com/GV100GL_TESLA_V100_PCIE_32GB
+        vendor: nvidia
+        workload: vm

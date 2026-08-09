@@ -96,9 +96,9 @@ func TestMergeSSHHostMaps_FlagOverridesFleet(t *testing.T) {
 	}
 	got := MergeSSHHostMaps(fleet, flag)
 	want := map[string]string{
-		"host5-a": "10.0.0.5",      // flag wins
+		"host5-a": "10.0.0.5",     // flag wins
 		"host6-a": "203.0.113.53", // fleet preserved
-		"host7-a": "10.0.0.7",      // flag-only
+		"host7-a": "10.0.0.7",     // flag-only
 	}
 	for k, v := range want {
 		if got[k] != v {

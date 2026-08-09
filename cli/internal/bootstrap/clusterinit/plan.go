@@ -97,9 +97,42 @@ type Plan struct {
 	// mirroring TLSCertFingerprint. High-entropy input, so the digest is safe
 	// to surface.
 	DNS01SecretKeyFingerprint string `json:"dns01SecretKeyFingerprint,omitempty"`
-	TrustedCAFingerprint      string `json:"trustedCaFingerprint,omitempty"`
-	Preset                    Preset `json:"preset"`
-	Mode                      Mode   `json:"mode"`
+	// Front door (design v2 §5a). These live on the PLAN, not just in the
+	// hash: the scaffold derives the Envoy service shape from the layer, so
+	// apply must ship the layer the operator REVIEWED. Without it here, a
+	// reviewed metallb-l2 plan silently scaffolded as none/ClusterIP — the
+	// flag is a dedicated field and is rejected via --set, so o.Sets never
+	// carried it into EnvMapFor (codex 2026-08-07, P1).
+	// IngressAddressLayer is the RESOLVED layer, not the raw flag: a plan is
+	// a statement of what will be BUILT, so an operator who passed nothing
+	// must still see "none" here rather than a blank they have to interpret.
+	IngressAddressLayer string   `json:"ingressAddressLayer,omitempty"`
+	IngressNodes        []string `json:"ingressNodes,omitempty"`
+
+	// IngressNodeLabel is the label the host-bind front-door component selects on, and
+	// the label Apply applies to IngressNodes before committing the overlay. Empty
+	// means DefaultIngressNodeLabel. Recorded in the plan so the label that gets
+	// applied and the label the rendered component selects cannot drift apart.
+	IngressNodeLabel string `json:"ingressNodeLabel,omitempty"`
+
+	// IngressHostCIDR is the prefix the platform NetworkPolicies must admit so the
+	// host-bound Envoy — which reaches upstreams with a NODE address — is not denied.
+	// Derived from the ingress nodes' InternalIPs during Apply (see ingresscidr.go),
+	// never from the discovered NODE_CIDR, which on real clusters can be a different
+	// network entirely.
+	//
+	// Deliberately NOT part of the plan HASH: it is read from the live cluster rather
+	// than supplied by the operator, so hashing it would make an approved plan stop
+	// matching whenever a node's address changed.
+	IngressHostCIDR string `json:"ingressHostCIDR,omitempty"`
+	// FrontDoor is the one-line plain-words summary printed in the reviewed
+	// inputs. It is ALWAYS present, because "which address do my users dial"
+	// is the question operators most often discover the answer to after the
+	// install rather than during the review.
+	FrontDoor            string `json:"frontDoor,omitempty"`
+	TrustedCAFingerprint string `json:"trustedCaFingerprint,omitempty"`
+	Preset               Preset `json:"preset"`
+	Mode                 Mode   `json:"mode"`
 
 	// --- Detected from the fleet state ---
 	// PriorClusters lists sibling cluster names when fleet-mode is
@@ -236,6 +269,64 @@ var ErrNoConsent = errors.New("init: --no-tty without --yes / --apply-plan / mat
 // preserved which is fine because struct definitions don't change at
 // runtime), no trailing newline, no escape-html. Used by both
 // ComputeInputHash and the Plan.computeHash internal flow.
+// frontDoorPlan resolves the front door for the plan header: the layer that
+// will actually be built plus a plain-words summary naming the ADDRESS users
+// will dial and the nodes that will answer. The summary is deliberately
+// concrete — an operator reviewing "metallb-l2" learns nothing they did not
+// already type, but "VIP 192.0.2.10, announced by ARP from 2 ingress node(s)"
+// is checkable against the network they were given.
+func frontDoorPlan(o *InitOptions) (layer, summary string) {
+	// An env-resolution failure means the preset itself is broken, which
+	// validation reports far more precisely than a summary line could. Fall
+	// back to the raw --set values so the summary degrades instead of lying.
+	env, err := ResolvedEnvFor(o)
+	if err != nil {
+		env = o.Sets
+	}
+	layer, ambiguous := resolveAddressLayer(o.IngressAddressLayer,
+		env["METALLB_FLOATING_IP"], env["METALLB_MODE"])
+	vip := strings.TrimSpace(env["METALLB_FLOATING_IP"])
+	// The DERIVED set, not the raw flag: an operator who named no ingress
+	// nodes still gets the gateway nodes, and the plan should name them —
+	// "which machines will answer :443" is not a question to leave implicit.
+	nodes, fromGateway := ResolveIngressNodes(o, env)
+	// Deliberately NOT the node list: the "ingress nodes:" clause appended
+	// below already names them, and saying it twice made the line harder to
+	// read than saying it once.
+	where := "the ingress nodes' own addresses"
+	switch {
+	case ambiguous:
+		// Validation refuses this, so it can only be seen with validation
+		// bypassed. Say so rather than printing a confident "none".
+		summary = fmt.Sprintf("UNRESOLVED — %s is reserved but no address layer claims it; pass --ingress-address-layer", vip)
+	case layer == AddressLayerMetalLBL2:
+		summary = fmt.Sprintf("MetalLB L2 — VIP %s, announced by ARP/GARP from whichever ingress node holds it", vip)
+	case layer == AddressLayerMetalLBBGP:
+		summary = fmt.Sprintf("MetalLB BGP — VIP %s, announced as a /32 to the peer", vip)
+	default:
+		summary = fmt.Sprintf("direct — no VIP; clients reach %s (point DNS at them)", where)
+	}
+	switch {
+	case len(nodes) > 0 && fromGateway:
+		summary += fmt.Sprintf(" | ingress nodes: %s (derived from KUBE_OVN_GW_NODES)", strings.Join(nodes, ", "))
+	case len(nodes) > 0:
+		summary += fmt.Sprintf(" | ingress nodes: %s", strings.Join(nodes, ", "))
+	default:
+		summary += " | ingress nodes: NOT DECLARED and no gateway nodes to derive from"
+	}
+	return layer, summary
+}
+
+// resolvedIngressNodesFor is frontDoorPlan's node half, split out so the plan
+// header can carry the same set the summary names.
+func resolvedIngressNodesFor(o *InitOptions) ([]string, bool) {
+	env, err := ResolvedEnvFor(o)
+	if err != nil {
+		env = o.Sets
+	}
+	return ResolveIngressNodes(o, env)
+}
+
 // canonicalIngressNodes sorts + de-duplicates the ingress-node set so the
 // plan hash depends on WHICH nodes were chosen, never on the order the
 // operator typed them.
@@ -456,6 +547,11 @@ var hashExcludedFields = map[string]string{
 	// Transient OUTPUT — filled by the post-apply phase (end-of-install
 	// access block); never an input to the plan.
 	"AccessSummary": "transient output (end-of-install access block); not a plan input",
+	"PrefillNotes":  "transient output (legacy-key translation notices); not a plan input",
+	// DISCOVERED from the live cluster, not operator input: hashing it would make
+	// the plan hash depend on which nodes happened to answer, so an unrelated
+	// node roll would read as plan drift.
+	"ControlPlaneNodes": "discovered from the live cluster; not an operator input",
 }
 
 // normalizeProviderForHash collapses explicit `github` to the
@@ -487,23 +583,28 @@ func (o *InitOptions) inputsForHash() inputsForHash {
 		// semantic change. Only non-default providers surface in
 		// the hash. Combined with `json:"provider,omitempty"` the
 		// canonical JSON omits the field for the default case.
-		Provider:                  normalizeProviderForHash(o.Provider),
-		GitHubOwner:               o.GitHubOwner,
-		GitHubRepo:                o.GitHubRepo,
-		Sets:                      o.Sets,
-		NodeNICs:                  o.NodeNICs,
-		RookMode:                  o.RookMode,
-		RookOSDNode:               o.RookOSDNode,
-		RookOSDSizeGB:             o.RookOSDSizeGB,
-		RookOSDDevice:             o.RookOSDDevice,
-		CephNodes:                 o.CephNodes,
-		CephStorageClass:          o.CephStorageClass,
-		CephOSDCount:              o.CephOSDCount,
-		CephOSDVolumeSizeGB:       o.CephOSDVolumeSizeGB,
-		S3Hostname:                o.S3Hostname,
-		NoS3Exposure:              o.NoS3Exposure,
-		VMStorageMode:             o.VMStorageMode,
-		ImageAcceleration:         o.ImageAcceleration,
+		Provider:            normalizeProviderForHash(o.Provider),
+		GitHubOwner:         o.GitHubOwner,
+		GitHubRepo:          o.GitHubRepo,
+		Sets:                o.Sets,
+		NodeNICs:            o.NodeNICs,
+		RookMode:            o.RookMode,
+		RookOSDNode:         o.RookOSDNode,
+		RookOSDSizeGB:       o.RookOSDSizeGB,
+		RookOSDDevice:       o.RookOSDDevice,
+		CephNodes:           o.CephNodes,
+		CephStorageClass:    o.CephStorageClass,
+		CephOSDCount:        o.CephOSDCount,
+		CephOSDVolumeSizeGB: o.CephOSDVolumeSizeGB,
+		S3Hostname:          o.S3Hostname,
+		NoS3Exposure:        o.NoS3Exposure,
+		VMStorageMode:       o.VMStorageMode,
+		ImageAcceleration:   o.ImageAcceleration,
+		// The EXPLICIT flag, never the resolved layer. Hashing the resolved
+		// value would turn an absent flag into "none" and change the hash of
+		// every plan written by an older CLI — a spurious drift error in the
+		// middle of somebody's install. The resolved layer belongs on the
+		// plan HEADER (what will be built); the hash covers what was SAID.
 		IngressAddressLayer:       o.IngressAddressLayer,
 		IngressNodes:              canonicalIngressNodes(o.IngressNodes),
 		TLSMode:                   canonicalTLSMode(o.TLSMode),
@@ -636,6 +737,12 @@ type FleetState struct {
 // apply once those slices ship — only the "exact line count" preview
 // values are placeholders.
 func BuildPlan(o *InitOptions, fleet FleetState) (*Plan, error) {
+	planLayer, planFrontDoor := frontDoorPlan(o)
+	// The RESOLVED set, so the header and the human summary agree and scaffold
+	// consumes the nodes the operator actually reviewed. Storing the raw list
+	// here while printing the derived one meant the :6443 derivation ran on a
+	// different set than the plan showed.
+	planIngressNodes, _ := resolvedIngressNodesFor(o)
 	if o == nil {
 		return nil, fmt.Errorf("BuildPlan: nil options")
 	}
@@ -649,16 +756,23 @@ func BuildPlan(o *InitOptions, fleet FleetState) (*Plan, error) {
 	}
 
 	p := &Plan{
-		Version:                   PlanSchemaVersion,
-		InputHash:                 inputHash,
-		GeneratedAt:               time.Now().UTC().Truncate(time.Second),
-		ClusterName:               o.Name,
-		Domain:                    o.Domain,
-		FleetMode:                 o.FleetMode,
-		StarterRef:                o.StarterRef,
-		OpenBaoSharesOut:          o.OpenBaoSharesOut,
-		Preset:                    o.Preset,
-		Mode:                      o.Mode,
+		Version:             PlanSchemaVersion,
+		InputHash:           inputHash,
+		GeneratedAt:         time.Now().UTC().Truncate(time.Second),
+		ClusterName:         o.Name,
+		Domain:              o.Domain,
+		FleetMode:           o.FleetMode,
+		StarterRef:          o.StarterRef,
+		OpenBaoSharesOut:    o.OpenBaoSharesOut,
+		Preset:              o.Preset,
+		Mode:                o.Mode,
+		IngressAddressLayer: planLayer,
+		IngressNodes:        planIngressNodes,
+		// The label Apply will put on those nodes, recorded next to the resolved node
+		// set so the label that gets APPLIED and the label the rendered host-bind
+		// component SELECTS cannot drift apart. Empty means DefaultIngressNodeLabel.
+		IngressNodeLabel:          DefaultIngressNodeLabel,
+		FrontDoor:                 planFrontDoor,
 		TLSMode:                   canonicalTLSMode(o.TLSMode),
 		TLSCertFingerprint:        o.TLSCertFingerprint,
 		DNS01SecretKeyFingerprint: o.DNS01SecretKeyFingerprint,
@@ -717,7 +831,7 @@ func filesForOptions(o *InitOptions, fleet FleetState) []PlanFile {
 	// generic placeholder — catches "I missed a --set" before
 	// scrolling through the deferred T10 file.
 	envKeyCount := 0
-	if envMap, err := EnvMapFor(o.Preset, o.Sets); err == nil {
+	if envMap, err := ResolvedEnvFor(o); err == nil {
 		envKeyCount = len(envMap)
 	}
 	envDesc := "cluster-config.env"
@@ -1034,6 +1148,81 @@ func scriptsForOptions(o *InitOptions, fleet FleetState) []ScriptInvocation {
 // 2026-07-04 — no extra flag), but the plan must state the outcome.
 func warningsForOptions(o *InitOptions) []string {
 	var w []string
+	// FRONT DOOR — stated only when there is something SURPRISING. Routine
+	// information in a warnings block trains operators to ignore warnings, so
+	// the plain case (an explicit no-VIP layer with ingress nodes declared)
+	// says nothing. What earns a line: an INFERRED choice (the operator did
+	// not ask for it), a VIP layer (failover is automatic but slower than
+	// people expect), and a missing/singular ingress-node set.
+	env, envErr := ResolvedEnvFor(o)
+	if envErr != nil {
+		env = o.Sets
+	}
+	layer, ambiguous := resolveAddressLayer(o.IngressAddressLayer,
+		env["METALLB_FLOATING_IP"], env["METALLB_MODE"])
+	if ambiguous {
+		// Validation refuses this, so reaching the plan means validation was
+		// bypassed. Do NOT dress the fail-safe up as a decision.
+		w = append(w, fmt.Sprintf(
+			"front door UNRESOLVED: METALLB_FLOATING_IP=%s is reserved but no address layer claims it. "+
+				"The install would fall back to serving on the ingress nodes' own addresses and that VIP would never be announced. "+
+				"Pass --ingress-address-layer=metallb-l2 (or =none and drop the reservation).",
+			strings.TrimSpace(env["METALLB_FLOATING_IP"])))
+	}
+	switch layer {
+	case AddressLayerMetalLBL2:
+		w = append(w,
+			"front door: MetalLB L2 VIP — MetalLB IS installed. The VIP moves on node loss automatically, but recovery is memberlist failure detection plus ARP/GARP convergence (seconds to tens of seconds), not instant.")
+	case AddressLayerMetalLBBGP:
+		w = append(w,
+			"front door: MetalLB BGP VIP — MetalLB IS installed. Withdrawal waits out the BGP hold timer (METALLB_BGP_HOLD_TIME, default 90s), so failover is automatic but NOT fast.")
+	}
+	ingressNodes, ingressFromGW := ResolveIngressNodes(o, env)
+	if len(ingressNodes) == 1 {
+		w = append(w,
+			"only ONE ingress node will carry the front door ("+ingressNodes[0]+"): that node is a single point of failure — two or more is the production shape.")
+	}
+	// Legal but wasted: a VIP is announced only from a node that is BOTH an
+	// external-gateway node and running Envoy (externalTrafficPolicy=Local),
+	// so ingress nodes outside the gateway set serve direct-IP traffic and
+	// never the VIP. Disjoint sets are a hard error elsewhere; a partial
+	// overlap is worth saying out loud because it looks like added capacity.
+	if addressLayerRequiresVIP(layer) && !ingressFromGW && len(ingressNodes) > 0 {
+		gwSet := map[string]bool{}
+		for _, n := range canonicalIngressNodes(strings.Split(env["KUBE_OVN_GW_NODES"], ",")) {
+			gwSet[n] = true
+		}
+		var outside []string
+		for _, n := range ingressNodes {
+			if !gwSet[n] {
+				outside = append(outside, n)
+			}
+		}
+		if len(outside) > 0 && len(outside) < len(ingressNodes) {
+			w = append(w, fmt.Sprintf(
+				"ingress node(s) %s are NOT external-gateway nodes, so they can never announce the VIP (MetalLB announces only from gateway nodes holding a local Envoy endpoint). They will still serve traffic sent to their own addresses.",
+				strings.Join(outside, ", ")))
+		}
+	}
+
+	// rook-ceph-local is LOOP-FILE backed: its disk-prep Job creates a sparse
+	// file and attaches it to a loop device, and CEPH_LOCAL_OSD_DEVICE names that
+	// LOOP device (every live cluster on this mode sets loop0; real disks are
+	// added afterwards by a per-cluster overlay patch). Naming a real disk here
+	// reads as "put Ceph on my NVMe" and does something subtly different, so say
+	// what will actually happen rather than refusing a shape that does work.
+	if o.RookMode == RookCephLocal && o.RookOSDDevice != "" &&
+		!strings.HasPrefix(o.RookOSDDevice, "loop") {
+		w = append(w, fmt.Sprintf(
+			"object storage: --rook-osd-device=%s names a REAL disk, but rook-ceph-local is loop-file "+
+				"backed. Ceph will consume %s directly, AND the disk-prep Job will still create a "+
+				"%d GiB sparse backing file and attach it to a free loop device — unused. If you meant "+
+				"Ceph on the raw disk, rook-ceph-multi-node is the mode for that; if you meant this "+
+				"disk's capacity through a backing file, set --rook-osd-device=loop0 and point "+
+				"CEPH_LOCAL_OSD_BACKING_FILE at a filesystem on it.",
+			o.RookOSDDevice, o.RookOSDDevice, o.RookOSDSizeGB))
+	}
+
 	if o.RookMode == RookDisabled {
 		// OS-4 v2: the degraded mode is honest — the exact
 		// consequences, not a vague "won't converge".
@@ -1146,6 +1335,11 @@ func (p *Plan) Render(w io.Writer) {
 	fmt.Fprintf(w, " Cluster: %s (%s)\n", p.ClusterName, p.Domain)
 	fmt.Fprintf(w, " Starter: %s\n", starterRef)
 	fmt.Fprintf(w, " OpenBao shares-out: %s\n", sharesOut)
+	// Always printed: the front door is the fact operators most often learn
+	// AFTER the install instead of during the review.
+	if p.FrontDoor != "" {
+		fmt.Fprintf(w, " Front door: %s\n", p.FrontDoor)
+	}
 	if p.TrustedCAFingerprint != "" {
 		fmt.Fprintf(w, " Private-CA sha256: %s\n", p.TrustedCAFingerprint)
 	}

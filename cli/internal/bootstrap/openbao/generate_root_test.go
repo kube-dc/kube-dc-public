@@ -46,12 +46,14 @@ func (f *fakeGRBao) RevokeSelf(_ context.Context, token []byte) error {
 }
 
 // Interface stubs — none of these should be called by GenerateRoot.
-func (f *fakeGRBao) PodList(_ context.Context) ([]string, error)                     { return nil, nil }
-func (f *fakeGRBao) Status(_ context.Context, _ string) (ports.BaoStatus, error)     { return ports.BaoStatus{}, nil }
-func (f *fakeGRBao) Unseal(_ context.Context, _ string, _ []byte) error              { return nil }
-func (f *fakeGRBao) RaftJoin(_ context.Context, _, _ string) error                   { return nil }
-func (f *fakeGRBao) ApplyPolicy(_ context.Context, _ []byte, _, _ string) error       { return nil }
-func (f *fakeGRBao) EnableAuthPath(_ context.Context, _ []byte, _, _ string) error    { return nil }
+func (f *fakeGRBao) PodList(_ context.Context) ([]string, error) { return nil, nil }
+func (f *fakeGRBao) Status(_ context.Context, _ string) (ports.BaoStatus, error) {
+	return ports.BaoStatus{}, nil
+}
+func (f *fakeGRBao) Unseal(_ context.Context, _ string, _ []byte) error            { return nil }
+func (f *fakeGRBao) RaftJoin(_ context.Context, _, _ string) error                 { return nil }
+func (f *fakeGRBao) ApplyPolicy(_ context.Context, _ []byte, _, _ string) error    { return nil }
+func (f *fakeGRBao) EnableAuthPath(_ context.Context, _ []byte, _, _ string) error { return nil }
 func (f *fakeGRBao) ConfigureKubernetesAuth(_ context.Context, _ []byte, _ string, _ ports.KubernetesAuthConfig) error {
 	return nil
 }

@@ -1,0 +1,40 @@
+{
+  "apiVersion": "v1",
+  "kind": "PodList",
+  "items": [
+    {
+      "metadata": {"namespace": "gpu-system", "name": "driver-fixture"},
+      "spec": {
+        "initContainers": [
+          {"name": "validation", "image": "registry.example/validator:v1.2.3"}
+        ],
+        "containers": [
+          {"name": "driver", "image": "registry.example/driver:580.126.20"}
+        ]
+      },
+      "status": {
+        "initContainerStatuses": [
+          {"name": "validation", "imageID": "registry.example/validator@sha256:1111111111111111111111111111111111111111111111111111111111111111"}
+        ],
+        "containerStatuses": [
+          {"name": "driver", "imageID": "registry.example/driver@sha256:2222222222222222222222222222222222222222222222222222222222222222"}
+        ]
+      }
+    },
+    {
+      "metadata": {"namespace": "gpu-system", "name": "scheduler-fixture"},
+      "spec": {
+        "containers": [
+          {"name": "scheduler", "image": "registry.example/scheduler:v1.35.3"},
+          {"name": "extender", "image": "registry.example/shared-gpu:2.9.0"}
+        ]
+      },
+      "status": {
+        "containerStatuses": [
+          {"name": "scheduler", "imageID": "registry.example/scheduler@sha256:3333333333333333333333333333333333333333333333333333333333333333"},
+          {"name": "extender", "imageID": "containerd://sha256:4444444444444444444444444444444444444444444444444444444444444444"}
+        ]
+      }
+    }
+  ]
+}

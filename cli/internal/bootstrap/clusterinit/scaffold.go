@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/config"
@@ -135,6 +136,15 @@ type ScaffoldOptions struct {
 	// (internal) IP when this is true.
 	SingleIPNAT bool
 
+	// ControlPlaneNodes are the real control-plane node NAMES, resolved from
+	// the live cluster when one is reachable. Empty means "unknown", which
+	// makes the :6443 set-intersection derivation stand down in favour of the
+	// address heuristic. It must never be filled with KUBE_OVN_GW_NODES: the
+	// gateway set is not the control-plane set (the reference cluster has a
+	// gateway node that is an ordinary worker), and substituting it inverts
+	// the listener decision for exactly those nodes.
+	ControlPlaneNodes []string
+
 	// Runner is the ports.ScriptRunner the engine calls. Real flow
 	// uses the script adapter; tests use a fake.
 	Runner ports.ScriptRunner
@@ -151,6 +161,11 @@ type ScaffoldOptions struct {
 // operators can pre-place a `docs/` README inside the overlay before
 // running bootstrap.
 var ErrScaffoldTargetExists = errors.New("init: scaffold target already initialised (cluster-config.env present)")
+
+// ErrFrontDoorChangeOnResume fires when a resume (existing overlay) is asked
+// for a different address layer than the overlay declares. See
+// CheckFrontDoorMatchesOverlay for why this refuses rather than applying.
+var ErrFrontDoorChangeOnResume = errors.New("init: front-door change cannot ride on a resume")
 
 // ErrScaffoldScriptFailed is returned when add-cluster.sh exits
 // non-zero. The error wraps the exit code + last few stderr lines.
@@ -215,7 +230,19 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// ~/.kube/<name>_config inside the script — we don't pass it
 	// because the CLI's apply path manages kubeconfigs through the
 	// kubeconfig package, not the script's default.
-	lines, err := opts.Runner.Run(ctx, ports.ScriptAddCluster, nil,
+	// The reviewed address layer MUST reach the script, because the script derives
+	// platform.yaml's spec.components from it and nothing downstream rewrites that list.
+	// It used to hardcode metallb-l2 while this package rewrote only the SCALAR
+	// afterwards, so a reviewed `none` plan produced an overlay that still selected
+	// address-metallb with ENVOY_LB_CLASS=null — an explicit null on a typed field, which
+	// server-side apply rejects and force: true converts into a DELETION of the
+	// EnvoyProxy. Reproduced; see scripts/check_layer_coherence.py, which now fails any
+	// overlay whose layer and components disagree.
+	scaffoldEnv := map[string]string{}
+	if opts.Plan.IngressAddressLayer != "" {
+		scaffoldEnv["SCAFFOLD_INGRESS_ADDRESS_LAYER"] = opts.Plan.IngressAddressLayer
+	}
+	lines, err := opts.Runner.Run(ctx, ports.ScriptAddCluster, scaffoldEnv,
 		opts.Plan.ClusterName, opts.Plan.Domain, opts.NodeExternalIP)
 	if err != nil {
 		return fmt.Errorf("scaffold: start add-cluster.sh: %w", err)
@@ -297,11 +324,49 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// Also fire when NODE_EXTERNAL_IP is simply one of the cluster's own node
 	// addresses. That is the same collision without any NAT, so the SSH probe
 	// above reports nothing — and under --no-ssh it never runs at all.
+	// PREFERRED: derive from the ingress-node set. Envoy binds the listener
+	// ports on the nodes carrying the ingress label, so "does Envoy share a
+	// node with kube-apiserver?" is a set intersection — not a guess about
+	// whether NODE_EXTERNAL_IP equals a control-plane address (codex
+	// 2026-08-07, P1). Falls back to the address heuristics when the operator
+	// declared no ingress nodes, so pre-v2 behaviour is preserved exactly.
+	envBody := ""
+	if body, err := os.ReadFile(filepath.Join(opts.FleetRepo, "clusters", opts.Plan.ClusterName, "cluster-config.env")); err == nil {
+		envBody = string(body)
+	}
 	collides := opts.SingleIPNAT
-	if !collides {
-		if body, err := os.ReadFile(filepath.Join(opts.FleetRepo, "clusters", opts.Plan.ClusterName, "cluster-config.env")); err == nil {
-			collides = GatewayCollidesWithAPIServer(string(body))
-		}
+	// KUBE_OVN_GW_NODES is NOT the control-plane set and must never be
+	// substituted for it. Verified live: the reference cluster has four
+	// external-gateway nodes and only three control-plane nodes, so one gateway
+	// node is an ordinary worker. Comparing against the gateway set therefore
+	// INVERTS the answer for that node — it would report "an ingress node is
+	// also a control-plane node" and drop the tenant kube-API listener from a
+	// worker where it would have bound fine.
+	//
+	// Nothing in cluster-config.env carries control-plane node NAMES
+	// (KUBE_OVN_MASTER_NODES holds their IPs), so the set-intersection
+	// derivation is used only when the caller supplies real names. Otherwise
+	// fall back to the address heuristic, which is exactly the pre-v2
+	// behaviour — a weaker signal, but not a wrong one.
+	if derived, ok := IngressCollidesWithAPIServer(
+		opts.Plan.IngressNodes, opts.ControlPlaneNodes,
+	); ok {
+		collides = derived
+		// State which listener this is, because the obvious guess is wrong: the
+		// :6443 listener carries kube-api.<domain> — the MANAGEMENT API — and NOT
+		// managed tenant clusters, which are on :443 via the wildcard
+		// passthrough listener and are unaffected by this decision either way.
+		onCP, offCP, _ := ClassifyIngressPlacement(opts.Plan.IngressNodes, opts.ControlPlaneNodes)
+		fmt.Fprintf(out, "[scaffold] :6443 management-API listener: %s\n",
+			map[bool]string{
+				true: fmt.Sprintf("REMOVED — ingress runs on control-plane node(s) %s, where kube-apiserver "+
+					"owns :6443, so Envoy could never bind it. Each apiserver serves :6443 itself",
+					strings.Join(onCP, ",")),
+				false: fmt.Sprintf("KEPT — ingress runs off the control plane (%s), so Envoy can bind :6443",
+					strings.Join(offCP, ",")),
+			}[derived])
+	} else if !collides && envBody != "" {
+		collides = GatewayCollidesWithAPIServer(envBody)
 	}
 	if collides {
 		if err := WriteSingleIPNATPatch(opts.FleetRepo, opts.Plan.ClusterName, out); err != nil {
@@ -479,7 +544,47 @@ func postProcessClusterConfig(path string, plan *Plan, sets map[string]string, n
 	// operator --set deltas (operator wins). EnvMapFor handles
 	// preset defaults + --set merge for us; layer inherited on top
 	// only when the operator didn't override.
-	merged, err := EnvMapFor(plan.Preset, sets)
+	// The address layer is a DEDICATED plan field (and is rejected via --set,
+	// so it is not in `sets`). Inject the REVIEWED plan's value so EnvMapFor
+	// derives the Envoy service shape the operator actually approved; without
+	// this a reviewed metallb-l2 plan scaffolded as none/ClusterIP (codex
+	// 2026-08-07, P1). An explicit --set of a derived ENVOY_* scalar still
+	// wins inside EnvMapFor, and the validator reports incoherence.
+	layered := sets
+	if plan.IngressAddressLayer != "" || plan.IngressHostCIDR != "" {
+		layered = make(map[string]string, len(sets)+2)
+		for k, v := range sets {
+			layered[k] = v
+		}
+		if plan.IngressAddressLayer != "" {
+			layered["INGRESS_ADDRESS_LAYER"] = plan.IngressAddressLayer
+		}
+		// Derived during Apply from the ingress nodes' InternalIPs. Without it the
+		// generated overlay carries an empty INGRESS_HOST_CIDR, and the platform
+		// NetworkPolicies then admit nothing from the host-bound Envoy — OpenBao and the
+		// Flux UI answer 503 with every manifest correct and Flux green. An explicit
+		// --set still wins, because `sets` is copied in first and EnvMapFor prefers it.
+		if plan.IngressHostCIDR != "" {
+			if _, pinned := sets["INGRESS_HOST_CIDR"]; !pinned {
+				layered["INGRESS_HOST_CIDR"] = plan.IngressHostCIDR
+			}
+		}
+		// ENVOY_REPLICAS is one Envoy per ingress node — EQUALITY, not "enough".
+		//
+		// The host-bind component has REQUIRED pod anti-affinity, so more replicas than
+		// labelled nodes strands the surplus Pending forever; fewer, and some labelled node
+		// has no Envoy, which on a single-address cluster can be exactly the node that owns
+		// the address — a dark front door with every pod Ready. The component defaulted to
+		// 3 and the installer never derived it, so a 2-node or 4-node ingress set was wrong
+		// out of the box. frontdoor-check.sh preflight already asserts the equality; this
+		// is what makes it hold.
+		if n := len(plan.IngressNodes); n > 0 {
+			if _, pinned := sets["ENVOY_REPLICAS"]; !pinned {
+				layered["ENVOY_REPLICAS"] = strconv.Itoa(n)
+			}
+		}
+	}
+	merged, err := EnvMapFor(plan.Preset, layered)
 	if err != nil {
 		return fmt.Errorf("scaffold: EnvMapFor: %w", err)
 	}

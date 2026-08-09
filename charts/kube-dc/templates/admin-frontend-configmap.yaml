@@ -1,0 +1,25 @@
+{{- if .Values.adminFrontend.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kube-dc.adminFrontend.fullname" . }}-config
+  labels:
+    {{- include "kube-dc.adminFrontend.labels" . | nindent 4 }}
+data:
+  # window._env_ consumed by the admin SPA at runtime. This is mounted over the
+  # image's baked-in /usr/share/nginx/html/env.js, which is built with
+  # placeholder/stage URLs. The admin image has NO entrypoint that regenerates
+  # env.js from env vars, so this ConfigMap — not the container env: — is the
+  # authoritative source of the runtime endpoints.
+  #
+  # TENANT_VLAN_ENABLED gates the Infrastructure -> VLANs page. It comes from
+  # the SAME chart value the manager's admission gate reads, so the console can
+  # never advertise a feature the platform is not enforcing. On a cluster that
+  # did not opt in the page is ABSENT — no nav entry and no reachable route —
+  # rather than rendered-and-empty (see the implementation PRD §17.0).
+  #
+  # Cosmetic only: the boundary is the manager's fail-closed webhook, so a
+  # stale bundle or a hand-edited ConfigMap gains nothing.
+  env.js: |
+    window._env_={BACKEND_URL:"https://{{ required "adminFrontend needs backend.gateway.hostname" .Values.backend.gateway.hostname }}",KEYCLOAK_URL:"{{ .Values.adminFrontend.keycloakUrl | default .Values.manager.keycloakSecret.url }}",KEYCLOAK_REALM:"{{ .Values.adminFrontend.keycloakRealm | default "master" }}",KEYCLOAK_CLIENT_ID:"{{ .Values.adminFrontend.keycloakClientId | default "kube-dc-admin-console" }}",TENANT_VLAN_ENABLED:"{{ .Values.projectNetwork.enabled }}"};
+{{- end }}

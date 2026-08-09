@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Windows 11 unattended BUILD answer file — kube-dc golden bake.
+  Rewritten 2026-08-06 against docs/prd/windows-bake-review-2026-08-06.md.
+
+  THIS FILE IS BUILD-ONLY. It is deleted before sealing, and a CLONE never sees
+  it: sysprep seals with cloudbase-init's own Unattend.xml, so tenant VMs boot
+  into cloudbase-init (user, password, SSH keys, hostname, volume-extend) rather
+  than into OOBE.
+
+  Fixes vs the first draft (all from the codex pre-run review):
+   - viostor (virtio-blk) is loaded, not vioscsi — the root disk is bus: virtio,
+     so with vioscsi alone Setup sees NO target disk.
+   - vioserial is loaded — qemu-guest-agent talks to KubeVirt over virtio-serial;
+     without it the service runs but AgentConnected stays false (the exact defect
+     of the 2026-07-09 golden).
+   - <ProductKey> removed entirely (an empty <Key/> is invalid for eval media).
+   - Driver paths are searched across drive letters instead of hard-coding E:.
+   - ONE FirstLogonCommand -> bootstrap.ps1. <Order> does not serialize on modern
+     Windows, so the previous five parallel commands could seal mid-install.
+   - Administrator is set via <AdministratorPassword>, not as a LocalAccount.
+-->
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+
+  <settings pass="windowsPE">
+    <!-- WITHOUT THIS COMPONENT SETUP STOPS AT "Select language settings" AND WAITS
+         FOREVER. That is exactly how the 2026-08-07 bake stalled: the answer file
+         WAS found and WAS valid, but the very first Setup page is rendered before
+         anything else in it applies, and only Microsoft-Windows-International-Core-WinPE
+         suppresses that page. Everything downstream (disk config, driver paths,
+         FirstLogonCommands) never gets a chance to run. Do not remove it. -->
+    <component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <SetupUILanguage>
+        <UILanguage>en-US</UILanguage>
+      </SetupUILanguage>
+      <InputLocale>en-US</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UILanguageFallback>en-US</UILanguageFallback>
+      <UserLocale>en-US</UserLocale>
+    </component>
+    <component name="Microsoft-Windows-PnpCustomizationsWinPE" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <DriverPaths>
+        <!-- The virtio ISO's letter is not stable in WinPE, so every plausible
+             drive is listed; missing paths are ignored by Setup. viostor is the
+             one that makes the virtio-blk root disk visible. -->
+        <PathAndCredentials wcm:action="add" wcm:keyValue="1"><Path>D:\viostor\w11\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="2"><Path>E:\viostor\w11\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="3"><Path>F:\viostor\w11\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="4"><Path>D:\vioserial\w11\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="5"><Path>E:\vioserial\w11\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="6"><Path>F:\vioserial\w11\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="7"><Path>D:\NetKVM\w11\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="8"><Path>E:\NetKVM\w11\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="9"><Path>F:\NetKVM\w11\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="10"><Path>D:\Balloon\w11\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="11"><Path>E:\Balloon\w11\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="12"><Path>F:\Balloon\w11\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="13"><Path>D:\viorng\w11\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="14"><Path>E:\viorng\w11\amd64</Path></PathAndCredentials>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="15"><Path>F:\viorng\w11\amd64</Path></PathAndCredentials>
+      </DriverPaths>
+    </component>
+
+    <component name="Microsoft-Windows-Setup" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <DiskConfiguration>
+        <Disk wcm:action="add">
+          <DiskID>0</DiskID>
+          <WillWipeDisk>true</WillWipeDisk>
+          <CreatePartitions>
+            <CreatePartition wcm:action="add"><Order>1</Order><Type>EFI</Type><Size>512</Size></CreatePartition>
+            <CreatePartition wcm:action="add"><Order>2</Order><Type>MSR</Type><Size>128</Size></CreatePartition>
+            <CreatePartition wcm:action="add"><Order>3</Order><Type>Primary</Type><Extend>true</Extend></CreatePartition>
+          </CreatePartitions>
+          <ModifyPartitions>
+            <ModifyPartition wcm:action="add"><Order>1</Order><PartitionID>1</PartitionID><Format>FAT32</Format><Label>System</Label></ModifyPartition>
+            <ModifyPartition wcm:action="add"><Order>2</Order><PartitionID>2</PartitionID></ModifyPartition>
+            <ModifyPartition wcm:action="add"><Order>3</Order><PartitionID>3</PartitionID><Format>NTFS</Format><Label>Windows</Label><Letter>C</Letter></ModifyPartition>
+          </ModifyPartitions>
+        </Disk>
+      </DiskConfiguration>
+      <ImageInstall>
+        <OSImage>
+          <InstallFrom>
+            <!-- Verify against the staged ISO before a bake:
+                 dism /Get-WimInfo /WimFile:<mount>\sources\install.wim -->
+            <MetaData wcm:action="add">
+              <Key>/IMAGE/NAME</Key>
+              <Value>Windows 11 Enterprise Evaluation</Value>
+            </MetaData>
+          </InstallFrom>
+          <InstallTo><DiskID>0</DiskID><PartitionID>3</PartitionID></InstallTo>
+        </OSImage>
+      </ImageInstall>
+      <UserData>
+        <!-- No <ProductKey>: evaluation media needs none, and an empty <Key/>
+             is rejected. BYOL — the tenant activates in their own VM. -->
+        <AcceptEula>true</AcceptEula>
+        <FullName>kube-dc</FullName>
+        <Organization>kube-dc</Organization>
+      </UserData>
+      <RunSynchronous>
+        <RunSynchronousCommand wcm:action="add"><Order>1</Order><Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassTPMCheck /t REG_DWORD /d 1 /f</Path></RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add"><Order>2</Order><Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassSecureBootCheck /t REG_DWORD /d 1 /f</Path></RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add"><Order>3</Order><Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassRAMCheck /t REG_DWORD /d 1 /f</Path></RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add"><Order>4</Order><Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassStorageCheck /t REG_DWORD /d 1 /f</Path></RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add"><Order>5</Order><Path>reg add HKLM\SYSTEM\Setup\LabConfig /v BypassCPUCheck /t REG_DWORD /d 1 /f</Path></RunSynchronousCommand>
+      </RunSynchronous>
+    </component>
+  </settings>
+
+  <settings pass="specialize">
+    <!-- STOP WINDOWS FROM ENCRYPTING THE GOLDEN DISK.
+         Windows 11 24H2 turns on automatic BitLocker device encryption during OOBE
+         whenever the hardware qualifies — and our build VM qualifies, because it has
+         a vTPM and Secure Boot. The 2026-08-07 bake produced a golden whose Windows
+         partition began with the BitLocker signature "-FVE-FS-" instead of NTFS: an
+         image sealed to the BUILD machine's TPM, which cannot be exported, cannot be
+         inspected, and is worthless as a clone source.
+         This must run in specialize — it has to land in the INSTALLED OS hive, and it
+         has to be there before OOBE starts. bootstrap.ps1 additionally refuses to
+         seal an encrypted volume, so this failing is not silent. -->
+    <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <RunSynchronous>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Description>prevent automatic BitLocker device encryption</Description>
+          <Path>reg add HKLM\SYSTEM\CurrentControlSet\Control\BitLocker /v PreventDeviceEncryption /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+      </RunSynchronous>
+    </component>
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <!-- Build-time hostname only; cloudbase-init's SetHostNamePlugin renames
+           each tenant clone from its NoCloud metadata. -->
+      <ComputerName>win11-build</ComputerName>
+      <TimeZone>UTC</TimeZone>
+    </component>
+  </settings>
+
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <ProtectYourPC>3</ProtectYourPC>
+        <SkipMachineOOBE>true</SkipMachineOOBE>
+        <SkipUserOOBE>true</SkipUserOOBE>
+      </OOBE>
+      <UserAccounts>
+        <!-- BUILD-ONLY administrator. Sysprep /generalize disables the built-in
+             Administrator again, and cloudbase-init creates the real `kube-dc`
+             tenant account per clone with a per-VM password. No tenant-facing
+             credential is baked into the image. -->
+        <AdministratorPassword>
+          <Value>${WIN_BUILD_ADMIN_PASSWORD}</Value>
+          <PlainText>true</PlainText>
+        </AdministratorPassword>
+      </UserAccounts>
+      <AutoLogon>
+        <Enabled>true</Enabled>
+        <Username>Administrator</Username>
+        <LogonCount>1</LogonCount>
+        <Password><Value>${WIN_BUILD_ADMIN_PASSWORD}</Value><PlainText>true</PlainText></Password>
+      </AutoLogon>
+      <FirstLogonCommands>
+        <!-- EXACTLY ONE command: bootstrap.ps1 does every step in order and
+             seals at the end. Multiple <Order>ed commands are NOT serialized on
+             modern Windows and could sysprep mid-install. -->
+        <SynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Description>kube-dc golden bootstrap (QGA, OpenSSH, cloudbase-init, cleanup, sysprep)</Description>
+          <CommandLine>cmd /c for %d in (D E F G H I) do if exist %d:\bootstrap.ps1 powershell -ExecutionPolicy Bypass -NoProfile -File %d:\bootstrap.ps1</CommandLine>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+    </component>
+  </settings>
+
+</unattend>

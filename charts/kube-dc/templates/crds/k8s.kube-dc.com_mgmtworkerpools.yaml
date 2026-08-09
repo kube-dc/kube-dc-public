@@ -1,0 +1,385 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: mgmtworkerpools.k8s.kube-dc.com
+spec:
+  group: k8s.kube-dc.com
+  names:
+    kind: MgmtWorkerPool
+    listKind: MgmtWorkerPoolList
+    plural: mgmtworkerpools
+    singular: mgmtworkerpool
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.minNodes
+      name: Min
+      type: integer
+    - jsonPath: .spec.maxNodes
+      name: Max
+      type: integer
+    - jsonPath: .status.nodes
+      name: Nodes
+      type: integer
+    - jsonPath: .status.joining
+      name: Joining
+      type: integer
+    - jsonPath: .status.timedOut
+      name: TimedOut
+      type: integer
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              MgmtWorkerPool declares an autoscaled pool of the MANAGEMENT cluster's own
+              RKE2 worker VMs on CloudSigma. It is the node-group source for the
+              management cluster-autoscaler (externalgrpc adapter): upstream CA does all
+              scheduling simulation and decides WHEN to grow; this CRD and its controller
+              decide HOW a node is provisioned and accepted.
+
+              SCALE-UP ONLY, structurally: the adapter's DeleteNodes is Unimplemented, so
+              no CA code path — utilisation, empty-node or otherwise — can remove a
+              management worker. Removal stays an operator runbook, because management
+              workers accumulate node-pinned local-path PVs (tenant etcd) and removing
+              one is a data operation, not a drain.
+
+              Pool CRs are platform-admin-only by RBAC. The spec references images, VLANs
+              and a join endpoint: without admission lockdown this object is a
+              credential-and-money-printing interface (design review, round 1 P0).
+            properties:
+              enforceMin:
+                description: |-
+                  EnforceMin opts this pool into cluster-autoscaler's
+                  --enforce-node-group-min-size behaviour: below-min pools are actively
+                  grown. Off by default — operators of hand-built pools must not be
+                  surprised by VMs appearing because a number in a CR says so.
+                type: boolean
+              join:
+                description: |-
+                  Join describes how a new VM reaches the RKE2 supervisor. There is
+                  deliberately NO token field: tokens are minted per attempt with a
+                  short TTL (see the token-minting Job) and never stored on this object
+                  or any Secret it references.
+                properties:
+                  serverURL:
+                    description: |-
+                      ServerURL should be an HA endpoint (VIP/DNS across masters), not a
+                      single master IP: a one-master outage must not poison the pool with
+                      timed-out attempts.
+                    pattern: ^https://.+:9345$
+                    type: string
+                required:
+                - serverURL
+                type: object
+              joinTimeoutMinutes:
+                default: 20
+                description: |-
+                  JoinTimeoutMinutes before an attempt is declared stuck: the VM is
+                  STOPPED (reversible — never deleted) and the ProvisioningStuck
+                  condition + alert fire. Joins take 2–15 minutes in practice.
+                  Capped at 20 because the chart runs cluster-autoscaler with
+                  --max-node-provision-time=25m: OUR ledger must always time out first,
+                  or CA declares the scale-up failed while the attempt is still live and
+                  orders a second VM for the same demand (review finding). Raising this
+                  cap and that flag is one coupled change.
+                format: int32
+                maximum: 20
+                minimum: 5
+                type: integer
+              maxConsecutiveFailures:
+                default: 2
+                description: |-
+                  MaxConsecutiveFailures stops provisioning (and pages) after this many
+                  attempts in a row time out. One bad joiner must not wedge the pool
+                  forever; a pattern of them must stop it.
+                format: int32
+                minimum: 1
+                type: integer
+              maxNodes:
+                description: |-
+                  MaxNodes is a HARD ceiling counting every owned artifact: Ready nodes,
+                  joining VMs, timed-out (stopped) VMs and unresolved attempt
+                  reservations — not just Nodes. Lowering it below current usage does not
+                  remove anything (nothing here ever removes a node); it only blocks new
+                  provisioning until usage falls below it.
+                format: int32
+                maximum: 32
+                minimum: 1
+                type: integer
+              minNodes:
+                description: |-
+                  MinNodes is the configured baseline. It is DOCUMENTATION plus optional
+                  enforcement, never silent repair: with EnforceMin=false a pool below
+                  this count only carries the BelowConfiguredBaseline condition.
+                format: int32
+                minimum: 0
+                type: integer
+              network:
+                description: |-
+                  Network provides static node addressing (no DHCP on CloudSigma VLANs).
+                  OPTIONAL in the schema so pools stored before this field existed keep
+                  round-tripping (review finding: a required field strands live objects
+                  mid-rollout) — but provisioning REFUSES to reserve attempts without it,
+                  fail closed at runtime.
+                properties:
+                  gateway:
+                    description: Gateway IP for the default route.
+                    pattern: ^([0-9]{1,3}\.){3}[0-9]{1,3}$
+                    type: string
+                  ipRangeEnd:
+                    pattern: ^([0-9]{1,3}\.){3}[0-9]{1,3}$
+                    type: string
+                  ipRangeStart:
+                    description: |-
+                      IPRangeStart..IPRangeEnd (inclusive) is the pool's allocation range.
+                      Must not overlap other pools, hand-made nodes, or platform VIPs — the
+                      operator owns that disjointness, exactly as with terraform IPs.
+                    pattern: ^([0-9]{1,3}\.){3}[0-9]{1,3}$
+                    type: string
+                  nameservers:
+                    description: Nameservers for the node.
+                    items:
+                      type: string
+                    minItems: 1
+                    type: array
+                  prefixLen:
+                    description: PrefixLen of the node subnet (e.g. 24 for /24).
+                    format: int32
+                    maximum: 30
+                    minimum: 8
+                    type: integer
+                required:
+                - gateway
+                - ipRangeEnd
+                - ipRangeStart
+                - nameservers
+                - prefixLen
+                type: object
+              nodeTemplate:
+                description: NodeTemplate is the shape of every VM this pool creates.
+                properties:
+                  cpuCores:
+                    format: int32
+                    minimum: 2
+                    type: integer
+                  diskGiB:
+                    format: int32
+                    minimum: 50
+                    type: integer
+                  imageUUID:
+                    description: |-
+                      ImageUUID must be on the allowlist; entries carry an added-on date and
+                      provisioning refuses images older than the configured freshness bound.
+                    type: string
+                  memoryGiB:
+                    format: int32
+                    minimum: 4
+                    type: integer
+                  rke2Version:
+                    description: |-
+                      RKE2Version is the EXACT pin (e.g. "v1.35.0+rke2r1") passed as
+                      INSTALL_RKE2_VERSION. Provisioning preflights the Kubernetes skew rule:
+                      the kubelet minor must not exceed any live apiserver minor.
+                    pattern: ^v[0-9]+\.[0-9]+\.[0-9]+\+rke2r[0-9]+$
+                    type: string
+                  vlans:
+                    description: |-
+                      VLANs the VM attaches to, in NIC order. The private (node-ip) VLAN is
+                      identified by matching the node subnet, and the NIC is selected in the
+                      guest BY MAC, never by interface order.
+                    items:
+                      type: string
+                    minItems: 1
+                    type: array
+                required:
+                - cpuCores
+                - diskGiB
+                - imageUUID
+                - memoryGiB
+                - rke2Version
+                - vlans
+                type: object
+            required:
+            - join
+            - maxNodes
+            - minNodes
+            - nodeTemplate
+            type: object
+            x-kubernetes-validations:
+            - message: minNodes must not exceed maxNodes
+              rule: self.minNodes <= self.maxNodes
+            - message: 'nodeTemplate is immutable: changing it under a live node group
+                changes what cluster-autoscaler simulates beneath existing nodes;
+                create a new pool instead'
+              rule: oldSelf == null || self.nodeTemplate == oldSelf.nodeTemplate
+            - message: join is immutable; create a new pool instead
+              rule: oldSelf == null || self.join == oldSelf.join
+            - message: network is immutable; create a new pool instead
+              rule: oldSelf == null || !has(oldSelf.network) || self.network == oldSelf.network
+          status:
+            properties:
+              attempts:
+                description: |-
+                  Attempts is the LEDGER — the single source of truth for ceiling
+                  arithmetic and group membership (Nodes/Joining/TimedOut above are
+                  derived display). Accepted entries persist for the life of their node;
+                  TimedOut entries are removed by the operator as acknowledgement.
+                  Bounded well above maxNodes<=32 so history cannot grow toward the
+                  object-size limit.
+                items:
+                  description: MgmtProvisioningAttempt is the durable record of one
+                    VM-creation attempt.
+                  properties:
+                    deadline:
+                      description: Deadline after which a non-Accepted attempt is
+                        TimedOut.
+                      format: date-time
+                      type: string
+                    id:
+                      description: ID is globally unique and becomes the node name
+                        (never reused).
+                      type: string
+                    ip:
+                      description: IP statically allocated to this attempt from spec.network's
+                        range.
+                      type: string
+                    message:
+                      type: string
+                    phase:
+                      description: |-
+                        MgmtAttemptPhase tracks one provisioning attempt through its lifecycle.
+                        Attempts are persisted in status BEFORE the external create call, so an
+                        ambiguous CloudSigma response or a controller failover can always be
+                        resolved by listing servers tagged with the attempt ID.
+                      enum:
+                      - Reserved
+                      - Provisioning
+                      - Accepted
+                      - TimedOut
+                      type: string
+                    serverUUID:
+                      description: ServerUUID is the CloudSigma UUID once the create
+                        is confirmed.
+                      type: string
+                    templateRevision:
+                      description: TemplateRevision the attempt was created from.
+                      format: int64
+                      type: integer
+                  required:
+                  - deadline
+                  - id
+                  - phase
+                  - templateRevision
+                  type: object
+                maxItems: 128
+                type: array
+              conditions:
+                description: |-
+                  Conditions: BelowConfiguredBaseline, ProvisioningStuck,
+                  DependencyOutage, QuotaExhausted, SkewBlocked, ImageStale.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              consecutiveFailures:
+                format: int32
+                type: integer
+              joining:
+                format: int32
+                type: integer
+              lastScaleReason:
+                type: string
+              lastScaleTime:
+                format: date-time
+                type: string
+              nodes:
+                description: |-
+                  Nodes is DERIVED display: the count of Accepted attempts. Never an
+                  input to ceiling or group arithmetic — the attempts ledger is.
+                format: int32
+                type: integer
+              observedTemplateRevision:
+                format: int64
+                type: integer
+              timedOut:
+                format: int32
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

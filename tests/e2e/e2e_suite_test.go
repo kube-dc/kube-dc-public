@@ -40,9 +40,44 @@ func Logf(format string, a ...interface{}) {
 	fmt.Fprintf(GinkgoWriter, time.Now().Format("2006-01-02 15:04:05")+": "+format+"\n", a...)
 }
 
+// E2EOptInEnv must be set for this suite to run at all.
+//
+// These specs are NOT hermetic: BeforeSuite calls config.GetConfig(), which
+// silently picks up the ambient kubeconfig, and the specs then CREATE AND
+// DELETE Organizations, Projects and namespaces on whatever cluster that
+// happens to point at. There is no envtest here and no dry-run mode.
+//
+// `make test` avoids them only by filtering the package list
+// (`go list ./... | grep -v /e2e`). Nothing protected a plain
+// `go test ./...`, `go test -race ./...`, an IDE "run all tests" action, or a
+// CI job that does not know about the Makefile — each of those would have run
+// destructive specs against the operator's current kubecontext, which on this
+// team is routinely a live production cluster. A reviewer hit exactly that on
+// 2026-07-20 and had to interrupt the run.
+//
+// The guard is an explicit opt-in rather than a build tag so the package still
+// compiles and vets in normal runs — a build tag would have hidden the code
+// from `go vet ./...` and from refactoring tools.
+const E2EOptInEnv = "KUBE_DC_E2E"
+
 func TestE2E(t *testing.T) {
+	if os.Getenv(E2EOptInEnv) == "" {
+		t.Skipf("skipping live-cluster E2E: set %s=1 to run. "+
+			"These specs create and delete real Organizations, Projects and namespaces "+
+			"on the cluster your current kubecontext points at (%s).",
+			E2EOptInEnv, currentContextHint())
+	}
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Kube-DC E2E Test Suite")
+}
+
+// currentContextHint names the cluster that WOULD have been targeted, so the
+// skip message is actionable instead of abstract. Best-effort and never fatal.
+func currentContextHint() string {
+	if kc := os.Getenv("KUBECONFIG"); kc != "" {
+		return "KUBECONFIG=" + kc
+	}
+	return "default kubeconfig ~/.kube/config"
 }
 
 var _ = BeforeSuite(func() {

@@ -2,9 +2,163 @@ apiVersion: v2
 name: kube-dc
 description: A Helm chart for kube-dc manager
 
+# v0.5.30: narrow the private-CA mount filter to kubelet's DOUBLE-dot internals.
+# v0.5.29 skipped every dot-prefixed entry, which would silently drop a legal
+# dot-prefixed ConfigMap key (".corp-ca.pem"): the bundle succeeds while that CA
+# is missing and endpoints stay untrusted with nothing reporting why.
+# v0.5.29: read private-CA bundles from kubelet AtomicWriter mounts. A mounted
+# ConfigMap exposes "..data" as a SYMLINK to a timestamped directory; reading it
+# returned EISDIR and failed the whole trusted-CA bundle, so EVERY Organization
+# reconcile failed on private-CA clusters ("collect trusted CA bundle: read cert
+# file .../..data: is a directory"). Malformed certificates still fail closed.
+# v0.5.28: the stateless management-API policy walk no longer fails closed on a
+# pod whose OVN logical switch port is already released (Succeeded/Failed Job
+# pods, and pods under deletion). Such a pod could never be programmed, so its
+# namespace never converged and live controller pods kept the /32 route WITHOUT
+# the stateless carve-out — their API path silently took the broken stateful
+# route. Found in production on cloud (shalb-docs, recurring MariaDB init-db Job
+# pod). A Pending pod is still included, so a genuinely-new client keeps failing
+# closed until Kube-OVN programs its port.
+# v0.5.27: drain ObjectBucketClaims before tenant namespace deletion so the
+# provisioner can reclaim buckets, ObjectBuckets and generated credentials.
+# v0.5.26: race-safe deterministic OvnEip allocation and automatic retirement
+# of legacy exact-owned duplicates before EIp finalizers clear.
+# v0.5.25: manager-owned stateless management-API policy for exact,
+# owner-chain-verified controller clients; table-local libovsdb Create calls;
+# and no-gap retirement of the pre-release management-API role.
+# v0.5.21: installer/main convergence, stable GPU/DRA promotion, private-CA
+# trust, and role-scoped management-Service API access. The Service path is
+# inert until a fleet explicitly selects MANAGEMENT_API_MODE=service.
+# v0.5.17: restore kube-apiserver streaming access to KubeVirt tenant workers.
+# KubeVirt masquerade exposes the guest through the outer virt-launcher Pod IP
+# but does not hairpin locally-originated traffic to that same address. A
+# KubeVirt-only Sveltos addon mirrors the advertised Node IP as a /32 loopback
+# alias inside each guest, allowing Konnectivity to reach kubelet for logs,
+# exec, and port-forward. Requires k8-manager with the provider selector label.
+
 type: application
 
-version: v0.4.2
+# v0.4.32: productize Tenant Networking v2 with fail-closed admission,
+# reconciled per-project infra SecurityGroups, and per-Service -ext retirement.
+# Requires manager v0.4.14.
+# v0.4.30: fix DRA admission match conditions so ordinary project Pods and
+# Deployments without the GPU backend label evaluate false instead of failing
+# closed on a missing map key. Includes the integrated tenant-networking
+# controller line and requires manager v0.4.12.
+# v0.4.29: ship the fixed-SKU stable-v1 DRA product path: DeviceClass and
+# admission boundaries, native DRA quota reconciliation, canonical backend-
+# owned workloads, redacted metrics/alerts, and exact-quota-safe Recreate
+# rollouts. Requires the v0.4.11 manager/backend/frontend/admin release unit.
+# v0.4.28: make the admin inventory DRA-aware and keep the legacy HAMi Pod
+# policy from rejecting controller updates to valid DRA-profile Pods. Requires
+# a backend image containing the paired ResourceSlice/ResourceClaim inventory.
+# v0.4.27: add strict catalog-driven stable-v1 DRA discovery RBAC. The backend
+# aggregates ResourceSlices/ResourceClaims into redacted model capacity and
+# never exposes node, pool, device, UUID, PCI, or ShareID values.
+# v0.4.24: support versioned, cluster-scoped add-on availability overrides for
+# v0.4.25: keep the last validated billing/GPU quota contract authoritative
+# when a ConfigMap update is rejected, expose config validity per organization,
+# and remove the retired GitHub Actions execution assumptions. Requires manager
+# v0.4.10; the paired backend v0.4.10 closes every entitlement-reduction path.
+#
+# both fresh billing-plan seeds and existing seed-once ConfigMaps, while
+# enforcing operator-only or disabled rollout states. Chart-only.
+# v0.4.23: keep the staged D-005 V100 add-on disabled while its catalog profile
+# is not billing-eligible, and migrate existing seed-once billing ConfigMaps to
+# the same fail-closed availability state. Chart-only.
+# v0.4.22: expose kube-dc-manager quota metrics through authenticated HTTPS,
+# ServiceMonitor discovery, bounded recording/alert rules, and optional exact-SA
+# /metrics RBAC. Requires manager v0.4.9 or newer.
+# v0.4.20: preserve explicit selfService=false in seed-once add-on migrations;
+# Helm's default function treats false as empty and previously rejected the
+# operator-only GPU pilot SKU during a live upgrade.
+# v0.4.19: add explicit WHMCS configurable-option mappings for recurring
+# add-ons. Requires backend/module 1.3.0 for signed quantity synchronization.
+# v0.4.18: add operator-managed GPU add-on assignment and active-holder
+# reduction guards, expose stable entitlement/headroom, and ship independently
+# gated Shared GPU Deployment preview/create UX. Requires v0.4.8 images.
+# v0.4.17: migrate the disabled D-005 V100 add-on into existing seed-once
+# billing-plans ConfigMaps without overwriting live plan/add-on edits. Chart-only.
+# v0.4.16: define the disabled-by-default D-005 V100 add-on and validate GPU
+# add-on availability against the catalog. Requires v0.4.7 manager/backend.
+# v0.4.15: require explicit HAMi memory/core billing budgets and expose safe
+# per-share project-cap ceilings. Requires the v0.4.6 manager/backend image set.
+# v0.4.14: enforce native HAMi count/memory/core budgets in organization HRQ
+# and org-admin project caps after live HNC qualification. Requires the v0.4.5
+# manager/backend image set; tenant entitlement remains configuration-gated.
+# v0.4.13: remove the KubeVirt hostDevices policy gap, require an effective
+# non-migratable GPU eviction strategy, and share VM/VMI CEL guardrails.
+# Chart-only.
+# v0.4.12: add catalog-derived KubeVirt VM/VMI GPU profile, device,
+# non-migration, and node-identity admission guardrails. Chart-only.
+# v0.4.11: add catalog-derived HAMi Pod admission guardrails and the stable
+# profile-label/scheduler contract used by the GPU-only fail-closed webhook.
+# Chart-only; manager/backend/frontend remain v0.4.4.
+# v0.4.10: fix controller-owned quota admission/RBAC, namespace teardown,
+# non-default release namespaces, exact HNC quota attribution, org-admin quota
+# writes, and GPU token-refresh rendering. Requires manager/backend/frontend
+# v0.4.4.
+# v0.4.9: add the disabled-by-default GPU profile catalog and accelerator quota
+# status CRD schema, and fix admin-console env.js. The admin image bakes env.js at
+# build time (placeholder/stage URLs) and has NO entrypoint that regenerates it
+# from env vars, so the deployment's BACKEND_URL/KEYCLOAK_URL env were silently
+# ignored and the console pointed at the wrong Keycloak ("Invalid parameter:
+# redirect_uri"). Now render env.js into a -config ConfigMap and subPath-mount it
+# over the baked-in file (mirrors frontend), plus adminFrontend.volumes/volumeMounts
+# hooks so fleet can mount the nginx config (env.js served no-store, not immutable).
+# Requires manager v0.4.3 for GPU catalog validation, billing-to-HRQ accelerator
+# grants, and accelerator status aggregation.
+# v0.4.4: chart-only — grant the backend ClusterRole cluster-wide get/list on
+# volumesnapshots + cronjobs (the admin "OS Images" console tab reads goldens
+# cluster-wide and the cdi-os-mirror CronJob via the backend SA). No manager code
+# change, so appVersion stays v0.4.2.
+# v0.4.3: raise the k8-manager memory limit 128Mi→512Mi (OOMKilled at scale).
+# v0.4.35: role-separated infra SecurityGroups with applied OVN membership gate.
+# v0.4.36: db-manager gets get/list/watch on endpoints. The dual-home gate
+# follows the mgmt Service's Endpoints to the backing pod to prove it carries
+# the infra NIC before dropping `-ext` from OpenBao's stored ConnectionURL.
+# Needs list+watch, not get: without them controller-runtime's informer logs
+# "Failed to watch *v1.Endpoints: forbidden" in a loop and the cache never
+# syncs, so the controller wedges silently rather than erroring. The rule
+# landed on main without a chart bump, which meant it could not ship — this
+# bump is what actually delivers it.
+# v0.5.31: tenant-installable components on the management-API service path.
+# Two defects made "service mode" untrue for the database and managed-Kubernetes
+# products even though every SecurityGroup reported Ready:
+#   1. CloudNativePG bootstraps through Jobs IT owns (initdb/join/pgbasebackup/
+#      fullRecovery), which the role classifier did not recognize. They were
+#      ordinary workloads, so they had no /32 route and no API egress, and every
+#      new Postgres database died with `dial tcp <serviceIP>:443: i/o timeout` ->
+#      BackoffLimitExceeded -> KdcDatabase stuck Provisioning (found live on
+#      stage). Adding a replica would have failed the same way.
+#   2. The policy controller moved PRE-EXISTING pods into the API-client group,
+#      but the route annotation is written once at admission and is immutable
+#      afterwards — so those pods were authorized for an address they could never
+#      route to, and the migration reported success. The route is now the source
+#      of truth: a pod without it stays on the workload policy and raises a
+#      ManagementAPIRouteMissing Event until its owner recreates it.
+# Rolls up v0.5.29/v0.5.30 (the kubelet AtomicWriter private-CA mount fixes),
+# which cloud and stage had not taken yet. ROLLBACK: v0.5.28.
+#
+# v0.5.34: coherent tenant-VLAN foundation release. v0.5.33 is intentionally
+# superseded: its manager image contained the FabricSegment / ProjectNetwork /
+# VlanReservation controllers while the live v0.5.32 chart did not contain
+# their CRDs, so upgrading only the image made manager cache sync fail and
+# removed the shared webhook endpoint. v0.5.34 publishes the manager and these
+# three additive CRDs as one unit. The feature itself remains DISABLED:
+# projectNetwork.enabled=false publishes no NetworkAttachmentDefinition and
+# deploys no tenant-VLAN admission path. Do not enable it on a real cluster
+# until every B-06 item in docs/prd/tenant-vlan-attachment-tracker.md is closed.
+# v0.5.32: same-project peering between the workload and api-client groups
+# (both directions, both groups, ALL protocols, rendered only in service mode).
+# A role migration straddles the two groups — old pods workload, new pods
+# api-client — and peer discovery is infra-to-infra, so with same-group-only
+# the new replica could not reach the old primary and an ordered StatefulSet
+# roll deadlocked (found live on a production cluster the day service mode
+# was flipped there). Safe: both group names embed the namespace, so the
+# peering can never span tenants; etcd role groups stay unpeered. ROLLBACK:
+# v0.5.31 (re-wedges a mid-roll multi-replica MariaDB).
+version: v0.5.66
 
 # appVersion IS the default manager image tag (manager-deployment.yaml falls
 # back to .Chart.AppVersion when manager.image.tag is unset). It MUST move in
@@ -13,6 +167,6 @@ version: v0.4.2
 # manager ClusterRole grants (storageclasses/volumesnapshots/volumesnapshotcontents
 # + cdi read) and the 4 default-project roles' volumesnapshots read. Pinning
 # appVersion to v0.4.2 stops a bare `helm install` from pairing new RBAC/chart
-# with an old (pre-seeder) manager image. shalb/kube-dc-manager:v0.4.2 must be
-# published for this chart version.
-appVersion: v0.4.2
+# with old component images. The v0.4.19 release unit must publish v0.4.9 for
+# manager, backend, tenant frontend, and admin frontend before chart rollout.
+appVersion: v0.5.56

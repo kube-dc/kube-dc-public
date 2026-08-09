@@ -44,7 +44,7 @@ Classes:
 
 The classifier is a heuristic: probes look at cluster-side
 configuration (cloud-provider integration, EnvoyProxy CR shape,
-Fork E Service presence) and combine the per-probe hints into a
+platform-endpoint Service presence) and combine the per-probe hints into a
 single verdict with a confidence label. For clusters where the
 shape doesn't match any of the three known classes, the verdict is
 "ambiguous" and you should fall back to the 5-line manual decision

@@ -2,6 +2,16 @@
 # ValidatingAdmissionPolicy: Restrict dangerous pod specs in project namespaces
 # Blocks hostPath, privileged, hostNetwork, hostPID, hostIPC for user-created pods.
 # System controllers (kubevirt, kamaji, kube-dc, capi, etc.) are exempted via matchConditions.
+#
+# CRITICAL: exempting the kube-system controllers implicitly exempts anyone who
+# can create their WORKLOAD objects. A pod-only policy is bypassed by wrapping
+# the same privileged/hostPath spec in a Deployment: the pod is then submitted
+# by system:serviceaccount:kube-system:replicaset-controller and skips every
+# check here. Verified live on cloud 2026-08-07 (bare pod DENIED, identical
+# payload inside a Deployment ADMITTED, and no Pod Security Admission labels on
+# project namespaces to catch it downstream). The second policy below closes
+# that by validating the pod TEMPLATE on every workload kind, where the TENANT
+# is the requester.
 # =============================================================================
 
 apiVersion: admissionregistration.k8s.io/v1
@@ -90,6 +100,103 @@ metadata:
   name: restrict-pod-security-in-projects
 spec:
   policyName: restrict-pod-security-in-projects
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+---
+# =============================================================================
+# Same rules, enforced where the tenant is the actual requester: the pod
+# template of every workload kind that can produce pods. Without this the
+# policy above only ever sees bare pods.
+# =============================================================================
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: restrict-pod-security-templates-in-projects
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "cronjobs"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["replicationcontrollers"]
+  matchConditions:
+    # NOTE: kube-system is deliberately NOT exempt here. The controllers create
+    # PODS, not these workload objects; a kube-system exemption would reopen the
+    # very bypass this policy exists to close. Platform controllers that DO
+    # create workloads in project namespaces are listed below.
+    - name: exclude-platform-service-accounts
+      expression: >-
+        !has(request.userInfo) || !has(request.userInfo.username) ||
+        !(['system:serviceaccount:kube-dc:',
+           'system:serviceaccount:kubevirt:',
+           'system:serviceaccount:kamaji-system:',
+           'system:serviceaccount:capi-system:',
+           'system:serviceaccount:capk-system:',
+           'system:serviceaccount:capcs-system:',
+           'system:serviceaccount:capi-kubeadm-bootstrap-system:',
+           'system:serviceaccount:capi-kubeadm-control-plane-system:',
+           'system:serviceaccount:cnpg-system:',
+           'system:serviceaccount:mariadb-system:'].exists(prefix,
+             request.userInfo.username.startsWith(prefix)))
+    - name: exclude-cluster-admins
+      expression: >-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !('system:masters' in request.userInfo.groups)
+    - name: exclude-node-users
+      expression: >-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !('system:nodes' in request.userInfo.groups)
+  variables:
+    - name: podSpec
+      expression: >-
+        has(object.spec.jobTemplate)
+          ? object.spec.jobTemplate.spec.template.spec
+          : object.spec.template.spec
+  validations:
+    - expression: >-
+        !has(variables.podSpec.volumes) ||
+        variables.podSpec.volumes.all(v, !has(v.hostPath))
+      message: "hostPath volumes are not allowed in project namespaces. Mount only PVCs, configMaps, secrets, or emptyDir."
+    - expression: >-
+        !has(variables.podSpec.containers) ||
+        variables.podSpec.containers.all(c,
+          !has(c.securityContext) || !has(c.securityContext.privileged) ||
+          c.securityContext.privileged == false)
+      message: "Privileged containers are not allowed in project namespaces."
+    - expression: >-
+        !has(variables.podSpec.initContainers) ||
+        variables.podSpec.initContainers.all(c,
+          !has(c.securityContext) || !has(c.securityContext.privileged) ||
+          c.securityContext.privileged == false)
+      message: "Privileged init containers are not allowed in project namespaces."
+    - expression: >-
+        !has(variables.podSpec.hostNetwork) || variables.podSpec.hostNetwork == false
+      message: "hostNetwork is not allowed in project namespaces."
+    - expression: >-
+        !has(variables.podSpec.hostPID) || variables.podSpec.hostPID == false
+      message: "hostPID is not allowed in project namespaces."
+    - expression: >-
+        !has(variables.podSpec.hostIPC) || variables.podSpec.hostIPC == false
+      message: "hostIPC is not allowed in project namespaces."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: restrict-pod-security-templates-in-projects
+spec:
+  policyName: restrict-pod-security-templates-in-projects
   validationActions: [Deny]
   matchResources:
     namespaceSelector:

@@ -136,12 +136,12 @@ func TestDeleteForRealm(t *testing.T) {
 // silently put two realms in the same file.
 func TestSlugify(t *testing.T) {
 	cases := map[string]string{
-		"master":      "master",
-		"shalb":       "shalb",
-		"demo-org":    "demo-org",
-		"":            "default",
-		"weird/name":  "weirdname",
-		"a..b__c":     "a..b__c",
+		"master":     "master",
+		"shalb":      "shalb",
+		"demo-org":   "demo-org",
+		"":           "default",
+		"weird/name": "weirdname",
+		"a..b__c":    "a..b__c",
 	}
 	for in, want := range cases {
 		if got := slugify(in); got != want {

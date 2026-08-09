@@ -1,0 +1,156 @@
+{{- $draProfiles := list -}}
+{{- range $profile := .Values.gpu.profiles -}}
+{{- if and $profile.enabled (eq ($profile.allocationBackend | default "") "dra") -}}
+{{- $draProfiles = append $draProfiles $profile -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.gpu.enabled (gt (len $draProfiles) 0) }}
+{{- $backendUsername := printf "system:serviceaccount:%s:%s" .Release.Namespace (include "kube-dc.backend.serviceAccountName" .) -}}
+{{- if not .Values.gpu.tenantDirectApply }}
+# Backend-owned creation: only the kube-dc backend may create/mutate DRA claim
+# templates. Skipped when gpu.tenantDirectApply is set — project admins then
+# create the fixed-product template directly, and the DRA *shape* policy still
+# forces the exact product while the ResourceQuota bounds device count.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: protect-kube-dc-dra-claim-templates
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["resource.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["resourceclaimtemplates"]
+  matchConditions:
+    - name: exclude-backend
+      expression: request.userInfo.username != {{ $backendUsername | quote }}
+    - name: exclude-namespace-teardown
+      expression: >-
+        !(request.operation == 'DELETE' && request.userInfo.username in [
+          'system:serviceaccount:kube-system:namespace-controller',
+          'system:serviceaccount:kube-system:generic-garbage-collector',
+          'system:kube-controller-manager'])
+    - name: exclude-cluster-admins
+      expression: "!has(request.userInfo.groups) || !('system:masters' in request.userInfo.groups)"
+  validations:
+    - expression: "false"
+      message: "DRA claim templates are managed by kube-dc and cannot be changed directly."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: protect-kube-dc-dra-claim-templates
+spec:
+  policyName: protect-kube-dc-dra-claim-templates
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+{{- end }}
+---
+# Generated claims are created by kube-controller-manager from the protected
+# template. Scheduler/driver writes use dedicated subresources and do not match
+# this rule.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: protect-kube-dc-dra-resourceclaims
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["resource.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["resourceclaims"]
+  matchConditions:
+    - name: exclude-claim-controller
+      expression: >-
+        !(request.userInfo.username in [
+          'system:kube-controller-manager',
+          'system:serviceaccount:kube-system:resource-claim-controller'])
+    - name: exclude-scheduler-finalizer
+      expression: >-
+        !(request.operation == 'UPDATE' &&
+          request.userInfo.username == 'system:kube-scheduler')
+    - name: exclude-namespace-teardown
+      expression: >-
+        !(request.operation == 'DELETE' && request.userInfo.username in [
+          'system:serviceaccount:kube-system:namespace-controller',
+          'system:serviceaccount:kube-system:generic-garbage-collector'])
+    - name: exclude-cluster-admins
+      expression: "!has(request.userInfo.groups) || !('system:masters' in request.userInfo.groups)"
+  validations:
+    - expression: "false"
+      message: "DRA resource claims are generated and cannot be changed directly."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: protect-kube-dc-dra-resourceclaims
+spec:
+  policyName: protect-kube-dc-dra-resourceclaims
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+---
+{{- if not .Values.gpu.tenantDirectApply }}
+# Only the backend can create or mutate a Deployment which carries a DRA claim
+# or kube-dc's DRA ownership label. Skipped when gpu.tenantDirectApply is set.
+# The separate shape policy below still validates every DRA Deployment write.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: protect-kube-dc-dra-deployments
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["deployments"]
+  matchConditions:
+    - name: has-dra-contract
+      expression: >-
+        (request.operation == 'DELETE' ?
+          (has(oldObject.spec.template.spec.resourceClaims) ||
+           (has(oldObject.metadata.labels) &&
+            'kube-dc.com/gpu-backend' in oldObject.metadata.labels &&
+            oldObject.metadata.labels['kube-dc.com/gpu-backend'] == 'dra')) :
+          (has(object.spec.template.spec.resourceClaims) ||
+           (has(object.metadata.labels) &&
+            'kube-dc.com/gpu-backend' in object.metadata.labels &&
+            object.metadata.labels['kube-dc.com/gpu-backend'] == 'dra')))
+    - name: exclude-backend
+      expression: request.userInfo.username != {{ $backendUsername | quote }}
+    - name: exclude-namespace-teardown
+      expression: >-
+        !(request.operation == 'DELETE' && request.userInfo.username in [
+          'system:serviceaccount:kube-system:namespace-controller',
+          'system:serviceaccount:kube-system:generic-garbage-collector',
+          'system:kube-controller-manager'])
+    - name: exclude-cluster-admins
+      expression: "!has(request.userInfo.groups) || !('system:masters' in request.userInfo.groups)"
+  validations:
+    - expression: "false"
+      message: "DRA GPU Deployments must be managed through the kube-dc API."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: protect-kube-dc-dra-deployments
+spec:
+  policyName: protect-kube-dc-dra-deployments
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+{{- end }}
+{{- end }}

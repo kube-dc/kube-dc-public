@@ -615,6 +615,194 @@ spec:
                         Architecture for this worker pool (amd64, arm64, etc.)
                         Used for node selection and image variants
                       type: string
+                    autoscaling:
+                      description: |-
+                        Autoscaling configures horizontal node autoscaling for this pool
+                        (EKS-node-group semantics: replicas stays "desired" and the
+                        autoscaler moves it between minReplicas and maxReplicas). Absent
+                        block = autoscaling off, behaviour identical to a static pool.
+
+                        NOTE this is the HORIZONTAL axis (node count). The similarly named
+                        spec.controlPlane.autoscaling is the control-plane VPA (vertical,
+                        container resources). See docs/prd/managed-k8s-worker-autoscaling.md.
+                      properties:
+                        behavior:
+                          description: Behavior tunes scaling speed and safety margins.
+                          properties:
+                            scaleDown:
+                              description: |-
+                                WorkerScaleDownPolicy bounds node removal. Disabled unless Enabled is
+                                explicitly true — removing a customer's node is the highest-risk action
+                                this feature can take.
+
+                                Every field here is consumed by upstream cluster-autoscaler, which is the
+                                only thing that removes nodes.
+                              properties:
+                                cooldownSeconds:
+                                  description: |-
+                                    CooldownSeconds is published to upstream cluster-autoscaler as
+                                    --scale-down-delay-after-add (the MAXIMUM across the cluster's pools,
+                                    because that flag is per-process rather than per-node-group).
+                                  format: int32
+                                  minimum: 0
+                                  type: integer
+                                enabled:
+                                  description: Enabled must be explicitly true for
+                                    any scale-down to occur.
+                                  type: boolean
+                                stabilizationWindowSeconds:
+                                  format: int32
+                                  minimum: 0
+                                  type: integer
+                                utilizationThreshold:
+                                  description: |-
+                                    UtilizationThreshold is the node utilisation percentage below which a
+                                    node counts as removable, for ClusterAutoscaler mode ONLY. It is
+                                    published per-pool as the upstream
+                                    cluster.x-k8s.io/autoscaling-options-scaledownutilizationthreshold
+                                    annotation (upstream expresses it as a 0..1 ratio; this is the same
+                                    number as a percent, so 50 here means 0.5 there).
+
+                                    Distinct from ThresholdDelta, which is a Builtin-loop hysteresis band
+                                    measured RELATIVE to the scale-up target. This one is absolute, matches
+                                    what upstream actually consumes, and is what an operator means by "remove
+                                    a node once it drops below X%".
+
+                                    Unset leaves the annotation off, so the pool follows cluster-autoscaler's
+                                    own default (0.5). Ignored under Builtin.
+                                  format: int32
+                                  maximum: 100
+                                  minimum: 1
+                                  type: integer
+                              type: object
+                            scaleUp:
+                              description: |-
+                                WorkerScaleUpPolicy bounds how aggressively nodes are added.
+                                Code-side defaults when unset: stabilization 120s, maxNodesPerStep 2,
+                                cooldown 300s.
+                              properties:
+                                cooldownSeconds:
+                                  description: CooldownSeconds is the minimum gap
+                                    between two scale-ups.
+                                  format: int32
+                                  minimum: 0
+                                  type: integer
+                                maxNodesPerStep:
+                                  description: MaxNodesPerStep caps nodes added by
+                                    one scaling decision.
+                                  format: int32
+                                  minimum: 1
+                                  type: integer
+                                stabilizationWindowSeconds:
+                                  description: |-
+                                    StabilizationWindowSeconds is how long the trigger condition must
+                                    hold before the first node is added.
+                                  format: int32
+                                  minimum: 0
+                                  type: integer
+                              type: object
+                          type: object
+                        enabled:
+                          description: |-
+                            Enabled turns the scaling loop on for this pool. The block may be
+                            kept with enabled=false to preserve tuning while pausing scaling.
+                          type: boolean
+                        maxReplicas:
+                          description: MaxReplicas is the ceiling the autoscaler will
+                            never exceed.
+                          format: int32
+                          minimum: 1
+                          type: integer
+                        metrics:
+                          description: |-
+                            Metrics enables the OPTIONAL utilisation trigger: scale up when any
+                            metric exceeds its target (sustained). Requires the metrics-server
+                            addon in the tenant cluster; without it these are inert and only
+                            the pending-pod trigger acts. Scale-down never acts on metrics
+                            alone.
+                          items:
+                            description: WorkerAutoscalingMetric is one utilisation
+                              target.
+                            properties:
+                              targetAverageUtilization:
+                                description: |-
+                                  TargetAverageUtilization is the pool-average percentage above which
+                                  the pool scales up.
+                                format: int32
+                                maximum: 100
+                                minimum: 1
+                                type: integer
+                              type:
+                                description: Type of the metric.
+                                enum:
+                                - cpu
+                                - memory
+                                type: string
+                            required:
+                            - targetAverageUtilization
+                            - type
+                            type: object
+                          maxItems: 2
+                          type: array
+                        minReplicas:
+                          description: |-
+                            MinReplicas is the floor the autoscaler will never go below.
+                            Defaults to 1 when unset. 0 is allowed but scale-to-zero is still
+                            subject to the platform guard: a pool may only reach 0 while
+                            another pool has Ready workers.
+                          format: int32
+                          minimum: 0
+                          type: integer
+                        mode:
+                          default: Builtin
+                          description: |-
+                            Mode selects WHICH autoscaler owns this pool's replicas (PRD §2).
+                            The two modes are mutually exclusive by construction — `replicas` has
+                            exactly one writer at any time — and switching between them is safe
+                            because both respect the same min/max.
+
+                              Builtin (default)
+                                The k8-manager loop owns spec.workers[i].replicas. Scale-UP only:
+                                unschedulable pods, plus the optional utilisation trigger. Works
+                                on every provider with no tenant-side component.
+
+                              ClusterAutoscaler
+                                Upstream cluster-autoscaler (--cloud-provider=clusterapi) owns the
+                                MachineDeployment's replicas. k8-manager SURRENDERS the field: it
+                                stops reconciling replicas for this pool and instead publishes the
+                                bounds as the standard CAPI node-group annotations. This is the
+                                only mode that scales DOWN, because safe scale-down requires the
+                                real kube-scheduler to prove a pod can be rescheduled — see the
+                                header of kdccluster_workers_scaledown.go for why the hand-rolled
+                                attempt was abandoned.
+
+                            Tuning splits by mode, and each mode IGNORES the other's fields:
+                              Builtin           metrics[] and behavior.scaleUp (the utilisation
+                                                trigger and its stabilization window).
+                              ClusterAutoscaler behavior.scaleDown — enabled, utilizationThreshold
+                                                and stabilizationWindowSeconds are published as the
+                                                per-node-group autoscaling-options annotations.
+                                                metrics[] and behavior.scaleUp are IGNORED, because
+                                                upstream scales UP on unschedulable pods only and has
+                                                no utilisation trigger at all. They are stored but
+                                                never read, so switching a pool back to Builtin
+                                                restores whatever was configured. There is no status
+                                                field marking them ignored — do not infer one.
+                          enum:
+                          - Builtin
+                          - ClusterAutoscaler
+                          type: string
+                      required:
+                      - maxReplicas
+                      type: object
+                      x-kubernetes-validations:
+                      - message: autoscaling.minReplicas must not exceed maxReplicas
+                        rule: '!has(self.minReplicas) || self.minReplicas <= self.maxReplicas'
+                      - message: minReplicas 0 is not supported with mode ClusterAutoscaler
+                          (scale-from-zero is not available)
+                        rule: '!(has(self.enabled) && self.enabled && has(self.mode)
+                          && self.mode == ''ClusterAutoscaler'' && has(self.minReplicas)
+                          && self.minReplicas == 0)'
                     cloudsigma:
                       description: CloudSigma-specific configuration (used when infrastructureProvider=cloudsigma)
                       properties:
@@ -647,11 +835,18 @@ spec:
                           description: CloudSigma server metadata (key-value pairs)
                           type: object
                         mhzPerCore:
-                          default: 2000
                           description: |-
-                            MHz per core (used when converting cpuCores to MHz)
-                            Default: 2000 MHz per core (CloudSigma default)
-                            Example: mhzPerCore=3000 with cpuCores=2 gives 6000 MHz total
+                            MHz per core — set ONLY to pin an explicit per-core frequency
+                            (total MHz = cpuCores × mhzPerCore). When ABSENT, the platform
+                            sizes worker VMs at the zone's MAXIMUM per-core frequency
+                            (k8-manager writes smp=cpuCores with cpu=0; CAPCS >=0.1.33
+                            resolves the max from the CloudSigma capabilities API).
+
+                            NOTE: no kubebuilder default on purpose. The former default=2000
+                            was API-server-injected into every pool, so the field could never
+                            be absent and CloudSigma auto-derived FEWER, DOWNCLOCKED cores
+                            from the resulting total (5 configured cores became 4 @ 2.5 GHz;
+                            BOC 2026-07-08). Existing stored pools keep their persisted value.
                           format: int32
                           minimum: 1000
                           type: integer
@@ -746,12 +941,13 @@ spec:
                         Disk size for KubeVirt workers (e.g., "10Gi", "20Gi", "40Gi").
                         Only used when storageType=datavolume.
 
-                        Note on plan storage budget: each worker DataVolume needs ~2× this
-                        size of namespace storage quota (the target PVC plus a CDI scratch
-                        PVC during import). Combined with dedicated etcd's 10Gi-per-replica
-                        requirement, a Dev Pool's 60 GB storage allows roughly:
-                          1-replica etcd + 1 worker @ 10Gi disk: 10 + 2×10 = 30 GB
-                          3-replica etcd + 1 worker @ 10Gi disk: 30 + 2×10 = 50 GB
+                        Note on plan storage budget: the rootdisk registry import runs with
+                        pullMethod=node (no CDI scratch PVC), so each worker consumes just
+                        this size of namespace storage quota. Combined with dedicated etcd's
+                        10Gi-per-replica requirement, a Dev Pool's 60 GB storage allows
+                        roughly:
+                          1-replica etcd + 1 worker @ 10Gi disk: 10 + 10 = 20 GB
+                          3-replica etcd + 1 worker @ 10Gi disk: 30 + 10 = 40 GB
                         Default kept conservative so a fresh dedicated-datastore cluster on
                         the entry tier provisions without hitting the storage quota.
                       type: string
@@ -887,6 +1083,13 @@ spec:
                   required:
                   - name
                   type: object
+                  x-kubernetes-validations:
+                  - message: replicas must lie within autoscaling.minReplicas..maxReplicas
+                      while autoscaling is enabled
+                    rule: '!has(self.autoscaling) || !self.autoscaling.enabled ||
+                      (self.replicas <= self.autoscaling.maxReplicas && self.replicas
+                      >= (has(self.autoscaling.minReplicas) ? self.autoscaling.minReplicas
+                      : 1))'
                 type: array
             required:
             - version
@@ -1193,6 +1396,63 @@ spec:
                   description: WorkerPoolStatus defines the observed state of a worker
                     pool
                   properties:
+                    autoscaling:
+                      description: |-
+                        Autoscaling reports the scaling loop's state for this pool. Always
+                        populated (Mode=Off when the pool has no autoscaling block) so
+                        consumers can render state without inspecting the spec.
+                      properties:
+                        currentCPUUtilization:
+                          description: |-
+                            Pool-average utilisation percentages; only set when the utilisation
+                            trigger is configured AND tenant metrics are reachable.
+                          format: int32
+                          type: integer
+                        currentMemoryUtilization:
+                          format: int32
+                          type: integer
+                        lastScaleReason:
+                          description: |-
+                            LastScaleReason is a human-readable explanation of the last scaling
+                            decision, e.g. "3 unschedulable pods fit this pool; +1 node".
+                          type: string
+                        lastScaleTime:
+                          description: LastScaleTime is when the loop last changed
+                            this pool's replicas.
+                          format: date-time
+                          type: string
+                        limitedBy:
+                          description: |-
+                            LimitedBy is set when the loop WANTED to scale but could not:
+                              Max | Quota | Placement | RollingUpdate
+                            Empty when unconstrained. This is a first-class signal, not a log
+                            line — it is how an operator learns a cluster wanted to grow.
+                          type: string
+                        maxReplicas:
+                          format: int32
+                          type: integer
+                        minReplicas:
+                          description: Effective bounds after code-side defaulting.
+                          format: int32
+                          type: integer
+                        mode:
+                          description: |-
+                            Mode of the loop for this pool:
+                              Off          — no autoscaling block, or enabled=false
+                              PendingPods  — EKS-like trigger active (no metrics configured)
+                              PendingPodsAndUtilization — both triggers configured
+                          type: string
+                      type: object
+                    deletingReplicas:
+                      description: |-
+                        DeletingReplicas is the number of this pool's Machines currently
+                        being deleted (deletionTimestamp set: cordoned, draining, or waiting
+                        for volume detach). Their kubelets often still report Ready, so
+                        MachineDeployment.status.readyReplicas alone overstates usable
+                        capacity — a pool whose Machines were ALL deleting used to display
+                        "Ready". Phase reports Deleting whenever this is non-zero.
+                      format: int32
+                      type: integer
                     name:
                       description: Name of the worker pool
                       type: string

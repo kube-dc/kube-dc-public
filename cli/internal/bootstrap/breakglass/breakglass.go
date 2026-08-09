@@ -12,16 +12,16 @@
 // Three operations:
 //
 //   - Adopt:  on an existing cluster the operator already has admin
-//             access to, mint the SA+token+kubeconfig and encrypt it
-//             into the fleet repo. One-time per cluster.
+//     access to, mint the SA+token+kubeconfig and encrypt it
+//     into the fleet repo. One-time per cluster.
 //   - Use:    decrypt the encrypted kubeconfig to a temp file and
-//             spawn a sub-shell with KUBECONFIG=<temp>. Tempfile is
-//             removed on shell exit (or process kill). Prints a red
-//             banner so the operator never accidentally uses this for
-//             daily work.
+//     spawn a sub-shell with KUBECONFIG=<temp>. Tempfile is
+//     removed on shell exit (or process kill). Prints a red
+//     banner so the operator never accidentally uses this for
+//     daily work.
 //   - Rotate: delete the SA token Secret, K8s recreates with a fresh
-//             token, re-encrypt the kubeconfig with the new value.
-//             Use after every break-glass session, or on a CronJob.
+//     token, re-encrypt the kubeconfig with the new value.
+//     Use after every break-glass session, or on a CronJob.
 package breakglass
 
 import (

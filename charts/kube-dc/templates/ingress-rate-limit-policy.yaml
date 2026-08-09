@@ -1,0 +1,71 @@
+{{- /*
+Front-door abuse guardrail — per-client LOCAL rate limits on the platform's
+own login/console surfaces (ingress design v2 §5a.2).
+
+WHY THIS LIVES HERE AND WHY IT IS OFF BY DEFAULT
+  The platform's public hostnames (console, login, backend API) are
+  unauthenticated by definition at the first hop, so they are the natural
+  target for credential stuffing and scraping. Envoy already terminates
+  every one of them, so a rate limit costs no new component — but a limit
+  that is too tight locks real operators out of their own console, and the
+  right ceiling depends on cluster size and whether clients arrive from a
+  shared NAT. So it ships DISABLED and an operator turns it on once they
+  know their traffic shape.
+
+WHY `type: Local` AND NOT GLOBAL
+  Global (cross-replica exact) rate limiting in Envoy Gateway needs the
+  ratelimit service plus a Redis — two more components on every cluster to
+  buy exactness we do not need for abuse control. Local limits are enforced
+  per Envoy process, which under the v2 data plane means PER INGRESS NODE:
+  the effective ceiling is (limit x number of ingress nodes). With a single
+  MetalLB VIP all traffic lands on one node, so local == global there.
+  Documented, deliberate, and revisited only if a customer needs exactness.
+
+DEPENDS ON THE TRUE CLIENT IP
+  A per-client limit is only meaningful if Envoy can see the client. That is
+  precisely what the v2 data plane guarantees: host-bind (or a VIP with
+  externalTrafficPolicy: Local) keeps the source address intact, whereas
+  externalTrafficPolicy: Cluster SNATs it to a node address — under which
+  EVERY client would share one bucket and the first burst would throttle
+  everyone. If you enable this while the Envoy Service still uses
+  Cluster, the limit will misfire; migrate the front door first.
+*/ -}}
+{{- if .Values.ingressGuardrails.rateLimit.enabled }}
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: {{ .Release.Name }}-front-door-rate-limit
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: kube-dc
+    app.kubernetes.io/component: ingress-guardrail
+spec:
+  # targetRefs is LocalPolicyTargetReferenceWithSectionName — it has NO
+  # namespace field. A `namespace:` here is either rejected by strict
+  # server-side apply or silently PRUNED, after which the ref resolves inside
+  # the POLICY's namespace and cross-namespace attachment never works (and no
+  # ReferenceGrant can enable it). So the policy must live in the same
+  # namespace as the routes it protects — which is why the object is rendered
+  # into .Release.Namespace and the values list carries names only.
+  targetRefs:
+    {{- range .Values.ingressGuardrails.rateLimit.targetRoutes }}
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: {{ . }}
+    {{- end }}
+  rateLimit:
+    type: Local
+    local:
+      rules:
+        - clientSelectors:
+            # type: Distinct gives every distinct client address inside
+            # the CIDR its OWN bucket — so 0.0.0.0/0 means "per client",
+            # not "one shared bucket for the internet". Narrow the CIDR
+            # only to scope WHICH clients the limit applies to.
+            - sourceCIDR:
+                value: {{ .Values.ingressGuardrails.rateLimit.clientCIDR | quote }}
+                type: Distinct
+          limit:
+            requests: {{ .Values.ingressGuardrails.rateLimit.requests }}
+            unit: {{ .Values.ingressGuardrails.rateLimit.unit }}
+{{- end }}

@@ -213,12 +213,30 @@ type InitOptions struct {
 	// enables it per node.
 	ImageAcceleration bool
 
+	// PrefillNotes carries operator-facing notices produced while importing a
+	// config/spec — currently legacy-key translations (e.g. INGRESS_MODE →
+	// --ingress-address-layer). Transient OUTPUT, never an input: it must not
+	// participate in the plan hash.
+	PrefillNotes []string
+
 	// --- Front door (docs/prd/ingress-mode-hostnetwork-design.md §5a) ---
+	// ControlPlaneNodes are the real control-plane node NAMES, resolved from the
+	// live cluster by the cobra layer when one is reachable. Empty means
+	// "unknown", which makes the placement checks stand down rather than guess —
+	// an operator who has not told us must not be blocked by a rule we cannot
+	// evaluate. Never populated from KUBE_OVN_GW_NODES: the gateway set is a
+	// DIFFERENT set (the reference cluster has a gateway node that is an ordinary
+	// worker), and substituting it inverts every placement conclusion.
+	ControlPlaneNodes []string
+
 	// IngressAddressLayer picks WHO OWNS the address clients dial:
 	// "none" (the ingress nodes' own IPs; MetalLB not installed),
 	// "metallb-l2" or "metallb-bgp" (a MetalLB-owned floating VIP).
-	// The DATA PLANE does not vary — every cluster runs the same
-	// host-bind Envoy DaemonSet — so this is the only front-door choice
+	// The DATA PLANE does not vary WITH THIS CHOICE — the same Envoy
+	// serves the same traffic on every layer — so this is the only
+	// front-door choice. (It is a 3-replica Deployment today; the
+	// reusable host-bind component is opt-in per cluster and the
+	// DaemonSet variant stays inert. Nothing here promises either.)
 	// an operator makes.
 	IngressAddressLayer string
 	// IngressNodes are the nodes that will carry the ingress label and
@@ -776,6 +794,7 @@ func validateObjectStorage(o *InitOptions) []string {
 		if o.RookOSDDevice != "" && !deviceNameRegex.MatchString(o.RookOSDDevice) {
 			errs = append(errs, fmt.Sprintf("--rook-osd-device %q is not a valid device name (e.g. sdb, nvme0n1, loop0)", o.RookOSDDevice))
 		}
+
 	case RookCephMultiNode:
 		// → CEPH_NODE_{1..3} + devices. Exactly 3 in v1: the fleet
 		// mode template is 3-slot (design call 2026-07-04 — don't

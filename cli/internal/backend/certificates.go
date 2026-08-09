@@ -15,16 +15,16 @@ import (
 // CertificateSummary mirrors the summariseManagedCertificate shape
 // emitted by the backend (ui/backend/controllers/certificatesModule.js).
 type CertificateSummary struct {
-	Name              string             `json:"name"`
-	Namespace         string             `json:"namespace"`
-	CreationTimestamp string             `json:"creationTimestamp,omitempty"`
-	Type              string             `json:"type"`
-	Purpose           string             `json:"purpose"`
-	DnsNames          []string           `json:"dnsNames"`
-	Duration          string             `json:"duration,omitempty"`
-	RenewBefore       string             `json:"renewBefore,omitempty"`
-	TargetSecretName  string             `json:"targetSecretName"`
-	Status            CertificateStatus  `json:"status"`
+	Name              string            `json:"name"`
+	Namespace         string            `json:"namespace"`
+	CreationTimestamp string            `json:"creationTimestamp,omitempty"`
+	Type              string            `json:"type"`
+	Purpose           string            `json:"purpose"`
+	DnsNames          []string          `json:"dnsNames"`
+	Duration          string            `json:"duration,omitempty"`
+	RenewBefore       string            `json:"renewBefore,omitempty"`
+	TargetSecretName  string            `json:"targetSecretName"`
+	Status            CertificateStatus `json:"status"`
 }
 
 // CertificateStatus is the status-mirror block the reconciler keeps
@@ -32,12 +32,12 @@ type CertificateSummary struct {
 // all optional — the reconciler only populates them once the
 // cert-manager Certificate becomes observable.
 type CertificateStatus struct {
-	Issuer                string            `json:"issuer,omitempty"`
-	CertificateSecretName string            `json:"certificateSecretName,omitempty"`
-	NotBefore             string            `json:"notBefore,omitempty"`
-	NotAfter              string            `json:"notAfter,omitempty"`
-	RenewalTime           string            `json:"renewalTime,omitempty"`
-	Conditions            []map[string]any  `json:"conditions,omitempty"`
+	Issuer                string           `json:"issuer,omitempty"`
+	CertificateSecretName string           `json:"certificateSecretName,omitempty"`
+	NotBefore             string           `json:"notBefore,omitempty"`
+	NotAfter              string           `json:"notAfter,omitempty"`
+	RenewalTime           string           `json:"renewalTime,omitempty"`
+	Conditions            []map[string]any `json:"conditions,omitempty"`
 }
 
 type CertificateList struct {

@@ -10,14 +10,14 @@ import "context"
 // serve a minority while implying universal coverage.
 //
 // The CLI's DNS surface is verification only:
-//   1. M1-T03 probes resolve a randomised sub-label (`kdc-dns-test-<rand>.
-//      <domain>`) — proves a wildcard A record is correctly wired without
-//      trusting the operator's claim of "I added the wildcard".
-//   2. On failure, doctor prints the single A record the operator must
-//      create (B-003 FixHint shape — see probe.go `FixHint.Records`).
-//   3. `init` refuses to mutate when the wildcard probe fails unless
-//      `--allow-dns-not-ready` is passed (certs land Pending until
-//      operator wires DNS).
+//  1. M1-T03 probes resolve a randomised sub-label (`kdc-dns-test-<rand>.
+//     <domain>`) — proves a wildcard A record is correctly wired without
+//     trusting the operator's claim of "I added the wildcard".
+//  2. On failure, doctor prints the single A record the operator must
+//     create (B-003 FixHint shape — see probe.go `FixHint.Records`).
+//  3. `init` refuses to mutate when the wildcard probe fails unless
+//     `--allow-dns-not-ready` is passed (certs land Pending until
+//     operator wires DNS).
 //
 // IPv4-only in v1; AAAA / dual-stack support is v2 (the Kube-DC stack
 // itself is IPv4-only today — see installer-prd.md §3 Non-Goals).

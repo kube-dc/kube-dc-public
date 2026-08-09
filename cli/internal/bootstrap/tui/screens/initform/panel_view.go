@@ -514,6 +514,11 @@ func initialState(o *clusterinit.InitOptions) *State {
 	// Wizard defaults first (first-time user)…
 	st := &State{
 		Mode: string(clusterinit.ModeInstall), Provider: "github", Preset: string(clusterinit.PresetCloudVLAN),
+		// NOTE: the front-door default is applied AFTER the prefill overlay,
+		// not here — see the block below FromOptions. Seeding it here would
+		// convert an untouched recommendation into an explicit answer for a
+		// config file that declared a VIP and no layer, which the flag path
+		// REFUSES as ambiguous. The wizard must not launder that ambiguity.
 		MetalLBMode: "l2",
 		GPUPlatform: string(clusterinit.GPUPlatformDisabled), GPUDriverSource: string(clusterinit.GPUDriverOperator),
 		GPUOperatorVersion:   clusterinit.DefaultGPUOperatorVersion,
@@ -528,6 +533,15 @@ func initialState(o *clusterinit.InitOptions) *State {
 	st.FromOptions(o)
 	if st.FleetMode == "" {
 		st.FleetMode = string(clusterinit.FleetNewRepo)
+	}
+	// Front-door default, applied only when the prefill left the question
+	// genuinely OPEN. A greenfield operator gets the recommended answer
+	// (metallb-l2 — a stable address is what DNS wants); an operator opening
+	// the wizard over a config that declares a VIP but no layer gets an EMPTY
+	// field, so the same ambiguity the flag path refuses surfaces here as a
+	// question rather than being answered on their behalf.
+	if st.IngressAddressLayer == "" && strings.TrimSpace(st.MetalLBVIP) == "" {
+		st.IngressAddressLayer = clusterinit.AddressLayerMetalLBL2
 	}
 	return st
 }

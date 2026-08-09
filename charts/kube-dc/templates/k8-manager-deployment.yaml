@@ -18,7 +18,8 @@ spec:
       annotations:
         kubectl.kubernetes.io/default-container: manager
       labels:
-        {{- include "kube-dc.k8manager.labels" . | nindent 8 }}
+        {{- include "kube-dc.k8manager.selectorLabels" . | nindent 8 }}
+        {{- include "kube-dc.podVersionLabel" . | nindent 8 }}
         control-plane: kube-dc-k8-manager
     spec:
       serviceAccountName: {{ include "kube-dc.k8manager.fullname" . }}
@@ -58,8 +59,15 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
         env:
+        {{- if .Values.k8Manager.etcdDefaultStorageClass }}
+        # Operator default for NEW tenant-etcd datastores that don't pin
+        # spec.etcd.storage.storageClassName. Existing StatefulSets are
+        # never retro-rolled.
+        - name: ETCD_DEFAULT_STORAGE_CLASS
+          value: {{ .Values.k8Manager.etcdDefaultStorageClass | quote }}
+        {{- end }}
         - name: INFRA_API_ENDPOINT
-          value: {{ .Values.k8Manager.infraAPIEndpoint | default "" | quote }}
+          value: {{ include "kube-dc.managementAPIEndpoint" (list $ .Values.k8Manager.infraAPIEndpoint) | quote }}
         - name: KAMAJI_DATASTORE_NAME
           value: {{ .Values.k8Manager.kamajiDatastoreName | default "default" | quote }}
         - name: KAMAJI_DATASTORE_NAMESPACE
@@ -83,6 +91,75 @@ spec:
         {{- if .Values.s3Endpoint }}
         - name: S3_ENDPOINT
           value: "{{ .Values.s3Endpoint }}"
+        {{- end }}
+        {{- if .Values.k8Manager.mgmtAutoscaling.enabled }}
+        # Management-worker autoscaling: adapter + provisioner + token broker
+        # + acceptance gate (SetupMgmtAutoscaling). Fail-closed at every
+        # layer on missing material.
+        - name: MGMT_AUTOSCALER_ADAPTER_ENABLED
+          value: "true"
+        - name: MGMT_CLUSTER_ID
+          value: {{ required "k8Manager.mgmtAutoscaling.clusterID is required" .Values.k8Manager.mgmtAutoscaling.clusterID | quote }}
+        - name: MGMT_ADAPTER_TLS_CERT
+          value: /etc/mgmt-adapter-tls/tls.crt
+        - name: MGMT_ADAPTER_TLS_KEY
+          value: /etc/mgmt-adapter-tls/tls.key
+        - name: MGMT_ADAPTER_CLIENT_CA
+          value: /etc/mgmt-adapter-tls/ca.crt
+        - name: MGMT_ADAPTER_CLIENT_CN
+          value: mgmt-cluster-autoscaler
+        - name: MGMT_PROVIDER_REGION
+          value: {{ required "k8Manager.mgmtAutoscaling.provider.region is required" .Values.k8Manager.mgmtAutoscaling.provider.region | quote }}
+        - name: MGMT_PROVIDER_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ required "k8Manager.mgmtAutoscaling.provider.secretName is required" .Values.k8Manager.mgmtAutoscaling.provider.secretName }}
+              key: username
+              # optional: a missing/typo'd provider secret must degrade to the
+              # feature's own DEPENDENCY-OUTAGE path (condition + paging
+              # alert), not CreateContainerConfigError the entire k8-manager
+              # pod and stop unrelated reconciliation (review finding).
+              optional: true
+        - name: MGMT_PROVIDER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.k8Manager.mgmtAutoscaling.provider.secretName }}
+              key: password
+              optional: true
+        # Impersonation OAuth (for providers where no basic-auth credential exists).
+        # All four optional: presence of the full quartet in the provider
+        # secret flips the k8-manager client to the service-account flow;
+        # partial config is a hard error in Go (never a silent basic fallback).
+        - name: MGMT_PROVIDER_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.k8Manager.mgmtAutoscaling.provider.secretName }}
+              key: client_id
+              optional: true
+        - name: MGMT_PROVIDER_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.k8Manager.mgmtAutoscaling.provider.secretName }}
+              key: client_secret
+              optional: true
+        - name: MGMT_PROVIDER_OAUTH_URL
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.k8Manager.mgmtAutoscaling.provider.secretName }}
+              key: oauth_url
+              optional: true
+        - name: MGMT_PROVIDER_USER_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.k8Manager.mgmtAutoscaling.provider.secretName }}
+              key: user_email
+              optional: true
+        - name: MGMT_PROVIDER_MHZ_PER_CORE
+          value: {{ .Values.k8Manager.mgmtAutoscaling.provider.mhzPerCore | quote }}
+        {{- if .Values.k8Manager.mgmtAutoscaling.tokenGroups }}
+        - name: MGMT_TOKEN_GROUPS
+          value: {{ .Values.k8Manager.mgmtAutoscaling.tokenGroups | quote }}
+        {{- end }}
         {{- end }}
         {{- with .Values.k8Manager.extraEnv }}
         {{- toYaml . | nindent 8 }}
@@ -115,4 +192,19 @@ spec:
           capabilities:
             drop:
             - ALL
+        {{- if .Values.k8Manager.mgmtAutoscaling.enabled }}
+        volumeMounts:
+          - name: mgmt-adapter-tls
+            mountPath: /etc/mgmt-adapter-tls
+            readOnly: true
+        {{- end }}
+      {{- if .Values.k8Manager.mgmtAutoscaling.enabled }}
+      volumes:
+        # Serving keypair + the dedicated client CA. ca.crt in this Secret is
+        # the mgmt-autoscaler-ca that signs the CA client cert — exactly the
+        # bundle the adapter must trust, nothing broader.
+        - name: mgmt-adapter-tls
+          secret:
+            secretName: mgmt-adapter-server-tls
+      {{- end }}
 {{- end }}

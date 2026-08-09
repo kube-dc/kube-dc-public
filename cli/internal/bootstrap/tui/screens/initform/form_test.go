@@ -20,7 +20,8 @@ func baseState() *State {
 		KubeOVNMasterNodes: "192.0.2.11",
 		PubVLANID:          "1100", PubCIDR: "203.0.113.48/29", PubGateway: "203.0.113.49",
 		PubExclude1: "203.0.113.49", PubExclude2: "203.0.113.50",
-		MetalLBMode: "l2", MetalLBVIP: "100.65.0.20", MetalLBInterface: "br-ext-cloud",
+		IngressAddressLayer: clusterinit.AddressLayerMetalLBL2,
+		MetalLBMode:         "l2", MetalLBVIP: "100.65.0.20", MetalLBInterface: "br-ext-cloud",
 		OSMode:    "rook-ceph-multi-node",
 		CephNode1: "host5-a=sdb", CephNode2: "host6-a=sdb", CephNode3: "host7-a=sdc",
 		AllowDNSNotReady: true,
@@ -278,11 +279,12 @@ func TestApply_InternalOnlyE2EComplete(t *testing.T) {
 		NodeIP: "203.0.113.52", SSHHost: "ubuntu@203.0.113.52",
 		Email: "ops@example.com", Mode: "install", FleetMode: "new-repo",
 		Provider: "github", Owner: "kube-dc", RepoName: "e2e-fleet-r5",
-		Preset:             "internal-only",
-		NetVLANID:          "0",
-		NetInterface:       "enp1s0",
-		KubeOVNMasterNodes: "10.77.0.22",
-		MetalLBMode:        "l2", MetalLBVIP: "100.65.0.20", MetalLBInterface: "br-ext-cloud",
+		Preset:              "internal-only",
+		NetVLANID:           "0",
+		NetInterface:        "enp1s0",
+		KubeOVNMasterNodes:  "10.77.0.22",
+		IngressAddressLayer: clusterinit.AddressLayerMetalLBL2,
+		MetalLBMode:         "l2", MetalLBVIP: "100.65.0.20", MetalLBInterface: "br-ext-cloud",
 		OSMode:  "rook-ceph-local",
 		OSDNode: "e2e-master-1", OSDSizeGB: "40",
 	}
@@ -406,5 +408,48 @@ func TestShellQuote_EmbeddedQuote(t *testing.T) {
 	got := shellQuote("it's here")
 	if got != `'it'\''s here'` {
 		t.Errorf("embedded quote escaping wrong: %s", got)
+	}
+}
+
+// The wizard prints an "equivalent command" that operators paste into runbooks
+// and CI. Both front-door flags are DEDICATED flags (not --set keys), so the
+// generic Sets loop cannot carry them: a command missing the layer would
+// silently re-run as "none" and rebuild a different front door than the one
+// the operator reviewed. Round-trip through Apply→Validate to prove it.
+func TestEquivalentFlags_CarriesFrontDoor(t *testing.T) {
+	st := baseState()
+	st.IngressNodes = "gw2, gw1,gw1"
+	st.GWNodes = "gw1,gw2"
+	o := &clusterinit.InitOptions{Yes: true}
+	if err := st.Apply(o); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(o.IngressNodes, ","); got != "gw2,gw1" {
+		t.Errorf("ingress nodes must be split, trimmed and de-duplicated, got %q", got)
+	}
+	flags := st.EquivalentFlags(o)
+	for _, want := range []string{
+		"--ingress-address-layer=metallb-l2",
+		"--ingress-node=gw1",
+		"--ingress-node=gw2",
+	} {
+		if !strings.Contains(flags, want) {
+			t.Errorf("equivalent flags missing %q\nFULL:\n%s", want, flags)
+		}
+	}
+}
+
+// An empty ingress-node field must stay EMPTY, never become a one-element
+// slice of "": that would name a node called "" and the co-location preflight
+// would compare against a set that cannot match anything.
+func TestApply_EmptyIngressNodesStaysNil(t *testing.T) {
+	st := baseState()
+	st.IngressNodes = "  ,  "
+	o := &clusterinit.InitOptions{Yes: true}
+	if err := st.Apply(o); err != nil {
+		t.Fatal(err)
+	}
+	if len(o.IngressNodes) != 0 {
+		t.Errorf("blank ingress-node input must resolve to nil, got %q", o.IngressNodes)
 	}
 }

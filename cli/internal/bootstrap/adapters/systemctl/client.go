@@ -102,4 +102,3 @@ func runReal(ctx context.Context, args ...string) ([]byte, []byte, error) {
 	err := cmd.Run()
 	return stdout.Bytes(), stderr.Bytes(), err
 }
-

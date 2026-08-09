@@ -1,0 +1,6 @@
+[.items[] |
+  select(.reason == "FailedCreate") |
+  select(.involvedObject.kind == "ReplicaSet" and .involvedObject.uid == strenv(INVOLVED_UID)) |
+  select((.metadata.creationTimestamp // "") >= strenv(STARTED_AT)) |
+  select(.message | contains(strenv(MESSAGE)))
+] | length
