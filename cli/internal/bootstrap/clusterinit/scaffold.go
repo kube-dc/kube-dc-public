@@ -145,6 +145,18 @@ type ScaffoldOptions struct {
 	// the listener decision for exactly those nodes.
 	ControlPlaneNodes []string
 
+	// KubeconfigPath, when non-empty, is passed to add-cluster.sh as its 4th
+	// positional arg so the SCRIPT-side discovery (NODE_CIDR for dual-homing,
+	// the INGRESS_HOST_CIDR seed) can read the cluster. The script defaults to
+	// ~/.kube/<name>_config, which nothing in the default flow creates —
+	// fetch-kubeconfig merges into ~/.kube/config — so on the documented path
+	// discovery silently found nothing and every fresh install scaffolded
+	// Tenant Networking v2 DISABLED (first fresh install, mod 2026-08-09).
+	// The caller must only set this to a kubeconfig it has VERIFIED targets
+	// this cluster (the apply path already does, via KubeconfigTargetsCluster —
+	// the same guard that protects the ingress-label step).
+	KubeconfigPath string
+
 	// Runner is the ports.ScriptRunner the engine calls. Real flow
 	// uses the script adapter; tests use a fake.
 	Runner ports.ScriptRunner
@@ -242,8 +254,11 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	if opts.Plan.IngressAddressLayer != "" {
 		scaffoldEnv["SCAFFOLD_INGRESS_ADDRESS_LAYER"] = opts.Plan.IngressAddressLayer
 	}
-	lines, err := opts.Runner.Run(ctx, ports.ScriptAddCluster, scaffoldEnv,
-		opts.Plan.ClusterName, opts.Plan.Domain, opts.NodeExternalIP)
+	scriptArgs := []string{opts.Plan.ClusterName, opts.Plan.Domain, opts.NodeExternalIP}
+	if opts.KubeconfigPath != "" {
+		scriptArgs = append(scriptArgs, opts.KubeconfigPath)
+	}
+	lines, err := opts.Runner.Run(ctx, ports.ScriptAddCluster, scaffoldEnv, scriptArgs...)
 	if err != nil {
 		return fmt.Errorf("scaffold: start add-cluster.sh: %w", err)
 	}
@@ -645,10 +660,25 @@ func postProcessClusterConfig(path string, plan *Plan, sets map[string]string, n
 	// An operator --set always wins — someone who typed the value explicitly
 	// knows their topology better than a route lookup does.
 	if _, overridden := sets["INFRA_ATTACHMENT_ROUTES"]; !overridden {
-		if nodeCIDR != "" {
-			env.Set("NODE_CIDR", nodeCIDR)
+		// The SCRIPT may have discovered the node network itself (it reads the
+		// kubeconfig the CLI now hands it). When the CLI-side SSH detection came
+		// up empty but the file already carries a discovered NODE_CIDR, blanking
+		// it here would throw away a correct answer and scaffold dual-homing
+		// DISABLED on the kubeconfig-only path (2026-08-09 review of the mod
+		// fixes) — the CLI-side value still wins when both exist, because the
+		// route lookup on the node beats the script's /24 assumption.
+		fileNodeCIDR := ""
+		if v, ok := env.Get("NODE_CIDR"); ok {
+			fileNodeCIDR = strings.TrimSpace(v)
+		}
+		effective := nodeCIDR
+		if effective == "" {
+			effective = fileNodeCIDR
+		}
+		if effective != "" {
+			env.Set("NODE_CIDR", effective)
 			env.Set("INFRA_ATTACHMENT_ROUTES",
-				strings.Join([]string{nodeCIDR, merged["JOIN_CIDR"], merged["POD_CIDR"]}, ","))
+				strings.Join([]string{effective, merged["JOIN_CIDR"], merged["POD_CIDR"]}, ","))
 			env.Set("INFRA_ATTACHMENT_ENABLED", "true")
 		} else {
 			// Fail safe, never fatal. A placeholder would pass the chart's
@@ -662,11 +692,42 @@ func postProcessClusterConfig(path string, plan *Plan, sets map[string]string, n
 		}
 	}
 
+	// Under a no-VIP address layer the starter's MetalLB placeholders are DEAD
+	// KEYS: addons.go deliberately installs no MetalLB layers and the
+	// address-metallb component is not selected, so nothing ever substitutes
+	// them. Leaving them as CHANGEME made the blanket placeholder scan below
+	// refuse the exact topology layer=none exists for — a site with NO spare
+	// address to give (first fresh install, mod 2026-08-09; predicted by the
+	// 2026-08-07 review: "the none path aborts because the MetalLB CHANGEME
+	// values survive"). Blank them so the file reads "not configured", not
+	// "forgot to fill in". Only untouched placeholders are blanked — an
+	// operator-supplied real value (a spare reservation to hold, the cs
+	// pattern) passes through unchanged.
+	deadMetalLBKeys := []string(nil)
+	switch {
+	case !addressLayerRequiresVIP(plan.IngressAddressLayer):
+		// No VIP layer: neither key is ever substituted.
+		deadMetalLBKeys = []string{"METALLB_FLOATING_IP", "METALLB_INTERFACE"}
+	case strings.EqualFold(strings.TrimSpace(plan.IngressAddressLayer), AddressLayerMetalLBBGP):
+		// BGP announces the VIP as a /32 to a peer — there is no L2 interface to
+		// bind, so METALLB_INTERFACE is dead there too. Without this the bgp
+		// layer aborted on the starter's CHANGEME exactly like none did, and an
+		// operator could only "fix" it by supplying a meaningless value
+		// (2026-08-09 review of the mod fixes). METALLB_FLOATING_IP stays
+		// load-bearing and still refuses as a placeholder.
+		deadMetalLBKeys = []string{"METALLB_INTERFACE"}
+	}
+	for _, k := range deadMetalLBKeys {
+		if v, ok := env.Get(k); ok && strings.HasPrefix(strings.TrimSpace(v), "CHANGEME") {
+			env.Set(k, "")
+		}
+	}
+
 	// Re-run semantic validation against the exact file we are about to
 	// publish, including derived values. Then fail closed if any starter
 	// placeholder survived. Every current CHANGEME is load-bearing
-	// (OVN, ProviderNetwork, or MetalLB); allowing one through merely defers
-	// the failure to Flux or the first tenant reconcile.
+	// (OVN, ProviderNetwork, or MetalLB under a VIP layer); allowing one
+	// through merely defers the failure to Flux or the first tenant reconcile.
 	finalValues := env.AsMap()
 	if err := ValidatePresetValues(plan.Preset, finalValues); err != nil {
 		return fmt.Errorf("scaffold: final cluster-config.env: %w", err)

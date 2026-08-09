@@ -50,6 +50,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -248,6 +249,12 @@ func MergeKubeconfig(destPath string, cfg *clientcmdapi.Config, setCurrent bool)
 	} else {
 		return fmt.Errorf("init: MergeKubeconfig: stat %s: %w", destPath, err)
 	}
+	// Captured BEFORE the upsert: "was there anything here to preserve?" A
+	// destination that already held contexts may have a BLANK current-context
+	// on purpose (an operator's safety interlock against fat-fingered
+	// kubectl); only a genuinely new or structurally empty file gets the
+	// merged context as current without --set-current (2026-08-09 review).
+	hadContexts := len(existing.Contexts) > 0
 
 	// Upsert clusters / users / contexts.
 	for name, c := range cfg.Clusters {
@@ -260,6 +267,16 @@ func MergeKubeconfig(destPath string, cfg *clientcmdapi.Config, setCurrent bool)
 		existing.Contexts[name] = c
 	}
 	if setCurrent && cfg.CurrentContext != "" {
+		existing.CurrentContext = cfg.CurrentContext
+	}
+	// "Preserve existing" is only meaningful when there was something here to
+	// preserve. A fetch into a fresh or structurally EMPTY file (--kubeconfig
+	// ~/.kube/<name>_config, the per-cluster shape every other bootstrap
+	// command expects) used to "preserve" the empty string — producing a
+	// kubeconfig whose plain `kubectl` dials localhost:8080 while the merged
+	// context sits one --context flag away (mod, 2026-08-09). A pre-populated
+	// file with a deliberately blank current-context keeps it blank.
+	if !hadContexts && existing.CurrentContext == "" && cfg.CurrentContext != "" {
 		existing.CurrentContext = cfg.CurrentContext
 	}
 
@@ -388,11 +405,29 @@ func KubeconfigTargetsCluster(domain, nodeIP string) (server string, targets boo
 	if !ok {
 		return "", false
 	}
+	// EXACT host identity, not a substring. Contains() accepted
+	// old-pilot.example.com for pilot.example.com and 10.0.0.10 for 10.0.0.1 —
+	// and everything downstream of a "targets" verdict trusts it: the
+	// ingress-label step, Flux bootstrap, and (since the discovery pass-through)
+	// the script-side NODE_CIDR discovery would all act on the WRONG cluster.
+	// A reused domain pointing at a new cluster is indistinguishable from here
+	// no matter what we parse, but the substring class is entirely avoidable.
+	u, err := url.Parse(server)
+	if err != nil || u.Hostname() == "" {
+		return server, false
+	}
+	host := strings.ToLower(u.Hostname())
 	for _, id := range []string{
 		strings.TrimSpace(domain),
 		strings.TrimSpace(nodeIP),
 	} {
-		if id != "" && strings.Contains(server, id) {
+		if id == "" {
+			continue
+		}
+		id = strings.ToLower(id)
+		// The API endpoint for <domain> is kube-api.<domain>; accept the domain
+		// itself too (older kubeconfigs), and the node IP only as an exact match.
+		if host == id || host == "kube-api."+id {
 			return server, true
 		}
 	}

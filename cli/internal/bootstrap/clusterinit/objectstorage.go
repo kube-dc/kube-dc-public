@@ -170,8 +170,118 @@ func WriteObjectStorage(fleetRepo, clusterName, domain string, spec ObjectStorag
 		return fmt.Errorf("object-storage: env keys: %w", err)
 	}
 
+	// (6) the Gateway listener the exposure overlay's route points at. The
+	// overlay ships the HTTPRoute (sectionName: https-s3) and the Certificate,
+	// but a listener with that sectionName must EXIST on the Gateway or the
+	// route sits Accepted=False and https://<S3_HOSTNAME> is a connection
+	// error while everything else reports healthy. Every pre-existing cluster
+	// carries this listener as a HAND-WRITTEN platform.yaml patch, which is
+	// exactly why no fresh install ever had it (found on the first one, mod
+	// 2026-08-09). Same managed-patch mechanics as the Gateway VIP patch.
+	if !spec.NoS3Exposure {
+		envBody, err := os.ReadFile(filepath.Join(clusterDir, "cluster-config.env"))
+		if err != nil {
+			return fmt.Errorf("object-storage: read env for the s3 listener patch: %w", err)
+		}
+		if err := writeS3ListenerPatch(clusterDir, string(envBody), out); err != nil {
+			return fmt.Errorf("object-storage: s3 listener patch: %w", err)
+		}
+	}
+
 	fmt.Fprintf(out, "[scaffold] object-storage wired (mode=%s, exposure=%t)\n", spec.Mode, !spec.NoS3Exposure)
 	return nil
+}
+
+// s3ListenerMarker identifies the managed https-s3 listener patch inside
+// platform.yaml, so resumed inits can find and update it rather than
+// duplicating it. Same convention as gatewayVIPMarker.
+const s3ListenerMarker = "# managed-by: kube-dc bootstrap init (s3-listener) — do not edit this entry by hand"
+
+// writeS3ListenerPatch appends (or updates) the https-s3 Gateway listener
+// patch in clusters/<name>/platform.yaml. The exposure overlay's HTTPRoute
+// names sectionName https-s3; without a matching listener the route is
+// Accepted=False and the S3 endpoint is dark by construction. The hostname is
+// a RESOLVED literal for the same reason the VIP patch writes one:
+// platform.yaml is substituted by the parent Kustomization, and depending on
+// a second pass is how values silently fail to land.
+func writeS3ListenerPatch(clusterDir, envBody string, out io.Writer) error {
+	host := envValue(envBody, "S3_HOSTNAME")
+	if host == "" || strings.HasPrefix(host, "CHANGEME") {
+		return fmt.Errorf("S3 exposure is enabled but S3_HOSTNAME is %q in cluster-config.env", host)
+	}
+
+	entry := "    - target:\n" +
+		"        group: gateway.networking.k8s.io\n" +
+		"        version: v1\n" +
+		"        kind: Gateway\n" +
+		"        name: eg\n" +
+		"        namespace: envoy-gateway-system\n" +
+		"      patch: |\n" +
+		"        " + s3ListenerMarker + "\n" +
+		"        - op: add\n" +
+		"          path: /spec/listeners/-\n" +
+		"          value:\n" +
+		"            name: https-s3\n" +
+		"            protocol: HTTPS\n" +
+		"            port: 443\n" +
+		"            hostname: \"" + host + "\"\n" +
+		"            tls:\n" +
+		"              mode: Terminate\n" +
+		"              certificateRefs:\n" +
+		"                - kind: Secret\n" +
+		"                  name: s3-server-tls\n" +
+		"                  namespace: rook-ceph\n" +
+		"            allowedRoutes:\n" +
+		"              namespaces:\n" +
+		"                from: All\n"
+
+	path := filepath.Join(clusterDir, "platform.yaml")
+	return patchFileLines(path, func(lines []string) ([]string, bool, error) {
+		present := false
+		changed := false
+		for i, l := range lines {
+			if !strings.Contains(l, s3ListenerMarker) {
+				continue
+			}
+			present = true
+			// Track the hostname on resumed inits, the way the VIP patch tracks
+			// its address — a moved S3 hostname must not leave a stale listener.
+			for j := i + 1; j < len(lines) && j < i+24; j++ {
+				t := strings.TrimSpace(lines[j])
+				if !strings.HasPrefix(t, "hostname:") {
+					continue
+				}
+				want := "            hostname: \"" + host + "\""
+				if lines[j] != want {
+					lines[j] = want
+					changed = true
+				}
+				break
+			}
+		}
+		if present {
+			return lines, changed, nil
+		}
+		hasPatches := false
+		for _, l := range lines {
+			if strings.TrimSpace(l) == "patches:" {
+				hasPatches = true
+				break
+			}
+		}
+		end := len(lines)
+		for end > 0 && strings.TrimSpace(lines[end-1]) == "" {
+			end--
+		}
+		block := entry
+		if !hasPatches {
+			block = "  patches:\n" + entry
+		}
+		outLines := append([]string{}, lines[:end]...)
+		outLines = append(outLines, strings.Split(strings.TrimRight(block, "\n"), "\n")...)
+		fmt.Fprintf(out, "[scaffold] https-s3 Gateway listener patch → platform.yaml (hostname %s)\n", host)
+		return outLines, true, nil
+	})
 }
 
 // objectStorageOverlayYAML renders clusters/<name>/object-storage/

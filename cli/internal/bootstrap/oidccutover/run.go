@@ -283,18 +283,31 @@ func waitAPIServerReady(ctx context.Context, o Options, node Node) error {
 			return ctx.Err()
 		case <-time.After(o.PollInterval):
 		}
+		// AUTHENTICATED probe via the node-local admin kubeconfig — not an
+		// anonymous curl. Kubernetes 1.35 answers unauthenticated /readyz with
+		// 401 (anonymous access to the health endpoints is no longer a given),
+		// so the curl form can NEVER see 200 there: on the first 1.35 install
+		// (mod, 2026-08-09) the cutover wired the node, the webhook was live in
+		// the running kube-apiserver, authenticated /readyz said ok — and this
+		// gate still reported failure and told the operator to roll back a
+		// healthy change. Same failure class as the busybox-TLS CNI probe: a
+		// probe whose own limitations are indistinguishable from the outage it
+		// checks for. sudo because rke2.yaml is root-owned; the cutover already
+		// requires passwordless sudo for the config write and the restart.
 		out, err := o.SSH.Run(ctx, node.Host,
-			`curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:6443/readyz || true`)
+			`sudo -n sh -c 'KUBECONFIG=/etc/rancher/rke2/rke2.yaml /var/lib/rancher/rke2/bin/kubectl get --raw=/readyz' 2>&1 || true`)
 		if err != nil {
 			last = err.Error()
 			continue // SSH itself may blip while the node restarts
 		}
 		last = strings.TrimSpace(string(out))
-		if last == "200" {
+		if last == "ok" {
 			return nil
 		}
 	}
-	return fmt.Errorf("apiserver did not report /readyz=200 on 127.0.0.1 within %s (last: %q)",
+	return fmt.Errorf("apiserver did not report /readyz=ok on 127.0.0.1 within %s (last: %q) — "+
+		"NOTE: the config change and restart already happened; verify with an authenticated "+
+		"readyz before rolling back (a probe failure is not proof the apiserver is unhealthy)",
 		o.ReadyTimeout, last)
 }
 

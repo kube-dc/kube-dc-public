@@ -200,6 +200,89 @@ stringData:
 
 // --- post-process cluster-config.env ---
 
+// --- the no-VIP layer and the placeholder gate ---
+
+// A layer that installs no MetalLB must not be refused over MetalLB
+// placeholders. The starter writes CHANGEME for METALLB_FLOATING_IP and
+// METALLB_INTERFACE unconditionally; under layer=none nothing ever substitutes
+// them (addons.go installs no MetalLB layers and the address-metallb component
+// is not selected), so the blanket placeholder scan refused the exact topology
+// none exists for: a site with NO spare address to give. Found on the first
+// fresh install (mod, 2026-08-09) — the reviewed plan applied cleanly right up
+// to the final scan, then rolled the whole scaffold back.
+func TestPostProcessClusterConfig_NoVIPLayer_BlanksDeadMetalLBPlaceholders(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cluster-config.env")
+	scriptOutput := `# Cluster: pilot
+CLUSTER_NAME=pilot
+DOMAIN=pilot.example.com
+EXT_NET_NAME=ext-cloud
+EXT_NET_VLAN_ID=163
+EXT_NET_INTERFACE=bond0
+METALLB_FLOATING_IP=CHANGEME
+METALLB_INTERFACE=CHANGEME
+POD_CIDR=10.100.0.0/16
+`
+	if err := os.WriteFile(path, []byte(scriptOutput), 0o644); err != nil {
+		t.Fatalf("write seed: %v", err)
+	}
+	plan := &Plan{
+		Preset:              PresetCloudVLAN,
+		ClusterName:         "pilot",
+		IngressAddressLayer: AddressLayerNone,
+	}
+	base := map[string]string{"EXT_NET_VLAN_ID": "163", "EXT_NET_INTERFACE": "bond0"}
+	if err := postProcessClusterConfig(path, plan, base, ""); err != nil {
+		t.Fatalf("layer=none must not fail on dead MetalLB placeholders: %v", err)
+	}
+	body, _ := os.ReadFile(path)
+	out := string(body)
+	if strings.Contains(out, "CHANGEME") {
+		t.Errorf("dead placeholders must be blanked, file still contains CHANGEME:\n%s", out)
+	}
+	for _, want := range []string{"METALLB_FLOATING_IP=\n", "METALLB_INTERFACE=\n"} {
+		if !strings.Contains(out+"\n", want) {
+			t.Errorf("expected blanked %q in:\n%s", strings.TrimSpace(want), out)
+		}
+	}
+}
+
+// Under a VIP layer the same placeholders ARE load-bearing (the IPAddressPool
+// renders ${METALLB_FLOATING_IP}/32), so the refusal must stand.
+func TestPostProcessClusterConfig_VIPLayer_StillRefusesMetalLBPlaceholders(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cluster-config.env")
+	scriptOutput := `# Cluster: pilot
+CLUSTER_NAME=pilot
+DOMAIN=pilot.example.com
+EXT_NET_NAME=ext-cloud
+EXT_NET_VLAN_ID=163
+EXT_NET_INTERFACE=bond0
+METALLB_FLOATING_IP=CHANGEME
+METALLB_INTERFACE=CHANGEME
+POD_CIDR=10.100.0.0/16
+`
+	if err := os.WriteFile(path, []byte(scriptOutput), 0o644); err != nil {
+		t.Fatalf("write seed: %v", err)
+	}
+	plan := &Plan{
+		Preset:              PresetCloudVLAN,
+		ClusterName:         "pilot",
+		IngressAddressLayer: AddressLayerMetalLBL2,
+	}
+	base := map[string]string{"EXT_NET_VLAN_ID": "163", "EXT_NET_INTERFACE": "bond0"}
+	err := postProcessClusterConfig(path, plan, base, "")
+	if err == nil || !strings.Contains(err.Error(), "METALLB") {
+		t.Fatalf("a VIP layer with placeholder MetalLB values must be refused naming the key, got %v", err)
+	}
+	// NOTE deliberately NOT tested here: an explicit real METALLB_FLOATING_IP
+	// under layer=none is REFUSED by semantic validation ("a reserved address is
+	// not assumed to be the front door") — that refusal is existing, correct
+	// behaviour and has its own coverage. The blanking above only touches
+	// untouched CHANGEME placeholders, so it cannot collide with it.
+}
+
+
 func TestPostProcessClusterConfig_AppliesPresetOverrides(t *testing.T) {
 	// Simulate what add-cluster.sh wrote: CHANGEME values for
 	// VLAN_ID + INTERFACE. Post-process must replace them with

@@ -1432,8 +1432,15 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		DNS01Route53:      dns01,
 		TrustedCA:         trustedCA,
 		GPU:               o.GPU(),
-		Runner:            session.Scripts,
-		Git:               session.Git,
+		// Hand the script-side discovery the SAME kubeconfig this process loads —
+		// but only when it has been verified to target THIS cluster (the guard a
+		// few hundred lines up either confirmed it or fetched the right one).
+		// Without this the script fell back to ~/.kube/<name>_config, which the
+		// default flow never creates, and every fresh install silently scaffolded
+		// Tenant Networking v2 DISABLED (mod, 2026-08-09).
+		KubeconfigPath: applyKubeconfigPathIfTargets(o),
+		Runner:         session.Scripts,
+		Git:            session.Git,
 		// Lets Apply label the front-door ingress nodes before the overlay is
 		// committed. session.K8s is nil when the cluster is unreachable, and Apply
 		// skips the step in that case rather than failing — an unreachable cluster is
@@ -1510,6 +1517,31 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 // SSH port) so the SSH adapter is constructed even when the
 // session had no kubeconfig at build time — matches the standalone
 // `bootstrap fetch-kubeconfig` subcommand's shape.
+// applyKubeconfigPathIfTargets returns the default-chain kubeconfig path when
+// its CURRENT context targets the cluster being installed, else "". On the
+// fresh-bastion path the pre-session auto-fetch merges into that same default
+// path and (since the fresh-file fix) sets current-context, so by the time this
+// runs the check passes there too. "" only remains for a kubeconfig that points
+// at a DIFFERENT cluster and could not be replaced — where handing it to
+// discovery would read the wrong cluster's node network, which is worse than
+// reading none.
+func applyKubeconfigPathIfTargets(o *clusterinit.InitOptions) string {
+	if _, targets := clusterinit.KubeconfigTargetsCluster(o.Domain, o.NodeExternalIP); !targets {
+		return ""
+	}
+	// A multi-file $KUBECONFIG chain is verified as the MERGED view, but the
+	// script can only take one path — and the first file may not contain the
+	// context the merge resolved (KUBECONFIG=/base:/pilot with the entries in
+	// /pilot: verification passes, the script's kubectl fails, discovery
+	// silently finds nothing). Refusing the pass-through falls back to the
+	// script's own default, which is the pre-existing behaviour, not a
+	// regression (2026-08-09 review).
+	if env := os.Getenv("KUBECONFIG"); env != "" && len(filepath.SplitList(env)) > 1 {
+		return ""
+	}
+	return clusterinit.DefaultKubeconfigPath()
+}
+
 func autoFetchKubeconfig(ctx context.Context, out io.Writer, o *clusterinit.InitOptions) error {
 	sshClient, err := bootstrap.NewSSHOnly()
 	if err != nil {

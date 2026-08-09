@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
@@ -245,8 +246,50 @@ func TestMergeKubeconfig_FreshFile_WritesConfig(t *testing.T) {
 	if _, ok := loaded.Clusters["fresh"]; !ok {
 		t.Errorf("cluster 'fresh' not present after merge; keys=%v", keysOf(loaded.Clusters))
 	}
-	if loaded.CurrentContext != "" {
-		t.Errorf("setCurrent=false must not touch current-context; got %q", loaded.CurrentContext)
+	// A FRESH file must come out usable: "preserve existing" preserved the empty
+	// string here, producing a kubeconfig whose plain `kubectl` dials
+	// localhost:8080 (found on the first fresh install, mod 2026-08-09). When
+	// there is nothing to preserve, the merged context becomes current even
+	// without --set-current.
+	if loaded.CurrentContext != "fresh" {
+		t.Errorf("a fresh file must get the merged context as current (nothing to preserve); got %q", loaded.CurrentContext)
+	}
+}
+
+// TestMergeKubeconfig_RealCurrentContextPreserved — the preserve semantics
+// still hold where they are meaningful: a shared kubeconfig whose operator is
+// parked on another cluster must NOT be yanked onto the merged one.
+func TestMergeKubeconfig_RealCurrentContextPreserved(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "config")
+	seed := clientcmdapi.NewConfig()
+	seed.Clusters["prod"] = &clientcmdapi.Cluster{Server: "https://prod.example.com:6443"}
+	seed.AuthInfos["prod"] = &clientcmdapi.AuthInfo{Token: "x"}
+	seed.Contexts["prod"] = &clientcmdapi.Context{Cluster: "prod", AuthInfo: "prod"}
+	seed.CurrentContext = "prod"
+	body, err := clientcmd.Write(*seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dest, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ssh := &fakeSSHClient{fetchReturn: []byte(canonicalRKE2Kubeconfig)}
+	cfg, err := FetchKubeconfig(context.Background(), FetchKubeconfigOptions{
+		SSH: ssh, Host: ports.SSHHost{Alias: "m"},
+		ClusterName: "staging", Domain: "staging.example.com",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := MergeKubeconfig(dest, cfg, false); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	loaded, err := clientcmd.LoadFromFile(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.CurrentContext != "prod" {
+		t.Errorf("a REAL existing current-context must be preserved without --set-current; got %q", loaded.CurrentContext)
 	}
 }
 
@@ -531,4 +574,42 @@ func TestKubeconfigTargetsCluster(t *testing.T) {
 			t.Errorf("expected (\"\", false), got (%q, %v)", server, ok)
 		}
 	})
+}
+
+// TestMergeKubeconfig_BlankInterlockPreserved — a multi-cluster kubeconfig
+// whose current-context is DELIBERATELY blank (an operator interlock against
+// fat-fingered kubectl) must stay blank without --set-current; only a
+// genuinely new or structurally empty destination gets the merged context.
+func TestMergeKubeconfig_BlankInterlockPreserved(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "config")
+	seed := clientcmdapi.NewConfig()
+	seed.Clusters["prod"] = &clientcmdapi.Cluster{Server: "https://prod.example.com:6443"}
+	seed.AuthInfos["prod"] = &clientcmdapi.AuthInfo{Token: "x"}
+	seed.Contexts["prod"] = &clientcmdapi.Context{Cluster: "prod", AuthInfo: "prod"}
+	seed.CurrentContext = "" // the interlock
+	body, err := clientcmd.Write(*seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dest, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ssh := &fakeSSHClient{fetchReturn: []byte(canonicalRKE2Kubeconfig)}
+	cfg, err := FetchKubeconfig(context.Background(), FetchKubeconfigOptions{
+		SSH: ssh, Host: ports.SSHHost{Alias: "m"},
+		ClusterName: "staging", Domain: "staging.example.com",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := MergeKubeconfig(dest, cfg, false); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := clientcmd.LoadFromFile(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.CurrentContext != "" {
+		t.Errorf("a deliberately blank current-context in a populated file must stay blank; got %q", loaded.CurrentContext)
+	}
 }

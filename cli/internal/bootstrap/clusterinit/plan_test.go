@@ -680,6 +680,16 @@ func TestFilesForOptions_ListsEveryGreenfieldScaffoldSideEffect(t *testing.T) {
 	o.RookOSDSizeGB = 100
 	o.ImageAcceleration = true
 	o.TrustedCAFingerprint = strings.Repeat("a", 64)
+	// The MetalLB layers are written only under a VIP layer, and the plan now
+	// says so (it used to list them unconditionally — a `none` plan promised
+	// four files the apply never writes). This test asserts the FULL greenfield
+	// list, so it pins the VIP layer; the none-side is asserted below.
+	o.IngressAddressLayer = AddressLayerMetalLBL2
+	if o.Sets == nil {
+		o.Sets = map[string]string{}
+	}
+	o.Sets["METALLB_FLOATING_IP"] = "203.0.113.40"
+	o.Sets["METALLB_INTERFACE"] = "bond0"
 
 	files := filesForOptions(&o, FleetState{})
 	got := make(map[string]PlanFile, len(files))
@@ -702,5 +712,19 @@ func TestFilesForOptions_ListsEveryGreenfieldScaffoldSideEffect(t *testing.T) {
 	}
 	if got["platform/registry-depot/secret.enc.yaml"].Action != "~" {
 		t.Fatalf("shared registry secret must be represented as ensure/modify, got %+v", got["platform/registry-depot/secret.enc.yaml"])
+	}
+
+	// And the none layer must NOT promise MetalLB files: the plan is a
+	// statement of what will be built, and addons.go installs nothing here.
+	oNone := validBase()
+	oNone.RookMode = RookCephLocal
+	oNone.RookOSDNode = "worker-1"
+	oNone.RookOSDSizeGB = 100
+	oNone.IngressAddressLayer = AddressLayerNone
+	noneFiles := filesForOptions(&oNone, FleetState{})
+	for _, f := range noneFiles {
+		if strings.Contains(f.Path, "addons") && !strings.Contains(f.Path, "tenant-addons") {
+			t.Errorf("layer=none plan must not promise MetalLB scaffold file %s", f.Path)
+		}
 	}
 }

@@ -33,7 +33,7 @@ func newFakeSSH(hosts ...string) *fakeSSH {
 	}
 	for _, h := range hosts {
 		f.config[h] = "cni: none\n"
-		f.readyz[h] = "200"
+		f.readyz[h] = "ok" // authenticated readyz answers the body, not a status code
 		f.apiFlags[h] = "authentication-token-webhook-config-file=" + WebhookKubeconfigPath
 		f.kubecfg[h] = true
 	}
@@ -212,7 +212,7 @@ func TestRun_FailsWhenTheFlagDidNotReachTheProcess(t *testing.T) {
 // must NOT continue to the next node (that is how a whole control plane dies).
 func TestRun_StopsAndNamesRollbackWhenAPIServerDoesNotReturn(t *testing.T) {
 	f := newFakeSSH("a", "b")
-	f.readyz["a"] = "000"
+	f.readyz["a"] = `The connection to the server 127.0.0.1:6443 was refused`
 	_, err := Run(context.Background(), opts(f, nodes("a", "b")))
 	if err == nil {
 		t.Fatal("an apiserver that never becomes ready must fail")

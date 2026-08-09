@@ -1,6 +1,7 @@
 package clusterinit
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -423,5 +424,54 @@ func TestWriteObjectStorage_NestedName(t *testing.T) {
 	}
 	if !strings.Contains(string(overlay), "../../../../infrastructure/object-storage/modes/rook-ceph-pvc") {
 		t.Errorf("nested overlay depth wrong:\n%s", overlay)
+	}
+}
+
+// The exposure overlay's HTTPRoute names sectionName https-s3; the scaffold
+// must emit the matching Gateway listener or a fresh install's S3 endpoint is
+// dark by construction (mod, 2026-08-09 — every pre-existing cluster carried
+// the listener as a hand-written patch, so no gate ever saw its absence).
+func TestWriteS3ListenerPatch(t *testing.T) {
+	dir := t.TempDir()
+	seed := "apiVersion: kustomize.toolkit.fluxcd.io/v1\nkind: Kustomization\nmetadata:\n  name: platform\nspec:\n  path: ./clusters/pilot/platform\n"
+	if err := os.WriteFile(filepath.Join(dir, "platform.yaml"), []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := "S3_HOSTNAME=s3.pilot.example.com\n"
+
+	if err := writeS3ListenerPatch(dir, env, io.Discard); err != nil {
+		t.Fatalf("writeS3ListenerPatch: %v", err)
+	}
+	body, _ := os.ReadFile(filepath.Join(dir, "platform.yaml"))
+	out := string(body)
+	for _, want := range []string{"name: https-s3", `hostname: "s3.pilot.example.com"`,
+		"s3-server-tls", s3ListenerMarker, "patches:"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("platform.yaml missing %q after patch:\n%s", want, out)
+		}
+	}
+
+	// Idempotent: a second run must not duplicate the entry.
+	if err := writeS3ListenerPatch(dir, env, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	body2, _ := os.ReadFile(filepath.Join(dir, "platform.yaml"))
+	if strings.Count(string(body2), "name: https-s3") != 1 {
+		t.Errorf("second run duplicated the listener entry")
+	}
+
+	// Resume with a MOVED hostname must update the literal in place.
+	if err := writeS3ListenerPatch(dir, "S3_HOSTNAME=objects.pilot.example.com\n", io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	body3, _ := os.ReadFile(filepath.Join(dir, "platform.yaml"))
+	if !strings.Contains(string(body3), `hostname: "objects.pilot.example.com"`) ||
+		strings.Contains(string(body3), "s3.pilot.example.com") {
+		t.Errorf("resumed run did not retarget the hostname:\n%s", string(body3))
+	}
+
+	// A CHANGEME hostname with exposure enabled is a refusal, not a silent skip.
+	if err := writeS3ListenerPatch(dir, "S3_HOSTNAME=CHANGEME\n", io.Discard); err == nil {
+		t.Error("CHANGEME S3_HOSTNAME must be refused when exposure is enabled")
 	}
 }

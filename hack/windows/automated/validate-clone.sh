@@ -133,37 +133,22 @@ note "clone PVC Bound (instant clone OK)"
 # misreported as "Windows didn't boot" (the 2026-07-31 runs failed on the agent
 # while RDP+SSH were open the whole time).
 
-# `kubectl run` DOES NOT WORK IN A PROJECT NAMESPACE. The platform's
-# ValidatingAdmissionPolicy `reserve-platform-identities-in-projects` rejects it:
-#   annotation network.kube-dc.com/infra-attachment is set by the platform webhook
-#   and cannot be pre-declared
-# On 2026-08-09 that silently cost a 45-minute gate run: the probe pod was never
-# created, `nc` never ran, BOOTED stayed 0, and the gate reported "genuine boot
-# failure" about an image whose guest agent was connected the whole time and
-# reporting Windows 11 build 26100. Probe with an applied Pod manifest instead,
-# and distinguish "the probe could not run" from "the port is closed".
-probe_port() {   # probe_port <ip> <port> -> 0 open, 1 closed, 2 probe broken
-  local ip="$1" port="$2" name="probe-${VM}-${port}"
-  kubectl -n "$NS" delete pod "$name" --ignore-not-found --wait=true >/dev/null 2>&1
-  cat <<POD | kubectl apply -f - >/dev/null 2>&1 || return 2
-apiVersion: v1
-kind: Pod
-metadata: { name: ${name}, namespace: ${NS} }
-spec:
-  restartPolicy: Never
-  containers:
-    - name: p
-      image: busybox:1.36
-      command: ["sh","-c","nc -z -w 5 ${ip} ${port}"]
-POD
-  local phase="" i
-  for i in $(seq 1 30); do
-    phase=$(kubectl -n "$NS" get pod "$name" -o jsonpath='{.status.phase}' 2>/dev/null || true)
-    case "$phase" in Succeeded|Failed) break;; esac
-    sleep 4
-  done
-  kubectl -n "$NS" delete pod "$name" --ignore-not-found --wait=false >/dev/null 2>&1
-  case "$phase" in Succeeded) return 0;; Failed) return 1;; *) return 2;; esac
+# DO NOT PROBE WITH A POD. A project namespace refuses user-created pods outright —
+# `kubectl run` AND a plain `kubectl apply` of a Pod both come back with:
+#   ValidatingAdmissionPolicy 'reserve-platform-identities-in-projects' denied request
+# virtctl port-forward tunnels through the API server to the VMI and needs no pod at
+# all, so it works where both pod routes fail. Confirmed 2026-08-09: RDP and SSH both
+# probed OPEN this way on a VM the pod-based probes had declared dead.
+probe_port() {   # probe_port <port> -> 0 open, 1 closed, 2 probe broken
+  local port="$1" lport=$(( 20000 + RANDOM % 20000 )) pf rc=1
+  command -v virtctl >/dev/null 2>&1 || return 2
+  virtctl port-forward "vmi/$VM" -n "$NS" "${lport}:${port}" >/dev/null 2>&1 &
+  pf=$!
+  sleep 6
+  kill -0 "$pf" 2>/dev/null || { wait "$pf" 2>/dev/null; return 2; }
+  if timeout 10 bash -c "cat < /dev/null > /dev/tcp/127.0.0.1/${lport}" 2>/dev/null; then rc=0; fi
+  kill "$pf" 2>/dev/null; wait "$pf" 2>/dev/null || true
+  return $rc
 }
 
 DEADLINE=$(( $(date +%s) + TIMEOUT_MIN * 60 ))
@@ -171,7 +156,7 @@ IP=""; BOOTED=0; PROBE_OK=0
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
   IP=$(kubectl -n "$NS" get vmi "$VM" -o jsonpath='{.status.interfaces[0].ipAddress}' 2>/dev/null || true)
   if [ -n "$IP" ]; then
-    probe_port "$IP" 3389; rc=$?
+    probe_port 3389; rc=$?
     [ "$rc" -ne 2 ] && PROBE_OK=1
     [ "$rc" -eq 0 ] && { BOOTED=1; break; }
   fi
@@ -183,7 +168,7 @@ if [ "$BOOTED" != "1" ]; then
   fail "Windows never answered RDP 3389 within ${TIMEOUT_MIN}m on $IP — check PHASE 2 below before concluding boot failure: a connected guest agent proves Windows booted, which would make this an RDP/firewall problem, not a boot problem"
 fi
 note "BOOT OK — RDP 3389 answering on $IP"
-probe_port "$IP" 22
+probe_port 22
 case $? in
   0) note "SSH 22 answering (OpenSSH present)" ;;
   1) note "WARNING: SSH 22 closed — OpenSSH missing from the golden" ;;

@@ -128,6 +128,11 @@ type ApplyOptions struct {
 	// GPU carries the validated, non-secret accelerator fleet contract.
 	GPU GPUConfig
 
+	// KubeconfigPath is forwarded to Scaffold so add-cluster.sh's discovery can
+	// read the cluster. Set it only to a kubeconfig VERIFIED to target this
+	// cluster; empty skips the pass-through (script falls back to its default).
+	KubeconfigPath string
+
 	// Runner executes scripts (add-cluster.sh, flux-install.sh).
 	// Real flow uses the script adapter; tests use a fake.
 	Runner ports.ScriptRunner
@@ -329,6 +334,7 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 		GPU:               opts.GPU,
 		SingleIPNAT:       opts.SingleIPNAT,
 		ControlPlaneNodes: opts.ControlPlaneNodes,
+		KubeconfigPath:    opts.KubeconfigPath,
 		Runner:            opts.Runner,
 		Out:               out,
 	}); err != nil {
