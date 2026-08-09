@@ -50,31 +50,31 @@ export function IdentityTenancyDiagram(): React.JSX.Element {
       diagramId="identity-tenancy-explainer"
       minWidth={840}
       title="Kube-DC identity and tenancy model"
-      viewBox="0 0 840 610"
+      viewBox="0 0 840 635"
     >
       <DiagramEdge d="M220 94 H330" label="signs in" labelWidth={78} labelX={275} labelY={72} />
       <DiagramEdge d="M510 94 H610" label="group claims" labelWidth={104} labelX={560} labelY={72} />
 
-      <DiagramEdge d="M420 236 C420 258 145 258 145 286 V298" />
-      <DiagramEdge d="M420 236 V298" />
-      <DiagramEdge d="M420 236 C420 258 695 258 695 286 V298" />
-      <DiagramEdge d="M420 370 C420 394 145 394 145 418 V430" kind="control" label="role in production" labelWidth={132} labelX={275} labelY={399} />
-      <DiagramEdge d="M420 370 C420 394 695 394 695 418 V430" kind="control" label="role in development" labelWidth={142} labelX={565} labelY={399} />
-      <DiagramEdge d="M145 502 V530" />
-      <DiagramEdge d="M695 502 V530" />
+      <DiagramEdge d="M340 281 C300 295 285 295 285 315 V405 C285 425 100 425 100 445" />
+      <DiagramEdge d="M420 281 V315" />
+      <DiagramEdge d="M500 281 C540 295 555 295 555 315 V405 C555 425 650 425 650 445" />
+      <DiagramEdge d="M360 387 C330 410 190 410 190 445" kind="control" label="role in production" labelWidth={132} labelX={240} labelY={414} />
+      <DiagramEdge d="M480 387 C510 410 740 410 740 445" kind="control" label="role in development" labelWidth={142} labelX={600} labelY={414} />
+      <DiagramEdge d="M145 517 V545" />
+      <DiagramEdge d="M695 517 V545" />
 
       <DiagramSectionLabel label="IDENTITY PATH" lineTo={812} x={28} y={28} />
       <DiagramNode detail={['organization', 'member']} height={82} icon={UsersIcon} title="User" tone="external" width={190} x={30} y={60} />
       <DiagramNode detail="OIDC identity" height={68} icon={KeycloakIcon} title="Keycloak" width={180} x={330} y={60} />
       <DiagramNode detail="authorization" height={68} icon={ApiIcon} title="Kubernetes API" width={200} x={610} y={60} />
 
-      <DiagramBoundary height={400} label="ORGANIZATION · GOVERNANCE BOUNDARY" labelWidth={330} width={800} x={20} y={170} />
-      <DiagramNode detail="contains Groups + Projects" height={66} title="Organization" tone="accent" width={260} x={290} y={190} />
-      <DiagramNode detail="membership mapping" height={72} title="Organization Group" width={240} x={300} y={298} />
-      <DiagramNode detail="backing namespace" height={72} title="Project: production" tone="accent" width={250} x={20} y={430} />
-      <DiagramNode detail="backing namespace" height={72} title="Project: development" width={250} x={570} y={430} />
-      <DiagramNode detail={['VMs · Pods · databases', 'Managed Clusters']} height={72} icon={ApplicationIcon} title="Governed workloads" width={250} x={20} y={530} />
-      <DiagramNode detail={['VMs · Pods · databases', 'Managed Clusters']} height={72} icon={ApplicationIcon} title="Governed workloads" width={250} x={570} y={530} />
+      <DiagramBoundary height={457} label="ORGANIZATION · GOVERNANCE BOUNDARY" labelWidth={330} width={800} x={20} y={170} />
+      <DiagramNode detail="contains Groups + Projects" height={66} title="Organization" tone="accent" width={260} x={290} y={215} />
+      <DiagramNode detail="membership mapping" height={72} title="Organization Group" width={240} x={300} y={315} />
+      <DiagramNode detail="backing namespace" height={72} title="Project: production" tone="accent" width={250} x={20} y={445} />
+      <DiagramNode detail="backing namespace" height={72} title="Project: development" width={250} x={570} y={445} />
+      <DiagramNode detail={['VMs · Pods · databases', 'Managed Clusters']} height={72} icon={ApplicationIcon} title="Governed workloads" width={250} x={20} y={545} />
+      <DiagramNode detail={['VMs · Pods · databases', 'Managed Clusters']} height={72} icon={ApplicationIcon} title="Governed workloads" width={250} x={570} y={545} />
     </ExplainerDiagram>
   );
 }
@@ -92,14 +92,14 @@ export function VirtualizationResourceDiagram(): React.JSX.Element {
       <DiagramEdge d="M250 94 H300" />
       <DiagramEdge d="M540 94 H590" kind="control" />
       <DiagramEdge d="M700 128 C700 158 440 160 440 188 V200" kind="control" />
-      <DiagramEdge d="M440 272 C440 294 140 294 140 318 V330" />
-      <DiagramEdge d="M440 272 V330" />
-      <DiagramEdge d="M440 272 C440 294 700 294 700 318 V330" />
-      <DiagramEdge d="M140 402 V442" />
-      <DiagramEdge d="M140 514 V542" />
-      <DiagramEdge d="M440 402 V442" />
-      <DiagramEdge d="M700 402 V442" />
-      <DiagramEdge d="M260 479 H320" kind="control" />
+      <DiagramEdge d="M440 272 C440 294 140 294 140 338 V350" />
+      <DiagramEdge d="M440 272 V350" />
+      <DiagramEdge d="M440 272 C440 294 700 294 700 338 V350" />
+      <DiagramEdge d="M140 422 V445" />
+      <DiagramEdge d="M140 517 V540" />
+      <DiagramEdge d="M440 422 V445" />
+      <DiagramEdge d="M700 422 V445" />
+      <DiagramEdge d="M255 481 H325" kind="control" />
 
       <DiagramSectionLabel label="RESOURCE ENTRY" lineTo={812} x={28} y={28} />
       <DiagramNode detail={['console · kubectl', 'virtctl']} height={82} icon={UsersIcon} title="User" tone="external" width={220} x={30} y={60} />
@@ -110,13 +110,13 @@ export function VirtualizationResourceDiagram(): React.JSX.Element {
       <DiagramBoundary height={305} label="RUNTIME" labelWidth={110} width={240} x={20} y={305} />
       <DiagramBoundary height={305} label="STORAGE" labelWidth={110} width={240} x={320} y={305} />
       <DiagramBoundary height={305} kind="network" label="NETWORK" labelWidth={110} width={240} x={580} y={305} />
-      <DiagramNode detail="KubeVirt runtime" height={72} title="VirtualMachineInstance" width={220} x={30} y={330} />
-      <DiagramNode detail="VM process Pod" height={72} title="virt-launcher Pod" width={220} x={30} y={442} />
-      <DiagramNode detail="QEMU + guest OS" height={58} title="Guest runtime" width={220} x={30} y={542} />
-      <DiagramNode detail="CDI source" height={72} title="DataVolume" width={220} x={330} y={330} />
-      <DiagramNode detail="persistent disk" height={72} title="PersistentVolumeClaim" width={220} x={330} y={442} />
-      <DiagramNode detail="NAD" height={72} title="Project default network" width={220} x={590} y={330} />
-      <DiagramNode detail="isolated routing" height={72} title="Project VPC" width={220} x={590} y={442} />
+      <DiagramNode detail="KubeVirt runtime" height={72} title="VirtualMachineInstance" width={230} x={25} y={350} />
+      <DiagramNode detail="VM process Pod" height={72} title="virt-launcher Pod" width={230} x={25} y={445} />
+      <DiagramNode detail="QEMU + guest OS" height={58} title="Guest runtime" width={230} x={25} y={540} />
+      <DiagramNode detail="CDI source" height={72} title="DataVolume" width={230} x={325} y={350} />
+      <DiagramNode detail="persistent disk" height={72} title="PersistentVolumeClaim" width={230} x={325} y={445} />
+      <DiagramNode detail="NAD" height={72} title="Project default network" width={230} x={585} y={350} />
+      <DiagramNode detail="isolated routing" height={72} title="Project VPC" width={230} x={585} y={445} />
     </ExplainerDiagram>
   );
 }

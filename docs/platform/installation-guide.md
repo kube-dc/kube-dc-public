@@ -789,8 +789,8 @@ kube-dc bootstrap init \
 | `--node-nic=NODE=IFACE` | Per-node override when a node's provider/trunk NIC differs from `EXT_NET_INTERFACE` (repeatable; also exposed in TUI/config) |
 | `--set=EXT_PUBLIC_*` | Public VLAN/CIDR/gateway for `cloud+public-vlan`. When the VIP is in this CIDR, the CLI derives the minimum gateway/VIP/anchor exclusions; widen them for any other reserved addresses |
 | `--set=METALLB_FLOATING_IP` / `METALLB_INTERFACE` | Dedicated ingress VIP and the host interface that carries its L2 segment. For an L2 VIP inside `EXT_PUBLIC_CIDR`, the current CLI selects the fleet-managed `ext-pub-anchor`; elsewhere the operator supplies the real interface |
-| `--ingress-address-layer` | **Who owns the address your users dial** — the one front-door question. `metallb-l2` (recommended) — a floating VIP announced by ARP on a shared L2 segment; `metallb-bgp` — the same VIP announced as a `/32` to a routed fabric; `none` — clients reach the ingress nodes' own IPs via wildcard DNS and MetalLB is not installed at all. Declaring a `METALLB_FLOATING_IP` **does not** select a layer for you: a reserved address is not assumed to be your front door, so declaring one without a layer is refused rather than guessed. Left unset this resolves to `none`. The **data plane never varies with this choice** — see "Choosing an address layer" below |
-| `--ingress-node` | Node that should carry the ingress label and bind `:80`/`:443` (repeatable). Today it feeds **validation and the plan only** — it does not label nodes or schedule Envoy, because the DaemonSet that would select on the label is staged (see §4.1). Leave it unset and the `KUBE_OVN_GW_NODES` set is used, which is the recommended shape |
+| `--ingress-address-layer` | **Who owns the address your users dial** — the one front-door question. `metallb-l2` (recommended) — a floating VIP announced by ARP on a shared L2 segment; `metallb-bgp` — the same VIP announced as a `/32` to a routed fabric; `none` — clients reach the ingress nodes' own IPs via wildcard DNS and MetalLB is not installed at all. Declaring a `METALLB_FLOATING_IP` **does not** select a layer for you: a reserved address is not assumed to be your front door, so declaring one without a layer is refused rather than guessed. Left unset this resolves to `none`. The **data plane does not vary with this choice** — host-bind Envoy on the ingress nodes either way — but the *Service shape* does: `ClusterIP` + `externalIPs` on `none`, `LoadBalancer` + `metallb` + `externalTrafficPolicy: Local` with `externalIPs` cleared on a MetalLB layer. See "Choosing an address layer" below |
+| `--ingress-node` | Node that should carry the `kube-dc.com/ingress` label and bind `:80`/`:443` (repeatable). `init` **applies the label** to this set before committing the overlay, and the front-door component places Envoy on it. Leave it unset and the `KUBE_OVN_GW_NODES` set is used, which is the recommended shape because it keeps the ingress set and the MetalLB announcer set identical. `ENVOY_REPLICAS` is expected to equal the size of this set |
 | `--set=INGRESS_MODE` | **Deprecated** — kept for one release so older config files round-trip. `metallb-lb` and `hostnetwork` both now select the same universal host-bind data plane; use `--ingress-address-layer` instead |
 | `--set=METALLB_MODE` | **Read-only legacy output — do not set it.** It is DERIVED from `--ingress-address-layer`, and setting it against the layer is refused (the addon tree that gets wired is chosen from the layer). For BGP pass `--ingress-address-layer=metallb-bgp`, which additionally requires `METALLB_BGP_LOCAL_ASN`, `METALLB_BGP_PEER_ASN` and `METALLB_BGP_PEER_ADDRESS` (all validated). See §4.3 |
 | `--tls-mode` | `acme` (default — HTTP-01 through the Gateway; needs inbound `:80`), `acme-dns01-route53` (same issuer, proves control via Route53 DNS records — for private/VPN-only clusters whose zone is in Route53; auto-renews; requires `--dns01-route53-zone-id` + `--dns01-route53-access-key-id`, secret key via `--dns01-route53-secret-key-file` or `KUBE_DC_DNS01_ROUTE53_SECRET_KEY`), or `byo-wildcard` (operator-supplied certificate; requires `--tls-cert`/`--tls-key`; nothing renews it). See [Platform TLS certificates](certificates.md) |
@@ -1175,33 +1175,69 @@ matches the generated resources before moving DNS.
 | `--preset=cloud+public-vlan` + complete `EXT_PUBLIC_*` values | `infra-public-network` Flux layer and the `ext-public` Kube-OVN VLAN/Subnet |
 | L2 `METALLB_FLOATING_IP` inside `EXT_PUBLIC_CIDR` + `KUBE_OVN_GW_NODES` | `ext-pub-anchor` access port, one derived per-node anchor, VIP return-policy routing, and minimum IPAM exclusions |
 | `--ingress-address-layer=metallb-l2\|metallb-bgp` | MetalLB operator plus an ordered, health-gated config layer, the matching advertisement CRs, and the Gateway/Service VIP request. The `ENVOY_SERVICE_TYPE` / `ENVOY_TRAFFIC_POLICY` / `ENVOY_LB_CLASS` scalars are written to `cluster-config.env` for the host-bind data plane (see the note below) |
-| `--ingress-address-layer=none` | **no MetalLB at all** — nothing is installed to claim an address, and the front door answers on the ingress nodes' own addresses |
-| `--ingress-node=NODE` (repeatable) | validation + the plan's `Front door:` line. It does **not** label nodes yet — see the note below |
+| `--ingress-address-layer=none` | **no MetalLB at all** — nothing is installed to claim an address, and the front door answers on the ingress nodes' own addresses. The generated cluster selects `host-bind` only, and deliberately NOT `address-metallb` |
+| any layer | `spec.components` on the generated `platform` Kustomization: `gateway-config/components/host-bind` always, plus `gateway-config/components/address-metallb` on a MetalLB layer, in that order |
+| `--ingress-node=NODE` (repeatable) | validation, the plan's `Front door:` line, **and the `kube-dc.com/ingress` label applied to those nodes** in the `ingress-nodes` step. Fail-closed: an empty set, a node that does not exist, or a node outside the set already carrying the label all stop the run before anything is committed |
 | `METALLB_MODE` | **derived from the address layer, not an independent choice.** `metallb-l2` → `IPAddressPool` + `L2Advertisement` on `METALLB_INTERFACE`; `metallb-bgp` → `IPAddressPool` + `BGPPeer` + `/32` `BGPAdvertisement`. Setting it against the layer is refused rather than silently overridden, because the addon tree that gets wired is chosen from the layer |
 | `METALLB_FLOATING_IP` | explicit Envoy Service `loadBalancerIPs` request (the pool has `autoAssign: false`) and, when different from the node address, the Gateway address patch |
 
-:::note What the address layer controls **today**
-Choosing a layer today decides **whether MetalLB is installed** and whether the
-Gateway/Service asks for a VIP — that part is live and is what makes the address
-reachable or not.
+:::note What the address layer controls
+Choosing a layer decides three things, all of them live:
 
-Two pieces are staged and not yet active:
+- **whether MetalLB is installed** and whether the Gateway/Service asks for a VIP;
+- **which front-door components the generated cluster selects.** Every new cluster
+  selects `platform/gateway-config/components/host-bind`; a `metallb-l2` or
+  `metallb-bgp` layer additionally selects
+  `platform/gateway-config/components/address-metallb`. A layer of `none` must
+  **not** select the address component — it clears `externalIPs`, which on a
+  node-address cluster is the only thing giving the Gateway an address;
+- **the `ENVOY_SERVICE_TYPE` / `ENVOY_TRAFFIC_POLICY` / `ENVOY_LB_CLASS` scalars**
+  in `cluster-config.env`, which those components read.
 
-- The **host-bind Envoy DaemonSet** (`platform/gateway-config-hostbind`) is
-  written but not yet selected by any cluster; the active `platform/gateway-config`
-  still renders a Deployment with a `LoadBalancer` Service and `externalIPs`. So
-  the `ENVOY_*` scalars are recorded in `cluster-config.env` ahead of the
-  consumer that will read them.
-- **Nothing applies the `kube-dc.com/ingress` label yet.** `--ingress-node` is
-  validated and reported, and its default (the `KUBE_OVN_GW_NODES` set) is what
-  the co-location invariant needs — but labelling lands together with the
-  DaemonSet that selects on it. Until then the ingress set is a *declaration*
-  the installer checks, not a change it makes.
+The order in `spec.components` is load-bearing: `address-metallb` must be listed
+**after** `host-bind`, because its patch on the Service overwrites `host-bind`'s and
+that is what clears `externalIPs` on a VIP cluster. The generator emits them in the
+right order and the fleet's render gate asserts it.
 
-This is deliberate sequencing, not an oversight: the layer decision is worth
-making correctly now, and it is refused up front when incoherent, so the staged
-activation cannot inherit a wrong answer.
+`kube-dc bootstrap init` **applies the `kube-dc.com/ingress` label** to the resolved
+ingress set (the `ingress-nodes` step, which runs before the overlay is committed).
+This is a hard prerequisite rather than a nicety: the component places Envoy by that
+label with *required* anti-affinity, so an unlabelled cluster renders replicas that
+are all unschedulable — every manifest correct, Flux green, and no front door at all.
+The step is fail-closed; see §4.1.
+
+`ENVOY_REPLICAS` must equal the number of labelled ingress nodes. Fewer, and some
+labelled node has no Envoy — which on a single-address cluster can be exactly the node
+that owns the address. More, and the surplus stays `Pending` forever under required
+anti-affinity. The platform PDB is `minAvailable: 2`, so fewer than three ingress nodes
+makes every voluntary drain block.
+
 :::
+
+:::caution Existing clusters: check the Service's target ports first
+A data-plane Service created **before** host-bind maps `443 → 10443` and `80 → 10080`.
+Envoy Gateway does **not** rewrite those target ports on a Service that already exists,
+so after the switch kube-proxy sends the front-door address to a port nothing listens
+on: every Envoy bound correctly, and the door dark.
+
+Check before migrating:
+
+```bash
+kubectl -n envoy-gateway-system get svc \
+  -l gateway.envoyproxy.io/owning-gateway-name=eg \
+  -o jsonpath='{range .items[*].spec.ports[*]}{.port}->{.targetPort}{"\n"}{end}'
+```
+
+If `443` does not map to `443`, patch the target ports **in place** — that preserves the
+Service UID and therefore any MetalLB allocation. Deleting the Service also works, but on
+a VIP cluster it withdraws the announcement, and MetalLB can only re-acquire the same
+address if the Service requests it explicitly (see `METALLB_FLOATING_IP`).
+:::
+
+The layer decision is refused up front when incoherent — a `METALLB_FLOATING_IP`
+without a layer, or a `METALLB_MODE` that contradicts one — rather than being silently
+resolved, because the components and the addon tree are both chosen from it and a wrong
+answer here is only visible as an unreachable address later.
 
 ### 4.1a Choosing an address layer
 
@@ -1209,11 +1245,16 @@ There is only one question, and it is about the address — never about the
 data plane. Whatever you choose, the data plane is the same on every cluster, so
 the choice cannot make the front door faster or slower — only reachable or not.
 
-Today that data plane is a three-replica Envoy **Deployment** behind the
-Service; the host-bind **DaemonSet** described in the design is staged and not
-yet activated (see the note in §4.1). Both serve the same traffic; the DaemonSet
-is what will preserve the real client IP, which per-client rate limits and IP
-allowlists need. Choosing an address layer does not depend on that transition.
+That data plane is an Envoy **Deployment** — one replica per node labelled
+`kube-dc.com/ingress`, with required anti-affinity — running on the **host network** and
+binding those nodes' `:80`/`:443` directly. That is what preserves the real client
+address, which per-client rate limits and IP allowlists need.
+
+A DaemonSet was considered and deliberately not used: `kubectl drain
+--ignore-daemonsets` does not evict DaemonSet pods and DaemonSet rolling updates ignore
+PodDisruptionBudgets, so a DaemonSet keeps serving on a cordoned node and its PDB is
+decorative. A Deployment is evicted and its endpoint deprogrammed before the node stops,
+which is what you want during planned maintenance.
 
 **Answer it explicitly.** `metallb-l2` is the recommended shape and the
 interactive wizard's default: a stable address is what DNS wants. Pick `none`
@@ -1255,9 +1296,17 @@ Two things to know before choosing a VIP layer:
     selector is pinned in the shared `addons/metallb-config` tree for both the
     L2 and BGP variants.
   - Envoy answers only on the nodes labelled `kube-dc.com/ingress`.
-  - The Envoy Service uses `externalTrafficPolicy: Local` so the real client IP
-    survives. Under `Local`, a node advertises the VIP **only while it holds a
-    ready local endpoint** — which here means a running Envoy.
+  - On a **MetalLB layer**, the Envoy Service uses `externalTrafficPolicy: Local`
+    so the real client IP survives. Under `Local`, a node advertises the VIP
+    **only while it holds a ready local endpoint** — which here means a running
+    Envoy. That is also what makes a rolling update near-gapless: the VIP moves
+    to a node that is already serving instead of waiting for a new pod to start.
+  - On a layer of **`none`** there is no VIP to move. The Service stays `ClusterIP`
+    and keeps `externalIPs`, and `externalTrafficPolicy` is left alone — do **not**
+    set `Local` there. With `externalIPs` rather than a LoadBalancer address, `Local`
+    leaves no usable local path and drops the traffic outright; this was measured on a
+    live cluster, which went from partly-working to 13 failed probes out of 13 and had
+    to be reverted the same hour.
 
   So the VIP is announced only from the *intersection* of those two sets. If
   they are disjoint, **nothing announces it**: the Service shows its external
@@ -1375,6 +1424,39 @@ spec:
 
 </details>
 
+### 4.2a Check the front door before and after Flux reconciles
+
+Two scripted checks live in the fleet repo. Use them; the front door has a failure mode
+that every other signal reports as healthy.
+
+```bash
+# BEFORE letting Flux reconcile a front-door change
+scripts/frontdoor-check.sh preflight <cluster> <kubeconfig>
+
+# AFTER it has reconciled
+scripts/frontdoor-check.sh smoke <cluster> <kubeconfig> [hostname ...]
+```
+
+`preflight` runs a **server-side** apply dry-run of the rendered `EnvoyProxy`, then checks
+the ingress labels exist and are a subset of the MetalLB announcer set, that
+`ENVOY_REPLICAS` equals the labelled node count and exceeds the PDB minimum, that `:80`
+and `:443` are free (or already held by this cluster's own Envoy) in each node's host
+netns, and that the Service has no stale pre-host-bind target ports.
+
+The server-side part matters: `kubectl apply --dry-run=server` strips explicit nulls
+client-side and reports success on objects Flux rejects — and because these
+Kustomizations run with `force: true`, a rejected object is **deleted** rather than left
+alone, after which Envoy Gateway regenerates a default 1-replica non-hostNetwork
+Deployment and nothing is listening at all.
+
+`smoke` asserts what a reconcile cannot: that `:80` and `:443` are actually LISTEN in each
+ingress node's host netns, that the `envoy` container ended up root with `NET_BIND_SERVICE`
+*and* kept `drop: [ALL]` and its seccomp profile while the sidecar stayed non-root, that the
+Gateway is `Programmed`, and that the hostnames really answer. A non-root Envoy with the
+capability starts, reports `2/2 Ready`, passes its probes and logs
+`cannot bind '0.0.0.0:443': Permission denied` for every listener — the pods look perfect
+and the site is down, which is why the socket assertion exists rather than a log grep.
+
 ### 4.3 Verify MetalLB allocation and announcement
 
 ```bash
@@ -1458,25 +1540,25 @@ one IP and intermittent outages.
 
 ### 4.5 Move DNS only after client-side acceptance
 
-The base keeps the original node `externalIPs` path alive while the generated
-MetalLB request is validated. Test the VIP from outside the node segment. In
-the same reviewed fleet change that moves wildcard/API DNS to the VIP, remove
-the old node pin from the EnvoyProxy patch:
+Test the VIP from outside the node segment before moving DNS to it.
 
-```yaml
-spec:
-  patches:
-    - target:
-        group: gateway.envoyproxy.io
-        version: v1alpha1
-        kind: EnvoyProxy
-        name: custom-proxy-config
-      patch: |-
-        - op: remove
-          path: /spec/provider/kubernetes/envoyService/patch/value/spec/externalIPs
-```
+On a MetalLB layer you do **not** hand-write an `externalIPs` removal any more: the
+`address-metallb` component clears it, because on a VIP cluster the announced address is
+the front door and leaving `externalIPs` in place would make the node's own address a
+second, unannounced entrance whose traffic takes the kube-proxy path instead. Selecting
+that component *is* the removal.
 
-Then commit, push, reconcile, and change DNS:
+Two things worth knowing about that clearing, both learned the hard way:
+
+- Dropping the key from a patch does not remove it from a **live** Service. Envoy Gateway
+  never deletes fields it no longer wants, so the value has to be explicitly nulled —
+  which is what the component does. A cluster that had `externalIPs` before the migration
+  keeps it otherwise, silently.
+- The clearing only happens if `address-metallb` is listed **after** `host-bind` in
+  `spec.components`. Reversed, `host-bind` re-asserts `externalIPs` from
+  `NODE_EXTERNAL_IP` and the second entrance survives.
+
+Once the VIP is proven, commit, push, reconcile, and change DNS:
 
 ```text
 *.example.com        → <METALLB_FLOATING_IP>

@@ -46,8 +46,8 @@ export function OvnLogicalNetworkDiagram(): React.JSX.Element {
     >
       <DiagramEdge d="M195 258 H215" />
       <DiagramEdge d="M365 258 H385" />
-      <DiagramEdge d="M575 238 C600 238 600 182 625 182" kind="data" label="default EIP + SNAT" labelWidth={136} labelX={600} labelY={222} />
-      <DiagramEdge d="M575 278 C600 278 600 342 625 342" kind="asynchronous" label="optional public path" labelWidth={146} labelX={600} labelY={304} />
+      <DiagramEdge d="M575 238 C600 238 600 182 625 182" kind="data" label="default EIP + SNAT" labelWidth={136} labelX={530} labelY={190} />
+      <DiagramEdge d="M575 278 C600 278 600 342 625 342" kind="asynchronous" label="optional public path" labelWidth={146} labelX={530} labelY={326} />
       <DiagramBoundary height={310} kind="network" label="PROJECT VPC · ISOLATED WORKLOAD NETWORK" labelWidth={350} width={560} x={20} y={130} />
       <DiagramBoundary height={410} label="MANAGEMENT VPC" labelWidth={180} width={220} x={610} y={50} />
       <DiagramNode detail="Pods + VMs" height={78} icon={ApplicationIcon} title="Workloads" width={160} x={35} y={219} />
@@ -70,8 +70,8 @@ export function EnvoyGatewayDiagram(): React.JSX.Element {
       title="Envoy Gateway request flow"
       viewBox="0 0 900 280"
     >
-      <DiagramEdge d="M170 132 H190" label="DNS + provider path" labelWidth={138} labelX={180} labelY={105} />
-      <DiagramEdge d="M380 132 H400" label="hostname match" labelWidth={110} labelX={390} labelY={105} />
+      <DiagramEdge d="M170 132 H190" label="DNS + provider path" labelWidth={138} labelX={180} labelY={72} />
+      <DiagramEdge d="M380 132 H400" label="hostname match" labelWidth={110} labelX={390} labelY={72} />
       <DiagramEdge d="M560 132 H580" />
       <DiagramEdge d="M740 132 H760" />
       <DiagramSectionLabel label="HOSTNAME-BASED APPLICATION TRAFFIC" lineTo={872} x={28} y={28} />

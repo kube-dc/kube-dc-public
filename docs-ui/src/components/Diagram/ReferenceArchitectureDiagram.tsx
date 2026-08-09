@@ -22,7 +22,7 @@ export default function ReferenceArchitectureDiagram(): React.JSX.Element {
       title="Illustrative Kube-DC reference architecture"
       viewBox="0 0 840 930"
     >
-      <DiagramEdge d="M210 87 H240" kind="control" />
+      <DiagramEdge d="M210 87 H220" kind="control" />
       <DiagramEdge d="M210 191 C225 191 225 625 350 625" kind="asynchronous" />
 
       <DiagramEdge d="M345 207 V240" directed={false} kind="data" />

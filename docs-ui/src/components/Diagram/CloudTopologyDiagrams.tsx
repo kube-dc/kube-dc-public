@@ -49,11 +49,11 @@ export function VlanWorkloadTopologyDiagram(): React.JSX.Element {
       title="Project workload with a datacenter VLAN"
       viewBox="0 0 840 470"
     >
-      <DiagramEdge d="M420 146 C420 176 210 176 210 204 V216" />
-      <DiagramEdge d="M420 146 C420 176 630 176 630 204 V216" kind="data" />
+      <DiagramEdge d="M420 174 C420 196 210 196 210 204 V216" />
+      <DiagramEdge d="M420 174 C420 196 630 196 630 204 V216" kind="data" />
       <DiagramEdge d="M630 298 V340" kind="data" />
       <DiagramBoundary height={265} label="PROJECT · ACME-PRODUCTION" labelWidth={260} width={800} x={20} y={50} />
-      <DiagramNode detail="Pod or VM" height={78} icon={ApplicationIcon} title="Workload" tone="accent" width={280} x={280} y={68} />
+      <DiagramNode detail="Pod or VM" height={78} icon={ApplicationIcon} title="Workload" tone="accent" width={280} x={280} y={96} />
       <DiagramNode detail={['eth0 · 10.0.0.15/24', 'DEFAULT ROUTE']} height={82} icon={NetworkIcon} title="Project VPC" width={300} x={60} y={216} />
       <DiagramNode detail={['net1 · 192.0.2.30/24', 'no default route']} height={82} icon={NetworkIcon} title="VLAN interface" width={300} x={480} y={216} />
       <DiagramNode detail={['802.1Q VLAN 4014', 'storage · appliance']} height={92} title="Physical segment" tone="external" width={420} x={420} y={340} />
@@ -72,7 +72,7 @@ export function ProjectPrivateNetworkDiagram(): React.JSX.Element {
       viewBox="0 0 840 500"
     >
       <DiagramEdge d="M200 230 C230 230 230 330 280 330" />
-      <DiagramEdge d="M420 230 V294" />
+      <DiagramEdge d="M420 266 V294" />
       <DiagramEdge d="M640 230 C610 230 610 330 560 330" />
       <DiagramEdge d="M420 396 V418" kind="data" />
       <DiagramBoundary height={400} kind="network" label="PROJECT PRODUCTION · VPC 10.0.0.0/24" labelWidth={390} width={800} x={20} y={50} />

@@ -211,7 +211,12 @@ Beyond what `accept` automates, confirm by hand the things only a human can:
 - enabled storage, backup, observability, and public exposure paths pass their
   own checks;
 - the front door answers from the network your **users** are on, not only from
-  the workstation that installed it.
+  the workstation that installed it. Two scripted checks in the fleet repo cover the
+  failure modes that every other signal reports as healthy —
+  `scripts/frontdoor-check.sh preflight <cluster> <kubeconfig>` before letting Flux
+  reconcile a front-door change, and `... smoke ...` afterwards. They assert that the
+  node ports are genuinely bound and that the hostnames answer, because Envoy can be
+  `Ready` on every node with nothing listening.
 
 ## Optional capabilities
 

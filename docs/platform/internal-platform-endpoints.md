@@ -9,7 +9,7 @@ This page tells you whether your installation needs the feature, how to decide, 
 | Section | What's in it |
 |---|---|
 | [Do you need this?](#do-you-need-this) | Three topology classes + decision rule |
-| [How it works](#how-it-works) | The Fork E pattern, anchors, Envoy front-door |
+| [How it works](#how-it-works) | The platform-endpoint pattern, anchors, Envoy front-door |
 | [Enabling on a cluster](#enabling-on-a-cluster) | Helm values + fleet wiring + vpc-dns Corefile |
 | [Verifying](#verifying) | Smoke tests for the four hostnames |
 | [Day-2 operations](#day-2-operations) | Adding hostnames, draining nodes, MetalLB speaker election |
@@ -34,11 +34,11 @@ Before reading the three class definitions, run the built-in topology classifier
 kube-dc bootstrap doctor topology
 ```
 
-It probes the current kubeconfig's cluster for four signals (Fork E Services already deployed, cloud-provider `providerID`, EnvoyProxy CR `externalIPs` configuration, EnvoyProxy hostNetwork patch) and prints a classification + verdict + confidence level. Sample output:
+It probes the current kubeconfig's cluster for four signals (platform-endpoint Services already deployed, cloud-provider `providerID`, EnvoyProxy CR `externalIPs` configuration, EnvoyProxy hostNetwork patch) and prints a classification + verdict + confidence level. Note that on any cluster carrying the host-bind front door the hostNetwork row now reads `true` and is **not** evidence of anything unusual — see the warning below. Sample output:
 
 ```
 PROBE              DETAIL                                                                  CLASS HINT  CONFIDENCE
-Fork E Services    neither platform-endpoint Service present                               —           high
+platform endpoints neither platform-endpoint Service present                               —           high
 cloud-provider     no providerID on any node                                               —           high
 Envoy externalIPs  externalIPs=[203.0.113.10] (svc type=LoadBalancer lb-class=metallb)    B           high
 Envoy hostNetwork  false or unset (standard pod networking)                                —           —
@@ -57,16 +57,26 @@ If the classifier returns Class A/B/C with `confidence: high`, you can skip the 
 
 Typical hardware: a single colo'd public IP routed to a private bare-metal cluster via 1:1 NAT on an edge router. The hairpin failure happens because the NAT box won't reflect a packet back through itself.
 
-:::warning Classification changes with the ingress rework
-`doctor topology` currently infers your class from how Envoy is exposed
-(`externalIPs`, Service type). The ingress rework makes that shape **the same
-on every cluster**, so on a reworked cluster the tool reports low confidence
-and says it cannot tell — deliberately, rather than guessing wrong. The
-question it is really asking does not change: **is the platform address
-reachable from inside the cluster (on a node's NIC), or translated by an
-upstream router?** Answer that with the manual smoke test below, which stays
-valid either way. Details: `docs/prd/internal-platform-endpoints-implementation.md`
-§6.E alignment note.
+:::warning What the ingress rework did to this classification
+`doctor topology` infers your class from how Envoy is exposed (`externalIPs`, Service
+type, hostNetwork). The front-door rework changed which of those signals still carry
+information, and an earlier version of this warning predicted it wrongly — it said the
+rework would make the shape **the same on every cluster**. It did not. There are two
+shapes, and which one you get is decided by `INGRESS_ADDRESS_LAYER`:
+
+| Signal | After the rework |
+|---|---|
+| `hostNetwork` | **true on every cluster** — Envoy always binds the node's `:80`/`:443`. This has stopped being a discriminator. |
+| `externalIPs` | present on a layer of `none` (the node address IS the front door); **cleared** on a `metallb-l2`/`metallb-bgp` layer, where the announced VIP is. Still a discriminator. |
+| Service type / class | `ClusterIP` with no class on `none`; `LoadBalancer` + `loadBalancerClass: metallb` on a MetalLB layer. Still a discriminator. |
+
+So a `hostNetwork: true` reading no longer means anything unusual, and it is the
+`externalIPs`-versus-VIP pair that tells you where the address lives. The question this
+page is really asking does not change: **is the platform address reachable from inside the
+cluster (on a node's NIC), or translated by an upstream router?** A MetalLB VIP is
+L2-local to the announcing node, which is the Class B answer; a 1:1 NAT from an upstream
+router is not, whatever the Service says. Answer it with the manual smoke test below,
+which stays valid either way.
 :::
 
 ### Class B — Flat-L2 with per-node externalIPs
@@ -75,7 +85,7 @@ valid either way. Details: `docs/prd/internal-platform-endpoints-implementation.
 |---|---|
 | Each control-plane node has a **public IP** directly bound on its `br-ext-cloud` (or equivalent external bridge), and all CP nodes share the same `/<N>` broadcast domain that includes the platform's public hostname IPs. Project Pods reach `https://login.<DOMAIN>` today without any extra config. | **You DO NOT need internal platform endpoints**. Project traffic is SNAT'd through the per-Project ext-cloud egress IP, the destination resolves L2-locally on `br-ext-cloud`, no upstream NAT box is involved in the hairpin. |
 
-Typical hardware: a colo or hosted environment that delivers a small public `/<N>` to your CP nodes directly, with Envoy binding `externalIPs:` per node.
+Typical hardware: a colo or hosted environment that delivers a small public `/<N>` to your CP nodes directly. With the host-bind front door this is either the node's own address carried on the Service's `externalIPs` (layer `none`), or a MetalLB VIP inside that same broadcast domain (layer `metallb-l2`) — both are L2-local to the announcing node, which is what makes this Class B.
 
 ### Class C — Cloud-provider LoadBalancer
 
@@ -115,9 +125,9 @@ If both answers are yes → Class B. If the public IP doesn't appear on any node
 
 ## How it works
 
-The feature uses one architectural pattern, **Fork E** in the engineering record, applied to two distinct platform endpoints: `kubeAPI` (port 6443) and `envoyGateway` (port 443, fans out via Envoy HTTPRoutes).
+The feature uses one architectural pattern applied to two distinct platform endpoints: `kubeAPI` (port 6443) and `envoyGateway` (port 443, fans out via Envoy HTTPRoutes).
 
-### The Fork E pattern
+### The platform-endpoint pattern
 
 <details data-github-only>
 <summary>Diagram source for GitHub</summary>
@@ -173,7 +183,7 @@ Anchors are seeded by `kube-dc bootstrap anchors apply` and verified by `kube-dc
 >   ovn-nbctl --columns=name,networks list logical_router_port | grep '<your EXT_NET_CIDR>'
 > ```
 >
-> Most critically: do not collide with the `ovn-cluster-ext-cloud` LRP — that's the management-VPC pod-egress SNAT IP, and a collision there manifests as ~80-min recurring outages of every controller's reach to Project EIPs. The rule is: **anchors must come from a subset of `EXT_NET_EXCLUDE_IPS` that is disjoint from existing OVN LRP IPs**, not literally "always `.11/.12/.13`". An empty-OVN cluster can use any anchors; on a cluster with existing Project VPCs / LRPs, audit first. Live-fix of a collided cluster requires `promote_secondaries=1` + ADD-new-before-DEL-old + per-node `ovs-ovn` restart — coordinate with the platform team before attempting (see `docs/internal/internal-platform-endpoints-runbook.md`).
+> Most critically: do not collide with the `ovn-cluster-ext-cloud` LRP — that's the management-VPC pod-egress SNAT IP, and a collision there manifests as ~80-min recurring outages of every controller's reach to Project EIPs. The rule is: **anchors must come from a subset of `EXT_NET_EXCLUDE_IPS` that is disjoint from existing OVN LRP IPs**, not literally "always `.11/.12/.13`". An empty-OVN cluster can use any anchors; on a cluster with existing Project VPCs / LRPs, audit first. Live-fix of a collided cluster requires `promote_secondaries=1` + ADD-new-before-DEL-old + per-node `ovs-ovn` restart — coordinate with the platform team before attempting — the live-fix procedure is held in the internal runbook rather than here, because it is destructive and cluster-specific.
 
 ### The `kubeAPI` endpoint
 

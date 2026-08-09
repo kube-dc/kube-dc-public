@@ -279,10 +279,38 @@ hostname. The route controller publishes status on the Service. Verify DNS,
 certificate readiness, Gateway route status, backend health, and external
 routing separately.
 
-MetalLB can provide a stable listener address on Layer 2 topologies. Other
-installations can use a cloud load balancer or a topology-specific address.
-Envoy Gateway itself does not make a private Cloud address reachable from the
-internet.
+### How the listener is reached
+
+Envoy runs as a Deployment on the **host network**, one replica per node labelled
+`kube-dc.com/ingress` (required anti-affinity, so two replicas cannot share a node), and
+binds those nodes' `:80` and `:443` directly. Because the packet arrives at the node rather
+than being forwarded through the Service, Envoy sees the **real client address** — which is
+what per-client rate limits, source allowlists and honest audit logs depend on.
+
+Binding privileged ports means the `envoy` container runs as UID 0. It keeps the rest of
+the generated hardening (`drop: [ALL]` plus `NET_BIND_SERVICE`, no privilege escalation,
+seccomp `RuntimeDefault`), and the shutdown-manager sidecar stays non-root without the
+capability. A capability alone is not sufficient here: a non-root process under
+`NoNewPrivs` never gets an added capability into its effective set, and Kubernetes exposes
+no way to set ambient capabilities, so a non-root Envoy starts, reports `Ready`, and fails
+to bind every listener.
+
+**Which address** reaches those nodes is a separate, per-cluster choice —
+`INGRESS_ADDRESS_LAYER`:
+
+| Layer | Address | Service shape |
+|---|---|---|
+| `metallb-l2` / `metallb-bgp` (recommended) | a MetalLB VIP, announced only from a node holding a **ready** Envoy | `LoadBalancer`, `loadBalancerClass: metallb`, `externalTrafficPolicy: Local`, `externalIPs` cleared |
+| `none` | the ingress nodes' own addresses via wildcard DNS | `ClusterIP` retaining `externalIPs` |
+
+Health-gated announcement is the practical difference: on a MetalLB layer the address moves
+to another already-serving node during a node loss or a rolling update, so the front door
+stays up. On `none` the address belongs to one node and cannot move.
+
+Both shapes come from two shared components (`gateway-config/components/host-bind` and,
+for a VIP, `gateway-config/components/address-metallb`) rather than per-cluster
+`EnvoyProxy` edits. Envoy Gateway itself does not make a private Cloud address reachable
+from the internet.
 
 ## Related Documentation
 

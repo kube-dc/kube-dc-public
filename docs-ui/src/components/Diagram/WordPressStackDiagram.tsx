@@ -20,10 +20,10 @@ export default function WordPressStackDiagram(): React.JSX.Element {
       title="WordPress services in a Kube-DC Project"
       viewBox="0 0 840 610"
     >
-      <DiagramEdge d="M190 96 H230" label="HTTPS + certificate" labelWidth={142} labelX={210} labelY={72} />
-      <DiagramEdge d="M460 96 H500" />
-      <DiagramEdge d="M650 132 C650 164 320 164 320 192 V204" />
-      <DiagramEdge d="M650 132 C650 164 570 164 570 192 V204" />
+      <DiagramEdge d="M190 96 H350" label="HTTPS + certificate" labelWidth={142} labelX={270} labelY={101} />
+      <DiagramEdge d="M580 96 H610" />
+      <DiagramEdge d="M710 132 C710 164 320 164 320 192 V204" />
+      <DiagramEdge d="M710 132 C710 164 570 164 570 192 V204" />
       <DiagramEdge d="M320 286 C320 320 420 320 420 348 V360" directed={false} kind="data" />
       <DiagramEdge d="M570 286 C570 320 420 320 420 348 V360" directed={false} kind="data" />
       <DiagramEdge d="M320 286 C320 344 680 344 680 378 V390" label="credentials" labelWidth={92} labelX={570} labelY={341} />
@@ -34,8 +34,8 @@ export default function WordPressStackDiagram(): React.JSX.Element {
 
       <DiagramSectionLabel label="PUBLIC REQUEST PATH" lineTo={812} x={28} y={28} />
       <DiagramNode detail={['external', 'client']} height={72} icon={PublicIcon} title="Browser" tone="external" width={160} x={30} y={60} />
-      <DiagramNode detail="TLS entry point" height={72} icon={NetworkIcon} title="Platform Gateway" tone="accent" width={230} x={230} y={60} />
-      <DiagramNode detail="wordpress" height={72} title="Service" width={200} x={500} y={60} />
+      <DiagramNode detail="TLS entry point" height={72} icon={NetworkIcon} title="Platform Gateway" tone="accent" width={230} x={350} y={60} />
+      <DiagramNode detail="wordpress" height={72} title="Service" width={200} x={610} y={60} />
 
       <DiagramBoundary height={350} label="YOUR PROJECT · APPLICATION AND DATA" labelWidth={340} width={800} x={20} y={170} />
       <DiagramNode detail="replica 1" height={82} icon={ApplicationIcon} title="WordPress Pod" width={220} x={210} y={204} />

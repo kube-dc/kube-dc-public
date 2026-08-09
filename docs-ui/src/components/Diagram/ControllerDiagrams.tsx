@@ -29,7 +29,7 @@ export function ControllerTopologyDiagram(): React.JSX.Element {
     >
       <DiagramEdge d="M210 92 H250" kind="control" />
       <DiagramEdge d="M480 92 H530" kind="control" />
-      <DiagramEdge d="M730 92 H790" kind="control" />
+      <DiagramEdge d="M730 92 H780" kind="control" />
 
       <DiagramEdge d="M280 235 H370" />
       <DiagramEdge d="M280 365 H370" />
@@ -85,48 +85,48 @@ export function ProjectLifecycleDiagram(): React.JSX.Element {
       minWidth={1000}
       textScale={1.12}
       title="Project lifecycle reconciliation"
-      viewBox="0 0 1000 870"
+      viewBox="0 0 1000 970"
     >
-      <DiagramEdge d="M210 118 H250" label="create Organization" labelWidth={142} labelX={230} labelY={94} />
-      <DiagramEdge d="M440 118 H470" label="reconcile" labelWidth={80} labelX={455} labelY={94} />
-      <DiagramEdge d="M700 118 H750" label="realm + groups" labelWidth={112} labelX={725} labelY={94} />
-      <DiagramEdge d="M585 154 C585 200 345 200 345 164 V154" kind="control" label="publish status" labelWidth={108} labelX={465} labelY={200} />
+      <DiagramEdge d="M210 136 H250" label="create Organization" labelWidth={142} labelX={230} labelY={82} />
+      <DiagramEdge d="M440 136 H470" label="reconcile" labelWidth={80} labelX={455} labelY={82} />
+      <DiagramEdge d="M700 136 H750" label="realm + groups" labelWidth={112} labelX={725} labelY={82} />
+      <DiagramEdge d="M585 177 C585 220 345 220 345 184 V172" kind="control" label="publish status" labelWidth={108} labelX={465} labelY={216} />
 
-      <DiagramEdge d="M210 370 H250" label="create Project" labelWidth={108} labelX={230} labelY={346} />
-      <DiagramEdge d="M440 370 H470" label="reconcile" labelWidth={80} labelX={455} labelY={346} />
-      <DiagramEdge d="M585 406 C585 438 115 438 115 470 V482" label="namespace · RBAC · trust" labelWidth={168} labelX={350} labelY={436} />
-      <DiagramEdge d="M585 406 C585 438 300 438 300 470 V482" label="VPC · subnet · policies" labelWidth={158} labelX={445} labelY={463} />
-      <DiagramEdge d="M585 406 C585 438 485 438 485 470 V482" label="backup + images" labelWidth={124} labelX={535} labelY={436} />
-      <DiagramEdge d="M585 406 C585 438 670 438 670 470 V482" label="datasource scope" labelWidth={128} labelX={630} labelY={463} />
-      <DiagramEdge d="M585 406 C585 438 855 438 855 470 V482" kind="control" label="publish status" labelWidth={108} labelX={720} labelY={436} />
+      <DiagramEdge d="M210 406 H250" label="create Project" labelWidth={108} labelX={230} labelY={350} />
+      <DiagramEdge d="M440 406 H470" label="reconcile" labelWidth={80} labelX={455} labelY={350} />
+      <DiagramEdge d="M585 447 C585 475 115 475 115 508 V520" label="namespace · RBAC · trust" labelWidth={168} labelX={350} labelY={475} />
+      <DiagramEdge d="M585 447 C585 475 300 475 300 508 V520" label="VPC · subnet · policies" labelWidth={158} labelX={445} labelY={502} />
+      <DiagramEdge d="M585 447 C585 475 485 475 485 508 V520" label="backup + images" labelWidth={124} labelX={535} labelY={475} />
+      <DiagramEdge d="M585 447 C585 475 670 475 670 508 V520" label="datasource scope" labelWidth={128} labelX={630} labelY={502} />
+      <DiagramEdge d="M585 447 C585 475 855 475 855 508 V520" kind="control" label="publish status" labelWidth={108} labelX={720} labelY={475} />
 
-      <DiagramEdge d="M210 690 H250" label="create OrgGroup" labelWidth={128} labelX={230} labelY={666} />
-      <DiagramEdge d="M440 690 H470" label="reconcile" labelWidth={80} labelX={455} labelY={666} />
-      <DiagramEdge d="M585 726 C585 754 730 754 730 772 V784" label="sync identity target" labelWidth={142} labelX={655} labelY={754} />
-      <DiagramEdge d="M585 726 C585 754 900 754 900 772 V784" kind="control" label="create RoleBindings" labelWidth={142} labelX={740} labelY={772} />
+      <DiagramEdge d="M210 756 H250" label="create OrgGroup" labelWidth={128} labelX={230} labelY={700} />
+      <DiagramEdge d="M440 756 H470" label="reconcile" labelWidth={80} labelX={455} labelY={700} />
+      <DiagramEdge d="M585 797 C585 825 730 825 730 863 V875" label="sync identity target" labelWidth={142} labelX={655} labelY={825} />
+      <DiagramEdge d="M585 797 C585 845 900 845 900 863 V875" kind="control" label="create RoleBindings" labelWidth={142} labelX={740} labelY={852} />
 
-      <DiagramBoundary height={230} label="1 · ORGANIZATION SETUP" labelWidth={230} width={960} x={20} y={30} />
-      <DiagramNode detail="actor" height={72} title="Platform admin" tone="external" width={180} x={30} y={82} />
-      <DiagramNode detail="Organization API" height={72} title="Kubernetes API" width={190} x={250} y={82} />
-      <DiagramNode detail={['Organization', 'reconcile']} height={82} title="Product controllers" tone="accent" width={230} x={470} y={77} />
-      <DiagramNode detail="realm + groups" height={72} icon={KeycloakIcon} title="Keycloak" width={200} x={750} y={82} />
+      <DiagramBoundary height={250} label="1 · ORGANIZATION SETUP" labelWidth={230} width={960} x={20} y={30} />
+      <DiagramNode detail="actor" height={72} title="Platform admin" tone="external" width={180} x={30} y={100} />
+      <DiagramNode detail="Organization API" height={72} title="Kubernetes API" width={190} x={250} y={100} />
+      <DiagramNode detail={['Organization', 'reconcile']} height={82} title="Product controllers" tone="accent" width={230} x={470} y={95} />
+      <DiagramNode detail="realm + groups" height={72} icon={KeycloakIcon} title="Keycloak" width={200} x={750} y={100} />
 
-      <DiagramBoundary height={300} label="2 · PROJECT SETUP" labelWidth={190} width={960} x={20} y={290} />
-      <DiagramNode detail="actor" height={72} title="Org admin" tone="external" width={180} x={30} y={334} />
-      <DiagramNode detail="Project API" height={72} title="Kubernetes API" width={190} x={250} y={334} />
-      <DiagramNode detail={['Project', 'reconcile']} height={82} title="Product controllers" tone="accent" width={230} x={470} y={329} />
-      <DiagramNode detail={['namespace +', 'access']} height={82} title="API resources" width={170} x={30} y={482} />
-      <DiagramNode detail={['Kube-OVN +', 'Multus']} height={82} title="Networking" width={170} x={215} y={482} />
-      <DiagramNode detail={['KubeVirt +', 'storage']} height={82} title="Virtualization" width={170} x={400} y={482} />
-      <DiagramNode detail={['datasource', 'scope']} height={82} title="Observability" width={170} x={585} y={482} />
-      <DiagramNode detail={['Project', 'conditions']} height={82} title="Project status" width={170} x={770} y={482} />
+      <DiagramBoundary height={330} label="2 · PROJECT SETUP" labelWidth={190} width={960} x={20} y={300} />
+      <DiagramNode detail="actor" height={72} title="Org admin" tone="external" width={180} x={30} y={370} />
+      <DiagramNode detail="Project API" height={72} title="Kubernetes API" width={190} x={250} y={370} />
+      <DiagramNode detail={['Project', 'reconcile']} height={82} title="Product controllers" tone="accent" width={230} x={470} y={365} />
+      <DiagramNode detail={['namespace +', 'access']} height={82} title="API resources" width={170} x={30} y={520} />
+      <DiagramNode detail={['Kube-OVN +', 'Multus']} height={82} title="Networking" width={170} x={215} y={520} />
+      <DiagramNode detail={['KubeVirt +', 'storage']} height={82} title="Virtualization" width={170} x={400} y={520} />
+      <DiagramNode detail={['datasource', 'scope']} height={82} title="Observability" width={170} x={585} y={520} />
+      <DiagramNode detail={['Project', 'conditions']} height={82} title="Project status" width={170} x={770} y={520} />
 
-      <DiagramBoundary height={250} label="3 · ACCESS MAPPING" labelWidth={205} width={960} x={20} y={620} />
-      <DiagramNode detail="actor" height={72} title="Org admin" tone="external" width={180} x={30} y={654} />
-      <DiagramNode detail={['OrganizationGroup', 'API']} height={82} title="Kubernetes API" width={190} x={250} y={649} />
-      <DiagramNode detail={['access', 'reconcile']} height={82} title="Product controllers" tone="accent" width={230} x={470} y={649} />
-      <DiagramNode detail={['membership', 'target']} height={82} title="Keycloak" width={160} x={650} y={784} />
-      <DiagramNode detail="per Project" height={82} title="RoleBindings" width={160} x={820} y={784} />
+      <DiagramBoundary height={310} label="3 · ACCESS MAPPING" labelWidth={205} width={960} x={20} y={650} />
+      <DiagramNode detail="actor" height={72} title="Org admin" tone="external" width={180} x={30} y={720} />
+      <DiagramNode detail={['OrganizationGroup', 'API']} height={82} title="Kubernetes API" width={190} x={250} y={715} />
+      <DiagramNode detail={['access', 'reconcile']} height={82} title="Product controllers" tone="accent" width={230} x={470} y={715} />
+      <DiagramNode detail={['membership', 'target']} height={82} title="Keycloak" width={160} x={650} y={875} />
+      <DiagramNode detail="per Project" height={82} title="RoleBindings" width={160} x={820} y={875} />
     </ExplainerDiagram>
   );
 }
@@ -148,16 +148,16 @@ export function ControllerNetworkFlowDiagram(): React.JSX.Element {
 
       <DiagramEdge d="M240 378 H300" />
       <DiagramEdge d="M560 378 C590 378 590 518 630 518" />
-      <DiagramEdge d="M740 554 V414" />
+      <DiagramEdge d="M740 482 V414" />
       <DiagramEdge d="M990 214 V302" />
-      <DiagramEdge d="M990 374 C990 440 740 440 740 330 V342" />
-      <DiagramEdge d="M740 414 C740 450 135 450 135 330 V342" />
+      <DiagramEdge d="M990 374 C990 430 870 430 870 320 H740 V342" />
+      <DiagramEdge d="M740 414 V450 H270 C250 450 250 320 230 320 H135 V342" />
 
       <DiagramEdge d="M240 578 H300" />
       <DiagramEdge d="M560 578 C590 578 590 538 630 538" />
       <DiagramEdge d="M740 554 V562" />
-      <DiagramEdge d="M990 374 C990 520 740 520 740 550 V562" />
-      <DiagramEdge d="M740 634 C740 670 135 670 135 170 V182" />
+      <DiagramEdge d="M990 374 V540 Q990 558 972 558 H740 V562" />
+      <DiagramEdge d="M740 634 V670 H270 V160 H135 V182" />
 
       <DiagramBoundary height={580} label="PROJECT" labelWidth={105} width={240} x={20} y={110} />
       <DiagramBoundary height={580} label="NETWORK CONTROLLERS" labelWidth={225} width={300} x={280} y={110} />
@@ -194,21 +194,21 @@ export function ControllerSecurityFlowDiagram(): React.JSX.Element {
       viewBox="0 0 1000 900"
     >
       <DiagramEdge d="M310 200 H350" />
-      <DiagramEdge d="M630 200 H700" kind="control" />
-      <DiagramEdge d="M490 236 C490 650 170 650 170 688 V700" />
+      <DiagramEdge d="M630 200 C655 200 675 182 700 182" kind="control" />
+      <DiagramEdge d="M390 236 C360 250 335 250 335 270 V670 C335 685 100 685 100 700" />
 
       <DiagramEdge d="M310 330 H350" />
-      <DiagramEdge d="M630 330 C665 330 665 220 700 220" kind="control" />
+      <DiagramEdge d="M630 330 C665 330 665 200 700 200" kind="control" />
       <DiagramEdge d="M630 350 H700" kind="control" />
-      <DiagramEdge d="M835 386 C835 670 170 670 170 788 V800" />
+      <DiagramEdge d="M930 386 C960 386 975 400 975 430 V780 H240 V800" />
 
       <DiagramEdge d="M310 460 H350" />
-      <DiagramEdge d="M630 460 C675 460 675 240 700 240" kind="control" />
+      <DiagramEdge d="M630 460 C675 460 675 218 700 218" kind="control" />
 
       <DiagramEdge d="M310 590 H350" />
-      <DiagramEdge d="M630 580 C680 580 680 260 700 260" kind="control" />
-      <DiagramEdge d="M310 610 C500 610 500 610 700 610" kind="control" />
-      <DiagramEdge d="M490 626 C490 676 170 676 170 688 V700" />
+      <DiagramEdge d="M630 580 C680 580 680 232 700 232" kind="control" />
+      <DiagramEdge d="M260 626 V650 H680 V610 H700" kind="control" />
+      <DiagramEdge d="M490 631 C490 676 170 676 170 688 V700" />
 
       <DiagramEdge d="M630 200 C650 200 650 830 700 830" kind="asynchronous" />
       <DiagramEdge d="M630 330 C660 330 660 830 700 830" kind="asynchronous" />
@@ -251,14 +251,14 @@ export function PlatformEndpointFlowDiagram(): React.JSX.Element {
       viewBox="0 0 1000 590"
     >
       <DiagramEdge d="M140 236 V275" kind="control" />
-      <DiagramEdge d="M140 436 V352" kind="control" />
+      <DiagramEdge d="M140 395 V357" kind="control" />
       <DiagramEdge d="M250 316 C290 316 290 200 340 200" />
       <DiagramEdge d="M475 236 V280" />
       <DiagramEdge d="M475 352 V400" />
       <DiagramEdge d="M340 436 C300 436 300 336 250 336" kind="control" />
       <DiagramEdge d="M825 236 V280" />
       <DiagramEdge d="M825 352 V400" />
-      <DiagramEdge d="M690 436 C630 436 630 336 250 336" />
+      <DiagramEdge d="M690 436 H630 V376 H270 V336 H250" />
 
       <DiagramBoundary height={440} label="FLEET DESIRED STATE" labelWidth={215} width={250} x={20} y={90} />
       <DiagramBoundary height={440} label="PLATFORM ENDPOINT RECONCILER" labelWidth={300} width={300} x={320} y={90} />

@@ -34,7 +34,14 @@ workers later is capacity and failure-domain work, covered in the
 The control plane is HA (three etcd members). The **front door is not**: with
 `INGRESS_ADDRESS_LAYER=none` the public address belongs to one node, so losing
 that node removes external access until DNS or the address moves. A MetalLB VIP
-is how you fix that — see the guide's address-layer section.
+is how you fix that, and it is the recommended shape — see the guide's
+address-layer section.
+
+Either way the data plane is the same: Envoy runs on the host network on the nodes
+labelled `kube-dc.com/ingress`, binding their `:80`/`:443` directly, so it sees the
+real client address. `init` applies that label itself; you do not label nodes by
+hand. With a MetalLB VIP the address then follows a node that has a *ready* Envoy,
+which is what makes the front door survive both a node loss and a rolling update.
 :::
 
 ---

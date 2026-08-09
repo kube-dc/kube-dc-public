@@ -12,11 +12,12 @@ import clsx from 'clsx';
 import styles from './styles.module.css';
 
 type RelationshipKind = 'primary' | 'asynchronous' | 'data' | 'control';
+export type EdgeTone = 'default' | 'muted' | 'data' | 'success' | 'warning' | 'danger';
 type NodeTone = 'default' | 'accent' | 'muted' | 'storage' | 'external' | 'source';
 type CalloutTone = 'info' | 'warning' | 'danger';
 
 interface DiagramContextValue {
-  markerIds: Record<RelationshipKind, string>;
+  markerIds: Record<EdgeTone, string>;
   textScale: number;
 }
 
@@ -64,10 +65,12 @@ export function ExplainerDiagram({
   const titleId = `${reactId}-title`;
   const descriptionId = `${reactId}-description`;
   const markerIds: DiagramContextValue['markerIds'] = {
-    primary: `${reactId}-arrow-primary`,
-    asynchronous: `${reactId}-arrow-asynchronous`,
+    default: `${reactId}-arrow-default`,
+    muted: `${reactId}-arrow-muted`,
     data: `${reactId}-arrow-data`,
-    control: `${reactId}-arrow-control`,
+    success: `${reactId}-arrow-success`,
+    warning: `${reactId}-arrow-warning`,
+    danger: `${reactId}-arrow-danger`,
   };
   const viewportStyle = {
     '--diagram-min-width': `${minWidth}px`,
@@ -99,11 +102,11 @@ export function ExplainerDiagram({
           <title id={titleId}>{title}</title>
           <desc id={descriptionId}>{description}</desc>
           <defs>
-            {Object.entries(markerIds).map(([kind, id]) => (
+            {Object.entries(markerIds).map(([tone, id]) => (
               <marker
                 id={id}
                 key={id}
-                className={styles[`marker${kind[0].toUpperCase()}${kind.slice(1)}`]}
+                className={styles[`marker${tone[0].toUpperCase()}${tone.slice(1)}`]}
                 viewBox="0 0 10 10"
                 refX="10"
                 refY="5"
@@ -156,7 +159,10 @@ export function DiagramNode({
   const textX = x + (Icon ? 58 : 18);
 
   return (
-    <g className={clsx(styles.node, styles[`node${tone[0].toUpperCase()}${tone.slice(1)}`])}>
+    <g
+      className={clsx(styles.node, styles[`node${tone[0].toUpperCase()}${tone.slice(1)}`])}
+      data-diagram-node="true"
+    >
       <rect x={x} y={y} width={width} height={height} rx="5" />
       {Icon && (
         <Icon
@@ -200,6 +206,9 @@ export interface DiagramEdgeProps {
   labelY?: number;
   labelWidth?: number;
   labelAnchor?: 'start' | 'middle' | 'end';
+  tone?: EdgeTone;
+  allowDetachedStart?: boolean;
+  allowDetachedEnd?: boolean;
 }
 
 export function DiagramEdge({
@@ -212,6 +221,9 @@ export function DiagramEdge({
   labelY = 0,
   labelWidth = 90,
   labelAnchor = 'middle',
+  tone = 'default',
+  allowDetachedStart = false,
+  allowDetachedEnd = false,
 }: DiagramEdgeProps): React.JSX.Element {
   const {markerIds, textScale} = useDiagram();
   const labelLeft = labelAnchor === 'middle'
@@ -222,11 +234,21 @@ export function DiagramEdge({
   const labelHeight = 22 * textScale;
 
   return (
-    <g className={clsx(styles.edge, styles[`edge${kind[0].toUpperCase()}${kind.slice(1)}`])}>
+    <g
+      className={clsx(
+        styles.edge,
+        styles[`edge${kind[0].toUpperCase()}${kind.slice(1)}`],
+        styles[`edgeTone${tone[0].toUpperCase()}${tone.slice(1)}`],
+      )}
+      data-diagram-edge="true"
+      data-edge-allow-detached-end={allowDetachedEnd ? 'true' : undefined}
+      data-edge-allow-detached-start={allowDetachedStart ? 'true' : undefined}
+    >
       <path
+        data-diagram-edge-path="true"
         d={d}
-        markerStart={bidirectional ? `url(#${markerIds[kind]})` : undefined}
-        markerEnd={directed ? `url(#${markerIds[kind]})` : undefined}
+        markerStart={bidirectional ? `url(#${markerIds[tone]})` : undefined}
+        markerEnd={directed ? `url(#${markerIds[tone]})` : undefined}
       />
       {label && (
         <g className={styles.edgeLabel}>
@@ -260,7 +282,10 @@ export function DiagramBoundary({
   kind = 'logical',
 }: DiagramBoundaryProps): React.JSX.Element {
   return (
-    <g className={clsx(styles.boundary, kind === 'network' && styles.boundaryNetwork)}>
+    <g
+      className={clsx(styles.boundary, kind === 'network' && styles.boundaryNetwork)}
+      data-diagram-boundary="true"
+    >
       <rect x={x} y={y} width={width} height={height} rx="6" />
       <rect
         className={styles.boundaryLabelBackground}
@@ -270,7 +295,7 @@ export function DiagramBoundary({
         height="26"
         rx="3"
       />
-      <text x={x + 18} y={y + 27}>{label}</text>
+      <text data-diagram-boundary-label="true" x={x + 18} y={y + 27}>{label}</text>
     </g>
   );
 }
@@ -289,7 +314,7 @@ export function DiagramSectionLabel({
   lineTo,
 }: DiagramSectionLabelProps): React.JSX.Element {
   return (
-    <g className={styles.sectionLabel}>
+    <g className={styles.sectionLabel} data-diagram-section-label="true">
       <text x={x} y={y}>{label}</text>
       {lineTo && <line x1={x} y1={y + 12} x2={lineTo} y2={y + 12} />}
     </g>
@@ -316,7 +341,10 @@ export function DiagramCallout({
   tone = 'info',
 }: DiagramCalloutProps): React.JSX.Element {
   return (
-    <g className={clsx(styles.callout, styles[`callout${tone[0].toUpperCase()}${tone.slice(1)}`])}>
+    <g
+      className={clsx(styles.callout, styles[`callout${tone[0].toUpperCase()}${tone.slice(1)}`])}
+      data-diagram-callout="true"
+    >
       <rect x={x} y={y} width={width} height={height} rx="5" />
       <text className={styles.calloutTitle} x={x + 18} y={y + 27}>{title}</text>
       {detail && <text className={styles.calloutDetail} x={x + 18} y={y + 50}>{detail}</text>}

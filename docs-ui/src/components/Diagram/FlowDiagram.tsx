@@ -4,6 +4,7 @@ import {
   DiagramEdge,
   DiagramNode,
   DiagramSectionLabel,
+  type EdgeTone,
   ExplainerDiagram,
 } from './index';
 
@@ -21,6 +22,7 @@ export interface FlowRelationship {
   label?: string;
   labelWidth?: number;
   kind?: FlowKind;
+  tone?: EdgeTone;
   directed?: boolean;
   bidirectional?: boolean;
 }
@@ -47,14 +49,33 @@ export function LinearFlowDiagram({
   relationships = [],
   minWidth = 900,
 }: LinearFlowDiagramProps): React.JSX.Element {
-  const gap = steps.length >= 5 ? 18 : 28;
+  const baseGap = steps.length >= 5 ? 18 : 28;
+  const labelledGaps = steps.slice(0, -1).map((_step, index) => {
+    const relationship = relationships[index];
+    return relationship?.label
+      ? Math.max(baseGap, (relationship.labelWidth || 90) + 24)
+      : baseGap;
+  });
   const maximumWidth = steps.length >= 5 ? 160 : 230;
+  const availableWidth = 872;
+  const inlineNodeWidth = Math.min(
+    maximumWidth,
+    (availableWidth - labelledGaps.reduce((total, gap) => total + gap, 0))
+      / steps.length,
+  );
+  const labelsAbove = steps.length >= 4 && inlineNodeWidth < 190;
+  const gaps = labelsAbove
+    ? steps.slice(0, -1).map(() => baseGap)
+    : labelledGaps;
   const nodeWidth = Math.min(
     maximumWidth,
-    (880 - gap * (steps.length - 1)) / steps.length,
+    (availableWidth - gaps.reduce((total, gap) => total + gap, 0)) / steps.length,
   );
-  const compositionWidth = nodeWidth * steps.length + gap * (steps.length - 1);
+  const compositionWidth = nodeWidth * steps.length
+    + gaps.reduce((total, gap) => total + gap, 0);
   const startX = (900 - compositionWidth) / 2;
+  const nodeX = (index: number) => startX + index * nodeWidth
+    + gaps.slice(0, index).reduce((total, gap) => total + gap, 0);
   const y = 92;
   const height = 88;
 
@@ -69,8 +90,8 @@ export function LinearFlowDiagram({
     >
       {steps.slice(0, -1).map((_step, index) => {
         const relation = relationships[index] || {};
-        const x1 = startX + nodeWidth * (index + 1) + gap * index;
-        const x2 = x1 + gap;
+        const x1 = nodeX(index) + nodeWidth;
+        const x2 = nodeX(index + 1);
         const labelX = (x1 + x2) / 2;
         return (
           <DiagramEdge
@@ -82,7 +103,8 @@ export function LinearFlowDiagram({
             label={relation.label}
             labelWidth={relation.labelWidth}
             labelX={labelX}
-            labelY={y + 20}
+            labelY={labelsAbove ? 72 : y + height / 2 + 5}
+            tone={relation.tone}
           />
         );
       })}
@@ -96,7 +118,7 @@ export function LinearFlowDiagram({
           title={step.title}
           tone={step.tone}
           width={nodeWidth}
-          x={startX + index * (nodeWidth + gap)}
+          x={nodeX(index)}
           y={y}
         />
       ))}

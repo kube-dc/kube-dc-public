@@ -16,18 +16,18 @@ export default function FloatingIpToVmDiagram(): React.JSX.Element {
       caption="The Floating IP remains a platform resource. OVN maps it bidirectionally to the VM's existing private interface; the public address is not configured inside the guest."
       description="External traffic reaches Floating IP ubuntu-fip with example public address 203.0.113.10 in Organization acme and Project production. Bidirectional one-to-one NAT across all ports maps that address to private address 10.0.0.153 on VM ubuntu."
       diagramId="fip-to-vm-explainer"
-      minWidth={840}
+      minWidth={900}
       title="Floating IP to virtual machine relationship"
-      viewBox="0 0 840 410"
+      viewBox="0 0 900 410"
     >
-      <DiagramEdge bidirectional d="M190 190 H260" kind="data" />
+      <DiagramEdge bidirectional d="M190 190 H230" kind="data" />
       <DiagramEdge
         bidirectional
-        d="M480 190 H550"
+        d="M450 190 H620"
         kind="data"
         label="1:1 NAT · all ports"
         labelWidth={146}
-        labelX={515}
+        labelX={535}
         labelY={165}
       />
 
@@ -36,8 +36,8 @@ export default function FloatingIpToVmDiagram(): React.JSX.Element {
         height={260}
         label="ORGANIZATION: ACME"
         labelWidth={190}
-        width={620}
-        x={200}
+        width={700}
+        x={180}
         y={62}
       />
       <DiagramBoundary
@@ -45,8 +45,8 @@ export default function FloatingIpToVmDiagram(): React.JSX.Element {
         kind="network"
         label="PROJECT: PRODUCTION · BACKING NAMESPACE ACME-PRODUCTION"
         labelWidth={450}
-        width={560}
-        x={230}
+        width={670}
+        x={200}
         y={112}
       />
 
@@ -68,7 +68,7 @@ export default function FloatingIpToVmDiagram(): React.JSX.Element {
         title="FIP ubuntu-fip"
         tone="accent"
         width={220}
-        x={260}
+        x={230}
         y={149}
       />
       <DiagramNode
@@ -77,7 +77,7 @@ export default function FloatingIpToVmDiagram(): React.JSX.Element {
         icon={VirtualMachineIcon}
         title="VM ubuntu"
         width={220}
-        x={550}
+        x={620}
         y={149}
       />
 
@@ -85,7 +85,7 @@ export default function FloatingIpToVmDiagram(): React.JSX.Element {
         detail="The VM keeps its private address; firewall controls still apply."
         height={68}
         title="The public address is mapped at the platform edge, not configured in the guest."
-        width={760}
+        width={820}
         x={40}
         y={330}
       />

@@ -39,7 +39,7 @@ export function BillingPlanControllerDiagram(): React.JSX.Element {
       <DiagramEdge d="M750 144 V230" />
       <DiagramEdge d="M130 312 C130 350 345 350 345 378 V390" kind="control" />
       <DiagramEdge d="M345 312 V390" kind="control" />
-      <DiagramEdge d="M750 312 C750 350 560 350 560 378 V390" kind="data" />
+      <DiagramEdge d="M750 312 C750 350 730 350 730 378 V390" kind="data" />
       <DiagramSectionLabel label="PLAN DEFINITION AND ORGANIZATION RECONCILIATION" lineTo={872} x={28} y={28} />
       <DiagramNode detail="kube-dc namespace" height={72} title="billing-plans ConfigMap" tone="source" width={240} x={30} y={72} />
       <DiagramNode detail="watches changes" height={72} icon={ControllerIcon} title="Org controller" tone="accent" width={240} x={330} y={72} />
@@ -49,7 +49,7 @@ export function BillingPlanControllerDiagram(): React.JSX.Element {
       <DiagramNode detail={['create-time', 'check']} height={82} icon={PublicIcon} title="EIP quota" width={190} x={465} y={230} />
       <DiagramNode detail="rook-ceph" height={82} title="Ceph S3 user" width={190} x={680} y={230} />
       <DiagramNode detail={['all child Project', 'backing namespaces']} height={82} icon={KubernetesIcon} title="Project enforcement" width={280} x={205} y={390} />
-      <DiagramNode detail="RGW server-side quota" height={82} icon={DataIcon} title="S3 enforcement" tone="storage" width={280} x={455} y={390} />
+      <DiagramNode detail="RGW server-side quota" height={82} icon={DataIcon} title="S3 enforcement" tone="storage" width={280} x={590} y={390} />
     </ExplainerDiagram>
   );
 }
@@ -64,8 +64,8 @@ export function SubscriptionLifecycleDiagram(): React.JSX.Element {
       title="Organization subscription lifecycle"
       viewBox="0 0 840 500"
     >
-      <DiagramEdge d="M260 120 H330" label="checkout completed" labelWidth={138} labelX={295} labelY={96} />
-      <DiagramEdge d="M510 120 H580" label="cancel at period end" labelWidth={150} labelX={545} labelY={96} />
+      <DiagramEdge d="M260 120 H330" label="checkout completed" labelWidth={138} labelX={295} labelY={72} />
+      <DiagramEdge d="M510 120 H580" label="cancel at period end" labelWidth={150} labelX={545} labelY={72} />
       <DiagramEdge d="M420 156 C420 188 210 188 210 216 V228" label="subscription.deleted" labelWidth={146} labelX={315} labelY={188} />
       <DiagramEdge d="M670 156 C670 188 630 188 630 216 V228" label="period ends" labelWidth={88} labelX={650} labelY={188} />
       <DiagramEdge d="M300 270 H540" label="7-day grace" labelWidth={100} labelX={420} labelY={246} />
@@ -91,22 +91,22 @@ export function Metal3TopologyDiagram(): React.JSX.Element {
       minWidth={900}
       textScale={1.04}
       title="Metal3 bare-metal worker topology"
-      viewBox="0 0 900 720"
+      viewBox="0 0 900 750"
     >
-      <DiagramEdge d="M450 148 V190" />
+      <DiagramEdge d="M450 168 V190" />
       <DiagramEdge d="M450 266 C450 294 250 294 250 322 V334" kind="control" />
       <DiagramEdge d="M450 266 C450 294 650 294 650 322 V334" kind="control" />
-      <DiagramEdge d="M250 416 C250 444 450 444 450 472 V484" kind="control" />
-      <DiagramEdge d="M650 416 C650 444 450 444 450 472 V484" kind="control" />
-      <DiagramEdge d="M450 566 V606" />
-      <DiagramBoundary height={520} label="KUBE-DC MANAGEMENT CLUSTER" labelWidth={310} width={860} x={20} y={40} />
-      <DiagramNode detail={['master-1 · master-2', 'master-3 · RKE2 + OVN DB']} height={88} icon={KubernetesIcon} title="Control-plane servers" width={360} x={270} y={60} />
+      <DiagramEdge d="M250 416 C250 444 390 444 390 472 V484" kind="control" />
+      <DiagramEdge d="M650 416 C650 444 510 444 510 472 V484" kind="control" />
+      <DiagramEdge d="M450 566 V630" />
+      <DiagramBoundary height={540} label="KUBE-DC MANAGEMENT CLUSTER" labelWidth={310} width={860} x={20} y={40} />
+      <DiagramNode detail={['master-1 · master-2', 'master-3 · RKE2 + OVN DB']} height={88} icon={KubernetesIcon} title="Control-plane servers" width={360} x={270} y={80} />
       <DiagramNode detail="Cluster API Provider Metal3 + IPAM" height={76} icon={ControllerIcon} title="CAPM3 control" tone="accent" width={420} x={240} y={190} />
       <DiagramNode detail={['BareMetalHost CRs', 'power + inspection']} height={82} icon={ControllerIcon} title="Bare Metal Operator" width={300} x={100} y={334} />
       <DiagramNode detail={['PXE / virtual media', 'image provisioning']} height={82} icon={CloudIcon} title="Ironic" width={300} x={500} y={334} />
       <DiagramNode detail={['IPMI · Redfish', 'iDRAC · iLO']} height={82} icon={NetworkIcon} title="BMC path" tone="external" width={300} x={300} y={484} />
-      <DiagramBoundary height={115} kind="network" label="BARE-METAL WORKER POOL" labelWidth={270} width={860} x={20} y={585} />
-      <DiagramNode detail={['worker-1 · worker-2 · worker-3 · worker-N', 'RKE2 agents · KubeVirt eligible']} height={82} icon={BareMetalIcon} title="Provisioned workers" width={700} x={100} y={606} />
+      <DiagramBoundary height={145} kind="network" label="BARE-METAL WORKER POOL" labelWidth={270} width={860} x={20} y={585} />
+      <DiagramNode detail={['worker-1 · worker-2 · worker-3 · worker-N', 'RKE2 agents · KubeVirt eligible']} height={82} icon={BareMetalIcon} title="Provisioned workers" width={700} x={100} y={630} />
     </ExplainerDiagram>
   );
 }
@@ -119,17 +119,17 @@ export function MetalLbHaDiagram(): React.JSX.Element {
       diagramId="metallb-ha-explainer"
       minWidth={840}
       title="MetalLB layer-two failover for Envoy Gateway"
-      viewBox="0 0 840 510"
+      viewBox="0 0 840 540"
     >
       <DiagramEdge d="M420 116 V160" />
-      <DiagramEdge d="M420 242 V286" kind="control" />
-      <DiagramEdge d="M420 368 V412" />
+      <DiagramEdge d="M420 242 V320" kind="control" />
+      <DiagramEdge d="M420 392 V436" />
       <DiagramSectionLabel label="PUBLIC LOADBALANCER PATH" lineTo={812} x={28} y={28} />
       <DiagramNode detail="external clients" height={68} icon={PublicIcon} title="Internet" tone="external" width={260} x={290} y={48} />
       <DiagramNode detail="X.X.X.X" height={82} icon={NetworkIcon} title="Floating service IP" tone="accent" width={300} x={270} y={160} />
-      <DiagramBoundary height={102} kind="network" label="METALLB SPEAKERS · ONE ELECTED ANNOUNCER" labelWidth={390} width={700} x={70} y={266} />
-      <DiagramNode detail={['master-0 · master-1 · master-2', 'L2 ARP on public interface']} height={72} title="Control-plane nodes" width={580} x={130} y={286} />
-      <DiagramNode detail={['kube-proxy Service path', 'automatic speaker failover']} height={82} icon={ApplicationIcon} title="Envoy Gateway Pod" width={340} x={250} y={412} />
+      <DiagramBoundary height={136} kind="network" label="METALLB SPEAKERS · ONE ELECTED ANNOUNCER" labelWidth={390} width={700} x={70} y={266} />
+      <DiagramNode detail={['master-0 · master-1 · master-2', 'L2 ARP on public interface']} height={72} title="Control-plane nodes" width={580} x={130} y={320} />
+      <DiagramNode detail={['kube-proxy Service path', 'automatic speaker failover']} height={82} icon={ApplicationIcon} title="Envoy Gateway Pod" width={340} x={250} y={436} />
     </ExplainerDiagram>
   );
 }
@@ -141,13 +141,12 @@ export function InternalEndpointDiagram(): React.JSX.Element {
       description="A Managed Cluster or Project workload resolves a platform hostname through vpc-dns to an internal MetalLB VIP on ext-cloud. The VIP fronts an annotated selectorless Service. PlatformEndpointReconciler probes eligible control-plane nodes every five seconds and writes only healthy addresses into a companion EndpointSlice. kube-proxy translates Service traffic to one of those healthy backends for the Kubernetes API or Envoy Gateway."
       diagramId="internal-endpoint-explainer"
       minWidth={900}
-      title="Internal platform endpoint Fork E pattern"
+      title="Internal platform endpoint pattern"
       viewBox="0 0 900 650"
     >
       <DiagramEdge d="M230 116 H280" />
       <DiagramEdge d="M500 116 H550" />
-      <DiagramEdge d="M700 152 V210" />
-      <DiagramEdge d="M450 292 V340" />
+      <DiagramEdge d="M650 152 C650 180 530 180 530 210 V320 H450 V340" />
       <DiagramEdge d="M700 292 C700 320 450 320 450 328 V340" kind="control" />
       <DiagramEdge d="M450 422 V470" />
       <DiagramEdge d="M450 552 V560" />
@@ -218,10 +217,10 @@ export function ImageCatalogDiagram(): React.JSX.Element {
     >
       <DiagramEdge d="M250 116 H325" kind="control" />
       <DiagramEdge d="M575 116 H650" kind="control" />
-      <DiagramEdge d="M775 152 V230" kind="data" />
-      <DiagramEdge d="M650 276 H575" kind="data" />
-      <DiagramEdge d="M450 322 V390" kind="control" />
+      <DiagramEdge d="M760 157 C760 190 675 190 675 218 V230" kind="data" />
+      <DiagramEdge d="M675 322 C675 356 450 356 450 378 V390" kind="control" />
       <DiagramEdge d="M450 472 V520" />
+      <DiagramEdge d="M450 592 V610" />
       <DiagramSectionLabel label="CONFIGURE · MIRROR · PUBLISH · CONSUME" lineTo={872} x={28} y={28} />
       <DiagramNode detail="osImages.catalog" height={72} icon={GitIcon} title="Chart values" tone="source" width={220} x={30} y={80} />
       <DiagramNode detail="per-family inputs" height={72} title="images-configmap" width={250} x={325} y={80} />
@@ -247,13 +246,13 @@ export function OsImageOperationsDiagram(): React.JSX.Element {
     >
       <DiagramEdge d="M230 110 H300" kind="data" />
       <DiagramEdge d="M600 110 H670" kind="data" />
-      <DiagramEdge d="M450 156 C450 188 150 188 150 216 V228" kind="data" />
-      <DiagramEdge d="M450 156 V228" kind="data" />
-      <DiagramEdge d="M450 156 C450 188 750 188 750 216 V228" kind="data" />
+      <DiagramEdge d="M450 146 C450 188 150 188 150 216 V228" kind="data" />
+      <DiagramEdge d="M450 146 V228" kind="data" />
+      <DiagramEdge d="M450 146 C450 188 750 188 750 216 V228" kind="data" />
       <DiagramEdge d="M450 320 V370" kind="data" />
-      <DiagramEdge d="M750 320 C750 350 610 350 610 358 V370" kind="control" />
+      <DiagramEdge d="M750 320 C750 344 540 344 540 358 V370" kind="control" />
       <DiagramEdge d="M450 452 V510" kind="control" />
-      <DiagramEdge d="M610 452 C610 482 450 482 450 498 V510" kind="control" />
+      <DiagramEdge d="M360 320 C250 350 250 474 360 498 V510" kind="control" />
       <DiagramEdge d="M450 592 V650" />
       <DiagramSectionLabel label="VERIFIED IMAGE SOURCES TO PROJECT-READY ARTIFACTS" lineTo={872} x={28} y={28} />
       <DiagramNode detail="cloud images" height={72} icon={CloudIcon} title="Upstream" tone="external" width={200} x={30} y={74} />

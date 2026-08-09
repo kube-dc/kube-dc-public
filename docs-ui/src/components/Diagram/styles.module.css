@@ -178,26 +178,55 @@
 }
 
 .edgeData path {
-  stroke: var(--diagram-data);
   stroke-width: 2;
 }
 
 .edgeControl path {
-  stroke: var(--diagram-muted);
   stroke-dasharray: 5 4;
 }
 
-.markerPrimary path,
-.markerAsynchronous path {
+.markerDefault path {
   fill: var(--diagram-signal);
+}
+
+.edgeToneMuted path {
+  stroke: var(--diagram-muted);
+}
+
+.markerMuted path {
+  fill: var(--diagram-muted);
+}
+
+.edgeToneData path {
+  stroke: var(--diagram-data);
 }
 
 .markerData path {
   fill: var(--diagram-data);
 }
 
-.markerControl path {
-  fill: var(--diagram-muted);
+.edgeToneSuccess path {
+  stroke: var(--diagram-storage);
+}
+
+.markerSuccess path {
+  fill: var(--diagram-storage);
+}
+
+.edgeToneWarning path {
+  stroke: var(--diagram-warning);
+}
+
+.markerWarning path {
+  fill: var(--diagram-warning);
+}
+
+.edgeToneDanger path {
+  stroke: var(--diagram-danger);
+}
+
+.markerDanger path {
+  fill: var(--diagram-danger);
 }
 
 .edgeLabel rect {

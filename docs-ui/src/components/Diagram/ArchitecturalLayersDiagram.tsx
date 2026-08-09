@@ -35,12 +35,12 @@ export default function ArchitecturalLayersDiagram(): React.JSX.Element {
       <DiagramEdge d="M420 267 V295" kind="asynchronous" />
       <DiagramEdge d="M420 267 C420 278 670 278 670 283 V295" kind="asynchronous" />
 
-      <DiagramEdge d="M420 267 C420 372 170 408 170 438 V450" kind="asynchronous" />
-      <DiagramEdge d="M420 267 C420 372 420 408 420 438 V450" kind="asynchronous" />
-      <DiagramEdge d="M420 267 C420 372 670 408 670 438 V450" kind="asynchronous" />
-      <DiagramEdge d="M660 267 C660 430 290 500 290 528 V540" kind="control" />
-      <DiagramEdge d="M660 267 C660 430 600 500 600 528 V540" kind="control" />
-      <DiagramEdge d="M420 267 C420 430 600 500 600 528 V540" kind="asynchronous" />
+      <DiagramEdge d="M330 267 Q330 280 317 280 H52 Q40 280 40 292 V390 C40 420 170 420 170 438 V450" kind="asynchronous" />
+      <DiagramEdge d="M380 267 C350 278 295 278 295 290 V410 C295 430 420 430 420 438 V450" kind="asynchronous" />
+      <DiagramEdge d="M500 267 Q500 280 513 280 H788 Q800 280 800 292 V390 C800 420 670 420 670 438 V450" kind="asynchronous" />
+      <DiagramEdge d="M620 272 Q620 280 628 280 H798 Q810 280 810 292 V408 Q810 420 798 420 H307 Q295 420 295 432 V520 Q295 528 290 528 V540" kind="control" />
+      <DiagramEdge d="M700 272 Q700 280 708 280 H798 Q810 280 810 292 V532 H600 V540" kind="control" />
+      <DiagramEdge d="M460 267 C500 278 545 278 545 290 V520 C545 528 540 528 540 540" kind="asynchronous" />
 
       <DiagramEdge d="M420 622 V670" />
       <DiagramEdge d="M420 742 V770" />
