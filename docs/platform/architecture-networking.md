@@ -295,6 +295,49 @@ capability. A capability alone is not sufficient here: a non-root process under
 no way to set ambient capabilities, so a non-root Envoy starts, reports `Ready`, and fails
 to bind every listener.
 
+:::caution Host-bind changes what a NetworkPolicy sees
+Because Envoy is on the host network, everything it proxies to an upstream arrives with a
+**node IP** as its source — not a pod IP in `envoy-gateway-system`. A NetworkPolicy that
+admits Envoy with
+
+```yaml
+- namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: envoy-gateway-system
+```
+
+therefore **can never match**, because the CNI cannot map a node IP back to a pod namespace.
+The policy fails closed, and the only symptom is a 503 from whatever sits behind it.
+
+This is not theoretical. It took a production front door's OpenBao offline for 44 hours: a
+managed cluster's KMS plugin could not log in, the apiserver's `kms-providers` readiness
+check failed (`livez` 200, `readyz` 500), and the tenant control plane sat NotReady while its
+worker VMs were Running the whole time.
+
+Such a policy needs an **address peer** for the ingress nodes, which is what
+`INGRESS_HOST_CIDR` supplies:
+
+```yaml
+- ipBlock:
+    cidr: "${INGRESS_HOST_CIDR}"    # subnet carrying the ingress nodes' upstream source
+```
+
+There is no tidier option on this platform. `NetworkPolicyPeer` cannot reference nodes, and
+the pinned Kube-OVN version skips hostNetwork pods when building selected ports, so a
+`podSelector` on Envoy cannot work either. The alternatives are giving up hostNetwork, adding
+a non-hostNetwork proxy hop, or SNATing Envoy's upstreams into a controlled range.
+
+**Do not derive that CIDR from the node's LAN prefix.** On at least one cluster in this fleet
+the recorded node CIDR is a *public* /26 while the management addresses are private — a
+derived value there would have admitted a prefix containing none of the real sources. Set it
+from the addresses the ingress nodes actually egress with, and let
+`scripts/frontdoor-check.sh preflight` confirm containment.
+
+`INGRESS_HOST_CIDR` has **no default**, deliberately: it previously defaulted to
+`127.0.0.1/32`, which is syntactically valid, passes every render and validation gate, and
+admits nothing.
+:::
+
 **Which address** reaches those nodes is a separate, per-cluster choice —
 `INGRESS_ADDRESS_LAYER`:
 
