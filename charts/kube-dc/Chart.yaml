@@ -158,7 +158,7 @@ type: application
 # was flipped there). Safe: both group names embed the namespace, so the
 # peering can never span tenants; etcd role groups stay unpeered. ROLLBACK:
 # v0.5.31 (re-wedges a mid-roll multi-replica MariaDB).
-version: v0.5.69
+version: v0.5.70
 
 # appVersion IS the default manager image tag (manager-deployment.yaml falls
 # back to .Chart.AppVersion when manager.image.tag is unset). It MUST move in
