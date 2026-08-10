@@ -686,6 +686,16 @@ kube-dc FIP, an EC2 elastic IP, an OpenStack/Hetzner floating IP), pass
 (internal) IP** into the fleet, and drops the Gateway's `:6443`
 passthrough listener — otherwise the front door silently resets. Bare
 metal with the public IP bound on the NIC needs none of this.
+
+**Tenants and the management API on this topology.** Dropping `:6443` does
+not itself remove the API endpoint — the apiserver still serves it — but on a
+private/single-ingress cluster a tenant VPC pod cannot route to it anyway (it is
+OVN-isolated from the node and service networks). `MANAGEMENT_API_MODE` defaults
+to `auto`, and the installer resolves it to **`service`** here: in-tenant
+platform controllers (managed-K8s CCM/CSI, CloudNativePG, cloud shell,
+autoscaler) reach the apiserver's in-cluster ClusterIP over the dual-home infra
+NIC. Do **not** force `external` on such a cluster — it has no tenant-reachable
+API endpoint, and every in-tenant controller silently loses its route.
 :::
 
 :::warning Internal domain served by a private CA

@@ -336,7 +336,7 @@ spec:
     http:
       # The golden published to your cluster's S3 OS-image mirror (the same entry
       # the Console UI clones). Replace <your-cluster-domain> with your domain.
-      url: https://s3.<your-cluster-domain>/cdi-os-images/windows/11/latest/windows11-x64-golden.qcow2
+      url: https://s3.<your-cluster-domain>/cdi-os-images/private/windows/11/latest/windows11-x64-golden.qcow2
 ---
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine

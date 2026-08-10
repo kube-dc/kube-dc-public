@@ -46,7 +46,7 @@ for licensing every Windows VM they run:
 
 This is the **one-time operator task** that produces the Windows 11 golden image for a
 cluster. Once the golden is built and published to the cluster's S3 OS-image mirror
-(`s3.<your-domain>/cdi-os-images/windows/11/latest/windows11-x64-golden.qcow2`), it
+(`s3.<your-domain>/cdi-os-images/private/windows/11/latest/windows11-x64-golden.qcow2`), it
 appears in the Console UI Operating System dropdown as **Windows 11 Enterprise (Golden
 Image)**, and **end users create Windows VMs from the console** — see
 [Creating a VM](/cloud/creating-vm#windows-11). Users do not run this guide.

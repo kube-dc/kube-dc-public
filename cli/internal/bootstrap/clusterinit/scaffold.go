@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -692,6 +693,38 @@ func postProcessClusterConfig(path string, plan *Plan, sets map[string]string, n
 		}
 	}
 
+	// Resolve MANAGEMENT_API_MODE=auto now that INFRA_ATTACHMENT_ENABLED and the
+	// service-CIDR inputs are final.
+	//
+	// WHY THIS EXISTS. The mode used to default to "external", which reaches the
+	// management API only through kube-api.<domain> — an endpoint that a tenant
+	// VPC pod cannot route to on a private/single-ingress cluster (the tenant
+	// networks are OVN-isolated from any external address, and on a single-IP
+	// cluster the :6443 SNI listener is stripped besides). So a fresh private
+	// install came up with NO working tenant->API path at all: CNPG bootstrap,
+	// CSI/CCM, the cloud shell and the cluster-autoscaler all failed, because the
+	// management-api-client role — the only thing that injects the /32 route to
+	// the apiserver ClusterIP over the dual-home NIC — is granted ONLY in service
+	// mode (internal/infraattachment/config.go). The service datapath was fully
+	// implemented and the PRD picked it as the intended installer default
+	// (docs/prd/mgmt-api-connectivity-deep-dive.md); the scaffold default was
+	// simply never advanced. Found live on the mod pilot 2026-08-10.
+	//
+	// Resolution: service is the default WHENEVER it is viable — dual-homing on
+	// with a canonical K8S_SERVICE_IP inside SVC_CIDR (the manager's own
+	// service-mode precondition). Otherwise external, the only thing that can
+	// work without an infra route. An operator who typed external or service
+	// explicitly is never overridden; "auto" is resolved before the file is
+	// written and never ships.
+	if strings.EqualFold(strings.TrimSpace(envGet(env, "MANAGEMENT_API_MODE")), "auto") {
+		resolved := "external"
+		if strings.TrimSpace(envGet(env, "INFRA_ATTACHMENT_ENABLED")) == "true" &&
+			serviceModeViable(envGet(env, "K8S_SERVICE_IP"), envGet(env, "SVC_CIDR")) {
+			resolved = "service"
+		}
+		env.Set("MANAGEMENT_API_MODE", resolved)
+	}
+
 	// Under a no-VIP address layer the starter's MetalLB placeholders are DEAD
 	// KEYS: addons.go deliberately installs no MetalLB layers and the
 	// address-metallb component is not selected, so nothing ever substitutes
@@ -737,9 +770,42 @@ func postProcessClusterConfig(path string, plan *Plan, sets map[string]string, n
 			return fmt.Errorf("scaffold: final cluster-config.env still contains placeholder %s=%s; provide it with --set %s=<value>", key, value, key)
 		}
 	}
+	// The auto sentinel must have been resolved above. Shipping "auto" would make
+	// the HR pass it to the chart, whose `eq .mode "service"` is false, silently
+	// landing external — the exact wrong mode auto exists to avoid. Fail loudly.
+	if strings.EqualFold(strings.TrimSpace(finalValues["MANAGEMENT_API_MODE"]), "auto") {
+		return fmt.Errorf("scaffold: MANAGEMENT_API_MODE=auto was not resolved before write (internal error)")
+	}
 
 	if err := env.Write(""); err != nil {
 		return err
 	}
 	return nil
+}
+
+// envGet is a small adapter over config.Env.Get, which returns (value, ok); the
+// scaffold's mode resolution only cares about the trimmed value.
+func envGet(env *config.Env, key string) string {
+	if v, ok := env.Get(key); ok {
+		return v
+	}
+	return ""
+}
+
+// serviceModeViable reports whether the management-API service datapath can be
+// selected: a canonical IPv4 K8S_SERVICE_IP that lies inside SVC_CIDR. This is
+// the same precondition the manager enforces (internal/infraattachment,
+// validateManagementAPI) — checked here so `auto` never resolves to a service
+// mode the manager would then reject at startup.
+func serviceModeViable(serviceIP, serviceCIDR string) bool {
+	ipText := strings.TrimSpace(serviceIP)
+	ip := net.ParseIP(ipText)
+	if ip == nil || ip.To4() == nil || ip.String() != ipText {
+		return false
+	}
+	_, cidr, err := net.ParseCIDR(strings.TrimSpace(serviceCIDR))
+	if err != nil || cidr.IP.To4() == nil {
+		return false
+	}
+	return cidr.Contains(ip)
 }

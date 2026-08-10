@@ -41,7 +41,7 @@ spec:
           args:
             - |
               set -eu
-              SRC="http://rook-ceph-rgw-my-store.rook-ceph.svc/cdi-os-images/windows/11/latest/windows11-x64-golden.qcow2"
+              SRC="http://rook-ceph-rgw-my-store.rook-ceph.svc/cdi-os-images/private/windows/11/latest/windows11-x64-golden.qcow2"
               TAG="$(date +%Y%m%d)"
               REF="$REGISTRY_INTERNAL_ENDPOINT/cdi-os/windows-11:$TAG"
               cd /work

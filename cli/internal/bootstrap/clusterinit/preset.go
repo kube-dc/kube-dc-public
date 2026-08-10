@@ -133,7 +133,7 @@ var universalMonitoringDefaults = map[string]string{
 // that we can't validate at preset-render time. See PRD §6.D.2
 // (docs/prd/internal-platform-endpoints-implementation.md).
 var universalPlatformEndpointDefaults = map[string]string{
-	"MANAGEMENT_API_MODE":                "external",
+	"MANAGEMENT_API_MODE":                "auto",
 	"KUBE_API_INTERNAL_VIP":              "",
 	"PLATFORM_ENDPOINT_KUBE_API_ENABLED": "false",
 }
@@ -1901,6 +1901,11 @@ func validateManagementAPI(envMap map[string]string, errs *[]string) {
 		mode = "external"
 	}
 	switch mode {
+	case "auto":
+		// Pre-resolution sentinel: the scaffold resolves auto -> service|external
+		// after INFRA_ATTACHMENT and the service-CIDR inputs are final, and the
+		// written cluster-config.env is asserted to never contain "auto". Valid at
+		// plan/validate time; carries no requirements of its own.
 	case "external":
 		// KUBE_API_EXTERNAL_URL is already part of the installer contract.
 	case "platformVIP":

@@ -39,13 +39,24 @@ spec:
         operations: ["CREATE", "UPDATE"]
         resources: ["jobs", "cronjobs"]
   matchConditions:
-    # Platform controllers create exactly these shapes legitimately.
+    # Platform controllers create exactly these shapes legitimately. The webhook
+    # runs BEFORE this policy and denies a pre-declared
+    # network.kube-dc.com/infra-attachment on the PRE-mutation object, so it is the
+    # real enforcement point for their pods; this policy runs AFTER the webhook has
+    # legitimately SET that annotation and cannot tell 'webhook set it' from
+    # 'creator forged it', so a platform controller omitted here has its own
+    # annotated pods rejected. cnpg-system is the case that bit us: CNPG creates
+    # instance pods DIRECTLY (its own SA), unlike StatefulSet operators whose pods
+    # come from the excluded controller (mod 2026-08-10). Tenants cannot impersonate
+    # these platform SAs, so excluding them narrows nothing tenant-facing.
     - name: exclude-system-service-accounts
       expression: >-
         !has(request.userInfo) || !has(request.userInfo.username) ||
         !(['system:serviceaccount:kube-dc:',
            'system:serviceaccount:kubevirt:',
            'system:serviceaccount:kamaji-system:',
+           'system:serviceaccount:cnpg-system:',
+           'system:serviceaccount:mariadb-system:',
            'system:serviceaccount:capi-system:',
            'system:serviceaccount:capk-system:',
            'system:serviceaccount:capcs-system:',

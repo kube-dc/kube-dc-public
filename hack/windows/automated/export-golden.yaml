@@ -90,7 +90,15 @@ spec:
               echo "sha256=$SHA"
 
               export AWS_ENDPOINT_URL="http://${BUCKET_HOST}:${BUCKET_PORT}"
-              KEY="windows/11/${TAG}/windows11-x64-golden.qcow2"
+              # PRIVATE PREFIX. An installed Windows must not land where the OS
+              # mirror publishes, because that prefix is anonymously readable. Our
+              # golden carries no <ProductKey> — it is an unactivated Enterprise
+              # Evaluation build and the tenant applies their own licence — so this
+              # is not a breach of the BYOL rule's letter, but "no product key" is
+              # not "free to redistribute anonymously" and the two should not be
+              # confused by whoever reads this next. Receiving clusters import it
+              # with a CDI DataVolume + secretRef.
+              KEY="private/windows/11/${TAG}/windows11-x64-golden.qcow2"
               echo "== upload -> s3://${BUCKET_NAME}/${KEY} =="
               aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp "$OUT" "s3://${BUCKET_NAME}/${KEY}"
 

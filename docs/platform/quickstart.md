@@ -419,12 +419,30 @@ cd "$KUBE_DC_FLEET" && git add -A && git commit -m "break-glass for dc1" && git 
 ### Which API endpoint do tenants' controllers use?
 
 `MANAGEMENT_API_MODE` decides how platform controllers running **inside tenant
-namespaces** reach the management API. It does **not** affect your or your
-tenants' `kubectl`, which always uses `kube-api.<domain>:6443`.
+namespaces** (managed-K8s CCM/CSI, CloudNativePG, the cloud shell, the
+cluster-autoscaler) reach the management API. It does **not** affect your or
+your tenants' `kubectl`, which always uses `kube-api.<domain>:6443`.
 
-Leave it at the default `external`. It requires only that tenant networks can
-resolve and reach `kube-api.<domain>:6443` — which is also what your own
-workstation does, so if `kubectl` works from outside, this works.
+Leave it at the default **`auto`**. The installer resolves it per topology:
+
+- **`service`** whenever dual-homing is enabled and the cluster has a canonical
+  `K8S_SERVICE_IP` inside `SVC_CIDR` (the normal case). Tenant controllers reach
+  the apiserver's own in-cluster ClusterIP over the dual-home infra NIC — a
+  `/32` route the platform injects into the pods that earn the
+  `management-api-client` role. This is the only path that works when tenant
+  networks are isolated from the outside, which they are on any private or
+  single-ingress cluster.
+- **`external`** only where a tenant-routable external endpoint genuinely
+  exists. **Do not assume your workstation's reachability proves this** —
+  `kubectl` from your laptop and a pod inside a tenant VPC are different routing
+  domains. A tenant VPC is OVN-isolated from the node/service networks and often
+  from the internet, so `kube-api.<domain>:6443` being reachable from outside
+  says nothing about whether a tenant pod can reach it. Choosing `external` on a
+  private cluster leaves every in-tenant controller with no route to the API
+  (CNPG bootstrap hangs, managed-cluster CSI/CCM fail) — silently, because
+  nothing else breaks.
+
+Set it explicitly only to override the automatic choice.
 
 ---
 

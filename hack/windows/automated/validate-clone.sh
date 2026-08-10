@@ -213,6 +213,33 @@ case "$HOSTNAME_SEEN" in
   win11-build|WIN11-BUILD|win11-golden-build)
     fail "guest hostname is still the BUILD hostname ($HOSTNAME_SEEN) — cloudbase-init did NOT run, so tenant SSH keys/password were not applied" ;;
 esac
+
+# "Not the build hostname" is far too weak an assertion, and on 2026-08-09 it
+# would have passed an image that provisioned NOTHING: sysprep /generalize leaves
+# a random WIN-XXXXXXXXXXX name, which differs from the build hostname while
+# proving only that sysprep ran. Assert the hostname we actually ASKED for.
+#
+# It arrives late. cloudbase-init runs during/after OOBE and then REBOOTS to apply
+# the name — on HDD-backed storage that took ~45 minutes end to end, and the agent
+# disconnects across the reboot. So poll, and treat the disconnect as expected
+# rather than as failure.
+WANT_HOST="$VM"
+DEADLINE=$(( $(date +%s) + TIMEOUT_MIN * 60 ))
+while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+  HOSTNAME_SEEN=$(kubectl -n "$NS" get vmi "$VM" -o jsonpath='{.status.guestOSInfo.hostname}' 2>/dev/null || true)
+  # Windows reports the NetBIOS name uppercased; compare case-insensitively.
+  if [ "$(printf '%s' "$HOSTNAME_SEEN" | tr 'A-Z' 'a-z')" = "$(printf '%s' "$WANT_HOST" | tr 'A-Z' 'a-z')" ]; then
+    note "hostname applied by cloudbase-init: $HOSTNAME_SEEN"
+    break
+  fi
+  case "$HOSTNAME_SEEN" in
+    WIN-*|win-*) : ;;   # still the sysprep random name — cloudbase-init has not finished
+  esac
+  sleep 30
+done
+if [ "$(printf '%s' "$HOSTNAME_SEEN" | tr 'A-Z' 'a-z')" != "$(printf '%s' "$WANT_HOST" | tr 'A-Z' 'a-z')" ]; then
+  fail "cloudbase-init never applied the requested hostname (wanted '$WANT_HOST', guest reports '$HOSTNAME_SEEN') — tenant SSH keys and password were NOT applied either; a random WIN-* name means sysprep ran but provisioning did not"
+fi
 note "provisioning OK — hostname '$HOSTNAME_SEEN' (adopted from NoCloud, not the build name)"
 
 echo "GATE PASS: $NS/$VM — clone, boot, agent, RDP and cloudbase-init provisioning all verified"

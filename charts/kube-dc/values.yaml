@@ -175,6 +175,10 @@ manager:
   # closed, so a single manager would turn every rollout/drain into an outage
   # for VLAN-attached workloads. The chart enforces the relationship.
   replicaCount: 1
+  # Default issuer for tenant expose-route certs: "Kind/name" (e.g.
+  # "ClusterIssuer/letsencrypt-prod-http") or a bare namespaced-Issuer name.
+  # Empty keeps the historical per-project Issuer "letsencrypt" default.
+  defaultTLSIssuerRef: ""
 
   # Requests only, deliberately no limits. Without a request the manager runs
   # BestEffort and is the first pod the kubelet evicts under node memory

@@ -282,7 +282,6 @@ POD_CIDR=10.100.0.0/16
 	// untouched CHANGEME placeholders, so it cannot collide with it.
 }
 
-
 func TestPostProcessClusterConfig_AppliesPresetOverrides(t *testing.T) {
 	// Simulate what add-cluster.sh wrote: CHANGEME values for
 	// VLAN_ID + INTERFACE. Post-process must replace them with
@@ -683,5 +682,27 @@ func TestScaffold_TruncatedStream_IsFailureNotSuccess(t *testing.T) {
 	}
 	if !errors.Is(err, ports.ErrStreamTruncated) {
 		t.Errorf("want ports.ErrStreamTruncated, got %v", err)
+	}
+}
+
+// serviceModeViable / auto resolution: a private cluster with dual-homing and a
+// valid service IP must resolve auto -> service (the mgmt-API path that actually
+// works when tenants are VPC-isolated); anything missing falls back to external.
+func TestServiceModeViable(t *testing.T) {
+	cases := []struct {
+		ip, cidr string
+		want     bool
+	}{
+		{"10.101.0.1", "10.101.0.0/16", true},
+		{"10.101.0.1", "10.100.0.0/16", false}, // IP outside CIDR
+		{"", "10.101.0.0/16", false},           // no service IP
+		{"10.101.0.1", "", false},              // no CIDR
+		{"not-an-ip", "10.101.0.0/16", false},
+		{"10.101.0.1", "garbage", false},
+	}
+	for _, c := range cases {
+		if got := serviceModeViable(c.ip, c.cidr); got != c.want {
+			t.Errorf("serviceModeViable(%q,%q)=%v want %v", c.ip, c.cidr, got, c.want)
+		}
 	}
 }
