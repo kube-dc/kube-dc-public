@@ -40,22 +40,22 @@ export function OvnLogicalNetworkDiagram(): React.JSX.Element {
       caption="Each Project has its own VPC and creator-supplied workload subnet. Its default EIP and SNAT use the selected external network; public EIPs, FIPs, and Services are optional explicit paths."
       description="Pods and virtual machines attach to the Project workload subnet and Project logical router inside the Project VPC. The router uses the configured cloud network for the default EIP and outbound SNAT. When configured, an optional public EIP, Floating IP, or LoadBalancer Service can use the public external network. Platform Pods and Services remain in the separate management VPC."
       diagramId="ovn-logical-network-explainer"
-      minWidth={840}
+      minWidth={900}
       title="Management and Project network isolation"
-      viewBox="0 0 840 510"
+      viewBox="0 0 900 510"
     >
-      <DiagramEdge d="M195 258 H215" />
-      <DiagramEdge d="M365 258 H385" />
-      <DiagramEdge d="M575 238 C600 238 600 182 625 182" kind="data" label="default EIP + SNAT" labelWidth={136} labelX={530} labelY={190} />
-      <DiagramEdge d="M575 278 C600 278 600 342 625 342" kind="asynchronous" label="optional public path" labelWidth={146} labelX={530} labelY={326} />
-      <DiagramBoundary height={310} kind="network" label="PROJECT VPC · ISOLATED WORKLOAD NETWORK" labelWidth={350} width={560} x={20} y={130} />
-      <DiagramBoundary height={410} label="MANAGEMENT VPC" labelWidth={180} width={220} x={610} y={50} />
-      <DiagramNode detail="Pods + VMs" height={78} icon={ApplicationIcon} title="Workloads" width={160} x={35} y={219} />
-      <DiagramNode detail="spec.cidrBlock" height={78} title="Project subnet" width={150} x={215} y={219} />
-      <DiagramNode detail="controlled routing" height={78} title="Logical router" width={190} x={385} y={219} />
-      <DiagramNode detail={["platform Pods", "Services"]} height={82} title="Platform network" width={190} x={625} y={82} />
-      <DiagramNode detail={["ext-cloud", "configured"]} height={82} icon={CloudIcon} title="Cloud network" width={190} x={625} y={182} />
-      <DiagramNode detail={["ext-public", "optional"]} height={82} icon={PublicNetworkIcon} title="Public network" width={190} x={625} y={302} />
+      <DiagramEdge d="M200 258 H220" />
+      <DiagramEdge d="M370 258 H390" />
+      <DiagramEdge d="M580 248 C620 248 620 223 670 223" kind="data" />
+      <DiagramEdge d="M580 268 C620 268 620 343 670 343" kind="asynchronous" />
+      <DiagramBoundary height={310} kind="network" label="PROJECT VPC · ISOLATED WORKLOAD NETWORK" labelWidth={350} width={580} x={20} y={130} />
+      <DiagramBoundary height={410} label="MANAGEMENT VPC" labelWidth={180} width={230} x={650} y={50} />
+      <DiagramNode detail="Pods + VMs" height={78} icon={ApplicationIcon} title="Workloads" width={160} x={40} y={219} />
+      <DiagramNode detail="spec.cidrBlock" height={78} title="Project subnet" width={150} x={220} y={219} />
+      <DiagramNode detail="controlled routing" height={78} title="Logical router" width={190} x={390} y={219} />
+      <DiagramNode detail={["platform Pods", "Services"]} height={82} title="Platform network" width={190} x={670} y={82} />
+      <DiagramNode detail={["ext-cloud", "EIP · SNAT"]} height={82} icon={CloudIcon} title="Cloud network" width={190} x={670} y={182} />
+      <DiagramNode detail={["ext-public", "EIP · FIP · LB"]} height={82} icon={PublicNetworkIcon} title="Public network" width={190} x={670} y={302} />
     </ExplainerDiagram>
   );
 }

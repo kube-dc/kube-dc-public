@@ -91,29 +91,29 @@ export function ManagedClusterTopologyDiagram(): React.JSX.Element {
       caption="KdcCluster owns a Kamaji control plane, datastore, worker MachineDeployment, and CCM inside the Project infrastructure namespace; users reach a separate tenant Kubernetes API and run workloads on its workers."
       description="In the acme-production Project infrastructure namespace, KdcCluster dev owns a LoadBalancer Service for the API, a Kamaji TenantControlPlane with API server, scheduler, and controller-manager Pods, a KdcClusterDatastore backed by an etcd StatefulSet, a worker MachineDeployment backed by KubeVirt virtual machines, and a CCM Deployment. Together these resources create Managed Cluster dev with three workers and a separate Kubernetes API for tenant Deployments, Services, and persistent volume claims."
       diagramId="managed-cluster-topology-explainer"
-      minWidth={900}
-      textScale={1.04}
+      minWidth={960}
+      textScale={1.08}
       title="KubeVirt-backed Managed Cluster topology"
-      viewBox="0 0 900 720"
+      viewBox="0 0 960 720"
     >
-      <DiagramEdge d="M450 162 C450 190 140 190 140 218 V230" />
-      <DiagramEdge d="M450 162 C450 190 350 190 350 218 V230" />
-      <DiagramEdge d="M450 162 C450 190 560 190 560 218 V230" />
-      <DiagramEdge d="M450 162 C450 190 760 190 760 218 V230" />
-      <DiagramEdge d="M350 312 V350" />
-      <DiagramEdge d="M560 312 V350" />
-      <DiagramEdge d="M450 442 V500" />
-      <DiagramBoundary height={450} label="MANAGEMENT CLUSTER · ACME-PRODUCTION" labelWidth={410} width={860} x={20} y={50} />
-      <DiagramNode detail="dev" height={72} icon={KubernetesIcon} title="KdcCluster" tone="accent" width={260} x={320} y={90} />
-      <DiagramNode detail={['dev-cp', 'LoadBalancer API']} height={82} title="Control-plane Service" width={220} x={30} y={230} />
-      <DiagramNode detail="Kamaji" height={82} title="TenantControlPlane" width={200} x={250} y={230} />
-      <DiagramNode detail="dev-etcd" height={82} icon={DataIcon} title="Datastore" width={200} x={460} y={230} />
-      <DiagramNode detail="kccm-dev" height={82} title="CCM Deployment" width={200} x={680} y={230} />
-      <DiagramNode detail={['API server · scheduler', 'controller-manager Pods']} height={92} icon={ControllerIcon} title="Control-plane Pods" width={300} x={200} y={350} />
-      <DiagramNode detail={['etcd StatefulSet', 'persistent storage']} height={92} icon={DataIcon} title="etcd cluster" tone="storage" width={300} x={510} y={350} />
-      <DiagramBoundary height={170} kind="network" label="MANAGED CLUSTER DEV · SEPARATE API" labelWidth={350} width={860} x={20} y={520} />
-      <DiagramNode detail={['worker-1 · worker-2', 'worker-3 · KubeVirt VMs']} height={92} icon={ComputeIcon} title="Worker MachineDeployment" width={360} x={60} y={560} />
-      <DiagramNode detail={['Deployments · Services', 'PVCs']} height={92} icon={ApplicationIcon} title="Tenant workloads" width={360} x={480} y={560} />
+      <DiagramEdge d="M480 162 C480 190 150 190 150 218 V230" />
+      <DiagramEdge d="M480 162 C480 190 375 190 375 218 V230" />
+      <DiagramEdge d="M480 162 C480 190 590 190 590 218 V230" />
+      <DiagramEdge d="M480 162 C480 190 805 190 805 218 V230" />
+      <DiagramEdge d="M375 312 C375 330 370 330 370 350" />
+      <DiagramEdge d="M590 312 C590 330 690 330 690 350" />
+      <DiagramEdge d="M480 442 V500" />
+      <DiagramBoundary height={450} label="MANAGEMENT CLUSTER · ACME-PRODUCTION" labelWidth={410} width={920} x={20} y={50} />
+      <DiagramNode detail="dev" height={72} icon={KubernetesIcon} title="KdcCluster" tone="accent" width={260} x={350} y={90} />
+      <DiagramNode detail={['dev-cp', 'LoadBalancer API']} height={82} title="Control-plane Service" width={220} x={40} y={230} />
+      <DiagramNode detail="Kamaji" height={82} title="TenantControlPlane" width={200} x={275} y={230} />
+      <DiagramNode detail="dev-etcd" height={82} icon={DataIcon} title="Datastore" width={200} x={490} y={230} />
+      <DiagramNode detail="kccm-dev" height={82} title="CCM Deployment" width={200} x={705} y={230} />
+      <DiagramNode detail={['API server · scheduler', 'controller-manager Pods']} height={92} icon={ControllerIcon} title="Control-plane Pods" width={300} x={220} y={350} />
+      <DiagramNode detail={['etcd StatefulSet', 'persistent storage']} height={92} icon={DataIcon} title="etcd cluster" tone="storage" width={300} x={540} y={350} />
+      <DiagramBoundary height={170} kind="network" label="MANAGED CLUSTER DEV · SEPARATE API" labelWidth={350} width={920} x={20} y={520} />
+      <DiagramNode detail={['worker-1 · worker-2', 'worker-3 · KubeVirt VMs']} height={92} icon={ComputeIcon} title="Worker MachineDeployment" width={380} x={70} y={560} />
+      <DiagramNode detail={['Deployments · Services', 'PVCs']} height={92} icon={ApplicationIcon} title="Tenant workloads" width={380} x={510} y={560} />
     </ExplainerDiagram>
   );
 }

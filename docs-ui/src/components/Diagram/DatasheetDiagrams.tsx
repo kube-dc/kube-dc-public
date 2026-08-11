@@ -90,20 +90,22 @@ export function DataProtectionDiagram(): React.JSX.Element {
       diagramId="datasheet-data-protection"
       minWidth={900}
       title="Service-owned data protection boundaries"
-      viewBox="0 0 900 600"
+      viewBox="0 0 900 680"
     >
-      <DiagramEdge bidirectional d="M280 154 C290 154 290 262 300 262" kind="data" />
-      <DiagramEdge bidirectional d="M280 294 H300" kind="data" />
-      <DiagramEdge d="M280 434 H340" kind="data" />
-      <DiagramEdge d="M630 262 H660" kind="asynchronous" />
+      <DiagramEdge bidirectional d="M280 166 H340" kind="data" />
+      <DiagramEdge bidirectional d="M280 306 H340" kind="data" />
+      <DiagramEdge d="M620 255 H650" kind="asynchronous" />
+      <DiagramEdge d="M280 521 H340" kind="data" />
       <DiagramSectionLabel label="BACKUP SCOPE FOLLOWS THE DATA OWNER" lineTo={872} x={28} y={28} />
-      <DiagramNode detail="scheduled + on demand" height={82} icon={DataIcon} title="Managed databases" width={250} x={30} y={113} />
-      <DiagramNode detail="etcd snapshots" height={82} icon={KubernetesIcon} title="Managed Clusters" width={250} x={30} y={253} />
-      <DiagramNode detail="point-in-time copies" height={82} icon={ComputeIcon} title="VMs + volumes" width={250} x={30} y={393} />
-      <DiagramNode detail={['service backup target', 'KMS envelope when configured']} height={102} icon={StorageIcon} title="Project S3" tone="storage" width={330} x={300} y={211} />
-      <DiagramNode detail="snapshot storage" height={82} icon={StorageIcon} title="Storage pool" tone="storage" width={280} x={340} y={393} />
-      <DiagramNode detail={['off-site copy', 'separate domain']} height={102} icon={StorageIcon} title="Enterprise backup" tone="external" width={220} x={660} y={211} />
-      <DiagramCallout detail="Desired state is not a backup of service or workload data." height={72} title="Git configuration" width={600} x={150} y={510} />
+      <DiagramBoundary height={370} label="PROJECT S3 · SERVICE BACKUPS" labelWidth={260} width={300} x={320} y={70} />
+      <DiagramNode detail="service owner" height={82} icon={DataIcon} title="Managed databases" width={250} x={30} y={125} />
+      <DiagramNode detail="service owner" height={82} icon={KubernetesIcon} title="Managed Clusters" width={250} x={30} y={265} />
+      <DiagramNode detail={['scheduled + on demand', 'optional KMS envelope']} height={82} icon={StorageIcon} title="Database backups" tone="storage" width={250} x={340} y={125} />
+      <DiagramNode detail={['scheduled snapshots', 'restore by topology']} height={82} icon={StorageIcon} title="etcd snapshots" tone="storage" width={250} x={340} y={265} />
+      <DiagramNode detail={['off-site copy', 'separate domain']} height={102} icon={StorageIcon} title="Enterprise backup" tone="external" width={220} x={650} y={204} />
+      <DiagramNode detail="point-in-time copies" height={82} icon={ComputeIcon} title="VMs + volumes" width={250} x={30} y={480} />
+      <DiagramNode detail="snapshot storage" height={82} icon={StorageIcon} title="Storage pool" tone="storage" width={280} x={340} y={480} />
+      <DiagramCallout detail="Desired state is not a backup of service or workload data." height={72} title="Git configuration" width={600} x={150} y={590} />
     </ExplainerDiagram>
   );
 }
