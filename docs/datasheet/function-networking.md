@@ -1,5 +1,5 @@
 ---
-title: Networking and VLAN Attachment
+title: Networking and VLAN attachment
 slug: networking
 hide_title: true
 description: Project VPCs, public exposure, floating addresses and controlled attachment to physical datacenter VLANs.
@@ -8,7 +8,7 @@ description: Project VPCs, public exposure, floating addresses and controlled at
 import DatasheetFigure from '@site/src/components/DatasheetFigure';
 import {VlanAllocationDiagram} from '@site/src/components/Diagram/CloudFlowDiagrams';
 
-# DRAFT — Kube-DC Function Datasheet: Networking & VLAN Attachment
+# DRAFT — Kube-DC Function Datasheet: Networking and VLAN attachment
 
 > 🚧 **Working draft — not for distribution.** Companion to the
 > [platform datasheet](draft-artifact-a-datasheet.md). Claims trace to the
@@ -17,26 +17,25 @@ import {VlanAllocationDiagram} from '@site/src/components/Diagram/CloudFlowDiagr
 
 ---
 
-# Networking & VLAN Attachment
+# Networking and VLAN attachment
 
-**Cloud networking semantics on your own fabric — VPCs, public endpoints
-and layer-2 reach into the datacenter you already run.**
+**Give each project an isolated VPC, with controlled paths to public services
+and existing datacenter networks.**
 
-Kube-DC's network layer gives every project the isolation model of a
-public-cloud VPC, while staying connected to the physical reality of your
-datacenter: your uplinks, your address space, your existing VLANs.
+Kube-DC creates a VPC for each project and connects it to the uplinks, address
+space, and VLANs managed by your datacenter team. Tenants can expose services
+without gaining control of the underlying network fabric.
 
-## 1. Per-project VPCs
+## Per-project VPCs
 
-Every project receives its own VPC and private subnet at creation. No
-private cross-project route is configured by default — the boundary is
-enforced in the software-defined network, not by policy convention, and
-reachability between projects exists only where a service is deliberately
-exposed or the operator configures routing. Pods, VMs and managed-cluster
-workers in the same project share the project network and reach each other
-directly.
+Every project receives its own VPC and private subnet at creation. The
+software-defined network does not configure private routes between projects by
+default. A service becomes reachable from another project only when it is
+deliberately exposed or the operator adds a route. Pods, VMs, and
+managed-cluster workers in the same project share the project network and can
+reach one another directly.
 
-## 2. Address model
+## Address model
 
 | Object | What it does |
 |---|---|
@@ -47,7 +46,7 @@ directly.
 Address pools are defined by the platform team from your ranges; tenants
 consume them within quota.
 
-## 3. Exposing services
+## Exposing services
 
 Two documented paths, chosen per service:
 
@@ -62,7 +61,7 @@ Two documented paths, chosen per service:
 Managed-cluster API endpoints follow the same model: private in-VPC by
 default, public HTTPS through the platform gateway on request.
 
-## 4. VLAN attachment: layer-2 into your datacenter
+## VLAN attachment: layer-2 into your datacenter
 
 Where the datacenter fabric trunks delegated VLANs to the platform nodes
 and the operator configures the bridge and VLAN pools, a project's network
@@ -105,7 +104,7 @@ flowchart LR
 
 <VlanAllocationDiagram />
 
-## 5. Traffic control
+## Traffic control
 
 - Egress restrictions and allowlists are operator-configured platform
   controls — tenants request exceptions; the platform team owns the
@@ -115,7 +114,7 @@ flowchart LR
 - North-south exposure happens through the objects above — an address or
   route a tenant deliberately created.
 
-## 6. Responsibilities — networking
+## Responsibilities
 
 | Concern | Your platform team | Tenant |
 |---|---|---|

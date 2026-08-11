@@ -1,5 +1,5 @@
 ---
-title: Managed Kubernetes Clusters
+title: Managed Kubernetes clusters
 slug: managed-kubernetes
 sidebar_label: Managed Kubernetes
 hide_title: true
@@ -10,7 +10,7 @@ import DatasheetFigure from '@site/src/components/DatasheetFigure';
 import {ManagedClusterTopologyDiagram} from '@site/src/components/Diagram/CloudTopologyDiagrams';
 import {ManagedKubernetesSizingDiagram, ManagedKubernetesUpgradeDiagram} from '@site/src/components/Diagram/DatasheetDiagrams';
 
-# DRAFT — Kube-DC Function Datasheet: Managed Kubernetes Clusters
+# DRAFT — Kube-DC Function Datasheet: Managed Kubernetes clusters
 
 > 🚧 **Working draft — not for distribution.** Companion to the
 > [platform datasheet](draft-artifact-a-datasheet.md); modeled on the
@@ -22,36 +22,31 @@ import {ManagedKubernetesSizingDiagram, ManagedKubernetesUpgradeDiagram} from '@
 
 ---
 
-# Managed Kubernetes Clusters
+# Managed Kubernetes clusters
 
-**Give every team a real Kubernetes cluster — without giving every team a
-control plane to operate.**
+**Each team gets its own Kubernetes API. Your platform team operates the
+control planes.**
 
-Kube-DC's managed clusters let your tenants — departments, faculties,
-customers — provision full, tenant-administered Kubernetes clusters from
-their projects. The platform runs the control planes; tenants own their
-clusters' workloads, upgrades and access. Your platform team operates one
-system, not one cluster per team.
+Departments, faculties, or customers can provision tenant-administered
+Kubernetes clusters from their projects. Kube-DC runs the control planes.
+Tenant administrators manage their clusters' workloads, upgrades, and access.
 
-## 1. Architecture
+## Architecture
 
-A managed cluster has two halves:
+A managed cluster has two parts:
 
-- **The hosted control plane** runs as managed pods on the platform
-  cluster — API server, controller manager, scheduler — with a dedicated
-  PKI per cluster. Tenants administer a full Kubernetes API without
-  touching a master node. Control planes live on a platform-internal
-  network that has no route from tenant networks; tenants reach only the
-  API endpoints published to them.
-- **Worker pools** run as virtual machines inside the tenant project's own
-  VPC — the same isolated network that holds the project's other
-  workloads. Workers join the control plane automatically at creation and
-  on scale-up.
+- **The hosted control plane** runs as managed pods on the platform cluster.
+  It includes the API server, controller manager, and scheduler, with a
+  dedicated PKI for each cluster. Control planes use a platform-internal
+  network that has no route from tenant networks. Tenants reach only the API
+  endpoints published for their clusters.
+- **Worker pools** run as virtual machines in the tenant project's VPC, beside
+  the project's other workloads. Workers join the control plane when the
+  cluster is created and when a pool scales up.
 
-An optional **dedicated etcd datastore** per cluster (three replicas by
-default) keeps a tenant's cluster state on its own instance, with
-platform-managed certificate rotation. Clusters can alternatively share a
-platform datastore.
+Clusters can share the platform datastore or use a **dedicated etcd
+datastore**. A dedicated datastore uses three replicas by default and keeps the
+cluster state on its own instance. The platform manages certificate rotation.
 
 <details data-github-only>
 <summary>Diagram source for GitHub</summary>
@@ -76,7 +71,7 @@ flowchart LR
 
 <ManagedClusterTopologyDiagram />
 
-## 2. Provisioning
+## Provisioning
 
 A cluster is one manifest (or a console form):
 
@@ -103,37 +98,35 @@ spec:
       diskSize: 30Gi
 ```
 
-The platform provisions the control plane, datastore, worker VMs, cluster
-PKI and kubeconfigs, and joins the workers — no further steps. Deleting
-the `KdcCluster` tears the cluster down; backup-object lifecycle follows
-the configured bucket and retention policy.
+From this resource, the platform provisions the control plane, datastore,
+worker VMs, cluster PKI, and kubeconfigs, then joins the workers. Deleting the
+`KdcCluster` removes the cluster. Backup objects follow the configured bucket
+and retention policy.
 
-## 3. Endpoints and access
+## Endpoints and access
 
-- **In-VPC endpoint by default** — the cluster API is reachable from the
-  owning project's network.
-- **Public HTTPS endpoint on request** — one annotation publishes the API
-  at a stable hostname, using the platform's gateway, DNS and certificate
-  issuer; the API server certificate is re-issued to include the public
-  name without manual PKI work.
-- **Kubeconfigs as Kubernetes Secrets** in the owning project: an admin
-  kubeconfig for the in-VPC endpoint and an external kubeconfig for the
-  public one. Retrieval works from the console, the CLI, or `kubectl` —
-  so CI systems can fetch cluster credentials the same way tenants do.
-- **Break-glass access** — the admin kubeconfig authenticates
-  independently of the platform's SSO; access still depends on endpoint,
-  network and control-plane availability.
+- **Private by default.** The cluster API is reachable from the owning
+  project's VPC.
+- **Public HTTPS when requested.** An annotation publishes the API at a
+  stable hostname through the platform gateway, DNS, and certificate issuer.
+  The API server certificate is reissued with the public name.
+- **Kubeconfigs stored as Kubernetes Secrets.** The owning project receives an
+  admin kubeconfig for the in-VPC endpoint and, when enabled, an external
+  kubeconfig for the public endpoint. Tenants and CI systems can retrieve them
+  through the console, CLI, or `kubectl`.
+- **Independent break-glass credentials.** The admin kubeconfig does not rely
+  on platform SSO. Access still requires an available endpoint, network path,
+  and control plane.
 
-## 4. Worker pools
+## Worker pools
 
-- Sized per pool: CPU, memory, disk, OS image, replica count; multiple
-  pools per cluster for heterogeneous workloads.
-- Worker OS images ship as prepared, versioned images matched to the
-  Kubernetes version.
-- **Per-pool autoscaling** with `minReplicas`/`maxReplicas` bounds and a
-  maximum step per scaling event.
-- Rolling operations respect PodDisruptionBudgets during drains, within a
-  configurable drain timeout.
+- Configure CPU, memory, disk, OS image, and replica count for each pool. A
+  cluster can have several pools for different workloads.
+- Prepared, versioned worker images are matched to the Kubernetes version.
+- **Per-pool autoscaling** uses `minReplicas` and `maxReplicas` bounds, plus a
+  maximum change per scaling event.
+- Rolling operations honor PodDisruptionBudgets during drains, up to the
+  configured drain timeout.
 
 <DatasheetFigure
   alt="Managed Kubernetes cluster summary showing Ready status, API endpoint, kubeconfig download, control-plane replicas, worker count and encryption-at-rest status"
@@ -147,15 +140,15 @@ the configured bucket and retention policy.
   src={require('./img/S-04.png').default}
 />
 
-## 5. Control-plane and etcd right-sizing
+## Control-plane and etcd right-sizing
 
-Tenant control planes are right-sized automatically, within configured
-bounds and available platform capacity. Both the control-plane pods and
-the etcd members carry VerticalPodAutoscalers, enabled by default:
+Kube-DC adjusts tenant control-plane resources within configured bounds and
+available platform capacity. VerticalPodAutoscalers are enabled by default for
+control-plane pods and etcd members:
 
-- Resource targets follow actual load between configured floors and
-  ceilings — small clusters stay small; growing clusters get API-server
-  and etcd headroom automatically.
+- Resource targets follow observed load between configured floors and
+  ceilings. Small clusters stay small, while growing clusters receive more API
+  server and etcd capacity.
 - Scaling is quorum-aware by design: recommendations are applied in-place
   where possible, and etcd resizing respects member quorum.
   Single-replica datastores use a conservative initial-assignment mode.
@@ -174,7 +167,7 @@ flowchart LR
 
 <ManagedKubernetesSizingDiagram />
 
-## 6. Upgrades
+## Upgrades
 
 Upgrades are staged and tenant-controlled:
 
@@ -183,9 +176,9 @@ Upgrades are staged and tenant-controlled:
 3. **Worker pools roll in steps** — new nodes join, old nodes drain and
    leave, pool by pool, with PodDisruptionBudgets honored during drains.
 
-Control plane and workers move separately, so tenants can pause between
-stages, validate, and continue. Supported version skew follows upstream
-Kubernetes policy.
+The control plane and workers move separately. Tenants can pause after a
+stage, validate the cluster, and continue. Supported version skew follows
+upstream Kubernetes policy.
 
 <details data-github-only>
 <summary>Diagram source for GitHub</summary>
@@ -199,7 +192,7 @@ flowchart LR
 
 <ManagedKubernetesUpgradeDiagram />
 
-## 7. Snapshots and restore
+## Snapshots and restore
 
 - **Scheduled etcd snapshots** are enabled automatically when the
   project's backup bucket exists (daily by default; schedule and
@@ -223,7 +216,7 @@ Scope and current limits, stated plainly:
   three-replica dedicated datastore, restore is an assisted operation
   until then.
 
-## 8. Isolation and security
+## Isolation and security
 
 - Control planes run on a platform-internal network with no route from
   tenant networks; workers and workloads live in the tenant project's VPC.
@@ -236,15 +229,14 @@ Scope and current limits, stated plainly:
   cluster's workloads from outside happens only through the exposure the
   tenant configures (LoadBalancer services, HTTPS routes).
 
-## 9. Observability
+## Observability
 
-With the platform's observability stack deployed, control-plane logs and
-events of managed clusters surface in the owning organization's Grafana —
-tenants watch their API servers and controllers without filing a ticket,
-and the platform team monitors all control planes centrally. Coverage and
-retention are operator-defined.
+When the observability stack is enabled, managed-cluster control-plane logs and
+events appear in the owning organization's Grafana. Tenants can inspect their
+API servers and controllers, while the platform team monitors all control
+planes centrally. The operator defines coverage and retention.
 
-## 10. Responsibilities — managed Kubernetes clusters
+## Responsibilities
 
 | Concern | Your platform team (via Kube-DC) | Tenant |
 |---|---|---|

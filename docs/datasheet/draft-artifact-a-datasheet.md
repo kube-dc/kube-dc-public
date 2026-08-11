@@ -1,7 +1,7 @@
 ---
 title: Kube-DC Platform Datasheet
 slug: /
-sidebar_label: Platform Overview
+sidebar_label: Overview
 hide_title: true
 description: A multi-tenant private cloud platform for virtual machines, Kubernetes, databases, networking and storage on infrastructure you own.
 ---
@@ -28,47 +28,45 @@ import {OvnLogicalNetworkDiagram} from '@site/src/components/Diagram/NetworkingA
 
 # Kube-DC
 
-**A multi-tenant private cloud platform for infrastructure you own.**
+**Run virtual machines, Kubernetes, databases, and storage on infrastructure
+you control.**
 
-<a
-  className="button button--primary"
-  download
-  href={require('./kube-dc-platform-datasheet-a4.pdf').default}>
-  Download the A4 PDF
-</a>
+<div className="datasheet-download"><strong>Printable version:</strong>{' '}<a download href={require('./kube-dc-platform-datasheet-a4.pdf').default}>Download the A4 PDF</a>.</div>
 
-Kube-DC turns your servers into a private cloud your whole organization
-consumes as a service: departments and teams get self-service projects with
-their own networks, virtual machines, Kubernetes clusters, databases and
-storage — while your platform team keeps central control of capacity,
-security and cost. Your hardware, your datacenter, your data.
+Kube-DC turns your servers into a self-service private cloud. Departments and
+teams work in isolated projects with their own networks, virtual machines,
+Kubernetes clusters, databases, and storage. Your platform team sets capacity,
+security, and cost controls for the whole environment, while your data stays in
+your datacenter.
 
 ## Who it's for
 
-- **Public-sector organizations** that must keep workloads and data on
-  infrastructure they control, with strict separation between departments.
-- **Large enterprises and retailers** consolidating VMware-era virtual
-  machines and modern containerized services onto one platform.
-- **Universities and research institutions** giving faculties, labs and
-  student groups isolated, quota-controlled environments on shared hardware.
-- **Datacenter and hosting operators** selling cloud services to their own
-  customers under their own brand.
+Kube-DC is designed for organizations that operate shared infrastructure for
+several teams or customers:
+
+- **Public-sector organizations** keeping workloads and data on infrastructure
+  they control, with clear separation between departments.
+- **Enterprises and retailers** bringing existing virtual machines and modern
+  container workloads onto one platform.
+- **Universities and research institutions** giving faculties, labs, and
+  student groups isolated environments with defined quotas.
+- **Datacenter and hosting operators** providing cloud services under their
+  own brand.
 
 ## At a glance
 
 - **One platform for VMs and containers.** Virtual machines and Kubernetes
-  workloads run side by side — same network fabric, same access model, same
-  quota and billing.
+  workloads use the same network fabric, access model, quota, and billing.
 - **Tenancy that reaches the network.** Every project gets its own VPC and
   subnet, not just a namespace label.
-- **Self-service without losing control.** Teams provision VMs, clusters,
-  databases, storage and public endpoints against quotas you set — through
-  a web console, `kubectl`, a CLI, or an AI coding assistant.
+- **Self-service with central controls.** Teams provision VMs, clusters,
+  databases, storage, and public endpoints within the quotas you set. They can
+  use the web console, `kubectl`, the CLI, or a supported coding assistant.
 - **Runs on standard x86-64 servers.** A platform starts at three nodes;
   capacity grows by adding nodes. Production sizing is validated against
   your workload in an architecture review.
-- **Assembled from named open-source components.** Kubernetes, KubeVirt,
-  Kube-OVN, Ceph, Keycloak, CloudNativePG and more — integrated and
+- **Built from named open-source components.** Kubernetes, KubeVirt, Kube-OVN,
+  Ceph, Keycloak, CloudNativePG, and other components are integrated and
   operated as one product.
 
 <details data-github-only>
@@ -104,23 +102,23 @@ flowchart TB
 
 ## How it works
 
-Kube-DC installs on a Kubernetes cluster running on your servers. Platform
-controllers reconcile a small set of resources — organizations, projects,
-machines, clusters, databases, keys — into the systems that do the work:
-software-defined networking, virtualization, identity, storage, ingress and
-observability. The result behaves like a public cloud, scoped to your
-hardware:
+Kube-DC runs on a Kubernetes management cluster on your servers. Its
+controllers turn product resources such as organizations, projects, machines,
+clusters, databases, and keys into the underlying networking, virtualization,
+identity, storage, ingress, and observability resources.
 
-1. **Your platform team** installs Kube-DC with the `kube-dc` CLI, which
-   bootstraps a GitOps repository — from then on, the platform's
-   configuration is declarative and versioned.
+The operating model has three levels:
+
+1. **Your platform team** installs Kube-DC with the `kube-dc` CLI. The CLI
+   bootstraps a GitOps repository, and platform configuration remains
+   declarative and versioned from then on.
 2. **Organizations** are your tenants: a ministry's directorates, a
    university's faculties, a retailer's business units, or an operator's
    customers. Each organization has its own identity realm, members, plan
    and billing scope.
-3. **Projects** are where teams deploy: each is an isolated environment
-   with a namespace, RBAC, its own VPC and optional quotas — reachable
-   through the console or a standard kubeconfig.
+3. **Projects** are where teams deploy. Each project has a namespace, RBAC,
+   its own VPC, and optional quotas. Teams use the console or a standard
+   kubeconfig to work with project resources.
 
 <ArchitecturalLayersDiagram />
 
@@ -134,14 +132,15 @@ hardware:
 | Quota | Project | Per-project quotas within the organization's plan |
 | Billing & chargeback | Organization | Plans, usage and subscription billing per organization |
 
-Organization quotas constrain the configured Kubernetes resource
-dimensions — CPU, memory, storage, pods, load balancers — and optional
-project quotas subdivide them; object-storage and physical capacity have
-their own controls and capacity planning. Project access is a curated role
-set for deploying and operating workloads; cluster-scoped administration
-stays with the platform team, and the supported project roles omit
-interactive pod `exec`/`attach`, enforced by admission policy (one-off
-tasks run as auditable Jobs instead).
+Organization quotas cover configured Kubernetes resources such as CPU,
+memory, storage, pods, and load balancers. Optional project quotas divide that
+capacity between teams. Object storage and physical capacity use their own
+controls and capacity plans.
+
+Project roles cover the work needed to deploy and operate workloads.
+Cluster-scoped administration stays with the platform team. Supported project
+roles do not include interactive pod `exec` or `attach`; an admission policy
+enforces that boundary, and teams run one-off tasks as auditable Jobs instead.
 
 <DatasheetFigure
   alt="Kube-DC organization Projects list showing Ready state, VPC CIDRs, workload counts and resource quota use"
@@ -151,12 +150,12 @@ tasks run as auditable Jobs instead).
 
 ## Self-service projects: deploy applications directly
 
-A project comes with a kubeconfig. Teams deploy applications, Helm charts,
-Jobs and services straight into it — there is no cluster to request first
-and no ticket queue. A complete stateful stack — application pods, a
-managed database, S3 bucket, shared volumes, HTTPS endpoint, autoscaling —
-deploys from plain Kubernetes manifests, with the platform providing the
-ingress, certificates, database engine and storage underneath.
+A project comes with a kubeconfig, so teams can deploy applications, Helm
+charts, Jobs, and services without first requesting a separate cluster. Plain
+Kubernetes manifests can describe a complete stateful stack: application pods,
+a managed database, an S3 bucket, shared volumes, an HTTPS endpoint, and
+autoscaling. The platform supplies the ingress, certificates, database engine,
+and storage.
 
 When a team needs cluster-scoped control — operators, CRDs, custom
 controllers — it provisions a managed Kubernetes cluster instead (below).

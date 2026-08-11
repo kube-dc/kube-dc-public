@@ -1,5 +1,5 @@
 ---
-title: Storage and Object Storage
+title: Storage and object storage
 slug: storage
 hide_title: true
 description: Block, shared and S3-compatible object storage from a Kube-DC platform's Ceph storage layer.
@@ -7,7 +7,7 @@ description: Block, shared and S3-compatible object storage from a Kube-DC platf
 
 import {StorageServiceDiagram} from '@site/src/components/Diagram/DatasheetDiagrams';
 
-# DRAFT — Kube-DC Function Datasheet: Storage & Object Storage
+# DRAFT — Kube-DC Function Datasheet: Storage and object storage
 
 > 🚧 **Working draft — not for distribution.** Companion to the
 > [platform datasheet](draft-artifact-a-datasheet.md). Claims trace to the
@@ -16,16 +16,16 @@ import {StorageServiceDiagram} from '@site/src/components/Diagram/DatasheetDiagr
 
 ---
 
-# Storage & Object Storage
+# Storage and object storage
 
-**Three storage services from the disks you rack — block, shared and S3 —
-consumed through standard Kubernetes APIs.**
+**Provide block, shared, and S3-compatible storage through standard Kubernetes
+APIs.**
 
-Kube-DC's storage layer is built on Ceph running on your hardware. The
-platform team defines the classes, topology and replication; tenants
-consume storage the Kubernetes-native way, within quota.
+Kube-DC uses Ceph on your hardware for its storage layer. The platform team
+defines storage classes, topology, and replication. Tenants request storage
+through Kubernetes APIs within their assigned quotas.
 
-## 1. Block storage
+## Block storage
 
 - PersistentVolumes for containers and disks for VMs from a replicated
   Ceph RBD pool.
@@ -34,7 +34,7 @@ consume storage the Kubernetes-native way, within quota.
   (replicated, node-local, performance) and what backs them — the
   platform runs on the disks and failure domains you give it.
 
-## 2. Shared (read-write-many) storage
+## Shared (read-write-many) storage
 
 Operator-defined RWX storage classes serve the cases single-writer volumes
 can't — each with the access mode and backend appropriate to its
@@ -46,7 +46,7 @@ semantics:
   class is eligible for live migration between hosts (see the Virtual
   Machines datasheet).
 
-## 3. S3-compatible object storage
+## S3-compatible object storage
 
 - **Per-project buckets** provisioned through a standard
   `ObjectBucketClaim` — credentials arrive as a Secret and ConfigMap the
@@ -74,7 +74,7 @@ flowchart TB
 
 <StorageServiceDiagram />
 
-## 4. Snapshots, clones and images
+## Snapshots, clones and images
 
 - **Volume snapshots** through the standard Kubernetes snapshot API —
   point-in-time copies of workload and VM volumes.
@@ -83,7 +83,7 @@ flowchart TB
   provisioning without image downloads.
 - Prepared images are published per project as snapshots.
 
-## 5. Capacity and quota
+## Capacity and quota
 
 Storage consumption counts against organization plans and project quotas
 like CPU and memory. Object-storage capacity is governed per organization
@@ -92,7 +92,7 @@ replication — these are platform-team decisions made against your
 hardware; capacity and durability are properties of the topology your
 team designs, validated in the architecture review.
 
-## 6. Data protection posture
+## Data protection posture
 
 Storage replication protects against component failure within the
 platform; it is not a backup. The protection stack is layered:
@@ -103,7 +103,7 @@ platform; it is not a backup. The protection stack is layered:
 | Point-in-time copies | Scheduled jobs run by platform controllers; on-demand snapshots and restores initiated by tenants | Shared |
 | Site/storage loss | Copied by your configured enterprise backup integration via S3 endpoints | Your backup team |
 
-## 7. Responsibilities — storage
+## Responsibilities
 
 | Concern | Your platform team | Tenant |
 |---|---|---|

@@ -1,5 +1,5 @@
 ---
-title: GPU Services
+title: GPU services
 slug: gpu
 hide_title: true
 description: Shared GPU slices for containers and dedicated GPU virtual machines with governed capacity and qualification controls.
@@ -7,7 +7,7 @@ description: Shared GPU slices for containers and dedicated GPU virtual machines
 
 import {GpuServiceModelDiagram} from '@site/src/components/Diagram/DatasheetDiagrams';
 
-# DRAFT — Kube-DC Function Datasheet: GPU Services
+# DRAFT — Kube-DC Function Datasheet: GPU services
 
 > 🚧 **Working draft — not for distribution.** Companion to the
 > [platform datasheet](draft-artifact-a-datasheet.md). Status per owner
@@ -34,26 +34,20 @@ import {GpuServiceModelDiagram} from '@site/src/components/Diagram/DatasheetDiag
 
 ---
 
-# GPU Services
+# GPU services
 
-**Two ways to give teams accelerators — a fraction of a card, or a whole
-one — with the governance an organization needs to hand GPUs to
-departments.**
+**Offer fixed GPU shares to containers or attach a complete GPU to a virtual
+machine.**
 
-GPUs are scarce, expensive and shared badly by default. Kube-DC treats
-them as a product: catalogued profiles, per-model entitlements enforced as
-quota, capacity reservations for organizations that need them, and an
-explicit security and supply-chain model — because the components that
-make GPUs work run privileged on your nodes.
+Kube-DC presents GPUs as catalogued products with per-model entitlements and
+capacity reservations. It also documents the security and supply-chain
+controls required by the privileged components that run on GPU nodes.
 
-GPU capabilities are enabled per cluster by your platform team once the
-hardware, driver and component set are qualified — GPU nodes couple
-device, kernel, driver and operator versions, so enablement follows
-qualification rather than a switch flip. Shared GPU and dedicated GPU VM
-creation are separately controlled, so a deployment can offer one without
-the other.
+Before enabling GPU services, the platform team qualifies the hardware,
+kernel, driver, and operator versions together. Shared GPUs and dedicated GPU
+VMs have separate controls, so an installation can offer either or both.
 
-## 1. Shared GPU for containers
+## Shared GPU for containers
 
 Several container workloads run on one physical GPU at the same time, each
 holding a fixed fraction of the device — the right fit for inference,
@@ -76,7 +70,7 @@ waste.
   with `kubectl`, like any other workload. Shared GPU runs tenant
   workloads in production on the reference deployment today.
 
-## 2. Dedicated GPU VMs
+## Dedicated GPU VMs
 
 One whole physical GPU attached to one virtual machine, for workloads that
 need a stronger boundary than software sharing: an isolated guest with the
@@ -110,7 +104,7 @@ flowchart TB
 
 <GpuServiceModelDiagram />
 
-## 3. Entitlements, quota and reservations
+## Entitlements, quota and reservations
 
 Two different things, deliberately distinguished:
 
@@ -128,7 +122,7 @@ Two different things, deliberately distinguished:
 Assigning a GPU add-on does not by itself create a reservation — the
 distinction is enforced in the product, not just in the documentation.
 
-## 4. Node modes and day-2 operations
+## Node modes and day-2 operations
 
 A GPU node runs in one mode at a time — shared-container or dedicated-VM
 passthrough — because the two require different host configuration.
@@ -144,7 +138,7 @@ passthrough — because the two require different host configuration.
   read-only pre-upgrade gate; the documented sequence qualifies a canary
   node and proves rollback before a fleet-wide plan.
 
-## 5. Security and supply chain
+## Security and supply chain
 
 GPU drivers, device plugins, schedulers and monitoring agents run
 privileged enough to compromise a node, so version selection and image
@@ -163,7 +157,7 @@ upgrades.
   product, and per-model quota bounds the count, so entitlement cannot be
   exceeded by hand-written manifests.
 
-## 6. Responsibilities — GPU services
+## Responsibilities
 
 | Concern | Your platform team | Tenant |
 |---|---|---|

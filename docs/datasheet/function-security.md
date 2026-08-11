@@ -1,5 +1,5 @@
 ---
-title: Security, Identity and Keys
+title: Security, identity, and keys
 slug: security
 hide_title: true
 description: Organization identity, Project RBAC and network boundaries, keys, secrets and managed certificates in Kube-DC.
@@ -8,7 +8,7 @@ description: Organization identity, Project RBAC and network boundaries, keys, s
 import DatasheetFigure from '@site/src/components/DatasheetFigure';
 import {IdentityTenancyDiagram} from '@site/src/components/Diagram/ResourceModelDiagrams';
 
-# DRAFT — Kube-DC Function Datasheet: Security, Identity & Keys
+# DRAFT — Kube-DC Function Datasheet: Security, identity, and keys
 
 > 🚧 **Working draft — not for distribution.** Companion to the
 > [platform datasheet](draft-artifact-a-datasheet.md). Claims trace to the
@@ -17,16 +17,16 @@ import {IdentityTenancyDiagram} from '@site/src/components/Diagram/ResourceModel
 
 ---
 
-# Security, Identity & Keys
+# Security, identity, and keys
 
-**Tenancy enforced by mechanisms, not conventions — from sign-on to the
-network to the keys.**
+**Separate tenant identity, permissions, networks, keys, and secrets at the
+boundaries where they are used.**
 
-Kube-DC layers organization identity, project RBAC, VPC network
-boundaries and project-scoped keys and secrets as defense in depth — each
-boundary enforced by a distinct system.
+Kube-DC combines organization identity, project RBAC, VPC boundaries, and
+project-scoped keys and secrets. A different subsystem enforces each boundary,
+so tenant separation does not depend on a single control.
 
-## 1. Identity and single sign-on
+## Identity and single sign-on
 
 - **An identity realm per organization** (Keycloak): each tenant
   organization manages its own users, groups and login policies —
@@ -62,7 +62,7 @@ flowchart LR
 
 <IdentityTenancyDiagram />
 
-## 2. Project authorization
+## Project authorization
 
 - **A curated, supported role set** per project — scoped to deploying and
   operating workloads. Cluster-scoped resources, CRDs and admission
@@ -76,7 +76,7 @@ flowchart LR
 - Custom roles remain under platform-team control; the default roles are
   a baseline, not a ceiling.
 
-## 3. Key management (KMS)
+## Key management (KMS)
 
 - **Per-project, purpose-scoped keys** (`application`, `backup`, …)
   backed by non-exportable keys in the platform's secrets backend
@@ -86,7 +86,7 @@ flowchart LR
   and managed-cluster snapshot encryption reference tenant KMS keys.
 - Envelope encryption is the documented pattern for large payloads.
 
-## 4. Secrets management
+## Secrets management
 
 - **A managed secret service per project**: store API tokens, credentials
   and configuration secrets outside Git, with lifecycle managed through
@@ -95,7 +95,7 @@ flowchart LR
   Secrets that workloads consume — applications stay platform-agnostic
   while the source of truth stays managed.
 
-## 5. Certificates
+## Certificates
 
 - **Managed certificates** as a project resource: public trust via ACME
   or issuance from your organization's private CA — the resulting TLS
@@ -103,7 +103,7 @@ flowchart LR
 - HTTPS routes get their certificates automatically (see the Networking
   datasheet); managed-cluster public endpoints likewise.
 
-## 6. Platform-level enforcement
+## Platform-level enforcement
 
 - Admission policies enforce tenant boundaries at the Kubernetes API —
   including the pod-access block and resource-placement rules.
@@ -113,7 +113,7 @@ flowchart LR
   team.
 - Platform configuration can be declaratively reconciled from Git.
 
-## 7. Responsibilities — security & identity
+## Responsibilities
 
 | Concern | Your platform team | Tenant |
 |---|---|---|

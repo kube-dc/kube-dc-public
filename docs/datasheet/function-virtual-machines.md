@@ -1,5 +1,5 @@
 ---
-title: Virtual Machines
+title: Virtual machines
 slug: virtual-machines
 hide_title: true
 description: Linux and Windows virtual machines, storage profiles, networking, lifecycle and migration on Kube-DC.
@@ -8,7 +8,7 @@ description: Linux and Windows virtual machines, storage profiles, networking, l
 import DatasheetFigure from '@site/src/components/DatasheetFigure';
 import {VirtualizationResourceDiagram} from '@site/src/components/Diagram/ResourceModelDiagrams';
 
-# DRAFT — Kube-DC Function Datasheet: Virtual Machines
+# DRAFT — Kube-DC Function Datasheet: Virtual machines
 
 > 🚧 **Working draft — not for distribution.** Companion to the
 > [platform datasheet](draft-artifact-a-datasheet.md). Claims trace to the
@@ -17,19 +17,16 @@ import {VirtualizationResourceDiagram} from '@site/src/components/Diagram/Resour
 
 ---
 
-# Virtual Machines
+# Virtual machines
 
-**Run the workloads you already have — beside the ones you're building
-next.**
+**Run existing virtual-machine workloads beside Kubernetes applications.**
 
-Kube-DC treats virtual machines as first-class workloads: they live in the
-same projects, attach to the same networks, obey the same quotas and appear
-on the same dashboards as containers. Legacy line-of-business systems,
-databases that ship as appliances, Windows servers — compatible workloads
-consolidate onto the platform without a separate virtualization stack to
-operate.
+Virtual machines use the same projects, networks, quotas, and dashboards as
+containers. Compatible line-of-business systems, virtual appliances, and
+Windows servers can move onto the platform without a separate virtualization
+control plane.
 
-## 1. Guest support
+## Guest support
 
 - **Linux**: the prepared-image catalog identifies the validated
   distributions and versions (Ubuntu, Debian and other cloud-image
@@ -41,7 +38,7 @@ operate.
   sources into a project; guest and driver compatibility validation is
   yours.
 
-## 2. Provisioning: prepared images and instant clones
+## Provisioning: prepared images and instant clones
 
 Each project carries a catalog of prepared OS images published as storage
 snapshots. Creating a VM clones the snapshot — the root disk is created
@@ -78,7 +75,7 @@ flowchart LR
 
 <VirtualizationResourceDiagram />
 
-## 3. VM profiles: standard and migratable
+## VM profiles: standard and migratable
 
 Two documented profiles, selected at creation:
 
@@ -93,7 +90,7 @@ A VM is eligible for live migration when its disks use the configured
 shared block tier and a CPU-compatible destination host has sufficient
 capacity; failed or ineligible migrations may require a restart.
 
-## 4. Lifecycle and operations
+## Lifecycle and operations
 
 - Start, stop, restart and delete from the console, `kubectl` or the CLI.
 - **Snapshots of running VMs** — online snapshots via the standard
@@ -110,7 +107,7 @@ capacity; failed or ineligible migrations may require a restart.
   src={require('../cloud/images/connecting-vm.png').default}
 />
 
-## 5. Networking
+## Networking
 
 VMs attach to the project's VPC like any pod:
 
@@ -124,14 +121,14 @@ VMs attach to the project's VPC like any pod:
   equipment — the consolidation path for systems that expect to sit on a
   specific network segment.
 
-## 6. Storage
+## Storage
 
 - Root and data disks as block volumes; disk expansion online.
 - Additional volumes attach and detach as Kubernetes resources.
 - Volume snapshots and clones for copies, templates and test
   environments.
 
-## 7. GPU guests
+## GPU guests
 
 A VM can be given a whole physical GPU (dedicated passthrough) where the
 platform team has enabled and qualified GPU support — a stronger boundary
@@ -139,7 +136,7 @@ than software GPU sharing, at the cost of live migration. See the
 [GPU services datasheet](function-gpu.md) for products, entitlements and
 the qualification model.
 
-## 8. Responsibilities — virtual machines
+## Responsibilities
 
 | Concern | Your platform team | Tenant |
 |---|---|---|
@@ -150,7 +147,7 @@ the qualification model.
 | VM data protection | Snapshot APIs provided | ✅ snapshots + in-guest/enterprise backup |
 | Network exposure | IPs and routes provided | ✅ configures |
 
-## 8. What to know before migrating
+## What to know before migrating
 
 Disk import from other virtualization platforms is supported (qcow2/raw);
 migration itself is a planned operation — inventory, guest preparation

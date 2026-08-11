@@ -528,12 +528,90 @@ article img.screenshot-full {
   width: 100%;
 }
 
-/* Datasheet pages use the same content as the print/PDF build. Keep long
-   technical pages comfortable on screen without changing the global docs
-   layout used by the task-oriented Cloud and Platform guides. */
-[class*='docs-doc-id-datasheet'] article,
-[class*='docs-doc-id-function-'] article {
-  --ifm-leading: 1.7;
+/* Datasheet reading rhythm
+ *
+ * Datasheets are longer than the task-oriented guides. Keep the prose at a
+ * readable measure and use deliberate section spacing, while diagrams,
+ * screenshots, tables, and code retain the full article width. */
+[class*='docs-doc-id-draft-artifact-a-datasheet'] .theme-doc-markdown,
+[class*='docs-doc-id-function-'] .theme-doc-markdown {
+  --ifm-leading: 1.55;
+}
+
+[class*='docs-doc-id-draft-artifact-a-datasheet'] .theme-doc-markdown > header > h1,
+[class*='docs-doc-id-function-'] .theme-doc-markdown > header > h1 {
+  margin-bottom: 0.75rem;
+  font-size: clamp(2.5rem, 5vw, 3rem);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+}
+
+[class*='docs-doc-id-draft-artifact-a-datasheet'] .theme-doc-markdown > h2,
+[class*='docs-doc-id-function-'] .theme-doc-markdown > h2 {
+  margin-top: 2.75rem;
+  margin-bottom: 0.75rem;
+  font-size: clamp(1.65rem, 3vw, 2rem);
+  line-height: 1.2;
+}
+
+[class*='docs-doc-id-draft-artifact-a-datasheet'] .theme-doc-markdown > h3,
+[class*='docs-doc-id-function-'] .theme-doc-markdown > h3 {
+  margin-top: 2rem;
+  margin-bottom: 0.625rem;
+}
+
+[class*='docs-doc-id-draft-artifact-a-datasheet'] .theme-doc-markdown > p,
+[class*='docs-doc-id-draft-artifact-a-datasheet'] .theme-doc-markdown > ul,
+[class*='docs-doc-id-draft-artifact-a-datasheet'] .theme-doc-markdown > ol,
+[class*='docs-doc-id-function-'] .theme-doc-markdown > p,
+[class*='docs-doc-id-function-'] .theme-doc-markdown > ul,
+[class*='docs-doc-id-function-'] .theme-doc-markdown > ol {
+  max-width: 76ch;
+}
+
+[class*='docs-doc-id-draft-artifact-a-datasheet'] .theme-doc-markdown > p,
+[class*='docs-doc-id-function-'] .theme-doc-markdown > p {
+  margin-bottom: 1rem;
+}
+
+[class*='docs-doc-id-draft-artifact-a-datasheet'] .theme-doc-markdown > ul,
+[class*='docs-doc-id-draft-artifact-a-datasheet'] .theme-doc-markdown > ol,
+[class*='docs-doc-id-function-'] .theme-doc-markdown > ul,
+[class*='docs-doc-id-function-'] .theme-doc-markdown > ol {
+  margin-bottom: 1.5rem;
+}
+
+[class*='docs-doc-id-draft-artifact-a-datasheet'] .theme-doc-markdown > ul > li,
+[class*='docs-doc-id-draft-artifact-a-datasheet'] .theme-doc-markdown > ol > li,
+[class*='docs-doc-id-function-'] .theme-doc-markdown > ul > li,
+[class*='docs-doc-id-function-'] .theme-doc-markdown > ol > li {
+  margin-bottom: 0.5rem;
+}
+
+.datasheet-download {
+  max-width: 76ch;
+  margin: 0.25rem 0 1.5rem;
+  padding: 0.625rem 0.875rem;
+  color: var(--ifm-font-color-base);
+  font-size: 0.9375rem;
+  background: color-mix(in srgb, var(--ifm-color-primary) 6%, transparent);
+  border-left: 3px solid var(--ifm-color-primary);
+}
+
+.datasheet-download a {
+  font-weight: 500;
+}
+
+@media screen and (max-width: 576px) {
+  [class*='docs-doc-id-draft-artifact-a-datasheet'] article,
+  [class*='docs-doc-id-function-'] article {
+    padding: 0;
+  }
+
+  [class*='docs-doc-id-draft-artifact-a-datasheet'] .theme-doc-markdown > header > h1,
+  [class*='docs-doc-id-function-'] .theme-doc-markdown > header > h1 {
+    font-size: 2.25rem;
+  }
 }
 
 @media print {
@@ -542,6 +620,10 @@ article img.screenshot-full {
   .theme-doc-toc-desktop,
   .pagination-nav,
   .footer {
+    display: none !important;
+  }
+
+  .datasheet-download {
     display: none !important;
   }
 

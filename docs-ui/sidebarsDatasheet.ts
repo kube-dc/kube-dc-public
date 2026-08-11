@@ -5,7 +5,7 @@ const sidebars: SidebarsConfig = {
     {
       type: 'doc',
       id: 'draft-artifact-a-datasheet',
-      label: 'Platform Overview',
+      label: 'Overview',
     },
     {
       type: 'category',

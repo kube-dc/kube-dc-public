@@ -18,18 +18,15 @@ import {ObservabilityPipelineDiagram} from '@site/src/components/Diagram/Datashe
 
 # Observability
 
-**Every organization gets monitoring on day one — logs, metrics and
-dashboards, configured automatically. Nobody builds a monitoring stack per
-team.**
+**Each organization receives its own view of metrics, logs, and dashboards.**
 
-Kube-DC ships a multi-tenant observability stack (Grafana, Mimir for
-metrics, Loki for logs) as part of the platform. When an organization is
-created, the platform's controllers provision its observability
-automatically: a Grafana organization of its own, pre-built dashboards,
-a metrics tenant and log routing. Teams open Grafana and see their
-workloads — there is nothing to install, wire or configure.
+Kube-DC includes a multi-tenant observability stack based on Grafana, Mimir,
+and Loki. When an organization is created, platform controllers provision a
+Grafana organization, dashboards, a metrics tenant, and log routing. Teams can
+open Grafana and inspect their workloads without installing a separate
+monitoring stack.
 
-## 1. What every organization gets
+## What every organization gets
 
 - **A Grafana organization of its own** — members sign in with the same
   SSO they use everywhere else and land in their organization's view.
@@ -65,7 +62,7 @@ flowchart LR
 
 <ObservabilityPipelineDiagram />
 
-## 2. Tenant separation
+## Tenant separation
 
 The stack is shared; the data is not. Metrics and logs are separated per
 tenant at the data layer — queries from one organization's Grafana reach
@@ -73,7 +70,7 @@ only that organization's data. The platform operates one observability
 system for all tenants instead of one stack per team, which is what makes
 day-one monitoring economically automatic.
 
-## 3. The operator's view
+## The operator's view
 
 The platform team monitors the platform itself from the same tooling:
 
@@ -84,7 +81,7 @@ The platform team monitors the platform itself from the same tooling:
 - Coverage and retention are operator-defined — the bundled defaults are
   a starting point, tuned to your capacity in the architecture review.
 
-## 4. Responsibilities — observability
+## Responsibilities
 
 | Concern | Your platform team | Tenant |
 |---|---|---|
