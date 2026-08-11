@@ -388,6 +388,22 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 		if err := WriteSingleIPNATPatch(opts.FleetRepo, opts.Plan.ClusterName, out); err != nil {
 			return fmt.Errorf("scaffold: %w", err)
 		}
+		// PRODUCTIZED FROM INCIDENT 2026-08-11: removing the :6443 listener is
+		// self-sufficient only when the front door is a node's OWN address (that
+		// node's apiserver serves :6443). On a MetalLB VIP front door the VIP can
+		// land on a node without an apiserver, so external kube-api needs an
+		// off-Envoy route or external kubectl silently dies. Scaffold it here.
+		if strings.TrimSpace(envValue(envBody, "INGRESS_ADDRESS_LAYER")) == "metallb-l2" {
+			vip := strings.TrimSpace(envValue(envBody, "METALLB_FLOATING_IP"))
+			if vip != "" {
+				cpIPs := strings.Split(envValue(envBody, "KUBE_OVN_MASTER_NODES"), ",")
+				if err := WriteExternalKubeAPIVIP(opts.FleetRepo, opts.Plan.ClusterName, vip, cpIPs, out); err != nil {
+					return fmt.Errorf("scaffold: %w", err)
+				}
+			} else {
+				fmt.Fprintf(out, "[scaffold] WARNING: :6443 listener removed on a metallb-l2 VIP front door but METALLB_FLOATING_IP is empty — external kube-api has NO route; set it and re-run, or add a kube-api-external Service by hand\n")
+			}
+		}
 	}
 
 	// (9) VM root-disk storage wiring — rbd-vm.yaml (base + goldens Flux

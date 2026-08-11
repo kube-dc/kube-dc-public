@@ -637,6 +637,41 @@ current Organization token are listed.`,
 	return cmd
 }
 
+
+// namespacesFromToken returns the Projects named by the access token, refreshing
+// it first when it is absent or expired.
+//
+// Best-effort by design: every failure returns nil so the caller falls back to
+// whatever was cached. A user who can no longer reach Keycloak should still be
+// able to switch between the Projects they last knew about.
+func namespacesFromToken(creds *config.Credentials, credMgr *config.CredentialsManager, server string) []string {
+	if creds.AccessToken != "" {
+		if claims, err := jwt.ParseToken(creds.AccessToken); err == nil && !claims.IsExpired() {
+			return claims.Namespaces
+		}
+	}
+	if creds.RefreshToken == "" {
+		return nil
+	}
+	tok, err := auth.RefreshToken(creds.KeycloakURL, creds.Realm, creds.ClientID,
+		creds.RefreshToken, creds.CACert, creds.Insecure)
+	if err != nil {
+		return nil
+	}
+	claims, err := jwt.ParseToken(tok.AccessToken)
+	if err != nil {
+		return nil
+	}
+	// Persist so the next command does not pay for another round trip. A failure
+	// to save is not worth failing the command over — the list is already in hand.
+	creds.AccessToken = tok.AccessToken
+	creds.RefreshToken = tok.RefreshToken
+	creds.AccessTokenExpiry = claims.ExpiryTime()
+	creds.User.Namespaces = claims.Namespaces
+	_ = credMgr.Save(creds)
+	return claims.Namespaces
+}
+
 func runNs(args []string) error {
 	// Get current context from kubeconfig
 	kubeMgr, err := kubeconfig.NewManager()
@@ -692,17 +727,24 @@ func runNs(args []string) error {
 		return fmt.Errorf("not logged in. Run: kube-dc login --domain %s %s", domainFromAPI(serverURL), loginMode)
 	}
 
+	// The ACCESS TOKEN is authoritative for which Projects a user may reach; the
+	// cached user.namespaces is only a copy written at login time. Prefer the
+	// token whenever it yields more, and REFRESH it when it is missing or stale.
+	//
+	// This matters because the web console's cloud shell seeds a credential file
+	// with an empty access_token — it is handed only a refresh token — and with a
+	// cached list that is at best the one Project the session was opened on.
+	// Reading the cache alone therefore either failed outright ("no accessible
+	// Projects") or, worse, silently presented one Project as the user's complete
+	// access and hid the rest.
 	namespaces := creds.User.Namespaces
-	if len(namespaces) == 0 {
-		// Try to get from token
-		claims, err := jwt.ParseToken(creds.AccessToken)
-		if err == nil && len(claims.Namespaces) > 0 {
-			namespaces = claims.Namespaces
-		}
+	if fresh := namespacesFromToken(creds, credMgr, serverURL); len(fresh) > len(namespaces) {
+		namespaces = fresh
 	}
 
 	if len(namespaces) == 0 {
-		return fmt.Errorf("no accessible Projects found in credentials")
+		return fmt.Errorf("no accessible Projects found. Run: kube-dc login --domain %s --org %s",
+			domainFromAPI(serverURL), realm)
 	}
 
 	// If no argument, list Project backing namespaces.

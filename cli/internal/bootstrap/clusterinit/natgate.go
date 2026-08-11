@@ -37,6 +37,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"sort"
 
 	"path/filepath"
@@ -329,6 +330,151 @@ func controlPlaneCandidateHost(candidate string) string {
 		return candidate
 	}
 	return strings.Trim(host, "[]")
+}
+
+// WriteExternalKubeAPIVIP scaffolds an OFF-ENVOY external route for the
+// management kube-api on the front-door MetalLB VIP.
+//
+// PRODUCTIZED FROM A PRODUCTION INCIDENT (2026-08-11). The
+// :6443 Envoy tls-passthrough listener is removed whenever Envoy shares a node
+// with an apiserver (IngressCollidesWithAPIServer / single-IP-NAT /
+// GatewayCollidesWithAPIServer). Removing it is self-sufficient ONLY when the
+// front-door address is a node's OWN address — that node's apiserver then serves
+// :6443 itself. On a MetalLB VIP front door the VIP can land on a node WITHOUT an
+// apiserver, so removing the listener silently kills external kube-api with no
+// replacement — exactly the incident (external kubectl dead, the cluster
+// "unusable" from an operator's laptop while console/login stayed up).
+//
+// The fix serves kube-api on the SAME VIP but NOT through Envoy: a selectorless
+// ClusterIP Service with externalIPs=<VIP> on :6443 + a static EndpointSlice to
+// the control-plane host IPs. kube-proxy DNATs <VIP>:6443 -> an apiserver on
+// whichever node MetalLB lands the VIP on; Envoy keeps :80/:443 and never binds
+// :6443, so the collision cannot recur. HA across all control-plane apiservers.
+//
+// Why externalIPs and not a second LoadBalancer Service sharing the VIP: MetalLB
+// will not co-locate a second Service on an already-allocated VIP (the Envoy
+// allocation carries no sharing key and the etp Local/Cluster backends differ),
+// and the kube-dc service_lb controller intercepts every type=LoadBalancer
+// Service. A ClusterIP + externalIPs Service sidesteps both.
+//
+// The VIP is written LITERALLY (not a ${METALLB_FLOATING_IP} substitution): an
+// empty substitution would render externalIPs: [""], a known front-door footgun.
+// Skips writing if the manifest already exists (operator may have customised it).
+func WriteExternalKubeAPIVIP(fleetRepo, clusterName, vip string, cpHostIPs []string, out io.Writer) error {
+	if out == nil {
+		out = io.Discard
+	}
+	if net.ParseIP(vip) == nil {
+		return fmt.Errorf("external-kube-api: VIP %q is not an IP", vip)
+	}
+	eps := make([]string, 0, len(cpHostIPs))
+	for _, ip := range cpHostIPs {
+		ip = strings.TrimSpace(ip)
+		if ip == "" {
+			continue
+		}
+		if net.ParseIP(ip) == nil {
+			return fmt.Errorf("external-kube-api: control-plane host %q is not an IP", ip)
+		}
+		eps = append(eps, fmt.Sprintf("  - addresses: [%q]", ip))
+	}
+	if len(eps) == 0 {
+		return fmt.Errorf("external-kube-api: no control-plane host IPs (KUBE_OVN_MASTER_NODES) to back the endpoint")
+	}
+	manifest := fmt.Sprintf(externalKubeAPIManifest, vip, strings.Join(eps, "\n"))
+
+	dir := filepath.Join(fleetRepo, "clusters", clusterName, "addons-config")
+	path := filepath.Join(dir, "kube-api-external.yaml")
+	if _, err := os.Stat(path); err == nil {
+		return nil // already scaffolded / operator-customised — never clobber
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("external-kube-api: mkdir %s: %w", dir, err)
+	}
+	if err := atomicWrite(path, []byte(manifest), 0o644); err != nil {
+		return fmt.Errorf("external-kube-api: write %s: %w", path, err)
+	}
+	kpath := filepath.Join(dir, "kustomization.yaml")
+	if err := patchFileLines(kpath, appendKustomizeResource("kube-api-external.yaml")); err != nil {
+		return fmt.Errorf("external-kube-api: wire kustomization: %w", err)
+	}
+	fmt.Fprintf(out, "[scaffold] external kube-api: VIP:6443 served OFF-Envoy via a ClusterIP+externalIPs Service -> %d control-plane apiservers (the :6443 Envoy listener was removed for this VIP+host-bind topology)\n", len(eps))
+	return nil
+}
+
+// externalKubeAPIManifest is the Service + EndpointSlice, %s = VIP, %s = the
+// joined "  - addresses: [\"ip\"]" endpoint lines.
+const externalKubeAPIManifest = `# kube-api-external — external management kube-api on the front-door VIP, served
+# OFF-Envoy. Scaffolded by ` + "`kube-dc bootstrap init`" + ` because this cluster's front
+# door is a MetalLB VIP AND Envoy is host-bind on apiserver node(s), so the
+# Gateway :6443 tls-passthrough listener was removed (it would snipe the
+# apiserver's own :6443 — production incident 2026-08-11). See natgate.go
+# WriteExternalKubeAPIVIP for the full rationale.
+#
+# kube-proxy DNATs <VIP>:6443 -> a control-plane apiserver on whichever node
+# MetalLB lands the VIP on; Envoy keeps :80/:443 and never binds :6443. If a
+# control-plane node's address changes, update the EndpointSlice below.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kube-api-external
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/managed-by: kube-dc
+    kube-dc.com/component: front-door-kube-api
+spec:
+  type: ClusterIP
+  externalIPs:
+    - %q
+  ports:
+    - name: https
+      port: 6443
+      targetPort: 6443
+      protocol: TCP
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: kube-api-external-1
+  namespace: kube-system
+  labels:
+    kubernetes.io/service-name: kube-api-external
+    app.kubernetes.io/managed-by: kube-dc
+addressType: IPv4
+ports:
+  - name: https
+    port: 6443
+    protocol: TCP
+endpoints:
+%s
+`
+
+// appendKustomizeResource returns a patchFileLines patch that idempotently adds
+// `- <resource>` under a kustomization's resources: key.
+func appendKustomizeResource(resource string) func([]string) ([]string, bool, error) {
+	want := "- " + resource
+	return func(lines []string) ([]string, bool, error) {
+		hasResources := false
+		for _, l := range lines {
+			t := strings.TrimSpace(l)
+			if t == want {
+				return lines, false, nil // already present
+			}
+			if t == "resources:" {
+				hasResources = true
+			}
+		}
+		end := len(lines)
+		for end > 0 && strings.TrimSpace(lines[end-1]) == "" {
+			end--
+		}
+		out := append([]string{}, lines[:end]...)
+		if !hasResources {
+			out = append(out, "resources:")
+		}
+		out = append(out, "  "+want)
+		return out, true, nil
+	}
 }
 
 // WriteSingleIPNATPatch appends the 6443-listener removal to the

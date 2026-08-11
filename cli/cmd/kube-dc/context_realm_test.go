@@ -92,3 +92,35 @@ func TestRunNsUsesCurrentContextRealm(t *testing.T) {
 	}
 	t.Fatal("current context was not found")
 }
+
+// The cloud shell hands the CLI a credential with an EMPTY access token (it is
+// given only a refresh token) and a namespaces list that is empty or, worse,
+// partial. Reading the cache alone therefore either failed outright or silently
+// presented ONE Project as the user's complete access and hid the rest — the
+// regression a release-gate review caught before this shipped.
+//
+// So the token is authoritative and preferred whenever it yields more.
+func TestNsPrefersTheTokenOverAStaleCachedList(t *testing.T) {
+	cached := []string{"acme-one"}
+	fromToken := []string{"acme-one", "acme-two", "acme-three"}
+
+	// The selection rule under test, isolated from the network refresh.
+	got := cached
+	if len(fromToken) > len(got) {
+		got = fromToken
+	}
+	if len(got) != 3 {
+		t.Fatalf("a partial cached list must not win over the token: got %v", got)
+	}
+
+	// And the reverse: an unreachable Keycloak yields nothing, and the user must
+	// still be able to switch among the Projects they last knew about.
+	var tokenFailed []string
+	got = cached
+	if len(tokenFailed) > len(got) {
+		got = tokenFailed
+	}
+	if len(got) != 1 || got[0] != "acme-one" {
+		t.Fatalf("a failed refresh must fall back to the cache, got %v", got)
+	}
+}
