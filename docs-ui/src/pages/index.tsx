@@ -31,7 +31,7 @@ type CardProps = {
 
 function DocCard({title, description, link, buttonLabel, items}: CardProps) {
   return (
-    <div className={clsx('col col--6')}>
+    <div className={clsx('col col--4', styles.cardColumn)}>
       <div className={styles.card}>
         <Heading as="h2">{title}</Heading>
         <p>{description}</p>
@@ -80,6 +80,19 @@ export default function Home(): ReactNode {
               'Networking and Storage',
               'Observability and Day-2 Operations',
               'Operator CLI and Reference',
+            ]}
+          />
+          <DocCard
+            title="Platform Datasheet"
+            description="Evaluate Kube-DC capabilities, architecture, service boundaries, and operating responsibilities."
+            link="/datasheet"
+            buttonLabel="Open Datasheet"
+            items={[
+              'Platform and Tenancy Model',
+              'Managed Clusters and Virtual Machines',
+              'Databases, Networking, and Storage',
+              'Security and Observability',
+              'GPU Service Models',
             ]}
           />
         </div>

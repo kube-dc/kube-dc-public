@@ -527,3 +527,25 @@ article img.screenshot-full {
   max-width: none;
   width: 100%;
 }
+
+/* Datasheet pages use the same content as the print/PDF build. Keep long
+   technical pages comfortable on screen without changing the global docs
+   layout used by the task-oriented Cloud and Platform guides. */
+[class*='docs-doc-id-datasheet'] article,
+[class*='docs-doc-id-function-'] article {
+  --ifm-leading: 1.7;
+}
+
+@media print {
+  .navbar,
+  .theme-doc-sidebar-container,
+  .theme-doc-toc-desktop,
+  .pagination-nav,
+  .footer {
+    display: none !important;
+  }
+
+  article {
+    box-shadow: none !important;
+  }
+}

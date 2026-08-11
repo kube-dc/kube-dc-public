@@ -39,6 +39,10 @@
   transition: box-shadow 0.2s ease;
 }
 
+.cardColumn {
+  margin-bottom: 1.5rem;
+}
+
 .card:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }

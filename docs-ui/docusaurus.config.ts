@@ -2,6 +2,7 @@ import { themes as prismThemes } from 'prism-react-renderer';
 import type { Config } from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 import stripGithubOnly from './src/remark/stripGithubOnly';
+import publishDatasheet from './src/remark/publishDatasheet';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
@@ -54,8 +55,8 @@ const config: Config = {
         indexDocs: true,
         indexBlog: false,
         indexPages: false,
-        docsDir: ['../docs/cloud', '../docs/platform'],
-        docsRouteBasePath: ['/cloud', '/platform'],
+        docsDir: ['../docs/cloud', '../docs/platform', '../docs/datasheet'],
+        docsRouteBasePath: ['/cloud', '/platform', '/datasheet'],
         searchResultLimits: 8,
         searchResultContextMaxLength: 50,
       },
@@ -140,6 +141,18 @@ const config: Config = {
         sidebarPath: './sidebarsPlatform.ts',
         beforeDefaultRemarkPlugins: [stripGithubOnly],
         editUrl: ({docPath}) => 'https://github.com/kube-dc/kube-dc-public/edit/main/docs/platform/' + docPath,
+      },
+    ],
+    [
+      '@docusaurus/plugin-content-docs',
+      {
+        id: 'datasheet',
+        path: '../docs/datasheet',
+        routeBasePath: '/datasheet',
+        sidebarPath: './sidebarsDatasheet.ts',
+        include: ['draft-artifact-a-datasheet.md', 'function-*.md'],
+        beforeDefaultRemarkPlugins: [stripGithubOnly, publishDatasheet],
+        editUrl: ({docPath}) => 'https://github.com/kube-dc/kube-dc-public/edit/main/docs/datasheet/' + docPath,
       },
     ],
     function llmsPlugin() {
@@ -318,6 +331,13 @@ const config: Config = {
           label: 'Platform Docs',
         },
         {
+          type: 'docSidebar',
+          sidebarId: 'datasheetSidebar',
+          docsPluginId: 'datasheet',
+          position: 'left',
+          label: 'Datasheet',
+        },
+        {
           href: 'https://github.com/kube-dc/kube-dc-public',
           label: 'GitHub',
           position: 'right',
@@ -392,6 +412,10 @@ const config: Config = {
             {
               label: 'Contact',
               href: 'https://shalb.com/contact',
+            },
+            {
+              label: 'Platform Datasheet',
+              to: '/datasheet',
             },
           ],
         },

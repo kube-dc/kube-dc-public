@@ -1,0 +1,40 @@
+.figure {
+  margin: 2rem 0 2.5rem;
+  break-inside: avoid;
+}
+
+.narrow {
+  max-width: 34rem;
+}
+
+.image {
+  width: 100%;
+  margin: 0;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 4px 18px rgba(21, 21, 21, 0.1);
+}
+
+.caption {
+  margin-top: 0.75rem;
+  color: var(--ifm-color-emphasis-700);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+@media print {
+  .figure {
+    margin: 7mm 0;
+  }
+
+  .image {
+    border-color: #c7c7c7;
+    box-shadow: none;
+  }
+
+  .caption {
+    color: #4d4d4d;
+    font-size: 8.5pt;
+  }
+}

@@ -2,7 +2,8 @@
 
 This directory contains the Docusaurus site published at
 [docs.kube-dc.com](https://docs.kube-dc.com). The documentation source is split
-between the user-facing Cloud Guide and the operator-facing Platform Docs.
+between three independent surfaces: the user-facing Cloud Guide, the
+operator-facing Platform Docs, and the capability-focused Platform Datasheet.
 
 ## Prerequisites
 
@@ -51,22 +52,25 @@ npm run serve
 ```text
 docs/
 |-- cloud/                    # User-facing Cloud Guide
-`-- platform/                 # Operator-facing Platform Docs
+|-- platform/                 # Operator-facing Platform Docs
+`-- datasheet/                # Public overview and capability datasheets
 docs-ui/
 |-- static/                   # Site-wide static assets
 |-- src/                      # Theme, components, styles, and pages
 |-- docusaurus.config.ts      # Site and content-plugin configuration
 |-- sidebarsCloud.ts          # Cloud Guide navigation
-`-- sidebarsPlatform.ts       # Platform Docs navigation
+|-- sidebarsPlatform.ts       # Platform Docs navigation
+`-- sidebarsDatasheet.ts      # Datasheet navigation
 ```
 
 ## Publishing
 
 The public source mirror and GitHub Pages target are
 [`kube-dc/kube-dc-public`](https://github.com/kube-dc/kube-dc-public). For a
-documentation release, mirror `README.md`, `docs/cloud/`, `docs/platform/`,
-`docs-ui/`, and `static/diagrams/` byte-for-byte from the product source. Keep
-public-owned `.github/` workflows and `skills/` content in the public repository.
+documentation release, mirror `README.md`, `docs/cloud/`, `docs/platform/`, the
+curated public files from `docs/datasheet/`, `docs-ui/`, and `static/diagrams/`
+from the product source. Keep public-owned `.github/` workflows and `skills/`
+content in the public repository.
 
 A push to `main` that changes `docs/**` or `docs-ui/**` starts the
 [Deploy Docs to GitHub Pages](https://github.com/kube-dc/kube-dc-public/actions/workflows/deploy-docs.yml)
