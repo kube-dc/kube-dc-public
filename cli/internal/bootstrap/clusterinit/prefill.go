@@ -1,6 +1,7 @@
 package clusterinit
 
 import (
+	"fmt"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -44,6 +45,7 @@ const (
 	KeyAllowNoKVM   = InitPrefix + "ALLOW_NO_KVM"
 	KeyAllowUnpin   = InitPrefix + "ALLOW_UNPINNED_ADOPT"
 	KeyNoS3Exposure = InitPrefix + "NO_S3_EXPOSURE"
+	KeyNoKubeVirt   = InitPrefix + "NO_KUBEVIRT"
 	// KeyNodeEgress is install-only by design: live cluster-config.env uses
 	// EXT_NET_NODE_EGRESS_ENABLED, but clone-from-sibling must never inherit this
 	// site-specific internet-gateway escape hatch.
@@ -63,6 +65,33 @@ const (
 	KeyGPUAllowUnassigned = InitPrefix + "GPU_ALLOW_UNASSIGNED"
 	KeyVGPUSecretReady    = InitPrefix + "VGPU_SECRET_READY"
 )
+
+// orchestrationKeys is the full set of install-only KUBE_DC_INIT_* keys the
+// importer recognizes. Used to catch a common footgun: writing the BARE form of
+// an install-only key (e.g. VM_STORAGE_MODE instead of
+// KUBE_DC_INIT_VM_STORAGE_MODE). The bare form is not recognized, is not denied,
+// and would otherwise ride the catch-all into cluster-config.env verbatim as a
+// silent no-op. Keep this in sync with the const block above.
+var orchestrationKeys = map[string]bool{
+	KeyMode: true, KeyFleetMode: true, KeyPreset: true, KeyProvider: true,
+	KeyGitHubOwner: true, KeyGitHubRepo: true, KeyRepo: true, KeySSHHost: true,
+	KeyAllowDNS: true, KeyAllowNoKVM: true, KeyAllowUnpin: true, KeyNoS3Exposure: true,
+	KeyNoKubeVirt: true,
+	KeyNodeEgress: true, KeyNodeNICs: true, KeyIngressNodes: true,
+	KeyVMStorageMode: true, KeyVMGolden: true, KeyVMGoldenBlock: true,
+	KeyGPUPlatform: true, KeyGPUAllowUnassigned: true, KeyVGPUSecretReady: true,
+}
+
+// IsOrchestrationKey reports whether fullKey (WITH the KUBE_DC_INIT_ prefix) is a
+// recognized install-only orchestration key. ImportMap reads every one of these
+// in prefixed form (directly via src[KeyX] or via the str/boolean helpers), so
+// the env-prefill path must KEEP the prefix on them; a native config key passed
+// through the KUBE_DC_INIT_ env namespace is stripped instead. Sharing this one
+// predicate keeps the env path and ImportMap from drifting — a mismatch silently
+// drops the input (the VM_STORAGE_MODE / INGRESS_NODES class of bug).
+func IsOrchestrationKey(fullKey string) bool {
+	return orchestrationKeys[fullKey]
+}
 
 // denyImportExact are the keys the scaffold/preset OWNS or recomputes:
 // domain-derived endpoints, the OVN DB IPs, and the universal + preset
@@ -150,7 +179,7 @@ var specOrder = []string{
 	KeyGPUAllowUnassigned, KeyVGPUSecretReady,
 	KeyMode, KeyFleetMode, KeyPreset, KeyProvider,
 	KeyGitHubOwner, KeyGitHubRepo, KeyRepo, KeySSHHost,
-	KeyAllowDNS, KeyAllowNoKVM, KeyAllowUnpin, KeyNoS3Exposure,
+	KeyAllowDNS, KeyAllowNoKVM, KeyAllowUnpin, KeyNoS3Exposure, KeyNoKubeVirt,
 }
 
 // parsePrefillBool accepts the env-file truthy spellings.
@@ -334,6 +363,7 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 	boolean(KeyAllowNoKVM, "allow-no-kubevirt-eligible", &o.AllowNoKubevirtEligible)
 	boolean(KeyAllowUnpin, "allow-unpinned-adopt", &o.AllowUnpinnedAdopt)
 	boolean(KeyNoS3Exposure, "no-s3-exposure", &o.NoS3Exposure)
+	boolean(KeyNoKubeVirt, "no-kubevirt", &o.NoKubeVirt)
 	if v, ok := src[KeyNodeEgress]; ok {
 		seen[KeyNodeEgress] = true
 		if _, explicitlySet := o.Sets["EXT_NET_NODE_EGRESS_ENABLED"]; !explicitlySet {
@@ -440,6 +470,17 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 		if denyImport(k) {
 			ignored = append(ignored, k)
 			continue
+		}
+		// Footgun guard: a BARE install-only key (e.g. VM_STORAGE_MODE instead of
+		// KUBE_DC_INIT_VM_STORAGE_MODE) is the common miss. Point at the prefixed
+		// form WITHOUT asserting it is a no-op — a same-named key CAN be a genuine
+		// cluster-config value (a custom Flux substitution), and it is carried
+		// as-is either way, so the operator decides.
+		if orchestrationKeys[InitPrefix+k] {
+			o.PrefillNotes = append(o.PrefillNotes, fmt.Sprintf(
+				"key %q is the bare form of the install-only key %q — if you meant "+
+					"that setting use the prefixed name; otherwise it is kept as "+
+					"cluster-config as written", k, InitPrefix+k))
 		}
 		if _, already := o.Sets[k]; !already && strings.TrimSpace(v) != "" {
 			o.Sets[k] = strings.TrimSpace(v)
@@ -570,6 +611,9 @@ func ExportMap(o *InitOptions) map[string]string {
 	}
 	if o.NoS3Exposure {
 		m[KeyNoS3Exposure] = "true"
+	}
+	if o.NoKubeVirt {
+		m[KeyNoKubeVirt] = "true"
 	}
 	if o.GPUPlatform != "" {
 		put(KeyGPUPlatform, string(o.GPUPlatform))

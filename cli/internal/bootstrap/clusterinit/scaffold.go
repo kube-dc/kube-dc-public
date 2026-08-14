@@ -330,80 +330,24 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 		return fmt.Errorf("scaffold: %w", err)
 	}
 
-	// (8) Single-IP NAT wiring (findings 17/17b) — drop the 6443
-	// passthrough listener via a platform.yaml spec.patches entry.
-	// MUST stay after step 7: the OS-4 disabled writer refuses any
-	// pre-existing patches: key, including ours; this writer composes
-	// with the OS-4 block when both fire. Apply-time detected (SSH
-	// probe), so dry-run plans don't list it — the substitution +
-	// patch are logged at apply.
-	// Also fire when NODE_EXTERNAL_IP is simply one of the cluster's own node
-	// addresses. That is the same collision without any NAT, so the SSH probe
-	// above reports nothing — and under --no-ssh it never runs at all.
-	// PREFERRED: derive from the ingress-node set. Envoy binds the listener
-	// ports on the nodes carrying the ingress label, so "does Envoy share a
-	// node with kube-apiserver?" is a set intersection — not a guess about
-	// whether NODE_EXTERNAL_IP equals a control-plane address (codex
-	// 2026-08-07, P1). Falls back to the address heuristics when the operator
-	// declared no ingress nodes, so pre-v2 behaviour is preserved exactly.
-	envBody := ""
-	if body, err := os.ReadFile(filepath.Join(opts.FleetRepo, "clusters", opts.Plan.ClusterName, "cluster-config.env")); err == nil {
-		envBody = string(body)
-	}
-	collides := opts.SingleIPNAT
-	// KUBE_OVN_GW_NODES is NOT the control-plane set and must never be
-	// substituted for it. Verified live: the reference cluster has four
-	// external-gateway nodes and only three control-plane nodes, so one gateway
-	// node is an ordinary worker. Comparing against the gateway set therefore
-	// INVERTS the answer for that node — it would report "an ingress node is
-	// also a control-plane node" and drop the tenant kube-API listener from a
-	// worker where it would have bound fine.
+	// (8) External kube-api front door. Off-Envoy is the DEFAULT for every new
+	// cluster and every address layer, and the base gateway no longer ships a
+	// :6443 Envoy listener at all: the starter's add-cluster.sh selects
+	// front-door/components/kube-api-off-envoy and seeds KUBE_API_ARRIVAL_IP.
+	// We NEVER route :6443 through Envoy on a host-bind cluster — it collides
+	// with the apiserver on control-plane ingress nodes (production incident
+	// 2026-08-11), which is exactly what the old collision-detection + listener
+	// removal (WriteSingleIPNATPatch) and the static-EndpointSlice bridge
+	// (WriteExternalKubeAPIVIP) worked around. Both are retired: there is no
+	// listener to remove, and endpoints are controller-managed and self-healing.
 	//
-	// Nothing in cluster-config.env carries control-plane node NAMES
-	// (KUBE_OVN_MASTER_NODES holds their IPs), so the set-intersection
-	// derivation is used only when the caller supplies real names. Otherwise
-	// fall back to the address heuristic, which is exactly the pre-v2
-	// behaviour — a weaker signal, but not a wrong one.
-	if derived, ok := IngressCollidesWithAPIServer(
-		opts.Plan.IngressNodes, opts.ControlPlaneNodes,
-	); ok {
-		collides = derived
-		// State which listener this is, because the obvious guess is wrong: the
-		// :6443 listener carries kube-api.<domain> — the MANAGEMENT API — and NOT
-		// managed tenant clusters, which are on :443 via the wildcard
-		// passthrough listener and are unaffected by this decision either way.
-		onCP, offCP, _ := ClassifyIngressPlacement(opts.Plan.IngressNodes, opts.ControlPlaneNodes)
-		fmt.Fprintf(out, "[scaffold] :6443 management-API listener: %s\n",
-			map[bool]string{
-				true: fmt.Sprintf("REMOVED — ingress runs on control-plane node(s) %s, where kube-apiserver "+
-					"owns :6443, so Envoy could never bind it. Each apiserver serves :6443 itself",
-					strings.Join(onCP, ",")),
-				false: fmt.Sprintf("KEPT — ingress runs off the control plane (%s), so Envoy can bind :6443",
-					strings.Join(offCP, ",")),
-			}[derived])
-	} else if !collides && envBody != "" {
-		collides = GatewayCollidesWithAPIServer(envBody)
-	}
-	if collides {
-		if err := WriteSingleIPNATPatch(opts.FleetRepo, opts.Plan.ClusterName, out); err != nil {
-			return fmt.Errorf("scaffold: %w", err)
-		}
-		// PRODUCTIZED FROM INCIDENT 2026-08-11: removing the :6443 listener is
-		// self-sufficient only when the front door is a node's OWN address (that
-		// node's apiserver serves :6443). On a MetalLB VIP front door the VIP can
-		// land on a node without an apiserver, so external kube-api needs an
-		// off-Envoy route or external kubectl silently dies. Scaffold it here.
-		if strings.TrimSpace(envValue(envBody, "INGRESS_ADDRESS_LAYER")) == "metallb-l2" {
-			vip := strings.TrimSpace(envValue(envBody, "METALLB_FLOATING_IP"))
-			if vip != "" {
-				cpIPs := strings.Split(envValue(envBody, "KUBE_OVN_MASTER_NODES"), ",")
-				if err := WriteExternalKubeAPIVIP(opts.FleetRepo, opts.Plan.ClusterName, vip, cpIPs, out); err != nil {
-					return fmt.Errorf("scaffold: %w", err)
-				}
-			} else {
-				fmt.Fprintf(out, "[scaffold] WARNING: :6443 listener removed on a metallb-l2 VIP front door but METALLB_FLOATING_IP is empty — external kube-api has NO route; set it and re-run, or add a kube-api-external Service by hand\n")
-			}
-		}
+	// The only remaining CLI job is to resolve KUBE_API_ARRIVAL_IP to a real
+	// address — on a MetalLB layer the scaffold leaves CHANGEME because the VIP
+	// is operator-supplied, so substitute METALLB_FLOATING_IP (the arrival
+	// address on a VIP front door IS the announced VIP). none/1:1-NAT already
+	// carries the node's own IP and is untouched.
+	if err := ResolveKubeAPIArrivalIP(opts.FleetRepo, opts.Plan.ClusterName, out); err != nil {
+		return fmt.Errorf("scaffold: %w", err)
 	}
 
 	// (9) VM root-disk storage wiring — rbd-vm.yaml (base + goldens Flux
@@ -428,6 +372,17 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// warning. tenant-addons deliberately no longer rides here — see (9b)
 	// and the WriteTenantBaseline doc comment.
 	if err := WriteImageAccel(opts.FleetRepo, opts.Plan.ClusterName, opts.ImageAccel, out); err != nil {
+		return fmt.Errorf("scaffold: %w", err)
+	}
+
+	// (9d) Per-tenant metrics write path (cortex-tenant + alloy-metrics).
+	// Default-on wherever Mimir is present (any non-disabled object-storage
+	// mode), so a fresh cluster's tenant Grafana Orgs show metrics, not just
+	// logs — the gap operators kept wiring by hand. Absent bundle in an older
+	// starter is skipped with a warning. Runs after (7): the write path
+	// dependsOn the platform/Mimir the object-storage step gates.
+	if err := WriteTenantMetrics(opts.FleetRepo, opts.Plan.ClusterName,
+		opts.ObjectStorage.Mode != RookDisabled, out); err != nil {
 		return fmt.Errorf("scaffold: %w", err)
 	}
 

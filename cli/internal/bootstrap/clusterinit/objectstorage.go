@@ -562,6 +562,11 @@ func objectStorageEnvKeys(domain string, spec ObjectStorageSpec) [][2]string {
 		if spec.OSDDevice != "" {
 			kv = append(kv, [2]string{"CEPH_LOCAL_OSD_DEVICE", spec.OSDDevice})
 		}
+		// Single OSD is definitional for this mode (1 MON / 1 MGR / 1 OSD), so a
+		// size-2 RBD pool would sit permanently PG_DEGRADED / HEALTH_WARN. Pin
+		// replication to 1 (no redundancy, correct for one OSD); the fleet
+		// rook-ceph-local CephBlockPool reads CEPH_REPLICATION_SIZE.
+		kv = append(kv, [2]string{"CEPH_REPLICATION_SIZE", "1"})
 	case RookCephMultiNode:
 		// Sorted node names → slots 1..3, deterministically.
 		nodes := make([]string, 0, len(spec.CephNodes))

@@ -63,7 +63,11 @@ var ErrNoKubeVirtEligibleNodes = errors.New("init: no KubeVirt-eligible nodes")
 type NFDGateOptions struct {
 	K8s                     discover.NodeLabelsProvider
 	AllowNoKubevirtEligible bool
-	Out                     io.Writer
+	// NoKubeVirt: VMs are out of scope for this cluster (e.g. cs/CloudSigma) —
+	// skip the eligibility check entirely rather than block/warn on nodes that
+	// will never run VMs.
+	NoKubeVirt bool
+	Out        io.Writer
 }
 
 // CheckKubeVirtEligibility resolves the target cluster's NFD state
@@ -80,6 +84,10 @@ func CheckKubeVirtEligibility(ctx context.Context, opts NFDGateOptions) error {
 	out := opts.Out
 	if out == nil {
 		out = io.Discard
+	}
+	if opts.NoKubeVirt {
+		fmt.Fprintln(out, "[apply] NFD gate: skipped (--no-kubevirt: VMs out of scope for this cluster)")
+		return nil
 	}
 	if opts.K8s == nil {
 		fmt.Fprintln(out, "[apply] NFD gate: skipped (no K8sClient — target cluster not observable yet)")

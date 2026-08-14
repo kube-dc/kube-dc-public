@@ -107,6 +107,7 @@ type State struct {
 	CephOSDVolumeSize string
 	S3Hostname        string
 	NoS3Exposure      bool
+	NoKubeVirt        bool
 	DisabledConsent   bool
 	// VM root-disk storage (PRD vm-storage-mode). Optional; empty/local =
 	// local-path (the VM default). shared-rbd needs a rook-ceph-* OSMode.
@@ -291,6 +292,7 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 	}
 	o.S3Hostname = strings.TrimSpace(s.S3Hostname)
 	o.NoS3Exposure = s.NoS3Exposure
+	o.NoKubeVirt = s.NoKubeVirt
 	// VM root-disk storage — the mode only; --vm-golden stays CLI-only.
 	// Empty == local (the writer + Validate both treat it as no-op). The
 	// selector is HIDDEN unless object storage is rook-backed (shared-rbd
@@ -459,6 +461,9 @@ func (s *State) FromOptions(o *clusterinit.InitOptions) {
 	if o.NoS3Exposure {
 		s.NoS3Exposure = true
 	}
+	if o.NoKubeVirt {
+		s.NoKubeVirt = true
+	}
 	if o.AllowDNSNotReady {
 		s.AllowDNSNotReady = true
 	}
@@ -544,6 +549,9 @@ func (s *State) EquivalentFlags(o *clusterinit.InitOptions) string {
 	add("s3-hostname", o.S3Hostname)
 	if o.NoS3Exposure {
 		b.WriteString("  --no-s3-exposure \\\n")
+	}
+	if o.NoKubeVirt {
+		b.WriteString("  --no-kubevirt \\\n")
 	}
 	// VM root-disk storage — only emit when non-default (local is the
 	// default; omitting the flag is equivalent). Goldens come from the CLI

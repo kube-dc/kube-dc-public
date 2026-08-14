@@ -52,6 +52,22 @@ Physical Interface (bond0)
 > for fabrics with no shared L2 — see the installation guide's
 > "BGP announcement" section.
 
+> **The egress gateway must answer ARP.** `EXT_NET_GATEWAY` (the tenant
+> internet next-hop on the ext network) has to be a live L2 neighbour that
+> replies to ARP on the ext interface — an address that is merely *inside*
+> the ext CIDR but silent on ARP produces a clean install with **black-holed
+> tenant egress** (pods route out, get no return path). `kube-dc bootstrap
+> init` now arpings the gateway from the node before CNI and prints a
+> warning if it is unreachable, but the check is advisory (fail-open); verify
+> by hand on any node once the ext interface is up:
+>
+> ```bash
+> arping -c2 -I <ext-iface> "$EXT_NET_GATEWAY"   # e.g. arping -c2 -I bond0.200 192.0.2.1
+> ```
+>
+> A node whose own anchor IP *is* the gateway (node-egress topology) needs no
+> ARP reply and is skipped by the probe.
+
 ## Example Cluster Usage
 
 - **demo-cloud project**: Uses `egressNetworkType: cloud` → EIP: 100.65.0.102 (development/testing)

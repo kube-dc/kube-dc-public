@@ -138,6 +138,18 @@ sudo rm -f /etc/resolv.conf
 echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" | sudo tee /etc/resolv.conf
 ```
 
+:::note The CLI installer never rewrites your resolver by default
+The steps above are the **manual** fallback. When you install with `kube-dc
+bootstrap init`, the RKE2 bootstrap probes DNS with `getent hosts get.rke2.io`
+and, if it fails, **stops with an error rather than silently overwriting
+`/etc/resolv.conf`** — rewriting a corporate or air-gapped resolver to public
+DNS would break internal names and leak queries. Fix DNS (or point RKE2 at a
+local mirror) and re-run. To force the public-DNS fallback anyway on a node you
+know is internet-facing, set `RKE2_DNS_PUBLIC_FALLBACK=true` (it saves the
+previous resolver to `/etc/resolv.conf.pre-kube-dc`). Do **not** set it on a
+corporate/air-gapped network.
+:::
+
 :::danger A wildcard DNS record + a search domain breaks ALL external name resolution from pods
 If your platform domain has a **wildcard A record** (`*.example.com`, which
 §3.2 asks you to create) then the nodes' `search` list must **not** contain
@@ -235,7 +247,7 @@ produces — the manual reference is grouped in
 From your bastion (after installing the CLI — see [§1.5](#15-install-the-kube-dc-cli)):
 
 ```bash
-RKE2_VERSION=v1.35.0+rke2r1  # pin the same reviewed version on EVERY node
+RKE2_VERSION=v1.36.3+rke2r1  # pin the same reviewed version on EVERY node
 kube-dc bootstrap install master-1 \
   --ssh-host root@203.0.113.10 \
   --domain example.com \
@@ -462,7 +474,7 @@ EOF
 Install and start RKE2:
 
 ```bash
-export INSTALL_RKE2_VERSION="v1.35.0+rke2r1"
+export INSTALL_RKE2_VERSION="v1.36.3+rke2r1"
 export INSTALL_RKE2_TYPE="server"
 curl -sfL https://get.rke2.io | sh -
 sudo systemctl enable rke2-server.service
@@ -489,7 +501,7 @@ Verify:
 ```bash
 kubectl get nodes
 # NAME       STATUS     ROLES                       AGE   VERSION
-# master-1   NotReady   control-plane,etcd,master   1m    v1.35.0+rke2r1
+# master-1   NotReady   control-plane,etcd,master   1m    v1.36.3+rke2r1
 ```
 
 The node will show `NotReady` until a CNI is installed — this is expected.
@@ -542,7 +554,7 @@ tls-san:
 EOF
 
 # Install and start
-export INSTALL_RKE2_VERSION="v1.35.0+rke2r1"
+export INSTALL_RKE2_VERSION="v1.36.3+rke2r1"
 export INSTALL_RKE2_TYPE="server"
 curl -sfL https://get.rke2.io | sh -
 sudo systemctl enable rke2-server.service
@@ -569,7 +581,7 @@ node-name: worker-1
 node-ip: 192.168.0.11
 EOF
 
-export INSTALL_RKE2_VERSION="v1.35.0+rke2r1"
+export INSTALL_RKE2_VERSION="v1.36.3+rke2r1"
 export INSTALL_RKE2_TYPE="agent"
 curl -sfL https://get.rke2.io | sh -
 sudo systemctl enable rke2-agent.service
@@ -585,9 +597,9 @@ Back on `master-1`:
 ```bash
 kubectl get nodes
 # NAME       STATUS     ROLES                       AGE   VERSION
-# master-1   NotReady   control-plane,etcd,master   10m   v1.35.0+rke2r1
-# master-2   NotReady   control-plane,etcd,master   3m    v1.35.0+rke2r1
-# master-3   NotReady   control-plane,etcd,master   1m    v1.35.0+rke2r1
+# master-1   NotReady   control-plane,etcd,master   10m   v1.36.3+rke2r1
+# master-2   NotReady   control-plane,etcd,master   3m    v1.36.3+rke2r1
+# master-3   NotReady   control-plane,etcd,master   1m    v1.36.3+rke2r1
 ```
 
 All three nodes should appear with the `control-plane,etcd,master` roles. `NotReady` status is expected until the CNI is deployed in Phase 3.
@@ -791,7 +803,8 @@ kube-dc bootstrap init \
 | `--starter-ref` | Immutable full OCI starter reference. Released CLIs default to their own version; pin it explicitly in controlled/reinstall procedures and never use `:latest` |
 | `--github-owner` / `--github-repo` | Where the fleet repo lives (auto-created in `new-repo` mode) |
 | `--object-storage-mode` | **REQUIRED.** Working: `rook-ceph-local` (loop-file backed, single node), `rook-ceph-multi-node` (raw devices, exactly 3 nodes), `rook-ceph-pvc`. `disabled` installs a **deliberately degraded** cluster: Mimir and Loki are SUSPENDED (no metrics or logs storage), Grafana's database runs with backups and WAL archiving OFF, and alloy log-delivery errors are expected — never for a customer-facing cluster. `external-ceph` and `external-s3` are **recognised but fail closed** (fleet stubs); do not select them |
-| `--ceph-node=NODE=DEVICE` | One raw block device per OSD node (repeat 3× for multi-node). Device is the **bare name** as `lsblk` shows it (`nvme1n1`, `sdb`) — a `/dev/` prefix is stripped automatically since v0.5.13. **Re-used hardware: see the zap warning below** |
+| `--ceph-node=NODE=DEVICE` | One raw block device per OSD node (repeat 3× for multi-node). Device is the **bare name** as `lsblk` shows it (`nvme1n1`, `sdb`) — a `/dev/` prefix is stripped automatically since v0.5.13. When a raw device is named (not the loop-file default) `init` probes it over SSH and **warns** if it is missing or already carries data — see the zap warning below. **Re-used hardware: see the zap warning below** |
+| `--no-kubevirt` | VMs are out of scope for this cluster (e.g. a CloudSigma `cs` cluster that only runs managed Kubernetes) — skips the KubeVirt-eligibility (`/dev/kvm`) preflight so the install does not block on nodes with no nested virtualization. **Leave it off for any cluster that will host tenant VMs.** Distinct from `--allow-no-kubevirt-eligible`, which keeps the VM feature but bypasses the *eligibility gate* on a single non-KVM node |
 | `--ssh-host` | Control-plane SSH target — enables kubeconfig auto-pull **and** NAT-topology detection (§3.2) |
 | `--set=KUBE_OVN_MASTER_NODES` | Control-plane **internal** IPs (comma-separated) — not emitted by the preset, always set it |
 | `--set=KUBE_OVN_GW_NODES` | Gateway/announcer **node names**. Required when an L2 VIP is inside `EXT_PUBLIC_CIDR`; the CLI derives one public anchor per listed node |
@@ -882,6 +895,14 @@ point `--repo` at an empty directory.
 For a one-box trial, use `--preset=internal-only --object-storage-mode=rook-ceph-local --rook-osd-node=<node> --rook-osd-size-gb=40`
 and skip the public-VLAN `--set` flags. A dedicated MetalLB VIP is **not** required for a one-box trial: pass `--ingress-address-layer=none` and the front door answers on the node's own address with no MetalLB installed. If you do have a spare address, `--ingress-address-layer=metallb-l2` plus `METALLB_FLOATING_IP` and a real `METALLB_INTERFACE` gives you the floating shape instead. Size the node at **≥12 vCPU /
 27 GiB / 100 GB** — the full platform plus reconcile churn needs it.
+
+On one node, object storage runs a single Ceph OSD, so the RBD pool is
+provisioned at replica **`size 1`** automatically (no redundancy — correct for a
+lab; multi-node installs use 3), and Ceph settles at `HEALTH_OK` instead of the
+`HEALTH_WARN` a size-2 pool would show on one OSD. One caveat: the front-door
+Envoy PodDisruptionBudget wants two healthy replicas, so a voluntary node drain
+(e.g. an RKE2 upgrade) blocks on a one-box cluster and the front door has a brief
+gap while the single Envoy restarts — plan upgrades for a maintenance window.
 :::
 
 ### 3.3.1 Interactive panel + reusable config (`--config` / `--save-config`)
@@ -1668,6 +1689,13 @@ kubectl get pods -n kamaji-system        # Kamaji
 Open `https://console.example.com` for tenants and `https://admin.example.com`
 for platform administrators. The admin frontend is enabled by the greenfield
 scaffold; its Keycloak-backed pages become active after §3.5 finalization.
+
+The **admin console** authenticates against the Keycloak `master` realm. §3.5
+finalization grants the master-realm `admin` user the **`superadmin`** realm role
+automatically, so the console opens straight to the dashboard — no more bare
+"Required role: superadmin or platform-admin" 403. Log in as Keycloak `admin`;
+add further platform admins by granting them the `superadmin` (full) or
+`platform-admin` (read-mostly) realm role in Keycloak.
 
 Retrieve the admin password of the organization you created in
 [§3.6](#36-verify-the-front-door) (the manager writes a `realm-access`

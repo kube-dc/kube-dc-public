@@ -55,6 +55,17 @@ clusters/<cluster>/platform/
   kustomization.yaml      # Per-cluster overlay (Grafana settings, secrets)
 ```
 
+> **The per-tenant metrics write path is enabled per cluster.** `cortex-tenant`
+> + `alloy-metrics` (the components that route each Project's metrics into its
+> own Mimir tenant) are **not** in the shared `platform/monitoring` root — their
+> cloud-sized values would over-provision small clusters. A capable cluster
+> opts in with a `monitoring-writepath.yaml` Flux Kustomization that pulls the
+> shared `platform/monitoring-writepath` bundle. `kube-dc bootstrap init`
+> **scaffolds this by default** for new installs wherever Mimir is present
+> (any non-disabled object-storage mode), so a fresh cluster's tenant Grafana
+> Orgs show metrics — not just logs — out of the box. Without it, tenant metrics
+> dashboards render empty while logs work.
+
 ---
 
 ## 2. Product and backend identity model

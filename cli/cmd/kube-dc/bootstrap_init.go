@@ -534,6 +534,8 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"S3 endpoint hostname for the exposure layer (default: s3.<domain>)")
 	cmd.Flags().BoolVar(&o.NoS3Exposure, "no-s3-exposure", false,
 		"Skip the S3 exposure layer (Certificate + HTTPRoute) — cluster-internal S3 only")
+	cmd.Flags().BoolVar(&o.NoKubeVirt, "no-kubevirt", false,
+		"VMs are out of scope for this cluster (e.g. cs/CloudSigma) — skip the KubeVirt-eligibility (KVM) preflight")
 	cmd.Flags().BoolVar(&o.ImageAcceleration, "image-acceleration", true,
 		"Wire the on-cluster image path (tenant-addons + cdi-os-mirror + registry-depot zot) into the scaffold; spegel (RKE2 embedded registry) is enabled per node by bootstrap install (default: true)")
 	cmd.Flags().StringVar(&o.IngressAddressLayer, "ingress-address-layer", "",
@@ -1029,6 +1031,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		Starter:          starterNeeded,
 		Adopt:            o.Mode == clusterinit.ModeAdopt,
 		SSH:              sshEnabled,
+		StorageDevCheck:  sshEnabled && len(o.ObjectStorage().RawOSDDevices()) > 0,
 		NewRepoCreate:    plan.FleetMode == clusterinit.FleetNewRepo && !o.NoCreateRepo && !o.NoPush,
 		NewRepoRemote:    plan.FleetMode == clusterinit.FleetNewRepo && !o.NoPush,
 		NoPush:           o.NoPush,
@@ -1197,6 +1200,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		return clusterinit.CheckKubeVirtEligibility(ctx, clusterinit.NFDGateOptions{
 			K8s:                     session.K8s,
 			AllowNoKubevirtEligible: o.AllowNoKubevirtEligible,
+			NoKubeVirt:              o.NoKubeVirt,
 			Out:                     out,
 		})
 	}); err != nil {
@@ -1301,6 +1305,102 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 				}
 				nodeCIDR = cidr
 				fmt.Fprintf(out, "[apply] node network CIDR: %s (Tenant Networking v2 enabled)\n", cidr)
+				return nil
+			})
+		}
+
+		// Egress-gateway reachability. Fails OPEN (warning) like the NAT probe:
+		// a false negative must never block a valid install, but a gateway that
+		// is in-CIDR yet silent on ARP means tenant internet egress will
+		// black-hole — the #1 "green install, dead egress" cause. Best-effort
+		// pre-CNI (see ProbeEgressGateway).
+		env, eerr := clusterinit.ResolvedEnvFor(o)
+		gw := ""
+		if eerr == nil {
+			gw = strings.TrimSpace(env["EXT_NET_GATEWAY"])
+		}
+		if gw == "" {
+			// No egress gateway to probe — terminalize the planned milestone so
+			// the TUI checklist does not leave it pending forever.
+			rep.Skip(clusterinit.StepEgressGW, "no EXT_NET_GATEWAY configured")
+		} else {
+			_ = step(rep, clusterinit.StepEgressGW, func() error {
+				sshClient, serr := bootstrap.NewSSHOnly()
+				if serr != nil {
+					fmt.Fprintf(out, "[apply] WARNING: egress-gateway probe skipped (ssh adapter: %v)\n", serr)
+					return nil
+				}
+				res, perr := clusterinit.ProbeEgressGateway(ctx, clusterinit.EgressGatewayProbeOptions{
+					SSH:       sshClient,
+					Host:      parseSSHHostArg(o.SSHHost),
+					Gateway:   gw,
+					ExtIface:  strings.TrimSpace(env["EXT_NET_INTERFACE"]),
+					AnchorIPs: env["EXT_NET_ANCHOR_IPS"],
+					Out:       out,
+				})
+				if perr != nil {
+					fmt.Fprintf(out, "[apply] WARNING: egress-gateway probe failed (%v)\n", perr)
+					return nil
+				}
+				switch {
+				case !res.Probed && res.Warn:
+					// The check couldn't run, but the config itself looks wrong.
+					fmt.Fprintf(out, "[apply] WARNING: egress gateway %s: %s\n", gw, res.Note)
+				case !res.Probed:
+					fmt.Fprintf(out, "[apply] egress gateway %s: not verified (%s)\n", gw, res.Note)
+				case !res.Reachable:
+					fmt.Fprintf(out, "[apply] WARNING: egress gateway %s did NOT answer ARP on %s.\n", gw, res.Iface)
+					fmt.Fprintf(out, "[apply]          Tenant internet egress will BLACK-HOLE until the upstream gateway answers\n")
+					fmt.Fprintf(out, "[apply]          ARP for %s on that VLAN (the #1 'green install, dead egress' cause).\n", gw)
+					fmt.Fprintf(out, "[apply]          Fix the upstream gateway or correct EXT_NET_GATEWAY before relying on tenant egress.\n")
+				default:
+					fmt.Fprintf(out, "[apply] egress gateway %s answered ARP on %s — tenant egress next hop reachable\n", gw, res.Iface)
+				}
+				return nil
+			})
+		}
+
+		// Raw OSD block-device presence (B3). Fail-open like the probes above:
+		// object storage silently never comes up when an OSD device is missing
+		// or already carries data (rook refuses a non-empty device) — yet every
+		// other step reports green. Only explicitly configured raw devices are
+		// checked; loop-file backings are created at install time. Ceph nodes
+		// resolve as ssh_config aliases, the same convention as GPU/anchor hosts.
+		if rawDevs := o.ObjectStorage().RawOSDDevices(); len(rawDevs) > 0 {
+			_ = step(rep, clusterinit.StepStorageDev, func() error {
+				sshClient, serr := bootstrap.NewSSHOnly()
+				if serr != nil {
+					fmt.Fprintf(out, "[apply] WARNING: OSD device check skipped (ssh adapter: %v)\n", serr)
+					return nil
+				}
+				resolve := anchors.NewHostResolver(nil)
+				for _, nd := range rawDevs {
+					node, dev := nd[0], nd[1]
+					res, perr := clusterinit.ProbeStorageDevice(ctx, clusterinit.StorageDeviceProbeOptions{
+						SSH:    sshClient,
+						Host:   resolve(node),
+						Node:   node,
+						Device: dev,
+						Out:    out,
+					})
+					if perr != nil {
+						fmt.Fprintf(out, "[apply] WARNING: OSD device check failed for %s on %s (%v)\n", dev, node, perr)
+						continue
+					}
+					switch res.State {
+					case clusterinit.StorageDevEmpty:
+						fmt.Fprintf(out, "[apply] OSD device /dev/%s on %s: empty block device — ready for rook\n", dev, node)
+					case clusterinit.StorageDevMissing:
+						fmt.Fprintf(out, "[apply] WARNING: OSD device /dev/%s does NOT exist on node %s.\n", dev, node)
+						fmt.Fprintf(out, "[apply]          rook will never bring the OSD up and object storage (Mimir/Loki/CNPG WAL) stays dead.\n")
+						fmt.Fprintf(out, "[apply]          Attach the disk or correct the device before relying on object storage.\n")
+					case clusterinit.StorageDevInUse:
+						fmt.Fprintf(out, "[apply] WARNING: OSD device /dev/%s on node %s already has data (filesystem/partitions/mount).\n", dev, node)
+						fmt.Fprintf(out, "[apply]          rook REFUSES a non-empty device — wipe it (wipefs -a /dev/%s) or pick an empty disk.\n", dev)
+					default: // Unknown — fail-open
+						fmt.Fprintf(out, "[apply] OSD device /dev/%s on %s: not verified (%s)\n", dev, node, res.Detail)
+					}
+				}
 				return nil
 			})
 		}
@@ -1834,20 +1934,6 @@ func applyInitPrefill(cmd *cobra.Command, o *clusterinit.InitOptions, configPath
 // CLUSTER_NAME). Confining env to one prefix stops a stray CLUSTER_NAME in
 // the shell from hijacking init.
 func initEnvPrefill() map[string]string {
-	orch := map[string]bool{
-		clusterinit.KeyMode: true, clusterinit.KeyFleetMode: true,
-		clusterinit.KeyPreset: true, clusterinit.KeyProvider: true,
-		clusterinit.KeyGitHubOwner: true, clusterinit.KeyGitHubRepo: true,
-		clusterinit.KeyRepo: true, clusterinit.KeySSHHost: true,
-		clusterinit.KeyAllowDNS: true, clusterinit.KeyAllowNoKVM: true,
-		clusterinit.KeyAllowUnpin: true, clusterinit.KeyNoS3Exposure: true,
-		// Orchestration, NOT a native config key: the ingress-node set is a
-		// dedicated option (--ingress-node), never a cluster-config.env value.
-		// Without this entry the prefix was STRIPPED to INGRESS_NODES, which
-		// the prefill scanner does not look for — so the env var was accepted
-		// and silently dropped, and the stripped key leaked into --set space.
-		clusterinit.KeyIngressNodes: true,
-	}
 	out := map[string]string{}
 	for _, e := range os.Environ() {
 		if !strings.HasPrefix(e, clusterinit.InitPrefix) {
@@ -1858,20 +1944,27 @@ func initEnvPrefill() map[string]string {
 			continue
 		}
 		name, val := e[:eq], e[eq+1:]
-		// Secrets never enter the prefill flow: an imported key ends up in
-		// Sets and then IN CLEARTEXT in cluster-config.env / --save-config
-		// output (codex review 2026-08-06, P0). The dedicated secret channels
-		// (KUBE_DC_DNS01_ROUTE53_SECRET_KEY, GITHUB_TOKEN) live outside the
-		// KUBE_DC_INIT_ namespace; this guard catches operator habit pasting
-		// one inside it anyway.
+		// A recognized orchestration key KEEPS its prefix so ImportMap finds it
+		// (single shared registry — see clusterinit.IsOrchestrationKey). This is
+		// the whole set, so a correctly-prefixed KUBE_DC_INIT_VM_STORAGE_MODE /
+		// _GPU_PLATFORM / _NODE_EGRESS_ENABLED etc. no longer gets stripped to a
+		// bare name that the scanner ignores and silently drops. Orchestration
+		// keys are a fixed, known set — never secret VALUES — so they bypass the
+		// secret guard below (KUBE_DC_INIT_VGPU_SECRET_READY is a boolean flag,
+		// not a secret, and was being dropped by the "SECRET" substring match).
+		if clusterinit.IsOrchestrationKey(name) {
+			out[name] = val
+			continue
+		}
+		// Not an orchestration key → a native config key passed via the env
+		// namespace (KUBE_DC_INIT_CLUSTER_NAME → CLUSTER_NAME). Guard against an
+		// operator pasting a secret here: an imported key ends up in Sets and
+		// then IN CLEARTEXT in cluster-config.env / --save-config output (codex
+		// 2026-08-06, P0). Dedicated secret channels live outside this namespace.
 		if strings.Contains(name, "SECRET") || strings.Contains(name, "TOKEN") || strings.Contains(name, "PASSWORD") {
 			continue
 		}
-		if orch[name] {
-			out[name] = val
-		} else {
-			out[strings.TrimPrefix(name, clusterinit.InitPrefix)] = val
-		}
+		out[strings.TrimPrefix(name, clusterinit.InitPrefix)] = val
 	}
 	return out
 }

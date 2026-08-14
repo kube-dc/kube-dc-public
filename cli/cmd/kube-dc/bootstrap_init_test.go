@@ -971,6 +971,8 @@ func TestBootstrapInit_ObjectStorageMode_RookDryRunRendersWiring(t *testing.T) {
 		"dependsOn: infra-core + infra-object-storage",
 		"wire object-storage (mode=rook-ceph-local)",
 		"object-storage keys",
+		// A2: per-tenant metrics write path is default-on wherever Mimir is present.
+		"per-tenant metrics write path",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("rook dry-run render missing %q\nFULL:\n%s", want, body)
@@ -1877,6 +1879,8 @@ func TestInitEnvPrefill_Normalization(t *testing.T) {
 	t.Setenv("KUBE_DC_INIT_MODE", "adopt")             // orchestration → keeps prefix
 	t.Setenv("KUBE_DC_INIT_CLUSTER_NAME", "dc9")       // config → strips prefix
 	t.Setenv("KUBE_DC_INIT_EXT_NET_INTERFACE", "eth0") // overlay config → strips prefix
+	t.Setenv("KUBE_DC_INIT_VM_STORAGE_MODE", "block")  // orchestration → keeps prefix (regression: was stripped + dropped)
+	t.Setenv("KUBE_DC_INIT_VGPU_SECRET_READY", "true") // orchestration → keeps prefix despite the "SECRET" substring
 	t.Setenv("UNRELATED_ENV", "ignored")
 
 	m := initEnvPrefill()
@@ -1888,6 +1892,12 @@ func TestInitEnvPrefill_Normalization(t *testing.T) {
 	}
 	if m["EXT_NET_INTERFACE"] != "eth0" {
 		t.Errorf("overlay config key must strip the prefix: %v", m)
+	}
+	if m[clusterinit.KeyVMStorageMode] != "block" {
+		t.Errorf("VM_STORAGE_MODE is an orchestration key — must keep the prefix (was silently stripped then dropped by ImportMap): %v", m)
+	}
+	if m[clusterinit.KeyVGPUSecretReady] != "true" {
+		t.Errorf("VGPU_SECRET_READY is a boolean flag, not a secret value — must keep the prefix, not be dropped by the SECRET substring guard: %v", m)
 	}
 	if _, ok := m["UNRELATED_ENV"]; ok {
 		t.Error("non-prefixed env must be ignored (no hijack)")

@@ -2,6 +2,8 @@ package clusterinit
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -71,12 +73,13 @@ var starterShapeMarkers = []string{
 // interrupted promotion — safe to clean and re-pull (resumable retry,
 // review P1 2026-07-20).
 var starterOwnedEntries = map[string]bool{
-	"bootstrap":        true,
-	"infrastructure":   true,
-	"platform":         true,
-	"addons":           true,
-	"scripts":          true,
-	".starter-version": true,
+	"bootstrap":         true,
+	"infrastructure":    true,
+	"platform":          true,
+	"addons":            true,
+	"scripts":           true,
+	".starter-version":  true,
+	".starter-manifest": true,
 }
 
 // benignPreseedEntries are directory entries allowed to pre-exist in a
@@ -262,6 +265,18 @@ func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (EnsureStarte
 			"%w: %s did not deliver .gitignore (carries the age.key exclusion) — republish the starter",
 			ErrStarterArtifactInvalid, opts.Ref)
 	}
+	// Artifact format v2 ships .starter-manifest (mode+sha256 per shared-tree
+	// file). Verify the pull against it: shape markers prove presence, the
+	// manifest proves INTEGRITY (a truncated layer or corrupted blob fails
+	// here with the ref in hand). v1 artifacts have no manifest — tolerated,
+	// they predate the contract. The manifest is then committed with the
+	// tree, so the repo records its vendor-clean baseline for the upgrade
+	// path (PRD fleet-starter-lifecycle, Phase 0).
+	if err := verifyStarterManifest(tmp); err != nil {
+		return EnsureStarterResult{}, fmt.Errorf(
+			"%w: %s failed manifest verification: %v — wrong ref or corrupted artifact",
+			ErrStarterArtifactInvalid, opts.Ref, err)
+	}
 
 	// Promote: move validated top-level entries into RepoPath. Same
 	// filesystem (sibling scratch dir), so each move is a rename.
@@ -314,6 +329,15 @@ func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (EnsureStarte
 	// .gitkeep but belt-and-suspenders here is one MkdirAll.
 	if err := os.MkdirAll(filepath.Join(opts.RepoPath, "clusters"), 0o755); err != nil {
 		return EnsureStarterResult{}, fmt.Errorf("init: starter: mkdir clusters/: %w", err)
+	}
+
+	// Record the exact ref this repo was materialized from. The publisher
+	// cannot embed the artifact's own digest (self-reference), so THIS is
+	// where immutable identity lands: when the ref is digest-pinned (the
+	// init default resolves tag@digest), the upgrade path can later prove
+	// which artifact supplied the baseline even if tags move (codex review).
+	if err := appendInstalledRef(opts.RepoPath, opts.Ref); err != nil {
+		return EnsureStarterResult{}, fmt.Errorf("init: starter: record installed ref: %w", err)
 	}
 
 	// Deterministic branch BEFORE flux bootstrap's branch detection
@@ -410,6 +434,231 @@ func mergeGitignore(starterPath, operatorPath string) error {
 	_, err = fmt.Fprintf(f, "\n# appended by kube-dc fleet-starter (entries your preseed lacked)\n%s\n",
 		strings.Join(missing, "\n"))
 	return err
+}
+
+// starterManifestTrees is the FIXED set of shared trees the manifest
+// covers. Deliberately not derived from the manifest's own entries: a
+// truncated manifest would then shrink its own coverage and pass (codex
+// review). Coverage growth is a schema bump, not an inference.
+var starterManifestTrees = []string{"bootstrap", "infrastructure", "platform", "addons", "scripts"}
+
+// starterSchemaVersion parses `schemaVersion:` and `manifestSha256:` out
+// of .starter-version. Absent file or absent schemaVersion key → 0 (a v1
+// artifact — predates the metadata contract).
+func starterSchemaVersion(dir string) (version int, manifestSha string) {
+	raw, err := os.ReadFile(filepath.Join(dir, ".starter-version"))
+	if err != nil {
+		return 0, ""
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if v, ok := strings.CutPrefix(line, "schemaVersion:"); ok {
+			fmt.Sscanf(strings.TrimSpace(v), "%d", &version)
+		}
+		if v, ok := strings.CutPrefix(line, "manifestSha256:"); ok {
+			manifestSha = strings.TrimSpace(v)
+		}
+	}
+	return version, manifestSha
+}
+
+// verifyStarterManifest checks an extracted artifact against its own
+// .starter-manifest (format: `<mode> <sha256> <path>` per line, `#`
+// comments, mode normalized to 755/644). Failure directions covered:
+//   - a schema-v2 artifact (per .starter-version) MISSING its manifest, or
+//     whose manifest sha256 differs from the declared manifestSha256 —
+//     stripping/tampering the manifest can't demote the artifact to v1;
+//   - listed files missing, hash-mismatched, non-regular (symlink/FIFO —
+//     os.Open would follow or block), or with a wrong executable bit;
+//   - files present under the FIXED shared trees but not listed
+//     (truncation), including walk errors — an unreadable dir is a
+//     verification failure, not a pass;
+//   - malformed lines, unsafe paths, duplicate or case-fold-duplicate
+//     entries (ambiguous on case-insensitive checkouts).
+//
+// Only a fully metadata-less artifact (no .starter-version schemaVersion,
+// no manifest) passes unverified — the v1 population. Closing that
+// residual hole needs artifact signing (PRD Phase 1).
+func verifyStarterManifest(dir string) error {
+	schema, wantManifestSha := starterSchemaVersion(dir)
+	manifestPath := filepath.Join(dir, ".starter-manifest")
+	raw, err := os.ReadFile(manifestPath)
+	if errors.Is(err, os.ErrNotExist) {
+		if schema >= 2 {
+			return fmt.Errorf("artifact declares schemaVersion %d but ships no .starter-manifest", schema)
+		}
+		return nil // v1 artifact — predates the baseline contract
+	}
+	if err != nil {
+		return err
+	}
+	if schema >= 2 {
+		if wantManifestSha == "" {
+			return fmt.Errorf("artifact declares schemaVersion %d but .starter-version has no manifestSha256", schema)
+		}
+		sum := sha256.Sum256(raw)
+		if got := hex.EncodeToString(sum[:]); got != wantManifestSha {
+			return fmt.Errorf(".starter-manifest sha256 %s does not match the declared manifestSha256 %s", got, wantManifestSha)
+		}
+	}
+
+	type rec struct{ mode, hash string }
+	want := map[string]rec{}      // rel path → manifest record
+	folded := map[string]string{} // lowercased path → original
+	for i, line := range strings.Split(string(raw), "\n") {
+		t := strings.TrimSpace(line)
+		if t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		fields := strings.SplitN(t, " ", 3)
+		if len(fields) != 3 || !isOctalMode(fields[0]) || !isHexSha256(fields[1]) {
+			return fmt.Errorf(".starter-manifest line %d is malformed: %q", i+1, t)
+		}
+		p := fields[2]
+		if filepath.IsAbs(p) || p != filepath.ToSlash(filepath.Clean(p)) || strings.HasPrefix(p, "..") {
+			return fmt.Errorf(".starter-manifest line %d has an unsafe path: %q", i+1, p)
+		}
+		if _, dup := want[p]; dup {
+			return fmt.Errorf(".starter-manifest lists %s twice", p)
+		}
+		if prev, dup := folded[strings.ToLower(p)]; dup {
+			return fmt.Errorf(".starter-manifest paths %s and %s collide on case-insensitive checkouts", prev, p)
+		}
+		folded[strings.ToLower(p)] = p
+		want[p] = rec{mode: fields[0], hash: fields[1]}
+	}
+	if len(want) == 0 {
+		return fmt.Errorf(".starter-manifest carries no entries")
+	}
+
+	var problems []string
+	note := func(format string, a ...any) {
+		if len(problems) < 5 {
+			problems = append(problems, fmt.Sprintf(format, a...))
+		}
+	}
+	for p, w := range want {
+		full := filepath.Join(dir, filepath.FromSlash(p))
+		fi, err := os.Lstat(full)
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			note("missing: %s", p)
+			continue
+		case err != nil:
+			note("unreadable: %s (%v)", p, err)
+			continue
+		case !fi.Mode().IsRegular():
+			// os.Open would FOLLOW a symlink (possibly out of the
+			// extraction root) or BLOCK on a FIFO — refuse the type
+			// before touching content.
+			note("not a regular file: %s (%s)", p, fi.Mode().Type())
+			continue
+		}
+		if wantExec := strings.HasPrefix(w.mode, "7"); wantExec != (fi.Mode().Perm()&0o100 != 0) {
+			note("executable bit mismatch: %s (manifest %s)", p, w.mode)
+			continue
+		}
+		got, err := sha256File(full)
+		switch {
+		case err != nil:
+			note("unreadable: %s (%v)", p, err)
+		case got != w.hash:
+			note("hash mismatch: %s", p)
+		}
+	}
+	for _, tree := range starterManifestTrees {
+		root := filepath.Join(dir, tree)
+		if _, err := os.Stat(root); errors.Is(err, os.ErrNotExist) {
+			continue // shape markers police tree presence separately
+		}
+		walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				note("walk error under %s: %v", tree, err)
+				return nil //nolint:nilerr // recorded as a problem; keep scanning
+			}
+			if d.IsDir() {
+				return nil
+			}
+			rel, rerr := filepath.Rel(dir, path)
+			if rerr != nil {
+				note("walk error under %s: %v", tree, rerr)
+				return nil //nolint:nilerr // recorded as a problem; keep scanning
+			}
+			if _, ok := want[filepath.ToSlash(rel)]; !ok {
+				note("unlisted file: %s", filepath.ToSlash(rel))
+			}
+			return nil
+		})
+		if walkErr != nil {
+			note("walk error under %s: %v", tree, walkErr)
+		}
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("%s", strings.Join(problems, "; "))
+	}
+	return nil
+}
+
+// isOctalMode accepts the manifest's normalized mode field (3-4 octal
+// digits; the publisher emits exactly 644 or 755).
+func isOctalMode(s string) bool {
+	if len(s) < 3 || len(s) > 4 {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '7' {
+			return false
+		}
+	}
+	return true
+}
+
+// isHexSha256 accepts a lowercase 64-char hex digest.
+func isHexSha256(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// appendInstalledRef appends the resolved pull ref (and its digest, when
+// the ref is digest-pinned) to .starter-version so the repo permanently
+// records which artifact it was materialized from. Creates the file when
+// the artifact predates .starter-version entirely.
+func appendInstalledRef(repoPath, ref string) error {
+	f, err := os.OpenFile(filepath.Join(repoPath, ".starter-version"),
+		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := fmt.Fprintf(f, "installedRef: %s\n", ref); err != nil {
+		return err
+	}
+	if _, digest, ok := strings.Cut(ref, "@"); ok && strings.HasPrefix(digest, "sha256:") {
+		if _, err := fmt.Fprintf(f, "installedDigest: %s\n", digest); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// sha256File returns the lowercase hex sha256 of the file's contents.
+func sha256File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // gitignoreExcludesAgeKey reports whether the file has a line that

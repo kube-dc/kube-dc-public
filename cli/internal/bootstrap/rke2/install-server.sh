@@ -8,7 +8,7 @@
 #   Join server:   ./install-server.sh <token> <server-ip>
 #
 # Environment variables (optional):
-#   RKE2_VERSION     - RKE2 version (default: v1.35.0+rke2r1)
+#   RKE2_VERSION     - RKE2 version (default: v1.36.3+rke2r1)
 #   NODE_NAME        - Node name (default: hostname)
 #   NODE_IP          - Node IP for K8s internal traffic (default: detected)
 #   EXTERNAL_IP      - External IP for ingress (default: NODE_IP)
@@ -47,7 +47,7 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 # Default configuration
-RKE2_VERSION="${RKE2_VERSION:-v1.35.0+rke2r1}"
+RKE2_VERSION="${RKE2_VERSION:-v1.36.3+rke2r1}"
 NODE_NAME="${NODE_NAME:-$(hostname)}"
 NODE_IP="${NODE_IP:-$(hostname -I | awk '{print $1}')}"
 EXTERNAL_IP="${EXTERNAL_IP:-${NODE_IP}}"
@@ -103,10 +103,25 @@ fi
 # resolvers. On a corporate network that breaks every internal name AND sends
 # every subsequent query to a third party — from a node whose DNS was fine.
 if ! getent hosts get.rke2.io >/dev/null 2>&1; then
-    log_warn "Cannot resolve get.rke2.io — falling back to public DNS."
-    log_warn "This REPLACES this node's resolver configuration. If this node is"
-    log_warn "supposed to use an internal DNS server, stop and fix DNS instead:"
-    log_warn "the platform will later need to resolve your own domain from here."
+    # DEFAULT: do NOT touch the resolver. On a corporate or air-gapped network,
+    # silently replacing /etc/resolv.conf with public DNS breaks every internal
+    # name and leaks queries to a third party — from a node whose DNS was a
+    # deliberate choice. Fail clearly and let the operator fix DNS (or use an
+    # RKE2 mirror / local artifact). The public-DNS rewrite is OPT-IN only.
+    if [[ "${RKE2_DNS_PUBLIC_FALLBACK:-false}" != "true" ]]; then
+        log_error "Cannot resolve get.rke2.io from this node."
+        log_error "kube-dc does not rewrite this node's resolver by default. Fix DNS so"
+        log_error "this node can resolve get.rke2.io (point it at a resolver with egress,"
+        log_error "or configure an RKE2 mirror / local artifact), then re-run. The platform"
+        log_error "later needs to resolve your OWN domain from here, so a working resolver"
+        log_error "matters beyond the install."
+        log_error "To force a public-DNS fallback (8.8.8.8/1.1.1.1) anyway, re-run with"
+        log_error "RKE2_DNS_PUBLIC_FALLBACK=true — do NOT do this on a corporate/air-gapped host."
+        exit 1
+    fi
+    log_warn "RKE2_DNS_PUBLIC_FALLBACK=true — replacing this node's resolver with public DNS."
+    log_warn "This REPLACES /etc/resolv.conf. If this node is supposed to use an internal"
+    log_warn "DNS server, stop and fix DNS instead."
     # Preserve whatever was there so the change is reversible.
     if [[ -e /etc/resolv.conf && ! -e /etc/resolv.conf.pre-kube-dc ]]; then
         cp -a /etc/resolv.conf /etc/resolv.conf.pre-kube-dc 2>/dev/null || true

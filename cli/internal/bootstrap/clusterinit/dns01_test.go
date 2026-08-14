@@ -171,7 +171,7 @@ func TestPatchPlatformDNS01Solver_ComposesWithOwnedBlock(t *testing.T) {
 	m := validDNS01(t)
 	patch := patchPlatformDNS01Solver(RenderDNS01IssuerPatch(m))
 
-	owned := platformYAML("  patches:\n    # --- " + natPlatformPatchesMarker + " ---\n    - target:\n        kind: Gateway\n")
+	owned := platformYAML("  patches:\n    # --- " + gatewayVIPMarker + " ---\n    - target:\n        kind: Gateway\n")
 	if _, changed, err := patch(owned); err != nil || !changed {
 		t.Errorf("must compose with a kube-dc-owned patches block: changed=%v err=%v", changed, err)
 	}

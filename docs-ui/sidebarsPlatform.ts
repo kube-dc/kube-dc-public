@@ -11,6 +11,7 @@ const sidebars: SidebarsConfig = {
         'quickstart',
         'installation-overview',
         'installation-guide',
+        'restricted-egress-operation',
       ],
     },
     {

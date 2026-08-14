@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,7 +42,7 @@ const remoteScriptPath = "/tmp/kube-dc-rke2-install-server.sh"
 // defaultRKE2Version pins the RKE2 line the installer requests when the
 // operator doesn't override it. Kept in sync with the install guide +
 // the fleet script default.
-const defaultRKE2Version = "v1.35.0+rke2r1"
+const defaultRKE2Version = "v1.36.3+rke2r1"
 
 // InstallOptions parameterizes a single control-plane node install.
 type InstallOptions struct {
@@ -145,6 +146,12 @@ func buildInstallEnv(o InstallOptions) map[string]string {
 		"POD_CIDR":     o.PodCIDR,
 		"SERVICE_CIDR": o.ServiceCIDR,
 		"CLUSTER_DNS":  o.ClusterDNS,
+	}
+	// Forward the operator's opt-in DNS fallback: the script defaults to a clean
+	// failure that never rewrites resolv.conf, so RKE2_DNS_PUBLIC_FALLBACK=true
+	// has to reach the remote environment to take effect.
+	if v := os.Getenv("RKE2_DNS_PUBLIC_FALLBACK"); v != "" {
+		env["RKE2_DNS_PUBLIC_FALLBACK"] = v
 	}
 	if o.DisableEmbeddedRegistry {
 		env["EMBEDDED_REGISTRY"] = "false"

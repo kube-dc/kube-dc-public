@@ -219,7 +219,7 @@ wget https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.i
 # Customize with virt-customize (libguestfs)
 virt-customize -a noble-server-cloudimg-amd64.img \
   --install curl,iptables,linux-headers-generic,nfs-common,open-iscsi \
-  --run-command 'curl -sfL https://get.rke2.io | INSTALL_RKE2_VERSION=v1.35.0+rke2r1 INSTALL_RKE2_TYPE=agent sh -' \
+  --run-command 'curl -sfL https://get.rke2.io | INSTALL_RKE2_VERSION=v1.36.3+rke2r1 INSTALL_RKE2_TYPE=agent sh -' \
   --run-command 'systemctl enable rke2-agent.service' \
   --run-command 'echo nf_conntrack >> /etc/modules' \
   --run-command 'echo "fs.inotify.max_user_watches=1524288" >> /etc/sysctl.conf' \

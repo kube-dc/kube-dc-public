@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 
@@ -157,6 +158,11 @@ func JoinWorker(ctx context.Context, o JoinWorkerOptions) error {
 	}
 	if o.RKE2Version != "" {
 		env["RKE2_VERSION"] = o.RKE2Version
+	}
+	// Forward the operator's opt-in DNS fallback (see install-server.sh); the
+	// worker script also defaults to a clean failure that never touches resolv.conf.
+	if v := os.Getenv("RKE2_DNS_PUBLIC_FALLBACK"); v != "" {
+		env["RKE2_DNS_PUBLIC_FALLBACK"] = v
 	}
 	if o.TrustedCA != nil {
 		env[trustedCAEnv] = remoteTrustedCAPath

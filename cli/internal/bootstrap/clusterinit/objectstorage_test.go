@@ -212,12 +212,12 @@ func TestObjectStorageEnvKeys_PerMode(t *testing.T) {
 		{
 			"local with device",
 			ObjectStorageSpec{Mode: RookCephLocal, OSDNode: "host6-a", OSDSizeGB: 500, OSDDevice: "sdb"},
-			[]string{"S3_HOSTNAME=s3.atlantis.example.com", "CEPH_LOCAL_OSD_NODE=host6-a", "CEPH_LOCAL_OSD_SIZE_GB=500", "CEPH_LOCAL_OSD_DEVICE=sdb"},
+			[]string{"S3_HOSTNAME=s3.atlantis.example.com", "CEPH_LOCAL_OSD_NODE=host6-a", "CEPH_LOCAL_OSD_SIZE_GB=500", "CEPH_LOCAL_OSD_DEVICE=sdb", "CEPH_REPLICATION_SIZE=1"},
 		},
 		{
 			"local default device omitted",
 			ObjectStorageSpec{Mode: RookCephLocal, OSDNode: "host6-a", OSDSizeGB: 500},
-			[]string{"S3_HOSTNAME=s3.atlantis.example.com", "CEPH_LOCAL_OSD_NODE=host6-a", "CEPH_LOCAL_OSD_SIZE_GB=500"},
+			[]string{"S3_HOSTNAME=s3.atlantis.example.com", "CEPH_LOCAL_OSD_NODE=host6-a", "CEPH_LOCAL_OSD_SIZE_GB=500", "CEPH_REPLICATION_SIZE=1"},
 		},
 		{
 			"multi-node sorted slots",

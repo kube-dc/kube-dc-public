@@ -33,3 +33,30 @@ func TestEmbeddedInstaller_EnvContractAndInvariants(t *testing.T) {
 		}
 	}
 }
+
+// TestEmbeddedInstaller_RKE2VersionMatchesConst guards the RKE2 version pin,
+// which lives in THREE places that must agree: the Go const defaultRKE2Version
+// and the RKE2_VERSION default in each embedded shell script. A bump that
+// touches one but not the others silently installs a mixed/wrong RKE2 version —
+// exactly the drift that made the v1.35→v1.36 bump an 8-file hand edit.
+func TestEmbeddedInstaller_RKE2VersionMatchesConst(t *testing.T) {
+	// Match an ACTIVE assignment line, anchored at line start after trimming
+	// indentation — not strings.Contains, which a commented-out `# RKE2_VERSION=…`
+	// or a secondary reference would satisfy while the real default drifted.
+	want := `RKE2_VERSION="${RKE2_VERSION:-` + defaultRKE2Version + `}"`
+	for name, script := range map[string][]byte{
+		"install-server.sh": installServerScript,
+		"install-agent.sh":  installAgentScript,
+	} {
+		found := false
+		for _, line := range strings.Split(string(script), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%s has no active RKE2_VERSION default matching defaultRKE2Version %q — bump the const AND both embedded scripts together", name, defaultRKE2Version)
+		}
+	}
+}

@@ -29,7 +29,17 @@ func TestInstallSteps_Conditionals(t *testing.T) {
 				NoPush:           false,
 				Finalize:         true,
 			},
-			want: "prepare,install-prereqs,dns,kubevirt-eligibility,nat-probe,create-repo,configure-remote,scaffold,commit-push,flux-install,fetch-kubeconfig,reconcile,openbao-init,keycloak-oidc",
+			want: "prepare,install-prereqs,dns,kubevirt-eligibility,nat-probe,egress-gateway,create-repo,configure-remote,scaffold,commit-push,flux-install,fetch-kubeconfig,reconcile,openbao-init,keycloak-oidc",
+		},
+		{
+			name: "ssh + raw-device rook mode plans the OSD device check after egress",
+			in: InstallStepInputs{
+				NoInstallPrereqs: true,
+				SSH:              true,
+				StorageDevCheck:  true,
+				NoPush:           true,
+			},
+			want: "prepare,dns,kubevirt-eligibility,nat-probe,egress-gateway,storage-device,scaffold,commit-push,fetch-kubeconfig",
 		},
 		{
 			name: "GPU flow tracks ownership operator HAMi and product readiness",
@@ -49,7 +59,7 @@ func TestInstallSteps_Conditionals(t *testing.T) {
 				NoPush:        true,
 				Finalize:      false,
 			},
-			want: "prepare,install-prereqs,dns,kubevirt-eligibility,nat-probe,scaffold,commit-push,fetch-kubeconfig",
+			want: "prepare,install-prereqs,dns,kubevirt-eligibility,nat-probe,egress-gateway,scaffold,commit-push,fetch-kubeconfig",
 		},
 		{
 			name: "no ssh, no prereqs, adopt gate",

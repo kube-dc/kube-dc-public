@@ -37,10 +37,7 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"sort"
-
-	"path/filepath"
 	"strings"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
@@ -143,34 +140,15 @@ func parseRouteSrc(out []byte) (string, error) {
 	return "", fmt.Errorf("no `src` in route output %q", strings.TrimSpace(string(out)))
 }
 
-// --- consequence 2: drop the 6443 passthrough listener ---
-
-// natPlatformPatchesMarker makes WriteSingleIPNATPatch idempotent and
-// greppable. Kept distinct from the OS-4 marker — both blocks may
-// coexist under one `patches:` key.
-const natPlatformPatchesMarker = "# single-IP-NAT: no 6443 passthrough on this topology (do not duplicate)"
-
-// natPlatformPatchEntry is the JSON6902 entry appended under
-// spec.patches of clusters/<name>/platform.yaml. The `test` op fails
-// the kustomize build loudly if platform/gateway-config ever reorders
-// the listener list — silent removal of the WRONG listener would take
-// down a front-door port.
-const natPlatformPatchEntry = `    ` + natPlatformPatchesMarker + `
-    # The envoy Service externalIP == the apiserver advertise IP here
-    # (single-IP NAT, kube-dc E2E finding 17b): a 6443 listener makes
-    # kube-proxy intercept apiserver traffic and envoy dial itself via
-    # the kube-api TLSRoute. Tenant-cluster kube-api SNI passthrough is
-    # unavailable on this topology (needs a second node IP).
-    - target:
-        kind: Gateway
-        name: eg
-        namespace: envoy-gateway-system
-      patch: |
-        - op: test
-          path: /spec/listeners/12/name
-          value: tls-passthrough
-        - op: remove
-          path: /spec/listeners/12`
+// RETIRED 2026-08-11: the single-IP-NAT :6443 listener-removal patch
+// (natPlatformPatchesMarker / natPlatformPatchEntry) and its writer
+// WriteSingleIPNATPatch are gone. Off-Envoy kube-api is the base default now —
+// the shared gateway no longer ships a :6443 listener, so there is nothing to
+// remove, and the index-coupled `test /spec/listeners/12` patch this emitted was
+// a latent bomb (any base listener shift failed the whole Kustomization). New
+// clusters get front-door/components/kube-api-off-envoy + KUBE_API_ARRIVAL_IP
+// (see ResolveKubeAPIArrivalIP). Same for WriteExternalKubeAPIVIP's static
+// EndpointSlice, replaced by the controller-managed off-Envoy component.
 
 // IngressCollidesWithAPIServer reports whether Envoy will share a node with
 // kube-apiserver, which is what decides the :6443 TLS-passthrough listener's
@@ -332,223 +310,6 @@ func controlPlaneCandidateHost(candidate string) string {
 	return strings.Trim(host, "[]")
 }
 
-// WriteExternalKubeAPIVIP scaffolds an OFF-ENVOY external route for the
-// management kube-api on the front-door MetalLB VIP.
-//
-// PRODUCTIZED FROM A PRODUCTION INCIDENT (2026-08-11). The
-// :6443 Envoy tls-passthrough listener is removed whenever Envoy shares a node
-// with an apiserver (IngressCollidesWithAPIServer / single-IP-NAT /
-// GatewayCollidesWithAPIServer). Removing it is self-sufficient ONLY when the
-// front-door address is a node's OWN address — that node's apiserver then serves
-// :6443 itself. On a MetalLB VIP front door the VIP can land on a node WITHOUT an
-// apiserver, so removing the listener silently kills external kube-api with no
-// replacement — exactly the incident (external kubectl dead, the cluster
-// "unusable" from an operator's laptop while console/login stayed up).
-//
-// The fix serves kube-api on the SAME VIP but NOT through Envoy: a selectorless
-// ClusterIP Service with externalIPs=<VIP> on :6443 + a static EndpointSlice to
-// the control-plane host IPs. kube-proxy DNATs <VIP>:6443 -> an apiserver on
-// whichever node MetalLB lands the VIP on; Envoy keeps :80/:443 and never binds
-// :6443, so the collision cannot recur. HA across all control-plane apiservers.
-//
-// Why externalIPs and not a second LoadBalancer Service sharing the VIP: MetalLB
-// will not co-locate a second Service on an already-allocated VIP (the Envoy
-// allocation carries no sharing key and the etp Local/Cluster backends differ),
-// and the kube-dc service_lb controller intercepts every type=LoadBalancer
-// Service. A ClusterIP + externalIPs Service sidesteps both.
-//
-// The VIP is written LITERALLY (not a ${METALLB_FLOATING_IP} substitution): an
-// empty substitution would render externalIPs: [""], a known front-door footgun.
-// Skips writing if the manifest already exists (operator may have customised it).
-func WriteExternalKubeAPIVIP(fleetRepo, clusterName, vip string, cpHostIPs []string, out io.Writer) error {
-	if out == nil {
-		out = io.Discard
-	}
-	if net.ParseIP(vip) == nil {
-		return fmt.Errorf("external-kube-api: VIP %q is not an IP", vip)
-	}
-	eps := make([]string, 0, len(cpHostIPs))
-	for _, ip := range cpHostIPs {
-		ip = strings.TrimSpace(ip)
-		if ip == "" {
-			continue
-		}
-		if net.ParseIP(ip) == nil {
-			return fmt.Errorf("external-kube-api: control-plane host %q is not an IP", ip)
-		}
-		eps = append(eps, fmt.Sprintf("  - addresses: [%q]", ip))
-	}
-	if len(eps) == 0 {
-		return fmt.Errorf("external-kube-api: no control-plane host IPs (KUBE_OVN_MASTER_NODES) to back the endpoint")
-	}
-	manifest := fmt.Sprintf(externalKubeAPIManifest, vip, strings.Join(eps, "\n"))
-
-	dir := filepath.Join(fleetRepo, "clusters", clusterName, "addons-config")
-	path := filepath.Join(dir, "kube-api-external.yaml")
-	if _, err := os.Stat(path); err == nil {
-		return nil // already scaffolded / operator-customised — never clobber
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("external-kube-api: mkdir %s: %w", dir, err)
-	}
-	if err := atomicWrite(path, []byte(manifest), 0o644); err != nil {
-		return fmt.Errorf("external-kube-api: write %s: %w", path, err)
-	}
-	kpath := filepath.Join(dir, "kustomization.yaml")
-	if err := patchFileLines(kpath, appendKustomizeResource("kube-api-external.yaml")); err != nil {
-		return fmt.Errorf("external-kube-api: wire kustomization: %w", err)
-	}
-	fmt.Fprintf(out, "[scaffold] external kube-api: VIP:6443 served OFF-Envoy via a ClusterIP+externalIPs Service -> %d control-plane apiservers (the :6443 Envoy listener was removed for this VIP+host-bind topology)\n", len(eps))
-	return nil
-}
-
-// externalKubeAPIManifest is the Service + EndpointSlice, %s = VIP, %s = the
-// joined "  - addresses: [\"ip\"]" endpoint lines.
-const externalKubeAPIManifest = `# kube-api-external — external management kube-api on the front-door VIP, served
-# OFF-Envoy. Scaffolded by ` + "`kube-dc bootstrap init`" + ` because this cluster's front
-# door is a MetalLB VIP AND Envoy is host-bind on apiserver node(s), so the
-# Gateway :6443 tls-passthrough listener was removed (it would snipe the
-# apiserver's own :6443 — production incident 2026-08-11). See natgate.go
-# WriteExternalKubeAPIVIP for the full rationale.
-#
-# kube-proxy DNATs <VIP>:6443 -> a control-plane apiserver on whichever node
-# MetalLB lands the VIP on; Envoy keeps :80/:443 and never binds :6443. If a
-# control-plane node's address changes, update the EndpointSlice below.
-apiVersion: v1
-kind: Service
-metadata:
-  name: kube-api-external
-  namespace: kube-system
-  labels:
-    app.kubernetes.io/managed-by: kube-dc
-    kube-dc.com/component: front-door-kube-api
-spec:
-  type: ClusterIP
-  externalIPs:
-    - %q
-  ports:
-    - name: https
-      port: 6443
-      targetPort: 6443
-      protocol: TCP
----
-apiVersion: discovery.k8s.io/v1
-kind: EndpointSlice
-metadata:
-  name: kube-api-external-1
-  namespace: kube-system
-  labels:
-    kubernetes.io/service-name: kube-api-external
-    app.kubernetes.io/managed-by: kube-dc
-addressType: IPv4
-ports:
-  - name: https
-    port: 6443
-    protocol: TCP
-endpoints:
-%s
-`
-
-// appendKustomizeResource returns a patchFileLines patch that idempotently adds
-// `- <resource>` under a kustomization's resources: key.
-func appendKustomizeResource(resource string) func([]string) ([]string, bool, error) {
-	want := "- " + resource
-	return func(lines []string) ([]string, bool, error) {
-		hasResources := false
-		for _, l := range lines {
-			t := strings.TrimSpace(l)
-			if t == want {
-				return lines, false, nil // already present
-			}
-			if t == "resources:" {
-				hasResources = true
-			}
-		}
-		end := len(lines)
-		for end > 0 && strings.TrimSpace(lines[end-1]) == "" {
-			end--
-		}
-		out := append([]string{}, lines[:end]...)
-		if !hasResources {
-			out = append(out, "resources:")
-		}
-		out = append(out, "  "+want)
-		return out, true, nil
-	}
-}
-
-// WriteSingleIPNATPatch appends the 6443-listener removal to the
-// scaffolded platform.yaml. Composes with the OS-4 disabled block:
-// when a `patches:` key already exists it must be ours (OS-4 marker) —
-// entries are appended under it; a hand-edited patches block is
-// refused, mirroring OS-4's own semantics. MUST run after
-// WriteObjectStorage in the scaffold sequence (OS-4's writer refuses
-// pre-existing patches: keys, including ours).
-func WriteSingleIPNATPatch(fleetRepo, clusterName string, out io.Writer) error {
-	if out == nil {
-		out = io.Discard
-	}
-	path := filepath.Join(fleetRepo, "clusters", clusterName, "platform.yaml")
-	if err := patchFileLines(path, patchPlatformSingleIPNAT); err != nil {
-		return fmt.Errorf("single-ip-nat: patch platform.yaml: %w", err)
-	}
-	fmt.Fprintf(out, "[scaffold] single-IP NAT: 6443 passthrough listener removed for this cluster (tenant kube-api SNI routing unavailable — needs a second node IP)\n")
-	return nil
-}
-
-func patchPlatformSingleIPNAT(lines []string) ([]string, bool, error) {
-	hasPatchesKey := false
-	for _, l := range lines {
-		switch strings.TrimSpace(l) {
-		case natPlatformPatchesMarker:
-			return lines, false, nil // already wired
-		case "patches:":
-			hasPatchesKey = true
-		}
-	}
-	if hasPatchesKey {
-		// Compose with any block WE generated; refuse only a hand-edited one.
-		//
-		// This used to accept the OS-4 marker alone, which broke a normal
-		// install: WriteAddons now writes the Gateway VIP patch earlier in the
-		// scaffold sequence, so on a cluster with
-		//   METALLB_FLOATING_IP != NODE_EXTERNAL_IP,
-		//   NODE_EXTERNAL_IP a control-plane address (or single-IP NAT), and
-		//   object storage ENABLED (so the OS-4 marker is absent)
-		// the `patches:` key exists, no OS-4 marker is found, and init aborts.
-		// Every kube-dc-owned marker has to be recognised here.
-		ours := false
-		for _, l := range lines {
-			t := strings.TrimSpace(l)
-			for _, m := range ownedPlatformPatchMarkers {
-				if t == m || strings.Contains(t, m) {
-					ours = true
-					break
-				}
-			}
-			if ours {
-				break
-			}
-		}
-		if !ours {
-			return nil, false, fmt.Errorf("platform.yaml already has a patches: block (hand-edited?) — add the single-IP-NAT 6443-listener removal manually (marker: %q)", natPlatformPatchesMarker)
-		}
-	}
-	end := len(lines)
-	for end > 0 && strings.TrimSpace(lines[end-1]) == "" {
-		end--
-	}
-	block := natPlatformPatchEntry
-	if !hasPatchesKey {
-		block = "  patches:\n" + block
-	}
-	out := make([]string, 0, end+24)
-	out = append(out, lines[:end]...)
-	out = append(out, strings.Split(block, "\n")...)
-	out = append(out, "")
-	return out, true, nil
-}
-
 // NodeCIDRFromAddrOutput derives the node's LAN prefix — the network its
 // primary address sits on — from `ip -o addr show` output.
 //
@@ -636,9 +397,197 @@ func DetectNodeCIDR(ctx context.Context, opts ArrivingIPOptions) (string, error)
 // Keep this in sync when adding a new managed patch.
 var ownedPlatformPatchMarkers = []string{
 	disabledPlatformPatchesMarker, // object-storage disabled
-	natPlatformPatchesMarker,      // single-IP NAT / 6443 listener removal
 	gatewayVIPMarker,              // Gateway address = MetalLB VIP
 	gatewayServiceVIPMarker,       // Envoy Service explicitly requests VIP
 	byoWildcardTLSMarker,          // byo-wildcard ACME Certificate suppression
 	dns01Route53Marker,            // ClusterIssuer solvers → Route53 DNS-01
+}
+
+// EgressGatewayProbeOptions parameterizes ProbeEgressGateway.
+type EgressGatewayProbeOptions struct {
+	SSH     ports.SSHClient
+	Host    ports.SSHHost
+	Gateway string // EXT_NET_GATEWAY — the tenant-egress next hop
+	// ExtIface is EXT_NET_INTERFACE (the ext parent interface, e.g. bond0). When
+	// set, a route that egresses via a DIFFERENT interface base is treated as
+	// inconclusive rather than probed — an overlapping connected management route
+	// on eth0 must not be mistaken for the (possibly down) tenant ext VLAN.
+	ExtIface string
+	// AnchorIPs is EXT_NET_ANCHOR_IPS (comma/space list). Used to sanity-check a
+	// gateway that resolves to a local address: a local IP is only an expected
+	// node-egress anchor when it is one of the CONFIGURED anchors — otherwise it
+	// is very likely a fat-fingered EXT_NET_GATEWAY, which is surfaced as a warning.
+	AnchorIPs string
+	Out       io.Writer
+}
+
+// EgressGatewayResult reports what the ARP probe found.
+type EgressGatewayResult struct {
+	// Probed is false when the check could not run conclusively: the gateway is
+	// the node's own anchor (node-egress), the ext network is not directly
+	// configured on this node yet (pre-CNI), the route egresses via a different
+	// interface, or the L2 probe tool was unavailable/ambiguous. Reachable is
+	// only meaningful when Probed is true.
+	Probed    bool
+	Reachable bool
+	// Warn asks the caller to surface Note as a WARNING rather than an
+	// informational line: it marks a config smell (a local gateway that is not a
+	// configured anchor) even though the ARP check itself could not run.
+	Warn  bool
+	Iface string
+	Note  string
+}
+
+// ProbeEgressGateway checks whether EXT_NET_GATEWAY actually answers ARP from
+// the node — the difference between "in-CIDR, looks fine" and "tenant internet
+// egress silently black-holes" (the green-install/dead-egress trap). It runs
+// PRE-CNI, so it is best-effort and fails OPEN: it verifies only when the
+// gateway is directly connected on a configured interface, and reports
+// Probed=false (skip, not fail) for the node-egress-anchor and
+// not-yet-configured cases rather than blocking a valid install.
+func ProbeEgressGateway(ctx context.Context, opts EgressGatewayProbeOptions) (EgressGatewayResult, error) {
+	if opts.SSH == nil {
+		return EgressGatewayResult{}, fmt.Errorf("egress-gw probe: nil SSH client")
+	}
+	if net.ParseIP(opts.Gateway) == nil {
+		return EgressGatewayResult{}, fmt.Errorf("egress-gw probe: %q is not an IP", opts.Gateway)
+	}
+	routeOut, err := opts.SSH.Run(ctx, opts.Host, fmt.Sprintf("ip -4 route get %s", opts.Gateway))
+	if err != nil {
+		return EgressGatewayResult{}, fmt.Errorf("egress-gw probe: ip route get: %w", err)
+	}
+	iface, direct, isLocal := parseEgressRoute(string(routeOut))
+	if isLocal {
+		// `local` proves only that the gateway is an address of THIS host — not
+		// that node-egress is configured. It is the expected node-egress anchor
+		// pattern ONLY when the gateway is one of the configured anchors; a local
+		// IP that is not a known anchor is almost always a fat-fingered gateway.
+		if opts.AnchorIPs != "" && !ipInList(opts.Gateway, opts.AnchorIPs) {
+			return EgressGatewayResult{Probed: false, Warn: true, Iface: "lo",
+				Note: "gateway resolves to a local address on this node that is NOT a configured ext anchor (EXT_NET_ANCHOR_IPS) — likely a misconfigured EXT_NET_GATEWAY"}, nil
+		}
+		return EgressGatewayResult{Probed: false, Iface: "lo", Note: "gateway is this node's own address (node-egress anchor) — ARP check N/A; verify upstream forwarding after install"}, nil
+	}
+	if !direct || iface == "" {
+		return EgressGatewayResult{Probed: false, Note: "ext-network interface not directly configured on this node yet — cannot verify pre-CNI"}, nil
+	}
+	// A route that egresses via a different interface than the configured ext
+	// parent is very likely an overlapping connected management route, NOT the
+	// tenant ext VLAN (which may simply be down pre-CNI). Don't probe it — a
+	// reply there would be a false "egress reachable".
+	if opts.ExtIface != "" && !ifaceMatches(iface, opts.ExtIface) {
+		return EgressGatewayResult{Probed: false, Iface: iface,
+			Note: fmt.Sprintf("gateway resolves via %s, not the configured ext interface %s — the ext VLAN may not be up yet; cannot verify pre-CNI", iface, opts.ExtIface)}, nil
+	}
+	// Defense-in-depth: the interface name is interpolated into a root SSH
+	// command. Kernel names are normally tame, but reject anything outside a
+	// safe grammar rather than trust `ip route get` output.
+	if !isSafeIfaceName(iface) {
+		return EgressGatewayResult{Probed: false, Iface: iface, Note: "route interface name failed validation — skipping ARP probe"}, nil
+	}
+	// arping is the L2 authority: rc 0 = replied, rc 1 = ran and got zero
+	// replies (a DEFINITIVE negative), rc >=2 = could not run (no CAP_NET_RAW,
+	// bad args). Without arping, only a ping REPLY is trustworthy (a ping
+	// non-reply may just be ICMP filtering), so that path yields REPLIED or
+	// INCONCLUSIVE — never a false NOREPLY. Inputs are pre-validated (Gateway is
+	// an IP, iface passed isSafeIfaceName), and single-quoted for good measure.
+	probeCmd := fmt.Sprintf(
+		"if command -v arping >/dev/null 2>&1; then "+
+			"arping -c2 -w3 -I '%[1]s' '%[2]s' >/dev/null 2>&1; rc=$?; "+
+			"if [ \"$rc\" -eq 0 ]; then echo REPLIED; "+
+			"elif [ \"$rc\" -eq 1 ]; then echo NOREPLY; "+
+			"else echo INCONCLUSIVE; fi; "+
+			"elif ping -c1 -W2 '%[2]s' >/dev/null 2>&1; then echo REPLIED; "+
+			"else echo INCONCLUSIVE; fi",
+		iface, opts.Gateway)
+	out, rerr := opts.SSH.Run(ctx, opts.Host, probeCmd)
+	if rerr != nil {
+		return EgressGatewayResult{Probed: false, Iface: iface, Note: fmt.Sprintf("ARP probe could not run (%v)", rerr)}, nil
+	}
+	switch s := string(out); {
+	case strings.Contains(s, "REPLIED"):
+		return EgressGatewayResult{Probed: true, Reachable: true, Iface: iface}, nil
+	case strings.Contains(s, "NOREPLY"):
+		return EgressGatewayResult{Probed: true, Reachable: false, Iface: iface}, nil
+	default: // INCONCLUSIVE / no arping+ICMP-filtered / empty
+		return EgressGatewayResult{Probed: false, Iface: iface, Note: "L2 probe inconclusive (arping unavailable/unprivileged or ICMP filtered) — verify egress by hand"}, nil
+	}
+}
+
+// isSafeIfaceName accepts only interface names within a conservative grammar
+// (Linux IFNAMSIZ is 16, so 15 usable chars). It exists to keep a name lifted
+// from `ip route get` output out of a shell command if it ever contained a
+// metacharacter such as `;` or `&`.
+func isSafeIfaceName(s string) bool {
+	if s == "" || len(s) > 15 {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '.' || r == '_' || r == '-' || r == ':' || r == '@':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// ifaceBase strips a VLAN sub-interface suffix (bond0.163 → bond0) so a route
+// via a VLAN of the configured ext parent still matches.
+func ifaceBase(s string) string { return strings.SplitN(s, ".", 2)[0] }
+
+// ifaceMatches reports whether a route interface belongs to the configured ext
+// parent (same base name), tolerating a VLAN sub-interface on either side.
+func ifaceMatches(routeIface, extIface string) bool {
+	return ifaceBase(routeIface) == ifaceBase(extIface)
+}
+
+// ipInList reports whether ip (normalized) appears in a comma/space separated
+// list of IPs.
+func ipInList(ip, list string) bool {
+	want := net.ParseIP(ip)
+	if want == nil {
+		return false
+	}
+	for _, tok := range strings.FieldsFunc(list, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' || r == '\n' }) {
+		if got := net.ParseIP(strings.TrimSpace(tok)); got != nil && got.Equal(want) {
+			return true
+		}
+	}
+	return false
+}
+
+// parseEgressRoute classifies `ip -4 route get <gw>` output:
+//   - direct=true: gw is directly connected on iface (`... dev <iface>` with no
+//     `via`) → arpable.
+//   - isLocal=true: gw is one of THIS node's own addresses (`local <gw> dev lo`)
+//     — the node-egress anchor pattern (gateway == node anchor IP).
+//   - both false: gw is reached via a next hop (`... via ...`) — ext network not
+//     directly configured on this node yet.
+func parseEgressRoute(routeOut string) (iface string, direct, isLocal bool) {
+	line := strings.TrimSpace(routeOut)
+	if line == "" {
+		return "", false, false
+	}
+	fields := strings.Fields(line)
+	if len(fields) > 0 && fields[0] == "local" {
+		return "lo", false, true
+	}
+	// Token scan (not a raw " via " substring) so field order can't fool it.
+	for _, f := range fields {
+		if f == "via" {
+			return devFromRouteFields(fields), false, false
+		}
+	}
+	return devFromRouteFields(fields), true, false
+}
+
+func devFromRouteFields(fields []string) string {
+	for i, f := range fields {
+		if f == "dev" && i+1 < len(fields) {
+			return fields[i+1]
+		}
+	}
+	return ""
 }

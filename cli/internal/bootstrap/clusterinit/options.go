@@ -189,6 +189,11 @@ type InitOptions struct {
 	// layer (Certificate + HTTPRoute) — the eu/dc2 pattern.
 	S3Hostname   string
 	NoS3Exposure bool
+	// NoKubeVirt marks a cluster where VMs are out of scope (e.g. cs/CloudSigma,
+	// where KubeVirt ships but is unused). Skips the KubeVirt-eligibility (KVM)
+	// preflight so the install is not blocked/warned on nodes that will never run
+	// VMs.
+	NoKubeVirt bool
 
 	// --- VM root-disk storage (PRD docs/prd/vm-storage-mode.md) ---
 	// OPTIONAL, default `local` (unlike RookMode, omitting it never

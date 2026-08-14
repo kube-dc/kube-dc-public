@@ -144,74 +144,6 @@ func writePlatformFixture(t *testing.T, body string) string {
 	return dir
 }
 
-func TestWriteSingleIPNATPatch_FreshPlatformYAML(t *testing.T) {
-	repo := writePlatformFixture(t, platformYAMLBase)
-	if err := WriteSingleIPNATPatch(repo, "atlantis", nil); err != nil {
-		t.Fatalf("fresh write: %v", err)
-	}
-	body, _ := os.ReadFile(filepath.Join(repo, "clusters", "atlantis", "platform.yaml"))
-	got := string(body)
-	for _, want := range []string{
-		"  patches:",
-		natPlatformPatchesMarker,
-		"op: test",
-		"value: tls-passthrough",
-		"op: remove",
-		"path: /spec/listeners/12",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("missing %q in patched platform.yaml:\n%s", want, got)
-		}
-	}
-}
-
-func TestWriteSingleIPNATPatch_Idempotent(t *testing.T) {
-	repo := writePlatformFixture(t, platformYAMLBase)
-	if err := WriteSingleIPNATPatch(repo, "atlantis", nil); err != nil {
-		t.Fatal(err)
-	}
-	first, _ := os.ReadFile(filepath.Join(repo, "clusters", "atlantis", "platform.yaml"))
-	if err := WriteSingleIPNATPatch(repo, "atlantis", nil); err != nil {
-		t.Fatalf("second write: %v", err)
-	}
-	second, _ := os.ReadFile(filepath.Join(repo, "clusters", "atlantis", "platform.yaml"))
-	if string(first) != string(second) {
-		t.Error("second write changed the file — not idempotent")
-	}
-}
-
-func TestWriteSingleIPNATPatch_ComposesWithOS4DisabledBlock(t *testing.T) {
-	// OS-4 disabled writer ran first (scaffold step 7 before step 8).
-	repo := writePlatformFixture(t, platformYAMLBase)
-	path := filepath.Join(repo, "clusters", "atlantis", "platform.yaml")
-	if err := patchFileLines(path, patchPlatformDisabledObjectStorage); err != nil {
-		t.Fatalf("OS-4 setup: %v", err)
-	}
-	if err := WriteSingleIPNATPatch(repo, "atlantis", nil); err != nil {
-		t.Fatalf("compose write: %v", err)
-	}
-	body, _ := os.ReadFile(path)
-	got := string(body)
-	if strings.Count(got, "patches:") != 1 {
-		t.Errorf("want exactly ONE patches: key after composing, got %d:\n%s",
-			strings.Count(got, "patches:"), got)
-	}
-	if !strings.Contains(got, natPlatformPatchesMarker) || !strings.Contains(got, disabledPlatformPatchesMarker) {
-		t.Errorf("both markers must be present after composing:\n%s", got)
-	}
-}
-
-func TestWriteSingleIPNATPatch_RefusesHandEditedPatches(t *testing.T) {
-	repo := writePlatformFixture(t, platformYAMLBase+"  patches:\n    - path: hand-crafted.yaml\n")
-	err := WriteSingleIPNATPatch(repo, "atlantis", nil)
-	if err == nil {
-		t.Fatal("want refusal on a hand-edited patches: block")
-	}
-	if !strings.Contains(err.Error(), natPlatformPatchesMarker) {
-		t.Errorf("refusal should name the marker for manual wiring: %v", err)
-	}
-}
-
 // TestGatewayCollidesWithAPIServer — the 6443 listener is unsafe whenever the
 // Envoy Service's externalIP is also an apiserver address. Single-IP NAT is
 // only one route there; pointing NODE_EXTERNAL_IP at a control-plane node's
@@ -284,17 +216,16 @@ func TestPatchComposition_GatewayVIPThenSingleIPNAT(t *testing.T) {
 		"NODE_EXTERNAL_IP=203.0.113.11\nMETALLB_FLOATING_IP=198.51.100.2\n"+
 		"KUBE_OVN_MASTER_NODES=203.0.113.11,203.0.113.12,203.0.113.13\n")
 
-	// 1. WriteAddons creates the patches: block with the VIP entry.
+	// WriteAddons creates the patches: block with the Gateway VIP entry. (The
+	// single-IP-NAT :6443 listener-removal writer that used to compose here was
+	// retired 2026-08-11 — off-Envoy kube-api is the base default, so there is no
+	// listener to remove.)
 	if err := WriteAddons(repo, cluster, nil); err != nil {
 		t.Fatalf("WriteAddons: %v", err)
 	}
-	// 2. The 6443 removal must compose with it, not reject it.
-	if err := WriteSingleIPNATPatch(repo, cluster, nil); err != nil {
-		t.Fatalf("WriteSingleIPNATPatch must compose with the Gateway VIP patch: %v", err)
-	}
 
 	got := read(t, filepath.Join(repo, "clusters", cluster), "platform.yaml")
-	for _, want := range []string{gatewayServiceVIPMarker, gatewayVIPMarker, natPlatformPatchesMarker} {
+	for _, want := range []string{gatewayServiceVIPMarker, gatewayVIPMarker} {
 		if !strings.Contains(got, want) {
 			t.Errorf("platform.yaml lost %q:\n%s", want, got)
 		}
@@ -304,20 +235,159 @@ func TestPatchComposition_GatewayVIPThenSingleIPNAT(t *testing.T) {
 	}
 }
 
-// TestPatchComposition_RefusesHandEditedBlock — the guard must still protect a
-// patches: block we did not write.
-func TestPatchComposition_RefusesHandEditedBlock(t *testing.T) {
-	repo, cluster := baseOverlay(t, "INGRESS_MODE=hostnetwork\n")
-	p := filepath.Join(repo, "clusters", cluster, "platform.yaml")
-	body, err := os.ReadFile(p)
-	if err != nil {
-		t.Fatal(err)
+// NOTE: the hand-edited-patches-block refusal that WriteSingleIPNATPatch used to
+// assert here is now covered by dns01_test.go's
+// TestPatchPlatformDNS01Solver_ComposesWithOwnedBlock — the refusal semantics are
+// shared across every owned-patch writer via ownedPlatformPatchMarkers, and the
+// single-IP-NAT writer was retired with the off-Envoy inversion (2026-08-11).
+
+// egressSSH answers by command intent: the route lookup vs the arping/ping
+// wrapper. It lets ProbeEgressGateway tests script both hops without pinning the
+// exact (long) wrapper string. RFC 5737 addresses throughout.
+type egressSSH struct {
+	route, probe       string
+	routeErr, probeErr error
+}
+
+func (s *egressSSH) Run(_ context.Context, _ ports.SSHHost, cmd string) ([]byte, error) {
+	if strings.Contains(cmd, "route get") {
+		return []byte(s.route), s.routeErr
 	}
-	hand := string(body) + "  patches:\n    - target: {kind: Gateway, name: eg}\n      patch: |\n        - op: remove\n          path: /spec/listeners/0\n"
-	if err := os.WriteFile(p, []byte(hand), 0o644); err != nil {
-		t.Fatal(err)
+	return []byte(s.probe), s.probeErr
+}
+func (s *egressSSH) Fetch(context.Context, ports.SSHHost, string) ([]byte, error) { return nil, nil }
+func (s *egressSSH) Put(context.Context, ports.SSHHost, string, []byte, uint32) error {
+	return nil
+}
+
+func TestProbeEgressGateway(t *testing.T) {
+	host := ports.SSHHost{Hostname: "192.0.2.10"}
+	cases := []struct {
+		name                            string
+		ssh                             *egressSSH
+		gw, extIface, anchors           string
+		wantProbed, wantReach, wantWarn bool
+		noteHas                         string
+	}{
+		{
+			name: "direct + arping reply → reachable",
+			ssh:  &egressSSH{route: "192.0.2.1 dev bond0 src 192.0.2.5 uid 0", probe: "REPLIED"},
+			gw:   "192.0.2.1", extIface: "bond0",
+			wantProbed: true, wantReach: true,
+		},
+		{
+			name: "VLAN sub-interface still matches the ext parent base",
+			ssh:  &egressSSH{route: "192.0.2.1 dev bond0.163 src 192.0.2.5 uid 0", probe: "REPLIED"},
+			gw:   "192.0.2.1", extIface: "bond0",
+			wantProbed: true, wantReach: true,
+		},
+		{
+			name: "direct + definitive NOREPLY → probed, unreachable, no warn",
+			ssh:  &egressSSH{route: "192.0.2.1 dev bond0 src 192.0.2.5 uid 0", probe: "NOREPLY"},
+			gw:   "192.0.2.1", extIface: "bond0",
+			wantProbed: true, wantReach: false,
+		},
+		{
+			name: "INCONCLUSIVE (no arping / ICMP filtered) is NOT a false negative",
+			ssh:  &egressSSH{route: "192.0.2.1 dev bond0 src 192.0.2.5 uid 0", probe: "INCONCLUSIVE"},
+			gw:   "192.0.2.1", extIface: "bond0",
+			wantProbed: false, noteHas: "inconclusive",
+		},
+		{
+			name: "route via a different interface than configured ext → inconclusive",
+			ssh:  &egressSSH{route: "192.0.2.1 dev eth0 src 198.51.100.5 uid 0", probe: "REPLIED"},
+			gw:   "192.0.2.1", extIface: "bond0",
+			wantProbed: false, noteHas: "not the configured ext interface",
+		},
+		{
+			name: "local gateway that is NOT a configured anchor → warn",
+			ssh:  &egressSSH{route: "local 192.0.2.1 dev lo src 192.0.2.1 uid 0"},
+			gw:   "192.0.2.1", anchors: "192.0.2.3,192.0.2.4",
+			wantProbed: false, wantWarn: true, noteHas: "NOT a configured ext anchor",
+		},
+		{
+			name: "local gateway that IS a configured anchor → node-egress, no warn",
+			ssh:  &egressSSH{route: "local 192.0.2.3 dev lo src 192.0.2.3 uid 0"},
+			gw:   "192.0.2.3", anchors: "192.0.2.3, 192.0.2.4",
+			wantProbed: false, wantWarn: false, noteHas: "node-egress anchor",
+		},
+		{
+			name: "reached via a next hop → ext not directly configured yet",
+			ssh:  &egressSSH{route: "192.0.2.1 via 198.51.100.1 dev eth0 src 198.51.100.5 uid 0"},
+			gw:   "192.0.2.1",
+			wantProbed: false, noteHas: "not directly configured",
+		},
+		{
+			name: "interface name with a shell metacharacter is rejected, never run",
+			ssh:  &egressSSH{route: "192.0.2.1 dev x;reboot src 192.0.2.5 uid 0", probe: "REPLIED"},
+			gw:   "192.0.2.1", // extIface empty → iface-match skipped, safe-name guard fires
+			wantProbed: false, noteHas: "failed validation",
+		},
 	}
-	if err := WriteSingleIPNATPatch(repo, cluster, nil); err == nil {
-		t.Error("a hand-edited patches: block must still be refused")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := ProbeEgressGateway(context.Background(), EgressGatewayProbeOptions{
+				SSH: tc.ssh, Host: host, Gateway: tc.gw, ExtIface: tc.extIface, AnchorIPs: tc.anchors,
+			})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if res.Probed != tc.wantProbed || res.Reachable != tc.wantReach || res.Warn != tc.wantWarn {
+				t.Errorf("got probed=%t reach=%t warn=%t, want %t/%t/%t (note=%q)",
+					res.Probed, res.Reachable, res.Warn, tc.wantProbed, tc.wantReach, tc.wantWarn, res.Note)
+			}
+			if tc.noteHas != "" && !strings.Contains(res.Note, tc.noteHas) {
+				t.Errorf("note %q does not contain %q", res.Note, tc.noteHas)
+			}
+		})
+	}
+}
+
+func TestProbeEgressGateway_RouteErrorFailsToCaller(t *testing.T) {
+	ssh := &egressSSH{routeErr: errors.New("connect refused")}
+	if _, err := ProbeEgressGateway(context.Background(), EgressGatewayProbeOptions{
+		SSH: ssh, Gateway: "192.0.2.1",
+	}); err == nil {
+		t.Fatal("want error when the route lookup itself fails")
+	}
+}
+
+func TestIsSafeIfaceName(t *testing.T) {
+	for _, ok := range []string{"eth0", "bond0.163", "br-ext-cloud", "enp1s0", "eth0:1", "vlan.100@bond0"} {
+		if !isSafeIfaceName(ok) {
+			t.Errorf("%q should be accepted", ok)
+		}
+	}
+	for _, bad := range []string{"", "x;reboot", "eth0 && rm", "a$b", "`id`", "toolongforanifname"} {
+		if isSafeIfaceName(bad) {
+			t.Errorf("%q should be rejected", bad)
+		}
+	}
+}
+
+func TestParseEgressRoute(t *testing.T) {
+	cases := []struct {
+		name    string
+		out     string
+		iface   string
+		direct  bool
+		isLocal bool
+	}{
+		// Directly connected on the ext interface → arpable.
+		{"direct", "100.65.0.1 dev bond0.163 src 100.65.0.5 uid 0", "bond0.163", true, false},
+		// Gateway == this node's own anchor (node-egress) → ARP N/A.
+		{"local anchor", "local 100.65.0.1 dev lo src 100.65.0.1 uid 0", "lo", false, true},
+		// Reached via a next hop → ext network not directly configured yet.
+		{"via next hop", "100.65.0.1 via 10.0.0.1 dev eth0 src 10.0.0.5 uid 0", "eth0", false, false},
+		{"empty", "", "", false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			iface, direct, isLocal := parseEgressRoute(tc.out)
+			if iface != tc.iface || direct != tc.direct || isLocal != tc.isLocal {
+				t.Errorf("parseEgressRoute(%q) = (%q,%v,%v), want (%q,%v,%v)",
+					tc.out, iface, direct, isLocal, tc.iface, tc.direct, tc.isLocal)
+			}
+		})
 	}
 }

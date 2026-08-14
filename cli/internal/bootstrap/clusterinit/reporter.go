@@ -35,6 +35,8 @@ const (
 	StepKubeVirt       StepID = "kubevirt-eligibility"
 	StepAdoptGate      StepID = "adopt-gate"
 	StepNATProbe       StepID = "nat-probe"
+	StepEgressGW       StepID = "egress-gateway"
+	StepStorageDev     StepID = "storage-device"
 	StepCreateRepo     StepID = "create-repo"
 	StepRemote         StepID = "configure-remote"
 	// StepIngressNodes labels the front-door nodes. It runs BEFORE scaffold, so a
@@ -127,6 +129,10 @@ func InstallSteps(o InstallStepInputs) []Step {
 	}
 	if o.SSH {
 		add(StepNATProbe, "Probe node topology (NAT)")
+		add(StepEgressGW, "Probe egress gateway (ARP)")
+		if o.StorageDevCheck {
+			add(StepStorageDev, "Verify OSD block devices")
+		}
 	}
 	if o.NewRepoCreate {
 		add(StepCreateRepo, "Create fleet repo")
@@ -172,14 +178,15 @@ type InstallStepInputs struct {
 	NoInstallPrereqs bool
 	Starter          bool // greenfield fleet-mode (new-repo/existing-repo): shared trees may need the OCI starter pull
 
-	Adopt         bool // Mode == adopt
-	SSH           bool // SSHHost != "" && !NoSSH
-	NewRepoCreate bool // new-repo && !NoCreateRepo && !NoPush
-	NewRepoRemote bool // new-repo && !NoPush (origin add/set-url)
-	NoPush        bool
-	Finalize      bool // drive OpenBao/Keycloak after reconcile (!NoPush)
-	GPUEnabled    bool // track GPU Flux layers when products are installed
-	HAMiEnabled   bool // include the HAMi layer in GPU progress
+	Adopt           bool // Mode == adopt
+	SSH             bool // SSHHost != "" && !NoSSH
+	StorageDevCheck bool // SSH && a raw-device rook mode with explicit OSD devices to verify
+	NewRepoCreate   bool // new-repo && !NoCreateRepo && !NoPush
+	NewRepoRemote   bool // new-repo && !NoPush (origin add/set-url)
+	NoPush          bool
+	Finalize        bool // drive OpenBao/Keycloak after reconcile (!NoPush)
+	GPUEnabled      bool // track GPU Flux layers when products are installed
+	HAMiEnabled     bool // include the HAMi layer in GPU progress
 }
 
 // GPUInstallStepIDs returns the terminal milestones that must be skipped when

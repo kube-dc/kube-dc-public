@@ -2,7 +2,10 @@ package clusterinit
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,10 +15,11 @@ import (
 // fakePuller simulates `flux pull artifact` by writing a configurable
 // file set into the output dir.
 type fakePuller struct {
-	files  []string // relative paths to create on Pull; nil = starter shape
-	err    error
-	called int
-	gotURL string
+	files    []string          // relative paths to create on Pull; nil = starter shape
+	contents map[string]string // optional per-path content override
+	err      error
+	called   int
+	gotURL   string
 }
 
 func (f *fakePuller) PullArtifact(_ context.Context, url, dir string) error {
@@ -37,6 +41,9 @@ func (f *fakePuller) PullArtifact(_ context.Context, url, dir string) error {
 		content := "x\n"
 		if rel == ".gitignore" {
 			content = "age.key\n" // the real artifact's P0-3 invariant
+		}
+		if c, ok := f.contents[rel]; ok {
+			content = c
 		}
 		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 			return err
@@ -367,5 +374,261 @@ func TestEnsureStarter_PreseedReadmeAndGitignorePreserved(t *testing.T) {
 	}
 	if !strings.Contains(string(gi), "age.key") {
 		t.Errorf("merged gitignore must carry age.key: %q", gi)
+	}
+}
+
+// --- artifact format v2: .starter-manifest verification ---
+
+// manifestFor renders a valid manifest for the fake puller's default
+// content ("x\n") over the given paths.
+func manifestFor(paths ...string) string {
+	sum := sha256.Sum256([]byte("x\n"))
+	h := hex.EncodeToString(sum[:])
+	var b strings.Builder
+	b.WriteString("# kube-dc fleet-starter manifest (format 1)\n")
+	for _, p := range paths {
+		fmt.Fprintf(&b, "644 %s %s\n", h, p)
+	}
+	return b.String()
+}
+
+func TestEnsureStarter_ValidManifestAccepted(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "fleet")
+	puller := &fakePuller{
+		files:    testStarterFiles("clusters/.gitkeep", ".gitignore", ".starter-manifest"),
+		contents: map[string]string{".starter-manifest": manifestFor(starterShapeMarkers...)},
+	}
+	res, err := EnsureStarter(context.Background(), EnsureStarterOptions{
+		RepoPath: dir, Ref: testStarterRef, Flux: puller, Git: &fakeStarterGit{},
+	})
+	if err != nil {
+		t.Fatalf("valid manifest must extract: %v", err)
+	}
+	if !res.Extracted {
+		t.Fatal("expected extraction")
+	}
+	// The baseline must land in the repo (committed with the tree).
+	if _, err := os.Stat(filepath.Join(dir, ".starter-manifest")); err != nil {
+		t.Errorf("manifest must be promoted into the repo: %v", err)
+	}
+}
+
+func TestEnsureStarter_ManifestHashMismatchRefused(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "fleet")
+	// Replace the FIRST entry's hash with zeros (line 0 is the header).
+	lines := strings.Split(manifestFor(starterShapeMarkers...), "\n")
+	lines[1] = "644 0000000000000000000000000000000000000000000000000000000000000000 " + starterShapeMarkers[0]
+	bad := strings.Join(lines, "\n")
+	puller := &fakePuller{
+		files:    testStarterFiles("clusters/.gitkeep", ".gitignore", ".starter-manifest"),
+		contents: map[string]string{".starter-manifest": bad},
+	}
+	_, err := EnsureStarter(context.Background(), EnsureStarterOptions{
+		RepoPath: dir, Ref: testStarterRef, Flux: puller, Git: &fakeStarterGit{},
+	})
+	if !errors.Is(err, ErrStarterArtifactInvalid) {
+		t.Fatalf("want ErrStarterArtifactInvalid on hash mismatch, got %v", err)
+	}
+	// Atomicity: validation fails pre-promotion, so the repo dir stays clean.
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("repo dir must stay clean on refused artifact, has %d entries", len(entries))
+	}
+}
+
+func TestVerifyStarterManifest(t *testing.T) {
+	write := func(t *testing.T, dir, rel, content string) {
+		t.Helper()
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sum := sha256.Sum256([]byte("x\n"))
+	xhash := hex.EncodeToString(sum[:])
+
+	t.Run("absent manifest is tolerated (v1 artifact)", func(t *testing.T) {
+		if err := verifyStarterManifest(t.TempDir()); err != nil {
+			t.Fatalf("v1 artifact must pass: %v", err)
+		}
+	})
+	t.Run("listed file missing", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, dir, ".starter-manifest", "644 "+xhash+" platform/kustomization.yaml\n")
+		if err := verifyStarterManifest(dir); err == nil || !strings.Contains(err.Error(), "missing") {
+			t.Fatalf("want missing-file error, got %v", err)
+		}
+	})
+	t.Run("unlisted extra under a covered tree", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, dir, "platform/kustomization.yaml", "x\n")
+		write(t, dir, "platform/rogue.yaml", "x\n")
+		write(t, dir, ".starter-manifest", "644 "+xhash+" platform/kustomization.yaml\n")
+		if err := verifyStarterManifest(dir); err == nil || !strings.Contains(err.Error(), "unlisted") {
+			t.Fatalf("want unlisted-file error, got %v", err)
+		}
+	})
+	t.Run("unsafe path refused", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, dir, ".starter-manifest", "644 "+xhash+" ../escape.yaml\n")
+		if err := verifyStarterManifest(dir); err == nil || !strings.Contains(err.Error(), "unsafe") {
+			t.Fatalf("want unsafe-path error, got %v", err)
+		}
+	})
+	t.Run("malformed line refused", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, dir, ".starter-manifest", "not-a-manifest-line\n")
+		if err := verifyStarterManifest(dir); err == nil || !strings.Contains(err.Error(), "malformed") {
+			t.Fatalf("want malformed error, got %v", err)
+		}
+	})
+	t.Run("empty manifest refused", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, dir, ".starter-manifest", "# only comments\n")
+		if err := verifyStarterManifest(dir); err == nil || !strings.Contains(err.Error(), "no entries") {
+			t.Fatalf("want no-entries error, got %v", err)
+		}
+	})
+}
+
+// TestVerifyStarterManifest_AgainstExternalDir round-trips the PUBLISHER's
+// real output through the CLI verifier: run
+//
+//	KEEP_STAGE=1 cicd/release/publish-starter vX.Y.Z   # dry-run, prints "stage kept: <dir>"
+//	KDC_STARTER_VERIFY_DIR=<dir> go test -run AgainstExternalDir ./internal/bootstrap/clusterinit/
+//
+// Skipped unless the env var points at a staged artifact — the hermetic
+// format tests above cover both sides in CI; this catches format drift
+// between the shell generator and this parser against real content.
+func TestVerifyStarterManifest_AgainstExternalDir(t *testing.T) {
+	dir := os.Getenv("KDC_STARTER_VERIFY_DIR")
+	if dir == "" {
+		t.Skip("set KDC_STARTER_VERIFY_DIR to a KEEP_STAGE'd publish-starter stage")
+	}
+	if err := verifyStarterManifest(dir); err != nil {
+		t.Fatalf("real staged artifact failed CLI verification: %v", err)
+	}
+}
+
+// --- codex-review hardening: schema awareness, types, duplicates ---
+
+func TestVerifyStarterManifest_Hardening(t *testing.T) {
+	write := func(t *testing.T, dir, rel, content string, mode os.FileMode) {
+		t.Helper()
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sum := sha256.Sum256([]byte("x\n"))
+	xhash := hex.EncodeToString(sum[:])
+
+	t.Run("v2 artifact missing its manifest is refused", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, dir, ".starter-version", "schemaVersion: 2\ntag: v9.9.9\nmanifestSha256: "+xhash+"\n", 0o644)
+		if err := verifyStarterManifest(dir); err == nil || !strings.Contains(err.Error(), "ships no .starter-manifest") {
+			t.Fatalf("stripping the manifest must not demote to v1: %v", err)
+		}
+	})
+	t.Run("manifestSha256 mismatch is refused", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, dir, "platform/kustomization.yaml", "x\n", 0o644)
+		write(t, dir, ".starter-manifest", "644 "+xhash+" platform/kustomization.yaml\n", 0o644)
+		write(t, dir, ".starter-version", "schemaVersion: 2\nmanifestSha256: "+strings.Repeat("0", 64)+"\n", 0o644)
+		if err := verifyStarterManifest(dir); err == nil || !strings.Contains(err.Error(), "does not match the declared") {
+			t.Fatalf("tampered manifest must fail the declared sha: %v", err)
+		}
+	})
+	t.Run("v2 with matching manifestSha256 passes", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, dir, "platform/kustomization.yaml", "x\n", 0o644)
+		manifest := "644 " + xhash + " platform/kustomization.yaml\n"
+		msum := sha256.Sum256([]byte(manifest))
+		write(t, dir, ".starter-manifest", manifest, 0o644)
+		write(t, dir, ".starter-version", "schemaVersion: 2\nmanifestSha256: "+hex.EncodeToString(msum[:])+"\n", 0o644)
+		if err := verifyStarterManifest(dir); err != nil {
+			t.Fatalf("authentic v2 artifact must pass: %v", err)
+		}
+	})
+	t.Run("truncated manifest fails on fixed-tree coverage", func(t *testing.T) {
+		// Coverage must come from the FIXED tree set, not the manifest's own
+		// entries — a manifest listing only bootstrap/ must still flag
+		// platform/ files as unlisted.
+		dir := t.TempDir()
+		write(t, dir, "bootstrap/add-cluster.sh", "x\n", 0o644)
+		write(t, dir, "platform/kustomization.yaml", "x\n", 0o644)
+		write(t, dir, ".starter-manifest", "644 "+xhash+" bootstrap/add-cluster.sh\n", 0o644)
+		if err := verifyStarterManifest(dir); err == nil || !strings.Contains(err.Error(), "unlisted") {
+			t.Fatalf("truncated manifest must fail: %v", err)
+		}
+	})
+	t.Run("listed symlink is refused", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, dir, "platform/real.yaml", "x\n", 0o644)
+		if err := os.Symlink("real.yaml", filepath.Join(dir, "platform", "kustomization.yaml")); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		write(t, dir, ".starter-manifest",
+			"644 "+xhash+" platform/kustomization.yaml\n644 "+xhash+" platform/real.yaml\n", 0o644)
+		if err := verifyStarterManifest(dir); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+			t.Fatalf("symlink must be refused even with a matching target hash: %v", err)
+		}
+	})
+	t.Run("duplicate entry is refused", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, dir, ".starter-manifest",
+			"644 "+xhash+" platform/a.yaml\n644 "+xhash+" platform/a.yaml\n", 0o644)
+		if err := verifyStarterManifest(dir); err == nil || !strings.Contains(err.Error(), "twice") {
+			t.Fatalf("duplicate must be refused: %v", err)
+		}
+	})
+	t.Run("case-fold duplicate is refused", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, dir, ".starter-manifest",
+			"644 "+xhash+" platform/a.yaml\n644 "+xhash+" platform/A.yaml\n", 0o644)
+		if err := verifyStarterManifest(dir); err == nil || !strings.Contains(err.Error(), "case-insensitive") {
+			t.Fatalf("case-fold duplicate must be refused: %v", err)
+		}
+	})
+	t.Run("executable bit mismatch is refused", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, dir, "bootstrap/add-cluster.sh", "x\n", 0o644) // manifest says 755
+		write(t, dir, ".starter-manifest", "755 "+xhash+" bootstrap/add-cluster.sh\n", 0o644)
+		if err := verifyStarterManifest(dir); err == nil || !strings.Contains(err.Error(), "executable bit") {
+			t.Fatalf("stripped exec bit must be refused: %v", err)
+		}
+	})
+	t.Run("bad mode grammar is malformed", func(t *testing.T) {
+		dir := t.TempDir()
+		write(t, dir, ".starter-manifest", "banana "+xhash+" platform/a.yaml\n", 0o644)
+		if err := verifyStarterManifest(dir); err == nil || !strings.Contains(err.Error(), "malformed") {
+			t.Fatalf("bad mode must be malformed: %v", err)
+		}
+	})
+}
+
+func TestEnsureStarter_RecordsInstalledRef(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "fleet")
+	ref := "oci://ghcr.io/kube-dc/fleet-starter:v0.5.0@sha256:" + strings.Repeat("ab", 32)
+	_, err := EnsureStarter(context.Background(), EnsureStarterOptions{
+		RepoPath: dir, Ref: ref, Flux: &fakePuller{}, Git: &fakeStarterGit{},
+	})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, ".starter-version"))
+	if err != nil {
+		t.Fatalf(".starter-version must exist post-extract: %v", err)
+	}
+	if !strings.Contains(string(b), "installedRef: "+ref) {
+		t.Errorf(".starter-version must record the installed ref:\n%s", b)
+	}
+	if !strings.Contains(string(b), "installedDigest: sha256:"+strings.Repeat("ab", 32)) {
+		t.Errorf(".starter-version must record the digest of a digest-pinned ref:\n%s", b)
 	}
 }
