@@ -820,6 +820,17 @@ kube-dc bootstrap init \
 | `--trusted-ca-bundle` | Certificate-only root/intermediate PEM for a private-CA platform. The CLI creates the durable ConfigMap and wires manager, backend, OIDC and OpenBao from one plan-pinned source |
 | `--openbao-shares-out` | Additional off-git `0600` custody copy of the five Shamir shares. The automatic post-apply finalizer honors this path; never place it inside a Git tree |
 
+:::note `.starter-version` and `.starter-manifest` are vendor-managed — leave them alone
+After install, the fleet repo root carries two files the platform maintains:
+`.starter-version` (which fleet-starter release this repo came from, including
+the immutable artifact digest when resolved) and `.starter-manifest` (a
+checksum baseline of the shared `bootstrap/ infrastructure/ platform/ addons/
+scripts/` trees). They are how a future `kube-dc` upgrade distinguishes
+vendor-clean files from your local changes. Don't edit or delete them — and
+put your own customization in `clusters/<name>/` (config keys + patches), not
+in the shared trees, so upgrades stay clean.
+:::
+
 `EXT_NET_ANCHOR_INTERFACE` names the parent OVS bridge even when `EXT_NET_ANCHOR_IPS` is empty; public L2 mode creates `EXT_NET_PUBLIC_ANCHOR_INTERFACE` on that bridge. Do not clear the bridge key merely because ext-cloud anchor addresses or node-egress NAT are disabled.
 
 `EXT_NET_NODE_EGRESS_ENABLED` is deliberately not part of the normal install
