@@ -188,6 +188,10 @@ Acceptance must test both boundaries:
 
 ## 5. Managed Cluster add-ons
 
+> **Older-CLI clusters only.** Current `kube-dc bootstrap init` scaffolds
+> `clusters/<name>/tenant-addons.yaml` unconditionally (see §6) — this
+> section is the manual wiring for a repo scaffolded before that.
+
 Wire `platform/tenant-addons` into a Flux Kustomization (`tenant-addons`,
 dependsOn platform). Without it managed clusters get **no CNI**: worker nodes
 stay NotReady → `kubelet-csr-approver` Pending → MachineDeployments stuck

@@ -111,7 +111,7 @@ reach the cluster API over HTTPS. A jump host works for SSH, but note that
 # 1. Install the CLI at a PINNED version, with its checksum verified.
 #    Do not use `latest`: an install you cannot reproduce is an install you
 #    cannot support.
-KUBE_DC_INSTALL_VERSION=vX.Y.Z          # the release you were given
+KUBE_DC_INSTALL_VERSION=vX.Y.Z          # the release you were given (latest: github.com/kube-dc/kube-dc-public/releases; the matching fleet-starter tag is published with it)
 asset=kube-dc_linux_amd64
 tmp="$(mktemp -d)"
 curl -fSL "https://github.com/kube-dc/kube-dc-public/releases/download/${KUBE_DC_INSTALL_VERSION}/${asset}" -o "${tmp}/${asset}"

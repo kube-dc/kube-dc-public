@@ -65,7 +65,8 @@ kube-dc version
 
 Organization login uses the CLI binary, a browser, and network access.
 Operator bootstrap workflows additionally use tools such as `kubectl`, `flux`,
-`helm`, `sops`, `age`, `git`, `gh`, and `ssh`. Run
+`sops`, `age`, `git`, `gh`, and `ssh` (plus `helm`/`kustomize`/`yq`, which
+`doctor` does not probe). Run
 `kube-dc bootstrap doctor --no-tty` before an installation workflow.
 
 ---

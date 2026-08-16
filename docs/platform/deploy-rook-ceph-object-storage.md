@@ -5,10 +5,17 @@ import {RookObjectStorageFlowDiagram} from '@site/src/components/Diagram/Platfor
 S3-compatible object storage backed by Rook Ceph RGW, integrated with Kube-DC
 Organizations, Project buckets, plans, quotas, and the console.
 
-This guide includes direct Helm and manifest examples for a standalone or lab
-installation. On a Fleet-managed cluster, express the same desired state in the
-Fleet repository so Flux remains authoritative. Do not apply a second live copy
-of resources already owned by Fleet.
+:::tip On a Kube-DC cluster you already have this
+`kube-dc bootstrap init --object-storage-mode rook-ceph-{local,multi-node,pvc}`
+scaffolds Rook Ceph, the RGW object store, bucket provisioning **and** the S3
+exposure layer (Gateway listener + Certificate + HTTPRoute at `s3.<domain>`;
+`--s3-hostname` / `--no-s3-exposure` tune it) into your fleet repo — see the
+[installation guide](installation-guide.md) "Key flags". The manual Helm /
+`kubectl patch gateway` steps below are for a **standalone or lab** cluster
+that is *not* Kube-DC-scaffolded; on a Fleet-managed cluster express the same
+desired state in the fleet repo so Flux stays authoritative — a hand-applied
+Gateway patch there is drift Flux will revert.
+:::
 
 ## Prerequisites
 

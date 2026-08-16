@@ -234,11 +234,15 @@ reserved in kube-ovn IPAM. Three rules are load-bearing:
 
 ## Troubleshooting
 
-### Check VLAN Interface on Nodes
+### Check the VLAN is trunked into OVS on the nodes
+The public VLAN is carried by the OVS provider bridge — do **not** expect a
+Linux `bond0.300` sub-interface to exist (kube-ovn attaches the trunk NIC to
+`br-ext-cloud` and tags in OVS). Check the bridge and, on public-L2 clusters,
+the anchor interface the fleet creates:
 ```bash
 # On cluster nodes
-ip link show bond0.300
-ip addr show bond0.300
+sudo ovs-vsctl show | grep -A6 br-ext-cloud      # trunk NIC + patch ports present
+ip -br link show ext-pub-anchor                  # public L2 anchor (EXT_NET_PUBLIC_ANCHOR_INTERFACE)
 ```
 
 ### Check OVN Resources
