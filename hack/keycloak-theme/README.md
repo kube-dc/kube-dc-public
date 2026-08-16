@@ -27,7 +27,6 @@ hack/keycloak-theme/
 │           └── kube-dc-account.css             # Account CSS styles
 ├── build-theme.sh                              # Build JAR and generate manifests
 ├── set-theme.sh                                # Activate theme via Keycloak API
-├── keycloak-values.yaml                        # Helm values for development
 └── README.md                                   # This file
 ```
 
