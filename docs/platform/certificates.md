@@ -237,12 +237,16 @@ secret name.
 
 Because the secrets are the source of truth, rotation is a Git operation:
 
-1. edit the SOPS file directly — `sops clusters/<name>/wildcard-tls-secrets.enc.yaml` —
-   replacing every `tls.crt`/`tls.key` pair with the base64 of the new material
-   (one certificate, all entries identical). A full `kube-dc bootstrap init`
-   re-run does NOT work against an existing overlay: init refuses a cluster
-   that is already scaffolded (`cluster-config.env` present) precisely so it
-   can never clobber live state;
+1. supply the new material — either way lands the same commit:
+   - **re-run `init`** against the existing overlay with the new files:
+     `kube-dc bootstrap init … --tls-mode byo-wildcard --tls-cert new.crt --tls-key new.key`.
+     `init` resumes (it never re-scaffolds a cluster that already has
+     `cluster-config.env`), rewrites only the TLS artifacts, and commits
+     `chore(<name>): rotate platform TLS material via kube-dc CLI`; unchanged
+     material is a no-op, so a plain resume stays a plain resume — **or**
+   - edit the SOPS file directly — `sops clusters/<name>/wildcard-tls-secrets.enc.yaml` —
+     replacing every `tls.crt`/`tls.key` pair with the base64 of the new material
+     (one certificate, all entries identical);
 2. commit and push;
 3. `flux reconcile kustomization flux-system --with-source`;
 4. Envoy picks the new material up without a restart; confirm with the

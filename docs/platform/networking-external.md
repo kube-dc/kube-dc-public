@@ -48,9 +48,9 @@ Physical Interface (bond0)
 > segments (tagged or untagged — `EXT_NET_VLAN_ID=0` is supported when the
 > carrier NIC *is* the segment). Tenant EIP/FIP reachability is ARP-based
 > and needs that L2 adjacency. The **platform ingress VIPs** announced by
-> MetalLB can alternatively be advertised over **BGP** (`METALLB_MODE=bgp`)
+> MetalLB can alternatively be advertised over **BGP** (`--ingress-address-layer=metallb-bgp`)
 > for fabrics with no shared L2 — see the installation guide's
-> "BGP announcement" section.
+> "BGP mode" section.
 
 > **The egress gateway must answer ARP.** `EXT_NET_GATEWAY` (the tenant
 > internet next-hop on the ext network) has to be a live L2 neighbour that
@@ -178,7 +178,7 @@ spec:
 ## Public-VLAN addressing contract (MetalLB L2 ingress VIP)
 
 When the platform ingress VIP lives on the routed public VLAN
-(`--preset cloud+public-vlan`, `METALLB_MODE=l2`), the public CIDR is
+(`--preset cloud+public-vlan`, `--ingress-address-layer=metallb-l2`), the public CIDR is
 partitioned by a fixed contract. Example for a `/28`
 (`EXT_PUBLIC_CIDR=192.0.2.0/28`):
 

@@ -228,7 +228,8 @@ kube-dc bootstrap doctor --no-tty
 The download pins one reviewed release (never the mutable `latest` alias) and
 verifies it against that release's published checksum before installation.
 `doctor` checks `kubectl`, `flux`,
-`helm`, `sops`, `age`, `git`, `gh`, and `ssh`; fix every blocker before
+`sops`, `age`, `git`, `gh`, and `ssh` (it does not probe `helm`, `kustomize`
+or `yq` — install those by hand); fix every blocker before
 continuing. Ensure the control-plane key is loaded with `ssh-add <key>`.
 
 ---
@@ -694,13 +695,15 @@ See [Platform TLS certificates](certificates.md).
 :::tip Behind a 1:1 NAT / floating IP?
 On clouds where the node never sees its own public IP locally (a
 kube-dc FIP, an EC2 elastic IP, an OpenStack/Hetzner floating IP), pass
-`--ssh-host`. The CLI SSH-probes the node, writes the **arriving
-(internal) IP** into the fleet, and drops the Gateway's `:6443`
-passthrough listener — otherwise the front door silently resets. Bare
-metal with the public IP bound on the NIC needs none of this.
+`--ssh-host`. The CLI SSH-probes the node and writes the **arriving
+(internal) IP** into the fleet as `NODE_EXTERNAL_IP` / `KUBE_API_ARRIVAL_IP`
+— kube-proxy matches externalIP rules against the address packets *actually*
+carry, so configuring the public IP there would make `:80/:443/:6443`
+silently reset. Bare metal with the public IP bound on the NIC needs none of
+this.
 
-**Tenants and the management API on this topology.** Dropping `:6443` does
-not itself remove the API endpoint — the apiserver still serves it — but on a
+**Tenants and the management API on this topology.** The apiserver is served
+off-Envoy on the arrival IP (see the kube-api tip in §4), but on a
 private/single-ingress cluster a tenant VPC pod cannot route to it anyway (it is
 OVN-isolated from the node and service networks). `MANAGEMENT_API_MODE` defaults
 to `auto`, and the installer resolves it to **`service`** here: in-tenant
@@ -972,9 +975,15 @@ completes.
 
 ### 3.3.2 Which mode? `install` / `adopt` / `resume`
 
-`--mode` tells `init` what it's walking into. It auto-detects when
-omitted (`--mode=auto`), but knowing the model helps you pick the right
-path — and avoid the one that isn't automated yet:
+`--mode` tells `init` what it's walking into and is **required** — pass
+`install` for a fresh RKE2 cluster (the §3.3 flow). `--mode=auto` is an
+opt-in shortcut for day-2 runs *against a cluster your kubeconfig already
+reaches*: `init` probes it and picks `install` / `adopt` / `resume`, printing
+"Auto-detected mode: … — <reason>" above the plan. It deliberately does not
+guess when there is no reachable kubeconfig (a fresh bastion before
+`fetch-kubeconfig`) — an unread cluster must never be silently installed
+over. Knowing the model helps you pick the right path — and avoid the one
+that isn't automated yet:
 
 | Your situation | Mode | What happens |
 |----------------|------|--------------|
@@ -1130,9 +1139,9 @@ command checks all of them:
 
 It also snapshots with `cp -n` so a re-run cannot overwrite the good original,
 verifies the flag on the **running process** (RKE2 accepts a malformed config
-and drops the arg silently), and probes `/readyz` on `127.0.0.1` — never the
-node IP, where Envoy's `:6443` SNI-passthrough listener makes a healthy
-apiserver look dead.
+and drops the arg silently), and probes `/readyz` on `127.0.0.1` — the
+loopback answer is the apiserver itself, independent of any front-door
+Service or kube-proxy rule on the node IP.
 
 :::note Doing it by hand
 If you must — an unreachable node, a bastion without the CLI — the equivalent is
@@ -1389,27 +1398,31 @@ Two things to know before choosing a VIP layer:
   committed. **The simplest correct answer is to pass no `--ingress-node` at all**:
   the gateway nodes are then used, which satisfies the invariant by construction.
 
-:::tip The `:6443` listener serves the MANAGEMENT API, not tenant clusters
-Two SNI-passthrough listeners exist and they carry different traffic:
+:::tip kube-api (`:6443`) is served OFF-Envoy; tenant clusters ride Envoy `:443`
+The two paths carry different traffic and are wired differently:
 
-- **`:6443`** carries one route — `kube-api.<domain>` → the `kubernetes`
-  Service (the management apiserver's ClusterIP).
+- **`kube-api.<domain>:6443`** — the **management apiserver**. It is **never
+  routed through Envoy**. The front door ships a selectorless
+  `ClusterIP` + `externalIPs` Service on `:6443` whose external IP is
+  `KUBE_API_ARRIVAL_IP` — the address external kube-api traffic *arrives on*
+  at the node: the node's own IP on the `none` / 1:1-NAT layers, the announced
+  VIP on a MetalLB layer (`init` substitutes `METALLB_FLOATING_IP` there so
+  both keys carry one value). kube-proxy matches that arriving address and
+  hands the connection to the apiserver. There is no Envoy `:6443` listener at
+  all — one would collide with the apiserver on a control-plane ingress node
+  (production incident 2026-08-11), which is exactly why the old listener +
+  "drop it behind NAT" patch were retired.
 - **`:443`** (`tls-passthrough-wildcard`, hostname `*.<domain>`) carries the
   **managed Kubernetes clusters**. A tenant's kubeconfig points at
   `https://<cluster>-cp-<namespace>.<domain>:443`, and Envoy passes the TLS
   session through to that Kamaji control plane. Managed clusters never use
   `:6443`.
 
-Envoy cannot bind `:6443` on a node that also runs `kube-apiserver` — the
-apiserver owns the port, and the listener sits silently dead while the Gateway
-still reports `Programmed=True`. That is why the installer drops the listener
-when an ingress node is also a control-plane node.
-
-Dropping it is safe **when the front-door address belongs to a control-plane
-node**: `kube-api.<domain>:6443` is then served by the apiserver itself. It is
-NOT safe if the front door is a VIP that can land on a node without an
-apiserver — there `:6443` would have no listener at all. Managed clusters are
-unaffected either way; they are on `:443`.
+If `KUBE_API_ARRIVAL_IP` cannot be resolved at scaffold time (VIP still
+`CHANGEME`), `init` warns and the render gate rejects
+`externalIPs: [CHANGEME]` — the misconfiguration fails loudly instead of
+shipping a dark kube-api. Point `kube-api.<domain>` DNS at that arrival
+address.
 :::
 
 The installer rejects missing public-network reservations, a missing L2
@@ -1558,7 +1571,7 @@ the network-side check.
 
 #### BGP mode and mode changes
 
-For a new cluster, choosing `METALLB_MODE=bgp` in CLI/TUI selects the BGP base
+For a new cluster, choosing `--ingress-address-layer=metallb-bgp` in CLI/TUI selects the BGP base
 and requires `METALLB_BGP_LOCAL_ASN`, `METALLB_BGP_PEER_ASN`, and
 `METALLB_BGP_PEER_ADDRESS`; optional port and hold time are validated against
 the wire format. The shared fleet defaults both `BGPPeer` sessions and
@@ -1631,7 +1644,7 @@ Once the VIP is proven, commit, push, reconcile, and change DNS:
 
 ```text
 *.example.com        → <METALLB_FLOATING_IP>
-kube-api.example.com → <METALLB_FLOATING_IP>   # only if the 6443 route is enabled
+kube-api.example.com → <METALLB_FLOATING_IP>   # the VIP is KUBE_API_ARRIVAL_IP on a MetalLB layer
 ```
 
 Keep the old DNS target until the new records resolve and HTTPS/API probes pass
@@ -1815,7 +1828,8 @@ fix the reported cause and re-run. Common ones: `KUBE_OVN_MASTER_NODES`
 unset (pass the control-plane **internal** IPs via `--set`), the wildcard
 DNS record not yet resolving (the DNS gate blocks; re-run once
 `dig +short test.<domain>` returns your IP, or pass
-`--allow-dns-not-ready` to proceed without TLS), or a missing
+`--allow-dns-not-ready` to proceed — the install completes and the ACME
+Certificates simply sit Pending until the record resolves), or a missing
 `repo,workflow`/`repo` scope on the `gh` token for `new-repo` mode.
 
 ### Flux Not Reconciling
