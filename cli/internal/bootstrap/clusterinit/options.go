@@ -712,10 +712,10 @@ func validatePreset(p Preset) []string {
 
 func validateMode(m Mode) []string {
 	if m == "" {
-		// Empty is rejected — until M4-T03 ships auto-detection, the
-		// operator must say explicitly. Treat "" as "operator forgot
-		// the flag" rather than "auto".
-		return []string{fmt.Sprintf("--mode is required (one of %s); --mode=auto will become the default once M4-T03 lands", joinModes(AllModes))}
+		// Empty is rejected: the operator must say what init is walking
+		// into. `auto` is an explicit opt-in that probes a REACHABLE cluster
+		// (it never guesses greenfield); on a fresh bastion pass install.
+		return []string{fmt.Sprintf("--mode is required (one of %s); pass install for a fresh cluster, or auto to probe a cluster your kubeconfig already reaches", joinModes(AllModes))}
 	}
 	for _, ok := range AllModes {
 		if m == ok {

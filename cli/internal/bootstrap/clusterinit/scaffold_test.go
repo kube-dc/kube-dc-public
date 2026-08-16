@@ -282,6 +282,83 @@ POD_CIDR=10.100.0.0/16
 	// untouched CHANGEME placeholders, so it cannot collide with it.
 }
 
+// Regression (codex docs-accuracy review 2026-08-16): add-cluster.sh seeds
+// KUBE_API_ARRIVAL_IP=CHANGEME on a MetalLB layer (the arrival address IS the
+// operator's VIP, unknown to the script). The blanket placeholder scan used to
+// reject that seed BEFORE scaffold step 8 (ResolveKubeAPIArrivalIP) could
+// substitute the VIP — so every MetalLB greenfield install failed unless the
+// operator hand-set KUBE_API_ARRIVAL_IP. Post-process must resolve it itself.
+func TestPostProcessClusterConfig_MetalLBLayer_ResolvesKubeAPIArrivalIPFromVIP(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cluster-config.env")
+	scriptOutput := `# Cluster: pilot
+CLUSTER_NAME=pilot
+DOMAIN=pilot.example.com
+EXT_NET_NAME=ext-cloud
+EXT_NET_VLAN_ID=163
+EXT_NET_INTERFACE=bond0
+INGRESS_ADDRESS_LAYER=metallb-l2
+METALLB_FLOATING_IP=CHANGEME
+METALLB_INTERFACE=CHANGEME
+KUBE_API_ARRIVAL_IP=CHANGEME
+POD_CIDR=10.100.0.0/16
+`
+	if err := os.WriteFile(path, []byte(scriptOutput), 0o644); err != nil {
+		t.Fatalf("write seed: %v", err)
+	}
+	plan := &Plan{
+		Preset:              PresetCloudVLAN,
+		ClusterName:         "pilot",
+		IngressAddressLayer: AddressLayerMetalLBL2,
+	}
+	// A real VIP + interface, as the operator supplies them.
+	sets := map[string]string{
+		"EXT_NET_VLAN_ID": "163", "EXT_NET_INTERFACE": "bond0",
+		"METALLB_FLOATING_IP": "198.51.100.7", "METALLB_INTERFACE": "bond0",
+	}
+	if err := postProcessClusterConfig(path, plan, sets, ""); err != nil {
+		t.Fatalf("a MetalLB layer with a real VIP must scaffold; the seeded KUBE_API_ARRIVAL_IP=CHANGEME must be resolved, got: %v", err)
+	}
+	body, _ := os.ReadFile(path)
+	if !strings.Contains(string(body), "KUBE_API_ARRIVAL_IP=198.51.100.7") {
+		t.Errorf("KUBE_API_ARRIVAL_IP must equal the VIP on a MetalLB layer:\n%s", body)
+	}
+	if strings.Contains(string(body), "CHANGEME") {
+		t.Errorf("no placeholder may survive:\n%s", body)
+	}
+}
+
+// On a none layer the arrival IP is the node's own address (written by the
+// script); post-process must NOT borrow the VIP even if one is present.
+func TestPostProcessClusterConfig_NoneLayer_DoesNotBorrowVIPForArrivalIP(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cluster-config.env")
+	scriptOutput := `# Cluster: pilot
+CLUSTER_NAME=pilot
+DOMAIN=pilot.example.com
+EXT_NET_NAME=ext-cloud
+EXT_NET_VLAN_ID=163
+EXT_NET_INTERFACE=bond0
+INGRESS_ADDRESS_LAYER=none
+KUBE_API_ARRIVAL_IP=192.0.2.11
+METALLB_FLOATING_IP=CHANGEME
+METALLB_INTERFACE=CHANGEME
+POD_CIDR=10.100.0.0/16
+`
+	if err := os.WriteFile(path, []byte(scriptOutput), 0o644); err != nil {
+		t.Fatalf("write seed: %v", err)
+	}
+	plan := &Plan{Preset: PresetCloudVLAN, ClusterName: "pilot", IngressAddressLayer: AddressLayerNone}
+	base := map[string]string{"EXT_NET_VLAN_ID": "163", "EXT_NET_INTERFACE": "bond0"}
+	if err := postProcessClusterConfig(path, plan, base, ""); err != nil {
+		t.Fatalf("none layer must post-process: %v", err)
+	}
+	body, _ := os.ReadFile(path)
+	if !strings.Contains(string(body), "KUBE_API_ARRIVAL_IP=192.0.2.11") {
+		t.Errorf("none layer must keep the node's own arrival IP:\n%s", body)
+	}
+}
+
 func TestPostProcessClusterConfig_AppliesPresetOverrides(t *testing.T) {
 	// Simulate what add-cluster.sh wrote: CHANGEME values for
 	// VLAN_ID + INTERFACE. Post-process must replace them with

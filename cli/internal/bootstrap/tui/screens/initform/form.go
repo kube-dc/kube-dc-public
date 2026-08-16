@@ -361,7 +361,16 @@ func (s *State) FromOptions(o *clusterinit.InitOptions) {
 	set(&s.NodeIP, o.NodeExternalIP)
 	set(&s.Email, o.Email)
 	set(&s.SSHHost, o.SSHHost)
-	set(&s.Mode, string(o.Mode))
+	// The wizard is deliberately EXPLICIT: its Mode selector has no "auto"
+	// entry (auto is a probe, not a choice). Cobra now defaults --mode to
+	// auto, so seed the panel with install — the greenfield default and the
+	// value the embedded root wizard already starts at — instead of an
+	// out-of-set value that Enter/Left would silently rotate.
+	if o.Mode == clusterinit.ModeAuto {
+		set(&s.Mode, string(clusterinit.ModeInstall))
+	} else {
+		set(&s.Mode, string(o.Mode))
+	}
 	set(&s.FleetMode, string(o.FleetMode))
 	set(&s.Repo, o.Repo)
 	set(&s.Provider, string(o.Provider))

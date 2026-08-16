@@ -372,6 +372,15 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 			// reusable cluster-config.env-format spec (runs on --dry-run
 			// too, to prepare a spec). Never includes the git token.
 			if saveConfigPath != "" {
+				// The spec is operator scratch, written BEFORE the plan is
+				// verified and before the live-mode re-probe — so it must
+				// never land inside the fleet checkout, where it would be a
+				// pre-gate mutation of fleet state (codex 2026-08-16).
+				if inside, ierr := pathInsideRepo(saveConfigPath, o.Repo); ierr != nil {
+					return fmt.Errorf("init --save-config: %w", ierr)
+				} else if inside {
+					return fmt.Errorf("init --save-config: %s is inside the fleet checkout %s — write the spec outside the repo (it is reviewed input, not fleet state)", saveConfigPath, o.Repo)
+				}
 				if err := clusterinit.WriteSpec(o, saveConfigPath); err != nil {
 					return fmt.Errorf("init --save-config: %w", err)
 				}
@@ -399,10 +408,30 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 			// gate so plan previews stay side-effect-free. Also pass
 			// `cmd.Context()` so operator Ctrl-C cancellation
 			// interrupts a long-running generate script.
-			if err := validateAgeKeyEnrollment(cmd.Context(), cmd.OutOrStdout(), o, !o.DryRun); err != nil {
-				if o.DryRun && (errors.Is(err, clusterinit.ErrAgeKeyNotFound) ||
-					errors.Is(err, clusterinit.ErrAgeKeyDryRunSkip)) {
-					fmt.Fprintf(cmd.OutOrStdout(), "[sops] WARNING: %v\n", err)
+			// mutationsAllowed=false HERE for every path (codex 2026-08-16):
+			// generation used to fire at this point on a starter-shaped repo
+			// with no age.key — creating age.key + committing .sops.yaml
+			// BEFORE the plan was loaded/verified and before the live-mode
+			// re-probe, so a stale/tampered plan or a cluster whose mode
+			// changed mutated the checkout and was refused only afterwards.
+			// The engine generates itself (runApplyEngine, after the
+			// re-probe, before scaffold needs the key). This call now only
+			// validates an already-present key; "not found / deferred" is a
+			// warning on every path, a hard error only when a key exists
+			// but is not enrolled.
+			if err := validateAgeKeyEnrollment(cmd.Context(), cmd.OutOrStdout(), o, false); err != nil {
+				if errors.Is(err, clusterinit.ErrAgeKeyNotFound) || errors.Is(err, clusterinit.ErrAgeKeyDryRunSkip) {
+					// Keep the WARNING token: dry-run/CI logs grep for it, and
+					// on existing-fleet a missing key is a real problem the
+					// engine will refuse (it never generates there).
+					switch {
+					case o.DryRun:
+						fmt.Fprintf(cmd.OutOrStdout(), "[sops] WARNING: %v (dry-run writes nothing; on apply the engine generates the key for a greenfield fleet after the plan is verified)\n", err)
+					case o.FleetMode == clusterinit.FleetExistingFleet:
+						fmt.Fprintf(cmd.OutOrStdout(), "[sops] WARNING: %v — existing-fleet expects the fleet's age key to be present; the apply engine will refuse without it\n", err)
+					default:
+						fmt.Fprintf(cmd.OutOrStdout(), "[sops] WARNING: %v — the apply engine generates it after the plan is verified and the cluster mode confirmed\n", err)
+					}
 				} else {
 					return err
 				}
@@ -466,7 +495,7 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 	cmd.Flags().StringVar((*string)(&o.Preset), "preset", "",
 		fmt.Sprintf("Network topology preset (one of %s; required)", joinPresets(clusterinit.AllPresets)))
 	cmd.Flags().StringVar((*string)(&o.Mode), "mode", "",
-		fmt.Sprintf("Operating mode (one of %s; required until M4-T03 ships auto-detection)", joinModes(clusterinit.AllModes)))
+		fmt.Sprintf("Operating mode (one of %s; required). auto = probe the cluster your kubeconfig reaches and pick install/adopt/resume — needs a reachable kubeconfig, it never guesses greenfield", joinModes(clusterinit.AllModes)))
 	cmd.Flags().StringVar(&o.Name, "name", "",
 		"Cluster name (lowercase, dashes, optionally nested with /; required)")
 	cmd.Flags().StringVar(&o.Domain, "domain", "",
@@ -659,6 +688,34 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 	return cmd
 }
 
+// pathInsideRepo reports whether p resolves to a location inside repo
+// (both made absolute + cleaned; symlinks are not followed — a symlink INTO
+// the repo is the operator's deliberate choice, and EvalSymlinks would fail
+// on the not-yet-existing spec path).
+func pathInsideRepo(p, repo string) (bool, error) {
+	if repo == "" {
+		return false, nil
+	}
+	ap, err := filepath.Abs(p)
+	if err != nil {
+		return false, err
+	}
+	ar, err := filepath.Abs(repo)
+	if err != nil {
+		return false, err
+	}
+	rel, err := filepath.Rel(ar, ap)
+	if err != nil {
+		return false, nil // different volumes etc. → not inside
+	}
+	// rel == "." (the repo itself) or a descendant → inside; anything that
+	// has to climb out ("..", "../x") is outside.
+	if rel == "." {
+		return true, nil
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)), nil
+}
+
 // modeResolution is the value `resolveAutoMode` returns: the
 // detected (or explicit) Mode plus the human-readable reason
 // rendered as the plan-header "Auto-detected: …" line.
@@ -698,8 +755,17 @@ func resolveAutoMode(ctx context.Context, out io.Writer, o *clusterinit.InitOpti
 	probeCtx, cancel := context.WithTimeout(ctx, modeProbeTimeout)
 	defer cancel()
 
-	prober, err := newRealModeProber("")
+	prober, err := newModeProber()
 	if err != nil {
+		if errors.Is(err, errNoKubeconfigConfigured) {
+			// No kubeconfig source at all (fresh bastion). auto does NOT
+			// guess greenfield: a "provisional install + re-probe later"
+			// design was codex-reviewed twice (2026-08-16) and still left
+			// fail-open holes (probe timeout, pre-engine writes such as
+			// age-key enrollment, discriminator vs client-go drift). Until
+			// those are closed the honest answer is precise remediation.
+			return modeResolution{}, fmt.Errorf("%w — auto-detection needs a cluster to inspect; on a fresh bastion pass --mode=install (or fetch the kubeconfig first: kube-dc bootstrap fetch-kubeconfig <name> --ssh-host <user@cp> --domain <domain> --set-current)", err)
+		}
 		return modeResolution{}, fmt.Errorf("%w (pass --mode=install|adopt|resume explicitly)", err)
 	}
 
@@ -725,16 +791,24 @@ func runInit(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, mod
 		return runInitDryRun(out, o)
 
 	case o.ApplyPlan != "":
-		return runInitApplyPlan(ctx, out, o, rep)
+		// The reviewed plan's mode is authoritative for what gets written,
+		// but the live cluster may have changed since the dry-run — re-probe
+		// before mutating so an `install` plan is never applied over a
+		// cluster that has since become Flux-managed. An operator who pins
+		// --mode explicitly on the apply is not second-guessed (same rule as
+		// default-apply): the plan's hash gate still catches a mismatch.
+		return runInitApplyPlan(ctx, out, o, rep, modeRes.AutoDetected)
 
 	default:
 		// Default-flow apply: build the plan from validated current
 		// inputs, then hand to Apply directly (no LoadPlan or
 		// VerifyApplyPlanInput — those gates are specific to the
 		// --apply-plan path where the plan was built in a prior
-		// session).
-		_ = modeRes
-		return runInitDefaultApply(ctx, out, o, rep)
+		// session). Re-probe when the mode was auto-resolved (a
+		// provisional greenfield answer MUST be checked once the
+		// kubeconfig exists; a probed answer is cheap to re-confirm);
+		// an explicit --mode is the operator's call and is not second-guessed.
+		return runInitDefaultApply(ctx, out, o, rep, modeRes.AutoDetected)
 	}
 }
 
@@ -841,7 +915,7 @@ func runInitDryRun(out io.Writer, o *clusterinit.InitOptions) error {
 // never calls `discoverFleetState` or `InheritFromSiblings` on this
 // path — fleet-state changes between dry-run and apply do not
 // influence what gets written.
-func runInitApplyPlan(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, rep clusterinit.StepReporter) error {
+func runInitApplyPlan(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, rep clusterinit.StepReporter, reprobe bool) error {
 	fmt.Fprintln(out, "=== kube-dc bootstrap init — APPLY-PLAN ===")
 	fmt.Fprintf(out, "Plan source: %s\n", o.ApplyPlan)
 
@@ -864,7 +938,7 @@ func runInitApplyPlan(ctx context.Context, out io.Writer, o *clusterinit.InitOpt
 	fmt.Fprintf(out, "Loaded plan for cluster %q (planHash=%s, %d scripts).\n",
 		plan.ClusterName, plan.PlanHash, len(plan.ScriptsToRun))
 	fmt.Fprintln(out, "Inputs verified — applying plan verbatim.")
-	return runApplyEngine(ctx, out, o, plan, rep)
+	return runApplyEngine(ctx, out, o, plan, rep, reprobe)
 }
 
 // runInitDefaultApply is the no-flags-apply path: BuildPlan from
@@ -872,7 +946,7 @@ func runInitApplyPlan(ctx context.Context, out io.Writer, o *clusterinit.InitOpt
 // is needed because the plan and the engine's `Sets`/`NodeNICs`
 // come from the same InitOptions instance — they're coherent by
 // construction.
-func runInitDefaultApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, rep clusterinit.StepReporter) error {
+func runInitDefaultApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, rep clusterinit.StepReporter, reprobe bool) error {
 	fmt.Fprintln(out, "=== kube-dc bootstrap init — APPLY ===")
 	fleet := discoverFleetState(o)
 	// Freeze the starter ref into the plan (review P1 2026-07-20): an
@@ -886,7 +960,7 @@ func runInitDefaultApply(ctx context.Context, out io.Writer, o *clusterinit.Init
 	}
 	fmt.Fprintf(out, "Built plan for cluster %q (planHash=%s, %d scripts).\n",
 		plan.ClusterName, plan.PlanHash, len(plan.ScriptsToRun))
-	return runApplyEngine(ctx, out, o, plan, rep)
+	return runApplyEngine(ctx, out, o, plan, rep, reprobe)
 }
 
 // layeredAdoptEnv presents the effective cluster-config.env to the
@@ -1010,7 +1084,7 @@ func runInitAdoptWizardStep(cmd *cobra.Command, out io.Writer, o *clusterinit.In
 // on. Builds a `bootstrap.Session` for the adapters, resolves the
 // GitHub token if --github-token wasn't passed, then calls
 // `clusterinit.Apply`.
-func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, plan *clusterinit.Plan, rep clusterinit.StepReporter) error {
+func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, plan *clusterinit.Plan, rep clusterinit.StepReporter, reprobe bool) error {
 	if rep == nil {
 		rep = clusterinit.NopReporter{}
 	}
@@ -1083,6 +1157,18 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		}
 	}
 
+	// Mode re-probe (auto-mode safety net): the pre-session block above has
+	// fetched or located this cluster's kubeconfig; before the first
+	// mutation, confirm the LIVE cluster still resolves to the mode this run
+	// was planned with. Refuses when they differ (an install plan over a
+	// now-Flux-managed cluster is the dangerous direction). Skipped only for
+	// an operator-pinned --mode.
+	if reprobe {
+		if err := reprobeModeAfterFetch(ctx, out, plan.Mode); err != nil {
+			return err
+		}
+	}
+
 	var session *bootstrap.Session
 	if err := step(rep, clusterinit.StepPrepare, func() error {
 		var e error
@@ -1129,13 +1215,15 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		}); err != nil {
 			return fmt.Errorf("apply: fleet starter: %w", err)
 		}
-		// The age-key gate deferred generation while the starter was
-		// pending (generate-age-key.sh lives INSIDE the starter — P0
-		// ordering fix, review 2026-07-20). Run it now, before scaffold
-		// needs the key for SOPS encryption.
-		if err := validateAgeKeyEnrollment(ctx, out, o, true); err != nil {
-			return fmt.Errorf("apply: age key (post-starter): %w", err)
-		}
+	}
+	// Age-key enrollment WITH generation — the ONE place it may mutate:
+	// after the plan gate and the live-mode re-probe above, after the
+	// starter is present (generate-age-key.sh lives inside it — P0 ordering
+	// fix, review 2026-07-20), and before scaffold needs the key for SOPS.
+	// Unconditional (not only under starterNeeded): a starter-shaped repo
+	// with no age.key must also generate HERE, not in RunE (codex 2026-08-16).
+	if err := validateAgeKeyEnrollment(ctx, out, o, true); err != nil {
+		return fmt.Errorf("apply: age key: %w", err)
 	}
 
 	// M4-T07 auto-install prereqs. Runs FIRST — before DNS / NFD /

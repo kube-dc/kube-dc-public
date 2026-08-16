@@ -204,7 +204,7 @@ bootstrap and the GitOps scaffold use it:
 
 ```bash
 # Linux amd64 — change asset for another platform
-KUBE_DC_INSTALL_VERSION=vX.Y.Z   # choose the approved immutable release
+KUBE_DC_INSTALL_VERSION=vX.Y.Z   # the approved immutable release (latest: github.com/kube-dc/kube-dc-public/releases)
 asset=kube-dc_linux_amd64
 task_cli_tmp="$(mktemp -d)"
 curl -fSL https://github.com/kube-dc/kube-dc-public/releases/download/${KUBE_DC_INSTALL_VERSION}/${asset} \
@@ -807,6 +807,8 @@ kube-dc bootstrap init \
 | `--github-owner` / `--github-repo` | Where the fleet repo lives (auto-created in `new-repo` mode) |
 | `--object-storage-mode` | **REQUIRED.** Working: `rook-ceph-local` (loop-file backed, single node), `rook-ceph-multi-node` (raw devices, exactly 3 nodes), `rook-ceph-pvc`. `disabled` installs a **deliberately degraded** cluster: Mimir and Loki are SUSPENDED (no metrics or logs storage), Grafana's database runs with backups and WAL archiving OFF, and alloy log-delivery errors are expected — never for a customer-facing cluster. `external-ceph` and `external-s3` are **recognised but fail closed** (fleet stubs); do not select them |
 | `--ceph-node=NODE=DEVICE` | One raw block device per OSD node (repeat 3× for multi-node). Device is the **bare name** as `lsblk` shows it (`nvme1n1`, `sdb`) — a `/dev/` prefix is stripped automatically since v0.5.13. When a raw device is named (not the loop-file default) `init` probes it over SSH and **warns** if it is missing or already carries data — see the zap warning below. **Re-used hardware: see the zap warning below** |
+| `--rook-osd-device` | `rook-ceph-local` only: OSD block device (bare name). Default = the fleet template's loop file (`loop0`, sized by `--rook-osd-size-gb`) — pass a real device for anything beyond a lab; when set, `init` probes it over SSH and warns if missing or non-empty |
+| `--ceph-storage-class` / `--ceph-osd-count` / `--ceph-osd-volume-size-gb` | `rook-ceph-pvc` only: the StorageClass backing the OSD PVCs (required), OSD PVC count (0 = fleet default 2) and size in GB (0 = fleet default 200). For clusters that already have a CSI-backed StorageClass and no raw disks |
 | `--no-kubevirt` | VMs are out of scope for this cluster (e.g. a CloudSigma `cs` cluster that only runs managed Kubernetes) — skips the KubeVirt-eligibility (`/dev/kvm`) preflight so the install does not block on nodes with no nested virtualization. **Leave it off for any cluster that will host tenant VMs.** Distinct from `--allow-no-kubevirt-eligible`, which keeps the VM feature but bypasses the *eligibility gate* on a single non-KVM node |
 | `--ssh-host` | Control-plane SSH target — enables kubeconfig auto-pull **and** NAT-topology detection (§3.2) |
 | `--set=KUBE_OVN_MASTER_NODES` | Control-plane **internal** IPs (comma-separated) — not emitted by the preset, always set it |
@@ -814,6 +816,7 @@ kube-dc bootstrap init \
 | `--set=EXT_NET_INTERFACE` / `EXT_NET_VLAN_ID` | Trunk NIC + cloud VLAN ID from Phase 1 (`EXT_NET_VLAN_ID=0` = untagged carrier) |
 | `--node-nic=NODE=IFACE` | Per-node override when a node's provider/trunk NIC differs from `EXT_NET_INTERFACE` (repeatable; also exposed in TUI/config) |
 | `--set=EXT_PUBLIC_*` | Public VLAN/CIDR/gateway for `cloud+public-vlan`. When the VIP is in this CIDR, the CLI derives the minimum gateway/VIP/anchor exclusions; widen them for any other reserved addresses |
+| `--set=EXT_PUBLIC_EXCLUDE_IPS_1` / `_2` | **Required for `cloud+public-vlan`** — the two IPAM exclusion ranges (`a.b.c.d..a.b.c.e`) that reserve gateway/VIP/anchors out of the public pool. Derived automatically **only** when the MetalLB VIP sits inside `EXT_PUBLIC_CIDR`; on `--ingress-address-layer=none`, or a VIP on the cloud VLAN, you must set both yourself or `init` refuses with `missing EXT_PUBLIC_EXCLUDE_IPS_1, EXT_PUBLIC_EXCLUDE_IPS_2` |
 | `--set=METALLB_FLOATING_IP` / `METALLB_INTERFACE` | Dedicated ingress VIP and the host interface that carries its L2 segment. For an L2 VIP inside `EXT_PUBLIC_CIDR`, the current CLI selects the fleet-managed `ext-pub-anchor`; elsewhere the operator supplies the real interface |
 | `--ingress-address-layer` | **Who owns the address your users dial** — the one front-door question. `metallb-l2` (recommended) — a floating VIP announced by ARP on a shared L2 segment; `metallb-bgp` — the same VIP announced as a `/32` to a routed fabric; `none` — clients reach the ingress nodes' own IPs via wildcard DNS and MetalLB is not installed at all. Declaring a `METALLB_FLOATING_IP` **does not** select a layer for you: a reserved address is not assumed to be your front door, so declaring one without a layer is refused rather than guessed. Left unset this resolves to `none`. The **data plane does not vary with this choice** — host-bind Envoy on the ingress nodes either way — but the *Service shape* does: `ClusterIP` + `externalIPs` on `none`, `LoadBalancer` + `metallb` + `externalTrafficPolicy: Local` with `externalIPs` cleared on a MetalLB layer. See "Choosing an address layer" below |
 | `--ingress-node` | Node that should carry the `kube-dc.com/ingress` label and bind `:80`/`:443` (repeatable). `init` **applies the label** to this set before committing the overlay, and the front-door component places Envoy on it. Leave it unset and the `KUBE_OVN_GW_NODES` set is used, which is the recommended shape because it keeps the ingress set and the MetalLB announcer set identical. `ENVOY_REPLICAS` and `INGRESS_HOST_CIDR` are **derived** from this set. Under a VIP layer the set must be a SUBSET of `KUBE_OVN_GW_NODES` — a partial overlap is refused, because the single node in both sets becomes a point of failure that looks like HA |
@@ -822,6 +825,22 @@ kube-dc bootstrap init \
 | `--tls-mode` | `acme` (default — HTTP-01 through the Gateway; needs inbound `:80`), `acme-dns01-route53` (same issuer, proves control via Route53 DNS records — for private/VPN-only clusters whose zone is in Route53; auto-renews; requires `--dns01-route53-zone-id` + `--dns01-route53-access-key-id`, secret key via `--dns01-route53-secret-key-file` or `KUBE_DC_DNS01_ROUTE53_SECRET_KEY`), or `byo-wildcard` (operator-supplied certificate; requires `--tls-cert`/`--tls-key`; nothing renews it). See [Platform TLS certificates](certificates.md) |
 | `--trusted-ca-bundle` | Certificate-only root/intermediate PEM for a private-CA platform. The CLI creates the durable ConfigMap and wires manager, backend, OIDC and OpenBao from one plan-pinned source |
 | `--openbao-shares-out` | Additional off-git `0600` custody copy of the five Shamir shares. The automatic post-apply finalizer honors this path; never place it inside a Git tree |
+
+**Less common flags** (all `kube-dc bootstrap init --help` for the full list):
+
+| Flag | Meaning |
+|------|---------|
+| `--dry-run` / `--print-plan` · `--yes` · `--no-tty` | Plan only (writes a consent marker) · apply without prompting · plain stdout for CI/agents. The documented loop is `--dry-run` → read the plan → same command with `--yes` |
+| `--plan-file` / `--apply-plan` | Save the dry-run plan as JSON, then apply *exactly that reviewed plan* (`--apply-plan plan.json`); the apply refuses on any input drift (hash-pinned) or plan-schema mismatch (a plan from an older CLI must be re-dry-run) |
+| `--config <file>` / `--save-config <file>` | Prefill every input from a `cluster-config.env`-format spec (config keys + `KUBE_DC_INIT_*` orchestration keys — see "Prefill from a file" below) / write the resolved inputs back out as one (never the git token) |
+| `--vm-storage-mode` / `--vm-golden` | VM root-disk storage: `local` (default) or `shared-rbd` (needs a rook-ceph-* object-storage mode; adds the rbd-vm layers + FS golden images — `--vm-golden debian-12,alpine-3.21`, Windows opt-in) |
+| `--s3-hostname` / `--no-s3-exposure` | S3 endpoint hostname for the exposure layer (default `s3.<domain>`) / keep S3 cluster-internal (no Certificate + HTTPRoute) |
+| `--image-acceleration` (default true) | Wire the on-cluster image path — `cdi-os-mirror` (OS images), `registry-depot` (zot) + spegel P2P — see [restricted-egress-operation](restricted-egress-operation.md) |
+| `--mirror-registry` / `--bundle-pull-secret` | Air-gap: pull platform images through your mirror registry, with a Docker pull-secret JSON |
+| `--provider github` / `gitlab` | Remote hosting for `--fleet-mode=new-repo` (default github) |
+| `--no-push` · `--no-ssh` · `--no-create-repo` · `--no-install-prereqs` | Commit locally without pushing · skip the SSH kubeconfig pull + node probes · skip remote-repo creation · skip prerequisite install |
+| `--no-kubevirt` · `--allow-no-kubevirt-eligible` · `--allow-dns-not-ready` · `--allow-unpinned-adopt` | The gates: VMs out of scope (skip the KVM preflight) · keep VMs but bypass the eligibility gate on a non-KVM node · proceed with the wildcard record not yet resolving (ACME certs sit Pending until it does) · `adopt` without pinning live versions (RISKY) |
+| `--gpu-*`, `--hami-*`, `--nvidia-*` | Accelerator products — see [gpu-node-mode-transitions](gpu-node-mode-transitions.md) and the GPU docs |
 
 :::note `.starter-version` and `.starter-manifest` are vendor-managed — leave them alone
 After install, the fleet repo root carries two files the platform maintains:
@@ -977,13 +996,15 @@ completes.
 
 `--mode` tells `init` what it's walking into and is **required** — pass
 `install` for a fresh RKE2 cluster (the §3.3 flow). `--mode=auto` is an
-opt-in shortcut for day-2 runs *against a cluster your kubeconfig already
-reaches*: `init` probes it and picks `install` / `adopt` / `resume`, printing
-"Auto-detected mode: … — <reason>" above the plan. It deliberately does not
-guess when there is no reachable kubeconfig (a fresh bastion before
-`fetch-kubeconfig`) — an unread cluster must never be silently installed
-over. Knowing the model helps you pick the right path — and avoid the one
-that isn't automated yet:
+opt-in for day-2 runs *against a cluster your kubeconfig already reaches*:
+`init` probes it and picks `install` / `adopt` / `resume`, printing
+"Auto-detected mode: … — <reason>" above the plan (`KUBE_DC_MOCK` scenarios
+drive it from the fixture, never your real kubeconfig). It deliberately
+**never guesses greenfield**: with no kubeconfig source at all it stops with
+"pass `--mode=install` or `fetch-kubeconfig` first", and a `KUBECONFIG` that
+points at a missing or unreachable cluster is an error — an unread cluster
+must never be silently installed over. Knowing the model helps you pick the
+right path — and avoid the one that isn't automated yet:
 
 | Your situation | Mode | What happens |
 |----------------|------|--------------|
@@ -1418,11 +1439,12 @@ The two paths carry different traffic and are wired differently:
   session through to that Kamaji control plane. Managed clusters never use
   `:6443`.
 
-If `KUBE_API_ARRIVAL_IP` cannot be resolved at scaffold time (VIP still
-`CHANGEME`), `init` warns and the render gate rejects
-`externalIPs: [CHANGEME]` — the misconfiguration fails loudly instead of
-shipping a dark kube-api. Point `kube-api.<domain>` DNS at that arrival
-address.
+`init` derives `KUBE_API_ARRIVAL_IP` while post-processing
+`cluster-config.env` (on a MetalLB layer it becomes `METALLB_FLOATING_IP`);
+if the VIP itself is still a placeholder the scaffold refuses with
+`still contains placeholder METALLB_FLOATING_IP` — the misconfiguration fails
+loudly instead of shipping a dark kube-api. Point `kube-api.<domain>` DNS at
+that arrival address.
 :::
 
 The installer rejects missing public-network reservations, a missing L2

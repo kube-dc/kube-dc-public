@@ -188,9 +188,12 @@ Acceptance must test both boundaries:
 
 ## 5. Managed Cluster add-ons
 
-> **Older-CLI clusters only.** Current `kube-dc bootstrap init` scaffolds
-> `clusters/<name>/tenant-addons.yaml` unconditionally (see §6) — this
-> section is the manual wiring for a repo scaffolded before that.
+> **Usually already done for you.** A fresh scaffold by the current
+> `kube-dc bootstrap init` writes `clusters/<name>/tenant-addons.yaml`
+> whenever the starter carries `platform/tenant-addons` (independent of the
+> image-acceleration setting — see §6). This section is the manual wiring for
+> an overlay scaffolded by an older CLI/starter, or an existing overlay that a
+> resumed `init` does not backfill.
 
 Wire `platform/tenant-addons` into a Flux Kustomization (`tenant-addons`,
 dependsOn platform). Without it managed clusters get **no CNI**: worker nodes

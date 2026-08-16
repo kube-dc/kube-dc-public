@@ -1437,50 +1437,181 @@ func TestBootstrapInit_PresetMissingRequiredKey(t *testing.T) {
 	}
 }
 
-func TestBootstrapInit_ModeAuto_NoKubeconfigErrorsClearly(t *testing.T) {
-	// M4-T03 wired the auto-detector. `--mode=auto` without a
-	// reachable kubeconfig must error with a clear message
-	// directing the operator at the remediation options (fix
-	// kubeconfig OR pass --mode= explicitly).
-	//
-	// Hermetic kubeconfig isolation: point KUBECONFIG at a
-	// guaranteed-nonexistent file so client-go cannot fall back to
-	// any of the standard precedence paths (env=this-nonexistent,
-	// --kubeconfig=unset, ~/.kube/config under tmpdir HOME).
+func TestBootstrapInit_ModeAuto_TypodKubeconfigIsAnErrorNotGreenfield(t *testing.T) {
+	// --mode=auto (opt-in). A KUBECONFIG that names a MISSING file is a
+	// configured source that failed — NOT greenfield. It must error with
+	// remediation, never quietly plan install (codex review 2026-08-16:
+	// IsEmptyConfig would have misclassified this; the strict discriminator
+	// keys on "no source configured at all").
 	bogus := filepath.Join(t.TempDir(), "absolutely-not-a-real-kubeconfig")
 	t.Setenv("KUBECONFIG", bogus)
-	args := replaceFlag(validAtlantisArgs(), "--mode=install", "--mode=auto")
+	args := append(replaceFlag(validAtlantisArgs(), "--mode=install", "--mode=auto"), "--dry-run")
 	_, err := runInitCmd(t, args)
 	if err == nil {
-		t.Fatal("--mode=auto without kubeconfig should error")
+		t.Fatal("KUBECONFIG pointing at a missing file must error, not fall back to install")
 	}
-	body := err.Error()
-	// Two acceptable error surfaces:
-	//   (a) prober constructor fails to load any kubeconfig
-	//   (b) prober loads a config but the apiserver is unreachable
-	// Both must direct the operator at the same remediation; assert
-	// the universally-present cues.
-	for _, want := range []string{"--mode="} {
-		if !strings.Contains(body, want) {
-			t.Errorf("error %q missing %q (operator-direction)", body, want)
+	if !strings.Contains(err.Error(), "--mode=") {
+		t.Errorf("error %q must direct the operator at --mode= remediation", err.Error())
+	}
+}
+
+func TestBootstrapInit_ModeAuto_NoSourceAtAllErrorsWithFetchHint(t *testing.T) {
+	// --mode=auto with NO kubeconfig source anywhere (fresh bastion). auto
+	// must NOT guess greenfield (a provisional-install design was codex-
+	// rejected twice: fail-open re-probe + pre-engine writes). It errors
+	// with the precise remediation: --mode=install, or fetch-kubeconfig.
+	//
+	// client-go's default-file list is baked at process start from the real
+	// HOME, so this can only run hermetically on a machine WITHOUT
+	// ~/.kube/config (CI); the injectable core is covered unconditionally by
+	// TestNoKubeconfigSourceIn.
+	t.Setenv("KUBECONFIG", "")
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	if !noKubeconfigSourceConfigured() {
+		t.Skip("a real default kubeconfig exists on this machine; strict-greenfield error path covered by TestNoKubeconfigSourceIn")
+	}
+	args := append(replaceFlag(validAtlantisArgs(), "--mode=install", "--mode=auto"), "--dry-run")
+	_, err := runInitCmd(t, args)
+	if err == nil {
+		t.Fatal("auto with no kubeconfig source must error, not guess install")
+	}
+	for _, want := range []string{"--mode=install", "fetch-kubeconfig"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q must carry remediation %q", err.Error(), want)
 		}
 	}
-	// AT LEAST ONE of these phrases must appear so operators know
-	// what to fix.
-	directions := []string{
-		"--mode=install|adopt|resume",
-		"check kubeconfig",
-		"load kubeconfig",
+}
+
+func TestBootstrapInit_ModeAuto_UnreachableClusterErrorsClearly(t *testing.T) {
+	// A kubeconfig that EXISTS but points at a dead apiserver is a real
+	// cluster we could not read — auto errors, never falls back.
+	kc := filepath.Join(t.TempDir(), "kubeconfig")
+	if err := os.WriteFile(kc, []byte(`apiVersion: v1
+kind: Config
+clusters:
+- name: dead
+  cluster: {server: "https://192.0.2.1:6443"}
+contexts:
+- name: dead
+  context: {cluster: dead, user: nobody}
+current-context: dead
+users:
+- name: nobody
+  user: {token: x}
+`), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	matched := false
-	for _, d := range directions {
-		if strings.Contains(body, d) {
-			matched = true
-			break
+	t.Setenv("KUBECONFIG", kc)
+	args := append(replaceFlag(validAtlantisArgs(), "--mode=install", "--mode=auto"), "--dry-run")
+	_, err := runInitCmd(t, args)
+	if err == nil {
+		t.Fatal("auto against an unreachable cluster must error, not fall back")
+	}
+	if !strings.Contains(err.Error(), "--mode=") {
+		t.Errorf("error %q must direct the operator at --mode= remediation", err.Error())
+	}
+}
+
+func TestBootstrapInit_ModeAuto_HonoursMockScenario(t *testing.T) {
+	// KUBE_DC_MOCK must drive auto from the scenario fixture — never the
+	// developer's real kubeconfig (hermetic CI). `cloud` has flux + manager
+	// → resume; `fresh` has neither → install.
+	bogus := filepath.Join(t.TempDir(), "must-not-be-read")
+	t.Setenv("KUBECONFIG", bogus) // would ERROR if the real prober ran
+	// openbao-sealed: flux installed, but the fixture declares no kube-dc
+	// HelmRelease/deployment — by the fixture contract that is a Flux-managed
+	// cluster WITHOUT kube-dc → adopt (the prober reads the same fields
+	// status/doctor consume; a scenario wanting resume must declare kube-dc).
+	for scenario, want := range map[string]string{"cloud": "resume", "fresh": "install", "openbao-sealed": "adopt"} {
+		t.Setenv("KUBE_DC_MOCK", scenario)
+		args := append(replaceFlag(validAtlantisArgs(), "--mode=install", "--mode=auto"), "--dry-run")
+		body, err := runInitCmd(t, args)
+		if err != nil {
+			t.Fatalf("mock %s: %v\nout:\n%s", scenario, err, body)
+		}
+		if !strings.Contains(body, "Auto-detected mode: "+want) {
+			t.Errorf("mock %s: want %q, got:\n%s", scenario, want, body)
 		}
 	}
-	if !matched {
-		t.Errorf("error %q missing any of %v (no remediation guidance)", body, directions)
+}
+
+func TestBootstrapInit_ConfigModeKeyBeatsAutoDefault(t *testing.T) {
+	// A KUBE_DC_INIT_MODE in --config supplies the (required) mode without
+	// the flag, and no auto probe runs — proven by an unreadable KUBECONFIG
+	// that WOULD error if a probe fired.
+	cfg := filepath.Join(t.TempDir(), "init.env")
+	if err := os.WriteFile(cfg, []byte("KUBE_DC_INIT_MODE=install\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bogus := filepath.Join(t.TempDir(), "must-not-be-read")
+	t.Setenv("KUBECONFIG", bogus) // a probe would ERROR — proving no probe ran
+	args := append(filterArgs(validAtlantisArgs(), "--mode"), "--config="+cfg, "--dry-run")
+	body, err := runInitCmd(t, args)
+	if err != nil {
+		t.Fatalf("config MODE must pre-empt the auto probe: %v\nout:\n%s", err, body)
+	}
+	if strings.Contains(body, "Auto-detected") {
+		t.Errorf("no probe should run when the config pins the mode:\n%s", body)
+	}
+}
+
+func TestReprobeModeAfterFetch_RefusesOnLiveMismatch(t *testing.T) {
+	// The apply-time safety net: a run planned as install must be refused
+	// when the (mock) live cluster resolves to resume.
+	t.Setenv("KUBE_DC_MOCK", "cloud") // flux + manager → resume
+	var out strings.Builder
+	err := reprobeModeAfterFetch(context.Background(), &out, clusterinit.ModeInstall)
+	if err == nil {
+		t.Fatal("install plan over a live flux-managed cluster must be refused")
+	}
+	if !strings.Contains(err.Error(), "resolves to mode resume") || !strings.Contains(err.Error(), "planned as install") {
+		t.Errorf("refusal must name both modes: %v", err)
+	}
+	// And a matching answer passes.
+	t.Setenv("KUBE_DC_MOCK", "fresh")
+	out.Reset()
+	if err := reprobeModeAfterFetch(context.Background(), &out, clusterinit.ModeInstall); err != nil {
+		t.Fatalf("matching live mode must pass: %v", err)
+	}
+	if !strings.Contains(out.String(), "mode re-probe confirmed: install") {
+		t.Errorf("confirmation must be printed:\n%s", out.String())
+	}
+}
+
+func TestNoKubeconfigSourceIn(t *testing.T) {
+	// client-go's RecommendedHomeFile is baked at process start, so the
+	// production wrapper cannot be HOME-sandboxed; test the injectable core.
+	dir := t.TempDir()
+	missing := filepath.Join(dir, ".kube", "config")
+	if !noKubeconfigSourceIn("", []string{missing}, "") {
+		t.Error("no KUBECONFIG, default file absent, not in-cluster → greenfield")
+	}
+	if noKubeconfigSourceIn("/definitely/missing", []string{missing}, "") {
+		t.Error("a configured (even missing) KUBECONFIG is a source → NOT greenfield")
+	}
+	if noKubeconfigSourceIn(" ", []string{missing}, "") {
+		t.Error("a whitespace KUBECONFIG is a configured path to client-go → NOT greenfield")
+	}
+	if noKubeconfigSourceIn("", []string{missing}, "10.0.0.1") {
+		t.Error("in-cluster env is a source → NOT greenfield")
+	}
+	if err := os.MkdirAll(filepath.Dir(missing), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(missing, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if noKubeconfigSourceIn("", []string{missing}, "") {
+		t.Error("an existing default file (even empty) is a source → NOT greenfield")
+	}
+	// A candidate that cannot be stat'ed for a non-ENOENT reason fails closed.
+	unreadableDir := filepath.Join(dir, "locked")
+	if err := os.MkdirAll(unreadableDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(unreadableDir, 0o755) })
+	if os.Getuid() != 0 && noKubeconfigSourceIn("", []string{filepath.Join(unreadableDir, "config")}, "") {
+		t.Error("a permission error on a candidate must fail closed (treated as configured)")
 	}
 }
 
@@ -1918,5 +2049,49 @@ func TestResolveStarterRef(t *testing.T) {
 	}
 	if got := resolveStarterRef("oci://example.com/custom:v1"); got != "oci://example.com/custom:v1" {
 		t.Errorf("override not honored: %q", got)
+	}
+}
+
+func TestPathInsideRepo(t *testing.T) {
+	repo := t.TempDir()
+	cases := []struct {
+		p    string
+		want bool
+	}{
+		{filepath.Join(repo, "review.env"), true},
+		{filepath.Join(repo, "clusters", "x", "spec.env"), true},
+		{repo, true},
+		{filepath.Join(filepath.Dir(repo), "elsewhere.env"), false},
+		{filepath.Join(repo, "..", "sibling", "spec.env"), false},
+		{"/tmp/definitely-not-in-repo.env", false},
+	}
+	for _, tc := range cases {
+		got, err := pathInsideRepo(tc.p, repo)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.p, err)
+		}
+		if got != tc.want {
+			t.Errorf("pathInsideRepo(%q, repo) = %v, want %v", tc.p, got, tc.want)
+		}
+	}
+	if in, _ := pathInsideRepo("/anything", ""); in {
+		t.Error("empty repo must never classify as inside")
+	}
+}
+
+func TestBootstrapInit_SaveConfigInsideRepoRefused(t *testing.T) {
+	// --save-config is written BEFORE the plan gate and the mode re-probe,
+	// so it must never land inside the fleet checkout (pre-gate mutation).
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "clusters"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	args := append(validAtlantisArgs(), "--save-config="+filepath.Join(repo, "review.env"))
+	_, err := runInitCmdWithRepo(t, repo, args)
+	if err == nil || !strings.Contains(err.Error(), "inside the fleet checkout") {
+		t.Fatalf("save-config inside the repo must be refused, got %v", err)
+	}
+	if _, serr := os.Stat(filepath.Join(repo, "review.env")); !os.IsNotExist(serr) {
+		t.Error("refused save-config must not have written the file")
 	}
 }

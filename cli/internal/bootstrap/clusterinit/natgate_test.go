@@ -312,15 +312,15 @@ func TestProbeEgressGateway(t *testing.T) {
 			wantProbed: false, wantWarn: false, noteHas: "node-egress anchor",
 		},
 		{
-			name: "reached via a next hop → ext not directly configured yet",
-			ssh:  &egressSSH{route: "192.0.2.1 via 198.51.100.1 dev eth0 src 198.51.100.5 uid 0"},
-			gw:   "192.0.2.1",
+			name:       "reached via a next hop → ext not directly configured yet",
+			ssh:        &egressSSH{route: "192.0.2.1 via 198.51.100.1 dev eth0 src 198.51.100.5 uid 0"},
+			gw:         "192.0.2.1",
 			wantProbed: false, noteHas: "not directly configured",
 		},
 		{
-			name: "interface name with a shell metacharacter is rejected, never run",
-			ssh:  &egressSSH{route: "192.0.2.1 dev x;reboot src 192.0.2.5 uid 0", probe: "REPLIED"},
-			gw:   "192.0.2.1", // extIface empty → iface-match skipped, safe-name guard fires
+			name:       "interface name with a shell metacharacter is rejected, never run",
+			ssh:        &egressSSH{route: "192.0.2.1 dev x;reboot src 192.0.2.5 uid 0", probe: "REPLIED"},
+			gw:         "192.0.2.1", // extIface empty → iface-match skipped, safe-name guard fires
 			wantProbed: false, noteHas: "failed validation",
 		},
 	}

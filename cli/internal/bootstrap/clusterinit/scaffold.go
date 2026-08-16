@@ -727,6 +727,23 @@ func postProcessClusterConfig(path string, plan *Plan, sets map[string]string, n
 		}
 	}
 
+	// KUBE_API_ARRIVAL_IP: add-cluster.sh seeds CHANGEME on a MetalLB layer
+	// (the arrival address IS the operator-supplied VIP, unknown to the
+	// script). Resolve it HERE, before the placeholder scan below — that scan
+	// used to reject the seeded CHANGEME first, so every MetalLB greenfield
+	// install failed unless the operator hand-set KUBE_API_ARRIVAL_IP
+	// (codex docs-accuracy review 2026-08-16; the later scaffold step 8
+	// ResolveKubeAPIArrivalIP was unreachable). Same rule as step 8: only a
+	// MetalLB layer borrows the VIP; none/1:1-NAT keep the node IP the
+	// script wrote, and a non-IP there stays for step 8's warning.
+	if arrival, _ := env.Get("KUBE_API_ARRIVAL_IP"); net.ParseIP(strings.TrimSpace(arrival)) == nil {
+		layer, _ := env.Get("INGRESS_ADDRESS_LAYER")
+		vip, _ := env.Get("METALLB_FLOATING_IP")
+		if l := strings.TrimSpace(layer); (l == "metallb-l2" || l == "metallb-bgp") && net.ParseIP(strings.TrimSpace(vip)) != nil {
+			env.Set("KUBE_API_ARRIVAL_IP", strings.TrimSpace(vip))
+		}
+	}
+
 	// Re-run semantic validation against the exact file we are about to
 	// publish, including derived values. Then fail closed if any starter
 	// placeholder survived. Every current CHANGEME is load-bearing
