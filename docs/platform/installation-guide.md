@@ -998,7 +998,7 @@ completes.
 `install` for a fresh RKE2 cluster (the §3.3 flow). `--mode=auto` is an
 opt-in for day-2 runs *against a cluster your kubeconfig already reaches*:
 `init` probes it and picks `install` / `adopt` / `resume`, printing
-"Auto-detected mode: … — <reason>" above the plan (`KUBE_DC_MOCK` scenarios
+"Auto-detected mode: … — `<reason>`" above the plan (`KUBE_DC_MOCK` scenarios
 drive it from the fixture, never your real kubeconfig). It deliberately
 **never guesses greenfield**: with no kubeconfig source at all it stops with
 "pass `--mode=install` or `fetch-kubeconfig` first", and a `KUBECONFIG` that
