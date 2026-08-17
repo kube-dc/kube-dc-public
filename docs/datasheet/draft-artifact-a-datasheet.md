@@ -277,6 +277,10 @@ flowchart LR
   delegated VLANs to the platform nodes, a project's network bridges onto
   an existing VLAN at layer 2 — lab equipment, legacy systems, dedicated
   links — allocated from per-organization VLAN pools.
+- **Routed networks with BGP**: operator-managed gateway replicas connect
+  selected project VPCs to existing routers or firewalls, advertise project
+  CIDRs, accept only approved prefixes, and fail closed when no healthy route
+  remains. Availability is qualified against each deployment's network.
 - Egress control and allowlists, operated by the platform team.
 
 <details data-github-only>
@@ -451,7 +455,7 @@ with full technical depth:
 | Managed Kubernetes clusters | [function-managed-kubernetes.md](function-managed-kubernetes.md) |
 | Virtual machines | [function-virtual-machines.md](function-virtual-machines.md) |
 | Managed databases | [function-managed-databases.md](function-managed-databases.md) |
-| Networking & VLAN attachment | [function-networking.md](function-networking.md) |
+| Networking, VLAN attachment & BGP | [function-networking.md](function-networking.md) |
 | Storage & object storage | [function-storage.md](function-storage.md) |
 | Security, identity & keys | [function-security.md](function-security.md) |
 | Observability | [function-observability.md](function-observability.md) |

@@ -1,14 +1,14 @@
 ---
-title: Networking and VLAN attachment
+title: Networking, VLAN attachment, and BGP
 slug: networking
 hide_title: true
-description: Project VPCs, public exposure, floating addresses and controlled attachment to physical datacenter VLANs.
+description: Project VPCs, public exposure, floating addresses, physical VLAN attachment, and operator-managed BGP routing.
 ---
 
 import DatasheetFigure from '@site/src/components/DatasheetFigure';
 import {VlanAllocationDiagram} from '@site/src/components/Diagram/CloudFlowDiagrams';
 
-# DRAFT — Kube-DC Function Datasheet: Networking and VLAN attachment
+# DRAFT — Kube-DC Function Datasheet: Networking, VLAN attachment, and BGP
 
 > 🚧 **Working draft — not for distribution.** Companion to the
 > [platform datasheet](draft-artifact-a-datasheet.md). Claims trace to the
@@ -17,14 +17,15 @@ import {VlanAllocationDiagram} from '@site/src/components/Diagram/CloudFlowDiagr
 
 ---
 
-# Networking and VLAN attachment
+# Networking, VLAN attachment, and BGP
 
 **Give each project an isolated VPC, with controlled paths to public services
 and existing datacenter networks.**
 
 Kube-DC creates a VPC for each project and connects it to the uplinks, address
-space, and VLANs managed by your datacenter team. Tenants can expose services
-without gaining control of the underlying network fabric.
+space, VLANs, and routed networks managed by your datacenter team. Tenants can
+expose services and use delegated connectivity without gaining control of the
+underlying network fabric.
 
 ## Per-project VPCs
 
@@ -104,6 +105,24 @@ flowchart LR
 
 <VlanAllocationDiagram />
 
+## Routed networks: BGP into existing routing domains
+
+Where platform nodes can reach an external router or firewall, Kube-DC can
+attach selected project VPCs to an operator-defined routed network. Managed
+gateway replicas establish eBGP, advertise only project CIDRs, and accept only
+prefixes approved by your platform team. Organization administrators attach a
+delegated routed network; peers, ASNs, and route policy remain platform-owned.
+
+- Two gateway replicas provide active/standby forwarding and failover.
+- Route maps, maximum-prefix limits, default-route rejection, and optional
+  peer authentication bound what can enter or leave the platform.
+- If no healthy gateway has an approved route, that destination fails closed;
+  the project's normal Internet egress remains separate.
+
+BGP connectivity is enabled and qualified per deployment because transit
+VLANs, addressing, timers, and external-router behavior belong to the
+datacenter network design.
+
 ## Traffic control
 
 - Egress restrictions and allowlists are operator-configured platform
@@ -123,6 +142,7 @@ flowchart LR
 | Egress policy and allowlists | ✅ | requests exceptions |
 | Service exposure (LBs, routes, FIPs) | Mechanisms provided | ✅ configures per service |
 | VLAN segment allocation from the org pool | Pool delegation | ✅ self-service within pool |
+| BGP peers, approved prefixes and transit network | ✅ | attaches delegated routed networks |
 | DNS for published hostnames | Platform zone provided | ✅ own domains via CNAME |
 
 ---
@@ -134,5 +154,7 @@ Evidence: per-project VPC, per-LB EIPs, FIp→VM mapping observed live
 application-stack E2E (row 7); VLAN attachment and per-org pools proven on
 a customer deployment with published documentation (row 23 — keep the
 "by arrangement/deployment-dependent" nature in the platform context: it
-requires trunked fabric). Not claimed: tenant-authored NetworkPolicies,
-universal TLS, cross-project routing options.
+requires trunked fabric); managed BGP routing, filtering, HA and fail-closed
+behavior verified on kube-dev (row 44). Not claimed: tenant-authored
+NetworkPolicies, universal TLS, arbitrary cross-project routing, universal
+BFD or ECMP support.
