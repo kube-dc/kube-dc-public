@@ -1,0 +1,10 @@
+apiVersion: kube-dc.com/v1
+kind: ProjectRouteAttachment
+metadata:
+  name: "{attachment-name}"
+  namespace: "{backing-namespace}"
+spec:
+  # This handle must already be allocated to the Project's Organization.
+  allocationRef: "{routed-network-allocation}"
+  # v1 permits Project-initiated flows and established replies only.
+  direction: routed-egress
