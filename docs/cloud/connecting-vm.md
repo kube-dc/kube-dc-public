@@ -25,6 +25,18 @@ The Console UI provides instant browser-based access to your VMs — no SSH keys
 
 **SSH Terminal** opens a web-based terminal connected via SSH — works if the VM has the QEMU guest agent running and SSH keys configured.
 
+:::tip Pasting into the remote console
+Open the arrow tab on the left side of the VNC window, select **Clipboard**,
+paste the text into the box, and click **Type into VM**. This sends paced key
+events and therefore works at firmware, installer, login, and Linux text-console
+screens where a guest clipboard does not exist. Newlines are sent as Enter and
+tabs as Tab.
+
+Editing the box also performs standard VNC clipboard synchronization for
+graphical guests that support it. Pressing Ctrl+V directly in a Linux TTY does
+not paste and may display `^V`; use **Type into VM** there.
+:::
+
 :::tip VNC User Access
 For VNC access with password authentication:
 1. Access the VM via SSH or serial console
