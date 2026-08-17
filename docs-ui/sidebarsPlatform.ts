@@ -33,6 +33,7 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       items: [
         'networking-external',
+        'routed-networks',
         'tenant-vlan-attachment',
         'deploy-metallb-ha',
       ],

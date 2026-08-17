@@ -235,6 +235,8 @@ segment and eligible nodes are ready.
 
 - **Operators:** [Datacenter VLAN attachment](tenant-vlan-attachment.md)
 - **Users:** [Datacenter VLANs](/cloud/datacenter-vlans)
+- **Operators:** [Routed Networks](routed-networks.md)
+- **Users:** [Routed Networks](/cloud/routed-networks)
 
 ## Network security
 

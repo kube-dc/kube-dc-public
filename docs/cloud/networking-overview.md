@@ -20,6 +20,7 @@ This page explains Kube-DC networking concepts — how your project connects to 
 | **FIP** (Floating IP) | One-to-one NAT mapping from an external address to a VM or another selected internal IP |
 | **LoadBalancer** | Kubernetes Service that routes external traffic to pods or VMs via an EIP |
 | **Gateway Route** | HTTP or HTTPS route through the shared Envoy Gateway; HTTPS uses a configured Project Issuer |
+| **Routed Network** | Organization-authorized L3 routes from the whole Project VPC to approved external destinations; Internet remains unchanged |
 
 ---
 
@@ -258,6 +259,7 @@ What are you exposing?
 
 ## Next Steps
 
+- [Routed Networks](routed-networks.md) — Connect a whole Project VPC to approved corporate or datacenter destinations
 - [External & Floating IPs](public-floating-ips.md) — Create and manage EIPs and FIPs
 - [VPC & Private Networking](private-networking.md) — Understand project isolation and subnets
 - [Datacenter VLANs](datacenter-vlans.md) — Put workloads on a physical network segment to reach your own hardware

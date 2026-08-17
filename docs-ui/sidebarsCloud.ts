@@ -94,6 +94,7 @@ const sidebars: SidebarsConfig = {
         'networking-overview',
         'public-floating-ips',
         'private-networking',
+        'routed-networks',
         'datacenter-vlans',
         'service-exposure',
       ],
