@@ -1,3 +1,5 @@
+import RoutedNetworkDiagram from '@site/src/components/Diagram/RoutedNetworkDiagram';
+
 # Routed Networks
 
 A Routed Network connects your entire Project VPC to specific destinations on
@@ -12,6 +14,22 @@ This is not a second workload interface:
 | Every workload in a Project should route to approved external prefixes | Routed Network |
 | Selected pods or VMs need a NIC directly on a physical segment | [Datacenter VLAN](datacenter-vlans.md) |
 | Publish a Service or VM to the Internet | [Service exposure](service-exposure.md) or [Floating IP](public-floating-ips.md) |
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
+```mermaid
+flowchart LR
+  W["Pods + VMs"] --> VPC["Project VPC router"]
+  VPC --> GW["Two managed routing gateways"]
+  GW <-->|"eBGP · Project CIDR + approved imports"| EDGE["External router / firewall"]
+  EDGE --> REMOTE["Approved remote network<br/>198.51.100.0/24"]
+  VPC -. "other destinations" .-> DEFAULT["Existing default gateway"] --> INTERNET["Internet · SNAT unchanged"]
+```
+
+</details>
+
+<RoutedNetworkDiagram />
 
 Three guarantees are always visible in the console:
 

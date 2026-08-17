@@ -1,4 +1,5 @@
 import FloatingIpToVmDiagram from '@site/src/components/Diagram/FloatingIpToVmDiagram';
+import RoutedNetworkDiagram from '@site/src/components/Diagram/RoutedNetworkDiagram';
 import {
   GatewayIngressDiagram,
   LoadBalancerIngressDiagram,
@@ -68,6 +69,28 @@ VM/Pod (10.0.0.x)  →  Project Router  →  SNAT via EIP  →  Internet
 <OutboundTrafficDiagram />
 
 Every Project has a default EIP for outbound SNAT. Internet access remains subject to platform egress policy and upstream availability.
+
+### Routed Network (Project VPC → approved remote network)
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
+```mermaid
+flowchart LR
+  W["Pods + VMs"] --> VPC["Project VPC router"]
+  VPC --> GW["Two managed routing gateways"]
+  GW <-->|"eBGP · Project CIDR + approved imports"| EDGE["External router / firewall"]
+  EDGE --> REMOTE["Approved remote network<br/>198.51.100.0/24"]
+  VPC -. "other destinations" .-> DEFAULT["Existing default gateway"] --> INTERNET["Internet · SNAT unchanged"]
+```
+
+</details>
+
+<RoutedNetworkDiagram />
+
+An Organization-authorized attachment applies to the whole Project VPC. Only
+approved destinations use the managed BGP path; ordinary Internet traffic
+continues through the existing Project gateway.
 
 ### Inbound via Gateway Route (HTTPS)
 

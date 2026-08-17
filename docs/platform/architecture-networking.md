@@ -3,6 +3,7 @@ import {
   OvnLogicalNetworkDiagram,
   PhysicalNetworkDiagram,
 } from '@site/src/components/Diagram/NetworkingArchitectureDiagrams';
+import RoutedNetworkDiagram from '@site/src/components/Diagram/RoutedNetworkDiagram';
 
 # Networking Architecture
 
@@ -235,6 +236,29 @@ segment and eligible nodes are ready.
 
 - **Operators:** [Datacenter VLAN attachment](tenant-vlan-attachment.md)
 - **Users:** [Datacenter VLANs](/cloud/datacenter-vlans)
+
+### Attaching a Project VPC to a routed network
+
+A Routed Network gives the whole Project VPC destination-specific reachability
+to approved external prefixes. Kube-DC operates redundant routing gateways and
+BGP; the Project's normal Internet path remains separate.
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
+```mermaid
+flowchart LR
+  W["Pods + VMs"] --> VPC["Project VPC router"]
+  VPC --> GW["Two managed routing gateways"]
+  GW <-->|"eBGP · Project CIDR + approved imports"| EDGE["External router / firewall"]
+  EDGE --> REMOTE["Approved remote network<br/>198.51.100.0/24"]
+  VPC -. "other destinations" .-> DEFAULT["Existing default gateway"] --> INTERNET["Internet · SNAT unchanged"]
+```
+
+</details>
+
+<RoutedNetworkDiagram />
+
 - **Operators:** [Routed Networks](routed-networks.md)
 - **Users:** [Routed Networks](/cloud/routed-networks)
 

@@ -11,7 +11,7 @@ import ArchitecturalLayersDiagram from '@site/src/components/Diagram/Architectur
 import ProductModelDiagram from '@site/src/components/Diagram/ProductModelDiagram';
 import {ManagedClusterTopologyDiagram} from '@site/src/components/Diagram/CloudTopologyDiagrams';
 import {DataProtectionDiagram} from '@site/src/components/Diagram/DatasheetDiagrams';
-import {OvnLogicalNetworkDiagram} from '@site/src/components/Diagram/NetworkingArchitectureDiagrams';
+import RoutedNetworkDiagram from '@site/src/components/Diagram/RoutedNetworkDiagram';
 
 # DRAFT — Kube-DC Platform Datasheet
 
@@ -287,21 +287,17 @@ flowchart LR
 <summary>Diagram source for GitHub</summary>
 
 ```mermaid
-flowchart TB
-  subgraph PRJ["Project VPC — private subnet"]
-    SVC["Pods & Services"]
-    VM["VMs"]
-  end
-  SVC -- "shared egress IP" --> NET["Datacenter network / Internet"]
-  SVC -- "LoadBalancer —<br/>dedicated external IP" --> NET
-  SVC -- "one annotation —<br/>HTTPS route + TLS" --> GW["Platform gateway"] --> NET
-  VM -- "Floating IP" --> NET
-  PRJ === |"VLAN attachment — layer 2,<br/>operator-configured trunking"| FAB["Existing datacenter VLAN<br/>(lab gear, legacy systems, links)"]
+flowchart LR
+  W["Pods + VMs"] --> VPC["Project VPC router"]
+  VPC --> GW["Two managed routing gateways"]
+  GW <-->|"eBGP · Project CIDR + approved imports"| EDGE["External router / firewall"]
+  EDGE --> REMOTE["Approved remote network<br/>198.51.100.0/24"]
+  VPC -. "other destinations" .-> DEFAULT["Existing default gateway"] --> INTERNET["Internet · SNAT unchanged"]
 ```
 
 </details>
 
-<OvnLogicalNetworkDiagram />
+<RoutedNetworkDiagram />
 
 ## Security and identity
 

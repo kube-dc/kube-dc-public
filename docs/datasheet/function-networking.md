@@ -7,6 +7,7 @@ description: Project VPCs, public exposure, floating addresses, physical VLAN at
 
 import DatasheetFigure from '@site/src/components/DatasheetFigure';
 import {VlanAllocationDiagram} from '@site/src/components/Diagram/CloudFlowDiagrams';
+import RoutedNetworkDiagram from '@site/src/components/Diagram/RoutedNetworkDiagram';
 
 # DRAFT — Kube-DC Function Datasheet: Networking, VLAN attachment, and BGP
 
@@ -112,6 +113,22 @@ attach selected project VPCs to an operator-defined routed network. Managed
 gateway replicas establish eBGP, advertise only project CIDRs, and accept only
 prefixes approved by your platform team. Organization administrators attach a
 delegated routed network; peers, ASNs, and route policy remain platform-owned.
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
+```mermaid
+flowchart LR
+  W["Pods + VMs"] --> VPC["Project VPC router"]
+  VPC --> GW["Two managed routing gateways"]
+  GW <-->|"eBGP · Project CIDR + approved imports"| EDGE["External router / firewall"]
+  EDGE --> REMOTE["Approved remote network<br/>198.51.100.0/24"]
+  VPC -. "other destinations" .-> DEFAULT["Existing default gateway"] --> INTERNET["Internet · SNAT unchanged"]
+```
+
+</details>
+
+<RoutedNetworkDiagram />
 
 - Two gateway replicas provide active/standby forwarding and failover.
 - Route maps, maximum-prefix limits, default-route rejection, and optional

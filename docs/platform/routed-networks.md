@@ -1,3 +1,5 @@
+import RoutedNetworkDiagram from '@site/src/components/Diagram/RoutedNetworkDiagram';
+
 # Operating Routed Networks
 
 Routed Networks connect an entire Project VPC to approved external IPv4
@@ -12,6 +14,22 @@ This is deliberately different from a [Datacenter VLAN](tenant-vlan-attachment.m
 | Tenant action | Attach the Project | Attach each pod or VM |
 | BGP | Platform-managed FRR | None |
 | Default route | Unchanged | Unchanged |
+
+<details data-github-only>
+<summary>Diagram source for GitHub</summary>
+
+```mermaid
+flowchart LR
+  W["Pods + VMs"] --> VPC["Project VPC router"]
+  VPC --> GW["Two managed routing gateways"]
+  GW <-->|"eBGP · Project CIDR + approved imports"| EDGE["External router / firewall"]
+  EDGE --> REMOTE["Approved remote network<br/>198.51.100.0/24"]
+  VPC -. "other destinations" .-> DEFAULT["Existing default gateway"] --> INTERNET["Internet · SNAT unchanged"]
+```
+
+</details>
+
+<RoutedNetworkDiagram />
 
 Routed Networks are an alpha feature and are disabled by default. The chart
 installs their additive CRDs, but the manager registers no watches, admission
