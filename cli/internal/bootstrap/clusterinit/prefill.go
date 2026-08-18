@@ -129,6 +129,20 @@ var denyImportExact = map[string]bool{
 	"EXT_NET_GATEWAY":             true, "EXT_NET_EXCLUDE_IPS": true,
 	"DEFAULT_GW_NETWORK_TYPE": true, "DEFAULT_EIP_NETWORK_TYPE": true,
 	"DEFAULT_FIP_NETWORK_TYPE": true, "DEFAULT_SVC_LB_NETWORK_TYPE": true,
+	// Cross-VPC allowlists are ADDRESSES OF THE SIBLING, never of the clone.
+	// The main entry is the sibling's management-VPC SNAT address, which
+	// kube-ovn allocated out of the SIBLING's external subnet; the rest are its
+	// platform-endpoint / envoy-gateway VIPs. Carrying them into a new cluster
+	// grants a permanent priority-32000/29500 exemption to a foreign address on
+	// every tenant router — a cross-VPC hole that nothing later removes,
+	// because discovery only ADDS this cluster's real address, it does not prune
+	// what an operator declared.
+	//
+	// A clone needs nothing here: from manager v0.5.98 the management SNAT
+	// address is discovered from kube-ovn's OvnSnatRule. Genuine federation
+	// peers or VIPs are deliberate, cluster-specific decisions and must be
+	// passed explicitly with --set, not inherited by accident.
+	"INGRESS_GLOBAL_ALLOWLIST": true, "EGRESS_GLOBAL_ALLOWLIST": true,
 }
 
 // denyImport reports whether a source key is scaffold/preset-owned and must

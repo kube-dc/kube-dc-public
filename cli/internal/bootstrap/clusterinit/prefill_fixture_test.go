@@ -33,7 +33,7 @@ func TestImportMap_FullFixture(t *testing.T) {
 		"METALLB_INTERFACE", "METALLB_FLOATING_IP", "CEPH_REPLICATION_SIZE",
 		"KUBE_API_INTERNAL_VIP", "PLATFORM_ENDPOINT_KUBE_API_ENABLED",
 		"ENVOY_GATEWAY_INTERNAL_VIP", "PLATFORM_ENDPOINT_ENVOY_GATEWAY_ENABLED",
-		"INGRESS_HOST_CIDR", "INGRESS_GLOBAL_ALLOWLIST", "EGRESS_GLOBAL_ALLOWLIST",
+		"INGRESS_HOST_CIDR",
 		"OPENBAO_ENABLED", "OPENBAO_REPLICAS", "OPENBAO_STORAGE_SIZE",
 		"PROM_MEM_LIMIT", "SYSTEM_QUOTA_MIMIR_BLOCKS", "SYSTEM_QUOTA_LOKI_CHUNKS",
 		"SMTP_ENABLED", "SMTP_HOST", "SMTP_PORT", "BILLING_PROVIDER", "SSO_ENABLED",
@@ -49,6 +49,11 @@ func TestImportMap_FullFixture(t *testing.T) {
 
 	// DROP — scaffold/preset-owned: derived, preset defaults, versions/images.
 	drop := []string{
+		// Cross-VPC allowlists are the SIBLING's addresses — carrying them
+		// would grant a foreign address a permanent 32000/29500 exemption on
+		// every tenant router of the new cluster. Discovery supplies the real
+		// one; federation entries must be passed explicitly with --set.
+		"INGRESS_GLOBAL_ALLOWLIST", "EGRESS_GLOBAL_ALLOWLIST",
 		"KUBE_API_EXTERNAL_URL", "KEYCLOAK_HOSTNAME", "OVN_DB_IPS",
 		"EXT_NET_NAME", "EXT_NET_TYPE", "EXT_NET_CIDR", "EXT_NET_GATEWAY", "EXT_NET_EXCLUDE_IPS",
 		"POD_CIDR", "SVC_CIDR", "CLUSTER_DNS", "JOIN_CIDR",

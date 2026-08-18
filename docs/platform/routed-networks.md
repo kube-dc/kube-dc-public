@@ -67,8 +67,11 @@ Before creating a fabric, verify:
 2. The switch trunks the chosen transit VLAN to those nodes.
 3. The external router owns the transit gateway address and is configured for
    the declared peer ASN.
-4. The transit CIDR is dedicated to routing gateways. Size it for two addresses
-   per attached Project, plus the external router and network reservations.
+4. The transit addresses are reserved exclusively for routing gateways. On a
+   dedicated VLAN, size the CIDR for two addresses per attached Project, plus
+   the external router and network reservations. When peering on an existing
+   platform VLAN, exclude the reserved gateway addresses from that VLAN's
+   existing Subnet IPAM before creating the fabric.
 5. Imported destinations do not overlap any platform or tenant range.
 6. The external routing domain has a non-overlapping prefix for every Project
    that will attach.
@@ -166,8 +169,13 @@ kubectl get routingfabric corporate-edge \
 ```
 
 `Ready` requires the provider network and the selected nodes to be available.
-The controller creates a provider VLAN, transit Subnet, and NAD. Do not create
-aliases for those generated objects.
+For a dedicated tag, the controller creates and owns the provider VLAN,
+transit Subnet, and NAD. If the same provider and VLAN ID already have exactly
+one healthy platform-owned Kube-OVN `Vlan`, the controller references that
+wire without adopting, mutating, or deleting it. The routed address slice then
+uses a fabric-owned transit VPC so its IPAM can overlap the platform Subnet
+without sharing allocations. Multiple matching `Vlan` objects or a conflicted
+VLAN fail closed. Do not create aliases for generated objects.
 
 ## Allocate policy to an Organization
 
