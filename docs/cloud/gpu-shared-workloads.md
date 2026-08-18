@@ -11,8 +11,9 @@ Your operator enables Shared GPU per project and grants a per-model entitlement
 ask your operator.
 
 For a stronger isolation boundary — one whole physical GPU bound to one guest —
-use a [Dedicated GPU VM](gpu-vm-guests.md) instead. Shared GPU trades that
-boundary for density.
+use a [Dedicated GPU VM](gpu-vm-guests.md) when your operator provides separate
+VM passthrough capacity. Shared/HAMi capacity cannot be attached to a VM; Shared
+GPU trades that boundary for density.
 
 ## How sharing works
 

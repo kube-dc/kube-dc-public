@@ -95,7 +95,7 @@ var bannedPatterns = []struct {
 	{re: regexp.MustCompile(`@shalb\.com`), reason: "employee email domain — use example.com identities"},
 	{re: regexp.MustCompile(`\bcs\.shalb\.com`), reason: "real bastion domain — use bastion.example.com"},
 	{re: regexp.MustCompile(`(?i)datapark`), reason: "real customer name — use a fictional name or just \"an on-prem install\""},
-	{re: regexp.MustCompile(`10\.191\.3[0-9]\.`), reason: "real customer LAN/public ranges — use RFC 5737 documentation addresses"},
+	{re: regexp.MustCompile(`10\.191\.`), reason: "real customer LAN/public ranges — use RFC 5737 documentation addresses"},
 	{re: regexp.MustCompile(`(?i)kube-dev\.inf\.`), reason: "real customer cluster domain — use cluster.example.com"},
 }
 

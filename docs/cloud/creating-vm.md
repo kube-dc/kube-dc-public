@@ -39,11 +39,12 @@ Kube-DC virtualization is powered by [KubeVirt](https://kubevirt.io/) and uses t
    - **Local disk (default)** — node-local storage; best durable-write latency. No snapshots, no live migration.
    - **Shared RBD** — shared Ceph-backed storage; supports snapshots and (optionally) live migration. Slower durable writes.
    - When **Shared RBD** is selected, an **Enable live migration** checkbox appears — tick it to let the VM move between nodes during maintenance (available when the OS has a Block golden and the cluster has ≥2 CPU-compatible nodes).
-7. **Accelerator** *(when entitled and enabled)* — keep **No GPU** for an
-   ordinary VM, or select an available Dedicated GPU VM profile. GPU VMs cannot
-   live migrate; the wizard clears live migration and maintenance requires a
-   shutdown/restart. Follow the [guest driver and lifecycle guide](gpu-vm-guests.md)
-   after first boot.
+7. **Accelerator** *(shown only when Dedicated GPU VM passthrough is enabled and
+   currently available to your project)* — keep **No GPU** for an ordinary VM,
+   or select an available Dedicated GPU VM profile. Shared GPU/HAMi pod capacity
+   does not make this option available. GPU VMs cannot live migrate; the wizard
+   clears live migration and maintenance requires a shutdown/restart. Follow the
+   [guest driver and lifecycle guide](gpu-vm-guests.md) after first boot.
 
 ![VM Creation](images/vm-creation-step1.png)
 

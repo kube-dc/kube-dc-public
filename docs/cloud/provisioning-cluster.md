@@ -140,7 +140,7 @@ metadata:
   annotations:
     k8s.kube-dc.com/expose-route: "true"
 spec:
-  version: v1.35.0
+  version: v1.36.1
   controlPlane:
     replicas: 1
   dataStore:
@@ -160,7 +160,7 @@ spec:
       cpuCores: 2
       memory: 8Gi
       diskSize: 30Gi
-      image: docker.io/shalb/ubuntu-2404-container-disk:v1.35.2
+      image: docker.io/shalb/ubuntu-2404-container-disk:v1.36.1
       architecture: amd64
       infrastructureProvider: kubevirt
       storageType: datavolume

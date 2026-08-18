@@ -5,6 +5,13 @@ provide a stronger workload boundary than Shared GPU containers, but they are
 not live-migratable. Planned maintenance requires a shutdown and restart, and a
 later start can wait for capacity or receive a different physical device.
 
+This is an operator-enabled passthrough mode, not a capability of every GPU
+cluster. It requires an enabled VM/passthrough profile, KubeVirt host-device
+configuration, compatible dedicated physical capacity, tenant entitlement, and
+the independent VM GPU creation gate. A cluster that offers only Shared GPU
+(HAMi/DRA pod workloads) cannot attach those shared devices to VMs; on such a
+cluster the VM console does not show accelerator creation or edit controls.
+
 This guide documents the qualified guest and driver combinations. A guest
 becomes supported on your cluster when the platform operator completes the
 guest qualification checklist at the end of this page — GPU passthrough
@@ -39,7 +46,9 @@ You need all of the following:
 - organization entitlement and a project device cap with at least one device
   of headroom;
 - the platform's independent Dedicated GPU VM creation gate enabled;
-- compatible physical capacity, which is quota rather than a reservation;
+- an operator-enabled VM/passthrough profile backed by KubeVirt host-device
+  capacity (Shared GPU/HAMi capacity does not qualify);
+- compatible free physical capacity, which is quota rather than a reservation;
 - an approved guest image and exact driver package from the operator;
 - enough root storage for the OS, driver, and application.
 

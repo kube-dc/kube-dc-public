@@ -51,12 +51,13 @@ four CRDs are discoverable.
   externally initiated sessions and Project transit are denied by nftables.
 - The Project's existing Internet/CGNAT default route is never changed.
 
-For every approved destination, the controller installs a Kube-OVN
-`PolicyRoute{action: drop}` backstop before changing steering. OVN policy
-routes precede static routes, so the controller removes that drop only after
-healthy steering is durable. If both FRR gateways fail, it re-installs the drop
-before withdrawing steering; the destination cannot fall through to the
-Internet gateway.
+For every approved destination, the controller owns a priority-30500 Kube-OVN
+destination guard above FIP and service-LB source reroutes. The guard is
+`allow` while destination steering is healthy. Before changing or withdrawing
+steering, it becomes `drop`; with zero healthy gateways it stays `drop`, so a
+FIP workload cannot send the corporate destination through its Internet
+gateway. OVN evaluates policy before static routes, which is why the drop is a
+transition/unhealthy state rather than permanently armed.
 
 ## Prerequisites
 
@@ -91,7 +92,7 @@ routedNetwork:
   enabled: true
   backend: frr-project-gateway
   namespace: kube-dc-routing
-  gatewayImage: shalb/kube-dc-routing-gateway:v0.1.6
+  gatewayImage: shalb/kube-dc-routing-gateway:v0.1.12
   frrImage: quay.io/frrouting/frr:10.4.1
   routingLinkPool: 100.65.0.0/16
 ```
@@ -234,14 +235,20 @@ The ordered controller pipeline is:
 3. create the Project routing link and controller-owned FRR/nftables config;
 4. create two hardened gateway replicas in `kube-dc-routing`;
 5. wait until every configured BGP peer is Established on a replica;
-6. install destination drop backstops;
+6. install destination drop guards above FIP/SvcLB reroutes;
 7. merge healthy next-hop steering into the existing VPC route slices and
-   disarm the now-shadowing transition drop; and
+   replace each transition drop with a healthy destination allow; and
 8. publish attachment and gateway status.
 
-Generated gateways have two interfaces: `eth0` is the hidden Project-VPC
-routing link and `net1` is the provider transit VLAN. They run without a service
-account token, with no privilege escalation, and only `NET_ADMIN`/`NET_RAW`.
+Generated gateways have three interfaces: platform `eth0` carries metrics and
+probes, `net1` is the hidden Project-VPC routing link, and `net2` is the provider
+transit VLAN. They run without a service account token, with no privilege
+escalation, and the bounded `NET_ADMIN`/`NET_BIND_SERVICE`/`NET_RAW`/`SYS_ADMIN` set required by
+the pinned FRR zebra binary. `SETUID`/`SETGID` are present only so zebra and
+bgpd can complete FRR's normal privilege drop; both daemons then run as the
+unprivileged `frr` user. They use the runtime-default seccomp profile, are not
+privileged, and have no host network, host PID namespace, or host mounts. The
+routing capability requirement matches FRR 10.4.1 in MetalLB.
 Required anti-affinity, topology spread, a PodDisruptionBudget, SecurityGroup,
 and nftables provide defense in depth.
 
@@ -257,9 +264,13 @@ manager and peer promote the next healthy replica. This keeps
 established-return nftables enforcement valid without sharing conntrack state
 between pods.
 
-The pinned two-capability gateway runtime runs `bgpd` without `zebra`/`bfdd`.
-Even when BFD is requested, status therefore reports `degraded-no-bfd` and
-failover follows the BGP hold timer plus exporter readiness. The FRR generator
+The pinned three-capability gateway runtime runs `zebra` and `bgpd`, so routes
+accepted by the import route-map are load-bearing in the kernel FIB and peer
+withdrawal removes them. Readiness proves both the accepted BGP routes and
+their `proto bgp` entries in the kernel; zebra VTY loss fails liveness so the
+pod restarts instead of remaining a silent black hole. It does not run `bfdd`. Even when BFD is requested,
+status therefore reports `degraded-no-bfd` and failover follows the BGP hold
+timer plus cached exporter readiness. The FRR generator
 and API retain BFD configuration for a future qualified runtime, but operators
 must never report BFD as active until both the peer and Kube-OVN next-hop path
 are proven live.
@@ -276,9 +287,22 @@ kubectl -n kube-dc-routing get deploy,pod,pdb \
 POD=$(kubectl -n kube-dc-routing get pod \
   -l network.kube-dc.com/project-namespace=acme-production \
   -o jsonpath='{.items[0].metadata.name}')
-kubectl -n kube-dc-routing exec "$POD" -- vtysh -c 'show bgp ipv4 unicast summary'
-kubectl -n kube-dc-routing exec "$POD" -- vtysh -c 'show route-map'
+kubectl -n kube-dc-routing exec "$POD" -- \
+  su frr -s /bin/sh -c "vtysh -c 'show bgp ipv4 unicast summary'"
+kubectl -n kube-dc-routing exec "$POD" -- \
+  su frr -s /bin/sh -c "vtysh -c 'show route-map'"
+
+# The same session state as exported to Prometheus. The listener is bound to
+# the infra PodIP rather than loopback.
+POD_IP=$(kubectl -n kube-dc-routing get pod "$POD" \
+  -o jsonpath='{.status.podIP}')
+kubectl -n kube-dc-routing exec "$POD" -- \
+  wget -qO- "http://$POD_IP:9100/metrics" | grep kube_dc_bgp_session_up
 ```
+
+Run `vtysh` as the `frr` user: its VTY sockets belong to the `frrvty` group,
+so a default root `kubectl exec -- vtysh …` does not connect in the hardened
+container even though bgpd and zebra are healthy.
 
 The controller records `Ready`, `PolicyValid`, `Redundant`, `BgpEstablished`,
 `RoutesProgrammed`, and `FailClosedArmed`. A healthy two-replica attachment is
@@ -287,11 +311,18 @@ is withdrawn while the drop remains.
 
 The main-only Grafana dashboard has UID `kube-dc-routed-networks`. Alerts are:
 
-- `BGPPeerDown`, `BGPAllPeersDown`, `BGPRouteFlapping`
+- `BGPPeerDown`, `BGPAllPeersDown`, `BGPRouteFlapping`, `BGPMissingImport`
+- `BGPFibDesynchronized`
 - `BGPMaxPrefixExceeded`, `BGPUnexpectedRoute`, `RouteLeakDetected`
 - `RoutingGatewayReplicaDown`, `RoutingGatewayNoRedundancy`
+- `RoutingGatewayNftCounterCollectorDown`
 - `RoutingFabricUnavailable`, `ProjectRouteProgrammingFailed`
 - `TransitAddressExhausted`
+
+The gateway also exports `kube_dc_nft_counter_collector_up`. A value of `0`
+means the capability-isolated nftables snapshot helper is unavailable or its
+snapshot is stale; BGP metrics remain available, but traffic and drop counters
+must not be treated as current.
 
 Organization notifications use only `organization`, `project`, and
 `routed_network`; peer and provider topology remain platform-only.
@@ -327,11 +358,11 @@ it into the unrelated identity-boundary policy.
 Delete the attachment before reclaiming its allocation or fabric. Teardown is
 fail closed and intentionally takes several reconciles:
 
-1. install the drop backstop before removing healthy steering;
+1. replace the healthy destination allow with a drop before removing steering;
 2. scale gateways to zero and wait for pods to disappear;
 3. delete owned config, security, and routing-link resources;
 4. release the atomic address claim;
-5. remove the drop last; and
+5. remove the residual destination guard last; and
 6. remove the finalizer.
 
 Never force-remove the finalizer during ordinary operation. If emergency
