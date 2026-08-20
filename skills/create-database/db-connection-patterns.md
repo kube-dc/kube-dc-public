@@ -64,7 +64,10 @@ env:
 ## External Clients
 
 Use `spec.expose.type: loadbalancer` for the supported workstation path, then
-read `.status.externalEndpoint`.
+read `.status.externalEndpoint`. The platform allocates a dedicated public EIp;
+disable exposure from the Connection tab (or set the type back to `internal`)
+to release it without interrupting the internal Service. Re-enabling assigns a
+new public address and migrates legacy cloud-network endpoints to public.
 
 Gateway is a narrow, manifest-only option for PostgreSQL 17 direct TLS:
 

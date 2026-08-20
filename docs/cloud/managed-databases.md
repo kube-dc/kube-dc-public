@@ -84,6 +84,7 @@ The Summary tab provides a quick overview of your database:
 The Connection tab shows everything you need to connect to your database:
 
 - **Endpoint** — Internal Project endpoint (`ClusterIP`). Use it from a workload that can reach the Project Service, or configure LoadBalancer exposure for a workstation
+- **External access** — Enable or disable a dedicated public LoadBalancer endpoint and follow its provisioning/removal status
 - **Database credentials** — Application username, password (click to reveal or rotate), database name, and port
 - **Credential Policies footer** — Shows the count of credential policies managing this database and links to the Credentials tab for policy-driven rotation (see [Credential Policies](#credential-policies) below)
 
@@ -184,10 +185,13 @@ By default, the database Service is a `ClusterIP` on the Project network. It is
 intended for workloads that can reach the Project's internal Service address; it
 is not a workstation or internet endpoint.
 
-The dashboard creation wizard offers **Internal** and **LoadBalancer** exposure.
-Use LoadBalancer for the supported console-to-workstation path. Gateway exposure
-is an advanced, manifest-only compatibility option for a narrow PostgreSQL 17
-client mode.
+The dashboard creation wizard and the post-create **Connection** tab offer
+**Internal** and **LoadBalancer** exposure. Use LoadBalancer for the supported
+console-to-workstation path. It consumes one Organization public-IPv4 quota
+slot; the UI shows the latest quota usage as an advisory, while the EIP
+controller remains the authoritative allocator. Gateway exposure is an
+advanced, manifest-only compatibility option for a narrow PostgreSQL 17 client
+mode.
 
 #### LoadBalancer + EIP (supported external path)
 
@@ -200,17 +204,39 @@ spec:
     type: loadbalancer
 ```
 
-The platform provisions a LoadBalancer Service and EIP. Read the endpoint from
-the database status:
+The platform creates `{database-name}-external`, provisions a dedicated public
+EIP, and programs its TCP LoadBalancer. Read the endpoint from the database
+status after the `ExposureReady` condition becomes true:
 
 ```bash
 kubectl get kdcdatabase my-postgres -n acme-production \
   -o jsonpath='{.status.externalEndpoint}'
-# Example: 100.65.0.42:5432
+# Example: 203.0.113.42:5432
 ```
 
-Use that IP and the engine port from a workstation database client. Remove
-external exposure when it is no longer needed.
+Use that IP and the engine port from a workstation database client. If an
+address cannot be allocated (for example, public IPv4 quota is full), the
+`ExposureReady=False` reason and message explain why.
+
+Every endpoint created by the managed lifecycle uses the `public` external
+network. Disabling and re-enabling deletes and recreates the Service, assigns a
+new address, and migrates any legacy endpoint that implicitly used the
+Project's `cloud` network to a public endpoint. Update client allowlists and DNS
+after re-enabling.
+
+Turn **External access** off in the Connection tab when it is no longer needed,
+or apply:
+
+```yaml
+spec:
+  expose:
+    type: internal
+```
+
+db-manager deletes the external Service; the Service finalizer removes the OVN
+load balancer, routes and SNAT state before the dedicated EIP is released and
+`status.externalEndpoint` is cleared. The internal ClusterIP endpoint remains
+online throughout.
 
 #### Gateway (advanced PostgreSQL 17 compatibility)
 

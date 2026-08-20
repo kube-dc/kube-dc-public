@@ -119,7 +119,23 @@ kubectl get kdcdb {database-name} -n {backing-namespace} \
   -o jsonpath='{.status.externalEndpoint}{"\n"}'
 ```
 
-Remove external exposure when it is no longer needed.
+The wizard and Connection tab show Organization public-IPv4 usage as an
+advisory; stale UI quota data never blocks the request, and the EIp controller
+remains authoritative. The Connection tab can enable and disable this endpoint
+after database creation. Enabling creates `{database-name}-external`, allocates
+a dedicated public EIp, and waits for
+`status.conditions[type=ExposureReady]` before presenting the endpoint as
+ready. Disabling changes `spec.expose.type` to `internal`; db-manager deletes
+the Service and the platform releases its EIp before clearing
+`status.externalEndpoint`. The internal endpoint stays online.
+
+Disable/re-enable recreates the Service with a new public address. It also
+migrates a legacy endpoint that implicitly used the Project `cloud` network to
+the supported public network, so update client allowlists and DNS.
+
+Remove external exposure when it is no longer needed. Public IPv4 quota is
+hard; if allocation is denied, inspect the `ExposureReady=False` reason/message
+and the generated `slb-*` EIp condition.
 
 ### Gateway: PostgreSQL 17 direct TLS only
 
