@@ -20,6 +20,10 @@ type fakeK8s struct {
 	apiArgs    map[string][]string
 	apiArgsErr error
 	crds       []string
+	// tenant-egress probe seams
+	cmData   map[string]string
+	podNames []string
+	execOut  map[string]string // pod name -> `ip neigh` output
 }
 
 func (f *fakeK8s) DiscoverFluxGraph(context.Context) (ports.Graph, error) {
@@ -39,10 +43,14 @@ func (f *fakeK8s) DeploymentImages(context.Context, string) (map[string]string, 
 }
 func (f *fakeK8s) ListNamespaces(context.Context) ([]string, error) { return nil, nil }
 func (f *fakeK8s) ListPodNames(context.Context, string, string) ([]string, error) {
-	return nil, nil
+	return f.podNames, nil
 }
-func (f *fakeK8s) PodExec(context.Context, string, string, []string, []byte) ([]byte, error) {
-	return nil, nil
+func (f *fakeK8s) PodExec(_ context.Context, _, pod string, _ []string, _ []byte) ([]byte, error) {
+	out, ok := f.execOut[pod]
+	if !ok {
+		return nil, errors.New("exec failed")
+	}
+	return []byte(out), nil
 }
 func (f *fakeK8s) PodExecViaKubectl(context.Context, string, string, []string, []byte) ([]byte, error) {
 	return nil, nil
@@ -56,8 +64,8 @@ func (f *fakeK8s) SetServiceAnnotation(context.Context, string, string, string, 
 func (f *fakeK8s) SetServiceAnnotations(context.Context, string, string, map[string]string) error {
 	return nil
 }
-func (f *fakeK8s) GetConfigMapData(context.Context, string, string, string) (string, error) {
-	return "", nil
+func (f *fakeK8s) GetConfigMapData(_ context.Context, _, _, key string) (string, error) {
+	return f.cmData[key], nil
 }
 func (f *fakeK8s) HelmReleaseChartVersions(context.Context) (map[string]string, error) {
 	return nil, nil
@@ -347,4 +355,125 @@ func (f *fakeK8s) NodeInternalIPs(context.Context) (map[string]string, error) {
 
 func (f *fakeK8s) SetNodeLabel(context.Context, string, string, string) error {
 	return nil
+}
+
+// The gateway check is the one that would have caught mod I-17 and the crk/jed
+// bastion-subnet bug, all of which passed acceptance with tenant egress dead.
+func TestTenantEgressGateway(t *testing.T) {
+	const arpReply = "ARPREPLY"
+	// The cheap path: a neighbour entry already resolved, no arping needed.
+	const preResolved = "RESOLVED 100.65.0.29 dev br-ext-cloud lladdr 22:2a:8f:23:02:a1 REACHABLE"
+	const resolved = "100.65.0.29 dev br-ext-cloud lladdr 22:2a:8f:23:02:a1 REACHABLE"
+	const silent = "100.65.0.29 dev br-ext-cloud  INCOMPLETE"
+	// A node with no anchor on the external segment cannot route to the gateway.
+	const noRoute = "NOROUTE"
+
+	cases := []struct {
+		name    string
+		k8s     *fakeK8s
+		want    Outcome
+		wantSub string
+	}{
+		{
+			name: "no external gateway configured is not this cluster's problem",
+			k8s:  &fakeK8s{},
+			want: Skipped,
+		},
+		{
+			name: "a resolved neighbour proves somebody owns the address",
+			k8s: &fakeK8s{
+				cmData:   map[string]string{"enable-external-gw": "true", "external-gw-addr": "100.65.0.29/16"},
+				podNames: []string{"cni-a"},
+				execOut:  map[string]string{"cni-a": resolved},
+			},
+			want: Pass,
+		},
+		{
+			name: "silent gateway is a failure, not a pass",
+			k8s: &fakeK8s{
+				cmData:   map[string]string{"enable-external-gw": "true", "external-gw-addr": "100.65.0.29/16"},
+				podNames: []string{"cni-a"},
+				execOut:  map[string]string{"cni-a": silent},
+			},
+			want:    Fail,
+			wantSub: "NOTHING answers ARP",
+		},
+		{
+			// Only nodes carrying an external anchor can resolve it, so one
+			// resolving pod is a pass even when the others cannot see it.
+			name: "one node resolving it is enough",
+			k8s: &fakeK8s{
+				cmData:   map[string]string{"enable-external-gw": "true", "external-gw-addr": "100.65.0.29/16"},
+				podNames: []string{"cni-a", "cni-b"},
+				execOut:  map[string]string{"cni-a": silent, "cni-b": resolved},
+			},
+			want: Pass,
+		},
+		{
+			// The regression this check shipped with: a MetalLB gateway VIP
+			// answers ARP but never ICMP, so a ping-then-read-neighbour probe
+			// reported a perfectly healthy gateway as a black hole.
+			name: "a VIP that answers ARP but not ICMP is healthy",
+			k8s: &fakeK8s{
+				cmData:   map[string]string{"enable-external-gw": "true", "external-gw-addr": "100.65.0.29/16"},
+				podNames: []string{"cni-a"},
+				execOut:  map[string]string{"cni-a": arpReply},
+			},
+			want: Pass,
+		},
+		{
+			name: "an already-resolved neighbour short-circuits the arping",
+			k8s: &fakeK8s{
+				cmData:   map[string]string{"enable-external-gw": "true", "external-gw-addr": "100.65.0.29/16"},
+				podNames: []string{"cni-a"},
+				execOut:  map[string]string{"cni-a": preResolved},
+			},
+			want: Pass,
+		},
+		{
+			// Workers have no anchor, so they must not be counted as evidence
+			// that the gateway is dead.
+			name: "nodes with no route to the segment are not evidence",
+			k8s: &fakeK8s{
+				cmData:   map[string]string{"enable-external-gw": "true", "external-gw-addr": "100.65.0.29/16"},
+				podNames: []string{"worker-a", "worker-b"},
+				execOut:  map[string]string{"worker-a": noRoute, "worker-b": noRoute},
+			},
+			want:    Skipped,
+			wantSub: "no probed node has a route",
+		},
+		{
+			name: "anchored node silent while unanchored nodes abstain is still a failure",
+			k8s: &fakeK8s{
+				cmData:   map[string]string{"enable-external-gw": "true", "external-gw-addr": "100.65.0.29/16"},
+				podNames: []string{"worker-a", "cni-a"},
+				execOut:  map[string]string{"worker-a": noRoute, "cni-a": silent},
+			},
+			want:    Fail,
+			wantSub: "NOTHING answers ARP",
+		},
+		{
+			name: "enabled but no address is a config error",
+			k8s: &fakeK8s{
+				cmData: map[string]string{"enable-external-gw": "true"},
+			},
+			want:    Fail,
+			wantSub: "external-gw-addr is empty",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := checkTenantEgressGateway(context.Background(), Options{K8s: tc.k8s})
+			if got.Outcome != tc.want {
+				t.Fatalf("outcome = %s, want %s (detail: %s)", got.Outcome, tc.want, got.Detail)
+			}
+			if tc.wantSub != "" && !strings.Contains(got.Detail, tc.wantSub) {
+				t.Fatalf("detail = %q, want it to contain %q", got.Detail, tc.wantSub)
+			}
+			if got.Outcome == Fail && got.Fix == "" {
+				t.Fatal("a failure must tell the operator what to do next")
+			}
+		})
+	}
 }

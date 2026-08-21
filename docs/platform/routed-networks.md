@@ -46,6 +46,10 @@ four CRDs are discoverable.
   supply an advertised prefix or FRR configuration.
 - Imports are explicit. `0.0.0.0/0` and any Project, node, Service, platform,
   transit, or routing-link prefix are rejected.
+- Imports from different allocations attached to the same Project must not
+  overlap, even when the allocations use different fabrics. This prevents two
+  controllers from competing for the same VPC destination and fail-closed
+  guard.
 - A shared routing domain requires non-overlapping Project CIDRs.
 - v1 is `routed-egress`: Project-initiated flows and their replies are allowed;
   externally initiated sessions and Project transit are denied by nftables.
@@ -95,7 +99,7 @@ routedNetwork:
   enabled: true
   backend: frr-project-gateway
   namespace: kube-dc-routing
-  gatewayImage: shalb/kube-dc-routing-gateway:v0.1.12
+  gatewayImage: shalb/kube-dc-routing-gateway:v0.1.13
   frrImage: quay.io/frrouting/frr:10.4.1
   routingLinkPool: 100.65.0.0/16
 ```

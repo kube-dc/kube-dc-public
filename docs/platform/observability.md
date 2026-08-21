@@ -408,6 +408,32 @@ Also verify the `mimir-ruler` deployment is running:
 kubectl get pods -n monitoring -l app.kubernetes.io/component=ruler
 ```
 
+The datasource must use the chart gateway, not the Ruler Service directly:
+
+```text
+http://mimir-nginx.monitoring.svc/prometheus
+```
+
+An empty **Alert Rules** list can be valid when the tenant has authored no
+Mimir rules. It is different from the **Active Alerts** dashboard, which shows
+platform-Prometheus alerts exported read-only through Alloy. To verify that
+export, compare a firing namespace-scoped series in platform Prometheus with
+the same series in the project's Mimir tenant:
+
+```bash
+kubectl -n monitoring port-forward svc/prom-operator-prometheus 9090:9090
+curl -G http://127.0.0.1:9090/api/v1/query \
+  --data-urlencode 'query=ALERTS{alertstate="firing",namespace="<org>-<project>"}'
+
+kubectl -n monitoring port-forward svc/mimir-nginx 8080:80
+curl -G -H 'X-Scope-OrgID: <org>-<project>' \
+  http://127.0.0.1:8080/prometheus/api/v1/query \
+  --data-urlencode 'query=ALERTS{alertstate="firing"}'
+```
+
+The second query should contain the same alert within two Alloy scrape
+intervals. Platform paging remains independent of tenant Mimir silences.
+
 ### 7.3 Dashboards missing from a Grafana Organization
 
 Dashboards are distributed on every Organization reconciliation. If they are

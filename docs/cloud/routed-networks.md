@@ -76,11 +76,12 @@ spec:
   direction: routed-egress
 ```
 
-Organization administrator RBAC permits `create` and `delete`, but deliberately
-does not permit `get`, `list`, `update`, or `patch` across cluster resources.
-Use the Organization console for filtered discovery and status. If you create a
-known attachment manifest with an Organization token, admission still verifies
-the allocation and Project ownership.
+Organization administrator RBAC permits `create`, `get`, `list`, `watch`, and
+`delete` for attachments in that Organization's Project namespaces, plus
+read-only discovery of its allocations. It deliberately does not permit
+`update` or `patch`, or modification of generated gateways. The Organization
+console forwards the caller's identity; a direct manifest request is subject
+to the same allocation and Project-ownership admission checks.
 
 ## View Project status
 
@@ -117,7 +118,8 @@ v1 supports `routed-egress`:
 Only the prefixes shown in the allocation are eligible. A peer-advertised
 default route or an address overlapping any tenant/platform network is rejected.
 The platform derives the Project prefix it advertises; there is no tenant field
-for arbitrary exports.
+for arbitrary exports. If a Project uses more than one Routed Network, their
+approved destination ranges must not overlap.
 
 Projects sharing one external routing domain must have non-overlapping VPC
 CIDRs. If attachment reports a CIDR overlap, create the Project with a distinct
