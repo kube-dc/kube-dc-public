@@ -173,18 +173,21 @@ of those resources.
 
 ### 4. Complete identity and security setup
 
-**Point the API servers at the OIDC webhook.** This is not optional and nothing
-reports that it was skipped. RKE2 starts with certificate-only authentication,
-because the authenticator does not exist until Flux brings it up — so until this
-runs, every Keycloak token is rejected and the cluster is unusable while looking
-completely healthy. One command wires every control-plane node
-(`kube-dc bootstrap oidc-cutover`); see
+**Point the API servers at the OIDC webhook.** `bootstrap init` does this as its
+last finalize step, so on a current CLI there is nothing to do here beyond
+confirming the `Wire apiservers to OIDC` milestone succeeded. It matters because
+RKE2 starts with certificate-only authentication — the authenticator does not
+exist until Flux brings it up — so until the cutover runs, every Keycloak token
+is rejected and the cluster is unusable while looking completely healthy. When
+`init` defers the step, or on a cluster installed by an older CLI, one command
+wires every control-plane node (`kube-dc bootstrap oidc-cutover`); see
 [Installation Guide §3.5.1](installation-guide.md) for what it checks and why it
 refuses a partial run.
 
-Then run the version-matched post-install workflows for Keycloak OIDC and, when
-enabled, OpenBao. Commit generated encrypted configuration through the Fleet
-workflow. Configure DNS and certificate issuance for the hostnames users will
+`init` also runs the version-matched post-install workflows for Keycloak OIDC
+and, when enabled, OpenBao, and commits the generated encrypted configuration
+through the Fleet workflow — each as its own milestone, each with the exact
+re-run command if it defers. Configure DNS and certificate issuance for the hostnames users will
 open, and record the age key and OpenBao recovery shares somewhere independent of
 this cluster and its Git repository.
 

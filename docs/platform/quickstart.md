@@ -332,14 +332,21 @@ kubectl -n kube-dc get pods          # manager, backend, frontend Running
 
 ---
 
-## 5. Make logins work
+## 5. Confirm logins can work
 
-**This step is mandatory and nothing will tell you that you skipped it.** RKE2
-starts with certificate-only authentication, because the OIDC webhook does not
-exist until Flux brings it up. Until the API server is pointed at that webhook,
-every Keycloak token is rejected — so the console cannot manage Organizations,
-tenant `kubectl` fails, and two operators fail — while the cluster looks
-perfectly healthy.
+**`bootstrap init` now does this for you.** RKE2 starts with certificate-only
+authentication, because the OIDC webhook does not exist until Flux brings it up.
+Until the API server is pointed at that webhook, every Keycloak token is
+rejected — so the console cannot manage Organizations, tenant `kubectl` fails,
+and two operators fail — while the cluster looks perfectly healthy. `init`
+therefore wires the API servers as its last finalize step, once Flux has brought
+`infra-core` up and the webhook kubeconfig exists. Watch for the
+`Wire apiservers to OIDC` milestone.
+
+Run it by hand when `init` reported the step deferred, when you installed with
+`--no-oidc-cutover` or `--no-ssh` (which also skips it, since the cutover needs
+SSH to the nodes), or on a cluster installed by a CLI older than v0.6 — which is
+every cluster installed before 2026-08-28:
 
 ```bash
 kube-dc bootstrap oidc-cutover --ssh-user "$KUBE_DC_SSH_USER" --dry-run   # review
@@ -354,6 +361,15 @@ It refuses to run unless it can reach **every** control-plane node. That is
 deliberate — a half-wired cluster returns *intermittent* 401s, because `kubectl`
 load-balances across API servers and only some of them accept the token. That
 symptom looks like a Keycloak or clock problem and wastes hours.
+
+The command takes no cluster name — it acts on whatever your current kubeconfig
+points at. Check that first if you have more than one cluster.
+
+Either way, verify:
+
+```bash
+kube-dc bootstrap accept <cluster> --domain <domain>   # identity/oidc-cutover must PASS
+```
 
 ---
 
@@ -496,9 +512,9 @@ It reports one of three states, and only the last means finished:
 | `usable` | Identity works, the front door is trusted, tenancy is installed | 0 |
 
 The check worth knowing about is `identity/oidc-cutover`: it reads the flags every
-`kube-apiserver` is **actually running with**, so it catches both a skipped step 5
-and — more importantly — a *partial* one, whose symptom is intermittent 401s that
-look like a Keycloak or clock problem.
+`kube-apiserver` is **actually running with**, so it catches a cutover that never
+ran and — more importantly — a *partial* one, whose symptom is intermittent 401s
+that look like a Keycloak or clock problem.
 
 :::note What `usable` does and does not prove
 It proves the wiring: Flux settled, nodes and control planes present, every
@@ -517,7 +533,7 @@ Then confirm what only a real login can:
 # 1. Front door serves a valid, publicly-trusted certificate (no -k)
 curl -sSI https://console.dc.example.com | head -1
 
-# 2. OIDC actually authenticates — this is what step 5 bought you
+# 2. OIDC actually authenticates — this is what the cutover bought you
 kube-dc login --domain dc.example.com --admin && kubectl auth whoami
 
 # 3. A tenant gets a working, correctly-scoped context
@@ -545,7 +561,7 @@ Which phases are safe to simply re-run:
 | `bootstrap init` before it pushed | Inspect first | It commits locally and *then* pushes, so a kill in between leaves a clean local commit. `git -C "$KUBE_DC_FLEET" log -1` — a re-run pushes HEAD |
 | `bootstrap init` after it pushed | Fix forward | Do **not** delete the repo. Fix the cause and re-run; it resumes |
 | `init` killed mid-scaffold | Inspect first | Untracked files in the fleet repo trip the clean-tree gate — inspect and remove or commit them |
-| `oidc-cutover` | Yes | Finished nodes are skipped. `--rollback` undoes it |
+| `oidc-cutover` (standalone, or `init`'s finalize step) | Yes | Finished nodes are skipped; a node whose config was patched but whose running apiserver lacks the flag is finished, not counted done. `--rollback` undoes it |
 | Ceph device wipe | **No** | Destructive and not reversible. Verify the device list in the dry run |
 
 Two things that are **not** convergence: changing `init` arguments against an

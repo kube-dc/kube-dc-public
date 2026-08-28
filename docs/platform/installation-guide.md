@@ -451,12 +451,12 @@ cluster-dns: "10.101.0.11"
 node-label:
   - kube-dc-manager=true
   - kube-ovn/role=master
-# OIDC authn is wired in a post-install step (after the gardener
-# oidc-webhook-authenticator DaemonSet is up). Do not pre-set
+# OIDC authn is wired after Flux brings up the gardener
+# oidc-webhook-authenticator DaemonSet. Do not pre-set
 # --authentication-config or --authentication-token-webhook-config-file
-# here — RKE2 boots cert-only, then the operator adds the webhook flag
-# per node. Pick the kubelet-arg block matching your node memory (see
-# table above).
+# here — RKE2 boots cert-only, and `kube-dc bootstrap init` adds the
+# webhook flag per node in its finalize phase (§3.5.1). Pick the
+# kubelet-arg block matching your node memory (see table above).
 kubelet-arg:
   - system-reserved=cpu=500m,memory=4Gi
   - kube-reserved=cpu=500m,memory=4Gi
@@ -1111,14 +1111,30 @@ Google login for tenants, run `hack/bootstrap-sso-realm.sh` (needs a
 Google OAuth client), set `SSO_ENABLED=true` in
 `clusters/dc1/cluster-config.env`, and push.
 
-### 3.5.1 MANDATORY — OIDC-webhook cutover on every control-plane node
+### 3.5.1 OIDC-webhook cutover on every control-plane node — automatic in `init`
 
 RKE2 boots cert-only (Phase 2). Until the apiserver is pointed at the
 oidc-webhook-authenticator, **every Keycloak JWT returns HTTP 401** — tenant
 `kubectl`, the console's Manage-Organization calls, and the k8-manager /
 db-manager operators all fail. The cluster meanwhile looks perfectly healthy:
 Flux is green, every pod is Ready, and nothing anywhere says "nobody can log
-in". Do this after Flux finishes `infra-core`.
+in".
+
+`kube-dc bootstrap init` performs the cutover itself, as the last finalize step
+(`Wire apiservers to OIDC`) — after the reconcile watch, because the webhook
+kubeconfig only exists once Flux has brought up `infra-core`, and an apiserver
+pointed at a missing kubeconfig will not start. If that step reports
+`OIDC cutover deferred`, the install is otherwise complete and this is the one
+thing left to do.
+
+Run it by hand in four cases: `init` deferred the step; you installed with
+`--no-oidc-cutover` (for control planes whose apiserver manifests are managed
+elsewhere); you installed with `--no-ssh`, which also skips it because the
+cutover needs SSH to the nodes; or the cluster was installed by a CLI older than
+v0.6 — which is every cluster installed before 2026-08-28.
+
+The command takes **no cluster name**: it acts on whatever the current
+kubeconfig points at, so check your context first.
 
 ```bash
 kube-dc bootstrap oidc-cutover --ssh-user root --dry-run   # review; use the SSH user from Phase 2
@@ -1697,8 +1713,9 @@ Keycloak login returning 401.
 
 The check worth knowing is `identity/oidc-cutover`: it reads the flags each
 `kube-apiserver` is **actually running with**, from the static pods RKE2
-registers per control-plane node. That catches both a skipped §3.5.1 and — more
-importantly — a *partial* one, whose symptom is intermittent and misleading.
+registers per control-plane node. That catches a cutover that never ran (§3.5.1
+deferred, opted out, or a pre-v0.6 install) and — more importantly — a *partial*
+one, whose symptom is intermittent and misleading.
 
 A check that cannot be performed reports `SKIP` with the reason, and a skipped
 required check never yields `usable`: "I could not tell" must not read as "fine".
