@@ -91,6 +91,44 @@ Keep `replicas` within `minReplicas` and `maxReplicas` (default mode). Inspect
 `.status.workerPools[].autoscaling` for the last scale reason and any limit
 such as quota, placement, maximum size, or a rolling update.
 
+## Expose a Service on a Project-Internal VIP
+
+A Managed Cluster Service can take a private VIP inside the Project VPC
+instead of a platform external IP: reachable from all Project workloads
+(VMs, platform pods, other Managed Clusters), never from outside the
+Project, and free of external-IP quota. Set both markers at creation:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: {name}
+  labels:
+    network.kube-dc.com/lb-pool: project
+spec:
+  type: LoadBalancer
+  loadBalancerClass: kube-dc.com/project
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+  selector:
+    app: {app}
+```
+
+Apply inside the Managed Cluster (not the Project namespace). The Service
+receives a VIP such as `10.242.0.208` from the cluster's delegated block
+(16 VIPs per block; raise `spec.loadBalancer.blocks` on the `KdcCluster`
+for more, 1–8).
+
+- Both the label and the class are required; without them the Service takes
+  the standard external-IP path instead.
+- KubeVirt-provider clusters only, and the platform enables VIP pools per
+  cluster — a Service stuck at `EXTERNAL-IP: <pending>` means the pool is
+  not enabled on this cluster.
+- No `externalTrafficPolicy: Local`, SCTP, or client source-IP
+  preservation; traffic arrives source-NATed.
+
 ## Upgrade Kubernetes
 
 Use the dashboard's version selector as the source of truth. Upgrade one minor

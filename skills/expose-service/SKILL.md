@@ -20,6 +20,7 @@ description: Expose a Service from a Kube-DC Project with a hostname-based HTTP/
 | SNI-based TLS passthrough | Gateway route with `expose-route: "tls-passthrough"` |
 | Selected TCP or UDP ports | EIP-backed `LoadBalancer` Service |
 | Direct access to one VM interface | `FIp`; use the `manage-networking` skill |
+| Private VIP for a Service inside a Managed Cluster | `network.kube-dc.com/lb-pool: project` label + `loadBalancerClass: kube-dc.com/project`; see the `manage-cluster` skill |
 
 The Gateway controller creates HTTPRoute or TLSRoute resources. It does not
 create a GRPCRoute. Validate the application's HTTP/2 behavior before putting
