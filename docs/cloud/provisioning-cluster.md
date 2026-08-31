@@ -191,6 +191,7 @@ kubectl apply -f cluster.yaml
 | `spec.workers[].image` | KubeVirt worker image; choose one compatible with `spec.version` | Platform default |
 | `spec.workers[].storageType` | `datavolume` (persistent) or `containerdisk` (ephemeral) | `datavolume` |
 | `spec.workers[].infrastructureProvider` | `kubevirt` or `cloudsigma` | `kubevirt` |
+| `spec.loadBalancer.blocks` | Number of `/28` blocks (16 VIPs each) for [project-internal LoadBalancer VIPs](cluster-management.md#project-internal-vips-private-loadbalancer) (1–8; KubeVirt clusters, where the platform enables VIP pools) | `1` |
 | `spec.encryption.etcd.enabled` | Encrypt selected API data at rest in the cluster's etcd (Secrets by default) (KMS v2 envelope via OpenBao Transit) — see [Encryption at Rest](#encryption-at-rest) | `false` |
 | `spec.encryption.etcd.kekRotation.enabled` | Auto-rotate the Key Encryption Key on a schedule | `false` |
 | `spec.encryption.etcd.kekRotation.interval` | Duration between rotations (units: `d`, `h`, `m`, `s` — `w` is not accepted). Must be ≥ 7d and ≥ `spec.backup.retentionDays`. | — |

@@ -136,6 +136,66 @@ services with `external-network-type: public`. Cloud IPs (the default)
 are not quota-limited.
 :::
 
+### Project-Internal VIPs (Private LoadBalancer)
+
+Besides the CCM path above — which allocates a cloud or public IP on the
+platform side — a Managed Cluster can expose a Service on a **project-internal
+VIP**: a stable private address inside your Project's VPC. It consumes no
+external IP and no quota, and it is reachable from everything in the same
+Project — VMs, platform pods, and other Managed Clusters — but never from
+outside the Project.
+
+Request one by setting the pool label **and** the load-balancer class:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app-internal
+  namespace: default
+  labels:
+    network.kube-dc.com/lb-pool: project
+spec:
+  type: LoadBalancer
+  loadBalancerClass: kube-dc.com/project
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+  selector:
+    app: my-app
+```
+
+The Service receives a VIP from the cluster's delegated block (a `/28`, 16
+addresses, from the project-wide `10.242.0.0/24` VIP range):
+
+```bash
+$ kubectl --kubeconfig=/tmp/dev-kubeconfig get svc my-app-internal
+NAME              TYPE           CLUSTER-IP     EXTERNAL-IP    PORT(S)        AGE
+my-app-internal   LoadBalancer   10.96.11.197   10.242.0.208   80:31902/TCP   10s
+```
+
+How it works: the address is assigned inside your Managed Cluster, and the
+platform realises it as a VPC load-balancer rule on the Project network — the
+VIP answers from anywhere in the Project without occupying an address in your
+Project subnet.
+
+Notes and limits:
+
+- **Both markers are required.** The `network.kube-dc.com/lb-pool: project`
+  label and `loadBalancerClass: kube-dc.com/project` must be set when the
+  Service is created. A Service without them takes the CCM path above.
+- **Capacity is 16 VIPs per block.** Every cluster gets one block
+  automatically when the feature is enabled for it; ask for more capacity by
+  raising `spec.loadBalancer.blocks` on the KdcCluster.
+- **Availability is per cluster.** The platform operator enables VIP pools
+  per Managed Cluster (KubeVirt-based clusters only). If your Service stays
+  at `EXTERNAL-IP: <pending>`, the pool is not enabled on your cluster yet.
+- `externalTrafficPolicy: Local`, SCTP, and client source-IP preservation
+  are not supported on this path — traffic arrives source-NATed, as it does
+  for NodePort services.
+
 ## Exposing Services (HTTPS Gateway Route)
 
 For web applications, the simplest exposure method is a **Gateway route**: one
