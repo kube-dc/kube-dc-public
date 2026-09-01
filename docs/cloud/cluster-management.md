@@ -186,12 +186,14 @@ Notes and limits:
 - **Both markers are required.** The `network.kube-dc.com/lb-pool: project`
   label and `loadBalancerClass: kube-dc.com/project` must be set when the
   Service is created. A Service without them takes the CCM path above.
-- **Capacity is 16 VIPs per block.** Every cluster gets one block
-  automatically when the feature is enabled for it; ask for more capacity by
-  raising `spec.loadBalancer.blocks` on the KdcCluster.
-- **Availability is per cluster.** The platform operator enables VIP pools
-  per Managed Cluster (KubeVirt-based clusters only). If your Service stays
-  at `EXTERNAL-IP: <pending>`, the pool is not enabled on your cluster yet.
+- **Nothing to enable.** Every Managed Cluster gets its VIP capacity
+  automatically when it is created — there is no request to make and no
+  setting to turn on.
+- **Capacity is 16 VIPs per block**, and each cluster starts with one block.
+  Need more? Raise `spec.loadBalancer.blocks` on the KdcCluster (up to 8).
+- **KubeVirt-backed clusters only.** Clusters running on an external
+  infrastructure provider (such as CloudSigma) expose LoadBalancers through
+  that provider's own path instead, described above.
 - `externalTrafficPolicy: Local`, SCTP, and client source-IP preservation
   are not supported on this path — traffic arrives source-NATed, as it does
   for NodePort services.

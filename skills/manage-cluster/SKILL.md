@@ -123,9 +123,10 @@ for more, 1–8).
 
 - Both the label and the class are required; without them the Service takes
   the standard external-IP path instead.
-- KubeVirt-provider clusters only, and the platform enables VIP pools per
-  cluster — a Service stuck at `EXTERNAL-IP: <pending>` means the pool is
-  not enabled on this cluster.
+- Nothing to enable: VIP capacity is provisioned with the cluster. Do not
+  tell the user to request it from an operator.
+- KubeVirt-backed clusters only. Clusters on an external infrastructure
+  provider (such as CloudSigma) use that provider's LoadBalancer path.
 - No `externalTrafficPolicy: Local`, SCTP, or client source-IP
   preservation; traffic arrives source-NATed.
 
