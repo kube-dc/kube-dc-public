@@ -168,7 +168,7 @@ spec:
 ```
 
 The Service receives a VIP from the cluster's delegated block (a `/28`, 16
-addresses, from the project-wide `10.242.0.0/24` VIP range):
+addresses, from the project's private VIP range):
 
 ```bash
 $ kubectl --kubeconfig=/tmp/dev-kubeconfig get svc my-app-internal
