@@ -1107,9 +1107,23 @@ kubectl -n keycloak get secret keycloak \
 ```
 
 Organizations work **without** external SSO out of the box. To enable
-Google login for tenants, run `hack/bootstrap-sso-realm.sh` (needs a
-Google OAuth client), set `SSO_ENABLED=true` in
-`clusters/dc1/cluster-config.env`, and push.
+self-service sign-up for tenants — email-only, or with Google social login on
+top — run:
+
+```bash
+SMTP_USER=<user> SMTP_PASSWORD=<password> \
+  kube-dc bootstrap keycloak sso dc1 --repo <fleet-repo> \
+  --smtp-host smtp.example.com --smtp-port 587 --smtp-from noreply@your-domain.com
+```
+
+It creates the realm, verifies the sign-up surface, SOPS-encrypts the
+credentials into your fleet overlay and flips `SSO_ENABLED=true` **after** the
+realm exists — do not set that flag by hand ahead of the realm, or every
+Organization Sync will fail against a realm that is not there. Add
+`--google-client-id` (with `GOOGLE_CLIENT_SECRET` in the environment) for Google.
+The same runs automatically during `kube-dc bootstrap init` when
+`SMTP_USER`/`SMTP_PASSWORD` are exported. Details:
+[Google SSO setup](sso-google-auth.md).
 
 ### 3.5.1 OIDC-webhook cutover on every control-plane node — automatic in `init`
 
