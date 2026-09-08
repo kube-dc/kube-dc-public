@@ -1,5 +1,23 @@
 # kube-dc CLI changelog
 
+## v0.7.3
+
+No CLI source change. This tag exists so a greenfield install gets the 0.7.1
+and 0.7.2 platform fixes by default: the CLI pulls
+`oci://ghcr.io/kube-dc/fleet-starter:<cli-version>`, and starter tags are
+immutable, so shipping updated component pins requires a new pair. Installing
+with this CLI lands a cluster on chart v0.7.3 rather than v0.7.0.
+
+What the platform gained in between:
+
+- **"Save a final snapshot before deleting" works.** The console asked the
+  platform for the snapshot instead of creating the Job itself (0.7.1), and the
+  pod classifier learned the chain that lets that snapshot actually reach etcd
+  (0.7.2) — without which it was admitted but hung.
+- **Cloud shell keeps working after upgrades.** 0.7.1 briefly pinned a
+  cloud-shell image that was never built; 0.7.2 corrected it, and from 0.7.3 the
+  kube-pod image is rebuilt with the CLI it claims to carry.
+
 ## v0.7.0
 
 The CLI joins the platform version: from this release the CLI, the
