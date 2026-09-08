@@ -522,9 +522,15 @@ var ErrVMStorageNeedsRookRBDPool = errors.New("init: --vm-storage-mode=shared-rb
 var clusterNameRegex = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$`)
 
 // domainRegex is a permissive FQDN check — at least one dot, valid
-// label chars, total length ≤ 253. Not RFC-1035-perfect, but rejects
-// obvious typos like `https://foo.example` (we want the host only).
-var domainRegex = regexp.MustCompile(`^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$`)
+// label chars. Not RFC-1035-perfect, but rejects obvious typos like
+// `https://foo.example` (we want the host only) and dotted IPs.
+//
+// The last label must start with a letter and be at least two
+// characters, but it MAY contain digits and interior hyphens: private
+// enterprise zones such as `kubedc.diia-dcir` or `corp.site-01` are valid
+// DNS names (RFC 1035 allows hyphens inside any label), and a letters-only
+// TLD rule rejected them at `bootstrap install --domain` (diia, 2026-09-08).
+var domainRegex = regexp.MustCompile(`^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z](?:[a-z0-9-]*[a-z0-9])$`)
 
 // Validate runs every cobra-time check and returns ErrValidation
 // wrapping the combined failures, ErrApplyGate, or ErrFleetModeNewRepo
