@@ -66,6 +66,9 @@ SSH, with the canonical config:
   - cluster/service CIDRs = resolved from --preset (the SAME source
                            'bootstrap init' uses, so they can't drift)
   - kubelet system/kube-reserved + max-pods = auto-tiered from node memory
+  - etcd/kube-apiserver CPU requests       = auto-tiered from node CPU count
+                           (their cpu.shares floor under contention; static
+                            pods live in kubepods, so *-reserved cannot shield them)
 
 The node comes up NotReady (no CNI yet) — that is expected. Finish the
 install with 'bootstrap fetch-kubeconfig' then 'bootstrap init'.

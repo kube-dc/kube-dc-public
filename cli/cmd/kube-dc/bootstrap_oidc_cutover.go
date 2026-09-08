@@ -45,7 +45,7 @@ func bootstrapOIDCCutoverCmd(fleetRepo *string) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:           "oidc-cutover",
-		Short:         "Point every control-plane apiserver at the OIDC webhook (required before anyone can log in)",
+		Short:         "Point every control-plane apiserver at the OIDC webhook (init does this; use this to redo or finish it)",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Long: `RKE2 boots cert-only: the apiserver has no way to validate a
@@ -54,6 +54,13 @@ Flux brings up later (infra-core). Until then the cluster looks completely
 healthy and NOBODY CAN LOG IN — every Keycloak JWT returns 401, so tenant
 kubectl, the console's organization management, and the k8-manager /
 db-manager operators all fail.
+
+kube-dc bootstrap init DOES THIS FOR YOU, as its last finalize step. Reach for
+this command when init reported the step deferred, when you installed with
+--no-oidc-cutover or --no-ssh, when you never ran init on this cluster, or on a
+cluster installed by a CLI older than v0.6.
+
+It takes NO cluster name: it acts on whatever the current kubeconfig points at.
 
 This wires every control-plane node, ONE AT A TIME, gating each on its
 apiserver returning before touching the next.
@@ -91,7 +98,7 @@ Safe to re-run: a node that is already wired is skipped, not restarted.
 			}
 			defer session.Close()
 
-			nodes, err := resolveCutoverNodes(ctx, sshHosts, sshUser, allowPartial)
+			nodes, err := resolveCutoverNodes(ctx, "", sshHosts, sshUser, allowPartial)
 			if err != nil {
 				return err
 			}
@@ -145,7 +152,11 @@ Safe to re-run: a node that is already wired is skipped, not restarted.
 // Discovery is the default because the operator should not have to keep a list
 // of control-plane addresses in their head, and an incomplete list is exactly
 // the partial cutover this command refuses to perform.
-func resolveCutoverNodes(ctx context.Context, sshHosts []string, sshUser string, allowPartialCutover bool) ([]oidccutover.Node, error) {
+// kubeconfigPath is passed explicitly rather than left to the default loading
+// rules because `init` discovers nodes against the kubeconfig IT just fetched;
+// resolving through KUBECONFIG there could inspect a different cluster and wire
+// the wrong machines. "" keeps the default rules for the standalone command.
+func resolveCutoverNodes(ctx context.Context, kubeconfigPath string, sshHosts []string, sshUser string, allowPartialCutover bool) ([]oidccutover.Node, error) {
 	if len(sshHosts) > 0 {
 		var nodes []oidccutover.Node
 		for _, raw := range sshHosts {
@@ -159,7 +170,7 @@ func resolveCutoverNodes(ctx context.Context, sshHosts []string, sshUser string,
 		// only on the discovery path meant `--ssh-host one-of-three` was
 		// accepted and produced exactly the partially-wired cluster the command
 		// advertises that it refuses to create.
-		if facts, err := k8sadapter.GatherNodeNetworkFacts(ctx, ""); err == nil {
+		if facts, err := k8sadapter.GatherNodeNetworkFacts(ctx, kubeconfigPath); err == nil {
 			cp := 0
 			for _, f := range facts {
 				if f.ControlPlane {
@@ -179,7 +190,7 @@ func resolveCutoverNodes(ctx context.Context, sshHosts []string, sshUser string,
 
 	probeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	facts, err := k8sadapter.GatherNodeNetworkFacts(probeCtx, "")
+	facts, err := k8sadapter.GatherNodeNetworkFacts(probeCtx, kubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("oidc-cutover: cannot reach the cluster to discover control-plane nodes "+
 			"(%w). Point KUBECONFIG at the cluster, or name the hosts with --ssh-host", err)

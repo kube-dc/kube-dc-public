@@ -637,7 +637,6 @@ current Organization token are listed.`,
 	return cmd
 }
 
-
 // namespacesFromToken returns the Projects named by the access token, refreshing
 // it first when it is absent or expired.
 //
@@ -990,6 +989,9 @@ kubectl port-forward by default. Mimir tenant auth will be added later.`,
 	cmd.Flags().StringVar(&alertmanagerURL, "alertmanager-url", "", "Alertmanager URL (overrides ALERTMANAGER_URL env; disables port-forward)")
 	cmd.Flags().BoolVar(&portForward, "port-forward", true, "Auto-start kubectl port-forward to Alertmanager when no URL is provided")
 	cmd.Flags().StringVar(&cluster, "cluster", "", "Cluster name (shown in the TUI header)")
+
+	// Suppression subcommands: silence / ack / silences / unsilence.
+	addAlertSuppressionCommands(cmd)
 
 	return cmd
 }

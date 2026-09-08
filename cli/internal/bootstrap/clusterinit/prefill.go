@@ -120,13 +120,20 @@ var denyImportExact = map[string]bool{
 	// KUBE_DC_DNS01_ROUTE53_SECRET_KEY env var) — a config file carrying it
 	// must never prefill Sets, where it would be re-persisted in cleartext.
 	"DNS01_ROUTE53_SECRET_KEY": true, "DNS01_ROUTE53_SECRET_ACCESS_KEY": true,
+	"DNS01_CLOUDFLARE_API_TOKEN": true, "CLOUDFLARE_API_TOKEN": true,
 	// Public-anchor map is derived from THIS cluster's VIP + gateway-node
 	// names (derivePublicAnchorEnv); a sibling's map carries the sibling's
 	// node names and VIP block, so a clone must re-derive, not inherit.
 	"EXT_NET_PUBLIC_ANCHOR_IPS": true, "EXT_NET_PUBLIC_ANCHOR_VLAN": true,
+	// Whether anchors own the nodes' default routes is a property of THIS
+	// cluster's host provisioning, never of a sibling's.
+	"EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE": true,
 	"EXT_NET_NAME": true, "EXT_NET_TYPE": true, "EXT_NET_CIDR": true,
 	"EXT_NET_NODE_EGRESS_ENABLED": true,
 	"EXT_NET_GATEWAY":             true, "EXT_NET_EXCLUDE_IPS": true,
+	// The management SNAT address is THIS cluster's router-port address; a
+	// sibling's would be adopted by kube-ovn and silently collide.
+	"EXT_NET_MGMT_SNAT_IP":    true,
 	"DEFAULT_GW_NETWORK_TYPE": true, "DEFAULT_EIP_NETWORK_TYPE": true,
 	"DEFAULT_FIP_NETWORK_TYPE": true, "DEFAULT_SVC_LB_NETWORK_TYPE": true,
 	// Cross-VPC allowlists are ADDRESSES OF THE SIBLING, never of the clone.
@@ -186,6 +193,7 @@ var specOrder = []string{
 	"S3_HOSTNAME",
 	"INGRESS_ADDRESS_LAYER", "INGRESS_NODE_LABEL",
 	"TLS_MODE", "DNS01_ROUTE53_ZONE_ID", "DNS01_ROUTE53_REGION", "DNS01_ROUTE53_ACCESS_KEY_ID",
+	"DNS01_CLOUDFLARE_ZONE", "DNS01_CLOUDFLARE_SCOPE",
 	KeyVMStorageMode, KeyVMGolden, KeyVMGoldenBlock,
 	KeyGPUPlatform, "GPU_DRIVER_SOURCE", "GPU_OPERATOR_VERSION",
 	"NVIDIA_DRIVER_VERSION", "NVIDIA_TOOLKIT_VERSION", "HAMI_ENABLED", "GPU_SHARED_ALLOCATOR",
@@ -289,6 +297,10 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 	str("DNS01_ROUTE53_ZONE_ID", "dns01-route53-zone-id", &o.DNS01Route53ZoneID)
 	str("DNS01_ROUTE53_REGION", "dns01-route53-region", &o.DNS01Route53Region)
 	str("DNS01_ROUTE53_ACCESS_KEY_ID", "dns01-route53-access-key-id", &o.DNS01Route53AccessKeyID)
+	str("DNS01_CLOUDFLARE_ZONE", "dns01-cloudflare-zone", &o.DNS01CloudflareZone)
+	// Scope has no flag (it is derived from the mode at load time); the
+	// restored value only documents the shape until the preflight re-derives it.
+	str("DNS01_CLOUDFLARE_SCOPE", "", &o.DNS01CloudflareScope)
 	intKey := func(key, flag string, dst *int) {
 		v, ok := src[key]
 		if !ok {
@@ -557,6 +569,8 @@ func ExportMap(o *InitOptions) map[string]string {
 	put("DNS01_ROUTE53_ZONE_ID", o.DNS01Route53ZoneID)
 	put("DNS01_ROUTE53_REGION", o.DNS01Route53Region)
 	put("DNS01_ROUTE53_ACCESS_KEY_ID", o.DNS01Route53AccessKeyID)
+	put("DNS01_CLOUDFLARE_ZONE", o.DNS01CloudflareZone)
+	put("DNS01_CLOUDFLARE_SCOPE", o.DNS01CloudflareScope)
 	// multi-node slots → CEPH_NODE_N (host) + CEPH_NODE_N_DEVICE (device),
 	// deterministic by sorted node name — matches the scaffold writer.
 	nodes := make([]string, 0, len(o.CephNodes))
@@ -589,7 +603,11 @@ func ExportMap(o *InitOptions) map[string]string {
 		}
 		put(k, v)
 	}
-	put(KeyMode, string(o.Mode))
+	// Persist what was REQUESTED, never the resolved verdict. A spec that
+	// froze `install` would read back on the next run as an explicit operator
+	// decision — against whatever cluster the kubeconfig then points at — and
+	// skip the auto safeguards entirely (codex 2026-08-28, critical #1).
+	put(KeyMode, string(o.persistableMode()))
 	put(KeyFleetMode, string(o.FleetMode))
 	put(KeyPreset, string(o.Preset))
 	if o.Provider != "" && o.Provider != ProviderGitHub {
@@ -699,4 +717,17 @@ func SpecOrderedKeys(m map[string]string) []string {
 		return keys[i] < keys[j]
 	})
 	return keys
+}
+
+// persistableMode is the value --save-config and TUI drafts must write: the
+// operator's request, falling back to the effective mode when nothing was
+// recorded (explicit --mode runs, where request and verdict are the same).
+func (o *InitOptions) persistableMode() Mode {
+	if o == nil {
+		return ""
+	}
+	if o.RequestedMode != "" {
+		return o.RequestedMode
+	}
+	return o.Mode
 }

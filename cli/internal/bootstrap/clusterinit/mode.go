@@ -33,6 +33,16 @@ import (
 // always treated as "absent" which routes to the most-conservative
 // branch (install).
 type ModeProbeInputs struct {
+	// ClusterUID is the kube-system namespace UID — a stable per-cluster
+	// fingerprint that survives re-issued certificates, renamed contexts and
+	// endpoint changes (a tunnel, a VIP cutover, an --ssh-host fetch that
+	// swaps the current context). Mode alone cannot tell two clusters apart:
+	// "reachable, no flux-system" describes a fresh target AND every
+	// unrelated plain cluster, so a decision taken about one cluster must be
+	// re-checked against this before anything is mutated. Empty when the
+	// prober cannot read it (mock scenarios).
+	ClusterUID string
+
 	// K8sReachable is true when the kubeconfig's apiserver responded
 	// to a basic `GET /api/v1/namespaces` (or equivalent) within the
 	// probe timeout.
@@ -121,6 +131,14 @@ func ResolveMode(ctx context.Context, o *InitOptions, prober ModeProber) (Mode, 
 	mode, reason, err := DetectMode(in)
 	if err != nil {
 		return "", "", err
+	}
+	// Record the REQUEST before substituting the verdict. Everything that
+	// persists or replays these options later must be able to tell "the
+	// operator said auto" from "auto happened to pick install on that run" —
+	// otherwise a saved spec reads back as an explicit decision and skips the
+	// safeguards auto exists to trigger.
+	if o.RequestedMode == "" {
+		o.RequestedMode = ModeAuto
 	}
 	o.Mode = mode
 	return mode, reason, nil

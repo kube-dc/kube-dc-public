@@ -25,6 +25,10 @@ type fakeK8s struct {
 	setAnn      func(ctx context.Context, ns, svc, key, value string) error
 }
 
+func (f *fakeK8s) ListResourceObjects(context.Context, string, string, string, string) ([]map[string]any, error) {
+	return nil, nil
+}
+
 func (f *fakeK8s) PodContainerArgs(context.Context, string, string) (map[string][]string, error) {
 	return nil, nil
 }

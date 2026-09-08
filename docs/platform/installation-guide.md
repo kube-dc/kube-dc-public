@@ -69,6 +69,7 @@ network:
 - Replace `eth0` and `eth1` with your actual interface names (run `ip link` to check).
 - Do **not** assign IPs to the trunk interface (`eth1`) — Kube-OVN will create OVS bridges and VLAN subinterfaces automatically.
 - Do **not** pre-create empty VLAN subinterfaces for the cloud/provider VLANs (`vlans:` entries with `addresses: []`) — Kube-OVN owns those VLANs on the trunk; pre-created ones are redundant and can conflict with the OVS bridge setup. Pass the **trunk** interface (`EXT_NET_INTERFACE`) + the VLAN ID instead.
+- **Never put a kernel VLAN subinterface on any OVN-owned VLAN — with or without an address.** Linux delivers tagged frames to a matching kernel VLAN device *before* OVS ever sees them, so a `bond0.<public-vlan>` device makes OVN completely mute on that VLAN on that node: tenant EIP/FIP ARP goes unanswered and MetalLB anchor announcements are deaf, while every Kubernetes object still reports healthy. If the hosts need addresses on the public VLAN (e.g. their internet egress rides it), that leg belongs on the **OVS side**: set `EXT_NET_PUBLIC_ANCHOR_IPS` to the host addresses and `EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE=true` — the platform's anchor DaemonSet then owns the address *and* the default route on an OVS internal port. `kube-dc bootstrap accept` fails on any overlap (`network/kernel-vlan-overlap`).
 - On `master-2` use `192.168.0.2`, on `master-3` use `192.168.0.3`.
 :::
 
@@ -817,12 +818,13 @@ kube-dc bootstrap init \
 | `--node-nic=NODE=IFACE` | Per-node override when a node's provider/trunk NIC differs from `EXT_NET_INTERFACE` (repeatable; also exposed in TUI/config) |
 | `--set=EXT_PUBLIC_*` | Public VLAN/CIDR/gateway for `cloud+public-vlan`. When the VIP is in this CIDR, the CLI derives the minimum gateway/VIP/anchor exclusions; widen them for any other reserved addresses |
 | `--set=EXT_PUBLIC_EXCLUDE_IPS_1` / `_2` | **Required for `cloud+public-vlan`** — the two IPAM exclusion ranges (`a.b.c.d..a.b.c.e`) that reserve gateway/VIP/anchors out of the public pool. Derived automatically **only** when the MetalLB VIP sits inside `EXT_PUBLIC_CIDR`; on `--ingress-address-layer=none`, or a VIP on the cloud VLAN, you must set both yourself or `init` refuses with `missing EXT_PUBLIC_EXCLUDE_IPS_1, EXT_PUBLIC_EXCLUDE_IPS_2` |
+| `--set=EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE` | `true` when the anchor is the host's **only** public leg: pass the host addresses as `EXT_NET_PUBLIC_ANCHOR_IPS` and the anchor DaemonSet owns each node's public address **and** default route on the OVS side (a kernel VLAN subinterface on the public VLAN must never exist — see §1.2). Default `false`: anchors hold spare addresses for the VIP return path only |
 | `--set=METALLB_FLOATING_IP` / `METALLB_INTERFACE` | Dedicated ingress VIP and the host interface that carries its L2 segment. For an L2 VIP inside `EXT_PUBLIC_CIDR`, the current CLI selects the fleet-managed `ext-pub-anchor`; elsewhere the operator supplies the real interface |
 | `--ingress-address-layer` | **Who owns the address your users dial** — the one front-door question. `metallb-l2` (recommended) — a floating VIP announced by ARP on a shared L2 segment; `metallb-bgp` — the same VIP announced as a `/32` to a routed fabric; `none` — clients reach the ingress nodes' own IPs via wildcard DNS and MetalLB is not installed at all. Declaring a `METALLB_FLOATING_IP` **does not** select a layer for you: a reserved address is not assumed to be your front door, so declaring one without a layer is refused rather than guessed. Left unset this resolves to `none`. The **data plane does not vary with this choice** — host-bind Envoy on the ingress nodes either way — but the *Service shape* does: `ClusterIP` + `externalIPs` on `none`, `LoadBalancer` + `metallb` + `externalTrafficPolicy: Local` with `externalIPs` cleared on a MetalLB layer. See "Choosing an address layer" below |
 | `--ingress-node` | Node that should carry the `kube-dc.com/ingress` label and bind `:80`/`:443` (repeatable). `init` **applies the label** to this set before committing the overlay, and the front-door component places Envoy on it. Leave it unset and the `KUBE_OVN_GW_NODES` set is used, which is the recommended shape because it keeps the ingress set and the MetalLB announcer set identical. `ENVOY_REPLICAS` and `INGRESS_HOST_CIDR` are **derived** from this set. Under a VIP layer the set must be a SUBSET of `KUBE_OVN_GW_NODES` — a partial overlap is refused, because the single node in both sets becomes a point of failure that looks like HA |
 | `--set=INGRESS_MODE` | **Deprecated** — kept for one release so older config files round-trip. `metallb-lb` and `hostnetwork` both now select the same universal host-bind data plane; use `--ingress-address-layer` instead |
 | `--set=METALLB_MODE` | **Read-only legacy output — do not set it.** It is DERIVED from `--ingress-address-layer`, and setting it against the layer is refused (the addon tree that gets wired is chosen from the layer). For BGP pass `--ingress-address-layer=metallb-bgp`, which additionally requires `METALLB_BGP_LOCAL_ASN`, `METALLB_BGP_PEER_ASN` and `METALLB_BGP_PEER_ADDRESS` (all validated). See §4.3 |
-| `--tls-mode` | `acme` (default — HTTP-01 through the Gateway; needs inbound `:80`), `acme-dns01-route53` (same issuer, proves control via Route53 DNS records — for private/VPN-only clusters whose zone is in Route53; auto-renews; requires `--dns01-route53-zone-id` + `--dns01-route53-access-key-id`, secret key via `--dns01-route53-secret-key-file` or `KUBE_DC_DNS01_ROUTE53_SECRET_KEY`), or `byo-wildcard` (operator-supplied certificate; requires `--tls-cert`/`--tls-key`; nothing renews it). See [Platform TLS certificates](certificates.md) |
+| `--tls-mode` | `acme` (default — HTTP-01 through the Gateway; needs inbound `:80`), `acme-dns01-route53` (same issuer, proves control via Route53 DNS records — for private/VPN-only clusters whose zone is in Route53; auto-renews; requires `--dns01-route53-zone-id` + `--dns01-route53-access-key-id`, secret key via `--dns01-route53-secret-key-file` or `KUBE_DC_DNS01_ROUTE53_SECRET_KEY`), `acme-dns01-cloudflare` (same, zone on Cloudflare; token via `--dns01-cloudflare-api-token-file` or `KUBE_DC_DNS01_CLOUDFLARE_API_TOKEN`, optional `--dns01-cloudflare-zone`), or `byo-wildcard` (operator-supplied certificate; requires `--tls-cert`/`--tls-key`; nothing renews it). On a **public** cluster, `--tls-mode acme --dns01-cloudflare-zone <apex>` keeps HTTP-01 and adds Cloudflare DNS-01 for the platform wildcard only. See [Platform TLS certificates](certificates.md) |
 | `--trusted-ca-bundle` | Certificate-only root/intermediate PEM for a private-CA platform. The CLI creates the durable ConfigMap and wires manager, backend, OIDC and OpenBao from one plan-pinned source |
 | `--openbao-shares-out` | Additional off-git `0600` custody copy of the five Shamir shares. The automatic post-apply finalizer honors this path; never place it inside a Git tree |
 
@@ -1282,6 +1284,7 @@ matches the generated resources before moving DNS.
 | `--ingress-node=NODE` (repeatable) | validation, the plan's `Front door:` line, **and the `kube-dc.com/ingress` label applied to those nodes** in the `ingress-nodes` step. Fail-closed: an empty set, a node that does not exist, or a node outside the set already carrying the label all stop the run before anything is committed |
 | `METALLB_MODE` | **derived from the address layer, not an independent choice.** `metallb-l2` → `IPAddressPool` + `L2Advertisement` on `METALLB_INTERFACE`; `metallb-bgp` → `IPAddressPool` + `BGPPeer` + `/32` `BGPAdvertisement`. Setting it against the layer is refused rather than silently overridden, because the addon tree that gets wired is chosen from the layer |
 | `METALLB_FLOATING_IP` | explicit Envoy Service `loadBalancerIPs` request (the pool has `autoAssign: false`) and, when different from the node address, the Gateway address patch |
+| `EXT_NET_EXCLUDE_IPS` (+ `EXT_NET_GATEWAY`) | `EXT_NET_MGMT_SNAT_IP` — the management VPC's SNAT address, the first host after the reserved block (`.1` → `.2`; a `.1...100` block → `.101`), with the block widened to cover it — and the `infra-mgmt-snat` Flux layer that declares it as `OvnEip ovn-cluster-<ext>` **before** `infra-core` wakes kube-ovn's external-gateway handler. Without this the handler picks and never records an address: the first tenant EIP can be handed the same one, and every Project stays `NotReady` on "no management SNAT address" (webdock, 2026-08-31). Set it explicitly only to a free host inside `EXT_NET_CIDR` that the exclusion covers |
 
 :::note What the address layer controls
 Choosing a layer decides three things, all of them live:
@@ -1730,6 +1733,34 @@ The check worth knowing is `identity/oidc-cutover`: it reads the flags each
 registers per control-plane node. That catches a cutover that never ran (§3.5.1
 deferred, opted out, or a pre-v0.6 install) and — more importantly — a *partial*
 one, whose symptom is intermittent and misleading.
+
+Two more checks exist because a converged cluster can hide a dead cross-VPC path
+for weeks: `network/management-snat` confirms kube-ovn has **published** the
+management VPC's SNAT address (the address system→tenant traffic is rewritten to,
+which the manager exempts in every tenant firewall — unpublished means every
+Project stays `NotReady`), and `network/management-gw-pair` reads the OVN
+northbound DB through an `ovn-central` pod to confirm the management router port
+**and** its peer switch port both exist and agree on that address. CR readiness
+cannot see the second: the OvnSnatRule stayed `ready` on stage while the pair was
+broken and every system→tenant packet had nowhere to go. `network/default-vpc-patch-pairs`
+extends the same northbound check to every Subnet on the management VPC — the
+dual-homing subnet (`infra-net`) in particular, because a half pair there never
+turns the Subnet Ready, the manager then never labels new projects for
+dual-homing, and Kamaji cannot reach a tenant etcd, with nothing red anywhere.
+
+Three node-level dataplane checks close the last visibility gap — states where
+every Kubernetes object *and* the OVN databases look perfect while the wire is
+dead. `network/kernel-vlan-overlap` probes each node's links (through the
+per-node `ovs-ovn` pods) and fails if any node carries a kernel VLAN
+subinterface on an OVN-owned VLAN: the kernel then steals every tagged frame
+before OVS sees it, so tenant public IPs never answer ARP on that node.
+`network/flow-restore-wait` fails only on an **unmanaged** `flow-restore-wait=true`
+— a stock-OVS stuck restore state that silently stops all new dataplane flows on
+the node. (The kube-ovn fork's ovn-controller manages this flag itself around
+flow updates and stamps `ovn-managed-flow-restore-wait=true`; that managed
+true/true pair is normal steady-state operation and passes.) `network/public-anchors` verifies each declared public anchor is
+actually live — port present, address bound, and (when the anchor owns the
+node's default route) the route pointing at it.
 
 A check that cannot be performed reports `SKIP` with the reason, and a skipped
 required check never yields `usable`: "I could not tell" must not read as "fine".

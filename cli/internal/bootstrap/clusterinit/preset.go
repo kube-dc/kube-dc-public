@@ -195,6 +195,11 @@ var universalPublicAnchorDefaults = map[string]string{
 	"EXT_NET_PUBLIC_ANCHOR_INTERFACE": "ext-pub-anchor",
 	"EXT_NET_PUBLIC_ANCHOR_VLAN":      "",
 	"EXT_NET_PUBLIC_ANCHOR_IPS":       "",
+	// true = the anchors also own the nodes' default routes (the posture for
+	// hosts whose ONLY public leg is the anchor — EXT_NET_PUBLIC_ANCHOR_IPS
+	// then maps the HOST addresses, not spare ones). Lowercase true/false;
+	// consumed by the fleet's ext-net-bridge-tag DaemonSet.
+	"EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE": "false",
 }
 
 // universalIngressDefaults are the front-door knobs every preset inherits.
@@ -1001,6 +1006,12 @@ func ValidatePresetValues(p Preset, envMap map[string]string) error {
 	validateExcludeIPRanges(envMap, publicCIDR, publicCIDRok, &errs)
 	extCIDR, extCIDRok := parseCIDRIfPresent(envMap, "EXT_NET_CIDR", &errs)
 	checkGatewayInCIDR(envMap, "EXT_NET_GATEWAY", extCIDR, extCIDRok, &errs)
+	// Management-VPC SNAT address (mgmtsnat.go): an explicit value must be a
+	// free host inside EXT_NET_CIDR and covered by the reserved block, or
+	// kube-ovn can hand the same address to a tenant EIP.
+	if msg := ValidateMgmtSnatIP(envMap); msg != "" {
+		errs = append(errs, "EXT_NET_MGMT_SNAT_IP: "+msg)
+	}
 	validateKubeOVNMasterNodes(envMap, &errs)
 
 	// Per-node anchor IPs (productized per-node MetalLB L3 anchor

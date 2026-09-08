@@ -1112,6 +1112,10 @@ func TestLoadBufferFromJSON(t *testing.T) {
 // the kube-root-ca.crt lookup the controller-auth setup needs.
 type fakeInitK8s struct{}
 
+func (f *fakeInitK8s) ListResourceObjects(context.Context, string, string, string, string) ([]map[string]any, error) {
+	return nil, nil
+}
+
 func (f *fakeInitK8s) PodContainerArgs(context.Context, string, string) (map[string][]string, error) {
 	return nil, nil
 }

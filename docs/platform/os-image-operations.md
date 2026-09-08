@@ -175,8 +175,16 @@ Then snapshot that PVC with the contract labels above. Name goldens **versioned*
 > **BYOL.** Our Windows golden carries **no `<ProductKey>`** — it is an unactivated
 > Enterprise Evaluation install, and cloudbase-init lets a tenant apply their own licence.
 > Never publish an activated, volume-licensed, KMS-configured or key-bearing image to the
-> anonymously readable bucket. Licensed media belongs behind a private prefix with a
-> per-cluster credential first.
+> anonymously readable bucket.
+>
+> **The `private/` prefix is NOT that protection.** It is a naming convention and
+> nothing more. Verified 2026-08-27 on `s3.stage.kube-dc.com`: an anonymous `GET` of
+> `private/windows/11/<date>/windows11-x64-golden.qcow2` returned HTTP 200 with the
+> full 7.3 GB body. The bucket is public-read throughout, so exporting a licensed
+> image "to the private prefix" publishes it to the world. Licensed media needs a
+> bucket whose policy actually denies anonymous reads, imported with a CDI
+> `secretRef` — and beware that a Rook OBC drops a hand-applied bucket policy on
+> reconcile.
 
 ## Gating
 
@@ -199,7 +207,47 @@ namespace the way the seeder does: a cluster-scoped pre-provisioned
 `VolumeSnapshotContent` (`deletionPolicy: Retain`) pointing at the same `snapshotHandle`,
 plus a namespaced `VolumeSnapshot` bound to it.
 
-## Promotion (blue/green)
+## Promotion — prefer a GoldenImageSelection
+
+`GoldenImageSelection` names the one golden a family serves. It exists because the
+`kube-dc.com/golden-active` label **cannot express a promotion atomically** — see the
+section below for what each intermediate state actually does. One object per
+(family, mode) makes promotion a single reviewed write, and makes "which image is this
+cluster serving?" answerable from Git rather than from labels somebody has to remember
+to move in the right order.
+
+```yaml
+apiVersion: kube-dc.com/v1
+kind: GoldenImageSelection
+metadata:
+  name: windows-11-golden-filesystem
+  namespace: golden-images
+spec:
+  family: windows-11-golden          # matches kube-dc.com/golden-os on the snapshots
+  mode: Filesystem                   # Filesystem | Block — Kubernetes' volumeMode spelling
+  snapshotName: golden-windows-11-20260828-f0dea74da9c5
+  releaseDigest: "sha256:f0dea74da9c54ba4728b2f4841316490cadd66b7ab1ed10de46549d457eb5018"
+```
+
+Promoting a new golden is then: commit the new versioned DataVolume + VolumeSnapshot
+(staged, serving nothing), let every cluster import and gate it, then change
+`snapshotName` in a second commit. Rollback is the same field, back.
+
+**It fails closed.** A family whose selection names a missing or unready snapshot is
+**skipped**, not served from a sibling. Skipping is safe — projects already seeded keep
+the copy they have — whereas falling back is the silent wrong-image seeding the type
+exists to prevent. Two selections naming different snapshots for one family are
+reported and the family held, never resolved by guessing.
+
+**Adoption is optional and order-independent.** A cluster with no CRD and no selections
+behaves exactly as before, on the label path, so the manager and the CRD can roll out in
+either order without breaking golden seeding.
+
+> `mode` is spelled `Filesystem`/`Block`. It is compared case-insensitively, but a
+> selection whose family or mode matches nothing governs nothing — which looks
+> identical to having no selection at all. Check `status.ready` rather than assuming.
+
+## Promotion via the golden-active label (legacy)
 
 Goldens are selected by `kube-dc.com/golden-active`. Exactly one per family may carry
 `"true"` — `activeGoldenConflicts()` rejects more, and `preferActive()` sorts an active
@@ -207,17 +255,94 @@ golden ahead of the rest.
 
 With **two goldens in a family and neither active**, selection falls back to list order
 rather than intent. That is safe (the incumbent keeps serving) but it is ambiguous, and it
-is the reason the label exists. Set it deliberately, only after the gate passes:
+is the reason the label exists. Set it deliberately, only after the gate passes.
+
+**Neither intermediate state is safe, and no ordering makes one safe.** Read what the
+code actually does (`internal/project/res_golden_snapshots.go`) before trusting any
+sequence:
+
+- **Zero active.** `preferActive()` is a `sort.SliceStable`, so with nothing labelled it
+  preserves *API list order* — which is not a selection contract. Projects seed from
+  whichever sibling the API returned first, and **no error is raised**. Silent and
+  arbitrary.
+- **Two active.** `activeGoldenConflicts()` produces an error, but the caller only
+  *appends it to a list* and the loop keeps going: seeding still proceeds, against an
+  arbitrary one of the two. Earlier revisions of this guide claimed seeding "fails for
+  the whole family" here. It does not.
+
+So the two states differ in whether anyone is told, not in whether the right image is
+chosen. Run the two commands back to back, then verify each project resolved to the
+handle you intended rather than assuming the sequence protected you.
+
+> The durable fix is a single Git-owned pointer per (family, mode) naming the chosen
+> snapshot, so promotion is one write with no intermediate state.
 
 ```bash
+# 1. stand down the incumbent (family briefly unlabelled — arbitrary AND silent; keep this window short)
+kubectl -n golden-images label volumesnapshot golden-windows-11-golden-<old-date> \
+  kube-dc.com/golden-active- --ignore-not-found
+
+# 2. promote the candidate
 kubectl -n golden-images label volumesnapshot golden-windows-11-golden-<date> \
   kube-dc.com/golden-active=true
-kubectl -n golden-images label volumesnapshot golden-windows-11-golden \
-  kube-dc.com/golden-active- --ignore-not-found
 ```
 
-Rollback is the same two commands with the names swapped. Projects pick the change up on
-the next Project resync (15 min).
+Rollback is the same two commands with the names swapped — same order, remove then add.
+Projects pick the change up on the next Project resync (15 min).
+
+## Disk sizing — three links, and all three are required
+
+A tenant who asks for a 200 GB Windows VM used to receive the bake size. Not
+approximately: **exactly** the golden's size, on every cluster. The request was real at
+the storage layer and invisible inside the guest.
+
+Tenant VMs are native rbd **CoW restores** from a golden VolumeSnapshot, in
+`Filesystem` volume mode. The restore honours the requested PVC size, but the
+`disk.img` *inside* that PVC is whatever the golden had. Three separate things must
+line up before a customer sees their disk, and if any one is missing the guest
+silently keeps the bake size — which is exactly why this went unnoticed for so long:
+each piece looks healthy on its own.
+
+| # | Link | Where it lives | Failure signature |
+|---|------|----------------|-------------------|
+| 1 | The image is grown to fill its PVC | KubeVirt `ExpandDisks` feature gate | Guest disk equals the golden's size, whatever the PVC says |
+| 2 | Nothing sits after `C:` on the disk | The bake removes the WinRE partition (v13+) | `Get-PartitionSupportedSize -DriveLetter C` reports `SizeMax == current` |
+| 3 | The filesystem is extended into the space | cloudbase-init `ExtendVolumesPlugin` | Disk is large, `C:` is not, free space is unallocated |
+
+**Link 1 — `ExpandDisks`.** Must be in the KubeVirt CR's feature gates
+(`platform/kubevirt/kubevirt-cr.yaml`). virt-launcher then expands the image before the
+VM starts, and says so:
+
+```
+pre-start expansion of image /var/run/kubevirt-private/vmi-disks/rootdisk/disk.img
+  to size 98767470592
+```
+
+That log line is the quickest way to confirm the gate is doing its job.
+
+**Link 2 — the WinRE partition.** Windows Setup appends a ~600 MB Recovery partition at
+the END of the disk, *after* `C:`, even though our answer file only asks for
+EFI + MSR + C:(Extend). Windows cannot extend a partition past a following one, so that
+600 MB in the wrong place strands every byte beyond it — permanently, on every clone.
+The bake now runs `reagentc /disable` (moving WinRE into `C:\Windows\System32\Recovery`,
+so this costs the recovery *image*, not the recovery *feature*) and deletes the
+partition before sysprep.
+
+**Link 3 — `ExtendVolumesPlugin`.** Already in the golden's plugin list, in both the
+unattend and service passes, with `volumes_to_extend` unset so it extends every volume.
+
+Verified end-to-end on stage 2026-08-28, a v13 golden cloned into a 100Gi PVC:
+
+```
+golden C:      66.6 GB
+guest  C:      98.1 GB      <- after all three links
+```
+
+> **local-path caveat.** That provisioner does not enforce PVC size, so with
+> `ExpandDisks` on, a guest can grow its image toward a request the node cannot
+> satisfy. The image is sparse (nothing is allocated up front) and the ceiling is what
+> the customer asked for, but this is the same class of exposure as the 2026-06-12
+> node-disk outage. Watch it on local-path-backed VMs specifically.
 
 ## Operational traps
 

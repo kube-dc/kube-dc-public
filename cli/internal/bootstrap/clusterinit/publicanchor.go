@@ -34,6 +34,24 @@ import (
 // exclusion keeps it, and the host + OVN then both answer ARP for one
 // IP on one L2 segment. Deriving the exclusion at init time — before
 // any tenant exists — is what makes the anchor block safe.
+//
+// TWO POSTURES for the anchor addresses:
+//
+//   1. Hosts have their own public presence elsewhere (or none): anchors
+//      get SPARE addresses (auto-derived VIP+1, VIP+2, …) and exist only
+//      for the VIP return path. EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE=false.
+//   2. The anchor IS the host's only public leg: pass the HOST addresses
+//      as EXT_NET_PUBLIC_ANCHOR_IPS and set
+//      EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE=true — the DaemonSet then owns
+//      the node's public address AND default route on the anchor.
+//
+// In BOTH postures the hard rule holds: the public VLAN must NOT exist as
+// a kernel VLAN subinterface (bondX.<vlan>) on any node. The kernel
+// delivers tagged frames to such a device BEFORE the OVS rx_handler, so
+// OVN never sees the VLAN at all — tenant EIP/FIP ARP goes unanswered and
+// the anchor announcer is deaf, while every CR reports healthy.
+// `bootstrap accept` fails on that overlap (network/kernel-vlan-overlap);
+// see kube-dc docs/internal/issues/ext-public-kernel-vlan-steals-ingress.md.
 
 // derivePublicAnchorEnv fills the public-anchor keys that follow
 // mechanically from the operator's public-VLAN inputs. Called from
@@ -116,7 +134,12 @@ func derivePublicAnchorEnv(env map[string]string) {
 			env["METALLB_INTERFACE"] = iface
 		}
 
-		if strings.TrimSpace(env["EXT_NET_PUBLIC_ANCHOR_IPS"]) == "" {
+		// Posture 2 (DEFAULT_ROUTE=true) forbids auto-derivation: the derived
+		// run is VIP-adjacent SPARE addresses, and moving the node's default
+		// route onto a spare source while the real host address stays behind
+		// breaks inbound access. The host-IP map must come from the operator.
+		deriveMap := strings.TrimSpace(env["EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE"]) != "true"
+		if deriveMap && strings.TrimSpace(env["EXT_NET_PUBLIC_ANCHOR_IPS"]) == "" {
 			nodes := splitNonEmpty(env["KUBE_OVN_GW_NODES"])
 			if len(nodes) > 0 {
 				ones, _ := cidr.Mask.Size()
@@ -163,6 +186,39 @@ func derivePublicAnchorEnv(env map[string]string) {
 // gateway, VIP and every anchor fall inside EXT_PUBLIC_EXCLUDE_IPS_*.
 // Otherwise tenant IPAM can create a duplicate address on the segment.
 func validatePublicAnchor(envMap map[string]string, errs *[]string) {
+	defRoute := strings.TrimSpace(envMap["EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE"])
+	switch defRoute {
+	case "", "false":
+	case "true":
+		// Posture 2: the anchor owns the node's public leg. The route needs a
+		// resolvable next hop, and the map must be the operator's HOST
+		// addresses — auto-derived spares cannot reconstruct the nodes'
+		// public identities, so derivation is disabled and an explicit map is
+		// mandatory (Codex P0, 2026-08-31).
+		if strings.TrimSpace(envMap["EXT_PUBLIC_GATEWAY"]) == "" {
+			*errs = append(*errs, "EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE=true needs EXT_PUBLIC_GATEWAY as the route's next hop")
+		}
+		if strings.TrimSpace(envMap["EXT_NET_PUBLIC_ANCHOR_IPS"]) == "" {
+			*errs = append(*errs, "EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE=true requires an explicitly operator-supplied EXT_NET_PUBLIC_ANCHOR_IPS map of the HOST addresses — it is never auto-derived in this posture")
+		} else if anchorMapLooksAutoDerived(envMap) {
+			// A map derived by an EARLIER run (spares at VIP+1, VIP+2, …) is
+			// indistinguishable from operator input by provenance, so detect
+			// its exact shape: flipping the flag over stale spares would move
+			// each node's default route onto an address that is not the
+			// node's public identity, breaking inbound (Codex P1 round 2).
+			*errs = append(*errs, "EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE=true but EXT_NET_PUBLIC_ANCHOR_IPS is the auto-derived spare run (consecutive addresses from METALLB_FLOATING_IP+1) — replace it with the nodes' real HOST addresses before enabling the default-route posture")
+		}
+		if !publicL2VIPUsesPublicSubnet(envMap) {
+			*errs = append(*errs, "EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE=true is only valid for public L2 anchors (METALLB_MODE=l2, an L2 VIP inside EXT_PUBLIC_CIDR, EXT_PUBLIC_VLAN_ID set) — the DaemonSet retires anchors, route included, outside that state")
+		}
+	default:
+		// The HelmRelease/DaemonSet consume this via strict envsubst with YAML
+		// 1.2 parsing — anything but lowercase true/false is a typo, not a
+		// silent enable (same rule as PLATFORM_ENDPOINT_KUBE_API_ENABLED).
+		*errs = append(*errs, fmt.Sprintf(
+			"EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE: %q must be lowercase true or false", defRoute))
+	}
+
 	anchorInterface := strings.TrimSpace(envMap["EXT_NET_PUBLIC_ANCHOR_INTERFACE"])
 	if anchorInterface != "" {
 		if msg := validateNICName(anchorInterface); msg != "" {
@@ -355,6 +411,44 @@ func validatePublicAnchor(envMap map[string]string, errs *[]string) {
 				strings.Join(uncovered, ", ")))
 		}
 	}
+}
+
+// anchorMapLooksAutoDerived reports whether EXT_NET_PUBLIC_ANCHOR_IPS is
+// exactly the shape derivePublicAnchorEnv produces: every anchor address in
+// the consecutive run starting at VIP+1 (gateway skipped). Only that exact
+// shape is flagged — a host whose real address happens to neighbour the VIP
+// but not complete the run is left alone.
+func anchorMapLooksAutoDerived(envMap map[string]string) bool {
+	vip, cidr, ok := publicVIPNetwork(envMap)
+	if !ok {
+		return false
+	}
+	gw := net.ParseIP(strings.TrimSpace(envMap["EXT_PUBLIC_GATEWAY"]))
+	gw = gw.To4()
+	var ips []uint32
+	for _, pair := range strings.Split(envMap["EXT_NET_PUBLIC_ANCHOR_IPS"], ",") {
+		_, cidrStr, found := strings.Cut(pair, "=")
+		ip, _, err := net.ParseCIDR(strings.TrimSpace(cidrStr))
+		if !found || err != nil || ip.To4() == nil {
+			return false
+		}
+		ips = append(ips, ipToU32(ip.To4()))
+	}
+	if len(ips) == 0 {
+		return false
+	}
+	sort.Slice(ips, func(i, j int) bool { return ips[i] < ips[j] })
+	next := ipAdd(vip, 1)
+	for _, got := range ips {
+		for gw != nil && next.Equal(gw) {
+			next = ipAdd(next, 1)
+		}
+		if !isUsableHostIP(next, cidr) || got != ipToU32(next) {
+			return false
+		}
+		next = ipAdd(next, 1)
+	}
+	return true
 }
 
 // parsePublicExcludeRanges parses EXT_PUBLIC_EXCLUDE_IPS_1/_2 in

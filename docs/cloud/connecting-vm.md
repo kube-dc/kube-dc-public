@@ -188,6 +188,66 @@ diagnostic role that grants the subresource explicitly.
 
 ---
 
+## Windows VMs — RDP and SSH
+
+Windows VMs are reached the same way as Linux ones, but the login itself works
+differently, and knowing which mechanism supplies what saves a lot of guessing.
+
+**The account is `kube-dc`**, the same login name the rest of the platform uses. It is
+created on first boot, so a VM that has only just started may not have it yet — give
+first boot a few minutes before concluding anything is wrong.
+
+**Two ways in, and they are provisioned by different mechanisms:**
+
+| | How you connect | Where the credential comes from |
+|---|---|---|
+| **RDP** (port 3389) | Any RDP client, to the VM's floating IP | Password, set through the guest agent |
+| **SSH** (port 22) | `ssh kube-dc@<floating-ip>` | Your project's SSH key, installed by cloudbase-init |
+
+### RDP
+
+Attach a floating IP to the VM, then point an RDP client at it:
+
+```bash
+kubectl get fip <vm-name> -o jsonpath='{.status.externalIP}'
+```
+
+- **macOS** — Windows App (formerly Microsoft Remote Desktop), from the App Store
+- **Linux** — `xfreerdp /v:<floating-ip> /u:kube-dc` or Remmina
+- **Windows** — `mstsc /v:<floating-ip>`
+
+The password is generated when the VM is created and stored in a Secret alongside it.
+In the UI it is on the VM's detail page; from the CLI:
+
+```bash
+kubectl get secret <vm-name>-console-credentials -o jsonpath='{.data}' | \
+  python3 -c 'import sys,json,base64; d=json.load(sys.stdin); \
+    print({k: base64.b64decode(v).decode() for k,v in d.items()})'
+```
+
+### SSH
+
+SSH works exactly as it does on Linux — your project key is installed into the
+`kube-dc` account on first boot:
+
+```bash
+ssh -i ~/.ssh/<project-key> kube-dc@<floating-ip>
+```
+
+The default shell is PowerShell, so `ssh kube-dc@<ip> "Get-Service sshd"` behaves the
+way you would expect.
+
+### If Windows is not answering yet
+
+A Windows first boot does noticeably more work than a Linux one: it specialises the
+image, creates the account, applies the password and key, and **reboots once** partway
+through. Until that finishes you may see RDP answering while SSH does not, or the
+reverse — services come up at different points, and the machine reboots in between.
+
+On slower (HDD-backed) storage this can take considerably longer than on NVMe. Before
+concluding a VM is broken, check the graphical console: a VM sitting on
+"Getting devices ready" or "Starting services" is still working, not stuck.
+
 ## Connection Method Comparison
 
 | Method | Use Case | Requires Network | Requires Public IP |

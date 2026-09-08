@@ -1560,7 +1560,7 @@ func TestReprobeModeAfterFetch_RefusesOnLiveMismatch(t *testing.T) {
 	// when the (mock) live cluster resolves to resume.
 	t.Setenv("KUBE_DC_MOCK", "cloud") // flux + manager → resume
 	var out strings.Builder
-	err := reprobeModeAfterFetch(context.Background(), &out, clusterinit.ModeInstall)
+	err := reprobeModeAfterFetch(context.Background(), &out, clusterinit.ModeInstall, clusterIdentity{})
 	if err == nil {
 		t.Fatal("install plan over a live flux-managed cluster must be refused")
 	}
@@ -1570,7 +1570,7 @@ func TestReprobeModeAfterFetch_RefusesOnLiveMismatch(t *testing.T) {
 	// And a matching answer passes.
 	t.Setenv("KUBE_DC_MOCK", "fresh")
 	out.Reset()
-	if err := reprobeModeAfterFetch(context.Background(), &out, clusterinit.ModeInstall); err != nil {
+	if err := reprobeModeAfterFetch(context.Background(), &out, clusterinit.ModeInstall, clusterIdentity{}); err != nil {
 		t.Fatalf("matching live mode must pass: %v", err)
 	}
 	if !strings.Contains(out.String(), "mode re-probe confirmed: install") {

@@ -28,6 +28,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -36,6 +37,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 	"gopkg.in/yaml.v3"
 )
 
@@ -150,6 +152,19 @@ type AdoptOpts struct {
 	// the cluster being adopted. If empty, current-context is used.
 	KubectlContext string
 
+	// KubeconfigPath, when set, is passed explicitly as `--kubeconfig`
+	// to every kubectl invocation instead of relying on the ambient
+	// $KUBECONFIG / ~/.kube/config resolution. The standalone
+	// `bootstrap break-glass adopt/rotate` commands leave this empty
+	// (operators already have the right context current). Automated
+	// callers — `bootstrap init`'s finalize phase — set it to the
+	// freshly-merged admin kubeconfig so this targets the cluster that
+	// was just installed regardless of what the operator's ambient
+	// $KUBECONFIG happens to point at, matching the convention already
+	// used for OIDC cutover's node discovery (an explicit path, not an
+	// assumption that ambient env and the session agree).
+	KubeconfigPath string
+
 	// ServerURL overrides the apiserver URL embedded in the resulting
 	// kubeconfig. Defaults to KUBE_API_EXTERNAL_URL from
 	// cluster-config.env when empty.
@@ -157,6 +172,26 @@ type AdoptOpts struct {
 
 	// DryRun: print what would happen, don't apply or write files.
 	DryRun bool
+
+	// Git, when non-nil, commits the encrypted kubeconfig (and pushes
+	// unless NoPush) after Adopt writes it. Nil — the default, and
+	// what the standalone `bootstrap break-glass adopt` command uses —
+	// preserves the original manual-commit contract documented in its
+	// --help: the file lands in the working tree and the operator
+	// commits it by hand. Automated callers set this so the fleet repo
+	// is push-current with no further operator action, closing the
+	// exact gap that left crk/jed/next without a recovery kubeconfig
+	// in the fleet repo: `bootstrap init` never ran `adopt` at all, and
+	// even where an operator ran it manually, committing it was a
+	// separate step that was easy to forget (2026-09-04).
+	Git ports.GitClient
+
+	// GitHubToken authenticates the push. Ignored when Git is nil or
+	// NoPush is true; empty is valid for SSH remotes.
+	GitHubToken string
+
+	// NoPush commits locally without pushing. Ignored when Git is nil.
+	NoPush bool
 }
 
 // Adopt creates the SA + CRB + token Secret on the cluster, waits for
@@ -178,6 +213,9 @@ func Adopt(ctx context.Context, opts AdoptOpts) error {
 	if _, err := os.Stat(clusterDir); err != nil {
 		return fmt.Errorf("cluster overlay not found at %s: %w", clusterDir, err)
 	}
+	if err := checkCleanWorkingTree(ctx, opts, ""); err != nil {
+		return err
+	}
 
 	// Resolve API server URL: explicit override > cluster-config.env > kubectl current.
 	server := opts.ServerURL
@@ -185,7 +223,7 @@ func Adopt(ctx context.Context, opts AdoptOpts) error {
 		server = readEnvVar(filepath.Join(clusterDir, "cluster-config.env"), "KUBE_API_EXTERNAL_URL")
 	}
 	if server == "" {
-		got, err := kubectlServer(opts.KubectlContext)
+		got, err := kubectlServer(opts.KubeconfigPath, opts.KubectlContext)
 		if err != nil {
 			return fmt.Errorf("could not resolve API server URL: pass --server, set KUBE_API_EXTERNAL_URL in cluster-config.env, or run with a working kubectl context: %w", err)
 		}
@@ -201,7 +239,7 @@ func Adopt(ctx context.Context, opts AdoptOpts) error {
 	// 1. Apply the SA + CRB + Secret manifest. kubectl apply is
 	//    idempotent — it'll patch existing objects in place.
 	fmt.Fprintln(os.Stderr, "  applying break-glass manifest…")
-	if err := kubectlApply(ctx, opts.KubectlContext, Manifest); err != nil {
+	if err := kubectlApply(ctx, opts.KubeconfigPath, opts.KubectlContext, Manifest); err != nil {
 		return fmt.Errorf("kubectl apply: %w", err)
 	}
 
@@ -209,7 +247,7 @@ func Adopt(ctx context.Context, opts AdoptOpts) error {
 	//    On a healthy cluster this completes in <2s, but on a busy
 	//    apiserver we've seen it take up to ~10s.
 	fmt.Fprintln(os.Stderr, "  waiting for SA token-controller…")
-	token, ca, err := waitForToken(ctx, opts.KubectlContext, 30*time.Second)
+	token, ca, err := waitForToken(ctx, opts.KubeconfigPath, opts.KubectlContext, 30*time.Second)
 	if err != nil {
 		return fmt.Errorf("wait for token: %w", err)
 	}
@@ -229,7 +267,98 @@ func Adopt(ctx context.Context, opts AdoptOpts) error {
 	}
 
 	fmt.Fprintf(os.Stderr, "✓ break-glass kubeconfig written to %s\n", target)
-	fmt.Fprintln(os.Stderr, "  next step: commit + push, then test with `kube-dc bootstrap break-glass "+opts.ClusterName+"`")
+	return commitBreakGlass(ctx, opts, target, "adopt break-glass recovery kubeconfig")
+}
+
+// ErrDirtyWorkingTree is returned when Git is configured (an automated
+// caller) and the fleet repo has uncommitted changes unrelated to
+// break-glass. Same shape as openbao.ErrDirtyWorkingTree.
+var ErrDirtyWorkingTree = errors.New("breakglass: fleet repo has uncommitted changes; commit or stash before adopt/rotate")
+
+// checkCleanWorkingTree refuses to proceed when opts.Git is set (i.e. this
+// call is about to auto-commit on the operator's behalf) and the fleet repo
+// has unrelated uncommitted changes. Without this, commitLocal's `git add
+// .` — the real adapter always stages the WHOLE working tree, by design,
+// matching every other Git.Commit(AndPush) caller in this codebase — would
+// sweep any such changes into the break-glass commit and push them.
+//
+// allow, when non-empty, is one path (relative to opts.FleetRoot, e.g.
+// "clusters/jed/break-glass-kubeconfig.enc.yaml") excluded from the dirty
+// check — used for the SECOND call site (see commitBreakGlass) so the
+// break-glass file's own expected change doesn't self-trigger the guard.
+// Pass "" for the entry-point call in Adopt/Rotate, which must see a fully
+// clean tree since nothing has been written yet.
+//
+// No-op when Git is nil: the standalone `bootstrap break-glass
+// adopt/rotate` commands never auto-commit, so there is nothing here for
+// them to sweep in by surprise — the operator reviews and commits by hand
+// either way.
+func checkCleanWorkingTree(ctx context.Context, opts AdoptOpts, allow string) error {
+	if opts.Git == nil {
+		return nil
+	}
+	diff, err := opts.Git.Diff(ctx, opts.FleetRoot)
+	if err != nil {
+		return fmt.Errorf("breakglass: diff %s: %w", opts.FleetRoot, err)
+	}
+	var paths []string
+	for _, f := range diff.Files {
+		if allow != "" && f.Path == allow {
+			continue
+		}
+		paths = append(paths, f.Path)
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w (dirty paths: %v)", ErrDirtyWorkingTree, paths)
+}
+
+// commitBreakGlass commits (and, unless NoPush, pushes) the encrypted
+// kubeconfig that Adopt just wrote. A no-op that prints the original
+// manual-commit reminder when opts.Git is nil — the contract the
+// standalone `bootstrap break-glass adopt` command still has, since it
+// never sets Git.
+//
+// sops re-encrypts non-deterministically (fresh nonce/data key every
+// run), so the committed file differs byte-for-byte even when the
+// underlying token hasn't changed — there is no "nothing changed, skip
+// the commit" case to detect here, unlike keycloak/openbao's
+// Head-before/Head-after comparison against an idempotent shell
+// script. Every successful write gets a commit.
+func commitBreakGlass(ctx context.Context, opts AdoptOpts, target, msgVerb string) error {
+	if opts.Git == nil {
+		fmt.Fprintln(os.Stderr, "  next step: commit + push, then test with `kube-dc bootstrap break-glass "+opts.ClusterName+"`")
+		return nil
+	}
+	// Re-check immediately before committing. The entry-point guard in
+	// Adopt/Rotate only catches dirt that existed BEFORE the manifest
+	// apply / token-controller wait / sops-encrypt ran — real network and
+	// disk I/O that leaves a window (seconds, longer if the token-wait
+	// retries) during which an operator working in another terminal could
+	// save a file into the SAME fleet checkout. Checking again right here,
+	// excluding only the file this call is about to commit, shrinks that
+	// window to the gap between this check and the commit call below
+	// instead of leaving it open for the whole operation.
+	rel, relErr := filepath.Rel(opts.FleetRoot, target)
+	if relErr != nil {
+		rel = "" // can't compute a safe exclusion — fail closed on ANY diff below
+	}
+	if err := checkCleanWorkingTree(ctx, opts, rel); err != nil {
+		return fmt.Errorf("%w (kubeconfig written to %s but NOT committed — resolve the conflicting change and re-run)", err, target)
+	}
+	msg := fmt.Sprintf("%s: %s", opts.ClusterName, msgVerb)
+	if opts.NoPush {
+		if _, err := opts.Git.Commit(ctx, opts.FleetRoot, msg); err != nil {
+			return fmt.Errorf("commit break-glass kubeconfig (file written to %s; commit + push manually): %w", target, err)
+		}
+		fmt.Fprintln(os.Stderr, "  committed locally (--no-push)")
+		return nil
+	}
+	if _, err := opts.Git.CommitAndPush(ctx, opts.FleetRoot, msg, opts.GitHubToken); err != nil {
+		return fmt.Errorf("commit+push break-glass kubeconfig (file written to %s; commit + push manually): %w", target, err)
+	}
+	fmt.Fprintln(os.Stderr, "  committed and pushed")
 	return nil
 }
 
@@ -315,6 +444,9 @@ func Rotate(ctx context.Context, opts AdoptOpts) error {
 	if _, err := os.Stat(target); err != nil {
 		return fmt.Errorf("break-glass kubeconfig not found at %s — nothing to rotate; run adopt first", target)
 	}
+	if err := checkCleanWorkingTree(ctx, opts, ""); err != nil {
+		return err
+	}
 
 	if opts.DryRun {
 		fmt.Fprintf(os.Stderr, "  dry-run: would delete Secret %s/%s and re-encrypt %s\n",
@@ -325,7 +457,7 @@ func Rotate(ctx context.Context, opts AdoptOpts) error {
 	// 1. Delete the Secret so the SA controller mints a fresh token
 	//    on next reconcile. The SA itself stays put.
 	fmt.Fprintln(os.Stderr, "  deleting existing token Secret…")
-	if err := kubectlRun(ctx, opts.KubectlContext, "delete", "secret",
+	if err := kubectlRun(ctx, opts.KubeconfigPath, opts.KubectlContext, "delete", "secret",
 		"-n", BreakGlassNamespace, BreakGlassSecretName, "--ignore-not-found"); err != nil {
 		return err
 	}
@@ -333,13 +465,13 @@ func Rotate(ctx context.Context, opts AdoptOpts) error {
 	// 2. Re-create from the manifest (only the Secret matters here, but
 	//    apply the whole bundle for idempotence).
 	fmt.Fprintln(os.Stderr, "  re-applying manifest (idempotent)…")
-	if err := kubectlApply(ctx, opts.KubectlContext, Manifest); err != nil {
+	if err := kubectlApply(ctx, opts.KubeconfigPath, opts.KubectlContext, Manifest); err != nil {
 		return err
 	}
 
 	// 3. Wait for new token + re-encrypt.
 	fmt.Fprintln(os.Stderr, "  waiting for new token…")
-	token, ca, err := waitForToken(ctx, opts.KubectlContext, 30*time.Second)
+	token, ca, err := waitForToken(ctx, opts.KubeconfigPath, opts.KubectlContext, 30*time.Second)
 	if err != nil {
 		return err
 	}
@@ -357,8 +489,7 @@ func Rotate(ctx context.Context, opts AdoptOpts) error {
 		return err
 	}
 	fmt.Fprintf(os.Stderr, "✓ break-glass token rotated; %s updated\n", target)
-	fmt.Fprintln(os.Stderr, "  commit + push so the rest of the team picks up the new token")
-	return nil
+	return commitBreakGlass(ctx, opts, target, "rotate break-glass token")
 }
 
 // Status decrypts the break-glass kubeconfig to memory (NOT to disk)
@@ -429,11 +560,25 @@ func sanitizeName(s string) string {
 }
 
 // kubectlApply pipes manifest bytes to `kubectl apply -f -`.
-func kubectlApply(ctx context.Context, kubectlContext, manifest string) error {
-	args := []string{"apply", "-f", "-"}
+// kubectlArgs prepends --kubeconfig / --context to args as needed.
+// kubeconfigPath takes precedence for WHICH file is read; kubectlContext
+// selects which context within it (or within the ambient default when
+// kubeconfigPath is empty) — the two are independent and both optional.
+// Order matters for flag prepending only in that both must land before
+// the subcommand args callers already built; prepending in either order
+// is fine since both are global kubectl flags.
+func kubectlArgs(kubeconfigPath, kubectlContext string, args []string) []string {
 	if kubectlContext != "" {
 		args = append([]string{"--context", kubectlContext}, args...)
 	}
+	if kubeconfigPath != "" {
+		args = append([]string{"--kubeconfig", kubeconfigPath}, args...)
+	}
+	return args
+}
+
+func kubectlApply(ctx context.Context, kubeconfigPath, kubectlContext, manifest string) error {
+	args := kubectlArgs(kubeconfigPath, kubectlContext, []string{"apply", "-f", "-"})
 	cmd := exec.CommandContext(ctx, "kubectl", args...)
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = os.Stderr // route to stderr so it interleaves with our progress
@@ -442,10 +587,8 @@ func kubectlApply(ctx context.Context, kubectlContext, manifest string) error {
 }
 
 // kubectlRun is a small wrapper for one-off kubectl commands.
-func kubectlRun(ctx context.Context, kubectlContext string, args ...string) error {
-	if kubectlContext != "" {
-		args = append([]string{"--context", kubectlContext}, args...)
-	}
+func kubectlRun(ctx context.Context, kubeconfigPath, kubectlContext string, args ...string) error {
+	args = kubectlArgs(kubeconfigPath, kubectlContext, args)
 	cmd := exec.CommandContext(ctx, "kubectl", args...)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
@@ -454,11 +597,9 @@ func kubectlRun(ctx context.Context, kubectlContext string, args ...string) erro
 
 // kubectlServer reads the server URL from the named context (or
 // current-context if empty).
-func kubectlServer(kubectlContext string) (string, error) {
-	args := []string{"config", "view", "--minify", "-o", "jsonpath={.clusters[0].cluster.server}"}
-	if kubectlContext != "" {
-		args = append([]string{"--context", kubectlContext}, args...)
-	}
+func kubectlServer(kubeconfigPath, kubectlContext string) (string, error) {
+	args := kubectlArgs(kubeconfigPath, kubectlContext,
+		[]string{"config", "view", "--minify", "-o", "jsonpath={.clusters[0].cluster.server}"})
 	out, err := exec.Command("kubectl", args...).Output()
 	if err != nil {
 		return "", err
@@ -468,10 +609,10 @@ func kubectlServer(kubectlContext string) (string, error) {
 
 // waitForToken polls the break-glass Secret until data.token is
 // populated by the SA-token controller. Returns (token, ca.crt).
-func waitForToken(ctx context.Context, kubectlContext string, timeout time.Duration) ([]byte, []byte, error) {
+func waitForToken(ctx context.Context, kubeconfigPath, kubectlContext string, timeout time.Duration) ([]byte, []byte, error) {
 	deadline := time.Now().Add(timeout)
 	for {
-		token, ca, err := readToken(ctx, kubectlContext)
+		token, ca, err := readToken(ctx, kubeconfigPath, kubectlContext)
 		if err == nil && len(token) > 0 && len(ca) > 0 {
 			return token, ca, nil
 		}
@@ -492,12 +633,9 @@ func waitForToken(ctx context.Context, kubectlContext string, timeout time.Durat
 // readToken issues a single get against the break-glass Secret and
 // returns the decoded token + ca.crt. Both empty if the Secret
 // exists but the controller hasn't populated data yet.
-func readToken(ctx context.Context, kubectlContext string) ([]byte, []byte, error) {
-	args := []string{"get", "secret", BreakGlassSecretName,
-		"-n", BreakGlassNamespace, "-o", "json"}
-	if kubectlContext != "" {
-		args = append([]string{"--context", kubectlContext}, args...)
-	}
+func readToken(ctx context.Context, kubeconfigPath, kubectlContext string) ([]byte, []byte, error) {
+	args := kubectlArgs(kubeconfigPath, kubectlContext,
+		[]string{"get", "secret", BreakGlassSecretName, "-n", BreakGlassNamespace, "-o", "json"})
 	out, err := exec.CommandContext(ctx, "kubectl", args...).Output()
 	if err != nil {
 		return nil, nil, err

@@ -99,8 +99,33 @@ func Run(ctx context.Context, o Options) (Result, error) {
 			return res, fmt.Errorf("oidccutover: %s: %w", label, err)
 		}
 		if !changed {
-			fmt.Fprintf(o.Out, "  already wired to the authenticator — nothing to do\n")
-			res.AlreadyWired = append(res.AlreadyWired, label)
+			// The FILE says wired. That is not proof the RUNNING apiserver
+			// carries the flag: a previous run can write the config and then
+			// fail its restart, and a hand edit never restarts at all. Calling
+			// such a node "already wired" is how a cluster ends up permanently
+			// half-authenticating while every tool reports the cutover done —
+			// so check the live process and finish the job if it is behind.
+			live := verifyFlagLive(ctx, o, node.Host)
+			if live == nil {
+				fmt.Fprintf(o.Out, "  already wired to the authenticator — nothing to do\n")
+				res.AlreadyWired = append(res.AlreadyWired, label)
+				continue
+			}
+			if o.DryRun {
+				fmt.Fprintf(o.Out, "  DRY RUN: %s is already patched but the running apiserver does NOT "+
+					"carry the flag (%v) — would restart rke2-server\n", RKE2ConfigPath, live)
+				res.Wired = append(res.Wired, label)
+				continue
+			}
+			fmt.Fprintf(o.Out, "  %s is already patched but the running apiserver does NOT carry the flag "+
+				"(%v) — restarting rke2-server to finish\n", RKE2ConfigPath, live)
+			if err := guardPort6443(ctx, o, node, label, &res); err != nil {
+				return res, err
+			}
+			if err := restartAndVerify(ctx, o, node, label); err != nil {
+				return res, err
+			}
+			res.Wired = append(res.Wired, label)
 			continue
 		}
 
@@ -110,20 +135,8 @@ func Run(ctx context.Context, o Options) (Result, error) {
 		// apiserver cannot re-bind, so the node comes back with a dead
 		// apiserver. Refuse rather than break it — draining a data-plane pod
 		// is the operator's call, not ours.
-		if owner, err := foreignPortOwner(ctx, o, node.Host); err != nil {
-			// FAIL CLOSED. This check guards against a restart that leaves the
-			// apiserver unable to re-bind :6443 — an outcome that takes the node
-			// out. "I could not look" is not a reason to proceed.
-			return res, fmt.Errorf("oidccutover: %s: cannot determine what is listening on :6443 (%w). "+
-				"Refusing to restart rke2-server blind: if something else holds that port the apiserver "+
-				"will not come back. Check by hand with `ss -tlpn | grep :6443` on the node", label, err)
-		} else if owner != "" {
-			reason := fmt.Sprintf(":6443 is held by %q, not kube-apiserver. Restarting rke2-server now "+
-				"would leave the apiserver unable to re-bind (SO_REUSEPORT: the second binder must ask, "+
-				"and the apiserver only asks when the port is free). Move that workload off this node "+
-				"first (`kubectl cordon %s`, delete the hostNetwork pod there), then re-run", owner, label)
-			res.Skipped[label] = reason
-			return res, fmt.Errorf("oidccutover: %s: %s", label, reason)
+		if err := guardPort6443(ctx, o, node, label, &res); err != nil {
+			return res, err
 		}
 
 		if o.DryRun {
@@ -145,22 +158,57 @@ func Run(ctx context.Context, o Options) (Result, error) {
 		}
 		fmt.Fprintf(o.Out, "  %s updated (snapshot at %s%s)\n", RKE2ConfigPath, RKE2ConfigPath, BackupSuffix)
 
-		if _, err := o.SSH.Run(ctx, node.Host, sudo("systemctl restart rke2-server")); err != nil {
-			return res, fmt.Errorf("oidccutover: %s: restart rke2-server: %w", label, err)
+		if err := restartAndVerify(ctx, o, node, label); err != nil {
+			return res, err
 		}
-		fmt.Fprintf(o.Out, "  rke2-server restarting; waiting for the apiserver\n")
-
-		if err := waitAPIServerReady(ctx, o, node); err != nil {
-			return res, fmt.Errorf("oidccutover: %s: %w (rollback: restore %s%s on this node and "+
-				"`systemctl restart rke2-server`)", label, err, RKE2ConfigPath, BackupSuffix)
-		}
-		if err := verifyFlagLive(ctx, o, node.Host); err != nil {
-			return res, fmt.Errorf("oidccutover: %s: %w", label, err)
-		}
-		fmt.Fprintf(o.Out, "  apiserver back and running with the webhook flag\n")
 		res.Wired = append(res.Wired, label)
 	}
 	return res, nil
+}
+
+// guardPort6443 refuses to restart a node whose :6443 is held by something
+// other than kube-apiserver.
+//
+// The production incident: a hostNetwork Envoy on a control-plane node owns the
+// port via SO_REUSEPORT. After `systemctl restart rke2-server` Envoy is the SOLE
+// owner and the apiserver cannot re-bind, so the node comes back with a dead
+// apiserver. Draining a data-plane pod is the operator's call, not ours.
+func guardPort6443(ctx context.Context, o Options, node Node, label string, res *Result) error {
+	owner, err := foreignPortOwner(ctx, o, node.Host)
+	if err != nil {
+		// FAIL CLOSED. "I could not look" is not a reason to restart blind.
+		return fmt.Errorf("oidccutover: %s: cannot determine what is listening on :6443 (%w). "+
+			"Refusing to restart rke2-server blind: if something else holds that port the apiserver "+
+			"will not come back. Check by hand with `ss -tlpn | grep :6443` on the node", label, err)
+	}
+	if owner == "" {
+		return nil
+	}
+	reason := fmt.Sprintf(":6443 is held by %q, not kube-apiserver. Restarting rke2-server now "+
+		"would leave the apiserver unable to re-bind (SO_REUSEPORT: the second binder must ask, "+
+		"and the apiserver only asks when the port is free). Move that workload off this node "+
+		"first (`kubectl cordon %s`, delete the hostNetwork pod there), then re-run", owner, label)
+	res.Skipped[label] = reason
+	return fmt.Errorf("oidccutover: %s: %s", label, reason)
+}
+
+// restartAndVerify restarts rke2-server and refuses to call the node done until
+// the apiserver is back AND the running process actually carries the flag.
+func restartAndVerify(ctx context.Context, o Options, node Node, label string) error {
+	if _, err := o.SSH.Run(ctx, node.Host, sudo("systemctl restart rke2-server")); err != nil {
+		return fmt.Errorf("oidccutover: %s: restart rke2-server: %w", label, err)
+	}
+	fmt.Fprintf(o.Out, "  rke2-server restarting; waiting for the apiserver\n")
+
+	if err := waitAPIServerReady(ctx, o, node); err != nil {
+		return fmt.Errorf("oidccutover: %s: %w (rollback: restore %s%s on this node and "+
+			"`systemctl restart rke2-server`)", label, err, RKE2ConfigPath, BackupSuffix)
+	}
+	if err := verifyFlagLive(ctx, o, node.Host); err != nil {
+		return fmt.Errorf("oidccutover: %s: %w", label, err)
+	}
+	fmt.Fprintf(o.Out, "  apiserver back and running with the webhook flag\n")
+	return nil
 }
 
 // preflight refuses to start unless the authenticator is actually up and every

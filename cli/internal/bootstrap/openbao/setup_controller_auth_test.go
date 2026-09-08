@@ -174,6 +174,10 @@ type fakeSetupK8s struct {
 	caErr  error
 }
 
+func (f *fakeSetupK8s) ListResourceObjects(context.Context, string, string, string, string) ([]map[string]any, error) {
+	return nil, nil
+}
+
 func (f *fakeSetupK8s) PodContainerArgs(context.Context, string, string) (map[string][]string, error) {
 	return nil, nil
 }

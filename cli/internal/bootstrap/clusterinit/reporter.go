@@ -56,6 +56,22 @@ const (
 	StepOpenBao         StepID = "openbao-init"
 	StepControllerAuth  StepID = "controller-auth"
 	StepKeycloakOIDC    StepID = "keycloak-oidc"
+	// StepOIDCCutover wires every apiserver to the OIDC webhook. It is a
+	// FINALIZE step and cannot move earlier: kube-apiserver refuses to start
+	// when pointed at a webhook kubeconfig that does not exist yet, and that
+	// file only appears once Flux has brought up infra-core.
+	StepOIDCCutover StepID = "oidc-cutover"
+	// StepBreakGlass adopts the static-token cluster-admin recovery
+	// kubeconfig into the fleet repo (installer-prd §16.3.3). Unlike every
+	// other finalize step it has NO platform dependency — the ServiceAccount
+	// + ClusterRoleBinding + token Secret it creates are core API objects
+	// served by kube-apiserver + kube-controller-manager alone, up long
+	// before Flux/infra-core exist — so it runs FIRST among the finalize
+	// steps, giving a recovery path even if everything after it defers.
+	// Before this was automated, adopting it was a separate operator
+	// command nobody had to run, and several clusters (crk, jed, next)
+	// shipped with none committed at all (2026-09-04).
+	StepBreakGlass StepID = "break-glass"
 )
 
 // Step is one milestone: a stable ID + a human title.
@@ -151,6 +167,10 @@ func InstallSteps(o InstallStepInputs) []Step {
 		add(StepFetchKubeconfig, "Fetch kubeconfig")
 	}
 	if o.Finalize {
+		// Adopt break-glass FIRST: it has no platform dependency (see
+		// StepBreakGlass), so it runs before the reconcile watch rather
+		// than being gated behind it like every other finalize step.
+		add(StepBreakGlass, "Adopt break-glass recovery kubeconfig")
 		// Watch Flux converge the platform BEFORE the finalize steps
 		// (OpenBao/Keycloak need the platform HelmReleases Ready).
 		add(StepReconcile, "Reconcile platform (Flux)")
@@ -167,6 +187,7 @@ func InstallSteps(o InstallStepInputs) []Step {
 		// step). keycloak.Init self-polls the OIDC endpoint internally.
 		add(StepOpenBao, "Initialize OpenBao")
 		add(StepKeycloakOIDC, "Configure Keycloak OIDC")
+		add(StepOIDCCutover, "Wire apiservers to OIDC")
 	}
 	return steps
 }

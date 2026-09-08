@@ -126,6 +126,10 @@ type ScaffoldOptions struct {
 	// loaded + validated by the cobra layer before any file is written.
 	DNS01Route53 *DNS01Route53Material
 
+	// DNS01Cloudflare is the validated Cloudflare DNS-01 solver config (nil =
+	// not requested). Same contract as DNS01Route53.
+	DNS01Cloudflare *DNS01CloudflareMaterial
+
 	// TrustedCA is validated public CA material for manager/backend/OIDC/OpenBao.
 	TrustedCA *TrustedCAMaterial
 
@@ -349,6 +353,13 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	if err := ResolveKubeAPIArrivalIP(opts.FleetRepo, opts.Plan.ClusterName, out); err != nil {
 		return fmt.Errorf("scaffold: %w", err)
 	}
+	// Management-VPC SNAT address: fill the starter's CHANGEME with the
+	// first address after the reserved block and widen the block to cover
+	// it (mgmtsnat.go). The fleet's infra-mgmt-snat Kustomization declares
+	// the OvnEip from it before kube-ovn's external-gateway handler wakes.
+	if err := ResolveMgmtSnatIP(opts.FleetRepo, opts.Plan.ClusterName, out); err != nil {
+		return fmt.Errorf("scaffold: %w", err)
+	}
 
 	// (9) VM root-disk storage wiring — rbd-vm.yaml (base + goldens Flux
 	// Kustomizations) + the selected FS golden subset overlay +
@@ -408,6 +419,13 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// (ValidateTLSMode), so at most one of the writers fires. Needs only
 	// platform.yaml, which add-cluster.sh writes unconditionally.
 	if err := WriteDNS01Route53(opts.FleetRepo, opts.Plan.ClusterName, opts.DNS01Route53, out); err != nil {
+		return fmt.Errorf("scaffold: %w", err)
+	}
+
+	// (11c) Cloudflare DNS-01 — every certificate (acme-dns01-cloudflare) or
+	// the platform wildcard only (acme + --dns01-cloudflare-zone). Mutually
+	// exclusive with (11b) (validateDNS01Flags + the writer's own refusal).
+	if err := WriteDNS01Cloudflare(opts.FleetRepo, opts.Plan.ClusterName, opts.Plan.Domain, opts.DNS01Cloudflare, out); err != nil {
 		return fmt.Errorf("scaffold: %w", err)
 	}
 
@@ -742,6 +760,26 @@ func postProcessClusterConfig(path string, plan *Plan, sets map[string]string, n
 		if l := strings.TrimSpace(layer); (l == "metallb-l2" || l == "metallb-bgp") && net.ParseIP(strings.TrimSpace(vip)) != nil {
 			env.Set("KUBE_API_ARRIVAL_IP", strings.TrimSpace(vip))
 		}
+	}
+
+	// EXT_NET_MGMT_SNAT_IP: add-cluster.sh seeds CHANGEME; the address is
+	// mechanically derivable (first host after the reserved block, block
+	// widened to cover it — mgmtsnat.go). Resolve HERE, before the
+	// placeholder scan below: step 8's file-level ResolveMgmtSnatIP is
+	// unreachable past that scan — the IDENTICAL trap that bit
+	// KUBE_API_ARRIVAL_IP above, this time caught by the greenfield E2E
+	// (2026-09-01) before any install shipped with it. An operator --set
+	// value is untouched (validated later by ResolveMgmtSnatIP).
+	if v, ok := env.Get(keyMgmtSnatIP); ok && strings.TrimSpace(v) == mgmtSnatUnsetV {
+		cidr, _ := env.Get(keyExtCIDR)
+		gw, _ := env.Get(keyExtGateway)
+		excl, _ := env.Get(keyExtExclude)
+		addr, widened, derr := DeriveMgmtSnatIP(cidr, gw, excl)
+		if derr != nil {
+			return fmt.Errorf("scaffold: %s: %w — set it with --set %s=<free host address in %s>", keyMgmtSnatIP, derr, keyMgmtSnatIP, keyExtCIDR)
+		}
+		env.Set(keyMgmtSnatIP, addr)
+		env.Set(keyExtExclude, widened)
 	}
 
 	// Re-run semantic validation against the exact file we are about to

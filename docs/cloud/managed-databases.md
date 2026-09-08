@@ -794,3 +794,35 @@ Check the backup history for error details. Common causes:
 - S3 storage credentials are misconfigured
 - Insufficient S3 storage quota
 - Database is not in Ready state
+
+## What the platform protects, and what that means for your workloads
+
+A managed database is run by the platform inside your project. Its engine
+objects carry the label `services.kube-dc.com/managed-by`, and the platform
+keeps them out of reach of your own identities so that nothing you deploy can
+break what you are paying the platform to run. In practice:
+
+- You change a managed database through its own resource (`KdcDatabase` or
+  `ManagedService`), never by editing or deleting the engine's Cluster,
+  Secrets, volumes or ServiceAccount directly. Those requests are refused.
+- Your pods cannot mount a managed database's volume, run as its
+  ServiceAccount, or request a token for it. Reach the database through its
+  Service and the credentials the platform hands you.
+- Volumes cannot be cloned from a managed database's storage, and snapshots
+  of it cannot be restored into your own claims. Use the database's backup
+  and restore operations instead.
+- A pod may name a PersistentVolumeClaim that does not exist yet (it waits
+  Pending until the claim appears, as usual), except under a name the
+  platform's engines use for their own volumes, which is refused. The
+  platform, in turn, never creates a managed claim under a name one of your
+  pods already holds.
+- The labels `services.kube-dc.com/*`, `kube-dc.com/managed-db`,
+  `cnpg.io/cluster` and `strimzi.io/cluster` are reserved for the platform's
+  objects and cannot be set on yours, nor in pod templates; a pod may not
+  carry a managed MariaDB's selector labels.
+- Legacy `kubernetes.io/service-account-token` Secrets cannot be created by
+  project identities; mint tokens with `kubectl create token`.
+- Port-forward and proxy through the API server are not available to project
+  identities.
+
+Everything else in your project works as before.

@@ -29,6 +29,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -251,6 +252,36 @@ func (c *Client) GetResourceFieldFirst(ctx context.Context, group, version, reso
 		}
 	}
 	return "", nil
+}
+
+// ListResourceObjects lists one resource kind through the dynamic client. A
+// missing CRD reports as an empty list, not an error: acceptance must be able to
+// ask about an optional component without failing when it is absent.
+func (c *Client) ListResourceObjects(ctx context.Context, group, version, resource, namespace string) ([]map[string]any, error) {
+	gvr := schema.GroupVersionResource{Group: group, Version: version, Resource: resource}
+	ri := c.dyn.Resource(gvr)
+	var (
+		list *unstructured.UnstructuredList
+		err  error
+	)
+	if namespace == "" {
+		list, err = ri.List(ctx, metav1.ListOptions{})
+	} else {
+		list, err = ri.Namespace(namespace).List(ctx, metav1.ListOptions{})
+	}
+	if err != nil {
+		// NoMatch means the CRD is not installed; NotFound means the namespace
+		// is absent. Both are "this component is not here", not a failure.
+		if apimeta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
+			return []map[string]any{}, nil
+		}
+		return nil, fmt.Errorf("k8s: list %s/%s: %w", group, resource, err)
+	}
+	out := make([]map[string]any, 0, len(list.Items))
+	for i := range list.Items {
+		out = append(out, list.Items[i].Object)
+	}
+	return out, nil
 }
 
 func (c *Client) NodeLabels(ctx context.Context) (map[string]map[string]string, error) {

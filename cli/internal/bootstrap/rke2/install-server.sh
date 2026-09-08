@@ -187,9 +187,10 @@ sysctl -p /etc/sysctl.d/99-kube-dc.conf >/dev/null
 # at /etc/rancher/oidc-webhook-kubeconfig.yaml is written on each CP node by
 # the webhook DaemonSet's init container. Bootstrap therefore writes NO
 # authn-config flag — RKE2 starts with cert-only authn until Flux finishes
-# infra-core, then the operator runs the per-node cutover from
-# docs/internal/oidc-webhook-cloud-rollout.md (kube-dc repo) to add
-# --authentication-token-webhook-config-file to kube-apiserver-arg.
+# infra-core. `kube-dc bootstrap init` then adds
+# --authentication-token-webhook-config-file to kube-apiserver-arg on every
+# CP node as its last finalize step; `kube-dc bootstrap oidc-cutover` does the
+# same thing on demand. Runbook: docs/internal/oidc-webhook-cloud-rollout.md.
 
 # Compute kubelet memory reservations sized to actual node memory.
 # Tiers are calibrated to keep system+kube+eviction at ≈10–15% of total
@@ -234,6 +235,116 @@ log_info "  system-reserved=${KUBELET_SYS_RESERVED}"
 log_info "  kube-reserved=${KUBELET_KUBE_RESERVED}"
 log_info "  eviction-hard=${KUBELET_EVICTION_HARD}"
 log_info "  max-pods=${KUBELET_MAX_PODS}"
+
+# --- Control-plane CPU shares ------------------------------------------------
+# etcd and kube-apiserver run as STATIC PODS inside the kubepods cgroup, so
+# system-reserved / kube-reserved -- which carve capacity OUTSIDE kubepods --
+# do not shield them from tenant pods. Under contention the kernel divides CPU
+# by cpu.shares, proportional to each pod's CPU *request*, and RKE2's defaults
+# (etcd 200m, kube-apiserver 250m) pin the whole control plane to a ~0.45-core
+# floor however large the node is.
+#
+# Not hypothetical: on 2026-09-07 a cloud control-plane node carrying tenant
+# VMs at 93% CPU pushed etcd into "apply request took too long" (262ms against
+# a 100ms expectation) while three sibling nodes sat at 7-31%. Reservations
+# alone could not have prevented it -- they do not apply to static pods.
+#
+# Tiered on CPU COUNT (not memory, unlike the kubelet tier above): the floor
+# only has to stay meaningful under contention while remaining a small
+# fraction of allocatable. Small nodes keep RKE2's defaults -- an all-in-one
+# install cannot afford to hand whole cores to the control plane.
+CPU_TOTAL=$(nproc 2>/dev/null || echo 1)
+if [ "${CPU_TOTAL:-1}" -ge 32 ]; then
+    CP_RESERVED_TIER="large (>=32 cpu)"
+    CP_ETCD_CPU="2000m"; CP_APISERVER_CPU="2000m"
+elif [ "${CPU_TOTAL:-1}" -ge 16 ]; then
+    CP_RESERVED_TIER="medium (16-32 cpu)"
+    CP_ETCD_CPU="1000m"; CP_APISERVER_CPU="1000m"
+elif [ "${CPU_TOTAL:-1}" -ge 8 ]; then
+    CP_RESERVED_TIER="modest (8-16 cpu)"
+    CP_ETCD_CPU="500m"; CP_APISERVER_CPU="500m"
+else
+    CP_RESERVED_TIER="small (<8 cpu, RKE2 defaults)"
+    CP_ETCD_CPU="200m"; CP_APISERVER_CPU="250m"
+fi
+
+# Raising a static pod's request SHRINKS the node's allocatable. On a fresh
+# install nothing is scheduled yet, so that costs nothing. On a node that
+# ALREADY has an RKE2 config the node may be packed, and shrinking allocatable
+# can leave newly scheduled pods Pending.
+#
+# Existence is judged by config.yaml, NOT by whether rke2-server is currently
+# active: a stopped or failed service on an established node would otherwise be
+# misread as fresh and get an unpreflighted raise. This matches how the
+# kube-apiserver-arg block below decides the same question.
+#
+# An existing control-plane-resource-requests line is PRESERVED verbatim. This
+# script regenerates config.yaml from scratch, so without this a re-install of a
+# node installed WITH a raise would silently rewrite it back down to RKE2's
+# defaults and quietly remove the protection on restart. Both YAML spellings are
+# captured -- a flow sequence on the key line, and a block sequence of indented
+# "- " items, which RKE2 accepts equally and an operator may well have written.
+#
+# CP_RESOURCE_RAISE=force wins over preservation, so a resized node pinned to a
+# now-too-small value can still be raised deliberately; the capture is skipped
+# entirely in that case.
+CP_RESOURCE_REQUESTS_OVERRIDE=""
+PRESERVED_CP_REQUESTS=""
+if [[ -f "${RANCHER_DIR}/config.yaml" && "${CP_RESOURCE_RAISE:-}" != "force" ]]; then
+    PRESERVED_CP_REQUESTS="$(awk '
+        # Flow style: key and a non-empty value on the same line.
+        /^control-plane-resource-requests:[[:space:]]*[^[:space:]]/ {
+            sub(/^control-plane-resource-requests:[[:space:]]*/, "")
+            print; exit
+        }
+        # Block style: bare key, then indented "- " sequence items.
+        /^control-plane-resource-requests:[[:space:]]*$/ { inblock=1; next }
+        inblock {
+            if ($0 ~ /^[[:space:]]*-[[:space:]]/) {
+                item = $0
+                sub(/^[[:space:]]*-[[:space:]]*/, "", item)
+                buf = (buf == "" ? item : buf ", " item)
+                next
+            }
+            if ($0 ~ /^[[:space:]]*$/ || $0 ~ /^[[:space:]]*#/) { next }
+            inblock = 0
+        }
+        END { if (buf != "") print "[" buf "]" }
+    ' "${RANCHER_DIR}/config.yaml")"
+fi
+
+if [[ -n "${PRESERVED_CP_REQUESTS}" ]]; then
+    log_info "Preserving existing control-plane-resource-requests across re-install"
+    CP_RESERVED_TIER="preserved from existing config"
+    CP_RESOURCE_REQUESTS_OVERRIDE="${PRESERVED_CP_REQUESTS}"
+elif [[ -f "${RANCHER_DIR}/config.yaml" && "${CP_RESOURCE_RAISE:-}" != "force" ]]; then
+    log_warn "existing RKE2 config found -- keeping RKE2 default control-plane CPU requests"
+    log_warn "  a raise shrinks allocatable on a node that already carries pods;"
+    log_warn "  re-run with CP_RESOURCE_RAISE=force once the node has headroom"
+    CP_RESERVED_TIER="existing node -- defaults kept"
+    CP_ETCD_CPU="200m"; CP_APISERVER_CPU="250m"
+fi
+
+# The FULL set is emitted, not only the raised values: this flag REPLACES
+# RKE2's built-in request list rather than merging into it, so naming just
+# etcd-cpu/kube-apiserver-cpu would silently drop every memory request and
+# every other component's request -- leaving kube-scheduler,
+# kube-controller-manager and kube-proxy BestEffort and first to be evicted.
+# The trailing values are RKE2 v1.36's own defaults, verified against a live
+# cluster; only the etcd/kube-apiserver CPU figures above are raised. Emitting
+# the defaults explicitly is also correct if the flag ever merges -- a no-op.
+CP_RESOURCE_REQUESTS="[etcd-cpu=${CP_ETCD_CPU}, etcd-memory=512Mi,\
+ kube-apiserver-cpu=${CP_APISERVER_CPU}, kube-apiserver-memory=1Gi,\
+ kube-controller-manager-cpu=200m, kube-controller-manager-memory=256Mi,\
+ kube-scheduler-cpu=100m, kube-scheduler-memory=128Mi,\
+ kube-proxy-cpu=250m, kube-proxy-memory=128Mi]"
+# A preserved line wins over anything computed above.
+if [[ -n "${CP_RESOURCE_REQUESTS_OVERRIDE:-}" ]]; then
+    CP_RESOURCE_REQUESTS="${CP_RESOURCE_REQUESTS_OVERRIDE}"
+fi
+log_info "Node CPU: ${CPU_TOTAL} cores -> control-plane tier: ${CP_RESERVED_TIER}"
+log_info "  control-plane-resource-requests=${CP_RESOURCE_REQUESTS}"
+
 
 # --- Private-CA trust for the NODE (docs/prd/platform-trust-bundle.md) ---
 #
@@ -587,8 +698,9 @@ node-label:
   - kube-dc-manager=true
   - kube-ovn/role=master
 # kube-apiserver-arg deliberately omitted at bootstrap — the webhook flag is
-# added by docs/internal/oidc-webhook-cloud-rollout.md after infra-core
-# brings up the OIDC webhook DaemonSet. Bootstrap apiserver runs cert-only.
+# added by `kube-dc bootstrap init` in its finalize phase (or by
+# `bootstrap oidc-cutover`) after infra-core brings up the OIDC webhook
+# DaemonSet. Bootstrap apiserver runs cert-only.
 kube-controller-manager-arg:
   - bind-address=0.0.0.0
   - authorization-always-allow-paths=/metrics
@@ -607,6 +719,11 @@ kubelet-arg:
   - kube-reserved=${KUBELET_KUBE_RESERVED}
   - eviction-hard=${KUBELET_EVICTION_HARD}
   - max-pods=${KUBELET_MAX_PODS}
+  # Pin the kubelet default explicitly: the kubepods cgroup stays capped at
+  # allocatable, so a future RKE2/kubelet default change cannot silently drop
+  # the cap that keeps system-reserved/kube-reserved out of tenant reach.
+  - enforce-node-allocatable=pods
+control-plane-resource-requests: ${CP_RESOURCE_REQUESTS}
 etcd-arg:
   - listen-metrics-urls=http://0.0.0.0:2381
 tls-san:
@@ -666,6 +783,11 @@ kubelet-arg:
   - kube-reserved=${KUBELET_KUBE_RESERVED}
   - eviction-hard=${KUBELET_EVICTION_HARD}
   - max-pods=${KUBELET_MAX_PODS}
+  # Pin the kubelet default explicitly: the kubepods cgroup stays capped at
+  # allocatable, so a future RKE2/kubelet default change cannot silently drop
+  # the cap that keeps system-reserved/kube-reserved out of tenant reach.
+  - enforce-node-allocatable=pods
+control-plane-resource-requests: ${CP_RESOURCE_REQUESTS}
 etcd-arg:
   - listen-metrics-urls=http://0.0.0.0:2381
 tls-san:
@@ -679,22 +801,98 @@ ${EMBEDDED_REGISTRY_BLOCK}
 EOF
 fi
 
-# Re-append the preserved block. Only when the freshly generated config has no
-# kube-apiserver-arg of its own — two top-level occurrences would be duplicate
-# YAML mapping keys, which RKE2 resolves by silently honouring one and
-# discarding the other.
+# Default apiserver feature gates.
+#
+# MutablePVNodeAffinity (alpha in Kubernetes 1.35) makes a PersistentVolume's
+# spec.nodeAffinity mutable. Without it that field is immutable, and a
+# node-local volume (local-path, which is what tenant etcd and the monitoring
+# StatefulSets use because local NVMe is markedly faster than network storage
+# for etcd fsyncs) is welded to the node that first bound it forever. Moving one
+# then means delete + recreate + restore-from-backup, and a node with a pinned
+# single-replica volume cannot be drained for maintenance at all.
+#
+# With the gate on, migration is: scale the workload to 0, copy the data
+# directory to the target node, repoint spec.nodeAffinity, scale back up. That
+# keeps local-disk performance AND makes nodes drainable.
+#
+# It is alpha, so it is off by default upstream and could change shape in a
+# future release. It only relaxes a validation rule — nothing reads it at
+# runtime — so the blast radius of it misbehaving is a rejected PATCH, not a
+# broken cluster. Re-evaluate at each Kubernetes minor bump.
+DEFAULT_APISERVER_FEATURE_GATES="${DEFAULT_APISERVER_FEATURE_GATES:-MutablePVNodeAffinity=true}"
+
+# Build the final kube-apiserver-arg block: whatever the operator already had
+# (OIDC webhook flags, audit config, their own gates) MERGED with our defaults.
+#
+# Merging rather than emitting a second block matters: two top-level
+# kube-apiserver-arg keys are duplicate YAML mapping keys and RKE2 silently
+# honours one and discards the other. Equally, two separate `feature-gates=`
+# entries are two occurrences of the same apiserver flag — so an existing
+# feature-gates line is extended in place, never duplicated.
+APISERVER_ARG_LINES=""
 if [[ -n "${PRESERVED_APISERVER_ARGS}" ]]; then
-    if grep -qE '^kube-apiserver-arg:[[:space:]]*$' "${RANCHER_DIR}/config.yaml"; then
-        log_warn "Generated config already declares kube-apiserver-arg; NOT re-appending the preserved block."
-        log_warn "Preserved content follows — merge it by hand if you need it:"
-        printf '%s\n' "${PRESERVED_APISERVER_ARGS}" >&2
+    # Drop the key line; we re-emit it below.
+    APISERVER_ARG_LINES="$(printf '%s\n' "${PRESERVED_APISERVER_ARGS}" | grep -vE '^kube-apiserver-arg:[[:space:]]*$' || true)"
+fi
+
+if [[ -n "${DEFAULT_APISERVER_FEATURE_GATES}" ]]; then
+    if printf '%s\n' "${APISERVER_ARG_LINES}" | grep -qE '^[[:space:]]*-[[:space:]]*feature-gates='; then
+        # Extend the existing feature-gates flag, skipping gates already listed.
+        APISERVER_ARG_LINES="$(
+            FG="${DEFAULT_APISERVER_FEATURE_GATES}" awk '
+                /^[[:space:]]*-[[:space:]]*feature-gates=/ {
+                    n = split(ENVIRON["FG"], want, ",")
+                    for (i = 1; i <= n; i++) {
+                        split(want[i], kv, "=")
+                        if (index($0, kv[1] "=") == 0) { $0 = $0 "," want[i] }
+                    }
+                }
+                { print }
+            ' <<< "${APISERVER_ARG_LINES}"
+        )"
     else
-        printf '%s\n' "${PRESERVED_APISERVER_ARGS}" >> "${RANCHER_DIR}/config.yaml"
-        log_info "Re-appended preserved kube-apiserver-arg block (OIDC cutover survives this re-install)"
+        APISERVER_ARG_LINES="${APISERVER_ARG_LINES:+${APISERVER_ARG_LINES}$'\n'}  - feature-gates=${DEFAULT_APISERVER_FEATURE_GATES}"
+    fi
+fi
+
+if [[ -n "${APISERVER_ARG_LINES}" ]]; then
+    if grep -qE '^kube-apiserver-arg:[[:space:]]*$' "${RANCHER_DIR}/config.yaml"; then
+        log_warn "Generated config already declares kube-apiserver-arg; NOT appending."
+        log_warn "Intended content follows — merge it by hand:"
+        printf 'kube-apiserver-arg:\n%s\n' "${APISERVER_ARG_LINES}" >&2
+    else
+        printf 'kube-apiserver-arg:\n%s\n' "${APISERVER_ARG_LINES}" >> "${RANCHER_DIR}/config.yaml"
+        if [[ -n "${PRESERVED_APISERVER_ARGS}" ]]; then
+            log_info "Wrote kube-apiserver-arg (preserved operator flags + default feature gates)"
+        else
+            log_info "Wrote kube-apiserver-arg (default feature gates: ${DEFAULT_APISERVER_FEATURE_GATES})"
+        fi
     fi
 fi
 
 log_info "Config written to ${RANCHER_DIR}/config.yaml"
+
+# Re-enable ext4 write barriers on the root filesystem.
+#
+# CloudSigma's stock Ubuntu image ships / in fstab as "defaults,discard,nobarrier"
+# on a virtio disk that reports a write-back cache. nobarrier removes the
+# flush/FUA that makes ext4's journal commit durable, so any hard reset (host
+# event, forced power-off) loses acknowledged writes and the filesystem comes
+# back inconsistent — "freeing already freed block", directory checksum
+# failures — then containerd's bbolt store tears days later and the node dies
+# with "container runtime is down". On one CloudSigma site this hit two management nodes and
+# every tenant worker from one host event around 2026-08-22 00:00 UTC. We do
+# not add nobarrier anywhere; we inherit it, so strip it here before RKE2
+# writes anything. The remount is online-safe. Nodes on images without the
+# option are untouched (the sed is a no-op).
+if grep -qE '^[^#].*[[:space:]]/[[:space:]]+ext4[[:space:]].*nobarrier' /etc/fstab 2>/dev/null; then
+    sed -i.bak-nobarrier -E '/[[:space:]]\/[[:space:]]+ext4[[:space:]]/s/,?nobarrier//' /etc/fstab
+    if mount -o remount,barrier=1 /; then
+        log_info "Root filesystem: removed nobarrier from fstab and re-enabled write barriers"
+    else
+        log_warn "Root filesystem: removed nobarrier from fstab but the live remount failed — barriers apply from the next boot"
+    fi
+fi
 
 # Install RKE2
 log_info "Installing RKE2 ${RKE2_VERSION}..."
@@ -794,40 +992,48 @@ log_info "To check node status:"
 log_info "  export PATH=\${PATH}:/var/lib/rancher/rke2/bin"
 log_info "  kubectl get nodes"
 
-# Loud reminder about the manual post-install OIDC cutover. This step is
-# documented in docs/internal/oidc-webhook-cloud-rollout.md but operators
-# have skipped it before (a production cluster 2026-06-01: cluster ran for 28
-# days with cert-only authn, every UI write returning HTTP 401 — see
-# kube-dc/docs/prd/installer-bugs-real-install.md §D'''''.11). Print the
-# requirement as a banner so it's impossible to miss on the install
-# output.
+# The OIDC cutover still has to happen, but since 2026-08-28 `kube-dc bootstrap
+# init` performs it automatically as its last finalize step. This banner used to
+# say "MANDATORY POST-INSTALL STEP" and hand the operator a runbook; that is now
+# wrong for the normal path and would send people to do by hand what init is
+# about to do for them. It stays loud because the failure mode has not changed
+# (a production cluster ran 28 days cert-only, every UI write returning HTTP
+# 401) and because `bootstrap install` can be run WITHOUT ever running init, in
+# which case nothing else will do it.
 echo ""
 echo "======================================================================"
-echo "  ⚠  MANDATORY POST-INSTALL STEP: enable OIDC webhook authentication"
+echo "  !  This cluster cannot accept a Keycloak login yet"
 echo "======================================================================"
 echo ""
-echo "  This bootstrap installs RKE2 with cert-only authn. Tenant kubectl"
-echo "  via Keycloak JWT, the UI's Manage-Organization API calls, and the"
-echo "  k8-manager / db-manager operators all need the OIDC webhook flag"
-echo "  on every CP node. Without it, every JWT returns HTTP 401."
+echo "  RKE2 is installed with cert-only authn. Tenant kubectl via Keycloak"
+echo "  JWT, the UI's Manage-Organization API calls, and the k8-manager /"
+echo "  db-manager operators all need the OIDC webhook flag on every CP node."
+echo "  Without it every JWT returns HTTP 401 while the cluster looks"
+echo "  completely healthy."
 echo ""
-echo "  After Flux finishes 'infra-core' and the oidc-webhook-authenticator"
-echo "  DaemonSet is Ready on every CP node, run the per-node cutover from:"
-echo "    docs/internal/oidc-webhook-cloud-rollout.md  (kube-dc repo)"
+echo "  If your next step is 'kube-dc bootstrap init', there is NOTHING to do"
+echo "  here: init wires every control-plane node itself, as its last finalize"
+echo "  step, once Flux has brought up infra-core. Watch for the 'Wire"
+echo "  apiservers to OIDC' milestone, and read the end of that run - init"
+echo "  says so loudly if it could not finish."
 echo ""
-echo "  Quick verification before cutover:"
+echo "  Do it by hand only if you are NOT running init on this cluster, if"
+echo "  init deferred the step, or if you passed --no-oidc-cutover / --no-ssh."
+echo "  Wait for Flux to finish 'infra-core' first:"
 echo "    kubectl -n oidc-webhook-authenticator get pods -o wide   # one per CP, all Ready"
 echo "    ls /etc/rancher/oidc-webhook-kubeconfig.yaml              # on each CP node"
 echo ""
-echo "  Run the cutover with ONE command — it wires every control-plane node,"
-echo "  one at a time, gating each on its apiserver returning, and refuses to"
-echo "  leave the cluster half-wired (which causes intermittent 401s):"
+echo "  Then, from the machine that can SSH to the control-plane nodes:"
 echo "    kube-dc bootstrap oidc-cutover --dry-run     # review"
 echo "    kube-dc bootstrap oidc-cutover               # apply"
+echo "  (it takes no cluster name - it acts on the current kubeconfig)"
 echo ""
-echo "  It also checks the things that break a control-plane node by hand:"
-echo "  a pre-existing kube-apiserver-arg block (appending a second one makes"
-echo "  RKE2 silently discard flags), and anything else already holding :6443"
-echo "  (after which kube-apiserver cannot re-bind)."
+echo "  It wires every node one at a time, gating each on its apiserver"
+echo "  returning, and refuses to leave the cluster half-wired (which causes"
+echo "  intermittent 401s). It also checks the things that break a node when"
+echo "  done by hand: a pre-existing kube-apiserver-arg block (appending a"
+echo "  second one makes RKE2 silently discard flags), and anything else"
+echo "  already holding :6443 (after which kube-apiserver cannot re-bind)."
 echo ""
+echo "  Verify either way:  kube-dc bootstrap accept <cluster> --domain <domain>"
 echo "======================================================================"

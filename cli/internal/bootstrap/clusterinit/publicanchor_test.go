@@ -376,3 +376,91 @@ func TestValidatePublicAnchor_RejectsUnusableAddressesAndWiringDrift(t *testing.
 		})
 	}
 }
+
+func TestValidatePublicAnchor_DefaultRoute(t *testing.T) {
+	base := func() map[string]string {
+		return map[string]string{
+			"EXT_NET_PUBLIC_ANCHOR_INTERFACE": "ext-pub-anchor",
+			"EXT_NET_PUBLIC_ANCHOR_VLAN":      "301",
+			"EXT_PUBLIC_VLAN_ID":              "301",
+			"EXT_PUBLIC_CIDR":                 "192.0.2.0/28",
+			"EXT_PUBLIC_GATEWAY":              "192.0.2.1",
+			"METALLB_FLOATING_IP":             "192.0.2.2",
+			"METALLB_INTERFACE":               "ext-pub-anchor",
+			"EXT_PUBLIC_EXCLUDE_IPS_1":        "192.0.2.1..192.0.2.9",
+			"KUBE_OVN_GW_NODES":               "node1",
+			// A HOST address, deliberately NOT the auto-derived VIP+1 shape.
+			"EXT_NET_PUBLIC_ANCHOR_IPS": "node1=192.0.2.9/28",
+			"EXT_NET_ANCHOR_INTERFACE":  "br-ext-cloud",
+		}
+	}
+	t.Run("true-happy", func(t *testing.T) {
+		env := base()
+		env["EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE"] = "true"
+		var errs []string
+		validatePublicAnchor(env, &errs)
+		if len(errs) != 0 {
+			t.Errorf("want no errors, got: %v", errs)
+		}
+	})
+	t.Run("true-needs-gateway", func(t *testing.T) {
+		env := base()
+		env["EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE"] = "true"
+		env["EXT_PUBLIC_GATEWAY"] = ""
+		var errs []string
+		validatePublicAnchor(env, &errs)
+		if !strings.Contains(strings.Join(errs, "; "), "needs EXT_PUBLIC_GATEWAY") {
+			t.Errorf("want next-hop error, got: %v", errs)
+		}
+	})
+	t.Run("case-typo-refused", func(t *testing.T) {
+		env := base()
+		env["EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE"] = "True"
+		var errs []string
+		validatePublicAnchor(env, &errs)
+		if !strings.Contains(strings.Join(errs, "; "), "lowercase true or false") {
+			t.Errorf("want lowercase error, got: %v", errs)
+		}
+	})
+	t.Run("true-requires-explicit-map", func(t *testing.T) {
+		env := base()
+		env["EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE"] = "true"
+		env["EXT_NET_PUBLIC_ANCHOR_IPS"] = ""
+		var errs []string
+		validatePublicAnchor(env, &errs)
+		if !strings.Contains(strings.Join(errs, "; "), "explicitly operator-supplied EXT_NET_PUBLIC_ANCHOR_IPS") {
+			t.Errorf("want explicit-map error, got: %v", errs)
+		}
+	})
+	t.Run("true-outside-public-l2-refused", func(t *testing.T) {
+		env := base()
+		env["EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE"] = "true"
+		env["METALLB_MODE"] = "bgp"
+		var errs []string
+		validatePublicAnchor(env, &errs)
+		if !strings.Contains(strings.Join(errs, "; "), "only valid for public L2 anchors") {
+			t.Errorf("want public-L2 gating error, got: %v", errs)
+		}
+	})
+	t.Run("true-over-stale-derived-map-refused", func(t *testing.T) {
+		env := base()
+		env["EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE"] = "true"
+		// Exactly what derivePublicAnchorEnv would have produced earlier:
+		// the consecutive run starting at VIP+1.
+		env["EXT_NET_PUBLIC_ANCHOR_IPS"] = "node1=192.0.2.3/28"
+		var errs []string
+		validatePublicAnchor(env, &errs)
+		if !strings.Contains(strings.Join(errs, "; "), "auto-derived spare run") {
+			t.Errorf("want stale-derived-map error, got: %v", errs)
+		}
+	})
+	t.Run("true-disables-derivation", func(t *testing.T) {
+		env := base()
+		env["EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE"] = "true"
+		env["EXT_NET_PUBLIC_ANCHOR_IPS"] = ""
+		derivePublicAnchorEnv(env)
+		if env["EXT_NET_PUBLIC_ANCHOR_IPS"] != "" {
+			t.Errorf("map must NOT be auto-derived in the default-route posture, got %q", env["EXT_NET_PUBLIC_ANCHOR_IPS"])
+		}
+	})
+}

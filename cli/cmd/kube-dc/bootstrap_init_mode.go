@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -36,6 +38,59 @@ import (
 // doesn't block the whole `init` indefinitely.
 type realModeProber struct {
 	client kubernetes.Interface
+	// origin identifies the cluster this prober actually reads, so an
+	// auto-detected mode can name it. With --mode defaulting to auto the
+	// operator no longer types the mode, so the ONE thing they must be able
+	// to check at a glance is which cluster the answer came from — a
+	// kubeconfig left pointing at an unrelated cluster is the realistic
+	// mistake, not a malformed one.
+	origin string
+}
+
+// ProbedOrigin reports the apiserver this prober reads, for the evidence
+// line. Empty when unknown (mock prober, or a client built without a host).
+func (p *realModeProber) ProbedOrigin() string {
+	if p == nil {
+		return ""
+	}
+	return p.origin
+}
+
+// originNamer is implemented by probers that can say which cluster they
+// read. Kept as an interface so the mock prober can stay silent.
+type originNamer interface{ ProbedOrigin() string }
+
+// clusterIdentity is what a mode decision is actually ABOUT. Mode alone is not
+// an identity: "reachable, no flux-system" is equally true of a fresh target
+// and of any unrelated plain cluster, so a verdict taken against one cluster
+// must be re-checked against this before anything is mutated.
+//
+// UID (the kube-system namespace UID) is the authoritative half — it survives
+// re-issued certs, renamed contexts, tunnels and endpoint changes. Endpoint is
+// the human half, shown so an operator recognises a mis-pointed kubeconfig.
+type clusterIdentity struct {
+	Endpoint string
+	UID      string
+}
+
+func (c clusterIdentity) String() string {
+	switch {
+	case c.Endpoint != "" && c.UID != "":
+		return fmt.Sprintf("%s (cluster %s)", c.Endpoint, c.UID)
+	case c.Endpoint != "":
+		return c.Endpoint
+	case c.UID != "":
+		return "cluster " + c.UID
+	default:
+		return "the cluster your current kubeconfig points at"
+	}
+}
+
+// sameCluster reports whether two probes read the same cluster. Only a UID
+// match is proof. Two empty UIDs (mock runs) are treated as "cannot tell",
+// which callers must handle as NOT proven rather than as equal.
+func (c clusterIdentity) sameCluster(other clusterIdentity) bool {
+	return c.UID != "" && c.UID == other.UID
 }
 
 // newRealModeProber constructs the prober from the standard
@@ -61,7 +116,7 @@ func newRealModeProber(kubeconfigPath string) (*realModeProber, error) {
 	if err != nil {
 		return nil, fmt.Errorf("--mode=auto: build k8s client: %w", err)
 	}
-	return &realModeProber{client: core}, nil
+	return &realModeProber{client: core, origin: sanitizeAPIServerHost(cfg.Host)}, nil
 }
 
 // Probe implements clusterinit.ModeProber. Returns
@@ -78,7 +133,8 @@ func (p *realModeProber) Probe(ctx context.Context) (clusterinit.ModeProbeInputs
 	// We use Get rather than List because the latter walks all
 	// namespaces and triggers RBAC issues on locked-down clusters
 	// while a single-namespace Get only needs `get` on namespaces.
-	if _, err := p.client.CoreV1().Namespaces().Get(ctx, "kube-system", metav1.GetOptions{}); err != nil {
+	ksNS, err := p.client.CoreV1().Namespaces().Get(ctx, "kube-system", metav1.GetOptions{})
+	if err != nil {
 		// Any error here (timeout, dial refused, RBAC) means the
 		// auto-detect contract is unsatisfiable. Return K8sReachable=false
 		// rather than propagating — DetectMode will emit the typed
@@ -86,6 +142,9 @@ func (p *realModeProber) Probe(ctx context.Context) (clusterinit.ModeProbeInputs
 		return in, nil
 	}
 	in.K8sReachable = true
+	// Same call that proves reachability also yields the cluster fingerprint —
+	// no extra round trip.
+	in.ClusterUID = string(ksNS.UID)
 
 	// (2) flux-system namespace presence — NotFound is meaningful
 	// (means we're on a fresh K8s); any other error propagates.
@@ -238,7 +297,7 @@ func newModeProber() (clusterinit.ModeProber, error) {
 // resolves to anything other than the mode the run was planned with, the run
 // is refused with the adopt/resume remediation — a plan reviewed as
 // "install" must never be applied over a live Flux-managed cluster.
-func reprobeModeAfterFetch(ctx context.Context, out io.Writer, planned clusterinit.Mode) error {
+func reprobeModeAfterFetch(ctx context.Context, out io.Writer, planned clusterinit.Mode, decided clusterIdentity) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -272,6 +331,113 @@ func reprobeModeAfterFetch(ctx context.Context, out io.Writer, planned clusterin
 			"a %s plan must never be applied over a live Flux-managed cluster",
 			live, reason, planned, live, planned)
 	}
+	// Mode agreement is NOT cluster agreement. `init --ssh-host` fetches the
+	// target's kubeconfig and makes it current, so the cluster examined when
+	// the decision was taken can differ from the one about to be mutated — and
+	// if both classify the same way (two fresh clusters both read "install"),
+	// a mode-only check waves it through. Bind to identity when we have it.
+	if decided.UID != "" {
+		liveID := clusterIdentity{Endpoint: sanitizeAPIServerHost(originOf(prober)), UID: in.ClusterUID}
+		if !decided.sameCluster(liveID) {
+			return fmt.Errorf("apply: this run was decided against %s but now points at %s — refusing to continue. "+
+				"The kubeconfig changed between the decision and the first mutation (an --ssh-host fetch does exactly this). "+
+				"Re-run against the cluster you mean to change, or pass --mode explicitly to state the intent",
+				decided, liveID)
+		}
+		fmt.Fprintf(out, "[apply] mode re-probe confirmed: %s — %s (same cluster: %s)\n", live, reason, liveID)
+		return nil
+	}
 	fmt.Fprintf(out, "[apply] mode re-probe confirmed: %s — %s\n", live, reason)
+	return nil
+}
+
+// originOf extracts the probed endpoint when the prober can report one.
+func originOf(p clusterinit.ModeProber) string {
+	if namer, ok := p.(originNamer); ok {
+		return namer.ProbedOrigin()
+	}
+	return ""
+}
+
+// sanitizeAPIServerHost reduces an apiserver URL to scheme://host[:port] for
+// display. A kubeconfig server field can legitimately carry userinfo, a path,
+// a query or a fragment; none of that identifies the cluster, and userinfo can
+// be a credential. Unparseable input is dropped rather than echoed.
+func sanitizeAPIServerHost(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return (&url.URL{Scheme: u.Scheme, Host: u.Host}).String()
+}
+
+// ---------------------------------------------------------------------------
+// Acknowledging an auto-detected mode before anything is mutated
+// ---------------------------------------------------------------------------
+
+// ErrAutoModeNeedsAcknowledgement fires when a mode was AUTO-DETECTED on a run
+// that will mutate, and there is no human present to confirm which cluster it
+// was detected against.
+//
+// Every mode is gated, not just install. The three verdicts differ in what
+// they imply about the cluster, but they share one apply engine that labels
+// nodes, creates the remote repository, does starter/age-key work and runs
+// flux-install — and several of those happen BEFORE the adopt gate, which
+// itself passes when no tracked components are found. `resume` has no gate of
+// its own at all. So "auto picked something other than install" is not a
+// safety property; the only real property is that a human affirmed the cluster.
+var ErrAutoModeNeedsAcknowledgement = errors.New(
+	"init: the mode was auto-detected and this run cannot ask for confirmation — pass --mode explicitly to state which cluster you mean to change")
+
+// ErrAutoModeNeedsFetchedTarget fires when auto-detection would be decided
+// from the LOCAL kubeconfig while the run also names an --ssh-host.
+//
+// init fetches that host's kubeconfig and makes it current, so the cluster
+// examined at decision time is not necessarily the one that gets mutated. The
+// local kubeconfig is simply not evidence about the SSH target, and mode
+// agreement between the two does not make them the same cluster (two fresh
+// clusters both read "install"). Rather than guess, say so.
+var ErrAutoModeNeedsFetchedTarget = errors.New(
+	"init: --mode=auto cannot decide for an --ssh-host target from your local kubeconfig — they may be different clusters. Run `kube-dc bootstrap fetch-kubeconfig <name> --ssh-host <user@cp> --domain <domain> --set-current` first, then re-run; or pass --mode explicitly")
+
+// guardAutoDetectedMode is the acknowledgement gate. No-op when the operator
+// stated the mode themselves (their own word is the acknowledgement) or when
+// the run cannot mutate.
+func guardAutoDetectedMode(out io.Writer, o *clusterinit.InitOptions, res modeResolution) error {
+	if o == nil || !res.AutoDetected {
+		return nil
+	}
+	// --dry-run and --save-config write local artefacts only; they never touch
+	// the fleet repo or a cluster. They are still shown the evidence line.
+	if o.DryRun {
+		return nil
+	}
+
+	if o.SSHHost != "" && !o.NoSSH {
+		return fmt.Errorf("%w (detected against %s)", ErrAutoModeNeedsFetchedTarget, res.Identity)
+	}
+
+	if o.NoTTY || !isWriterTTY(out) {
+		return fmt.Errorf("%w (detected %s against %s)", ErrAutoModeNeedsAcknowledgement, res.Mode, res.Identity)
+	}
+
+	fmt.Fprintf(out, "\nAuto-detected mode: %s — %s\n", res.Mode, res.Reason)
+	fmt.Fprintf(out, "This run will change: %s\n\n", res.Identity)
+
+	proceed := false
+	if err := huh.NewConfirm().
+		Title(fmt.Sprintf("Proceed with %s against this cluster?", res.Mode)).
+		Description(res.Identity.String()).
+		Affirmative("Yes — this is the cluster I mean to change").
+		Negative("No — stop").
+		Value(&proceed).Run(); err != nil {
+		return fmt.Errorf("init: confirm auto-detected mode: %w", err)
+	}
+	if !proceed {
+		return fmt.Errorf("init: aborted — the auto-detected %s was not confirmed; pin the intent with --mode=%s, or point your kubeconfig at the right cluster", res.Mode, res.Mode)
+	}
 	return nil
 }

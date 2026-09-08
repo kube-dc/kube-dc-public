@@ -51,5 +51,6 @@ from the parent bootstrap command. Both must point at the fleet
 repo that holds the cluster overlay.`,
 	}
 	cmd.AddCommand(bootstrapKeycloakInitCmd(fleetRepo))
+	cmd.AddCommand(bootstrapKeycloakSSOCmd(fleetRepo))
 	return cmd
 }

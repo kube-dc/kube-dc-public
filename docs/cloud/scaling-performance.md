@@ -101,10 +101,47 @@ Replicas help only when they can serve independently:
 - use readiness probes that represent real serving health
 - spread replicas when the storage and topology allow it
 - define a PodDisruptionBudget for applications that need controlled eviction
+  (see the note below — write it so it covers only your own workloads)
 - use image digests and predictable startup times
 
 A ReadWriteOnce volume can constrain replicas to one node. Choose storage and
 application architecture together.
+
+### PodDisruptionBudgets and managed services
+
+A budget in your project covers the pods its selector matches — and a managed
+database's pods carry ordinary labels too (`app.kubernetes.io/name=postgresql`,
+`role=primary`), so a selector written for your own application can catch them
+by accident. A budget that covers a managed engine can block the node drains
+the platform needs for maintenance, so the platform adds two requirements to
+every budget you create:
+
+```yaml
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: my-app      # yours, unchanged
+    matchExpressions:                      # added for you
+      - {key: services.kube-dc.com/managed-by, operator: DoesNotExist}
+      - {key: kube-dc.com/managed-db, operator: DoesNotExist}
+```
+
+They are ANDed with your own selector, so the budget still protects exactly
+your workloads. **Write them into your manifests** if you deploy with Argo CD
+or Flux — that is the only option that works the same in every tool: otherwise
+your repository and the live object differ on every sync and the application
+shows as permanently OutOfSync.
+
+If you would rather not, the tool-specific settings are:
+
+- Argo CD: `argocd.argoproj.io/compare-options: ServerSideDiff=true,IncludeMutationWebhook=true`
+  — **both**, because server-side diff alone does not account for mutating
+  webhooks — or an `ignoreDifferences` entry for
+  `/spec/selector/matchExpressions` on `policy/PodDisruptionBudget`.
+- Flux: `spec.driftDetection.ignore` with the same path.
+
+Selecting the platform's own ownership markers is refused rather than adjusted,
+because such a budget would protect nothing of yours.
 
 ## Size the Data Layer Separately
 

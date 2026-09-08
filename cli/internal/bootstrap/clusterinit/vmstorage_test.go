@@ -115,10 +115,21 @@ func TestResolveVMGoldens(t *testing.T) {
 	repo := t.TempDir()
 	seedGoldenCatalog(t, repo, "debian-12", "alpine-3.21", "windows-11-golden", "ubuntu-24.04")
 
-	// default → the single containerdisk default, never all
+	// default → the curated default set, never the whole catalog. Windows is IN it:
+	// as a flag-gated opt-in it was in practice never enabled, so tenants on a fresh
+	// cluster simply could not create a Windows VM.
 	got, err := resolveVMGoldens(repo, nil)
-	if err != nil || len(got) != 1 || got[0] != defaultVMGolden {
-		t.Fatalf("default: got=%v err=%v (want [%s])", got, err, defaultVMGolden)
+	if err != nil || len(got) != len(defaultVMGoldens) {
+		t.Fatalf("default: got=%v err=%v (want %v)", got, err, defaultVMGoldens)
+	}
+	for i, want := range defaultVMGoldens {
+		if got[i] != want {
+			t.Fatalf("default[%d]: got %q want %q (full: %v)", i, got[i], want, got)
+		}
+	}
+	// ...and it must still not be the entire catalog.
+	if len(got) >= 4 {
+		t.Fatalf("default must stay curated, got %v", got)
 	}
 	// explicit subset: deduped + sorted, windows opt-in works
 	got, err = resolveVMGoldens(repo, []string{"windows-11-golden", "alpine-3.21", "alpine-3.21"})
@@ -202,11 +213,15 @@ func TestWriteVMStorage_SharedRBD_DefaultGolden(t *testing.T) {
 		t.Fatalf("default golden: %v", err)
 	}
 	overlay, _ := os.ReadFile(filepath.Join(repo, "clusters", "atlantis", "rbd-vm-goldens", "kustomization.yaml"))
-	if !strings.Contains(string(overlay), "os/"+defaultVMGolden+".yaml") {
-		t.Errorf("default subset must be the containerdisk default %q:\n%s", defaultVMGolden, overlay)
+	for _, want := range defaultVMGoldens {
+		if !strings.Contains(string(overlay), "os/"+want+".yaml") {
+			t.Errorf("default subset must contain %q:\n%s", want, overlay)
+		}
 	}
-	if strings.Contains(string(overlay), "os/windows-11-golden.yaml") {
-		t.Error("default must never include the 70Gi windows golden")
+	// A fresh cluster must be able to offer Windows without anyone re-running init
+	// with a flag — that gating is why only one live cluster had it at all.
+	if !strings.Contains(string(overlay), "os/windows-11-golden.yaml") {
+		t.Error("default must include the windows golden")
 	}
 }
 
@@ -401,5 +416,27 @@ func TestVMStorageFiles_Preview(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Errorf("preview missing %q\n%s", want, joined)
 		}
+	}
+}
+
+// A catalog that predates one of the defaults must still scaffold — refusing to
+// install over a missing OPTIONAL default would turn a cosmetic gap into a failed
+// bootstrap. But an empty or wholly-renamed catalog must stay loud.
+func TestResolveVMGoldens_PartialDefaultCatalog(t *testing.T) {
+	repo := t.TempDir()
+	seedGoldenCatalog(t, repo, "debian-12") // no windows-11-golden
+
+	got, err := resolveVMGoldens(repo, nil)
+	if err != nil {
+		t.Fatalf("a catalog missing one default must still resolve: %v", err)
+	}
+	if len(got) != 1 || got[0] != "debian-12" {
+		t.Fatalf("got %v, want [debian-12]", got)
+	}
+
+	repo2 := t.TempDir()
+	seedGoldenCatalog(t, repo2, "gentoo-amd64") // none of the defaults
+	if _, err := resolveVMGoldens(repo2, nil); err == nil {
+		t.Fatal("a catalog with none of the defaults must be an error, not a silent empty selection")
 	}
 }

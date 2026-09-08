@@ -292,3 +292,65 @@ func TestRun_Rollback(t *testing.T) {
 		t.Errorf("rollback must restore and restart (restored=%v restarted=%v)", restored, restarted)
 	}
 }
+
+// A node whose config is already patched but whose RUNNING apiserver does not
+// carry the flag must be finished, not reported done.
+//
+// This is the state a failed restart leaves behind: the file says wired, the
+// process is not, and every Keycloak token that lands on this apiserver is
+// rejected. Trusting the file means the cluster stays half-authenticating
+// forever while `init`, the cutover command and the operator all believe the
+// work is complete.
+func TestRun_PatchedConfigButFlagNotLiveIsRestarted(t *testing.T) {
+	f := newFakeSSH("a", "b")
+	if _, err := Run(context.Background(), opts(f, nodes("a", "b"))); err != nil {
+		t.Fatal(err)
+	}
+	// Node "a" restarted but came back without the flag (RKE2 rejected the
+	// file, the unit failed, someone hand-edited and never restarted).
+	f.apiFlags["a"] = ""
+	f.cmds = nil
+
+	res, err := Run(context.Background(), opts(f, nodes("a", "b")))
+	if err == nil {
+		t.Fatal("expected an error: node a's apiserver still has no webhook flag after the restart")
+	}
+	if len(res.AlreadyWired) != 0 {
+		t.Errorf("a node whose live apiserver lacks the flag must not count as already wired: %v", res.AlreadyWired)
+	}
+	var restarted bool
+	for _, c := range f.cmds {
+		if strings.HasPrefix(c, "a: ") && strings.Contains(c, "systemctl restart") {
+			restarted = true
+		}
+	}
+	if !restarted {
+		t.Errorf("node a should have been restarted to finish the job, commands were: %v", f.cmds)
+	}
+}
+
+// The same state, seen through --dry-run, must be reported as work to do
+// rather than as a finished node — and must change nothing.
+func TestRun_DryRunReportsPatchedButNotLiveAsPending(t *testing.T) {
+	f := newFakeSSH("a")
+	if _, err := Run(context.Background(), opts(f, nodes("a"))); err != nil {
+		t.Fatal(err)
+	}
+	f.apiFlags["a"] = ""
+	f.cmds = nil
+
+	o := opts(f, nodes("a"))
+	o.DryRun = true
+	res, err := Run(context.Background(), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Wired) != 1 || len(res.AlreadyWired) != 0 {
+		t.Errorf("dry-run should report 1 node still to do, got wired=%v already=%v", res.Wired, res.AlreadyWired)
+	}
+	for _, c := range f.cmds {
+		if strings.Contains(c, "systemctl restart") {
+			t.Errorf("dry-run must not restart anything, but ran: %s", c)
+		}
+	}
+}

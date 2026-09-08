@@ -129,8 +129,17 @@ var AllRookModes = []RookMode{
 // the command line at all.
 type InitOptions struct {
 	// --- Topology ---
-	Preset         Preset
-	Mode           Mode
+	Preset Preset
+	Mode   Mode
+	// RequestedMode is what the OPERATOR asked for, preserved even after
+	// ResolveMode substitutes a concrete verdict into Mode. It exists because
+	// "auto" and "the mode auto happened to pick" are different facts, and
+	// anything persisted or replayed later (--save-config, a TUI draft, a
+	// saved plan) must carry the request, not the verdict: a spec that froze
+	// `install` reads back as an explicit operator decision on the NEXT run,
+	// against whatever cluster the kubeconfig then points at, skipping every
+	// safeguard that exists for auto. Empty means "same as Mode".
+	RequestedMode  Mode
 	Name           string
 	Domain         string
 	NodeExternalIP string
@@ -282,6 +291,21 @@ type InitOptions struct {
 	// (hex SHA-256 of the validated secret key) so the plan binds the exact
 	// credential, mirroring TLSCertFingerprint.
 	DNS01SecretKeyFingerprint string
+	// --- acme-dns01-cloudflare solver config (dns01_cloudflare.go) ---
+	// Zone (apex the token is scoped to; optional in the dedicated mode, the
+	// explicit opt-in with --tls-mode=acme = wildcards only) and Scope
+	// (derived from the mode: all | wildcard, persisted as
+	// DNS01_CLOUDFLARE_SCOPE) are configuration. The API token never has a
+	// field here: it is read at load time from --dns01-cloudflare-api-token-file
+	// or the KUBE_DC_DNS01_CLOUDFLARE_API_TOKEN environment variable and only
+	// ever ships SOPS-encrypted.
+	DNS01CloudflareZone         string
+	DNS01CloudflareScope        string
+	DNS01CloudflareAPITokenFile string
+	// DNS01CloudflareTokenFingerprint is NOT a flag: stamped by the RunE
+	// preflight (hex SHA-256 of the validated token) so the plan binds the
+	// exact credential, mirroring DNS01SecretKeyFingerprint.
+	DNS01CloudflareTokenFingerprint string
 	// TrustedCABundle is a local certificate-only PEM path. Its validated
 	// canonical fingerprint is plan-pinned; the public CA material is written
 	// to a ConfigMap, never to a Secret.
@@ -332,8 +356,21 @@ type InitOptions struct {
 	AllowUnpinnedAdopt bool
 	SSHHost            string
 	NoSSH              bool
-	NoInstallPrereqs   bool
-	NoCreateRepo       bool
+	// NoOIDCCutover skips the finalize step that points every
+	// kube-apiserver at the OIDC webhook. Default false — the cutover is
+	// part of a normal install, because a cluster without it looks
+	// completely healthy and rejects every Keycloak login, and four
+	// clusters shipped that way while it was a separate command.
+	//
+	// The escape exists for control planes whose apiserver manifests are
+	// owned by something else (a config-management system, an air-gapped
+	// image, a distro that is not RKE2): there the CLI editing the manifest
+	// in place would be reverted or would fight the owner. Those operators
+	// wire the flags themselves; `bootstrap accept` still verifies the
+	// result, so skipping the automation never means skipping the check.
+	NoOIDCCutover    bool
+	NoInstallPrereqs bool
+	NoCreateRepo     bool
 	// StarterRef overrides the fleet-starter OCI artifact pulled into
 	// --repo when the shared fleet trees are absent (greenfield
 	// new-repo/existing-repo modes). Empty = the cobra layer resolves

@@ -121,6 +121,9 @@ type ApplyOptions struct {
 	// nil = acme mode. Loaded by the cobra layer before Apply starts.
 	WildcardTLS  *WildcardTLSMaterial
 	DNS01Route53 *DNS01Route53Material
+	// DNS01Cloudflare is the validated Cloudflare DNS-01 solver config (step
+	// 11c). nil = not requested.
+	DNS01Cloudflare *DNS01CloudflareMaterial
 
 	// TrustedCA is validated public CA material (Scaffold step 12).
 	TrustedCA *TrustedCAMaterial
@@ -330,6 +333,7 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 		ImageAccel:        opts.ImageAccel,
 		WildcardTLS:       opts.WildcardTLS,
 		DNS01Route53:      opts.DNS01Route53,
+		DNS01Cloudflare:   opts.DNS01Cloudflare,
 		TrustedCA:         opts.TrustedCA,
 		GPU:               opts.GPU,
 		SingleIPNAT:       opts.SingleIPNAT,
@@ -385,12 +389,15 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 	// plain resume stays a plain resume) — and commit whatever changed; the
 	// resume push below carries it.
 	rotated := false
-	if resuming && (opts.WildcardTLS != nil || opts.DNS01Route53 != nil) {
+	if resuming && (opts.WildcardTLS != nil || opts.DNS01Route53 != nil || opts.DNS01Cloudflare != nil) {
 		if err := WriteWildcardTLS(opts.FleetRepo, opts.Plan.ClusterName, opts.Plan.Domain, opts.WildcardTLS, out); err != nil {
 			return fmt.Errorf("apply: rotate wildcard-tls on resumed overlay: %w", err)
 		}
 		if err := WriteDNS01Route53(opts.FleetRepo, opts.Plan.ClusterName, opts.DNS01Route53, out); err != nil {
 			return fmt.Errorf("apply: rotate dns01-route53 on resumed overlay: %w", err)
+		}
+		if err := WriteDNS01Cloudflare(opts.FleetRepo, opts.Plan.ClusterName, opts.Plan.Domain, opts.DNS01Cloudflare, out); err != nil {
+			return fmt.Errorf("apply: rotate dns01-cloudflare on resumed overlay: %w", err)
 		}
 		rotDiff, derr := opts.Git.Diff(ctx, opts.FleetRepo)
 		if derr != nil {

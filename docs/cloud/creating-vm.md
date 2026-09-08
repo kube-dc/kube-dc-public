@@ -34,7 +34,13 @@ Kube-DC virtualization is powered by [KubeVirt](https://kubevirt.io/) and uses t
 2. **Operating System** — select from available images (Ubuntu 22.04 / 24.04 / 26.04, Debian 12, CentOS Stream 9, Fedora 42, openSUSE Leap 15.6, Alpine 3.21, Gentoo, Windows 11)
 3. **Version** *(optional, advanced)* — most Linux families now expose multiple maintained versions (e.g., Ubuntu 24.04 currently keeps `20260321`, `20260225`, `20260209`, `20260131`). Leave the dropdown on **Latest** to take the newest mirrored bytes — Kube-DC keeps `/latest/` pointing at the freshest version per family, refreshed weekly. Pin a specific version only if you need reproducibility against a known build.
 4. **vCPUs** and **RAM** — set resources based on your workload
-5. **Root Storage Size** — set disk size (e.g., 12 GB for Linux, 70 GB for Windows)
+5. **Root Storage Size** — set disk size (e.g., 12 GB for Linux, 70 GB for Windows).
+   The value is a floor as well as a size: a VM is created by cloning a golden image,
+   so the request cannot be smaller than that golden. Ask for more and the extra space
+   is yours — the disk is grown to your requested size before the VM starts, and the
+   guest filesystem expands into it on first boot. On Windows that expansion happens
+   during the first-boot sequence, so `C:` reaches its full size a few minutes after
+   the VM is created rather than instantly.
 6. **Root disk storage** — the real storage choice for the VM (see [below](#root-disk-storage)):
    - **Local disk (default)** — node-local storage; best durable-write latency. No snapshots, no live migration.
    - **Shared RBD** — shared Ceph-backed storage; supports snapshots and (optionally) live migration. Slower durable writes.

@@ -151,6 +151,22 @@ var scriptContracts = map[ports.ScriptKind]scriptContract{
 		maxArgs:     1,
 		argDesc:     "<cluster-name>",
 	},
+	ports.ScriptSetupSSORealm: {
+		// SMTP_USER/SMTP_PASSWORD are required only on the FIRST run
+		// (the script falls back to the SOPS-stored values afterwards),
+		// so the contract lists them optional and the script enforces
+		// presence itself with a precise message.
+		requiredEnv: []string{"KUBECONFIG"},
+		optionalEnv: []string{
+			"SMTP_HOST", "SMTP_PORT", "SMTP_FROM", "SMTP_FROM_NAME", "SMTP_SECURE",
+			"SMTP_USER", "SMTP_PASSWORD",
+			"GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
+			"SSO_BROKER_SECRET", "CONSOLE_URL",
+		},
+		minArgs: 1,
+		maxArgs: 1,
+		argDesc: "<cluster-name>",
+	},
 	ports.ScriptOpenBaoSetupControllerAuth: {
 		// hack/openbao-setup-controller-auth.sh takes ZERO positional
 		// args. CLUSTER + DOMAIN are env-only (the script's body uses

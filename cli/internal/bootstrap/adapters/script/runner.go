@@ -101,6 +101,7 @@ var scriptPaths = map[ports.ScriptKind]scriptLocation{
 	ports.ScriptFluxInstall:                {RootFleet, "bootstrap/flux-install.sh"},
 	ports.ScriptOpenBaoInit:                {RootFleet, "bootstrap/openbao-init.sh"},
 	ports.ScriptSetupKeycloakOIDC:          {RootFleet, "bootstrap/setup-keycloak-oidc.sh"},
+	ports.ScriptSetupSSORealm:              {RootFleet, "bootstrap/setup-sso-realm.sh"},
 	ports.ScriptOpenBaoSetupControllerAuth: {RootKubeDC, "hack/openbao-setup-controller-auth.sh"},
 	ports.ScriptAddEngineer:                {RootFleet, "bootstrap/add-engineer.sh"},
 	ports.ScriptInstallPrereqs:             {RootFleet, "scripts/install-prerequisites.sh"},

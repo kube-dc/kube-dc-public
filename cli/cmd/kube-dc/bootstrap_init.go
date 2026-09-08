@@ -258,6 +258,9 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 			if err != nil {
 				return err
 			}
+			if err := guardAutoDetectedMode(cmd.OutOrStdout(), o, autoResolution); err != nil {
+				return err
+			}
 
 			if err := o.Validate(); err != nil {
 				// OS-1 design call: never inherit the mode, but when a
@@ -320,6 +323,20 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 				o.DNS01SecretKeyFingerprint = dns01.Fingerprint
 				fmt.Fprintf(cmd.OutOrStdout(), "[preflight] acme-dns01-route53 validated: zone=%s accessKeyID=%s secret sha256=%s (cert-manager renews automatically)\n",
 					dns01.ZoneID, dns01.AccessKeyID, dns01.Fingerprint[:16])
+			}
+
+			// Cloudflare DNS-01 (every certificate, or wildcards only on a
+			// public cluster): same door — bad shapes fail a dry-run with zero
+			// files written; the plan binds the token via its fingerprint.
+			// Only zone + scope are printed, never the token.
+			if cf, err := loadDNS01CloudflareFromOptions(o); err != nil {
+				return err
+			} else if cf != nil {
+				o.DNS01CloudflareZone = cf.Zone
+				o.DNS01CloudflareScope = cf.Scope
+				o.DNS01CloudflareTokenFingerprint = cf.Fingerprint
+				fmt.Fprintf(cmd.OutOrStdout(), "[preflight] Cloudflare DNS-01 validated: scope=%s zone=%q token sha256=%s (cert-manager renews automatically)\n",
+					cf.Scope, cf.Zone, cf.Fingerprint[:16])
 			}
 
 			if caMaterial, err := loadTrustedCAFromOptions(o); err != nil {
@@ -495,7 +512,7 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 	cmd.Flags().StringVar((*string)(&o.Preset), "preset", "",
 		fmt.Sprintf("Network topology preset (one of %s; required)", joinPresets(clusterinit.AllPresets)))
 	cmd.Flags().StringVar((*string)(&o.Mode), "mode", "",
-		fmt.Sprintf("Operating mode (one of %s; required). auto = probe the cluster your kubeconfig reaches and pick install/adopt/resume — needs a reachable kubeconfig, it never guesses greenfield", joinModes(clusterinit.AllModes)))
+		fmt.Sprintf("Operating mode (one of %s; required). auto probes the cluster your kubeconfig reaches — it never guesses greenfield, names the cluster it read, and any auto-detected mode must be confirmed interactively or pinned with an explicit --mode before it changes anything", joinModes(clusterinit.AllModes)))
 	cmd.Flags().StringVar(&o.Name, "name", "",
 		"Cluster name (lowercase, dashes, optionally nested with /; required)")
 	cmd.Flags().StringVar(&o.Domain, "domain", "",
@@ -582,6 +599,10 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"Static IAM access key ID (AKIA…) scoped to the hosted zone; acme-dns01-route53 only")
 	cmd.Flags().StringVar(&o.DNS01Route53SecretKeyFile, "dns01-route53-secret-key-file", "",
 		"Path to a file holding the AWS secret access key (alternatively set "+clusterinit.KubeDCDNS01SecretKeyEnv+"); read once, committed only SOPS-encrypted, never logged; acme-dns01-route53 only")
+	cmd.Flags().StringVar(&o.DNS01CloudflareZone, "dns01-cloudflare-zone", "",
+		"Cloudflare zone (apex, e.g. example.org) the API token is scoped to. With --tls-mode=acme-dns01-cloudflare it is optional (becomes a dnsZones selector guard); with --tls-mode=acme it is the opt-in that adds a Cloudflare DNS-01 solver for the platform WILDCARD only, HTTP-01 staying for every per-host certificate")
+	cmd.Flags().StringVar(&o.DNS01CloudflareAPITokenFile, "dns01-cloudflare-api-token-file", "",
+		"Path to a file holding the Cloudflare API token (Zone:DNS:Edit + Zone:Zone:Read on the one zone; alternatively set "+clusterinit.KubeDCDNS01CloudflareTokenEnv+"); read once, committed only SOPS-encrypted, never logged")
 	cmd.Flags().StringVar(&o.TLSCert, "tls-cert", "",
 		"Path to the wildcard certificate chain, leaf first (PEM); byo-wildcard only")
 	cmd.Flags().StringVar(&o.TLSKey, "tls-key", "",
@@ -643,7 +664,14 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"With --mode=adopt: proceed even when pre-existing components aren't version-pinned to their live versions (RISKY — Flux's first reconcile may upgrade/restart them; run `bootstrap adopt --pin-versions` first instead)")
 	cmd.Flags().StringVar(&o.SSHHost, "ssh-host", "",
 		"SSH host for auto-kubeconfig-pull (M4-T06; deferred — operator must pass kubeconfig manually for v1)")
-	cmd.Flags().BoolVar(&o.NoSSH, "no-ssh", false, "Skip the SSH kubeconfig-pull step")
+	cmd.Flags().BoolVar(&o.NoSSH, "no-ssh", false,
+		"Skip the SSH kubeconfig-pull step. NOTE: this also skips the OIDC-webhook cutover, "+
+			"which needs SSH to the control-plane nodes — the install then finishes with every "+
+			"Keycloak login returning 401 until you run `kube-dc bootstrap oidc-cutover` yourself")
+	cmd.Flags().BoolVar(&o.NoOIDCCutover, "no-oidc-cutover", false,
+		"Do NOT wire the apiservers to the OIDC webhook during finalize. Only for control planes whose "+
+			"apiserver manifests are owned elsewhere — without the cutover the cluster looks healthy and "+
+			"every Keycloak login is rejected; run `kube-dc bootstrap oidc-cutover` yourself")
 	cmd.Flags().BoolVar(&o.NoInstallPrereqs, "no-install-prereqs", false,
 		"Skip the auto-install-prerequisites step (M4-T07)")
 	cmd.Flags().BoolVar(&o.NoCreateRepo, "no-create-repo", false,
@@ -726,6 +754,12 @@ type modeResolution struct {
 	// false for explicit --mode flags (we still record the reason
 	// so the renderer can echo "explicit --mode=X" uniformly).
 	AutoDetected bool
+	// Identity is the cluster the verdict was read from: a sanitized
+	// endpoint for humans and the kube-system UID as proof. A mode decision
+	// is only meaningful ABOUT a cluster, so the apply path re-checks this
+	// immediately before the first mutation — an --ssh-host fetch can swap
+	// the current context between the decision and the change.
+	Identity clusterIdentity
 }
 
 // resolveAutoMode handles `--mode=auto` by probing the current
@@ -769,12 +803,21 @@ func resolveAutoMode(ctx context.Context, out io.Writer, o *clusterinit.InitOpti
 		return modeResolution{}, fmt.Errorf("%w (pass --mode=install|adopt|resume explicitly)", err)
 	}
 
-	mode, reason, err := clusterinit.ResolveMode(probeCtx, o, prober)
+	in, err := prober.Probe(probeCtx)
+	if err != nil {
+		return modeResolution{}, fmt.Errorf("--mode=auto probe failed: %w", err)
+	}
+	mode, reason, err := clusterinit.DetectMode(in)
 	if err != nil {
 		return modeResolution{}, err
 	}
-	fmt.Fprintf(out, "Auto-detected mode: %s — %s\n\n", mode, reason)
-	return modeResolution{Mode: mode, Reason: reason, AutoDetected: true}, nil
+	if o.RequestedMode == "" {
+		o.RequestedMode = clusterinit.ModeAuto
+	}
+	o.Mode = mode
+	identity := clusterIdentity{Endpoint: originOf(prober), UID: in.ClusterUID}
+	fmt.Fprintf(out, "Auto-detected mode: %s — %s\n  read from: %s\n\n", mode, reason, identity)
+	return modeResolution{Mode: mode, Reason: reason, AutoDetected: true, Identity: identity}, nil
 }
 
 // runInit dispatches on the three operating modes documented in the
@@ -797,7 +840,7 @@ func runInit(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, mod
 		// cluster that has since become Flux-managed. An operator who pins
 		// --mode explicitly on the apply is not second-guessed (same rule as
 		// default-apply): the plan's hash gate still catches a mismatch.
-		return runInitApplyPlan(ctx, out, o, rep, modeRes.AutoDetected)
+		return runInitApplyPlan(ctx, out, o, rep, modeRes.AutoDetected, modeRes.Identity)
 
 	default:
 		// Default-flow apply: build the plan from validated current
@@ -808,7 +851,7 @@ func runInit(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, mod
 		// provisional greenfield answer MUST be checked once the
 		// kubeconfig exists; a probed answer is cheap to re-confirm);
 		// an explicit --mode is the operator's call and is not second-guessed.
-		return runInitDefaultApply(ctx, out, o, rep, modeRes.AutoDetected)
+		return runInitDefaultApply(ctx, out, o, rep, modeRes.AutoDetected, modeRes.Identity)
 	}
 }
 
@@ -915,7 +958,7 @@ func runInitDryRun(out io.Writer, o *clusterinit.InitOptions) error {
 // never calls `discoverFleetState` or `InheritFromSiblings` on this
 // path — fleet-state changes between dry-run and apply do not
 // influence what gets written.
-func runInitApplyPlan(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, rep clusterinit.StepReporter, reprobe bool) error {
+func runInitApplyPlan(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, rep clusterinit.StepReporter, reprobe bool, decided clusterIdentity) error {
 	fmt.Fprintln(out, "=== kube-dc bootstrap init — APPLY-PLAN ===")
 	fmt.Fprintf(out, "Plan source: %s\n", o.ApplyPlan)
 
@@ -938,7 +981,7 @@ func runInitApplyPlan(ctx context.Context, out io.Writer, o *clusterinit.InitOpt
 	fmt.Fprintf(out, "Loaded plan for cluster %q (planHash=%s, %d scripts).\n",
 		plan.ClusterName, plan.PlanHash, len(plan.ScriptsToRun))
 	fmt.Fprintln(out, "Inputs verified — applying plan verbatim.")
-	return runApplyEngine(ctx, out, o, plan, rep, reprobe)
+	return runApplyEngine(ctx, out, o, plan, rep, reprobe, decided)
 }
 
 // runInitDefaultApply is the no-flags-apply path: BuildPlan from
@@ -946,7 +989,7 @@ func runInitApplyPlan(ctx context.Context, out io.Writer, o *clusterinit.InitOpt
 // is needed because the plan and the engine's `Sets`/`NodeNICs`
 // come from the same InitOptions instance — they're coherent by
 // construction.
-func runInitDefaultApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, rep clusterinit.StepReporter, reprobe bool) error {
+func runInitDefaultApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, rep clusterinit.StepReporter, reprobe bool, decided clusterIdentity) error {
 	fmt.Fprintln(out, "=== kube-dc bootstrap init — APPLY ===")
 	fleet := discoverFleetState(o)
 	// Freeze the starter ref into the plan (review P1 2026-07-20): an
@@ -960,7 +1003,7 @@ func runInitDefaultApply(ctx context.Context, out io.Writer, o *clusterinit.Init
 	}
 	fmt.Fprintf(out, "Built plan for cluster %q (planHash=%s, %d scripts).\n",
 		plan.ClusterName, plan.PlanHash, len(plan.ScriptsToRun))
-	return runApplyEngine(ctx, out, o, plan, rep, reprobe)
+	return runApplyEngine(ctx, out, o, plan, rep, reprobe, decided)
 }
 
 // layeredAdoptEnv presents the effective cluster-config.env to the
@@ -1084,7 +1127,7 @@ func runInitAdoptWizardStep(cmd *cobra.Command, out io.Writer, o *clusterinit.In
 // on. Builds a `bootstrap.Session` for the adapters, resolves the
 // GitHub token if --github-token wasn't passed, then calls
 // `clusterinit.Apply`.
-func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, plan *clusterinit.Plan, rep clusterinit.StepReporter, reprobe bool) error {
+func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, plan *clusterinit.Plan, rep clusterinit.StepReporter, reprobe bool, decided clusterIdentity) error {
 	if rep == nil {
 		rep = clusterinit.NopReporter{}
 	}
@@ -1164,7 +1207,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	// now-Flux-managed cluster is the dangerous direction). Skipped only for
 	// an operator-pinned --mode.
 	if reprobe {
-		if err := reprobeModeAfterFetch(ctx, out, plan.Mode); err != nil {
+		if err := reprobeModeAfterFetch(ctx, out, plan.Mode, decided); err != nil {
 			return err
 		}
 	}
@@ -1587,6 +1630,21 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 			plan.DNS01SecretKeyFingerprint, dns01.Fingerprint)
 	}
 
+	cf, err := loadDNS01CloudflareFromOptions(o)
+	if err != nil {
+		return err
+	}
+	switch {
+	case cf != nil && plan.DNS01CloudflareTokenFingerprint == "":
+		return fmt.Errorf("init: Cloudflare DNS-01 flags supplied but the plan under review was generated without them — re-run the plan")
+	case cf == nil && plan.DNS01CloudflareTokenFingerprint != "":
+		return fmt.Errorf("init: the reviewed plan requires Cloudflare DNS-01 but no --dns01-cloudflare-* flags/token were supplied")
+	case cf != nil && plan.DNS01CloudflareTokenFingerprint != cf.Fingerprint:
+		return fmt.Errorf(
+			"init: the Cloudflare API token supplied is NOT the one the reviewed plan approved (plan sha256=%.16s, supplied sha256=%.16s) — re-run the plan against the current material",
+			plan.DNS01CloudflareTokenFingerprint, cf.Fingerprint)
+	}
+
 	trustedCA, err := loadTrustedCAFromOptions(o)
 	if err != nil {
 		return err
@@ -1618,6 +1676,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		ImageAccel:        o.ImageAccel(),
 		WildcardTLS:       wildcardTLS,
 		DNS01Route53:      dns01,
+		DNS01Cloudflare:   cf,
 		TrustedCA:         trustedCA,
 		GPU:               o.GPU(),
 		// Hand the script-side discovery the SAME kubeconfig this process loads —
@@ -1686,14 +1745,26 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	if !o.NoPush {
 		if sshEnabled && !fetchOK {
 			reason := fmt.Sprintf("kubeconfig fetch failed: %v", fetchErr)
+			rep.Skip(clusterinit.StepBreakGlass, reason)
 			rep.Skip(clusterinit.StepReconcile, reason)
 			skipGPUInstallSteps(rep, gpu, reason)
 			rep.Skip(clusterinit.StepOpenBao, reason)
 			rep.Skip(clusterinit.StepKeycloakOIDC, reason)
+			// The cutover must be reported here too. An unreported milestone
+			// renders as nothing at all, and "nothing at all" is precisely the
+			// state that shipped four unusable clusters: the operator sees a
+			// successful install and no mention of the one step whose absence
+			// makes every Keycloak login fail.
+			rep.Skip(clusterinit.StepOIDCCutover, reason)
 			fmt.Fprintln(out, "[post] skipped because the fresh admin kubeconfig was not fetched; refusing to guess from the current context")
-			finalizeHint(out, o)
+			finalizeHint(out, o, "", false)
 		} else {
-			runPostApply(ctx, out, o, rep)
+			// fetchVerified: true exactly when sshEnabled && fetchOK — the ONLY
+			// case where fetch-kubeconfig actually renamed a context to o.Name
+			// for THIS run. On --no-ssh this branch also runs (finalize is not
+			// gated on SSH) with fetchVerified=false, so runPostApply knows not
+			// to assert a --kube-context guarantee it cannot back up.
+			runPostApply(ctx, out, o, rep, sshEnabled && fetchOK)
 		}
 	}
 	return nil
@@ -2179,8 +2250,8 @@ func writeOptionsSummary(out io.Writer, o *clusterinit.InitOptions) {
 		}
 	}
 	fmt.Fprintln(out, "Gates:")
-	fmt.Fprintf(out, "  allow-dns-not-ready=%t  allow-no-kubevirt-eligible=%t  no-ssh=%t  no-install-prereqs=%t  no-create-repo=%t  no-push=%t  no-tty=%t  yes=%t\n",
-		o.AllowDNSNotReady, o.AllowNoKubevirtEligible, o.NoSSH, o.NoInstallPrereqs, o.NoCreateRepo, o.NoPush, o.NoTTY, o.Yes)
+	fmt.Fprintf(out, "  allow-dns-not-ready=%t  allow-no-kubevirt-eligible=%t  no-ssh=%t  no-oidc-cutover=%t  no-install-prereqs=%t  no-create-repo=%t  no-push=%t  no-tty=%t  yes=%t\n",
+		o.AllowDNSNotReady, o.AllowNoKubevirtEligible, o.NoSSH, o.NoOIDCCutover, o.NoInstallPrereqs, o.NoCreateRepo, o.NoPush, o.NoTTY, o.Yes)
 	fmt.Fprintf(out, "Files:        mirror-registry=%s  bundle-pull-secret=%s  openbao-shares-out=%s\n",
 		emptyAsNone(o.MirrorRegistry), pull, sharesOut)
 }
@@ -2235,11 +2306,12 @@ func assertRequiredFlagsRegistered(fs *pflag.FlagSet) error {
 		"ingress-address-layer", "ingress-node",
 		"tls-mode", "tls-cert", "tls-key", "trusted-ca-bundle",
 		"dns01-route53-zone-id", "dns01-route53-region", "dns01-route53-access-key-id", "dns01-route53-secret-key-file",
+		"dns01-cloudflare-zone", "dns01-cloudflare-api-token-file",
 		"gpu-platform", "gpu-driver-source", "gpu-operator-version", "nvidia-driver-version", "nvidia-toolkit-version",
 		"hami-enabled", "gpu-shared-allocator", "hami-version", "hami-scheduler-version", "gpu-node-mode", "gpu-ssh-host-map", "gpu-kubeconfig", "gpu-profile",
 		"allow-unassigned-gpus", "vgpu-secret-ready",
 		"addon",
-		"allow-dns-not-ready", "ssh-host", "no-ssh", "no-install-prereqs", "no-create-repo",
+		"allow-dns-not-ready", "ssh-host", "no-ssh", "no-oidc-cutover", "no-install-prereqs", "no-create-repo",
 		"starter-ref", "mirror-registry", "bundle-pull-secret", "openbao-shares-out",
 		"dry-run", "plan-file", "apply-plan", "no-push", "no-tty", "yes",
 	}
@@ -2443,6 +2515,14 @@ func loadDNS01FromOptions(o *clusterinit.InitOptions) (*clusterinit.DNS01Route53
 	return clusterinit.LoadDNS01Route53(
 		o.DNS01Route53ZoneID, o.DNS01Route53Region, o.DNS01Route53AccessKeyID,
 		o.DNS01Route53SecretKeyFile, os.Getenv(clusterinit.KubeDCDNS01SecretKeyEnv))
+}
+
+// loadDNS01CloudflareFromOptions loads + validates the Cloudflare DNS-01
+// solver config; (nil, nil) when neither the dedicated mode nor the
+// wildcard opt-in (--dns01-cloudflare-zone with --tls-mode=acme) is in play.
+func loadDNS01CloudflareFromOptions(o *clusterinit.InitOptions) (*clusterinit.DNS01CloudflareMaterial, error) {
+	return clusterinit.LoadDNS01Cloudflare(o.TLSMode, o.Domain, o.DNS01CloudflareZone,
+		o.DNS01CloudflareAPITokenFile, os.Getenv(clusterinit.KubeDCDNS01CloudflareTokenEnv))
 }
 
 // loadTrustedCAFromOptions validates the public CA material named by the

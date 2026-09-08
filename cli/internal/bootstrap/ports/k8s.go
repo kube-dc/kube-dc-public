@@ -199,6 +199,23 @@ type K8sClient interface {
 	// it, which is precisely the failure that makes a healthy-looking cluster
 	// reject every login.
 	PodContainerArgs(ctx context.Context, ns, labelSelector string) (map[string][]string, error)
+
+	// ListResourceObjects returns every object of one resource kind as a
+	// generic map (namespace "" lists cluster-scoped kinds, or every
+	// namespace for namespaced ones).
+	//
+	// Acceptance needs to inspect kinds the installer does not own and has no
+	// typed client for — StorageClasses, MetalLB IPAddressPools, cert-manager
+	// Certificates, admission webhooks, and the substituted cluster-config
+	// Secrets. Each of those has produced a cluster that every convergence
+	// signal called healthy, so the checks have to read them directly rather
+	// than infer from Flux. Adding one generic reader keeps that from becoming
+	// one bespoke port method per kind.
+	//
+	// A kind whose CRD is not installed is NOT an error: it returns an empty
+	// slice, so a check for an optional component reports "not present" rather
+	// than failing an install that legitimately does not use it.
+	ListResourceObjects(ctx context.Context, group, version, resource, namespace string) ([]map[string]any, error)
 }
 
 // Graph is a dependsOn-resolved view of `flux-system`. Nodes are sorted

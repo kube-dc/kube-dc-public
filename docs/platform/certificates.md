@@ -16,6 +16,7 @@ S3 over TLS), see [private-CA enterprise install](private-ca-enterprise-install.
 |---|---|---|
 | `acme` (default) | cert-manager, via the `letsencrypt-prod-http` ClusterIssuer (HTTP-01 through the Gateway) | The domain is publicly resolvable **and** reachable on `:80` for the HTTP-01 challenge |
 | `acme-dns01-route53` | cert-manager, same ClusterIssuer, but proving control via **Route53 DNS records** | The zone lives in Route53 but the cluster itself is private/VPN-only (Let's Encrypt cannot reach it) — certificates still **renew automatically** |
+| `acme-dns01-cloudflare` | cert-manager, same ClusterIssuer, proving control via **Cloudflare DNS records** | Same situation, zone on Cloudflare. **Also usable on a public cluster** (`--tls-mode acme --dns01-cloudflare-zone`): HTTP-01 keeps every per-host certificate and Cloudflare solves only the platform **wildcard** — the one certificate HTTP-01 can never issue |
 | `byo-wildcard` | You do. One wildcard for `*.<DOMAIN>`, committed SOPS-encrypted | Internal/air-gapped domains, corporate PKI, or any cluster ACME cannot validate — **nothing renews this for you** |
 
 `acme` is the default and needs no configuration.
@@ -68,6 +69,70 @@ kubectl get challenge -A              # empty when done; stuck "pending" =
 **Rotation:** create a new IAM key, re-run `init` with the new material (the
 SOPS artifact and env records update in place), commit, then disable the old
 key in AWS.
+
+## `acme-dns01-cloudflare` — and Cloudflare for the wildcard only
+
+Same mechanism as Route53 with a Cloudflare zone: cert-manager's native
+`cloudflare` solver, an API token SOPS-encrypted next to the issuer patch,
+automatic renewal. Two shapes, chosen by `--tls-mode`:
+
+| Shape | Flags | Solvers on `letsencrypt-prod-http` |
+|---|---|---|
+| **Private cluster** — every certificate via DNS-01 | `--tls-mode acme-dns01-cloudflare` (+ optional `--dns01-cloudflare-zone`) | Cloudflare only (HTTP-01 dropped; with a zone, a `dnsZones` selector guards the token) |
+| **Public cluster** — wildcard only | `--tls-mode acme --dns01-cloudflare-zone <apex>` | Cloudflare **for `*.<DOMAIN>` + `<DOMAIN>`** (a `dnsNames` selector), then the unchanged HTTP-01 solver for everything else |
+
+The second shape exists because a public cluster's `wildcard-tls` Certificate
+(`*.<DOMAIN>`) can never issue over HTTP-01 — it sits `Ready=False` forever
+while every per-host certificate is fine. The zone flag is the explicit
+opt-in: a token that merely sits in your environment never turns a plain
+`acme` run into a hybrid one.
+
+Create a **scoped API token** in Cloudflare (My Profile → API Tokens → Create
+Token): permissions **Zone → DNS → Edit** and **Zone → Zone → Read**, zone
+resources restricted to the one zone. The legacy account-wide *Global API Key*
+is refused by the CLI. Then:
+
+```bash
+# the token never goes on the command line: file or environment
+export KUBE_DC_DNS01_CLOUDFLARE_API_TOKEN='<api token>'
+
+# private cluster, everything via DNS-01
+kube-dc bootstrap init … --tls-mode acme-dns01-cloudflare --dns01-cloudflare-zone example.org
+
+# public cluster, wildcard only (HTTP-01 stays for the rest)
+kube-dc bootstrap init … --tls-mode acme --dns01-cloudflare-zone example.org
+```
+
+What the CLI scaffolds (it never calls Cloudflare itself):
+
+- `clusters/<name>/dns01-cloudflare-credentials.enc.yaml` — the token,
+  SOPS-encrypted, for the solver's `apiTokenSecretRef`
+  (`cloudflare-dns01-credentials` / key `api-token` in `cert-manager`);
+- a `platform.yaml` patch replacing the ClusterIssuer's solvers with the shape
+  above (the issuer keeps its historical name — every platform Certificate
+  references it, so nothing else changes);
+- `TLS_MODE`, `DNS01_CLOUDFLARE_ZONE` and `DNS01_CLOUDFLARE_SCOPE`
+  (`all` | `wildcard`) in `cluster-config.env`.
+
+The plan pins the token's SHA-256 exactly as the Route53 mode pins the secret
+key. One DNS-01 provider per cluster: the CLI refuses a `platform.yaml` that
+already carries the Route53 solver block (and vice versa).
+
+Verify — the wildcard is the interesting one on a public cluster:
+
+```bash
+kubectl -n envoy-gateway-system get certificate wildcard-tls   # Ready=True within ~2-5 min
+kubectl get challenge -A            # empty when done; stuck "pending" = token
+                                    # lacks Zone:DNS:Edit on this zone — check
+                                    # cert-manager logs for the Cloudflare error
+```
+
+**Renewal is automatic.** cert-manager re-solves the challenge ~30 days before
+each expiry (Let's Encrypt certificates last 90 days) using the same token —
+there is nothing to schedule. What *can* break renewal is the token: keep it
+valid, and when rotating, create the new token first, re-run `init` with it
+(or `sops edit` the file), commit, wait for `kubectl get challenge -A` to be
+empty once, then revoke the old one.
 
 Everything below is about `byo-wildcard`.
 

@@ -73,11 +73,20 @@ func joinVMStorageModes(m []VMStorageMode) string {
 // structurally excluded (the value lands in a kustomization resource path).
 var vmGoldenNameRegex = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$`)
 
-// defaultVMGolden is the minimal default when --vm-golden is unset: ONE
-// containerdisk-source golden (no S3-mirror dependency, unlike the http/S3
-// goldens), so a fresh capacity-constrained cluster imports ~one small OS
-// rather than the whole ~200 Gi+ catalog. Windows is never a default.
-const defaultVMGolden = "debian-12"
+// defaultVMGoldens is what a cluster gets when --vm-golden is unset.
+//
+// It is deliberately NOT the whole ~200 Gi+ catalog: a fresh, capacity-constrained
+// cluster should not import every OS. But it does now include Windows, because
+// "opt-in via a flag" meant that in practice NO cluster had it — of the three live
+// clusters only one had ever passed the flag, so on the others a tenant simply could
+// not create a Windows VM and nothing said why. An install option nobody exercises is
+// not a feature.
+//
+// The cost is real and worth stating: windows-11-golden is ~70 Gi provisioned and is
+// fetched from the S3 mirror rather than a containerdisk, so a greenfield install
+// pulls ~7.8 GB more and waits for that import before Windows is offerable. Drop it
+// with an explicit --vm-golden list on a cluster that does not want it.
+var defaultVMGoldens = []string{"debian-12", "windows-11-golden"}
 
 // VMStorageSpec bundles the InitOptions fields the scaffold writer
 // consumes. Passed through ScaffoldOptions/ApplyOptions like
@@ -236,10 +245,21 @@ func resolveVMGoldens(fleetRepo string, requested []string) ([]string, error) {
 	}
 
 	if len(requested) == 0 {
-		if !avail[defaultVMGolden] {
-			return nil, fmt.Errorf("vm-storage: default golden %q not in the catalog (have: %s) — pass --vm-golden explicitly", defaultVMGolden, strings.Join(availList, ","))
+		// Take the defaults the catalog actually has. A fleet pinned to an older
+		// starter may predate one of them, and refusing to scaffold at all over a
+		// missing OPTIONAL default would turn a cosmetic gap into a failed install.
+		// Requiring at least one keeps a genuinely empty/renamed catalog loud.
+		var defs []string
+		for _, g := range defaultVMGoldens {
+			if avail[g] {
+				defs = append(defs, g)
+			}
 		}
-		return []string{defaultVMGolden}, nil
+		if len(defs) == 0 {
+			return nil, fmt.Errorf("vm-storage: none of the default goldens %v are in the catalog (have: %s) — pass --vm-golden explicitly",
+				defaultVMGoldens, strings.Join(availList, ","))
+		}
+		return defs, nil
 	}
 
 	seen := map[string]bool{}

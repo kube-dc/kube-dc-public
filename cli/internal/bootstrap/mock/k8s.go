@@ -152,6 +152,14 @@ func (c *K8sClient) ListNamespaces(ctx context.Context) ([]string, error) {
 // PodContainerArgs reports the scenario's apiserver flags. The mock returns an
 // empty map, which the acceptance check reads as "cannot verify" rather than
 // "not wired" — a mock must never be able to assert a real cluster is healthy.
+// ListResourceObjects reports every kind as absent. The mock cluster models
+// Flux convergence, not the individual objects acceptance inspects, and an
+// empty list is the real client's "CRD not installed" answer — so the checks
+// built on it SKIP rather than fail against a mock scenario.
+func (c *K8sClient) ListResourceObjects(_ context.Context, _, _, _, _ string) ([]map[string]any, error) {
+	return []map[string]any{}, nil
+}
+
 func (c *K8sClient) PodContainerArgs(_ context.Context, _, _ string) (map[string][]string, error) {
 	return map[string][]string{}, nil
 }

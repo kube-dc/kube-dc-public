@@ -193,6 +193,21 @@ func Run(ctx context.Context, o Options) (Report, error) {
 	// --- Tenant egress ---------------------------------------------------
 	rep.Checks = append(rep.Checks, checkTenantEgressGateway(ctx, o))
 
+	// --- Properties every convergence signal reports as fine -------------
+	rep.Checks = append(rep.Checks, checkHelmReleases(ctx, o))
+	rep.Checks = append(rep.Checks, checkDefaultStorageClass(ctx, o))
+	rep.Checks = append(rep.Checks, checkSopsDecryption(ctx, o))
+	rep.Checks = append(rep.Checks, checkClusterConfigPins(ctx, o))
+	rep.Checks = append(rep.Checks, checkLoadBalancerPools(ctx, o))
+	rep.Checks = append(rep.Checks, checkManagementSnat(ctx, o))
+	rep.Checks = append(rep.Checks, checkManagementGatewayPair(ctx, o))
+	rep.Checks = append(rep.Checks, checkDefaultVPCPatchPairs(ctx, o))
+	rep.Checks = append(rep.Checks, checkProviderVLANKernelDevices(ctx, o))
+	rep.Checks = append(rep.Checks, checkFlowRestoreWait(ctx, o))
+	rep.Checks = append(rep.Checks, checkPublicAnchors(ctx, o))
+	rep.Checks = append(rep.Checks, checkAdmissionWebhooks(ctx, o))
+	rep.Checks = append(rep.Checks, checkCertificates(ctx, o))
+
 	// --- Verdict ---------------------------------------------------------
 	switch {
 	case !fluxSettled:
@@ -439,11 +454,21 @@ func checkTenantEgressGateway(ctx context.Context, o Options) Check {
 		pods = pods[:maxProbes]
 	}
 
-	// Nodes without an external-network anchor have no route to the gateway at
-	// all; they report NOROUTE and are not counted as evidence either way.
+	// Nodes without an external-network anchor have no ON-LINK route to the
+	// gateway (either no route, or one "via" the default router on another
+	// VLAN — webdock 2026-08-31, where hosts deliberately carry no address on the
+	// ext-cloud VLAN); they report NOROUTE and are not counted as evidence
+	// either way. Probing the default-route device for a gateway that lives on
+	// a different VLAN reported a healthy cluster as a black hole.
 	probe := fmt.Sprintf(`
-dev=$(ip route get %[1]s 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -1)
+r=$(ip route get %[1]s 2>/dev/null | head -1)
+dev=$(echo "$r" | sed -n 's/.* dev \([^ ]*\).*/\1/p')
 [ -n "$dev" ] || { echo NOROUTE; exit 0; }
+# A route "via <router>" means this node is NOT on the external segment: the
+# gateway is reached through some other router (typically the default route on
+# a different VLAN), and an ARP probe on that device can never be answered.
+# Only an on-link route (no "via") makes the node a witness.
+case " $r " in *" via "*) echo NOROUTE; exit 0;; esac
 n=$(ip neigh show %[1]s 2>/dev/null)
 case "$n" in
   *lladdr*)
@@ -494,6 +519,17 @@ ip neigh show %[1]s
 		}
 	}
 
+	// Strongest witness of all, independent of host routing: OVN's southbound
+	// mac_binding table records the gateway's MAC once ANY logical router on
+	// the external switch resolved it — i.e. a tenant or management router
+	// actually got an ARP reply from the gateway. On a cluster whose hosts
+	// keep no address on the external VLAN (webdock) it is the ONLY evidence
+	// available, and on any cluster it beats a host-side probe that can be
+	// answered by the wrong VLAN.
+	if port, mac := ovnGatewayMacBinding(ctx, o, gw); mac != "" {
+		return Check{Name: name, Required: true, Outcome: Pass,
+			Detail: fmt.Sprintf("%s is %s on the external segment, learned by OVN via %s", gw, mac, port)}
+	}
 	if probed == 0 {
 		return Check{Name: name, Required: true, Outcome: Skipped,
 			Detail: fmt.Sprintf("no probed node has a route to %s, so none could test it", gw),
@@ -529,4 +565,41 @@ func Render(w io.Writer, rep Report) {
 		fmt.Fprintln(w, "cannot be trusted until it has.")
 	}
 	fmt.Fprintln(w, "(* = required for `usable`)")
+}
+
+// ovnGatewayMacBinding asks an ovn-central pod whether the southbound DB holds
+// a MAC binding for gw. ("", "") when none, or when ovn-central cannot be
+// reached — callers treat that as "no evidence", never as proof of absence.
+func ovnGatewayMacBinding(ctx context.Context, o Options, gw string) (port, mac string) {
+	pods, err := o.K8s.ListPodNames(ctx, "kube-system", "app=ovn-central")
+	if err != nil || len(pods) == 0 {
+		return "", ""
+	}
+	script := fmt.Sprintf(`ovn-sbctl --no-leader-only --columns=logical_port,mac --bare find mac_binding ip=%s 2>/dev/null`, gw)
+	for _, pod := range pods {
+		out, err := o.K8s.PodExec(ctx, "kube-system", pod, []string{"sh", "-c", script}, nil)
+		if err != nil || len(strings.TrimSpace(string(out))) == 0 {
+			if alt, altErr := o.K8s.PodExecViaKubectl(ctx, "kube-system", pod, []string{"sh", "-c", script}, nil); altErr == nil {
+				out = alt
+			} else {
+				continue
+			}
+		}
+		// --bare prints the two columns as consecutive lines, one record at a time.
+		var fields []string
+		for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if l = strings.TrimSpace(l); l != "" {
+				fields = append(fields, l)
+			}
+		}
+		for i := 0; i+1 < len(fields); i += 2 {
+			if m := strings.ToLower(fields[i+1]); len(m) == 17 && strings.Count(m, ":") == 5 {
+				return fields[i], m
+			}
+		}
+		if len(fields) > 0 {
+			return "", "" // answered, no binding
+		}
+	}
+	return "", ""
 }

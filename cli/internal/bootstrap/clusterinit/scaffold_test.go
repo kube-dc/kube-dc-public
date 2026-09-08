@@ -783,3 +783,59 @@ func TestServiceModeViable(t *testing.T) {
 		}
 	}
 }
+
+// The management-SNAT placeholder must be RESOLVED by post-process, not
+// refused by its placeholder scan: step 8's file-level ResolveMgmtSnatIP is
+// unreachable past that scan (identical to the KUBE_API_ARRIVAL_IP trap,
+// 2026-08-16). Caught by the greenfield E2E on 2026-09-01 — every fresh
+// install aborted demanding a manual --set.
+func TestPostProcessClusterConfig_DerivesMgmtSnatIPBeforePlaceholderScan(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cluster-config.env")
+	scriptOutput := `# Cluster: pilot
+CLUSTER_NAME=pilot
+DOMAIN=pilot.example.com
+EXT_NET_NAME=ext-cloud
+EXT_NET_VLAN_ID=163
+EXT_NET_INTERFACE=bond0
+EXT_NET_CIDR=100.65.0.0/16
+EXT_NET_GATEWAY=100.65.0.1
+EXT_NET_EXCLUDE_IPS=100.65.0.1
+EXT_NET_MGMT_SNAT_IP=CHANGEME
+POD_CIDR=10.100.0.0/16
+`
+	if err := os.WriteFile(path, []byte(scriptOutput), 0o644); err != nil {
+		t.Fatalf("write seed: %v", err)
+	}
+	plan := &Plan{
+		Preset:              PresetCloudVLAN,
+		ClusterName:         "pilot",
+		IngressAddressLayer: AddressLayerNone,
+	}
+	base := map[string]string{"EXT_NET_VLAN_ID": "163", "EXT_NET_INTERFACE": "bond0"}
+	if err := postProcessClusterConfig(path, plan, base, ""); err != nil {
+		t.Fatalf("post-process must derive EXT_NET_MGMT_SNAT_IP, not refuse it: %v", err)
+	}
+	body, _ := os.ReadFile(path)
+	out := string(body)
+	if !strings.Contains(out, "EXT_NET_MGMT_SNAT_IP=100.65.0.2") {
+		t.Errorf("EXT_NET_MGMT_SNAT_IP not derived to first-after-block: %s", out)
+	}
+	if !strings.Contains(out, "EXT_NET_EXCLUDE_IPS=100.65.0.1..100.65.0.2") {
+		t.Errorf("EXT_NET_EXCLUDE_IPS not widened to cover the SNAT address: %s", out)
+	}
+	// An operator-supplied value (with its reservation, as validation
+	// demands) must be left alone.
+	seed2 := strings.ReplaceAll(scriptOutput, "EXT_NET_MGMT_SNAT_IP=CHANGEME", "EXT_NET_MGMT_SNAT_IP=100.65.0.9")
+	seed2 = strings.ReplaceAll(seed2, "EXT_NET_EXCLUDE_IPS=100.65.0.1\n", "EXT_NET_EXCLUDE_IPS=100.65.0.1..100.65.0.9\n")
+	if err := os.WriteFile(path, []byte(seed2), 0o644); err != nil {
+		t.Fatalf("write seed 2: %v", err)
+	}
+	if err := postProcessClusterConfig(path, plan, base, ""); err != nil {
+		t.Fatalf("explicit value must pass: %v", err)
+	}
+	body, _ = os.ReadFile(path)
+	if !strings.Contains(string(body), "EXT_NET_MGMT_SNAT_IP=100.65.0.9") {
+		t.Errorf("explicit operator value was overwritten: %s", string(body))
+	}
+}

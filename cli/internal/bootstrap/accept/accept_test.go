@@ -24,6 +24,8 @@ type fakeK8s struct {
 	cmData   map[string]string
 	podNames []string
 	execOut  map[string]string // pod name -> `ip neigh` output
+	// objects staged per "group/version/resource" for the object-reading checks
+	objects map[string][]map[string]any
 }
 
 func (f *fakeK8s) DiscoverFluxGraph(context.Context) (ports.Graph, error) {
@@ -32,6 +34,41 @@ func (f *fakeK8s) DiscoverFluxGraph(context.Context) (ports.Graph, error) {
 func (f *fakeK8s) NodeLabels(context.Context) (map[string]map[string]string, error) {
 	return f.nodeLabels, nil
 }
+func (f *fakeK8s) ListResourceObjects(_ context.Context, group, version, resource, _ string) ([]map[string]any, error) {
+	return f.objects[group+"/"+version+"/"+resource], nil
+}
+
+// stage registers objects for one kind.
+func (f *fakeK8s) stage(gvr string, objs ...map[string]any) {
+	if f.objects == nil {
+		f.objects = map[string][]map[string]any{}
+	}
+	f.objects[gvr] = append(f.objects[gvr], objs...)
+}
+
+// obj builds a minimal object with metadata and arbitrary extra top-level keys.
+func obj(ns, name string, extra map[string]any) map[string]any {
+	meta := map[string]any{"name": name}
+	if ns != "" {
+		meta["namespace"] = ns
+	}
+	o := map[string]any{"metadata": meta}
+	for k, v := range extra {
+		o[k] = v
+	}
+	return o
+}
+
+// defaultStorageClass is what a cluster needs for a PVC with no class to bind.
+func defaultStorageClass(name string) map[string]any {
+	return map[string]any{"metadata": map[string]any{
+		"name": name,
+		"annotations": map[string]any{
+			"storageclass.kubernetes.io/is-default-class": "true",
+		},
+	}}
+}
+
 func (f *fakeK8s) PodContainerArgs(context.Context, string, string) (map[string][]string, error) {
 	return f.apiArgs, f.apiArgsErr
 }
@@ -90,6 +127,28 @@ func healthy() *fakeK8s {
 			"kube-apiserver-cp-2": {"kube-apiserver", "--authentication-token-webhook-config-file=/x"},
 		},
 		crds: []string{"organizations.kube-dc.com", "projects.kube-dc.com"},
+		// A usable cluster can bind a PVC that names no class. Everything else
+		// the object checks read is optional and reports SKIP when absent.
+		objects: map[string][]map[string]any{
+			"storage.k8s.io/v1/storageclasses": {defaultStorageClass("standard")},
+			// Every real cluster has Secrets. Staging one keeps the healthy
+			// fixture honest: with none, the SOPS check correctly reports that
+			// it could not inspect anything, which must not read as "fine".
+			"/v1/secrets": {{
+				"metadata": map[string]any{"namespace": "flux-system", "name": "cluster-secrets"},
+				"data":     map[string]any{"TOKEN": "ZGVjcnlwdGVk"},
+			}},
+			// Likewise every real cluster has EndpointSlices. With none, the
+			// webhook check correctly reports that it cannot verify backends.
+			"discovery.k8s.io/v1/endpointslices": {{
+				"metadata": map[string]any{
+					"namespace": "default", "name": "kubernetes",
+					"labels": map[string]any{"kubernetes.io/service-name": "kubernetes"},
+				},
+				"endpoints": []any{map[string]any{"addresses": []any{"10.0.0.1"}}},
+				"ports":     []any{map[string]any{"port": int64(6443)}},
+			}},
+		},
 	}
 }
 

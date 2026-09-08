@@ -59,7 +59,7 @@ export function ManagedDatabaseProtectionDiagram(): React.JSX.Element {
   return (
     <ExplainerDiagram
       caption="Applications keep one read-write endpoint while engine replication and operator promotion protect service continuity; scheduled and on-demand backups land in Project S3 for new-name or in-place restore."
-      description="An application connects through a stable read-write endpoint to the current database primary. The primary replicates to an available replica, which the operator can promote after an eligible failure. Scheduled and on-demand backups are written to Project S3 and can restore a database under a new name or in place."
+      description="An application connects through a stable read-write endpoint to the current database primary. The primary replicates to an available replica, which the operator can promote after an eligible failure. Scheduled and on-demand backups are written to Project S3 and can restore a database under a new name or in place. Backup-artifact encryption is deployment-qualified separately."
       diagramId="datasheet-managed-database-protection"
       minWidth={900}
       title="Managed database availability and backup path"
@@ -75,7 +75,7 @@ export function ManagedDatabaseProtectionDiagram(): React.JSX.Element {
       <DiagramNode detail="current writer" height={82} icon={DataIcon} title="Primary" tone="accent" width={280} x={285} y={92} />
       <DiagramNode detail="promotion target" height={82} icon={DataIcon} title="Replica" width={250} x={620} y={92} />
       <DiagramBoundary height={155} label="PROJECT DATA PROTECTION" labelWidth={280} width={820} x={40} y={210} />
-      <DiagramNode detail={['scheduled + on demand', 'KMS envelope when configured']} height={82} icon={StorageIcon} title="Project S3 backups" tone="storage" width={360} x={270} y={255} />
+      <DiagramNode detail={['scheduled + on demand', 'artifact encryption qualified per site']} height={82} icon={StorageIcon} title="Project S3 backups" tone="storage" width={360} x={270} y={255} />
       <DiagramNode detail="new name" height={72} icon={DataIcon} title="Restore copy" width={260} x={170} y={390} />
       <DiagramNode detail="controlled outage" height={72} icon={DataIcon} title="In-place restore" width={260} x={520} y={390} />
     </ExplainerDiagram>
@@ -100,7 +100,7 @@ export function DataProtectionDiagram(): React.JSX.Element {
       <DiagramBoundary height={370} label="PROJECT S3 · SERVICE BACKUPS" labelWidth={260} width={300} x={320} y={70} />
       <DiagramNode detail="service owner" height={82} icon={DataIcon} title="Managed databases" width={250} x={30} y={125} />
       <DiagramNode detail="service owner" height={82} icon={KubernetesIcon} title="Managed Clusters" width={250} x={30} y={265} />
-      <DiagramNode detail={['scheduled + on demand', 'optional KMS envelope']} height={82} icon={StorageIcon} title="Database backups" tone="storage" width={250} x={340} y={125} />
+      <DiagramNode detail={['scheduled + on demand', 'encryption qualified per site']} height={82} icon={StorageIcon} title="Database backups" tone="storage" width={250} x={340} y={125} />
       <DiagramNode detail={['scheduled snapshots', 'restore by topology']} height={82} icon={StorageIcon} title="etcd snapshots" tone="storage" width={250} x={340} y={265} />
       <DiagramNode detail={['off-site copy', 'separate domain']} height={102} icon={StorageIcon} title="Enterprise backup" tone="external" width={220} x={650} y={204} />
       <DiagramNode detail="point-in-time copies" height={82} icon={ComputeIcon} title="VMs + volumes" width={250} x={30} y={480} />

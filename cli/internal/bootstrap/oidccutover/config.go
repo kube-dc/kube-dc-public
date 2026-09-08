@@ -4,9 +4,12 @@
 //
 // # WHY THIS EXISTS AS CODE INSTEAD OF A RUNBOOK
 //
-// RKE2 boots cert-only: `kube-dc bootstrap install` deliberately omits
-// kube-apiserver-arg, because the authenticator does not exist yet (Flux brings
-// it up later, in infra-core). Until the apiserver is pointed at it, EVERY
+// RKE2 boots cert-only: `kube-dc bootstrap install` deliberately omits the
+// authentication-token-webhook flags, because the authenticator does not exist
+// yet (Flux brings it up later, in infra-core). The install DOES write a
+// kube-apiserver-arg block for default feature gates, so this transform's
+// existing-block path — locate the block, insert only the missing flags — is
+// the normal case rather than the exception. Until the apiserver is pointed at it, EVERY
 // Keycloak JWT returns 401 — tenant `kubectl`, the console's
 // Manage-Organization calls, and the k8-manager / db-manager operators all
 // fail. The cluster looks healthy: Flux is green, every pod is Ready, and

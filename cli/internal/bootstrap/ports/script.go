@@ -94,6 +94,12 @@ const (
 	// token; the runner diverts that to a registered callback.
 	ScriptOpenBaoInit ScriptKind = "openbao-init.sh"
 
+	// ScriptSetupSSORealm = bootstrap/setup-sso-realm.sh (self-service
+	// sign-up: the central `sso` realm with email self-registration +
+	// verification, optional Google IdP; persists SMTP/broker secrets
+	// via SOPS and flips SSO_ENABLED only after the realm exists).
+	ScriptSetupSSORealm ScriptKind = "setup-sso-realm.sh"
+
 	// ScriptSetupKeycloakOIDC = bootstrap/setup-keycloak-oidc.sh
 	// (deferred to Phase 5 tail; runs after HelmRelease/keycloak Ready).
 	ScriptSetupKeycloakOIDC ScriptKind = "setup-keycloak-oidc.sh"
