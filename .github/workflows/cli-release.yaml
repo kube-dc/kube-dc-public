@@ -27,12 +27,29 @@ jobs:
           cache: true
           cache-dependency-path: cli/go.sum
 
+      # The release body must describe the release, not the mirror: this
+      # repository sees squashed "Mirror the CLI ..." commits, which is all
+      # GoReleaser's own changelog could ever say. Take the tag's section from
+      # cli/CHANGELOG.md when it has one, and fall back to the generated
+      # changelog when it does not.
+      - name: Release notes for this tag
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if awk -v t="## ${tag}" 'index($0,t)==1{f=1;next} f&&/^## /{exit} f' cli/CHANGELOG.md > /tmp/release-notes.md \
+             && [ -s /tmp/release-notes.md ]; then
+            echo "RELEASE_NOTES=/tmp/release-notes.md" >> "$GITHUB_ENV"
+            echo "using cli/CHANGELOG.md section for ${tag}"
+          else
+            echo "no cli/CHANGELOG.md section for ${tag}; GoReleaser will generate the notes"
+          fi
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: latest
-          args: release --clean
+          args: release --clean ${{ env.RELEASE_NOTES && format('--release-notes={0}', env.RELEASE_NOTES) || '' }}
           workdir: cli
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
