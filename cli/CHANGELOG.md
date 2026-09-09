@@ -1,5 +1,15 @@
 # kube-dc CLI changelog
 
+## v0.7.6
+
+No CLI source change. The tag exists so a greenfield install gets the
+10-second database settle window: the fleet-starter is bound to the CLI
+version and starter tags are immutable, and the v0.7.5 starter was cut before
+that override landed in the shared fleet tree. This starter carries it, and
+the chart it pins defaults to 10 seconds too, so a database provisions in
+seconds on a fresh cluster rather than reporting itself busy for a minute
+and a half.
+
 ## v0.7.5
 
 ### Added
