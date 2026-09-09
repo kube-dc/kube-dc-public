@@ -116,6 +116,14 @@ var denyImportExact = map[string]bool{
 	// Strictly worse than a crash. The rest of the INFRA_ATTACHMENT_* keys are
 	// universal and safe to carry.
 	"NODE_CIDR": true, "INFRA_ATTACHMENT_ROUTES": true,
+	// INFRA_ATTACHMENT_PLATFORM_INGRESS_VIP is deliberately NOT here. It is
+	// this cluster's address too, but an operator may have set it by hand
+	// where the scaffold cannot establish it (1:1-NAT with the internal-VIP
+	// overlay), and a saved config that silently dropped that override would
+	// be re-derived to a wrong value with a success message. It is carried
+	// as explicit input; a clone's sibling value is caught at scaffold time,
+	// which warns whenever the explicit value disagrees with the address this
+	// cluster establishes (reconcilePlatformIngressVIP).
 	// Secret material has dedicated channels (file flag or the
 	// KUBE_DC_DNS01_ROUTE53_SECRET_KEY env var) — a config file carrying it
 	// must never prefill Sets, where it would be re-persisted in cleartext.
@@ -176,7 +184,7 @@ var specOrder = []string{
 	// it was taken from.
 	"MANAGEMENT_API_MODE", "NODE_CIDR", "INFRA_ATTACHMENT_ENABLED", "INFRA_ATTACHMENT_SUBNET",
 	"INFRA_ATTACHMENT_CIDR", "INFRA_ATTACHMENT_GATEWAY",
-	"INFRA_ATTACHMENT_SECURITY_GROUP", "INFRA_ATTACHMENT_ROUTES",
+	"INFRA_ATTACHMENT_SECURITY_GROUP", "INFRA_ATTACHMENT_ROUTES", KeyPlatformIngressVIP,
 
 	"CLUSTER_NAME", "DOMAIN", "NODE_EXTERNAL_IP", "EMAIL",
 	"EXT_NET_VLAN_ID", "EXT_NET_INTERFACE", "EXT_NET_MTU", "KUBE_OVN_MASTER_NODES",
@@ -599,6 +607,14 @@ func ExportMap(o *InitOptions) map[string]string {
 			// Owned by dedicated fields (exported above); Validate rejects
 			// these in --set, this guard keeps a programmatic caller from
 			// clobbering the dedicated export (codex pass-2, P2).
+			continue
+		}
+		if k == KeyPlatformIngressVIP {
+			// An explicit EMPTY --set is a decision ("no front-door rule"),
+			// but put drops empty values, so a reload would let the scaffold
+			// re-seed what the operator declined. Persist the decision under
+			// its spelled-out name instead (codex review 2026-09-08, pass 4).
+			put(k, platformIngressVIPPersisted(v))
 			continue
 		}
 		put(k, v)

@@ -148,3 +148,113 @@ func TestValidateInfraAttachment_AllowsTheDisabledShape(t *testing.T) {
 		t.Fatalf("rejected the legitimate disabled shape: %s", got)
 	}
 }
+
+// The platform front door is the one address a managed control plane must
+// reach beyond its own etcd (OpenBao Transit for the kms-plugin sidecar, S3 for
+// snapshots). Every case below installed cleanly on a lab cluster and then parked four
+// control-plane pods with zero workers (2026-09-08). The "must be set" error
+// fires only when the front door is ESTABLISHED (announced VIP == arrival on a
+// MetalLB layer) and sits inside the routes — never on a guess. The none layer
+// and the platform-endpoint overlay are never demanded: the file cannot tell a
+// NAT-free node from a 1:1-NAT one, nor whether the overlay's DNS rewrite is
+// in place; the scaffold seeds or warns for those.
+func TestValidateInfraAttachment_PlatformIngressVIP(t *testing.T) {
+	base := map[string]string{
+		"INFRA_ATTACHMENT_ENABLED":        "true",
+		"INFRA_ATTACHMENT_ROUTES":         "192.168.110.0/24,172.30.0.0/22,10.100.0.0/16",
+		"INFRA_ATTACHMENT_SECURITY_GROUP": "infra-lock-{namespace}",
+	}
+	with := func(mutate func(map[string]string)) map[string]string {
+		env := make(map[string]string, len(base)+4)
+		for k, v := range base {
+			env[k] = v
+		}
+		mutate(env)
+		return env
+	}
+
+	// Seeded value inside the node route: the ordinary healthy file.
+	if got := infraErrs(with(func(v map[string]string) { v[KeyPlatformIngressVIP] = "192.168.110.180" })); got != "" {
+		t.Fatalf("front door inside the routes rejected: %s", got)
+	}
+	// Front door OUTSIDE the routes with the key empty: the pod reaches it over
+	// the tenant route, nothing to grant, nothing to complain about.
+	if got := infraErrs(with(func(v map[string]string) {
+		v["INGRESS_ADDRESS_LAYER"] = "metallb-l2"
+		v["METALLB_FLOATING_IP"], v["KUBE_API_ARRIVAL_IP"] = "203.0.113.10", "203.0.113.10"
+	})); got != "" {
+		t.Fatalf("tenant-route front door demanded a key: %s", got)
+	}
+	// Front door INSIDE the routes with the key empty on a MetalLB layer: the
+	// live failure. The error must name the exact assignment.
+	got := infraErrs(with(func(v map[string]string) {
+		v["INGRESS_ADDRESS_LAYER"] = "metallb-l2"
+		v["METALLB_FLOATING_IP"], v["KUBE_API_ARRIVAL_IP"] = "192.168.110.180", "192.168.110.180"
+	}))
+	if !strings.Contains(got, KeyPlatformIngressVIP+"=192.168.110.180") {
+		t.Fatalf("infra-NIC front door without the key accepted, or the fix not named: %q", got)
+	}
+	// none layer: the node's own address is inside the routes, but the file
+	// cannot say whether 1:1 NAT stands in front of it (both keys carry the
+	// post-NAT address there). Not demanded — the scaffold seeds or warns.
+	if got := infraErrs(with(func(v map[string]string) {
+		v["INGRESS_ADDRESS_LAYER"] = "none"
+		v["NODE_EXTERNAL_IP"], v["KUBE_API_ARRIVAL_IP"] = "192.168.110.180", "192.168.110.180"
+	})); got != "" {
+		t.Fatalf("none-layer node address demanded as the front door: %s", got)
+	}
+	// A MetalLB arrival address that no longer matches the announced VIP (a
+	// clone's leftover) is likewise not established.
+	if got := infraErrs(with(func(v map[string]string) {
+		v["INGRESS_ADDRESS_LAYER"] = "metallb-l2"
+		v["METALLB_FLOATING_IP"], v["KUBE_API_ARRIVAL_IP"] = "192.168.110.181", "192.168.110.180"
+	})); got != "" {
+		t.Fatalf("stale arrival address demanded as the front door: %s", got)
+	}
+	// The platform-endpoint overlay: enabling it does not prove bao. is
+	// rewritten to the internal VIP, so nothing is demanded — not the internal
+	// VIP, and not the MetalLB VIP that would otherwise be established.
+	if got := infraErrs(with(func(v map[string]string) {
+		v["INGRESS_ADDRESS_LAYER"] = "metallb-l2"
+		v["METALLB_FLOATING_IP"], v["KUBE_API_ARRIVAL_IP"] = "192.168.110.180", "192.168.110.180"
+		v["PLATFORM_ENDPOINT_ENVOY_GATEWAY_ENABLED"] = "true"
+		v["ENVOY_GATEWAY_INTERNAL_VIP"] = "192.168.110.31"
+	})); got != "" {
+		t.Fatalf("overlay topology demanded a guess: %s", got)
+	}
+
+	for name, vip := range map[string]string{
+		"outside-routes": "203.0.113.10",
+		"ipv6":           "2001:db8::1",
+		"ipv4-mapped":    "::ffff:192.168.110.180",
+		"cidr":           "192.168.110.180/32",
+		"hostname":       "bao.example.com",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := infraErrs(with(func(v map[string]string) { v[KeyPlatformIngressVIP] = vip })); got == "" {
+				t.Fatalf("%s=%q accepted", KeyPlatformIngressVIP, vip)
+			}
+		})
+	}
+
+	// The persistable decline is accepted as-is even where the front door is
+	// established and inside the routes: the scaffold rewrites it to empty
+	// and is the one that warns about the cost.
+	if got := infraErrs(with(func(v map[string]string) {
+		v["INGRESS_ADDRESS_LAYER"] = "metallb-l2"
+		v["METALLB_FLOATING_IP"], v["KUBE_API_ARRIVAL_IP"] = "192.168.110.180", "192.168.110.180"
+		v[KeyPlatformIngressVIP] = PlatformIngressVIPNone
+	})); got != "" {
+		t.Fatalf("deliberate decline rejected: %s", got)
+	}
+
+	// Dual-homing off: the chart never renders the key, so only its shape is
+	// checked — a value outside routes that do not apply is not an error.
+	off := map[string]string{"INFRA_ATTACHMENT_ENABLED": "false", KeyPlatformIngressVIP: "203.0.113.10"}
+	if got := infraErrs(off); got != "" {
+		t.Fatalf("inert key rejected while dual-homing is off: %s", got)
+	}
+	if got := infraErrs(map[string]string{"INFRA_ATTACHMENT_ENABLED": "false", KeyPlatformIngressVIP: "nope"}); got == "" {
+		t.Fatal("malformed inert key accepted")
+	}
+}

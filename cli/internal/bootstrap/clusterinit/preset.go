@@ -595,6 +595,14 @@ func EnvMapFor(p Preset, sets map[string]string) (map[string]string, error) {
 		// allow-lists; operators can layer arbitrary cluster-config
 		// keys via --set (and the SCREAMING_SNAKE_CASE check in
 		// options.go's validateSets catches typos).
+		if k == KeyPlatformIngressVIP {
+			// An explicit EMPTY value is a decision ("no front-door rule"),
+			// spelled `none` from the first map every consumer sees —
+			// preflight validation, the scaffold, --save-config — so it is
+			// never mistaken for "not set" (codex review 2026-09-08, pass 5).
+			out[k] = platformIngressVIPPersisted(v)
+			continue
+		}
 		out[k] = v
 	}
 
@@ -1990,6 +1998,8 @@ func validateInfraAttachment(envMap map[string]string, errs *[]string) {
 			"INFRA_ATTACHMENT_SECURITY_GROUP=%q must contain the literal {namespace} "+
 				"(without it every project shares one security group, which is a cross-tenant isolation failure)", sg))
 	}
+
+	validatePlatformIngressVIP(envMap, enabled == "true", routes, errs)
 
 	infraCIDR, infraOK := parseCIDRIfPresent(envMap, "INFRA_ATTACHMENT_CIDR", errs)
 	checkGatewayInCIDR(envMap, "INFRA_ATTACHMENT_GATEWAY", infraCIDR, infraOK, errs)

@@ -293,6 +293,13 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	if err := postProcessClusterConfig(envPath, opts.Plan, opts.Sets, opts.NodeCIDR, opts.GPU); err != nil {
 		return fmt.Errorf("scaffold: post-process %s: %w", envPath, err)
 	}
+	// The none layer's front door is the node's own address, but only a
+	// NAT-free one is what DNS names — and SingleIPNAT plus this cluster's
+	// resolved node address are known here alone, so the seed cannot live in
+	// postProcessClusterConfig with the rest. Also announces / warns.
+	if err := reconcilePlatformIngressVIP(envPath, opts.NodeExternalIP, opts.SingleIPNAT, opts.Sets, opts.Plan.ClusterName, out); err != nil {
+		return fmt.Errorf("scaffold: %w", err)
+	}
 
 	// (6) M4-T11 customInterfaces patch — apply the inline Kustomize
 	// patch when the operator supplied --node-nic mappings. No-op
@@ -780,6 +787,36 @@ func postProcessClusterConfig(path string, plan *Plan, sets map[string]string, n
 		}
 		env.Set(keyMgmtSnatIP, addr)
 		env.Set(keyExtExclude, widened)
+	}
+
+	// Platform front door for the managed control plane. The manager adds one
+	// exact TCP/443 egress rule to the control-plane security group so the
+	// kms-plugin sidecar reaches OpenBao Transit and the etcd-backup Job
+	// reaches S3 over the locked infra NIC — but only when the front-door
+	// address actually sits inside the injected routes; outside them the pod
+	// takes the tenant route and the manager rejects the key as a dead rule.
+	//
+	// Ordered AFTER the KUBE_API_ARRIVAL_IP resolution above on purpose: on a
+	// MetalLB layer the script seeds CHANGEME there, and deriving before it is
+	// resolved leaves the key empty — which the validation below then rejects
+	// as soon as the resolved VIP lands inside the routes, aborting every
+	// MetalLB greenfield scaffold (codex review 2026-09-08, HIGH #1). Only the
+	// case the file can ESTABLISH is seeded here (MetalLB VIP == arrival); the
+	// none layer is seeded by Scaffold, which alone knows whether 1:1 NAT
+	// stands in front of the node and which address it resolved for it. An
+	// operator --set, or a value already in the file, always wins. Scaffold
+	// reports the outcome (reconcilePlatformIngressVIP) once the file is
+	// written.
+	if _, overridden := sets[KeyPlatformIngressVIP]; !overridden &&
+		strings.TrimSpace(envGet(env, KeyPlatformIngressVIP)) == "" {
+		seeded := ""
+		if strings.TrimSpace(envGet(env, "INFRA_ATTACHMENT_ENABLED")) == "true" {
+			candidate := platformIngressVIPCandidate(func(k string) string { return envGet(env, k) })
+			if candidate != "" && routeCoversIP(envGet(env, "INFRA_ATTACHMENT_ROUTES"), candidate) {
+				seeded = candidate
+			}
+		}
+		env.Set(KeyPlatformIngressVIP, seeded)
 	}
 
 	// Re-run semantic validation against the exact file we are about to

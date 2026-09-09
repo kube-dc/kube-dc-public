@@ -1,5 +1,27 @@
 # kube-dc CLI changelog
 
+## v0.7.4
+
+### Added
+
+- **The scaffold seeds the platform ingress VIP.** A dual-homed managed control
+  plane reaches `bao.` and `s3.<domain>` — the Envoy front door — over its infra
+  NIC, and the control-plane security group previously allowed only etcd on
+  2379. The kms-plugin sidecar's OpenBao login timed out, so the apiserver never
+  became Ready and CAPI refused every worker. `init` now seeds
+  `INFRA_ATTACHMENT_PLATFORM_INGRESS_VIP` where this cluster's front door is
+  established and sits inside the injected routes, and says exactly which key to
+  set where it cannot prove that itself. Set it to `none` to opt out.
+
+### Fixed
+
+- **A new database no longer reports itself Failed for 90 seconds.** Creating a
+  database showed a red "Failed" badge with `ReconciliationFailed` until the
+  engine's name-reservation window expired. That wait is gone: the squatter scan
+  now runs on every reconcile instead of once behind a 90-second delay, so a
+  database starts provisioning immediately and a planted claim is caught whenever
+  it appears rather than only at creation.
+
 ## v0.7.3
 
 No CLI source change. This tag exists so a greenfield install gets the 0.7.1

@@ -325,3 +325,42 @@ func TestImportMap_NodeEgressRequiresExplicitInstallKey(t *testing.T) {
 		t.Fatalf("saved spec round-trip = %q, want true", got)
 	}
 }
+
+// The front-door key is operator input that must survive --save-config →
+// --config verbatim — both a hand-set address (where the scaffold cannot
+// establish one) and the persistable decline. It is deliberately NOT
+// deny-imported: a saved override that silently vanished would be re-derived
+// to a wrong value with a success message (codex review 2026-09-08).
+func TestExportImport_PlatformIngressVIPOverridesSurvive(t *testing.T) {
+	// in → what a reload must see. An explicit EMPTY input is a decision
+	// too, and is saved under its spelled-out name because empty values are
+	// dropped on both sides of the round trip (codex review 2026-09-08,
+	// pass 4).
+	for in, want := range map[string]string{
+		"198.51.100.7":         "198.51.100.7",
+		PlatformIngressVIPNone: PlatformIngressVIPNone,
+		"":                     PlatformIngressVIPNone,
+	} {
+		orig := &InitOptions{
+			Name: "dc1", Domain: "kdc.example.com", NodeExternalIP: "203.0.113.10",
+			Email: "ops@example.com", Mode: ModeInstall, FleetMode: FleetNewRepo,
+			Preset: PresetInternalOnly, GitHubOwner: "acme", GitHubRepo: "acme-fleet",
+			Sets: map[string]string{"EXT_NET_INTERFACE": "enp1s0", KeyPlatformIngressVIP: in},
+		}
+		got := &InitOptions{}
+		if ignored := ImportMap(got, ExportMap(orig), noFlagsChanged); len(ignored) != 0 {
+			t.Errorf("%q: round-trip ignored %v", in, ignored)
+		}
+		if got.Sets[KeyPlatformIngressVIP] != want {
+			t.Errorf("%s=%q did not survive save/reload as %q: got %q", KeyPlatformIngressVIP, in, want, got.Sets[KeyPlatformIngressVIP])
+		}
+	}
+	// A sibling's file with the key merely EMPTY (the scaffold's "nothing to
+	// grant") must NOT import as a decline: absent means "let the scaffold
+	// decide" on the new cluster.
+	got := &InitOptions{}
+	ImportMap(got, map[string]string{"EXT_NET_INTERFACE": "enp1s0", KeyPlatformIngressVIP: ""}, noFlagsChanged)
+	if _, present := got.Sets[KeyPlatformIngressVIP]; present {
+		t.Errorf("an empty key in a source file was imported as explicit input: %q", got.Sets[KeyPlatformIngressVIP])
+	}
+}

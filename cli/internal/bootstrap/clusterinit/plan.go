@@ -644,7 +644,7 @@ func (o *InitOptions) inputsForHash() inputsForHash {
 		Provider:            normalizeProviderForHash(o.Provider),
 		GitHubOwner:         o.GitHubOwner,
 		GitHubRepo:          o.GitHubRepo,
-		Sets:                o.Sets,
+		Sets:                normalizeSetsForHash(o.Sets),
 		NodeNICs:            o.NodeNICs,
 		RookMode:            o.RookMode,
 		RookOSDNode:         o.RookOSDNode,
