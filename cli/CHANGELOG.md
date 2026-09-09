@@ -1,6 +1,6 @@
 # kube-dc CLI changelog
 
-## v0.7.4
+## v0.7.5
 
 ### Added
 
@@ -15,12 +15,13 @@
 
 ### Fixed
 
-- **A new database no longer reports itself Failed for 90 seconds.** Creating a
-  database showed a red "Failed" badge with `ReconciliationFailed` until the
-  engine's name-reservation window expired. That wait is gone: the squatter scan
-  now runs on every reconcile instead of once behind a 90-second delay, so a
-  database starts provisioning immediately and a planted claim is caught whenever
-  it appears rather than only at creation.
+- **A new database provisions in seconds and never reports itself Failed while
+  it waits.** Creating a database showed a red "Failed" badge with
+  `ReconciliationFailed` for its first 90 seconds — the engine's name-reservation
+  window, reported through the error path. That window is now 10 seconds and
+  shows as Provisioning. The only identity that can plant a claim under the
+  engine's names is the tenant, in their own namespace, and leftovers from an
+  unclean delete are already caught by the marker scan without any wait.
 
 ## v0.7.3
 
