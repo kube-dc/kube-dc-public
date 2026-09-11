@@ -1,11 +1,20 @@
 # kube-dc CLI changelog
 
+## v0.7.8
+
+Starter-only portability cleanup; no CLI behavior change from v0.7.7:
+
+- Keep the shared incident rules and notification policy provider-neutral.
+  Provider overlays retain any legacy resource names required for upgrades.
+- Keep customer rollout evidence, site names and account identifiers out of the
+  product documentation, tests and public starter.
+
 ## v0.7.7
 
 Starter-only corrections; no CLI behavior change from v0.7.6:
 
-- Keep failed backup jobs visible outside CloudSigma, where the corresponding
-  CloudSigma-specific backup freshness alert is not installed.
+- Keep failed backup jobs visible when a provider-specific replacement backup
+  freshness alert is not installed.
 - Preserve independent managed-cluster health signals when the inventory
   exporter is unavailable; missing inventory alone is not proof of deletion.
 
