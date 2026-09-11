@@ -380,10 +380,13 @@ Notes:
   (`kdc_rotator`) from "human ops" (`postgres`). It does not change
   what's *possible* to access; it changes what shows up in audit
   trails.
-- **Cannot be changed after creation** for PostgreSQL — CNPG's
-  `enableSuperuserAccess` is provisioning-time. Set it at
-  `KdcDatabase` creation if you want it on; recreate the DB if you
-  change your mind later.
+- **This is not a creation-only CNPG setting.** The database controller
+  renders the requested value on reconciliation. With CNPG 1.29, disabling
+  it removes the operator-generated superuser Secret and clears the
+  `postgres` password. Wait for reconciliation and verify that a fresh
+  password-authenticated connection is refused; already-open sessions and
+  privileged SQL changes are not undone. Do not recreate a database just
+  to change this setting. See [CNPG superuser access](https://cloudnative-pg.io/docs/1.29/security/).
 - **MariaDB tenants don't need this knob** — mariadb-operator
   unconditionally provides `<db>-root`, which is already this kind
   of break-glass path.

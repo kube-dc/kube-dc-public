@@ -4,7 +4,8 @@ Kube-DC uses one cluster-wide SMTP configuration for email sent by Keycloak and 
 
 - account setup, email verification, and password-reset messages from Keycloak;
 - Organization join-request notifications; and
-- join-request approval or denial messages.
+- join-request approval or denial messages; and
+- billing lifecycle notifications when delivery is enabled or explicitly released.
 
 This guide covers the password-based Google path supported by Kube-DC's current SMTP configuration: `smtp.gmail.com` with a Google App Password. It is not the only way to send through Google. Google says App Passwords are not recommended for most applications and should be used only when an application cannot use **Sign in with Google**. Kube-DC's SMTP client does not currently implement that OAuth flow.
 
@@ -66,6 +67,14 @@ Google documents `smtp.gmail.com`, port `587`, and TLS for authenticated applica
 
 ## Configure Kube-DC
 
+Admin **Settings → Email (SMTP)** now prefills the effective settings. Saving there
+creates a separate runtime override shared by Keycloak and console email. Fleet
+values remain the baseline; use **Restore GitOps settings** to follow them again.
+Fleet can lock editing with `backend.smtp.management: gitops`. If an override is
+active, rotating a password in Fleet does not rotate the override password.
+See [configuration ownership and tests](../prd/shared-smtp-admin-configuration.md).
+
+
 The administrator should provide the credential through the installation's protected Helm or GitOps secret flow. For a chart-based deployment, the resulting values have this shape:
 
 ```yaml
@@ -83,16 +92,38 @@ backend:
 
 Do not treat a direct edit to the generated `master-config` Secret as durable configuration. The chart renders that Secret for the controller and also configures the console backend from the same `backend.smtp` values.
 
-After the deployment reconciles, the Organization controller writes the SMTP settings into each Organization's Keycloak realm and corrects SMTP drift when that realm is reconciled. Propagation time depends on the deployment and reconciliation state, so verify both email paths before relying on them.
+After the deployment reconciles, the manager synchronizes SMTP settings into
+master and each managed Organization realm every 30 seconds. Backend sends read
+the current configuration directly. Check the synchronization status in admin
+Settings and verify both email paths before relying on them.
 
 ## Verify the configuration
 
 1. Confirm that the updated Kube-DC manager and backend workloads are ready.
-2. In the Keycloak Admin Console, select an Organization realm, open **Realm settings > Email**, and use **Test connection**.
+2. In admin **Settings → Email (SMTP)**, use **Test connection**, then **Send test email** to an address you control. Confirm Keycloak synchronization is current.
 3. Run an account-setup or password-reset flow for a test user.
 4. If your deployment uses Organization join requests, submit and approve a test request to verify the console backend path too.
 
 Successful SMTP authentication does not guarantee inbox placement. Google may filter or reject messages under its account, anti-abuse, and sender policies.
+
+### Verify sender authentication
+
+Use **Check sender DNS** to inspect published SPF, DMARC and the selected DKIM
+record. Then inspect a received message with Gmail's **Show original**. The DNS
+check does not establish which key the provider used or whether the message passed
+authentication.
+
+The cloud test on 2026-09-10 passed SPF, DKIM and DMARC, but Google signed with
+`kube-dc-cloud.20251104.gappssmtp.com`; DMARC passed through SPF alignment with
+the rewritten `console@kube-dc.cloud` sender. Cloud now configures that From address
+explicitly. To add aligned DKIM, a Google Workspace administrator should open
+**Apps → Google Workspace → Gmail → Authenticate email**, select `kube-dc.cloud`,
+check that the displayed selector/key matches the published DNS record, and use
+**Start authentication** if it is not enabled. If already enabled, investigate why
+this sending path still uses the Google signing domain. Verify a new received
+message has a passing signature with `d=kube-dc.cloud`. See
+[Google's DKIM setup instructions](https://knowledge.workspace.google.com/admin/security/set-up-dkim)
+and [DMARC alignment](https://knowledge.workspace.google.com/admin/security/set-up-dmarc#dmarc-alignment).
 
 ## Sending limits
 
@@ -125,8 +156,8 @@ Google revokes App Passwords when the Google Account password changes. If SMTP a
 | `530 5.7.0 Must issue a STARTTLS command first` | The port and TLS mode do not match. | For this guide, use port `587` with `secure: "false"`. Port `465` requires implicit TLS with `secure: "true"`. |
 | Sending stops or messages are deferred | The account reached a sending or recipient limit, or Google applied an anti-abuse control. | Check the Google Account, Kube-DC logs, and the current sending-limit pages. Wait for Google to restore sending or move the workload to a suitable relay. |
 | The sender is rejected or rewritten | The **From address** is not permitted for the authenticated account. | Use the authenticated address or a verified alias allowed by the Google Workspace administrator. |
-| Keycloak mail works but join-request notifications do not | The Organization realm has the SMTP settings, but the console backend has not received or reloaded its configuration. | Confirm the backend rollout and inspect its logs for SMTP errors. |
-| Join-request notifications work but Keycloak mail does not | The backend is configured, but the Organization realm has not converged or has a realm-specific SMTP problem. | Inspect **Realm settings > Email**, reconcile the Organization, and retry **Test connection**. |
+| Keycloak mail works but join-request notifications do not | The backend cannot read the shared configuration or its SMTP request fails. | Confirm the backend rollout, test the current configuration in admin Settings, and inspect backend logs for SMTP errors. |
+| Join-request notifications work but Keycloak mail does not | The Organization realm has not converged or has a realm-specific SMTP problem. | Check synchronization status in admin Settings and manager logs, then inspect **Realm settings > Email** and retry the account flow. |
 
 Google maintains a reference of [Gmail SMTP errors and codes](https://support.google.com/mail/answer/3726730?hl=en) for server-side failures.
 

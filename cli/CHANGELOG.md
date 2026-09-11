@@ -1,5 +1,17 @@
 # kube-dc CLI changelog
 
+## v0.7.9
+
+One version across the whole platform again. Every image we ship, the chart,
+this CLI, the cloud-shell image and the fleet-starter carry `v0.7.9`, rebuilt
+from main — the 0.7.5-0.7.8 line had drifted far enough apart that the release
+tooling refused to run (kube-pod was still pinned to a v0.7.5 CLI while v0.7.8
+was released). A v0.7.9 CLI installs a v0.7.9 cluster.
+
+No CLI behaviour change of its own beyond what 0.7.6-0.7.8 already added; this
+tag exists so a greenfield install gets the whole current platform, since the
+fleet-starter is bound to the CLI version and starter tags are immutable.
+
 ## v0.7.8
 
 Starter-only portability cleanup; no CLI behavior change from v0.7.7:
