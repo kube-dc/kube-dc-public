@@ -1,5 +1,14 @@
 # kube-dc CLI changelog
 
+## v0.7.7
+
+Starter-only corrections; no CLI behavior change from v0.7.6:
+
+- Keep failed backup jobs visible outside CloudSigma, where the corresponding
+  CloudSigma-specific backup freshness alert is not installed.
+- Preserve independent managed-cluster health signals when the inventory
+  exporter is unavailable; missing inventory alone is not proof of deletion.
+
 ## v0.7.6
 
 - Add `bootstrap keycloak init --admin-console-only` for scoped Admin Console
