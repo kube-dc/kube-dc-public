@@ -148,8 +148,8 @@ var scriptContracts = map[ports.ScriptKind]scriptContract{
 	ports.ScriptSetupKeycloakOIDC: {
 		requiredEnv: []string{"KUBECONFIG"},
 		minArgs:     1,
-		maxArgs:     1,
-		argDesc:     "<cluster-name>",
+		maxArgs:     3,
+		argDesc:     "<cluster-name> [--admin-console-only] [--grant-bootstrap-superadmin]",
 	},
 	ports.ScriptSetupSSORealm: {
 		// SMTP_USER/SMTP_PASSWORD are required only on the FIRST run

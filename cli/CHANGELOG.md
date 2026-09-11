@@ -1,5 +1,16 @@
 # kube-dc CLI changelog
 
+## v0.7.6
+
+- Add `bootstrap keycloak init --admin-console-only` for scoped Admin Console
+  enrollment without changing existing users, passwords, roles or realm settings.
+- The matching Fleet starter includes named Grafana-only operators, password
+  onboarding without SMTP, grouped alerts with public Grafana links, and secure
+  Slack/Opsgenie settings. Notification destinations start disabled.
+- Standardize new Prometheus installations on a 1 GiB memory request and 4 GiB
+  limit, separate expensive historical recording rules, and stop deleted managed
+  clusters and worker pools from sustaining stale health alerts.
+
 ## v0.7.5
 
 ### Added

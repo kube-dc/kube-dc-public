@@ -55,6 +55,11 @@ type InitOptions struct {
 	// NoPush leaves the script-created commit local for explicit test workflows.
 	NoPush bool
 
+	// AdminConsoleOnly avoids the full bootstrap's realm, Flux, Grafana, CLI
+	// and human-account reconciliation. Enrollment is separately opt-in.
+	AdminConsoleOnly         bool
+	GrantBootstrapSuperadmin bool
+
 	// Out is where redacted stdout + status lines go. nil = io.Discard.
 	Out io.Writer
 }
@@ -92,7 +97,14 @@ func Init(ctx context.Context, opts InitOptions) error {
 	// No env or sentinel callback — the script's stdout is purely
 	// human-readable progress + a `git commit` at the end. Secrets
 	// are surfaced via SOPS-encrypted file mutations, not stdout.
-	lines, err := opts.Runner.Run(ctx, ports.ScriptSetupKeycloakOIDC, nil, opts.ClusterName)
+	args := []string{opts.ClusterName}
+	if opts.AdminConsoleOnly {
+		args = append(args, "--admin-console-only")
+	}
+	if opts.GrantBootstrapSuperadmin {
+		args = append(args, "--grant-bootstrap-superadmin")
+	}
+	lines, err := opts.Runner.Run(ctx, ports.ScriptSetupKeycloakOIDC, nil, args...)
 	if err != nil {
 		return fmt.Errorf("keycloak init: start setup-keycloak-oidc.sh: %w", err)
 	}
@@ -130,11 +142,18 @@ func Init(ctx context.Context, opts InitOptions) error {
 			fmt.Fprintln(out, "[keycloak] init complete — clients configured; encrypted secrets + chart wiring committed and pushed")
 		}
 	}
-	fmt.Fprintln(out, "[keycloak] next: flux reconcile kustomization flux-system --with-source && flux reconcile kustomization addons && flux reconcile kustomization platform")
+	if opts.AdminConsoleOnly {
+		fmt.Fprintln(out, "[keycloak] next: reconcile flux-system --with-source, then the addons layer named by the scoped setup, and platform")
+	} else {
+		fmt.Fprintln(out, "[keycloak] next: flux reconcile kustomization flux-system --with-source && flux reconcile kustomization addons && flux reconcile kustomization platform")
+	}
 	return nil
 }
 
 func validate(opts InitOptions) error {
+	if opts.GrantBootstrapSuperadmin && !opts.AdminConsoleOnly {
+		return fmt.Errorf("--grant-bootstrap-superadmin requires --admin-console-only")
+	}
 	if opts.ClusterName == "" {
 		return fmt.Errorf("%w: ClusterName", ErrMissingDependency)
 	}

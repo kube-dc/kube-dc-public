@@ -13,9 +13,11 @@ import (
 type fakeRunner struct {
 	lines []ports.Line
 	err   error
+	args  []string
 }
 
-func (r *fakeRunner) Run(_ context.Context, _ ports.ScriptKind, _ map[string]string, _ ...string) (<-chan ports.Line, error) {
+func (r *fakeRunner) Run(_ context.Context, _ ports.ScriptKind, _ map[string]string, args ...string) (<-chan ports.Line, error) {
+	r.args = args
 	if r.err != nil {
 		return nil, r.err
 	}
@@ -181,5 +183,26 @@ func TestValidateNoPushDoesNotRequireGit(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("validate() error = %v with --no-push", err)
+	}
+}
+
+func TestScopedAdminConsoleBootstrap(t *testing.T) {
+	runner := successfulRunner()
+	err := Init(context.Background(), InitOptions{ClusterName: "region/site", FleetRepo: "/fleet", Runner: runner,
+		NoPush: true, AdminConsoleOnly: true, GrantBootstrapSuperadmin: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(runner.args, " ") != "region/site --admin-console-only --grant-bootstrap-superadmin" {
+		t.Fatalf("unexpected script arguments: %v", runner.args)
+	}
+}
+
+func TestExplicitGrantRequiresScopedMode(t *testing.T) {
+	runner := successfulRunner()
+	err := Init(context.Background(), InitOptions{ClusterName: "region/site", FleetRepo: "/fleet", Runner: runner,
+		NoPush: true, GrantBootstrapSuperadmin: true})
+	if err == nil || len(runner.args) != 0 {
+		t.Fatal("unscoped explicit grant must fail before running")
 	}
 }

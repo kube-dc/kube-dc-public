@@ -26,7 +26,7 @@ import (
 // Idempotent end-to-end: re-running on a cluster where all clients
 // already exist produces no diff.
 func bootstrapKeycloakInitCmd(fleetRepo *string) *cobra.Command {
-	var noPush bool
+	var noPush, adminConsoleOnly, grantBootstrapSuperadmin bool
 	cmd := &cobra.Command{
 		Use:   "init <cluster-name>",
 		Short: "Bootstrap Keycloak OIDC clients + persist encrypted secrets (D'-1)",
@@ -92,17 +92,23 @@ they don't pick up Secret rotations without a restart.`,
 			}
 
 			return keycloak.Init(cmd.Context(), keycloak.InitOptions{
-				ClusterName: clusterName,
-				FleetRepo:   repo,
-				Runner:      session.Scripts,
-				Git:         session.Git,
-				GitHubToken: token,
-				NoPush:      noPush,
-				Out:         out,
+				ClusterName:              clusterName,
+				FleetRepo:                repo,
+				Runner:                   session.Scripts,
+				Git:                      session.Git,
+				GitHubToken:              token,
+				NoPush:                   noPush,
+				AdminConsoleOnly:         adminConsoleOnly,
+				GrantBootstrapSuperadmin: grantBootstrapSuperadmin,
+				Out:                      out,
 			})
 		},
 	}
 	cmd.Flags().BoolVar(&noPush, "no-push", false,
 		"Commit locally; do not push the Keycloak client secrets and chart wiring")
+	cmd.Flags().BoolVar(&adminConsoleOnly, "admin-console-only", false,
+		"Configure only Admin Console clients/roles/backend wiring; preserve existing identities and other clients")
+	cmd.Flags().BoolVar(&grantBootstrapSuperadmin, "grant-bootstrap-superadmin", false,
+		"With --admin-console-only, add only superadmin to the existing admin user; never change profile/password/groups")
 	return cmd
 }

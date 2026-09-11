@@ -139,7 +139,7 @@ func TestValidateContract_ArgCount_TooFew(t *testing.T) {
 func TestValidateContract_ArgCount_TooMany(t *testing.T) {
 	t.Setenv("KUBECONFIG", "/k")
 	err := validateContract(
-		ports.ScriptSetupKeycloakOIDC, nil, []string{"a", "b"}, // max 1
+		ports.ScriptSetupKeycloakOIDC, nil, []string{"a", "b", "c", "d"}, // max 3
 	)
 	if err == nil {
 		t.Fatal("expected ErrInvalidArgCount")
