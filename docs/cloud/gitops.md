@@ -44,9 +44,53 @@ another namespace or includes a cluster-scoped object.
 
 :::warning Credentials for automation
 The interactive `kube-dc login` credential is a user session, not a permanent
-CI secret. Use the automation identity and credential flow approved by your
-Kube-DC administrator. Scope it to one Project, store it in the CI secret store,
-and rotate it regularly.
+CI secret. Mint a Project-scoped automation credential instead, as below. Scope it
+to one Project, store it in the CI secret store, and rotate it regularly.
+:::
+
+### Minting an automation credential
+
+Create a ServiceAccount in your Project namespace, give it only the rights the
+pipeline needs, and mint a short-lived token for it. A Project admin can do all
+three; no platform administrator is involved.
+
+```bash
+# 1. the identity your pipeline will act as
+kubectl -n <project-namespace> create serviceaccount ci-deploy
+
+# 2. exactly the rights it needs — this example deploys, and reads nothing secret
+kubectl -n <project-namespace> create role ci-deploy \
+  --verb=get,list,watch,create,update,patch \
+  --resource=deployments.apps,services,persistentvolumeclaims
+kubectl -n <project-namespace> create rolebinding ci-deploy \
+  --role=ci-deploy --serviceaccount=<project-namespace>:ci-deploy
+
+# 3. the credential itself
+kubectl -n <project-namespace> create token ci-deploy --duration=24h
+```
+
+Put the token in your CI secret store and build a kubeconfig around it, or pass it
+as a bearer token.
+
+**Tokens expire.** `create token` issues a bound, time-limited credential — there is
+no permanent one, by design. Choose a duration your rotation can keep up with, and
+re-mint before it lapses. A pipeline cannot re-mint its own token, so rotation is a
+Project-admin action (or a job running under a longer-lived credential).
+
+If your organization's identity provider supports it, prefer federating your CI
+system directly rather than storing any long-lived token at all.
+
+:::note Why a Secret does not work
+Creating a `kubernetes.io/service-account-token` Secret is refused. That older
+mechanism produces a credential that never expires, and it is filled for whichever
+account holds the named ServiceAccount at the moment the controller reaches it —
+so a Secret created against a name that is later taken over by a platform-managed
+account would be filled with *that* account's credential. `create token` has no
+such ambiguity: it names the account, and the token is bound and short-lived.
+
+For the same reason, tokens for platform-managed ServiceAccounts — the accounts
+behind managed databases and other managed services — are refused. Those carry the
+`services.kube-dc.com/managed-by` label and are minted only by the platform.
 :::
 
 ## Pattern 2: GitOps in a Managed Cluster
