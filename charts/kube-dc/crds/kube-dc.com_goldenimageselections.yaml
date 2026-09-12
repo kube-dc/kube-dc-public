@@ -1,0 +1,195 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.4
+  name: goldenimageselections.kube-dc.com
+spec:
+  group: kube-dc.com
+  names:
+    kind: GoldenImageSelection
+    listKind: GoldenImageSelectionList
+    plural: goldenimageselections
+    shortNames:
+    - gis
+    singular: goldenimageselection
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.family
+      name: Family
+      type: string
+    - jsonPath: .spec.mode
+      name: Mode
+      type: string
+    - jsonPath: .spec.snapshotName
+      name: Snapshot
+      type: string
+    - jsonPath: .status.ready
+      name: Ready
+      type: boolean
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          GoldenImageSelection pins the golden image a family serves from, so promotion is a
+          single reviewed write instead of a two-label flip with no safe intermediate state.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              GoldenImageSelectionSpec names the ONE golden a family serves from.
+
+              It replaces the kube-dc.com/golden-active label, which could not express a
+              promotion atomically. That label lives on the snapshots themselves, so moving it
+              means two writes, and BOTH intermediate states pick the wrong image:
+
+                - zero labelled: preferActive() is a sort.SliceStable, so it merely preserves API
+                  list order — not a selection contract. Projects seed from whichever sibling the
+                  API happened to return first, and nothing is logged.
+                - two labelled: activeGoldenConflicts() produces an error, but the caller appends
+                  it to a slice and keeps going, so seeding still proceeds from an arbitrary one.
+
+              A single object per (family, mode) makes promotion one write with no intermediate
+              state, and makes "which image is this cluster serving" answerable from Git rather
+              than from labels an operator has to remember to move in the right order.
+            properties:
+              family:
+                description: |-
+                  Family is the OS family this selection governs, matching the
+                  kube-dc.com/golden-os label on candidate snapshots (e.g. "windows-11-golden").
+                minLength: 1
+                type: string
+              mode:
+                default: Filesystem
+                description: |-
+                  Mode is the golden flavour: "Filesystem" (the default tenant root disk) or
+                  "Block" (live-migration capable). A family may serve both, independently
+                  promoted, so the selection is per (family, mode).
+
+                  Spelled like Kubernetes' own PersistentVolumeMode, and matching the seeder's
+                  internal constants. Getting this wrong is silent: a selection whose mode does
+                  not match governs NOTHING, and the family quietly falls back to label
+                  selection. The controller compares case-insensitively for that reason.
+                enum:
+                - Filesystem
+                - Block
+                type: string
+              releaseDigest:
+                description: |-
+                  ReleaseDigest, when set, is the sha256 of the artifact the named snapshot was
+                  built from ("sha256:..."). The controller records a mismatch rather than
+                  silently serving an image whose provenance does not match what Git claims —
+                  the failure mode that mutable /latest/ URLs produced, where identical Git could
+                  mean different bytes on two clusters.
+                type: string
+              snapshotName:
+                description: |-
+                  SnapshotName is the VolumeSnapshot in the golden-images namespace that projects
+                  must be seeded from. It is deliberately a plain name and not a selector: a
+                  selector can match two objects, which is the ambiguity this type exists to end.
+                minLength: 1
+                type: string
+            required:
+            - family
+            - snapshotName
+            type: object
+          status:
+            description: GoldenImageSelectionStatus reports whether the named snapshot
+              can actually serve.
+            properties:
+              conditions:
+                description: Conditions carries the reason a selection is not Ready.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              ready:
+                description: |-
+                  Ready is true when the named snapshot exists, is readyToUse, and carries the
+                  golden contract labels for this family. False means seeding for the family is
+                  held rather than silently falling back to a sibling.
+                type: boolean
+              resolvedSnapshotHandle:
+                description: |-
+                  ResolvedSnapshotHandle is the underlying CSI snapshot handle the selection
+                  currently resolves to. Projects are seeded content-addressed by this handle, so
+                  it — not the name — is what proves a cluster is serving the intended bytes.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -213,24 +213,53 @@ Git diff and never rotates that secret implicitly.
 
 ### Step 3: Configure Kube-DC
 
-#### Option A: Helm Values (Recommended for new deployments)
+#### Option A: GitOps fleet (recommended — this is the supported path)
 
-Add SSO configuration to your Helm values:
+The chart is deployed by Flux from `kube-dc-fleet`, and the four SSO values are
+already wired into `platform/kube-dc/helmrelease.yaml`. You do not edit the
+chart or run Helm yourself; you set the variables the HelmRelease substitutes.
 
-```yaml
-manager:
-  keycloakSecret:
-    ssoEnabled: true
-    ssoBrokerSecret: "<from-bootstrap-output>"
-    googleClientId: "<your-google-client-id>"
-    googleClientSecret: "<your-google-client-secret>"
-```
-
-Then upgrade the Helm release:
+Turn the feature on in `clusters/<cluster>/cluster-config.env`:
 
 ```bash
-helm upgrade kube-dc ./charts/kube-dc -n kube-dc -f values.yaml
+SSO_ENABLED=true
 ```
+
+The three credentials are secrets, so they belong in the SOPS-encrypted
+`clusters/<cluster>/secrets.enc.yaml`, **not** in `cluster-config.env`:
+
+```yaml
+stringData:
+  SSO_BROKER_SECRET: "<from-bootstrap-output>"
+  GOOGLE_CLIENT_ID: "<your-google-client-id>"
+  GOOGLE_CLIENT_SECRET: "<your-google-client-secret>"
+```
+
+:::warning Keep the keys present in `cluster-config.env`
+`platform/kube-dc/helmrelease.yaml` references all four keys
+*unconditionally*, and Flux's `postBuild` envsubst runs in **strict** mode — an
+undefined key fails the entire `platform` Kustomization with `variable not set
+(strict mode)`, not just the SSO feature. So `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET` and `SSO_BROKER_SECRET` must still *exist* in
+`cluster-config.env`; leave them **empty** there. The cluster-secrets Secret is
+listed after the ConfigMap in every Kustomization's `substituteFrom`, so the
+encrypted values override the empty ones.
+:::
+
+Commit and push the fleet repo, then let Flux apply it:
+
+```bash
+flux reconcile kustomization platform --with-source
+```
+
+:::danger Never `helm upgrade` a fleet-managed cluster
+Do not run `helm upgrade kube-dc ./charts/kube-dc`. The chart in a git checkout
+is not necessarily the version the cluster runs, so this can silently
+**downgrade** the platform, and Flux reverts whatever it applies on the next
+reconcile. If you need Helm directly for a non-fleet cluster, pull the released
+chart by version from the registry
+(`oci://registry-1.docker.io/shalb/kube-dc`) rather than using a local path.
+:::
 
 #### Option B: kubectl patch (Existing deployments)
 

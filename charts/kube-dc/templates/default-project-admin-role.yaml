@@ -13,7 +13,30 @@ rules:
 # Core resources
 - apiGroups: [""]
   resources: [persistentvolumeclaims, services, secrets, serviceaccounts, configmaps]
-  verbs: ["*"]
+  # Explicit verbs: a wildcard would also grant impersonate (ServiceAccounts) and
+  # escalate/bind (Roles, RoleBindings), which let a project identity act as the
+  # managed engines' accounts or mint roles it does not hold.
+  verbs: [get, list, watch, create, update, patch, delete, deletecollection]
+# serviceaccounts/token is a SEPARATE RBAC resource from serviceaccounts: the grant
+# above does not confer it. Without this rule a project admin has no way to obtain a
+# non-interactive credential at all -- `kubectl create token` is Forbidden, and the
+# legacy kubernetes.io/service-account-token Secret is refused by the
+# managed-references webhook (the token controller fills such a Secret with a
+# NON-EXPIRING credential for whichever account holds that name when it gets there,
+# a race no lookup can close). That left CI/CD with no supported path.
+#
+# Safe because the gate already exists: ManagedServiceAccountTokenValidator admits a
+# TokenRequest only for an account WITHOUT services.kube-dc.com/managed-by, so a
+# project admin can mint for their own ci-deploy account but not for a managed
+# engine's (CNPG runs each instance under a ServiceAccount named after its Cluster,
+# in the project namespace). That webhook's own comment anticipates "a project admin
+# who holds create on serviceaccounts/token" -- it was written for this grant.
+#
+# Admin only. Developer, manager and user roles must NOT hold this: minting a
+# credential is an administrative act.
+- apiGroups: [""]
+  resources: [serviceaccounts/token]
+  verbs: [create]
 - apiGroups: [""]
   resources: [resourcequotas]
   # ResourceQuotas are owned by the HNC and kube-dc quota controllers. Tenant
@@ -59,7 +82,10 @@ rules:
 # RBAC
 - apiGroups: [rbac.authorization.k8s.io]
   resources: [roles, rolebindings]
-  verbs: ["*"]
+  # Explicit verbs: a wildcard would also grant impersonate (ServiceAccounts) and
+  # escalate/bind (Roles, RoleBindings), which let a project identity act as the
+  # managed engines' accounts or mint roles it does not hold.
+  verbs: [get, list, watch, create, update, patch, delete, deletecollection]
 # Networking
 - apiGroups: [k8s.cni.cncf.io]
   resources: [network-attachment-definitions]
@@ -125,6 +151,11 @@ rules:
 - apiGroups: [kube-dc.com]
   resources: [eips, fips]
   verbs: [create, get, list, watch, delete]
+{{- if .Values.routedNetwork.enabled }}
+- apiGroups: [kube-dc.com]
+  resources: [projectrouteattachments]
+  verbs: [create, get, list, watch, delete]
+{{- end }}
 - apiGroups: [k8s.kube-dc.com]
   resources: [kdcclusters, kdcclusterdatastores]
   verbs: [create, get, list, watch, delete, patch, update]
@@ -158,6 +189,14 @@ rules:
 - apiGroups: [db.kube-dc.com]
   resources: [kdcdatabases]
   verbs: [create, get, list, watch, delete, patch, update]
+# Managed services (kube-dc-services): the tenant-facing objects, same rights
+# as KdcDatabase. Placements are the hub's; readable so status makes sense.
+- apiGroups: [services.kube-dc.com]
+  resources: [managedservices, serviceoperations, servicebindings, servicecredentialpolicies]
+  verbs: [create, get, list, watch, delete, patch, update]
+- apiGroups: [services.kube-dc.com]
+  resources: [managedservices/status, serviceoperations/status, servicebindings/status, servicecredentialpolicies/status, serviceplacements, serviceplacements/status, servicebackups, servicebackups/status]
+  verbs: [get, list, watch]
 # Database Engine Resources (CNPG + MariaDB operator)
 # `clusters` and `mariadbs` reads let the UI surface engine-side recovery
 # progress (status.bootstrap, status.conditions) during a restore.
@@ -202,7 +241,10 @@ rules:
 # Core resources (no secrets write)
 - apiGroups: [""]
   resources: [persistentvolumeclaims, services, serviceaccounts, configmaps]
-  verbs: ["*"]
+  # Explicit verbs: a wildcard would also grant impersonate (ServiceAccounts) and
+  # escalate/bind (Roles, RoleBindings), which let a project identity act as the
+  # managed engines' accounts or mint roles it does not hold.
+  verbs: [get, list, watch, create, update, patch, delete, deletecollection]
 - apiGroups: [""]
   resources: [secrets]
   verbs: [get, list]
@@ -325,6 +367,14 @@ rules:
 - apiGroups: [db.kube-dc.com]
   resources: [kdcdatabases]
   verbs: [create, get, list, watch, delete, patch, update]
+# Managed services (kube-dc-services): the tenant-facing objects, same rights
+# as KdcDatabase. Placements are the hub's; readable so status makes sense.
+- apiGroups: [services.kube-dc.com]
+  resources: [managedservices, serviceoperations, servicebindings, servicecredentialpolicies]
+  verbs: [create, get, list, watch, delete, patch, update]
+- apiGroups: [services.kube-dc.com]
+  resources: [managedservices/status, serviceoperations/status, servicebindings/status, servicecredentialpolicies/status, serviceplacements, serviceplacements/status, servicebackups, servicebackups/status]
+  verbs: [get, list, watch]
 # Database Engine Resources (CNPG + MariaDB operator)
 # `clusters` and `mariadbs` reads let the UI surface engine-side recovery
 # progress (status.bootstrap, status.conditions) during a restore.
@@ -488,6 +538,15 @@ rules:
 - apiGroups: [db.kube-dc.com]
   resources: [kdcdatabases]
   verbs: [get, list, watch]
+# Managed services (kube-dc-services) - read only
+- apiGroups: [services.kube-dc.com]
+  resources: [managedservices, managedservices/status, serviceoperations, serviceoperations/status, servicebindings, servicebindings/status, servicecredentialpolicies, servicecredentialpolicies/status, serviceplacements, serviceplacements/status, servicebackups, servicebackups/status]
+  verbs: [get, list, watch]
+# Match legacy credential-policy access: project-manager may pause or adjust
+# an existing schedule, but may not create/delete policy objects.
+- apiGroups: [services.kube-dc.com]
+  resources: [servicecredentialpolicies]
+  verbs: [update, patch]
 # Database Engine Resources - read only
 - apiGroups: [postgresql.cnpg.io]
   resources: [backups, scheduledbackups, clusters]
@@ -640,6 +699,11 @@ rules:
 - apiGroups: [db.kube-dc.com]
   resources: [kdcdatabases]
   verbs: [get, list]
+# Service metadata is readable like the legacy database metadata; no values,
+# engine writes, placement mutation or credential operations are granted.
+- apiGroups: [services.kube-dc.com]
+  resources: [managedservices, managedservices/status, serviceoperations, serviceoperations/status, servicebindings, servicebindings/status, servicecredentialpolicies, servicecredentialpolicies/status, serviceplacements, serviceplacements/status, servicebackups, servicebackups/status]
+  verbs: [get, list, watch]
 # Database Engine Resources - read only
 - apiGroups: [postgresql.cnpg.io]
   resources: [backups, scheduledbackups, clusters]

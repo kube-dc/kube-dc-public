@@ -116,7 +116,6 @@ spec:
                       "InPlaceOrRecreate" mode so requests/limits are right-sized
                       from observed usage. To disable autoscaling and keep static
                       resources, set Mode=Off and optionally provide Resources.
-                      See docs/prd/control-plane-vpa-autoscaling.md for the full design.
                     properties:
                       maxAllowed:
                         additionalProperties:
@@ -328,8 +327,7 @@ spec:
                 description: |-
                   Encryption configures cluster-level encryption-at-rest. When omitted,
                   the cluster runs with plaintext etcd contents (matching the historic
-                  behaviour). See docs/internal/managed-k8s-encryption-design.md for
-                  the M5 design.
+                  behaviour).
                 properties:
                   etcd:
                     description: |-
@@ -383,21 +381,18 @@ spec:
                         type: boolean
                       kekRotation:
                         description: |-
-                          KEKRotation configures automatic rotation of the per-cluster Key
-                          Encryption Key (KEK) — the OpenBao Transit key that wraps every
-                          etcd DEK and every backup-snapshot DEK. M5-T06 plumbing; the actual
-                          rotation scheduler lives in the M3 KMSKey reconciler
-                          (kube-dc-manager). When omitted or Enabled=false, the auto-
-                          provisioned KMSKey runs with rotation disabled; existing encrypted
-                          etcd rows and existing backup envelopes remain decryptable with
-                          the original key version indefinitely.
+                          KEKRotationSpec configures automatic rotation of the per-cluster KEK
+                          (Transit key) that wraps every etcd DEK and every backup DEK.
 
-                          When the tenant supplied an explicit KeyRef above (operator-owned
-                          KMSKey), the controller WILL NOT mutate that KMSKey's rotation
-                          policy. Instead it surfaces a KEKRotationManagedExternally warning
-                          condition so the runbook flags the discrepancy.
+                          Rotation is implemented by the M3 KMSKey reconciler in kube-dc-manager
+                          via spec.rotation on the underlying KMSKey CR. This block is the
+                          tenant-facing knob; the kdccluster reconciler mirrors it onto the
+                          auto-provisioned KMSKey at FU1 ensure-time.
 
-                          See docs/prd/managed-k8s-kek-rotation.md for the full design.
+                          Old key versions are kept by OpenBao until an operator explicitly
+                          advances min_decryption_version (manual + irreversible; never done
+                          by automation). This means a KEK rotation does NOT invalidate
+                          existing backups — their captured transitKeyVersion still decrypts.
                         properties:
                           enabled:
                             default: false
@@ -564,9 +559,37 @@ spec:
                     - message: 'systemReserved keys must be one of: cpu, memory, ephemeral-storage'
                       rule: self.all(k, k in ['cpu','memory','ephemeral-storage'])
                 type: object
+              loadBalancer:
+                description: |-
+                  LoadBalancer configures project-internal LoadBalancer VIPs: platform-owned
+                  address blocks delegated to this cluster for private in-VPC Service VIPs.
+                properties:
+                  blocks:
+                    default: 1
+                    description: |-
+                      Blocks is how many 16-address ranges the cluster holds (default 1). A cluster
+                      that needs more than 16 internal LoadBalancer addresses asks for a second
+                      block; blocks are never resized in place.
+                    format: int32
+                    maximum: 8
+                    minimum: 1
+                    type: integer
+                type: object
               network:
                 description: Network configuration
                 properties:
+                  controlPlaneEndpointMode:
+                    description: |-
+                      ControlPlaneEndpointMode selects the stable worker API and Konnectivity
+                      endpoint. ProjectInternal uses a ClusterIP shadowed into the project VPC
+                      and requires local KubeVirt workers and dual-homed control-plane pods.
+                      Omitted or External preserves the external LoadBalancer endpoint.
+                      This selection is immutable; changing a running worker's endpoint requires
+                      a separate migration. External infrastructure workers must use External.
+                    enum:
+                    - External
+                    - ProjectInternal
+                    type: string
                   podCIDR:
                     default: 10.244.0.0/16
                     description: Pod CIDR
@@ -575,27 +598,26 @@ spec:
                     default: 10.96.0.0/12
                     description: Service CIDR
                     type: string
+                  workerMTU:
+                    description: 'WorkerMTU is the measured IPv4 link MTU for local managed worker images.
+
+                      ProjectInternal requires an explicit value so bootstrap and Cilium use
+
+                      the same installation setting instead of detecting the node-IP alias on lo.
+
+                      Supported images use systemd-networkd and an IPv4 DHCP default interface.
+
+                      Immutable once set; changing an established pool requires a migration.'
+                    format: int32
+                    maximum: 9000
+                    minimum: 576
+                    type: integer
+                    x-kubernetes-validations:
+                    - message: workerMTU is immutable
+                      rule: self == oldSelf
                 type: object
               publicApiEndpoint:
                 default: false
-                description: |-
-                  PublicAPIEndpoint, when true on a private-link cluster (one whose
-                  workers have CloudSigma.PrivateAPIEndpointIP set), creates an Envoy
-                  Gateway TLSRoute that exposes the kube-apiserver publicly via the
-                  shared management-cluster Gateway. The private MetalLB VIP remains
-                  the primary path; this is a break-glass fallback for when the
-                  customer VLAN is unavailable.
-
-                  On non-private-link clusters this field is a no-op (those clusters
-                  expose publicly via the existing expose-route annotation regardless
-                  of this field).
-
-                  Disabling this field removes the TLSRoute and reverts the admin
-                  kubeconfig's server: URL to the non-exposed form. Cert SANs keep the
-                  private VIP entry, so the private kubeconfig is unaffected.
-
-                  See docs/prd/private-link-public-breakglass.md for the security
-                  implications and rollout plan.
                 type: boolean
               version:
                 description: Kubernetes version for the control plane
@@ -624,7 +646,7 @@ spec:
 
                         NOTE this is the HORIZONTAL axis (node count). The similarly named
                         spec.controlPlane.autoscaling is the control-plane VPA (vertical,
-                        container resources). See docs/prd/managed-k8s-worker-autoscaling.md.
+                        container resources).
                       properties:
                         behavior:
                           description: Behavior tunes scaling speed and safety margins.
@@ -807,8 +829,15 @@ spec:
                       description: CloudSigma-specific configuration (used when infrastructureProvider=cloudsigma)
                       properties:
                         ccmImage:
-                          default: docker.io/shalb/cloudsigma-ccm:latest
-                          description: Cloud Controller Manager image
+                          description: |-
+                            Cloud Controller Manager image. Leave empty to run the controller's
+                            pinned default (DefaultCloudSigmaCCMImage in kdccluster_ccm.go), which a
+                            k8-manager release can move fleet-wide. Deliberately NOT a CRD default:
+                            an OpenAPI default is persisted into every object at admission, so the
+                            controller default could never apply and every CCM bump needed a
+                            per-object edit (the pre-2026-08-16 default was the mutable ":latest").
+                            The literal legacy value docker.io/shalb/cloudsigma-ccm:latest is
+                            treated as unset by the controller.
                           type: string
                         cpuMHz:
                           description: |-
@@ -892,6 +921,22 @@ spec:
                                 required:
                                 - name
                                 type: object
+                              loadBalancer:
+                                description: |-
+                                  LoadBalancer, when true, provisions this public NIC in CloudSigma's
+                                  "manual" mode with no address of its own, reserved for the cloud
+                                  controller manager to hang LoadBalancer IPs on.
+
+                                  A worker's own public address is held only through its NIC binding, so
+                                  the CCM switching that NIC to manual — which it must do to run a second
+                                  IP on it — hands the address back to CloudSigma. The guest keeps it on
+                                  the interface and the platform stops carrying it, leaving a node that
+                                  reports Ready and can neither resolve DNS nor pull an image. Giving
+                                  LoadBalancer IPs a NIC of their own means the worker's public NIC is
+                                  never switched.
+
+                                  Requires Public. Mutually exclusive with VLAN.
+                                type: boolean
                               public:
                                 description: |-
                                   Public, when true, attaches a CloudSigma public IP to this NIC via
@@ -913,6 +958,19 @@ spec:
                             When set, a LoadBalancer Service is created for kube-api-proxy
                             and a token-based private kubeconfig is generated as a Secret.
                             Only the first pool's value is used (one endpoint per cluster).
+
+                            A BARE IPv4 address — never a CIDR. The Pattern is load-bearing: this
+                            value is copied verbatim into the tenant apiserver's certSANs, the
+                            MetalLB LoadBalancer VIP, the CCM env and a CAPI annotation, and none of
+                            those accept a prefix length. A CIDR here used to be accepted all the way
+                            down until Kamaji's vtenantcontrolplane webhook refused the
+                            TenantControlPlane ("altname is not a valid IP address"), which creates
+                            NO control plane at all — the cluster then sits in Provisioning forever
+                            with the real reason buried in a KamajiControlPlane condition the tenant
+                            cannot see (crk poc-02, marinambest, 2026-09-10: "10.8.0.1/24", 87
+                            minutes). Rejecting it at admission turns that dead end into an
+                            immediate, readable error on the create call.
+                          pattern: ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$
                           type: string
                         region:
                           description: CloudSigma region (zrh, lvs, sjc, tyo, or "next"
@@ -955,7 +1013,10 @@ spec:
                       description: |-
                         Container disk image for KubeVirt workers only
                         For CloudSigma, use cloudsigma.imageUUID instead
-                        Default for KubeVirt: docker.io/shalb/ubuntu-2404-container-disk:v1.35.2
+                        Default for KubeVirt: docker.io/shalb/ubuntu-2604-container-disk:v1.36.1
+                        (deliberately a Go-side default, NOT a CRD default — a CRD default is
+                        persisted into every object at admission and can never be moved by a
+                        k8-manager release; see the cloudsigma.ccmImage history for the scar)
                       type: string
                     infrastructureProvider:
                       default: kubevirt
@@ -984,6 +1045,19 @@ spec:
                         for every Machine in this pool. Controls how long CAPI waits for
                         voluntary eviction before force-deleting a node during rollout or
                         scale-down. Default (when unset): CAPI default of 0 (no timeout).
+                      format: int32
+                      minimum: 0
+                      type: integer
+                    nodeVolumeDetachTimeoutSeconds:
+                      description: |-
+                        NodeVolumeDetachTimeoutSeconds is forwarded to CAPI
+                        Machine.spec.nodeVolumeDetachTimeout: how long to wait for a deleting
+                        worker's volumes to detach before proceeding anyway. Unset applies the
+                        platform default of 300 seconds — without a bound, replacing the only
+                        worker of a cluster that has attached PersistentVolumes deadlocks,
+                        because the drain evicts the CSI controller that would process the
+                        detach. Explicit 0 restores CAPI's unlimited wait; the machine then
+                        proceeds only when every volume is cleanly detached.
                       format: int32
                       minimum: 0
                       type: integer
@@ -1077,7 +1151,6 @@ spec:
 
                         Must satisfy the kubeadm version-skew rule: pool.version MAY be
                         up to two minors behind cluster.version but MUST NOT exceed it.
-                        See docs/prd/staged-cluster-upgrades.md.
                       pattern: ^v\d+\.\d+\.\d+$
                       type: string
                   required:
@@ -1094,6 +1167,19 @@ spec:
             required:
             - version
             type: object
+            x-kubernetes-validations:
+            - message: loadBalancer.blocks can only grow and loadBalancer cannot be
+                removed once set (released blocks stay excluded)
+              rule: '!has(oldSelf.loadBalancer) || (has(self.loadBalancer) && self.loadBalancer.blocks
+                >= oldSelf.loadBalancer.blocks)'
+            - message: controlPlaneEndpointMode cannot change after cluster creation
+              rule: (has(self.network) && has(self.network.controlPlaneEndpointMode)
+                && self.network.controlPlaneEndpointMode == 'ProjectInternal') ==
+                (has(oldSelf.network) && has(oldSelf.network.controlPlaneEndpointMode)
+                && oldSelf.network.controlPlaneEndpointMode == 'ProjectInternal')
+            - message: workerMTU cannot be removed or changed once set
+              rule: '!has(oldSelf.network) || !has(oldSelf.network.workerMTU) || (has(self.network)
+                && has(self.network.workerMTU) && self.network.workerMTU == oldSelf.network.workerMTU)'
           status:
             description: KdcClusterStatus defines the observed state of KdcCluster
             properties:
@@ -1173,8 +1259,14 @@ spec:
                     type: string
                   lastRecommendationUpdate:
                     description: |-
-                      LastRecommendationUpdate is the controller-side timestamp at which the
-                      recommendations field was last refreshed from the upstream VPA object.
+                      LastRecommendationUpdate is when the NORMALISED recommendation last
+                      CHANGED (memory rounded to Mi, CPU to millicores) -- not the last time
+                      the VPA was read. The recommendation is observed every reconcile; a
+                      timestamp stamped on every read made every pass a status change and
+                      re-triggered the controller forever. A stable recommendation therefore
+                      keeps its timestamp for as long as it stays stable, and this field
+                      cannot be used to detect a dead recommender: use the VPA object's own
+                      status for that.
                     format: date-time
                     type: string
                   recommendations:
@@ -1374,6 +1466,73 @@ spec:
                   restore.
                 format: date-time
                 type: string
+              loadBalancer:
+                description: LoadBalancer mirrors the cluster's delegated address
+                  block(s).
+                properties:
+                  blocks:
+                    description: Blocks in reservation order.
+                    items:
+                      description: LoadBalancerBlock is one delegated range as the
+                        reservation reports it.
+                      properties:
+                        addressSpaceUID:
+                          description: |-
+                            AddressSpaceUID is the immutable UID of the VPCVIPPool arena whose claim
+                            committed this delegation. The datapath validates it against the live
+                            ledger so an arena replacement cannot inherit a stale certificate.
+                          type: string
+                        delegatable:
+                          type: boolean
+                        enabled:
+                          description: 'Enabled: this block is authorized in the certificate
+                            (per-block).'
+                          type: boolean
+                        message:
+                          type: string
+                        phase:
+                          description: Phase of the reservation (Fenced, Ready, Compromised,
+                            Exhausted, ...).
+                          type: string
+                        range:
+                          description: Range "start-stop" (inclusive), empty until
+                            fenced.
+                          type: string
+                        ready:
+                          description: |-
+                            Ready / Delegatable as the reservation's conditions say them, mirrored
+                            only when the condition's observedGeneration matches the reservation.
+                          type: boolean
+                        reservation:
+                          description: Reservation is the AddressReservation (cluster-scoped,
+                            kube-dc.com/v1).
+                          type: string
+                        vipCIDR:
+                          description: |-
+                            VIPCIDR is the VPCVIPPool CIDR the block was claimed in: VIPs live
+                            outside the project subnet and are realised as OVN load-balancer VIPs.
+                          type: string
+                      required:
+                      - reservation
+                      type: object
+                    type: array
+                  configMap:
+                    description: ConfigMap that carries the delegation to the tenant
+                      addon channel.
+                    type: string
+                  enabled:
+                    description: 'Enabled: at least one block is Ready+Delegatable
+                      and the mode allows the pool.'
+                    type: boolean
+                  mode:
+                    description: 'Mode the manager runs in: off | observe | enable.'
+                    type: string
+                  revision:
+                    description: Revision is the certificate's monotonic authorization
+                      revision.
+                    format: int64
+                    type: integer
+                type: object
               phase:
                 description: Phase represents the current phase of the cluster
                 type: string
@@ -1496,6 +1655,22 @@ spec:
                   - replicas
                   type: object
                 type: array
+              workerRootDiskIdentity:
+                additionalProperties:
+                  type: string
+                description: |-
+                  WorkerRootDiskIdentity records, per joined KubeVirt worker Machine (by
+                  name), "<machineUID>:<pvcUID>" — the UID of the PersistentVolumeClaim that
+                  backed its root disk when the Machine first registered a Node, verified
+                  through the ownership chain (Machine -> CAPK-labelled VM -> VM UID ->
+                  kubevirt.io/created-by PVC owned by the VM's DataVolume). A joined worker
+                  whose verified root-disk PVC UID later differs (same Machine UID) has lost
+                  its on-disk kubeadm state and — since Cluster API stops refreshing a
+                  Machine's bootstrap token once it has a nodeRef — can never re-join: the
+                  controller reports it as WorkerRootDiskReplaced (Phase 0 of the
+                  node-health PRD: observe only). Entries are pruned when the Machine goes
+                  away and reset when a different Machine reuses the name.
+                type: object
             type: object
         type: object
     served: true

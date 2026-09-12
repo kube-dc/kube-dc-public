@@ -18,6 +18,45 @@ cluster and fail before deleting any webhook configuration.
 {{- end }}
 {{- end }}
 {{- end }}
+{{- /*
+Two independent features put a FAIL-CLOSED webhook on the ordinary pod path:
+tenant-VLAN attachment (projectNetwork) and managed-services protection
+(managed-references / managed-subresource / the token and connect gates, all
+failurePolicy: Fail since chart v0.6.21). Either one makes a manager outage an
+outage for tenant workload creation, so the budget is rendered for either.
+*/ -}}
+{{- /*
+Only where there are replicas to lose. A budget over a knowingly single-replica
+manager (manager.singleReplicaAdmissionAccepted) blocks the ordinary drain the
+operator has already accepted the consequences of, and protects nothing.
+*/ -}}
+{{- $failClosed := include "kube-dc.manager.highlyAvailableAdmission" . }}
+{{- /*
+Rendered even for a single replica. With minAvailable: 1 that BLOCKS the
+voluntary eviction of the only manager -- which is the point: while the gate
+fails closed, evicting it stops tenant pod, claim and Secret creation. A
+blocked drain is a loud, recoverable signal; a silent outage is not. The
+remedy is manager.replicaCount: 2. An operator who accepts the window drains
+with `kubectl drain --disable-eviction` (which deletes pods outright and is
+the only flag that bypasses a budget; --force does not).
+*/ -}}
+{{- if $failClosed }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "kube-dc.manager.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  # A manager that is already unready protects nothing: let it be evicted so
+  # a drain can relocate it, instead of holding the node and the outage open.
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      {{- include "kube-dc.manager.selectorLabels" . | nindent 6 }}
+{{- end }}
 {{- if .Values.projectNetwork.enabled }}
 {{- /*
 Tenant-VLAN attachment installs fail-closed admission webhooks on pod CREATE and
@@ -42,16 +81,5 @@ attachments. That combination is strictly worse than the feature being off.
 {{- if lt ((.Values.manager.replicaCount | default 1) | int) 2 }}
 {{- fail "projectNetwork.enabled=true requires manager.replicaCount >= 2: the attachment gate is a fail-closed webhook on the pod path, and a single replica makes every rollout or drain an outage for VLAN-attached workloads" }}
 {{- end }}
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: {{ include "kube-dc.manager.fullname" . }}
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "kube-dc.manager.labels" . | nindent 4 }}
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      {{- include "kube-dc.manager.selectorLabels" . | nindent 6 }}
+{{- /* the budget itself is rendered above, for either fail-closed feature */ -}}
 {{- end }}

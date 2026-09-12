@@ -121,6 +121,105 @@ webhooks:
         apiVersions: ["v1alpha1"]
         operations: ["CREATE", "UPDATE"]
         resources: ["databasecredentialpolicies"]
+{{- if .Values.projectPolicies.protectManagedServices.enabled }}
+  # What an engine operator derives from a managed engine -- CNPG's server,
+  # CA and replication Secrets carry an ownerReference to the Cluster and
+  # none of its labels -- is marked AT CREATION, so the protection policy
+  # covers it from its first moment. Keyed on the requester being a platform
+  # identity and the named owner really carrying the marker: an
+  # ownerReference alone is a tenant-writable field. The reverse too: a
+  # platform controller creating an object with the reserved labels from a
+  # tenant's template (StatefulSet volumeClaimTemplates) has them stripped
+  # unless the owner is marked. A snapshot of a marked claim is marked.
+  # Fails closed; the matchConditions keep tenant identities out of its
+  # path entirely, so a manager outage never blocks a tenant's own writes.
+  - name: mark-managed-children.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    reinvocationPolicy: Never
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    matchConditions:
+      - name: platform-identities-only
+        # The exempt ServiceAccount namespaces, and the controller manager's
+        # own identity where per-controller credentials are off.
+        expression: >-
+          has(request.userInfo) && has(request.userInfo.username) &&
+          (request.userInfo.username == 'system:kube-controller-manager' ||
+           [{{ range $i, $ns := (include "kube-dc.managedServices.exemptNamespaces" $ | fromJsonArray) }}{{ if $i }}, {{ end }}'system:serviceaccount:{{ $ns }}:'{{ end }}].exists(prefix,
+            request.userInfo.username.startsWith(prefix)))
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-managed-children
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["secrets", "configmaps", "services", "persistentvolumeclaims", "serviceaccounts", "pods"]
+      # What an operator derives as a workload (CNPG's pooler Deployment, the
+      # ReplicaSet the deployment controller makes of it, StatefulSets, Jobs):
+      # marked, so the pods they create are trusted by their owner.
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["deployments", "replicasets", "statefulsets"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["jobs"]
+      - apiGroups: ["snapshot.storage.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["volumesnapshots"]
+  # A tenant PodDisruptionBudget is NARROWED to exclude platform-managed pods.
+  # Refusing selectors that name the platform's keys cannot work: a managed
+  # CNPG pod also carries app.kubernetes.io/name=postgresql, role=primary and
+  # cnpg.io/instanceRole=primary, so an ordinary-looking selector with
+  # minAvailable: 100% blocks the node drains maintenance needs.
+  #
+  # Its OWN stanza, with the INVERSE match condition of the child mutator
+  # above: that one matches platform identities only, which is what keeps a
+  # manager outage off the tenant's write path, so a tenant request never
+  # reaches it. Widening it would put every tenant Secret, Pod and PVC write
+  # behind a fail-closed webhook; this one matches tenant identities and
+  # PodDisruptionBudgets only, so an outage blocks nothing else.
+  #
+  # UPDATE is included because a budget can be widened, or its minAvailable
+  # raised, long after it was created.
+  - name: mark-tenant-budgets.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    reinvocationPolicy: Never
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    matchConditions:
+      - name: tenant-identities-only
+        expression: >-
+          !(has(request.userInfo) && has(request.userInfo.username) &&
+          (request.userInfo.username == 'system:kube-controller-manager' ||
+           [{{ range $i, $ns := (include "kube-dc.managedServices.exemptNamespaces" $ | fromJsonArray) }}{{ if $i }}, {{ end }}'system:serviceaccount:{{ $ns }}:'{{ end }}].exists(prefix,
+            request.userInfo.username.startsWith(prefix))))
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-tenant-budget
+    rules:
+      - apiGroups: ["policy"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["poddisruptionbudgets"]
+{{- end }}
 {{- if .Values.manager.infraAttachment.enabled }}
   # Tenant Networking v2 — infra-attachment pod mutating webhook
   # (docs/prd/tenant-networking-v2.md). Injects the dual-NIC pattern on pods in
@@ -221,9 +320,26 @@ webhooks:
     sideEffects: None
     failurePolicy: Fail
     matchPolicy: Equivalent
-    objectSelector:
-      matchLabels:
-        app.kubernetes.io/component: kube-dc-cloud-shell
+    # The trigger must cover EVERY place the label can appear, or the handler's
+    # second arm is unreachable: an objectSelector sees only the Job's own
+    # labels, so a Job labelled solely in its pod template never reached this
+    # gate. Today that grants nothing -- the classifier that hands out the
+    # management-API role reads the JOB's labels (internal/infraattachment/
+    # pod_role.go) -- but a trigger narrower than its handler is exactly how a
+    # later refactor turns a defensive check into a hole. matchConditions are
+    # evaluated by the API server, so the narrow blast radius that makes
+    # failurePolicy: Fail safe here is preserved: unlabelled Jobs never call
+    # the webhook.
+    matchConditions:
+      - name: carries-the-cloud-shell-label
+        expression: >-
+          (has(object.metadata.labels) &&
+           'app.kubernetes.io/component' in object.metadata.labels &&
+           object.metadata.labels['app.kubernetes.io/component'] == 'kube-dc-cloud-shell') ||
+          (has(object.spec) && has(object.spec.template) && has(object.spec.template.metadata) &&
+           has(object.spec.template.metadata.labels) &&
+           'app.kubernetes.io/component' in object.spec.template.metadata.labels &&
+           object.spec.template.metadata.labels['app.kubernetes.io/component'] == 'kube-dc-cloud-shell')
     clientConfig:
       service:
         name: {{ include "kube-dc.manager.fullname" . }}-webhook
@@ -253,6 +369,352 @@ webhooks:
   # Scoped to project namespaces (kube-dc.com/project) so kube-system and other
   # infrastructure Services are never in the path, and to UPDATE only — a CREATE
   # always sets the value legitimately, and the EIP is derived from it.
+{{- if .Values.projectPolicies.protectManagedServices.enabled }}
+  # Platform-managed ServiceAccount token gate (kube-dc-services in-project
+  # placement): the managed-objects policy exempts the engine's per-instance
+  # ServiceAccount, and only the manager can look an account up to refuse a
+  # tenant's TokenRequest for it. Fails CLOSED: a token for a marked account
+  # goes only to a pod that is provably the platform's, and an unreadable
+  # account cannot be told apart from a marked one; pod creation in project
+  # namespaces already depends on this manager. It covers a boundary, not a
+  # primary control.
+  - name: managed-serviceaccount-token.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate--v1-serviceaccount-token
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["serviceaccounts/token"]
+  # Label-less subresources of platform-managed objects: an Eviction and a
+  # Scale carry no labels, so the managed-objects policy never sees them. The
+  # manager reads the parent and refuses tenant identities. Fails closed like
+  # the other gates: the manager runs two replicas behind a PodDisruptionBudget,
+  # and a drain or scale that cannot be judged waits rather than passes.
+  - name: managed-subresource.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-managed-subresource
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods/eviction"]
+      # Binding a pod to a node is when it starts consuming its claims: a
+      # pod that is not the platform's referencing a managed claim is
+      # stopped here whatever the timing of its admission.
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods/binding"]
+      # Adding an ephemeral container (kubectl debug) is an UPDATE of the
+      # pod through its subresource.
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["pods/ephemeralcontainers"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["statefulsets/scale", "deployments/scale", "replicasets/scale"]
+  # Network reach into a managed pod or Service through the API server:
+  # port-forward and proxy land on arbitrary pod ports, past any network
+  # policy. The same handler, in its own entry, because this one fails
+  # CLOSED: an unreachable manager must not let a CONNECT through on the
+  # namespace-wide permission. Kube-DC's project roles grant none of these
+  # subresources; the gate is defence in depth for roles that do.
+  - name: managed-connect.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-managed-subresource
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CONNECT"]
+        resources: ["pods/portforward", "pods/proxy", "services/proxy"]
+  # A platform-managed CNPG Cluster's STATUS is written by its own instance
+  # only. The managed-services policy excludes the subresource (a policy
+  # cannot look anything up) and this stanza is its sole judge, proving the
+  # instance's provenance by UID. It has its OWN path: an old manager pod
+  # still serving the shared path during a rolling upgrade would wave a
+  # subresource through, whereas a path it does not serve answers 404 --
+  # under failurePolicy Fail a refusal, never an unjudged admission.
+  - name: managed-cluster-status.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-cnpg-cluster-status
+    rules:
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["clusters/status"]
+  - name: managed-pooler-status.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-cnpg-pooler-status
+    rules:
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["poolers/status"]
+  # References to managed objects that the policies cannot see: a tenant pod
+  # naming a managed engine's PersistentVolumeClaim or ServiceAccount, a claim
+  # cloned from a managed one (dataSource), a VolumeSnapshot of one. The
+  # manager looks the referenced object up; pods are judged on the POD (a
+  # marked pod is trusted only when its controller owner is marked), claims
+  # and snapshots also on the requester. Fails CLOSED: this is the boundary
+  # for those paths, and pod creation in project namespaces already depends
+  # on the manager through the infra-attachment mutator.
+  - name: managed-references.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-managed-references
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["persistentvolumeclaims"]
+      # Pods on UPDATE as well: labels can change after creation, and the
+      # engine selector rule is about labels.
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["pods"]
+      # A legacy ServiceAccount-token Secret naming a marked account would be
+      # filled by the token controller without any TokenRequest.
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["secrets"]
+      # A ServiceAccount under a name the platform has claimed for an engine
+      # instance: CNPG does not adopt a pre-existing account, so a tenant one
+      # would leave the instance unable to write its Cluster's status.
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["serviceaccounts"]
+      - apiGroups: ["snapshot.storage.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["volumesnapshots"]
+      # Copies of managed storage through CDI's populators and DataVolumes,
+      # and VirtualMachines whose dataVolumeTemplates clone one.
+      - apiGroups: ["cdi.kubevirt.io"]
+        apiVersions: ["v1beta1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["datavolumes", "volumeclonesources", "datasources"]
+      - apiGroups: ["kubevirt.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["virtualmachines"]
+      # Exempt controllers as deputies: a Certificate aimed at a marked
+      # Secret, a bucket claim named after a marked Secret or ConfigMap.
+      - apiGroups: ["cert-manager.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["certificates"]
+      - apiGroups: ["objectbucket.io"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE"]
+        resources: ["objectbucketclaims"]
+      # mariadb-operator resources a tenant would aim at a managed MariaDB.
+      - apiGroups: ["k8s.mariadb.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["mariadbs", "pointintimerecoveries", "backups", "physicalbackups", "restores", "sqljobs", "users", "grants", "databases", "connections", "maxscales"]
+      # CNPG's own backup API: a Backup or ScheduledBackup naming a managed
+      # Cluster is a second, unapproved operation path into the engine (CNPG
+      # resolves it by spec.cluster.name and runs it, with no ServiceOperation
+      # involved).
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        # clusters: a tenant Cluster that bootstraps from the managed engine's
+        # backup, streams from it with pg_basebackup, or replicates it reads
+        # the platform's engine without any operation at all.
+        # publications/subscriptions: CNPG's declarative logical replication
+        # runs CREATE PUBLICATION / CREATE SUBSCRIPTION on the cluster they
+        # name, without passing through the Cluster object at all.
+        resources: ["backups", "scheduledbackups", "clusters", "poolers", "publications", "subscriptions"]
+      # DELETE of a backup object is judged by its TARGET, not by its own
+      # label: db-manager's ScheduledBackup carries no marker, so the marker
+      # policy does not protect it, and deleting it silently stops the backups
+      # of a platform-managed database.
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["v1"]
+        operations: ["DELETE"]
+        resources: ["backups", "scheduledbackups", "poolers"]
+
+      # A tenant PodDisruptionBudget whose selector covers platform-managed
+      # pods would impose a second maintenance policy on them, up to blocking
+      # a node drain entirely.
+      - apiGroups: ["policy"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["poddisruptionbudgets"]
+      # Families added in .Values.serviceFamilies.extra: the WHOLE group/version
+      # of every operation and passthrough resource is routed to the gate,
+      # which judges registered operations by their target, admits declared
+      # passthrough resources, and refuses anything else to tenant identities.
+      # Listing operations by name would leave an operation CRD later replaced
+      # under another plural unguarded (codex round 94); routing the whole
+      # group/version makes the renamed resource unknown, not unguarded. The
+      # built-in families' resources are listed above by hand. `*` does not
+      # match subresources.
+{{- include "kube-dc.serviceFamilies.validate" $ }}
+{{- /* Every VERSION too: an operator upgrade that starts serving v2 of an operation must not bypass the gate (codex round 95); the gate refuses a tenant a version the registry does not name. */}}
+{{- range .Values.serviceFamilies.extra }}
+{{- $groups := dict }}
+{{- range (.operations | default list) }}
+{{- $g := .group | default "" }}
+{{- $_ := set $groups $g (or (index $groups $g | default false) (.delete | default false)) }}
+{{- end }}
+{{- range (.passthroughResources | default list) }}
+{{- $g := .group | default "" }}
+{{- if not (hasKey $groups $g) }}{{ $_ := set $groups $g false }}{{ end }}
+{{- end }}
+{{- range $g, $del := $groups }}
+      - apiGroups: [{{ $g | quote }}]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["*"]
+{{- if $del }}
+      - apiGroups: [{{ $g | quote }}]
+        apiVersions: ["*"]
+        operations: ["DELETE"]
+        resources: ["*"]
+{{- end }}
+{{- end }}
+{{- end }}
+      # A tenant StatefulSet whose templates would name a marked claim (the
+      # controller adopts and, under its retention policy, owns it).
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["statefulsets"]
+{{- end }}
+{{- include "kube-dc.serviceFamilies.validateInstanceWrites" $ }}
+{{- $statusWrites := include "kube-dc.serviceFamilies.instanceStatusWrites" $ | fromJsonArray }}
+{{- $coreWrites := include "kube-dc.serviceFamilies.instanceCoreWrites" $ | fromJsonArray }}
+{{- if or $statusWrites $coreWrites }}
+  # A registered family whose operator runs INSIDE the project namespace under
+  # an account it creates per instance (Strimzi's entity operator): the
+  # writes that account must make -- the status of the family's operation
+  # objects, and the core Secrets/ConfigMaps it derives from them -- are
+  # judged here with UID-verified provenance, on a path of their own like
+  # the CNPG status judge (an old manager pod answers 404 = refused). The
+  # managed-services policies hand exactly these writes over in the NEXT
+  # chart (projectPolicies.protectManagedServices.instanceWritesJudgedByWebhook),
+  # once every cluster serves this stanza.
+{{- if $statusWrites }}
+  - name: managed-instance-status.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-family-instance-writes
+    rules:
+{{- range $statusWrites }}
+      - apiGroups: [{{ .group | quote }}]
+        apiVersions: ["*"]
+        operations: ["UPDATE"]
+        resources: [{{ printf "%s/status" .resource | quote }}]
+{{- end }}
+{{- end }}
+{{- if $coreWrites }}
+  - name: managed-instance-objects.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-family-instance-writes
+    matchConditions:
+      - name: instance-account
+        expression: {{ include "kube-dc.serviceFamilies.instanceIdentityCEL" $ | quote }}
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: {{ toJson $coreWrites }}
+{{- end }}
+{{- end }}
   - name: vservicenetworktype.kube-dc.com
     admissionReviewVersions: ["v1"]
     sideEffects: None
@@ -417,14 +879,31 @@ webhooks:
       - name: not-the-cni-itself
         expression: >-
           request.userInfo.username != '{{ required "projectNetwork.kubeOvnControllerUsername is required when projectNetwork is enabled" .Values.projectNetwork.kubeOvnControllerUsername }}'
+      # BARE keys: matched on CREATE, and on UPDATE only when the request
+      # ADDS OR CHANGES one. The handler treats a bare
+      # ovn.kubernetes.io/logical_switch as a primary-network selector and
+      # refuses a reserved segment, but the trigger never delivered one, so
+      # that refusal was unreachable -- and CREATE alone does not close it,
+      # because a tenant can create an unannotated pod and patch the
+      # annotation before allocation.
+      #
+      # The deadlock this exclusion was written for is kube-ovn PATCHING every
+      # pod it manages to record the allocated network: it SETS the key on a
+      # pod that lacked it, which is exactly an "added" UPDATE. What keeps
+      # that from deadlocking now is the identity condition above -- the CNI's
+      # own writes never reach this webhook -- so that condition is
+      # load-bearing for this rule too, and mis-setting
+      # projectNetwork.kubeOvnControllerUsername reintroduces the stage B-10
+      # outage. Unchanged bare keys on UPDATE stay unmatched, so ordinary pod
+      # edits (labels, images, status) never touch this gate.
       - name: declares-a-network-attachment
         expression: >-
           (has(object.metadata) && has(object.metadata.annotations) && (
             'k8s.v1.cni.cncf.io/networks' in object.metadata.annotations ||
             'v1.multus-cni.io/default-network' in object.metadata.annotations ||
-            object.metadata.annotations.exists(k, k.endsWith('kubernetes.io/logical_switch') && k != 'ovn.kubernetes.io/logical_switch') ||
-            object.metadata.annotations.exists(k, k.endsWith('kubernetes.io/logical_router') && k != 'ovn.kubernetes.io/logical_router') ||
-            object.metadata.annotations.exists(k, k.endsWith('kubernetes.io/vpc') && k != 'ovn.kubernetes.io/vpc')
+            object.metadata.annotations.exists(k, k.endsWith('kubernetes.io/logical_switch') && (k != 'ovn.kubernetes.io/logical_switch' || request.operation == 'CREATE' || !(k in (request.operation == 'UPDATE' && has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {})) || (request.operation == 'UPDATE' && has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {})[k] != object.metadata.annotations[k])) ||
+            object.metadata.annotations.exists(k, k.endsWith('kubernetes.io/logical_router') && (k != 'ovn.kubernetes.io/logical_router' || request.operation == 'CREATE' || !(k in (request.operation == 'UPDATE' && has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {})) || (request.operation == 'UPDATE' && has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {})[k] != object.metadata.annotations[k])) ||
+            object.metadata.annotations.exists(k, k.endsWith('kubernetes.io/vpc') && (k != 'ovn.kubernetes.io/vpc' || request.operation == 'CREATE' || !(k in (request.operation == 'UPDATE' && has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {})) || (request.operation == 'UPDATE' && has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {})[k] != object.metadata.annotations[k]))
           ))
           || (has(object.spec) && has(object.spec.networks)
               && object.spec.networks.exists(n, has(n.multus) && has(n.multus.networkName)))
@@ -660,5 +1139,54 @@ webhooks:
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE", "DELETE"]
         resources: ["subnets", "vlans"]
+{{- end }}
+{{- if .Values.routedNetwork.enabled }}
+  # Fine-grained org delegation for ProjectRouteAttachment. Project roles are
+  # intentionally coarse; this fresh-state webhook is the cross-org boundary.
+  - name: vprojectrouteattachment.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 5
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-project-route-attachment
+    rules:
+      - apiGroups: ["kube-dc.com"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["projectrouteattachments"]
+  - name: vroutingfabric.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 5
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-routing-fabric
+    rules:
+      - apiGroups: ["kube-dc.com"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["routingfabrics"]
+  - name: vroutedfabricsegment.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 5
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-routed-fabric-segment
+    rules:
+      - apiGroups: ["kube-dc.com"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["fabricsegments"]
 {{- end }}
 {{- end }}

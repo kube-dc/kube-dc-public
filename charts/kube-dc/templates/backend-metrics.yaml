@@ -1,0 +1,30 @@
+{{- if and .Values.backend.metrics.enabled .Values.backend.metrics.serviceMonitor.enabled }}
+{{- $port := int .Values.backend.metrics.port }}
+{{- if or (lt $port 1) (gt $port 65535) }}
+{{- fail "backend.metrics.port must be between 1 and 65535" }}
+{{- end }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "kube-dc.backend.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.backend.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+    {{- with .Values.backend.metrics.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      {{- include "kube-dc.backend.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      scheme: http
+      interval: {{ .Values.backend.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.backend.metrics.serviceMonitor.scrapeTimeout }}
+{{- end }}

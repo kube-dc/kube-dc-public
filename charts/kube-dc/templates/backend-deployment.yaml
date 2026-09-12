@@ -1,3 +1,6 @@
+{{- if and .Values.backend.managedK8sInternalEndpoints (or (lt (int .Values.backend.managedK8sWorkerMTU) 576) (gt (int .Values.backend.managedK8sWorkerMTU) 9000)) }}
+{{- fail "backend.managedK8sInternalEndpoints requires a measured backend.managedK8sWorkerMTU (576..9000)" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -48,7 +51,40 @@ spec:
             - name: http
               containerPort: 3333 #{{ .Values.backend.service.port }}
               protocol: TCP
+            {{- if .Values.backend.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.backend.metrics.port }}
+              protocol: TCP
+            {{- end }}
           env:
+            - name: MANAGED_K8S_WORKER_MTU
+              value: {{ .Values.backend.managedK8sWorkerMTU | default 0 | quote }}
+            - name: MANAGED_K8S_INTERNAL_ENDPOINTS_ENABLED
+              value: {{ .Values.backend.managedK8sInternalEndpoints | default false | quote }}
+            - name: MANAGED_K8S_INTERNAL_ENDPOINT_NAMESPACES
+              value: {{ join "," .Values.backend.managedK8sInternalEndpointNamespaces | quote }}
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: BRAND_PRODUCT_NAME
+              value: {{ (.Values.branding | default dict).productName | default "Kube-DC" | quote }}
+            - name: BRAND_PRIMARY_COLOR
+              value: {{ (.Values.branding | default dict).primaryColor | default "#002952" | quote }}
+            - name: BRAND_ACCENT_COLOR
+              value: {{ (.Values.branding | default dict).accentColor | default "#40199A" | quote }}
+            - name: NOTIFICATION_SUPPORT_PORTAL_URL
+              value: {{ (.Values.notifications | default dict).supportPortalUrl | default "" | quote }}
+            - name: NOTIFICATION_SUPPORT_EMAIL
+              value: {{ (.Values.notifications | default dict).supportEmail | default "" | quote }}
+            - name: NOTIFICATION_PAYMENT_URL
+              value: {{ (.Values.notifications | default dict).paymentUrl | default "" | quote }}
+            - name: BILLING_NOTIFICATIONS_ENABLED
+              value: {{ ((.Values.notifications | default dict).enabled | default false) | quote }}
+            {{- if .Values.backend.metrics.enabled }}
+            - name: METRICS_PORT
+              value: {{ .Values.backend.metrics.port | quote }}
+            {{- end }}
             - name: GPU_SHARED_CREATION_ENABLED
               value: {{ .Values.gpu.sharedCreation.enabled | quote }}
             - name: GPU_VM_CREATION_ENABLED
@@ -108,6 +144,12 @@ spec:
                 secretKeyRef:
                   name: master-config
                   key: console_url
+            # Backend's own externally-reachable base URL — used to build links that
+            # must be redeemed by hitting this service directly (e.g. the
+            # provisioning-ready welcome email's magic link), as opposed to
+            # CONSOLE_URL which points at the frontend SPA.
+            - name: BACKEND_PUBLIC_URL
+              value: "https://{{ required "backend.gateway.hostname is required" .Values.backend.gateway.hostname }}"
             - name: KEYCLOAK_ADMIN_USER
               valueFrom:
                 secretKeyRef:
@@ -207,6 +249,8 @@ spec:
             # the manager publishes NADs at all, so the two cannot drift.
             - name: PROJECT_NETWORK_ENABLED
               value: {{ .Values.projectNetwork.enabled | quote }}
+            - name: ROUTED_NETWORK_ENABLED
+              value: {{ .Values.routedNetwork.enabled | quote }}
             # Per-project VPC CIDR suggestion (see values.yaml backend.projectCidr).
             # `reserved` must name every underlay inside `pool` that is not a
             # project network, otherwise the allocator can suggest a block that

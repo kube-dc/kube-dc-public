@@ -49,7 +49,7 @@ spec:
         args:
         - --leader-elect
         - --health-probe-bind-address=:8081
-        {{- if .Values.k8Manager.metricsEnabled }}
+        {{- if or .Values.k8Manager.metrics.enabled .Values.k8Manager.metricsEnabled }}
         - --metrics-bind-address=:8443
         - --metrics-secure=true
         {{- else }}
@@ -65,6 +65,15 @@ spec:
         # never retro-rolled.
         - name: ETCD_DEFAULT_STORAGE_CLASS
           value: {{ .Values.k8Manager.etcdDefaultStorageClass | quote }}
+        {{- end }}
+        # Project-internal LoadBalancer VIPs: off | observe | enable.
+        - name: LB_BLOCK_MODE
+          value: {{ (.Values.k8Manager.lbBlockMode | default "observe") | quote }}
+        {{- if .Values.k8Manager.lbBlockRequireOptIn }}
+        # Advanced: require an explicit per-cluster opt-in annotation
+        # (network.kube-dc.com/lb-block=enabled) instead of participating by default.
+        - name: LB_BLOCK_REQUIRE_OPT_IN
+          value: "true"
         {{- end }}
         - name: INFRA_API_ENDPOINT
           value: {{ include "kube-dc.managementAPIEndpoint" (list $ .Values.k8Manager.infraAPIEndpoint) | quote }}
@@ -168,7 +177,7 @@ spec:
         - containerPort: 8081
           name: health
           protocol: TCP
-        {{- if .Values.k8Manager.metricsEnabled }}
+        {{- if or .Values.k8Manager.metrics.enabled .Values.k8Manager.metricsEnabled }}
         - containerPort: 8443
           name: metrics
           protocol: TCP

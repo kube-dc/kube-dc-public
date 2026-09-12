@@ -1,0 +1,20 @@
+{{- /*
+The service-family registry the manager loads at startup (internal/servicefamily).
+Rendered from .Values.serviceFamilies.extra; the built-ins (CNPG, MariaDB) are
+compiled in and merged underneath. The Deployment carries a checksum of this
+ConfigMap so a change rolls the manager -- the registry is read once, at start.
+*/ -}}
+{{- include "kube-dc.serviceFamilies.validate" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kube-dc.manager.fullname" . }}-service-families
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+data:
+  families.yaml: |
+    families:
+{{- range .Values.serviceFamilies.extra }}
+      - {{ toJson . }}
+{{- end }}

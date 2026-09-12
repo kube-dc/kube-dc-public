@@ -1,0 +1,84 @@
+{{- if .Values.routedNetwork.enabled }}
+{{- $managerUser := printf "system:serviceaccount:%s:%s" .Release.Namespace (include "kube-dc.manager.serviceAccountName" .) -}}
+{{- $ovnUser := required "routedNetwork.kubeOvnControllerUsername is required when routedNetwork is enabled" .Values.routedNetwork.kubeOvnControllerUsername -}}
+# Sibling policy to vap-platform-identity.yaml. Keep the I-19 policy unchanged:
+# this boundary protects routed-network generated objects and shared VPC route
+# slices without widening any platform-identity exemption.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: kube-dc-routed-network-generated
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["kube-dc.com"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["projectroutinggateways"]
+      - apiGroups: ["", "apps", "policy", "k8s.cni.cncf.io", "kubeovn.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["configmaps", "secrets", "deployments", "poddisruptionbudgets", "network-attachment-definitions", "security-groups", "subnets", "vlans", "vpcs"]
+  matchConditions:
+    - name: generated-routed-object
+      expression: >-
+        request.resource.group == 'kube-dc.com' && request.resource.resource == 'projectroutinggateways'
+        || (request.operation != 'DELETE' && has(object.metadata.labels)
+            && 'network.kube-dc.com/gateway-role' in object.metadata.labels
+            && object.metadata.labels['network.kube-dc.com/gateway-role'] == 'routing-gateway')
+        || (request.operation != 'DELETE' && has(object.metadata.labels)
+            && 'network.kube-dc.com/routing-fabric' in object.metadata.labels)
+        || ((request.operation == 'UPDATE' || request.operation == 'DELETE') && has(oldObject.metadata.labels)
+            && 'network.kube-dc.com/gateway-role' in oldObject.metadata.labels
+            && oldObject.metadata.labels['network.kube-dc.com/gateway-role'] == 'routing-gateway')
+        || ((request.operation == 'UPDATE' || request.operation == 'DELETE') && has(oldObject.metadata.labels)
+            && 'network.kube-dc.com/routing-fabric' in oldObject.metadata.labels)
+  validations:
+    - expression: >-
+        (has(request.userInfo.groups) && 'system:masters' in request.userInfo.groups)
+        || request.userInfo.username == {{ $managerUser | quote }}
+        || request.userInfo.username == {{ $ovnUser | quote }}
+        || request.userInfo.username == 'system:serviceaccount:kube-system:generic-garbage-collector'
+      message: "routed-network generated objects may be changed only by their platform controllers"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: kube-dc-routed-network-generated
+spec:
+  policyName: kube-dc-routed-network-generated
+  validationActions: [Deny]
+---
+# Vpc is shared with res_vpc and FIP. Non-platform identities may not alter the
+# two route slices; unrelated metadata/spec updates remain outside this policy.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: kube-dc-routed-network-vpc-routes
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["kubeovn.io"]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["vpcs"]
+  validations:
+    - expression: >-
+        (has(request.userInfo.groups) && 'system:masters' in request.userInfo.groups)
+        || request.userInfo.username == {{ $managerUser | quote }}
+        || ((has(object.spec.staticRoutes) == has(oldObject.spec.staticRoutes))
+            && (!has(object.spec.staticRoutes) || object.spec.staticRoutes == oldObject.spec.staticRoutes)
+            && (has(object.spec.policyRoutes) == has(oldObject.spec.policyRoutes))
+            && (!has(object.spec.policyRoutes) || object.spec.policyRoutes == oldObject.spec.policyRoutes))
+      message: "Kube-OVN Vpc staticRoutes and policyRoutes are platform-managed"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: kube-dc-routed-network-vpc-routes
+spec:
+  policyName: kube-dc-routed-network-vpc-routes
+  validationActions: [Deny]
+{{- end }}

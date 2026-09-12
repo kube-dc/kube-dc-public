@@ -48,55 +48,51 @@ def check_namespace(namespace: str):
         sys.exit(1)
 
 def get_configmap_data(configmap_file: str) -> Dict[str, Any]:
-    """Extract OS images from ConfigMap template file"""
-    log(f"Parsing OS images from ConfigMap file: {configmap_file}")
-    
+    """Extract OS images by RENDERING the chart's ConfigMap template.
+
+    The catalog itself lives in `charts/kube-dc/values.yaml` under
+    `osImages.catalog`; this template is a `range` over it that also derives
+    each entry's effective OS_IMAGE_URL (mirrorBaseURL + mirrorPath, else
+    upstreamURL). Scraping the template as text therefore yields only Go
+    template directives and no entries, so we ask Helm to render it and read
+    the result — which is exactly what the cluster gets, with no need to
+    reimplement the URL derivation here.
+    """
+    import os as _os
+    chart_dir = _os.path.normpath(_os.path.join(_os.path.dirname(configmap_file), ".."))
+    log(f"Rendering OS-image catalog from chart: {chart_dir}")
+
     try:
-        with open(configmap_file, 'r') as f:
-            content = f.read()
-        
-        # Extract the images.yaml section manually since it's a Helm template
-        # Find the images.yaml: | line and extract everything until the end
-        lines = content.split('\n')
-        os_images_lines = []
-        in_images = False
-        
-        for line in lines:
-            if 'images.yaml:' in line and '|' in line:
-                in_images = True
-                continue
-            elif in_images:
-                # Stop when we hit another top-level key or end of file
-                if line and not line.startswith('  ') and not line.startswith('\t'):
-                    break
-                os_images_lines.append(line)
-        
-        # Remove common indentation and parse
-        if os_images_lines:
-            # Remove empty lines at the end
-            while os_images_lines and not os_images_lines[-1].strip():
-                os_images_lines.pop()
-            
-            # Find minimum indentation (excluding empty lines)
-            non_empty_lines = [line for line in os_images_lines if line.strip()]
-            if non_empty_lines:
-                min_indent = min(len(line) - len(line.lstrip()) for line in non_empty_lines)
-                os_images_lines = [line[min_indent:] if len(line) > min_indent else line for line in os_images_lines]
-        
-        # Join and parse as YAML
-        os_images_content = '\n'.join(os_images_lines)
-        parsed_data = yaml.safe_load(os_images_content)
-        
-        if not parsed_data or 'images' not in parsed_data:
-            error("No images found in ConfigMap")
-            sys.exit(1)
-            
-        return parsed_data['images']
-    except Exception as e:
-        error(f"Failed to parse ConfigMap file: {e}")
-        import traceback
-        traceback.print_exc()
+        rendered = subprocess.run(
+            [
+                "helm", "template", "os-images", chart_dir,
+                # Satisfy the chart's unrelated `required` values so a
+                # --show-only render of this one template succeeds.
+                "--set-string", "backend.gateway.hostname=os-images.example.test",
+                "--show-only", "templates/os-images-configmap.yaml",
+            ],
+            capture_output=True, text=True, check=True,
+        ).stdout
+    except FileNotFoundError:
+        error("helm not found in PATH — it is required to render the OS-image catalog")
         sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        error(f"helm template failed: {e.stderr.strip()}")
+        sys.exit(1)
+
+    try:
+        configmap = yaml.safe_load(rendered)
+        images_yaml = configmap["data"]["images.yaml"]
+        parsed_data = yaml.safe_load(images_yaml)
+    except Exception as e:
+        error(f"Failed to parse rendered ConfigMap: {e}")
+        sys.exit(1)
+
+    if not parsed_data or not parsed_data.get("images"):
+        error("No images found in the rendered ConfigMap")
+        sys.exit(1)
+
+    return parsed_data["images"]
 
 def sanitize_name(name: str) -> str:
     """Convert OS name to valid Kubernetes resource name"""
@@ -150,6 +146,19 @@ def generate_vm(os_config: Dict[str, Any], namespace: str) -> Dict[str, Any]:
     
     # Check if this is a Windows VM
     is_windows = 'Windows' in os_config['OS_NAME']
+
+    # The chart marks per-image capabilities; honour them rather than assuming
+    # every guest takes a cloud-init disk, an SSH key or runs a guest agent.
+    # Talos, for example, sets cloudInitDisk=false and sshAccess=false.
+    def _flag(key: str, default: bool) -> bool:
+        raw = os_config.get(key)
+        if raw is None:
+            return default
+        return str(raw).strip().lower() not in ('false', 'no', '0', '')
+
+    wants_cloud_init_disk = _flag('CLOUD_INIT_DISK', True)
+    has_guest_agent = _flag('GUEST_AGENT', True)
+    ssh_access = _flag('SSH_ACCESS', not is_windows) and bool(os_config.get('CLOUD_USER'))
     
     # Base VM spec
     vm_spec = {
@@ -213,7 +222,7 @@ def generate_vm(os_config: Dict[str, Any], namespace: str) -> Dict[str, Any]:
                                 }
                             }
                         }
-                    }] if not is_windows else [],
+                    }] if ssh_access else [],
                     'terminationGracePeriodSeconds': 60,
                     'volumes': [
                         {
@@ -223,7 +232,7 @@ def generate_vm(os_config: Dict[str, Any], namespace: str) -> Dict[str, Any]:
                         {
                             'name': 'cloudinitdisk',
                             'cloudInitNoCloud': {
-                                'userData': os_config['CLOUD_INIT']
+                                'userData': os_config.get('CLOUD_INIT', '')
                             }
                         }
                     ]
@@ -243,6 +252,20 @@ def generate_vm(os_config: Dict[str, Any], namespace: str) -> Dict[str, Any]:
             }
         }
     
+    # Drop the cloud-init disk for images that do not take one (e.g. Talos).
+    if not wants_cloud_init_disk:
+        devices = vm_spec['spec']['template']['spec']['domain']['devices']
+        devices['disks'] = [d for d in devices['disks'] if d.get('name') != 'cloudinitdisk']
+        vm_spec['spec']['template']['spec']['volumes'] = [
+            v for v in vm_spec['spec']['template']['spec']['volumes']
+            if v.get('name') != 'cloudinitdisk'
+        ]
+
+    # guestAgentPing never succeeds without a guest agent, so the VM would
+    # sit un-Ready forever.
+    if not has_guest_agent:
+        vm_spec['spec']['template']['spec'].pop('readinessProbe', None)
+
     return vm_spec
 
 def get_existing_resources(namespace: str) -> Dict[str, Dict]:

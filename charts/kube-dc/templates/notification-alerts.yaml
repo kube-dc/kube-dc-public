@@ -1,0 +1,35 @@
+{{- if and ((.Values.notifications | default dict).enabled | default false) .Values.platformComponentAlerts.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kube-dc-billing-notifications
+  namespace: {{ .Release.Namespace }}
+  labels:
+    release: {{ .Values.platformComponentAlerts.prometheusReleaseLabel | default "monitoring" }}
+spec:
+  groups:
+    - name: kube-dc.billing-notifications
+      rules:
+        - alert: KubeDCBillingNotificationNeedsAttention
+          expr: max(kube_dc_billing_notifications_outstanding{state=~"quarantined|needs_attention"}) > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: Billing notifications require operator review
+            description: Review exact recipients and messages in Admin > Notifications. Quarantine persists until explicit release.
+        - alert: KubeDCBillingNotificationOutboxGrowing
+          expr: max(kube_dc_billing_notification_outbox_entries) >= 50
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Billing notification intent is accumulating
+        - alert: KubeDCBillingNotificationWorkerStalled
+          expr: time() - max(kube_dc_billing_notifications_last_scan_timestamp_seconds) > 600 or absent(kube_dc_billing_notifications_last_scan_timestamp_seconds)
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Billing notification recovery scans are stalled
+{{- end }}

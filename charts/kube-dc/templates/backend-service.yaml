@@ -11,5 +11,11 @@ spec:
       targetPort: http
       protocol: TCP
       name: http
+    {{- if .Values.backend.metrics.enabled }}
+    - port: {{ .Values.backend.metrics.port }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+    {{- end }}
   selector:
     {{- include "kube-dc.backend.selectorLabels" . | nindent 4 }}

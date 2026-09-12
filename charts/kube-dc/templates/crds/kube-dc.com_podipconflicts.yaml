@@ -1,0 +1,357 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    helm.sh/resource-policy: keep
+    controller-gen.kubebuilder.io/version: v0.16.4
+  name: podipconflicts.kube-dc.com
+spec:
+  group: kube-dc.com
+  names:
+    kind: PodIPConflict
+    listKind: PodIPConflictList
+    plural: podipconflicts
+    shortNames:
+    - podipc
+    singular: podipconflict
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.podRef.namespace
+      name: Project
+      type: string
+    - jsonPath: .spec.podRef.name
+      name: Pod
+      type: string
+    - jsonPath: .spec.ip
+      name: IP
+      type: string
+    - jsonPath: .spec.mac
+      name: Claimed-By
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.quarantineActive
+      name: Quarantined
+      type: boolean
+    - jsonPath: .spec.disposition
+      name: Disposition
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: "PodIPConflict is the platform's durable record of one pod NIC
+          address that\nkube-ovn IPAM handed out but another host already answers
+          for on the wire\n(kube-ovn's duplicate-address detection then refuses the
+          NIC and kubelet\nretries sandbox creation forever with the same address).
+          It is CLUSTER-scoped\non purpose: tenants hold admin rights inside their
+          project namespaces, so the\nstate of a cluster-admin-driven remediation
+          workflow must live where they\ncannot touch it. One object per (subnet UID,
+          address, pod UID, provider).\n\nThe record is a PROJECTION, not the source
+          of truth for the exclusion: the\nexclusion itself and its ownership live
+          in the kube-ovn Subnet (the\nexcludeIps entry plus the network.kube-dc.com/ip-conflict-ledger
+          annotation,\nwritten in the same update). A record therefore survives manager
+          crashes at\nany point: on restart the controller re-derives QuarantineActive
+          from the\nledger, Recovering from the pod's presence, and BreakerOpen from
+          the Subnet\nannotation.\n\nLifecycle (status.phase):\n\n\tDetected ─▶ Quarantined
+          ─▶ Recovering ─▶ Recovered\n\t   │             │\n\t   │             ├─▶
+          Manual      (address kept; workload not recreated automatically)\n\t   │
+          \            └─▶ Retained    (operator: legitimate VIP, keep excluded, not
+          an incident)\n\t   ├─▶ BreakerOpen               (subnet budget reached;
+          no mutation; operator resets)\n\t   └─▶ Resolved                  (pod gone
+          / started / re-addressed without our action)\n\tany owned exclusion ─▶ Released
+          \ (operator disposition, after the release checks)"
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              PodIPConflictSpec is written by the controller on creation. Every field but
+              disposition is immutable (enforced by the API server), so an edited record can
+              never make the controller touch a different address, subnet or pod.
+            properties:
+              disposition:
+                default: Auto
+                description: Disposition is the operator's decision. Defaults to Auto.
+                enum:
+                - Auto
+                - Observe
+                - Retain
+                - Release
+                type: string
+              ip:
+                description: IP is the conflicted IPv4 address (canonical dotted quad).
+                maxLength: 15
+                pattern: ^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$
+                type: string
+              ipCRName:
+                description: |-
+                  IPCRName / IPCRUID identify the kube-ovn IP object that held the address
+                  for this pod NIC when the conflict was recorded. Exactly that object (by
+                  UID) must still bind the address to the pod for any mutation to proceed.
+                maxLength: 512
+                minLength: 1
+                type: string
+              ipCRUID:
+                maxLength: 63
+                minLength: 1
+                type: string
+              mac:
+                description: |-
+                  MAC is the host that answered for the address (evidence, never a
+                  security principal — it can be changed at will).
+                maxLength: 63
+                type: string
+              podRef:
+                description: |-
+                  PodIPConflictPodRef identifies the exact pod instance (UID, not just name —
+                  a same-name replacement must never inherit an incident).
+                properties:
+                  name:
+                    maxLength: 253
+                    type: string
+                  namespace:
+                    maxLength: 63
+                    type: string
+                  owner:
+                    description: Owner is the pod's controller owner reference, if
+                      any (absent for a bare pod).
+                    properties:
+                      apiVersion:
+                        maxLength: 253
+                        type: string
+                      kind:
+                        maxLength: 63
+                        type: string
+                      name:
+                        maxLength: 253
+                        type: string
+                      uid:
+                        maxLength: 63
+                        type: string
+                    required:
+                    - apiVersion
+                    - kind
+                    - name
+                    - uid
+                    type: object
+                  uid:
+                    maxLength: 63
+                    type: string
+                required:
+                - name
+                - namespace
+                - uid
+                type: object
+              provider:
+                description: |-
+                  Provider is the kube-ovn provider of the conflicted NIC ("ovn" for the
+                  cluster network, "<nad>.<ns>.ovn" for a tenant attachment).
+                maxLength: 253
+                minLength: 1
+                type: string
+              subnetName:
+                description: |-
+                  SubnetName / SubnetUID identify the kube-ovn Subnet the address belongs to.
+                  The UID is checked on every ledger operation: a recreated Subnet with the
+                  same name is a different subnet.
+                maxLength: 253
+                minLength: 1
+                type: string
+              subnetUID:
+                maxLength: 63
+                minLength: 1
+                type: string
+            required:
+            - ip
+            - ipCRName
+            - ipCRUID
+            - podRef
+            - provider
+            - subnetName
+            - subnetUID
+            type: object
+            x-kubernetes-validations:
+            - message: spec.podRef is immutable
+              rule: self.podRef.__namespace__ == oldSelf.podRef.__namespace__ && self.podRef.name
+                == oldSelf.podRef.name && self.podRef.uid == oldSelf.podRef.uid
+            - message: spec.podRef.owner is immutable
+              rule: has(self.podRef.owner) == has(oldSelf.podRef.owner) && (!has(self.podRef.owner)
+                || (self.podRef.owner.uid == oldSelf.podRef.owner.uid && self.podRef.owner.kind
+                == oldSelf.podRef.owner.kind && self.podRef.owner.name == oldSelf.podRef.owner.name
+                && self.podRef.owner.apiVersion == oldSelf.podRef.owner.apiVersion))
+            - message: only spec.disposition may change after creation
+              rule: self.provider == oldSelf.provider && self.subnetName == oldSelf.subnetName
+                && self.subnetUID == oldSelf.subnetUID && self.ip == oldSelf.ip &&
+                self.ipCRName == oldSelf.ipCRName && self.ipCRUID == oldSelf.ipCRUID
+            - message: spec.mac is immutable
+              rule: has(self.mac) == has(oldSelf.mac) && (!has(self.mac) || self.mac
+                == oldSelf.mac)
+          status:
+            description: PodIPConflictStatus is the controller's record of evidence
+              and actions.
+            properties:
+              action:
+                description: Action taken to recover the pod ("DeletePod"), and when.
+                type: string
+              actionAt:
+                format: date-time
+                type: string
+              conditions:
+                description: 'Conditions: Quarantined, Recovered, NeedsOperator, BreakerOpen.'
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              exclusionPreexisting:
+                description: |-
+                  ExclusionPreexisting is true when the address was already excluded (an
+                  operator entry, a range, or another record's entry) when this record
+                  reached the quarantine step: recovery proceeds, nothing is owned.
+                type: boolean
+              firstObserved:
+                description: FirstObserved / LastObserved are manager clock times
+                  of those witnesses.
+                format: date-time
+                type: string
+              lastObserved:
+                format: date-time
+                type: string
+              message:
+                description: Message is a human-readable summary of the current state.
+                type: string
+              observations:
+                description: |-
+                  Observations is the number of DISTINCT kubelet reports the manager itself
+                  witnessed: a new Event UID, or the same Event's count / source occurrence
+                  time advancing. Action is gated on these, never on the Event's own counter.
+                format: int32
+                type: integer
+              observedEvents:
+                description: |-
+                  ObservedEvents is the per-Event state the observations were counted
+                  against (UID, count and source occurrence time of the last occurrence
+                  counted for that Event). Bounded; the oldest entries are dropped. A
+                  re-delivered, unchanged Event never counts; a skewed node clock cannot
+                  manufacture observations because only advancement past the last COUNTED
+                  occurrence of the same Event counts.
+                items:
+                  description: PodIPConflictEventObservation is the last counted occurrence
+                    of one Event.
+                  properties:
+                    count:
+                      format: int32
+                      type: integer
+                    time:
+                      description: Time is the Event's own (source-side) occurrence
+                        time.
+                      format: date-time
+                      type: string
+                    uid:
+                      maxLength: 63
+                      type: string
+                  required:
+                  - uid
+                  type: object
+                maxItems: 8
+                type: array
+              phase:
+                description: Phase, see the PodIPConflict* constants.
+                type: string
+              quarantineActive:
+                description: |-
+                  QuarantineActive is true while THIS record owns the address's entry in the
+                  Subnet ledger (this controller added it for this record). Only an owned
+                  entry is ever released or retained.
+                type: boolean
+              quarantinedAt:
+                format: date-time
+                type: string
+              releaseRequestedAt:
+                description: |-
+                  ReleaseRequestedAt is when the CURRENT Release request was first seen
+                  (ReleaseRequestedGeneration is the record generation that carried it);
+                  the dwell is measured from the later of this and LastObserved, and a
+                  later, separate Release request starts a new dwell.
+                format: date-time
+                type: string
+              releaseRequestedGeneration:
+                format: int64
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

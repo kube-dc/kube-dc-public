@@ -91,6 +91,7 @@ spec:
             service: kube-dc-control-plane
             owner: control-plane
           annotations:
+            dashboard_uid: kube-dc-manager
             summary: Kube-DC organization quota configuration is invalid
             description: Billing plan or GPU catalog validation has failed; keep entitlement changes gated until the configuration reconciles.
             runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/shared-gpu-pilot-runbook.md
@@ -102,6 +103,7 @@ spec:
             service: kube-dc-control-plane
             owner: control-plane
           annotations:
+            dashboard_uid: kube-dc-manager
             summary: Kube-DC organization quota configuration has not been observed
             description: The manager has not completed plan and GPU catalog validation since starting.
             runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/shared-gpu-pilot-runbook.md
@@ -113,9 +115,267 @@ spec:
             service: kube-dc-control-plane
             owner: control-plane
           annotations:
+            dashboard_uid: kube-dc-manager
             summary: Kube-DC organization quota reconciliation is failing
             description: One or more bounded quota reconciliation stages failed during the last 15 minutes; inspect manager events and logs before changing entitlement.
             runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/shared-gpu-pilot-runbook.md
+    - name: kube-dc.reconcile-liveness
+      rules:
+        - alert: KubeDcManagerReconcileWedged
+          expr: max by (controller) (kube_dc_controller_wedged) > 0
+          for: 2m
+          labels:
+            severity: critical
+            service: kube-dc-control-plane
+            owner: control-plane
+          annotations:
+            dashboard_uid: kube-dc-manager
+            summary: kube-dc-manager {{ "{{ $labels.controller }}" }} controller is deadlocked
+            description: >-
+              A reconcile in the {{ "{{ $labels.controller }}" }} controller has been in flight past the
+              liveness threshold; the worker pool is wedged and finalizers/deletions are stalled.
+              Kubernetes should auto-restart the pod via the liveness probe (incident 2026-08-12);
+              if it persists, restart kube-dc-manager and inspect OVN/Keycloak/apiserver reachability.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/e2e-installer-test-plan.md
+        - alert: KubeDcManagerReconcileSlow
+          expr: max by (controller) (kube_dc_controller_oldest_active_reconcile_seconds) > 300
+          for: 5m
+          labels:
+            severity: warning
+            service: kube-dc-control-plane
+            owner: control-plane
+          annotations:
+            dashboard_uid: kube-dc-manager
+            summary: kube-dc-manager {{ "{{ $labels.controller }}" }} has a slow reconcile
+            description: >-
+              A reconcile in the {{ "{{ $labels.controller }}" }} controller has exceeded the 5m
+              per-reconcile deadline for 5m; an external dependency (OVN, Keycloak, apiserver) is
+              likely stalling. This precedes a full worker-pool wedge.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/e2e-installer-test-plan.md
+        - alert: KubeDcManagerWorkersSaturated
+          expr: >-
+            (max by (controller) (controller_runtime_active_workers)
+              >= max by (controller) (controller_runtime_max_concurrent_reconciles))
+            and (sum by (controller) (rate(controller_runtime_reconcile_total[10m])) == 0)
+          for: 10m
+          labels:
+            severity: warning
+            service: kube-dc-control-plane
+            owner: control-plane
+          annotations:
+            dashboard_uid: kube-dc-manager
+            summary: kube-dc-manager {{ "{{ $labels.controller }}" }} workers saturated with no progress
+            description: >-
+              Every reconcile worker for {{ "{{ $labels.controller }}" }} is busy and no reconcile has
+              completed in 10m. Defense-in-depth from controller-runtime built-ins, independent of the
+              kube_dc_controller_wedged metric.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/e2e-installer-test-plan.md
+    # Pod NIC address conflicts: kube-ovn's duplicate-address detection refused
+    # a pod's address because another host answers for it (a tenant VM announcing
+    # a nested-cluster VIP). The manager records a PodIPConflict, and in remediate
+    # mode quarantines the address in the project subnet and recreates
+    # controller-owned pods. Unresolved state is read from the durable record
+    # gauge, never from counters. docs/prd/project-subnet-ipam-delegation.md
+    - name: kube-dc.pod-ip-conflict
+      rules:
+        - alert: KubeDcPodIPConflictDetected
+          expr: sum by (project) (increase(kube_dc_manager_pod_ip_conflicts_total{action="detected"}[30m])) > 0
+          for: 0m
+          labels:
+            severity: warning
+            service: kube-dc-networking
+            owner: platform
+          annotations:
+            dashboard_uid: kube-dc-networking
+            summary: Pod address conflict in project {{ "{{ $labels.project }}" }}
+            description: >-
+              kube-ovn handed a pod in project {{ "{{ $labels.project }}" }} an address that
+              another host already answers for (a VM in the project announcing it as a VIP).
+              A tenant is using addresses kube-ovn does not know about: reserve their
+              LoadBalancer range explicitly. kubectl get podipconflicts -l
+              network.kube-dc.com/project={{ "{{ $labels.project }}" }}
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/project-subnet-ipam-delegation.md
+        - alert: KubeDcPodIPConflictNeedsOperator
+          expr: max by (project) (kube_dc_manager_pod_ip_conflict_records{phase="Manual"}) > 0
+          for: 15m
+          labels:
+            severity: critical
+            service: kube-dc-networking
+            owner: platform
+          annotations:
+            dashboard_uid: kube-dc-networking
+            summary: Pod address conflict needs an operator in project {{ "{{ $labels.project }}" }}
+            description: >-
+              A PodIPConflict in project {{ "{{ $labels.project }}" }} is in phase Manual: the
+              address is excluded from IPAM but the pod is not recreated automatically (a VM,
+              StatefulSet or bare pod, an owner that no longer wants it, or an IPAM
+              inconsistency). The pod stays Pending until someone acts. Inspect the record
+              (kubectl get podipconflicts -l network.kube-dc.com/project={{ "{{ $labels.project }}" }} -o yaml)
+              and the pod's IPConflict* Events; when done set spec.disposition=Retain (known VIP)
+              or Release (claimant removed).
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/project-subnet-ipam-delegation.md
+        - alert: KubeDcPodIPConflictUnresolved
+          expr: max by (project) (kube_dc_manager_pod_ip_conflict_records{phase=~"Detected|Quarantined|Recovering"}) > 0
+          for: 30m
+          labels:
+            severity: warning
+            service: kube-dc-networking
+            owner: platform
+          annotations:
+            dashboard_uid: kube-dc-networking
+            summary: Pod address conflict unresolved for 30m in project {{ "{{ $labels.project }}" }}
+            description: >-
+              A PodIPConflict in project {{ "{{ $labels.project }}" }} has sat in
+              Detected/Quarantined/Recovering for 30 minutes. Detected for that long means the
+              manager runs in observe mode or the project is not opted in (the pod is wedged and
+              nobody is fixing it); Quarantined/Recovering that long means the workflow is stuck
+              (check the record's status.message and the manager log).
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/project-subnet-ipam-delegation.md
+        - alert: KubeDcPodIPConflictBreakerOpen
+          expr: max by (project, subnet) (kube_dc_manager_pod_ip_conflict_breaker_open) == 1
+          for: 0m
+          labels:
+            severity: critical
+            service: kube-dc-networking
+            owner: platform
+          annotations:
+            dashboard_uid: kube-dc-networking
+            summary: Quarantine breaker open on subnet {{ "{{ $labels.subnet }}" }}
+            description: >-
+              Subnet {{ "{{ $labels.subnet }}" }} (project {{ "{{ $labels.project }}" }}) reached
+              its quarantine budget: a tenant is claiming a RANGE of addresses. The manager
+              only reports there now. Reserve the tenant's range explicitly, then clear the
+              network.kube-dc.com/ip-conflict-breaker annotation on the subnet.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/project-subnet-ipam-delegation.md
+        - alert: KubeDcSubnetLedgerInvalid
+          expr: min by (project, subnet) (kube_dc_manager_subnet_ledger_valid) == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: kube-dc-networking
+            owner: platform
+          annotations:
+            dashboard_uid: kube-dc-networking
+            summary: ip-conflict ledger on subnet {{ "{{ $labels.subnet }}" }} is corrupt
+            description: >-
+              The network.kube-dc.com/ip-conflict-ledger annotation on subnet
+              {{ "{{ $labels.subnet }}" }} (project {{ "{{ $labels.project }}" }}) does not parse. The
+              manager refuses every quarantine, release and retain on that subnet until the
+              annotation is repaired or removed by hand (removing it abandons ownership of the
+              existing excludeIps entries, which then stay in place as operator entries).
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/project-subnet-ipam-delegation.md
+        - alert: KubeDcSubnetQuarantineGrowing
+          expr: max by (project, subnet) (kube_dc_manager_quarantined_ips{state="quarantined"}) >= 3
+          for: 10m
+          labels:
+            severity: warning
+            service: kube-dc-networking
+            owner: platform
+          annotations:
+            dashboard_uid: kube-dc-networking
+            summary: Subnet {{ "{{ $labels.subnet }}" }} has {{ "{{ $value }}" }} quarantined addresses
+            description: >-
+              kube-dc keeps {{ "{{ $value }}" }} addresses excluded from IPAM in subnet
+              {{ "{{ $labels.subnet }}" }} because another host answers for them (retained,
+              operator-acknowledged VIPs are not counted). That tenant is squatting a range;
+              reserve it instead of accumulating per-address quarantines (the breaker opens at
+              the configured cap).
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/project-subnet-ipam-delegation.md
+    - name: kube-dc.address-reservation
+      rules:
+        - alert: KubeDcAddressReservationQuarantined
+          expr: sum by (project) (increase(kube_dc_manager_address_reservation_transitions_total{action="quarantined"}[30m])) > 0
+          for: 0m
+          labels:
+            severity: critical
+            service: kube-dc-networking
+            owner: platform
+          annotations:
+            dashboard_uid: kube-dc-networking
+            summary: Address reservation quarantined in project {{ "{{ $labels.project }}" }}
+            description: >-
+              A range fenced for project {{ "{{ $labels.project }}" }} was contaminated or never
+              acknowledged by kube-ovn; it stays excluded from IPAM but is NOT delegated.
+              kubectl get addressreservations -o wide, then find who answers for those addresses.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/project-subnet-ipam-delegation.md
+        - alert: KubeDcAddressReservationCompromised
+          expr: max by (project) (kube_dc_manager_address_reservations{phase="Compromised"}) > 0
+          for: 5m
+          labels:
+            severity: critical
+            service: kube-dc-networking
+            owner: platform
+          annotations:
+            dashboard_uid: kube-dc-networking
+            summary: kube-ovn allocated inside a delegated range in project {{ "{{ $labels.project }}" }}
+            description: >-
+              A kube-ovn IP object, Vip or pod NIC exists inside a range delegated to a tenant
+              cluster in project {{ "{{ $labels.project }}" }}. The exclusion should have made this
+              impossible: inspect the reservation and the Subnet excludeIps for hand edits.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/project-subnet-ipam-delegation.md
+        - alert: KubeDcAddressReservationExhausted
+          expr: max by (project) (kube_dc_manager_address_reservations{phase="Exhausted"}) > 0
+          for: 15m
+          labels:
+            severity: warning
+            service: kube-dc-networking
+            owner: platform
+          annotations:
+            dashboard_uid: kube-dc-networking
+            summary: No safe block could be reserved in project {{ "{{ $labels.project }}" }}
+            description: >-
+              Every candidate range in project {{ "{{ $labels.project }}" }} was occupied, quarantined
+              or too small. The consumer gets no delegated LoadBalancer range — decide by hand.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/project-subnet-ipam-delegation.md
+        - alert: KubeDcAddressArenaClaimSlotsHigh
+          expr: >-
+            kube_dc_manager_address_arena_claim_slots_used
+              / kube_dc_manager_address_arena_claim_slots_maximum >= 0.75
+          for: 15m
+          labels:
+            severity: warning
+            service: kube-dc-networking
+            owner: platform
+          annotations:
+            dashboard_uid: kube-dc-networking
+            summary: VIP-pool ledger is using at least 75% of its claim slots in project {{ "{{ $labels.project }}" }}
+            description: >-
+              AddressArena {{ "{{ $labels.arena }}" }} is approaching its 64-claim schema ceiling.
+              Inspect active claims and unreclaimed tombstones before new managed-cluster LoadBalancer
+              blocks are refused. This alert measures ledger slots, not remaining VIP addresses.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/managed-k8s-lb-ipam.md
+        - alert: KubeDcAddressArenaInconsistent
+          expr: min by (project, subnet) (kube_dc_manager_address_arena_consistent) == 0
+          for: 10m
+          labels:
+            severity: critical
+            service: kube-dc-networking
+            owner: platform
+          annotations:
+            dashboard_uid: kube-dc-networking
+            summary: A reserved range on subnet {{ "{{ $labels.subnet }}" }} is not excluded from IPAM
+            description: >-
+              The AddressArena audit for subnet {{ "{{ $labels.subnet }}" }} (project
+              {{ "{{ $labels.project }}" }}) found a claim or a ledger range — possibly a deleted
+              reservation's tombstone — that excludeIps no longer covers and that the manager could
+              not repair (enforcement off, breaker open, or the subnet changed). kube-ovn may hand
+              those addresses out. kubectl get addressarena {{ "{{ $labels.subnet }}" }} -o yaml
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/project-subnet-ipam-delegation.md
+        - alert: KubeDcAddressReservationStuck
+          expr: max by (project) (kube_dc_manager_address_reservations{phase=~"Proposed|Fenced|RejectedCandidate"}) > 0
+          for: 30m
+          labels:
+            severity: warning
+            service: kube-dc-networking
+            owner: platform
+          annotations:
+            dashboard_uid: kube-dc-networking
+            summary: Address reservation not Ready after 30m in project {{ "{{ $labels.project }}" }}
+            description: >-
+              A reservation in project {{ "{{ $labels.project }}" }} has not reached Ready in 30
+              minutes (kube-ovn not acknowledging the fence, a subnet missing, or candidates being
+              claimed concurrently). Check status.message.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/project-subnet-ipam-delegation.md
 {{- if get $draMetrics "enabled" }}
     - name: kube-dc.gpu-dra
       rules:

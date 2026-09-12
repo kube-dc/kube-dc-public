@@ -301,6 +301,13 @@ spec:
                 service:
                   description: LoadBalancer service configuration
                   properties:
+                    exposure:
+                      description: |-
+                        Exposure selects internal-only etcd Services or the legacy cloud EIP.
+                        Internal requires dual-homed etcd and direct Kamaji datastore endpoints.
+                        Omitted or External preserves existing datastore behavior.
+                      enum: [External, Internal]
+                      type: string
                     eip:
                       description: EIP configuration
                       properties:
@@ -342,6 +349,9 @@ spec:
               required:
                 - etcd
               type: object
+              x-kubernetes-validations:
+                - message: datastore service exposure cannot change after creation
+                  rule: "(has(self.service) && has(self.service.exposure) && self.service.exposure == 'Internal') == (has(oldSelf.service) && has(oldSelf.service.exposure) && oldSelf.service.exposure == 'Internal')"
             status:
               description: status defines the observed state of KdcClusterDatastore
               properties:

@@ -1,0 +1,146 @@
+{{- if and .Values.dbManager.enabled (or .Values.dbManager.metrics.enabled .Values.dbManager.metricsEnabled) }}
+{{- $metricsName := printf "%s-metrics" (include "kube-dc.dbmanager.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- $port := int .Values.dbManager.metrics.service.port }}
+{{- if or (lt $port 1) (gt $port 65535) }}
+{{- fail "dbManager.metrics.service.port must be between 1 and 65535" }}
+{{- end }}
+# controller-runtime's secure metrics filter performs TokenReview and
+# SubjectAccessReview for every scrape. Without this binding the endpoint is
+# reachable but returns HTTP 500 (the same contract as k8-manager).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ printf "%s-metrics-auth" (include "kube-dc.dbmanager.fullname" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "kube-dc.dbmanager.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kube-dc.dbmanager.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $metricsName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.dbmanager.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+spec:
+  selector:
+    {{- include "kube-dc.dbmanager.selectorLabels" . | nindent 4 }}
+    control-plane: db-manager
+  ports:
+    - name: metrics
+      port: {{ $port }}
+      protocol: TCP
+      targetPort: metrics
+---
+{{- if .Values.dbManager.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $metricsName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.dbmanager.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+    {{- with .Values.dbManager.metrics.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      {{- include "kube-dc.dbmanager.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: metrics
+  endpoints:
+    - port: metrics
+      path: /metrics
+      scheme: https
+      interval: {{ .Values.dbManager.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.dbManager.metrics.serviceMonitor.scrapeTimeout }}
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tlsConfig:
+        insecureSkipVerify: true
+---
+{{- end }}
+{{- if .Values.dbManager.metrics.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ $metricsName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.dbmanager.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+    {{- with .Values.dbManager.metrics.prometheusRule.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: kube-dc.db-manager-reconcile-liveness
+      rules:
+        - alert: KubeDcDBManagerReconcileWedged
+          expr: max by (controller) (kube_dc_db_manager_controller_wedged) > 0
+          for: 2m
+          labels:
+            severity: critical
+            service: kube-dc-databases
+            owner: database-platform
+          annotations:
+            dashboard_uid: kube-dc-databases
+            summary: db-manager {{ "{{ $labels.controller }}" }} controller is wedged
+            description: A database reconcile has remained in flight beyond the wedge threshold and the liveness probe will restart the process if it persists.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/kube-dc-platform-observability-catalog.md
+        - alert: KubeDcDBManagerReconcileSlow
+          expr: max by (controller) (kube_dc_db_manager_controller_oldest_active_reconcile_seconds) > 300
+          for: 5m
+          labels:
+            severity: warning
+            service: kube-dc-databases
+            owner: database-platform
+          annotations:
+            dashboard_uid: kube-dc-databases
+            summary: db-manager {{ "{{ $labels.controller }}" }} controller has a slow reconcile
+            description: A database reconcile has exceeded the five-minute operation budget.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/kube-dc-platform-observability-catalog.md
+{{- end }}
+{{- if .Values.dbManager.metrics.rbac.create }}
+{{- if eq (len .Values.dbManager.metrics.rbac.serviceAccounts) 0 }}
+{{- fail "dbManager.metrics.rbac.serviceAccounts must contain at least one exact scraper identity when dbManager.metrics.rbac.create=true" }}
+{{- end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $metricsName }}-reader
+  labels:
+    {{- include "kube-dc.dbmanager.labels" . | nindent 4 }}
+rules:
+  - nonResourceURLs: [/metrics]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $metricsName }}-reader
+  labels:
+    {{- include "kube-dc.dbmanager.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $metricsName }}-reader
+subjects:
+  {{- range .Values.dbManager.metrics.rbac.serviceAccounts }}
+  - kind: ServiceAccount
+    name: {{ required "dbManager.metrics.rbac.serviceAccounts[].name is required" .name }}
+    namespace: {{ required "dbManager.metrics.rbac.serviceAccounts[].namespace is required" .namespace }}
+  {{- end }}
+{{- end }}
+{{- end }}

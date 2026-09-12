@@ -2,6 +2,72 @@ apiVersion: v2
 name: kube-dc
 description: A Helm chart for kube-dc manager
 
+# v0.6.6: raise db-manager memory limit 128Mi→256Mi for the exposure
+# lifecycle's optional Gateway resource caches; stage cache sync exceeded 128Mi.
+# v0.6.5: manager v0.6.4 rejects overlapping imported destinations owned by
+# different RoutingFabrics in the same Project, preventing ambiguous VPC route
+# and fail-closed guard ownership during fabric migrations.
+# v0.6.4: gateway v0.1.13 excludes FRR own-AS-loop re-advertisements from
+# import policy health while reporting them explicitly; manager stays v0.6.3.
+# v0.6.3: manager v0.6.3 restores namespace-neutral routing-link Subnets
+# after the dual-home gateway change regressed the Kube-OVN custom-VPC rule.
+# v0.6.1: manager v0.6.1 safely references an existing platform Vlan for
+# routed transit without adopting/deleting it, and isolates overlapping IPAM
+# in a fabric-owned Vpc. This enables reviewed ext-cloud peering fallbacks.
+# v0.5.108: manager v0.5.99 closes the routed-transit reverse bind path at
+# ProjectNetwork admission and reconciliation, and accepts omitted BGP timers.
+# v0.5.106: manager v0.5.97 and gateway v0.1.12 keep the isolated nft counter
+# helper outside Pod readiness so metrics failures cannot withdraw healthy BGP.
+# v0.5.105: manager v0.5.96 and gateway v0.1.11 isolate nftables counter
+# reads in a NET_ADMIN-only sidecar and report stale/missing snapshots.
+# v0.5.104: manager v0.5.95 and gateway v0.1.10 remove bgpd's `--no_kernel`
+# flag after fail-closed readiness proved the valid imported route stayed out
+# of zebra and the kernel FIB.
+# v0.5.103: manager v0.5.94 and gateway v0.1.9 give FRR writable runtime
+# volumes and its normal SETUID/SETGID privilege-drop path; both routing
+# daemons finish startup as the unprivileged frr user.
+# v0.5.102: manager v0.5.93 and gateway v0.1.8 remove the bgpd-only `-S`
+# option from zebra after the pinned FRR 10.4.1 runtime rejected it live, add
+# zebra's required SYS_ADMIN capability, and ship its vtysh baseline files.
+# v0.5.101: manager v0.5.92 closes the routed-network round-two admission,
+# FIP fail-closed, dual-home observability, and load-bearing BGP findings;
+# gateway v0.1.7 runs zebra and exposes cached metrics on the infra PodIP.
+# v0.5.100: manager v0.5.91 uses uncached teardown reads and repairs orphaned
+# UID-owned VPC route sets after an interrupted or stale-cache drain.
+# v0.5.99: manager v0.5.90 and gateway v0.1.6 resolve the final review
+# findings for fail-closed detach, recovery, and return-path symmetry.
+# v0.5.98: manager v0.5.89 removes an unused routed workload result and clears
+# the substantive final feature-delta lint findings; runtime is unchanged.
+# v0.5.97: manager v0.5.88 probes fixed custom-VPC gateway addresses through
+# a loopback exec path, avoiding Kube-OVN same-IP probe reuse during rollout.
+# v0.5.96: manager v0.5.87 and gateway v0.1.5 align stateful routed-egress
+# active/standby using deterministic controller steering and per-replica MED.
+# v0.5.95: manager v0.5.86 disarms the OVN drop backstop after healthy
+# steering is durable and re-arms it before route withdrawal or replacement.
+# v0.5.94: manager v0.5.85 makes gateway Deployment reconciliation stable by
+# retaining Kubernetes-owned metadata and comparing API-defaulted specs.
+# v0.5.93: manager v0.5.84 configures forwarding on the gateway pod sandbox;
+# gateway v0.1.4 verifies it and passes ECMP nexthops as distinct arguments.
+# v0.5.92: manager v0.5.83 leaves custom-VPC routing-link Subnets
+# namespace-neutral so Kube-OVN can validate and program them.
+# v0.5.91: manager v0.5.82 preserves Kube-OVN-owned routing-link Subnet
+# defaults and merge-patches only the fields managed by Routed Networks.
+# v0.5.90: gateway v0.1.2 also prepares FRR's runtime PID/socket directory for
+# the reduced capability set; appVersion remains manager v0.5.81.
+# v0.5.89: gateway v0.1.1 writes the generated FRR configuration without
+# CAP_CHOWN or CAP_DAC_OVERRIDE; appVersion remains manager v0.5.81.
+# v0.5.88: add feature-gated Routed Networks: retained APIs, guarded
+# controllers/admission, hardened FRR gateways, scoped UI APIs and console
+# surfaces. Requires manager v0.5.81; the gate remains disabled by default.
+# v0.5.86: manager v0.5.80 uses one process-scoped OVN client for all Project
+# router-option updates. This works around libovsdb v0.8.1 Close leaving its
+# leader watcher/cache reachable and eliminates the per-reconcile growth.
+# v0.5.85: manager v0.5.79 closes per-Project OVN clients after use. This stops
+# most client workers, but pprof proved an upstream leader watcher survives;
+# superseded by the process-scoped client in v0.5.80.
+# v0.5.84: add an opt-in, loopback-only pprof listener for diagnosing the
+# production manager memory/goroutine leak. No Service or Pod port is exposed;
+# operators connect through kubectl port-forward. Requires manager v0.5.78.
 # v0.5.30: narrow the private-CA mount filter to kubelet's DOUBLE-dot internals.
 # v0.5.29 skipped every dot-prefixed entry, which would silently drop a legal
 # dot-prefixed ConfigMap key (".corp-ca.pem"): the bundle succeeds while that CA
@@ -158,8 +224,138 @@ type: application
 # was flipped there). Safe: both group names embed the namespace, so the
 # peering can never span tenants; etcd role groups stay unpeered. ROLLBACK:
 # v0.5.31 (re-wedges a mid-roll multi-replica MariaDB).
-version: v0.5.70
+# v0.5.71: close the owner-reference-forgery hole in the reserve-platform-
+# identities VAP (I-19). The infra-attachment classifier grants control-plane
+# (etcd 2379) / datastore / management-api-client by walking a pod/Job's
+# controller ownerReference chain to a trusted root (KdcCluster, the per-cluster
+# <cluster>-etcd-backup CronJob, a CNPG Cluster, a MariaDB) and matching each
+# link by UID — which proves the parent EXISTS, not who created the child. A
+# project admin (who holds `*` on `*` in their own namespace) could read a real
+# privileged parent's UID and create a Job/Pod with a FORGED controller
+# ownerReference to it, earning the privileged network role. New CEL clause
+# denies any non-operator requester whose object carries a controller:true
+# ownerReference to one of those kinds; the only legitimate creators are
+# kube-system controllers (already exempt policy-wide) and the CNPG / MariaDB
+# operators (carved out by exact SA). Template-only; appVersion unchanged.
+# v0.5.71 hardened (codex round-5): the owner set now enumerates EVERY trusted
+# edge by exact GVK — incl. KdcDatabase, whose omission was a live bypass
+# reachable under the shipped admin Role (Pod->Job->KdcDatabase grants the
+# management-API route), plus KdcCluster/KdcClusterDatastore/TenantControlPlane
+# and the apps/batch spine. Exact GVK (not startsWith / kind-only) so an
+# unrelated tenant CR that happens to be named Job/ReplicaSet is not denied;
+# DaemonSet dropped (no classifier branch follows it). Operator carve-outs
+# tightened to each engine's OWN CR (CNPG SA -> CNPG Cluster, MariaDB SA ->
+# MariaDB) so a compromised operator cannot be a confused deputy for a
+# different root. Also matches pods/ephemeralcontainers (kubectl debug into a
+# privileged pod). Proven live: 16/16 allow/deny cases on a 1.33 apiserver.
+# v0.6.34: the service-family registry (F7). Families are DATA now --
+# .Values.serviceFamilies.extra renders a ConfigMap the manager loads at
+# startup (checksum-rolled), merged over the compiled CNPG/MariaDB defaults. A
+# registered family's pods earn the management-API route on a Tenant-
+# Networking-v2 cluster through the same UID-verified owner walk CNPG always
+# had, its selector keys are reserved in all three policies from one helper
+# (kube-dc.reservedLabelKeysCEL), and its operation CRs get webhook rules
+# rendered from the same values and are judged by their target. Kafka is the
+# documented example; the defaults are byte-identical to v0.6.33.
+# Also: event filters on kdccluster-encryption and clusterip-shadow (157 and
+# 315 reconciles a minute on cloud, driven by k8-manager status churn).
+# v0.6.33 (round 87): an absolute host that stops at ".svc." carries no cluster
+# domain and is therefore not a Kubernetes FQDN -- it is somebody's private
+# zone, and treating it as local would refuse their database.
+# v0.6.32 (round 86): an absolute host (trailing dot) is only this cluster's
+# when its zone is -- engine-rw.platform.svc.vendor.example. was read as a
+# Service in a namespace called platform. Absolute names are checked against
+# KUBE_DC_CLUSTER_DNS_DOMAIN (default cluster.local). Service resolution reads
+# by key with a per-request cache (an absent name remembered as absent) and
+# lists only a namespace, only for a bare-IP host: the previous cluster-wide
+# list was 297 objects per admission on cloud.
+# v0.6.31 (round 85): the ExternalName hop budget failed OPEN -- a chain one
+# hop longer than the cap resolved to the managed Service and was then
+# admitted. Unfinished resolution at the cap is refused; cycles resolve to
+# nothing; the walk crosses namespaces because Kubernetes resolves <svc>.<ns>.
+# Host matching is case-insensitive (DNS is), compares parsed IPs (FD00::10 is
+# fd00::10), and accepts any configured cluster zone. Services are fetched once
+# per request and indexed.
+# v0.6.30 (round 84): a Subscription has TWO ends and only the subscriber was
+# judged -- spec.externalClusterName is the publisher, an alias in the
+# subscriber Cluster's own spec.externalClusters, so a subscription on a
+# tenant's cluster could hold a replication slot open on the platform's
+# database. An object store's serverName defaults to the entry's own name, so
+# for a store-bearing entry the alias IS the target. Host resolution reads
+# hostaddr as well as host (libpq connects to hostaddr when both are set),
+# splits comma-separated lists, matches every spec.clusterIPs entry, follows
+# ExternalName aliases with a visited set, and no longer mistakes
+# <engine>-rw.vendor.example.com for a local Service.
+# v0.6.29 (round 83): CNPG's declarative logical replication is a third path to
+# a managed engine -- a Publication names spec.cluster.name and CNPG runs
+# CREATE PUBLICATION on THAT database, without passing through the Cluster --
+# so publications and subscriptions are gated like the backup objects. An
+# external-cluster entry is judged by what it POINTS AT (host, object-store or
+# plugin server name, one hop through an ExternalName Service, the namespace's
+# Services listed once per request) and never by its alias: an entry named
+# after a managed engine but pointing at a vendor's database is the tenant's
+# own business. The PodDisruptionBudget refusal likewise covers the platform's
+# OWN markers only: a tenant running its own CNPG database writes a budget over
+# cnpg.io/cluster legitimately, and the appended exclusions already keep it off
+# managed pods.
+# v0.6.28 (round 82): the v0.6.27 tenant-budget mutation could never have run
+# -- it was added to mark-managed-children, whose matchConditions admit only
+# platform identities, so the API server never invoked it for a tenant. It has
+# its own stanza now (mark-tenant-budgets, the inverse condition, budgets
+# only, so an outage blocks nothing else), and a chart-contract test checks
+# every registered handler path against the stanza that serves it. The Cluster
+# gate also judges EVERY externalClusters entry rather than only the ones a
+# recognised source consumes (an entry nothing reads today is read tomorrow by
+# initdb.import, a Subscription, or a spec.replica flip -- which is now part
+# of the UPDATE shortcut), resolves a connection host through this namespace's
+# Services, and covers spec.bootstrap.initdb.import and CNPG-I plugin server
+# names.
+# v0.6.27 (round 81 on the same review): F2's real shape -- a managed CNPG pod
+# also carries app.kubernetes.io/name=postgresql and role=primary, so refusing
+# reserved keys never closed it. Tenant PodDisruptionBudgets are now NARROWED
+# by the child mutator (a DoesNotExist requirement per ownership marker, on
+# CREATE and UPDATE) instead of judged, and a null selector is left alone
+# (policy/v1: it matches no pods). F1 extends to CNPG Clusters: a tenant
+# Cluster may not bootstrap from a managed engine's Backup, stream it with
+# pg_basebackup, or replicate it, and a ScheduledBackup update is re-judged
+# even when spec.cluster is untouched (the schedule IS the operation). The HA
+# machinery (spread, budget) now needs replicas as well as fail-closed
+# admission: on an accepted single-replica install minDomains: 2 stalls every
+# rollout.
+# v0.6.26 (release-boundary review 2026-09-05): the reference gate covers
+# CNPG's own backup API (a Backup or ScheduledBackup naming a MARKED Cluster is
+# a second, unapproved operation path -- CNPG runs it with no ServiceOperation
+# involved) and tenant PodDisruptionBudgets whose selector would cover managed
+# pods (a 100% minimum blocks the drains platform maintenance needs; a budget
+# excluding them with a DoesNotExist expression is accepted). One helper --
+# kube-dc.manager.failClosedAdmission -- now drives the budget, the replica
+# floor and the node spread, so a managed-services-only cluster stops getting
+# one without the others; a single replica needs the explicit
+# manager.singleReplicaAdmissionAccepted. Protection with
+# manager.webhook.enabled=false, or without Deny in validationActions, now
+# fails the render instead of looking protected. Template + manager change:
+# appVersion moves with it.
+# v0.6.39: the OS catalog can say an image has no qemu-guest-agent
+# (osImages.catalog[].guestAgent: false), and Gentoo is EFI, not BIOS. Both were
+# tenant-visible bugs. Gentoo's autobuild is GPT with an ESP and an all-zero MBR,
+# so declared as bios it booted SeaBIOS, found no boot sector, and the VM reached
+# Running with an IP while nothing inside ever executed. And with no agent in the
+# image the wizard's agent-based key propagation delivered no key at all, while
+# guestAgentPing held the VM not-Ready forever; CirrOS had the same problem. The
+# wizard reads the flag through cdi-os-catalog (needs a cdi-os-mirror build that
+# carries it) or straight off images-configmap. appVersion unchanged: no manager
+# code moves with this.
+#
+# Same version adds Talos Linux 1.14 to the catalog and the two capabilities it
+# needs: sshAccess: false (no users, no shell -- so no accessCredentials and no
+# login-name annotation) and cloudInitDisk: false (its NoCloud disk IS the machine
+# config; handed one it cannot parse Talos retries "config not found" forever and
+# never reaches maintenance mode, so apid never starts). With no disk it boots to
+# maintenance in ~4s, AgentConnected=True, and the Talos API answers on :50000.
+version: v0.7.10
 
+# v0.6.5: reconcile every Grafana Mimir datasource to the chart gateway so
+# query, health, and Ruler APIs share one supported endpoint.
 # appVersion IS the default manager image tag (manager-deployment.yaml falls
 # back to .Chart.AppVersion when manager.image.tag is unset). It MUST move in
 # lockstep with a chart that needs new manager code: v0.4.2 adds the
@@ -169,4 +365,4 @@ version: v0.5.70
 # appVersion to v0.4.2 stops a bare `helm install` from pairing new RBAC/chart
 # with old component images. The v0.4.19 release unit must publish v0.4.9 for
 # manager, backend, tenant frontend, and admin frontend before chart rollout.
-appVersion: v0.5.58
+appVersion: v0.7.9

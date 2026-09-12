@@ -174,7 +174,13 @@ manager:
   # projectNetwork requires at least two: its attachment admission path fails
   # closed, so a single manager would turn every rollout/drain into an outage
   # for VLAN-attached workloads. The chart enforces the relationship.
-  replicaCount: 1
+  #
+  # Two by default since v0.6.21: the managed-services gates (references,
+  # token, child marker, connect) fail closed on pod, claim, Secret and token
+  # creation in every project namespace, so the webhook server has to survive
+  # a rollout or a drain. Leader election keeps one active controller; every
+  # replica serves the webhooks. The PodDisruptionBudget keeps one available.
+  replicaCount: 2
   # Default issuer for tenant expose-route certs: "Kind/name" (e.g.
   # "ClusterIssuer/letsencrypt-prod-http") or a bare namespaced-Issuer name.
   # Empty keeps the historical per-project Issuer "letsencrypt" default.
@@ -197,6 +203,53 @@ manager:
   resources:
     requests:
       memory: 1Gi
+
+  # Go runtime profiling for incident response. Disabled by default and
+  # deliberately restricted by the chart to IPv4 loopback: operators reach it
+  # with `kubectl port-forward pod/<manager-pod> 6060:6060 -n kube-dc`. No
+  # Service or Pod port is created because profiles can contain sensitive data.
+  pprof:
+    enabled: false
+    bindAddress: "127.0.0.1:6060"
+
+  # Pod NIC address conflicts. kube-ovn refuses to configure a pod NIC whose
+  # address is already answered on the wire (a tenant VM announcing a nested
+  # cluster's LoadBalancer VIP) and kubelet then retries forever with the same
+  # address. remediate: quarantine the address in the project subnet
+  # (excludeIps) and re-draw the pod's NIC. observe: Events + metrics only.
+  # mode: observe (default) records PodIPConflict objects, Events and metrics
+  # only. remediate additionally quarantines the address and recreates
+  # controller-owned pods — for projects whose NAMESPACE carries the label
+  # network.kube-dc.com/ip-conflict-remediation=enabled, or every project when
+  # allProjects is true. Budgets (per-subnet outstanding/rate, capacity floor,
+  # per-project and cluster rates) and a persistent per-subnet breaker bound
+  # what a tenant claiming addresses can make the platform exclude.
+  podIPConflict:
+    mode: observe
+    allProjects: false
+  # AddressReservation controller: keeps reserved ranges of a project subnet out
+  # of kube-ovn's IPAM (tenant LoadBalancer blocks, legacy VIPs). dryrun computes
+  # and reports only — never writes a Subnet. enforce fences ranges for projects
+  # whose namespace carries network.kube-dc.com/address-reservation=enabled
+  # (or every project with allProjects: true).
+  # L1b static-IP fence (docs/internal/managed-k8s-lb-ipam.md §4.1.4): the
+  # cluster-wide ValidatingAdmissionPolicy; per-project bindings are created
+  # by the Project reconciler with validationAction = staticIPFence.action.
+  staticIPFence:
+    enabled: true
+    action: Audit   # Audit | Warn | Deny
+  addressReservation:
+    mode: dryrun
+    allProjects: false
+    # Address pool for project-internal LoadBalancer VIPs, one per project VPC
+    # (the same CIDR in every VPC — these addresses exist only as OVN LB VIPs
+    # inside their own VPC). The new chart deliberately supplies /20 while the
+    # binary fallback remains the legacy /24 for old-chart compatibility.
+    #
+    # PIN THIS ON AN EXISTING CLUSTER. Arenas record the CIDR they were built
+    # with, so a cluster that already delegated VIPs must keep its value or
+    # every live delegation is revoked pending an operator migration.
+    vipPoolCIDR: "10.242.0.0/20"
 
   # Extra CA roots for clusters whose platform hostnames are served by a
   # PRIVATE CA (internal domain with no public issuer). The manager calls the
@@ -259,6 +312,45 @@ manager:
   webhook:
     enabled: true
 
+  # Accept a SINGLE manager replica while its admission fails closed.
+  #
+  # projectNetwork, routedNetwork and projectPolicies.protectManagedServices
+  # each put a fail-closed webhook on the ordinary tenant path: with one
+  # replica, every rollout, drain or eviction is a window in which tenant
+  # pods, claims and Secrets cannot be created, and a node loss is an outage.
+  # The chart therefore requires two replicas, and this value is the explicit,
+  # documented way to say "this installation is not highly available and that
+  # is understood" — a development cluster, or a single-node site. It is not a
+  # supported production setting.
+  singleReplicaAdmissionAccepted: false
+
+  # Non-controller owner edges in registered engine chains (Strimzi's
+  # StrimziPodSet references its KafkaNodePool with controller: false).
+  # "attested" (default): the manager climbs such an edge only for
+  # intermediates created after its owner-guard epoch, which it keeps
+  # checking every minute by dry-run creating, as a fixed synthetic tenant
+  # (owner-guard-probe@kube-dc.internal, in the chart's canary namespace
+  # kube-dc-owner-guard-canary), objects the owner-forgery guard and the
+  # marker policy must refuse; an observed lapse retires the epoch. This is
+  # a health signal, not a proof: the classifier's trust in ANY owner chain
+  # rests on the policies being continuously enforced (docs/platform/
+  # security-model.md, "Continuous enforcement"). "off": controller
+  # references only, no probes; the same upgrade installs an admission fence
+  # (owner-guard-off-fence) that refuses any manager pod created without the
+  # literal knob, whoever creates it; while off, the epoch record is retired
+  # every minute and, once the fence has been observed enforcing for a full
+  # ten-minute settle with the rollout to off complete, each replica
+  # acknowledges the maintenance boundary (ConfigMap kube-dc/owner-guard-
+  # boundary, stamped with the manager Deployment's UID and rollout
+  # revision; a lease that is complete only while every manager pod's
+  # acknowledgement is fresh) -- run hack/owner-guard-boundary-check.sh
+  # (two samples, strictly renewed acknowledgements) and require READY
+  # BEFORE rolling back or editing those policies
+  # (docs/platform/security-model.md gives the order), and clear the knob
+  # after they are back; no record from before or during the maintenance is
+  # ever adopted afterwards. The canary namespace stays either way.
+  nonControllerOwnerEdges: attested
+
   # Tenant Networking v2 — infra-attachment pod webhook
   # (docs/prd/tenant-networking-v2.md). Gives pods in opted-in project
   # namespaces (labelled network.kube-dc.com/infra-attachment=enabled) a second
@@ -276,6 +368,40 @@ manager:
     gateway: ""         # e.g. 100.66.0.1
     securityGroup: ""   # required template, e.g. infra-lock-{namespace}
     routes: ""          # comma-separated: "<node-subnet>,<join>,<system-pod>" e.g. "192.168.1.0/24,172.30.0.0/22,10.100.0.0/16"
+    # platformIngressVIP: the IPv4 address the platform HTTPS front door (the
+    # Envoy Gateway LoadBalancer — bao.<domain>, s3.<domain>) answers on from
+    # inside the cluster. Managed-cluster CONTROL-PLANE pods get one exact
+    # TCP/443 egress rule to it: the kms-plugin sidecar must log in to OpenBao
+    # Transit before the tenant apiserver can serve (etcd encryption at rest),
+    # and the etcd-backup Job uploads snapshots to S3. When that address sits
+    # inside `routes` and this is empty, those dials ride the locked infra NIC
+    # and time out — the apiserver never becomes Ready and no worker is ever
+    # created. Must lie inside one of `routes` (the manager refuses it
+    # otherwise); leave empty when the front door is outside them, i.e.
+    # reached over the tenant route. Breadth: the rule admits every hostname
+    # the front door multiplexes on :443, not OpenBao/S3 by name. The literal
+    # "none" is treated as empty (the kube-dc CLI's persistable "no rule").
+    # This grants the CONTROL-PLANE role only; ordinary tenant workloads are
+    # covered by platformIngressWorkloadEgress below.
+    platformIngressVIP: ""
+    # platformIngressWorkloadEgress additionally grants ORDINARY TENANT
+    # WORKLOADS the same /32 TCP/443 rule. Needed where the VIP lies inside
+    # `routes`, because a tenant pod's dial is then forced onto the locked
+    # infra NIC — CDI importers pulling OS images from s3.<domain> time out,
+    # and a Windows VM cannot provision at all.
+    #
+    # Understand the boundary before enabling. It is BROADER than the
+    # tenant-route path it replaces: traffic leaving over the infra NIC never
+    # traverses the tenant router, so the VPC egress policy routes
+    # (external-subnet isolation, project and global allowlists) do not police
+    # it. The listener also multiplexes every platform hostname and TLS does
+    # not pick the audience — the client chooses SNI. Tenant NetworkPolicy
+    # DOES still apply: kube-ovn evaluates it in a separate pipeline stage
+    # from SecurityGroup rules, so an SG allow does not overrule a later
+    # NetworkPolicy drop. Enable only where every workload may open an HTTPS
+    # session to every service behind that listener, with authorization
+    # enforced by those services.
+    platformIngressWorkloadEgress: false
 
   # OpenBao integration (M1+, see docs/prd/openbao-integration*.md).
   # Threaded into master-config as enable_openbao / openbao_url /
@@ -577,6 +703,15 @@ adminFrontend:
   affinity: {}
 
 backend:
+  # Enable only after k8-manager/CRDs and dual-home networking pass the
+  # ProjectInternal acceptance suite. Applies to newly created local clusters.
+  # Existing and external-worker clusters keep their endpoint contract.
+  managedK8sInternalEndpoints: false
+  # Optional project namespace allowlist for a pilot. Empty enables the
+  # installation-wide flag; listing namespaces leaves other tenants on External.
+  managedK8sInternalEndpointNamespaces: []
+  # Measured IPv4 worker link MTU; required before enabling internal endpoints.
+  managedK8sWorkerMTU: 0
   # Verify TLS certificates on every outbound HTTPS call (API server, Keycloak,
   # OpenBao, Loki, object storage).
   #
@@ -674,7 +809,15 @@ backend:
 
   # SMTP configuration for email notifications (all required for email to work)
   smtp:
+    # admin permits a separate UI-owned override; gitops locks editing and uses
+    # this baseline. The chart must never own the smtp-settings runtime Secret.
+    management: admin
     enabled: false
+    security: "" # tls, starttls, none; empty uses the legacy secure/port setting
+    replyTo: ""
+    replyToName: ""
+    envelopeFrom: ""
+    dkimSelector: "google" # DNS diagnostic selector; signing is done by the provider
     host: "" # e.g., "smtp.gmail.com"
     port: "587"
     secure: "false" # "true" for port 465
@@ -719,6 +862,21 @@ backend:
   service:
     type: ClusterIP
     port: 8080
+
+  # Native backend Prometheus metrics are served on an internal-only port at
+  # /metrics (the public Gateway still targets only the application port). The
+  # endpoint contains process/runtime metrics plus normalized
+  # request duration/count and dependency outcome counters; it never includes
+  # tenant, user, URL, object-name, or token labels.
+  metrics:
+    enabled: true
+    port: 9090
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+      scrapeTimeout: 10s
+      additionalLabels:
+        release: prom-operator
 
   gateway:
     hostname: "" # Required: Set to your backend hostname, e.g., backend.example.com
@@ -798,6 +956,17 @@ backend:
 k8Manager:
   enabled: true
   replicaCount: 1
+  # Project-internal LoadBalancer VIPs for managed Kubernetes clusters.
+  # off | observe (request blocks only in projects already opted in; never labels) |
+  # enable (every KubeVirt-backed managed cluster gets a VIP block and a
+  # working tenant pool without an operator switching anything on). The chart
+  # intentionally remains observe until the separate rollout flip; a cluster
+  # opts out with network.kube-dc.com/lb-block=disabled, and
+  # LB_BLOCK_REQUIRE_OPT_IN=true restores explicit opt-in.
+  lbBlockMode: observe
+  # Advanced/staging: require each managed cluster to be annotated
+  # network.kube-dc.com/lb-block=enabled before it gets a VIP block.
+  lbBlockRequireOptIn: false
 
   # Management-cluster worker autoscaling (docs/prd/mgmt-worker-autoscaling.md,
   # private repo). OFF by default; CloudSigma-backed management clusters only.
@@ -841,7 +1010,7 @@ k8Manager:
   image:
     repository: shalb/kube-dc-k8-manager
     pullPolicy: IfNotPresent
-    tag: "latest"
+    tag: "v0.7.9"
 
   # External endpoint for the infrastructure cluster API
   # Required for CCMs running in VPC-isolated namespaces that cannot reach kubernetes.default.svc
@@ -870,8 +1039,34 @@ k8Manager:
   kamajiDatastoreName: "default"
   kamajiDatastoreNamespace: "kamaji-system"
 
-  # Enable metrics endpoint
+  # Enable metrics endpoint (legacy flag; superseded by metrics.enabled below,
+  # kept as an OR fallback in the deployment).
   metricsEnabled: false
+
+  # k8-manager metrics: the Phase-0 managed-K8s node-health observer gauges
+  # (kdc_worker_stuck_join, kdc_worker_node_unhealthy) + controller-runtime
+  # built-ins, plus a ServiceMonitor and a node-health PrometheusRule.
+  # controller-runtime serves /metrics on :8443 with authn (TokenReview) + authz
+  # (SubjectAccessReview for GET /metrics); the standard Prometheus/Alloy scraper
+  # identity already carries that grant on the supported platform, so rbac.create
+  # defaults false (identical contract to manager.metrics).
+  metrics:
+    enabled: true
+    service:
+      port: 8443
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+      scrapeTimeout: 10s
+      additionalLabels:
+        release: prom-operator
+    prometheusRule:
+      enabled: true
+      additionalLabels:
+        release: prom-operator
+    rbac:
+      create: false
+      serviceAccounts: []
 
   # Extra arguments for the manager
   extraArgs: []
@@ -1243,6 +1438,20 @@ billing:
         cpuPerProject: 0
         memPerProject: 0
       addons:
+        extra-ipv4-3:
+          displayName: "+3 Dedicated IPv4"
+          description: "+3 public IPv4 addresses"
+          price: 15
+          currency: "EUR"
+          # Counted, not measured: public addresses are whole slots, so this is a
+          # plain integer rather than a resource.Quantity like cpu/memory/storage.
+          # Consumed by EffectiveEIPQuota, which adds it to the plan's eipQuota entry
+          # (internal/organization/plan_resources.go). Without that, the ONLY way to
+          # give one organisation more addresses was to raise the shared plan, which
+          # raises it for every tenant on that plan.
+          ipv4: 3
+          # selfService is deliberately left at the default: this is an ordinary
+          # purchasable addon, not an internal-only grant.
         turbo-x1:
           displayName: "Turbo x1"
           description: "+4 GB RAM • +2 vCPU"
@@ -1291,29 +1500,96 @@ billing:
               shares: 1
               memoryMiB: 8192
               corePercent: 25
+        # Operator-assignable NVIDIA L40 shared-GPU SKU. Same contract as the
+        # V100 entry: disabled by default, selfService=false, so it is never a
+        # tenant purchase. An operator assigns it to an organization and — under
+        # the plan-less accelerator-HRQ path (billing-independent grants) — that
+        # grants the org L40 capacity to cap per project. The grant must equal
+        # the profile's fixed preset (12 GB / 25%).
+        gpu-l40-shared-12g:
+          disabled: true
+          selfService: false
+          displayName: "Shared NVIDIA L40 — 12 GB"
+          description: "1 concurrent GPU workload • 12 GB GPU memory • 25% compute"
+          price: 0
+          currency: "EUR"
+          providers:
+            stripe:
+              priceId: ""
+            whmcs:
+              configurableOptionName: "Kube-DC Shared NVIDIA L40 12 GB"
+          gpu:
+            nvidia-l40-hami:
+              shares: 1
+              memoryMiB: 12288
+              corePercent: 25
       eipQuota:
         dev-pool: 1
         pro-pool: 1
         scale-pool: 3
 
 dbManager:
+  # Private-CA trust. Left empty the chart inherits platformTrustBundle, then
+  # manager.trustedCA — a private-CA cluster therefore needs no extra key. Set
+  # it only to point db-manager at a DIFFERENT bundle than the manager's.
+  trustedCA:
+    configMapName: ""
+    mountPath: /etc/kube-dc/trusted-ca
+  # Settle window before an engine is created for a new KdcDatabase (a Go
+  # duration; the operator floor is 10s). Only the tenant can plant a claim under
+  # the engine's names, in their own namespace; leftovers from an unclean delete
+  # are caught by the marker scan without any wait. Was 90s until 0.7.5.
+  engineSettleWindow: "10s"
   enabled: false
   replicaCount: 1
+  # Legacy endpoint flag. Kept as an OR fallback for existing values files;
+  # new installations should use metrics.enabled below.
   metricsEnabled: true
+
+  # db-manager uses controller-runtime's authenticated HTTPS metrics server.
+  # The ServiceMonitor scraper authenticates with its own ServiceAccount token;
+  # the db-manager SA needs system:auth-delegator to perform TokenReview and
+  # SubjectAccessReview, otherwise /metrics returns HTTP 500.
+  metrics:
+    enabled: true
+    service:
+      port: 8443
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+      scrapeTimeout: 10s
+      additionalLabels:
+        release: prom-operator
+    prometheusRule:
+      enabled: true
+      additionalLabels:
+        release: prom-operator
+    rbac:
+      create: false
+      serviceAccounts: []
 
   infraAPIEndpoint: "" # Required when enabled, e.g. "kube-api.stage.kube-dc.com:6443"
 
   image:
     repository: shalb/db-manager
     pullPolicy: IfNotPresent
-    tag: "v0.1.3"
+    # The fleet pins the tag per cluster (DB_MANAGER_TAG); this default was
+    # left at v0.1.3 while every cluster ran a v0.5.x line, so anyone reading
+    # the chart -- or installing without a fleet override -- got a version
+    # four minor lines behind the one the platform actually supports.
+    # db-manager is being retired in favour of kube-dc-services; until it is,
+    # this default tracks the released line.
+    tag: "v0.7.9"
 
   extraEnv: []
 
+  # Exposure lifecycle reconciliation watches optional Gateway API resources in
+  # addition to engine resources. A 128Mi limit was below the observed startup
+  # cache-sync peak on stage; keep the small request but leave safe headroom.
   resources:
     limits:
       cpu: 500m
-      memory: 128Mi
+      memory: 256Mi
     requests:
       cpu: 10m
       memory: 64Mi
@@ -1475,6 +1751,31 @@ certManagerPkiBinding:
   serviceAccountNamespace: cert-manager
 
 osImages:
+  # FIRST-BOOT POLICY: every Linux family below sets `package_upgrade: false`.
+  #
+  # It was `true`, and that is why a newly created VM was unreachable for ~29
+  # minutes (issue #172). cloud-init's cc_package_update_upgrade_install runs
+  #   update -> upgrade -> install
+  # in a FIXED order that cannot be rearranged. qemu-guest-agent is in each
+  # family's `packages:`, so a full dist-upgrade of a stale base image ran to
+  # completion BEFORE the agent was installed -- and the SSH key reaches the guest
+  # THROUGH that agent (accessCredentials propagationMethod: qemuGuestAgent), so
+  # login waited on the entire upgrade.
+  #
+  # Measured on the reporter's own cloud-init.log (Ubuntu 26.04, 1 vCPU / 1 GiB):
+  #   18:59:04  cloud-init starts
+  #   18:59:42  cc_ssh runs (init stage)
+  #   19:00:13  package module starts -> dist-upgrade
+  #   19:28:52  dist-upgrade returns; apt install qemu-guest-agent starts
+  #   19:29:20  agent installed -- the install took 28s, the upgrade ~28.5 MINUTES
+  #   modules-final total: 1751s
+  # Over 97% of time-to-SSH was the upgrade, not the agent.
+  #
+  # This does not stop patching, it stops BLOCKING FIRST BOOT on it: Debian/Ubuntu
+  # images ship unattended-upgrades, and the durable fix is a fresh image cadence
+  # plus baking the agent into the image. Do NOT set this back to true without
+  # first moving qemu-guest-agent out of the first-boot package path, or every
+  # tenant VM becomes unreachable for as long as its base image is stale.
   # Empty by default — chart ships upstream URLs out of the box.
   # Override per cluster (e.g. "https://s3.kube-dc.cloud/cdi-os-images")
   # to flip the whole catalog over to the local mirror.
@@ -1501,11 +1802,10 @@ osImages:
       features: "acpi"
       cloudInit: |
         #cloud-config
-        package_update: true
-        package_upgrade: true
-        packages:
-          - qemu-guest-agent
+        package_update: false
+        package_upgrade: false
         runcmd:
+          - command -v qemu-ga >/dev/null 2>&1 || (apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends qemu-guest-agent)
           - systemctl enable --now qemu-guest-agent
     - osName: "Ubuntu 24.04 LTS"
       cloudUser: ubuntu
@@ -1534,11 +1834,10 @@ osImages:
       features: "acpi"
       cloudInit: |
         #cloud-config
-        package_update: true
-        package_upgrade: true
-        packages:
-          - qemu-guest-agent
+        package_update: false
+        package_upgrade: false
         runcmd:
+          - command -v qemu-ga >/dev/null 2>&1 || (apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends qemu-guest-agent)
           - systemctl enable --now qemu-guest-agent
     # Ubuntu 22.04 LTS deprecated from the catalog 2026-06-23 — superseded by
     # 24.04 LTS (jellyfish) and 26.04 LTS (resolute). Removed entirely rather
@@ -1562,19 +1861,16 @@ osImages:
       features: "acpi"
       cloudInit: |
         #cloud-config
-        package_update: true
-        package_upgrade: true
+        package_update: false
+        package_upgrade: false
         users:
         - name: centos
           groups: wheel
           sudo: ALL=(ALL) NOPASSWD:ALL
           shell: /bin/bash
           lock_passwd: false
-        packages:
-          - qemu-guest-agent
-          - lrzsz
-          - policycoreutils-python-utils
         runcmd:
+          - command -v qemu-ga >/dev/null 2>&1 || dnf -y install qemu-guest-agent lrzsz policycoreutils-python-utils
           - setenforce 0
           - sed -i 's/SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
           - setsebool -P virt_qemu_ga_manage_ssh 1
@@ -1593,6 +1889,12 @@ osImages:
       minVCPU: "1"
       minStorage: "5G"
       firmwareType: "bios"
+      # CirrOS carries no qemu-guest-agent and no package manager to install one,
+      # so the guest agent can never come up. Say so: the wizard then propagates
+      # the tenant's SSH key through cloud-init instead of through the agent, and
+      # drops the guestAgentPing readiness probe that would otherwise hold this VM
+      # permanently not-Ready. Before this flag the key never arrived at all.
+      guestAgent: false
       # CirrOS ships no package manager, so there's nothing to install on
       # first boot — but the wizard always attaches a cloudInitNoCloud disk and
       # KubeVirt rejects the VM if its userData is empty. Carry a minimal valid
@@ -1619,11 +1921,10 @@ osImages:
       machineType: "q35"
       cloudInit: |
         #cloud-config
-        package_update: true
-        package_upgrade: true
-        packages:
-          - qemu-guest-agent
+        package_update: false
+        package_upgrade: false
         runcmd:
+          - command -v qemu-ga >/dev/null 2>&1 || (apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends qemu-guest-agent)
           - systemctl enable --now qemu-guest-agent
     - osName: "Debian 13"
       # Debian 13 "Trixie" — current stable. Same shape as Debian 12; the
@@ -1648,11 +1949,10 @@ osImages:
       machineType: "q35"
       cloudInit: |
         #cloud-config
-        package_update: true
-        package_upgrade: true
-        packages:
-          - qemu-guest-agent
+        package_update: false
+        package_upgrade: false
         runcmd:
+          - command -v qemu-ga >/dev/null 2>&1 || (apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends qemu-guest-agent)
           - systemctl enable --now qemu-guest-agent
     - osName: "Fedora 42"
       # Was Fedora 41 (Fedora-Cloud-Base-Generic-41-1.4) until 2026-05-12;
@@ -1660,14 +1960,20 @@ osImages:
       # current-stable cloud-init qcow2 anymore. F42 is the current
       # mainline Fedora release.
       cloudUser: fedora
-      upstreamURL: "https://dl.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-42-1.1.x86_64.qcow2"
+      # Fedora 42 is EOL: /releases/42 now 404s, and fedoraproject.org's releases.json
+      # still advertises that dead link, so `fedora-releases` discovery cannot resolve
+      # this family any more (verified 2026-09-05). Pinned at the archive, which serves
+      # the identical image, with discovery disabled so the weekly refresh uses this URL
+      # rather than the dead one. Product follow-up: offer a supported release (43/44)
+      # as its own family instead of an archived one.
+      upstreamURL: "https://dl.fedoraproject.org/pub/archive/fedora/linux/releases/42/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-42-1.1.x86_64.qcow2"
       mirrorPath: "fedora/42/latest/Fedora-Cloud-Base-Generic-42-1.1.x86_64.qcow2"
       containerdiskRepo: "quay.io/containerdisks/fedora"
       containerdiskTag: "42"
-      discovery:
-        type: "fedora-releases"
-        release: "42"
-        subvariant: "Cloud_Base"
+      # discovery:
+      # type: "fedora-releases"
+      # release: "42"
+      # subvariant: "Cloud_Base"
       minMemory: "2G"
       minVCPU: "1"
       minStorage: "25G"
@@ -1676,12 +1982,10 @@ osImages:
       features: "acpi"
       cloudInit: |
         #cloud-config
-        package_update: true
-        package_upgrade: true
-        packages:
-          - qemu-guest-agent
-          - policycoreutils-python-utils
+        package_update: false
+        package_upgrade: false
         runcmd:
+          - command -v qemu-ga >/dev/null 2>&1 || dnf -y install qemu-guest-agent policycoreutils-python-utils
           - setenforce 0
           - sed -i 's/SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
           - setsebool -P virt_qemu_ga_manage_ssh 1
@@ -1711,11 +2015,10 @@ osImages:
       features: "acpi"
       cloudInit: |
         #cloud-config
-        package_update: true
-        package_upgrade: true
-        packages:
-          - qemu-guest-agent
+        package_update: false
+        package_upgrade: false
         runcmd:
+          - command -v qemu-ga >/dev/null 2>&1 || (apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends qemu-guest-agent)
           - systemctl enable --now qemu-guest-agent
     - osName: "Alpine Linux 3.21"
       # Bumped from 3.19.1 -> 3.21.0 on 2026-05-12. 3.19 still works
@@ -1737,11 +2040,10 @@ osImages:
       features: "acpi"
       cloudInit: |
         #cloud-config
-        package_update: true
-        package_upgrade: true
-        packages:
-          - qemu-guest-agent
+        package_update: false
+        package_upgrade: false
         runcmd:
+          - command -v qemu-ga >/dev/null 2>&1 || apk add --no-cache qemu-guest-agent
           - rc-service qemu-guest-agent restart
           - rc-update add qemu-guest-agent default
     # Gentoo: re-added 2026-05-18 (was removed 2026-05-11). The original
@@ -1755,7 +2057,11 @@ osImages:
     # dropdown.
     - osName: "Gentoo Linux (cloudinit)"
       cloudUser: gentoo
-      upstreamURL: "https://distfiles.gentoo.org/releases/amd64/autobuilds/current-di-amd64-cloudinit/di-amd64-cloudinit-latest.qcow2"
+      # Gentoo's autobuild directory holds timestamped files only -- there is no
+      # "-latest" alias and that URL 404s (verified 2026-09-05). The gentoo-html
+      # discovery below scrapes the directory and picks the newest, which is the real
+      # source; this fallback now names a file that actually exists.
+      upstreamURL: "https://distfiles.gentoo.org/releases/amd64/autobuilds/current-di-amd64-cloudinit/di-amd64-cloudinit-20260830T151604Z.qcow2"
       mirrorPath: "gentoo/amd64/latest/gentoo-cloudinit-amd64.qcow2"
       discovery:
         type: "gentoo-html"
@@ -1763,28 +2069,106 @@ osImages:
         arch: "amd64"
       minMemory: "2G"
       minVCPU: "1"
-      minStorage: "20G"
-      firmwareType: "bios"
+      # The Gentoo cloudinit image declares a 20.00 GiB virtual size, so a 20G (=18.6 GiB)
+      # request is REFUSED by CDI with "DataVolume too small to contain image" -- every
+      # tenant accepting the default failed to provision (verified 2026-09-06). It is the
+      # only family whose image exceeds its advertised minimum; the rest have 3-10 GiB
+      # images behind a 20G floor.
+      minStorage: "25G"
+      # EFI, not BIOS. The autobuild image is GPT with an ESP ("gentooefi") and a
+      # root partition, no BIOS boot partition, and its MBR is all zeroes -- there
+      # is no BIOS bootloader in it, and /boot/grub carries only an x86_64-efi
+      # target (read out of the image 2026-09-06). Declared as bios it booted
+      # SeaBIOS, found no boot sector and hung: the VM reached Running with an IP
+      # in its status (KubeVirt reports the address it assigned, not one the guest
+      # claimed) while nothing inside was ever executed -- no cloud-init, no sshd,
+      # no agent. That is what made Gentoo look like an "agent" problem.
+      firmwareType: "efi"
       machineType: "q35"
       features: "acpi"
+      # The autobuild image does NOT contain qemu-guest-agent. Verified against the
+      # published .CONTENTS.gz of di-amd64-cloudinit-20260830T151604Z (2026-09-06):
+      # the only app-emulation package in it is cloud-init-25.1, and the string
+      # "qemu-ga" appears nowhere. A live probe agreed -- AgentConnected stayed
+      # false and AccessCredentialsSynchronized reported "Guest agent is offline",
+      # so the tenant's SSH key never arrived and the VM never went Ready.
+      # Installing it on first boot is not an option either: portage would have to
+      # sync a tree and build, which is minutes to hours, not seconds.
+      guestAgent: false
       cloudInit: |
         #cloud-config
         package_update: false
         package_upgrade: false
-        # Gentoo cloudinit images ship with qemu-guest-agent already
-        # installed and the service unit enabled. Don't run portage
-        # (`emerge --sync && emerge ...`) on first boot — a sync alone
-        # is heavy and would slow first-boot by minutes. Tenant can
-        # `emerge --sync` manually whenever they want a current Portage
-        # tree.
-        runcmd:
-          - rc-service qemu-guest-agent restart
-          - rc-update add qemu-guest-agent default
+        # Nothing to start here: there is no qemu-guest-agent in this image (see
+        # guestAgent: false above). Don't run portage (`emerge --sync && emerge
+        # ...`) on first boot either -- a sync alone is heavy and would slow
+        # first-boot by minutes. Tenants can `emerge --sync` whenever they want a
+        # current Portage tree.
+    - osName: "Talos Linux 1.14"
+      # Talos has no users, no shell and no SSH. A VM boots into maintenance mode
+      # and is configured with talosctl, so `sshAccess: false` keeps the wizard
+      # from attaching accessCredentials that the guest could never act on, and
+      # from stamping a login name that would send the console's SSH hint at a
+      # door that does not exist. The guest agent IS present -- the image is built
+      # from a factory schematic whose only customization is the official
+      # siderolabs/qemu-guest-agent extension -- so AgentConnected and the
+      # guestAgentPing readiness probe both work (verified on stage 2026-09-06:
+      # boot to maintenance in ~4s, AgentConnected=True, Ready=True, Talos API
+      # answering TLS on :50000 with CN=maintenance-service.talos.dev).
+      cloudUser: ""
+      sshAccess: false
+      # Schematic ce4c9805... is reproducible from this, at factory.talos.dev:
+      #   customization:
+      #     systemExtensions:
+      #       officialExtensions:
+      #         - siderolabs/qemu-guest-agent
+      # Pinned: Talos publishes no "latest" alias per schematic and a node's
+      # version is a deliberate choice, not something to drift under a tenant.
+      upstreamURL: "https://factory.talos.dev/image/ce4c980550dd2ab1b17bbf2b08801c7eb59418eafe8f279833297925d67c7515/v1.14.0/nocloud-amd64.qcow2"
+      mirrorPath: "talos/1.14/latest/nocloud-amd64.qcow2"
+      minMemory: "2G"
+      minVCPU: "2"
+      minStorage: "20G"
+      firmwareType: "bios"
+      machineType: "q35"
+      features: "acpi"
+      # DELIBERATELY EMPTY, and it must stay that way. Talos does not read
+      # cloud-config -- its NoCloud user-data IS the machine config -- and it
+      # treats the presence of a cidata disk as authoritative: handed one it
+      # cannot parse (a comment, a #cloud-config, anything that is not a machine
+      # config) it retries "config not found" forever and never falls back to
+      # maintenance mode, so apid never starts and the node is unreachable.
+      # Verified on stage 2026-09-06: with a comment-only user-data the console
+      # sat at service[apid](Waiting): Waiting for config to be ready; with no
+      # cidata disk at all it reached maintenance mode in ~4s and printed its own
+      #   talosctl apply-config --insecure --nodes <ip> --file controlplane.yaml
+      # A tenant who wants the node configured on first boot instead pastes the
+      # machine config into the Review YAML, which attaches the disk.
+      cloudInitDisk: false
+      cloudInit: ""
     - osName: "Windows 11 Enterprise (Golden Image)"
       familyId: "windows-11-golden"
       cloudUser: kube-dc
-      upstreamURL: "https://iso.stage.kube-dc.com/windows11-x64-golden.qcow2"
-      mirrorPath: "windows/11/latest/windows11-x64-golden.qcow2"
+      # PINNED TO AN IMMUTABLE RELEASE, not a mutable /latest/ alias.
+      #
+      # Windows has no upstream vendor image: we bake it, and the export publishes a
+      # content-addressed key. The digest is IN the path, so this chart version names
+      # exactly one artifact, and a rebuild lands on a different key instead of
+      # silently replacing a published release. The Linux families get the same
+      # property by digest-pinning their containerdisks.
+      #
+      # Why the pin has to live HERE and not only in the fleet golden manifest: the
+      # per-cluster cdi-os-mirror CronJob copies upstreamURL -> mirrorPath into each
+      # cluster's own bucket, and the golden DataVolume then imports from the LOCAL
+      # mirror. Pinning only the fleet file names a key that exists in one cluster's
+      # bucket and nowhere else — verified: stage returned 200 and cloud 403 for the
+      #
+      # To ship a new Windows golden: bake -> gate -> export (prints the release key)
+      # -> bump both lines below -> chart release -> each cluster's mirror replicates
+      # it -> add the matching versioned pair in platform/rbd-vm/goldens-fs/os/ ->
+      # promote with the golden-active label once Ready.
+      upstreamURL: "https://s3.stage.kube-dc.com/cdi-os-images/windows/11/releases/2026-08-28/sha256-f0dea74da9c5/windows11-x64-golden.qcow2"
+      mirrorPath: "windows/11/releases/2026-08-28/sha256-f0dea74da9c5/windows11-x64-golden.qcow2"
       minMemory: "8G"
       minVCPU: "2"
       minStorage: "70G"
@@ -2168,7 +2552,126 @@ projectNetwork:
   # fields; a namespace prefix or admin-group exemption is forbidden.
   kubeOvnControllerUsername: system:serviceaccount:kube-system:ovn
 
+# Routed Networks + BGP (docs/platform/routed-networks.md). This is a separate
+# L3 product from tenant VLAN attachment. OFF is the production-safe default:
+# no controller/watch is registered and no transit, gateway, or VPC route is
+# programmed until a cluster explicitly opts in.
+routedNetwork:
+  enabled: false
+  backend: frr-project-gateway
+  namespace: kube-dc-routing
+  gatewayImage: shalb/kube-dc-routing-gateway:v0.7.9
+  frrImage: quay.io/frrouting/frr:10.4.1
+  routingLinkPool: 100.65.0.0/16
+  # Exact identity allowed to maintain kube-ovn finalizers/status on protected
+  # controller-owned Subnets. Never broaden this to a namespace prefix.
+  kubeOvnControllerUsername: system:serviceaccount:kube-system:ovn
+
 # Admission policies applied to tenant PROJECT namespaces.
+# Managed-service families the platform recognises INSIDE tenant Project
+# namespaces. This is the per-cluster half of the family integration
+# contract (docs/prd/service-family-integration-contract.md): it drives which
+# engine kinds a pod's owner chain may lead to for the management-API route
+# (Tenant Networking v2), which operator selector keys are reserved against
+# tenant identities, and which operation CRs (backups, schedules, users) are
+# gated when they name a managed engine. CNPG (postgresql) and MariaDB are
+# compiled into the manager and need no entry; add a family here and it is
+# recognised on the next manager rollout -- no kube-dc release.
+#
+# What this does NOT change is trust: an engine reached through a chain is
+# still proven by UID at every hop and by the platform's marker on the root.
+# The registry only says what a chain may look like.
+serviceFamilies:
+  # extra: additional families beside the built-ins (a built-in name cannot
+  # be redeclared). Empty by default so an upgrade changes nothing. INSTALL
+  # THE OPERATOR FIRST: the manager verifies every declared kind and
+  # resource against API discovery at startup and refuses to start on one
+  # the server does not serve as declared (a rule rendered for a plural
+  # that matches nothing would gate nothing). Every string here is
+  # validated before the policies render; a family may not claim the
+  # platform's own kinds (core/apps/batch roots, *.kube-dc.com, kamaji,
+  # kubevirt, cluster-api) as roots or hops. The Kafka
+  # entry below is the documented shape for Strimzi -- brokers run under a
+  # StrimziPodSet owned by the Kafka CR, and the entity operator (which
+  # watches KafkaUser CRs, so it NEEDS the management API on a
+  # Tenant-Networking-v2 cluster) as a Deployment owned by the Kafka CR.
+  extra: []
+  # - name: kafka
+  #   # Measured on stage with Strimzi 1.2.0: broker and controller pods are
+  #   # owned by a StrimziPodSet (core.strimzi.io/v1), which references its
+  #   # KafkaNodePool through a NON-controller ownerReference; neither is
+  #   # owned by the Kafka CR. So the node pool is a root of its own, the pod
+  #   # set is its hop, and the classifier follows that non-controller edge
+  #   # for custom kinds (the forgery policy refuses tenants any such edge).
+  #   # The Kafka CR stays a root for the entity operator's Deployment chain.
+  #   engineRoots:
+  #     - group: kafka.strimzi.io
+  #       version: v1
+  #       kind: KafkaNodePool
+  #       via:
+  #         - {group: core.strimzi.io, version: v1, kind: StrimziPodSet, resource: strimzipodsets, operatorCreatesChildren: true}
+  #     - group: kafka.strimzi.io
+  #       version: v1
+  #       kind: Kafka
+  #       # Strimzi runs its entity operator INSIDE the project namespace as the
+  #       # ServiceAccount <kafka>-entity-operator, a tenant identity to the
+  #       # policies. The manager admits, with UID-verified provenance, exactly
+  #       # the writes declared here (docs/internal/managed-services-trust-mechanics.md).
+  #       instanceServiceAccount: "{{instance}}-entity-operator"
+  #       instanceWrites:
+  #         - {group: kafka.strimzi.io, resource: kafkausers, subresource: status}
+  #         - {group: kafka.strimzi.io, resource: kafkatopics, subresource: status}
+  #         - {group: "", resource: secrets}
+  #       # The kinds a pod's owner chain may pass through to reach THIS root.
+  #       # `resource` (the plural) is required: the owner-forgery policy
+  #       # matches by resource and must judge every one of these kinds, or a
+  #       # tenant could author one with a UID-correct ownerReference to a
+  #       # managed Kafka and earn its network role.
+  #       # operatorCreatesChildren: the family's OWN operator creates the
+  #       # objects owned by this kind (Strimzi runs the StrimziPodSet
+  #       # controller and creates broker pods itself), so the forgery policy
+  #       # admits the operator under it. Never on apps/batch kinds: their
+  #       # children come from kube-system controllers, which are exempt.
+  #       via:
+  #         - {group: apps, version: v1, kind: Deployment, resource: deployments}
+  #         - {group: apps, version: v1, kind: ReplicaSet, resource: replicasets}
+  #   selectorKeys: ["strimzi.io/cluster"]
+  #   # The ONLY identities allowed to create objects controller-owned by a
+  #   # Kafka CR (the owner-forgery policy carves them out, scoped to this
+  #   # family's roots). A tenant may not, or it could forge the chain. Their
+  #   # NAMESPACE (strimzi-system here) also becomes an exempt platform
+  #   # identity for the managed-services policies, the child mutator and the
+  #   # manager's gates -- the operator writes its engine's marked children in
+  #   # the project namespace, as cnpg-system does -- so no second list.
+  #   operatorServiceAccounts: ["system:serviceaccount:strimzi-system:strimzi-cluster-operator"]
+  #   # An operation names its engine by a field path ("spec.cluster.name") or
+  #   # by a label ("label:<key>"; the key must be one of selectorKeys). An
+  #   # object with NO reference is refused to a tenant unless
+  #   # allowMissingReference is set -- set it only where the operator provably
+  #   # ignores an unreferenced object, as Strimzi does for a KafkaUser or
+  #   # KafkaTopic without its cluster label.
+  #   operations:
+  #     - {group: kafka.strimzi.io, version: v1, resource: kafkausers,  engineRef: "label:strimzi.io/cluster", root: Kafka, allowMissingReference: true}
+  #     - {group: kafka.strimzi.io, version: v1, resource: kafkatopics, engineRef: "label:strimzi.io/cluster", root: Kafka, allowMissingReference: true}
+  #   # The WHOLE group of every operation, in EVERY version, is routed to the
+  #   # gate, so the operator's other resources there must be declared for
+  #   # tenants to use them freely (`kubectl api-resources --api-group=...`).
+  #   # Anything in the group that is neither an operation nor listed here is
+  #   # refused to tenants, and an operation in a version not named above is
+  #   # refused too -- which is what keeps an operation CRD renamed or
+  #   # re-versioned by an operator upgrade from slipping past the gate. Keep
+  #   # this current across operator upgrades. The operatorServiceAccounts
+  #   # are trusted inside these groups (they may create the operation CRs
+  #   # the engine needs) and nowhere else.
+  #   passthroughResources:
+  #     - {group: kafka.strimzi.io, version: v1, resource: kafkas}
+  #     - {group: kafka.strimzi.io, version: v1, resource: kafkanodepools}
+  #     - {group: kafka.strimzi.io, version: v1, resource: kafkaconnects}
+  #     - {group: kafka.strimzi.io, version: v1, resource: kafkaconnectors}
+  #     - {group: kafka.strimzi.io, version: v1, resource: kafkamirrormaker2s}
+  #     - {group: kafka.strimzi.io, version: v1, resource: kafkabridges}
+  #     - {group: kafka.strimzi.io, version: v1, resource: kafkarebalances}
+
 projectPolicies:
   # Reserve the pod labels + ServiceAccount names that the infra-attachment
   # webhook treats as proof of platform identity. Without this a project admin
@@ -2181,3 +2684,103 @@ projectPolicies:
   reservePlatformIdentities:
     enabled: true
     validationActions: ["Deny"]
+
+  # Keep tenant identities off platform-managed service objects that live
+  # INSIDE the project namespace (kube-dc-services in-project placement, the
+  # model db-manager uses). Every such object carries
+  # `services.kube-dc.com/managed-by`; a project admin holds `*` on `*` in
+  # their namespace and could otherwise delete the engine's PVCs. Deny by
+  # default: no object carries the label until kube-dc-services stamps it, so
+  # nothing existing changes behaviour. ["Audit"] logs without blocking.
+  # exemptServiceAccountNamespaces are the platform identities that legitimately
+  # manage these objects: the service runner, the engine operators, kube-dc,
+  # kube-system (namespace/garbage/PVC-protection controllers), cert-manager,
+  # rook (bucket claims), sveltos (bundle delivery).
+  protectManagedServices:
+    enabled: true
+    validationActions: ["Deny"]
+    # PHASE 2 of the instance-write judge (a registered family whose
+    # operator runs inside the project namespace under a per-instance
+    # account -- Strimzi's entity operator -- writing the status of the
+    # family's operation objects and the Secrets it derives from them).
+    # Phase 1 is the managed-instance-status / managed-instance-objects
+    # webhook stanzas, rendered whenever a family declares instanceWrites;
+    # flip this to true ONLY once every target cluster serves those stanzas
+    # (the manager logs "Registering webhook /validate-family-instance-writes"):
+    # the policies then stop judging those writes and the webhook, which
+    # proves the account's provenance by UID, is their sole judge. Flipping
+    # it in the same release as the stanza would let the relaxation be
+    # observed before the refusal (the two are separately cached objects).
+    # Default true since chart v0.6.46 (phase 2); v0.6.45 shipped the stanzas
+    # with it false and was observed on every target cluster first.
+    instanceWritesJudgedByWebhook: true
+    # Two-phase Pooler status handoff: install the manager/guard first, then
+    # enable once every replica serves /validate-cnpg-pooler-status. The
+    # services runner must bind its reserved SA to the live Pooler's UID.
+    poolerStatusJudgedByWebhook: false
+    # The introduction policy below is rendered only while this is true. It
+    # is true by default (a fresh cluster has nothing to migrate). A cluster
+    # whose managed databases predate db-manager v0.5.23 pins this chart with
+    # it FALSE, runs hack/migrate-managed-db-markers --apply and --verify
+    # under the corrected marker policy this same chart carries, and flips
+    # it to true afterwards -- the tool refuses --apply while the
+    # introduction policy is present, and refuses it under an older marker
+    # policy that still leaves replicasets/status open (Codex round 131).
+    markerIntroduction: true
+    # Markers are stamped when the platform CREATES an object and are never
+    # added to one that already exists (policy
+    # protect-managed-service-marker-introduction-in-projects): an engine
+    # operator's create-or-update reconcile must not adopt an object a tenant
+    # pre-created under the name it is about to use -- the object's UID, and
+    # any token minted against it, would then pass the UID-based provenance
+    # checks. No service account is exempt, the runner included (its own
+    # ownership guard never applies over a name it does not own). Only
+    # cluster admins (system:masters) may add a marker to an existing object,
+    # and only through hack/migrate-managed-db-markers.sh, which recreates
+    # every authority-bearing child (accounts, workloads, pods) under new UIDs
+    # and labels the persistent ones after a provenance audit -- run it, and
+    # its --verify, on a chart BELOW v0.6.45 before pinning this chart on a
+    # cluster whose managed databases predate db-manager v0.5.23. Letting the
+    # operator "propagate" onto arbitrary existing children is the laundering
+    # this policy exists to prevent (round 130).
+    # Exact Rook CSI controller identities may update PVC status only. Do not
+    # exempt rook-ceph wholesale: the bucket controller is a tenant deputy.
+    csiStatusServiceAccounts:
+      - system:serviceaccount:rook-ceph:ceph-csi-rbd-ctrlplugin-sa
+      - system:serviceaccount:rook-ceph:ceph-csi-cephfs-ctrlplugin-sa
+    exemptServiceAccountNamespaces:
+      - kube-dc
+      - kube-system
+      - kube-dc-service-runner
+      - kube-dc-services
+      - cnpg-system
+      - mariadb-system
+      - cert-manager
+      - rook-ceph
+      - projectsveltos
+      # are set by their controllers (virt-launcher -> VMI, importer -> PVC). Without
+      # these two the marker policy refuses them and no VM can start or import
+      # (cloud, 2026-09-04, chart v0.6.22). Platform controllers a tenant cannot
+      # impersonate.
+      # Not listed: strimzi-system. Kafka is delivered to dedicated data planes
+      # through the family profile; a Kafka instance placed IN a project on
+      # this cluster would need the Strimzi operator here, and its in-project
+      # Entity/User Operators' identities recognised -- neither exists yet
+      # (kube-dc-services tracker, external review finding 9).
+      # NOT kubevirt or cdi: their pods (virt-launcher, importers) are judged
+      # like any tenant pod and pass on their own merits; exempting them would
+      # let the child mutator mark a CDI importer pod owned by a marked claim.
+# UI edits use branding-config; these are installation defaults supplied by Fleet.
+branding:
+  productName: "Kube-DC"
+  primaryColor: "#002952"
+  accentColor: "#40199A"
+  # Enable only after installing the matching kube-dc Keycloak email theme.
+  keycloakEmailThemeSync: false
+notifications:
+  supportPortalUrl: ""
+  supportEmail: ""
+  paymentUrl: ""
+  # Capture is always durable; enable sending after SMTP/support and staged
+  # release validation. Historical suspensions are never automatically backfilled.
+  enabled: false

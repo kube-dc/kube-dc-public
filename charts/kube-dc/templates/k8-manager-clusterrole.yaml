@@ -6,6 +6,10 @@ metadata:
   labels:
     {{- include "kube-dc.k8manager.labels" . | nindent 4 }}
 rules:
+# Per-managed-cluster CloudSigma CCM metrics discovery.
+- apiGroups: ["monitoring.coreos.com"]
+  resources: ["servicemonitors"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 # BOC #2: read the KamajiControlPlane CRD schema to detect whether the
 # kube-dc-forked control-plane provider is installed (kube-proxy JSON-patch
 # capability gate). Without this the gate fails closed and #2 is silently
@@ -318,6 +322,37 @@ rules:
   - watch
   - update
   - patch
+# Managed-Kubernetes LoadBalancer blocks (docs/internal/managed-k8s-lb-ipam.md
+# §4.2): the consumer requests/adopts AddressReservations, opts the project
+# namespace in (label), and writes the <cluster>-lb-block ConfigMap.
+- apiGroups:
+  - kubevirt.io
+  resources:
+  - virtualmachineinstances
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - kube-dc.com
+  resources:
+  - addressreservations
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - update
+  - patch
 - apiGroups:
   - ""
   resources:
@@ -326,6 +361,8 @@ rules:
   - get
   - list
   - watch
+  - update
+  - patch
 - apiGroups:
   - kubevirt.io
   resources:
@@ -496,3 +533,20 @@ rules:
   resources: [nodes]
   verbs: [get, list, watch, update, patch]
 {{- end }}
+# Project VIP-pool deletion handshake: k8-manager counts the mirror-family
+# switch-lb-rules (durable cluster-UID label) before withdrawing a
+# delegation certificate.
+- apiGroups:
+  - kubeovn.io
+  resources:
+  - switch-lb-rules
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups: [gateway.networking.k8s.io]
+  resources: [gateways]
+  verbs: [get, list, watch]
+- apiGroups: [gateway.networking.k8s.io]
+  resources: [tlsroutes]
+  verbs: [get, list, watch, create, update, patch, delete]

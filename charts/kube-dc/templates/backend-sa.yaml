@@ -21,6 +21,12 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 rules:
+  # Only product catalog reads use the backend identity. The services UI
+  # authorizes the Project caller first and returns a redacted projection.
+  # Instance, operation, binding and Secret requests use the caller's token.
+  - apiGroups: ["services.kube-dc.com"]
+    resources: ["managedserviceclasses", "managedserviceplans", "connectivityclasses"]
+    verbs: ["get", "list"]
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["create", "get", "list", "watch", "delete"]
@@ -130,6 +136,14 @@ rules:
   - apiGroups: ["kube-dc.com"]
     resources: ["organizations"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Partner API credentials (docs/prd/partner-api-prd.md). The superadmin console
+  # creates/edits/deletes Partner CRs (controllers/admin/partnersController.js);
+  # the Partner API reads them on every authenticated call to resolve scopes,
+  # limits and suspension. API key records are Secrets, already covered by the
+  # core rule above.
+  - apiGroups: ["kube-dc.com"]
+    resources: ["partners"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Admin console group management (controllers/admin/groupsController.js)
   # creates/deletes OrganizationGroup CRs in the org namespace.
   - apiGroups: ["kube-dc.com"]
@@ -140,9 +154,13 @@ rules:
   # SA (the user's bearer token can't be used here on prefix-style
   # structured-authn clusters — see resolveProjectGrafanaOrgId in
   # ui/backend/controllers/observabilityModule.js for why).
+  # The admin console creates, edits (quota), stamps and deletes Project CRs
+  # (controllers/admin/organizationController.js createProject / patchProjectQuota /
+  # deleteProject, projectForceDelete.js). Without these verbs every admin-side
+  # project mutation is a 403 on the backend service account.
   - apiGroups: ["kube-dc.com"]
     resources: ["projects"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
   # Admin Networking page lists and deletes EIp/FIp CRs
   # (controllers/admin/organizationController.js deleteEIP/deleteFIP).
   - apiGroups: ["kube-dc.com"]
@@ -177,6 +195,17 @@ rules:
   - apiGroups: ["kube-dc.com"]
     resources: ["vlanreservations"]
     verbs: ["get", "list"]
+  {{- if .Values.routedNetwork.enabled }}
+  # Routed-network endpoints perform caller authorization and organization
+  # filtering in the backend before using this service-account identity. Never
+  # return an unfiltered cluster-scoped collection to a tenant endpoint.
+  - apiGroups: ["kube-dc.com"]
+    resources: ["routingfabrics", "routednetworkallocations"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["kube-dc.com"]
+    resources: ["projectrouteattachments", "projectroutinggateways"]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
   # Admin Workloads page lists and deletes tenant databases (KdcDatabase)
   # (controllers/admin/organizationController.js deleteDatabase).
   - apiGroups: ["db.kube-dc.com"]
@@ -193,9 +222,18 @@ rules:
   - apiGroups: [""]
     resources: ["namespaces"]
     verbs: ["create", "get", "list", "watch"]
-  # Object Storage: CephObjectStoreUser quota + S3 keys from rook-ceph
+  # Object Storage: CephObjectStoreUser quota + S3 keys from rook-ceph.
+  # cephclusters/cephblockpools/cephobjectstores are read by the admin console
+  # Storage -> Ceph tab (GET /api/admin/storage/ceph -> getCephStorage), which
+  # inspects the CephCluster + pool CRs directly. Without them the endpoint 403s
+  # and the UI shows "Failed to fetch Ceph storage state" (no user workaround
+  # should be needed — this must work out of the box).
   - apiGroups: ["ceph.rook.io"]
-    resources: ["cephobjectstoreusers"]
+    resources:
+      - cephobjectstoreusers
+      - cephclusters
+      - cephblockpools
+      - cephobjectstores
     verbs: ["get", "list"]
   - apiGroups: ["objectbucket.io"]
     resources: ["objectbucketclaims"]

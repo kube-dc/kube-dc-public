@@ -79,4 +79,13 @@ data:
   {{- if .familyId }}
         OS_FAMILY_ID: {{ .familyId | quote }}
   {{- end }}
+  {{- if hasKey . "guestAgent" }}
+        GUEST_AGENT: {{ .guestAgent | quote }}
+  {{- end }}
+  {{- if hasKey . "sshAccess" }}
+        SSH_ACCESS: {{ .sshAccess | quote }}
+  {{- end }}
+  {{- if hasKey . "cloudInitDisk" }}
+        CLOUD_INIT_DISK: {{ .cloudInitDisk | quote }}
+  {{- end }}
 {{- end }}

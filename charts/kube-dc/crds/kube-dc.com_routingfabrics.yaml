@@ -1,0 +1,456 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.4
+  name: routingfabrics.kube-dc.com
+spec:
+  group: kube-dc.com
+  names:
+    kind: RoutingFabric
+    listKind: RoutingFabricList
+    plural: routingfabrics
+    shortNames:
+    - rtfabric
+    singular: routingfabric
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.driver
+      name: Driver
+      type: string
+    - jsonPath: .spec.providerNetwork
+      name: Provider
+      type: string
+    - jsonPath: .spec.vlanId
+      name: VLAN
+      type: integer
+    - jsonPath: .spec.bgp.localASN
+      name: ASN
+      type: integer
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.transitAddressesFree
+      name: Free IPs
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          RoutingFabric is the platform-owned transport, peering policy, and external
+          routing domain used by one or more organization allocations.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: RoutingFabricSpec defines one platform-owned external routing
+              transport.
+            properties:
+              bgp:
+                description: Bgp declares platform-owned peering and liveness policy.
+                properties:
+                  authenticationSecretRef:
+                    description: |-
+                      AuthenticationSecretRef optionally names a Secret in the platform routing
+                      namespace whose password key contains the TCP-MD5 secret. Secret data is
+                      never copied into this resource, status, events, metrics, or UI responses.
+                    properties:
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  bfd:
+                    description: Bfd configures optional BFD sessions.
+                    properties:
+                      enabled:
+                        default: false
+                        description: |-
+                          Enabled requests BFD for the FRR peers and Kube-OVN next hops. A backend
+                          that cannot establish BFD reports degraded-no-bfd rather than claiming
+                          sub-second failover.
+                        type: boolean
+                      minRx:
+                        default: 300
+                        description: MinRx is the minimum receive interval in milliseconds.
+                        format: int32
+                        maximum: 60000
+                        minimum: 50
+                        type: integer
+                      minTx:
+                        default: 300
+                        description: MinTx is the minimum transmit interval in milliseconds.
+                        format: int32
+                        maximum: 60000
+                        minimum: 50
+                        type: integer
+                      multiplier:
+                        default: 3
+                        description: Multiplier is the number of missed packets before
+                          the session is down.
+                        format: int32
+                        maximum: 50
+                        minimum: 2
+                        type: integer
+                    type: object
+                  localASN:
+                    description: |-
+                      LocalAsn is the Kube-DC autonomous-system number used by every Project
+                      gateway on this fabric.
+                    format: int64
+                    maximum: 4294967295
+                    minimum: 1
+                    type: integer
+                    x-kubernetes-validations:
+                    - message: bgp.localASN is immutable
+                      rule: self == oldSelf
+                  peers:
+                    description: |-
+                      Peers lists the external single-hop eBGP neighbors. Tenant-facing APIs do
+                      not expose this list.
+                    items:
+                      description: RoutingFabricBGPPeer declares one single-hop eBGP
+                        neighbor.
+                      properties:
+                        address:
+                          description: Address is the peer's IPv4 address on the transit
+                            subnet.
+                          format: ipv4
+                          type: string
+                        asn:
+                          description: Asn is the peer's 16-bit or 32-bit autonomous-system
+                            number.
+                          format: int64
+                          maximum: 4294967295
+                          minimum: 1
+                          type: integer
+                      required:
+                      - address
+                      - asn
+                      type: object
+                    maxItems: 8
+                    minItems: 1
+                    type: array
+                    x-kubernetes-validations:
+                    - message: BGP peer addresses must be unique
+                      rule: self.map(p, p.address).all(a, self.filter(p, p.address
+                        == a).size() == 1)
+                  timers:
+                    description: Timers configure keepalive-based failure detection.
+                    properties:
+                      hold:
+                        default: 9
+                        description: |-
+                          Hold is the BGP hold time in seconds and must be at least three times the
+                          keepalive interval.
+                        format: int32
+                        maximum: 65535
+                        minimum: 3
+                        type: integer
+                      keepalive:
+                        default: 3
+                        description: Keepalive is the BGP keepalive interval in seconds.
+                        format: int32
+                        maximum: 65535
+                        minimum: 1
+                        type: integer
+                    type: object
+                required:
+                - localASN
+                - peers
+                type: object
+                x-kubernetes-validations:
+                - message: bgp.timers.hold must be at least three times keepalive
+                  rule: '!has(self.timers) || self.timers.hold >= self.timers.keepalive
+                    * 3'
+              driver:
+                default: frr-project-gateway
+                description: |-
+                  Driver selects the routing backend. frr-project-gateway is the only v1
+                  implementation.
+                enum:
+                - frr-project-gateway
+                type: string
+                x-kubernetes-validations:
+                - message: driver is immutable
+                  rule: self == oldSelf
+              highAvailability:
+                description: HighAvailability declares per-Project gateway replication.
+                properties:
+                  replicas:
+                    default: 2
+                    description: |-
+                      Replicas is the number of gateway pods created for each attached Project.
+                      v1 requires at least two so the advertised HA contract is honest.
+                    format: int32
+                    maximum: 8
+                    minimum: 2
+                    type: integer
+                type: object
+              nodeSelector:
+                description: |-
+                  NodeSelector selects nodes on which routing gateway pods may run. The VLAN
+                  must be trunked and bridge-mapped on every matching node.
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: |-
+                        A label selector requirement is a selector that contains values, a key, and an operator that
+                        relates the key and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: |-
+                            operator represents a key's relationship to a set of values.
+                            Valid operators are In, NotIn, Exists and DoesNotExist.
+                          type: string
+                        values:
+                          description: |-
+                            values is an array of string values. If the operator is In or NotIn,
+                            the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                            the values array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                      map is equivalent to an element of matchExpressions, whose key field is "key", the
+                      operator is "In", and the values array contains only "value". The requirements are ANDed.
+                    type: object
+                type: object
+                x-kubernetes-map-type: atomic
+              providerNetwork:
+                description: |-
+                  ProviderNetwork names the existing kube-ovn ProviderNetwork whose uplink
+                  carries the transit VLAN.
+                maxLength: 12
+                minLength: 1
+                type: string
+                x-kubernetes-validations:
+                - message: providerNetwork is immutable
+                  rule: self == oldSelf
+              routingDomain:
+                description: RoutingDomain reserves the external isolation model in
+                  the stable API.
+                properties:
+                  mode:
+                    default: shared
+                    description: |-
+                      Mode is shared in v1. per-project-vrf is reserved for a future backend and
+                      is rejected by the current reconciler before any data-plane programming.
+                    enum:
+                    - shared
+                    - per-project-vrf
+                    type: string
+                type: object
+              transit:
+                description: Transit declares the address pool and external router
+                  on the transit VLAN.
+                properties:
+                  cidrBlock:
+                    description: |-
+                      CidrBlock is the IPv4 subnet carried on the transit VLAN. Gateway replica
+                      addresses are allocated from this range.
+                    format: cidr
+                    type: string
+                    x-kubernetes-validations:
+                    - message: transit.cidrBlock is immutable
+                      rule: self == oldSelf
+                  excludeIps:
+                    description: |-
+                      ExcludeIps lists individual addresses or inclusive address ranges that
+                      gateway IP allocation must never consume.
+                    items:
+                      minLength: 1
+                      type: string
+                    type: array
+                    x-kubernetes-validations:
+                    - message: transit.excludeIps is immutable
+                      rule: self == oldSelf
+                  gateway:
+                    description: |-
+                      Gateway is the external router address on the transit subnet. It is used
+                      for reachability status and must also appear as a configured BGP peer when
+                      the router peers from that address.
+                    format: ipv4
+                    type: string
+                    x-kubernetes-validations:
+                    - message: transit.gateway is immutable
+                      rule: self == oldSelf
+                required:
+                - cidrBlock
+                - gateway
+                type: object
+              vlanId:
+                description: VlanId is the 802.1Q tag used by the dedicated transit
+                  network.
+                format: int32
+                maximum: 4094
+                minimum: 1
+                type: integer
+                x-kubernetes-validations:
+                - message: vlanId is immutable
+                  rule: self == oldSelf
+            required:
+            - bgp
+            - providerNetwork
+            - transit
+            - vlanId
+            type: object
+          status:
+            description: RoutingFabricStatus reports fabric readiness and address
+              capacity.
+            properties:
+              conditions:
+                description: |-
+                  Conditions represents the latest observations of provider readiness,
+                  transit reachability, and peer configuration.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              phase:
+                description: Phase is Ready, Degraded, or Unavailable.
+                type: string
+              transitAddressesFree:
+                description: |-
+                  TransitAddressesFree is the number of usable addresses not currently
+                  claimed by Project routing gateways.
+                format: int32
+                type: integer
+              transitAllocations:
+                description: TransitAllocations records storage-atomic controller-owned
+                  IP claims.
+                items:
+                  description: |-
+                    RoutingFabricTransitAllocation is an atomic address claim stored on fabric
+                    status. The controller updates this slice with resource-version preconditions,
+                    so concurrent attachments cannot receive the same transit IP.
+                  properties:
+                    addresses:
+                      description: Addresses contains one transit IP per desired gateway
+                        replica.
+                      items:
+                        type: string
+                      type: array
+                    gatewayRef:
+                      description: GatewayRef is the namespace/name of the owning
+                        ProjectRoutingGateway.
+                      type: string
+                    gatewayUid:
+                      description: |-
+                        GatewayUid pins the claim to one exact ProjectRouteAttachment incarnation.
+                        The field name is retained because the claim supplies its generated gateway.
+                      type: string
+                    routingLinkCIDR:
+                      description: |-
+                        RoutingLinkCIDR is the controller-owned /29 allocated from the cluster's
+                        routed-network link pool for this Project VPC. Keeping the transit and link
+                        claims in one status record makes their allocation storage-atomic.
+                      type: string
+                  required:
+                  - addresses
+                  - gatewayRef
+                  - gatewayUid
+                  - routingLinkCIDR
+                  type: object
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

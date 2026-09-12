@@ -41,8 +41,12 @@ spec:
           for: 10m
           labels:
             severity: warning
+            service: kube-dc-storage
+            owner: storage-platform
             kube-dc.com/runbook: cdi-acceleration.md
           annotations:
+            dashboard_uid: kube-dc-virtualization
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/cdi-acceleration.md
             summary: "OS-image mirror refresh job failed"
             description: |
               cdi-os-mirror-refresh Job {{ "{{ $labels.job_name }}" }} in
@@ -62,8 +66,12 @@ spec:
           for: 1h
           labels:
             severity: warning
+            service: kube-dc-storage
+            owner: storage-platform
             kube-dc.com/runbook: cdi-acceleration.md
           annotations:
+            dashboard_uid: kube-dc-virtualization
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/cdi-acceleration.md
             summary: "OS-image mirror has not refreshed successfully in >14 days"
             description: |
               cdi-os-mirror-refresh last successful run was more than 14
@@ -82,8 +90,12 @@ spec:
           for: 30m
           labels:
             severity: warning
+            service: kube-dc-storage
+            owner: storage-platform
             kube-dc.com/runbook: cdi-acceleration.md
           annotations:
+            dashboard_uid: kube-dc-virtualization
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/cdi-acceleration.md
             summary: "cdi-upload-gc Job failed"
             description: |
               cdi-upload-gc {{ "{{ $labels.job_name }}" }} failed.
@@ -104,8 +116,12 @@ spec:
           for: 1h
           labels:
             severity: info
+            service: kube-dc-storage
+            owner: storage-platform
             kube-dc.com/runbook: cdi-acceleration.md
           annotations:
+            dashboard_uid: kube-dc-virtualization
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/cdi-acceleration.md
             summary: "cdi-upload-gc has not run successfully in >24h"
             description: |
               The 6-hourly cdi-upload-gc CronJob has not produced a
@@ -126,8 +142,12 @@ spec:
           for: 10m
           labels:
             severity: warning
+            service: kube-dc-storage
+            owner: storage-platform
             kube-dc.com/runbook: cdi-acceleration.md
           annotations:
+            dashboard_uid: kube-dc-virtualization
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/cdi-acceleration.md
             summary: "CDI importer in {{ "{{ $labels.namespace }}/{{ $labels.pod }}" }} is restart-looping"
             description: |
               CDI importer pod {{ "{{ $labels.namespace }}/{{ $labels.pod }}" }}
@@ -154,8 +174,12 @@ spec:
           for: 5m
           labels:
             severity: info
+            service: kube-dc-storage
+            owner: storage-platform
             kube-dc.com/runbook: cdi-acceleration.md
           annotations:
+            dashboard_uid: kube-dc-virtualization
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/cdi-acceleration.md
             summary: "DataVolume {{ "{{ $labels.namespace }}/{{ $labels.datavolume }}" }} stuck importing"
             description: |
               DataVolume {{ "{{ $labels.namespace }}/{{ $labels.datavolume }}" }}

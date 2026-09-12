@@ -316,7 +316,7 @@ metadata:
 spec:
   policyName: mgmt-worker-pending-taint
   validationActions: [Deny]
-{{- if .Values.k8Manager.metricsEnabled }}
+{{- if or .Values.k8Manager.metrics.enabled .Values.k8Manager.metricsEnabled }}
 ---
 # Paging, not just status (review round 2): gauges are exported by the
 # k8-manager provisioner via its metrics endpoint, so the alerts gate on the
@@ -326,7 +326,7 @@ kind: PrometheusRule
 metadata:
   name: mgmt-autoscaling-alerts
   namespace: {{ $ns }}
-  labels: {release: monitoring}
+  labels: {release: prom-operator}
 spec:
   groups:
     - name: mgmt-worker-autoscaling
@@ -334,17 +334,27 @@ spec:
         - alert: MgmtWorkerProvisioningStuck
           expr: kube_dc_mgmt_pool_timed_out_attempts > 0
           for: 5m
-          labels: {severity: critical}
+          labels:
+            severity: critical
+            service: kube-dc-managed-k8s
+            owner: control-plane
           annotations:
+            dashboard_uid: kube-dc-managed-kubernetes
             summary: "Management worker pool {{`{{ $labels.pool }}`}} has stopped, unacknowledged VM(s)"
             description: "A provisioning attempt timed out; the VM was stopped but holds a ceiling slot AND keeps billing storage/IP. Follow the acknowledge/cleanup runbook in docs/prd/mgmt-worker-autoscaling.md."
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/mgmt-worker-autoscaling.md
         - alert: MgmtWorkerDependencyOutage
           expr: kube_dc_mgmt_pool_dependency_outage > 0
           for: 10m
-          labels: {severity: warning}
+          labels:
+            severity: warning
+            service: kube-dc-managed-k8s
+            owner: control-plane
           annotations:
+            dashboard_uid: kube-dc-managed-kubernetes
             summary: "Management worker pool {{`{{ $labels.pool }}`}} cannot provision"
             description: "Provider client or token broker unavailable - the pool is fail-closed and will not grow."
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/mgmt-worker-autoscaling.md
         - alert: MgmtClusterAutoscalerDown
           # The absent() branch covers the WORST failure — Deployment (or its
           # metric series) gone entirely, where a bare ==0 never fires
@@ -353,10 +363,15 @@ spec:
             (kube_deployment_status_replicas_available{deployment="mgmt-cluster-autoscaler",namespace="{{ $ns }}"} == 0)
             or absent(kube_deployment_status_replicas_available{deployment="mgmt-cluster-autoscaler",namespace="{{ $ns }}"})
           for: 10m
-          labels: {severity: critical}
+          labels:
+            severity: critical
+            service: kube-dc-managed-k8s
+            owner: control-plane
           annotations:
+            dashboard_uid: kube-dc-managed-kubernetes
             summary: "Management cluster-autoscaler is down"
             description: "No scale-up decisions are being made; an adapter outage also blocks CA's Refresh loop entirely."
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/mgmt-worker-autoscaling.md
 {{- end }}
 {{- end }}
 {{- if and .Values.k8Manager.enabled .Values.k8Manager.mgmtAutoscaling.enabled }}

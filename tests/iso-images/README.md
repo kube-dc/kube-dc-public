@@ -8,7 +8,7 @@ This directory contains scripts for testing OS images and guest agent functional
 **Main script** - Generates VMs and DataVolumes from the ConfigMap template for testing all OS images.
 
 **Features:**
-- Parses OS configurations directly from `charts/kube-dc/templates/os-images-configmap.yaml`
+- Renders `charts/kube-dc/templates/os-images-configmap.yaml` with `helm template` and reads the resulting catalog (the entries themselves live in `charts/kube-dc/values.yaml` under `osImages.catalog`)
 - Single source of truth - no hardcoded values
 - Supports all OS types including Linux and Windows
 - Automatic resource naming and labeling
@@ -94,8 +94,12 @@ The scripts automatically test all OS images defined in the ConfigMap:
 
 ## Configuration
 
-All OS configurations are sourced from:
+All OS configurations are sourced from the chart, by rendering:
 `charts/kube-dc/templates/os-images-configmap.yaml`
+
+The catalog entries live in `charts/kube-dc/values.yaml` (`osImages.catalog`);
+the template derives each entry's effective image URL. **`helm` must be in
+PATH.**
 
 This ensures:
 - ✅ Single source of truth

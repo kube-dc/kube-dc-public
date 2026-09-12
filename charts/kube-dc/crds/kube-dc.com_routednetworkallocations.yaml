@@ -1,0 +1,258 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.4
+  name: routednetworkallocations.kube-dc.com
+spec:
+  group: kube-dc.com
+  names:
+    kind: RoutedNetworkAllocation
+    listKind: RoutedNetworkAllocationList
+    plural: routednetworkallocations
+    shortNames:
+    - rnalloc
+    singular: routednetworkallocation
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.fabricRef
+      name: Fabric
+      type: string
+    - jsonPath: .spec.organization
+      name: Organization
+      type: string
+    - jsonPath: .spec.sharing.mode
+      name: Sharing
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          RoutedNetworkAllocation is the platform-owned grant of a RoutingFabric and
+          prefix policy to one organization.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: RoutedNetworkAllocationSpec delegates one fabric policy to
+              an organization.
+            properties:
+              exportPolicy:
+                description: ExportPolicy controls controller-derived Project CIDR
+                  advertisements.
+                properties:
+                  maxPrefixes:
+                    default: 16
+                    description: |-
+                      MaxPrefixes bounds the number of derived Project prefixes advertised by a
+                      gateway.
+                    format: int32
+                    maximum: 256
+                    minimum: 1
+                    type: integer
+                  mode:
+                    default: project-vpc-cidrs
+                    description: |-
+                      Mode is project-vpc-cidrs in v1. The controller derives the prefix from
+                      authoritative Project/VPC state; tenants cannot supply advertisements.
+                    enum:
+                    - project-vpc-cidrs
+                    type: string
+                type: object
+              fabricRef:
+                description: FabricRef names the platform-owned RoutingFabric used
+                  by this allocation.
+                minLength: 1
+                type: string
+                x-kubernetes-validations:
+                - message: fabricRef is immutable
+                  rule: self == oldSelf
+              importPolicy:
+                description: ImportPolicy is the platform-owned allowlist for learned
+                  external routes.
+                properties:
+                  allowDefaultRoute:
+                    default: false
+                    description: |-
+                      AllowDefaultRoute is reserved for a future platform-admin override. v1
+                      requires false so 0.0.0.0/0 can never replace or bypass Project Internet
+                      routing.
+                    type: boolean
+                    x-kubernetes-validations:
+                    - message: allowDefaultRoute must be false in v1
+                      rule: self == false
+                  allowedPrefixes:
+                    description: |-
+                      AllowedPrefixes is the complete set of external IPv4 prefixes tenants may
+                      reach through this allocation. Empty means import nothing.
+                    items:
+                      format: cidr
+                      type: string
+                    maxItems: 256
+                    type: array
+                  matchMode:
+                    default: exact-or-more-specific
+                    description: MatchMode selects exact-only matching or bounded
+                      more-specific matching.
+                    enum:
+                    - exact
+                    - exact-or-more-specific
+                    type: string
+                  maxPrefixLength:
+                    default: 32
+                    description: |-
+                      MaxPrefixLength is the longest accepted IPv4 prefix length when matchMode
+                      is exact-or-more-specific.
+                    format: int32
+                    maximum: 32
+                    minimum: 0
+                    type: integer
+                  maxPrefixes:
+                    default: 100
+                    description: MaxPrefixes is the per-peer maximum-prefix protection
+                      threshold.
+                    format: int32
+                    maximum: 10000
+                    minimum: 1
+                    type: integer
+                  minPrefixLength:
+                    default: 0
+                    description: |-
+                      MinPrefixLength is the shortest accepted IPv4 prefix length when
+                      matchMode is exact-or-more-specific.
+                    format: int32
+                    maximum: 32
+                    minimum: 0
+                    type: integer
+                type: object
+                x-kubernetes-validations:
+                - message: minPrefixLength must not exceed maxPrefixLength
+                  rule: self.minPrefixLength <= self.maxPrefixLength
+                - message: 0.0.0.0/0 is not allowed in import policy
+                  rule: '!self.allowedPrefixes.exists(p, p == ''0.0.0.0/0'')'
+              organization:
+                description: |-
+                  Organization is the immutable organization name permitted to attach its
+                  own Projects to this allocation.
+                minLength: 1
+                type: string
+                x-kubernetes-validations:
+                - message: organization is immutable; delete and recreate the allocation
+                    to transfer it
+                  rule: self == oldSelf
+              sharing:
+                description: Sharing controls whether one or many Projects may attach.
+                properties:
+                  mode:
+                    default: multiple-projects
+                    description: Mode is single-project or multiple-projects.
+                    enum:
+                    - single-project
+                    - multiple-projects
+                    type: string
+                type: object
+            required:
+            - fabricRef
+            - organization
+            type: object
+          status:
+            description: RoutedNetworkAllocationStatus reports consumption without
+              exposing peer secrets.
+            properties:
+              attachedProjects:
+                description: AttachedProjects lists namespace-qualified Projects consuming
+                  the allocation.
+                items:
+                  type: string
+                type: array
+              conditions:
+                description: Conditions represents current fabric validity and allocation
+                  readiness.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              phase:
+                description: Phase is Available when unused and InUse when at least
+                  one Project is attached.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

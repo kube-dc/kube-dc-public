@@ -1,0 +1,252 @@
+{{- if .Values.k8Manager.metrics.enabled }}
+{{- $metricsName := printf "%s-metrics" (include "kube-dc.k8manager.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- $port := int .Values.k8Manager.metrics.service.port }}
+{{- if or (lt $port 1) (gt $port 65535) }}
+{{- fail "k8Manager.metrics.service.port must be between 1 and 65535" }}
+{{- end }}
+# controller-runtime's secure /metrics endpoint authenticates each scraper via a
+# TokenReview and authorizes via a SubjectAccessReview. The k8-manager SA must be
+# allowed to create both, or the authz filter errors and /metrics returns HTTP 500
+# (Prometheus then marks the target down — observed on cloud 2026-08-13). The
+# main manager gets this through its broad ClusterRole; k8-manager needs it
+# explicitly, so bind its SA to the built-in system:auth-delegator role.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ printf "%s-metrics-auth" (include "kube-dc.k8manager.fullname" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "kube-dc.k8manager.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kube-dc.k8manager.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+---
+# k8-manager (managed-K8s controller) metrics — Service + ServiceMonitor +
+# PrometheusRule. Exposes the Phase-0 node-health observer gauges
+# (kdc_worker_stuck_join, kdc_worker_node_unhealthy) plus controller-runtime's
+# built-ins. controller-runtime serves /metrics on :8443 with authn (TokenReview)
+# + authz (SubjectAccessReview for GET /metrics); the standard Prometheus/Alloy
+# scraper identity already carries that grant on the supported platform, so
+# rbac.create defaults to false (see manager-metrics.yaml for the same contract).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $metricsName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.k8manager.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+spec:
+  selector:
+    {{- include "kube-dc.k8manager.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ $port }}
+      protocol: TCP
+      targetPort: metrics
+---
+{{- if .Values.k8Manager.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $metricsName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.k8manager.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+    {{- with .Values.k8Manager.metrics.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      {{- include "kube-dc.k8manager.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: metrics
+  endpoints:
+    - port: metrics
+      path: /metrics
+      scheme: https
+      interval: {{ .Values.k8Manager.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.k8Manager.metrics.serviceMonitor.scrapeTimeout }}
+      # Each scraper authenticates with its own projected ServiceAccount token;
+      # controller-runtime performs a SubjectAccessReview for GET /metrics.
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tlsConfig:
+        # controller-runtime generates an ephemeral self-signed serving cert
+        # when no cert directory is configured. Authn/authz still gate the read.
+        insecureSkipVerify: true
+---
+{{- end }}
+{{- if .Values.k8Manager.metrics.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ $metricsName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.k8manager.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+    {{- with .Values.k8Manager.metrics.prometheusRule.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: kube-dc.k8-manager-reconcile-liveness
+      rules:
+        - alert: KubeDcK8ManagerReconcileWedged
+          expr: max by (controller) (kube_dc_k8_manager_controller_wedged) > 0
+          for: 2m
+          labels:
+            severity: critical
+            service: kube-dc-managed-k8s
+            owner: control-plane
+          annotations:
+            dashboard_uid: kube-dc-managed-kubernetes
+            summary: k8-manager {{ "{{ $labels.controller }}" }} controller is wedged
+            description: A managed-Kubernetes reconcile has remained in flight beyond the wedge threshold and the liveness probe will restart the process if it persists.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/managed-k8s-node-health-and-cleanup.md
+        - alert: KubeDcK8ManagerReconcileSlow
+          expr: max by (controller) (kube_dc_k8_manager_controller_oldest_active_reconcile_seconds) > 300
+          for: 5m
+          labels:
+            severity: warning
+            service: kube-dc-managed-k8s
+            owner: control-plane
+          annotations:
+            dashboard_uid: kube-dc-managed-kubernetes
+            summary: k8-manager {{ "{{ $labels.controller }}" }} controller has a slow reconcile
+            description: A managed-Kubernetes reconcile has exceeded the five-minute operation budget.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/managed-k8s-node-health-and-cleanup.md
+    # Phase-0 managed-K8s node-health signals (observe-only; the observer never
+    # remediates). See docs/prd/managed-k8s-node-health-and-cleanup.md.
+    - name: kube-dc.managed-k8s-node-health
+      rules:
+        - alert: KubeDcManagedK8sWorkerStuckJoin
+          expr: max by (project, cluster) (kdc_worker_stuck_join) > 0
+          for: 15m
+          labels:
+            severity: warning
+            service: kube-dc-managed-k8s
+            owner: control-plane
+          annotations:
+            dashboard_uid: kube-dc-managed-kubernetes
+            summary: Managed-K8s worker has not joined ({{ "{{ $labels.cluster }}" }})
+            description: >-
+              At least one worker Machine of KdcCluster {{ "{{ $labels.cluster }}" }}
+              (project {{ "{{ $labels.project }}" }}) has had no Node registered past the
+              stuck-join threshold — never joined or its kubeadm bootstrap failed. Phase-0
+              observe-only: no automatic remediation. Inspect the WorkerStuckJoin Events on
+              the KdcCluster and the worker VM/bootstrap.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/managed-k8s-node-health-and-cleanup.md
+        - alert: KubeDcManagedK8sWorkerNodeUnhealthy
+          expr: max by (project, cluster) (kdc_worker_node_unhealthy) > 0
+          for: 15m
+          labels:
+            severity: warning
+            service: kube-dc-managed-k8s
+            owner: control-plane
+          annotations:
+            dashboard_uid: kube-dc-managed-kubernetes
+            summary: Managed-K8s worker Node missing or NotReady ({{ "{{ $labels.cluster }}" }})
+            description: >-
+              At least one joined worker Machine of KdcCluster {{ "{{ $labels.cluster }}" }}
+              (project {{ "{{ $labels.project }}" }}) references a Node that is absent from
+              the tenant cluster or has been NotReady past the threshold — this includes the
+              re-imported-rootdisk / expired-bootstrap-token zombie. Phase-0 observe-only.
+              Inspect the WorkerNodeMissing / WorkerNodeNotReady Events on the KdcCluster.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/managed-k8s-node-health-and-cleanup.md
+        - alert: KubeDcManagedK8sWorkerRootDiskReplaced
+          expr: max by (project, cluster) (kdc_worker_root_disk_replaced) > 0
+          for: 10m
+          labels:
+            severity: warning
+            service: kube-dc-managed-k8s
+            owner: control-plane
+          annotations:
+            dashboard_uid: kube-dc-managed-kubernetes
+            summary: Managed-K8s worker root disk re-provisioned under a joined Machine ({{ "{{ $labels.cluster }}" }})
+            description: >-
+              A joined worker Machine of KdcCluster {{ "{{ $labels.cluster }}" }}
+              (project {{ "{{ $labels.project }}" }}) has a re-provisioned root disk: its
+              kubeadm state is gone and Cluster API no longer refreshes its bootstrap token,
+              so it can never re-join (the "scalling" zombie). Replace the Machine (delete
+              it; the MachineSet recreates it with fresh bootstrap material). Phase-0
+              observe-only: nothing is done automatically. See the WorkerRootDiskReplaced
+              Event/condition on the KdcCluster.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/managed-k8s-node-health-and-cleanup.md
+        - alert: KubeDcManagedK8sWorkerOrphanedResources
+          expr: sum by (project, cluster) (kdc_worker_orphaned_resources) > 0
+          for: 30m
+          labels:
+            severity: warning
+            service: kube-dc-managed-k8s
+            owner: control-plane
+          annotations:
+            dashboard_uid: kube-dc-managed-kubernetes
+            summary: Orphaned worker VM/root-disk resources for {{ "{{ $labels.cluster }}" }}
+            description: >-
+              Worker VirtualMachines or root-disk PVCs in project {{ "{{ $labels.project }}" }}
+              have had no live Machine for 30m — the Machine-delete cleanup chain (CAPK VM
+              delete -> DataVolume -> PVC GC) did not complete. Dry-run detection: nothing is
+              deleted automatically. Inspect the WorkerOrphanedResources Event, then delete
+              the leftovers by hand after confirming the Machine is really gone.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/managed-k8s-node-health-and-cleanup.md
+        - alert: KubeDcManagedK8sNodeLocalDefaultStorage
+          expr: max by (project, cluster) (kdc_cluster_default_storageclass_node_local) == 1
+          for: 6h
+          labels:
+            severity: info
+            service: kube-dc-managed-k8s
+            owner: control-plane
+          annotations:
+            dashboard_uid: kube-dc-managed-kubernetes
+            summary: Managed cluster {{ "{{ $labels.cluster }}" }} defaults to node-local storage
+            description: >-
+              The default StorageClass of KdcCluster {{ "{{ $labels.cluster }}" }} (project
+              {{ "{{ $labels.project }}" }}) provisions node-local volumes, so new stateful
+              workloads land on a single worker's disk. Automatic worker replacement will
+              treat this cluster as data-unsafe. Informational.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/managed-k8s-node-health-and-cleanup.md
+---
+{{- end }}
+{{- if .Values.k8Manager.metrics.rbac.create }}
+{{- if eq (len .Values.k8Manager.metrics.rbac.serviceAccounts) 0 }}
+{{- fail "k8Manager.metrics.rbac.serviceAccounts must contain at least one exact scraper identity when k8Manager.metrics.rbac.create=true" }}
+{{- end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $metricsName }}-reader
+  labels:
+    {{- include "kube-dc.k8manager.labels" . | nindent 4 }}
+rules:
+  - nonResourceURLs:
+      - /metrics
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $metricsName }}-reader
+  labels:
+    {{- include "kube-dc.k8manager.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $metricsName }}-reader
+subjects:
+  {{- range .Values.k8Manager.metrics.rbac.serviceAccounts }}
+  - kind: ServiceAccount
+    name: {{ required "k8Manager.metrics.rbac.serviceAccounts[].name is required" .name }}
+    namespace: {{ required "k8Manager.metrics.rbac.serviceAccounts[].namespace is required" .namespace }}
+  {{- end }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,58 @@
+{{- if .Values.manager.staticIPFence.enabled }}
+# L1b — static addresses inside a fenced (delegated) range are refused.
+# One ValidatingAdmissionPolicyBinding per opted-in project is created by the
+# Project reconciler (parameter = the project's AddressArena, namespace-scoped
+# match); projects that never opted in are not affected. The matchConditions
+# select only Pods that request a static address, so a missing arena denies
+# static-IP requests and nothing else. docs/internal/managed-k8s-lb-ipam.md §4.1.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: kube-dc-static-ip-fence
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: kube-dc.com/v1
+    kind: AddressArena
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["pods"]
+  matchConditions:
+  - name: requests-a-static-address
+    expression: >-
+      has(object.metadata.annotations) &&
+      object.metadata.annotations.exists(k, k.endsWith('.kubernetes.io/ip_address'))
+  variables:
+  - name: ipKeys
+    expression: "object.metadata.annotations.filter(k, k.endsWith('.kubernetes.io/ip_address'))"
+  - name: cidrs
+    expression: "has(params.status) && has(params.status.reservedCIDRs) ? params.status.reservedCIDRs : []"
+  - name: consistent
+    expression: >-
+      has(params.status) && has(params.status.conditions) &&
+      params.status.conditions.exists(c, c.type == 'Consistent' && c.status == 'True' && c.observedGeneration == params.metadata.generation)
+  - name: defaultSwitch
+    expression: "object.metadata.namespace + '-default'"
+  validations:
+  - expression: "variables.consistent"
+    message: "static IP requests are refused while the project's address arena is not audited consistent (kube-dc address reservation)"
+    reason: Forbidden
+  - expression: >-
+      variables.ipKeys.all(k,
+        (
+          (k.replace('ip_address', 'logical_switch') in object.metadata.annotations
+           && object.metadata.annotations[k.replace('ip_address', 'logical_switch')].trim() != '')
+            ? object.metadata.annotations[k.replace('ip_address', 'logical_switch')].trim()
+            : variables.defaultSwitch
+        ) != params.spec.subnetName
+        ||
+        object.metadata.annotations[k].split(',').all(a,
+          !variables.cidrs.exists(c, cidr(c).containsIP(ip(a.trim())))
+        )
+      )
+    messageExpression: "'static IP inside a range of subnet ' + params.spec.subnetName + ' that kube-dc delegated to a managed cluster (' + variables.cidrs.join(', ') + ') is refused'"
+    reason: Forbidden
+{{- end }}

@@ -22,6 +22,14 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: reserve-platform-identities-in-projects
+  annotations:
+    # The manager records its owner-guard epoch only after it has seen this
+    # attestation (internal/infraattachment/guard_epoch.go): from chart
+    # v0.6.39 engine kinds are trusted owners through ANY reference and every
+    # operator carve-out is all-quantified, so a non-controller owner edge on
+    # an object created after the epoch was judged by this guard.
+    kube-dc.com/owner-trust: any-edge
+    kube-dc.com/pooler-owner-trust: any-edge
 spec:
   failurePolicy: Fail
   matchConstraints:
@@ -29,7 +37,14 @@ spec:
       - apiGroups: [""]
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE"]
-        resources: ["pods"]
+        # pods/ephemeralcontainers is a SEPARATE subresource: `kubectl debug
+        # --target` runs attacker code inside an EXISTING privileged pod, sharing
+        # its network namespace + SecurityGroup, without creating a new pod. The
+        # 1.33 subresource strategy preserves the pod's metadata, so the owner
+        # clause below sees the real (privileged) owner and denies a non-exempt
+        # requester. The shipped project Role does not grant this subresource; it
+        # is defense-in-depth for a cluster that widens tenant RBAC to */*.
+        resources: ["pods", "pods/ephemeralcontainers"]
       - apiGroups: ["apps"]
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE"]
@@ -38,6 +53,38 @@ spec:
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE"]
         resources: ["jobs", "cronjobs"]
+{{- /*
+Every via kind of every family in .Values.serviceFamilies.extra whose exact
+group/version/resource the hand-written rules above do not already match.
+variables.ownerTrusted names these kinds as trusted EDGES, but the policy only
+judges an object the resourceRules match: a tenant-authored StrimziPodSet (or
+a core/v1 ReplicationController -- the core rule above matches only pods)
+carrying a UID-correct controller ownerReference to a managed root would
+otherwise never be evaluated, and the classifier would honour the chain
+(codex rounds 91-92). The manager verifies each plural against API discovery
+at startup, so a resource that matches nothing is refused there.
+*/}}
+{{- include "kube-dc.serviceFamilies.validate" . }}
+{{- $covered := dict "|v1|pods" true "apps|v1|deployments" true "apps|v1|replicasets" true "apps|v1|statefulsets" true "apps|v1|daemonsets" true "batch|v1|jobs" true "batch|v1|cronjobs" true }}
+{{- $viaRules := dict }}
+{{- range .Values.serviceFamilies.extra }}
+{{- range .engineRoots }}
+{{- range .via }}
+{{- $gvr := printf "%s|%s|%s" (.group | default "") .version .resource }}
+{{- if not (hasKey $covered $gvr) }}
+{{- $k := printf "%s|%s" (.group | default "") .version }}
+{{- $_ := set $viaRules $k (append (index $viaRules $k | default list) .resource | uniq) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- range $k, $resources := $viaRules }}
+{{- $parts := splitList "|" $k }}
+      - apiGroups: [{{ index $parts 0 | quote }}]
+        apiVersions: [{{ index $parts 1 | quote }}]
+        operations: ["CREATE", "UPDATE"]
+        resources: [{{ range $i, $r := $resources }}{{ if $i }}, {{ end }}{{ $r | quote }}{{ end }}]
+{{- end }}
   matchConditions:
     # Platform controllers create exactly these shapes legitimately.
     - name: exclude-system-service-accounts
@@ -83,6 +130,183 @@ spec:
       expression: >-
         has(variables.podMeta.spec) && has(variables.podMeta.spec.serviceAccountName)
           ? variables.podMeta.spec.serviceAccountName : ''
+    # The requesting identity, '' when unauthenticated info is absent.
+    - name: reqUser
+      expression: >-
+        has(request.userInfo) && has(request.userInfo.username)
+          ? request.userInfo.username : ''
+    # Does THIS object carry a controller ownerReference to a parent the
+    # classifier (internal/infraattachment/pod_role.go) walks to grant a
+    # privileged role? Every trusted edge in that file, by exact GVK — apps
+    # Deployment/ReplicaSet/StatefulSet and batch Job/CronJob (the workload
+    # spine), plus the platform roots TenantControlPlane, KdcCluster,
+    # KdcClusterDatastore, KdcDatabase, and the engine CRs CNPG Cluster /
+    # MariaDB. DaemonSet is deliberately absent: no classifier branch follows
+    # it. controller:false edges are ignored, mirroring metav1.GetControllerOf.
+    # Two kinds of trusted edge. The kube-system and platform kinds are
+    # trusted through CONTROLLER references only (mirroring
+    # metav1.GetControllerOf; a tenant's non-controller reference to their
+    # own Deployment for garbage collection is theirs to make). The engine
+    # kinds -- CNPG Cluster, MariaDB, and every registered family's roots
+    # and custom via kinds -- are trusted through ANY reference: Strimzi
+    # owns its StrimziPodSet through a NON-controller reference to the
+    # KafkaNodePool (measured on stage, Strimzi 1.2.0), the classifier
+    # follows that edge for custom kinds, and a tenant has no business
+    # referencing a platform engine as an owner at all.
+    - name: ownerTrusted
+      expression: >-
+        object.metadata.?ownerReferences.orValue([]).exists(o, {{ include "kube-dc.identity.trustedEdge" . }})
+    # Every carve-out is an ALL over the object's references: each trusted
+    # edge the object carries must be one this operator may create. With
+    # `exists`, one allowed edge would hide a second, unauthorised trusted
+    # edge -- a Job owned by a marked CNPG Cluster plus a stray reference to
+    # a MariaDB would pass the MariaDB operator (codex round 108).
+    - name: ownerCnpg
+      expression: >-
+        object.metadata.?ownerReferences.orValue([]).all(o,
+          !({{ include "kube-dc.identity.trustedEdge" . }}) ||
+          (o.apiVersion == 'postgresql.cnpg.io/v1' && o.kind == 'Cluster') ||
+          (o.apiVersion == 'postgresql.cnpg.io/v1' && o.kind == 'Pooler'))
+    # CNPG copies a managed Pooler's pod template into its Deployment. This
+    # requirement is NOT a role grant: the pod mutator still verifies the full
+    # marked, UID-bound, inventory-attested chain and refuses until it earns
+    # management-api-client. Keep every other identity clause active.
+    - name: cnpgPoolerRequirement
+      expression: >-
+        variables.reqUser == 'system:serviceaccount:cnpg-system:cnpg-cloudnative-pg'
+          && request.resource.group == 'apps'
+          && request.resource.resource == 'deployments'
+          && (!has(request.subResource) || request.subResource == '')
+          && variables.ownerCnpg
+          && object.metadata.?ownerReferences.orValue([]).exists(o,
+               o.apiVersion == 'postgresql.cnpg.io/v1' && o.kind == 'Pooler')
+          && 'network.kube-dc.com/requires-role' in variables.annotations
+          && variables.annotations['network.kube-dc.com/requires-role'] == 'management-api-client'
+    # mariadb-operator's DIRECT children — the StatefulSet it creates and its
+    # bootstrap Jobs — ARE controller-owned by the MariaDB CR, so this matches
+    # them (and only them: scoped to the exact engine GVK, like ownerCnpg).
+    # Kept as a SEPARATE carve-out from the pod one below (codex 2026-08-11
+    # round-4): folding both into the pods-only/UPDATE-only gate would deny the
+    # operator CREATE of its own StatefulSet/Jobs (ownerTrusted=true via the
+    # MariaDB edge, but the pod gate is false for a statefulsets CREATE).
+    - name: ownerMariadb
+      expression: >-
+        object.metadata.?ownerReferences.orValue([]).all(o,
+          !({{ include "kube-dc.identity.trustedEdge" . }}) ||
+          (o.apiVersion == 'k8s.mariadb.com/v1alpha1' && o.kind == 'MariaDB'))
+{{- /*
+One carve-out per registered family, scoped to ITS roots exactly as the two
+above are: the family's operator may create objects controller-owned by the
+family's engine root -- and by a via kind the family flagged
+operatorCreatesChildren, because that operator materialises those children
+itself (Strimzi's cluster operator runs the StrimziPodSet controller and
+creates broker pods; MariaDB's come from the exempt statefulset-controller
+and need nothing here). The flag is refused on core/apps/batch kinds: their
+children are always kube-system's, and admitting the operator under ANY
+Deployment or ReplicaSet in the namespace would make a compromised operator
+a confused deputy for a platform-owned workload. Nothing else.
+*/}}
+{{- range .Values.serviceFamilies.extra }}
+    - name: ownerFamily_{{ .name | replace "-" "_" }}
+      expression: >-
+        object.metadata.?ownerReferences.orValue([]).all(o,
+          !({{ include "kube-dc.identity.trustedEdge" $ }}) ||
+          (false
+{{- range .engineRoots }}
+            || (o.apiVersion == '{{ if .group }}{{ .group }}/{{ end }}{{ .version }}' && o.kind == '{{ .kind }}')
+{{- range .via }}
+{{- if .operatorCreatesChildren }}
+{{- if has .group (list "" "apps" "batch") }}{{ fail (printf "serviceFamilies.extra: via kind %s/%s %s cannot set operatorCreatesChildren (its children are kube-system's; the carve-out would widen to platform-owned workloads)" .group .version .kind) }}{{ end }}
+            || (o.apiVersion == '{{ if .group }}{{ .group }}/{{ end }}{{ .version }}' && o.kind == '{{ .kind }}')
+{{- end }}
+{{- end }}
+{{- end }}))
+{{- end }}
+    # mariadb-operator manages its instance PODS THROUGH a StatefulSet, so a
+    # real mariadb pod's controller owner is that StatefulSet (a trusted edge),
+    # NOT the MariaDB CR — ownerMariadb above never matches one. That gap
+    # denied the operator's OWN label reconcile on both the owner-forgery and
+    # infra-attachment rules (verified live 2026-08-11 by server-dry-run
+    # impersonating the operator SA: with infra-attachment present the
+    # annotation rule fires; remove it and the owner rule fires underneath).
+    # Live impact: tenant DB status flapped ~4s on cloud (etcd write churn),
+    # stuck 18d on a customer cluster. The instance pod legitimately carries
+    # the webhook-set infra-attachment (its OpenBao/backup traffic needs mgmt
+    # reach). This identifies a genuine mariadb instance pod by the operator's
+    # own labels AND its StatefulSet controller edge — paired with the
+    # requester-SA gate in the two carve-outs below, it scopes the exception to
+    # the operator acting on its OWN pods, exactly as ownerCnpg scopes CNPG.
+    # A tenant cannot reach it (not the operator SA) nor forge the signature
+    # onto a foreign privileged pod (relabeling one is itself an UPDATE this
+    # policy governs, and that pod lacks the mariadb name label).
+    - name: podMariadbInstance
+      expression: >-
+        ('app.kubernetes.io/name' in variables.labels && variables.labels['app.kubernetes.io/name'] == 'mariadb')
+          && 'k8s.mariadb.com/role' in variables.labels
+          && object.metadata.?ownerReferences.orValue([]).exists(o,
+               o.?controller.orValue(false) && o.apiVersion == 'apps/v1' && o.kind == 'StatefulSet')
+    # The single, fully-gated mariadb-operator carve-out used by BOTH rules
+    # below. Bounded to a bare-Pod UPDATE (codex 2026-08-11 round-3): the
+    # operator ONLY ever PATCHES existing instance pods (the exempt
+    # statefulset-controller CREATEs them), so restricting to
+    # operation==UPDATE + resource==pods + main resource costs the operator
+    # nothing while closing two escalation paths a COMPROMISED operator would
+    # otherwise gain — (a) CREATE-minting a privileged pod by stamping the
+    # signature + a forged real-UID controller ref to a MariaDB StatefulSet so
+    # the webhook classifies it, and (b) the label-from-template /
+    # owner-from-outer-object shape mismatch on Deployment/Job/CronJob. A
+    # non-operator can never reach this (reqUser gate), so it does not widen
+    # the deny set for any tenant request.
+    - name: mariadbOperatorOwnPodUpdate
+      # request.subResource is OMITTED (not "") for a main-resource request, so
+      # a bare `request.subResource == ''` raises "no such key: subResource" —
+      # and under failurePolicy: Fail a CEL error DENIES. Verified live on
+      # k8s 1.35 (v0.5.72 shipped with the bare access and the operator patch
+      # errored→denied; harmless because reqUser short-circuits first for
+      # everyone else, but ineffective). Guard the access with has().
+      expression: >-
+        variables.reqUser == 'system:serviceaccount:mariadb-system:mariadb-operator'
+          && request.operation == 'UPDATE'
+          && request.resource.resource == 'pods'
+          && (!has(request.subResource) || request.subResource == '')
+          && object.metadata.?ownerReferences.orValue([]).all(o,
+               !({{ include "kube-dc.identity.trustedEdge" . }}) ||
+               (o.apiVersion == 'apps/v1' && o.kind == 'StatefulSet'))
+          && variables.podMariadbInstance
+    # CDI (KubeVirt's disk importer) creates bare importer/uploadserver/clone-source
+    # pods DIRECTLY as cdi-sa (not via a kube-system controller), so they hit this
+    # policy; the infra-attachment mutating webhook then stamps the marker and rule
+    # #2 below would deny every DataVolume import (worker-VM disks + tenant VM
+    # images). Scope the carve-out to the EXACT requester + a main-resource pod
+    # CREATE — NOT a matchConditions exemption, which would skip rules #3-#9 too and
+    # let a tenant abuse CDI as a confused deputy (CDI v1.65 honours a tenant-set
+    # cdi.kubevirt.io/storage.pod.serviceAccountName, so the pod can run under a
+    # project-local SA; rule #9 must stay active to block a reserved one).
+    - name: cdiWorkerPodCreate
+      expression: >-
+        variables.reqUser == 'system:serviceaccount:cdi:cdi-sa'
+          && request.operation == 'CREATE'
+          && request.resource.group == ''
+          && request.resource.resource == 'pods'
+          && (!has(request.subResource) || request.subResource == '')
+    # cert-manager creates a bare cm-acme-http-solver-* pod per HTTP-01 Challenge in
+    # the project namespace (same webhook-stamp -> rule #2 deny). Scope to the exact
+    # requester + a solver pod CREATE identified by the http01-solver label AND a
+    # controller ownerReference to an acme Challenge, so a tenant cannot reuse the
+    # carve-out for a non-solver pod. Rules #3-#9 stay active.
+    - name: certManagerHTTP01PodCreate
+      expression: >-
+        variables.reqUser == 'system:serviceaccount:cert-manager:cert-manager'
+          && request.operation == 'CREATE'
+          && request.resource.group == ''
+          && request.resource.resource == 'pods'
+          && (!has(request.subResource) || request.subResource == '')
+          && 'acme.cert-manager.io/http01-solver' in variables.labels
+          && variables.labels['acme.cert-manager.io/http01-solver'] == 'true'
+          && object.metadata.?ownerReferences.orValue([]).exists(o,
+               o.?controller.orValue(false)
+                 && o.apiVersion == 'acme.cert-manager.io/v1'
+                 && o.kind == 'Challenge')
   validations:
     # The requirement declaration is ONE key to guard, which is why it is the
     # direction of travel: components declare what they need instead of the
@@ -92,15 +316,79 @@ spec:
     # owned by a real CNPG Cluster, need the structural fix described in
     # docs/internal/, not another label rule.)
     - expression: >-
-        !('network.kube-dc.com/requires-role' in variables.annotations)
+        variables.cnpgPoolerRequirement
+          || !('network.kube-dc.com/requires-role' in variables.annotations)
           || variables.annotations['network.kube-dc.com/requires-role'] == ''
       message: "annotation network.kube-dc.com/requires-role is reserved for platform components; it declares a privileged network role."
-    # CNPG operator creates instance pods directly under its own SA; the webhook
-    # already sets this marker on them. Carve out ONLY that exact SA (codex 2026-08-10);
-    # a blanket namespace exclusion would let the MariaDB operator be a confused deputy.
+    # Both engine operators legitimately manage pods carrying this webhook-set
+    # marker. Carve out ONLY each exact SA acting on ITS OWN pods (codex
+    # 2026-08-10 / 2026-08-11) — never a blanket namespace exclusion, which
+    # would make either operator a confused deputy for the other's roots:
+    #   - CNPG owns its instance pods DIRECTLY (ownerCnpg).
+    #   - mariadb-operator owns them via a StatefulSet (podMariadbInstance).
+    # In a namespace the infra-attachment mutator serves (its label), the
+    # mutator has already run on this very request -- it is fail-closed
+    # there -- and either stamped the annotation itself or verified a
+    # pre-set value against the required managed state and refused a
+    # mismatch. Refusing the annotation here again refused every pod a
+    # tenant creates directly in a dual-homed project (finding 11 of the
+    # 2026-09 managed-services review). The carve-out exists only when the
+    # mutator is deployed, so a namespace label without the webhook behind it
+    # opens nothing.
     - expression: >-
-        (has(request.userInfo) && has(request.userInfo.username) && request.userInfo.username == 'system:serviceaccount:cnpg-system:cnpg-cloudnative-pg') || !('network.kube-dc.com/infra-attachment' in variables.annotations)
+        variables.cdiWorkerPodCreate
+        || variables.certManagerHTTP01PodCreate
+        || (variables.reqUser == 'system:serviceaccount:cnpg-system:cnpg-cloudnative-pg')
+        || variables.mariadbOperatorOwnPodUpdate
+{{- if .Values.manager.infraAttachment.enabled }}
+        || (has(namespaceObject.metadata.labels)
+            && 'network.kube-dc.com/infra-attachment' in namespaceObject.metadata.labels
+            && namespaceObject.metadata.labels['network.kube-dc.com/infra-attachment'] == 'enabled')
+{{- end }}
+        || !('network.kube-dc.com/infra-attachment' in variables.annotations)
       message: "annotation network.kube-dc.com/infra-attachment is set by the platform webhook and cannot be pre-declared."
+    # OWNER-REFERENCE FORGERY (codex 2026-08-10, hardened round-5). The label
+    # clauses above cover the classifier's LABEL branches; this seals its OWNER
+    # branches (pod_role.go). Those grant control-plane (etcd 2379) / datastore /
+    # management-api-client by walking a pod/Job controller ownerReference chain
+    # to a trusted root and matching each link BY UID. A UID proves the parent
+    # EXISTS, not who created the child: a project admin (who holds `*` on `*` in
+    # their own namespace) can read a real parent's UID and create a Job or Pod
+    # with a FORGED controller ownerReference to it — the exempt kube-system
+    # controllers then materialise the privileged pod. Notably Pod->Job->
+    # KdcDatabase (managed-DB init) is reachable under the SHIPPED admin Role:
+    # Jobs are creatable and KdcDatabases readable, and the init-db identifying
+    # labels sit on the JOB, not its pod template, so no label clause catches it.
+    #
+    # variables.ownerTrusted enumerates EVERY trusted edge by exact GVK, so this
+    # denies any non-exempt requester whose object carries a controller edge to
+    # one — structurally, independent of the label clauses. The only legitimate
+    # creators of such children are the kube-system controllers (whole policy
+    # exempt via matchConditions; the real db-manager init-db Job included, since
+    # db-manager runs in the exempt `kube-dc` namespace) and the two engine
+    # operators, each carved out to its OWN engine CR (ownerCnpg / ownerMariadb).
+    #
+    # KNOWN INTERACTION — Velero restore. A platform Velero restoring controller-
+    # owned pods/ReplicaSets INTO a project namespace runs as the velero SA (not
+    # exempt) and would be denied here. That is the workflow docs/cloud/backups-
+    # snapshots.md explicitly forbids ("No Project-wide Velero workflow"), and the
+    # binding only matches project namespaces, so it never touches Velero's own
+    # namespace. If a cluster ever supports project-scoped restore, carve out the
+    # exact SA HERE (e.g. `|| variables.reqUser == 'system:serviceaccount:velero:
+    # velero'`) — only after confirming tenants cannot create Restores or supply
+    # untrusted archives (else Velero becomes a confused deputy).
+    - expression: >-
+        !variables.ownerTrusted
+        || (variables.reqUser == 'system:serviceaccount:cnpg-system:cnpg-cloudnative-pg' && variables.ownerCnpg)
+        || (variables.reqUser == 'system:serviceaccount:mariadb-system:mariadb-operator' && variables.ownerMariadb)
+        || variables.mariadbOperatorOwnPodUpdate
+{{- range .Values.serviceFamilies.extra }}
+{{- $var := printf "ownerFamily_%s" (.name | replace "-" "_") }}
+{{- range .operatorServiceAccounts }}
+        || (variables.reqUser == '{{ . }}' && variables.{{ $var }})
+{{- end }}
+{{- end }}
+      message: "an ownerReference to a platform-controlled parent (a controller reference to a Deployment/ReplicaSet/StatefulSet, Job/CronJob, TenantControlPlane, KdcCluster/KdcClusterDatastore or KdcDatabase; any reference to a managed engine such as a CNPG Cluster, MariaDB or a registered family's engine kinds) is reserved for platform controllers; a project identity cannot forge one to earn a privileged network role."
     # The clauses below mirror the classifier's label-based branches.
     - expression: >-
         !('kamaji.clastix.io/name' in variables.labels)

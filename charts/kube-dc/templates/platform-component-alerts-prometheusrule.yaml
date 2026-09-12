@@ -44,8 +44,12 @@ spec:
           for: 15m
           labels:
             severity: critical
+            service: kube-dc-managed-k8s
+            owner: control-plane
             kube-dc.com/runbook: managed-k8s-troubleshooting.md
           annotations:
+            dashboard_uid: kube-dc-managed-kubernetes
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/managed-k8s-node-health-and-cleanup.md
             summary: "Platform component {{ "{{ $labels.deployment }}" }} is down in {{ "{{ $labels.namespace }}" }}"
             description: |
               {{ "{{ $labels.deployment }}" }} has had no available replica for 15
@@ -73,8 +77,12 @@ spec:
           for: 5m
           labels:
             severity: warning
+            service: kube-dc-managed-k8s
+            owner: control-plane
             kube-dc.com/runbook: managed-k8s-troubleshooting.md
           annotations:
+            dashboard_uid: kube-dc-managed-kubernetes
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/managed-k8s-node-health-and-cleanup.md
             summary: "Platform component {{ "{{ $labels.pod }}" }} is crash-looping"
             description: |
               {{ "{{ $labels.pod }}" }} in {{ "{{ $labels.namespace }}" }} restarted more
@@ -91,8 +99,12 @@ spec:
           for: 15m
           labels:
             severity: critical
+            service: kube-dc-managed-k8s
+            owner: control-plane
             kube-dc.com/runbook: managed-k8s-troubleshooting.md
           annotations:
+            dashboard_uid: kube-dc-managed-kubernetes
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/managed-k8s-node-health-and-cleanup.md
             summary: "Tenant etcd {{ "{{ $labels.statefulset }}" }} is degraded"
             description: |
               {{ "{{ $labels.statefulset }}" }} in {{ "{{ $labels.namespace }}" }} has fewer

@@ -1,0 +1,18 @@
+{{- if .Values.routedNetwork.enabled }}
+# Organization administrators receive this role through one controller-managed
+# binding per organization. Writes remain namespaced in the Project admin Role;
+# the fail-closed attachment webhook validates organization ownership.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-dc:routednetwork-tenant
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["kube-dc.com"]
+    resources: ["routednetworkallocations"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["kube-dc.com"]
+    resources: ["projectrouteattachments"]
+    verbs: ["list"]
+{{- end }}

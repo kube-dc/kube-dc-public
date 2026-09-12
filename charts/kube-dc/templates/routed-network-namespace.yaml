@@ -1,0 +1,14 @@
+{{- if .Values.routedNetwork.enabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.routedNetwork.namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    network.kube-dc.com/routed-network-platform: "true"
+    # FRR needs NET_ADMIN/NET_BIND_SERVICE/NET_RAW/SYS_ADMIN for routing plus
+    # SETUID/SETGID for its privilege drop. It is confined to this namespace.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+{{- end }}

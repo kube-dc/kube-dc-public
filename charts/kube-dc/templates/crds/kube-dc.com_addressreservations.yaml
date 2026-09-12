@@ -1,0 +1,360 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    helm.sh/resource-policy: keep
+    controller-gen.kubebuilder.io/version: v0.16.4
+  name: addressreservations.kube-dc.com
+spec:
+  group: kube-dc.com
+  names:
+    kind: AddressReservation
+    listKind: AddressReservationList
+    plural: addressreservations
+    shortNames:
+    - addrres
+    singular: addressreservation
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.project
+      name: Project
+      type: string
+    - jsonPath: .spec.purpose
+      name: Purpose
+      type: string
+    - jsonPath: .status.range
+      name: Range
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: 'AddressReservationSpec: everything but disposition is immutable.'
+            properties:
+              addressSpace:
+                default: ProjectSubnet
+                description: |-
+                  AddressSpace the reservation allocates from:
+                  ProjectSubnet — a range of the project's kube-ovn subnet, fenced out of
+                  IPAM (the original mode); VPCVIPPool — a range of the dedicated
+                  out-of-subnet VIP pool of the project's VPC, realised as OVN LB VIPs
+                  (no fencing, no acknowledgement: the arena's claims are the ledger).
+                enum:
+                - ProjectSubnet
+                - VPCVIPPool
+                type: string
+              disposition:
+                default: Auto
+                description: AddressReservationDisposition is the operator's decision.
+                enum:
+                - Auto
+                - Hold
+                - Release
+                type: string
+              owner:
+                description: |-
+                  AddressReservationOwner is the consumer of the range (a KdcCluster, a
+                  Project for an arena, or nothing for a legacy VIP).
+                properties:
+                  apiVersion:
+                    description: APIVersion of the owner (e.g. k8s.kube-dc.com/v1alpha1
+                      for a KdcCluster).
+                    maxLength: 253
+                    type: string
+                  kind:
+                    maxLength: 63
+                    type: string
+                  name:
+                    maxLength: 253
+                    type: string
+                  namespace:
+                    maxLength: 63
+                    type: string
+                  uid:
+                    maxLength: 63
+                    type: string
+                type: object
+              project:
+                description: |-
+                  Project is the logical project identity "<org-namespace>/<name>". The
+                  subnet is derived ("<org-namespace>-<name>-default").
+                maxLength: 253
+                minLength: 1
+                type: string
+              purpose:
+                description: |-
+                  Purpose: Arena (headroom reserved for a project's clusters), ClusterBlock
+                  (delegated to one cluster's LoadBalancer pool), Legacy (an address a tenant
+                  already announces; imported so it is owned and audited).
+                enum:
+                - Arena
+                - ClusterBlock
+                - Legacy
+                type: string
+              range:
+                description: 'Range: an explicit range (legacy imports, operator-chosen
+                  blocks).'
+                properties:
+                  start:
+                    maxLength: 15
+                    pattern: ^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$
+                    type: string
+                  stop:
+                    maxLength: 15
+                    pattern: ^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$
+                    type: string
+                required:
+                - start
+                - stop
+                type: object
+              request:
+                description: 'Request: how many usable addresses; the controller chooses
+                  the block.'
+                properties:
+                  usable:
+                    format: int32
+                    maximum: 4096
+                    minimum: 1
+                    type: integer
+                required:
+                - usable
+                type: object
+            required:
+            - project
+            - purpose
+            type: object
+            x-kubernetes-validations:
+            - message: project and purpose are immutable
+              rule: self.project == oldSelf.project && self.purpose == oldSelf.purpose
+            - message: addressSpace is immutable
+              rule: '(has(oldSelf.addressSpace) ? oldSelf.addressSpace : ''ProjectSubnet'')
+                == (has(self.addressSpace) ? self.addressSpace : ''ProjectSubnet'')'
+            - message: request is immutable
+              rule: has(self.request) == has(oldSelf.request) && (!has(self.request)
+                || self.request.usable == oldSelf.request.usable)
+            - message: range is immutable
+              rule: has(self.range) == has(oldSelf.range) && (!has(self.range) ||
+                (self.range.start == oldSelf.range.start && self.range.stop == oldSelf.range.stop))
+            - message: exactly one of request or range must be set
+              rule: has(self.request) != has(self.range)
+            - message: owner is immutable once set (bound exactly once, as a complete
+                tuple)
+              rule: '!has(oldSelf.owner) || (has(self.owner) && self.owner == oldSelf.owner)'
+            - message: 'owner must be a complete, non-empty tuple: apiVersion, kind,
+                namespace, name, uid'
+              rule: '!has(self.owner) || (has(self.owner.apiVersion) && size(self.owner.apiVersion)
+                > 0 && has(self.owner.kind) && size(self.owner.kind) > 0 && has(self.owner.__namespace__)
+                && size(self.owner.__namespace__) > 0 && has(self.owner.name) && size(self.owner.name)
+                > 0 && has(self.owner.uid) && size(self.owner.uid) > 0)'
+          status:
+            properties:
+              capacity:
+                description: Capacity is the subnet budget this fence was admitted
+                  against.
+                properties:
+                  allocatableAfter:
+                    format: int64
+                    type: integer
+                  allocatableBefore:
+                    description: |-
+                      AllocatableBefore / AllocatableAfter are capacity remaining in Unit before
+                      and after this reservation.
+                    format: int64
+                    type: integer
+                  floor:
+                    description: 'Floor is the headroom the guard insists on keeping:
+                      max(32, 12.5 %).'
+                    format: int64
+                    type: integer
+                  unit:
+                    description: |-
+                      Unit says what the capacity counters measure. ProjectSubnet uses Addresses;
+                      VPCVIPPool uses ClaimSlots because AddressArena.spec.claims MaxItems, not
+                      address count, is the pool-mode ceiling.
+                    enum:
+                    - Addresses
+                    - ClaimSlots
+                    type: string
+                  usableTotal:
+                    description: UsableTotal is the total capacity in Unit (usable
+                      addresses or claim slots).
+                    format: int64
+                    type: integer
+                type: object
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              endOffset:
+                format: int64
+                type: integer
+              fence:
+                description: FenceStatus records the acknowledgement protocol.
+                properties:
+                  acknowledgedAt:
+                    format: date-time
+                    type: string
+                  attempts:
+                    description: Attempts counts fence attempts (candidates) for this
+                      reservation.
+                    format: int32
+                    type: integer
+                  consistentReads:
+                    description: |-
+                      ConsistentReads counts consecutive uncached Subnet reads (≥30 s apart)
+                      on which kube-ovn's counters satisfied available + using + excluded =
+                      usable with the fence in the spec. Two are required.
+                    format: int32
+                    type: integer
+                  delegatableAt:
+                    format: date-time
+                    type: string
+                  expectedFree:
+                    description: |-
+                      ExpectedFree is how many addresses of the range were allocatable before
+                      the fence — the drop kube-ovn's available count must show.
+                    format: int32
+                    type: integer
+                  lastCheckAt:
+                    format: date-time
+                    type: string
+                  settleChecks:
+                    description: |-
+                      SettleChecks counts holder re-checks after Ready (≥1 min apart) that
+                      found nothing inside the range. kube-ovn allocates in memory before it
+                      writes the IP object, so a pre-fence allocation can surface late; the
+                      range is Delegatable (condition) only after three clean checks.
+                    format: int32
+                    type: integer
+                  writtenAt:
+                    description: WrittenAt is when the excludeIps range was written.
+                    format: date-time
+                    type: string
+                type: object
+              message:
+                type: string
+              observedCIDR:
+                description: |-
+                  ObservedCIDR / ObservedGateway bind the offsets to a geometry; the
+                  reservation is invalidated if the subnet changes them under the same UID.
+                type: string
+              observedGateway:
+                type: string
+              observedSubnetUID:
+                type: string
+              observedVPC:
+                description: |-
+                  ObservedVPC binds the reservation to the VPC the subnet belonged to when it
+                  was made; a VPC change invalidates it like a geometry change.
+                maxLength: 253
+                type: string
+              phase:
+                type: string
+              quarantinedRanges:
+                description: |-
+                  QuarantinedRanges lists ranges that were fenced but contaminated; they
+                  stay excluded.
+                items:
+                  type: string
+                maxItems: 16
+                type: array
+              range:
+                description: Range is the chosen/explicit range as "start-stop".
+                type: string
+              rejectedCandidates:
+                description: RejectedCandidates lists ranges found occupied at preflight
+                  (never fenced).
+                items:
+                  type: string
+                maxItems: 16
+                type: array
+              startOffset:
+                description: StartOffset/EndOffset mirror the arena claim.
+                format: int64
+                type: integer
+              subnetName:
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

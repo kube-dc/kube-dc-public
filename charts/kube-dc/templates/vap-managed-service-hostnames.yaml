@@ -1,0 +1,66 @@
+{{- if .Values.projectPolicies.protectManagedServices.enabled }}
+# Reserve the UID-derived hostname prefix BEFORE services can publish a route.
+# Object markers protect existing routes, not a competing route created first.
+# No namespace filter: an unrelated namespace must not claim the same SNI on
+# a Gateway whose allowedRoutes includes all namespaces. Ordinary tenant hosts
+# and wildcard routes remain allowed; the managed exact hostname is more specific.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: reserve-managed-service-hostnames
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["gateway.networking.k8s.io"]
+        apiVersions: ["*"]
+        resources: ["tlsroutes", "httproutes", "grpcroutes"]
+        operations: ["CREATE", "UPDATE"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["services"]
+        operations: ["CREATE", "UPDATE"]
+      - apiGroups: ["networking.k8s.io"]
+        apiVersions: ["*"]
+        resources: ["ingresses"]
+        operations: ["CREATE", "UPDATE"]
+  matchConditions:
+    # Only the services runner originates managed hostnames. Core's Service
+    # route controller needs no exemption: its tenant inputs are gated below.
+    - name: exclude-services-runner-and-admins
+      expression: >-
+        !('system:masters' in request.userInfo.groups) &&
+        request.userInfo.username != {{ printf "system:serviceaccount:%s:kube-dc-service-runner" (.Values.projectPolicies.protectManagedServices.runnerNamespace | default "kube-dc-service-runner") | toJson }}
+  variables:
+    - name: annotations
+      expression: "object.metadata.?annotations.orValue({})"
+  validations:
+    - expression: >-
+        request.resource.group != 'gateway.networking.k8s.io' ||
+        dyn(object.spec).?hostnames.orValue([]).all(h, !h.matches('(?i)^kdc-managed-'))
+      message: "kdc-managed- hostnames are reserved for UID-bound managed-service routes"
+      reason: Forbidden
+    - expression: >-
+        request.resource.group != '' ||
+        ((!('service.nlb.kube-dc.com/route-hostname' in variables.annotations) ||
+          !variables.annotations['service.nlb.kube-dc.com/route-hostname'].matches('(?i)^kdc-managed-')) &&
+         (!('service.nlb.kube-dc.com/expose-route' in variables.annotations) ||
+          variables.annotations['service.nlb.kube-dc.com/expose-route'] == '' ||
+          !object.metadata.name.startsWith('kdc-managed-')))
+      message: "Service-generated routes cannot claim the reserved managed-service hostname prefix"
+      reason: Forbidden
+    - expression: >-
+        request.resource.group != 'networking.k8s.io' ||
+        (dyn(object.spec).?rules.orValue([]).all(r, !r.?host.orValue('').matches('(?i)^kdc-managed-')) &&
+         dyn(object.spec).?tls.orValue([]).all(t, t.?hosts.orValue([]).all(h, !h.matches('(?i)^kdc-managed-'))))
+      message: "Ingress cannot claim the reserved managed-service hostname prefix"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: reserve-managed-service-hostnames
+spec:
+  policyName: reserve-managed-service-hostnames
+  validationActions: {{ toJson .Values.projectPolicies.protectManagedServices.validationActions }}
+{{- end }}

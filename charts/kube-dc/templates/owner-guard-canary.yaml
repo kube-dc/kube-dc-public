@@ -1,0 +1,124 @@
+# =============================================================================
+# The owner-guard canary: a platform-owned namespace that carries the project
+# label the policy bindings select on, where the manager checks, every minute,
+# that the owner-forgery guard and the marker policy refuse a tenant identity
+# (internal/infraattachment/guard_epoch.go). The probes are server-side dry
+# runs by a fixed synthetic user bound to a Role here that may create
+# Deployments; no tenant can fill this namespace's quota, squat the probe's
+# name or install a policy in it, so no tenant can withhold non-controller
+# owner edges from everyone else. Rendered whenever the guard is, knob or no
+# knob: a Namespace that came and went with manager.nonControllerOwnerEdges
+# would be Terminating when the next upgrade wanted it back. The synthetic
+# user is never issued by any authentication provider and cannot be
+# impersonated by tenants (project roles carry no impersonate); the policy
+# below refuses it, and any other non-service-account identity, every write
+# here that is not a dry run.
+# =============================================================================
+{{- if .Values.projectPolicies.reservePlatformIdentities.enabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kube-dc-owner-guard-canary
+  labels:
+    kube-dc.com/project: ""
+    kube-dc.com/owner-guard-canary: "true"
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+  annotations:
+    kube-dc.com/description: "owner-guard canary: the manager's admission probes run here as a synthetic tenant (server-side dry runs, nothing is created)"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: owner-guard-probe
+  namespace: kube-dc-owner-guard-canary
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["create", "get", "update"]
+---
+# The UPDATE probe's target: an unmarked, zero-replica Deployment the probe
+# user tries (dry run) to stamp with a marker key -- the UPDATE path of
+# marker introduction, refused by the marker protection (the marker policy
+# or the object-protection policy, whichever the apiserver names first).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: owner-guard-probe-target
+  namespace: kube-dc-owner-guard-canary
+  labels:
+    app: owner-guard-probe-target
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: owner-guard-probe-target
+  template:
+    metadata:
+      labels:
+        app: owner-guard-probe-target
+    spec:
+      containers:
+        - name: target
+          image: "{{ .Values.manager.image.repository }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}"
+          command: ["/bin/true"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: owner-guard-probe
+  namespace: kube-dc-owner-guard-canary
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: owner-guard-probe
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: owner-guard-probe@kube-dc.internal
+---
+# Nothing but dry runs from users in the canary: service accounts (Flux,
+# HNC, the platform) may write here; a human or synthetic user may only
+# dry-run, so even an identity that somehow obtained the probe user's name
+# could not create a real, unmetered workload.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: owner-guard-canary-dry-run-only
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      # Namespaced ONLY: a namespaceSelector never excludes cluster-scoped
+      # objects, so without this scope every human admin's real write to a
+      # ClusterRole, CRD or Node would be refused cluster-wide (codex round
+      # 114). Every operation (CONNECT too: no exec into a canary pod) and
+      # every resource and subresource inside the canary.
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: ["*"]
+        resources: ["*/*"]
+        scope: Namespaced
+  matchConditions:
+    - name: not-a-service-account
+      expression: "!request.userInfo.username.startsWith('system:serviceaccount:')"
+  validations:
+    - expression: "request.dryRun"
+      message: "the owner-guard canary accepts only server-side dry runs from user identities"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: owner-guard-canary-dry-run-only
+spec:
+  policyName: owner-guard-canary-dry-run-only
+  validationActions: ["Deny"]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/owner-guard-canary: "true"
+{{- end }}

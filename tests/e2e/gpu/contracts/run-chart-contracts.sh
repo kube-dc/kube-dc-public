@@ -68,7 +68,7 @@ require_env_value() {
 expect_render_failure() {
   local label=$1
   shift
-  if helm template gpu-contract "${chart}" -f "${fixture}" "$@" >"${tmp_dir}/${label}.out" 2>"${tmp_dir}/${label}.err"; then
+  if helm template --set-string backend.gateway.hostname=backend.example.test gpu-contract "${chart}" -f "${fixture}" "$@" >"${tmp_dir}/${label}.out" 2>"${tmp_dir}/${label}.err"; then
     echo "invalid GPU fixture rendered successfully: ${label}" >&2
     exit 1
   fi
@@ -77,7 +77,7 @@ expect_render_failure() {
 helm lint "${chart}"
 require_present "${billing_plans_template}" '(not (hasKey $addon "selfService"))'
 require_absent "${billing_plans_template}" 'get $addon "selfService" | default true'
-helm template gpu-off "${chart}" >"${tmp_dir}/off.yaml"
+helm template --set-string backend.gateway.hostname=backend.example.test gpu-off "${chart}" >"${tmp_dir}/off.yaml"
 node "${script_dir}/check-vap-match-condition-maps.js" "${tmp_dir}/off.yaml"
 require_present "${tmp_dir}/off.yaml" 'billing.kube-dc.com/plan-seed-migration: "gpu-v100-shared-8g-v3-disabled"'
 sku_block=$(grep -m1 -A4 -F -- 'gpu-v100-shared-8g:' "${tmp_dir}/off.yaml")
@@ -86,7 +86,7 @@ if [[ "${sku_block}" != *'disabled: true'* || "${sku_block}" != *'selfService: f
   exit 1
 fi
 
-helm template gpu-operator-only "${chart}" \
+helm template --set-string backend.gateway.hostname=backend.example.test gpu-operator-only "${chart}" \
   --set-string 'billing.plans.migration.version=gpu-v100-shared-8g-v4-operator-only' \
   --set 'billing.plans.migration.availabilityOverrides.gpu-v100-shared-8g.disabled=false' \
   --set 'billing.plans.migration.availabilityOverrides.gpu-v100-shared-8g.selfService=false' \
@@ -113,7 +113,7 @@ expect_render_failure unlisted-availability-override \
 require_absent "${tmp_dir}/off.yaml" 'dev-pool-gpu:'
 require_absent "${tmp_dir}/off.yaml" 'pro-pool-gpu:'
 require_absent "${tmp_dir}/off.yaml" 'scale-pool-gpu:'
-helm template gpu-plan-variants "${chart}" -f "${fixture}" \
+helm template --set-string backend.gateway.hostname=backend.example.test gpu-plan-variants "${chart}" -f "${fixture}" \
   --set 'gpu.profiles[0].billingEligible=true' \
   --set 'billing.plans.gpuVariants.enabled=true' \
   --set-string 'billing.provider=whmcs' \
@@ -195,16 +195,19 @@ require_present "${tmp_dir}/off.yaml" 'expr: absent(kube_dc_organization_quota_c
 require_present "${tmp_dir}/off.yaml" 'alert: KubeDcOrganizationQuotaReconcileErrors'
 require_present "${tmp_dir}/off.yaml" 'kube_dc_organization_quota_reconcile_total{result="error"}'
 require_absent "${tmp_dir}/off.yaml" 'alert: KubeDcGPUDRADiscoveryFailed'
-require_count "${tmp_dir}/off.yaml" 'service: kube-dc-control-plane' 3
-require_count "${tmp_dir}/off.yaml" 'owner: control-plane' 3
-require_count "${tmp_dir}/off.yaml" 'runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/shared-gpu-pilot-runbook.md' 3
+# Three quota alerts plus the three manager watchdog alerts share routing labels.
+helm template --set-string backend.gateway.hostname=backend.example.test gpu-off "${chart}" --show-only templates/manager-metrics.yaml >"${tmp_dir}/manager-metrics.yaml"
+require_count "${tmp_dir}/manager-metrics.yaml" 'service: kube-dc-control-plane' 6
+require_count "${tmp_dir}/manager-metrics.yaml" '            owner: control-plane' 6
+require_count "${tmp_dir}/manager-metrics.yaml" 'runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/shared-gpu-pilot-runbook.md' 3
 require_absent "${tmp_dir}/off.yaml" 'nonResourceURLs:'
 
-helm template metrics-off "${chart}" --set 'manager.metrics.enabled=false' >"${tmp_dir}/metrics-off.yaml"
+helm template --set-string backend.gateway.hostname=backend.example.test metrics-off "${chart}" --set 'manager.metrics.enabled=false' >"${tmp_dir}/metrics-off.yaml"
 require_absent "${tmp_dir}/metrics-off.yaml" 'name: metrics-off-kube-dc-manager-metrics'
-require_absent "${tmp_dir}/metrics-off.yaml" 'containerPort: 8443'
+helm template --set-string backend.gateway.hostname=backend.example.test metrics-off "${chart}" --set 'manager.metrics.enabled=false' --show-only templates/manager-deployment.yaml >"${tmp_dir}/manager-metrics-off.yaml"
+require_absent "${tmp_dir}/manager-metrics-off.yaml" 'containerPort: 8443'
 
-helm template metrics-rbac "${chart}" \
+helm template --set-string backend.gateway.hostname=backend.example.test metrics-rbac "${chart}" \
   --set 'manager.metrics.rbac.create=true' \
   --set 'manager.metrics.rbac.serviceAccounts[0].namespace=monitoring' \
   --set 'manager.metrics.rbac.serviceAccounts[0].name=metrics-scraper' \
@@ -218,9 +221,9 @@ expect_render_failure metrics-rbac-without-subject \
 expect_render_failure invalid-metrics-port \
   --set 'manager.metrics.service.port=0'
 
-helm template gpu-on "${chart}" -f "${fixture}" >"${tmp_dir}/on.yaml"
+helm template --set-string backend.gateway.hostname=backend.example.test gpu-on "${chart}" -f "${fixture}" >"${tmp_dir}/on.yaml"
 node "${script_dir}/check-vap-match-condition-maps.js" "${tmp_dir}/on.yaml"
-helm template gpu-contract "${chart}" -f "${fixture}" \
+helm template --set-string backend.gateway.hostname=backend.example.test gpu-contract "${chart}" -f "${fixture}" \
   --show-only templates/gpu-profiles-configmap.yaml \
   | sed -e '/^---$/d' -e '/^# Source:/d' -e '/helm.sh\/chart:/d' \
   >"${tmp_dir}/gpu-profiles-configmap.yaml"
@@ -242,12 +245,12 @@ require_present "${tmp_dir}/on.yaml" 'request.userInfo.username == "system:servi
 require_present "${tmp_dir}/on.yaml" "kind == 'VirtualMachineInstance'"
 require_present "${tmp_dir}/on.yaml" 'Ephemeral containers cannot be attached to GPU VM launcher Pods.'
 
-helm template gpu-custom-scheduler "${chart}" -f "${fixture}" \
+helm template --set-string backend.gateway.hostname=backend.example.test gpu-custom-scheduler "${chart}" -f "${fixture}" \
   --set-string 'gpu.hamiSchedulerName=hami-scheduler-v2' >"${tmp_dir}/custom-scheduler.yaml"
 require_env_value "${tmp_dir}/custom-scheduler.yaml" GPU_HAMI_SCHEDULER_NAME hami-scheduler-v2
 require_present "${tmp_dir}/custom-scheduler.yaml" 'object.spec.schedulerName == "hami-scheduler-v2"'
 
-helm template gpu-dra-fixed "${chart}" -f "${dra_fixture}" >"${tmp_dir}/dra-fixed.yaml"
+helm template --set-string backend.gateway.hostname=backend.example.test gpu-dra-fixed "${chart}" -f "${dra_fixture}" >"${tmp_dir}/dra-fixed.yaml"
 node "${script_dir}/check-vap-match-condition-maps.js" "${tmp_dir}/dra-fixed.yaml"
 require_present "${tmp_dir}/dra-fixed.yaml" 'alert: KubeDcGPUDRADiscoveryFailed'
 require_present "${tmp_dir}/dra-fixed.yaml" 'absent(kube_dc_gpu_dra_discovery_success)'
@@ -278,7 +281,7 @@ require_present "${tmp_dir}/dra-fixed.yaml" "object.spec.strategy.type == 'Recre
 require_present "${tmp_dir}/dra-fixed.yaml" '["nvidia.com/gpumem-percentage","nvidia.com/priority","nvidia.com/gpu"]'
 require_env_value "${tmp_dir}/dra-fixed.yaml" GPU_SHARED_CREATION_ENABLED false
 
-helm template gpu-dra-mapping-inactive "${chart}" -f "${dra_fixture}" \
+helm template --set-string backend.gateway.hostname=backend.example.test gpu-dra-mapping-inactive "${chart}" -f "${dra_fixture}" \
   --set-string 'gpu.profiles[0].allocationBackend=' >"${tmp_dir}/dra-mapping-inactive.yaml"
 require_absent "${tmp_dir}/dra-mapping-inactive.yaml" 'kind: DeviceClass'
 require_absent "${tmp_dir}/dra-mapping-inactive.yaml" 'name: protect-kube-dc-dra-resourceclaims'
@@ -286,7 +289,7 @@ require_absent "${tmp_dir}/dra-mapping-inactive.yaml" 'name: protect-kube-dc-dra
 # A DRA Pod SKU may intentionally reuse the same native resource name as a
 # KubeVirt passthrough SKU. The generic HAMi deny list must not then reject the
 # virt-launcher Pod before the VM-specific admission checks can authorize it.
-helm template gpu-dra-vm-shared-resource "${chart}" -f "${dra_fixture}" \
+helm template --set-string backend.gateway.hostname=backend.example.test gpu-dra-vm-shared-resource "${chart}" -f "${dra_fixture}" \
   --set 'gpu.profiles[1].id=nvidia-v100-passthrough' \
   --set 'gpu.profiles[1].displayName=NVIDIA V100 passthrough' \
   --set 'gpu.profiles[1].vendor=nvidia' \
@@ -305,12 +308,12 @@ require_present "${tmp_dir}/dra-vm-shared-resource.yaml" 'name: hasVMResources'
 require_present "${tmp_dir}/dra-vm-shared-resource.yaml" '["nvidia.com/gpumem-percentage","nvidia.com/priority"]'
 require_absent "${tmp_dir}/dra-vm-shared-resource.yaml" '["nvidia.com/gpumem-percentage","nvidia.com/priority","nvidia.com/gpu"]'
 
-if helm template gpu-dra-custom "${chart}" -f "${dra_fixture}" \
+if helm template --set-string backend.gateway.hostname=backend.example.test gpu-dra-custom "${chart}" -f "${dra_fixture}" \
   --set 'gpu.profiles[0].request.allowCustom=true' >"${tmp_dir}/dra-custom.out" 2>"${tmp_dir}/dra-custom.err"; then
   echo 'active DRA profile accepted custom tenant capacity' >&2
   exit 1
 fi
-if helm template gpu-dra-duplicate-class "${chart}" -f "${dra_fixture}" \
+if helm template --set-string backend.gateway.hostname=backend.example.test gpu-dra-duplicate-class "${chart}" -f "${dra_fixture}" \
   --set 'gpu.profiles[1].id=nvidia-a100-shared-8g' \
   --set 'gpu.profiles[1].displayName=A100' \
   --set 'gpu.profiles[1].enabled=true' \
@@ -332,7 +335,7 @@ if helm template gpu-dra-duplicate-class "${chart}" -f "${dra_fixture}" \
   echo 'two DRA SKUs accepted one DeviceClass/quota identity' >&2
   exit 1
 fi
-if helm template gpu-dra-overlap "${chart}" -f "${dra_fixture}" \
+if helm template --set-string backend.gateway.hostname=backend.example.test gpu-dra-overlap "${chart}" -f "${dra_fixture}" \
   --set 'gpu.profiles[1].id=nvidia-a100-shared-8g' \
   --set 'gpu.profiles[1].displayName=A100' \
   --set 'gpu.profiles[1].enabled=true' \
@@ -355,26 +358,26 @@ if helm template gpu-dra-overlap "${chart}" -f "${dra_fixture}" \
   exit 1
 fi
 
-helm template gpu-hami-only "${chart}" -f "${fixture}" \
+helm template --set-string backend.gateway.hostname=backend.example.test gpu-hami-only "${chart}" -f "${fixture}" \
   --set 'gpu.profiles[1].enabled=false' \
   --set-string 'gpu.kubevirtControllerUsername=' >"${tmp_dir}/hami-only.yaml"
 require_present "${tmp_dir}/hami-only.yaml" 'name: kube-dc-hami-gpu-pods'
 require_absent "${tmp_dir}/hami-only.yaml" 'name: hasVMResources'
 require_absent "${tmp_dir}/hami-only.yaml" 'Whole-GPU VM resources may only be requested by KubeVirt launcher Pods.'
 
-helm template gpu-dra-only "${chart}" -f "${dra_fixture}" >"${tmp_dir}/dra-only.yaml"
+helm template --set-string backend.gateway.hostname=backend.example.test gpu-dra-only "${chart}" -f "${dra_fixture}" >"${tmp_dir}/dra-only.yaml"
 require_present "${tmp_dir}/dra-only.yaml" 'name: kube-dc-hami-gpu-pods'
 require_present "${tmp_dir}/dra-only.yaml" \
   'object.metadata.labels["kube-dc.com/gpu-profile"] in ["nvidia-v100-hami"]'
 require_absent "${tmp_dir}/dra-only.yaml" \
   'Shared GPU requests must use equal requests/limits and the selected profile'
 
-helm template gpu-shared-create "${chart}" -f "${fixture}" \
+helm template --set-string backend.gateway.hostname=backend.example.test gpu-shared-create "${chart}" -f "${fixture}" \
   --set 'gpu.sharedCreation.enabled=true' >"${tmp_dir}/shared-create.yaml"
 require_env_value "${tmp_dir}/shared-create.yaml" GPU_SHARED_CREATION_ENABLED true
 require_env_value "${tmp_dir}/shared-create.yaml" GPU_VM_CREATION_ENABLED false
 
-helm template gpu-vm-create "${chart}" -f "${fixture}" \
+helm template --set-string backend.gateway.hostname=backend.example.test gpu-vm-create "${chart}" -f "${fixture}" \
   --set 'gpu.vmCreation.enabled=true' >"${tmp_dir}/vm-create.yaml"
 require_env_value "${tmp_dir}/vm-create.yaml" GPU_SHARED_CREATION_ENABLED false
 require_env_value "${tmp_dir}/vm-create.yaml" GPU_VM_CREATION_ENABLED true

@@ -1,0 +1,528 @@
+{{- /*
+Protection is a CONTRACT, not a single policy. These ValidatingAdmissionPolicies
+keep tenant identities off marked objects, but the rest of the boundary lives in
+the manager's webhooks: the reference gate (a tenant object aimed at a managed
+engine, its claims, its backups), the subresource gate (exec, proxy, portforward
+into managed pods), the token gate (a token for a managed identity), the connect
+gate, and the child mutator that marks what an engine operator derives -- WITHOUT
+which nothing carries the marker these policies key on, and they protect an empty
+set. An installation with protection "enabled" and the webhooks disabled is
+therefore not protected in any meaningful sense, and must not look protected.
+Release-boundary review 2026-09-05, F4.
+*/ -}}
+{{- if and .Values.projectPolicies.protectManagedServices.enabled (not .Values.manager.webhook.enabled) }}
+{{- fail "projectPolicies.protectManagedServices.enabled requires manager.webhook.enabled: the admission policies alone protect only direct writes to already-marked objects. Without the manager's webhooks nothing marks an engine operator's children, and the reference, subresource, token and connect gates are absent. Enable manager.webhook.enabled, or disable projectPolicies.protectManagedServices.enabled and understand that managed objects are then under tenant CRUD." }}
+{{- end }}
+{{- /*
+Enforcement, not observation: validationActions of ["Audit"] or ["Warn"] leave
+every refusal as a log line, which for in-project placement means the tenant
+still holds `*` on `*` over the platform's engine.
+*/ -}}
+{{- if and .Values.projectPolicies.protectManagedServices.enabled (not (has "Deny" .Values.projectPolicies.protectManagedServices.validationActions)) }}
+{{- fail "projectPolicies.protectManagedServices.validationActions must include \"Deny\": Audit/Warn record the violation and admit it, so managed objects stay under tenant CRUD. Use [\"Deny\"] (optionally with \"Audit\"), or disable the feature deliberately." }}
+{{- end }}
+# =============================================================================
+# ValidatingAdmissionPolicy: keep tenant identities off platform-managed
+# service objects placed inside project namespaces
+#
+# kube-dc-services runs a tenant's managed database INSIDE the project
+# namespace (in-project placement, the model db-manager uses). A project admin
+# holds `*` on `*` there, so without this policy they can delete the engine's
+# PVCs or Secrets — and deleted storage is not something reconciliation
+# recovers. Every object the platform manages carries
+# `services.kube-dc.com/managed-by`: the service runner stamps it on what it
+# applies, and the engine operator inherits it onto every child it creates
+# (CNPG `inheritedMetadata`), so pods, PVCs, Services and credential Secrets
+# are covered, not only the top-level CR.
+#
+# Who may still touch them: platform ServiceAccounts (the runner, the engine
+# operators, kube-dc, kube-system, and the rest of the list below), cluster
+# admins, nodes, the scheduler and controller-manager identities — and the
+# engine's own per-instance ServiceAccount: CNPG runs each instance under a
+# ServiceAccount named after its Cluster, in the project namespace, and the
+# instance manager writes the Cluster's and its Backups' status with it. That
+# last exemption is keyed on the object's `cnpg.io/cluster` label matching the
+# requester's ServiceAccount name and is limited to CNPG's own API group,
+# which is all its Role grants; a project identity may not impersonate it
+# (the project roles carry no impersonate verb).
+#
+# Closed residuals (each has its own gate):
+#   - a token for the per-instance ServiceAccount: the manager's
+#     managed-serviceaccount-token webhook.
+#   - pods/eviction and */scale: the manager's managed-subresource webhook;
+#     CNPG's clusters/scale is closed below.
+#   - a tenant pod mounting a managed claim or running as the engine's
+#     account: the manager's managed-pod-references webhook (decided on the
+#     pod, since tenant pods are created by kube-system controllers).
+#   - the marker labels themselves: the second policy in this file.
+#
+# Regression test against a live cluster: hack/test-vap-managed-services.sh
+#
+# Objects without the label — the tenant's own workloads, db-manager's
+# databases — are untouched. Namespaces without `kube-dc.com/project` are
+# untouched.
+# =============================================================================
+{{- /* .namespaces: ServiceAccount namespaces to exempt; .controlPlane / .nodes:
+       whether the control-plane identities and nodes are exempt. */}}
+{{- define "kube-dc.managedServicesPolicy.matchConditions" }}
+- name: exclude-platform-service-accounts
+  expression: >-
+    !has(request.userInfo) || !has(request.userInfo.username) ||
+    !([{{ range $i, $ns := .namespaces }}{{ if $i }},
+       {{ end }}'system:serviceaccount:{{ $ns }}:'{{ end }}].exists(prefix,
+         request.userInfo.username.startsWith(prefix)))
+{{- if .controlPlane }}
+- name: exclude-control-plane-identities
+  expression: >-
+    !has(request.userInfo) || !has(request.userInfo.username) ||
+    !(request.userInfo.username.startsWith('system:kube-') ||
+      request.userInfo.username == 'system:apiserver')
+{{- end }}
+- name: exclude-cluster-admins
+  expression: >-
+    !has(request.userInfo) || !has(request.userInfo.groups) ||
+    !('system:masters' in request.userInfo.groups)
+{{- if .nodes }}
+- name: exclude-node-users
+  expression: >-
+    !has(request.userInfo) || !has(request.userInfo.groups) ||
+    !('system:nodes' in request.userInfo.groups)
+{{- end }}
+{{- end }}
+{{- $p := .Values.projectPolicies.protectManagedServices }}
+{{- $gatewayStatusSAs := list "system:serviceaccount:envoy-gateway-system:envoy-gateway" }}
+{{- if hasKey $p "gatewayStatusServiceAccounts" }}{{- $gatewayStatusSAs = $p.gatewayStatusServiceAccounts }}{{- end }}
+{{- if $p.enabled }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: protect-managed-services-in-projects
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    objectSelector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: Exists}
+    # PHASE 2 (chart v0.6.36): the status subresource of a CNPG Cluster is
+    # judged by the managed-cluster-status webhook alone (UID-verified
+    # instance provenance; shipped in v0.6.35 and observed on every target
+    # cluster before this exclusion). A policy cannot look the account or
+    # the pod up, and a name is something a tenant can pre-own.
+    excludeResourceRules:
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["*"]
+        operations: ["*"]
+        resources: ["clusters/status"]
+{{- if $p.poolerStatusJudgedByWebhook }}
+      # Enable only after all managers serve the dedicated fail-closed path.
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["*"]
+        operations: ["*"]
+        resources: ["poolers/status"]
+{{- end }}
+{{- include "kube-dc.serviceFamilies.validateInstanceWrites" $ }}
+{{- if $p.instanceWritesJudgedByWebhook }}
+    # PHASE 2 of the instance-write judge: the status of a registered
+    # family's operation objects, written by the family's in-project instance
+    # account, is judged by the managed-instance-status webhook alone (shipped
+    # in the previous chart and observed on every target cluster before this).
+{{- range (include "kube-dc.serviceFamilies.instanceStatusWrites" $ | fromJsonArray) }}
+      - apiGroups: [{{ .group | quote }}]
+        apiVersions: ["*"]
+        operations: ["*"]
+        resources: [{{ printf "%s/status" .resource | quote }}]
+{{- end }}
+{{- end }}
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["*/*"]   # every resource and every subresource
+  matchConditions:
+    {{- /* cert-manager and rook-ceph are not excluded wholesale: a tenant can
+           point a Certificate at a marked Secret, or name a bucket claim after
+           a marked Secret or ConfigMap, and have the exempt controller
+           overwrite it. They pass below only for objects they provably own. */}}
+    {{- include "kube-dc.managedServicesPolicy.matchConditions" (dict "namespaces" (without (include "kube-dc.managedServices.exemptNamespaces" $ | fromJsonArray) "cert-manager" "rook-ceph") "controlPlane" true "nodes" true) | nindent 4 }}
+{{- include "kube-dc.instanceWrites.handoff" $ | nindent 4 }}
+  variables:
+    # CREATE has no oldObject; DELETE has no object.
+    - name: oldLabels
+      expression: "request.operation != 'CREATE' && has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}"
+    - name: newLabels
+      expression: "request.operation != 'DELETE' && has(object.metadata.labels) ? object.metadata.labels : {}"
+    # Provenance: the child mutator stamps services.kube-dc.com/provenance on
+    # what cert-manager and rook-ceph CREATE, with their own name, and on
+    # nothing else (the key is reserved: a tenant cannot set it, another
+    # platform identity has it stripped). Each of them may write a marked
+    # object only when the EXISTING object carries its own provenance -- an
+    # annotation or an ownerReference a tenant can plant is not provenance.
+    - name: provenance
+      expression: "'services.kube-dc.com/provenance' in variables.oldLabels ? variables.oldLabels['services.kube-dc.com/provenance'] : ''"
+    # Their writes are gated only where they can reach a shared name: the
+    # core group (Secrets, ConfigMaps). On their own API groups (a marked
+    # Certificate or ObjectBucketClaim the platform rendered) they reconcile
+    # status and finalizers as usual. Neither controller ever changes a
+    # reserved label: a marked object stays marked exactly as it was.
+    - name: reservedKeys
+      expression: {{ include "kube-dc.reservedLabelKeysCEL" . }}
+    - name: reservedUnchanged
+      expression: >-
+        request.operation != 'UPDATE' ||
+        variables.reservedKeys.all(k,
+          (k in variables.oldLabels) == (k in variables.newLabels) &&
+          (!(k in variables.oldLabels) || variables.oldLabels[k] == variables.newLabels[k]))
+    - name: certManagerOwn
+      expression: >-
+        request.userInfo.username.startsWith('system:serviceaccount:cert-manager:') &&
+        (request.resource.group == 'cert-manager.io' ||
+         ((request.operation == 'CREATE' || variables.provenance == 'cert-manager') && variables.reservedUnchanged))
+    # CSI resizers update claims created by CNPG, not by Rook. Their status
+    # writes cannot satisfy the bucket-child provenance predicate. Scope this
+    # exception to exact controller identities and PVC STATUS; neither a
+    # tenant nor the bucket operator gains access to engine data or metadata.
+    - name: rookCSIStatus
+      expression: >-
+        request.userInfo.username in {{ $p.csiStatusServiceAccounts | default (list) | toJson }} &&
+        request.operation == 'UPDATE' && request.resource.group == '' &&
+        request.resource.resource == 'persistentvolumeclaims' && has(request.subResource) && request.subResource == 'status' &&
+        variables.reservedUnchanged && object.spec == oldObject.spec &&
+        object.metadata.?ownerReferences.orValue([]) == oldObject.metadata.?ownerReferences.orValue([]) &&
+        object.metadata.?finalizers.orValue([]) == oldObject.metadata.?finalizers.orValue([])
+    - name: rookOwn
+      expression: >-
+        request.userInfo.username.startsWith('system:serviceaccount:rook-ceph:') &&
+        (variables.rookCSIStatus || request.resource.group == 'objectbucket.io' ||
+         ((request.operation == 'CREATE' || variables.provenance == 'rook-ceph') && variables.reservedUnchanged))
+    # Native managed TLSRoutes are reconciled by Envoy, not by the runner.
+    # This is an exact-identity STATUS exception, not a namespace exemption.
+    # Keep all tenant/runner metadata and spec unchanged on that path.
+    - name: gatewayRouteStatus
+      expression: >-
+        request.userInfo.username in {{ $gatewayStatusSAs | toJson }} &&
+        request.operation == 'UPDATE' && request.resource.group == 'gateway.networking.k8s.io' &&
+        request.resource.resource == 'tlsroutes' && has(request.subResource) && request.subResource == 'status' &&
+        object.spec == oldObject.spec &&
+        variables.oldLabels == variables.newLabels &&
+        object.metadata.?annotations.orValue({}) == oldObject.metadata.?annotations.orValue({}) &&
+        object.metadata.?ownerReferences.orValue([]) == oldObject.metadata.?ownerReferences.orValue([]) &&
+        object.metadata.?finalizers.orValue([]) == oldObject.metadata.?finalizers.orValue([])
+  validations:
+    - expression: "!request.userInfo.username.startsWith('system:serviceaccount:cert-manager:') || variables.certManagerOwn"
+      message: "cert-manager may write only the Secrets it issued (carrying its provenance), without touching the platform's labels; this platform-managed object is not one"
+      reason: Forbidden
+    - expression: "!request.userInfo.username.startsWith('system:serviceaccount:rook-ceph:') || variables.rookOwn"
+      message: "the bucket provisioner may write only the objects it created (carrying its provenance), without touching the platform's labels; this platform-managed object is not one"
+      reason: Forbidden
+    # The engine's per-instance identity: CNPG runs each instance under a
+    # ServiceAccount named after its Cluster, in the same namespace, and the
+    # instance manager patches its pods and status with it. Authenticated
+    # against the EXISTING object -- a tenant cannot make an object claim a
+    # new owner by editing the label in the same request -- never on CREATE,
+    # and the label has to survive the update.
+    #
+    # The Cluster object ITSELF carries no cnpg.io/cluster label, so the
+    # label-keyed clause never matched the one write every instance must
+    # make: its own Cluster's status (system ID, current primary,
+    # readiness). Found on cloud 2026-09-06: every KdcDatabase created after
+    # db-manager began marking engines (v0.5.24, 2026-09-04) sat in
+    # Provisioning forever. The REAL judge of that write is the
+    # managed-cluster-status webhook (manager-webhook.yaml), which proves
+    # the instance's provenance by UID -- a policy cannot look the account
+    # or the pod up, and a name alone is something a tenant can pre-own
+    # (codex round 100). MIGRATION: phase 1 (chart v0.6.35) shipped the
+    # stanza and its handler with this policy UNCHANGED, because the policy
+    # and the webhook configuration are separate objects the API server
+    # caches independently and a relaxation observed before the stanza
+    # would admit the write unjudged (codex rounds 102-103); phase 2 (chart
+    # v0.6.36), once every target cluster ran the stanza, excluded
+    # clusters/status from this policy (matchConstraints.excludeResourceRules)
+    # and the webhook became the sole judge.
+    - expression: >-
+        variables.gatewayRouteStatus ||
+        (request.userInfo.username.startsWith('system:serviceaccount:cert-manager:') && variables.certManagerOwn) ||
+        (request.userInfo.username.startsWith('system:serviceaccount:rook-ceph:') && variables.rookOwn) ||
+        (request.operation != 'CREATE' &&
+        'cnpg.io/cluster' in variables.oldLabels &&
+        request.userInfo.username ==
+          'system:serviceaccount:' + request.namespace + ':' + variables.oldLabels['cnpg.io/cluster'] &&
+        request.resource.group == 'postgresql.cnpg.io' &&
+        (request.operation == 'DELETE' ||
+          ('cnpg.io/cluster' in variables.newLabels &&
+           variables.newLabels['cnpg.io/cluster'] == variables.oldLabels['cnpg.io/cluster'])))
+      messageExpression: >-
+        'this object is managed by the platform (services.kube-dc.com/managed-by); ' +
+        'change it through its ManagedService, not directly'
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: protect-managed-services-in-projects
+spec:
+  policyName: protect-managed-services-in-projects
+  validationActions: {{ toJson $p.validationActions }}
+---
+# The marker labels are the platform's to set. The policy above protects what
+# CARRIES services.kube-dc.com/managed-by, and the runner recognises its own
+# objects by services.kube-dc.com/instance-uid -- so a tenant who could stamp
+# those on an object of a deterministic name would have the runner adopt it,
+# and one who could put them on a pod template would have the ReplicaSet
+# controller (a platform identity) create marked pods on their behalf.
+# Objects: a marker may not appear or change under a tenant identity (it may
+# stay as it was). Pod templates of the workload kinds: no marker at all.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: protect-managed-service-markers-in-projects
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        # Subresources too (round 130): a status strategy does not universally
+        # reset labels (ReplicaSet's keeps them). Scale, eviction, token and
+        # binding objects carry no labels and pass. Namespaced only.
+        resources: ["*/*"]
+        scope: Namespaced
+  matchConditions:
+    {{- include "kube-dc.managedServicesPolicy.matchConditions" (dict "namespaces" (include "kube-dc.managedServices.exemptNamespaces" $ | fromJsonArray) "controlPlane" true "nodes" true) | nindent 4 }}
+{{- include "kube-dc.instanceWrites.handoff" $ | nindent 4 }}
+  variables:
+    # The marker, the instance identity the runner reads, and the engine
+    # operators' selector keys: a tenant pod carrying an engine's selector
+    # would be routed the engine's traffic by the EndpointSlice controller.
+    - name: markers
+      expression: {{ include "kube-dc.reservedLabelKeysCEL" . }}
+    - name: oldLabels
+      expression: "request.operation == 'UPDATE' && has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}"
+    - name: newLabels
+      expression: "has(object.metadata.labels) ? object.metadata.labels : {}"
+  validations:
+    # A marker is neither added, changed nor removed by a tenant identity: it
+    # must be present in both old and new with the same value, or in neither.
+    - expression: >-
+        !variables.markers.exists(m,
+          (m in variables.newLabels || m in variables.oldLabels) &&
+          !(m in variables.oldLabels && m in variables.newLabels && variables.oldLabels[m] == variables.newLabels[m]))
+      message: >-
+        the labels services.kube-dc.com/managed-by, services.kube-dc.com/instance,
+        services.kube-dc.com/instance-uid, cnpg.io/cluster and strimzi.io/cluster
+        mark platform-managed objects and are set, changed or removed only by the platform
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: protect-managed-service-markers-in-projects
+spec:
+  policyName: protect-managed-service-markers-in-projects
+  validationActions: {{ toJson $p.validationActions }}
+{{- /* absent means ON: a --reuse-values upgrade from a chart without the key must not disable the policy (Codex round 132); only an explicit false turns it off */}}
+{{- if or (not (hasKey $p "markerIntroduction")) $p.markerIntroduction }}
+---
+# A marker is stamped when the platform CREATES an object; it is never added to
+# an object that already exists. The instance-write judge and the pod
+# classifier prove provenance from the object as it is now (markers, owner
+# references, UIDs): an engine operator's ordinary create-or-update reconcile
+# would otherwise ADOPT an object a tenant pre-created under the name the
+# operator is about to use -- the same UID gains the markers and the owner
+# reference, and a token the tenant minted against it earlier passes every
+# check (round 129). So the transition unmarked -> marked on UPDATE is refused
+# for EVERY identity but cluster admins (system:masters: the audited, by-hand
+# migration of objects that predate markers). No service account is exempt --
+# not the runner either: a server-side apply over an object that already
+# exists is an UPDATE, and the runner's own ownership guard never applies
+# over a name it does not own by instance UID (round 130). An operator's
+# reconcile fails loudly on a squatted name instead of laundering it, and the
+# platform recreates under new UIDs. Objects created marked are untouched.
+# Subresources are matched too ("*/*"): a status strategy does not
+# universally reset labels (ReplicaSet's keeps them), so a status write could
+# otherwise carry the introduction. Namespaced only: a namespaceSelector does
+# not exclude cluster-scoped objects by itself.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: protect-managed-service-marker-introduction-in-projects
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: ["UPDATE"]
+        resources: ["*/*"]
+        scope: Namespaced
+  matchConditions:
+    - name: exclude-cluster-admins
+      expression: >-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !('system:masters' in request.userInfo.groups)
+  variables:
+    - name: oldLabels
+      expression: "has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}"
+    - name: newLabels
+      expression: "has(object.metadata.labels) ? object.metadata.labels : {}"
+  validations:
+    - expression: >-
+        !('services.kube-dc.com/managed-by' in variables.newLabels) ||
+        'services.kube-dc.com/managed-by' in variables.oldLabels
+      message: >-
+        services.kube-dc.com/managed-by is stamped when the platform creates an
+        object and is never added to one that already exists: the object under
+        this name predates the managed instance and must be removed, not adopted
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: protect-managed-service-marker-introduction-in-projects
+spec:
+  policyName: protect-managed-service-marker-introduction-in-projects
+  validationActions: {{ toJson $p.validationActions }}
+{{- end }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: protect-managed-service-pod-templates-in-projects
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    # every rule below is Namespaced: a namespaceSelector alone does not
+    # exclude cluster-scoped objects (round 130)
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "cronjobs"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["replicationcontrollers", "podtemplates"]
+  matchConditions:
+    {{- include "kube-dc.managedServicesPolicy.matchConditions" (dict "namespaces" (include "kube-dc.managedServices.exemptNamespaces" $ | fromJsonArray) "controlPlane" true "nodes" true) | nindent 4 }}
+  variables:
+    - name: markers
+      expression: {{ include "kube-dc.reservedLabelKeysCEL" . }}
+    # The workload kinds keep their pod template under spec.template, a
+    # CronJob under spec.jobTemplate.spec.template, the core PodTemplate under
+    # template. Every step is guarded: a missing parent must read as {}.
+    - name: templateLabels
+      expression: >-
+        has(object.spec) && has(object.spec.template) && has(object.spec.template.metadata) && has(object.spec.template.metadata.labels)
+          ? object.spec.template.metadata.labels
+          : (has(object.spec) && has(object.spec.jobTemplate) && has(object.spec.jobTemplate.spec) && has(object.spec.jobTemplate.spec.template) &&
+             has(object.spec.jobTemplate.spec.template.metadata) && has(object.spec.jobTemplate.spec.template.metadata.labels)
+               ? object.spec.jobTemplate.spec.template.metadata.labels
+               : (has(object.template) && has(object.template.metadata) && has(object.template.metadata.labels)
+                    ? object.template.metadata.labels : {}))
+    # A StatefulSet's claims are created by a platform controller from these
+    # templates; the labels a tenant writes here would be laundered into
+    # platform-created objects.
+    - name: claimTemplateLabels
+      expression: >-
+        has(object.spec) && has(object.spec.volumeClaimTemplates)
+          ? object.spec.volumeClaimTemplates.map(t, has(t.metadata) && has(t.metadata.labels) ? t.metadata.labels : {})
+          : []
+    # ownerReferences a tenant writes into a template are copied by the
+    # controller into the objects it creates; a reference to a marked owner
+    # would then read as the platform's provenance. Templates carry none.
+    - name: templateOwnerRefs
+      expression: >-
+        (has(object.spec) && has(object.spec.template) && has(object.spec.template.metadata) && has(object.spec.template.metadata.ownerReferences)
+          ? size(object.spec.template.metadata.ownerReferences) : 0) +
+        (has(object.spec) && has(object.spec.jobTemplate) && has(object.spec.jobTemplate.spec) && has(object.spec.jobTemplate.spec.template) &&
+         has(object.spec.jobTemplate.spec.template.metadata) && has(object.spec.jobTemplate.spec.template.metadata.ownerReferences)
+          ? size(object.spec.jobTemplate.spec.template.metadata.ownerReferences) : 0) +
+        (has(object.template) && has(object.template.metadata) && has(object.template.metadata.ownerReferences)
+          ? size(object.template.metadata.ownerReferences) : 0) +
+        (has(object.spec) && has(object.spec.volumeClaimTemplates)
+          ? object.spec.volumeClaimTemplates.map(t, has(t.metadata) && has(t.metadata.ownerReferences) ? size(t.metadata.ownerReferences) : 0).sum() : 0)
+  validations:
+    - expression: "variables.templateOwnerRefs == 0"
+      message: >-
+        a pod template or volumeClaimTemplate may not carry ownerReferences;
+        the controller sets them on what it creates
+      reason: Forbidden
+    - expression: "!variables.markers.exists(m, m in variables.templateLabels)"
+      message: >-
+        a pod template may not carry services.kube-dc.com/managed-by,
+        services.kube-dc.com/instance, services.kube-dc.com/instance-uid,
+        cnpg.io/cluster or strimzi.io/cluster; those labels mark the platform's own pods
+      reason: Forbidden
+    - expression: "!variables.claimTemplateLabels.exists(l, variables.markers.exists(m, m in l))"
+      message: >-
+        a volumeClaimTemplate may not carry the platform's marker labels
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: protect-managed-service-pod-templates-in-projects
+spec:
+  policyName: protect-managed-service-pod-templates-in-projects
+  validationActions: {{ toJson $p.validationActions }}
+---
+# CNPG's Cluster exposes clusters/scale, and Kubernetes deliberately omits the
+# parent's labels from the generated Scale object, so the policy above never
+# sees it: a project admin could `kubectl scale` a managed Cluster past its
+# plan. Nothing legitimate in a project scales a CNPG Cluster through the
+# subresource -- db-manager and kube-dc-services both set spec.instances -- so
+# it is closed to tenant identities in project namespaces. The exemptions are
+# NARROWER than above: not kube-system and not the control-plane identities,
+# because the HorizontalPodAutoscaler controller runs there and a tenant can
+# point an unlabelled HPA at the Cluster and have the controller scale it on
+# their behalf (a confused deputy). Nothing in kube-system needs this
+# subresource.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: protect-managed-services-scale-in-projects
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["*"]
+        operations: ["UPDATE"]
+        resources: ["clusters/scale"]
+  matchConditions:
+    {{- include "kube-dc.managedServicesPolicy.matchConditions" (dict "namespaces" (without (include "kube-dc.managedServices.exemptNamespaces" $ | fromJsonArray) "kube-system") "controlPlane" false "nodes" false) | nindent 4 }}
+  validations:
+    - expression: "false"
+      message: >-
+        scaling a PostgreSQL Cluster through clusters/scale is not allowed in
+        project namespaces; set spec.instances through its ManagedService or
+        KdcDatabase
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: protect-managed-services-scale-in-projects
+spec:
+  policyName: protect-managed-services-scale-in-projects
+  validationActions: {{ toJson $p.validationActions }}
+{{- end }}

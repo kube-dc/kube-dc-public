@@ -1,3 +1,10 @@
+{{/*
+Trusted-CA source for db-manager. An explicit dbManager.trustedCA.configMapName
+wins; otherwise inherit what the platform already trusts, so a private-CA
+cluster that set MANAGER_TRUSTED_CA_CONFIGMAP gets db-manager fixed with no
+extra key to discover.
+*/}}
+{{- $dbTrustedCA := .Values.dbManager.trustedCA.configMapName | default .Values.platformTrustBundle.configMapName | default .Values.manager.trustedCA.configMapName }}
 {{- if .Values.dbManager.enabled }}
 apiVersion: apps/v1
 kind: Deployment
@@ -49,13 +56,18 @@ spec:
         args:
         - --leader-elect
         - --health-probe-bind-address=:8081
-        {{- if .Values.dbManager.metricsEnabled }}
+        {{- if or .Values.dbManager.metrics.enabled .Values.dbManager.metricsEnabled }}
         - --metrics-bind-address=:8443
         - --metrics-secure=true
         {{- else }}
         - --metrics-bind-address=0
         {{- end }}
         env:
+        # How long a KdcDatabase must have been observed before its engine is
+        # created (kube-dc reserves the engine's names meanwhile). Operator floor is
+        # 10s; 90s was the pre-0.7.5 default and made every new database look Failed.
+        - name: KDC_ENGINE_SETTLE_WINDOW
+          value: {{ .Values.dbManager.engineSettleWindow | default "10s" | quote }}
         - name: INFRA_API_ENDPOINT
           value: {{ include "kube-dc.managementAPIEndpoint" (list $ .Values.dbManager.infraAPIEndpoint) | quote }}
         # Cluster-level S3 endpoint, used by KdcDatabase backups when
@@ -91,11 +103,26 @@ spec:
         {{- with .Values.dbManager.extraEnv }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+        {{- if $dbTrustedCA }}
+        # Additional CA roots for clusters whose platform hostnames are served by
+        # a PRIVATE CA. db-manager calls the platform's own https endpoints — the
+        # OpenBao login at auth/k8s-host, the object-store endpoint for backups —
+        # and Go verifies those with the process trust store, so OPENBAO_CA_BUNDLE
+        # alone does not cover every client. Without these roots a KdcDatabase
+        # reports
+        #   openbao login: ... x509: certificate signed by unknown authority
+        # and envelope encryption never gets configured.
+        #
+        # SSL_CERT_DIR (not SSL_CERT_FILE): Go reads the distro bundle AND every
+        # file here, so this ADDS roots instead of replacing the system store.
+        - name: SSL_CERT_DIR
+          value: {{ .Values.dbManager.trustedCA.mountPath | quote }}
+        {{- end }}
         ports:
         - containerPort: 8081
           name: health
           protocol: TCP
-        {{- if .Values.dbManager.metricsEnabled }}
+        {{- if or .Values.dbManager.metrics.enabled .Values.dbManager.metricsEnabled }}
         - containerPort: 8443
           name: metrics
           protocol: TCP
@@ -120,4 +147,16 @@ spec:
           capabilities:
             drop:
             - ALL
+        {{- if $dbTrustedCA }}
+        volumeMounts:
+        - name: trusted-ca
+          mountPath: {{ .Values.dbManager.trustedCA.mountPath | quote }}
+          readOnly: true
+        {{- end }}
+      {{- if $dbTrustedCA }}
+      volumes:
+      - name: trusted-ca
+        configMap:
+          name: {{ $dbTrustedCA | quote }}
+      {{- end }}
 {{- end }}

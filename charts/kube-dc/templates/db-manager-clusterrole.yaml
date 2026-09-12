@@ -85,6 +85,22 @@ rules:
 - apiGroups: [k8s.mariadb.com]
   resources: [backups]
   verbs: [create, delete, get, list, watch]
+# db-manager >= v0.5.24 checks for Restores aimed at a MariaDB before it
+# reconciles the cluster; without this every MariaDB KdcDatabase fails with
+# "restores.k8s.mariadb.com is forbidden" (measured on stage 2026-09-06).
+- apiGroups: [k8s.mariadb.com]
+  resources: [restores]
+  verbs: [get, list, watch]
+# ... and, in the same preflight, for SqlJobs, Users, Grants, Databases,
+# Connections and MaxScales aimed at the engine's name (engine_mariadb.go:
+# a mariadb-operator resource can be created before its MariaDB exists and
+# would run against the platform's engine the moment it appears). The
+# restores rule above fixed only the first refusal of that loop; the next
+# one, "sqljobs.k8s.mariadb.com is forbidden", failed every MariaDB
+# KdcDatabase on stage (2026-09-07). Read only.
+- apiGroups: [k8s.mariadb.com]
+  resources: [sqljobs, users, grants, databases, connections, maxscales]
+  verbs: [get, list, watch]
 - apiGroups: [kube-dc.com]
   resources: [eips]
   verbs: [create, delete, get, list, patch, update, watch]

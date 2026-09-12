@@ -1,0 +1,52 @@
+# =============================================================================
+# The owner-guard off fence: while manager.nonControllerOwnerEdges is "off",
+# no manager pod may be created in this namespace unless its "manager"
+# container carries the literal knob KUBE_DC_NON_CONTROLLER_OWNER_EDGES=off --
+# whoever creates it, the ReplicaSet controller included. Kubernetes leader
+# election is unfenced: an old kube-controller-manager leader can still create
+# a pod for a ReplicaSet the new leader has already zeroed and reported, after
+# every observation an off manager can make (codex round 116). The off manager
+# therefore commits the maintenance boundary only after it has watched THIS
+# policy refuse an attested manager pod (a server-side dry run), and the fence
+# stays until the knob is cleared: the same upgrade that clears it removes the
+# fence, and attested pods that Helm rolls a few seconds before that deletion
+# are refused until it lands and then retried by their ReplicaSet.
+# =============================================================================
+{{- if eq (.Values.manager.nonControllerOwnerEdges | default "attested") "off" }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: owner-guard-off-fence
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+        scope: Namespaced
+  variables:
+    - name: managers
+      expression: "object.spec.containers.filter(c, c.name == 'manager')"
+    - name: knobs
+      expression: "variables.managers.size() == 1 ? variables.managers[0].?env.orValue([]).filter(e, e.name == 'KUBE_DC_NON_CONTROLLER_OWNER_EDGES') : []"
+  validations:
+    - expression: "variables.managers.size() == 1 && variables.knobs.size() == 1 && !has(variables.knobs[0].valueFrom) && variables.knobs[0].?value.orValue('') == 'off'"
+      message: "owner-guard maintenance in progress: a manager pod may be created only with KUBE_DC_NON_CONTROLLER_OWNER_EDGES=off in its manager container"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: owner-guard-off-fence
+spec:
+  policyName: owner-guard-off-fence
+  validationActions: ["Deny"]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Release.Namespace }}
+    objectSelector:
+      matchLabels:
+        app.kubernetes.io/name: {{ include "kube-dc.manager.name" . }}
+{{- end }}
