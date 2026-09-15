@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -37,7 +36,7 @@ const (
 // named kube-dc/<domain>/admin into ~/.kube/config.
 //
 // Flow:
-//  1. PKCE OAuth against https://login.<domain>/realms/master.
+//  1. PKCE or device authorization against https://login.<domain>/realms/master.
 //  2. Parse the access token's claims; verify the user is a member of
 //     the kube-dc-admin Keycloak group. (The API server enforces RBAC
 //     too, but failing here gives a much better error than kubectl's
@@ -48,28 +47,20 @@ const (
 //  4. Merge a single new context into ~/.kube/config via
 //     kubeconfig.AddKubeDCContext with Realm=master so the exec plugin
 //     loads the right cache entry on each kubectl invocation.
-func runAdminLogin(domain, caCertFile string, insecure, deviceCode bool) error {
+func runAdminLogin(ctx context.Context, domain, caCertFile string, insecure, deviceCode bool) error {
 	if domain == "" {
 		return fmt.Errorf("--domain is required for --admin login")
 	}
-	if deviceCode {
-		return fmt.Errorf("device code flow is not implemented. " +
-			"On a headless machine use one of these instead:\n" +
-			"  - run `kube-dc login` on a workstation WITH a browser, then copy ~/.kube/config over; or\n" +
-			"  - use the client-certificate kubeconfig from `kube-dc bootstrap fetch-kubeconfig`, " +
-			"which needs neither a browser nor OIDC")
-	}
-
 	server := fmt.Sprintf("https://kube-api.%s:6443", domain)
 	keycloakURL := fmt.Sprintf("https://login.%s", domain)
 
 	var caCertPEM string
 	if caCertFile != "" {
-		b, err := os.ReadFile(caCertFile)
+		b, err := readLoginCA(caCertFile)
 		if err != nil {
-			return fmt.Errorf("failed to read CA certificate: %w", err)
+			return err
 		}
-		caCertPEM = string(b)
+		caCertPEM = b
 		fmt.Printf("Using CA certificate from %s\n", caCertFile)
 	}
 
@@ -77,17 +68,17 @@ func runAdminLogin(domain, caCertFile string, insecure, deviceCode bool) error {
 	fmt.Printf("   API Server: %s\n", server)
 	fmt.Printf("   Keycloak:   %s\n\n", keycloakURL)
 
-	flow := auth.NewOAuthFlow(&auth.OAuthConfig{
+	apiCACert, err := resolveLoginAPICA(ctx, domain, fmt.Sprintf("kube-dc-%s-admin", domain), server, caCertPEM, insecure)
+	if err != nil {
+		return err
+	}
+	tokens, err := loginOAuth(ctx, &auth.OAuthConfig{
 		KeycloakURL: keycloakURL,
 		Realm:       adminRealm,
 		ClientID:    adminClientID,
 		CACert:      caCertPEM,
 		Insecure:    insecure,
-	})
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-
-	tokens, err := flow.Login(ctx)
+	}, deviceCode)
 	if err != nil {
 		return fmt.Errorf("admin login failed: %w", err)
 	}
@@ -173,10 +164,11 @@ func runAdminLogin(domain, caCertFile string, insecure, deviceCode bool) error {
 		UserName:    userName,
 		ContextName: contextName,
 		// No Namespace: admin is cluster-scoped.
-		CACert:     caCertPEM,
-		Insecure:   insecure,
-		SetCurrent: true,
-		Realm:      adminRealm, // exec plugin will use --realm master
+		CACert:      apiCACert.CACert,
+		UseSystemCA: apiCACert.UseSystemCA,
+		Insecure:    insecure,
+		SetCurrent:  true,
+		Realm:       adminRealm, // exec plugin will use --realm master
 	}); err != nil {
 		return fmt.Errorf("failed to update kubeconfig: %w", err)
 	}

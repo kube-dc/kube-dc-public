@@ -57,6 +57,7 @@ Project-scoped kubeconfig contexts.
 
 It follows the same patterns as AWS CLI, GCloud, and other cloud provider CLIs:
 - Browser-based OAuth login
+- Device code login for headless machines
 - Automatic token refresh
 - Project context selection with kube-dc use
 - Seamless kubectl integration`,
@@ -139,6 +140,9 @@ func loginCmd() *cobra.Command {
 Opens your default browser for authentication. After successful login,
 your credentials are cached and kubectl is configured automatically.
 
+Use --device-code on a headless machine or over SSH. The CLI displays a URL
+and code to approve in a browser on another device.
+
 The domain is used to derive the API and login URLs:
   - API Server: https://kube-api.{domain}:6443
   - Keycloak:   https://login.{domain}
@@ -159,6 +163,9 @@ Two identity modes:
   # Platform-admin login
   kube-dc login --domain kube-dc.cloud --admin
 
+  # Headless machine / SSH login
+  kube-dc login --domain kube-dc.cloud --org myorg --device-code
+
   # With CA certificate (for self-hosted)
   kube-dc login --domain internal.example.com --org myorg --ca-cert /path/to/ca.crt`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -171,9 +178,9 @@ Two identity modes:
 			// which is the whole point of the realm pre-flight below.
 			cmd.SilenceUsage = true
 			if admin {
-				return runAdminLogin(domain, caCertFile, insecure, deviceCode)
+				return runAdminLogin(cmd.Context(), domain, caCertFile, insecure, deviceCode)
 			}
-			return runLogin(domain, org, caCertFile, insecure, deviceCode)
+			return runLogin(cmd.Context(), domain, org, caCertFile, insecure, deviceCode)
 		},
 	}
 
@@ -182,12 +189,12 @@ Two identity modes:
 	cmd.Flags().BoolVar(&admin, "admin", false, "Login as a platform admin against the master realm (cluster-wide RBAC)")
 	cmd.Flags().StringVar(&caCertFile, "ca-cert", "", "Path to CA certificate file")
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "Skip TLS verification (not recommended)")
-	cmd.Flags().BoolVar(&deviceCode, "device-code", false, "NOT IMPLEMENTED — returns an error. On a headless machine, either run `kube-dc login` on a workstation WITH a browser and copy the resulting ~/.kube/config, or use the client-certificate kubeconfig from `kube-dc bootstrap fetch-kubeconfig` (which needs no browser and no OIDC)")
+	cmd.Flags().BoolVar(&deviceCode, "device-code", false, "Authenticate by approving a code in a browser on another device (headless / SSH)")
 
 	return cmd
 }
 
-func runLogin(domain, org, caCertFile string, insecure, deviceCode bool) error {
+func runLogin(ctx context.Context, domain, org, caCertFile string, insecure, deviceCode bool) error {
 	reader := bufio.NewReader(os.Stdin)
 
 	// Prompt for domain if not provided
@@ -217,20 +224,12 @@ func runLogin(domain, org, caCertFile string, insecure, deviceCode bool) error {
 	// Load CA certificate if provided
 	var caCertPEM string
 	if caCertFile != "" {
-		certData, err := os.ReadFile(caCertFile)
+		certData, err := readLoginCA(caCertFile)
 		if err != nil {
-			return fmt.Errorf("failed to read CA certificate: %w", err)
+			return err
 		}
-		caCertPEM = string(certData)
+		caCertPEM = certData
 		fmt.Printf("Using CA certificate from %s\n", caCertFile)
-	}
-
-	if deviceCode {
-		return fmt.Errorf("device code flow is not implemented. " +
-			"On a headless machine use one of these instead:\n" +
-			"  - run `kube-dc login` on a workstation WITH a browser, then copy ~/.kube/config over; or\n" +
-			"  - use the client-certificate kubeconfig from `kube-dc bootstrap fetch-kubeconfig`, " +
-			"which needs neither a browser nor OIDC")
 	}
 
 	fmt.Printf("\n🔐 Logging in to %s (Organization: %s)\n", domain, org)
@@ -252,7 +251,12 @@ func runLogin(domain, org, caCertFile string, insecure, deviceCode bool) error {
 		return err
 	}
 
-	// Create OAuth config
+	// API trust must be established before storing credentials or claiming the
+	// kubeconfig is ready. The discovered CA is scoped to the API, not OAuth.
+	apiCACert, err := resolveLoginAPICA(ctx, domain, fmt.Sprintf("kube-dc-%s-%s", domain, org), server, caCertPEM, insecure)
+	if err != nil {
+		return err
+	}
 	oauthConfig := &auth.OAuthConfig{
 		KeycloakURL: keycloakURL,
 		Realm:       org,
@@ -262,11 +266,7 @@ func runLogin(domain, org, caCertFile string, insecure, deviceCode bool) error {
 	}
 
 	// Run OAuth flow
-	flow := auth.NewOAuthFlow(oauthConfig)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-
-	tokenResponse, err := flow.Login(ctx)
+	tokenResponse, err := loginOAuth(ctx, oauthConfig, deviceCode)
 	if err != nil {
 		return fmt.Errorf("login failed: %w", err)
 	}
@@ -345,10 +345,11 @@ func runLogin(domain, org, caCertFile string, insecure, deviceCode bool) error {
 	// Create one context for each accessible Project.
 	// Include domain in names to support multiple kube-dc installations
 	for i, ns := range claims.Namespaces {
-		params := tenantContextParams(domain, org, server, ns, caCertPEM, insecure, i == 0)
+		params := tenantContextParams(domain, org, server, ns, apiCACert.CACert, insecure, i == 0)
+		params.UseSystemCA = apiCACert.UseSystemCA
 
 		if err := kubeMgr.AddKubeDCContext(params); err != nil {
-			fmt.Printf("  Warning: failed to add context %s: %v\n", params.ContextName, err)
+			return fmt.Errorf("failed to add context %s: %w", params.ContextName, err)
 		}
 	}
 

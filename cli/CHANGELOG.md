@@ -1,5 +1,38 @@
 # kube-dc CLI changelog
 
+## v0.7.12
+
+- Control-plane servers installed with this version get a kube-apiserver audit
+  policy. `bootstrap install` and the fleet's `bootstrap/rke2/install-server.sh`
+  write `/etc/rancher/rke2/kube-dc-audit-policy.yaml` and set `audit-policy-file`
+  in the RKE2 config. It records at Metadata level, with no request or response
+  bodies:
+  - every Secret request;
+  - pod log, exec, attach, port-forward and proxy access;
+  - Pod and workload-controller writes by anyone other than kube-system
+    controllers and nodes;
+  - writes to managed-service intents.
+
+  The log is `/var/lib/rancher/rke2/server/logs/audit.log` on each server. RKE2
+  rotates it at 100 MB and keeps up to 10 rotated files, none older than 30 days
+  (about 1.1 GB with the active log). Existing servers are not changed: do not
+  re-run the installer on a live server to enable it, because a re-run
+  regenerates `config.yaml`. Never pass a credential as a `kubectl exec`
+  argument: request URIs are recorded.
+- `kube-dc login --device-code` signs in from an SSH session or a machine without
+  a browser: open the displayed URL on another device, enter the code and approve.
+  Credentials and kubeconfig are saved on the machine running the CLI. If Keycloak
+  rejects it, a platform administrator enables the OAuth 2.0 Device Authorization
+  Grant on the Organization's `kube-dc` client.
+- Login discovers and embeds the Kubernetes API's CA certificate when needed,
+  over the backend's verified HTTPS endpoint, and verifies the API before saving
+  the context. No existing kubeconfig is required. On an older installation
+  without discovery, pass a trusted CA bundle with `--ca-cert`. Login keeps
+  existing kubeconfig fields: proxy and TLS server names, CA file references.
+- `bootstrap openbao` no longer lets the controller-manager token write the KV
+  prefix reserved for managed services.
+- This CLI and the fleet-starter carry `v0.7.12`, the platform release version.
+
 ## v0.7.9
 
 One version across the whole platform again. Every image we ship, the chart,

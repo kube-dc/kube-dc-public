@@ -102,6 +102,26 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Partner API',
+      collapsed: true,
+      items: [
+        'partner-api/overview',
+        'partner-api/http-tutorial',
+        'partner-api/authentication',
+        'partner-api/provisioning',
+        'partner-api/idempotency',
+        'partner-api/console-login',
+        'partner-api/plans-quota-capacity',
+        'partner-api/lifecycle',
+        'partner-api/usage-billing',
+        'partner-api/webhooks',
+        'partner-api/errors',
+        'partner-api/pagination',
+        'partner-api/going-live',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Bare Metal',
       collapsed: true,
       items: [

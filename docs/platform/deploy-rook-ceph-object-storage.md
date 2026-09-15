@@ -475,7 +475,41 @@ objectStorageConfig:
   storeName: my-store        # default
 ```
 
-### 7.2 Backend Environment Variables
+### 7.2 Enable object-storage administration
+
+Key management and object-storage usage in the console are **admin operations**
+against the Ceph RGW admin API. They run on a platform-owned RGW identity that
+the chart creates, and that identity is **off by default**:
+
+```yaml
+# values.yaml (kube-dc chart)
+objectStorage:
+  platformAdminUser:
+    enabled: true            # off by default — see below
+    name: kube-dc-platform-admin
+```
+
+Until it is enabled, buckets, objects and presigned URLs all work normally, but
+the console's S3 key management and its storage-usage figures return HTTP 503 and
+log the reason.
+
+**On a new cluster, turn this on now.** There is nothing in the store yet for it
+to be exposed to.
+
+**On a cluster that already serves organizations, do not turn it on yet.** Ceph
+RGW admin capabilities are not scoped to the identity that holds them, so any
+identity in the store that still carries them can read this one's secret key, and
+removing capabilities later does not invalidate a key that was already copied.
+Kube-DC releases before v0.7.10 granted those capabilities to every organization.
+Work through the inventory and rotation procedure first; Kube-DC engineers should
+follow `docs/internal/s3-admin-capability-remediation.md`, and operators of an
+existing cluster should contact support before enabling it.
+
+The name is reserved: an organization of the same name would resolve to the same
+`CephObjectStoreUser` and Secret, so both the controller and the backend refuse
+to serve an organization by that name.
+
+### 7.3 Backend Environment Variables
 
 The UI backend reads these from environment (all have sensible defaults):
 
@@ -485,10 +519,11 @@ The UI backend reads these from environment (all have sensible defaults):
 | `CEPH_STORE_NAME` | `my-store` | Name of the `CephObjectStore` resource |
 | `CEPH_STORAGE_CLASS` | `ceph-bucket` | StorageClass for `ObjectBucketClaim` provisioning |
 | `S3_ENDPOINT` | `https://s3.example.com` | External S3 endpoint URL used by the UI and presigned URLs |
+| `S3_PLATFORM_ADMIN_USER` | `kube-dc-platform-admin` | The RGW identity that signs admin operations, and the organization name both the backend and the controller refuse (§7.2) |
 
 Set `S3_ENDPOINT` to your actual S3 domain in the backend deployment.
 
-### 7.3 Billing Plans
+### 7.4 Billing Plans
 
 Object storage quotas are defined per billing plan in the `billing-plans`
 ConfigMap. The chart can seed this document from Fleet values, but the live
@@ -506,7 +541,7 @@ plans:
 
 The Go controller automatically creates a `CephObjectStoreUser` per organization with these quotas when the Organization is reconciled.
 
-### 7.4 Backend Service Account RBAC
+### 7.5 Backend Service Account RBAC
 
 The backend service account needs read access to rook-ceph resources. The Kube-DC Helm chart already includes these rules in `backend-sa.yaml`:
 
@@ -520,7 +555,7 @@ The backend service account needs read access to rook-ceph resources. The Kube-D
   verbs: ["get", "list"]
 ```
 
-### 7.5 Project Role Permissions
+### 7.6 Project Role Permissions
 
 Users need `objectbucketclaims` permissions in their Project's backing namespace. The default Project Roles already include:
 

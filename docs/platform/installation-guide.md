@@ -470,8 +470,16 @@ tls-san:
   - 192.168.0.1
   - 192.168.0.2
   - 192.168.0.3
+# kube-apiserver audit policy: write the file first (see the note below).
+audit-policy-file: /etc/rancher/rke2/kube-dc-audit-policy.yaml
 EOF
 ```
+
+The scripted installer writes the audit policy for you. On a hand-written
+config, copy the policy out of `install-server.sh` (the block between
+`<<'AUDIT_POLICY_EOF'` and `AUDIT_POLICY_EOF`) to
+`/etc/rancher/rke2/kube-dc-audit-policy.yaml`, with mode 0600, before starting
+RKE2.
 
 Install and start RKE2:
 

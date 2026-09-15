@@ -82,6 +82,25 @@ This opens your browser for secure authentication. After login:
 - Contexts are created for each project you have access to
 - Tokens are cached with user-only file permissions (`~/.kube-dc/credentials/`)
 
+Login automatically discovers and embeds the Kubernetes API's CA certificate
+when required. Discovery uses the backend's verified HTTPS endpoint; the CLI
+then verifies the API before saving your context. No existing kubeconfig is
+required. If an older installation does not support discovery, your platform
+administrator can provide a trusted CA bundle to pass with `--ca-cert`.
+
+For an SSH session or a machine without a browser, add `--device-code`:
+
+```bash
+kube-dc login --domain kube-dc.cloud --org acme --device-code
+```
+
+Open the displayed URL on another device, enter the code, and approve the
+login. Credentials and kubeconfig are saved on the machine running the CLI.
+Later kubectl commands refresh tokens automatically while the session remains
+valid. If Keycloak rejects device login, ask your platform administrator to
+enable **OAuth 2.0 Device Authorization Grant** on your Organization's
+`kube-dc` client.
+
 ### 2. Switch Projects
 
 ```bash

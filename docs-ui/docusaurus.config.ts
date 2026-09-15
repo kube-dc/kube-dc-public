@@ -210,11 +210,29 @@ const config: Config = {
             }
             return '';
           }
-          function rewriteRelativeDocLinks(content: string, routeBase: string): string {
+          // Every .md file under a docs directory, as a sorted '/'-separated path relative to it,
+          // so documents in sub-directories (for example platform/partner-api/) are indexed too.
+          function listMarkdownFiles(dir: string, prefix = ''): string[] {
+            return fs.readdirSync(dir, {withFileTypes: true}).flatMap((entry: {name: string; isDirectory(): boolean; isFile(): boolean}) => {
+              const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+              if (entry.isDirectory()) return listMarkdownFiles(path.join(dir, entry.name), relative);
+              return entry.isFile() && entry.name.endsWith('.md') ? [relative] : [];
+            }).sort();
+          }
+          // Docusaurus Tabs are MDX components: keep each tab's content, labelled, for plain-text readers.
+          function flattenTabs(content: string): string {
+            return content
+              .replace(/^<Tabs\b[^>]*>[ \t]*$/gm, '')
+              .replace(/^<\/Tabs>[ \t]*$/gm, '')
+              .replace(/^<TabItem\b[^>]*\blabel="([^"]+)"[^>]*>[ \t]*$/gm, '**$1**')
+              .replace(/^<\/TabItem>[ \t]*$/gm, '');
+          }
+          function rewriteRelativeDocLinks(content: string, routeBase: string, docDir: string): string {
             return content.replace(
               /\[([^\]]+)\]\((?![a-z][a-z0-9+.-]*:|\/|#)(?:\.\/)?([^)\s]+)\.md(#[^)]+)?\)/gi,
               (_match: string, label: string, target: string, anchor = '') => {
-                const slug = target === 'index' ? '' : target;
+                const resolved = path.posix.normalize(path.posix.join(docDir, target));
+                const slug = resolved === 'index' ? '' : resolved;
                 const targetUrl = slug ? `${siteUrl}${routeBase}/${slug}` : `${siteUrl}${routeBase}/`;
                 return `[${label}](${targetUrl}${anchor})`;
               },
@@ -250,7 +268,7 @@ const config: Config = {
             indexLines.push(`\n## ${label}\n`);
             fullSections.push(`\n## ${label}\n`);
 
-            const files = fs.readdirSync(dir).filter((f: string) => f.endsWith('.md')).sort();
+            const files = listMarkdownFiles(dir);
             for (const file of files) {
               const source = fs.readFileSync(path.join(dir, file), 'utf-8');
               const websiteSource = source.replace(
@@ -264,11 +282,12 @@ const config: Config = {
               const desc = extractDescription(document.body);
               indexLines.push(`- [${title}](${url})${desc ? ': ' + desc : ''}`);
 
-              const cleaned = shiftPageHeadings(rewriteRelativeDocLinks(document.body
+              const docDir = path.posix.dirname(file) === '.' ? '' : path.posix.dirname(file);
+              const cleaned = shiftPageHeadings(rewriteRelativeDocLinks(flattenTabs(document.body
                 .replace(/^import\s.*;\s*$/gm, '')
                 .replace(/!\[([^\]]*)\]\([^)]*\)/g, (_match: string, alt: string) => alt ? `[Image: ${alt}]` : '[Image]')
                 .replace(/<img\s[^>]*\/?\s*>/g, '[Image]')
-                .trim(), routeBase));
+                .trim()), routeBase, docDir));
               fullSections.push(`\n---\n\n### ${title}\n\nCanonical URL: ${url}\n\n${cleaned}\n`);
               documentCount += 1;
             }

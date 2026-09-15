@@ -96,6 +96,26 @@ Their next OIDC token refresh (≤5 min, governed by Keycloak's access-token lif
 
 ---
 
+## Login from a headless machine
+
+Both browser and device login [discover the API CA automatically](cli-ca-discovery.md)
+on a fresh machine. The master-realm identity and permissions are independent of
+the public certificate metadata.
+
+```bash
+kube-dc login --domain kube-dc.cloud --admin --device-code
+```
+
+The CLI displays a URL and code. Open the URL in a browser on another device,
+enter the code, and approve the login. The same master-realm `admin` group
+check, credential cache, and admin kubeconfig context apply.
+
+The `kube-dc-admin` client in `master` must have **OAuth 2.0 Device Authorization
+Grant** enabled. The updated fleet `bootstrap/setup-keycloak-oidc.sh` sets this
+on both creation and update. For an existing installation, rerun that script
+or enable the capability in Keycloak's client settings. Its JSON attribute is
+`"oauth2.device.authorization.grant.enabled": "true"`.
+
 ## Pre-flight on a fresh cluster
 
 The CLI side works against any cluster, but a fresh cluster needs **four** pieces wired up before `kube-dc login --admin` resolves:

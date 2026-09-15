@@ -68,7 +68,11 @@ import (
 //     stamped by clusters running M5-T07 (2026-07-03).
 //   - Generation 2: adds SnapshotPolicyHCL and the openbao/openbao-snapshot
 //     Kubernetes-auth role with a 15-minute no-default-policy token (2026-07-17).
-const PolicyGeneration = 2
+//   - Generation 3: denies the manager token the reserved managed-service KV
+//     prefix (kube-dc-svc-*) in every Org and mount, so a tenant-created
+//     ManagedSecret under that prefix cannot have this controller write the
+//     credential on their behalf (2026-09-13).
+const PolicyGeneration = 3
 
 // AnnotationPolicyGeneration stores the last-stamped generation
 // number on svc/openbao. Distinct from AnnotationControllerAuthInstalled

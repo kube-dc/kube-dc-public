@@ -666,6 +666,85 @@ if [[ -f "${RANCHER_DIR}/config.yaml" ]]; then
     fi
 fi
 
+# kube-apiserver audit policy. It records at Metadata level, never a request or
+# response body: every Secret request; pod log, exec, attach, port-forward and
+# proxy access; workload writes by anyone but kube-system controllers and nodes;
+# and managed-service intent writes. It is written before config.yaml, whose
+# audit-policy-file key names it, because kube-apiserver does not start without
+# the file. It is inline, not a sibling file, because the kube-dc CLI stages only
+# this script on the node. Keep it byte-identical in both installer copies; the
+# CLI test pins its sha256.
+cat > "${RANCHER_DIR}/kube-dc-audit-policy.yaml" <<'AUDIT_POLICY_EOF'
+# kube-apiserver audit policy for Kube-DC managed-services credential access
+# (revision 3). Metadata level only: no request or response object is recorded.
+# The scope and the accepted residuals are stated in the rollout design; in
+# particular a request URI (exec arguments included) is always recorded.
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages:
+  - RequestReceived
+rules:
+  # Every request on a Secret: every verb, every identity, no exclusion. A read,
+  # a write, and a merge patch used to read back the stored object are recorded.
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: ["secrets"]
+  # Every way to reach what a running pod holds. kube-dc denies tenants exec and
+  # attach in Project namespaces, but every Project role grants pods/log, so a
+  # Job that prints a mounted Secret and `kubectl logs` is the ordinary path.
+  - level: Metadata
+    resources:
+      - group: ""
+        resources:
+          - pods/log
+          - pods/exec
+          - pods/attach
+          - pods/portforward
+          - pods/proxy
+          - pods/ephemeralcontainers
+          - services/proxy
+  # Built-in controllers and nodes act for a workload someone else created or
+  # changed; the next rule records that person.
+  - level: None
+    userGroups: ["system:serviceaccounts:kube-system", "system:nodes"]
+    resources:
+      - group: ""
+        resources: ["pods"]
+      - group: "apps"
+        resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+      - group: "batch"
+        resources: ["jobs", "cronjobs"]
+    verbs: ["create", "update", "patch", "delete", "deletecollection"]
+  # Who creates, changes or deletes a workload that could mount a Secret. Status
+  # and scale subresources are not listed, so their churn is not recorded.
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: ["pods"]
+      - group: "apps"
+        resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+      - group: "batch"
+        resources: ["jobs", "cronjobs"]
+    verbs: ["create", "update", "patch", "delete", "deletecollection"]
+  # Writes to the tenant-facing service intents and to the reservation an
+  # operator retires (CP-7). These objects carry references, never values.
+  - level: Metadata
+    resources:
+      - group: "services.kube-dc.com"
+        resources:
+          - managedservices
+          - serviceoperations
+          - servicebindings
+          - servicecredentialpolicies
+          - cellreservations
+    verbs: ["create", "update", "patch", "delete", "deletecollection"]
+  # Nothing else.
+  - level: None
+AUDIT_POLICY_EOF
+chmod 0600 "${RANCHER_DIR}/kube-dc-audit-policy.yaml"
+log_info "Audit policy written to ${RANCHER_DIR}/kube-dc-audit-policy.yaml"
+
 # Generate config.yaml
 if [[ -n "${JOIN_TOKEN}" && -n "${JOIN_SERVER}" ]]; then
     log_info "Mode: Joining existing cluster at ${JOIN_SERVER}"
@@ -733,6 +812,7 @@ tls-san:
   - ${NODE_IP}
   - ${JOIN_SERVER}
 advertise-address: ${NODE_IP}
+audit-policy-file: ${RANCHER_DIR}/kube-dc-audit-policy.yaml
 debug: true
 ${EMBEDDED_REGISTRY_BLOCK}
 EOF
@@ -796,6 +876,7 @@ tls-san:
   - ${EXTERNAL_IP}
   - ${NODE_IP}
 advertise-address: ${NODE_IP}
+audit-policy-file: ${RANCHER_DIR}/kube-dc-audit-policy.yaml
 debug: true
 ${EMBEDDED_REGISTRY_BLOCK}
 EOF

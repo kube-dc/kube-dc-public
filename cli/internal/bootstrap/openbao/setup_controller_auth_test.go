@@ -527,6 +527,50 @@ func TestEmbeddedHCL_HasExpectedPaths(t *testing.T) {
 
 }
 
+// The manager holds create/update on every project KV mount, so a tenant who
+// creates a ManagedSecret under the reserved managed-service prefix would
+// otherwise have THIS token write the credential on their behalf, and External
+// Secrets would project it to the application. Tenant policy cannot reach that
+// -- this token is not a tenant token -- so the narrowing lives here, on the
+// writer. Deny wins over the broad +/+/... grants regardless of ordering.
+func TestEmbeddedHCL_DeniesReservedManagedServicePrefix(t *testing.T) {
+	for _, want := range []string{
+		`path "+/+/data/kube-dc-svc-*"     { capabilities = ["deny"] }`,
+		`path "+/+/metadata/kube-dc-svc-*" { capabilities = ["deny"] }`,
+		`path "+/+/delete/kube-dc-svc-*"   { capabilities = ["deny"] }`,
+		`path "+/+/undelete/kube-dc-svc-*" { capabilities = ["deny"] }`,
+		`path "+/+/destroy/kube-dc-svc-*"  { capabilities = ["deny"] }`,
+	} {
+		if !strings.Contains(ManagerPolicyHCL, want) {
+			t.Errorf("ManagerPolicyHCL missing reserved-prefix deny:\n  %s", want)
+		}
+	}
+	// The broad grants must survive: this narrows one prefix, it does not
+	// take the controller's ordinary KV access away.
+	for _, keep := range []string{
+		`path "+/+/data/*"`,
+		`path "+/+/metadata/*"`,
+	} {
+		if !strings.Contains(ManagerPolicyHCL, keep) {
+			t.Errorf("ManagerPolicyHCL lost an ordinary KV grant: %s", keep)
+		}
+	}
+	// Presence of a deny is not the same as absence of an override: OpenBao
+	// picks ONE highest-priority matching rule, so a later, more specific
+	// grant on this prefix would win and a string-presence check would stay
+	// green. Scan every rule that mentions the prefix and require all of them
+	// to be denies.
+	for _, line := range strings.Split(ManagerPolicyHCL, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "path ") || !strings.Contains(line, "kube-dc-svc-") {
+			continue
+		}
+		if !strings.Contains(line, `capabilities = ["deny"]`) {
+			t.Errorf("every rule touching the reserved prefix must be a deny; found a grant:\n  %s", line)
+		}
+	}
+}
+
 // SetNodeLabel is unused by these tests; the ingress-label step is covered in
 // clusterinit/ingresslabels_test.go.
 func (f *fakeSetupK8s) SetNodeLabel(context.Context, string, string, string) error {

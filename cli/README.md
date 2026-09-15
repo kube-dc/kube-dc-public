@@ -6,6 +6,7 @@ from AWS CLI, Google Cloud CLI, and DigitalOcean CLI.
 ## Features
 
 - **Browser-based OAuth login** - No passwords in terminal
+- **Device code login** - Approve headless / SSH login from another device
 - **Automatic token refresh** - Short-lived access tokens refresh while the
   cached session remains valid
 - **Project context switching** - Keep the selected Project and backing
@@ -75,6 +76,51 @@ kube-dc login --domain stage.kube-dc.com --org shalb
 kube-dc login --domain kube-dc.cloud --org myorg
 kube-dc login --domain internal.example.com --org myorg --ca-cert /path/to/ca.crt
 ```
+
+For a headless machine or SSH session:
+
+```bash
+kube-dc login --domain kube-dc.cloud --org myorg --device-code
+# Platform administrators can use the same flow:
+kube-dc login --domain kube-dc.cloud --admin --device-code
+```
+
+Open the displayed URL in a browser on another device, enter the code, and
+approve the login. The CLI waits for approval, then caches tokens and configures
+kubectl on the machine where the command is running. This is a user login;
+it requires browser approval. The normal token refresh handles later kubectl calls.
+`--ca-cert` and `--insecure` apply to device login too.
+
+On a fresh installation, login obtains the API CA from
+`https://backend.<domain>/.well-known/kube-dc-config` when system trust cannot
+verify the API. It verifies the backend's HTTPS certificate, checks that the
+metadata names the expected API, verifies that API with the returned CA, and
+embeds the CA in kubeconfig. This applies to browser and device login, for both
+Organization and admin identities. No CA download or copying is normally needed.
+
+An existing CA is reused when it still verifies the same API endpoint. A stale
+CA can be replaced through discovery on the next login. Discovered trust applies
+only to the Kubernetes API; it is not added to system trust or the Keycloak
+credential cache. Explicit `--ca-cert` remains authoritative. For private HTTPS
+installations, supply a trusted bundle containing the required API and Keycloak
+CAs. `--insecure` remains an explicit opt-out and skips discovery.
+
+Older backends without discovery continue to work when system roots or an
+existing/explicit CA verify the API. Otherwise login reports how to supply a
+trusted CA instead of creating a context that cannot connect. See the
+[product configuration and rollout guide](../docs/platform/cli-ca-discovery.md).
+
+Keycloak must enable **OAuth 2.0 Device Authorization Grant** on the `kube-dc`
+client in the Organization realm, or `kube-dc-admin` in `master` for admin login.
+The controller enables it for new and existing tenant clients on reconciliation;
+the fleet's `bootstrap/setup-keycloak-oidc.sh` enables it for the admin client
+when run. On an existing installation, deploy the updated controller and rerun
+the updated bootstrap script, or enable the capability in Keycloak's client
+settings. The client attribute is
+`"oauth2.device.authorization.grant.enabled": "true"`.
+
+The implementation uses Keycloak's [device authorization endpoint](https://www.keycloak.org/securing-apps/oidc-layers#device-authorization-endpoint)
+and follows [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628.html).
 
 ### `kube-dc logout`
 

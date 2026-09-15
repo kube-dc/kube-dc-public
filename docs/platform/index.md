@@ -17,6 +17,7 @@ run the management cluster.
 | Operate internal platform endpoints | [Internal platform endpoints](internal-platform-endpoints.md) |
 | Review platform controls and trust boundaries | [Security model](security-model.md) |
 | Operate metrics, logs, alerts, and dashboards | [Observability](observability.md) |
+| Sell capacity from a partner portal through the Partner API | [Partner API integration guide](partner-api/overview.md) |
 
 ## Product vocabulary
 

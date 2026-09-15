@@ -172,20 +172,23 @@ func runBootstrapKubeconfig(ctx context.Context, opts runKubeconfigOpts) error {
 	}
 
 	// Resolve the CA: explicit file > TLS-handshake fetch > none (system trust).
+	useSystemCA, preserveCA := false, false
 	if opts.CACertFile != "" {
-		b, err := os.ReadFile(opts.CACertFile)
+		b, err := readLoginCA(opts.CACertFile)
 		if err != nil {
 			return fmt.Errorf("read --ca-cert: %w", err)
 		}
-		tmpl.CACertPEM = string(b)
+		tmpl.CACertPEM = b
 	} else if !opts.InsecureSkipTLS {
 		fetchCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 		defer cancel()
 		ca, fetchErr := bkubeconfig.FetchCA(fetchCtx, tmpl.Server, 5*time.Second)
 		if fetchErr != nil {
+			preserveCA = true
 			fmt.Fprintf(os.Stderr, "⚠  CA fetch from %s failed: %v\n", tmpl.Server, fetchErr)
-			fmt.Fprintln(os.Stderr, "   continuing without CA — will rely on system trust")
+			fmt.Fprintln(os.Stderr, "   preserving existing CA settings (system trust if none are configured)")
 		} else if ca == "" {
+			useSystemCA = true
 			fmt.Fprintf(os.Stderr, "✓ %s presents a publicly-trusted certificate; no CA embed needed\n", tmpl.Server)
 		} else {
 			tmpl.CACertPEM = ca
@@ -206,6 +209,8 @@ func runBootstrapKubeconfig(ctx context.Context, opts runKubeconfigOpts) error {
 	fmt.Fprintf(os.Stderr, "  server:   %s\n", tmpl.Server)
 	if tmpl.CACertPEM != "" {
 		fmt.Fprintf(os.Stderr, "  ca:       embedded (%d bytes PEM)\n", len(tmpl.CACertPEM))
+	} else if preserveCA {
+		fmt.Fprintln(os.Stderr, "  ca:       preserving existing trust")
 	} else {
 		fmt.Fprintf(os.Stderr, "  ca:       (none — relying on system trust)\n")
 	}
@@ -230,6 +235,7 @@ func runBootstrapKubeconfig(ctx context.Context, opts runKubeconfigOpts) error {
 		UserName:    tmpl.UserName,
 		ContextName: tmpl.ContextName,
 		CACert:      tmpl.CACertPEM,
+		UseSystemCA: useSystemCA,
 		Insecure:    opts.InsecureSkipTLS,
 		SetCurrent:  opts.SetCurrent,
 		Realm:       tmpl.Realm, // pins --realm in exec args — no silent fallback

@@ -222,7 +222,12 @@ func CreateHTTPClient(caCert string, insecure bool) *http.Client {
 	tlsConfig := &tls.Config{}
 
 	if caCert != "" {
-		certPool := x509.NewCertPool()
+		// The Kubernetes API can use a private CA while Keycloak uses a
+		// public certificate. A supplied bundle supplements system trust.
+		certPool, _ := x509.SystemCertPool()
+		if certPool == nil {
+			certPool = x509.NewCertPool()
+		}
 		if ok := certPool.AppendCertsFromPEM([]byte(caCert)); ok {
 			tlsConfig.RootCAs = certPool
 		}

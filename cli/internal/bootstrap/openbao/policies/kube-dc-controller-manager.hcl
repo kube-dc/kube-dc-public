@@ -60,6 +60,28 @@ path "+/+/metadata/*"           { capabilities = ["create","read","update","dele
 path "+/+/delete/*"             { capabilities = ["update"] }
 path "+/+/undelete/*"           { capabilities = ["update"] }
 path "+/+/destroy/*"            { capabilities = ["update"] }
+# Reserved managed-service credentials (kube-dc-svc-*): this controller must
+# NOT write them, in any Org or mount.
+#
+# Why a deny rather than tenant policy: the tenant roles are already narrowed
+# to read-only on this prefix, but THIS token is not a tenant token. A tenant
+# who creates a ManagedSecret named kube-dc-svc-<x> would otherwise have the
+# manager write that credential on their behalf, and External Secrets would
+# project the result to the application. The narrowing has to be here, on the
+# writer, because that is the identity actually performing the write.
+#
+# Precedence: deny always wins, and these patterns outrank the broad +/+/...
+# rules above -- they tie on first-wildcard position, trailing glob and
+# +-segment count, and win on being the longer path.
+#
+# Consequence, deliberate: NOTHING can write these paths today. The
+# managed-services publisher gets its own OpenBao identity scoped to this
+# prefix; publication must not be routed back through this token.
+path "+/+/data/kube-dc-svc-*"     { capabilities = ["deny"] }
+path "+/+/metadata/kube-dc-svc-*" { capabilities = ["deny"] }
+path "+/+/delete/kube-dc-svc-*"   { capabilities = ["deny"] }
+path "+/+/undelete/kube-dc-svc-*" { capabilities = ["deny"] }
+path "+/+/destroy/kube-dc-svc-*"  { capabilities = ["deny"] }
 # Per-Org PKI engine (M2 Certificate Manager). EnsureOrgIntermediate
 # creates the <org>/pki_int mount; EnsureProjectRole writes
 # <org>/pki_int/roles/<project>; cert-manager's vault Issuer then

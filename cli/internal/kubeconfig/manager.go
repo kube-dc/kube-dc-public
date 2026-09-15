@@ -19,51 +19,62 @@ type Config struct {
 	Contexts       []NamedContext `yaml:"contexts"`
 	Users          []NamedUser    `yaml:"users"`
 	Preferences    map[string]any `yaml:"preferences,omitempty"`
+	Extra          map[string]any `yaml:",inline"`
 }
 
 // NamedCluster represents a cluster entry in kubeconfig
 type NamedCluster struct {
-	Name    string  `yaml:"name"`
-	Cluster Cluster `yaml:"cluster"`
+	Name    string         `yaml:"name"`
+	Cluster Cluster        `yaml:"cluster"`
+	Extra   map[string]any `yaml:",inline"`
 }
 
 // Cluster contains cluster connection information
 type Cluster struct {
-	Server                   string `yaml:"server"`
-	CertificateAuthorityData string `yaml:"certificate-authority-data,omitempty"`
-	InsecureSkipTLSVerify    bool   `yaml:"insecure-skip-tls-verify,omitempty"`
+	Server                   string         `yaml:"server"`
+	CertificateAuthority     string         `yaml:"certificate-authority,omitempty"`
+	CertificateAuthorityData string         `yaml:"certificate-authority-data,omitempty"`
+	InsecureSkipTLSVerify    bool           `yaml:"insecure-skip-tls-verify,omitempty"`
+	TLSServerName            string         `yaml:"tls-server-name,omitempty"`
+	ProxyURL                 string         `yaml:"proxy-url,omitempty"`
+	Extra                    map[string]any `yaml:",inline"`
 }
 
 // NamedContext represents a context entry in kubeconfig
 type NamedContext struct {
-	Name    string  `yaml:"name"`
-	Context Context `yaml:"context"`
+	Name    string         `yaml:"name"`
+	Context Context        `yaml:"context"`
+	Extra   map[string]any `yaml:",inline"`
 }
 
 // Context contains context settings
 type Context struct {
-	Cluster   string `yaml:"cluster"`
-	User      string `yaml:"user"`
-	Namespace string `yaml:"namespace,omitempty"`
+	Cluster   string         `yaml:"cluster"`
+	User      string         `yaml:"user"`
+	Namespace string         `yaml:"namespace,omitempty"`
+	Extra     map[string]any `yaml:",inline"`
 }
 
 // NamedUser represents a user entry in kubeconfig
 type NamedUser struct {
-	Name string `yaml:"name"`
-	User User   `yaml:"user"`
+	Name  string         `yaml:"name"`
+	User  User           `yaml:"user"`
+	Extra map[string]any `yaml:",inline"`
 }
 
 // User contains user authentication information
 type User struct {
-	Exec *ExecConfig `yaml:"exec,omitempty"`
+	Exec  *ExecConfig    `yaml:"exec,omitempty"`
+	Extra map[string]any `yaml:",inline"`
 }
 
 // ExecConfig contains exec credential plugin configuration
 type ExecConfig struct {
-	APIVersion      string   `yaml:"apiVersion"`
-	Command         string   `yaml:"command"`
-	Args            []string `yaml:"args,omitempty"`
-	InteractiveMode string   `yaml:"interactiveMode,omitempty"`
+	APIVersion      string         `yaml:"apiVersion"`
+	Command         string         `yaml:"command"`
+	Args            []string       `yaml:"args,omitempty"`
+	InteractiveMode string         `yaml:"interactiveMode,omitempty"`
+	Extra           map[string]any `yaml:",inline"`
 }
 
 // Manager handles kubeconfig file operations
@@ -73,7 +84,14 @@ type Manager struct {
 
 // NewManager creates a new kubeconfig manager
 func NewManager() (*Manager, error) {
-	path := os.Getenv("KUBECONFIG")
+	// Match kubectl's write destination: the first non-empty path in the list.
+	var path string
+	for _, candidate := range filepath.SplitList(os.Getenv("KUBECONFIG")) {
+		if candidate != "" {
+			path = candidate
+			break
+		}
+	}
 	if path == "" {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
@@ -95,6 +113,49 @@ func NewManager() (*Manager, error) {
 // write to. Useful for surfacing in the TUI ("Kube-DC Contexts —
 // ~/.kube/config").
 func (m *Manager) Path() string { return m.path }
+
+// ClusterConnection returns settings only for the exact named API endpoint.
+func (m *Manager) ClusterConnection(clusterName, server string) (Cluster, error) {
+	config, err := m.Load()
+	if err != nil {
+		return Cluster{}, err
+	}
+	for _, named := range config.Clusters {
+		if named.Name != clusterName || named.Cluster.Server != server {
+			continue
+		}
+		return named.Cluster, nil
+	}
+	return Cluster{}, nil
+}
+
+// ClusterCA returns only trust already configured for this exact API endpoint.
+// Relative certificate file paths resolve beside the kubeconfig that owns them.
+func (m *Manager) ClusterCA(clusterName, server string) (string, error) {
+	cluster, err := m.ClusterConnection(clusterName, server)
+	if err != nil {
+		return "", err
+	}
+	if cluster.CertificateAuthorityData != "" {
+		data, err := base64.StdEncoding.DecodeString(cluster.CertificateAuthorityData)
+		if err != nil {
+			return "", fmt.Errorf("decode CA for cluster %q: %w", clusterName, err)
+		}
+		return string(data), nil
+	}
+	if cluster.CertificateAuthority != "" {
+		path := cluster.CertificateAuthority
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(filepath.Dir(m.path), path)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return "", fmt.Errorf("read CA for cluster %q: %w", clusterName, err)
+		}
+		return string(data), nil
+	}
+	return "", nil
+}
 
 // Load loads the kubeconfig file
 func (m *Manager) Load() (*Config, error) {
@@ -138,6 +199,9 @@ func (m *Manager) Save(config *Config) error {
 // AddKubeDCContext adds or updates a Kube-DC context in the kubeconfig
 // It preserves all non-Kube-DC entries
 func (m *Manager) AddKubeDCContext(params AddContextParams) error {
+	if params.UseSystemCA && params.CACert != "" {
+		return fmt.Errorf("cannot set both a CA bundle and system CA trust")
+	}
 	config, err := m.Load()
 	if err != nil {
 		return err
@@ -181,11 +245,25 @@ func (m *Manager) AddKubeDCContext(params AddContextParams) error {
 	clusterFound := false
 	for i, c := range config.Clusters {
 		if c.Name == clusterName {
-			config.Clusters[i].Cluster = Cluster{
+			cluster := Cluster{
 				Server:                   params.Server,
 				CertificateAuthorityData: caCertBase64,
 				InsecureSkipTLSVerify:    skipTLS,
 			}
+			if c.Cluster.Server == params.Server {
+				cluster.Extra = c.Cluster.Extra
+				cluster.TLSServerName = c.Cluster.TLSServerName
+				cluster.ProxyURL = c.Cluster.ProxyURL
+			}
+			// Re-authentication does not change trust for an existing API
+			// endpoint. Omitting --ca-cert must not erase a private CA already
+			// configured for it. Explicit CA replacement or --insecure wins;
+			// never carry a CA over when the server address changes.
+			if params.CACert == "" && !params.UseSystemCA && !params.Insecure && c.Cluster.Server == params.Server {
+				cluster.CertificateAuthority = c.Cluster.CertificateAuthority
+				cluster.CertificateAuthorityData = c.Cluster.CertificateAuthorityData
+			}
+			config.Clusters[i].Cluster = cluster
 			clusterFound = true
 			break
 		}
@@ -239,6 +317,7 @@ func (m *Manager) AddKubeDCContext(params AddContextParams) error {
 				Cluster:   clusterName,
 				User:      userName,
 				Namespace: params.Namespace,
+				Extra:     c.Context.Extra,
 			}
 			contextFound = true
 			break
@@ -271,6 +350,7 @@ type AddContextParams struct {
 	ContextName string
 	Namespace   string
 	CACert      string // PEM-encoded CA certificate
+	UseSystemCA bool   // Explicitly clear old CA data/files instead of preserving them
 	Insecure    bool   // Skip TLS verification
 	SetCurrent  bool
 
