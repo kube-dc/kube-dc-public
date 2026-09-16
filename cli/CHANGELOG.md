@@ -1,5 +1,9 @@
 # kube-dc CLI changelog
 
+## v0.8.2 — 2026-09-16
+
+- Align the UI migration bundle after live acceptance: encode S3 copy-source headers for Unicode object names and retry temporarily unavailable project-terminal log verification.
+
 ## v0.8.1 — 2026-09-16
 
 - Ship the corrected console quota/log routing and complete matching platform, UI and starter bundle.
