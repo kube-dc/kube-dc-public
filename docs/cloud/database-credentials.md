@@ -1,5 +1,12 @@
 # Database Credentials
 
+:::info Managed Services replaces KdcDatabase for new databases
+[Managed Services](managed-services.md) is the replacement for new databases.
+It currently covers PostgreSQL. The `KdcDatabase` and
+`DatabaseCredentialPolicy` resources described on this page remain supported
+for existing databases and will be deprecated.
+:::
+
 Kube-DC's Database Credentials feature rotates a database user's password and,
 when Secret sync is enabled, projects the current value into a Kubernetes
 `Secret`. The password does not

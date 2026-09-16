@@ -1,0 +1,511 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    helm.sh/resource-policy: keep
+    controller-gen.kubebuilder.io/version: v0.16.4
+  name: partners.kube-dc.com
+spec:
+  group: kube-dc.com
+  names:
+    kind: Partner
+    listKind: PartnerList
+    plural: partners
+    shortNames:
+    - prt
+    singular: partner
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.displayName
+      name: Display Name
+      type: string
+    - jsonPath: .status.ready
+      name: Ready
+      type: boolean
+    - jsonPath: .status.customerCount
+      name: Customers
+      type: integer
+    - jsonPath: .spec.suspended
+      name: Suspended
+      type: boolean
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: Partner is the Schema for the partners API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              PartnerSpec defines an external platform authorized to provision and operate
+              Kube-DC tenants through the Partner API on behalf of its own customers.
+
+              The controller reconciles this into a confidential service-account client in
+              the Keycloak master realm (partner-<name>). That client's service account is
+              deliberately granted NO realm-management or admin roles: partner tokens are an
+              identity + scope assertion for the Kube-DC Partner API, never a Keycloak
+              credential. All privileged work stays on the backend's own credentials.
+            properties:
+              contactEmail:
+                description: |-
+                  ContactEmail is the partner's technical contact, used for credential and
+                  deprecation notices.
+                maxLength: 256
+                minLength: 5
+                type: string
+              customerIdPrefix:
+                description: |-
+                  CustomerIDPrefix is prepended to every customer ID this partner creates
+                  ("<prefix>-<slug>"). Customer IDs are Organization names, which are
+                  cluster-wide -- a namespace, a Keycloak realm and DNS names hang off them --
+                  so without a prefix partners compete for the same names. Empty means the
+                  partner's own name, cut to 16 characters. Changing it affects only customers
+                  created afterwards.
+                maxLength: 16
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
+              defaults:
+                description: Defaults applied to provisioning calls that omit a field.
+                properties:
+                  egressNetworkType:
+                    default: cloud
+                    description: |-
+                      EgressNetworkType is the default project egress mode. See ProjectSpec.
+                      Defaults to "cloud", matching the platform's own guidance: a public
+                      gateway IP is opt-in, and clusters with allow_public_projects=false
+                      (the default) reject "public" at admission, which would fail every
+                      customer a partner provisions.
+                    enum:
+                    - public
+                    - cloud
+                    type: string
+                  planId:
+                    default: dev-pool
+                    description: |-
+                      PlanID is the billing plan assigned to new customers (e.g. "dev-pool").
+                      Must exist in the billing-plans ConfigMap at call time; unvalidated here
+                      because plans are data, not schema.
+                    maxLength: 64
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                  projectName:
+                    default: default
+                    description: ProjectName is the name of the project created alongside
+                      a new customer.
+                    maxLength: 63
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                type: object
+              displayName:
+                description: DisplayName is the human-readable partner name shown
+                  in the admin console.
+                maxLength: 128
+                minLength: 1
+                type: string
+              limits:
+                description: Limits caps customers and API call rate.
+                properties:
+                  allowedGpuProfiles:
+                    description: |-
+                      AllowedGPUProfiles lists the GPU profile ids this partner may grant,
+                      through a quota or a plan. Empty means none: GPUs are scarce and opt-in.
+                    items:
+                      type: string
+                    maxItems: 100
+                    type: array
+                  allowedPlans:
+                    description: |-
+                      AllowedPlans lists the plan ids this partner may assign. Empty means the
+                      plans in the catalog that are available for self-service.
+                    items:
+                      type: string
+                    maxItems: 100
+                    type: array
+                  capacity:
+                    description: |-
+                      Capacity is the pool every customer's allocation draws from: the sum of
+                      what this partner has granted (explicit quotas, or plans plus add-ons),
+                      suspended customers included so a resume never fails. Unset dimensions
+                      are unlimited; an unset pool is unlimited.
+                    properties:
+                      cpu:
+                        description: CPU in cores, as a Kubernetes quantity (e.g.
+                          "400", "1500m").
+                        pattern: ^[0-9]+(\.[0-9]+)?m?$
+                        type: string
+                      gpu:
+                        additionalProperties:
+                          description: |-
+                            PartnerGPUGrant is an amount of one GPU profile, in the same dimensions as a
+                            plan or quota GPU grant.
+                          properties:
+                            corePercent:
+                              format: int64
+                              minimum: 0
+                              type: integer
+                            devices:
+                              format: int64
+                              minimum: 0
+                              type: integer
+                            memoryMiB:
+                              format: int64
+                              minimum: 0
+                              type: integer
+                            shares:
+                              format: int64
+                              minimum: 0
+                              type: integer
+                          type: object
+                        description: GPU maps a catalog profile id to an amount of
+                          that profile.
+                        type: object
+                      loadBalancers:
+                        description: LoadBalancers is a count of LoadBalancer services.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      memory:
+                        description: Memory as a Kubernetes quantity (e.g. "1600Gi").
+                        pattern: ^[0-9]+(\.[0-9]+)?(Ki|[MGTPE]i?|k)?$
+                        type: string
+                      objectStorage:
+                        description: ObjectStorage as a Kubernetes quantity (e.g.
+                          "5Ti").
+                        pattern: ^[0-9]+(\.[0-9]+)?(Ki|[MGTPE]i?|k)?$
+                        type: string
+                      pods:
+                        description: Pods is a count.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      publicIPs:
+                        description: PublicIPs is a count of dedicated public IPv4
+                          addresses.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      storage:
+                        description: Storage (block) as a Kubernetes quantity (e.g.
+                          "20Ti").
+                        pattern: ^[0-9]+(\.[0-9]+)?(Ki|[MGTPE]i?|k)?$
+                        type: string
+                    type: object
+                  maxCustomers:
+                    default: 0
+                    description: |-
+                      MaxCustomers caps how many organizations this partner may have at once.
+                      0 means unlimited. Each customer costs a Keycloak realm, so an explicit
+                      cap is the guard against a runaway integration.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  maxOpenOperations:
+                    default: 100
+                    description: |-
+                      MaxOpenOperations caps provisioning operations in flight for this partner,
+                      the guard against a runaway integration creating work faster than the
+                      platform completes it. 0 means unlimited.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  maxProjectsPerCustomer:
+                    default: 10
+                    description: |-
+                      MaxProjectsPerCustomer caps the projects one customer may have. 0 means
+                      unlimited.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  perCustomerMax:
+                    description: |-
+                      PerCustomerMax caps the allocation of any single customer. Unset
+                      dimensions are uncapped.
+                    properties:
+                      cpu:
+                        description: CPU in cores, as a Kubernetes quantity (e.g.
+                          "400", "1500m").
+                        pattern: ^[0-9]+(\.[0-9]+)?m?$
+                        type: string
+                      gpu:
+                        additionalProperties:
+                          description: |-
+                            PartnerGPUGrant is an amount of one GPU profile, in the same dimensions as a
+                            plan or quota GPU grant.
+                          properties:
+                            corePercent:
+                              format: int64
+                              minimum: 0
+                              type: integer
+                            devices:
+                              format: int64
+                              minimum: 0
+                              type: integer
+                            memoryMiB:
+                              format: int64
+                              minimum: 0
+                              type: integer
+                            shares:
+                              format: int64
+                              minimum: 0
+                              type: integer
+                          type: object
+                        description: GPU maps a catalog profile id to an amount of
+                          that profile.
+                        type: object
+                      loadBalancers:
+                        description: LoadBalancers is a count of LoadBalancer services.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      memory:
+                        description: Memory as a Kubernetes quantity (e.g. "1600Gi").
+                        pattern: ^[0-9]+(\.[0-9]+)?(Ki|[MGTPE]i?|k)?$
+                        type: string
+                      objectStorage:
+                        description: ObjectStorage as a Kubernetes quantity (e.g.
+                          "5Ti").
+                        pattern: ^[0-9]+(\.[0-9]+)?(Ki|[MGTPE]i?|k)?$
+                        type: string
+                      pods:
+                        description: Pods is a count.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      publicIPs:
+                        description: PublicIPs is a count of dedicated public IPv4
+                          addresses.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      storage:
+                        description: Storage (block) as a Kubernetes quantity (e.g.
+                          "20Ti").
+                        pattern: ^[0-9]+(\.[0-9]+)?(Ki|[MGTPE]i?|k)?$
+                        type: string
+                    type: object
+                  rateLimit:
+                    description: RateLimit bounds API call rate per key.
+                    properties:
+                      burst:
+                        default: 40
+                        description: |-
+                          Burst is the token-bucket depth, i.e. how far above the sustained rate a
+                          short spike may go. 0 means the platform default.
+                        format: int32
+                        maximum: 10000
+                        minimum: 0
+                        type: integer
+                      requestsPerMinute:
+                        default: 120
+                        description: RequestsPerMinute is the sustained rate. 0 means
+                          the platform default.
+                        format: int32
+                        maximum: 10000
+                        minimum: 0
+                        type: integer
+                    type: object
+                type: object
+              portalUrl:
+                description: |-
+                  PortalURL is the partner's own customer portal, where the partner's
+                  customers buy and change capacity. The tenant console shows it to those
+                  customers as "Manage in <displayName> portal". Must be an https URL without
+                  embedded credentials. Empty means no link is shown.
+                maxLength: 2048
+                pattern: ^https://[^/?#@\s]+([/?#]\S*)?$
+                type: string
+              scopes:
+                description: |-
+                  Scopes granted to this partner's credentials. An empty list grants nothing,
+                  which is the safe default for a CR created by hand.
+                items:
+                  description: |-
+                    PartnerScope is one capability granted to a partner's API credentials. Scopes
+                    become client roles on the partner's Keycloak service account, so they travel
+                    inside the access token (resource_access["partner-<name>"].roles) and the API
+                    never has to re-read the CR to authorize a call.
+                  enum:
+                  - customers:read
+                  - customers:write
+                  - customers:sso
+                  - usage:read
+                  type: string
+                type: array
+              suspended:
+                default: false
+                description: |-
+                  Suspended disables the partner immediately: the controller disables the
+                  Keycloak client (killing its sessions) and the API rejects both token
+                  exchange and any already-issued token. The CR, its keys, and its customers
+                  are left intact so the partner can be resumed.
+                type: boolean
+              webhook:
+                description: Webhook configures outbound event delivery.
+                properties:
+                  enabled:
+                    default: true
+                    description: |-
+                      Enabled turns delivery on. Disabling keeps the configuration but stops
+                      delivery — the partner falls back to polling, which is always authoritative.
+                    type: boolean
+                  events:
+                    description: |-
+                      Events subscribes to event types; "*" suffix wildcards are allowed
+                      (e.g. "customer.*"). Empty means every event.
+                    items:
+                      type: string
+                    type: array
+                  secretRef:
+                    description: |-
+                      SecretRef names a Secret in the Partner's namespace holding the HMAC
+                      signing secret. The controller generates one if the Secret is absent.
+                    properties:
+                      key:
+                        default: secret
+                        description: Key inside the Secret's data.
+                        maxLength: 253
+                        type: string
+                      name:
+                        description: Name of the Secret.
+                        maxLength: 253
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  url:
+                    description: URL receives signed event POSTs. Must be https outside
+                      development.
+                    maxLength: 2048
+                    pattern: ^https?://
+                    type: string
+                required:
+                - url
+                type: object
+            required:
+            - displayName
+            type: object
+          status:
+            description: PartnerStatus reports the reconciled credential state.
+            properties:
+              clientSecretRef:
+                description: |-
+                  ClientSecretRef names the Secret holding the client secret the API backend
+                  uses to broker client_credentials grants on the partner's behalf.
+                properties:
+                  key:
+                    default: secret
+                    description: Key inside the Secret's data.
+                    maxLength: 253
+                    type: string
+                  name:
+                    description: Name of the Secret.
+                    maxLength: 253
+                    type: string
+                required:
+                - name
+                type: object
+              conditions:
+                description: Conditions follow the standard Ready/Degraded pattern.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              customerCount:
+                description: |-
+                  CustomerCount is the number of organizations currently labelled with this
+                  partner. Refreshed on reconcile; advisory, not a quota gate (the API
+                  counts live when enforcing MaxCustomers).
+                format: int32
+                type: integer
+              keycloakClientId:
+                description: KeycloakClientID is the clientId of the partner's service-account
+                  client.
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the spec generation last reconciled.
+                format: int64
+                type: integer
+              ready:
+                description: Ready is true once the Keycloak client exists and matches
+                  spec.
+                type: boolean
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -118,6 +118,53 @@ gpu:
 # own.
 s3Endpoint: ""  # example: "https://s3.stage.kube-dc.com"
 
+# Object storage (Rook Ceph RGW).
+#
+# Ceph RGW admin capabilities are not scoped to the user holding them: a
+# credential with `user=read` can read any other user's record, secret keys
+# included, and `bucket=*` reaches every bucket in the store. Key management
+# and usage reporting therefore run on the platform's own admin identity below,
+# which never leaves the backend, while each organization's user holds no
+# capabilities and is the credential tenants actually receive.
+objectStorage:
+  # These two MUST name the same store as the billing plans'
+  # `objectStorageConfig` (namespace / storeName), which is what the controller
+  # uses for organization users. They feed the backend and the platform identity.
+  # Both default to rook-ceph / my-store; override them together or not at all.
+  rookNamespace: rook-ceph
+  cephStoreName: my-store
+  platformAdminUser:
+    # DEFAULTS TO FALSE, and that is deliberate.
+    #
+    # While ANY RGW identity in the store still carries admin capabilities, its
+    # holder can call `GET /admin/user?uid=<this user>` and read THIS user's
+    # secret key in full — verified on live RGW. Revoking capabilities afterwards
+    # does not invalidate what was copied, so creating this identity one moment
+    # too early hands out a permanent store-wide admin credential. A chart cannot
+    # order itself against a controller that has not reconciled yet, so the
+    # barrier is this flag rather than a promise about timing.
+    #
+    # Fresh install: turn it on. There are no legacy identities to leak to, and
+    # docs/platform/deploy-rook-ceph-object-storage.md §7.2 says so to operators.
+    # Existing cluster: leave it off for the upgrade that ships the controller,
+    # then follow docs/internal/s3-admin-capability-remediation.md — it covers
+    # the inventory that must come back clean, including RGW users a tenant may
+    # have minted for itself, and the key rotation that has to happen because
+    # revoking a capability does not invalidate a key already copied.
+    #
+    # While it is off, the console's key management and object-storage usage
+    # views return HTTP 503 and say so in the backend log.
+    enabled: false
+    # Reserved: an organization of this name would resolve to the same
+    # CephObjectStoreUser and Secret. The controller and the backend both refuse
+    # that collision, so changing this name changes what they reserve.
+    # Do not rename in place on a running cluster: during the rollout old pods
+    # still reserve the old name while the new user is created. Choose it at
+    # install time. Sync reserves the name; the capability pass and organization
+    # Delete recognise this user by name, the chart's labels and the absence of the
+    # organization label.
+    name: kube-dc-platform-admin
+
 # Per-cluster public Grafana URL. Threaded into kube-dc-backend
 # (GRAFANA_URL env) for the "Open Grafana" SSO launch redirect. Same
 # rationale as s3Endpoint — no fallback, must be set per-cluster.
@@ -520,6 +567,18 @@ manager:
     kube-dc-manager: "true"
 
 
+ui:
+  # Opt in only with images built from github.com/kube-dc/ui and Console API v1.
+  enabled: false
+  environment: production
+  environmentLabel: ""
+  defaultOrganization: ""
+  managedServices:
+    installation: kube-dc
+    organizations: []
+    allOrganizations: false
+  buildLabel: ""
+
 frontend:
   replicaCount: 2
   # Extra environment variables for the container
@@ -703,6 +762,17 @@ adminFrontend:
   affinity: {}
 
 backend:
+  # CLI bootstrap publishes the API server CA over the backend's trusted HTTPS
+  # endpoint. By default it reads the projected service-account ca.crt. Override
+  # with a certificate-only ConfigMap if the external API uses a different CA.
+  cliDiscovery:
+    caConfigMapName: ""
+    caKey: ca.crt
+  consoleApi:
+    enabled: false
+    # Kubernetes service DNS and mounted CA; override only for a verified endpoint.
+    kubernetesApiUrl: https://kubernetes.default.svc
+    kubernetesCaFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
   # Enable only after k8-manager/CRDs and dual-home networking pass the
   # ProjectInternal acceptance suite. Applies to newly created local clusters.
   # Existing and external-worker clusters keep their endpoint contract.
@@ -1010,7 +1080,7 @@ k8Manager:
   image:
     repository: shalb/kube-dc-k8-manager
     pullPolicy: IfNotPresent
-    tag: "v0.7.9"
+    tag: "v0.8.0"
 
   # External endpoint for the infrastructure cluster API
   # Required for CCMs running in VPC-isolated namespaces that cannot reach kubernetes.default.svc
@@ -1579,7 +1649,7 @@ dbManager:
     # four minor lines behind the one the platform actually supports.
     # db-manager is being retired in favour of kube-dc-services; until it is,
     # this default tracks the released line.
-    tag: "v0.7.9"
+    tag: "v0.8.0"
 
   extraEnv: []
 
@@ -2163,12 +2233,11 @@ osImages:
       # mirror. Pinning only the fleet file names a key that exists in one cluster's
       # bucket and nowhere else — verified: stage returned 200 and cloud 403 for the
       #
-      # To ship a new Windows golden: bake -> gate -> export (prints the release key)
-      # -> bump both lines below -> chart release -> each cluster's mirror replicates
-      # it -> add the matching versioned pair in platform/rbd-vm/goldens-fs/os/ ->
-      # promote with the golden-active label once Ready.
-      upstreamURL: "https://s3.stage.kube-dc.com/cdi-os-images/windows/11/releases/2026-08-28/sha256-f0dea74da9c5/windows11-x64-golden.qcow2"
-      mirrorPath: "windows/11/releases/2026-08-28/sha256-f0dea74da9c5/windows11-x64-golden.qcow2"
+      # Windows media must be supplied by the operator through an authenticated
+      # source. No publicly redistributed installed disk is a chart default.
+      # Existing imported golden DataVolumes are retained across chart upgrades.
+      upstreamURL: ""
+      mirrorPath: "private/windows/11/golden/windows11-x64-golden.qcow2"
       minMemory: "8G"
       minVCPU: "2"
       minStorage: "70G"
@@ -2560,7 +2629,7 @@ routedNetwork:
   enabled: false
   backend: frr-project-gateway
   namespace: kube-dc-routing
-  gatewayImage: shalb/kube-dc-routing-gateway:v0.7.9
+  gatewayImage: shalb/kube-dc-routing-gateway:v0.8.0
   frrImage: quay.io/frrouting/frr:10.4.1
   routingLinkPool: 100.65.0.0/16
   # Exact identity allowed to maintain kube-ovn finalizers/status on protected
@@ -2778,6 +2847,8 @@ branding:
   # Enable only after installing the matching kube-dc Keycloak email theme.
   keycloakEmailThemeSync: false
 notifications:
+  # One reminder after 24 hours, including older eligible signups. Stripe only.
+  stripeSignupRemindersEnabled: true
   supportPortalUrl: ""
   supportEmail: ""
   paymentUrl: ""

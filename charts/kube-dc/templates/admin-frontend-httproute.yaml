@@ -15,6 +15,18 @@ spec:
   hostnames:
   - {{ required "adminFrontend.gateway.hostname is required (e.g. admin.<domain>)" .Values.adminFrontend.gateway.hostname }}
   rules:
+  {{- if .Values.ui.enabled }}
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/ui/v1
+    timeouts:
+      request: "1h"
+      backendRequest: "1h"
+    backendRefs:
+    - name: {{ $fullName }}
+      port: {{ $svcPort }}
+  {{- end }}
   # Admin SPA: nginx serves static assets; the browser calls BACKEND_URL
   # (backend.<domain>) directly, so a single catch-all route is enough.
   - matches:

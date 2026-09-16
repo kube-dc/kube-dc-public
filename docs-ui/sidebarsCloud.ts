@@ -101,6 +101,68 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Managed Services',
+      collapsed: true,
+      items: [
+        {
+          type: 'doc',
+          id: 'managed-services',
+          label: 'Overview',
+        },
+        {
+          type: 'doc',
+          id: 'managed-services-plans',
+          label: 'Classes and Plans',
+        },
+        {
+          type: 'doc',
+          id: 'postgresql-create',
+          label: 'Create a PostgreSQL Service',
+        },
+        {
+          type: 'doc',
+          id: 'postgresql-connect',
+          label: 'Connect Applications',
+        },
+        {
+          type: 'doc',
+          id: 'postgresql-credentials',
+          label: 'Credentials and Rotation',
+        },
+        {
+          type: 'doc',
+          id: 'postgresql-operations',
+          label: 'Day-2 Operations',
+        },
+        {
+          type: 'doc',
+          id: 'postgresql-backup-restore',
+          label: 'Backups and Restore',
+        },
+        {
+          type: 'doc',
+          id: 'postgresql-external-access',
+          label: 'External Access',
+        },
+        {
+          type: 'doc',
+          id: 'managed-services-status-deletion',
+          label: 'Status and Deletion',
+        },
+        {
+          type: 'doc',
+          id: 'managed-services-from-kdcdatabase',
+          label: 'Coming from KdcDatabase',
+        },
+        {
+          type: 'doc',
+          id: 'managed-services-other-families',
+          label: 'Valkey',
+        },
+      ],
+    },
+    {
+      type: 'category',
       label: 'Managed Databases',
       collapsed: true,
       items: [

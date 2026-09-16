@@ -21,6 +21,8 @@ Pass `from`, `to` or `granularity` to also get a `window`: the reserved capacity
 
 The window carries `from`, `to`, `granularity` and three totals: `cpu_hours`, `memory_gib_hours` and `storage_gib_hours`. The longest window the platform answers is `limits.max_usage_window_days` in `GET /auth/whoami` (the per-customer response also repeats it as `max_window_days`). A longer window, bad timestamps or an unknown granularity answer `400` with `VALIDATION_ERROR`.
 
+Samples are attributed to the immutable customer identity, including projects removed during the window. Reusing a customer name starts a new history. Periods before ownership-attributed metrics were enabled, and gaps in those metrics, are unavailable; time before this customer was created contributes zero. Hourly and daily sampling approximate reservations between observations.
+
 **Unmeasurable is never zero.** When a value cannot be measured, it is `null` and that window carries `partial: true` with a `partial_reason`. With `GET /usage`, check `window.partial` on every entry.
 
 ## Turning usage into invoices

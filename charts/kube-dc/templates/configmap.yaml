@@ -3,6 +3,10 @@ kind: ConfigMap
 metadata:
   name: {{ include "kube-dc.frontend.fullname" . }}-config
 data:
+  {{- if .Values.ui.enabled }}
+  runtime-config.json: |
+    {{- include "kube-dc.ui.runtimeConfig" (dict "root" . "application" "tenant") | nindent 4 }}
+  {{- end }}
   env.js: |
     window.backendURL = 'https://{{ .Values.backend.gateway.hostname }}';
     window.frontendURL = 'https://{{ .Values.frontend.gateway.hostname }}';

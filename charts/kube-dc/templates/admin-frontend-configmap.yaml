@@ -6,6 +6,10 @@ metadata:
   labels:
     {{- include "kube-dc.adminFrontend.labels" . | nindent 4 }}
 data:
+  {{- if .Values.ui.enabled }}
+  runtime-config.json: |
+    {{- include "kube-dc.ui.runtimeConfig" (dict "root" . "application" "admin") | nindent 4 }}
+  {{- end }}
   # window._env_ consumed by the admin SPA at runtime. This is mounted over the
   # image's baked-in /usr/share/nginx/html/env.js, which is built with
   # placeholder/stage URLs. The admin image has NO entrypoint that regenerates

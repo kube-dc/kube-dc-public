@@ -13,10 +13,11 @@ spec:
       {{- include "kube-dc.frontend.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.frontend.podAnnotations }}
       annotations:
+        checksum/ui-config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.frontend.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
       labels:
         {{- include "kube-dc.frontend.selectorLabels" . | nindent 8 }}
         {{- include "kube-dc.podVersionLabel" . | nindent 8 }}
@@ -35,7 +36,7 @@ spec:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.frontend.securityContext | nindent 12 }}
-          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "kube-dc.ui.image" (dict "image" .Values.frontend.image "appVersion" .Chart.AppVersion) | quote }}
           imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
           ports:
             - name: http
@@ -55,6 +56,12 @@ spec:
             - mountPath: /usr/share/nginx/html/env.js
               name: env-js
               subPath: env.js
+            {{- if .Values.ui.enabled }}
+            - mountPath: /usr/share/nginx/html/runtime-config.json
+              name: env-js
+              subPath: runtime-config.json
+              readOnly: true
+            {{- end }}
           {{- with .Values.frontend.volumeMounts }}
             {{- toYaml . | nindent 12 }}
           {{- end }}

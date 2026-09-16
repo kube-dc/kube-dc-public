@@ -24,6 +24,12 @@ spec:
     - path:
         type: PathPrefix
         value: /api/cloud-shell
+    - path:
+        type: PathPrefix
+        value: /api/project-console
+    - path:
+        type: PathPrefix
+        value: /api/ui/v1
     timeouts:
       request: {{ .Values.backend.gateway.longLivedTimeout | default "1h" | quote }}
       backendRequest: {{ .Values.backend.gateway.longLivedTimeout | default "1h" | quote }}

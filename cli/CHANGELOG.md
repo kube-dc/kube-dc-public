@@ -1,5 +1,11 @@
 # kube-dc CLI changelog
 
+## v0.8.0 — 2026-09-16
+
+- Align the CLI and fleet starter with the v0.8.0 platform, controllers and managed services.
+- Fresh installations use the new tenant/admin consoles and matching Keycloak theme.
+- Root UI configuration and backend Console API v1 are installation-specific, with verified upstream TLS and one-use terminal tickets.
+
 ## v0.7.12
 
 - Control-plane servers installed with this version get a kube-apiserver audit

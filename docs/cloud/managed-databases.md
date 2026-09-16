@@ -1,5 +1,11 @@
 # Managed Databases
 
+:::info Managed Services replaces KdcDatabase for new databases
+[Managed Services](managed-services.md) is the replacement for new databases.
+It currently covers PostgreSQL. The `KdcDatabase` resources described on this
+page remain supported for existing databases and will be deprecated.
+:::
+
 Kube-DC provides managed **PostgreSQL** and **MariaDB** databases through the dashboard and Kubernetes API. A one-replica database is standalone; configure two or more replicas when the engine and workload require failover.
 
 ## Databases Overview

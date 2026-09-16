@@ -122,6 +122,10 @@ rules:
   resources: [horizontalpodautoscalers]
   verbs: ["*"]
 # Cluster API (KDC Clusters)
+# Worker inventory is read-only, including for project administrators.
+- apiGroups: [cluster.x-k8s.io]
+  resources: [machines]
+  verbs: [get, list, watch]
 - apiGroups: [cluster.x-k8s.io]
   resources: [clusters, machinedeployments]
   verbs: ["*"]
@@ -319,6 +323,10 @@ rules:
   resources: [horizontalpodautoscalers]
   verbs: [create, get, list, watch, delete, update, patch]
 # KDC Clusters - full CRUD
+# Worker inventory is read-only, including for project administrators.
+- apiGroups: [cluster.x-k8s.io]
+  resources: [machines]
+  verbs: [get, list, watch]
 - apiGroups: [cluster.x-k8s.io]
   resources: [clusters, machinedeployments]
   verbs: [get, list, watch]
@@ -488,6 +496,10 @@ rules:
   resources: [horizontalpodautoscalers]
   verbs: [get, list, watch]
 # Cluster API - read only
+# Worker inventory is read-only, including for project administrators.
+- apiGroups: [cluster.x-k8s.io]
+  resources: [machines]
+  verbs: [get, list, watch]
 - apiGroups: [cluster.x-k8s.io]
   resources: [clusters, machinedeployments]
   verbs: [get, list, watch]
@@ -651,6 +663,10 @@ rules:
   resources: [horizontalpodautoscalers]
   verbs: [get, list]
 # Cluster API - read only
+# Worker inventory is read-only, including for project administrators.
+- apiGroups: [cluster.x-k8s.io]
+  resources: [machines]
+  verbs: [get, list, watch]
 - apiGroups: [cluster.x-k8s.io]
   resources: [clusters, machinedeployments]
   verbs: [get, list]
