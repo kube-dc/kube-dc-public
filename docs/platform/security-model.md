@@ -228,7 +228,7 @@ What that means in practice for an operator:
   `driftDetection.ignore` (or Argo's
   `ServerSideDiff=true,IncludeMutationWebhook=true` — both options, since
   server-side diff alone does not account for mutating webhooks) as the
-  alternative. See [Scaling and performance](../cloud/scaling-performance.md).
+  alternative. See [Scaling and performance](/cloud/scaling-performance).
 
   **Decided 2026-09-05: narrowing stays.** The alternative — REFUSING a budget
   that lacks the requirements — ends the *mutation* drift, because admission
