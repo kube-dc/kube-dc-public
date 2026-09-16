@@ -1,0 +1,8 @@
+{{- if and .Values.ui.enabled (not .Values.backend.consoleApi.enabled) -}}
+{{- fail "ui.enabled requires backend.consoleApi.enabled and a compatible backend image" -}}
+{{- end -}}
+{{- if .Values.backend.consoleApi.enabled -}}
+{{- if or .Values.backend.autoscaling.enabled (ne (int .Values.backend.replicaCount) 1) -}}
+{{- fail "Console API v1 requires backend.replicaCount=1 and backend.autoscaling.enabled=false for process-local tickets" -}}
+{{- end -}}
+{{- end -}}

@@ -27,6 +27,22 @@ rules:
   - apiGroups: ["services.kube-dc.com"]
     resources: ["managedserviceclasses", "managedserviceplans", "connectivityclasses"]
     verbs: ["get", "list"]
+  # The operator views under /api/admin/managed-services are cluster-wide by
+  # nature (every Project's instances, every data plane, the operations parked
+  # for a provider), so they read with this identity behind the master-realm
+  # admin gate. Reads only: the tenant API still authorizes each Project caller
+  # and acts with the caller's own token.
+  - apiGroups: ["services.kube-dc.com"]
+    resources: ["managedservices", "servicedataplanes", "serviceplacements", "cellreservations", "servicebackups"]
+    verbs: ["get", "list"]
+  # serviceoperations also carry patch: approving a gated operation and
+  # withdrawing a queued one are annotation writes on this object. The cluster
+  # still decides -- the approval annotation is gated by an admission policy
+  # that admits only operator groups, and this identity is in none of them
+  # unless an installation deliberately grants it.
+  - apiGroups: ["services.kube-dc.com"]
+    resources: ["serviceoperations"]
+    verbs: ["get", "list", "patch"]
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["create", "get", "list", "watch", "delete"]

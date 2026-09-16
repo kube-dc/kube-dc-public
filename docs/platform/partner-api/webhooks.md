@@ -205,3 +205,8 @@ Every event body is `{"id", "event", "created_at", "partner_id", "data"}`, with 
 
 - `POST /webhook/test` sends one `ping` synchronously: a single attempt with a 5-second timeout and no retries, whatever your `events` filter and even while delivery is disabled. It reports `delivered`, `delivery_id`, `attempts`, the HTTP `status` your endpoint answered and any `error`. It answers `400` with `NOT_CONFIGURED` when no webhook URL or secret is configured.
 - `GET /webhook/deliveries` lists the 50 most recent delivery attempts, newest first, with `id`, `event`, `delivered`, `attempts`, `status`, `error` and `at`. Bodies are never kept. It is a best-effort log for debugging, not a replay queue.
+
+
+### Deletion completion
+
+`customer.deleted` and `project.deleted` mean the original resource has disappeared after finalization. Accepting a DELETE only starts that process. These completion events survive a backend restart and retry with the same delivery ID; deduplicate the ID before applying an event. A replacement resource reusing the name is a separate resource.

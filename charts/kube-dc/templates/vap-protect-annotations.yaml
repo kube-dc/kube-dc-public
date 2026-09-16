@@ -30,6 +30,18 @@ spec:
         (has(object.metadata.annotations) ? object.metadata.annotations : {}) ==
         (has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {})
       message: "Modifying annotations on this resource is not allowed. Only system controllers can change annotations."
+    # Partner ownership labels. The partner label decides which partner may
+    # manage (and delete) a customer and whether in-console purchases are
+    # blocked; a tenant removing or rewriting it would escape its partner's
+    # control or push itself into another partner's account.
+    - expression: >-
+        (has(object.metadata.labels) && 'partner.kube-dc.com/id' in object.metadata.labels ? object.metadata.labels['partner.kube-dc.com/id'] : '') ==
+        (has(oldObject.metadata.labels) && 'partner.kube-dc.com/id' in oldObject.metadata.labels ? oldObject.metadata.labels['partner.kube-dc.com/id'] : '')
+      message: "The partner.kube-dc.com/id label is managed by the platform and cannot be changed."
+    - expression: >-
+        (has(object.metadata.labels) && 'partner.kube-dc.com/external-id-hash' in object.metadata.labels ? object.metadata.labels['partner.kube-dc.com/external-id-hash'] : '') ==
+        (has(oldObject.metadata.labels) && 'partner.kube-dc.com/external-id-hash' in oldObject.metadata.labels ? oldObject.metadata.labels['partner.kube-dc.com/external-id-hash'] : '')
+      message: "The partner.kube-dc.com/external-id-hash label is managed by the platform and cannot be changed."
 
 ---
 apiVersion: admissionregistration.k8s.io/v1

@@ -216,3 +216,6 @@ To cap a slider for one customer, the most it can hold in a dimension is the sma
 | `BUSY` | 409 | | Retry after `Retry-After`. |
 
 Capacity is checked when you create a customer, set a quota and assign a plan.
+
+
+Quantities must be finite and non-negative. Use `k` for decimal thousands or `Ki` for binary kibibytes; uppercase `K` is rejected. Nonzero quantities must be at least 1e-9 and at most 9007199254740991 in base units. GPU grants must match an enabled, billing-eligible catalog profile. Unreadable existing quotas block capacity increases until the platform operator repairs them; a customer whose current allocation is known can still decrease it.

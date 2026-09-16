@@ -9,7 +9,7 @@ Welcome to Kube-DC Cloud — a managed cloud platform where you deploy applicati
 - **Provision Managed Clusters** — A tenant-controlled cluster of your own, for operators, CRDs and cluster-scoped software
 - **Connect and Expose Workloads** — Private networks per Project, public and floating IPs, load balancers, HTTPS ingress
 - **Store and Protect Data** — Use persistent block storage, S3-compatible object storage, snapshots, and backups
-- **Run Managed Databases** — Provision PostgreSQL or MariaDB with persistent storage, replication options, backups, connection details, and credential workflows → [Managed Databases](managed-databases.md)
+- **Run Managed Databases** — Provision PostgreSQL or MariaDB with persistent storage, replication options, backups, connection details, and credential workflows → [Managed Services](managed-services.md) and [Managed Databases](managed-databases.md)
 - **Manage Application Secrets** — Keep API tokens and credentials out of Git in encrypted storage, audit access, and sync selected values into Kubernetes Secrets → [Secrets Manager](secrets-manager.md)
 - **Manage Teams and Billing** — Users, roles and billing across your organization
 

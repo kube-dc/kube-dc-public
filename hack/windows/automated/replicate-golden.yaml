@@ -1,0 +1,118 @@
+# replicate-golden — copy ONE immutable golden release into THIS cluster's image bucket.
+#
+# WHY THIS EXISTS. Every cluster has its own S3 bucket, and the fleet's golden URL
+# substitutes the local hostname (${S3_HOSTNAME:=s3.${DOMAIN}}). So a release published
+# from the bake cluster is NOT visible anywhere else: the receiving cluster resolves
+# .../releases/<date>/sha256-<short>/... against its OWN bucket and gets 403, and the
+# CDI importer crash-loops (observed 2026-08-28: cloud and prod1 both at 20
+# restarts, ~80 minutes, while their previous golden kept serving).
+#
+# The alternative — pointing every cluster at one canonical S3 host — was rejected: it
+# makes every cluster's golden import depend on another cluster staying reachable, and
+# the Linux side deliberately rebuilds per cluster from immutable inputs for the same
+# reason. Replication keeps each cluster self-contained after one copy.
+#
+# The digest in the key is what makes this safe to run anywhere, any number of times:
+# the object is content-addressed, so a re-run either finds the same bytes already
+# present or fails the checksum. It never silently substitutes a different image.
+#
+# NAMESPACE: kube-dc. That is where the OBC's cdi-os-images Secret AND ConfigMap both
+# live on every cluster. golden-images-build (the bake namespace) has only the Secret
+# on some clusters, which fails as CreateContainerConfigError -- the pod never starts,
+# reports no logs, and sat "active" for 56 minutes on cloud looking like a slow
+# download before I checked the pod state rather than the job's.
+#
+# USAGE (run against the RECEIVING cluster):
+#   # Supply a short-lived presigned source URL for this private object.
+#   SRC=https://s3.example.com/cdi-os-images/private/windows/11/releases/2026-08-28/sha256-f0dea74da9c5/windows11-x64-golden.qcow2
+#   KEY=private/windows/11/releases/2026-08-28/sha256-f0dea74da9c5/windows11-x64-golden.qcow2
+#   SHA=f0dea74da9c54ba4728b2f4841316490cadd66b7ab1ed10de46549d457eb5018
+#   sed -e "s|__SRC__|$SRC|" -e "s|__KEY__|$KEY|" -e "s|__SHA__|$SHA|" \
+#     hack/windows/automated/replicate-golden.yaml | kubectl apply -f -
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: golden-replicate-scratch
+  namespace: kube-dc
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      # Holds one compressed release (~8 GB today). Not the virtual disk size.
+      storage: 24Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: golden-replicate
+  namespace: kube-dc
+  labels:
+    kube-dc.com/system: "true"
+spec:
+  backoffLimit: 2
+  # 4h. This is a cross-SITE pull of ~8 GB over the public internet, not a
+  # same-cluster copy: cloud exceeded a 2h budget on 2026-08-28 while prod1
+  # and webdock finished comfortably. The deadline is a runaway guard, so err long —
+  # a job killed mid-download wastes the whole transfer and leaves nothing behind.
+  activeDeadlineSeconds: 14400
+  template:
+    metadata:
+      labels: { app: golden-replicate }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: replicate
+          image: alpine:3.20
+          resources:
+            # A scheduling floor, not a throughput cap: this is network+disk bound, and
+            # a 1-core request could not be placed on a busy cluster (2026-08-27).
+            requests: { cpu: "300m", memory: 512Mi }
+            limits:   { cpu: "2", memory: 2Gi }
+          env:
+            - { name: AWS_ACCESS_KEY_ID,     valueFrom: { secretKeyRef: { name: cdi-os-images, key: AWS_ACCESS_KEY_ID } } }
+            - { name: AWS_SECRET_ACCESS_KEY, valueFrom: { secretKeyRef: { name: cdi-os-images, key: AWS_SECRET_ACCESS_KEY } } }
+            - { name: BUCKET_HOST,           valueFrom: { configMapKeyRef: { name: cdi-os-images, key: BUCKET_HOST } } }
+            - { name: BUCKET_PORT,           valueFrom: { configMapKeyRef: { name: cdi-os-images, key: BUCKET_PORT } } }
+            - { name: BUCKET_NAME,           valueFrom: { configMapKeyRef: { name: cdi-os-images, key: BUCKET_NAME } } }
+          command:
+            - sh
+            - -ceu
+            - |
+              apk add --no-cache curl aws-cli coreutils >/dev/null
+              SRC="__SRC__"; KEY="__KEY__"; SHA="__SHA__"
+              export AWS_ENDPOINT_URL="http://${BUCKET_HOST}:${BUCKET_PORT}"
+
+              # Already here with the right digest? Then there is nothing to do — the
+              # key is content-addressed, so a present object IS the right object.
+              if aws --endpoint-url "$AWS_ENDPOINT_URL" s3api head-object \
+                   --bucket "$BUCKET_NAME" --key "$KEY" >/dev/null 2>&1; then
+                echo "REPLICATE_SKIP key already present: $KEY"
+                exit 0
+              fi
+
+              echo "== fetching $SRC =="
+              curl -fL --retry 5 --retry-all-errors -o /work/golden.qcow2 "$SRC"
+
+              # VERIFY BEFORE PUBLISHING. Without this, a truncated or substituted
+              # download would be uploaded under a digest-named key, which is worse
+              # than useless: the key would then LIE about its contents on this
+              # cluster only, and nothing downstream re-checks it.
+              ACTUAL=$(sha256sum /work/golden.qcow2 | cut -d' ' -f1)
+              echo "expected=$SHA"
+              echo "actual  =$ACTUAL"
+              [ "$ACTUAL" = "$SHA" ] || { echo "DIGEST MISMATCH — refusing to publish"; exit 1; }
+
+              echo "== uploading -> s3://${BUCKET_NAME}/${KEY} =="
+              aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp /work/golden.qcow2 "s3://${BUCKET_NAME}/${KEY}"
+
+              REMOTE=$(aws --endpoint-url "$AWS_ENDPOINT_URL" s3api head-object \
+                        --bucket "$BUCKET_NAME" --key "$KEY" --query ContentLength --output text)
+              LOCAL=$(stat -c %s /work/golden.qcow2)
+              [ "$REMOTE" = "$LOCAL" ] || { echo "ERROR: uploaded $REMOTE bytes, expected $LOCAL"; exit 1; }
+              echo "REPLICATE_OK key=$KEY bytes=$LOCAL sha256=$ACTUAL"
+          volumeMounts:
+            - { name: work, mountPath: /work }
+      volumes:
+        - name: work
+          persistentVolumeClaim: { claimName: golden-replicate-scratch }

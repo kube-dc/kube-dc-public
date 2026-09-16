@@ -93,6 +93,13 @@ spec:
           - --pprof-bind-address={{ .Values.manager.pprof.bindAddress }}
           {{- end }}
         env:
+          # The reserved object-storage admin identity. The manager refuses to
+          # manage an organization of this name, because such an organization
+          # would resolve to the platform's own CephObjectStoreUser and Secret.
+          # Threaded from the same value that creates the user, so the two
+          # cannot drift — see templates/s3-platform-admin-user.yaml.
+          - name: S3_PLATFORM_ADMIN_USER
+            value: {{ .Values.objectStorage.platformAdminUser.name | quote }}
           # Platform ServiceAccount namespaces the managed-services token gate
           # exempts; the same list the protect-managed-services policy uses.
           - name: MANAGED_SERVICES_EXEMPT_SA_NAMESPACES

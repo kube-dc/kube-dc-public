@@ -1,0 +1,33 @@
+{{- if .Values.objectStorage.platformAdminUser.enabled }}
+{{- /*
+The platform's own RGW admin-ops identity.
+
+Ceph RGW admin capabilities are NOT scoped to the user that holds them: a
+credential with `user=read` can read ANY user's record, secret keys included,
+and `bucket=*` reaches every bucket in the store. So an identity that carries
+them can never be handed to a tenant.
+
+Key management (list, generate, revoke) and usage reporting are admin-ops
+operations, and the console offers them per organization. They are served with
+this credential, which stays inside the backend, and the backend pins the uid to
+the caller's own organization. The per-organization CephObjectStoreUser that the
+manager creates therefore holds no capabilities at all: it owns its buckets and
+speaks S3, and its keys are the ones tenants receive.
+*/}}
+apiVersion: ceph.rook.io/v1
+kind: CephObjectStoreUser
+metadata:
+  name: {{ .Values.objectStorage.platformAdminUser.name }}
+  namespace: {{ .Values.objectStorage.rookNamespace }}
+  labels:
+    helm.sh/chart: {{ include "kube-dc.chart" . }}
+    app.kubernetes.io/part-of: kube-dc
+    app.kubernetes.io/component: object-storage
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  store: {{ .Values.objectStorage.cephStoreName }}
+  displayName: "Kube-DC platform admin-ops"
+  capabilities:
+    user: "*"
+    bucket: "*"
+{{- end }}

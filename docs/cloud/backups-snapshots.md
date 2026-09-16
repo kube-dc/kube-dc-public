@@ -8,6 +8,7 @@ Start by identifying the data owner:
 | Resource | Supported protection path | What it protects |
 |----------|---------------------------|------------------|
 | Managed PostgreSQL or MariaDB | Database backup and restore | Database engine data and recovery metadata |
+| Managed Services PostgreSQL service | Scheduled and on-demand backups, restore into a new service, or restore in place | Database data, archived WAL and `ServiceBackup` history records |
 | Managed Cluster | etcd snapshots | Kubernetes API state in that Managed Cluster |
 | Application files on a PVC | Application-native backup to object storage | Files selected by the application |
 | Object storage bucket | Application retention, versioning, or replication policy | Objects covered by that policy |
@@ -20,6 +21,18 @@ Project guide. The platform Velero installation and its namespace are
 operator-owned, and a metadata-only capture is not a VM or PVC data backup.
 Contact your provider when you need a platform-level recovery service.
 :::
+
+## Managed Services Backups
+
+A PostgreSQL `ManagedService` takes scheduled base backups and archives its WAL
+when both the plan's `backup.enabled` and the service's
+`spec.parameters.backup.enabled` are `true`. Take an on-demand backup with
+a `Backup` operation, read the backup history from `ServiceBackup` records, and
+restore into a new service or in place. See
+[Backups and Restore](postgresql-backup-restore.md).
+
+For the in-Project placement, deleting a Project deletes its services without a
+final backup; see [Deleting a Project](managed-services-status-deletion.md#deleting-a-project).
 
 ## Managed Database Backups
 
@@ -121,6 +134,7 @@ written; only a restore test proves that it is usable.
 
 ## Next Steps
 
+- [Managed Services: Backups and Restore](postgresql-backup-restore.md)
 - [Managed Databases](managed-databases.md)
 - [Managed Clusters](cluster-management.md)
 - [Object Storage](object-storage.md)

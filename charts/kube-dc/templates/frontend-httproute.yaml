@@ -14,6 +14,18 @@ spec:
   hostnames:
   - {{ .Values.frontend.gateway.hostname }}
   rules:
+  {{- if .Values.ui.enabled }}
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/ui/v1
+    timeouts:
+      request: "1h"
+      backendRequest: "1h"
+    backendRefs:
+    - name: {{ $fullName }}
+      port: {{ $svcPort }}
+  {{- end }}
   # ttyd-backed cloud-shell WebSocket goes through console.<DOMAIN>/api/cloud-shell/...
   # (nginx inside the frontend pod proxies to the backend). Envoy's default
   # 15s route timeout closes the WebSocket mid-session and the browser sees

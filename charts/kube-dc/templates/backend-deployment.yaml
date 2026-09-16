@@ -8,6 +8,10 @@ metadata:
   labels:
     {{- include "kube-dc.backend.labels" . | nindent 4 }}
 spec:
+  {{- if .Values.backend.consoleApi.enabled }}
+  strategy:
+    type: Recreate
+  {{- end }}
   {{- if not .Values.backend.autoscaling.enabled }}
   replicas: {{ .Values.backend.replicaCount }}
   {{- end }}
@@ -45,7 +49,7 @@ spec:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.backend.securityContext | nindent 12 }}
-          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "kube-dc.ui.image" (dict "image" .Values.backend.image "appVersion" .Chart.AppVersion) | quote }}
           imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
           ports:
             - name: http
@@ -57,6 +61,34 @@ spec:
               protocol: TCP
             {{- end }}
           env:
+            - name: KUBE_DC_BACKEND_VERSION
+              value: {{ .Values.backend.image.tag | default .Chart.AppVersion | quote }}
+            {{- if .Values.backend.consoleApi.enabled }}
+            - name: UI_API_ENABLED
+              value: "true"
+            - name: UI_API_REPLICAS
+              value: "1"
+            - name: UI_BACKEND_URL
+              value: {{ printf "https://%s" (required "Console API requires backend.gateway.hostname" .Values.backend.gateway.hostname) | quote }}
+            - name: UI_KEYCLOAK_BASE_URL
+              value: {{ .Values.manager.keycloakSecret.url | quote }}
+            - name: UI_KUBERNETES_API_URL
+              value: {{ .Values.backend.consoleApi.kubernetesApiUrl | quote }}
+            - name: UI_KUBERNETES_CA_FILE
+              value: {{ .Values.backend.consoleApi.kubernetesCaFile | quote }}
+            - name: UI_ALLOWED_ORIGINS
+              value: {{ printf "https://%s,https://%s" .Values.frontend.gateway.hostname (.Values.adminFrontend.gateway.hostname | default (printf "admin.%s" (trimPrefix "console." .Values.frontend.gateway.hostname))) | quote }}
+            - name: UI_SSH_RELAY_URL
+              value: {{ printf "wss://%s/api/ui/v1/vm/relay" .Values.frontend.gateway.hostname | quote }}
+            - name: UI_ENVIRONMENT
+              value: {{ .Values.ui.environment | quote }}
+            - name: UI_TENANT_VLAN_ENABLED
+              value: {{ .Values.projectNetwork.enabled | quote }}
+            - name: UI_ROUTED_NETWORK_ENABLED
+              value: {{ .Values.routedNetwork.enabled | quote }}
+            - name: UI_GPU_ENABLED
+              value: {{ .Values.gpu.enabled | default false | quote }}
+            {{- end }}
             - name: MANAGED_K8S_WORKER_MTU
               value: {{ .Values.backend.managedK8sWorkerMTU | default 0 | quote }}
             - name: MANAGED_K8S_INTERNAL_ENDPOINTS_ENABLED
@@ -79,6 +111,8 @@ spec:
               value: {{ (.Values.notifications | default dict).supportEmail | default "" | quote }}
             - name: NOTIFICATION_PAYMENT_URL
               value: {{ (.Values.notifications | default dict).paymentUrl | default "" | quote }}
+            - name: STRIPE_SIGNUP_REMINDERS_ENABLED
+              value: {{ dig "stripeSignupRemindersEnabled" true (.Values.notifications | default dict) | quote }}
             - name: BILLING_NOTIFICATIONS_ENABLED
               value: {{ ((.Values.notifications | default dict).enabled | default false) | quote }}
             {{- if .Values.backend.metrics.enabled }}
@@ -97,6 +131,10 @@ spec:
               value: "{{ .Values.backend.prometheusUrl | default "http://prom-operator-prometheus.monitoring:9090" }}"
             - name: PROJECT_SHELL_API_URL
               value: "{{ .Values.kubeApiExternalUrl }}"
+            {{- if (.Values.backend.cliDiscovery | default dict).caConfigMapName }}
+            - name: KUBE_API_CA_FILE
+              value: /etc/kube-dc/api-ca/ca.crt
+            {{- end }}
             # Under management-API `service` mode the cloud shell must dial the
             # kubernetes ServiceIP, not the external hostname. Its SecurityGroup
             # permits exactly one egress rule — tcp <ServiceIP>/32:443 — and the
@@ -121,6 +159,22 @@ spec:
             # never runs in production. Leave the value empty in
             # values.yaml if you want the fallback (single-cluster
             # cloud-only deployment).
+            - name: ROOK_NAMESPACE
+              value: "{{ .Values.objectStorage.rookNamespace }}"
+            - name: CEPH_STORE_NAME
+              value: "{{ .Values.objectStorage.cephStoreName }}"
+            # The admin-ops identity for key management and usage. It is read
+            # with the backend's own service account and never reaches a tenant;
+            # see the objectStorage comment in values.yaml for why an
+            # organization's own user must not carry these capabilities.
+            #
+            # Passed unconditionally, exactly like the manager's copy. This name
+            # is also the organization name both refuse to serve, and the two
+            # must never disagree: if the backend fell back to a built-in default
+            # while the manager reserved a renamed identity, an organization of
+            # that name would sail past the backend's guard.
+            - name: S3_PLATFORM_ADMIN_USER
+              value: "{{ .Values.objectStorage.platformAdminUser.name }}"
             {{- if .Values.s3Endpoint }}
             - name: S3_ENDPOINT
               value: "{{ .Values.s3Endpoint }}"
@@ -343,8 +397,13 @@ spec:
             {{- toYaml .Values.backend.readinessProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
-          {{- if or .Values.backend.volumeMounts .Values.backend.trustedCA.configMapName }}
+          {{- if or .Values.backend.volumeMounts .Values.backend.trustedCA.configMapName (.Values.backend.cliDiscovery | default dict).caConfigMapName }}
           volumeMounts:
+            {{- if (.Values.backend.cliDiscovery | default dict).caConfigMapName }}
+            - name: cli-api-ca
+              mountPath: /etc/kube-dc/api-ca
+              readOnly: true
+            {{- end }}
             {{- if .Values.backend.trustedCA.configMapName }}
             - name: trusted-ca
               mountPath: {{ .Values.backend.trustedCA.mountPath | quote }}
@@ -354,8 +413,16 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- end }}
-      {{- if or .Values.backend.volumes .Values.backend.trustedCA.configMapName }}
+      {{- if or .Values.backend.volumes .Values.backend.trustedCA.configMapName (.Values.backend.cliDiscovery | default dict).caConfigMapName }}
       volumes:
+        {{- if (.Values.backend.cliDiscovery | default dict).caConfigMapName }}
+        - name: cli-api-ca
+          configMap:
+            name: {{ .Values.backend.cliDiscovery.caConfigMapName | quote }}
+            items:
+              - key: {{ .Values.backend.cliDiscovery.caKey | default "ca.crt" | quote }}
+                path: ca.crt
+        {{- end }}
         {{- if .Values.backend.trustedCA.configMapName }}
         - name: trusted-ca
           configMap:
