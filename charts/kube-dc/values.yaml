@@ -1080,7 +1080,7 @@ k8Manager:
   image:
     repository: shalb/kube-dc-k8-manager
     pullPolicy: IfNotPresent
-    tag: "v0.8.2"
+    tag: "v0.8.3"
 
   # External endpoint for the infrastructure cluster API
   # Required for CCMs running in VPC-isolated namespaces that cannot reach kubernetes.default.svc
@@ -1649,7 +1649,7 @@ dbManager:
     # four minor lines behind the one the platform actually supports.
     # db-manager is being retired in favour of kube-dc-services; until it is,
     # this default tracks the released line.
-    tag: "v0.8.2"
+    tag: "v0.8.3"
 
   extraEnv: []
 
@@ -2629,7 +2629,7 @@ routedNetwork:
   enabled: false
   backend: frr-project-gateway
   namespace: kube-dc-routing
-  gatewayImage: shalb/kube-dc-routing-gateway:v0.8.2
+  gatewayImage: shalb/kube-dc-routing-gateway:v0.8.3
   frrImage: quay.io/frrouting/frr:10.4.1
   routingLinkPool: 100.65.0.0/16
   # Exact identity allowed to maintain kube-ovn finalizers/status on protected
