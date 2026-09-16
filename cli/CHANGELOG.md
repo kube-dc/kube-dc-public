@@ -1,5 +1,10 @@
 # kube-dc CLI changelog
 
+## v0.8.1 — 2026-09-16
+
+- Ship the corrected console quota/log routing and complete matching platform, UI and starter bundle.
+- Preserve v0.8.0 artifacts; use v0.8.1 for new installations and UI migrations.
+
 ## v0.8.0 — 2026-09-16
 
 - Align the CLI and fleet starter with the v0.8.0 platform, controllers and managed services.
