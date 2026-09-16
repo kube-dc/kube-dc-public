@@ -35,7 +35,7 @@ A golden is a **Ready `VolumeSnapshot`** carrying:
 | `kube-dc.com/os-family-id` | annotation | canonical family id, matches the chart catalog entry |
 | `kube-dc.com/os-name` | annotation | display name on the Admin → OS Images page |
 | `kube-dc.com/golden-mode` | label/annotation | `Block` (RWX-Block, live-migratable) or `Filesystem` (default; assumed if absent) |
-| `kube-dc.com/golden-active` | label | blue/green selector — see [Promotion](#promotion-bluegreen) |
+| `kube-dc.com/golden-active` | label | blue/green selector — see [Promotion](#promotion-via-the-golden-active-label-legacy) |
 | `kube-dc.com/clone-min-size` | annotation | stamped by the per-project seeder; the floor a clone PVC must request |
 
 They live in `golden-images` (Filesystem) and `golden-images-block` (Block).

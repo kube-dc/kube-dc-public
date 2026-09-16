@@ -72,7 +72,6 @@ creates a separate runtime override shared by Keycloak and console email. Fleet
 values remain the baseline; use **Restore GitOps settings** to follow them again.
 Fleet can lock editing with `backend.smtp.management: gitops`. If an override is
 active, rotating a password in Fleet does not rotate the override password.
-See [configuration ownership and tests](../prd/shared-smtp-admin-configuration.md).
 
 
 The administrator should provide the credential through the installation's protected Helm or GitOps secret flow. For a chart-based deployment, the resulting values have this shape:
