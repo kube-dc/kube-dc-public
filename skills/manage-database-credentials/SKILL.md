@@ -1,186 +1,125 @@
 ---
 name: manage-database-credentials
-description: Manage static password rotation for an existing Kube-DC database with DatabaseCredentialPolicy, optionally projecting the current credential into a stable Kubernetes Secret.
+description: Deliver a managed service credential role to a workload with a ServiceBinding Secret, rotate it now with a RotateCredentials operation, or rotate it on a schedule with a ServiceCredentialPolicy. Replaces the deprecated DatabaseCredentialPolicy of db-manager databases.
 ---
 
 ## Prerequisites
 
-- The target Project and `KdcDatabase` are Ready.
+- The `ManagedService` is Ready; record its `metadata.uid`.
 - Know the Project's backing namespace: `{organization}-{project}`.
-- The database user already exists. The default `app` user is created with a
-  managed database; create custom users through an approved DBA or migration
-  Job before adding a policy.
-- Never target the reserved `kdc_rotator`, `postgres`, or `root` users.
+- The `admin` or `developer` Project role. `project-manager` may pause or
+  change an existing policy but not create one.
 
-## Current Capability
+## Model
 
-`static-rotated` is the only supported mode. OpenBao changes one existing
-user's password on the configured interval. The `rolling` and `immediate`
-strategy values remain for API compatibility, but both currently perform a
-single-password cutover. Applications must reload credentials before opening a
-new connection.
+- A **credential role** is a login the family declares: `owner` and
+  `readonly` for PostgreSQL, MySQL, MariaDB and ClickHouse; `default` for
+  Valkey (`read-only` on `valkey-ha`); `admin` and `client` for Kafka. All
+  bindings of one role share one credential.
+- A **`ServiceBinding`** delivers a role as a Secret in the Project and pins
+  the service UID. It is the only way credentials reach workloads; status
+  never carries values.
+- A **`RotateCredentials`** operation issues a new password for a role and
+  republishes it to every binding of that role.
+- A **`ServiceCredentialPolicy`** does the rotation on an interval. It never
+  creates a login or grants privileges.
 
-`dynamic` is reserved but not implemented. A dynamic policy reports
-`Ready=False/DynamicModeDeferred`, does not project a Secret, and the issue
-API/CLI returns HTTP 501.
+## 1. Deliver a credential
 
-## Trust Boundary
-
-DatabaseCredentialPolicy is scoped to a Project, but raw Kubernetes Secret
-access is shared within that Project. The standard `admin`, `developer`, and
-`project-manager` roles can read raw Secrets, including database management
-credentials. The `user` role cannot.
-
-If two teams must not share database credentials, place their workloads in
-separate Projects. There is no per-Secret isolation inside one Project.
-
-## Create a Policy
-
-Use [dbcp-template.yaml](dbcp-template.yaml) or apply:
+[binding-template.yaml](binding-template.yaml):
 
 ```yaml
-apiVersion: security.kube-dc.com/v1alpha1
-kind: DatabaseCredentialPolicy
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ServiceBinding
 metadata:
-  name: api-app
+  name: "{service-name}-{role}"
   namespace: "{backing-namespace}"
 spec:
-  databaseRef:
-    name: "{database-name}"
-  mode: static-rotated
-  username: app
-  rotation:
-    interval: 30d
-    strategy: rolling
-  sync:
-    enabled: true
-    targetSecretName: api-app-credentials
+  serviceRef: { name: "{service-name}" }
+  serviceUID: "{service-uid}"
+  role: "{role}"
+  consumer:
+    kind: ServiceAccount
+    name: "{workload-service-account}"
+    namespace: "{backing-namespace}"
+  delivery:
+    secretName: "{service-name}-{role}"
 ```
 
 ```bash
-kubectl apply -f dbcp.yaml
-kubectl get dbcp api-app -n {backing-namespace} -w
+kubectl apply -f binding.yaml
+kubectl get servicebinding {service-name}-{role} -n {backing-namespace} -w   # READY True, CredentialDelivered
+kubectl describe secret {service-name}-{role} -n {backing-namespace}           # keys only
 ```
 
-When sync is omitted for `static-rotated`, admission defaults it on. The
-target Secret name defaults to the policy name.
+The Secret carries the annotation `services.kube-dc.com/credential-version`;
+`status.credentialVersion` on the binding matches it after every rotation.
 
-## Consume the Projected Secret
+## 2. Rotate now
 
-A synced Secret contains `username`, `password`, `host`, `port`,
-`database`, `engine`, and `dsn`.
+[rotate-operation-template.yaml](rotate-operation-template.yaml):
 
 ```yaml
-env:
-- name: DB_USER
-  valueFrom:
-    secretKeyRef:
-      name: api-app-credentials
-      key: username
-- name: DB_PASSWORD
-  valueFrom:
-    secretKeyRef:
-      name: api-app-credentials
-      key: password
-- name: DB_HOST
-  valueFrom:
-    secretKeyRef:
-      name: api-app-credentials
-      key: host
-- name: DB_PORT
-  valueFrom:
-    secretKeyRef:
-      name: api-app-credentials
-      key: port
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ServiceOperation
+metadata:
+  name: "{service-name}-rotate-{role}-{n}"
+  namespace: "{backing-namespace}"
+spec:
+  serviceRef: { name: "{service-name}" }
+  serviceUID: "{service-uid}"
+  type: RotateCredentials
+  idempotencyKey: "{service-name}-rotate-{role}-{n}"
+  parameters:
+    role: "{role}"
+  execution:
+    window: Immediate
 ```
 
-The Secret is rewritten after rotation. Environment variables do not change in
-a running container; restart the workload. Secret volume files refresh
-eventually, but the application must reread them. Keep connection-pool reload or
-authentication-error recovery in the application design.
+Wait for `Succeeded`, then restart workloads that read the password from
+environment variables (`kubectl rollout restart deployment/{name}`). Workloads
+that mount the Secret as a file and reread it need no restart. The plan may
+require provider approval (`AwaitingApproval`); tenants cannot approve.
 
-Do not use the engine bootstrap Secret after a policy starts managing that
-user. It is not updated on each policy rotation.
+## 3. Rotate on a schedule
 
-## CLI Operations
+[rotation-policy-template.yaml](rotation-policy-template.yaml):
+
+```yaml
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ServiceCredentialPolicy
+metadata:
+  name: "{service-name}-{role}-rotation"
+  namespace: "{backing-namespace}"
+spec:
+  serviceRef: { name: "{service-name}" }
+  serviceUID: "{service-uid}"
+  role: "{role}"
+  rotationIntervalSeconds: 2592000     # 30 days; 60 to 31536000
+  paused: false
+```
+
+For an existing SQL login a DBA created (PostgreSQL, plan entitlement
+`credentials.allowExistingUsers`), replace `role` with
+`existingUser: { username: "{login}", database: "{database}" }`; the policy's
+`status.credentialRole` is then the role bindings must use.
 
 ```bash
-kube-dc db credentials list
-kube-dc db credentials describe api-app
-
-# Password is masked unless explicitly requested
-kube-dc db credentials get api-app
-kube-dc db credentials get api-app --show-password
-
-# One immediate single-password cutover
-kube-dc db credentials rotate api-app
-
-# Explicit confirmation is required
-kube-dc db credentials delete api-app --yes
+kubectl get servicecredentialpolicy -n {backing-namespace}
+kubectl patch servicecredentialpolicy {name} -n {backing-namespace} --type merge -p '{"spec":{"paused":true}}'
 ```
 
-Do not put `--show-password` output in logs or chat.
-
-## Rotation Timing
-
-OpenBao owns the rotation schedule. The controller tightens its requeue near a
-rotation and otherwise uses a five-minute ceiling to refresh the projected
-Secret. Kubelet propagation adds another delay for mounted files. Design
-clients for eventual propagation; do not promise an exact cutover second.
-
-## Restore and Delete Semantics
-
-After an in-place database restore, rotate every affected policy once the
-database is Ready. The restored database can contain an older password while
-OpenBao and the projected Secret still hold the pre-restore value:
-
-```bash
-kube-dc db credentials rotate api-app
-```
-
-Deleting a policy removes its controller-owned projected Secret. For
-PostgreSQL's default `app` user, the finalizer attempts to copy OpenBao's
-current password back to `{database}-app`. MariaDB does not currently provide
-the same engine-Secret resynchronization guarantee. Before deleting a MariaDB
-policy, arrange a replacement credential or database-user reset with the
-operator.
-
-Deleting a policy does not drop the database user.
+Deleting a policy of a declared role keeps the bindings and their Secrets.
 
 ## Verification
 
-```bash
-# Ready condition
-kubectl get dbcp api-app -n {backing-namespace} \
-  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}{"\n"}'
+Report the binding name, role, Secret name and keys, the credential version,
+and for a rotation the operation phase. Never print `password` or `uri`.
 
-# Projected Secret metadata and expected keys
-kubectl get secret api-app-credentials -n {backing-namespace} \
-  -o jsonpath='{.metadata.name}{"\t"}{.type}{"\n"}'
-```
+## Deprecated: DatabaseCredentialPolicy
 
-Use an application or migration Job on the Project network for an end-to-end
-login check. Project pod exec, attach, and port-forward are not supported
-administrative paths.
-
-Common conditions:
-
-- `DynamicModeDeferred`: dynamic mode is not implemented; use
-  `static-rotated`.
-- `DatabaseEngineUnconfigured`: wait for db-manager to register the Ready
-  database with OpenBao.
-- `DatabaseNotFound`: fix `spec.databaseRef.name`.
-- `TargetSecretConflict`: choose an unused target Secret or remove the
-  conflicting owner.
-- `RoleProvisioning`: OpenBao accepted the role but credentials are not yet
-  readable; retry and escalate if it persists.
-
-## Safety
-
-- One policy is allowed for each `(databaseRef, username)` pair.
-- Both rotation strategies are currently single-password cutovers.
-- Do not edit the projected Secret; reconciliation overwrites it.
-- Root/superuser rotation endpoints are retired and return HTTP 410. Use the
-  documented break-glass path with operator help.
-- Short intervals create repeated `ALTER USER` load. Use short periods only
-  in tests and days in production.
+`DatabaseCredentialPolicy` rotated passwords of deprecated `KdcDatabase`
+databases and projected them into a Secret with `dsn` and `database` keys.
+Never create one. When a Project still has one, keep it until the database is
+migrated (`docs/cloud/managed-services-migration.md`), then delete it with the
+`KdcDatabase`.

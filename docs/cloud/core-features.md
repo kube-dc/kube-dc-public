@@ -88,15 +88,16 @@ LoadBalancer Service for selected ports or a Floating IP for direct VM access.
 - [Connect to a Virtual Machine](connecting-vm.md)
 - [VM Lifecycle](vm-lifecycle.md)
 
-## Managed Databases
+## Managed Services
 
-Kube-DC can provision and operate PostgreSQL and MariaDB inside a Project.
-Database configuration can include replication, scheduled backups, restore
-workflows, and Project-scoped credentials. Availability depends on the replica
-count and the application connection strategy; a single replica is not highly
-available.
+Kube-DC provisions and operates databases, caches and message brokers inside
+a Project from a provider-published catalog: PostgreSQL, MySQL, MariaDB,
+ClickHouse, Valkey and Kafka. A plan sets the capacity, the backups and the
+operations you may request; credentials reach your workloads as Kubernetes
+Secrets. Availability depends on the plan's topology and your application's
+connection handling; a single instance is not highly available.
 
-See [Managed Databases](managed-databases.md).
+See [Managed Services](managed-services.md).
 
 ## Networking
 

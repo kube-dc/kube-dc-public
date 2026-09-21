@@ -442,24 +442,8 @@ workloads to another `Secret` before you delete a binding they still use.
 kubectl delete servicebinding orders-api-db -n my-project
 ```
 
-## Moving from KdcDatabase Secret keys
+## Coming from a db-manager database
 
-If your application reads the Secret that a `DatabaseCredentialPolicy`
-projects for a `KdcDatabase`, map its keys as follows:
-
-| `DatabaseCredentialPolicy` Secret key | `ServiceBinding` Secret key | Application change |
-|--------------------------|-----------------------------|--------------------|
-| `username`, `password`, `host`, `port` | Same names | Change the Secret name only |
-| `database` | `dbname` | Change the key name |
-| `dsn` | `uri` | Change the key name. The URI uses `sslmode=verify-full`, so the client also needs the CA |
-| `engine` | Not delivered | Select the driver in the application configuration |
-| None | `ca.crt`, `sslmode` | Mount `ca.crt` and set `PGSSLROOTCERT` and `PGSSLMODE=verify-full` |
-
-An application that reads the PostgreSQL engine Secret `<db>-app` of a
-`KdcDatabase` uses its `password` key, which maps to the same key name. For
-PostgreSQL, the legacy `dsn` value uses `sslmode=require`, which does not check
-the server's host name; binding Secrets use `sslmode=verify-full`.
-
-This table maps Secret keys only. It does not move data from a `KdcDatabase`
-into a `ManagedService`. See
-[Coming from KdcDatabase](managed-services-from-kdcdatabase.md).
+The Secret a `KdcDatabase` or a `DatabaseCredentialPolicy` produced uses
+different key names. The mapping, and how to move the data, is in
+[Migrating from db-manager databases](managed-services-migration.md).

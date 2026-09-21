@@ -15,7 +15,7 @@ RBAC.
 | Deploy a small web application | [Deploy Your First Application](deploy-first-app.md) |
 | Build a fuller application stack | [Deploy a WordPress Stack](deploy-wordpress-stack.md) |
 | Create and connect to a VM | [Create a Virtual Machine](creating-vm.md) |
-| Provision PostgreSQL or MariaDB | [Managed Databases](managed-databases.md) |
+| Provision a database, cache or broker | [Managed Services](managed-services.md) |
 | Create a Managed Cluster | [Provision a Managed Cluster](provisioning-cluster.md) |
 
 ## Networking
@@ -36,7 +36,7 @@ describing an endpoint as internet-accessible.
 |------|-------|
 | Attach block storage to a Pod or VM | [Block Storage](block-storage.md) |
 | Create and use an S3-compatible bucket | [Object Storage](object-storage.md) |
-| Configure database backups | [Managed Databases](managed-databases.md#backups) |
+| Configure database backups | [Backups and Restore](postgresql-backup-restore.md) |
 | Design a recovery plan | [Data Protection and Recovery](backups-snapshots.md) |
 
 ## Security and Automation

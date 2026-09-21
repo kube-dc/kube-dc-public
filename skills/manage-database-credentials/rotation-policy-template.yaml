@@ -1,0 +1,12 @@
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ServiceCredentialPolicy
+metadata:
+  name: "{service-name}-{role}-rotation"
+  namespace: "{backing-namespace}"
+spec:
+  serviceRef:
+    name: "{service-name}"
+  serviceUID: "{service-uid}"
+  role: "{role}"
+  rotationIntervalSeconds: 2592000
+  paused: false

@@ -15,9 +15,11 @@ run the management cluster.
 | Understand Organizations, Projects, and access | [Multi-tenancy and access control](architecture-multi-tenancy.md) |
 | Design provider and Project networks | [Networking architecture](architecture-networking.md) |
 | Operate internal platform endpoints | [Internal platform endpoints](internal-platform-endpoints.md) |
+| Offer managed databases, caches and brokers to tenants | [Managed services overview](managed-services-overview.md), [Enabling managed services](managed-services-enable.md), [Publishing the catalog](managed-services-catalog.md), [Operating the service](managed-services-operations.md) |
+| Retire the deprecated db-manager databases | [Retiring db-manager](managed-services-retire-db-manager.md) |
 | Review platform controls and trust boundaries | [Security model](security-model.md) |
 | Operate metrics, logs, alerts, and dashboards | [Observability](observability.md) |
-| Sell capacity from a partner portal through the Partner API | [Partner API integration guide](partner-api/overview.md) |
+| Provision and bill organizations from a hosting portal | [Provisioning API for hosting providers](platform-api.md) |
 
 ## Product vocabulary
 

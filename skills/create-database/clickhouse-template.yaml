@@ -1,0 +1,31 @@
+# ClickHouse managed service: sized by shard shape, never by instances.
+# Compute, storage and the shape are fixed at creation.
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ManagedService
+metadata:
+  name: "{service-name}"
+  namespace: "{backing-namespace}"
+spec:
+  classRef:
+    name: clickhouse
+  planRef:
+    name: clickhouse-development   # clickhouse-production: 1 shard x 2 replicas + Keeper quorum
+  placement:
+    mode: ProviderShared
+  connectivity:
+    classRef:
+      name: tenant-native
+  topology:
+    shards: 1
+    replicasPerShard: 1            # 2 on the production plan
+  compute:
+    cpu: 500m
+    memory: 2Gi
+  storage:
+    size: 10Gi
+  parameters:
+    database: "{application-database}"
+    # limits:
+    #   max_execution_time: "300"
+  deletionPolicy: Retain
+  deletionProtection: true

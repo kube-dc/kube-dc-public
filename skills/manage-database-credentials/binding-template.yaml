@@ -1,0 +1,19 @@
+# Delivers one credential role of a managed service as a Secret in the Project.
+# serviceUID pins the exact service; read it from the ManagedService metadata.uid.
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ServiceBinding
+metadata:
+  name: "{service-name}-owner"
+  namespace: "{backing-namespace}"
+spec:
+  serviceRef:
+    name: "{service-name}"
+  serviceUID: "{service-uid}"
+  role: owner                      # postgresql/mysql/mariadb/clickhouse: owner | readonly; valkey: default
+  consumer:
+    kind: ServiceAccount
+    name: "{workload-service-account}"
+    namespace: "{backing-namespace}"
+  delivery:
+    secretName: "{service-name}-owner"
+    # endpointName: read-write     # default; read-only where the family has a replica endpoint

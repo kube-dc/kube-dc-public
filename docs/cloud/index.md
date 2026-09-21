@@ -9,7 +9,7 @@ Welcome to Kube-DC Cloud — a managed cloud platform where you deploy applicati
 - **Provision Managed Clusters** — A tenant-controlled cluster of your own, for operators, CRDs and cluster-scoped software
 - **Connect and Expose Workloads** — Private networks per Project, public and floating IPs, load balancers, HTTPS ingress
 - **Store and Protect Data** — Use persistent block storage, S3-compatible object storage, snapshots, and backups
-- **Run Managed Databases** — Provision PostgreSQL or MariaDB with persistent storage, replication options, backups, connection details, and credential workflows → [Managed Services](managed-services.md) and [Managed Databases](managed-databases.md)
+- **Run Managed Services** — Provision PostgreSQL, MySQL, MariaDB, ClickHouse, Valkey or Kafka from the catalog, with backups, credentials delivered as Secrets and day-2 operations → [Managed Services](managed-services.md)
 - **Manage Application Secrets** — Keep API tokens and credentials out of Git in encrypted storage, audit access, and sync selected values into Kubernetes Secrets → [Secrets Manager](secrets-manager.md)
 - **Manage Teams and Billing** — Users, roles and billing across your organization
 
@@ -18,7 +18,7 @@ Welcome to Kube-DC Cloud — a managed cloud platform where you deploy applicati
 - **New here?** Start with [What is Kube-DC?](what-is-kube-dc.md) and [Core Concepts](core-concepts.md)
 - **Ready to build?** [Create Your First Project](first-project.md), then [deploy directly to it](kubernetes-projects.md)
 - **First app?** [Deploy Your First App](deploy-first-app.md)
-- **Need a database?** Provision [managed PostgreSQL or MariaDB](managed-databases.md)
+- **Need a database?** Create a [managed service](managed-services.md) from the catalog
 - **Handling secrets?** Keep them out of Git with [Secrets Manager](secrets-manager.md)
 - **Need VMs?** See [Creating a Virtual Machine](creating-vm.md)
 - **Networking?** Check [Public & Floating IPs](public-floating-ips.md)

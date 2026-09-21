@@ -62,41 +62,75 @@ spec:
   generateBucketName: wordpress-files
   storageClassName: ceph-bucket
 ---
-# Managed MariaDB. The platform provisions, operates, and backs it up daily.
-# Backups land in the Project database-backup bucket.
-apiVersion: db.kube-dc.com/v1alpha1
-kind: KdcDatabase
+# Managed MariaDB. The platform provisions, operates and backs it up daily
+# into the Project's backup bucket.
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ManagedService
 metadata:
   name: wordpress-db          # NOT "wordpress" — see the note below
   namespace: acme-production
 spec:
-  engine: mariadb
-  version: "11.4"
-  replicas: 1
-  cpu: "1"
-  memory: 1Gi
-  storage: 10Gi
-  databaseName: wordpress
-  username: app
-  expose:
-    type: internal
-  backup:
-    enabled: true
-    schedule: "0 2 * * *"
-    retentionDays: 7
+  classRef:
+    name: mariadb
+  planRef:
+    name: mariadb-development   # one server; mariadb-production for a Galera cluster
+  placement:
+    mode: ProviderShared
+  connectivity:
+    classRef:
+      name: tenant-native
+  compute:
+    cpu: "1"
+    memory: 1Gi
+  storage:
+    size: 10Gi
+  parameters:
+    database: wordpress
+  deletionPolicy: Retain
 ```
 
 :::caution Name the database differently from your app Service
-The platform creates a Service named after the `KdcDatabase` (here `wordpress-db.acme-production.svc:3306`). If you name the database `wordpress` and later create an app Service called `wordpress`, they collide. Keep them distinct.
+The platform creates Services named after the `ManagedService` (here `wordpress-db…` in `acme-production`). If you name the database `wordpress` and later create an app Service called `wordpress`, they collide. Keep them distinct.
 :::
 
 ```bash
 kubectl apply -f 01-platform-services.yaml
-
-# Wait for the database and its generated engine Secret:
-kubectl get kdcdatabase wordpress-db     # PHASE: Ready
-kubectl get secret wordpress-db-password
+kubectl get managedservice wordpress-db -w     # PHASE: Ready
+kubectl get managedservice wordpress-db -o jsonpath='{.metadata.uid}{"\n"}'
 ```
+
+Then deliver the owner credential as a Secret with a `ServiceBinding`. Bindings
+pin the service UID you just printed:
+
+```yaml title="01b-database-binding.yaml"
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ServiceBinding
+metadata:
+  name: wordpress-db-password
+  namespace: acme-production
+spec:
+  serviceRef:
+    name: wordpress-db
+  serviceUID: REPLACE_WITH_SERVICE_UID
+  role: owner
+  consumer:
+    kind: ServiceAccount
+    name: default
+    namespace: acme-production
+  delivery:
+    secretName: wordpress-db-password
+```
+
+```bash
+kubectl apply -f 01b-database-binding.yaml
+kubectl get servicebinding wordpress-db-password -w   # READY: True
+```
+
+The Secret carries `host`, `port`, `database`, `username`, `password`, `uri`,
+`jdbcUrl`, `tls` and `ca.crt`. In the console, choosing **Kubernetes Secret**
+on the last step of the creation sheet creates the same binding for you. The
+WordPress container below reads `host`, `username`, `password` and `database`
+from it, so nothing is copied into the manifest.
 
 ## Step 2 — WordPress
 
@@ -155,14 +189,17 @@ spec:
           name: http
         env:
         - name: WORDPRESS_DB_HOST
-          value: wordpress-db:3306
+          valueFrom:
+            secretKeyRef: {name: wordpress-db-password, key: host}
         - name: WORDPRESS_DB_USER
-          value: app
+          valueFrom:
+            secretKeyRef: {name: wordpress-db-password, key: username}
         - name: WORDPRESS_DB_PASSWORD
           valueFrom:
             secretKeyRef: {name: wordpress-db-password, key: password}
         - name: WORDPRESS_DB_NAME
-          value: wordpress
+          valueFrom:
+            secretKeyRef: {name: wordpress-db-password, key: database}
         - name: WORDPRESS_CONFIG_EXTRA
           value: |
             /* Behind the platform HTTPS gateway */
@@ -291,13 +328,13 @@ spec:
           echo "WordPress installed."
         env:
         - name: WORDPRESS_DB_HOST
-          value: wordpress-db:3306
+          valueFrom: {secretKeyRef: {name: wordpress-db-password, key: host}}
         - name: WORDPRESS_DB_USER
-          value: app
+          valueFrom: {secretKeyRef: {name: wordpress-db-password, key: username}}
         - name: WORDPRESS_DB_PASSWORD
           valueFrom: {secretKeyRef: {name: wordpress-db-password, key: password}}
         - name: WORDPRESS_DB_NAME
-          value: wordpress
+          valueFrom: {secretKeyRef: {name: wordpress-db-password, key: database}}
         - name: ADMIN_PASSWORD
           valueFrom: {secretKeyRef: {name: wordpress-admin, key: password}}
         volumeMounts:
@@ -328,7 +365,7 @@ kubectl get secret wordpress-admin -o jsonpath='{.data.password}' | base64 -d
 
 ## Step 4 — Back up wp-content to your S3 bucket
 
-The database is already backed up daily by the platform; verify the `BackupReady` condition with `kubectl get kdcdatabase wordpress-db -o yaml`. Files are yours to archive — a Job with your bucket's access keys does it:
+The database is already backed up daily by the platform; verify the `BackupReady` condition with `kubectl get managedservice wordpress-db -o yaml` or the **Backups** tab of the service. Files are yours to archive — a Job with your bucket's access keys does it:
 
 ```yaml title="04-content-backup.yaml"
 apiVersion: batch/v1
@@ -393,9 +430,9 @@ Use your cluster's public S3 endpoint (`https://s3.kube-dc.cloud` on Kube-DC Clo
 
 | Concern | Handled by |
 |---|---|
-| Database provisioning and lifecycle | `KdcDatabase` (platform-operated MariaDB) |
-| Database credentials | MariaDB engine Secret |
-| Database backups | `spec.backup` — daily, 7-day retention |
+| Database provisioning and lifecycle | `ManagedService` (platform-operated MariaDB) |
+| Database credentials | `ServiceBinding` Secret with host, database, user, password and CA |
+| Database backups | The plan — daily, 7-day retention on the Development plan |
 | Content storage | Ceph-backed PVC shared by all replicas |
 | File backups + access keys | `ObjectBucketClaim` bucket + Job |
 | HTTPS, certificate, DNS name | Project Issuer + Service annotation |
@@ -408,7 +445,7 @@ Use your cluster's public S3 endpoint (`https://s3.kube-dc.cloud` on Kube-DC Clo
 kubectl delete hpa/wordpress svc/wordpress deploy/wordpress \
   job/wordpress-install job/wp-content-backup \
   pvc/wordpress-content secret/wordpress-admin
-kubectl delete kdcdatabase/wordpress-db
+kubectl delete servicebinding/wordpress-db-password managedservice/wordpress-db
 kubectl delete obc/wordpress-files
 ```
 
@@ -418,6 +455,6 @@ kubectl delete obc/wordpress-files
 |---|---|
 | No hostname/certificate appears | The Service must be `type: LoadBalancer` for `expose-route` to be processed |
 | Second replica `Pending` | podAffinity needs capacity on the volume's node — free capacity or lower requests |
-| `wordpress-db-password` missing | The database has not finished provisioning — inspect `kubectl get kdcdatabase wordpress-db -o yaml` |
+| `wordpress-db-password` missing | The service or its binding is not Ready yet — inspect `kubectl get managedservice,servicebinding -n acme-production` |
 | S3 upload times out | Use the public S3 endpoint, not the in-cluster `BUCKET_HOST` |
-| DB Service name collides | Name the `KdcDatabase` differently from your app Service |
+| DB Service name collides | Name the `ManagedService` differently from your app Service |

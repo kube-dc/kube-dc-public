@@ -1,0 +1,28 @@
+# Valkey cache. One node (class valkey) or three members with Sentinels
+# (class valkey-ha, topology.instances: 3). TLS-only, credential role "default".
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ManagedService
+metadata:
+  name: "{service-name}"
+  namespace: "{backing-namespace}"
+spec:
+  classRef:
+    name: valkey                   # valkey-ha for the Sentinel cluster
+  planRef:
+    name: valkey-development       # valkey-production with class valkey-ha
+  placement:
+    mode: ProviderShared
+  connectivity:
+    classRef:
+      name: tenant-native
+  compute:
+    cpu: 250m
+    memory: 512Mi
+  storage:
+    size: 2Gi
+  parameters:
+    appendonly: "yes"
+    settings:
+      maxmemory-policy: allkeys-lru
+  deletionPolicy: Delete
+  deletionProtection: false

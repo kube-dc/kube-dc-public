@@ -1,0 +1,15 @@
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ServiceOperation
+metadata:
+  name: "{service-name}-rotate-{role}-1"
+  namespace: "{backing-namespace}"
+spec:
+  serviceRef:
+    name: "{service-name}"
+  serviceUID: "{service-uid}"
+  type: RotateCredentials
+  idempotencyKey: "{service-name}-rotate-{role}-1"
+  parameters:
+    role: "{role}"
+  execution:
+    window: Immediate

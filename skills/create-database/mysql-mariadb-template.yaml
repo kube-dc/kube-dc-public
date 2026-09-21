@@ -1,0 +1,30 @@
+# MySQL or MariaDB managed service. MySQL is sized once at creation; MariaDB
+# supports Resize and ExpandStorage later. Production plans are clusters of 3.
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ManagedService
+metadata:
+  name: "{service-name}"
+  namespace: "{backing-namespace}"
+spec:
+  classRef:
+    name: mariadb                  # or mysql
+  planRef:
+    name: mariadb-development      # mariadb-production | mysql-development | mysql-production
+  placement:
+    mode: ProviderShared
+  connectivity:
+    classRef:
+      name: tenant-native
+  topology:
+    instances: 1                   # 3 on the production plans
+  compute:
+    cpu: 500m
+    memory: 1Gi
+  storage:
+    size: 10Gi
+  parameters:
+    database: "{application-database}"
+    # settings:                    # CreateOnly, allow-listed server settings as strings
+    #   max_connections: "300"
+  deletionPolicy: Retain
+  deletionProtection: true

@@ -69,7 +69,7 @@ spec:
     name: postgresql
   planRef:
     # The plan must allow exposure.gateway and use engineVersion 17 or 18.
-    name: postgresql-platform-ha
+    name: postgresql-production
   placement:
     mode: ProviderShared
   connectivity:

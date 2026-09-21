@@ -7,8 +7,8 @@ Start by identifying the data owner:
 
 | Resource | Supported protection path | What it protects |
 |----------|---------------------------|------------------|
-| Managed PostgreSQL or MariaDB | Database backup and restore | Database engine data and recovery metadata |
-| Managed Services PostgreSQL service | Scheduled and on-demand backups, restore into a new service, or restore in place | Database data, archived WAL and `ServiceBackup` history records |
+| Managed service (PostgreSQL, MySQL, MariaDB, ClickHouse) | Scheduled and on-demand backups, restore into a new service, or restore in place for PostgreSQL | Database data, archived WAL where the family has it, and `ServiceBackup` history records |
+| Managed service (Valkey, Kafka) | No recovery facility; see the family page | Rebuildable data: caches, and topics protected by replication |
 | Managed Cluster | etcd snapshots | Kubernetes API state in that Managed Cluster |
 | Application files on a PVC | Application-native backup to object storage | Files selected by the application |
 | Object storage bucket | Application retention, versioning, or replication policy | Objects covered by that policy |
@@ -24,36 +24,24 @@ Contact your provider when you need a platform-level recovery service.
 
 ## Managed Services Backups
 
-A PostgreSQL `ManagedService` takes scheduled base backups and archives its WAL
-when both the plan's `backup.enabled` and the service's
-`spec.parameters.backup.enabled` are `true`. Take an on-demand backup with
-a `Backup` operation, read the backup history from `ServiceBackup` records, and
-restore into a new service or in place. See
-[Backups and Restore](postgresql-backup-restore.md).
+A `ManagedService` takes scheduled backups when both the plan's
+`backup.enabled` and the service's backup settings are on. Take an on-demand
+backup with a `Backup` operation or **Back up now** in the console, read the
+history from `ServiceBackup` records or the **Backups** tab, and restore into a
+new service; PostgreSQL also restores in place and offers point-in-time
+recovery. See [Backups and Restore](postgresql-backup-restore.md) and the
+limits on each family page.
 
 For the in-Project placement, deleting a Project deletes its services without a
 final backup; see [Deleting a Project](managed-services-status-deletion.md#deleting-a-project).
 
-## Managed Database Backups
+## Databases still on db-manager
 
-Configure backups on the `KdcDatabase` or in the database detail view. Confirm
-that the database reports a successful backup before relying on it.
-
-A database recovery plan should record:
-
-- backup schedule and retention
-- last successful backup time
-- recovery mode: restored copy or destructive in-place restore
-- PostgreSQL point-in-time recovery window, when enabled
-- encryption key and object-storage dependencies
-- application maintenance and credential behavior during restore
-
-A restored copy is safer for validation because it leaves the source database
-running. In-place restore replaces current data and requires a maintenance
-window.
-
-See [Managed Databases: Backups](managed-databases.md#backups) for configuration
-and restore procedures.
+`KdcDatabase` databases are deprecated. Their backups keep running until you
+migrate; configure them on the resource or in the deprecated Databases view of
+the console, and confirm that the database reports a successful backup before
+relying on it. See
+[Migrating from db-manager databases](managed-services-migration.md).
 
 ## Managed Cluster Snapshots
 
@@ -135,7 +123,7 @@ written; only a restore test proves that it is usable.
 ## Next Steps
 
 - [Managed Services: Backups and Restore](postgresql-backup-restore.md)
-- [Managed Databases](managed-databases.md)
+- [Migrating from db-manager databases](managed-services-migration.md)
 - [Managed Clusters](cluster-management.md)
 - [Object Storage](object-storage.md)
 - [Block Storage](block-storage.md)

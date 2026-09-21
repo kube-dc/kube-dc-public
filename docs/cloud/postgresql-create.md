@@ -1,19 +1,21 @@
 # Create a PostgreSQL Service
 
-This page creates a PostgreSQL `ManagedService`, explains every parameter the
-PostgreSQL class accepts, and shows how to read the service's status.
+This page creates a PostgreSQL `ManagedService` with a manifest, explains every
+field and parameter the PostgreSQL class accepts, and shows how to read the
+service's status. The console's creation sheet submits the same manifest; see
+[Using the Console](managed-services-console.md).
 
 ## Before you begin
 
 - The `admin` or `developer` role in the Project. See
   [Managed Services](managed-services.md#project-roles).
 - The class, plan and connectivity class names. This page uses `postgresql`,
-  `postgresql-platform-ha` and `tenant-native`. See
-  [Classes and Plans](managed-services-plans.md).
+  `postgresql-production` and `tenant-native`; plan names differ between
+  installations. See [Classes and Plans](managed-services-plans.md).
 - A plan whose `allowedPlacementModes` includes `ProviderShared` and whose
   `allowedConnectivityClasses` includes `tenant-native`.
 - The values of your plan's bounds (instances, storage, compute), which you get
-  from your provider.
+  from your provider or from the sliders of the console's Size step.
 - Enough Project quota for the instances, storage and backups you request.
 
 Throughout this page, replace `my-project` with your Project's backing
@@ -37,21 +39,27 @@ spec:
   classRef:
     name: postgresql
   planRef:
-    name: postgresql-platform-ha
-  # Set placement explicitly; the API default is TenantCluster.
+    name: postgresql-production
+  # Set placement explicitly; the API default is TenantCluster, which the
+  # published plans do not allow.
   placement:
     mode: ProviderShared
   connectivity:
     classRef:
       name: tenant-native
+  # Sizing. Each value must be within the plan's bounds; omit a field to take
+  # the plan default. These change later only through operations.
+  topology:
+    instances: 3
+  compute:
+    cpu: "1"
+    memory: 2Gi
+  storage:
+    size: 20Gi
+  # Engine parameters of the postgresql class.
   parameters:
     database: orders
     owner: orders
-    # Must be within the plan's topology bounds.
-    instances: 2
-    storage:
-      # Per instance; must not exceed the plan's capacity.maxStorage.
-      size: 10Gi
     readonlyRole: true
     # Backups need backup.enabled: true on the plan.
     backup:
@@ -59,9 +67,6 @@ spec:
     postgresql:
       parameters:
         work_mem: 8MB
-    # Optional, only when the plan has capacity.computeBounds:
-    # cpu: 500m
-    # memory: 1Gi
   deletionPolicy: Retain
   deletionProtection: true
 ```
@@ -91,20 +96,32 @@ kubectl get managedservice orders-db -n my-project -o jsonpath='{.metadata.uid}{
 | Field | Required | Description |
 |-------|----------|-------------|
 | `spec.classRef.name` | Yes | The class, `postgresql`. Cannot change |
-| `spec.planRef.name` | Yes | The plan, for example `postgresql-platform-ha`. Cannot change |
-| `spec.placement.mode` | Yes | Set `ProviderShared`, which runs the service inside your Project. Your plan's `allowedPlacementModes` must include it. If you omit the field, the API default `TenantCluster` is used. Cannot change |
+| `spec.planRef.name` | Yes | The plan, for example `postgresql-production`. Cannot change |
+| `spec.placement.mode` | Yes | Set `ProviderShared`, which runs the service inside your Project. Your plan's `allowedPlacementModes` must include it. If you omit the field, the API default `TenantCluster` is used and the published plans refuse it. Cannot change |
 | `spec.connectivity.classRef.name` | Yes | The connectivity class, `tenant-native`. Your plan's `allowedConnectivityClasses` must include it. Cannot change |
-| `spec.parameters` | No | Class parameters. See [Parameter reference](#parameter-reference) |
+| `spec.engineVersion` | No | The PostgreSQL major version, for example `"17"`. It must equal the plan's `engineVersion`, so the simplest choice is to omit it. Changes only through a `MinorUpgrade` or `MajorUpgrade` operation |
+| `spec.topology.instances` | No | One primary plus replicas, within the plan's `topology` bounds. Default: the plan's `topology.defaultInstances`. Changes only through a `Scale` operation |
+| `spec.compute.cpu`, `spec.compute.memory` | No | Requests and limits per instance, as quantity strings (`500m`, `1Gi`). Only within the plan's `capacity.computeBounds`; a plan without bounds accepts only its defaults. Change through a `Resize` operation |
+| `spec.storage.size` | No | The data volume per instance, at most the plan's `capacity.maxStorage`. Default: the plan's `capacity.storage`. Grows through an `ExpandStorage` operation; never shrinks |
+| `spec.storage.class` | No | The plan default or one of its `capacity.allowedStorageClasses`. Cannot change; existing volumes never move to another class |
+| `spec.parameters` | No | Engine parameters of the class. See [Parameter reference](#parameter-reference) |
+| `spec.maintenance.applyImmediately` | No | Apply declarative changes now instead of waiting for the plan's maintenance window. It never bypasses approval |
+| `spec.retry` | No | Request one new attempt for a failed declarative change, naming its attempt ID from status |
 | `spec.deletionPolicy` | No | What deleting the `ManagedService` does to the engine and its data. Default `Retain`. Must be one of the plan's `allowedDeletionPolicies` |
 | `spec.deletionProtection` | No | While `true`, deleting the `ManagedService` is refused. Set it to `false` in a separate update before you delete |
-| `spec.restoreFrom` | No | Creates the service from a backup of another service. Not covered on this page. Cannot change |
+| `spec.restoreFrom` | No | Creates the service from a backup of another service. See [Backups and Restore](postgresql-backup-restore.md#restore-into-a-new-service). Cannot change |
+
+The sizing fields used to live under `spec.parameters`. Manifests that still
+carry `parameters.cpu`, `parameters.memory`, `parameters.instances`,
+`parameters.storage` or `parameters.version` are refused at admission with a
+message naming the field to use instead.
 
 The deletion policies behave as follows:
 
 | `deletionPolicy` | Effect of deleting the `ManagedService` |
 |------------------|------------------------------------------|
 | `Retain` | Management stops. The engine, its volumes and its data stay in the Project and can keep using capacity and quota |
-| `SnapshotAndDelete` | The platform takes a final backup and then removes the engine and its volumes. This needs working backups. If the engine no longer exists, so that no final backup can be taken, the data volumes are retained instead of deleted. Handling of a final backup that fails is not yet qualified; ask your provider |
+| `SnapshotAndDelete` | The platform takes a final backup and then removes the engine and its volumes. This needs working backups. If the engine no longer exists, so that no final backup can be taken, the data volumes are retained instead of deleted |
 | `Delete` | The engine and its volumes are removed and the data is lost. The service must also carry the annotation `services.kube-dc.com/confirm-delete` set to the service name, or deletion waits with reason `DeletionConfirmationNeeded` |
 
 For a service in the Project's own namespace, none of these settings apply
@@ -114,21 +131,16 @@ and [Status and Deletion](managed-services-status-deletion.md).
 
 ## Parameter reference
 
-These are the parameters of the `postgresql` class. Unknown parameters are
-refused. The "Changes after creation" column gives each parameter's mutation
-class; see [Change a service after creation](#change-a-service-after-creation).
+These are the engine parameters of the `postgresql` class, under
+`spec.parameters`. Unknown parameters are refused. The last column gives each
+parameter's mutation class; see
+[Change a service after creation](#change-a-service-after-creation).
 
 | Parameter | Type and format | Default | Changes after creation |
 |-----------|-----------------|---------|------------------------|
-| `version` | String: `"14"` to `"18"` | The plan's `engineVersion` | `CreateOnly` |
 | `database` | String matching `^[a-z_][a-z0-9_]*$`, up to 63 characters | `app` | `CreateOnly` |
 | `owner` | String matching `^[a-z_][a-z0-9_]*$`, up to 63 characters | `app` | `CreateOnly` |
 | `readonlyRole` | Boolean | `true` | `CreateOnly` |
-| `instances` | Integer, 1 to 9, within the plan's topology bounds | The plan's `topology.defaultInstances` | `OperationOnly` (`Scale`) |
-| `cpu` | Quantity string, whole milliCPU, for example `500m` | The plan's `capacity.cpu` | `OperationOnly` (`Resize`) |
-| `memory` | Quantity string, whole bytes, for example `1Gi` | The plan's `capacity.memory` | `OperationOnly` (`Resize`) |
-| `storage.size` | Quantity string, for example `10Gi` | The plan's `capacity.storage` | `OperationOnly` (`ExpandStorage`) |
-| `storage.class` | Storage class name | The plan's `capacity.storageClass` | `CreateOnly` |
 | `postgresql.parameters` | Map of allow-listed settings; values are strings | Managed defaults | `OnlineDesired`, or the `UpdateParameters` operation |
 | `backup.enabled` | Boolean | `true` | `OnlineDesired` |
 | `backup.schedule` | Five-field cron expression in UTC | The plan's `backup.schedule` | `OnlineDesired` |
@@ -137,30 +149,17 @@ class; see [Change a service after creation](#change-a-service-after-creation).
 | `pooler.enabled` | Boolean | `false` | `OnlineDesired` |
 | `pooler.instances` | Integer, 1 to 3 | `1` | `OnlineDesired` |
 | `pooler.mode` | `session` or `transaction` | `transaction` | `OnlineDesired` |
+| `pooler.readOnly` | Boolean: also pool the replicas as the `pooled-read-only` endpoint | `false` | `OnlineDesired` |
 | `breakGlass.enableSuperuserAccess` | Boolean | `false` | `OnlineDesired` |
-| `expose.type` | String | `internal` | `OnlineDesired` |
+| `expose.type` | `internal`, `loadbalancer` or `gateway` | `internal` | `OnlineDesired` |
 
 Details:
 
-- **`version`**: the PostgreSQL major version. It must equal the plan's
-  `engineVersion`, so the simplest choice is to omit it. A new service starts
-  on the newest image the plan allows for that major version.
 - **`database`** and **`owner`**: the application database created at bootstrap
   and the login that owns it. The owner's credential is the `owner` binding
   role.
 - **`readonlyRole`**: creates a `readonly` login with the `pg_read_all_data`
   privilege, delivered through the `readonly` binding role.
-- **`instances`**: one primary plus replicas. With two or more instances on a
-  plan with `topology.ha: true`, the platform fails over automatically.
-- **`cpu`** and **`memory`**: requests and limits per instance. You can choose
-  values only when the plan has `capacity.computeBounds`; otherwise only the
-  plan defaults are accepted.
-- **`storage.size`**: requested per instance, at most the plan's
-  `capacity.maxStorage`. On a local-disk storage class the requested size is
-  not a hard filesystem limit.
-- **`storage.class`**: the plan default or one of its
-  `capacity.allowedStorageClasses`.
-  Existing volumes never move to another class.
 - **`postgresql.parameters`**: settings that reload online are `work_mem`,
   `maintenance_work_mem`, `effective_cache_size`,
   `log_min_duration_statement`, `timezone`, `statement_timeout`,
@@ -170,10 +169,10 @@ Details:
   `max_replication_slots`, `huge_pages`, `max_prepared_transactions` and
   `max_locks_per_transaction`. Give every value as a string with exact units.
   `timezone` accepts IANA names and `UTC`.
-- **`backup.*`**: backups require the plan's `backup.enabled: true`. The schedule and
-  retention must be within the plan's backup bounds. Omit a field to inherit
-  the plan value. Lowering `retentionDays` can permanently remove old recovery
-  points.
+- **`backup.*`**: backups require the plan's `backup.enabled: true`. The
+  schedule and retention must be within the plan's backup bounds. Omit a field
+  to inherit the plan value. Lowering `retentionDays` can permanently remove
+  old recovery points.
 - **`backup.store`**: a backup destination of your own. It requires the plan's
   `backup.allowedCustomEndpoints` and an existing `Opaque` Secret in the
   Project with `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. Keep that
@@ -181,31 +180,35 @@ Details:
   later.
 - **`pooler.*`**: runs PgBouncer in front of the primary and publishes a
   `pooled` endpoint. Each pooler replica adds 100m CPU and 128Mi memory to the
-  capacity the service uses. `transaction` mode multiplexes more clients. Use `session`
-  mode for anything that relies on session state, such as prepared statements,
-  advisory locks, `LISTEN`/`NOTIFY` or temporary tables. Turning the pooler
-  off is refused while a binding uses the `pooled` endpoint.
+  capacity the service uses. `transaction` mode multiplexes more clients. Use
+  `session` mode for anything that relies on session state, such as prepared
+  statements, advisory locks, `LISTEN`/`NOTIFY` or temporary tables. Turning
+  the pooler off is refused while a binding uses the `pooled` endpoint.
 - **`breakGlass.enableSuperuserAccess`**: emergency `postgres` superuser
   access. It requires the plan's `credentials.allowBreakGlass` and is off by
-  default. It is not covered on this page.
-- **`expose.type`**: keep the default `internal` unless you need Gateway
-  access. The value `gateway` requires the plan field `exposure.gateway`; see
-  [External Access](postgresql-external-access.md). Other values require plan
-  entitlements and are not covered in this chapter.
+  default.
+- **`expose.type`**: keep the default `internal` unless you need access from
+  outside the Project. `gateway` requires the plan field `exposure.gateway`;
+  see [External Access](postgresql-external-access.md). `loadbalancer` requires
+  the plan's `exposure.allowPublicLoadBalancer` and a public IPv4 address from
+  your organization's quota.
 
 ## Change a service after creation
 
 ### `OnlineDesired` parameters
 
 Edit the manifest and apply the complete `ManagedService` again, keeping every
-other field unchanged:
+other field unchanged, or change the value in the console's **Settings** tab
+and use **Review & apply**:
 
 ```bash
 kubectl apply -f orders-db.yaml
 ```
 
 Settings that need a restart roll through the instances one at a time.
-Applications should reconnect and retry.
+Applications should reconnect and retry. Declarative changes wait for the
+plan's maintenance window unless the plan applies them immediately or you set
+`spec.maintenance.applyImmediately: true`.
 
 For PostgreSQL settings, a completed `UpdateParameters` operation takes
 precedence over the manifest. After such an operation, editing or removing
@@ -214,9 +217,9 @@ effective value; use another `UpdateParameters` operation. Its
 `resetParameters` list resets the named settings to their managed defaults. A
 setting cannot be set and reset in the same operation.
 
-### `CreateOnly` and `OperationOnly` parameters
+### Sizing, version and `CreateOnly` parameters
 
-An edit to one of these parameters on the `ManagedService` is refused when you
+An edit to one of these fields on the `ManagedService` is refused when you
 apply it:
 
 ```text
@@ -227,23 +230,25 @@ If an edit gets past admission, the service reports `Reconciled=False` with
 reason `ParameterMutationRejected`, and the last accepted configuration stays
 in force. Revert the edit.
 
-Change `OperationOnly` values with a `ServiceOperation`:
+Change them with a `ServiceOperation`, or with the matching action in the
+console:
 
-| Parameter | Operation `type` | Operation `parameters` | Plan requirement |
-|-----------|------------------|------------------------|------------------|
-| `instances` | `Scale` | `instances` | Within `topology` bounds |
-| `cpu`, `memory` | `Resize` | `cpu`, `memory` (either one may be omitted to keep its current value) | `capacity.computeBounds` and `capacity.allocationProtocol: v1` |
-| `storage.size` | `ExpandStorage` | `size`, larger than the current size | At most `capacity.maxStorage`, and the service's `status.engineDetails.storageExpansion` must be `"true"`. The operation is refused on local-path storage. Successful expansion is not yet qualified; ask your provider before you rely on it |
-| `postgresql.parameters` | `UpdateParameters` | `parameters`, `resetParameters` | None beyond the allow-list |
+| Field | Operation `type` | Operation `parameters` | Plan requirement |
+|-------|------------------|------------------------|------------------|
+| `spec.topology.instances` | `Scale` | `instances` | Within `topology` bounds |
+| `spec.compute.cpu`, `spec.compute.memory` | `Resize` | `cpu`, `memory` (either one may be omitted to keep its current value) | `capacity.computeBounds` and `capacity.allocationProtocol: v1` |
+| `spec.storage.size` | `ExpandStorage` | `size`, larger than the current size | At most `capacity.maxStorage`, and the service's `status.engineDetails.storageExpansion` must be `"true"`. Refused on storage that cannot expand |
+| `spec.engineVersion` | `MinorUpgrade`, `MajorUpgrade` | `imageName` from the plan's `allowedImages` | See [Upgrades](postgresql-operations.md#upgrades) |
+| `spec.parameters.postgresql.parameters` | `UpdateParameters` | `parameters`, `resetParameters` | None beyond the allow-list |
 
 Every operation type must also be in the plan's `operations.allowed`. This
-example scales `orders-db` to three instances:
+example scales `orders-db` to five instances:
 
 ```yaml
 apiVersion: services.kube-dc.com/v1alpha1
 kind: ServiceOperation
 metadata:
-  name: orders-db-scale-3
+  name: orders-db-scale-5
   namespace: my-project
 spec:
   serviceRef:
@@ -251,16 +256,16 @@ spec:
   # The service's metadata.uid.
   serviceUID: REPLACE_WITH_SERVICE_UID
   type: Scale
-  idempotencyKey: orders-db-scale-3
+  idempotencyKey: orders-db-scale-5
   parameters:
-    instances: 3
+    instances: 5
   execution:
     window: Immediate
 ```
 
 ```bash
-kubectl apply -f orders-db-scale-3.yaml
-kubectl get serviceoperation orders-db-scale-3 -n my-project -w
+kubectl apply -f orders-db-scale-5.yaml
+kubectl get serviceoperation orders-db-scale-5 -n my-project -w
 ```
 
 An operation moves through `Pending`, `Preflight`, `AwaitingApproval`,
@@ -279,8 +284,9 @@ An operation moves through `Pending`, `Preflight`, `AwaitingApproval`,
   Deleting a record does not stop work that has already started.
 
 After an operation succeeds, the new value appears in
-`status.effectiveConfiguration`, not in `spec.parameters`. Do not copy it back
-into the manifest.
+`status.effectiveConfiguration` and `status.resolvedSpec`, not in the manifest
+you applied. Do not copy it back: the manifest keeps stating what you created,
+and the operations record what changed.
 
 ## Read the status
 
@@ -372,13 +378,14 @@ kubectl get events -n my-project --field-selector involvedObject.name=orders-db
 | Where it shows | Reason or message | Meaning and fix |
 |----------------|-------------------|-----------------|
 | `kubectl apply` error | `parameters ... are CreateOnly, OperationOnly or ReplaceOrMigrate ...` | You edited a parameter that cannot change on the `ManagedService`. Revert it, or use the matching operation |
+| `kubectl apply` error | `spec.parameters.cpu ... use spec.compute.cpu` (also `memory`, `instances`, `storage`, `version`) | The manifest uses a retired parameter path. Move the value to the typed field the message names |
 | `kubectl apply` error | `classRef is immutable`, `planRef is immutable ...`, `placement is immutable ...`, `connectivity is immutable after creation ...`, `restoreFrom is create-only` | These fields are fixed at creation. Create a new service instead |
 | `kubectl delete` error | `deletionProtection is enabled on this ManagedService; set spec.deletionProtection=false first` | Set `deletionProtection: false`, apply, then delete |
 | `Forbidden` from the API | RBAC | Your Project role cannot write this resource. See [Project roles](managed-services.md#project-roles) |
 | `Accepted=False`, phase `Rejected` | `PlanNotEntitled` | The plan was not found, is disabled or not verified, or does not allow the requested placement mode, connectivity class or deletion policy. For example, if `placement.mode` is omitted and the plan's `allowedPlacementModes` does not include `TenantCluster`, the message is `plan <plan> does not allow placement mode TenantCluster` |
 | `Accepted=False`, phase `Rejected` | `ClassNotVerified` | The class name is wrong or the class is unavailable |
 | `Accepted=False`, phase `Rejected` | `ConnectivityClassAbsent` | The connectivity class name does not exist |
-| `Accepted=False`, phase `Rejected` | `ParameterSchemaRejected` | A parameter is invalid for the class or outside the plan's bounds. Examples: `spec.parameters.version: must equal the plan engine version "..."`, `spec.parameters.instances: must be between <min> and <max> for plan <plan>`, `spec.parameters.storage.size: must not exceed the plan maximum ...`, or an unknown parameter reported as `additional properties ...` |
+| `Accepted=False`, phase `Rejected` | `ParameterSchemaRejected` | A parameter is invalid for the class or outside the plan's bounds. Examples: `spec.engineVersion: must equal the plan engine version "..."`, `spec.topology.instances: must be between <min> and <max> for plan <plan>`, `spec.storage.size: must not exceed the plan maximum ...`, or an unknown parameter reported as `additional properties ...` |
 | `Accepted=False`, phase `Rejected` | `PlanQuotaExceeded` | The Project already has the plan's `maxInstancesPerProject` services: `plan <plan> allows <n> instances per project` |
 | `Placed=False`, phase `Pending` | `NoQualifiedDataPlane` | The platform has nowhere to place a service of this plan right now. Ask your provider |
 | `Placed=False` | `ReservationRejected` | The platform could not secure capacity for the service. Ask your provider |

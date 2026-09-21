@@ -59,8 +59,8 @@ Generic Kubernetes MCP servers let AI assistants run `kubectl` — but they don'
 | `create-project` | Create a project with VPC networking and correct network type |
 | `deploy-app` | Deploy a containerized app with optional database and HTTPS |
 | `create-vm` | Provision a VM with SSH access, cloud-init, and guest agent |
-| `create-database` | Create managed PostgreSQL/MariaDB with connection patterns |
-| `manage-database-credentials` | Rotate database-user passwords and project the current value into a Secret |
+| `create-database` | Create a managed database (PostgreSQL, MySQL, MariaDB, ClickHouse) or cache with a binding Secret and connection patterns |
+| `manage-database-credentials` | Deliver credential roles to workloads as Secrets and rotate them on demand or on a schedule |
 | `expose-service` | Expose via Gateway Route (HTTPS) or Direct EIP (TCP/UDP) |
 | `manage-cluster` | Scale workers, upgrade K8s version, access kubeconfig |
 | `manage-networking` | Create EIPs, FIPs, understand VPC networking |
@@ -478,7 +478,7 @@ Deploy WordPress with a managed HA MariaDB database in Project production in Org
 Expose it via HTTPS with auto TLS.
 ```
 
-With Agent Skills loaded, the agent will: create a `KdcDatabase` with `engine: mariadb` (WordPress core has no PostgreSQL driver — `engine: postgresql` produces a tight CrashLoop), wait for it to become Ready, build a small bridge Secret aliasing the auto-generated password to the chart's expected key (`mariadb-password`), deploy WordPress via `helm install` with `externalDatabase.existingSecret` pointing at the bridge, expose with `service.type=LoadBalancer` plus `service.nlb.kube-dc.com/expose-route: https`, and report the auto-generated hostname.
+With Agent Skills loaded, the agent will: create a MariaDB `ManagedService` (WordPress core has no PostgreSQL driver) and a `ServiceBinding` for its owner credential, wait for both to become Ready, build a small bridge Secret aliasing the delivered password to the chart's expected key (`mariadb-password`), deploy WordPress via `helm install` with `externalDatabase.existingSecret` pointing at the bridge, expose with `service.type=LoadBalancer` plus `service.nlb.kube-dc.com/expose-route: https`, and report the auto-generated hostname.
 
 ### Create a VM with SSH access
 

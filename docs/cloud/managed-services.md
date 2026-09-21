@@ -1,19 +1,40 @@
 # Managed Services
 
-Managed Services runs a provider-operated service, such as a PostgreSQL
-database, inside your Project. You describe the service you want with
-Kubernetes resources in the `services.kube-dc.com/v1alpha1` API, and the
-platform provisions the engine, runs it and reports what it actually applied.
+Managed Services runs a provider-operated data service inside your Project:
+a PostgreSQL, MySQL, MariaDB or ClickHouse database, a Valkey cache or a Kafka
+cluster. You choose an engine and a plan; the platform provisions the engine,
+issues its certificates, holds its credentials, backs it up, runs your
+day-2 operations and reports what it actually applied. You never operate the
+engine yourself.
 
-This chapter currently covers PostgreSQL.
+You can work from the [console](managed-services-console.md), or describe the
+service with Kubernetes resources in the `services.kube-dc.com/v1alpha1` API
+and apply them with `kubectl` or your GitOps pipeline. Both paths create the
+same objects, and the console offers the exact YAML for every request it
+makes.
 
-:::info Managed Services and KdcDatabase
-Managed Services is the replacement for new databases. Existing `KdcDatabase`
-resources, described in [Managed Databases](managed-databases.md), remain
-supported and will be deprecated. The two APIs are separate: a `KdcDatabase`
-does not appear as a `ManagedService`, and the reverse is also true. See
-[Coming from KdcDatabase](managed-services-from-kdcdatabase.md).
+:::warning db-manager databases are deprecated
+Managed Services replaces the earlier `KdcDatabase` product operated by
+db-manager. Its console area remains only for the organizations and Projects
+your provider has listed as still running such databases, and new databases
+cannot be created that way. See
+[Migrating from db-manager databases](managed-services-migration.md).
 :::
+
+## Families
+
+| Family | Class | What the plans offer | Backups |
+|--------|-------|----------------------|---------|
+| [PostgreSQL](postgresql-create.md) | `postgresql` | One instance, or a replicated cluster with automatic failover, a connection pooler and read-only credentials | Scheduled backups to object storage with continuous archiving, point-in-time recovery, restore into a new service or in place |
+| [MySQL](managed-services-mysql-mariadb.md) | `mysql` | One server with a Router, or a Group Replication cluster behind Routers | Scheduled verified logical archives, restore into a new service |
+| [MariaDB](managed-services-mysql-mariadb.md) | `mariadb` | One server, or a Galera cluster where published | Scheduled verified logical archives, restore into a new service |
+| [ClickHouse](managed-services-clickhouse.md) | `clickhouse` | One server with its own Keeper, or two replicas of one shard behind one address | Scheduled verified native archives, restore into a new service |
+| [Valkey](managed-services-valkey.md) | `valkey` | One node, or a Sentinel-managed set where published | On-demand snapshots only; not a recovery facility |
+| [Kafka](managed-services-kafka.md) | `kafka` | Controllers and brokers sized by the plan | None; durability is replication |
+
+Which families and plans your Project can use is decided by your provider.
+The console shows only what is published for your installation; a manifest
+that names an unpublished plan is refused.
 
 ## Resource model
 
@@ -34,8 +55,13 @@ A typical workflow has four steps:
    platform delivers a `Secret` with connection details and credentials.
 4. Point your application at that `Secret`.
 
-See [Create a PostgreSQL Service](postgresql-create.md) and
-[Connect Applications](postgresql-connect.md) for the full procedure.
+In the console, choosing **Kubernetes Secret** on the last step of creation
+does steps 2 and 3 for you and names the Secret `<service>-owner`.
+
+The PostgreSQL pages of this chapter walk through the full procedure with
+manifests: [Create a PostgreSQL Service](postgresql-create.md) and
+[Connect Applications](postgresql-connect.md). The other family pages show
+what differs for their engine.
 
 ### The service UID
 
@@ -63,11 +89,10 @@ change after creation:
 | Mutation class | How to change it |
 |----------------|------------------|
 | `CreateOnly` | It cannot change. Create a new service instead |
-| `OnlineDesired` | Edit the `ManagedService` and apply the complete manifest |
-| `OperationOnly` | Create a `ServiceOperation`. Editing the value on the `ManagedService` is refused |
+| `OnlineDesired` | Edit the `ManagedService` and apply the complete manifest, or change it in the console's **Settings** tab |
+| `OperationOnly` | Create a `ServiceOperation`, or use the matching action in the console. Editing the value on the `ManagedService` is refused |
 
-The PostgreSQL parameters and their mutation classes are listed in
-[Create a PostgreSQL Service](postgresql-create.md#parameter-reference).
+Each family page lists its parameters and their mutation classes.
 
 Applying a manifest or creating an operation only records your request.
 Completion comes from status: the service's `Accepted` and `Ready` conditions,
@@ -87,8 +112,7 @@ allowed at all and which ones wait for provider approval.
 The platform protects the engine's own objects (database cluster, volumes,
 engine Secrets and ServiceAccounts) from Project identities. Change a service
 only through its `ManagedService`, `ServiceOperation` and `ServiceBinding`
-resources. See
-[What the platform protects](managed-databases.md#what-the-platform-protects-and-what-that-means-for-your-workloads).
+resources, or through the console, which does the same.
 
 ## Project roles
 
@@ -153,10 +177,15 @@ you need to keep.
 
 ## Next steps
 
+- [Using the Console](managed-services-console.md): the catalog, the creation
+  sheet and the service page.
 - [Classes and Plans](managed-services-plans.md): the class, plan and
   connectivity names to use, and the plan fields that decide what a service
   may do.
-- [Create a PostgreSQL Service](postgresql-create.md)
-- [Connect Applications](postgresql-connect.md)
+- [Create a PostgreSQL Service](postgresql-create.md) and
+  [Connect Applications](postgresql-connect.md): the full manifest procedure.
+- [MySQL and MariaDB](managed-services-mysql-mariadb.md),
+  [ClickHouse](managed-services-clickhouse.md),
+  [Valkey](managed-services-valkey.md), [Kafka](managed-services-kafka.md).
 - [Status and Deletion](managed-services-status-deletion.md)
-- [Coming from KdcDatabase](managed-services-from-kdcdatabase.md)
+- [Migrating from db-manager databases](managed-services-migration.md)

@@ -224,7 +224,7 @@ distinct needs:
 |---|---|
 | [KMS](kms.md) | You want to encrypt opaque payloads or wrap your own data keys on the fly (not store them). The Transit service processes each plaintext or ciphertext request, while non-exportable key material remains inside OpenBao. |
 | [Certificate Manager](certificate-manager.md) | You need x509 certs (TLS server, mTLS, code signing). Cert renewal is automatic. |
-| [Database Credentials](database-credentials.md) | The "secret" is a database password whose lifecycle is tied to an actual DB user. The platform rotates the password on schedule. |
+| [Managed Services credentials](postgresql-credentials.md) | The "secret" is a database password whose lifecycle is tied to an actual database login. A `ServiceBinding` delivers it and a `ServiceCredentialPolicy` rotates it on schedule. |
 
 Use Secrets Manager when none of those fit — short-lived OAuth tokens
 from your IdP, third-party API keys, SSH host keys, GPG signing keys,
@@ -235,4 +235,4 @@ etc. Anything you'd otherwise jam into a YAML file or git-crypt.
 - **CLI** — `kube-dc secrets --help`
 - **CRD** — `ManagedSecret` in API group `security.kube-dc.com/v1alpha1`
 - **HTTP API** — see your cluster's backend at `https://backend.<your-domain>/api/secrets/*`
-- **Related** — [KMS](kms.md) · [Certificate Manager](certificate-manager.md) · [Database Credentials](database-credentials.md)
+- **Related** — [KMS](kms.md) · [Certificate Manager](certificate-manager.md) · [Managed Services credentials](postgresql-credentials.md)

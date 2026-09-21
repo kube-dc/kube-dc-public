@@ -31,7 +31,7 @@ workflows a Project is designed for:
 - **Manage certificates** — Request `ManagedCertificate` resources; Project admins
   can also create namespaced cert-manager Issuers and Certificates for routes
 - **Configure autoscaling** — HorizontalPodAutoscalers for automatic scaling
-- **Backups** — Use the backup controls provided by supported managed services, such as [Managed Databases](managed-databases.md) and [Managed Clusters](cluster-management.md)
+- **Backups** — Use the backup controls provided by supported managed services, such as [Managed Services](managed-services.md) and [Managed Clusters](cluster-management.md)
 
 :::tip
 If you receive a message like *"hostPath volumes are not allowed in project

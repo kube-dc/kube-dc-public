@@ -33,8 +33,8 @@ commands.
 
 ## Use Managed Data Services
 
-- [Managed Databases](managed-databases.md)
-- [Database Credentials](database-credentials.md)
+- [Managed Services](managed-services.md): databases, caches and brokers from the catalog
+- [Credentials and Rotation](postgresql-credentials.md)
 - [Object Storage](object-storage.md)
 - [Secrets Manager](secrets-manager.md)
 - [Key Management](kms.md)

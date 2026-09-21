@@ -230,7 +230,7 @@ This page covers restores that name exactly one selector.
      classRef:
        name: postgresql
      planRef:
-       name: postgresql-platform-ha
+       name: postgresql-production
      placement:
        mode: ProviderShared
      connectivity:
@@ -246,15 +246,16 @@ This page covers restores that name exactly one selector.
        # For point-in-time recovery, replace backupID with a targetTime,
        # for example: targetTime: "2026-01-15T10:40:00Z"
        backupID: REPLACE_WITH_BACKUP_ID
+     # Omit engineVersion: the restore uses the major version recorded on the backup.
+     topology:
+       instances: 1
+     storage:
+       # Recommended: at least the size of the source's data volumes.
+       size: 20Gi
      parameters:
-       # Omit version: the restore uses the major version recorded on the backup.
        # Recommended: the same database and owner names as the source service.
        database: orders
        owner: orders
-       instances: 1
-       storage:
-         # Recommended: at least the size of the source's data volumes.
-         size: 10Gi
      deletionPolicy: Retain
      deletionProtection: true
    ```
@@ -285,7 +286,7 @@ This page covers restores that name exactly one selector.
   that version equals the plan's `engineVersion`, the plan offers it. When it
   differs, the plan's `allowedImages` must include an image of that version;
   otherwise the restore is refused.
-- Omit `parameters.version`. If you set it, it must equal the plan's
+- Omit `spec.engineVersion`. If you set it, it must equal the plan's
   `engineVersion`, and a backup written by another major version is then
   refused.
 - The source service is not changed. The new service gets its own credentials

@@ -1,0 +1,35 @@
+# PostgreSQL managed service. Replace every {placeholder}; keep placement and
+# connectivity as written. Sizing fields are typed and bounded by the plan.
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ManagedService
+metadata:
+  name: "{service-name}"
+  namespace: "{backing-namespace}"
+spec:
+  classRef:
+    name: postgresql
+  planRef:
+    name: postgresql-development   # postgresql-production for 3 members with failover
+  placement:
+    mode: ProviderShared
+  connectivity:
+    classRef:
+      name: tenant-native
+  topology:
+    instances: 1
+  compute:
+    cpu: 500m
+    memory: 1Gi
+  storage:
+    size: 10Gi
+  parameters:
+    database: "{application-database}"
+    owner: app
+    readonlyRole: true
+    backup:
+      enabled: true
+    # postgresql:
+    #   parameters:
+    #     work_mem: 8MB
+  deletionPolicy: Retain
+  deletionProtection: true

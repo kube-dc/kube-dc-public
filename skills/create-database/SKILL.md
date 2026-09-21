@@ -1,217 +1,176 @@
 ---
 name: create-database
-description: Create a managed PostgreSQL or MariaDB database in a Kube-DC Project, connect workloads with Kubernetes Secrets, configure supported external access, and prepare backup or restore workflows.
+description: Create a managed database (PostgreSQL, MySQL, MariaDB, ClickHouse) or Valkey cache in a Kube-DC Project as a ManagedService, deliver its credential to workloads with a ServiceBinding Secret, and prepare backup and restore workflows. KdcDatabase is deprecated; never create one.
 ---
 
 ## Prerequisites
 
 - The target Project exists and is Ready.
 - Know its backing namespace: `{organization}-{project}`.
-- Check storage, CPU, memory, and pod quota with the `check-quota` skill.
+- Check storage, CPU, memory and pod quota with the `check-quota` skill.
+- Know the plan names of the installation. Tenants cannot list the
+  cluster-scoped catalog; standard installations publish
+  `{family}-development` and `{family}-production`, and the console's
+  "or get the YAML for GitOps" link shows the exact names it uses. When the
+  user does not know, ask before applying.
 
-## 1. Choose the Database Shape
+## 1. Choose the Engine and Plan
 
-| Engine | Supported versions | Internal write endpoint |
-|---|---|---|
-| PostgreSQL | 14, 15, 16, 17 | `{name}-rw.{backing-namespace}.svc:5432` |
-| MariaDB, one replica | 10.11, 11.4 | `{name}.{backing-namespace}.svc:3306` |
-| MariaDB, two or more replicas | 10.11, 11.4 | `{name}-primary.{backing-namespace}.svc:3306` |
+| Need | Class | Standard plans | Notes |
+|---|---|---|---|
+| General SQL, PITR, replicas, pooler | `postgresql` | `postgresql-development`, `postgresql-production` | Production: 3 members, automatic failover |
+| MySQL 8.4 | `mysql` | `mysql-development`, `mysql-production` | Sized once at creation; Production is Group Replication (every table needs a primary key) |
+| MariaDB 11.8 | `mariadb` | `mariadb-development`, `mariadb-production` | Production is a Galera cluster; Resize and ExpandStorage available |
+| Analytics SQL | `clickhouse` | `clickhouse-development`, `clickhouse-production` | Sized by shards × replicas, fixed at creation |
+| Cache, sessions, queues | `valkey` (one node), `valkey-ha` (Sentinel) | `valkey-development`, `valkey-production` | Data you can rebuild |
 
-Use two or more replicas when the engine and workload require failover. Start
-with internal exposure unless the user explicitly needs workstation access.
+Start with the Development plan unless the user asks for failover or backups
+with 14-day retention.
 
-## 2. Create the Database
+## 2. Create the Service
 
-Use [pg-template.yaml](pg-template.yaml) or
-[mariadb-template.yaml](mariadb-template.yaml), or apply this PostgreSQL
-example:
+Use the template for the engine: [postgresql-template.yaml](postgresql-template.yaml),
+[mysql-mariadb-template.yaml](mysql-mariadb-template.yaml),
+[clickhouse-template.yaml](clickhouse-template.yaml) or
+[valkey-template.yaml](valkey-template.yaml). The PostgreSQL shape:
 
 ```yaml
-apiVersion: db.kube-dc.com/v1alpha1
-kind: KdcDatabase
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ManagedService
 metadata:
-  name: "{database-name}"
+  name: "{service-name}"
   namespace: "{backing-namespace}"
 spec:
-  engine: postgresql
-  version: "16"
-  databaseName: "{application-database}"
-  username: app
-  replicas: 2
-  cpu: "1"
-  memory: 2Gi
-  storage: 20Gi
-  expose:
-    type: internal
+  classRef:
+    name: postgresql
+  planRef:
+    name: postgresql-development
+  placement:
+    mode: ProviderShared          # always; the API default is refused by the plans
+  connectivity:
+    classRef:
+      name: tenant-native
+  topology:
+    instances: 1                  # within the plan's bounds
+  compute:
+    cpu: 500m
+    memory: 1Gi
+  storage:
+    size: 10Gi
+  parameters:
+    database: "{application-database}"
+    owner: app
+    readonlyRole: true
+    backup:
+      enabled: true
+  deletionPolicy: Retain
+  deletionProtection: true
 ```
 
-Wait for the resource:
+Rules the API enforces:
+
+- Sizing is typed. Never put `cpu`, `memory`, `instances`, `storage` or
+  `version` under `spec.parameters`; admission refuses them and names the
+  typed field to use.
+- `classRef`, `planRef`, `placement`, `connectivity` and `storage.class` are
+  immutable. Sizing changes go through `ServiceOperation` objects (Scale,
+  Resize, ExpandStorage) where the family allows them; MySQL and ClickHouse
+  are sized once.
+- ClickHouse uses `topology.shards` and `topology.replicasPerShard`, never
+  `instances`.
+
+Apply with a server-side dry run first, then wait for readiness and record
+the UID, which every binding, operation and policy must pin:
 
 ```bash
-kubectl get kdcdb {database-name} -n {backing-namespace} -w
+kubectl apply --dry-run=server -f service.yaml
+kubectl apply -f service.yaml
+kubectl get managedservice {service-name} -n {backing-namespace} -w
+kubectl get managedservice {service-name} -n {backing-namespace} -o jsonpath='{.metadata.uid}{"\n"}'
 ```
 
-Treat `.status.phase=Ready` as the readiness signal. Provisioning time depends
-on image availability, storage, placement, and quota.
+`PHASE: Ready` with `READY: True` is the readiness signal. A refusal shows as
+`Accepted=False` with a reason (`PlanNotEntitled`, `ParameterSchemaRejected`,
+`PlanQuotaExceeded`); fix the manifest rather than retrying.
 
-## 3. Connect an Application
+## 3. Deliver a Credential to the Application
 
-The engine creates a bootstrap credential Secret:
-
-| Engine | Secret | Password key |
-|---|---|---|
-| PostgreSQL | `{name}-app` | `password` |
-| MariaDB | `{name}-password` | `password` |
-
-PostgreSQL example:
+Create a `ServiceBinding` from [binding-template.yaml](binding-template.yaml)
+with the service UID. The platform delivers a Secret; nothing is copied into
+manifests.
 
 ```yaml
-env:
-- name: DB_HOST
-  value: "{database-name}-rw.{backing-namespace}.svc"
-- name: DB_PORT
-  value: "5432"
-- name: DB_NAME
-  value: "{application-database}"
-- name: DB_USER
-  value: "app"
-- name: DB_PASSWORD
-  valueFrom:
-    secretKeyRef:
-      name: "{database-name}-app"
-      key: password
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ServiceBinding
+metadata:
+  name: "{service-name}-owner"
+  namespace: "{backing-namespace}"
+spec:
+  serviceRef:
+    name: "{service-name}"
+  serviceUID: "{service-uid}"
+  role: owner                     # readonly | default (Valkey) | client, admin (Kafka)
+  consumer:
+    kind: ServiceAccount
+    name: "{workload-service-account}"
+    namespace: "{backing-namespace}"
+  delivery:
+    secretName: "{service-name}-owner"
 ```
 
-For MariaDB, use `{database-name}.{backing-namespace}.svc` with one replica
-or `{database-name}-primary.{backing-namespace}.svc` with two or more, port
-`3306`, and Secret `{database-name}-password`.
+Secret keys by family:
 
-If a `DatabaseCredentialPolicy` manages this user, stop reading the engine
-Secret. It remains at the provisioning-time value after the first rotation.
-Use the policy's projected Secret or the authorized `kube-dc db credentials`
-command instead.
+| Family | Keys |
+|---|---|
+| PostgreSQL | `host`, `port`, `dbname`, `username`, `password`, `sslmode` (`verify-full`), `ca.crt`, `uri` |
+| MySQL, MariaDB | `host`, `port`, `database`, `username`, `password`, `tls` (`verify-full`), `ca.crt`, `uri`, `jdbcUrl` |
+| ClickHouse | `host`, `port` (9440), `httpsPort` (8443), `database`, `username`, `password`, `tls`, `ca.crt`, `uri`, `httpsUrl`, `jdbcUrl` |
+| Valkey | `host`, `port` (6379), `username`, `password`, `uri`, `ca.crt` |
+
+Every endpoint is TLS-only with the platform's own CA: mount `ca.crt` and
+verify the server (PostgreSQL `PGSSLROOTCERT` + `sslmode=verify-full`, MySQL
+`--ssl-ca --ssl-verify-server-cert`, Valkey `--tls --cacert`). See
+[db-connection-patterns.md](db-connection-patterns.md).
 
 Some Helm charts expect a different password key. Prefer a chart setting such
-as `existingSecretPasswordKey`. If none exists, create a small bridge Secret
-from the current source-of-truth Secret and point the chart at it. Recreate that
-bridge after every credential rotation unless automation keeps it synchronized.
+as `existingSecretPasswordKey`; otherwise create a small bridge Secret from
+the binding Secret and recreate it after every rotation unless automation
+keeps it synchronized.
 
-See [db-connection-patterns.md](db-connection-patterns.md) for connection
-examples.
+## 4. Do Not Expose Externally by Default
 
-## 4. Configure External Access Only When Needed
+Services are reachable inside the Project through `tenant-native`. PostgreSQL
+can be exposed through the direct-TLS Gateway (`parameters.expose.type:
+gateway`, plan entitlement, PostgreSQL 17+ clients) or a public LoadBalancer
+(`loadbalancer`, plan entitlement plus IPv4 quota). The other families have no
+external exposure. Do not build host names; use the binding Secret's `host`.
 
-### LoadBalancer: supported workstation path
+## 5. Back Up and Restore
 
-The dashboard supports **Internal** and **LoadBalancer**. To request a
-dedicated address in a manifest:
-
-```yaml
-spec:
-  expose:
-    type: loadbalancer
-```
-
-Read the allocated endpoint from status:
-
-```bash
-kubectl get kdcdb {database-name} -n {backing-namespace} \
-  -o jsonpath='{.status.externalEndpoint}{"\n"}'
-```
-
-The wizard and Connection tab show Organization public-IPv4 usage as an
-advisory; stale UI quota data never blocks the request, and the EIp controller
-remains authoritative. The Connection tab can enable and disable this endpoint
-after database creation. Enabling creates `{database-name}-external`, allocates
-a dedicated public EIp, and waits for
-`status.conditions[type=ExposureReady]` before presenting the endpoint as
-ready. Disabling changes `spec.expose.type` to `internal`; db-manager deletes
-the Service and the platform releases its EIp before clearing
-`status.externalEndpoint`. The internal endpoint stays online.
-
-Disable/re-enable recreates the Service with a new public address. It also
-migrates a legacy endpoint that implicitly used the Project `cloud` network to
-the supported public network, so update client allowlists and DNS.
-
-Remove external exposure when it is no longer needed. Public IPv4 quota is
-hard; if allocation is denied, inspect the `ExposureReady=False` reason/message
-and the generated `slb-*` EIp condition.
-
-### Gateway: PostgreSQL 17 direct TLS only
-
-Gateway exposure is an advanced, manifest-only compatibility path. It works
-only when PostgreSQL 17 and the client both start with a standard TLS
-ClientHello and the client sets `sslnegotiation=direct`:
-
-```yaml
-spec:
-  engine: postgresql
-  version: "17"
-  expose:
-    type: gateway
-```
-
-Connect to public port `443`, not the engine port reported in status:
-
-```bash
-psql "host={database-name}-db-{backing-namespace}.{platform-domain} port=443 dbname={application-database} user=app sslmode=require sslnegotiation=direct"
-```
-
-This path is not compatible with PostgreSQL 14-16 protocol negotiation or the
-MariaDB server-first handshake. It passes through the database certificate and
-does not issue one for the public hostname. Use LoadBalancer for those engines
-or when verified server identity is required.
-
-Standard Project roles do not grant pod port-forward. Do not present
-`kubectl port-forward` as a tenant database access method.
-
-## 5. Back Up the Database
-
-Scheduled backups are disabled unless configured:
-
-```yaml
-spec:
-  backup:
-    enabled: true
-    schedule: "0 2 * * *"
-    retentionDays: 7
-```
-
-Backups use the Project backup bucket configured by the platform. PostgreSQL
-also uses continuous WAL archiving for point-in-time recovery when backup is
-enabled. Follow [backup-restore-patterns.md](backup-restore-patterns.md) for
-on-demand backups and both restore paths.
+Scheduled backups run when the plan enables them (daily on the standard
+plans). An on-demand backup is a `ServiceOperation` of type `Backup`; history
+is the read-only `ServiceBackup` list. Restore is into a new service for every
+family (`RestoreToNew` operation or `spec.restoreFrom` on a new
+`ManagedService`); PostgreSQL also restores in place and offers point-in-time
+recovery. Kafka backs up metadata only. See
+[backup-restore-patterns.md](backup-restore-patterns.md).
 
 ## Verification
 
 ```bash
-# Database state and endpoints
-kubectl get kdcdb {database-name} -n {backing-namespace} -o yaml
-
-# Engine Service and ready endpoints
-kubectl get service,endpointslice -n {backing-namespace}
-
-# Bootstrap Secret, only when no DBCP manages the user
-kubectl get secret {database-name}-app -n {backing-namespace} # PostgreSQL
+kubectl get managedservice,servicebinding -n {backing-namespace}
+kubectl get managedservice {service-name} -n {backing-namespace} \
+  -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.reason}{"\n"}{end}'
+kubectl describe secret {service-name}-owner -n {backing-namespace}   # keys only, never values
 ```
 
-Success means the `KdcDatabase` is Ready, the expected Service has endpoints,
-and the correct source-of-truth credential Secret exists. On failure, inspect
-conditions and events:
+Report the service name, plan, phase, the binding Secret name and its keys.
+Never print `password` or `uri`.
 
-```bash
-kubectl describe kdcdb {database-name} -n {backing-namespace}
-```
+## Deprecated: KdcDatabase
 
-## Safety
-
-- Never print or log passwords.
-- Default to internal exposure.
-- Use the correct MariaDB endpoint for the replica count.
-- Do not use an engine bootstrap Secret after a credential policy rotates that
-  user.
-- Prefer a new-name restore. In-place restore deletes engine resources and
-  PVCs before rebuilding from the selected backup.
-- MariaDB manual `PhysicalBackup` resources should use
-  `target: PreferReplica`; strict `Replica` can wait indefinitely when no
-  replica is available.
+`KdcDatabase` and `DatabaseCredentialPolicy` are deprecated. Never create
+them. If the Project has one, point the user to the migration guide
+(`docs/cloud/managed-services-migration.md`): create the managed service,
+copy the data with the engine's dump tool from a Job in the Project, repoint
+the application at the binding Secret, delete the `KdcDatabase`.

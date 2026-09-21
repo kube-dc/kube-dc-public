@@ -12,11 +12,15 @@ Master catalog for AI agents. Read this first, then dive into specific files as 
 | `EIp` | `kube-dc.com` | `v1` | — | External IP allocation (cloud or public) |
 | `FIp` | `kube-dc.com` | `v1` | — | Floating IP — 1:1 NAT to VM/pod |
 | `KdcCluster` | `k8s.kube-dc.com` | `v1alpha1` | `kdc-cl` | Managed Kubernetes cluster (Kamaji + CAPI) |
-| `KdcDatabase` | `db.kube-dc.com` | `v1alpha1` | `kdcdb` | Managed PostgreSQL or MariaDB |
+| `ManagedService` | `services.kube-dc.com` | `v1alpha1` | `msvc` | Managed PostgreSQL, MySQL, MariaDB, ClickHouse, Valkey or Kafka |
+| `ServiceBinding` | `services.kube-dc.com` | `v1alpha1` | | Credential role delivered as a Secret |
+| `ServiceOperation` | `services.kube-dc.com` | `v1alpha1` | | One day-2 action on a service |
+| `ServiceCredentialPolicy` | `services.kube-dc.com` | `v1alpha1` | | Scheduled credential rotation |
+| `KdcDatabase` | `db.kube-dc.com` | `v1alpha1` | `kdcdb` | Deprecated db-manager database; migrate to `ManagedService` |
 | `ManagedSecret` | `security.kube-dc.com` | `v1alpha1` | — | Project secret backed by OpenBao, optionally projected into a K8s Secret via ESO |
 | `ManagedCertificate` | `security.kube-dc.com` | `v1alpha1` | `mcert` | x509 cert from Org private CA or public ACME, auto-renewed |
 | `KMSKey` | `security.kube-dc.com` | `v1alpha1` | — | Per-project encryption key backed by OpenBao Transit |
-| `DatabaseCredentialPolicy` | `security.kube-dc.com` | `v1alpha1` | `dbcp` | Static-rotated or dynamic DB credentials backed by OpenBao Database engine |
+| `DatabaseCredentialPolicy` | `security.kube-dc.com` | `v1alpha1` | `dbcp` | Deprecated with `KdcDatabase`; use `ServiceCredentialPolicy` |
 | `VirtualMachine` | `kubevirt.io` | `v1` | `vm` | KubeVirt VM definition |
 | `DataVolume` | `cdi.kubevirt.io` | `v1beta1` | `dv` | VM disk import (http) or blank |
 | `ObjectBucketClaim` | `objectbucket.io` | `v1alpha1` | `obc` | S3 bucket claim (Rook-Ceph) |
@@ -29,8 +33,8 @@ Master catalog for AI agents. Read this first, then dive into specific files as 
 | `create-project` | Create project with VPC networking | SKILL.md, project-template.yaml, network-types.md |
 | `deploy-app` | Deploy containerized app with optional DB + HTTPS | SKILL.md |
 | `create-vm` | Provision VM with SSH access and cloud-init | SKILL.md, vm-template.yaml |
-| `create-database` | Create managed PostgreSQL/MariaDB with access patterns + backup/restore | SKILL.md, pg-template.yaml, mariadb-template.yaml, db-connection-patterns.md, backup-restore-patterns.md |
-| `manage-database-credentials` | Create `DatabaseCredentialPolicy` CRs that rotate DB user passwords on a schedule, projected into a K8s Secret. Pair with `create-database`. | SKILL.md, dbcp-template.yaml |
+| `create-database` | Create a managed PostgreSQL, MySQL, MariaDB, ClickHouse or Valkey service, bind its credential to a workload, back up and restore | SKILL.md, postgresql-template.yaml, mysql-mariadb-template.yaml, clickhouse-template.yaml, valkey-template.yaml, binding-template.yaml, db-connection-patterns.md, backup-restore-patterns.md |
+| `manage-database-credentials` | Deliver a managed service credential role to a workload with `ServiceBinding`, rotate it now with a `RotateCredentials` operation or on a schedule with `ServiceCredentialPolicy`. Pair with `create-database`. | SKILL.md, binding-template.yaml, rotation-policy-template.yaml, rotate-operation-template.yaml |
 | `expose-service` | Expose service via Gateway Route or Direct EIP | SKILL.md, envoy-gateway-examples.yaml, eip-loadbalancer-examples.yaml |
 | `manage-cluster` | Scale workers, upgrade K8s version, access kubeconfig | SKILL.md, scale-workers.md, upgrade-version.md, kubeconfig-access.md |
 | `manage-networking` | Create EIPs, FIPs, understand VPC networking | SKILL.md, eip-template.yaml, fip-template.yaml, decision-guide.md |
@@ -53,7 +57,7 @@ Skills location: `skills/{skill-name}/SKILL.md`
 | File | Topic | Size |
 |------|-------|------|
 | `service-exposure.md` | Gateway routes, EIP, FIP, all exposure patterns | ~700 lines |
-| `managed-databases.md` | DB creation, connection, external access, scheduled + on-demand backups, restore (in-place + new-name), PostgreSQL PITR | ~620 lines |
+| `managed-services.md` and the Managed Services chapter | Catalog, plans, console, PostgreSQL create/connect/credentials/operations/backups/external access, MySQL and MariaDB, ClickHouse, Valkey, Kafka, status and deletion, migration from db-manager | ~3,500 lines |
 | `creating-vm.md` | VM deployment, SSH access, cloud-init | ~210 lines |
 | `cluster-management.md` | K8s cluster scaling, upgrading, storage, troubleshooting | ~390 lines |
 | `provisioning-cluster.md` | Creating managed K8s clusters, including etcd-at-rest encryption + KEK rotation toggles | ~300 lines |
@@ -69,7 +73,8 @@ Skills location: `skills/{skill-name}/SKILL.md`
 | `secrets-manager.md` | ManagedSecret CRD, sync to K8s Secret, KMS comparison | ~200 lines |
 | `kms.md` | KMSKey CRD, direct encrypt/decrypt, envelope encryption with Go + Python helpers, rotation, min_decryption_version | ~350 lines |
 | `certificate-manager.md` | ManagedCertificate CRD, private CA vs ACME public, mTLS / code-signing | ~250 lines |
-| `database-credentials.md` | DatabaseCredentialPolicy CRD, static-rotated GA + dynamic preview | ~260 lines |
+| `postgresql-credentials.md` | ServiceBinding delivery, RotateCredentials, ServiceCredentialPolicy for declared roles and existing logins, break-glass | ~450 lines |
+| `managed-services-migration.md` | db-manager deprecation, copy Jobs and field mappings for moving a KdcDatabase to a ManagedService | ~230 lines |
 | `backups-snapshots.md` | Velero workload backups + managed-K8s etcd backup envelope mode | ~530 lines |
 
 ### Platform Operator Guide (`docs/platform/`)

@@ -170,7 +170,7 @@ spec:
   classRef:
     name: postgresql
   planRef:
-    name: postgresql-platform-ha
+    name: postgresql-production
   placement:
     mode: ProviderShared
   connectivity:

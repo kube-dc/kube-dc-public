@@ -147,8 +147,10 @@ because such a budget would protect nothing of yours.
 
 A managed database does not scale automatically with an application Deployment.
 Measure query latency, connections, working-set memory, storage growth, and
-backup duration. Add replicas for the availability model described in
-[Managed Databases](managed-databases.md); one replica is not highly available.
+backup duration. Choose a plan with automatic failover and two or more
+instances for the availability model described in
+[Managed Services](managed-services.md); a single instance is not highly
+available.
 
 For application files, decide whether block storage or
 [Object Storage](object-storage.md) matches the access pattern. Storage class,
@@ -205,5 +207,5 @@ upstream dependencies. See [Service Exposure](service-exposure.md).
 
 - [Deploy Your First Application](deploy-first-app.md)
 - [Billing and Usage](billing-usage.md)
-- [Managed Databases](managed-databases.md)
+- [Managed Services](managed-services.md)
 - [Data Protection and Recovery](backups-snapshots.md)

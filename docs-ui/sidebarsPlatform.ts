@@ -75,6 +75,18 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Managed Services',
+      collapsed: true,
+      items: [
+        { type: 'doc', id: 'managed-services-overview', label: 'Overview' },
+        { type: 'doc', id: 'managed-services-enable', label: 'Enabling on an Installation' },
+        { type: 'doc', id: 'managed-services-catalog', label: 'Publishing the Catalog' },
+        { type: 'doc', id: 'managed-services-operations', label: 'Operating the Service' },
+        { type: 'doc', id: 'managed-services-retire-db-manager', label: 'Retiring db-manager' },
+      ],
+    },
+    {
+      type: 'category',
       label: 'Managed Clusters',
       collapsed: true,
       items: [

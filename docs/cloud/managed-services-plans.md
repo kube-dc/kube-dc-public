@@ -15,15 +15,27 @@ creation.
 
 ## Names to use
 
-| Entry | Name |
-|-------|------|
-| Class | `postgresql` |
-| Plan | `postgresql-platform-ha` |
-| Connectivity class | `tenant-native` |
+Class names are the same on every installation. Plan names are the provider's
+choice; installations that publish the standard shared plans use
+`<family>-development` and `<family>-production`, which the console shows as
+the Dev and Production tiers.
 
-`tenant-native` publishes the service as internal Services inside your
-Project's network. Workloads in the same Project connect to them directly. It
-allocates no public address.
+| Family | Class | Standard plans |
+|--------|-------|----------------|
+| PostgreSQL | `postgresql` | `postgresql-development`, `postgresql-production` |
+| MySQL | `mysql` | `mysql-development`, `mysql-production` |
+| MariaDB | `mariadb` | `mariadb-development`, `mariadb-production` |
+| ClickHouse | `clickhouse` | `clickhouse-development`, `clickhouse-production` |
+| Valkey | `valkey` (single node), `valkey-ha` (Sentinel) | `valkey-development`, `valkey-production` |
+| Kafka | `kafka` | `kafka-development`, `kafka-production` |
+
+The only connectivity class today is `tenant-native`. It publishes the service
+as internal Services inside your Project's network. Workloads in the same
+Project connect to them directly. It allocates no public address.
+
+The console's creation sheet lists the published plans of a class under
+**Advanced · pick a published plan**, and its **or get the YAML for GitOps**
+link shows the names it selected.
 
 :::info You cannot list the catalog
 Classes, plans and connectivity classes are cluster-scoped, and no Project role
@@ -43,15 +55,16 @@ your provider for the current values of your plan.
 
 | Plan field | Effect |
 |------------|--------|
-| `engineVersion` | The PostgreSQL major version of the plan. If you set `parameters.version`, it must equal this value. Omit it to take the plan's version |
+| `engineVersion` | The engine version of the plan (a PostgreSQL major, or a release line such as MySQL `8.4`). If you set `spec.engineVersion`, it must equal this value. Omit it to take the plan's version |
 | `allowedImages` | The exact engine images that `MinorUpgrade` and `MajorUpgrade` operations may move to |
 
 ### Instances
 
 | Plan field | Effect |
 |------------|--------|
-| `topology.minInstances`, `topology.maxInstances` | The range allowed for `parameters.instances` and for `Scale` operations |
-| `topology.defaultInstances` | The instance count when you omit `parameters.instances` |
+| `topology.minInstances`, `topology.maxInstances` | The range allowed for `spec.topology.instances` and for `Scale` operations |
+| `topology.defaultInstances` | The instance count when you omit `spec.topology.instances` |
+| `topology.minShards`, `topology.maxShards`, `topology.defaultShards`, `topology.minReplicasPerShard`, `topology.maxReplicasPerShard`, `topology.defaultReplicasPerShard` | The shard shape of a sharded family (ClickHouse), used with `spec.topology.shards` and `spec.topology.replicasPerShard` instead of `instances`. A plan declares exactly one of the two shapes |
 | `topology.ha` | When `true`, the plan provides automatic failover for services with two or more instances |
 | `maxInstancesPerProject` | How many services on this plan one Project may have. `0` means no limit |
 
@@ -59,16 +72,16 @@ your provider for the current values of your plan.
 
 | Plan field | Effect |
 |------------|--------|
-| `capacity.storage` | The data volume size per instance when you omit `parameters.storage.size` |
+| `capacity.storage` | The data volume size per instance when you omit `spec.storage.size` |
 | `capacity.maxStorage` | The largest size allowed at creation and for `ExpandStorage` |
-| `capacity.storageClass` | The storage class used when you omit `parameters.storage.class` |
+| `capacity.storageClass` | The storage class used when you omit `spec.storage.class` |
 | `capacity.allowedStorageClasses` | Other storage classes you may select at creation. Empty means only the default |
 
 ### Compute
 
 | Plan field | Effect |
 |------------|--------|
-| `capacity.cpu`, `capacity.memory` | The CPU and memory per instance when you omit `parameters.cpu` or `parameters.memory` |
+| `capacity.cpu`, `capacity.memory` | The CPU and memory per instance when you omit `spec.compute.cpu` or `spec.compute.memory` |
 | `capacity.computeBounds` | `minCPU`, `maxCPU`, `minMemory` and `maxMemory`. When absent, the plan is fixed-size and only the default values are accepted |
 | `capacity.allocationProtocol` | Must be `v1` for `Resize` and `RestoreInPlace` operations |
 
