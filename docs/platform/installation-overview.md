@@ -1,25 +1,25 @@
 import ReferenceArchitectureDiagram from '@site/src/components/Diagram/ReferenceArchitectureDiagram';
 import {InstallationNetworkDiagram} from '@site/src/components/Diagram/ResourceModelDiagrams';
 
-# Installation Overview
+# Installation overview
 
 This page helps platform operators choose a supported topology and understand
 what the installer changes. It names commands but contains **no copy-paste
-sequences** — once you have chosen,
+sequences**. After you have chosen,
 go to the [Quickstart](quickstart.md) to install, or the
-[Installation Guide](installation-guide.md) for the full option reference.
+[Installation guide](installation-guide.md) for the full option reference.
 
 :::info Which installation page do I need?
-Three pages, three jobs — read them in this order only if you need all three.
+Three pages, three jobs. Read them in this order only if you need all three.
 
 | Page | Answers | Read it when |
 |---|---|---|
 | **[Quickstart](quickstart.md)** | *What do I type?* | You are installing for the first time. One linear path, one topology, one config file, a checkpoint per phase. |
-| **[Installation Overview](installation-overview.md)** | *What am I choosing, and what will it change?* | Before the quickstart, to pick a topology and understand the network model and what Flux installs. Concepts, not copy-paste. |
-| **[Installation Guide](installation-guide.md)** | *What are all the options, and what if it goes wrong?* | For alternative topologies, the manual RKE2 fallback, per-flag reference, day-2 migrations, and recovery. |
+| **[Installation overview](installation-overview.md)** | *What am I choosing, and what will it change?* | Before the quickstart, to pick a topology and understand the network model and what Flux installs. Concepts, not copy-paste. |
+| **[Installation guide](installation-guide.md)** | *What are all the options, and what if it goes wrong?* | For alternative topologies, the manual RKE2 fallback, per-flag reference, day-2 migrations, and recovery. |
 
 All three describe the **same installer**. Where they overlap, the Quickstart is
-the tested happy path — it is verified against the real command tree on every
+the tested happy path, verified against the real command tree on every
 build, so its commands and config keys cannot drift.
 :::
 
@@ -123,7 +123,7 @@ For NAT or routed environments where Project workloads cannot hairpin through
 the platform's public address, enable
 [internal platform endpoints](internal-platform-endpoints.md).
 
-## What the Fleet installs
+## What the fleet installs
 
 The exact versions are pinned in
 `clusters/<cluster>/cluster-config.env`. Depending on the selected
@@ -176,8 +176,8 @@ of those resources.
 **Point the API servers at the OIDC webhook.** `bootstrap init` does this as its
 last finalize step, so on a current CLI there is nothing to do here beyond
 confirming the `Wire apiservers to OIDC` milestone succeeded. It matters because
-RKE2 starts with certificate-only authentication — the authenticator does not
-exist until Flux brings it up — so until the cutover runs, every Keycloak token
+RKE2 starts with certificate-only authentication, and the authenticator does not
+exist until Flux brings it up. Until the cutover runs, every Keycloak token
 is rejected and the cluster is unusable while looking completely healthy. When
 `init` defers the step, or on a cluster installed by an older CLI, one command
 wires every control-plane node (`kube-dc bootstrap oidc-cutover`); see
@@ -186,7 +186,7 @@ refuses a partial run.
 
 `init` also runs the version-matched post-install workflows for Keycloak OIDC
 and, when enabled, OpenBao, and commits the generated encrypted configuration
-through the Fleet workflow — each as its own milestone, each with the exact
+through the Fleet workflow, each as its own milestone, each with the exact
 re-run command if it defers. Configure DNS and certificate issuance for the hostnames users will
 open, and record the age key and OpenBao recovery shares somewhere independent of
 this cluster and its Git repository.
@@ -196,26 +196,26 @@ this cluster and its Git repository.
 `kube-dc bootstrap accept <cluster>` checks the machine-checkable part of this and
 distinguishes three states that are easy to confuse: **reconciling** (Flux has not settled), **converged**
 (components are up but something a user would hit is broken), and **usable**.
-Only the last is a candidate for finished — `usable` proves the WIRING (Flux
+Only the last is a candidate for finished. `usable` proves the WIRING (Flux
 settled, every apiserver calling the OIDC webhook, the console answering over a
 trusted certificate, tenancy installed). It does not authenticate a real token or
 check storage, so the human confirmations below still matter.
 
 The distinction matters because *converged* is what every other signal reports.
-Do not infer health from every Pod being `Running` — completed Jobs and
+Do not infer health from every Pod being `Running`. Completed Jobs and
 component-specific readiness conditions are valid states, and a cluster where
 nobody can log in has Running pods and a green Flux.
 
 Beyond what `accept` automates, confirm by hand the things only a human can:
 
-- a test Organization **and Project** reach Ready — an Organization alone gives a
+- a test Organization **and Project** reach Ready. An Organization alone gives a
   tenant token no namespaces, so their login succeeds and creates no context;
 - the test Project has working DNS and the expected egress path;
 - enabled storage, backup, observability, and public exposure paths pass their
   own checks;
 - the front door answers from the network your **users** are on, not only from
   the workstation that installed it. Two scripted checks in the fleet repo cover the
-  failure modes that every other signal reports as healthy —
+  failure modes that every other signal reports as healthy.
   `scripts/frontdoor-check.sh preflight <cluster> <kubeconfig>` before letting Flux
   reconcile a front-door change, and `... smoke ...` afterwards. They assert that the
   node ports are genuinely bound and that the hostnames answer, because Envoy can be
@@ -232,4 +232,4 @@ Enable these only after their prerequisites and recovery paths are understood:
 - GPU workload profiles
 - Stripe or WHMCS billing integration
 
-Continue with the [Installation Guide](installation-guide.md).
+Continue with the [Installation guide](installation-guide.md).

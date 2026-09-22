@@ -6,14 +6,14 @@ import {
   ProjectLifecycleDiagram,
 } from '@site/src/components/Diagram/ControllerDiagrams';
 
-# Controller Architecture
+# Controller architecture
 
 This page shows how Kube-DC controllers turn platform custom resources into
 Kubernetes, network, identity, storage, and security state. It is an operator
 view: resource names and component responsibilities are shown, but source-code
 paths and implementation details are intentionally omitted.
 
-## High-Level Topology
+## High-level topology
 
 <details data-github-only>
 <summary>Diagram source for GitHub</summary>
@@ -85,7 +85,7 @@ flowchart TB
 
 <ControllerTopologyDiagram />
 
-## Controller Groups
+## Controller groups
 
 | Controller group | Watches | Main responsibility |
 | --- | --- | --- |
@@ -95,7 +95,7 @@ flowchart TB
 | Security controllers | ManagedSecrets, ManagedCertificates, KMSKeys, DatabaseCredentialPolicies | Bridge project security resources to OpenBao, cert-manager, projected Kubernetes Secrets, and status rollups. |
 | Status aggregation | Project security and platform state | Roll child-resource readiness into higher-level Project and Organization status so operators and UI users see one clear state. |
 
-## Project Lifecycle
+## Project lifecycle
 
 <details data-github-only>
 <summary>Diagram source for GitHub</summary>
@@ -137,7 +137,7 @@ sequenceDiagram
 
 <ProjectLifecycleDiagram />
 
-## Network Flow
+## Network flow
 
 <details data-github-only>
 <summary>Diagram source for GitHub</summary>
@@ -196,7 +196,7 @@ Kube-DC has two address concepts:
 The controller keeps ownership and status on the Kube-DC resources while
 Kube-OVN owns the low-level routing, NAT, and load-balancer programming.
 
-## Security Flow
+## Security flow
 
 <details data-github-only>
 <summary>Diagram source for GitHub</summary>
@@ -254,7 +254,7 @@ keeping backend credentials and privileged operations in platform service
 accounts. Ready conditions on child resources are aggregated so the Project
 status can show whether its security dependencies are usable.
 
-## Platform Endpoint Flow
+## Platform endpoint flow
 
 <details data-github-only>
 <summary>Diagram source for GitHub</summary>
@@ -304,7 +304,7 @@ rewrites platform hostnames to the internal VIP. This keeps the hostname and TLS
 identity unchanged while selecting a reachable path. See
 [Internal platform endpoints](internal-platform-endpoints.md).
 
-## Reading The Diagram
+## Read the diagram
 
 - The **CLI and Fleet repository** define desired state.
 - **Flux** applies that state to the management cluster.

@@ -1,4 +1,4 @@
-# Status and Deletion
+# Status and deletion
 
 This page covers what a `ManagedService` reports while it is being deleted, how
 deletion protection and the three deletion policies work, what remains after a
@@ -43,7 +43,7 @@ These events are specific to deletion:
 | Event | Type | Recorded when |
 |-------|------|---------------|
 | `DeletionPolicyDowngraded` | `Warning` | The platform could not apply the deletion policy you set and uses a less destructive one. See [When the policy cannot be applied](#when-the-policy-cannot-be-applied) |
-| `ProjectDeleted` | `Normal` | The service is being deleted because its Project is being deleted. See [Deleting a Project](#deleting-a-project) |
+| `ProjectDeleted` | `Normal` | The service is being deleted because its Project is being deleted. See [Delete a Project](#delete-a-project) |
 
 ## Deletion protection
 
@@ -59,7 +59,7 @@ deletionProtection is enabled on this ManagedService; set spec.deletionProtectio
   manifest, apply it, and then delete the service.
 - The protection covers deletion of the `ManagedService` only. It does not
   protect the service from deletion of its Project; see
-  [Deleting a Project](#deleting-a-project).
+  [Delete a Project](#delete-a-project).
 - An in-place restore also requires `deletionProtection: false`; see
   [Restore in place](postgresql-backup-restore.md#restore-in-place).
 
@@ -154,7 +154,7 @@ service.
 5. Delete the service and watch until it is gone.
 
 This manifest prepares the service from
-[Create a PostgreSQL Service](postgresql-create.md#create-the-service) for
+[Create a PostgreSQL service](postgresql-create.md#create-the-service) for
 deletion with `Delete`. All other fields stay unchanged:
 
 ```yaml
@@ -212,7 +212,7 @@ then refuses the request when the name belongs to a different service. A plain
 | `ServiceCredentialPolicy` objects | Kept. While the service is being deleted they report `ServiceDeleting` and submit no rotations. Delete them; see [Retire a policy](postgresql-credentials.md#retire-a-policy) |
 | Engine, data volumes, credential Secrets and published Services | Kept under `Retain`. Under `SnapshotAndDelete`, the data volumes and credential Secrets are kept when the engine no longer existed, so no final backup could be taken. Ask your provider to remove them |
 
-## Deleting a Project
+## Delete a Project
 
 :::warning Deleting a Project deletes its services
 For the in-Project placement, deleting a Project deletes every service in it
@@ -243,7 +243,7 @@ Before you delete a Project:
 A service whose `status.instanceNamespace` is not the Project namespace is
 outside the placement this chapter covers; ask your provider what deleting the
 Project does to it. See also
-[Deleting services and Projects](managed-services.md#deleting-services-and-projects).
+[Delete a service or a Project](managed-services.md#delete-a-service-or-a-project).
 
 ## Limits
 

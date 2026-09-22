@@ -3,7 +3,7 @@ import {
   SubscriptionLifecycleDiagram,
 } from '@site/src/components/Diagram/PlatformTopologyDiagrams';
 
-# Billing Plans & Resource Quota Configuration
+# Billing plans & resource quota configuration
 
 This guide explains how to configure billing plans, resource quotas, and EIP limits for Kube-DC organizations using the `billing-plans` ConfigMap.
 
@@ -13,14 +13,14 @@ This guide explains how to configure billing plans, resource quotas, and EIP lim
 
 Kube-DC enforces organization-level resource limits using four mechanisms:
 
-1. **HierarchicalResourceQuota (HRQ)** — Aggregates resource usage across all Project backing namespaces within an Organization. Enforced at Pod scheduling time.
-2. **LimitRange** — Provides default CPU/memory requests and limits for containers that don't specify them. Required for HRQ to work correctly.
-3. **EIP Quota** — Limits the number of public External IPs an Organization can allocate.
-4. **Object Storage Quota** — Manages S3 storage limits via Rook-Ceph `CephObjectStoreUser` quotas.
+1. **HierarchicalResourceQuota (HRQ)**: Aggregates resource usage across all Project backing namespaces within an Organization. Enforced at Pod scheduling time.
+2. **LimitRange**: Provides default CPU/memory requests and limits for containers that don't specify them. Required for HRQ to work correctly.
+3. **EIP Quota**: Limits the number of public External IPs an Organization can allocate.
+4. **Object Storage Quota**: Manages S3 storage limits through Rook-Ceph `CephObjectStoreUser` quotas.
 
 All four are driven by a single ConfigMap: `billing-plans` in the `kube-dc` namespace.
 
-### Billing Provider Feature Flag
+### Billing provider feature flag
 
 The quota system is **decoupled** from payment collection. The installation has
 one active provider. `BILLING_PROVIDER` supplies the bootstrap/default value,
@@ -29,7 +29,7 @@ billing configuration.
 
 | Value | Behavior |
 |-------|----------|
-| `none` (default) | **Quota-only mode.** Plans load from ConfigMap, HRQ/LimitRange/EIP quotas enforced. No payment flow. Plan assignment via `kubectl` annotations. |
+| `none` (default) | **Quota-only mode.** Plans load from ConfigMap, HRQ/LimitRange/EIP quotas enforced. No payment flow. Plan assignment through `kubectl` annotations. |
 | `stripe` | Full Stripe integration: checkout sessions, webhooks, customer portal, subscription CRUD. |
 | `whmcs` | WHMCS is the billing system of record. The shipped provisioning module sends signed create, change, suspend, unsuspend, and terminate events; purchase actions stay in WHMCS rather than the Kube-DC console. |
 
@@ -47,7 +47,7 @@ kubectl annotate organization/<org-name> -n <org-namespace> \
   --overwrite
 ```
 
-### How It Works
+### How it works
 
 <details data-github-only>
 <summary>Diagram source for GitHub</summary>
@@ -74,7 +74,7 @@ Organization Controller (watches ConfigMap for changes)
 
 <BillingPlanControllerDiagram />
 
-When a billing plan is assigned to an organization (via annotations), the controller:
+When a billing plan is assigned to an organization (through annotations), the controller:
 
 1. Reads the plan definition from the ConfigMap
 2. Computes resource limits (base plan + addons + system overhead + burst ratio)
@@ -85,7 +85,7 @@ When a billing plan is assigned to an organization (via annotations), the contro
 
 ---
 
-## Prerequisites
+## Before you begin
 
 - Hierarchical Namespace Controller (HNC) installed with HRQ support
 - HNC configured to propagate `LimitRange` resources (`mode: Propagate`)
@@ -94,7 +94,7 @@ When a billing plan is assigned to an organization (via annotations), the contro
 
 ---
 
-## ConfigMap Reference
+## ConfigMap reference
 
 Create the ConfigMap in the `kube-dc` namespace:
 
@@ -157,7 +157,7 @@ data:
       <plan-id>: <number>
 ```
 
-### Field Reference
+### Field reference
 
 #### `plans.<plan-id>`
 
@@ -172,14 +172,14 @@ Each plan defines the base resource allocation for an organization.
 | `servicesLB` | Maximum LoadBalancer services | `100` |
 | `burstRatio` | Multiplier for CPU and memory limits over requests; `1.0` makes limits equal requests | `1.0` |
 | `selfService` | Purchase visibility: `false` hides the plan from tenant purchase APIs while an operator can still assign it, and organizations already on it are unaffected. Omitted means visible. | `false` |
-| `gpu.<profile>.shares` | Concurrent shared-GPU workloads included in the tier. **WHMCS installations only** — see [GPU plans](#gpu-plans-whmcs-installations-only). | `1` |
+| `gpu.<profile>.shares` | Concurrent shared-GPU workloads included in the tier. **WHMCS installations only.** See [GPU plans](#gpu-plans-whmcs-installations-only). | `1` |
 | `gpu.<profile>.memoryMiB` | Aggregate GPU memory budget included in the tier | `8192` |
 | `gpu.<profile>.corePercent` | Aggregate GPU compute budget included in the tier | `25` |
 
 > **A plan carrying `gpu` grants is not inert on a cluster without a GPU
 > catalog.** If the `gpu-profiles` ConfigMap is absent, or the granted profile is
-> not `billingEligible`, the manager rejects the **entire** `plans.yaml` — every
-> plan, `suspendedPlan`, `systemOverhead` and `eipQuota` with it — and quota
+> not `billingEligible`, the manager rejects the **entire** `plans.yaml`. That
+> includes every plan, `suspendedPlan`, `systemOverhead`, and `eipQuota`, and quota
 > enforcement falls back to the last known-good config. Only add `gpu` to a plan
 > on a cluster whose catalog is deployed and billing-eligible.
 
@@ -215,7 +215,7 @@ Minimal resources allowed when an organization's subscription is suspended.
 
 #### `systemOverhead`
 
-Per-project overhead added to the organization's quota to account for system pods (VPC DNS, network agents, etc.).
+Per-project overhead added to the organization's quota to account for system pods such as VPC DNS and the network agents.
 
 | Field | Description | Example |
 |-------|-------------|---------|
@@ -228,7 +228,7 @@ controller default is 50 Projects.
 
 #### `addons`
 
-Resource add-ons that can be attached to an organization via the `billing.kube-dc.com/addons` annotation.
+Resource add-ons that can be attached to an organization through the `billing.kube-dc.com/addons` annotation.
 
 | Field | Description | Example |
 |-------|-------------|---------|
@@ -252,7 +252,7 @@ addons:
   gpu-v100-shared-8g:
     disabled: false
     selfService: false
-    displayName: "Shared NVIDIA V100 — 8 GB"
+    displayName: "Shared NVIDIA V100, 8 GB"
     description: "1 concurrent GPU workload • 8 GB GPU memory • 25% compute"
     price: 0
     currency: EUR
@@ -287,11 +287,11 @@ provider:
 
 | provider | how GPU is sold |
 |----------|-----------------|
-| `whmcs` | as a **plan** — a GPU-carrying tier alongside the plain one |
+| `whmcs` | as a **plan**: a GPU-carrying tier beside the plain one |
 | `stripe`, `none` | as an **add-on** (`gpu-v100-shared-8g` above) |
 
 WHMCS provisions a service by plan id and carries no Kube-DC add-on quantities,
-so a WHMCS customer cannot buy the GPU add-on at all — the entitlement has to be
+so a WHMCS customer cannot buy the GPU add-on at all. The entitlement has to be
 part of the tier. Stripe has no such limit and keeps using the add-on catalog.
 Publishing GPU plans on a Stripe installation would be a second, unbillable way
 to buy the same entitlement, so it is refused.
@@ -302,7 +302,7 @@ the console can change without a Helm run):
 - GPU plans are withdrawn from `GET /api/billing/plans` and the tenant plan grid;
 - tenant purchase routes return `403`;
 - superadmin assignment returns `409 GPU_PLAN_PROVIDER_MISMATCH`;
-- **lookups are untouched** — an organization already on a GPU plan keeps
+- **lookups are untouched**: an organization already on a GPU plan keeps
   rendering quota, usage and its plan name on any provider. Only new purchases
   and assignments are refused.
 
@@ -314,7 +314,7 @@ cluster without a catalog rejects the whole document (see the warning above):
 
 ```yaml
 billing:
-  provider: whmcs          # required — the render fails on any other provider
+  provider: whmcs          # required; the render fails on any other provider
   plans:
     gpuVariants:
       enabled: true        # requires gpu.enabled=true as well
@@ -331,7 +331,7 @@ billing:
 `billing-plans` is seeded **once**: on upgrade the chart preserves the live
 `plans.yaml`, so adding a plan to values changes nothing on an existing cluster.
 `addMissingPlans` is the migration wave that copies a plan into a live
-ConfigMap — it copies only what is **absent**, never replaces an operator-edited
+ConfigMap. It copies only what is **absent**, and never replaces an operator-edited
 definition, and records the completed `version` as an annotation. It also
 back-fills a missing `eipQuota` entry, because a plan absent from that map gets
 no public-IPv4 enforcement at all.
@@ -341,9 +341,9 @@ The render fails, with the reason named, when: the provider is not `whmcs`,
 / `gpu`, a granted profile is unknown, disabled or not `billingEligible`, a
 variant id collides with an existing plan, or a variant has no `eipQuota` entry.
 
-A GPU alternative should otherwise be **identical** to its base tier — same
+A GPU alternative should otherwise be **identical** to its base tier: the same
 `requests`, `pods`, `servicesLB`, `limitRange`, `burstRatio`, `objectStorage`,
-`ipv4` and `eipQuota` — so the two read as one choice with a GPU switch rather
+`ipv4`, and `eipQuota`, so that the two read as one choice with a GPU switch rather
 than unrelated products. The tenant plan grid relies on that: it shows one half
 of the catalog at a time behind a **Standard / With GPU** toggle.
 
@@ -366,8 +366,8 @@ shares per device = min( deviceMemoryMiB / shareMemoryMiB,
 sellable shares   = shares per device × number of devices
 ```
 
-For the shipped V100 profile — an 8192 MiB / 25% product on a 32 GiB / 100%
-device — that is `min(4, 4, 10) = 4` per device, so a two-GPU node sells **8**
+For the shipped V100 profile, an 8192 MiB / 25% product on a 32 GiB / 100%
+device, that is `min(4, 4, 10) = 4` for each device, so a two-GPU node sells **8**
 concurrent shares, not 20. Compute this before pricing the tiers, and check how
 many nodes carry the devices: GPUs concentrated on one node mean a drain or
 driver upgrade removes all GPU capacity at once.
@@ -545,9 +545,9 @@ kubectl apply -f billing-plans-configmap.yaml
 
 ---
 
-## How Quotas Are Computed
+## How quotas are computed
 
-### HRQ Computation
+### HRQ computation
 
 For an organization with plan `pro-pool`, 1× `turbo-x1` addon, and 3 projects:
 
@@ -575,7 +575,7 @@ spec:
     services.loadbalancers:  "100"
 ```
 
-### Burst Ratio
+### Burst ratio
 
 The burst ratio determines how much `limits` exceed `requests`:
 
@@ -595,7 +595,7 @@ the request quota. Treat that as an explicit overcommit policy: it does not
 increase guaranteed capacity, and it can make the advertised capacity harder to
 interpret for VM-heavy workloads.
 
-### LimitRange Behavior
+### LimitRange behavior
 
 The LimitRange ensures every container has resource requests set, which is **required** by Kubernetes when a ResourceQuota is active:
 
@@ -607,9 +607,9 @@ The LimitRange is created in the Organization namespace and automatically propag
 
 ---
 
-## Organization Annotations
+## Organization annotations
 
-Plans are assigned to organizations via annotations:
+Plans are assigned to organizations through annotations:
 
 ```yaml
 apiVersion: kube-dc.com/v1
@@ -623,19 +623,19 @@ metadata:
     billing.kube-dc.com/addons: '[{"addonId":"turbo-x1","quantity":1}]'
 ```
 
-### Subscription States
+### Subscription states
 
 | Status | HRQ Behavior |
 |--------|-------------|
 | `active` | Full plan limits applied |
 | `trialing` | Full plan limits applied |
 | `canceling` | Full plan limits applied (until period ends) |
-| `suspended` | Minimal quota from `suspendedPlan` (e.g., 500m CPU, 1Gi memory) |
-| No annotation | No HRQ created — no quota enforcement |
+| `suspended` | Minimal quota from `suspendedPlan` (for example, 500m CPU, 1Gi memory) |
+| No annotation | No HRQ created, so there is no quota enforcement |
 
 ---
 
-## Per-Project Sub-Quotas
+## Per-Project sub-quotas
 
 The HRQ enforces the **aggregate** limit across all Projects. Platform operators can additionally limit an individual Project with a standard Kubernetes `ResourceQuota`. The standard Project Roles have read-only quota access, so manage these objects through the platform operations or GitOps workflow:
 
@@ -657,7 +657,7 @@ The effective limit per resource is `min(Project ResourceQuota, Organization HRQ
 
 ---
 
-## Updating Plans
+## Update a plan
 
 Edit the ConfigMap and apply:
 
@@ -669,7 +669,7 @@ kubectl apply -f billing-plans-configmap.yaml
 
 The controller watches the ConfigMap and queues affected Organizations for reconciliation when it changes. Confirm the resulting HRQs and LimitRanges before relying on the new limits.
 
-### Adding a New Plan
+### Add a plan
 
 Add a new entry under `plans:` with all required fields and a corresponding `eipQuota` entry:
 
@@ -700,13 +700,13 @@ eipQuota:
   enterprise-pool: 10
 ```
 
-### Modifying an Existing Plan
+### Modify an existing plan
 
 Change the values in the ConfigMap. All organizations on that plan will be updated automatically.
 
 ---
 
-## Monitoring Quota Usage
+## Monitor quota usage
 
 ### View HRQ status
 
@@ -765,7 +765,7 @@ kubectl logs deployment/kube-dc-manager -n kube-dc | grep -i "billing-plans\|pla
 
 ---
 
-## Subscription Lifecycle
+## Subscription lifecycle
 
 Organizations transition through the following subscription states:
 
@@ -798,7 +798,7 @@ checkout.session.completed
 
 <SubscriptionLifecycleDiagram />
 
-### State Details
+### State details
 
 | Status | HRQ Quota | Workloads | New Deployments | S3 Quota |
 |--------|-----------|-----------|-----------------|----------|
@@ -809,20 +809,20 @@ checkout.session.completed
 | `canceled` | Minimal (100m CPU, 128Mi) | Scaled to zero | Blocked | `maxSize=0` |
 | `past_due` | Full plan limits | Running | Allowed | Plan's `objectStorage` |
 
-### Grace Period
+### Grace period
 
-When a subscription is deleted (via Stripe webhook), the organization enters the `suspended` state:
+When a subscription is deleted (through Stripe webhook), the organization enters the `suspended` state:
 
-- **7-day grace period** — existing workloads continue running, but new deployments are blocked
+- **7-day grace period**: existing workloads continue running, but new deployments are blocked
 - After 7 days, the controller transitions the Organization to `canceled` and suspends all workloads
 - Workload suspension: Deployments/StatefulSets scaled to 0, CronJobs suspended
 - Original replica counts stored in annotations for restoration on re-subscribe
 
-### Key Annotations
+### Key annotations
 
 | Annotation | Description |
 |------------|-------------|
-| `billing.kube-dc.com/subscription` | Current status (`active`, `suspended`, `canceled`, etc.) |
+| `billing.kube-dc.com/subscription` | The status: `active`, `suspended`, or `canceled` |
 | `billing.kube-dc.com/plan-id` | Active plan ID |
 | `billing.kube-dc.com/plan-name` | Display name |
 | `billing.kube-dc.com/suspended-at` | ISO timestamp when suspension started |
@@ -832,11 +832,11 @@ When a subscription is deleted (via Stripe webhook), the organization enters the
 
 ---
 
-## API Endpoints
+## API endpoints
 
 The billing backend exposes the following REST endpoints under `/api/billing/`:
 
-### Subscription Management
+### Subscription management
 
 These routes are provider-dependent. Read-only catalog and quota routes remain
 available in quota-only mode. Stripe mounts checkout, subscription mutation,
@@ -851,7 +851,7 @@ purchase buttons.
 | `PUT` | `/organization-subscription` | Change plan on existing subscription |
 | `DELETE` | `/organization-subscription` | Cancel subscription at period end |
 
-### Quota & Usage
+### Quota & usage
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -859,7 +859,7 @@ purchase buttons.
 | `GET` | `/quota-status` | HRQ existence and enforcement status |
 | `POST` | `/simulate-downgrade` | Check if current usage fits target plan |
 
-### Plans & Add-ons
+### Plans & add-ons
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -868,7 +868,7 @@ purchase buttons.
 | `POST` | `/organization-subscription/addons` | Add turbo add-on |
 | `DELETE` | `/organization-subscription/addons/:id` | Remove turbo add-on |
 
-### Per-Project Quota (under `/api/manage-organization/`)
+### Per-Project quota (under `/api/manage-organization/`)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -876,9 +876,9 @@ purchase buttons.
 | `PUT` | `/projects/:id/quota` | Set per-project ResourceQuota (org-admin only) |
 | `DELETE` | `/projects/:id/quota` | Remove per-project ResourceQuota (org-admin only) |
 
-Per-project quotas use standard Kubernetes `ResourceQuota` objects. They coexist with the HRQ — the most restrictive limit wins. The HNC-managed `hrq.hnc.x-k8s.io` quota is read-only; only the `project-quota` ResourceQuota can be managed through the authorized kube-dc API.
+Per-project quotas use standard Kubernetes `ResourceQuota` objects. They coexist with the HRQ, and the most restrictive limit wins. The HNC-managed `hrq.hnc.x-k8s.io` quota is read-only; only the `project-quota` ResourceQuota can be managed through the authorized kube-dc API.
 
-### Stripe Integration
+### Stripe integration
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -900,7 +900,7 @@ Per-project quotas use standard Kubernetes `ResourceQuota` objects. They coexist
 | Workloads scaled to zero | Organization in `canceled` state | Re-subscribe to restore workloads |
 | S3 uploads rejected (403) | Object storage quota exceeded or Organization suspended | Upgrade plan or re-subscribe |
 | Subscription stuck in `suspended` | Grace period not expired yet (7 days) | Wait for grace period or re-subscribe |
-| **No HRQ/LimitRange on any Organization** (quota enforcement silently off cluster-wide) | `billing-plans` ConfigMap is missing the required top-level `suspendedPlan` / `systemOverhead` / `eipQuota` sections, so `LoadPlanConfig` fails and the reconcile skips the whole quota block for every Organization | Restore the missing sections (see below). Confirm the fix: the manager logs `Loaded billing plans from ConfigMap (... plans: N)`. If `LoadPlanConfig` is failing it now logs at **ERROR** (`billing-plans ConfigMap not loaded — HRQ/LimitRange/quota enforcement is DISABLED ...`). |
+| **No HRQ/LimitRange on any Organization** (quota enforcement silently off cluster-wide) | `billing-plans` ConfigMap is missing the required top-level `suspendedPlan`, `systemOverhead`, or `eipQuota` sections, so `LoadPlanConfig` fails and the reconcile skips the whole quota block for every Organization | Restore the missing sections. See [Validate the complete plan document](#validate-the-complete-plan-document). Confirm the fix: the manager logs `Loaded billing plans from ConfigMap (... plans: N)`. If `LoadPlanConfig` is failing, it logs at **ERROR** (`billing-plans ConfigMap not loaded - HRQ/LimitRange/quota enforcement is DISABLED ...`). |
 
 ### Validate the complete plan document
 

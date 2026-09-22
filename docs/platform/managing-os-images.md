@@ -1,6 +1,6 @@
 import {ImageCatalogDiagram} from '@site/src/components/Diagram/PlatformTopologyDiagrams';
 
-# Managing OS Images in Kube-DC
+# Manage OS images in Kube-DC
 
 This guide is for **cluster operators**. It explains how Kube-DC's
 OS-image pipeline works, how to add or modify a family in the
@@ -101,7 +101,7 @@ For every catalog entry the refresh job writes:
 ```
 
 - `latest/<file>` is what the chart's per-entry `mirrorPath` points
-  to — every existing VM provisioned against `/latest/` keeps
+  to. Every existing VM provisioned against `/latest/` keeps
   working regardless of how many version dirs land underneath.
 - `_latest.json` is the **authoritative pointer** for which tag is
   considered "latest" by the discovery adapter. The catalog builder
@@ -162,7 +162,7 @@ the per-cycle download budget stays bounded.
 ### Example: Windows-style entry (no discovery)
 
 Two Windows entries share `windows/11/` so `familyId` disambiguates
-them in the catalog. No `discovery:` block — `static-url` adapter
+them in the catalog. There is no `discovery:` block, and the `static-url` adapter
 mirrors the upstream URL verbatim.
 
 ```yaml
@@ -178,10 +178,10 @@ mirrors the upstream URL verbatim.
 `platform/cdi-os-mirror/refresh-cronjob.yaml` (in
 `kube-dc-fleet`) runs the refresh tool weekly:
 
-- Schedule: `0 4 * * 0` Europe/Amsterdam — every Sunday 04:00 local
+- Schedule: `0 4 * * 0` Europe/Amsterdam, which is every Sunday at 04:00 local time
   time, one hour after the etcd defrag CronJob.
-- `concurrencyPolicy: Forbid` — only one run at a time.
-- `activeDeadlineSeconds: 14400` (4h) — bounds the worst case
+- `concurrencyPolicy: Forbid`: only one run at a time.
+- `activeDeadlineSeconds: 14400` (4h) bounds the worst case
   Windows golden refresh.
 - Image: `docker.io/shalb/cdi-os-mirror:main-<sha>`. The Python
   source lives at `kube-dc/images/cdi-os-mirror/refresh.py`.
@@ -195,7 +195,7 @@ adapter's `is_latest=True` Version**, then runs retention.
 Retention runs **before** the catalog rebuild (since v0.3.15) so the
 catalog never advertises a version that's about to be pruned.
 
-### Running the refresh manually
+### Run the refresh by hand
 
 ```bash
 # Trigger a one-off run that mirrors the cronjob's template
@@ -203,7 +203,7 @@ kubectl -n kube-dc create job --from=cronjob/cdi-os-mirror-refresh refresh-manua
 ```
 
 Add `--dry-run` (set `args:` on the Job) to walk through what would
-be uploaded without actually writing to S3 — useful for adapter
+be uploaded without writing to S3. Use it for adapter
 debugging.
 
 ## gc CronJob
@@ -244,7 +244,7 @@ JSON output → kubectl+jq peak working set >128 Mi). Limits are
 
 `cdiMirrorAlerts.enabled` (default `true`) renders a `PrometheusRule`
 that prom-operator picks up automatically. Sources entirely from
-`kube-state-metrics` — no custom exporter required.
+`kube-state-metrics`, and no custom exporter is required.
 
 | Alert | Group | Trips when |
 |---|---|---|
@@ -253,7 +253,7 @@ that prom-operator picks up automatically. Sources entirely from
 | `KubeDCCdiGcJobFailed` | cdi-upload-gc | 6-hourly gc Job failed |
 | `KubeDCCdiGcStale` | cdi-upload-gc | no successful gc run in >24h |
 | `CDIImporterRetryStorm` | cdi-importer | importer pod restart rate >0.1/s over 10m |
-| `CDIImporterImportInProgressStale` | cdi-importer | DV stuck importing >importDeadlineMinutes (requires textfile-collector — defined-but-inert until that metric source ships) |
+| `CDIImporterImportInProgressStale` | cdi-importer | DV stuck importing >importDeadlineMinutes (requires textfile-collector; defined but inert until that metric source ships) |
 
 Disable on clusters without prometheus-operator installed:
 
@@ -262,10 +262,10 @@ cdiMirrorAlerts:
   enabled: false
 ```
 
-## Adding a new family to the catalog
+## Add a family to the catalog
 
 The minimum viable entry has `osName`, `cloudUser`, `upstreamURL`,
-and `mirrorPath`. That gives you single-version mirroring via
+and `mirrorPath`. That gives you single-version mirroring through
 `StaticURLAdapter`. For multi-version, add a `discovery:` block.
 
 ```yaml
@@ -296,7 +296,7 @@ pull the bytes:
 kubectl -n kube-dc create job --from=cronjob/cdi-os-mirror-refresh first-rocky-pull
 ```
 
-### Writing a new discovery adapter
+### Write a discovery adapter
 
 If the upstream doesn't fit any of the seven shipped adapters
 (streams JSON / releases JSON / HTML listing / static URL), the
@@ -307,7 +307,7 @@ the type string in `ADAPTERS = {...}`. Add an `entry.discovery.type`
 in the chart pointing at the new key.
 
 The `_ListingAdapter` base class is a one-line subclass for any
-HTML-autoindex upstream — set `file_regex` and (optionally)
+HTML-autoindex upstream. Set `file_regex` and, optionally,
 `sha256_sidecar_suffix`.
 
 ## Troubleshooting
@@ -351,7 +351,7 @@ comfortably.
 
 The gc CronJob has its own resource profile (`64Mi/384Mi`). If you
 see `gc-deep-diag` OOMKilled, the cluster has grown past what the
-limit handles — bump `cdiUploadGc.resources.limits.memory`.
+limit handles. Raise `cdiUploadGc.resources.limits.memory`.
 
 ### Alerts fired
 
@@ -386,7 +386,7 @@ catalog entries. Each entry now includes Phase 2.3 extension fields:
 
 `_versions`, `_familyId`, and `_latestURL` are present only when
 `cdi-os-catalog` exists; the backend falls back to the flat
-single-version shape when it doesn't (e.g. fresh cluster before the
+single-version shape when it doesn't (for example, fresh cluster before the
 first refresh).
 
 ## References

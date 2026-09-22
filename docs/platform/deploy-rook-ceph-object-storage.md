@@ -1,6 +1,6 @@
 import {RookObjectStorageFlowDiagram} from '@site/src/components/Diagram/PlatformFlowDiagrams';
 
-# Deploying Rook Ceph Object Storage (S3) for Kube-DC
+# Deploy Rook Ceph object storage (S3) for Kube-DC
 
 S3-compatible object storage backed by Rook Ceph RGW, integrated with Kube-DC
 Organizations, Project buckets, plans, quotas, and the console.
@@ -9,21 +9,21 @@ Organizations, Project buckets, plans, quotas, and the console.
 `kube-dc bootstrap init --object-storage-mode rook-ceph-{local,multi-node,pvc}`
 scaffolds Rook Ceph, the RGW object store, bucket provisioning **and** the S3
 exposure layer (Gateway listener + Certificate + HTTPRoute at `s3.<domain>`;
-`--s3-hostname` / `--no-s3-exposure` tune it) into your fleet repo — see the
+`--s3-hostname` and `--no-s3-exposure` tune it) into your fleet repo. See the
 [installation guide](installation-guide.md) "Key flags". The manual Helm /
 `kubectl patch gateway` steps below are for a **standalone or lab** cluster
 that is *not* Kube-DC-scaffolded; on a Fleet-managed cluster express the same
-desired state in the fleet repo so Flux stays authoritative — a hand-applied
+desired state in the fleet repo, so that Flux stays authoritative. A hand-applied
 Gateway patch there is drift Flux will revert.
 :::
 
-## Prerequisites
+## Before you begin
 
 - Kubernetes cluster with Kube-DC installed
 - Dedicated raw block devices on the intended storage nodes; loop devices are evaluation-only
 - [Envoy Gateway](https://gateway.envoyproxy.io/) for external S3 endpoint (optional)
 - [cert-manager](https://cert-manager.io/) with `--enable-gateway-api` for TLS (optional)
-- DNS record for your S3 endpoint (e.g., `s3.example.com`)
+- DNS record for your S3 endpoint (for example, `s3.example.com`)
 
 ## Architecture
 
@@ -53,7 +53,7 @@ The following requests are an evaluation starting point, not production sizing:
 
 ---
 
-## Step 1: Install Rook Operator
+## Step 1: Install Rook operator
 
 ```bash
 kubectl create namespace rook-ceph
@@ -84,7 +84,7 @@ kubectl set env deployment/rook-ceph-operator -n rook-ceph ROOK_ALLOW_LOOP_DEVIC
 
 ---
 
-## Step 2: Prepare Storage
+## Step 2: Prepare storage
 
 ### Option A: Dedicated raw devices
 
@@ -217,7 +217,7 @@ spec:
     nodes:
       - name: <YOUR_WORKER_NODE>    # Replace with your worker node name
         devices:
-          - name: loop0             # Or sdb, nvme0n1, etc.
+          - name: loop0             # Or another device, such as sdb or nvme0n1
   placement:
     mon:
       nodeAffinity:
@@ -322,7 +322,7 @@ kubectl get svc -n rook-ceph | grep rgw
 
 ---
 
-## Step 5: Create StorageClass for Bucket Provisioning
+## Step 5: Create StorageClass for bucket provisioning
 
 ```yaml
 # 04-storage-class.yaml
@@ -344,9 +344,9 @@ kubectl get sc ceph-bucket
 
 ---
 
-## Step 6: Expose S3 Endpoint (Optional — External Access)
+## Step 6: expose the S3 endpoint for external access (optional)
 
-Skip this step if you only need internal S3 access via the in-cluster service `rook-ceph-rgw-my-store.rook-ceph.svc:80`.
+Skip this step if you only need internal S3 access through the in-cluster service `rook-ceph-rgw-my-store.rook-ceph.svc:80`.
 
 ### 6.1 DNS
 
@@ -356,7 +356,7 @@ Create an A record pointing your S3 domain to your gateway's load balancer IP:
 s3.example.com → <GATEWAY_LB_IP>
 ```
 
-### 6.2 Gateway Listener
+### 6.2 Gateway listener
 
 Add an HTTPS listener for the S3 hostname to your gateway:
 
@@ -374,7 +374,7 @@ kubectl patch gateway eg -n envoy-gateway-system --type=json \
   }}]'
 ```
 
-### 6.3 TLS Certificate, ReferenceGrant, HTTPRoute, and Timeouts
+### 6.3 TLS Certificate, ReferenceGrant, HTTPRoute, and timeouts
 
 ```yaml
 # 05-s3-endpoint.yaml
@@ -464,7 +464,7 @@ curl -s -o /dev/null -w "%{http_code}" https://s3.example.com/
 
 ## Step 7: Configure Kube-DC
 
-### 7.1 Helm Values
+### 7.1 Helm values
 
 Configure the object storage store name and namespace in your Kube-DC Helm values. The defaults match the manifests above:
 
@@ -485,7 +485,7 @@ the chart creates, and that identity is **off by default**:
 # values.yaml (kube-dc chart)
 objectStorage:
   platformAdminUser:
-    enabled: true            # off by default — see below
+    enabled: true            # off by default; see the backend configuration sections
     name: kube-dc-platform-admin
 ```
 
@@ -509,7 +509,7 @@ The name is reserved: an organization of the same name would resolve to the same
 `CephObjectStoreUser` and Secret, so both the controller and the backend refuse
 to serve an organization by that name.
 
-### 7.3 Backend Environment Variables
+### 7.3 Backend environment variables
 
 The UI backend reads these from environment (all have sensible defaults):
 
@@ -523,7 +523,7 @@ The UI backend reads these from environment (all have sensible defaults):
 
 Set `S3_ENDPOINT` to your actual S3 domain in the backend deployment.
 
-### 7.4 Billing Plans
+### 7.4 Billing plans
 
 Object storage quotas are defined per billing plan in the `billing-plans`
 ConfigMap. The chart can seed this document from Fleet values, but the live
@@ -541,7 +541,7 @@ plans:
 
 The Go controller automatically creates a `CephObjectStoreUser` per organization with these quotas when the Organization is reconciled.
 
-### 7.5 Backend Service Account RBAC
+### 7.5 Backend service account RBAC
 
 The backend service account needs read access to rook-ceph resources. The Kube-DC Helm chart already includes these rules in `backend-sa.yaml`:
 
@@ -555,7 +555,7 @@ The backend service account needs read access to rook-ceph resources. The Kube-D
   verbs: ["get", "list"]
 ```
 
-### 7.6 Project Role Permissions
+### 7.6 Project role permissions
 
 Users need `objectbucketclaims` permissions in their Project's backing namespace. The default Project Roles already include:
 
@@ -568,24 +568,24 @@ Users need `objectbucketclaims` permissions in their Project's backing namespace
 
 ---
 
-## Kube-DC Integration Summary
+## Kube-DC integration summary
 
-Once deployed, the following features are automatically available:
+After deployment, the following features are automatically available:
 
-### Go Controller (automatic)
+### Go controller (automatic)
 - Creates `CephObjectStoreUser` per organization with quotas from billing plan
 - Updates quotas on plan change, blocks uploads on suspension (`maxSize=0`)
 - Deletes user on organization removal
-- User capabilities: `user=*`, `bucket=*` (enables key management via RGW Admin API)
+- User capabilities: `user=*`, `bucket=*` (enables key management through RGW Admin API)
 
-### UI Backend API
-- **Bucket Management**: Create/delete buckets via `ObjectBucketClaim`, list with usage stats
+### UI backend API
+- **Bucket Management**: Create/delete buckets through `ObjectBucketClaim`, list with usage stats
 - **File Browser**: Upload, download (presigned URLs), delete, create folders
 - **S3 Access Keys**: View Organization-level credentials, generate additional keys, revoke keys
-- **Quota & Usage**: Real-time storage usage via RGW Admin API, quota limits from `CephObjectStoreUser`
+- **Quota & Usage**: Real-time storage usage through RGW Admin API, quota limits from `CephObjectStoreUser`
 - **Bucket Policies**: Toggle public-read / private access per bucket
 
-### UI Frontend
+### UI frontend
 - **Object Storage sidebar tab** with tree view (Overview, Buckets, Access Keys)
 - **Overview**: Quota usage bars, endpoint info, bucket count
 - **Buckets**: Table with expandable details, access toggle, file browser
@@ -597,7 +597,7 @@ Once deployed, the following features are automatically available:
 
 ## Verification
 
-### Test S3 Access
+### Test S3 access
 
 ```python
 import boto3
@@ -617,14 +617,14 @@ resp = s3.get_object(Bucket='test-bucket', Key='hello.txt')
 print(resp['Body'].read().decode())
 ```
 
-### Check Ceph Health
+### Check Ceph health
 
 ```bash
 kubectl -n rook-ceph exec deploy/rook-ceph-operator -- \
   ceph -c /var/lib/rook/rook-ceph/rook-ceph.config status
 ```
 
-### Verify the Organization Object-Storage User
+### Verify the Organization object-storage user
 
 ```bash
 kubectl get cephobjectstoreuser -n rook-ceph
@@ -633,7 +633,7 @@ kubectl get cephobjectstoreuser -n rook-ceph
 
 ---
 
-## Decommissioning
+## Decommission the deployment
 
 :::danger
 Decommissioning the object store destroys Project buckets and can invalidate

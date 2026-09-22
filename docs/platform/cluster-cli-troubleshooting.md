@@ -1,4 +1,4 @@
-# Common Checks & Troubleshooting
+# Common checks & troubleshooting
 
 Daily-driver health checks first, then a catalogue of errors with fixes.
 
@@ -83,7 +83,7 @@ kube-dc use <domain>/<org>/<project>
 kube-dc login --domain <domain> --admin
 ```
 
-The error message always contains the right command — copy-paste it.
+The error message always contains the right command. Copy it and run it.
 
 ### `kube-dc bootstrap` says all clusters are `Unreachable`
 
@@ -91,9 +91,9 @@ You haven't logged in to any of them yet. The probe needs an OIDC bearer token t
 
 ### `kube-dc login --admin` fails with "user is authenticated but NOT in the 'admin' group"
 
-The OAuth flow worked but Keycloak says you're not a platform admin. Ask someone with Keycloak access to add you to the master realm's `admin` group (see [Adding a new admin](cluster-cli-admin-login.md#adding-a-new-admin-one-time-per-person)).
+The OAuth flow worked but Keycloak says you're not a platform admin. Ask someone with Keycloak access to add you to the master realm's `admin` group (see [Adding a new admin](cluster-cli-admin-login.md#add-an-admin-once-for-each-person)).
 
-### Browser shows "We are sorry... Client not found" (and the CLI hangs)
+### Browser shows "we are sorry... client not found" (and the CLI hangs)
 
 The cluster's master realm does not have the `kube-dc-admin` PKCE OIDC client yet. Review and run the setup script from the Fleet version deployed to this cluster:
 
@@ -115,7 +115,7 @@ curl -s -o /dev/null -w "%{http_code}\n" \
 # 400 → client missing OR redirect rejected
 ```
 
-### Browser shows "Invalid parameter: redirect_uri"
+### Browser shows "invalid parameter: redirect_uri"
 
 The `kube-dc-admin` client and the CLI disagree about the loopback callback.
 Re-run the version-matched `bootstrap/setup-keycloak-oidc.sh <cluster>`, then
@@ -128,7 +128,7 @@ CLI, and do not add web origins or production hostnames to it.
 
 ### `kubectl get nodes` says forbidden under `--admin`
 
-The OIDC chain is fine but the cluster-side RBAC isn't wired. Check ["Is my admin login wired up correctly?"](#is-my-admin-login-wired-up-correctly) above — usually the `platform-admin` `ClusterRoleBinding` hasn't reconciled yet.
+The OIDC chain is fine but the cluster-side RBAC isn't wired. See ["Is my admin login wired up correctly?"](#is-my-admin-login-wired-up-correctly). Usually the `platform-admin` `ClusterRoleBinding` has not reconciled yet.
 
 ### A cluster row shows `Drifted`
 
@@ -170,7 +170,7 @@ kube-dc login --domain <domain> --admin   # ← context lands in <cluster>_kubec
   ┌─ kubeconfig destination ─
   │  $KUBECONFIG = /home/<you>/.kube/<cluster>_kubeconfig_tunnel
   │  → writing to: /home/<you>/.kube/<cluster>_kubeconfig_tunnel
-  │  (default would be /home/<you>/.kube/config — kubectx reads from there)
+  │  (the default is /home/<you>/.kube/config, which kubectx reads)
   └──
   Continue writing to this file? [y/N]
 ```
@@ -222,11 +222,11 @@ print('email:  ', c.get('email'))
 "
 ```
 
-The most common 401 cause: `aud` doesn't include `kube-dc-admin`. That means the **audience mapper** wasn't attached to the client in Keycloak — re-run `setup-keycloak-oidc.sh <cluster>` to add it, then `kube-dc login --domain <domain> --admin` again to mint a token with the new audience.
+The most common 401 cause: `aud` doesn't include `kube-dc-admin`. That means the **audience mapper** was not attached to the client in Keycloak. Re-run `setup-keycloak-oidc.sh <cluster>` to add it, then run `kube-dc login --domain <domain> --admin` again to mint a token with the new audience.
 
 ### kubelet image cache trap (when `kubectl set image` doesn't actually update the pod)
 
-**Symptom**: you push a new image, run `kubectl set image`, the pod rolls — but the new pod is still running the OLD binary. Verified by comparing image digests:
+**Symptom**: you push a new image and run `kubectl set image`, the pod rolls, but the new pod still runs the OLD binary. Verified by comparing image digests:
 
 ```bash
 # What the pod actually pulled:

@@ -30,7 +30,7 @@ It cannot read workloads or Secrets, change RBAC, or touch organizations
 outside its prefix. Organization users cannot change size or lift a
 suspension set by the provider.
 
-## Setting up a provider
+## Set up a provider
 
 Enable the extension API in the chart values:
 
@@ -41,8 +41,8 @@ platformApi:
 
 Then, in the admin console, open **Provisioning API** (superadmin):
 
-1. **New client**: choose a client id (e.g. `webdock-portal`), the
-   organization prefix (e.g. `wd`) and the grants. Creating organizations is
+1. **New client**: choose a client id (for example, `webdock-portal`), the
+   organization prefix (for example, `wd`) and the grants. Creating organizations is
    always included; `users`, `consolelogins`, `organizationusages` and `plans`
    are separate, so creating organizations does not imply signing users in or
    reading usage. The page creates the Keycloak master-realm client (client

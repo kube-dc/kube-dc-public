@@ -1,11 +1,11 @@
-# Windows 11 VM Setup — Operator Guide (building the golden)
+# Windows 11 VM setup: operator guide for building the golden
 
-## The QEMU Guest Agent is REQUIRED (not optional)
+## The QEMU guest agent is REQUIRED (not optional)
 
 Install `qemu-guest-agent` in the golden **before** sysprep/export, and verify it
 after: KubeVirt injects the Project's SSH public key *through* the agent and reads
 `guestOSInfo` from it. A golden without a running agent still boots and serves
-RDP, but **Project key injection silently does nothing** — this is exactly the
+RDP, but **Project key injection silently does nothing**. This is exactly the
 defect the 2026-07-31 gate run found in the previously published golden.
 
 In the commands below, replace `<backing-namespace>` with the generated `{organization}-{project}` namespace for the operator Project used to build and validate the image.
@@ -17,7 +17,7 @@ Verify before publishing (must print `AgentConnected ... True`):
 # PHASE 1 proves Windows booted (RDP), PHASE 2 proves the agent is live.
 ```
 
-## Licensing model — BYOL (bring your own license)
+## Licensing model: bring your own license
 
 Kube-DC ships the Windows golden image as an **evaluation-based starter build**:
 it is produced from the Microsoft Windows 11 Enterprise **Evaluation** ISO and is
@@ -33,11 +33,11 @@ for licensing every Windows VM they run:
 - Evaluation builds are time-limited by Microsoft (90 days). Assign a license
   before the evaluation window ends; an expired evaluation shuts down hourly.
 - Operators: never publish a pre-activated or volume-licensed image as the
-  shared golden — the shared image must remain the neutral evaluation base so
+  shared golden. The shared image must stay the neutral evaluation base, so
   each customer applies their own entitlement.
 - The golden and installer media live in the **anonymously readable**
   `cdi-os-images` bucket (CDI imports without credentials). That is an accepted,
-  documented posture *because* the media is evaluation-grade and key-free — see
+  documented posture *because* the media is evaluation-grade and key-free. See
   "Windows media in the public image bucket" in
   [OS-image operations](os-image-operations.md). It is exactly why the rule above
   is absolute: publishing an activated or licensed image there would turn an
@@ -45,10 +45,10 @@ for licensing every Windows VM they run:
 
 
 This is the **one-time operator task** that produces the Windows 11 golden image for a
-cluster. Once the golden is built and published to the cluster's S3 OS-image mirror
+cluster. After the golden is built and published to the cluster's S3 OS-image mirror
 (`s3.<your-domain>/cdi-os-images/private/windows/11/latest/windows11-x64-golden.qcow2`), it
 appears in the Console UI Operating System dropdown as **Windows 11 Enterprise (Golden
-Image)**, and **end users create Windows VMs from the console** — see
+Image)**, and **end users create Windows VMs from the console**. See
 [Creating a VM](/cloud/creating-vm#windows-11). Users do not run this guide.
 
 :::note Storage requirement
@@ -63,16 +63,16 @@ This guide provides two deployment methods:
 1. **Golden Image Deployment** (Recommended) - Deploy pre-configured VMs in 5-10 minutes
 2. **Fresh Installation** - Create custom Windows installations with full control
 
-## Prerequisites
+## Before you begin
 
 - KubeVirt and CDI installed and running
 - Multus CNI with OVN network configured
 - StorageClass `local-path` available
 - Ingress controller for HTTP access to ISOs
 
-## Step 1: Create ISO Hosting Environment
+## Step 1: Create ISO hosting environment
 
-### 1.1 Create Dedicated Namespace
+### 1.1 Create a dedicated namespace
 
 ```yaml
 # hack/windows/iso-namespace.yaml
@@ -82,7 +82,7 @@ metadata:
   name: iso
 ```
 
-### 1.2 Create Storage for ISOs
+### 1.2 Create storage for ISOs
 
 ```yaml
 # hack/windows/iso-storage-pvc-iso-ns.yaml
@@ -100,7 +100,7 @@ spec:
   storageClassName: local-path
 ```
 
-### 1.3 HTTP Server for ISOs
+### 1.3 HTTP server for ISOs
 
 ```yaml
 # hack/windows/nginx-iso-server-iso-ns.yaml
@@ -164,7 +164,7 @@ data:
 apiVersion: v1
 kind: Service
 metadata:
-  # NB: the Service is `iso-server` (NOT nginx-iso-server) — the Ingress and the
+  # NB: the Service is `iso-server` (NOT nginx-iso-server). The Ingress and the
   # export Job both address iso-server.iso.svc.cluster.local. Keep in sync with
   # hack/windows/nginx-iso-server-iso-ns.yaml.
   name: iso-server
@@ -179,7 +179,7 @@ spec:
     targetPort: 80
 ```
 
-### 1.4 Ingress Configuration with TLS
+### 1.4 Ingress configuration with TLS
 
 ```yaml
 # hack/windows/iso-ingress-iso-ns.yaml
@@ -213,7 +213,7 @@ spec:
               number: 80
 ```
 
-### 1.5 Deploy Infrastructure
+### 1.5 Deploy infrastructure
 
 ```bash
 # Deploy all infrastructure components
@@ -227,7 +227,7 @@ kubectl get pods -n iso
 kubectl get ingress -n iso
 ```
 
-## Step 2: Download and Upload Windows ISO
+## Step 2: Download and upload Windows ISO
 
 ### 2.1 Download Windows 11 Enterprise ISO
 
@@ -235,14 +235,14 @@ kubectl get ingress -n iso
 2. Select: **ISO – Enterprise download 64-bit edition** (90-day evaluation)  
 3. Download the ISO file (approximately 5.4GB)
 
-### 2.2 Download VirtIO Drivers
+### 2.2 Download VirtIO drivers
 
 ```bash
 # Download latest VirtIO drivers
 wget https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso
 ```
 
-### 2.3 Upload Files to Cluster
+### 2.3 Upload the files to the cluster
 
 ```bash
 # Create temporary upload pod
@@ -268,9 +268,9 @@ curl -I https://iso.example.com/win11-x64.iso
 curl -I https://iso.example.com/virtio-win.iso
 ```
 
-## Step 3: Fresh Windows Installation
+## Step 3: Fresh Windows installation
 
-### 3.1 Deploy Installation VM
+### 3.1 Deploy installation VM
 
 Use the complete VM manifest that includes all required DataVolumes:
 
@@ -285,7 +285,7 @@ kubectl get dv -n <backing-namespace>
 kubectl get vm,vmi -n <backing-namespace> | grep windows11
 ```
 
-### 3.2 Windows Installation Process
+### 3.2 Windows installation process
 
 ```bash
 # Access VM console via VNC
@@ -340,12 +340,12 @@ PowerShell -ExecutionPolicy Bypass -Command "Invoke-Expression (Invoke-WebReques
 - ✅ Enables ICMP ping (IPv4 and IPv6)
 - ✅ Provides detailed verification and status reporting
 
-## Step 4: Create Golden Image
+## Step 4: Create golden image
 
-### 4.1 Prepare VM for Golden Image
+### 4.1 Prepare VM for golden image
 
 ```bash
-# 1. Inside Windows VM, run Sysprep — REQUIRED, not optional.
+# 1. Inside the Windows VM, run Sysprep. REQUIRED, not optional.
 #    Microsoft requires generalization before an installation is cloned to other
 #    machines: without it every cloned VM inherits the same machine SID/identity
 #    and the image is unsupported (codex review HIGH).
@@ -357,7 +357,7 @@ kubectl patch vm windows11-vm -n <backing-namespace> --type merge -p '{"spec":{"
 kubectl wait --for=delete vmi/windows11-vm -n <backing-namespace> --timeout=300s
 ```
 
-### 4.2 Export to QCOW2 Golden Image
+### 4.2 Export to QCOW2 golden image
 
 ```yaml
 # hack/windows/export-golden-image.yaml
@@ -405,7 +405,7 @@ spec:
         claimName: windows11-disk
 ```
 
-### 4.3 Export Process
+### 4.3 Export process
 
 ```bash
 # Export golden image
@@ -426,9 +426,9 @@ curl -I https://iso.example.com/windows11-x64-golden.qcow2
 kubectl delete pod export-golden-image -n <backing-namespace> --wait=true
 ```
 
-## Step 5: Deploy from Golden Image
+## Step 5: Deploy from golden image
 
-### 5.1 Golden Image Deployment (Recommended)
+### 5.1 Golden image deployment (recommended)
 
 ```bash
 # Deploy VM from golden image
@@ -449,7 +449,7 @@ kubectl get vmi win11-x64 -n <backing-namespace> -o jsonpath='{.status.interface
 ssh kube-dc@<vm-ip>
 ```
 
-### 5.2 Golden Image Benefits
+### 5.2 Golden image benefits
 
 | Aspect | Golden Image | Fresh Install |
 |--------|--------------|---------------|
@@ -462,7 +462,7 @@ ssh kube-dc@<vm-ip>
 
 ## Step 6: Troubleshooting
 
-### 6.1 Common Issues
+### 6.1 Common issues
 
 **DataVolume stuck in ImportScheduled:**
 ```bash
@@ -502,7 +502,7 @@ kubectl logs -n local-path-storage <provisioner-pod>
 # Note: local-path doesn't support Block mode, use Filesystem mode
 ```
 
-### 6.2 Verification Commands
+### 6.2 Verification commands
 
 ```bash
 # Check all Windows VMs
@@ -518,7 +518,7 @@ virtctl vnc <vm-name> -n <namespace>
 kubectl top pods -n <namespace> | grep virt-launcher
 ```
 
-## Required Manifests Summary
+## Required manifests summary
 
 **Infrastructure (Step 1):**
 - `hack/windows/iso-namespace.yaml` - ISO namespace
@@ -542,16 +542,16 @@ kubectl top pods -n <namespace> | grep virt-launcher
 - `hack/windows/windows11-from-datasource.yaml` - Deploy from DataSource (same namespace)
 - `hack/windows/pvc-init-windows11-disk.yaml` - Fix disk size issues if needed
 
-## Available Resources
+## Available resources
 
-Once deployed, the following resources are available:
+After deployment, the following resources are available:
 
 - **Windows 11 ISO**: `https://iso.example.com/win11-x64.iso` (5.4GB)
 - **VirtIO Drivers**: `https://iso.example.com/virtio-win.iso` (700MB)
 - **SSH Script**: `https://iso.example.com/install-openssh-windows.ps1` (5KB)
 - **Golden Image**: `https://iso.example.com/windows11-x64-golden.qcow2` (21.3GB)
 
-## Security Considerations
+## Security considerations
 
 - **SSH Keys**: Use KubeVirt accessCredentials for secure key injection
 - **Network Policies**: Implement Kubernetes network policies for VM isolation

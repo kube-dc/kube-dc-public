@@ -2,22 +2,22 @@
 
 Shared GPU lets several container workloads run on one physical GPU at the same
 time, each holding a fixed fraction of the device's memory and compute. It is
-the right choice when a job needs GPU acceleration but not a whole card — model
+the right choice when a job needs GPU acceleration but not a whole card: model
 inference, notebooks, small training runs, batch scoring. You run it the same
 way you run any other workload: a Kubernetes manifest applied with `kubectl`.
 
 Your operator enables Shared GPU per project and grants a per-model entitlement
-(a GPU quota). If your project has no GPU quota, it is not enabled for you yet —
+(a GPU quota). If your Project has no GPU quota, the feature is not enabled for you yet.
 ask your operator.
 
-For a stronger isolation boundary — one whole physical GPU bound to one guest —
+For a stronger isolation boundary, with one whole physical GPU bound to one guest,
 use a [Dedicated GPU VM](gpu-vm-guests.md) when your operator provides separate
 VM passthrough capacity. Shared/HAMi capacity cannot be attached to a VM; Shared
 GPU trades that boundary for density.
 
 ## How sharing works
 
-A Shared GPU product is a **fixed fraction** of a specific GPU model — for
+A Shared GPU product is a **fixed fraction** of a specific GPU model. For
 example, an 8 GiB slice of an NVIDIA V100. You request the product; you do not
 tune memory and compute freely.
 
@@ -31,7 +31,7 @@ tune memory and compute freely.
   a hard boundary, use a [Dedicated GPU VM](gpu-vm-guests.md).
 - **Quota is an entitlement, not a reservation.** Holding quota does not reserve
   a physical slice. When every compatible GPU is busy, a valid workload
-  legitimately **queues** — its pod stays `Pending` until a slice frees up.
+  legitimately **queues**. Its pod stays `Pending` until a slice frees up.
 - **Each GPU model is metered independently**, so spending your V100 entitlement
   never consumes another model's headroom.
 
@@ -46,12 +46,12 @@ kubectl get resourcequota -n acme-ai -o yaml | grep deviceclass
 
 The number is how many concurrent slices of that product you may hold.
 
-## Run a Shared GPU workload
+## Run a shared GPU workload
 
 A Shared GPU workload is two objects: a `ResourceClaimTemplate` describing the
 fixed product, and a `Deployment` that references it. Copy the manifest below,
 replace `gpu-demo`, `acme-ai`, and the container image, then apply it. Keep
-everything else exactly as shown — the platform validates the shape on admission
+everything else exactly as shown. The platform validates the shape on admission
 (see [The contract](#the-contract) below).
 
 ```yaml
@@ -140,7 +140,7 @@ kubectl apply -n acme-ai -f shared-gpu.yaml
 ```
 
 > Each document defines its own `&labels` / `&annotations` and reuses them
-> within that document — YAML anchors do not carry across the `---` separator, so
+> within that document. YAML anchors do not carry across the `---` separator, so
 > the ResourceClaimTemplate and the Deployment each declare the labels once. If
 > your editor strips YAML anchors, just write the same four labels and three
 > annotations wherever `*labels` / `*annotations` appears.
@@ -160,16 +160,16 @@ kubectl logs -n acme-ai deploy/gpu-demo
 # GPU 0: Tesla V100-PCIE-32GB (UUID: ...)
 ```
 
-A workload may legitimately stay `Pending` while it waits for a free slice —
+A workload can legitimately stay `Pending` while it waits for a free slice.
 that is expected when your GPUs are busy. Confirm the GPU through your normal
 CUDA framework (for example `torch.cuda.is_available()`). Do **not** build logic
-around a GPU's UUID, PCI address, or the node name — a rescheduled workload can
+around a GPU's UUID, its PCI address, or the node name. A rescheduled workload can
 land on different hardware.
 
 ## Release
 
 Delete the workload to return the slice. Delete the whole set, not just the pod
-— deleting only the pod lets the Deployment respawn it and keep the slice:
+Delete only the pod, and the Deployment respawns it and keeps the slice:
 
 ```bash
 kubectl delete -n acme-ai -f shared-gpu.yaml
@@ -185,7 +185,7 @@ drifts from the fixed product is rejected. If `kubectl apply` returns a
 
 - **Fixed capacity.** `memory` and `cores` must be exactly the product's
   published values (`8192Mi` / `25` for the 8 GiB V100). Requesting more is
-  rejected — the fixed product *is* your entitlement.
+  rejected, because the fixed product *is* your entitlement.
 - **One request named `gpu`**, `allocationMode: ExactCount`, `count: 1`, no
   selectors, no `adminAccess`.
 - **Labels** `app.kubernetes.io/managed-by: kube-dc`, `kube-dc.com/gpu-backend:
@@ -195,7 +195,7 @@ drifts from the fixed product is rejected. If `kubectl apply` returns a
 - **`strategy: Recreate`**, one container, and the container's
   `resources.claims[0].name` = `gpu` = the pod's `resourceClaims[0].name`.
 - **No** `schedulerName`, `nodeSelector`, `nodeName`, node affinity, host
-  namespaces, `hostPath`, or privileged containers — the platform schedules and
+  namespaces, `hostPath`, or privileged containers. The platform schedules and
   isolates the workload for you.
 
 You cannot exceed your entitlement: the fixed product is enforced for every

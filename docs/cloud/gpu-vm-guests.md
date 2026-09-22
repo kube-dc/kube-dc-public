@@ -14,7 +14,7 @@ cluster the VM console does not show accelerator creation or edit controls.
 
 This guide documents the qualified guest and driver combinations. A guest
 becomes supported on your cluster when the platform operator completes the
-guest qualification checklist at the end of this page — GPU passthrough
+guest qualification checklist at the end of this page. GPU passthrough
 couples the device, guest OS and driver package, so each combination is
 qualified rather than assumed.
 
@@ -24,7 +24,7 @@ qualified rather than assumed.
 |---|---|---|
 | Ubuntu 24.04 LTS x86_64 | NVIDIA Data Center R580, proprietary kernel modules | Qualified combination |
 | Windows 11 Enterprise x86_64 golden image | NVIDIA Data Center R580 Windows driver | Qualified combination |
-| Windows 11 fresh-install image | Same driver after VirtIO and OS setup | Installation-only image — qualify the resulting golden image before use |
+| Windows 11 fresh-install image | Same driver after VirtIO and OS setup | An installation-only image. Qualify the resulting golden image before use |
 | Other catalog images | Not selected | Qualify separately before use |
 
 R580 is the candidate because NVIDIA's R580 release notes include V100 and
@@ -190,5 +190,5 @@ changing either row to supported:
 10. support owner, rollback procedure, and driver/image update policy.
 
 Retain the evidence from both walkthroughs. Open tenant GPU VM creation on a
-cluster once its qualification record is complete — that record is what makes
+cluster after its qualification record is complete. That record is what makes
 the combination supported for your users.

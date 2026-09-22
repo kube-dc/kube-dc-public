@@ -1,44 +1,48 @@
-# CLI, Console, and IDE Access
+# CLI, console, and IDE access
 
-This guide explains how to install and use the `kube-dc` CLI tool for command-line access, web console, and IDE integration with Projects and Managed Clusters.
+This guide explains how to install and use the `kube-dc` CLI for command-line
+access, for the web console, and for IDE integration with Projects and Managed
+Clusters.
 
 ## Overview
 
-The `kube-dc` CLI provides secure, browser-based authentication for Kubernetes access. It handles:
+The `kube-dc` CLI authenticates you to Kubernetes through your browser. It
+handles:
 
-- **Browser-based login** — no password is entered in the terminal
-- **Automatic token refresh** — short-lived access tokens refresh while the
+- **Browser-based login**: no password is entered in the terminal
+- **Automatic token refresh**: short-lived access tokens refresh while the
   cached session remains valid
-- **Multi-cluster support** — manage more than one Kube-DC installation,
+- **Multi-cluster support**: manage more than one Kube-DC installation,
   Organization, and Project
-- **Project context switching** — select a named context for an accessible
+- **Project context switching**: select a named context for an accessible
   Project while keeping its identity and backing namespace aligned
 
-## Get CLI Access from Console UI
+## Get CLI access from the console
 
-You can access the CLI tool directly from the Console UI right after creating a project:
+The console offers the CLI as soon as you create a Project:
 
-1. Navigate to your project's **Workloads Dashboard**
-2. Click the **Get CLI Access** card
-3. Follow the displayed commands to install and authenticate
+1. Open your Project's **Workloads Dashboard**.
+2. Click the **Get CLI Access** card.
+3. Run the commands the console displays to install the CLI and authenticate.
 
 ![Get CLI Access from Console UI](images/get-kubeconfig.png)
 
-The Console UI provides platform-specific installation commands and your authentication details. The `kube-dc` CLI will:
+The console gives you installation commands for your platform and your
+authentication details. The `kube-dc` CLI then:
 
-- Authenticate you via browser
-- Generate your kubeconfig automatically
-- Save cached credentials with user-only file permissions under `~/.kube-dc/`
-- Configure kubectl contexts for your projects
+- Authenticates you through the browser
+- Generates your kubeconfig
+- Saves cached credentials under `~/.kube-dc/` with user-only file permissions
+- Configures `kubectl` contexts for your Projects
 
 ```bash
-# Example workflow shown in Console UI
+# Example workflow shown in the console
 kube-dc login --domain kube-dc.cloud --org your-org
 kube-dc use kube-dc.cloud/your-org/your-project
 kubectl get pods
 ```
 
-## Installation
+## Install the CLI
 
 ### macOS and Linux
 
@@ -69,24 +73,25 @@ $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$installDir*") { [Environment]::SetEnvironmentVariable("Path", "$installDir;$userPath", "User") }
 ```
 
-## Quick Start
+## Quick start
 
-### 1. Login to your organization
+### 1. Sign in to your Organization
 
 ```bash
 kube-dc login --domain kube-dc.cloud --org acme
 ```
 
-This opens your browser for secure authentication. After login:
-- Your kubeconfig is automatically configured
-- Contexts are created for each project you have access to
-- Tokens are cached with user-only file permissions (`~/.kube-dc/credentials/`)
+The command opens your browser for authentication. After you sign in, the CLI:
 
-Login automatically discovers and embeds the Kubernetes API's CA certificate
-when required. Discovery uses the backend's verified HTTPS endpoint; the CLI
-then verifies the API before saving your context. No existing kubeconfig is
-required. If an older installation does not support discovery, your platform
-administrator can provide a trusted CA bundle to pass with `--ca-cert`.
+- Configures your kubeconfig
+- Creates a context for each Project you can access
+- Caches tokens in `~/.kube-dc/credentials/` with user-only file permissions
+
+When the Kubernetes API needs a CA certificate, sign-in discovers and embeds
+it. Discovery uses the backend's verified HTTPS endpoint, and the CLI verifies
+the API before it saves your context. You do not need an existing kubeconfig.
+If an older installation does not support discovery, ask your platform
+administrator for a trusted CA bundle and pass it with `--ca-cert`.
 
 For an SSH session or a machine without a browser, add `--device-code`:
 
@@ -95,11 +100,11 @@ kube-dc login --domain kube-dc.cloud --org acme --device-code
 ```
 
 Open the displayed URL on another device, enter the code, and approve the
-login. Credentials and kubeconfig are saved on the machine running the CLI.
-Later kubectl commands refresh tokens automatically while the session remains
-valid. If Keycloak rejects device login, ask your platform administrator to
-enable **OAuth 2.0 Device Authorization Grant** on your Organization's
-`kube-dc` client.
+sign-in. The CLI saves the credentials and the kubeconfig on the machine it
+runs on. Later `kubectl` commands refresh tokens while the session stays valid.
+If Keycloak rejects device sign-in, ask your platform administrator to turn on
+**OAuth 2.0 Device Authorization Grant** on your Organization's `kube-dc`
+client.
 
 ### 2. Switch Projects
 
@@ -111,7 +116,7 @@ kube-dc use
 kube-dc use kube-dc.cloud/acme/production
 ```
 
-### 3. Use kubectl normally
+### 3. Run kubectl
 
 ```bash
 kubectl get pods
@@ -119,11 +124,11 @@ kubectl top pods
 kubectl logs -f my-pod
 ```
 
-## Commands Reference
+## Command reference
 
 ### `kube-dc login`
 
-Authenticate with a kube-dc platform.
+Authenticates you to a Kube-DC platform.
 
 ```bash
 kube-dc login --domain <domain> --org <organization>
@@ -133,10 +138,11 @@ kube-dc login --domain kube-dc.cloud --org acme
 kube-dc login --domain stage.kube-dc.com --org mycompany
 ```
 
-**Options:**
-- `--domain` - Platform domain (e.g., kube-dc.cloud)
-- `--org` - Organization/realm name
-- `--insecure` - Skip TLS verification (not recommended for production)
+The command takes the following options:
+
+- `--domain`: the platform domain, for example `kube-dc.cloud`.
+- `--org`: the Organization, which is also the realm name.
+- `--insecure`: skips TLS verification. Do not use it in production.
 
 ### `kube-dc ns`
 
@@ -155,7 +161,7 @@ kube-dc ns acme-production
 
 ### `kube-dc use`
 
-Switch between Kube-DC contexts. This is the preferred Project switcher.
+Switches between Kube-DC contexts. This is the preferred Project switcher.
 
 ```bash
 # List all kube-dc contexts
@@ -167,19 +173,19 @@ kube-dc use kube-dc.cloud/acme/production
 
 ### `kube-dc logout`
 
-Remove cached credentials.
+Removes cached credentials.
 
 ```bash
-# Logout from current server
+# Sign out of the current server
 kube-dc logout
 
-# Logout from all servers
+# Sign out of all servers
 kube-dc logout --all
 ```
 
 ### `kube-dc config`
 
-View configuration and token status.
+Shows the configuration and the token status.
 
 ```bash
 # Show current configuration
@@ -189,22 +195,25 @@ kube-dc config show
 kube-dc config get-contexts
 ```
 
-## How It Works
+## How it works
 
-### Authentication Flow
+### Authentication flow
 
-1. **Login**: Browser opens to Keycloak login page
-2. **OAuth2 PKCE**: Secure token exchange without exposing credentials
-3. **Token Storage**: Token files stored in `~/.kube-dc/credentials/` with owner-only filesystem permissions
-4. **kubectl Integration**: Acts as credential plugin for kubectl
+1. The CLI opens the Keycloak sign-in page in your browser.
+2. Keycloak and the CLI exchange tokens with OAuth 2.0 PKCE, so no credential
+   passes through the terminal.
+3. The CLI writes the token files to `~/.kube-dc/credentials/` with owner-only
+   filesystem permissions.
+4. `kubectl` calls the CLI as its credential plugin.
 
 :::note Local credential storage
-The credential cache is not encrypted at rest. It is protected with owner-only file permissions (`0600`); protect your local account and disk accordingly.
+The credential cache is not encrypted at rest. Owner-only file permissions
+(`0600`) protect it. Protect your local account and disk accordingly.
 :::
 
-### Kubeconfig Integration
+### Kubeconfig integration
 
-After login, your kubeconfig contains entries like:
+After you sign in, your kubeconfig contains entries like these:
 
 ```yaml
 contexts:
@@ -228,19 +237,19 @@ users:
         - acme
 ```
 
-### Token Lifecycle
+### Token lifecycle
 
-- **Access token** — short-lived (15 minutes by the platform default)
-- **Refresh token** — requested with the `offline_access` scope
-- **Local session window** — the CLI records a 30-day refresh window when the
+- **Access token**: short-lived (15 minutes by the platform default)
+- **Refresh token**: requested with the `offline_access` scope
+- **Local session window**: the CLI records a 30-day refresh window when the
   identity provider reports no finite refresh expiry; successful refreshes
   extend that local window
-- **Automatic refresh** — the kubeconfig credential plugin refreshes the access
+- **Automatic refresh**: the kubeconfig credential plugin refreshes the access
   token when `kubectl` runs
 
-## Shell Completions
+## Shell completions
 
-Enable tab completion for your shell:
+To turn on tab completion, run the command for your shell:
 
 ```bash
 # Bash
@@ -255,18 +264,18 @@ kube-dc completion fish > ~/.config/fish/completions/kube-dc.fish
 
 ## Troubleshooting
 
-### Session Expired
+### Session expired
 
-If you see `session expired`, the cached refresh credential is missing,
+The message `session expired` means the cached refresh credential is missing,
 expired, or no longer accepted by the identity provider. Sign in again:
 
 ```bash
 kube-dc login --domain <domain> --org <org>
 ```
 
-### Context Not Found
+### Context not found
 
-If a command reports that the current context is not a Kube-DC context:
+If a command reports that the current context is not a Kube-DC context, run:
 
 ```bash
 # Check current context
@@ -276,16 +285,16 @@ kubectl config current-context
 kube-dc use kube-dc.cloud/acme/production
 ```
 
-### Clear All Credentials
+### Clear all credentials
 
-To start fresh:
+To start fresh, run:
 
 ```bash
 kube-dc logout --all
 rm -rf ~/.kube-dc/credentials/
 ```
 
-### Diagnose Access
+### Diagnose access
 
 Confirm the selected context and test the permission needed for your next
 command:
@@ -296,27 +305,29 @@ kubectl auth can-i get pods
 kube-dc login --help
 ```
 
-## Security Best Practices
+## Security practices
 
-- **Never share** your `~/.kube-dc/credentials/` directory
-- Use `--insecure` only for development/testing
-- Logout when finished: `kube-dc logout`
-- Credentials are stored with `0600` permissions
+- Never share your `~/.kube-dc/credentials/` directory.
+- Use `--insecure` only for development and testing.
+- Sign out when you finish: `kube-dc logout`.
+- The CLI stores credentials with `0600` permissions.
 
-## Project Console (Web Terminal)
+## Project console (web terminal)
 
-For quick access without CLI installation, use the **Project Console** from the UI:
+To get access without installing the CLI, use the **Project console** in the
+web interface:
 
-1. Click your username in the top-right
-2. Select "Project console"
-3. A web terminal opens with kubectl pre-configured
+1. Click your username in the top right corner.
+2. Select **Project console**. A web terminal opens with `kubectl` already
+   configured.
 
 The web console includes:
-- `kubectl`, `helm`, `k9s`, `stern`, `virtctl`
-- Shell completions for all tools
-- Common aliases: `k`, `kgp`, `kgs`, `kl`, etc.
 
-## Next Steps
+- `kubectl`, `helm`, `k9s`, `stern`, and `virtctl`
+- Shell completions for all of those tools
+- The aliases `k`, `kgp`, `kgs`, and `kl`
 
-- [Team Management](team-management.md): Learn about role-based access control
-- [Creating a Virtual Machine](creating-vm.md): Deploy your first VM
+## Next steps
+
+- [Team management](team-management.md) covers role-based access control.
+- [Create a virtual machine](creating-vm.md) deploys your first VM.

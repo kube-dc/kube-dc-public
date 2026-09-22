@@ -1,4 +1,4 @@
-# Object Storage (S3)
+# Object storage (S3)
 
 Kube-DC provides S3-compatible object storage for storing files, images, backups, and any unstructured data. You can manage buckets and files through the dashboard or use standard S3 tools like AWS CLI, s3cmd, and boto3.
 
@@ -10,14 +10,14 @@ The Object Storage view shows all your buckets with their S3 bucket name, status
 
 Click on a bucket to expand its details:
 
-- **General Information** — Name, S3 bucket name, backing namespace, storage class, status, and creation date
-- **S3 Connection** — Endpoint URL, region, access toggle (Public/Private), and public URL
-- **Bucket Credentials** — Per-bucket Access Key ID and Secret Access Key
-- **Actions** — Browse Files or Delete the bucket
+- **General Information**: Name, S3 bucket name, backing namespace, storage class, status, and creation date
+- **S3 Connection**: Endpoint URL, region, access toggle (Public/Private), and public URL
+- **Bucket Credentials**: Per-bucket Access Key ID and Secret Access Key
+- **Actions**: Browse Files or Delete the bucket
 
-### Create a Bucket
+### Create a bucket
 
-#### Via Dashboard
+#### Via dashboard
 
 1. Navigate to your project → **Object Storage** → **Buckets**
 2. Click **+ Create Bucket**
@@ -61,15 +61,15 @@ kubectl get configmap my-bucket -n acme-production -o yaml
 ```
 
 The ConfigMap contains:
-- `BUCKET_HOST` — Internal S3 endpoint
-- `BUCKET_NAME` — Full bucket name in S3
-- `BUCKET_PORT` — Service port
-- `BUCKET_REGION` — Region identifier
+- `BUCKET_HOST`: Internal S3 endpoint
+- `BUCKET_NAME`: Full bucket name in S3
+- `BUCKET_PORT`: Service port
+- `BUCKET_REGION`: Region identifier
 
-### Bucket Access: Private vs Public
+### Bucket access: private and public
 
-- **Private** (default) — Only accessible with valid S3 credentials
-- **Public Read** — Anyone with the URL can read objects; writing still requires credentials
+- **Private** (default): Only accessible with valid S3 credentials
+- **Public Read**: Anyone with the URL can read objects; writing still requires credentials
 
 Toggle access from the bucket detail view in the dashboard. The **S3 Connection** panel shows the endpoint configured for your installation. Public object URLs follow this pattern:
 
@@ -77,7 +77,7 @@ Toggle access from the bucket detail view in the dashboard. The **S3 Connection*
 <S3_ENDPOINT>/<bucket-name>/<object-key>
 ```
 
-### Delete a Bucket
+### Delete a bucket
 
 ```bash
 kubectl delete objectbucketclaim my-bucket -n acme-production
@@ -87,7 +87,7 @@ kubectl delete objectbucketclaim my-bucket -n acme-production
 Deleting a bucket removes all objects inside it permanently.
 :::
 
-## File Browser
+## File browser
 
 The built-in file browser lets you manage objects directly from the dashboard without any external tools.
 
@@ -95,20 +95,20 @@ The built-in file browser lets you manage objects directly from the dashboard wi
 
 From the bucket detail view, click **Browse Files** to open the file browser. You can:
 
-- **Upload Files** — Click **Upload Files** and select one or more files
-- **Create Folders** — Click **+ Create Folder** to organize objects into prefixes
-- **Download** — Right-click or use the action menu to download files
-- **Move** — Move objects to a different folder within the bucket
-- **Copy Public URL** — Get a direct link for public buckets
-- **Delete** — Remove individual files or folders
+- **Upload Files**: Click **Upload Files** and select one or more files
+- **Create Folders**: Click **+ Create Folder** to organize objects into prefixes
+- **Download**: Right-click or use the action menu to download files
+- **Move**: Move objects to a different folder within the bucket
+- **Copy Public URL**: Get a direct link for public buckets
+- **Delete**: Remove individual files or folders
 
 The file browser shows each object's name, size, last modified date, and type (File or Folder).
 
-## Access Keys
+## Access keys
 
 Kube-DC exposes two credential scopes:
 
-### Organization Account Keys
+### Organization account keys
 
 The **Access Keys** section manages credentials for the Organization's RGW account. These keys can operate buckets owned by that account and are also used by the platform for account administration and usage reporting.
 
@@ -116,12 +116,12 @@ Buckets created through the dashboard or as standard ObjectBucketClaims are owne
 
 The Access Keys view shows:
 
-- **Credentials** — Your primary Access Key ID, Secret Access Key (click to reveal), S3 endpoint, and region
-- **Key Management** — Generate additional keys or revoke existing ones
+- **Credentials**: Your primary Access Key ID, Secret Access Key (click to reveal), S3 endpoint, and region
+- **Key Management**: Generate additional keys or revoke existing ones
 
 Use Organization account keys only with buckets owned by that account. For dashboard-created buckets and ObjectBucketClaims, use the per-bucket credentials below. The **Access Keys** view shows the configured S3 endpoint and region.
 
-### Per-Bucket Keys
+### Per-bucket keys
 
 Each dashboard-created bucket or ObjectBucketClaim has its own credentials, available in the bucket detail view or as a Kubernetes Secret in its backing namespace:
 
@@ -133,7 +133,7 @@ kubectl get secret my-bucket -n acme-production -o jsonpath='{.data.AWS_SECRET_A
 
 Per-bucket keys are scoped to that specific bucket only.
 
-## Using S3 Tools
+## Use S3 tools
 
 The examples below use a bucket's per-bucket credentials. Set `S3_ENDPOINT` to the endpoint shown in the bucket detail or Access Keys view.
 
@@ -203,7 +203,7 @@ s3cmd ls s3://acme-production-my-bucket/
 s3cmd put myfile.txt s3://acme-production-my-bucket/
 ```
 
-### Using Credentials from Kubernetes Secrets
+### Use credentials from Kubernetes Secrets
 
 For workloads running inside your project, you can mount the per-bucket credentials directly:
 
@@ -264,7 +264,7 @@ The **Object Storage Overview** aggregates usage for ObjectBucketClaims carrying
 
 The standard Rook ObjectBucketClaim provisioner creates a separate S3 user for each bucket. The Organization account quota displayed by Kube-DC is therefore not, by itself, an aggregate admission boundary for those per-bucket users. Do not assume that crossing the displayed limit will automatically reject a new claim or upload; your provider may apply additional enforcement.
 
-## Quick Reference
+## Quick reference
 
 | Action | Command |
 |--------|---------|
@@ -276,7 +276,7 @@ The standard Rook ObjectBucketClaim provisioner creates a separate S3 user for e
 | S3 list objects (AWS CLI) | `aws --endpoint-url "$S3_ENDPOINT" s3 ls s3://bucket/` |
 | S3 upload | `aws --endpoint-url "$S3_ENDPOINT" s3 cp file s3://bucket/` |
 
-## Next Steps
+## Next steps
 
-- [Block Storage](block-storage.md) — Persistent volumes for VMs and containers
-- [Backups & Snapshots](backups-snapshots.md)
+- [Block storage](block-storage.md): Persistent volumes for VMs and containers
+- [Backups and snapshots](backups-snapshots.md)

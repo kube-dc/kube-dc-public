@@ -1,95 +1,110 @@
-# Sign Up & Login
+# Sign up and sign in
 
-To use Kube-DC, you must have a verified user account and belong to an Organization. This guide walks you through the account creation process, organization setup, and login options.
+To use Kube-DC, you need a verified user account and membership of an
+Organization. This guide covers account creation, Organization setup, and the
+sign-in options.
 
-## Prerequisites
+## Before you begin
+
+You need:
 
 - A valid email address
-- A modern web browser (Chrome, Firefox, Safari, or Edge)
+- A current web browser: Chrome, Firefox, Safari, or Edge
 
-## Create Your Account
+## Create your account
 
-To get started with Kube-DC Cloud, you need to register a new account.
+1. Go to [console.kube-dc.cloud](https://console.kube-dc.cloud).
+2. Click **Sign up with email** or **Sign up with Google**.
+3. Fill in the registration form:
 
-1. Navigate to [console.kube-dc.cloud](https://console.kube-dc.cloud)
-2. Click **Sign up with email** or **Sign up with Google**
-3. Fill in the registration form with your details:
-   - **Email** — Your email address (used for login and notifications)
-   - **First name** — Your first name
-   - **Last name** — Your last name
+   - **Email**: your email address. Kube-DC uses it for sign-in and
+     notifications.
+   - **First name**: your first name.
+   - **Last name**: your last name.
 
-4. Click **Register** to create your account
-5. Check your email for a verification link and confirm your account
+4. Click **Register**.
+5. Open the verification email and confirm your account.
 
-:::tip Using Google SSO
-If you sign up with Google, your account is automatically verified and you can proceed directly to organization setup.
+:::tip Google single sign-on
+If you sign up with Google, Kube-DC verifies your account automatically. Go
+straight to Organization setup.
 :::
 
-## Set Up Your Organization
+## Set up your Organization
 
-After registration, you'll be prompted to set up or join an Organization. An Organization is the identity, membership, billing, and shared-quota boundary for its Projects.
+After registration, the console asks you to set up or join an Organization. An
+Organization is the identity, membership, billing, and shared-quota boundary
+for its Projects.
 
-### Create a New Organization
+### Create an Organization
 
-If you are starting fresh or need a separate Organization:
+Follow these steps if you start fresh, or if you need a separate Organization:
 
-1. Enter a unique **Organization name** (e.g., your company or team name)
-2. The system validates availability — a green checkmark indicates the name is available
-3. Set your **Organization login password** (minimum 8 characters)
-4. Confirm your password
-5. Click **Continue**
+1. Enter a unique **Organization name**, such as your company or team name.
+2. Wait for the availability check. A green checkmark means the name is free.
+3. Set your **Organization login password**. It needs at least 8 characters.
+4. Confirm the password.
+5. Click **Continue**.
 
 :::note Organization Admin
-When you create an organization, you automatically become the Organization Admin with full access to manage users, projects, and settings. Keep your Organization login password secure. It belongs to your user account and is not a password shared by Organization members.
+The user who creates an Organization becomes its Organization Admin, with full
+access to users, Projects, and settings. Keep your Organization login password
+secure. It belongs to your own user account. Organization members do not share
+it.
 :::
 
-### Join an Existing Organization
+### Join an existing Organization
 
-If your team already has an organization:
+Follow these steps if your team already has an Organization:
 
-1. Enter the existing **Organization name**
-2. The system detects the organization exists and shows "Organization exists. You can request to join."
-3. Click **Request to join**
-4. Wait for an Organization Admin to approve your request
+1. Enter the existing **Organization name**.
+2. Read the message "Organization exists. You can request to join."
+3. Click **Request to join**.
+4. Wait for an Organization Admin to approve the request.
 
-:::info Approval Required
-Join requests must be approved by an Organization Admin. You'll receive an email notification once your request is processed.
-:::
+An Organization Admin must approve every join request. Kube-DC sends you an
+email when the request is processed.
 
-## Login
+## Sign in
 
-Once your account is set up, you can log in to access your dashboard.
+1. Go to [console.kube-dc.cloud](https://console.kube-dc.cloud).
+2. Enter your **Organization** name.
+3. Choose a sign-in method:
 
-1. Navigate to [console.kube-dc.cloud](https://console.kube-dc.cloud)
-2. Enter your **Organization** name
-3. Choose your login method:
-   - **Log in** — Enter your Organization login password
-   - **Sign in with Google** — Use Google SSO (if configured)
+   - **Log in**: enter your Organization login password.
+   - **Sign in with Google**: use Google single sign-on, if your Organization
+     has it configured.
 
 ![Login page](images/sign-up-4.png)
 
-:::tip Remember Your Organization
-Bookmark your organization's direct login URL for faster access: `https://console.kube-dc.cloud/?realm=your-org-name`
+:::tip Bookmark your Organization
+For faster access, bookmark your Organization's direct sign-in URL:
+`https://console.kube-dc.cloud/?realm=ORGANIZATION_NAME`. Replace
+`ORGANIZATION_NAME` with your Organization name.
 :::
 
-## Choose a Plan or Trial
+## Choose a plan or a trial
 
-Subscription and trial options depend on the Kube-DC deployment and its billing provider. Some providers offer a first-subscription trial; a valid promo code or an administrator can also enable trial access. The Billing screen shows your exact eligibility and duration before checkout.
+Subscription and trial options depend on the Kube-DC deployment and its billing
+provider. Some providers offer a trial with the first subscription. A valid
+promo code or an administrator can also enable trial access. The Billing screen
+shows your eligibility and the duration before checkout.
 
-After the Organization is created, open **Billing** to:
+After you create the Organization, open **Billing** to:
 
-- choose from the plans currently offered by your provider;
-- redeem a promo code, when you have one;
-- review the exact CPU, memory, storage, IP, and accelerator quota before checkout;
-- see the subscription state and remaining trial time, when applicable.
+- Choose one of the plans your provider offers
+- Redeem a promo code, if you have one
+- Review the CPU, memory, storage, IP, and accelerator quota before checkout
+- See the subscription state and the remaining trial time, if a trial applies
 
-The Billing screen is the source of truth for current plan capacity and commercial terms. See [Billing and Usage](billing-usage.md) for quota and subscription details.
+The Billing screen is the source of truth for plan capacity and commercial
+terms. For quota and subscription details, see
+[Billing and usage](billing-usage.md).
 
-## Next Steps
+## Next steps
 
-After signing up and setting up your organization:
-
-- [Explore the Dashboard](dashboard-overview.md) — learn how to navigate the Kube-DC UI
-- [Create your first project](first-project.md)
+- [Explore the dashboard](dashboard-overview.md) to learn how to navigate the
+  Kube-DC console
+- [Create your first Project](first-project.md)
 - [Set up user groups and permissions](team-management.md)
-- [Configure Google SSO for your organization](/platform/sso-google-auth)
+- [Configure Google SSO for your Organization](/platform/sso-google-auth)

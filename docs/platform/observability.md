@@ -1,4 +1,4 @@
-# Observability — Platform Operator Guide
+# Observability: platform operator guide
 
 **Audience:** Cluster operators and platform engineers  
 **Scope:** Day-2 operations for the shared observability stack
@@ -57,13 +57,13 @@ clusters/<cluster>/platform/
 
 > **The per-tenant metrics write path is enabled per cluster.** `cortex-tenant`
 > + `alloy-metrics` (the components that route each Project's metrics into its
-> own Mimir tenant) are **not** in the shared `platform/monitoring` root — their
+> own Mimir tenant) are **not** in the shared `platform/monitoring` root. Their
 > cloud-sized values would over-provision small clusters. A capable cluster
 > opts in with a `monitoring-writepath.yaml` Flux Kustomization that pulls the
 > shared `platform/monitoring-writepath` bundle. `kube-dc bootstrap init`
 > **scaffolds this by default** for new installs wherever Mimir is present
 > (any non-disabled object-storage mode), so a fresh cluster's tenant Grafana
-> Orgs show metrics — not just logs — out of the box. Without it, tenant metrics
+> Orgs show metrics, and not only logs, out of the box. Without it, tenant metrics
 > dashboards render empty while logs work.
 
 ---
@@ -114,7 +114,7 @@ Grafana UI are overwritten on the next reconcile. Organizations that need custom
 dashboards should create new ones in their Grafana Organization. Those dashboards
 are persisted in the Grafana database and are not touched by the controller.
 
-### 3.2 Currently shipped dashboards
+### 3.2 Shipped dashboards
 
 | Dashboard | Grafana folder | Shown to |
 |---|---|---|
@@ -130,13 +130,13 @@ are persisted in the Grafana database and are not touched by the controller.
 1. **Create the dashboard JSON.**  
    Export from Grafana (`Share → Export → Save to file`) or author from scratch.  
    Requirements:
-   - Must have a stable, unique `uid` field (e.g. `kube-dc-my-new-dashboard`).
-   - Use the well-known datasource UIDs — do not embed a datasource name:
-     - `mimir` — federated metrics (queries across all Organization backend tenant IDs)
-     - `mimir-alerts` — alert rule management for one backend tenant ID at a time
-     - `loki` — federated logs
-     - `alertmanager` — Alertmanager API
-   - Use `$namespace` template variable populated via
+   - Must have a stable, unique `uid` field (for example, `kube-dc-my-new-dashboard`).
+   - Use the well-known datasource UIDs. Do not embed a datasource name:
+     - `mimir`: federated metrics (queries across all Organization backend tenant IDs)
+     - `mimir-alerts`: alert rule management for one backend tenant ID at a time
+     - `loki`: federated logs
+     - `alertmanager`: Alertmanager API
+   - Use `$namespace` template variable populated through
      `label_values(kube_pod_info, namespace)` (not `kube_namespace_created`, which
      includes terminated namespaces).
    - Set `"editable": false` for platform-owned dashboards.
@@ -171,7 +171,7 @@ are persisted in the Grafana database and are not touched by the controller.
 
 ### 3.4 Scope annotation
 
-Control which Grafana Organizations receive a dashboard via the
+Control which Grafana Organizations receive a dashboard through the
 `kube-dc.com/grafana-scope` annotation:
 
 | Value | Distributed to |
@@ -189,7 +189,7 @@ wins (alphabetical ConfigMap order).
 ### 3.6 Editing an existing dashboard
 
 Edit the JSON file in `kube-dc-fleet/platform/monitoring/dashboards/`, commit, and push.
-Keep the `uid` field unchanged — changing the UID causes a new dashboard to be created
+Keep the `uid` field unchanged. A changed UID creates a new dashboard
 and the old one to remain (orphaned). If you need to retire a dashboard, delete the JSON
 and ConfigMap entry; then manually delete it from Grafana Organizations or wait for the next full
 re-provision.
@@ -202,17 +202,17 @@ re-provision.
 
 | Rule type | Storage location | Who manages |
 |---|---|---|
-| **Platform rules** (cluster health, node, kube-system) | Prometheus PrometheusRules, evaluated by kube-prometheus-stack Prometheus | Managed via `prom-operator/values-configmap.yaml` or additional PrometheusRule CRDs |
-| **Organization alert rules** | Mimir Ruler, stored under backend tenant IDs in S3 | Organization users (Grafana Alert Rules UI) or operators via `mimirtool` |
+| **Platform rules** (cluster health, node, kube-system) | Prometheus PrometheusRules, evaluated by kube-prometheus-stack Prometheus | Managed through `prom-operator/values-configmap.yaml` or additional PrometheusRule CRDs |
+| **Organization alert rules** | Mimir Ruler, stored under backend tenant IDs in S3 | Organization users (Grafana Alert Rules UI) or operators through `mimirtool` |
 
 ### 4.2 Adding or changing platform alert rules
 
 Platform alerting rules are part of the `kube-prometheus-stack` chart. Add a
-`PrometheusRule` manifest in `kube-dc-fleet/platform/monitoring/prom-operator/` (or via a
+`PrometheusRule` manifest in `kube-dc-fleet/platform/monitoring/prom-operator/` (or through a
 kustomize overlay) and commit. The Prometheus Operator observes the resource and updates the selected rule
 configuration through its normal reconciliation loop.
 
-Example — adding a custom platform rule:
+The following example adds a custom platform rule:
 ```yaml
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
@@ -236,7 +236,7 @@ spec:
             summary: "High restart count in kube-dc"
 ```
 
-### 4.3 Managing backend alert rules via `mimirtool`
+### 4.3 Managing backend alert rules through `mimirtool`
 
 For bulk operations across backend tenant IDs (for example, pushing a common baseline rule set):
 
@@ -255,7 +255,7 @@ mimirtool rules load ./rules/my-rules.yaml \
 Authentication requires a valid Keycloak access token from the `master` realm (platform
 admin group). See the `kube-dc` CLI docs for obtaining tokens.
 
-### 4.4 Default Alertmanager routing
+### 4.4 Default alertmanager routing
 
 Each Kube-DC Organization has its own Alertmanager configuration managed through Grafana
 (Contact Points and Notification Policies). Platform-level Alertmanager config (for the
@@ -329,7 +329,7 @@ paths after identity or monitoring changes.
 ### 6.2 Inspecting an Organization's Grafana space
 
 1. Log in as platform admin (§6.1).
-2. Open the **Organization switcher** (top-left globe icon or via `Admin → Organizations`).
+2. Open the **Organization switcher** (top-left globe icon or through `Admin → Organizations`).
 3. Switch to the target Grafana Organization. You now see its dashboards,
    datasources, and alert rules as its users do.
 4. **Switch back** to `Main Org.` when finished to avoid accidental edits in
@@ -394,7 +394,7 @@ CLI, and long-running API clients.
      -l app.kubernetes.io/name=alloy-metrics --tail=100
    ```
 
-### 7.2 Alert Rules tab shows 404 or is empty
+### 7.2 Alert rules tab shows 404 or is empty
 
 This happens when the `Mimir Alerts` datasource (the per-backend-tenant alerting datasource)
 is missing or misconfigured. As platform admin:
@@ -445,12 +445,12 @@ missing after a new dashboard was added to the Fleet repository:
    kubectl get cm -n monitoring -l kube-dc.com/grafana-dashboard=true
    ```
 2. Trigger reconciliation (§6.3).
-3. Check `kube-dc-manager` logs for `ensureDashboards` errors — the most common cause is
+3. Check the `kube-dc-manager` logs for `ensureDashboards` errors. The most common cause is
    a dashboard JSON missing the `uid` field.
 
 ### 7.4 Grafana pod keeps restarting
 
-Check the CNPG `grafana-pg` cluster status first — Grafana will crash-loop if the
+Check the CNPG `grafana-pg` cluster status first. Grafana crash-loops if the
 PostgreSQL backend is unavailable:
 ```bash
 kubectl get cluster -n monitoring grafana-pg

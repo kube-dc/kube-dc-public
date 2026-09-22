@@ -1198,12 +1198,12 @@ func TestInit_PhaseC_RunsControllerAuthSetup(t *testing.T) {
 		t.Errorf("ConfigureKubernetesAuth calls = %d, want 1", bao.configureAuthCalls)
 	}
 	// Three policies in order, including the read-only snapshot job.
-	if len(bao.policyCalls) != 3 || bao.policyCalls[0] != ManagerPolicyName || bao.policyCalls[1] != DBManagerPolicyName || bao.policyCalls[2] != SnapshotPolicyName {
+	if len(bao.policyCalls) != 4 || bao.policyCalls[3] != PublisherPolicyName || bao.policyCalls[0] != ManagerPolicyName || bao.policyCalls[1] != DBManagerPolicyName || bao.policyCalls[2] != SnapshotPolicyName {
 		t.Errorf("policy call order wrong: %v", bao.policyCalls)
 	}
 	// Three roles in order.
-	wantRoles := []string{KubernetesAuthPath + "/" + ManagerRoleName, KubernetesAuthPath + "/" + DBManagerRoleName, KubernetesAuthPath + "/" + SnapshotRoleName}
-	if len(bao.roleCalls) != len(wantRoles) || bao.roleCalls[0] != wantRoles[0] || bao.roleCalls[1] != wantRoles[1] || bao.roleCalls[2] != wantRoles[2] {
+	wantRoles := []string{KubernetesAuthPath + "/" + ManagerRoleName, KubernetesAuthPath + "/" + DBManagerRoleName, KubernetesAuthPath + "/" + SnapshotRoleName, KubernetesAuthPath + "/" + PublisherRoleName}
+	if len(bao.roleCalls) != len(wantRoles) || bao.roleCalls[0] != wantRoles[0] || bao.roleCalls[1] != wantRoles[1] || bao.roleCalls[2] != wantRoles[2] || bao.roleCalls[3] != wantRoles[3] {
 		t.Errorf("role call order wrong: %v (want %v)", bao.roleCalls, wantRoles)
 	}
 }

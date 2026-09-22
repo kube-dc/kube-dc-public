@@ -1,16 +1,16 @@
 import {AiMcpFlowDiagram} from '@site/src/components/Diagram/CloudFlowDiagrams';
 
-# AI IDE Integration
+# AI IDE integration
 
 :::tip Agent Skills
-Kube-DC ships **16 Agent Skills**: structured procedures and templates that help compatible coding agents generate Kube-DC manifests. Skills complement MCP servers, which provide live cluster access. See [Agent Skills Setup](#agent-skills-setup) below.
+Kube-DC ships **16 Agent Skills**: structured procedures and templates that help compatible coding agents generate Kube-DC manifests. Skills complement MCP servers, which provide live cluster access. See [Agent skills setup](#agent-skills-setup) below.
 :::
 
-Modern AI coding assistants — Claude Code, Cursor, Devin Desktop (formerly Windsurf), and VS Code with Copilot — can connect to the Kube-DC management cluster in a Project context through the **Model Context Protocol (MCP)**. Once connected, they can manage workloads, inspect logs, and diagnose resources within the permissions of that Project context.
+AI coding assistants such as Claude Code, Cursor, Devin Desktop (formerly Windsurf), and VS Code with Copilot can connect to the Kube-DC management cluster in a Project context, through the **Model Context Protocol (MCP)**. After they connect, they can manage workloads, inspect logs, and diagnose resources within the permissions of that Project context.
 
 ---
 
-## How It Works: MCP and Kubernetes
+## How it works: MCP and Kubernetes
 
 The **Model Context Protocol (MCP)** is an open standard that gives AI assistants structured access to external tools and data sources. A Kubernetes MCP server acts as a bridge between your AI IDE and the Kube-DC management cluster:
 
@@ -37,11 +37,11 @@ The AI can then answer questions like *"Why is my deployment not scaling?"* or e
 
 ---
 
-## Agent Skills Setup
+## Agent skills setup
 
-Generic Kubernetes MCP servers let AI assistants run `kubectl` — but they don't know about Kube-DC CRDs, annotations, naming conventions, or multi-tenant constraints. **Agent Skills** bridge this gap by providing structured, Kube-DC-specific knowledge that AI assistants load automatically.
+A generic Kubernetes MCP server lets an AI assistant run `kubectl`, but it does not know the Kube-DC CRDs, annotations, naming conventions, or multi-tenant constraints. **Agent Skills** bridge this gap by providing structured, Kube-DC-specific knowledge that AI assistants load automatically.
 
-### What Skills Provide
+### What skills provide
 
 | Without Skills | With Skills |
 |----------------|-------------|
@@ -49,10 +49,10 @@ Generic Kubernetes MCP servers let AI assistants run `kubectl` — but they don'
 | Wrong annotations | Correct `service.nlb.kube-dc.com/*` annotations |
 | Missing `qemu-guest-agent` in VMs | Always included (safety rule) |
 | Incorrect backing namespace patterns | Correct `{organization}-{project}` backing namespace |
-| No awareness of exposure paths | Knows Gateway Route vs Direct EIP decision |
+| No awareness of exposure paths | Knows when to use a Gateway Route and when to use a direct EIP |
 | Generic kubectl advice | Kube-DC-specific templates and workflows |
 
-### Available Skills
+### Available skills
 
 | Skill | What It Does |
 |-------|-------------|
@@ -61,7 +61,7 @@ Generic Kubernetes MCP servers let AI assistants run `kubectl` — but they don'
 | `create-vm` | Provision a VM with SSH access, cloud-init, and guest agent |
 | `create-database` | Create a managed database (PostgreSQL, MySQL, MariaDB, ClickHouse) or cache with a binding Secret and connection patterns |
 | `manage-database-credentials` | Deliver credential roles to workloads as Secrets and rotate them on demand or on a schedule |
-| `expose-service` | Expose via Gateway Route (HTTPS) or Direct EIP (TCP/UDP) |
+| `expose-service` | Expose through Gateway Route (HTTPS) or Direct EIP (TCP/UDP) |
 | `manage-cluster` | Scale workers, upgrade K8s version, access kubeconfig |
 | `manage-networking` | Create EIPs, FIPs, understand VPC networking |
 | `manage-storage` | S3 buckets (OBC), DataVolumes, PVCs |
@@ -73,11 +73,11 @@ Generic Kubernetes MCP servers let AI assistants run `kubectl` — but they don'
 | `ssh-into-vm` | SSH into a VM using the project's auto-generated keypair |
 | `use-kube-dc-cli` | Authentication, context switching and Project selection through the kube-dc CLI |
 
-### Install Skills
+### Install skills
 
 There are three ways to add Kube-DC skills to your IDE, depending on your setup:
 
-#### Option A: `npx skills add` (Recommended)
+#### Option A: `npx skills add` (recommended)
 
 The `skills` CLI can install the catalog globally or into one workspace. A global install makes the selected skills available across workspaces for the targeted coding agents.
 
@@ -100,7 +100,7 @@ Installation locations vary by agent and scope. Verify the result with `npx skil
 Use `npx skills add kube-dc/kube-dc-public --list` to see all available skills before installing.
 :::
 
-#### Option B: System Prompt / IDE Settings (Lightweight)
+#### Option B: System prompt / IDE settings (lightweight)
 
 If you can't install skills globally, you can paste the Kube-DC context into your IDE's system prompt settings. Copy the content of `_agent-instructions.md` (or `AGENTS.md`):
 
@@ -129,7 +129,7 @@ The system prompt provides **awareness** (correct namespaces, annotations, safet
 
 :::
 
-#### Option C: Workspace Install
+#### Option C: Workspace install
 
 If you want the full package (skills + docs + examples + workflows) in a specific project:
 
@@ -146,7 +146,7 @@ cd /path/to/your-repo
 git submodule add https://github.com/kube-dc/kube-dc-public.git .kube-dc
 ```
 
-### Repository Structure
+### Repository structure
 
 ```
 kube-dc-public/
@@ -164,7 +164,7 @@ kube-dc-public/
 └── examples/                          # Ready-to-use YAML manifests
 ```
 
-### Verify Skill Discovery
+### Verify skill discovery
 
 Do not infer discovery from a directory name. Ask the installer which skills are available at each scope:
 
@@ -173,7 +173,7 @@ npx skills list
 npx skills list -g
 ```
 
-### Test the Skills
+### Test the skills
 
 Open any project in your IDE with the skills installed globally or in that workspace, then try:
 
@@ -192,14 +192,14 @@ How do I SSH into it?
 ```
 
 ```
-Expose my nginx service via HTTPS with auto TLS in Project "production" in Organization "acme".
+Expose my nginx service over HTTPS with auto TLS in Project "production" in Organization "acme".
 ```
 
-The agent should generate correct Kube-DC manifests with proper CRD schemas, annotations, and namespace patterns — without any manual correction.
+The agent generates correct Kube-DC manifests, with the right CRD schemas, annotations, and namespace patterns, and you correct nothing by hand.
 
 ---
 
-## Step 0: Get Your Kube-DC Kubeconfig
+## Step 0: Get your Kube-DC kubeconfig
 
 All integrations below require a valid Project context in a kubeconfig for the Kube-DC management cluster. An Organization login creates one context for each accessible Project; each context selects that Project's backing namespace.
 
@@ -219,7 +219,7 @@ See [CLI & Kubeconfig](cli-kubeconfig.md) for full setup instructions.
 
 ## Claude Code
 
-[Claude Code](https://claude.com/product/claude-code) is Anthropic's terminal-based AI agent. It can read files, run commands, manage Git, and — with MCP — interact with your Kubernetes cluster directly from the terminal.
+[Claude Code](https://claude.com/product/claude-code) is Anthropic's terminal-based AI agent. It can read files, run commands, manage Git, and, with MCP, work with your Kubernetes cluster from the terminal.
 
 ### Install the MCP server
 
@@ -236,7 +236,7 @@ claude mcp list
 
 ### Example workflows
 
-Once connected, use natural language in the Claude Code terminal:
+After they connect, use natural language in the Claude Code terminal:
 
 ```
 > Show me all pods that are not running in Project production in Organization acme
@@ -246,16 +246,16 @@ Once connected, use natural language in the Claude Code terminal:
 > Scale the api-server deployment to 3 replicas
 ```
 
-Claude Code can chain multiple kubectl operations automatically — for example, if a pod is crashing, it will fetch events, logs, and describe the pod in a single response.
+Claude Code chains several `kubectl` operations automatically. When a pod is crashing, for example, it fetches the events and the logs, and describes the pod, in one response.
 
-### Use Agent Skills with Claude Code
+### Use agent skills with Claude Code
 
 Open the `kube-dc-public` repo in Claude Code. It contains:
 
-- `CLAUDE.md` — loaded automatically, references `@_agent-instructions.md` and `@knowledge/index.md`
-- `.claude/skills/` — 16 workflow skills (symlink to `skills/`)
+- `CLAUDE.md`: loaded automatically, references `@_agent-instructions.md` and `@knowledge/index.md`
+- `.claude/skills/`: 16 workflow skills (symlink to `skills/`)
 
-With both MCP and skills, Claude Code can generate correct Kube-DC manifests **and** apply them directly. See [Agent Skills Setup](#agent-skills-setup) above.
+With both MCP and skills, Claude Code can generate correct Kube-DC manifests **and** apply them directly. See [Agent skills setup](#agent-skills-setup) above.
 
 ### Restrict destructive tools
 
@@ -299,19 +299,19 @@ Open the Cursor chat (`Cmd+L` / `Ctrl+L`) and ask questions about your cluster:
 ```
 @kubernetes list all pods in backing namespace acme-production that have been restarting
 @kubernetes describe the ingress for my-app and check if the service exists
-@kubernetes what is the current resource usage vs quota in Project production in Organization acme?
+@kubernetes what is the resource usage against quota in Project production in Organization acme?
 ```
 
 Cursor can also generate and apply manifests directly from the chat, editing files and running `kubectl apply` in sequence.
 
-### Use Agent Skills with Cursor
+### Use agent skills with Cursor
 
 Instead of a generic `.cursorrules` file, open the `kube-dc-public` repo in Cursor. It contains:
 
-- `AGENTS.md` — Cursor reads this automatically for Kube-DC context
-- `.cursor/rules/kube-dc-conventions/RULE.md` — always-on rules for namespace patterns, CRD naming, and safety constraints
+- `AGENTS.md`: Cursor reads this automatically for Kube-DC context
+- `.cursor/rules/kube-dc-conventions/RULE.md`: always-on rules for namespace patterns, CRD naming, and safety constraints
 
-This gives Cursor full awareness of Kube-DC CRDs, annotations, and naming conventions — far more comprehensive than a hand-written rules file. See [Agent Skills Setup](#agent-skills-setup) above.
+Cursor then knows the Kube-DC CRDs, annotations, and naming conventions, which a hand-written rules file does not cover. See [Agent skills setup](#agent-skills-setup) above.
 
 ---
 
@@ -321,7 +321,7 @@ This gives Cursor full awareness of Kube-DC CRDs, annotations, and naming conven
 local agents: Devin Local, the default for new tabs, and the legacy Cascade
 agent. Both support MCP, but they use separate configuration stores.
 
-### Configure Devin Local MCP
+### Configure Devin local MCP
 
 Add the Kubernetes server at user scope so it is available across workspaces:
 
@@ -374,7 +374,7 @@ The agent can chain file edits, terminal commands, and MCP tool calls in a
 single flow: writing the Deployment YAML, applying it, and monitoring rollout
 status.
 
-### Use Agent Skills with Devin Desktop
+### Use agent skills with Devin Desktop
 
 Install the catalog through
 [Option A](#option-a-npx-skills-add-recommended) and let the `skills` CLI detect
@@ -388,16 +388,16 @@ configuration.
 
 ## VS Code
 
-VS Code supports Kubernetes cluster management via both dedicated extensions and MCP through GitHub Copilot.
+VS Code supports Kubernetes cluster management with dedicated extensions and with MCP through GitHub Copilot.
 
-### Essential Extensions
+### Essential extensions
 
 **[Kubernetes](https://marketplace.visualstudio.com/items?itemName=ms-kubernetes-tools.vscode-kubernetes-tools)**  
 The official Kubernetes extension provides a full cluster browser in the VS Code sidebar:
 - Browse namespaces, pods, deployments, services, and more
 - View and edit live resources
 - Stream pod logs directly in the editor
-- Supports multiple kubeconfig contexts — switch between Kube-DC Projects instantly
+- Supports several kubeconfig contexts, so you switch between Kube-DC Projects at once
 
 **[YAML](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)**  
 Provides schema validation and autocompletion for Kubernetes manifests. YAML files containing `apiVersion:` and `kind:` are automatically validated against Kubernetes schemas.
@@ -427,7 +427,7 @@ With this enabled, you can ask Copilot in the chat panel (`Ctrl+Alt+I`):
 @workspace generate a Deployment for nginx with resource limits matching our Dev Pool plan
 ```
 
-### Alternative: Red Hat Kubernetes MCP Server
+### Alternative: Red Hat Kubernetes MCP server
 
 The [Red Hat kubernetes-mcp-server](https://github.com/containers/kubernetes-mcp-server) is a single-binary MCP server with no external dependencies (no Node.js or kubectl needed):
 
@@ -451,7 +451,7 @@ Recommended for production use due to its safety modes and single-binary deploym
 
 ---
 
-## MCP Server Capabilities
+## MCP server capabilities
 
 Kubernetes MCP servers expose different tool sets. Kube-DC standard Project roles can inspect events and logs, but they do not grant pod exec, pod attach, pod port-forward, or VM/VMI port-forward. An admission policy also blocks exec and attach in Project backing namespaces, even if a custom Role grants those subresources. Port-forward has a different boundary: a platform operator can grant it through separate diagnostic RBAC. Use an External IP, LoadBalancer, Gateway Route, or the VM browser console for normal interactive access. Common capabilities, subject to the kubeconfig's RBAC, include:
 
@@ -465,20 +465,20 @@ Kubernetes MCP servers expose different tool sets. Kube-DC standard Project role
 | Delete | "Delete all completed jobs in backing namespace acme-production" |
 | Helm | "Install this application chart in the current Project" |
 | Diagnose | "Why is my pod in CrashLoopBackOff? Walk through logs, events, and describe" |
-| Quota check | "What is the current CPU and memory usage vs quota for my organization?" |
+| Quota check | "What is the CPU and memory usage against quota for my organization?" |
 
 ---
 
-## Practical Kube-DC Workflows
+## Practical Kube-DC workflows
 
 ### Deploy WordPress with managed database
 
 ```
 Deploy WordPress with a managed HA MariaDB database in Project production in Organization acme.
-Expose it via HTTPS with auto TLS.
+Expose it over HTTPS with auto TLS.
 ```
 
-With Agent Skills loaded, the agent will: create a MariaDB `ManagedService` (WordPress core has no PostgreSQL driver) and a `ServiceBinding` for its owner credential, wait for both to become Ready, build a small bridge Secret aliasing the delivered password to the chart's expected key (`mariadb-password`), deploy WordPress via `helm install` with `externalDatabase.existingSecret` pointing at the bridge, expose with `service.type=LoadBalancer` plus `service.nlb.kube-dc.com/expose-route: https`, and report the auto-generated hostname.
+With Agent Skills loaded, the agent will: create a MariaDB `ManagedService` (WordPress core has no PostgreSQL driver) and a `ServiceBinding` for its owner credential, wait for both to become Ready, build a small bridge Secret aliasing the delivered password to the chart's expected key (`mariadb-password`), deploy WordPress through `helm install` with `externalDatabase.existingSecret` pointing at the bridge, expose with `service.type=LoadBalancer` plus `service.nlb.kube-dc.com/expose-route: https`, and report the auto-generated hostname.
 
 ### Create a VM with SSH access
 
@@ -526,21 +526,21 @@ The agent will: create an ObjectBucketClaim with the required `kube-dc.com/organ
 
 ---
 
-## Security Considerations
+## Security considerations
 
 - **Use a genuinely read-only server mode** (`--read-only`) or a read-only ServiceAccount when only inspection is needed
 - **Use a dedicated ServiceAccount** with minimal RBAC instead of a cluster-admin kubeconfig when sharing MCP access with a team
 - **Never commit kubeconfig files** to Git repositories
-- **Treat the selected backing namespace as context, not a security boundary** — Kubernetes RBAC determines what the credential may access
+- **Treat the selected backing namespace as context, not a security boundary**: Kubernetes RBAC determines what the credential may access
 - Kube-DC uses short-lived access tokens with refresh support; rerun `kube-dc login` when the session can no longer refresh
 
 ---
 
-## Further Reading
+## Further reading
 
-- [kubectl-ai by Google Cloud](https://github.com/GoogleCloudPlatform/kubectl-ai) — AI-powered kubectl with natural language to command translation
-- [kubectl-mcp-server](https://github.com/rohitg00/kubectl-mcp-server) — MCP server with natural language to kubectl, supports Gemini, Claude, Cursor, Devin Desktop, and Copilot
-- [mcp-server-kubernetes](https://github.com/Flux159/mcp-server-kubernetes) — Full-featured npm MCP server
-- [containers/kubernetes-mcp-server](https://github.com/containers/kubernetes-mcp-server) — Red Hat single-binary MCP server
-- [GitOps with Kube-DC](gitops.md) — Managing cluster state declaratively via Git
-- [CLI & Kubeconfig](cli-kubeconfig.md) — Setting up kubectl for Kube-DC
+- [kubectl-ai by Google Cloud](https://github.com/GoogleCloudPlatform/kubectl-ai): AI-powered kubectl with natural language to command translation
+- [kubectl-mcp-server](https://github.com/rohitg00/kubectl-mcp-server): MCP server with natural language to kubectl, supports Gemini, Claude, Cursor, Devin Desktop, and Copilot
+- [mcp-server-kubernetes](https://github.com/Flux159/mcp-server-kubernetes): Full-featured npm MCP server
+- [containers/kubernetes-mcp-server](https://github.com/containers/kubernetes-mcp-server): Red Hat single-binary MCP server
+- [GitOps with Kube-DC](gitops.md): Managing cluster state declaratively through Git
+- [CLI & Kubeconfig](cli-kubeconfig.md): Setting up kubectl for Kube-DC

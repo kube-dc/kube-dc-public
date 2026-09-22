@@ -1,4 +1,4 @@
-# Project Lifecycle and Resources
+# Project lifecycle and resources
 
 A Kube-DC **Project** is the governed workload boundary inside an
 **Organization**. The Project controller materializes the Kubernetes,
@@ -125,7 +125,7 @@ The controller:
 Finalizers protect this order. A Project can remain `Terminating` while a
 dependent controller releases infrastructure.
 
-## Troubleshooting deletion
+## Troubleshoot deletion
 
 Start with read-only inspection:
 

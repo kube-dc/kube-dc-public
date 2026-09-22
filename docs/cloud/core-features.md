@@ -1,9 +1,10 @@
 import {CloudResourceModelDiagram} from '@site/src/components/Diagram/ResourceModelDiagrams';
 
-# Platform Capabilities
+# Platform capabilities
 
 Kube-DC gives teams a governed place to run applications, virtual machines,
-databases, and Managed Clusters without exposing the platform cluster itself.
+databases, and Managed Clusters. It does this without exposing the platform
+cluster itself.
 
 The customer model is:
 
@@ -24,13 +25,13 @@ Organization
 <CloudResourceModelDiagram />
 
 An **Organization** owns identity, billing, and shared quota. A **Project** is
-the day-to-day workload boundary. In Kubernetes, that Project is implemented as a
-backing namespace named `{organization}-{project}`, with Project RBAC and isolated VPC
-networking. A **Managed Cluster** is different: it has its own Kubernetes API
-and is the right place for CRDs, operators, multiple namespaces, and
+the day-to-day workload boundary. In Kubernetes, a Project is a backing
+namespace named `{organization}-{project}`, with Project RBAC and isolated VPC
+networking. A **Managed Cluster** is different. It has its own Kubernetes API,
+and it is the right place for CRDs, operators, multiple namespaces, and
 cluster-scoped administration.
 
-See [Core Concepts](core-concepts.md) for the complete resource model.
+For the complete resource model, see [Core concepts](core-concepts.md).
 
 ## Projects
 
@@ -42,67 +43,70 @@ A Project provides a focused Kubernetes environment for application teams:
 - Managed PostgreSQL and MariaDB
 - Project-scoped identities, roles, secrets, certificates, and encryption keys
 - Cloud or public gateway networking with explicit inbound exposure
-- Optional Project quota within the Organization's shared plan
+- An optional Project quota within the Organization's shared plan
 
 Project users cannot create namespaces, CRDs, ClusterRoles, or StorageClasses.
 Container exec and attach are blocked, CronJobs are read-only, and
 NetworkPolicy is not a self-service Project control. These boundaries protect
 the shared platform.
 
-Read [Projects](kubernetes-projects.md) before adapting a Helm chart
-or operator for a Project.
+Read [Projects](kubernetes-projects.md) before you adapt a Helm chart or an
+operator for a Project.
 
 ## Managed Clusters
 
-A Managed Cluster gives you a separate Kubernetes API and control plane while
+A Managed Cluster gives you a separate Kubernetes API and control plane, and
 Kube-DC operates its lifecycle. Use one when your workload needs:
 
 - CRDs or Kubernetes operators
 - Multiple namespaces
 - ClusterRoles or other cluster-scoped resources
 - Scheduled controllers such as GitOps agents
-- Kubernetes version and worker-pool control
+- Control of the Kubernetes version and the worker pools
 - Privileged platform software that cannot run in a shared Project
 
 Managed Cluster workers run as virtual machines inside the parent Project and
-consume its quota. Start with [Provision a Managed Cluster](provisioning-cluster.md).
+consume its quota. Start with
+[Provision a Managed Cluster](provisioning-cluster.md).
 
 ## Applications
 
-Projects support ordinary container workloads and Helm charts that stay within
-the Project boundary. Kube-DC applies resource defaults when a container omits
-requests or limits, and the Project network keeps private workload traffic
+Projects support ordinary container workloads, and Helm charts that stay inside
+the Project boundary. When a container omits requests or limits, Kube-DC
+applies resource defaults. The Project network keeps private workload traffic
 isolated.
 
-- [Deploy Your First Application](deploy-first-app.md)
-- [Service Exposure](service-exposure.md)
+- [Deploy your first application](deploy-first-app.md)
+- [Service exposure](service-exposure.md)
 - [GitOps](gitops.md)
 
-## Virtual Machines
+## Virtual machines
 
 KubeVirt provides VM lifecycle, console access, persistent disks, and Project
-networking alongside container workloads. Public access remains explicit: use a
-LoadBalancer Service for selected ports or a Floating IP for direct VM access.
+networking alongside container workloads. Public access stays explicit. Use a
+LoadBalancer Service for selected ports, or a floating IP for direct VM access.
 
-- [Create a Virtual Machine](creating-vm.md)
-- [Connect to a Virtual Machine](connecting-vm.md)
-- [VM Lifecycle](vm-lifecycle.md)
+- [Create a virtual machine](creating-vm.md)
+- [Connect to a virtual machine](connecting-vm.md)
+- [VM lifecycle](vm-lifecycle.md)
 
-## Managed Services
+## Managed services
 
-Kube-DC provisions and operates databases, caches and message brokers inside
-a Project from a provider-published catalog: PostgreSQL, MySQL, MariaDB,
-ClickHouse, Valkey and Kafka. A plan sets the capacity, the backups and the
-operations you may request; credentials reach your workloads as Kubernetes
-Secrets. Availability depends on the plan's topology and your application's
-connection handling; a single instance is not highly available.
+Kube-DC provisions and operates databases, caches, and message brokers inside a
+Project, from a catalog that the provider publishes: PostgreSQL, MySQL,
+MariaDB, ClickHouse, Valkey, and Kafka. A plan sets the capacity, the backups,
+and the operations you can request. Credentials reach your workloads as
+Kubernetes Secrets.
 
-See [Managed Services](managed-services.md).
+Availability depends on the plan's topology and on how your application handles
+connections. A single instance is not highly available.
+
+See [Managed services](managed-services.md).
 
 ## Networking
 
 Every Project has an isolated VPC and a gateway EIP. The Project network type
-selects the default external address pool; it does not decide which workload
+selects the default external address pool. It does not decide which workload
 types the Project can run.
 
 Use:
@@ -111,48 +115,42 @@ Use:
 - LoadBalancer Services for selected TCP or UDP ports
 - Floating IPs for one-to-one VM address mapping
 
-An EIP may be cloud-internal or public. Do not assume that every external
+An EIP can be cloud-internal or public. Do not assume that every external
 address is reachable from the internet.
 
-- [Networking Overview](networking-overview.md)
-- [Service Exposure](service-exposure.md)
-- [External and Floating IPs](public-floating-ips.md)
+- [Networking overview](networking-overview.md)
+- [Service exposure](service-exposure.md)
+- [External and floating IPs](public-floating-ips.md)
 
-## Storage and Data Protection
+## Storage and data protection
 
-Projects can use block storage for VMs and containers and S3-compatible object
+Projects can use block storage for VMs and containers, and S3-compatible object
 storage for application data. Backup behavior belongs to the service that owns
-the data: managed database backup, Managed Cluster etcd snapshots, and
+the data. Managed database backup, Managed Cluster etcd snapshots, and
 application-level file or object backup are separate workflows.
 
-- [Block Storage](block-storage.md)
-- [Object Storage](object-storage.md)
-- [Data Protection and Recovery](backups-snapshots.md)
+- [Block storage](block-storage.md)
+- [Object storage](object-storage.md)
+- [Data protection and recovery](backups-snapshots.md)
 
-## Identity and Security
+## Identity and security
 
 Organization membership controls who can see the environment. Organization
 Groups grant a standard or custom Project role to a team. Project admission
-policies then enforce the shared-platform boundary independently of the UI.
+policies then enforce the shared-platform boundary, independently of the UI.
 
-- [User and Group Management](team-management.md)
-- [Security Restrictions](security-restrictions.md)
+- [User and group management](team-management.md)
+- [Security restrictions](security-restrictions.md)
 - [Secrets Manager](secrets-manager.md)
-- [Key Management](kms.md)
-- [Certificate Management](certificate-manager.md)
+- [Key management](kms.md)
+- [Certificate management](certificate-manager.md)
 
-## Billing and Quota
+## Billing and quota
 
-An Organization's plan is shared across its Projects. Organization admins can
-add a Project cap when one team needs a smaller budget, but Project users cannot
-edit the platform-managed ResourceQuota objects directly. Plan values and
-optional capabilities can vary by installation; use the console's Billing page
-as the source of truth.
+An Organization's plan is shared across its Projects. Organization
+administrators can add a Project cap when one team needs a smaller budget.
+Project users cannot edit the platform-managed ResourceQuota objects directly.
+Plan values and optional capabilities vary by installation. Use the console's
+Billing page as the source of truth.
 
-See [Billing and Usage](billing-usage.md).
-
-:::info Product status
-A page should describe a capability as available only when it is exposed in the
-current console or documented API. Preview, Pilot, provider-specific, and
-roadmap capabilities must be labeled explicitly.
-:::
+See [Billing and usage](billing-usage.md).

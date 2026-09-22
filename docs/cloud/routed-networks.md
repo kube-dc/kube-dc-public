@@ -1,6 +1,6 @@
 import RoutedNetworkDiagram from '@site/src/components/Diagram/RoutedNetworkDiagram';
 
-# Routed Networks
+# Routed networks
 
 A Routed Network connects your entire Project VPC to specific destinations on
 an external corporate or datacenter network. Your platform administrator

@@ -1,4 +1,4 @@
-# Backups and Restore
+# Backups and restore
 
 When both the plan's `backup.enabled` and the service's
 `parameters.backup.enabled` are `true`, a PostgreSQL service takes scheduled base
@@ -27,7 +27,7 @@ it.
   its services and their data volumes whatever their deletion settings, without
   a final backup, and also removes the Project's backup history records. Copy
   out any data you need first. See
-  [Deleting a Project](managed-services-status-deletion.md#deleting-a-project).
+  [Delete a Project](managed-services-status-deletion.md#delete-a-project).
 
 Throughout this page, replace `my-project` with your Project's backing
 namespace.
@@ -452,7 +452,7 @@ When the initial validation refuses an in-place restore, the operation is
 Before you create a new operation, make sure the refused one did not already
 start the restore: an in-place restore can be rejected after execution has
 begun. When you cannot tell, keep the operation and ask your provider for its
-outcome. Once retrying is safe, fix the cause and create a new operation with a
+outcome. When retrying is safe, fix the cause and create a new operation with a
 new name and `idempotencyKey`.
 
 ## Point-in-time recovery

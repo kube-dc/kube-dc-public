@@ -16,7 +16,7 @@ Choose one of these supported patterns:
 | A Kube-DC Managed Cluster | That cluster, and optionally registered external targets | You need Argo CD or Flux inside Kube-DC |
 | Manual CI reconciliation | One Project with `kubectl diff/apply` or Helm | You need a small, auditable delivery path without another controller |
 
-## Pattern 1: External Controller to a Project
+## Pattern 1: External controller to a Project
 
 Configure the external controller with a credential scoped to the target
 Project. Do not let the tool bootstrap a cluster-admin account or create
@@ -48,7 +48,7 @@ CI secret. Mint a Project-scoped automation credential instead, as below. Scope 
 to one Project, store it in the CI secret store, and rotate it regularly.
 :::
 
-### Minting an automation credential
+### Mint an automation credential
 
 Create a ServiceAccount in your Project namespace, give it only the rights the
 pipeline needs, and mint a short-lived token for it. A Project admin can do all
@@ -58,7 +58,7 @@ three; no platform administrator is involved.
 # 1. the identity your pipeline will act as
 kubectl -n <project-namespace> create serviceaccount ci-deploy
 
-# 2. exactly the rights it needs — this example deploys, and reads nothing secret
+# 2. exactly the rights it needs. This example deploys, and reads nothing secret.
 kubectl -n <project-namespace> create role ci-deploy \
   --verb=get,list,watch,create,update,patch \
   --resource=deployments.apps,services,persistentvolumeclaims
@@ -72,7 +72,7 @@ kubectl -n <project-namespace> create token ci-deploy --duration=24h
 Put the token in your CI secret store and build a kubeconfig around it, or pass it
 as a bearer token.
 
-**Tokens expire.** `create token` issues a bound, time-limited credential — there is
+**Tokens expire.** `create token` issues a bound, time-limited credential. There is
 no permanent one, by design. Choose a duration your rotation can keep up with, and
 re-mint before it lapses. A pipeline cannot re-mint its own token, so rotation is a
 Project-admin action (or a job running under a longer-lived credential).
@@ -83,13 +83,14 @@ system directly rather than storing any long-lived token at all.
 :::note Why a Secret does not work
 Creating a `kubernetes.io/service-account-token` Secret is refused. That older
 mechanism produces a credential that never expires, and it is filled for whichever
-account holds the named ServiceAccount at the moment the controller reaches it —
+account holds the named ServiceAccount at the moment the controller reaches it.
 so a Secret created against a name that is later taken over by a platform-managed
 account would be filled with *that* account's credential. `create token` has no
 such ambiguity: it names the account, and the token is bound and short-lived.
 
-For the same reason, tokens for platform-managed ServiceAccounts — the accounts
-behind managed databases and other managed services — are refused. Those carry the
+For the same reason, the platform refuses tokens for its own managed
+ServiceAccounts, the accounts behind managed databases and other managed
+services. Those carry the
 `services.kube-dc.com/managed-by` label and are minted only by the platform.
 :::
 
@@ -131,7 +132,7 @@ rollout errors.
 For higher assurance, promote the same image digest and rendered configuration
 between environments rather than rebuilding them.
 
-## Repository Structure
+## Repository structure
 
 Keep reusable configuration separate from environment ownership:
 
@@ -148,7 +149,7 @@ apps/
 A Project overlay should contain only resources supported in a Project. Put
 operators, CRDs, namespaces, and cluster add-ons in a Managed Cluster repository.
 
-## Project Compatibility Checklist
+## Project compatibility checklist
 
 Before enabling reconciliation, confirm that the rendered output:
 
@@ -163,12 +164,12 @@ Before enabling reconciliation, confirm that the rendered output:
 
 Use `helm template` or the tool's dry-run mode in CI to enforce this check.
 
-## Rollback and Recovery
+## Rollback and recovery
 
 Git gives you the desired-state history, not a data backup. Reverting a commit
 can restore Kubernetes configuration, but it does not roll back a database,
 object bucket, or persistent volume. Pair GitOps with the service-specific
-recovery plan in [Data Protection and Recovery](backups-snapshots.md).
+recovery plan in [Data protection and recovery](backups-snapshots.md).
 
 ## Troubleshooting
 
@@ -186,11 +187,11 @@ namespace scope to the Project and rotate any credential that had wider access.
 **The deployment is healthy but the application is unreachable**
 
 GitOps reconciles the workload, not its public entry point. Check the
-LoadBalancer Service, EIP, or Gateway route in [Service Exposure](service-exposure.md).
+LoadBalancer Service, EIP, or Gateway route in [Service exposure](service-exposure.md).
 
-## Next Steps
+## Next steps
 
 - [Projects](kubernetes-projects.md)
 - [Managed Clusters](provisioning-cluster.md)
-- [Security Restrictions](security-restrictions.md)
-- [Service Exposure](service-exposure.md)
+- [Security restrictions](security-restrictions.md)
+- [Service exposure](service-exposure.md)

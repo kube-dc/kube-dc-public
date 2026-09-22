@@ -1,6 +1,6 @@
 import WordPressStackDiagram from '@site/src/components/Diagram/WordPressStackDiagram';
 
-# Deploy a Full WordPress Stack
+# Deploy a full WordPress stack
 
 This guide deploys a complete WordPress stack directly in a Kube-DC Project, using platform-managed data, storage, security, and exposure services:
 
@@ -36,7 +36,7 @@ flowchart LR
 
 <WordPressStackDiagram />
 
-## Prerequisites
+## Before you begin
 
 - A Kube-DC [Project](first-project.md) with enough CPU, memory, storage, and object-storage quota
 - [CLI access](cli-kubeconfig.md) with `kubectl` connected to the Project
@@ -46,7 +46,7 @@ flowchart LR
   and replace the example email address before applying it
 - Examples use `acme-production`, the backing namespace for Organization `acme` and Project `production`
 
-## Step 1 — Platform services
+## Step 1: platform services
 
 One manifest creates the data layer: an S3 bucket and a managed database with daily backups.
 
@@ -67,7 +67,7 @@ spec:
 apiVersion: services.kube-dc.com/v1alpha1
 kind: ManagedService
 metadata:
-  name: wordpress-db          # NOT "wordpress" — see the note below
+  name: wordpress-db          # NOT "wordpress"; see the following note
   namespace: acme-production
 spec:
   classRef:
@@ -100,7 +100,9 @@ kubectl get managedservice wordpress-db -o jsonpath='{.metadata.uid}{"\n"}'
 ```
 
 Then deliver the owner credential as a Secret with a `ServiceBinding`. Bindings
-pin the service UID you just printed:
+pin the service UID you just printed. If you would rather apply the whole stack
+as one set, omit the `serviceUID` line: the platform records the instance the
+name resolves to and pins the binding to it.
 
 ```yaml title="01b-database-binding.yaml"
 apiVersion: services.kube-dc.com/v1alpha1
@@ -132,7 +134,7 @@ on the last step of the creation sheet creates the same binding for you. The
 WordPress container below reads `host`, `username`, `password` and `database`
 from it, so nothing is copied into the manifest.
 
-## Step 2 — WordPress
+## Step 2: WordPress
 
 The application layer adds a Ceph-backed content volume, two co-located replicas that share it, HTTPS through the Project Issuer and a Service annotation, and an autoscaler.
 
@@ -274,10 +276,10 @@ kubectl get httproute              # wordpress-route
 ```
 
 :::tip About the shared volume
-`ReadWriteOnce` on Ceph RBD attaches the volume to one node; every pod on that node can mount it simultaneously. The `podAffinity` rule keeps all replicas (and the Jobs below) on that node, so they genuinely share `/var/www/html` — writes from one pod are immediately visible to the others. The trade-off is that all replicas live on one node at a time; the volume and database remain safe across node failure, and the pods reschedule together.
+`ReadWriteOnce` on Ceph RBD attaches the volume to one node; every pod on that node can mount it simultaneously. The `podAffinity` rule keeps all replicas (and the Jobs below) on that node, so they share `/var/www/html`. Writes from one pod are immediately visible to the others. The trade-off is that all replicas live on one node at a time; the volume and database remain safe across node failure, and the pods reschedule together.
 :::
 
-## Step 3 — Install WordPress headlessly
+## Step 3: install WordPress headlessly
 
 Instead of the browser wizard, run WP-CLI as a Job. Administrative tasks in Projects run as Jobs; direct `kubectl exec` into Pods is restricted in Project backing namespaces.
 
@@ -363,9 +365,9 @@ Log in at `https://<your-hostname>/wp-admin/` with `admin` and the password from
 kubectl get secret wordpress-admin -o jsonpath='{.data.password}' | base64 -d
 ```
 
-## Step 4 — Back up wp-content to your S3 bucket
+## Step 4: back up wp-content to your S3 bucket
 
-The database is already backed up daily by the platform; verify the `BackupReady` condition with `kubectl get managedservice wordpress-db -o yaml` or the **Backups** tab of the service. Files are yours to archive — a Job with your bucket's access keys does it:
+The database is already backed up daily by the platform; verify the `BackupReady` condition with `kubectl get managedservice wordpress-db -o yaml` or the **Backups** tab of the service. The files are yours to archive. A Job with your bucket's access keys does it:
 
 ```yaml title="04-content-backup.yaml"
 apiVersion: batch/v1
@@ -423,7 +425,7 @@ kubectl logs job/wp-content-backup -c upload | tail -2
 ```
 
 :::info Use the public S3 endpoint from workloads
-Use your cluster's public S3 endpoint (`https://s3.kube-dc.cloud` on Kube-DC Cloud) from pods. The in-cluster RGW service address in the ConfigMap is not reachable from project networks. Note `amazon/aws-cli` has no `tar` — hence the busybox init container.
+Use your cluster's public S3 endpoint (`https://s3.kube-dc.cloud` on Kube-DC Cloud) from pods. The in-cluster RGW service address in the ConfigMap is not reachable from project networks. The `amazon/aws-cli` image has no `tar`, which is why the manifest adds a busybox init container.
 :::
 
 ## What you built
@@ -432,14 +434,14 @@ Use your cluster's public S3 endpoint (`https://s3.kube-dc.cloud` on Kube-DC Clo
 |---|---|
 | Database provisioning and lifecycle | `ManagedService` (platform-operated MariaDB) |
 | Database credentials | `ServiceBinding` Secret with host, database, user, password and CA |
-| Database backups | The plan — daily, 7-day retention on the Development plan |
+| Database backups | Set by the plan: daily, with 7-day retention on the Development plan |
 | Content storage | Ceph-backed PVC shared by all replicas |
 | File backups + access keys | `ObjectBucketClaim` bucket + Job |
 | HTTPS, certificate, DNS name | Project Issuer + Service annotation |
 | Scaling | HorizontalPodAutoscaler 2→4 |
 | Admin operations | WP-CLI Jobs on the shared volume |
 
-## Cleanup
+## Clean up
 
 ```bash
 kubectl delete hpa/wordpress svc/wordpress deploy/wordpress \
@@ -454,7 +456,7 @@ kubectl delete obc/wordpress-files
 | Symptom | Cause |
 |---|---|
 | No hostname/certificate appears | The Service must be `type: LoadBalancer` for `expose-route` to be processed |
-| Second replica `Pending` | podAffinity needs capacity on the volume's node — free capacity or lower requests |
-| `wordpress-db-password` missing | The service or its binding is not Ready yet — inspect `kubectl get managedservice,servicebinding -n acme-production` |
+| Second replica `Pending` | podAffinity needs capacity on the volume's node. Free capacity, or lower the requests |
+| `wordpress-db-password` missing | The service or its binding is not Ready yet. Run `kubectl get managedservice,servicebinding -n acme-production` |
 | S3 upload times out | Use the public S3 endpoint, not the in-cluster `BUCKET_HOST` |
 | DB Service name collides | Name the `ManagedService` differently from your app Service |

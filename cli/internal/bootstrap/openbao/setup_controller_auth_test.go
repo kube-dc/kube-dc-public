@@ -272,11 +272,11 @@ func TestSetupControllerAuth_RefreshFull_HitsAllCallsInOrder(t *testing.T) {
 	if len(bao.configureCalls) != 1 {
 		t.Errorf("expected 1 ConfigureKubernetesAuth call, got %d", len(bao.configureCalls))
 	}
-	if len(bao.policyCalls) != 3 {
-		t.Errorf("expected 3 ApplyPolicy calls, got %d", len(bao.policyCalls))
+	if len(bao.policyCalls) != 4 {
+		t.Errorf("expected 4 ApplyPolicy calls, got %d", len(bao.policyCalls))
 	}
-	if len(bao.roleCalls) != 3 {
-		t.Errorf("expected 3 WriteAuthRole calls, got %d", len(bao.roleCalls))
+	if len(bao.roleCalls) != 4 {
+		t.Errorf("expected 4 WriteAuthRole calls, got %d", len(bao.roleCalls))
 	}
 	if len(bao.annotateCalls) != 1 {
 		t.Errorf("expected 1 SetAnnotations call, got %d", len(bao.annotateCalls))
@@ -349,6 +349,9 @@ func TestSetupControllerAuth_RefreshFull_ProperPathsAndNames(t *testing.T) {
 		t.Errorf("snapshot role must issue only a short-lived, no-default-policy token: %v", got)
 	}
 
+	if bao.policyCalls[3].name != PublisherPolicyName || bao.roleCalls[3].role != PublisherRoleName || bao.roleCalls[3].params["bound_service_account_names"] != PublisherSAName || bao.roleCalls[3].params["bound_service_account_namespaces"] != PublisherSAns || bao.roleCalls[3].params["token_no_default_policy"] != "true" {
+		t.Fatal("publisher identity binding incorrect")
+	}
 	// Annotations — Full mode stamps both:
 	//   - AnnotationControllerAuthInstalled (RFC3339 timestamp)
 	//   - AnnotationPolicyGeneration (M5-T07 compile-time int)
@@ -390,10 +393,10 @@ func TestSetupControllerAuth_RefreshPolicy_SkipsEnableConfigureAnnotate(t *testi
 		t.Errorf("RefreshPolicy must NOT stamp %s (Full-only); batch=%v", AnnotationControllerAuthInstalled, kv)
 	}
 	// Policies + roles ARE rewritten.
-	if len(bao.policyCalls) != 3 {
+	if len(bao.policyCalls) != 4 {
 		t.Errorf("RefreshPolicy must rewrite 3 policies; got %d", len(bao.policyCalls))
 	}
-	if len(bao.roleCalls) != 3 {
+	if len(bao.roleCalls) != 4 {
 		t.Errorf("RefreshPolicy must rewrite 3 roles; got %d", len(bao.roleCalls))
 	}
 }
@@ -558,11 +561,20 @@ func TestEmbeddedHCL_DeniesReservedManagedServicePrefix(t *testing.T) {
 	// Presence of a deny is not the same as absence of an override: OpenBao
 	// picks ONE highest-priority matching rule, so a later, more specific
 	// grant on this prefix would win and a string-presence check would stay
-	// green. Scan every rule that mentions the prefix and require all of them
-	// to be denies.
+	// green. Scan reserved KV rules, excluding separately scoped database
+	// engine APIs whose provider role names deliberately use the same prefix.
 	for _, line := range strings.Split(ManagerPolicyHCL, "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "path ") || !strings.Contains(line, "kube-dc-svc-") {
+			continue
+		}
+		databaseAPI := false
+		for _, segment := range []string{"config", "roles", "static-roles", "static-creds", "rotate-role"} {
+			if strings.HasPrefix(line, `path "+/+/`+segment+`/kube-dc-svc-`) {
+				databaseAPI = true
+			}
+		}
+		if databaseAPI || strings.HasPrefix(line, `path "+/sys/leases/revoke-prefix/+/creds/kube-dc-svc-`) {
 			continue
 		}
 		if !strings.Contains(line, `capabilities = ["deny"]`) {

@@ -117,3 +117,13 @@ path "+/identity/group-alias/*" { capabilities = ["create","read","update","dele
 # Token lookup-self (lets the manager check its own lease for renewal).
 path "auth/token/lookup-self"   { capabilities = ["read"] }
 path "auth/token/renew-self"    { capabilities = ["update"] }
+
+# Managed-service database engines: Org / Project mount / provider UID name.
+# The single-segment mount wildcard is necessary: Bao only accepts '*' at the
+# end of a path. No tenant chooses a config or generated role name here.
+path "+/+/config/kube-dc-svc-*"       { capabilities = ["create","read","update","delete"] }
+path "+/+/roles/kube-dc-svc-*"        { capabilities = ["create","read","update","delete"] }
+path "+/+/static-roles/kube-dc-svc-*" { capabilities = ["create","read","update","delete"] }
+path "+/+/static-creds/kube-dc-svc-*" { capabilities = ["read"] }
+path "+/+/rotate-role/kube-dc-svc-*"  { capabilities = ["update"] }
+path "+/sys/leases/revoke-prefix/+/creds/kube-dc-svc-*" { capabilities = ["update","sudo"] }

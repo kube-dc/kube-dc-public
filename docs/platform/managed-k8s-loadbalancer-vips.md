@@ -24,8 +24,8 @@ spec:
   loadBalancerClass: kube-dc.com/project
 ```
 
-The address is reachable from everything in the same Project — VMs, platform
-pods, other Managed Clusters — and from nowhere else. It consumes no external
+The address is reachable from everything in the same Project, which includes
+VMs, platform pods, and other Managed Clusters, and from nowhere else. It consumes no external
 IP and no public-IP quota.
 
 ## Why it works this way
@@ -40,7 +40,7 @@ The pool lives **outside** every project subnet in a dedicated per-VPC CIDR
 (`--vip-pool-cidr`, default `10.242.0.0/24`), so a VIP never consumes an
 address in the tenant's own subnet.
 
-## Enabling it
+## Enable it
 
 Two settings, both per management cluster:
 
@@ -50,17 +50,17 @@ Two settings, both per management cluster:
 | `VIP_POOL_CIDR` | `cluster-config.env` | The pool CIDR. **Pin this on any cluster that has already delegated VIPs.** |
 
 With `LB_BLOCK_MODE=enable`, every KubeVirt-backed Managed Cluster on that
-management cluster participates automatically — no per-cluster action, no
+management cluster participates automatically. There is no per-cluster action and no
 tenant request. The tenant profiles (allocator, guardrails, pools) are
 delivered by the controller; operators do not stamp labels by hand.
 
 Advanced overrides:
 
-- `network.kube-dc.com/lb-block: disabled` on a `KdcCluster` — opt that one
+- `network.kube-dc.com/lb-block: disabled` on a `KdcCluster` opts that one
   cluster out.
-- `LB_BLOCK_REQUIRE_OPT_IN=true` — restore explicit per-cluster opt-in
+- `LB_BLOCK_REQUIRE_OPT_IN=true`: restore explicit per-cluster opt-in
   (`network.kube-dc.com/lb-block: enabled` required).
-- `network.kube-dc.com/address-reservation: disabled` on a Project namespace —
+- `network.kube-dc.com/address-reservation: disabled` on a Project namespace
   exclude the whole Project.
 
 :::warning[CIDR changes are not an in-place migration]
@@ -69,7 +69,7 @@ cluster that already delegated VIPs revokes every live delegation until an
 operator migrates. Pin the existing value; see the migration runbook below.
 :::
 
-## Reading the state
+## Read the state
 
 ```bash
 # per-cluster delegation
@@ -91,7 +91,7 @@ kubectl get addressarena vip-<project-ns>
 | `Pending` | A reservation has not settled yet. Resolves by itself. |
 | `PoolExhausted` | **Operator action needed.** No free block; see capacity below. |
 | `TenantNetworkConflict` | The cluster's own pod/service CIDR overlaps the VIP pool. |
-| `ProviderUnsupported` | Not a KubeVirt cluster — LoadBalancers take the provider's own path. |
+| `ProviderUnsupported` | Not a KubeVirt cluster. LoadBalancers take the provider's own path. |
 | `OptedOut` / `NotActivated` | Excluded by annotation or by `LB_BLOCK_REQUIRE_OPT_IN`. |
 | `ClusterAPIObjectMissing` | No CAPI Cluster yet; transitional during provisioning. |
 
@@ -102,7 +102,7 @@ Each cluster is delegated a **16-address block** (`spec.loadBalancer.blocks`,
 project's arena ledger, which holds **64 claim slots**.
 
 A block released by a deleted cluster is **reclaimed** once teardown is proven
-— no mirror or SwitchLBRule references the range, and two leader-consistent
+when no mirror and no SwitchLBRule reference the range, and two leader-consistent
 OVN-NB reads five seconds apart show it absent. Until that proof holds the
 range stays tombstoned and keeps its slot. So capacity is bounded by
 *concurrent* usage, not by how many clusters a project has ever created.
@@ -113,7 +113,7 @@ Watch it before it bites:
 - alert `KubeDcAddressArenaClaimSlotsHigh` fires at 75%
 - alert `KubeDcAddressReservationExhausted` fires at the wall
 
-## Migrating the pool CIDR
+## Migrate the pool CIDR
 
 Operator-only, and not an in-place change. Releasing a reservation tombstones
 its range; it does **not** reclaim capacity into a different pool.
@@ -123,7 +123,7 @@ its range; it does **not** reclaim capacity into a different pool.
 2. Set `spec.disposition: Release` on every old reservation.
 3. Delete the released reservation records so a rebuild cannot resurrect the
    old claims.
-4. Retire the old arena explicitly — it is finalizer-protected while the
+4. Retire the old arena explicitly. It is finalizer-protected while the
    Project lives.
 5. Create and re-authorize against the new pool.
 

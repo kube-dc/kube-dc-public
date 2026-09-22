@@ -1,4 +1,4 @@
-# Publishing the catalog
+# Publish the catalog
 
 The catalog is what tenants can ask for: one `ManagedServiceClass` per family,
 one or more `ManagedServicePlan` per class, and the `ConnectivityClass`
@@ -51,7 +51,7 @@ A plan is the product decision for one class. The fields an operator sets:
 | `topology` | Either `min/max/defaultInstances`, or `min/max/defaultShards` with `min/max/defaultReplicasPerShard` for sharded families; plus `ha`, `synchronousStandbys`, `durability` |
 | `operations.allowed`, `operations.autoApprove` | Which operation types tenants may request and which run without an operator's approval |
 | `maintenance` | The recurring window (`day`, `startHour`, `durationMinutes`, UTC) for `NextPlanWindow` operations and deferred declarative changes |
-| `backup` | `enabled`, `schedule`, `retentionDays`, the retention and interval bounds, `pitr`, and the object store (below) |
+| `backup` | `enabled`, `schedule`, `retentionDays`, the retention and interval bounds, `pitr`, and the object store. See [Storage roles and backups](#storage-roles-and-backups) |
 | `exposure` | `allowPublicLoadBalancer`, and the shared `gateway` listener for PostgreSQL direct TLS |
 | `credentials` | `allowExistingUsers`, `allowBreakGlass`, and the OpenBao delivery switches |
 | `allowedPlacementModes`, `allowedConnectivityClasses`, `allowedDeletionPolicies`, `minIsolation` | The placement contract; every published shared plan allows only `ProviderShared`, `tenant-native` and `NamespaceSharedNodes` |
@@ -123,7 +123,7 @@ Regenerate the digest in the services repository with
 move `SERVICES_RUNNER_TAG`, the bundle's `revision` and the class in one
 commit.
 
-## Adding a family to a cluster
+## Add a family to a cluster
 
 1. Install or attest the engine operator (see the operator table on
    [Enabling managed services](managed-services-enable.md#4-family-operators))

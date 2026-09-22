@@ -1,6 +1,6 @@
 import {ExternalNetworksDiagram} from '@site/src/components/Diagram/PlatformTopologyDiagrams';
 
-# Additional External Network Configuration
+# Additional external network configuration
 
 This guide explains how to add additional external networks to Kube-DC alongside the default cloud network.
 
@@ -8,9 +8,9 @@ This guide explains how to add additional external networks to Kube-DC alongside
 
 The configuration demonstrates how to add a second external network (public) to an existing Kube-DC setup that already has a cloud external network, using multiple VLANs on a single physical interface per node.
 
-## Network Types Explained by Example
+## Network types explained by example
 
-### Cloud Network (`egressNetworkType: cloud`)
+### Cloud network (`egressNetworkType: cloud`)
 - **Purpose**: Default external network for most workloads
 - **Subnet**: `ext-cloud` (100.65.0.0/16) on VLAN 200
 - **Use Cases**: 
@@ -19,7 +19,7 @@ The configuration demonstrates how to add a second external network (public) to 
   - Cost-effective external connectivity
 - **IP Pool**: Large address space (65,000+ IPs available)
 
-### Public Network (`egressNetworkType: public`)
+### Public network (`egressNetworkType: public`)
 - **Purpose**: Premium external network for specialized workloads
 - **Subnet**: `ext-public` (192.0.2.0/28) on VLAN 300
 - **Use Cases**:
@@ -45,16 +45,16 @@ Physical Interface (bond0)
 <ExternalNetworksDiagram />
 
 > **Routed / L3-only datacenters**: the external networks above are L2
-> segments (tagged or untagged — `EXT_NET_VLAN_ID=0` is supported when the
+> segments, tagged or untagged. `EXT_NET_VLAN_ID=0` is supported when the
 > carrier NIC *is* the segment). Tenant EIP/FIP reachability is ARP-based
 > and needs that L2 adjacency. The **platform ingress VIPs** announced by
 > MetalLB can alternatively be advertised over **BGP** (`--ingress-address-layer=metallb-bgp`)
-> for fabrics with no shared L2 — see the installation guide's
+> for fabrics with no shared L2. See the installation guide's
 > "BGP mode" section.
 
 > **The egress gateway must answer ARP.** `EXT_NET_GATEWAY` (the tenant
 > internet next-hop on the ext network) has to be a live L2 neighbour that
-> replies to ARP on the ext interface — an address that is merely *inside*
+> replies to ARP on the ext interface. An address that is only *inside*
 > the ext CIDR but silent on ARP produces a clean install with **black-holed
 > tenant egress** (pods route out, get no return path). `kube-dc bootstrap
 > init` now arpings the gateway from the node before CNI and prints a
@@ -62,19 +62,19 @@ Physical Interface (bond0)
 > by hand on any node once the ext interface is up:
 >
 > ```bash
-> arping -c2 -I <ext-iface> "$EXT_NET_GATEWAY"   # e.g. arping -c2 -I bond0.200 192.0.2.1
+> arping -c2 -I <ext-iface> "$EXT_NET_GATEWAY"   # for example, arping -c2 -I bond0.200 192.0.2.1
 > ```
 >
 > A node whose own anchor IP *is* the gateway (node-egress topology) needs no
 > ARP reply and is skipped by the probe.
 
-## Example Cluster Usage
+## Example cluster usage
 
 - **demo-cloud project**: Uses `egressNetworkType: cloud` → EIP: 100.65.0.102 (development/testing)
 - **demo-public project**: Uses `egressNetworkType: public` → EIP: 192.0.2.6 (development with public access)
 - **demo-envoy project**: Uses `egressNetworkType: public` → EIPs: 192.0.2.7, 192.0.2.8 (production load balancer)
 
-### Choosing the Right Network
+### Choose the right network
 
 **Use Cloud Network when:**
 - Need basic internet connectivity
@@ -87,7 +87,7 @@ Physical Interface (bond0)
 
 ## OVS/OVN resources generated
 
-### 1. OVS Bridge Configuration
+### 1. OVS bridge configuration
 With the physical NIC already configured as a VLAN trunk, Kube-OVN creates the following host OVS resources from the fleet manifests:
 
 **Bridge: `br-ext-cloud`**
@@ -97,12 +97,12 @@ With the physical NIC already configured as a VLAN trunk, Kube-OVN creates the f
   - `patch-localnet.ext-cloud-to-br-int` ↔ `patch-br-int-to-localnet.ext-cloud`
   - `patch-localnet.ext-public-to-br-int` ↔ `patch-br-int-to-localnet.ext-public`
 
-### 2. OVN Logical Switches
+### 2. OVN logical switches
 Two logical switches are created automatically:
 - `ext-cloud` (for VLAN 200)
 - `ext-public` (for VLAN 300)
 
-### 3. ProviderNetwork Status
+### 3. ProviderNetwork status
 The existing ProviderNetwork `ext-cloud` is updated to include both VLANs:
 ```yaml
 status:
@@ -122,12 +122,12 @@ a day-2 fallback for an older overlay and must be committed back into the fleet
 to avoid GitOps drift.
 
 
-### 1. Apply VLAN Configuration
+### 1. Apply VLAN configuration
 ```bash
 kubectl apply -f examples/networking/additional-external-network.yaml
 ```
 
-### 2. Verify Configuration
+### 2. Verify configuration
 ```bash
 # Check ProviderNetwork VLANs
 kubectl get provider-network ext-cloud -o jsonpath='{.status.vlans}'
@@ -186,7 +186,7 @@ partitioned by a fixed contract. Example for a `/28`
 |---|---|
 | `192.0.2.1` | Public VLAN gateway (`EXT_PUBLIC_GATEWAY`) |
 | `192.0.2.2` | MetalLB floating ingress VIP (`METALLB_FLOATING_IP`) |
-| `192.0.2.3-.5` | **Per-node anchor addresses** — one per gateway node (`EXT_NET_PUBLIC_ANCHOR_IPS`) |
+| `192.0.2.3-.5` | **Per-node anchor addresses**, one for each gateway node (`EXT_NET_PUBLIC_ANCHOR_IPS`) |
 | `192.0.2.6-.14` | Tenant pool: public EIPs and per-project VPC router ports (LRPs) |
 
 The current `kube-dc bootstrap init` derives the anchors (VIP+1, VIP+2, …)
@@ -194,40 +194,40 @@ and writes `EXT_PUBLIC_EXCLUDE_IPS_1/2` so gateway + VIP + anchors are
 reserved in kube-ovn IPAM. Three rules are load-bearing:
 
 1. **Anchors must hold addresses.** MetalLB's ARP responder needs no
-   address, so an address-less announcement *looks* alive — ARP resolves
-   and TCP connects — but the reply routes out the node's default
+   address, so an address-less announcement *looks* alive. ARP resolves
+   and TCP connects, but the reply routes out the node's default
    (management VLAN), asymmetric through the datacenter's stateful
    firewall, which drops it. Clients see accept-then-timeout. The
    fleet's `ext-net-bridge-tag` DaemonSet binds each node's anchor and a
-   policy route (`from <VIP> lookup 129`, default via the public
+   policy route (`from <VIP> lookup 129`, default through the public
    gateway) continuously, so the setting survives reboots and kube-ovn
    bridge recreation. The shared `L2Advertisement` selects the same
    `ovn.kubernetes.io/external-gw=true` nodes. This selector is load-bearing:
    MetalLB's `interfaces` field filters interfaces but does not constrain leader
    election, so an unanchored worker must not be eligible.
 2. **Reserve before the first tenant.** kube-ovn honors `excludeIps`
-   for **new** allocations only — an EIP or VPC router port that grabbed
+   for **new** allocations only. An EIP or a VPC router port that grabbed
    an address before the exclusion keeps it, and the host and OVN then
    both answer ARP for one IP on one segment. If an anchor IP ever
    resolves to two MACs, audit `kubectl get ovn-eip -o wide` for a
    pre-exclusion allocation and re-home it (detach/re-attach the VPC's
-   external subnet — fresh allocations honor the exclusion).
+   external subnet; fresh allocations honor the exclusion).
 3. **Test the VIP with SNI, from off the node.** `curl https://<VIP>/`
    gets a TCP handshake and then an Envoy reset (no SNI filter-chain
-   match) — indistinguishable from a broken VIP. Use
+   match), which you cannot tell apart from a broken VIP. Use
    `curl --resolve console.<domain>:443:<VIP> https://console.<domain>/`.
    And never test from a cluster node: kube-proxy intercepts
    LoadBalancer IPs in the OUTPUT path, so node-originated probes never
    reach the wire.
 
-## Key Points
+## Key points
 
 1. **Single ProviderNetwork**: Use one ProviderNetwork per physical interface with multiple VLANs attached
 2. **Automatic Configuration**: OVS bridges, patch ports, and OVN logical switches are created automatically
 3. **VLAN Trunking**: The physical interface supports multiple VLANs simultaneously
 4. **GitOps-owned host state**: Kube-OVN and the `ext-net-bridge-tag` DaemonSet own the host OVS ports; the operator still owns the physical switch trunk and upstream routing
 
-## Prerequisites
+## Before you begin
 
 - Physical network infrastructure supporting VLAN trunking
 - vSwitch configured with appropriate VLAN IDs
@@ -235,7 +235,7 @@ reserved in kube-ovn IPAM. Three rules are load-bearing:
 ## Troubleshooting
 
 ### Check the VLAN is trunked into OVS on the nodes
-The public VLAN is carried by the OVS provider bridge — do **not** expect a
+The OVS provider bridge carries the public VLAN. Do **not** expect a
 Linux `bond0.300` sub-interface to exist (kube-ovn attaches the trunk NIC to
 `br-ext-cloud` and tags in OVS). Check the bridge and, on public-L2 clusters,
 the anchor interface the fleet creates:
@@ -245,7 +245,7 @@ sudo ovs-vsctl show | grep -A6 br-ext-cloud      # trunk NIC + patch ports prese
 ip -br link show ext-pub-anchor                  # public L2 anchor (EXT_NET_PUBLIC_ANCHOR_INTERFACE)
 ```
 
-### Check OVN Resources
+### Check OVN resources
 ```bash
 # Check OVN-EIP resources
 kubectl get ovn-eip | grep ext-public
@@ -254,7 +254,7 @@ kubectl get ovn-eip | grep ext-public
 kubectl get subnet ext-public -o yaml
 ```
 
-### Test Connectivity
+### Test connectivity
 ```bash
 # Test from pod
 kubectl exec -n [namespace] [pod] -- wget -qO- http://httpbin.org/ip

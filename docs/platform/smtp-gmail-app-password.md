@@ -1,4 +1,4 @@
-# Configure Gmail with a Google App Password
+# Configure Gmail with a Google app password
 
 Kube-DC uses one cluster-wide SMTP configuration for email sent by Keycloak and the console backend. This includes:
 
@@ -7,7 +7,7 @@ Kube-DC uses one cluster-wide SMTP configuration for email sent by Keycloak and 
 - join-request approval or denial messages; and
 - billing lifecycle notifications when delivery is enabled or explicitly released.
 
-This guide covers the password-based Google path supported by Kube-DC's current SMTP configuration: `smtp.gmail.com` with a Google App Password. It is not the only way to send through Google. Google says App Passwords are not recommended for most applications and should be used only when an application cannot use **Sign in with Google**. Kube-DC's SMTP client does not currently implement that OAuth flow.
+This guide covers the password-based Google path supported by Kube-DC's current SMTP configuration: `smtp.gmail.com` with a Google App Password. It is not the only way to send through Google. Google says App Passwords are not recommended for most applications and should be used only when an application cannot use **Sign in with Google**. Kube-DC's SMTP client does not implement that OAuth flow.
 
 For a production Google Workspace deployment, also consider Google's recommended [SMTP relay service](https://support.google.com/a/answer/176600?hl=en). For another provider, see [Alternatives](#alternatives).
 
@@ -29,7 +29,7 @@ Google requires 2-Step Verification for App Passwords. Google also says the App 
 
 If the option is unavailable, contact your Google Workspace administrator or use another SMTP relay. See Google's [App Password help](https://support.google.com/accounts/answer/185833?hl=en) for the current requirements.
 
-## Step 1: Enable 2-Step Verification
+## Step 1: Enable 2-Step verification
 
 1. Sign in to the Google account that will send the messages.
 2. Open [Google Account security](https://myaccount.google.com/security).
@@ -38,7 +38,7 @@ If the option is unavailable, contact your Google Workspace administrator or use
 
 When the account shows that 2-Step Verification is on, continue to the next step.
 
-## Step 2: Create the App Password
+## Step 2: Create the app password
 
 1. Open [Google App Passwords](https://myaccount.google.com/apppasswords).
 2. Enter a descriptive app name, such as **`Kube-DC SMTP - prod-1`**. Including the cluster name makes the credential easier to identify and revoke later.
@@ -126,7 +126,7 @@ and [DMARC alignment](https://knowledge.workspace.google.com/admin/security/set-
 
 ## Sending limits
 
-Google's published limits depend on the account and sending method. Google currently documents:
+Google's published limits depend on the account and the sending method. Google documents:
 
 - up to 500 outgoing messages per day for a standard personal Gmail account;
 - up to 2,000 messages per day for a Google Workspace user account; and
@@ -134,7 +134,7 @@ Google's published limits depend on the account and sending method. Google curre
 
 Recipient limits and anti-abuse controls also apply, and Google may change or temporarily reduce limits. Review the current [personal Gmail limits](https://support.google.com/mail/answer/22839?hl=en) and [Google Workspace sending limits](https://support.google.com/a/answer/166852?hl=en) before sizing a production service. Use a transactional email provider or an appropriately configured Workspace SMTP relay when these limits or policies do not fit your workload.
 
-## Rotate or revoke the App Password
+## Rotate or revoke the app password
 
 App Passwords can be revoked independently:
 

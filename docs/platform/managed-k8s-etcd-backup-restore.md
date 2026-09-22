@@ -3,7 +3,7 @@
 This page documents the operator internals behind scheduled etcd snapshots and
 the customer-facing **Take snapshot now** and **Restore** actions in a Managed
 Cluster's danger zone. Customers should use
-[Data Protection and Recovery](/cloud/backups-snapshots#managed-cluster-snapshots)
+[Data protection and recovery](/cloud/backups-snapshots#managed-cluster-snapshots)
 as the canonical workflow.
 
 Operators inspect and recover the pipeline with `kubectl` against the
@@ -46,13 +46,13 @@ For every Managed Cluster whose Project backing namespace has a working
 `<cluster>-etcd-backup` CronJob. The platform provisions the claim automatically
 when Rook Ceph object storage is available.
 
-| Default | Configurable via |
+| Default | Configurable through |
 |---|---|
 | Schedule: `0 2 * * *` (02:00 UTC daily) | `KdcCluster.spec.backup.schedule` |
 | Retention: 7 days (S3 lifecycle policy) | `KdcCluster.spec.backup.retentionDays` |
 | Bucket: `<projectNamespace>-managed-k8s-backups` | `KdcCluster.spec.backup.destinationPath` |
 | Object key (plaintext): `<cluster>/<cluster>-<ts>.db` | (not configurable) |
-| Object key (envelope-encrypted): `<cluster>/<cluster>-<ts>/` (directory of 3 objects — see Encrypted backups below) | (not configurable) |
+| Object key (envelope-encrypted): `<cluster>/<cluster>-<ts>/` (a directory of 3 objects; see Encrypted backups) | (not configurable) |
 | S3 endpoint: `S3_ENDPOINT` controller environment (for example, `https://s3.<domain>`) | `KdcCluster.spec.backup.s3Endpoint` |
 
 Snapshot size and upload duration depend on the Managed Cluster's API state,
@@ -68,7 +68,7 @@ When the owning `KdcCluster` has
 (`spec.encryption.etcd.enabled: true`), the backup CronJob switches
 into **envelope mode**: it wraps the snapshot before upload using the
 same KEK assigned to that Managed Cluster for live etcd.
-Plaintext mode is unchanged for Managed Clusters that do not opt in — both
+Plaintext mode is unchanged for Managed Clusters that do not opt in. Both
 modes coexist on the same platform.
 
 For each snapshot under envelope mode, three sibling objects land in
@@ -77,7 +77,7 @@ S3 instead of one:
 ```
 s3://<projectNS>-managed-k8s-backups/<cluster>/<cluster>-<ts>/
   ├── snapshot.db.enc      NONCE(12B) || CIPHERTEXT || GCM_TAG(16B)
-  ├── dek.wrapped          vault:vN:... — the OpenBao-wrapped DEK
+  ├── dek.wrapped          vault:vN:... the OpenBao-wrapped DEK
   └── metadata.json        schemaVersion + transitKey + transitKeyVersion +
                            algorithm + nonce + wrappedDek + createdAt +
                            source + etcdSnapshotSha256
@@ -140,7 +140,7 @@ kubectl -n <backing-namespace> get cronjob <cluster-name>-etcd-backup -o yaml
 
 ---
 
-## Performing a restore
+## Perform a restore
 
 Customers should select and restore the snapshot from the Managed Cluster's
 danger zone as described in the Cloud guide. Internally, that workflow sets the
@@ -216,12 +216,12 @@ Common failures:
 |---|---|
 | `MultiReplicaUnsupported` | The Managed Cluster uses more than one etcd replica. The current controller restore flow supports one replica only; follow the installed-version manual recovery runbook. |
 | `ForeignKey` | The snapshot key does not start with this Managed Cluster's name. Use `<cluster-name>/...` paths only. |
-| `RestoreJobFailed` | Inspect `kubectl logs job/<cluster>-etcd-restore` — common causes: S3 credentials invalid, snapshot integrity check failed, network to S3 from the Project backing namespace blocked. |
+| `RestoreJobFailed` | Inspect `kubectl logs job/<cluster>-etcd-restore`. The common causes are invalid S3 credentials, a failed snapshot integrity check, and a blocked network path to S3 from the Project backing namespace. |
 | `EtcdStartFailed` / `ControlPlaneStartFailed` | Restored etcd did not become ready. Inspect the etcd Pod logs and the Kamaji `TenantControlPlane` custom-resource status; validate snapshot integrity, peer URLs, and certificates before retrying. |
 
 ---
 
-## Verifying a restore is complete
+## Verify that a restore is complete
 
 ```bash
 # 1. Confirm controller completion and the recorded snapshot key.

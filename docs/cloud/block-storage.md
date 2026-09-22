@@ -1,8 +1,8 @@
-# Block Storage
+# Block storage
 
-Kube-DC provides persistent block storage through Kubernetes **PersistentVolumeClaims (PVCs)**. The Containerized Data Importer (CDI) adds **DataVolumes**, which create and populate PVCs from sources such as VM images. Both resource types are managed through the Volumes view in the dashboard or via kubectl.
+Kube-DC provides persistent block storage through Kubernetes **PersistentVolumeClaims (PVCs)**. The Containerized Data Importer (CDI) adds **DataVolumes**, which create and populate PVCs from sources such as VM images. Both resource types are managed through the Volumes view in the dashboard or with kubectl.
 
-## Volumes Dashboard
+## Volumes dashboard
 
 <div style={{width: '100%', maxWidth: 'none'}}>
 ![Volumes dashboard](images/volume-view.png)
@@ -15,23 +15,23 @@ Click on any volume to expand its details:
 ![Volume detail view](images/volumes-view.png)
 
 The detail panel shows:
-- **Volume Information** — Name, type, capacity, and storage class
-- **Status** — Attachment status and which VM/pod the volume is attached to
-- **Actions** — Detach from a VM, Clone, or View YAML, when the action is supported for that volume
+- **Volume Information**: Name, type, capacity, and storage class
+- **Status**: Attachment status and which VM/pod the volume is attached to
+- **Actions**: Detach from a VM, Clone, or View YAML, when the action is supported for that volume
 
-## Understanding Volume Types
+## Volume types
 
-### DataVolumes (VM Disk Imports)
+### DataVolumes (VM disk imports)
 
-A **DataVolume** is a KubeVirt resource provided by the [Containerized Data Importer (CDI)](https://kubevirt.io/user-guide/storage/containerized_data_importer/). It automates creating a PVC and populating it with data from a source — typically an OS image for a VM root disk.
+A **DataVolume** is a KubeVirt resource provided by the [Containerized Data Importer (CDI)](https://kubevirt.io/user-guide/storage/containerized_data_importer/). It creates a PVC and fills it with data from a source, usually an OS image for a VM root disk.
 
 When the VM wizard imports an image, it creates a DataVolume for the root disk. For a prepared image with snapshot support, the wizard can instead restore a PVC directly from a `VolumeSnapshot`. In both cases, the VM ultimately uses a PVC-backed disk.
 
 DataVolumes can populate storage from:
 
-- **HTTP/HTTPS URL** — Download a cloud image (e.g., Debian, Ubuntu)
-- **Container Registry** — Pull a disk image from a container registry
-- **Blank** — Create an empty disk for additional storage
+- **HTTP or HTTPS URL**: download a cloud image, such as Debian or Ubuntu
+- **Container Registry**: Pull a disk image from a container registry
+- **Blank**: Create an empty disk for additional storage
 
 **Example: VM root disk DataVolume**
 
@@ -54,7 +54,7 @@ spec:
     storageClassName: local-path
 ```
 
-Once the import completes (Phase: `Succeeded`), the DataVolume is ready and can be attached to a VM.
+After the import completes (Phase: `Succeeded`), the DataVolume is ready and can be attached to a VM.
 
 **Example: Blank data disk**
 
@@ -76,7 +76,7 @@ spec:
     storageClassName: local-path
 ```
 
-### PersistentVolumeClaims (VMs and Containers)
+### PersistentVolumeClaims (VMs and containers)
 
 A **PVC** is the standard Kubernetes resource for requesting persistent storage. VMs use PVC-backed disks, and containerized workloads such as Deployments, StatefulSets, and Pods mount PVCs when their data must persist across restarts.
 
@@ -121,7 +121,7 @@ spec:
         claimName: postgres-data
 ```
 
-### DataVolume vs PVC — When to Use Which
+### When to use a DataVolume and when to use a PVC
 
 | Feature | DataVolume | PVC |
 |---------|-----------|-----|
@@ -131,11 +131,11 @@ spec:
 | **Backed by** | Creates a PVC internally | Directly binds to a PersistentVolume |
 | **Visible in UI** | Yes (Volumes tab, type: DataVolume) | Yes (Volumes tab, type: PVC) |
 
-## Storage Classes
+## Storage classes
 
 A **StorageClass** defines what type of storage backs your volumes. The available storage classes depend on the infrastructure provider.
 
-### Kube-DC Cloud Default: `local-path`
+### Kube-DC Cloud default: `local-path`
 
 ```
 $ kubectl get storageclass
@@ -145,23 +145,23 @@ local-path (default)   rancher.io/local-path   Delete          WaitForFirstConsu
 
 The `local-path` storage class provisions storage on the local disk of the node where the workload runs. Key characteristics:
 
-- **Fast** — Direct local disk I/O, no network overhead
-- **Node-bound** — Data is stored on a specific node; the workload must run on the same node
-- **Delete reclaim policy** — When a PVC is deleted, the underlying data is removed
+- **Fast**: Direct local disk I/O, no network overhead
+- **Node-bound**: Data is stored on a specific node; the workload must run on the same node
+- **Delete reclaim policy**: When a PVC is deleted, the underlying data is removed
 
 :::info Provider-Dependent Storage Classes
 Storage classes vary by infrastructure provider. Some platforms may offer:
 
-- **Network-attached storage** (e.g., Ceph RBD, Longhorn) — Data accessible from any node, supports live migration
-- **SSD-backed classes** — Higher IOPS for database workloads
-- **HDD-backed classes** — Cost-effective for large datasets
+- **Network-attached storage** (for example, Ceph RBD, Longhorn): Data accessible from any node, supports live migration
+- **SSD-backed classes**: Higher IOPS for database workloads
+- **HDD-backed classes**: Cost-effective for large datasets
 
 Check your available storage classes with `kubectl get storageclass`. Always specify the `storageClassName` in your PVC or DataVolume to ensure you get the expected storage type.
 :::
 
-## Creating Volumes
+## Create a volume
 
-### Via Dashboard
+### Via dashboard
 
 1. Navigate to your project → **Volumes** tab
 2. Click **+ Create Volume**
@@ -211,9 +211,9 @@ spec:
 EOF
 ```
 
-## Managing Volumes
+## Manage volumes
 
-### Check Volume Status
+### Check volume status
 
 ```bash
 # List all PVCs
@@ -226,17 +226,17 @@ kubectl get datavolumes -n acme-production
 kubectl describe pvc debian-root -n acme-production
 ```
 
-### Clone a Volume
+### Clone a volume
 
 From the Volumes dashboard, expand a volume and click **Clone** to request a separate copy. PVC cloning requires CSI clone support from the selected StorageClass; DataVolume cloning can use CDI's copy strategy. For example, `local-path` does not provide CSI cloning, so a direct PVC clone can remain pending.
 
 Check the cloned DataVolume or PVC status and events before attaching it. A clone is not a replacement for a tested backup or snapshot policy.
 
-### Detach a Volume
+### Detach a volume
 
 Click **Detach** to disconnect a volume from an attached VM without deleting the data. The volume can be reattached later. To detach a PVC from a Pod, Deployment, or StatefulSet, update that workload's manifest or controller instead.
 
-### Delete a Volume
+### Delete a volume
 
 ```bash
 # Delete a DataVolume (also deletes the underlying PVC)
@@ -250,7 +250,7 @@ kubectl delete pvc my-pvc -n acme-production
 Deleting a claim removes the Kubernetes storage resource. What happens to the underlying data depends on the StorageClass reclaim policy. The hosted `local-path` class uses `Delete`, so deleting its PVC removes the backing data; do not rely on recovery after deletion.
 :::
 
-## Quick Reference
+## Quick reference
 
 | Action | Command |
 |--------|---------|
@@ -261,7 +261,7 @@ Deleting a claim removes the Kubernetes storage resource. What happens to the un
 | Delete DataVolume | `kubectl delete datavolume <name> -n acme-production` |
 | Delete PVC | `kubectl delete pvc <name> -n acme-production` |
 
-## Next Steps
+## Next steps
 
-- [Object Storage](object-storage.md) — S3-compatible storage for files and backups
-- [Backups & Snapshots](backups-snapshots.md)
+- [Object storage](object-storage.md): S3-compatible storage for files and backups
+- [Backups and snapshots](backups-snapshots.md)

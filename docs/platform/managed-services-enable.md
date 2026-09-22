@@ -1,4 +1,4 @@
-# Enabling managed services on a Kube-DC installation
+# Enable managed services on a Kube-DC installation
 
 Managed services give a tenant a database or a message broker they ask for as a
 Kubernetes object and never operate: Kube-DC places it, issues its
@@ -19,17 +19,26 @@ plans. The CloudSigma sites run this way deliberately.
 | PostgreSQL | 1 instance | 3 instances, replicated | object store, PITR |
 | MySQL | 1 server + Router | 3 Group Replication members + 2 Routers | verified logical archive |
 | MariaDB | 1 server | 3-member Galera *(unpublished)* | verified logical archive |
-| ClickHouse | 1 server + Keeper | 2 replicas + 3 Keepers *(unpublished)* | verified native archive |
+| ClickHouse | 1 server + Keeper | 2 replicas + 3 Keepers | verified native archive |
 | Valkey | 1 node | 3 nodes, Sentinel | RDB snapshot |
-| Kafka | 1 controller | 3 controllers, 3+ brokers | none — durability is replication |
+| Kafka | 1 controller | 3 controllers, 3+ brokers | none; replication provides the durability |
 
 Every family offers create, bind, credential rotation, storage expansion,
-backup and restore-into-a-new-service. Plans marked *unpublished* ship
-implemented but with `services.kube-dc.com/console: disabled`, so tenants do
-not see them: their HA-specific checks have not been run. Publish one by
-removing that annotation once you have run them on your own cluster.
+backup and restore-into-a-new-service. A plan marked *unpublished* ships
+implemented but annotated `services.kube-dc.com/console: disabled`, so tenants
+do not see it: its HA-specific checks have not been run. Publish one by setting
+that annotation to `enabled` once you have run them on your own cluster — and
+bump the plan's `revision`, or the catalog gate refuses content that changed
+under an unchanged one.
 
-## Turning it on
+MariaDB's Galera shape is the one still unpublished, and not for want of
+testing: the operator's Galera `Init` step creates the engine's storage claim
+itself, and `managed-references.kube-dc.com` refuses a reserved claim name from
+any creator that does not carry the platform marker. The Standalone shape is
+unaffected, because there the StatefulSet creates its claims from a template
+that already carries it.
+
+## Turn it on
 
 ### 1. Pins
 
@@ -69,7 +78,7 @@ installations. Map the role to a class that supports volume expansion.
 
 `clusters/<name>/services.yaml`, path `./platform/kube-dc-services`, with
 `components: [components/self-data-plane]` when the cluster hosts its own data
-plane — which it does when `SERVICES_RUNNER_SELF=true`. That component creates
+plane, which it does when `SERVICES_RUNNER_SELF=true`. That component creates
 the ServiceAccount the hub acts as on this cluster, its token, the scoped
 read-only ClusterRole and the binding, and tells the hub that this plane is
 itself. Nothing has to be applied by hand.
@@ -107,7 +116,7 @@ so the bundle attests the operator's version and never installs a second copy.
 | MariaDB | `platform/mariadb-operator` | `MARIADB_OPERATOR_VERSION` |
 | ClickHouse | `platform/clickhouse-operator` | `CLICKHOUSE_OPERATOR_CHART_VERSION` |
 | Valkey | `platform/valkey-operator` | `VALKEY_OPERATOR_CHART_VERSION` |
-| Kafka | installed by the family bundle | — |
+| Kafka | installed by the family bundle | None |
 
 Selecting a family component without its operator gives you a bundle that
 never becomes ready and placements that are refused with "family bundle not
@@ -151,11 +160,11 @@ creation sheet groups the plans of a class into Dev, Production and HA tiers.
 See [Publishing the catalog](managed-services-catalog.md) and
 [Retiring db-manager](managed-services-retire-db-manager.md).
 
-## Upgrading
+## Upgrade
 
 The hub, the runner and the catalog are **one release**. The catalog in the
 fleet tree describes the adapters the released runner compiles, and a class
-whose blueprint digest does not match the running hub stops being `Verified` —
+whose blueprint digest does not match the running hub stops being `Verified`.
 new placements are refused while everything already running keeps its pinned
 revision.
 

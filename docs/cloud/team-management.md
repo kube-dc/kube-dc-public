@@ -1,18 +1,18 @@
 import {TeamAuthenticationDiagram} from '@site/src/components/Diagram/CloudFlowDiagrams';
 import {OrganizationGroupLifecycleDiagram} from '@site/src/components/Diagram/CloudTopologyDiagrams';
 
-# User and Group Management
+# User and group management
 
 Kube-DC separates Organization administration from Project access. Organization Admins manage members and Organization Groups, while Project roles control what those groups can do in each Project. Custom roles cover narrower requirements.
 
-## Security Model
+## Security model
 
 Each Organization in Kube-DC has a **dedicated identity domain**:
 
-- **Dedicated Keycloak Realm** — Every organization gets its own Keycloak realm, acting as an independent OIDC provider. Users from different organizations cannot share credentials or sessions.
-- **Isolated JWT Tokens** — Authentication tokens are scoped to a single organization realm. A token issued for `acme` cannot be used to access `example` organization resources.
-- **Separate Token Authentication** — Each realm has its own signing keys, token policies, and session management. Credentials and sessions are scoped to their issuing organization.
-- **Kubernetes RBAC Integration** — JWT group claims are mapped to Kubernetes RoleBindings automatically. Access is enforced at the API server level, independent of the UI layer.
+- **Dedicated Keycloak Realm**: Every organization gets its own Keycloak realm, acting as an independent OIDC provider. Users from different organizations cannot share credentials or sessions.
+- **Isolated JWT Tokens**: Authentication tokens are scoped to a single organization realm. A token issued for `acme` cannot be used to access `example` organization resources.
+- **Separate Token Authentication**: Each realm has its own signing keys, token policies, and session management. Credentials and sessions are scoped to their issuing organization.
+- **Kubernetes RBAC Integration**: JWT group claims are mapped to Kubernetes RoleBindings automatically. Access is enforced at the API server level, independent of the UI layer.
 
 <details data-github-only>
 <summary>Diagram source for GitHub</summary>
@@ -53,7 +53,7 @@ Every project receives these four roles automatically:
 | `project-manager` | Operations and oversight | Read and monitor Project resources, use the VM console, update selected managed security resources, and create or update KMS keys; no Project membership or quota management |
 | `user` | Read-only access | Read Project resources and logs; no raw Secret access or VM console |
 
-### Automatic Role Bindings
+### Automatic Role bindings
 
 When a project is created, these bindings are configured automatically:
 
@@ -65,24 +65,24 @@ When a project is created, these bindings are configured automatically:
 Additional Project roles, including `admin`, `developer`, and
 `project-manager`, can be assigned through **Organization Groups**.
 
-## Managing Users
+## Manage users
 
 The **Users** section in the console is available to organization administrators under the **Manage Organization** menu.
 
-### User List
+### User list
 
 The users page shows all members of the organization with their assigned roles, status, and join date. Organization admins can:
 
-- **Create User** — Add a new user directly to the organization
-- **Assign Groups** — Grant elevated per-project access via organization groups
-- **Delete** — Remove a user from the organization
-- **Pending Requests** tab — Review and approve self-service join requests
+- **Create User**: Add a new user directly to the organization
+- **Assign Groups**: Grant elevated per-project access through organization groups
+- **Delete**: Remove a user from the organization
+- **Pending Requests** tab: review and approve self-service join requests
 
 :::info Permission Required
 Only users with the `org-admin` role can create, delete, or modify other users. Regular users can view the list but cannot perform management actions.
 :::
 
-### Creating a User
+### Create a user
 
 Organization administrators can create users directly from the UI without any external tooling.
 
@@ -112,7 +112,7 @@ The user is created in the organization's Keycloak realm and can log in to the K
 New users are created with the `User` role by default, which grants read-only access to all projects. To grant elevated project access, use **Organization Groups** after creation.
 :::
 
-### Assigning Groups to a User
+### Assign groups to a user
 
 After creating a user, you can assign them to organization groups to grant elevated access to specific projects.
 
@@ -121,15 +121,15 @@ After creating a user, you can assign them to organization groups to grant eleva
 1. In the **Users** list, find the user and click **Assign Groups**
 2. Select the **action**: Assign groups or Remove groups
 3. Choose from the available groups:
-   - **Realm Groups** (`org-admin`, `user`) — Organization-wide roles
-   - **Organization Groups** — Project-specific elevated access groups you have created
+   - **Realm Groups** (`org-admin`, `user`): Organization-wide roles
+   - **Organization Groups**: Project-specific elevated access groups you have created
 4. Click **Assign Groups** to apply
 
 Group assignments and removals affect newly issued tokens. An access token that was already issued keeps its existing group claims until it expires, which is 15 minutes by default. Sign out and sign in again to obtain updated claims immediately.
 
-### Handling Join Requests
+### Handle join requests
 
-Users who discover Kube-DC independently can request to join an organization via the **Join Request** flow on the login page. Organization administrators are notified and can approve or deny these requests from the **Pending Requests** tab.
+Users who discover Kube-DC independently can request to join an organization through the **Join Request** flow on the login page. Organization administrators are notified and can approve or deny these requests from the **Pending Requests** tab.
 
 **Steps:**
 
@@ -139,14 +139,14 @@ Users who discover Kube-DC independently can request to join an organization via
 
 Approved users are automatically added to the `user` group and receive read-only access to all projects.
 
-### Deleting a User
+### Delete a user
 
 1. In the **Users** list, click **Delete** next to the user
 2. Confirm the deletion in the dialog
 
 The user is removed from the Organization's Keycloak realm, which blocks new logins and token refresh. An access token that was already issued can remain valid until its expiry, which is 15 minutes by default.
 
-## Organization Groups
+## Organization groups
 
 Organization Groups define elevated access per Project. Each group connects a Keycloak group claim to Kubernetes RoleBindings in the selected Projects' backing namespaces.
 
@@ -154,21 +154,21 @@ Organization Groups define elevated access per Project. Each group connects a Ke
 - Grant `admin`, `developer`, or `project-manager` access to specific Projects
 - Manage teams: one group can span multiple Projects with a different role in each
 
-### Creating an Organization Group via UI
+### Create an Organization group in the console
 
 1. Navigate to **Manage Organization → Organization Groups**
 2. Click **Create Group** and provide a group name
 3. Configure project permissions:
 
 For each project permission entry:
-- **Project** — Select the target project from the dropdown
-- **Roles** — Select one or more roles to grant in that project (`admin`, `developer`, `project-manager`, `user`)
+- **Project**: Select the target project from the dropdown
+- **Roles**: Select one or more roles to grant in that project (`admin`, `developer`, `project-manager`, `user`)
 
 You can add multiple project permissions to a single group. Click **Update Group** to save.
 
-4. Assign users to this group via **Users → Assign Groups**
+4. Assign users to this group through **Users → Assign Groups**
 
-### Creating an Organization Group via kubectl
+### Create an Organization group with kubectl
 
 For infrastructure-as-code workflows, Organization Groups can be managed as Kubernetes CRDs:
 
@@ -204,10 +204,10 @@ When this resource is created, Kube-DC automatically:
 :::important
 - `OrganizationGroup` must be created in the **Organization API namespace**, not a Project backing namespace
 - The group name must be unique within the organization
-- Standard groups (`org-admin`, `user`) are managed automatically and cannot be overridden via OrganizationGroup
+- Standard groups (`org-admin`, `user`) are managed automatically and cannot be overridden through OrganizationGroup
 :::
 
-### Controller Lifecycle
+### Controller lifecycle
 
 <details data-github-only>
 <summary>Diagram source for GitHub</summary>
@@ -235,20 +235,20 @@ OrganizationGroup deleted
 
 The four standard Project roles cover most scenarios. A holder of the Project `admin` role can create a custom Kubernetes Role when a narrower permission set is required.
 
-### Editing Roles via UI
+### Edit roles in the console
 
 Navigate to **Manage Organization → Project Roles** to view and edit roles per project:
 
 ![Edit Role interface](images/role-edit.png)
 
-The role editor allows you to define permission rules by:
-- **API Group** — Select `Core API Group` (pods, services, etc.), `apps`, `kubevirt.io`, or other groups
-- **Resources** — Select specific resource types (configmaps, secrets, services, etc.)
-- **Verbs (Actions)** — Select allowed operations: `get`, `list`, `watch`, `create`, `update`, `patch`, `delete`
+In the role editor, define permission rules by:
+- **API Group**: select `Core API Group` for pods and services, or `apps`, `kubevirt.io`, or another group
+- **Resources**: select the resource types, such as configmaps, secrets, and services
+- **Verbs (Actions)**: Select allowed operations: `get`, `list`, `watch`, `create`, `update`, `patch`, `delete`
 
 Multiple permission rules can be added to a single role. Click **Review** to preview before saving.
 
-### Creating a Custom Role via kubectl
+### Create a custom Role with kubectl
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -269,7 +269,7 @@ rules:
 Kubernetes Roles are namespace-scoped. To use the same custom role across multiple Projects, create it in every target Project's backing namespace before referencing it from an OrganizationGroup.
 :::
 
-Once the role exists in the Project's backing namespace, reference it from an OrganizationGroup:
+After the role exists in the Project's backing namespace, reference it from an OrganizationGroup:
 
 ```yaml
 spec:
@@ -279,17 +279,17 @@ spec:
     - ci-deployer   # Custom role name
 ```
 
-## Permission Reference
+## Permission reference
 
-### Organization API Scope
+### Organization API scope
 
 | Resource | `org-admin` | `user` |
 |----------|-------------|--------|
 | `organizations` | get, list, patch, update, watch | get |
 | `projects` | full CRUD | get, list |
-| `organizationgroups` | full CRUD | — |
+| `organizationgroups` | full CRUD | None |
 
-### Project API Scope
+### Project API scope
 
 | Resource | `admin` | `developer` | `project-manager` | `user` |
 |----------|---------|-------------|-------------------|--------|

@@ -1,4 +1,4 @@
-# Product Direction
+# Product direction
 
 This page describes product maturity and direction without promising release
 dates. Deployment capabilities still depend on the enabled Fleet components,

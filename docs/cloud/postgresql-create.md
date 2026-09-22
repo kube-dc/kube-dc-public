@@ -3,15 +3,15 @@
 This page creates a PostgreSQL `ManagedService` with a manifest, explains every
 field and parameter the PostgreSQL class accepts, and shows how to read the
 service's status. The console's creation sheet submits the same manifest; see
-[Using the Console](managed-services-console.md).
+[Use the console](managed-services-console.md).
 
 ## Before you begin
 
 - The `admin` or `developer` role in the Project. See
-  [Managed Services](managed-services.md#project-roles).
+  [Managed services](managed-services.md#project-roles).
 - The class, plan and connectivity class names. This page uses `postgresql`,
   `postgresql-production` and `tenant-native`; plan names differ between
-  installations. See [Classes and Plans](managed-services-plans.md).
+  installations. See [Classes and plans](managed-services-plans.md).
 - A plan whose `allowedPlacementModes` includes `ProviderShared` and whose
   `allowedConnectivityClasses` includes `tenant-native`.
 - The values of your plan's bounds (instances, storage, compute), which you get
@@ -109,7 +109,7 @@ kubectl get managedservice orders-db -n my-project -o jsonpath='{.metadata.uid}{
 | `spec.retry` | No | Request one new attempt for a failed declarative change, naming its attempt ID from status |
 | `spec.deletionPolicy` | No | What deleting the `ManagedService` does to the engine and its data. Default `Retain`. Must be one of the plan's `allowedDeletionPolicies` |
 | `spec.deletionProtection` | No | While `true`, deleting the `ManagedService` is refused. Set it to `false` in a separate update before you delete |
-| `spec.restoreFrom` | No | Creates the service from a backup of another service. See [Backups and Restore](postgresql-backup-restore.md#restore-into-a-new-service). Cannot change |
+| `spec.restoreFrom` | No | Creates the service from a backup of another service. See [Backups and restore](postgresql-backup-restore.md#restore-into-a-new-service). Cannot change |
 
 The sizing fields used to live under `spec.parameters`. Manifests that still
 carry `parameters.cpu`, `parameters.memory`, `parameters.instances`,
@@ -126,8 +126,8 @@ The deletion policies behave as follows:
 
 For a service in the Project's own namespace, none of these settings apply
 when the whole Project is deleted. See
-[Deleting services and Projects](managed-services.md#deleting-services-and-projects)
-and [Status and Deletion](managed-services-status-deletion.md).
+[Delete a service or a Project](managed-services.md#delete-a-service-or-a-project)
+and [Status and deletion](managed-services-status-deletion.md).
 
 ## Parameter reference
 
@@ -189,7 +189,7 @@ Details:
   default.
 - **`expose.type`**: keep the default `internal` unless you need access from
   outside the Project. `gateway` requires the plan field `exposure.gateway`;
-  see [External Access](postgresql-external-access.md). `loadbalancer` requires
+  see [External access](postgresql-external-access.md). `loadbalancer` requires
   the plan's `exposure.allowPublicLoadBalancer` and a public IPv4 address from
   your organization's quota.
 
@@ -362,7 +362,7 @@ An invalid edit can leave the phase and the applied revision unchanged while
 |-------|----------|
 | `status.effectiveConfiguration` | The configuration in force, including values set by operations |
 | `status.engineDetails` | Engine observations, such as `engineUID`, `currentPrimary`, `readyInstances`, `storageClass`, `storageExpansion` and `hibernated` |
-| `status.endpoints` | Named endpoints with addresses, TLS details and probe results. See [Connect Applications](postgresql-connect.md) |
+| `status.endpoints` | Named endpoints with addresses, TLS details and probe results. See [Connect applications](postgresql-connect.md) |
 | `status.credentials` | Credential roles with their Secret name, version and fingerprint. Never the values |
 | `status.lastBackup`, `status.recentBackups` | The newest verified backup and a short recent window. This is not the full backup history |
 | `status.operationSummary` | The active, last successful and last failed operation |

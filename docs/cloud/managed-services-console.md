@@ -1,4 +1,4 @@
-# Using the Console
+# Use the console
 
 Everything in this chapter can be done from the Kube-DC console as well as
 with manifests. The console shows the same objects the manifests create, so
@@ -21,7 +21,7 @@ category.
 An engine appears only when at least one of its plans is published for your
 installation. If an engine you expect is missing, ask your provider.
 
-## Creating a service
+## Create a service
 
 **New service** opens a three-step sheet.
 
@@ -54,7 +54,7 @@ outcomes in plain words. **or get the YAML for GitOps** in the footer shows the
 delivery) exactly as the console will submit them, with a copy button. Commit
 that YAML to your repository and apply it with your pipeline instead of
 pressing **Deploy**, if that is how your Project is managed. The two paths
-produce the same objects; see [Create a PostgreSQL Service](postgresql-create.md)
+produce the same objects; see [Create a PostgreSQL service](postgresql-create.md)
 for the manifest fields.
 
 **Deploy** submits the request. The bell in the header follows it: the
@@ -90,7 +90,7 @@ service in the Project, newest first. A row's menu offers the lifecycle
 actions of that service, including **Resume** for a hibernated service, and
 the list header offers **resume all** when several are hibernated.
 
-## Deprecated: the Databases area
+## Deprecated: the databases area
 
 Databases created with the earlier db-manager product (`KdcDatabase`) are
 deprecated. The **Databases** entry appears only for the organizations and

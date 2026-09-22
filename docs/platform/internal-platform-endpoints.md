@@ -1,8 +1,8 @@
 import {InternalEndpointDiagram} from '@site/src/components/Diagram/PlatformTopologyDiagrams';
 
-# Internal Platform Endpoints
+# Internal platform endpoints
 
-Project Pods in a Kube-DC cluster need to reach the platform's own public hostnames — `kube-api.<DOMAIN>`, `login.<DOMAIN>` (Keycloak), `console.<DOMAIN>` (UI), `backend.<DOMAIN>` (kube-dc API), `billing.<DOMAIN>`. On some cluster topologies that path works "naturally" through the cluster's public IP. On others, the same packet black-holes at the upstream NAT box. **Internal Platform Endpoints** is the optional Kube-DC feature that provides a cluster-internal path to those hostnames regardless of upstream topology.
+Project Pods in a Kube-DC cluster need to reach the platform's own public hostnames: `kube-api.<DOMAIN>`, `login.<DOMAIN>` (Keycloak), `console.<DOMAIN>` (UI), `backend.<DOMAIN>` (kube-dc API), `billing.<DOMAIN>`. On some cluster topologies that path works "naturally" through the cluster's public IP. On others, the same packet black-holes at the upstream NAT box. **Internal Platform Endpoints** is the optional Kube-DC feature that provides a cluster-internal path to those hostnames regardless of upstream topology.
 
 This page tells you whether your installation needs the feature, how to decide, and how to enable and operate it.
 
@@ -10,8 +10,8 @@ This page tells you whether your installation needs the feature, how to decide, 
 |---|---|
 | [Do you need this?](#do-you-need-this) | Three topology classes + decision rule |
 | [How it works](#how-it-works) | The platform-endpoint pattern, anchors, Envoy front-door |
-| [Enabling on a cluster](#enabling-on-a-cluster) | Helm values + fleet wiring + vpc-dns Corefile |
-| [Verifying](#verifying) | Smoke tests for the four hostnames |
+| [Enable the feature on a cluster](#enable-the-feature-on-a-cluster) | Helm values + fleet wiring + vpc-dns Corefile |
+| [Verify the result](#verify-the-result) | Smoke tests for the four hostnames |
 | [Day-2 operations](#day-2-operations) | Adding hostnames, draining nodes, MetalLB speaker election |
 | [Troubleshooting](#troubleshooting) | What goes wrong and how to diagnose |
 | [Configuration reference](#configuration-reference) | Full chart surface |
@@ -34,39 +34,39 @@ Before reading the three class definitions, run the built-in topology classifier
 kube-dc bootstrap doctor topology
 ```
 
-It probes the current kubeconfig's cluster for four signals (platform-endpoint Services already deployed, cloud-provider `providerID`, EnvoyProxy CR `externalIPs` configuration, EnvoyProxy hostNetwork patch) and prints a classification + verdict + confidence level. Note that on any cluster carrying the host-bind front door the hostNetwork row now reads `true` and is **not** evidence of anything unusual — see the warning below. Sample output:
+It probes the current kubeconfig's cluster for four signals (platform-endpoint Services already deployed, cloud-provider `providerID`, EnvoyProxy CR `externalIPs` configuration, EnvoyProxy hostNetwork patch) and prints a classification, a verdict, and a confidence level. On any cluster that carries the host-bind front door, the hostNetwork row reads `true`. That is **not** evidence of anything unusual; see the following warning. Sample output:
 
 ```
 PROBE              DETAIL                                                                  CLASS HINT  CONFIDENCE
-platform endpoints neither platform-endpoint Service present                               —           high
-cloud-provider     no providerID on any node                                               —           high
+platform endpoints neither platform-endpoint Service present                               none        high
+cloud-provider     no providerID on any node                                               none        high
 Envoy externalIPs  externalIPs=[203.0.113.10] (svc type=LoadBalancer lb-class=metallb)    B           high
-Envoy hostNetwork  false or unset (standard pod networking)                                —           —
+Envoy hostNetwork  false or unset (standard pod networking)                                none        none
 
 Classification: Class B  (confidence: high)
 Internal Platform Endpoints: not-needed
 ```
 
-If the classifier returns Class A/B/C with `confidence: high`, you can skip the manual decision aid below — the recommended verdict is reliable. For `confidence: medium` or the `ambiguous` verdict, read on and use the manual 5-line smoke test as the authoritative check.
+If the classifier returns Class A/B/C with `confidence: high`, you can skip the following manual decision aid, because the recommended verdict is reliable. For `confidence: medium` or the `ambiguous` verdict, read on and use the manual 5-line smoke test as the authoritative check.
 
-### Class A — Single public IP behind 1:1 NAT (hairpin breaks)
+### Class A: single public IP behind 1:1 NAT (hairpin breaks)
 
 | Symptom | Decision |
 |---|---|
-| Cluster has **one** public IP, NAT'd at an upstream router to one or more internal node IPs. Project Pods trying to reach `https://login.<DOMAIN>` get a TCP timeout. External `kubectl` against `kube-api.<DOMAIN>:6443` works (the same NAT, observed from outside). | **You MUST enable internal platform endpoints**. Without it, Project Pods cannot reach Keycloak, the console, or `kube-api.<DOMAIN>:6443` — the OIDC login flow, the in-cluster console pod, and Managed Cluster control planes all break. |
+| Cluster has **one** public IP, NAT'd at an upstream router to one or more internal node IPs. Project Pods trying to reach `https://login.<DOMAIN>` get a TCP timeout. External `kubectl` against `kube-api.<DOMAIN>:6443` works (the same NAT, observed from outside). | **You MUST enable internal platform endpoints**. Without it, Project Pods cannot reach Keycloak, the console, or `kube-api.<DOMAIN>:6443`. The OIDC login flow, the in-cluster console pod, and the Managed Cluster control planes all break. |
 
-Typical hardware: a single colo'd public IP routed to a private bare-metal cluster via 1:1 NAT on an edge router. The hairpin failure happens because the NAT box won't reflect a packet back through itself.
+Typical hardware: a single colo'd public IP routed to a private bare-metal cluster through 1:1 NAT on an edge router. The hairpin failure happens because the NAT box won't reflect a packet back through itself.
 
 :::warning What the ingress rework did to this classification
 `doctor topology` infers your class from how Envoy is exposed (`externalIPs`, Service
 type, hostNetwork). The front-door rework changed which of those signals still carry
-information, and an earlier version of this warning predicted it wrongly — it said the
+information, and an earlier version of this warning predicted it wrongly. It said the
 rework would make the shape **the same on every cluster**. It did not. There are two
 shapes, and which one you get is decided by `INGRESS_ADDRESS_LAYER`:
 
 | Signal | After the rework |
 |---|---|
-| `hostNetwork` | **true on every cluster** — Envoy always binds the node's `:80`/`:443`. This has stopped being a discriminator. |
+| `hostNetwork` | **true on every cluster.** Envoy always binds the node's `:80` and `:443`. This has stopped being a discriminator. |
 | `externalIPs` | present on a layer of `none` (the node address IS the front door); **cleared** on a `metallb-l2`/`metallb-bgp` layer, where the announced VIP is. Still a discriminator. |
 | Service type / class | `ClusterIP` with no class on `none`; `LoadBalancer` + `loadBalancerClass: metallb` on a MetalLB layer. Still a discriminator. |
 
@@ -79,19 +79,19 @@ router is not, whatever the Service says. Answer it with the manual smoke test b
 which stays valid either way.
 :::
 
-### Class B — Flat-L2 with per-node externalIPs
+### Class B: flat L2 with per-node externalIPs
 
 | Symptom | Decision |
 |---|---|
 | Each control-plane node has a **public IP** directly bound on its `br-ext-cloud` (or equivalent external bridge), and all CP nodes share the same `/<N>` broadcast domain that includes the platform's public hostname IPs. Project Pods reach `https://login.<DOMAIN>` today without any extra config. | **You DO NOT need internal platform endpoints**. Project traffic is SNAT'd through the per-Project ext-cloud egress IP, the destination resolves L2-locally on `br-ext-cloud`, no upstream NAT box is involved in the hairpin. |
 
-Typical hardware: a colo or hosted environment that delivers a small public `/<N>` to your CP nodes directly. With the host-bind front door this is either the node's own address carried on the Service's `externalIPs` (layer `none`), or a MetalLB VIP inside that same broadcast domain (layer `metallb-l2`) — both are L2-local to the announcing node, which is what makes this Class B.
+Typical hardware: a colo or hosted environment that delivers a small public `/<N>` to your CP nodes directly. With the host-bind front door this is either the node's own address carried on the Service's `externalIPs` (layer `none`), or a MetalLB VIP inside that same broadcast domain (layer `metallb-l2`). Both are L2-local to the announcing node, which is what makes this Class B.
 
-### Class C — Cloud-provider LoadBalancer
+### Class C: cloud-provider LoadBalancer
 
 | Symptom | Decision |
 |---|---|
-| The platform's public hostnames are served by a cloud-provider LoadBalancer (AWS NLB, GCP LB, Azure LB, Hetzner LB, etc.) that handles hairpin natively. Project Pods reach `https://login.<DOMAIN>` today. | **You DO NOT need internal platform endpoints**. The provider LB does the right thing. |
+| The platform's public hostnames are served by a cloud-provider LoadBalancer such as an AWS NLB, a GCP LB, an Azure LB, or a Hetzner LB, that handles hairpin natively. Project Pods reach `https://login.<DOMAIN>` today. | **You DO NOT need internal platform endpoints**. The provider LB does the right thing. |
 
 ### Quick decision aid
 
@@ -108,8 +108,8 @@ curl -sk -m 6 -o /dev/null -w "HTTP=%{http_code}\n" https://login.<DOMAIN>/realm
 
 | Result | Topology hint |
 |---|---|
-| `HTTP=200` (or any 2xx/3xx/4xx response in well under 6s) | **Class B or C** — you do not need this feature. |
-| Hangs and times out at 6s | **Class A** — you need this feature. |
+| `HTTP=200` (or any 2xx/3xx/4xx response in well under 6s) | **Class B or C.** You do not need this feature. |
+| Hangs and times out at 6s | **Class A.** You need this feature. |
 
 If you cannot run the diagnostic inside a Project Pod, use this equivalent **structural** check:
 
@@ -119,13 +119,13 @@ ip -4 -br addr show br-ext-cloud  # does this show a routable public IP?
 ip -4 route get $PUBLIC_IP        # does this say "dev br-ext-cloud" (L2-local)?
 ```
 
-If both answers are yes → Class B. If the public IP doesn't appear on any node and the route goes via an upstream gateway you don't control → likely Class A.
+If both answers are yes → Class B. If the public IP doesn't appear on any node and the route goes through an upstream gateway you don't control → likely Class A.
 
 ---
 
 ## How it works
 
-The feature uses one architectural pattern applied to two distinct platform endpoints: `kubeAPI` (port 6443) and `envoyGateway` (port 443, fans out via Envoy HTTPRoutes).
+The feature uses one architectural pattern applied to two distinct platform endpoints: `kubeAPI` (port 6443) and `envoyGateway` (port 443, fans out through Envoy HTTPRoutes).
 
 ### The platform-endpoint pattern
 
@@ -140,7 +140,7 @@ The feature uses one architectural pattern applied to two distinct platform endp
 │   │  MetalLB VIP (e.g. 100.65.0.30)         │ ← Project Pods target     │
 │   │  ┌────────────────────────────────────┐ │   this address            │
 │   │  │ Selectorless Service               │ │                           │
-│   │  │ (no pod selector — manager owns    │ │                           │
+│   │  │ (no pod selector: manager owns     │ │                           │
 │   │  │  the EndpointSlice)                │ │                           │
 │   │  └────────────────────────────────────┘ │                           │
 │   │  ┌────────────────────────────────────┐ │                           │
@@ -160,19 +160,19 @@ The feature uses one architectural pattern applied to two distinct platform endp
 <InternalEndpointDiagram />
 
 `kube-dc-manager` probes each control-plane node's `InternalIP` directly:
-- For `kubeAPI`: `GET https://<nodeIP>:6443/readyz` — apiserver is alive if it returns any non-5xx.
-- For `envoyGateway`: `GET https://<nodeIP>:443/` with `SNI=console.<DOMAIN>` — Envoy is alive if it returns 200 at the console HTTPRoute.
+- For `kubeAPI`: `GET https://<nodeIP>:6443/readyz`. The apiserver is alive if it returns any non-5xx.
+- For `envoyGateway`: `GET https://<nodeIP>:443/` with `SNI=console.<DOMAIN>`. Envoy is alive if it returns 200 at the console HTTPRoute.
 
 Probes update the manager-owned EndpointSlice every 5s. Backends that stop responding for 2 consecutive intervals drop out; backends that come back are re-added.
 
 ### Per-node MetalLB L3 anchors
 
-MetalLB's L2 (layer-2) mode announces a VIP via GARP from one elected "speaker" node. With Kube-OVN's `ext-cloud` subnet and `lb-class: metallb` Services, the elected speaker needs an L3-routable address in the subnet that **other** nodes can ARP-resolve. That's the **anchor IP** — a per-node, host-bound IP in the `ext-cloud` subnet, managed by a tiny systemd unit (`kube-dc-anchor.service`).
+MetalLB's L2 (layer-2) mode announces a VIP through GARP from one elected "speaker" node. With Kube-OVN's `ext-cloud` subnet and `lb-class: metallb` Services, the elected speaker needs an L3-routable address in the subnet that **other** nodes can ARP-resolve. That is the **anchor IP**: a per-node, host-bound IP in the `ext-cloud` subnet, managed by a tiny systemd unit (`kube-dc-anchor.service`).
 
 | Concept | Belongs to |
 |---|---|
-| **VIP** (e.g. `100.64.0.30`) | The selectorless Service; MetalLB announces it from whichever speaker is currently elected |
-| **Anchor** (e.g. srv5 → `100.64.0.11/16`) | A per-CP-node, host-bound IP on `br-ext-cloud`. Lets the elected speaker's GARP get ARP-resolved by the other CPs. No allowlist entry needed (GARPs are L2 frames, never reach the LR policy table). |
+| **VIP** (for example, `100.64.0.30`) | The selectorless Service; MetalLB announces it from whichever speaker is currently elected |
+| **Anchor** (for example, srv5 → `100.64.0.11/16`) | A per-CP-node, host-bound IP on `br-ext-cloud`. Lets the elected speaker's GARP get ARP-resolved by the other CPs. No allowlist entry needed (GARPs are L2 frames, never reach the LR policy table). |
 
 Anchors are seeded by `kube-dc bootstrap anchors apply` and verified by `kube-dc bootstrap doctor anchors`. See [`docs/platform/cluster-cli-fleet.md`](cluster-cli-fleet.md) for the CLI workflow.
 
@@ -183,7 +183,7 @@ Anchors are seeded by `kube-dc bootstrap anchors apply` and verified by `kube-dc
 >   ovn-nbctl --columns=name,networks list logical_router_port | grep '<your EXT_NET_CIDR>'
 > ```
 >
-> Most critically: do not collide with the `ovn-cluster-ext-cloud` LRP — that's the management-VPC pod-egress SNAT IP, and a collision there manifests as ~80-min recurring outages of every controller's reach to Project EIPs. The rule is: **anchors must come from a subset of `EXT_NET_EXCLUDE_IPS` that is disjoint from existing OVN LRP IPs**, not literally "always `.11/.12/.13`". An empty-OVN cluster can use any anchors; on a cluster with existing Project VPCs / LRPs, audit first. Live-fix of a collided cluster requires `promote_secondaries=1` + ADD-new-before-DEL-old + per-node `ovs-ovn` restart — coordinate with the platform team before attempting — the live-fix procedure is held in the internal runbook rather than here, because it is destructive and cluster-specific.
+> Most critically: do not collide with the `ovn-cluster-ext-cloud` LRP. That is the management-VPC pod-egress SNAT IP, and a collision there manifests as ~80-min recurring outages of every controller's reach to Project EIPs. The rule is: **anchors must come from a subset of `EXT_NET_EXCLUDE_IPS` that is disjoint from existing OVN LRP IPs**, not literally "always `.11/.12/.13`". An empty-OVN cluster can use any anchors; on a cluster with existing Project VPCs / LRPs, audit first. Live-fix of a collided cluster requires `promote_secondaries=1` + ADD-new-before-DEL-old + per-node `ovs-ovn` restart. Coordinate with the platform team before you attempt it. The live-fix procedure is held in the internal runbook rather than here, because it is destructive and cluster-specific.
 
 ### The `kubeAPI` endpoint
 
@@ -191,29 +191,29 @@ Anchors are seeded by `kube-dc bootstrap anchors apply` and verified by `kube-dc
 |---|---|
 | Default name | `kube-system/kube-api-platform` |
 | Default port | 6443 (apiserver) |
-| Backend mode | `node-control-plane` — manager populates the slice with CP `InternalIP`s |
+| Backend mode | `node-control-plane`: the manager populates the slice with CP `InternalIP`s |
 | Probe target | `https://<nodeIP>:6443/readyz` |
-| Probe SNI | none (bare IP — apiserver cert SANs are validated via `insecureSkipVerify: true`) |
+| Probe SNI | none (bare IP; apiserver cert SANs are validated through `insecureSkipVerify: true`) |
 | Project resolution | vpc-dns Corefile: `<VIP> kube-api.<DOMAIN>` |
 
 ### The `envoyGateway` endpoint (generic front-door)
 
-The single `envoyGateway` VIP covers **all** Envoy-routed platform hostnames at once — `login.<DOMAIN>`, `backend.<DOMAIN>`, `console.<DOMAIN>`, `billing.<DOMAIN>`, and anything else you add to your Gateway. Traffic arrives at the VIP, MetalLB-elected speaker DNATs to a healthy Envoy backend, Envoy's existing HTTPRoute matching dispatches to the right Service.
+The single `envoyGateway` VIP covers **all** Envoy-routed platform hostnames at once: `login.<DOMAIN>`, `backend.<DOMAIN>`, `console.<DOMAIN>`, `billing.<DOMAIN>`, and anything else you add to your Gateway. Traffic arrives at the VIP, MetalLB-elected speaker DNATs to a healthy Envoy backend, Envoy's existing HTTPRoute matching dispatches to the right Service.
 
 | Field | Value |
 |---|---|
 | Default name | `envoy-gateway-system/envoy-gateway-platform` |
 | Default port | 443 (Envoy data plane) |
-| Backend mode | `node-control-plane` — Envoy is hostNetwork on CP nodes |
+| Backend mode | `node-control-plane`: Envoy is hostNetwork on CP nodes |
 | Probe target | `https://<nodeIP>:443/` |
-| Probe SNI | **REQUIRED** — `console.<DOMAIN>` (any HTTPRoute hostname; see SNI gotcha below) |
+| Probe SNI | **REQUIRED.** `console.<DOMAIN>`, or any HTTPRoute hostname; see the SNI gotcha |
 | Project resolution | vpc-dns Corefile: `<VIP> login.<DOMAIN> backend.<DOMAIN> console.<DOMAIN> billing.<DOMAIN>` |
 
 #### Critical SNI gotcha
 
-Envoy rejects HTTPS handshakes whose SNI doesn't match a configured Gateway listener. Probing the bare node IP gets `connection reset by peer`. The probe must send a valid SNI via `platformEndpoints.envoyGateway.backend.health.host`.
+Envoy rejects HTTPS handshakes whose SNI doesn't match a configured Gateway listener. Probing the bare node IP gets `connection reset by peer`. The probe must send a valid SNI through `platformEndpoints.envoyGateway.backend.health.host`.
 
-**`health.host` MUST be an `HTTPRoute` hostname, not a `TLSRoute` hostname.** `kube-api.<DOMAIN>` looks tempting (every cluster has it) but it's a TLSRoute that passes through to the apiserver — Envoy doesn't terminate TLS for it, so the probe handshake reaches the apiserver and gets the wrong cert. The fleet default is `console.<DOMAIN>` because every Kube-DC cluster ships the frontend HTTPRoute and it returns 200 at `/`. Other safe choices: `backend.<DOMAIN>`, `login.<DOMAIN>`.
+**`health.host` MUST be an `HTTPRoute` hostname, not a `TLSRoute` hostname.** `kube-api.<DOMAIN>` looks tempting (every cluster has it) but it is a TLSRoute that passes through to the apiserver, so Envoy does not terminate TLS for it, so the probe handshake reaches the apiserver and gets the wrong cert. The fleet default is `console.<DOMAIN>` because every Kube-DC cluster ships the frontend HTTPRoute and it returns 200 at `/`. Other safe choices: `backend.<DOMAIN>`, `login.<DOMAIN>`.
 
 ### vpc-dns Corefile rewrite
 
@@ -227,9 +227,9 @@ hosts {
 }
 ```
 
-`s3.${DOMAIN}` (the cluster's Rook-Ceph RGW front-door) sits in the same list because per-Managed-Cluster etcd backup CronJobs upload snapshots there — without an internal-DNS override they hit the public IP and hairpin-fail on Class A topologies.
+`s3.${DOMAIN}` (the cluster's Rook-Ceph RGW front-door) sits in the same list because per-Managed-Cluster etcd backup CronJobs upload snapshots there. Without an internal-DNS override they hit the public IP and hairpin-fail on Class A topologies.
 
-External resolution (laptop `kubectl`, browser hitting `console.<DOMAIN>`) is unaffected — public DNS still points at the cluster's public IP, the public path keeps working for external clients.
+External resolution (laptop `kubectl`, browser hitting `console.<DOMAIN>`) is unaffected. Public DNS still points at the cluster's public IP, the public path keeps working for external clients.
 
 ### Required Project logical-router allowlists
 
@@ -244,9 +244,9 @@ Per-node anchor IPs do **not** belong in the allowlists (they're L2 GARP sources
 
 ---
 
-## Enabling on a cluster
+## Enable the feature on a cluster
 
-This section assumes a Class A cluster (you need the feature). For Class B and C, skip — the chart default is off.
+This section assumes a Class A cluster (you need the feature). For Class B and C, skip this section. The chart default is off.
 
 ### 1. Pick VIPs from the `ext-cloud` subnet
 
@@ -289,7 +289,7 @@ platformEndpoints:
         host: "console.${DOMAIN}"     # any HTTPRoute hostname; console is the default
 ```
 
-For Flux/GitOps installations the same fields go in your `HelmRelease.spec.values` (or are populated from `cluster-config.env` via postBuild substitution). See [`docs/platform/cluster-cli-fleet.md`](cluster-cli-fleet.md).
+For Flux/GitOps installations the same fields go in your `HelmRelease.spec.values` (or are populated from `cluster-config.env` through postBuild substitution). See [`docs/platform/cluster-cli-fleet.md`](cluster-cli-fleet.md).
 
 ### 5. Update vpc-dns Corefile
 
@@ -305,7 +305,7 @@ hosts {
 
 ### 6. Restart per-Project vpc-dns Deployments
 
-CoreDNS doesn't watch ConfigMaps for changes — force-restart so each per-Project resolver picks up the new Corefile:
+CoreDNS does not watch ConfigMaps for changes. Force a restart, so that each per-Project resolver picks up the new Corefile:
 
 ```bash
 kubectl -n kube-system get deploy -o name | grep '^deployment.apps/vpc-dns-' | \
@@ -322,11 +322,11 @@ kube-dc bootstrap anchors apply        # seed per-CP-node anchors in ext-cloud
 kube-dc bootstrap doctor anchors       # verify (must be all green)
 ```
 
-This binds the anchor IPs to each CP node's `br-ext-cloud` interface via a small systemd unit. Without anchors, MetalLB GARPs are still emitted but the elected speaker has no L3 presence in the subnet — return traffic black-holes.
+This binds the anchor IPs to each CP node's `br-ext-cloud` interface through a small systemd unit. Without anchors, MetalLB GARPs are still emitted but the elected speaker has no L3 presence in the subnet, so return traffic black-holes.
 
 ---
 
-## Verifying
+## Verify the result
 
 From a Pod in any Project backing namespace:
 
@@ -369,9 +369,9 @@ kubectl -n envoy-gateway-system describe svc envoy-gateway-platform | tail -30
 
 ## Day-2 operations
 
-### Adding a new platform hostname behind `envoyGateway`
+### Add a platform hostname behind `envoyGateway`
 
-Any new HTTPRoute hostname your cluster serves through Envoy (e.g. a new admin UI at `admin.<DOMAIN>`) automatically works from Project Pods — `envoyGateway` is generic.
+Any new HTTPRoute hostname your cluster serves through Envoy (for example, a new admin UI at `admin.<DOMAIN>`) automatically works from Project Pods, because `envoyGateway` is generic.
 
 But you still need to tell `vpc-dns` to resolve the new name internally. Edit the per-cluster Corefile hosts block:
 
@@ -386,9 +386,9 @@ But you still need to tell `vpc-dns` to resolve the new name internally. Edit th
 
 Then restart per-Project vpc-dns Deployments (same `rollout restart` loop as enablement step 6).
 
-### Draining a control-plane node
+### Drain a control-plane node
 
-The data path is resilient to single-node drains. With Envoy running 3 replicas (one per CP node — the platform default), the `envoy-data-plane` PodDisruptionBudget keeps at least 2 serving during a drain. The manager-owned EndpointSlice drops the drained node within ~10–15 seconds (probe `failureThreshold × intervalSeconds = 2 × 5s`).
+The data path is resilient to single-node drains. With Envoy running 3 replicas (one per CP node, the platform default), the `envoy-data-plane` PodDisruptionBudget keeps at least 2 serving during a drain. The manager-owned EndpointSlice drops the drained node within ~10–15 seconds (probe `failureThreshold × intervalSeconds = 2 × 5s`).
 
 ```bash
 kubectl drain <cp-node> --ignore-daemonsets --delete-emptydir-data
@@ -399,22 +399,22 @@ kubectl drain <cp-node> --ignore-daemonsets --delete-emptydir-data
 #   - Sustained HTTP probe: all 200 except for the same ~6s window
 ```
 
-After uncordon, the slice repopulates automatically — no manual intervention.
+After uncordon, the slice repopulates automatically, with no manual intervention.
 
 ### Anchor IP retirement / re-pick
 
-If you need to reclaim an anchor IP for another use (e.g. retire a CP node and reassign its anchor):
+If you need to reclaim an anchor IP for another use (for example, retire a CP node and reassign its anchor):
 
 1. Drain the CP node hosting the old anchor.
 2. Update `EXT_NET_ANCHOR_IPS` (cluster-config.env or values) with the new IP.
 3. Re-run `kube-dc bootstrap anchors apply`.
 4. Re-run `kube-dc bootstrap doctor anchors` to verify.
 
-Note: anchor IPs do not appear in `INGRESS_GLOBAL_ALLOWLIST` / `EGRESS_GLOBAL_ALLOWLIST`. They're L2-only. If you find an old anchor IP still in either allowlist, it's a stale Phase-0 entry — safe to remove once vpc-dns no longer references it.
+Note: anchor IPs do not appear in `INGRESS_GLOBAL_ALLOWLIST` / `EGRESS_GLOBAL_ALLOWLIST`. They're L2-only. If you find an old anchor IP still in either allowlist, it is a stale Phase-0 entry, safe to remove after vpc-dns no longer references it.
 
-### Disabling the feature (rollback)
+### Disable the feature (rollback)
 
-If a cluster was misclassified as Class A and you want to turn the feature off, or you're decommissioning a cluster, the rollback is the enablement steps in reverse — and unlike the enablement, it's order-sensitive:
+If a cluster was misclassified as Class A and you want to turn the feature off, or you're decommissioning a cluster, the rollback is the enablement steps in reverse. Unlike the enablement, it is order-sensitive:
 
 1. **First, restore the public-DNS path for Project Pods.** Remove the platform hostnames from the per-cluster vpc-dns Corefile `hosts` block (and keep `fallthrough` so resolution falls back to public DNS):
    ```diff
@@ -426,7 +426,7 @@ If a cluster was misclassified as Class A and you want to turn the feature off, 
    ```
    Restart per-Project `vpc-dns-*` Deployments (same `rollout restart` loop as enablement step 6). **Wait at least 5 minutes** after the rollout so any client process caches re-resolve to the public IPs.
 
-2. **Verify Project Pods now reach platform hostnames via the public path** (Class B/C requirement). If they don't, you have a real Class A topology and rollback would break Project traffic — STOP and revert step 1.
+2. **Verify Project Pods now reach platform hostnames through the public path** (Class B/C requirement). If they do not, you have a real Class A topology, and the rollback would break Project traffic. STOP and revert step 1.
 
 3. **Disable the chart switches**:
    ```yaml
@@ -440,11 +440,11 @@ If a cluster was misclassified as Class A and you want to turn the feature off, 
 
 4. **Remove the VIPs from both allowlists** (`INGRESS_GLOBAL_ALLOWLIST` / `EGRESS_GLOBAL_ALLOWLIST` in `cluster-config.env`). Same pattern as the Phase D.6 `.11` retirement procedure: Project logical router `lr-policy-list` should drop the VIPs from priority-32000 + 29500 allow rules on the next manager reconcile.
 
-5. **Narrow `EXT_NET_EXCLUDE_IPS`** back to the pre-Fork-E range if you want kube-ovn to be able to hand out the previously-reserved VIP addresses to Projects. Safe to leave widened too — it just costs you 2 unused IPs in the ext-cloud pool.
+5. **Narrow `EXT_NET_EXCLUDE_IPS`** back to the pre-Fork-E range if you want kube-ovn to be able to hand out the previously-reserved VIP addresses to Projects. It is safe to leave widened too. It costs you 2 unused IPs in the ext-cloud pool.
 
-6. **Per-node MetalLB L3 anchors** (`kube-dc-anchor.service` systemd units bound to `br-ext-cloud`) — keep them as long as the cluster runs MetalLB for ANY other Service type=LoadBalancer. They're not Fork-E-specific. Only remove if you're decommissioning MetalLB entirely.
+6. **Per-node MetalLB L3 anchors** (`kube-dc-anchor.service` systemd units bound to `br-ext-cloud`): keep them as long as the cluster runs MetalLB for ANY other Service type=LoadBalancer. They're not Fork-E-specific. Only remove if you're decommissioning MetalLB entirely.
 
-**Rollback safety**: steps 1–4 are reversible at any point — re-add the hosts entry / re-enable the chart switch / re-add the allowlist entries. Step 5 is reversible too (just rewiden again). Step 6 has the largest blast radius if you get it wrong (deleting an anchor on a node that still hosts MetalLB-announced VIPs breaks those VIPs' announcement). Don't touch step 6 unless you're sure no other MetalLB VIP depends on the anchor.
+**Rollback safety**: steps 1 to 4 are reversible at any point. Re-add the hosts entry, re-enable the chart switch, or re-add the allowlist entries. Step 5 is reversible too (just rewiden again). Step 6 has the largest blast radius if you get it wrong (deleting an anchor on a node that still hosts MetalLB-announced VIPs breaks those VIPs' announcement). Don't touch step 6 unless you're sure no other MetalLB VIP depends on the anchor.
 
 ---
 
@@ -454,7 +454,7 @@ If a cluster was misclassified as Class A and you want to turn the feature off, 
 |---|---|---|
 | Project Pod gets `connection refused` to VIP | EndpointSlice has no ready backends. Manager probe is failing. | Check manager logs: `kubectl -n kube-dc logs deploy/kube-dc-manager \| grep platform-endpoint`. Common causes: NetworkPolicy blocking manager → CP `:443`, or wrong `health.host` SNI. |
 | Project Pod gets `connection reset by peer` to envoyGateway VIP | `health.host` is set to a TLSRoute hostname (most commonly `kube-api.<DOMAIN>`). Envoy resets the probe handshake. | Set `health.host: "console.<DOMAIN>"` or another HTTPRoute hostname. |
-| Project Pod gets timeout to VIP, but apiserver/Envoy is healthy | VIP is missing from `INGRESS_GLOBAL_ALLOWLIST` / `EGRESS_GLOBAL_ALLOWLIST`. Project logical router drops the packet at priority-29000. | Add VIP to both allowlists, push. Verify with `kubectl ko nbctl lr-policy-list <project-lr>` — VIP should appear in priority-32000 + 29500 allow rules. |
+| Project Pod gets timeout to VIP, but apiserver/Envoy is healthy | VIP is missing from `INGRESS_GLOBAL_ALLOWLIST` / `EGRESS_GLOBAL_ALLOWLIST`. Project logical router drops the packet at priority-29000. | Add VIP to both allowlists, push. Verify with `kubectl ko nbctl lr-policy-list <project-lr>`. The VIP appears in the priority-32000 and 29500 allow rules. |
 | `nslookup login.<DOMAIN>` from Project Pod returns the public IP, not the internal VIP | Per-Project `vpc-dns-<project>` Deployment hasn't picked up the new Corefile. | `kubectl rollout restart deploy/vpc-dns-<project> -n kube-system` and wait. |
 | MetalLB doesn't announce the VIP (no GARP) | Anchor not bound on any CP node. | Run `kube-dc bootstrap doctor anchors`. Re-apply with `kube-dc bootstrap anchors apply` if any fail. |
 | EndpointSlice has only one backend even though 3 CP nodes exist | Envoy is running single-replica (typically pinned to one node). Probes for other CP IPs correctly fail because there's no Envoy bound there. | Ship Envoy data-plane HA: `replicas=3` + pod anti-affinity + PDB `minAvailable=2`. See the chart's `platformEndpoints` reference. |
@@ -473,7 +473,7 @@ and the result of `kube-dc bootstrap doctor anchors`.
 ```yaml
 platformEndpoints:
 
-  # kubeAPI — internal VIP for Project-user `kubectl` against kube-api.<DOMAIN>:6443
+  # kubeAPI: internal VIP for Project-user `kubectl` against kube-api.<DOMAIN>:6443
   kubeAPI:
     enabled: false                    # opt-in per cluster
     name: kube-api-platform
@@ -499,7 +499,7 @@ platformEndpoints:
         successThreshold: 1
         insecureSkipVerify: true      # apiserver cert SAN won't include the node IP
 
-  # envoyGateway — internal VIP for Project traffic to every Envoy-routed hostname
+  # envoyGateway: internal VIP for Project traffic to every Envoy-routed hostname
   envoyGateway:
     enabled: false                    # opt-in per cluster
     name: envoy-gateway-platform
@@ -518,7 +518,7 @@ platformEndpoints:
         scheme: https
         path: /
         port: 443
-        host: ""                      # REQUIRED — see SNI gotcha
+        host: ""                      # REQUIRED: see the SNI gotcha
         intervalSeconds: 5
         timeoutSeconds: 2
         failureThreshold: 2
@@ -528,7 +528,7 @@ platformEndpoints:
                                       # treat anything <500 as healthy
 ```
 
-### Required cluster-config fields (Fleet `cluster-config.env`)
+### Required cluster-config fields (fleet `cluster-config.env`)
 
 ```bash
 # Exclude VIPs from kube-ovn IPAM
@@ -564,7 +564,7 @@ EXT_NET_ANCHOR_IPS=srv1=100.64.0.11,srv2=100.64.0.12,srv3=100.64.0.13
 
 ## Cross-references
 
-- [`docs/platform/architecture-networking.md`](architecture-networking.md) — VPCs, subnets, OVN logical layout.
-- [`docs/platform/networking-external.md`](networking-external.md) — adding additional external networks (`ext-public` etc).
-- [`docs/platform/deploy-metallb-ha.md`](deploy-metallb-ha.md) — MetalLB HA install.
-- [`docs/platform/cluster-cli-fleet.md`](cluster-cli-fleet.md) — Fleet CLI workflow including `bootstrap anchors`.
+- [`docs/platform/architecture-networking.md`](architecture-networking.md): VPCs, subnets, OVN logical layout.
+- [`docs/platform/networking-external.md`](networking-external.md): adding additional external networks (`ext-public` etc).
+- [`docs/platform/deploy-metallb-ha.md`](deploy-metallb-ha.md): MetalLB HA install.
+- [`docs/platform/cluster-cli-fleet.md`](cluster-cli-fleet.md): Fleet CLI workflow including `bootstrap anchors`.

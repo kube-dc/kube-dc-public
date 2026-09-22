@@ -1,4 +1,4 @@
-# Operating managed services
+# Operate managed services
 
 Day-2 for the operator: what tenants wait on you for, what to check after a
 release, and the procedures that change a running installation safely. Tenant
@@ -25,14 +25,14 @@ Other operator-only annotations on a `ManagedService`:
 
 | Annotation | Effect |
 |------------|--------|
-| `services.kube-dc.com/adopt-catalog=<token>` | Move the instance to the current catalog revisions; see below |
+| `services.kube-dc.com/adopt-catalog=<token>` | Move the instance to the current catalog revisions. See [Catalog adoption](#catalog-adoption) |
 | `services.kube-dc.com/accept-parameters=<generation>` | Accept a parameter snapshot the hub refused as drift; honoured for the current generation only, then removed |
 
 Tenants may set `services.kube-dc.com/cancel: "true"` on an operation that
 has not started, and `services.kube-dc.com/confirm-delete=<name>` on a
 service with `deletionPolicy: Delete`.
 
-## Reading status honestly
+## Read the status honestly
 
 - `Ready` needs `Accepted`, `Placed`, `Reconciled`, `ConnectivityReady` (an
   active probe from the promised location) and `BackupReady` when the plan
@@ -101,6 +101,57 @@ engine; it needs the tenant's explicit `engineUID`, data-loss
 acknowledgement and `deletionProtection: false`. Deleting a Project deletes
 its in-Project instances with their data and takes no final backup, whatever
 the deletion policy says; a `ProjectDeleted` event records it.
+
+## Growing a service, and moving from Development to Production
+
+A tenant asking "can I start small and grow?" is really asking three separate
+questions, and only two of them have a yes.
+
+**At creation, pick anywhere in the plan's range.** A plan's `computeBounds`
+and its `storage`..`maxStorage` band bound what a tenant may choose when the
+service is created, whether or not the plan offers `Resize` afterwards. A
+MySQL Development service can be created at 4 CPU and 8Gi on day one. The
+console publishes these as the plan's tunables.
+
+**After creation, growth depends on the family.** Each adapter declares whether
+compute, storage and member count may change after the engine exists, and the
+plan's `operations.allowed` decides which of those a tenant may ask for:
+
+| Family | CPU / memory | Storage | Members |
+|---|---|---|---|
+| PostgreSQL | `Resize` | `ExpandStorage` | `Scale` |
+| Kafka | fixed after create | `ExpandStorage` | `Scale` |
+| Valkey | `Resize` | `ExpandStorage` | fixed after create |
+| MariaDB | `Resize` | `ExpandStorage` | fixed after create |
+| MySQL | fixed after create | fixed after create | fixed after create |
+| ClickHouse | fixed after create | fixed after create | fixed after create |
+
+MySQL and ClickHouse are fixed for the same reason: their operators read the
+pod spec and the volume template only when they build the StatefulSet, and
+patching a generated StatefulSet is not something the platform does. Sizing
+those two is a decision made once, at creation, which is why their plans
+still carry wide `computeBounds`.
+
+**Becoming the Production shape is never in place.** The topology is a property
+of the plan, not of the instance: Standalone versus Galera, one InnoDB member
+versus three with Routers, one ClickHouse server versus two replicas behind a
+Keeper quorum, or a single Valkey against Sentinel, which is a different class
+again (`valkey-ha`). No operation turns one into the other.
+
+The supported path is a restore:
+
+1. `Backup` on the Development service.
+2. `RestoreToNew` with `target.planRef` naming the **Production** plan.
+
+The hub allows a restore to cross plans. It requires the target plan to belong
+to the same *family* (not the same class), the engine major line to match the
+backup's, the target plan to be Verified and to allow `RestoreToNew`. The new
+service starts with fresh credentials and `deletionPolicy: Retain`; the source
+is untouched, so the cutover is the tenant's to make and to reverse.
+
+Every family offers this except **Kafka**, which has no `RestoreToNew` at all.
+Its backups carry metadata, not message data. Moving a Kafka cluster means
+creating the new one and mirroring topics into it, outside the platform.
 
 ## Data planes
 

@@ -215,6 +215,6 @@ Use **Reserved GPU capacity** only after an active ledger record exists:
 > organization. It does not guarantee a particular device or host. Planned
 > maintenance and hardware-failure terms apply.
 
-Never use “dedicated,” “reserved,” “guaranteed,” or “always available” for a
+Never use "dedicated," "reserved," "guaranteed," or "always available" for a
 plain quota add-on. Dedicated passthrough describes runtime isolation, not
 capacity availability.

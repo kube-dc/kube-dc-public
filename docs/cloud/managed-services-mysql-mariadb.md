@@ -74,7 +74,8 @@ kubectl get managedservice shop-db -n my-project -o jsonpath='{.metadata.uid}{"\
 | `parameters.settings` | Fixed at creation | Fixed at creation |
 
 A MySQL service is therefore sized once. To move to a larger size, take a
-backup and restore it into a new service on a larger plan (see below).
+backup and restore it into a new service on a larger plan. See
+[Backups and restore](#backups-and-restore).
 
 ## Connect an application
 
@@ -143,7 +144,7 @@ must reconnect and retry.
 
 Every type must be in your plan's `operations.allowed`. Rotation is also
 available on a schedule through a `ServiceCredentialPolicy`; see
-[Credentials and Rotation](postgresql-credentials.md), which applies to these
+[Credentials and rotation](postgresql-credentials.md), which applies to these
 classes with the roles `owner` and `readonly`.
 
 ## Backups and restore
@@ -163,7 +164,7 @@ service to a larger size.
 ## Deletion
 
 `deletionPolicy` and `deletionProtection` behave as described in
-[Status and Deletion](managed-services-status-deletion.md). Deleting the
+[Status and deletion](managed-services-status-deletion.md). Deleting the
 Project deletes the service and its data without a final backup.
 
 ## Limits

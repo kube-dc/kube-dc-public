@@ -2,7 +2,7 @@ import ProductModelDiagram from '@site/src/components/Diagram/ProductModelDiagra
 import ManagementPlaneDiagram from '@site/src/components/Diagram/ManagementPlaneDiagram';
 import ArchitecturalLayersDiagram from '@site/src/components/Diagram/ArchitecturalLayersDiagram';
 
-# Architecture Overview
+# Architecture overview
 
 Kube-DC turns one Kubernetes management cluster into a multi-tenant platform
 for virtual machines, containers, managed databases, object storage, and

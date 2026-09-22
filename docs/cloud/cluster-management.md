@@ -5,9 +5,9 @@ import {
 
 # Manage a Managed Cluster
 
-Once your Managed Cluster is running, you can deploy workloads, expose Services, use persistent storage, scale worker pools, and manage its lifecycle.
+After your Managed Cluster is running, you can deploy workloads, expose Services, use persistent storage, scale worker pools, and manage its lifecycle.
 
-## Getting the Kubeconfig
+## Get the kubeconfig
 
 For workstation access, download the generated external kubeconfig. It already
 contains the supported external API endpoint; do not rewrite the server field:
@@ -23,11 +23,11 @@ The cluster detail view's **Kubeconfig** action downloads the same data. If the
 external Secret does not exist, the API endpoint is private. Enable external
 API exposure or connect through an operator-approved private network path.
 
-## Exposing Services (LoadBalancer)
+## Expose a Service with a LoadBalancer
 
 When you create a `Service` of type `LoadBalancer` inside your Managed Cluster, the Cloud Controller Manager (CCM) provisions a real LoadBalancer service in the platform cluster, giving your application an external IP.
 
-### How LoadBalancer Services Work
+### How LoadBalancer Services work
 
 <details data-github-only>
 <summary>Diagram source for GitHub</summary>
@@ -52,17 +52,17 @@ When you create a `Service` of type `LoadBalancer` inside your Managed Cluster, 
 
 All `service.nlb.kube-dc.com/*` and `network.kube-dc.com/*` annotations on the
 Managed Cluster Service are copied to the platform-side Service, so every exposure
-method from the [Service Exposure Guide](service-exposure.md) — Gateway routes
-with automatic TLS, dedicated EIPs, public IPs — also works from inside a
+method from the [Service exposure](service-exposure.md) guide also works from
+inside a
 Managed Cluster.
 
 :::warning[Annotations are copied at creation time only]
 The CCM copies annotations when it first creates the platform-side
 Service. Adding or changing an annotation on an existing Managed Cluster Service has
-no effect — delete and recreate the service with the annotations in place.
+no effect. Delete the Service and recreate it with the annotations in place.
 :::
 
-### Example: Expose a Web Application
+### Example: Expose a web application
 
 Inside your Managed Cluster, create a LoadBalancer service:
 
@@ -89,7 +89,7 @@ spec:
 kubectl --kubeconfig=/tmp/dev-kubeconfig apply -f service.yaml
 ```
 
-### Service Annotations
+### Service annotations
 
 | Annotation | Value | Description |
 |------------|-------|-------------|
@@ -111,9 +111,9 @@ The `EXTERNAL-IP` is reachable outside the Managed Cluster, but it is not
 always internet-routable. A cloud address is reachable only from configured
 platform networks; a public address is reachable from the internet.
 
-### Working Example
+### Worked example
 
-A Langfuse deployment exposed via LoadBalancer in a real Managed Cluster:
+A Langfuse deployment exposed with a LoadBalancer Service in a real Managed Cluster:
 
 ```bash
 $ kubectl --kubeconfig=/tmp/dev-kubeconfig get svc langfuse-web-lb -n langfuse
@@ -129,20 +129,20 @@ cross-Project access to cloud addresses is blocked by default.
 
 :::note[Public IPs count against your Organization quota]
 Public EIPs are limited per Organization by your plan. If the quota is
-exhausted, the Managed Cluster Service stays at `EXTERNAL-IP: <pending>` forever —
+exhausted, the Managed Cluster Service stays at `EXTERNAL-IP: <pending>` for ever, and
 the quota error may not appear inside the Managed Cluster. Check the
 dashboard's public IPv4 usage and the platform-side Service status before exposing
 services with `external-network-type: public`. Cloud IPs (the default)
 are not quota-limited.
 :::
 
-### Project-Internal VIPs (Private LoadBalancer)
+### Project-Internal VIPs (private LoadBalancer)
 
-Besides the CCM path above — which allocates a cloud or public IP on the
-platform side — a Managed Cluster can expose a Service on a **project-internal
+The preceding CCM path allocates a cloud or a public IP on the platform side. A
+Managed Cluster can also expose a Service on a **project-internal
 VIP**: a stable private address inside your Project's VPC. It consumes no
 external IP and no quota, and it is reachable from everything in the same
-Project — VMs, platform pods, and other Managed Clusters — but never from
+Project, which includes VMs, platform pods, and other Managed Clusters, but never from
 outside the Project.
 
 Request one by setting the pool label **and** the load-balancer class:
@@ -177,7 +177,7 @@ my-app-internal   LoadBalancer   10.96.11.197   10.242.0.208   80:31902/TCP   10
 ```
 
 How it works: the address is assigned inside your Managed Cluster, and the
-platform realises it as a VPC load-balancer rule on the Project network — the
+platform realizes it as a VPC load-balancer rule on the Project network. The
 VIP answers from anywhere in the Project without occupying an address in your
 Project subnet.
 
@@ -187,7 +187,7 @@ Notes and limits:
   label and `loadBalancerClass: kube-dc.com/project` must be set when the
   Service is created. A Service without them takes the CCM path above.
 - **Nothing to enable.** Every Managed Cluster gets its VIP capacity
-  automatically when it is created — there is no request to make and no
+  automatically when it is created. There is no request to make and no
   setting to turn on.
 - **Capacity is 16 VIPs per block**, and each cluster starts with one block.
   Need more? Raise `spec.loadBalancer.blocks` on the KdcCluster (up to 8).
@@ -195,10 +195,10 @@ Notes and limits:
   infrastructure provider (such as CloudSigma) expose LoadBalancers through
   that provider's own path instead, described above.
 - `externalTrafficPolicy: Local`, SCTP, and client source-IP preservation
-  are not supported on this path — traffic arrives source-NATed, as it does
+  are not supported on this path. Traffic arrives source-NATed, as it does
   for NodePort services.
 
-## Exposing Services (HTTPS Gateway Route)
+## Expose a Service with an HTTPS Gateway route
 
 For web applications, the simplest exposure method is a **Gateway route**: one
 annotation gives you HTTPS with an automatically provisioned Let's Encrypt
@@ -275,14 +275,14 @@ curl https://my-app-acme-production.kube-dc.cloud
 ```
 
 Issuance typically completes in one to two minutes. `http` and
-`tls-passthrough` route types work the same way — see the
-[Service Exposure Guide](service-exposure.md) for all annotations.
+`tls-passthrough` route types work the same way. See the
+[Service exposure](service-exposure.md) for all annotations.
 
-## Persistent Storage (KubeVirt CSI)
+## Persistent storage (KubeVirt CSI)
 
 For a KubeVirt-backed Managed Cluster with KubeVirt CSI enabled, the node driver runs in the Managed Cluster and the infrastructure-side CSI controller creates DataVolumes in the Project's backing namespace. This gives Managed Cluster workloads persistent block storage backed by the platform cluster.
 
-### How KubeVirt CSI Works
+### How KubeVirt CSI works
 
 <details data-github-only>
 <summary>Diagram source for GitHub</summary>
@@ -324,7 +324,7 @@ spec:
 
 The `kubevirt` StorageClass is automatically created when KubeVirt CSI is enabled. It is set as the default StorageClass, so you can omit `storageClassName` if you prefer.
 
-### Verify Storage
+### Verify storage
 
 ```bash
 # Check PVCs in the Managed Cluster
@@ -344,7 +344,7 @@ kubectl get pvc -n acme-production | grep pvc-c09
 pvc-c09c6404-63ac-4ebc-9aab-671b4583b599   Bound   pvc-2d6bb...   11362347344   RWO   local-path   15d
 ```
 
-### StorageClass Parameters
+### StorageClass parameters
 
 The default `kubevirt` StorageClass uses the following configuration:
 
@@ -354,16 +354,16 @@ The default `kubevirt` StorageClass uses the following configuration:
 | `bus` | `scsi` | Disk bus type for hotplug |
 | `infraStorageClassName` | `local-path` | Storage class used on the platform cluster |
 
-### Access Modes
+### Access modes
 
 | Tenant PVC request | Supported | Notes |
 |--------------------|-----------|-------|
-| `ReadWriteOnce` (Filesystem) | ✅ Yes | The standard case. Volumes survive pod restarts and can be detached from one worker VM and hotplugged to another. With the default node-local infra storage, reattaching to a **different** worker only works when both worker VMs run on the same hypervisor host (see the [troubleshooting note](#pod-stuck-after-rescheduling-to-another-worker) below); a replicated infra class like Ceph RBD removes this restriction. |
-| `ReadWriteOnce` (Block) | ✅ Yes | Raw block device inside the pod. |
-| `ReadWriteMany` (Filesystem) | ❌ No | Rejected by the CSI driver (`non-block volume with RWX access mode is not supported`). Hotplugged disks cannot be safely filesystem-mounted on two VMs at once. For shared filesystems, run an in-cluster NFS/SeaweedFS on top of RWO volumes, or use S3 object storage. |
-| `ReadWriteMany` (Block) | ⚠️ Advanced | Supported by the driver when the infra storage class supports RWX Block (Ceph RBD). Only for cluster-aware software that coordinates raw block access. Availability depends on the platform — ask your operator. |
+| `ReadWriteOnce` (Filesystem) | Yes | The standard case. Volumes survive pod restarts and can be detached from one worker VM and hotplugged to another. With the default node-local infra storage, reattaching to a **different** worker only works when both worker VMs run on the same hypervisor host (see the [troubleshooting note](#pod-stuck-after-rescheduling-to-another-worker) below); a replicated infra class like Ceph RBD removes this restriction. |
+| `ReadWriteOnce` (Block) | Yes | Raw block device inside the pod. |
+| `ReadWriteMany` (Filesystem) | No | Rejected by the CSI driver (`non-block volume with RWX access mode is not supported`). Hotplugged disks cannot be safely filesystem-mounted on two VMs at once. For shared filesystems, run an in-cluster NFS/SeaweedFS on top of RWO volumes, or use S3 object storage. |
+| `ReadWriteMany` (Block) | ⚠️ Advanced | Supported by the driver when the infra storage class supports RWX Block (Ceph RBD). Only for cluster-aware software that coordinates raw block access. Availability depends on the platform, so ask your operator. |
 
-### Additional Storage Classes
+### Additional storage classes
 
 You can create additional Managed Cluster StorageClasses that map to any storage class
 offered to your Project on the platform cluster (for example replicated
@@ -386,9 +386,9 @@ Choose an infrastructure storage class offered in the cluster creation UI or
 documented by your provider. StorageClasses are cluster-scoped and are not
 listable with a Project kubeconfig.
 
-## Scaling Workers
+## Scale the worker pool
 
-### Scale via kubectl
+### Scale with kubectl
 
 Use a **JSON patch targeting only the replica count**:
 
@@ -402,13 +402,13 @@ kubectl patch kdccluster dev -n acme-production --type=json \
 `spec.workers` is a **list**. A merge patch like
 `--type merge -p '{"spec":{"workers":[{"name":"workers","replicas":5}]}}'`
 **replaces the whole list**, silently wiping `cpuCores`, `memory`,
-`diskSize` and `image` from your pool spec — new workers would then be
+`diskSize` and `image` from your pool spec. New workers would then be
 created with default sizing instead of yours. Always use a JSON patch
 (`--type=json`) for single-field changes, or apply a full manifest that
 includes every field of every pool.
 :::
 
-### Add a Worker Pool
+### Add a worker pool
 
 Append a pool with JSON Patch so every existing pool, including optional
 autoscaling, labels, taints, drain, and network settings, remains unchanged:
@@ -432,7 +432,7 @@ kubectl patch kdccluster dev -n acme-production --type=json -p '[
 Provisioning time varies with image import, quota, and node readiness. Watch the
 `KdcCluster` status instead of relying on a fixed duration.
 
-### Scale to Zero
+### Scale to zero
 
 A worker pool can reach zero only while another pool has Ready workers. This
 guard prevents the last available worker pool from being stopped:
@@ -445,7 +445,7 @@ kubectl patch kdccluster dev -n acme-production --type=json \
 The control plane remains accessible. Scale the pool back up before removing or
 stopping the other Ready pool.
 
-### Autoscaling a Worker Pool
+### Autoscale a worker pool
 
 Instead of scaling by hand, a pool can add nodes on its own when workloads
 do not fit. The model is the same as an EKS node group: `replicas` is still
@@ -465,25 +465,25 @@ kubectl patch kdccluster dev -n acme-production --type=json -p '[
 :::note[`replicas` must be inside the bounds]
 While autoscaling is enabled, `replicas` has to be within
 `[minReplicas, maxReplicas]`. If the pool's current count is outside the
-bounds you are setting, change both in the same patch — the console does
+bounds you are setting, change both in the same patch. The console does
 this for you automatically.
 :::
 
 **What causes a node to be added:** a pod is `Pending` because the scheduler
 could not place it, and that pod's CPU/memory requests would fit on a new
-node of this pool. Pods a new node cannot help are ignored — a pod waiting
+node of this pool. The autoscaler ignores pods a new node cannot help. A pod waiting
 on a PersistentVolumeClaim, a pod requesting more resources than one node of
 this pool provides, or a pod pinned by node affinity elsewhere.
 
 **In the default mode, nodes are only added, never removed.** To shrink a
-pool, lower `replicas` (or `maxReplicas`) yourself — or switch the pool to
+pool, lower `replicas` or `maxReplicas` yourself, or switch the pool to
 full autoscaling, below.
 
-#### Removing idle nodes (full autoscaling)
+#### Remove idle nodes (full autoscaling)
 
 Set `mode: ClusterAutoscaler` to hand the pool's node count entirely to the
 platform. It still adds nodes for pending pods, and additionally **removes a
-node** after it has been idle for the stabilization window — pods are drained
+node** after it has been idle for the stabilization window. Pods are drained
 safely (respecting PodDisruptionBudgets) before the node is deleted. In the
 console this is the **"Add & remove nodes"** choice on the pool card, with a
 **"Remove idle nodes"** switch.
@@ -500,13 +500,13 @@ kubectl patch kdccluster dev -n acme-production --type=json -p '[
 
 Things to know in this mode:
 
-- **The node count is platform-managed.** Do not set `replicas` by hand — the
+- **The node count is platform-managed.** Do not set `replicas` by hand. The
   platform owns it and will move it between the bounds. The console disables
   the manual scale control for such pools.
 - **`minReplicas` must be at least 1.** Scale-to-zero is not available.
 - **Scale-down is per pool, and OFF until you ask for it.** Selecting this mode
   does not by itself remove anything: `behavior.scaleDown.enabled` must be set
-  to `true`. Left false (or with the block omitted) the pool is grow-only — it
+  to `true`. Left false, or with the block omitted, the pool is grow-only. It
   still ADDS nodes for pending pods, which is what distinguishes this from
   pinning `minReplicas = maxReplicas`, where nothing moves in either direction.
   One pool can shrink while a sibling never does.
@@ -521,7 +521,7 @@ Things to know in this mode:
 
 **Scale-up tuning does not apply in this mode.** `metrics[]` and
 `behavior.scaleUp` are read only by `mode: Builtin`. Under
-`ClusterAutoscaler`, nodes are added when pods cannot be scheduled — upstream
+`ClusterAutoscaler`, nodes are added when pods cannot be scheduled. Upstream
 has no utilisation trigger and no per-step cap, so the stabilization window,
 `maxNodesPerStep` and the scale-up cooldown below are ignored here. Use
 `mode: Builtin` if you want CPU/memory-driven scale-up.
@@ -571,14 +571,14 @@ kubectl get kdccluster dev -n acme-production \
 | `Placement` | The infrastructure could not place another node right now. |
 | `RollingUpdate` | An upgrade or rollout is in progress; scaling resumes afterwards. |
 
-## Upgrading Kubernetes Version
+## Upgrade the Kubernetes version
 
 A Managed Cluster upgrade updates the control plane first and then replaces
 workers using a rolling strategy. Plan a maintenance window: application
 availability depends on replicas, disruption budgets, spare capacity, and
 storage topology.
 
-### Choose a Supported Version
+### Choose a supported version
 
 The table below is an example catalog and can age between documentation
 releases. Use the dashboard's version selector as the source of truth, and
@@ -590,20 +590,20 @@ choose the exact worker image paired with the target control-plane version.
 | v1.35.0 | `docker.io/shalb/ubuntu-2404-container-disk:v1.35.2` | Supported |
 | v1.34.0 | `quay.io/capk/ubuntu-2404-container-disk:v1.34.1` | Supported |
 
-### Upgrade via Dashboard
+### Upgrade in the dashboard
 
 When an upgrade is available, the cluster detail page shows an **Upgrade to vX.Y.Z** button in the header and a version badge in the Summary tab.
 
-![Kubernetes Upgrade via Dashboard](images/k8s-upgrade.png)
+![Kubernetes version upgrade in the dashboard](images/k8s-upgrade.png)
 
 1. Open the cluster detail page in the dashboard
 2. Click the **Upgrade to vX.Y.Z** button next to the version badge
-3. Review the confirmation dialog — it shows the target version and worker image
+3. Review the confirmation dialog. It shows the target version and the worker image
 4. Click **Upgrade** to start the rolling upgrade
 
 The upgrade progress is visible in the cluster status. The phase will change during the upgrade and return to **Ready** once complete.
 
-### Upgrade via kubectl
+### Upgrade with kubectl
 
 **Step 1: Check current version**
 
@@ -666,20 +666,20 @@ kubectl --kubeconfig=/tmp/dev-kubeconfig get nodes -o wide
 # dev-workers-xxx-yyy     Ready    v1.35.2   containerd://2.2.2
 ```
 
-### Important Notes
+### Important notes
 
-- **Sequential minor versions only** — You must upgrade one minor version at a time (e.g., v1.34 → v1.35). Skipping versions is not supported.
-- **No downgrades** — Kubernetes version downgrades are not supported. The system will reject any attempt to lower the version.
-- **Rolling replacement** — A new worker is created before an old worker is removed. Keep multiple application replicas, suitable disruption budgets, and enough spare quota; the platform does not guarantee uninterrupted workloads.
-- **Image must match version** — Always update the worker image alongside the version. The image contains the matching kubelet and kubeadm binaries.
+- **Sequential minor versions only**: You must upgrade one minor version at a time (for example, v1.34 → v1.35). Skipping versions is not supported.
+- **No downgrades**: Kubernetes version downgrades are not supported. The system will reject any attempt to lower the version.
+- **Rolling replacement**: A new worker is created before an old worker is removed. Keep multiple application replicas, suitable disruption budgets, and enough spare quota; the platform does not guarantee uninterrupted workloads.
+- **Image must match version**: Always update the worker image alongside the version. The image contains the matching kubelet and kubeadm binaries.
 
-## Deleting a Cluster
+## Delete a cluster
 
-### Delete via Dashboard
+### Delete in the dashboard
 
 Navigate to the cluster detail page and use the delete action.
 
-### Delete via kubectl
+### Delete with kubectl
 
 ```bash
 kubectl delete kdccluster dev -n acme-production
@@ -701,7 +701,7 @@ Deleting a cluster is irreversible. All workloads, services, and data inside the
 ## Troubleshooting
 
 
-### Cluster Stuck in Provisioning
+### Cluster stuck in provisioning
 
 ```bash
 # Check events in the Project backing namespace
@@ -714,7 +714,7 @@ kubectl describe kdccluster dev -n acme-production
 kubectl get pods -n acme-production -l kamaji.clastix.io/name=dev-cp
 ```
 
-### Workers Not Joining
+### Workers not joining
 
 ```bash
 # Check MachineDeployment status
@@ -725,7 +725,7 @@ kubectl get machinedeployments -n acme-production
 kubectl get vmi -n acme-production
 ```
 
-### Service Not Getting External IP
+### Service not getting external IP
 
 ```bash
 # Verify CCM is running
@@ -738,7 +738,7 @@ kubectl logs -n acme-production -l k8s-app=kccm-dev
 kubectl --kubeconfig=/tmp/dev-kubeconfig get svc my-app-lb -o yaml | grep -A2 annotations
 ```
 
-### PVC Stuck in Pending
+### PVC stuck in Pending
 
 ```bash
 # Check the CSI controller logs on the platform cluster
@@ -755,10 +755,10 @@ kubectl --kubeconfig=/tmp/dev-kubeconfig get storageclass
 ```
 
 A PVC requesting `ReadWriteMany` with Filesystem mode stays `Pending` with the
-event `non-block volume with RWX access mode is not supported` — this is by
-design, see [Access Modes](#access-modes).
+event `non-block volume with RWX access mode is not supported`. This is by
+design, see [Access modes](#access-modes).
 
-### Pod Stuck in ContainerCreating (`couldn't find device by serial id`)
+### Pod stuck in ContainerCreating (`couldn't find device by serial id`)
 
 Volume hotplug into a worker VM is **batched per VM**: while any pending
 volume on the same worker cannot finish provisioning (for example a stuck
@@ -767,10 +767,10 @@ VM too. Already-bound volumes then fail to mount with `couldn't find device by
 serial id` until the broken sibling is resolved.
 
 Fix the failing PVC first (check `kubectl get dv -n acme-production` on the
-platform cluster for `ImportInProgress` with restarts) or delete it — the
+platform cluster for `ImportInProgress` with restarts), or delete it. The
 healthy volumes can attach when the controller retries.
 
-### Pod Stuck After Rescheduling to Another Worker
+### Pod stuck after rescheduling to another worker
 
 With the default `kubevirt` StorageClass, the backing disk lives on
 **node-local storage of the hypervisor host** where it was first provisioned.
@@ -797,15 +797,15 @@ kubectl --kubeconfig=/tmp/dev-kubeconfig uncordon <other-worker-1> <other-worker
 
 For workloads that must survive rescheduling to any worker, use a Managed Cluster
 StorageClass backed by replicated storage (see
-[Additional Storage Classes](#additional-storage-classes)) if your platform
+[Additional storage classes](#additional-storage-classes)) if your platform
 offers one.
 
-## End-to-End Example: WordPress
+## End-to-end Example: WordPress
 
-A complete stateful application — MariaDB and WordPress on persistent volumes,
+A complete stateful application, with MariaDB and WordPress on persistent volumes,
 exposed over HTTPS through the platform cluster's Gateway. Apply inside the
 Managed Cluster (the ACME Issuer from
-[Exposing Services (HTTPS Gateway Route)](#exposing-services-https-gateway-route)
+[Expose a Service with an HTTPS Gateway Route](#expose-a-service-with-an-https-gateway-route)
 must exist in your Project). Create the namespace and generate unique database
 credentials before applying the workload manifest:
 
@@ -957,13 +957,13 @@ restarts; for rescheduling across workers, read the
 [placement caveat](#pod-stuck-after-rescheduling-to-another-worker) of the
 default storage class.
 
-## Quick Reference
+## Quick reference
 
 | Operation | Command |
 |-----------|---------|
 | List clusters | `kubectl get kdccluster -n acme-production` |
 | Get cluster details | `kubectl describe kdccluster dev -n acme-production` |
-| Get kubeconfig | `kubectl get secret dev-cp-admin-kubeconfig-external -n acme-production -o jsonpath='{.data.admin\.conf}' \| base64 -d` (see [Getting the Kubeconfig](#getting-the-kubeconfig)) |
+| Get kubeconfig | `kubectl get secret dev-cp-admin-kubeconfig-external -n acme-production -o jsonpath='{.data.admin\.conf}' \| base64 -d` (see [Get the kubeconfig](#get-the-kubeconfig)) |
 | Check endpoint | `kubectl get kdccluster dev -n acme-production -o jsonpath='{.status.endpoint}'` |
 | Scale workers | `kubectl patch kdccluster dev -n acme-production --type=json -p '[{"op":"replace","path":"/spec/workers/0/replicas","value":5}]'` |
 | Enable autoscaling | `kubectl patch kdccluster dev -n acme-production --type=json -p '[{"op":"add","path":"/spec/workers/0/autoscaling","value":{"enabled":true,"minReplicas":2,"maxReplicas":8}}]'` |
@@ -972,8 +972,8 @@ default storage class.
 | Delete cluster | `kubectl delete kdccluster dev -n acme-production` |
 | Check datastore | `kubectl get kdcclusterdatastores -n acme-production` |
 
-## Next Steps
+## Next steps
 
 - [Provisioning a Cluster](provisioning-cluster.md)
-- [Service Exposure Guide](service-exposure.md) — More on networking and service exposure
-- [Block Storage](block-storage.md) — Additional storage options
+- [Service exposure](service-exposure.md): More on networking and service exposure
+- [Block storage](block-storage.md): Additional storage options

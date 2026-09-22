@@ -3,7 +3,7 @@ import {
   ExposureDecisionDiagram,
 } from '@site/src/components/Diagram/CloudTopologyDiagrams';
 
-# Service Exposure Guide
+# Service exposure guide
 
 This guide explains how to expose workloads in a Kube-DC Project. Choose the
 method by protocol and reachability: use a Gateway route for hostname-based web
@@ -11,13 +11,13 @@ traffic, a LoadBalancer Service for selected TCP or UDP ports, and a Floating IP
 for direct access to a VM. Both Project network types support these methods.
 
 > **Managed Clusters**: every annotation below also works on
-> `LoadBalancer` services **inside** a Managed Cluster — the cloud
+> `LoadBalancer` Services **inside** a Managed Cluster. The cloud
 > controller manager copies them to the platform cluster at Service creation
-> time. See [Cluster Management](cluster-management.md#exposing-services-loadbalancer)
+> time. See [Cluster management](cluster-management.md#expose-a-service-with-a-loadbalancer)
 > for the Managed Cluster specifics (Issuer prerequisite, hostname pinning,
 > public-IP quota).
 
-## Quick Reference
+## Quick reference
 
 | Need | Recommended method | Result |
 |------|--------------------|--------|
@@ -27,7 +27,7 @@ for direct access to a VM. Both Project network types support these methods.
 
 > **Note**: Both network types support EIPs and LoadBalancers. The difference is where EIPs are allocated from.
 
-## Understanding Project Network Types
+## Project network types
 
 Every installation supports the `cloud` type. The `public` Project type is
 available only when the provider enables it; otherwise the dashboard hides it
@@ -45,7 +45,7 @@ spec:
 
 This creates Project `production` in Organization `acme`. Kubernetes stores that Project's workload resources in the backing namespace `acme-production`.
 
-### Cloud Network (`egressNetworkType: cloud`)
+### Cloud network (`egressNetworkType: cloud`)
 
 - **Default EIPs** allocated from the cloud address pool
 - Outbound traffic is SNATed through the Project gateway EIP
@@ -55,7 +55,7 @@ This creates Project `production` in Organization `acme`. Kubernetes stores that
 - **Best for**: Web applications, APIs, microservices, and internal platform connectivity
 - **Cost**: Provider- and plan-dependent
 
-### Public Network (`egressNetworkType: public`)
+### Public network (`egressNetworkType: public`)
 
 - **Default EIPs** allocated from the configured public address pool
 - Outbound traffic is SNATed through the Project gateway EIP
@@ -65,27 +65,27 @@ This creates Project `production` in Organization `acme`. Kubernetes stores that
 - **Best for**: Game servers, custom protocols, direct IP requirements
 - **Cost**: Provider- and plan-dependent; public address quota still applies
 
-### Feature Comparison
+### Feature comparison
 
 | Feature | Cloud Project | Public Project |
 |---------|---------------|----------------|
 | **Default EIP source** | Configured cloud address pool | Configured public address pool |
 | **Can get public EIPs** | When the provider exposes the pool and quota is available | Yes by default, subject to quota |
-| **Can use Gateway Routes** | ✅ Yes | ✅ Yes |
-| **Can use EIP + LB** | ✅ Yes | ✅ Yes |
-| **Can run VMs** | ✅ Yes | ✅ Yes |
-| **Can run Pods** | ✅ Yes | ✅ Yes |
+| **Can use Gateway Routes** | Yes | Yes |
+| **Can use EIP + LB** | Yes | Yes |
+| **Can run VMs** | Yes | Yes |
+| **Can run Pods** | Yes | Yes |
 
 ---
 
-## Part 1: Gateway Routes
+## Part 1: Gateway routes
 
 Use Gateway routes for hostname-based HTTP, HTTPS, or TLS passthrough in either
 Project network type.
 
-### All Service Annotations Reference
+### All Service annotations reference
 
-#### Gateway Route Annotations
+#### Gateway route annotations
 
 | Annotation | Description | Example Values |
 |------------|-------------|----------------|
@@ -95,7 +95,7 @@ Project network type.
 | `tls-issuer` | cert-manager Issuer name | `letsencrypt` (default) |
 | `tls-secret` | User-provided TLS secret | `my-tls-secret` |
 
-#### EIP/LoadBalancer Annotations
+#### EIP/LoadBalancer annotations
 
 | Annotation | Description | Example Values |
 |------------|-------------|----------------|
@@ -112,7 +112,7 @@ Service remains without endpoints. Leave it unset for normal workload
 lifecycle.
 :::
 
-#### Network Type Annotation
+#### Network type annotation
 
 | Annotation | Description | Example Values |
 |------------|-------------|----------------|
@@ -124,7 +124,7 @@ lifecycle.
 >   network.kube-dc.com/external-network-type: "public"
 > ```
 
-> **Set this when you create the Service — it cannot be changed afterwards.**
+> **Set this when you create the Service. You cannot change it afterwards.**
 > The annotation chooses which external network the Service's address is
 > allocated from, and an external IP keeps the type it was allocated with for
 > life. Editing the annotation on a Service that already has an address is
@@ -133,10 +133,10 @@ lifecycle.
 >
 > To move a workload to a different external network, create a second Service
 > with the annotation you want, cut traffic over to its address, then delete the
-> old one. In that order the workload is never without a reachable address —
+> old one. In that order the workload always has a reachable address.
 > deleting first would release the old IP before the new one is serving.
 
-#### Status Annotations (Read-Only)
+#### Status annotations (read-only)
 
 | Annotation | Description |
 |------------|-------------|
@@ -144,11 +144,11 @@ lifecycle.
 
 > **Note**: All annotations use prefix `service.nlb.kube-dc.com/`
 
-### Gateway Route Annotations (Details)
+### Gateway route annotations (details)
 
 Add these annotations to your `LoadBalancer` Service.
 
-#### Multi-Port Services
+#### Multi-port Services
 
 When using `expose-route`, the gateway routes traffic to a **single port** on
 your Service. By default this is the first port in `spec.ports`. For every
@@ -165,7 +165,7 @@ annotations:
 
 > **Note**: This applies to all route types (`http`, `https`, `tls-passthrough`). The gateway terminates TLS (for `https`) or passes it through (for `tls-passthrough`), then forwards traffic to the selected port on your service.
 
-#### Route Type Comparison
+#### Route type comparison
 
 | Route Type | Port | TLS | App Serves | Use Case |
 |------------|------|-----|------------|----------|
@@ -173,7 +173,7 @@ annotations:
 | `https` | 443 | Gateway terminates | HTTP | Recommended for web traffic; automatic TLS |
 | `tls-passthrough` | 443 | App terminates | HTTPS | End-to-end encryption |
 
-### Example: HTTPS Web Application (Recommended)
+### Example: HTTPS web application (recommended)
 
 The simplest way to expose a web app with automatic TLS:
 
@@ -235,7 +235,7 @@ metadata:
   name: my-app
   namespace: acme-production
   annotations:
-    # Expose via HTTPS with auto-provisioned certificate
+    # Expose over HTTPS with an auto-provisioned certificate
     service.nlb.kube-dc.com/expose-route: "https"
 spec:
   type: LoadBalancer
@@ -284,9 +284,9 @@ spec:
     targetPort: 80
 ```
 
-Access via: `http://my-app-acme-production.kube-dc.cloud`
+Open `http://my-app-acme-production.kube-dc.cloud`.
 
-### Example: TLS Passthrough (Kubernetes API)
+### Example: TLS passthrough (Kubernetes API)
 
 For services that handle their own TLS (like Kubernetes control planes):
 
@@ -321,7 +321,7 @@ not start with a TLS handshake or the backend certificate cannot cover the
 Gateway hostname.
 :::
 
-### Example: Custom Hostname
+### Example: Custom hostname
 
 Override the auto-generated hostname:
 
@@ -381,26 +381,26 @@ SANs and chain to a CA trusted by your clients.
 
 ### gRPC
 
-The `expose-route` annotation currently creates an `HTTPRoute`, even when a Service port sets `appProtocol: kubernetes.io/h2c`. It does not create a `GRPCRoute` or configure an HTTP/2 backend. For gRPC today, use a dedicated LoadBalancer Service or work with your platform operator to provide explicit Gateway API `GRPCRoute` and backend protocol resources.
+The `expose-route` annotation creates an `HTTPRoute`, even when a Service port sets `appProtocol: kubernetes.io/h2c`. It does not create a `GRPCRoute` or configure an HTTP/2 backend. For gRPC today, use a dedicated LoadBalancer Service or work with your platform operator to provide explicit Gateway API `GRPCRoute` and backend protocol resources.
 
 ---
 
-## Part 2: EIP-Based Exposure (Both Project Types)
+## Part 2: EIP-based exposure (both Project types)
 
 Both cloud and public projects can use EIPs and LoadBalancer services.
 
-### Default EIP Allocation
+### Default EIP allocation
 
 | Project Type | Default EIP Source | Can Request |
 |--------------|-------------------|-------------|
 | Cloud | Configured cloud address pool | `cloud`; `public` when the provider exposes that pool and quota is available |
 | Public | Configured public address pool | `public`; other types depend on provider configuration and quota |
 
-> **When to use EIPs vs Gateway Routes:**
+> **When to use an EIP, and when to use a Gateway Route:**
 > - Use **Gateway Routes** for HTTP/HTTPS/TLS passthrough (automatic TLS for HTTPS)
 > - Use **EIPs** for gRPC and other TCP/UDP protocols, VMs, or when you need a dedicated IP
 
-## Understanding EIPs
+## How EIPs work
 
 External IPs (EIPs) provide addresses for your Project from a provider-configured external network.
 
@@ -411,7 +411,7 @@ SNAT. A LoadBalancer Service uses it only when you set
 `bind-on-default-gw-eip: "true"`; otherwise the platform can allocate a
 Service-specific EIP.
 
-### Creating Additional EIPs
+### Create an extra EIP
 
 For services that need dedicated IPs:
 
@@ -434,14 +434,14 @@ spec:
 
 > **Tip**: When your provider offers public addresses to cloud Projects, request a public EIP for workloads that need a dedicated internet-routable IP.
 
-## LoadBalancer Service Annotations
+## LoadBalancer Service annotations
 
 | Annotation | Description |
 |------------|-------------|
 | `service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"` | Use project's default EIP |
 | `service.nlb.kube-dc.com/bind-on-eip: "eip-name"` | Use a specific EIP |
 
-## Example: Web Server on Default EIP
+## Example: Web server on default EIP
 
 ```yaml
 apiVersion: v1
@@ -464,7 +464,7 @@ spec:
     targetPort: 443
 ```
 
-## Example: Service on Dedicated EIP
+## Example: Service on dedicated EIP
 
 ```yaml
 # Step 1: Create dedicated EIP
@@ -493,7 +493,7 @@ spec:
     targetPort: 443
 ```
 
-## Example: VM SSH Access
+## Example: VM SSH access
 
 Expose SSH access to a virtual machine:
 
@@ -517,15 +517,15 @@ spec:
 
 ## Floating IPs (FIPs)
 
-Floating IPs map an internal IP directly to an EIP, providing 1:1 NAT. For detailed FIP management, see [External & Floating IPs](public-floating-ips.md).
+Floating IPs map an internal IP directly to an EIP, providing 1:1 NAT. For detailed FIP management, see [External and floating IPs](public-floating-ips.md).
 
-### When to Use FIPs
+### When to use FIPs
 
 - Direct IP mapping for VMs
 - Whole-VM exposure across many ports
 - Protocols that are awkward to model as individual Service ports
 
-### Creating a FIP for a VM
+### Create a FIP for a VM
 
 Use `vmTarget` to point a FIP at a VM. The controller reads the named interface address from the running VirtualMachineInstance status, so the VM must be running and that interface must report an IP:
 
@@ -542,7 +542,7 @@ spec:
     interfaceName: vpc_net_0
 ```
 
-### Important Limitation: FIP and LoadBalancer Conflicts
+### Important limitation: FIP and LoadBalancer conflicts
 
 **A pod/VM cannot simultaneously serve as:**
 1. A target for a **public FIP**
@@ -572,9 +572,9 @@ Pod IP: 10.0.0.30
 
 ---
 
-## Part 3: Choosing the Right Approach
+## Part 3: Choosing the right approach
 
-### Decision Tree
+### Decision tree
 
 <details data-github-only>
 <summary>Diagram source for GitHub</summary>
@@ -601,7 +601,7 @@ Pod IP: 10.0.0.30
 
 <ExposureDecisionDiagram />
 
-### Comparison Table
+### Comparison table
 
 | Feature | Gateway route (any Project) | EIP + LoadBalancer (any Project) |
 |---------|------------------------|----------------------------|
@@ -615,9 +615,9 @@ Pod IP: 10.0.0.30
 
 ---
 
-## Part 4: Advanced Topics
+## Part 4: Advanced topics
 
-### Envoy Gateway Backend
+### Envoy Gateway backend
 
 Use the `create-gateway-backend` annotation on a **LoadBalancer** Service to
 register an Envoy Gateway Backend for advanced routing scenarios. Prefer
@@ -646,7 +646,7 @@ This creates an Envoy Gateway `Backend` resource, enabling:
 - Advanced load balancing configurations
 
 
-### Namespace-Scoped Ingress Controller
+### Namespace-scoped Ingress controller
 
 For advanced HTTP routing beyond Gateway capabilities, deploy a dedicated ingress-nginx:
 
@@ -684,7 +684,7 @@ helm install ingress ingress-nginx/ingress-nginx \
 
 ## Troubleshooting
 
-### Gateway Routes
+### Gateway routes
 
 ```bash
 # Check route hostname was assigned
@@ -717,7 +717,7 @@ kubectl get svc -n acme-production
 kubectl describe svc my-lb -n acme-production
 ```
 
-### Common Issues
+### Common issues
 
 | Issue | Cause | Solution |
 |-------|-------|----------|

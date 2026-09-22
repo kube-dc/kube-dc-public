@@ -8,11 +8,16 @@ You can manage secrets through the **dashboard**, the **`kube-dc` CLI**, or the 
 
 A **ManagedSecret** is a CRD in your project that describes *intent*:
 
-- **what** the secret is — name, type (`opaque`, `password`, `api-key`, `tls`, `db-static`), optional description
-- **how** it should be projected — sync on or off; target `Secret` name; ESO refresh interval; optional key allowlist
-- **whether** to rotate — opt-in scheduled rotation for `type=password`
+- **what** the secret is: its name, its type (`opaque`, `password`, `api-key`,
+  `tls`, or `db-static`), and an optional description
+- **how** to project it: sync on or off, the target `Secret` name, the External
+  Secrets Operator refresh interval, and an optional key allowlist
+- **whether** to rotate it: opt-in scheduled rotation for `type=password`
 
-Values themselves never live in the CRD. They're written through the platform API and stored in OpenBao under a per-project KV mount (`kv-<project>`). When sync is enabled, the Kube-DC controller wires an External Secrets Operator `ExternalSecret` that materializes the values into a regular Kubernetes `Secret` your pods can mount via `envFrom`, `env.valueFrom`, or a Secret volume — exactly like they would with any other Secret.
+The values themselves never live in the CRD. The platform API writes them, and stores them in OpenBao under a per-Project KV mount (`kv-<project>`). When sync is on, the Kube-DC controller wires an External Secrets Operator
+`ExternalSecret`. That `ExternalSecret` materializes the values into an ordinary
+Kubernetes `Secret`, which your pods mount with `envFrom`, `env.valueFrom`, or a
+Secret volume, exactly as they mount any other Secret.
 
 Every read, write, sync change, import, and destroy emits a structured audit event you can query with `kube-dc audit list`.
 
@@ -22,30 +27,30 @@ In your project's sidebar, click the **key icon** to open the Secrets Manager. Y
 
 The sidebar tree under **Secrets** lists every secret in the project. The status dot next to each name tells you at a glance:
 
-- **Ready** (green) — sync is enabled and the Kubernetes `Secret` has been projected
-- **Pending** (amber) — sync is enabled but the projection is not ready yet
-- **Sync disabled** (gray) — values remain in the platform store only
+- **Ready** (green): sync is enabled and the Kubernetes `Secret` has been projected
+- **Pending** (amber): sync is enabled but the projection is not ready yet
+- **Sync disabled** (gray): values remain in the platform store only
 
 Click a secret in the tree (or click its name in the table) to open the detail view with full metadata, a **Reveal values** button, and a **Used by** panel listing every Deployment, StatefulSet, DaemonSet, Job, CronJob, and Pod in the project that references the synced `Secret`.
 
 ## Create a secret
 
-### Create via the dashboard
+### Create in the dashboard
 
 1. Open the **Secrets Manager** view in your project.
 2. Click **Create secret**.
 3. Fill in the form:
-   - **Name** — a valid Kubernetes name (lowercase letters, digits, hyphens, dots; up to 253 chars).
-   - **Type** — pick `opaque` unless you're storing one of the higher-shape types.
-   - **Description** — optional, surfaced in the UI for context.
-   - **Sync to Kubernetes Secret** — leave on (default) to project the values into a regular `Secret`; turn off to keep values platform-only.
-   - **Target Secret name** + **Refresh interval** — optional overrides; defaults to the secret name and 1 hour.
-   - **Seed initial values** — toggle on and add `KEY=value` rows to write the first version atomically with the create.
+   - **Name**: a valid Kubernetes name (lowercase letters, digits, hyphens, dots; up to 253 chars).
+   - **Type**: pick `opaque` unless you're storing one of the higher-shape types.
+   - **Description**: optional, surfaced in the UI for context.
+   - **Sync to Kubernetes Secret**: leave on (default) to project the values into a regular `Secret`; turn off to keep values platform-only.
+   - **Target Secret name** and **Refresh interval**: optional overrides. They default to the secret name and to 1 hour.
+   - **Seed initial values**: toggle on and add `KEY=value` rows to write the first version atomically with the create.
 4. Click **Create**.
 
 If you provided initial values, the secret is created and its first version is written in one round trip. Otherwise the secret starts empty and you can populate it later with the CLI (`kube-dc secrets put …`).
 
-### Create via the CLI
+### Create with the CLI
 
 ```bash
 # Empty secret, sync enabled, target defaults to the secret name:
@@ -59,7 +64,7 @@ kube-dc secrets create app-config \
 # Seed from a .env file:
 kube-dc secrets create app-env --from-env-file=./app.env
 
-# No sync — only readable via "kube-dc secrets get --value":
+# No sync: readable only with "kube-dc secrets get --value"
 kube-dc secrets create api-keys --sync-disabled
 ```
 
@@ -67,7 +72,7 @@ kube-dc secrets create api-keys --sync-disabled
 
 Already have a raw `Secret` in your Project's backing namespace? Import it so the platform takes over its lifecycle.
 
-### Import via the dashboard
+### Import in the dashboard
 
 1. Open the **Secrets Manager** view.
 2. Click **Import existing Secret**.
@@ -79,9 +84,9 @@ The cross-namespace option appears only when your identity can list eligible
 namespaces. It still requires permission to read the source `Secret`, and the
 request is recorded in the audit stream.
 
-The import reads every key from the source `Secret`, writes them to the platform store, creates the matching `ManagedSecret` CR, and turns on sync so the original `Secret` keeps existing (now owned by the platform). Failures roll back cleanly — no orphan KV paths are left behind.
+The import reads every key from the source `Secret`, writes them to the platform store, creates the matching `ManagedSecret` CR, and turns on sync so the original `Secret` keeps existing (now owned by the platform). Failures roll back cleanly, with no orphan KV paths are left behind.
 
-### Import via the CLI
+### Import with the CLI
 
 ```bash
 kube-dc secrets import app-config --from legacy-app-credentials
@@ -91,9 +96,9 @@ kube-dc secrets import app-config --from legacy-app-credentials
 
 Values are hidden by default everywhere. To see them:
 
-- **Dashboard** — click **Reveal** on a row, or **Reveal values** in the detail view. Each value renders with a one-click copy button. Values are re-hidden automatically if the page reloads or the data refreshes.
-- **CLI** — `kube-dc secrets get <name> --value` prints the values as a key/value list. Without `--value` you get the metadata only.
-- **API** — `GET /api/secrets/:project/:name?includeValue=true` returns `value.data` as a `{key: value}` map.
+- **Dashboard**: click **Reveal** on a row, or **Reveal values** in the detail view. Each value renders with a one-click copy button. Values are re-hidden automatically if the page reloads or the data refreshes.
+- **CLI**: `kube-dc secrets get <name> --value` prints the values as a key/value list. Without `--value` you get the metadata only.
+- **API**: `GET /api/secrets/:project/:name?includeValue=true` returns `value.data` as a `{key: value}` map.
 
 Every value-read attempt emits an audit event tagged with your identity, the secret name, and (if applicable) the elevation_id of the active org-admin elevation window.
 
@@ -151,16 +156,16 @@ The first version is written when the resource is created. Subsequent versions a
 
 A Secret volume is refreshed eventually, but the application must reread or reload the file. Values injected through `env` or `envFrom` never change in a running container; roll out the workload after rotation.
 
-The Kube-DC CLI's `kube-dc secrets get app-password --value` always shows the current version. Older versions remain readable via the API for the secret's KV history window.
+The Kube-DC CLI's `kube-dc secrets get app-password --value` always shows the current version. Older versions remain readable through the API for the secret's KV history window.
 
 ## Delete a secret
 
 Two flavours:
 
-- **Soft delete** — removes the `ManagedSecret` and the projected Kubernetes `Secret`, but keeps the value history in the platform store so an admin can restore it.
-- **Destroy** — `kube-dc secrets delete <name> --destroy` (admin-only) wipes both the resource and every version of the stored values irreversibly.
+- **Soft delete**: removes the `ManagedSecret` and the projected Kubernetes `Secret`, but keeps the value history in the platform store so an admin can restore it.
+- **Destroy**: `kube-dc secrets delete <name> --destroy` (admin-only) wipes both the resource and every version of the stored values irreversibly.
 
-The dashboard's delete action soft-deletes by default; destroy must be done via the CLI or HTTP API with `?destroy=true` so the irreversible step is explicit.
+The dashboard's delete action soft-deletes by default; destroy must be done with the CLI or HTTP API with `?destroy=true` so the irreversible step is explicit.
 
 ## Permissions
 
@@ -210,13 +215,13 @@ Every event includes `actor`, `actor_email`, `action`, `result`, `resource`, `re
 
 ## Tips
 
-- **Cross-project copies** — to move a secret between projects, `kube-dc secrets get --value -o yaml` in the source project, then `kube-dc secrets create … --from-literal=…` in the target. The platform deliberately doesn't expose a one-step cross-project copy to keep the audit trail unambiguous.
-- **Diff before destroy** — `kube-dc secrets consumers <name>` lists every workload referencing the synced `Secret`. Always check this before `--destroy`.
-- **Organization admin access** — a Project role grants direct access according to the table above. Elevation applies only when the installation enforces it and the Organization admin has no qualifying Project role.
+- **Cross-project copies**: to move a secret between projects, `kube-dc secrets get --value -o yaml` in the source project, then `kube-dc secrets create … --from-literal=…` in the target. The platform deliberately doesn't expose a one-step cross-project copy to keep the audit trail unambiguous.
+- **Diff before destroy**: `kube-dc secrets consumers <name>` lists every workload referencing the synced `Secret`. Always check this before `--destroy`.
+- **Organization admin access**: a Project role grants direct access according to the table above. Elevation applies only when the installation enforces it and the Organization admin has no qualifying Project role.
 
-## When to use Secrets Manager vs. other features
+## When to use Secrets Manager, and when to use another feature
 
-The Secrets Manager is for **values you store** — API tokens, signing
+The Secrets Manager is for **values you store**: API tokens, signing
 keys, OAuth client secrets. Three sibling features cover related but
 distinct needs:
 
@@ -226,13 +231,13 @@ distinct needs:
 | [Certificate Manager](certificate-manager.md) | You need x509 certs (TLS server, mTLS, code signing). Cert renewal is automatic. |
 | [Managed Services credentials](postgresql-credentials.md) | The "secret" is a database password whose lifecycle is tied to an actual database login. A `ServiceBinding` delivers it and a `ServiceCredentialPolicy` rotates it on schedule. |
 
-Use Secrets Manager when none of those fit — short-lived OAuth tokens
+Use Secrets Manager when none of those fit. Short-lived OAuth tokens
 from your IdP, third-party API keys, SSH host keys, GPG signing keys,
-etc. Anything you'd otherwise jam into a YAML file or git-crypt.
+and license keys. Store anything you would otherwise put in a YAML file or in git-crypt.
 
 ## Reference
 
-- **CLI** — `kube-dc secrets --help`
-- **CRD** — `ManagedSecret` in API group `security.kube-dc.com/v1alpha1`
-- **HTTP API** — see your cluster's backend at `https://backend.<your-domain>/api/secrets/*`
-- **Related** — [KMS](kms.md) · [Certificate Manager](certificate-manager.md) · [Managed Services credentials](postgresql-credentials.md)
+- **CLI**: `kube-dc secrets --help`
+- **CRD**: `ManagedSecret` in API group `security.kube-dc.com/v1alpha1`
+- **HTTP API**: see your cluster's backend at `https://backend.<your-domain>/api/secrets/*`
+- **Related**: [KMS](kms.md) · [Certificate Manager](certificate-manager.md) · [Managed Services credentials](postgresql-credentials.md)

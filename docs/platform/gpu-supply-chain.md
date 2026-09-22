@@ -23,7 +23,7 @@ An enabled installer accepts one indivisible qualified tuple:
 | NVIDIA DCGM exporter | `4.4.1-4.6.0-ubuntu22.04` plus its resolved runtime digest |
 
 The CLI rejects any other value even if it is syntactically valid. This keeps
-version flags from becoming unreviewed “latest” knobs. A newly qualified tuple
+version flags from becoming unreviewed "latest" knobs. A newly qualified tuple
 is promoted by updating the release constants and contracts after the GPU
 upgrade gate, hardware canary, monitoring, and rollback evidence pass.
 

@@ -1,44 +1,43 @@
 # Tutorials
 
-Choose a path by what you are trying to operate. Most application work happens
-inside a Project; Kubernetes platform software belongs in a Managed Cluster.
+Choose a path by what you want to operate. Most application work happens inside
+a Project. Kubernetes platform software belongs in a Managed Cluster.
 
-## First Session
+## First session
 
-1. [Sign Up and Log In](sign-up-login.md)
+1. [Sign up and sign in](sign-up-login.md)
 2. [Understand Organizations, Projects, and Managed Clusters](core-concepts.md)
-3. [Create Your First Project](first-project.md)
-4. [Configure CLI Access](cli-kubeconfig.md)
-5. [Deploy Your First Application](deploy-first-app.md)
+3. [Create your first Project](first-project.md)
+4. [Configure CLI access](cli-kubeconfig.md)
+5. [Deploy your first application](deploy-first-app.md)
 
-## Run an Application in a Project
+## Run an application in a Project
 
-- [Projects](kubernetes-projects.md): understand the supported API boundary
-- [Deploy a WordPress Stack](deploy-wordpress-stack.md): combine an app with managed services
-- [Service Exposure](service-exposure.md): publish HTTP, HTTPS, TCP, or UDP
-- [Scaling and Performance](scaling-performance.md): size from measurements
-- [GitOps](gitops.md): deliver from an external controller or CI
+- [Projects](kubernetes-projects.md) explains the supported API boundary.
+- [Deploy a WordPress stack](deploy-wordpress-stack.md) combines an app with managed services.
+- [Service exposure](service-exposure.md) publishes HTTP, HTTPS, TCP, or UDP.
+- [Scaling and performance](scaling-performance.md) sizes a workload from measurements.
+- [GitOps](gitops.md) delivers from an external controller or from CI.
 
-A Project is backed by the `{organization}-{project}` namespace. Use the
-Project name in product language and the backing namespace only in YAML or `kubectl`
-commands.
+The `{organization}-{project}` namespace backs each Project. Use the Project
+name in prose, and the backing namespace only in YAML or in `kubectl` commands.
 
-## Run a Virtual Machine
+## Run a virtual machine
 
-1. [Create a Virtual Machine](creating-vm.md)
+1. [Create a virtual machine](creating-vm.md)
 2. [Connect to the VM](connecting-vm.md)
-3. [Manage the VM Lifecycle](vm-lifecycle.md)
-4. [Choose Block Storage](block-storage.md)
-5. [Configure External or Floating IPs](public-floating-ips.md)
+3. [Manage the VM lifecycle](vm-lifecycle.md)
+4. [Choose block storage](block-storage.md)
+5. [Configure external or floating IPs](public-floating-ips.md)
 
-## Use Managed Data Services
+## Use managed data services
 
-- [Managed Services](managed-services.md): databases, caches and brokers from the catalog
-- [Credentials and Rotation](postgresql-credentials.md)
-- [Object Storage](object-storage.md)
+- [Managed services](managed-services.md): databases, caches, and brokers from the catalog
+- [Credentials and rotation](postgresql-credentials.md)
+- [Object storage](object-storage.md)
 - [Secrets Manager](secrets-manager.md)
-- [Key Management](kms.md)
-- [Data Protection and Recovery](backups-snapshots.md)
+- [Key management](kms.md)
+- [Data protection and recovery](backups-snapshots.md)
 
 ## Operate a Managed Cluster
 
@@ -46,24 +45,24 @@ Use a Managed Cluster when an application needs its own Kubernetes API,
 operators, CRDs, multiple namespaces, or cluster-scoped administration.
 
 1. [Provision a Managed Cluster](provisioning-cluster.md)
-2. [Manage Workers, Storage, Exposure, and Upgrades](cluster-management.md)
+2. [Manage workers, storage, exposure, and upgrades](cluster-management.md)
 3. [Install GitOps in the Managed Cluster](gitops.md#pattern-2-gitops-in-a-managed-cluster)
 
 Managed Cluster workers consume quota from the parent Project.
 
-## Manage Access and Security
+## Manage access and security
 
-- [User and Group Management](team-management.md)
-- [Security Restrictions](security-restrictions.md)
-- [Certificate Management](certificate-manager.md)
+- [User and group management](team-management.md)
+- [Security restrictions](security-restrictions.md)
+- [Certificate management](certificate-manager.md)
 
 Organization admins manage membership and Project role assignments. Project
 roles do not remove the platform admission policies that protect shared
 infrastructure.
 
-## Platform Operator Guides
+## Platform operator guides
 
 Installation, shared networking, identity-provider configuration, and platform
 recovery are operator responsibilities. They are documented separately in the
-[Platform Guide](/platform). Project users should not run platform-cluster
-commands from customer tutorials.
+[Platform guide](/platform). Project users should not run platform-cluster
+commands from tenant tutorials.

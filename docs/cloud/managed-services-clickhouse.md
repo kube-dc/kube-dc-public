@@ -138,7 +138,7 @@ that must survive the loss of a replica.
 There is no resize, storage expansion, scaling, upgrade or hibernation for
 this family in the current release. Rotation on a schedule uses a
 `ServiceCredentialPolicy`; see
-[Credentials and Rotation](postgresql-credentials.md).
+[Credentials and rotation](postgresql-credentials.md).
 
 ## Backups and restore
 
@@ -155,7 +155,9 @@ replication group.
 
 ## Limits
 
-| | |
+The following table lists the limits of a managed ClickHouse service:
+
+| Property | Limit |
 |---|---|
 | Versions | 25.8 release line |
 | High availability | Production plan: two replicas of one shard behind one address, coordinated by a three-member Keeper quorum that survives losing one member. A lost Keeper leaves replicated tables readable and refusing writes until it returns |

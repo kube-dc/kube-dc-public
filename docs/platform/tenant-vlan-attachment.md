@@ -1,6 +1,6 @@
 import {TenantVlanLifecycleDiagram} from '@site/src/components/Diagram/PlatformFlowDiagrams';
 
-# Attaching a Project to a physical VLAN
+# Attach a Project to a physical VLAN
 
 Kube-DC can put a Project's workloads on a customer-owned physical VLAN, so they
 are layer-2 adjacent to that customer's own hardware while their default route
@@ -8,7 +8,7 @@ stays on the Project VPC interface.
 
 There are two things to operate here, and keeping them apart is the whole point:
 
-- **The wire.** A `FabricSegment` is one physical broadcast domain—one
+- **The wire.** A `FabricSegment` is one physical broadcast domain: one
   (`ProviderNetwork`, VLAN ID) pair. You declare it once, after the switch really
   delivers the tag to the nodes.
 - **Who may use it.** A `FabricSegmentAllocation` offers that wire to one
@@ -32,8 +32,8 @@ There are two things to operate here, and keeping them apart is the whole point:
 
 The user-facing half of this is documented in
 [Datacenter VLANs](/cloud/datacenter-vlans) in the Cloud guide. For where this
-sits in the wider network design — overlay vs. underlay, VPCs, provider bridges
-— see [Networking Architecture](architecture-networking.md#attaching-a-project-to-a-datacenter-vlan).
+sits in the wider network design: overlay compared with underlay, VPCs, provider bridges
+See [Networking architecture](architecture-networking.md#attach-a-project-to-a-datacenter-vlan).
 
 ---
 
@@ -51,7 +51,7 @@ Deliberately narrow. Anything outside this is refused at admission:
   workload or Namespace primary `logical_switch`
 - **one Project per physical broadcast domain**, and one Organization per wire
 
-## Enabling the feature
+## Enable the feature
 
 The chart installs the additive CRDs (`FabricSegment`, `FabricSegmentAllocation`,
 `ProjectNetwork`, `VlanReservation`) on every cluster. The controller and its
@@ -76,7 +76,7 @@ transition. Delete every binding, wait for its drain-first teardown, then disabl
 
 ---
 
-## Prerequisites
+## Before you begin
 
 Confirm all of the following before declaring a segment:
 
@@ -89,7 +89,7 @@ Confirm all of the following before declaring a segment:
    allocates freely from whatever you leave open, and a collision lands on
    equipment you do not operate and cannot see.
 4. The VLAN CIDR does **not overlap** the Project's VPC subnet, nor any
-   other VLAN the same Project holds. Nothing validates this today — an overlap
+   other VLAN the same Project holds. Nothing validates this today. An overlap
    produces ambiguous connected routes inside the workload and is very hard to
    diagnose from the outside.
 5. The VLAN is dedicated to one Kube-DC Project. A second Project on the same
@@ -106,7 +106,7 @@ dedicated VLAN from the datacenter network team.
 
 ---
 
-## Step 1 — declare the physical segment
+## Step 1: declare the physical segment
 
 The name is deterministic. For the underlay driver it must be
 `pn-<providerNetwork>-<vlanId>`, because **the name is the isolation key**: two
@@ -138,7 +138,7 @@ kubectl get fabricsegment pn-ext-4014 \
 
 `status.ready` must be `true`, `readyNodes` must match the intended nodes, and
 `foreignObjects` must be empty. `foreignObjects` lists kube-ovn objects sitting on
-this wire that Kube-DC did not create — an alias Subnet or duplicate Vlan can
+this wire that Kube-DC did not create. An alias Subnet or a duplicate Vlan can
 bridge an unintended Project onto the same broadcast domain, so it blocks admission.
 
 Segments and their allocations are visible under **Infrastructure → VLANs** in
@@ -148,7 +148,7 @@ the admin console.
 
 ---
 
-## Step 2 — allocate the wire to an Organization
+## Step 2: allocate the wire to an Organization
 
 This is what delegates day-to-day assignment to an Organization admin. Use **Infrastructure →
 VLANs → Allocations → Allocate to Organization**.
@@ -178,15 +178,15 @@ Two things about this object are load-bearing:
 
 **Its name is the segment name.** There is no `segmentRef` field, and adding one
 would be a regression. Naming the allocation after the wire makes "one
-Organization per broadcast domain" an atomic property of storage — a second
+Organization per broadcast domain" an atomic property of storage. A second
 allocation collides with `AlreadyExists`. A `segmentRef` field plus a uniqueness
 check in admission is a read-then-write race: two concurrent passes each list,
 each see no conflict, and both proceed.
 
 **The addressing lives here, not on the Project binding.** These are physical
 facts about the customer's segment, and admission requires an Organization-admin-created
-`ProjectNetwork` to match them exactly. Without that, an Organization admin — who holds
-`create` on `ProjectNetwork` — could bind their allocated wire with a CIDR
+`ProjectNetwork` to match them exactly. Without that, an Organization admin, who holds
+`create` on `ProjectNetwork`, could bind their allocated wire with a CIDR
 covering the customer's entire subnet, a gateway pointing at their own workload,
 or empty `excludeIps` that lets IPAM hand out addresses the customer's hardware
 already uses.
@@ -209,7 +209,7 @@ kubectl get fabricsegmentallocation
 
 ---
 
-## Step 3 — an Organization admin binds a Project
+## Step 3: an Organization admin binds a Project
 
 Nothing for you to do. The Organization admin assigns and unassigns from their
 own console, as described in [Datacenter VLANs](/cloud/datacenter-vlans).
@@ -224,9 +224,9 @@ kubectl get vlanreservation pn-ext-4014 -o yaml
 kubectl -n acme-production get network-attachment-definition
 ```
 
-### Binding directly, as the platform admin
+### Bind directly, as the platform administrator
 
-You can still create a `ProjectNetwork` yourself — for a cluster where nobody has
+You can still create a `ProjectNetwork` yourself, for a cluster where nobody has
 delegated yet, or to reproduce a Project user's issue:
 
 ```yaml
@@ -247,7 +247,7 @@ spec:
 ```
 
 A platform admin may bind without an allocation existing. The controller then
-**adopts** one — recording which organization holds the wire, copying the
+**adopts** one. It records which organization holds the wire, copies the
 addressing off the binding. That is how clusters that predate this feature
 converge with no migration step and no operator action.
 
@@ -268,7 +268,7 @@ is only a coarse gate and admission is the real boundary**.
 `kube-dc:projectnetwork-tenant` grants exactly `create` and `delete`, bound
 per-organization to the group `<org>:org-admin`. Do not add verbs to it.
 
-- **No `update`/`patch`.** Every `ProjectNetworkSpec` field is immutable, so an Organization administrator UPDATE can only touch metadata — including the controller's teardown
+- **No `update`/`patch`.** Every `ProjectNetworkSpec` field is immutable, so an Organization administrator UPDATE can touch only metadata, which includes the controller's teardown
   finalizer. Strip that and delete, and the binding disappears *without draining*:
   the NAD and reservation go while a workload's Multus interface is still on the
   wire, the allocation reads free, and the next assignment puts two projects on
@@ -295,7 +295,7 @@ On `ProjectNetwork` CREATE / UPDATE / DELETE:
 
 Identity comes from `AdmissionRequest.UserInfo.Groups`, which the API server
 derives from the authenticated token. Per-organization OIDC stamps the realm name
-onto every group, so `acme:org-admin` can only be issued by the `acme` realm — a
+onto every group, so only the `acme` realm can issue `acme:org-admin`. A
 user cannot mint a group naming somebody else's Organization.
 
 DELETE is validated too, and this is easy to miss: a cluster-scoped `delete` takes
@@ -309,7 +309,7 @@ the new realm mints the identical `acme:org-admin`. The controller therefore pin
 the `Organization` UID in `status.orgUid` and admission compares the live UID
 against it.
 
-On mismatch the allocation is marked stale and the pin is **not** rewritten —
+On a mismatch the allocation is marked stale, and the pin is **not** rewritten.
 re-pinning is exactly the silent hand-over being prevented. Re-allocate
 explicitly. The console shows a warning icon on such a row.
 
@@ -326,10 +326,10 @@ explicitly. The console shows a warning icon on such a row.
 
 ---
 
-## Reclaiming a wire
+## Reclaim a wire
 
 Deleting an allocation is refused while a project still holds it, both at
-admission and by a finalizer — so the refusal survives a webhook outage or a
+admission and by a finalizer, so the refusal survives a webhook outage or a
 `--force` delete.
 
 ```bash
@@ -348,7 +348,7 @@ holds the wire and the tooltip names that Project.
 
 ## Teardown
 
-Delete the `ProjectNetwork` — never its NAD, Subnet, Vlan, or reservation.
+Delete the `ProjectNetwork`. Never delete its NAD, Subnet, Vlan, or reservation.
 Teardown enters `Denying`, refuses new attachments, and waits for a stable zero of
 attachment intent. It then confirms, in order, that the NAD, Kube-OVN Subnet
 (including its finalizer) and controller-owned Vlan are gone before releasing the
@@ -370,14 +370,14 @@ Delete the `FabricSegment` only after the reservation is released and the
 ### Orphaned reservations
 
 A `VlanReservation` whose owning `ProjectNetwork` no longer exists blocks every
-future binding of that wire *and* blocks deleting the segment — and the fabric
+future binding of that wire *and* blocks deleting the segment, and the fabric
 guard correctly refuses a reservation delete from anyone but the controller, so it
 cannot be cleared by hand.
 
 The controller reaps such a claim automatically, but **only when the wire is
 genuinely quiesced**. On reconcile it compares the reservation's owner UID against
 live `ProjectNetwork`s and, if the owner is gone, additionally confirms that
-teardown's own artifacts — the published NAD and the generated Kube-OVN Subnet —
+teardown's own artifacts, the published NAD and the generated Kube-OVN Subnet,
 are absent before releasing anything.
 
 That second check is the important one. A `ProjectNetwork` can disappear *without*
@@ -394,7 +394,7 @@ reaping orphaned VlanReservation: owner gone and teardown artifacts confirmed ab
 If instead you see this, the wire is quarantined on purpose:
 
 ```
-NOT reaping VlanReservation: its owner is gone but teardown artifacts remain —
+NOT reaping VlanReservation: its owner is gone but teardown artifacts remain.
 the wire may still carry workloads
 ```
 
@@ -418,13 +418,13 @@ kubectl get projectnetwork -o custom-columns='NAME:.metadata.name,UID:.metadata.
 
 ---
 
-## Attaching workloads
+## Attach workloads
 
 Project-user instructions are in [Datacenter VLANs](/cloud/datacenter-vlans). What
 matters operationally:
 
 Admission injects required node affinity and provider-scoped port security,
-re-deriving usable nodes from **live** Node and ProviderNetwork state — so a stale
+re-deriving usable nodes from **live** Node and ProviderNetwork state, so a stale
 `FabricSegment.status.readyNodes` cannot authorize a black-holed placement. For
 VMs this happens on the generated `virt-launcher` Pod, not on the
 `VirtualMachine` object.
@@ -539,6 +539,6 @@ Before presenting the feature as operational on a cluster, prove all of these:
 
 ## Related
 
-- [Datacenter VLANs](/cloud/datacenter-vlans) — the Project-user guide
-- [External Networking](networking-external.md) — provider networks and platform VLANs
-- [Networking Architecture](architecture-networking.md) — how Kube-OVN is laid out
+- [Datacenter VLANs](/cloud/datacenter-vlans): the Project-user guide
+- [External Networking](networking-external.md): provider networks and platform VLANs
+- [Networking architecture](architecture-networking.md): how Kube-OVN is laid out

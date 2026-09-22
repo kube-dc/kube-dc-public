@@ -1,15 +1,15 @@
-# External & Floating IPs
+# External & floating IPs
 
 Kube-DC provides two address resources for Project egress and inbound access:
 
-- **External IP (EIP)** — a cloud-internal or public address that can back a
+- **External IP (EIP)**: a cloud-internal or public address that can back a
   Project gateway or LoadBalancer Service
-- **Floating IP (FIP)** — a 1:1 NAT mapping between an external address and a
+- **Floating IP (FIP)**: a 1:1 NAT mapping between an external address and a
   specific VM or Pod
 
 ---
 
-## Managing IPs via UI
+## Manage IPs in the console
 
 The **Networking** section in the Console UI shows all IP resources in your project:
 
@@ -30,14 +30,14 @@ Every project gets a **default gateway EIP** (`default-gw`) automatically. This 
 - Outbound NAT for all VMs and pods
 - Default endpoint for LoadBalancer services (in public projects)
 
-### EIP Network Types
+### EIP network types
 
 | `externalNetworkType` | Description | Use Case |
 |-----------------------|-------------|----------|
 | `cloud` | Private address allocated from the platform's shared cloud pool; not internet-routable | Outbound NAT and private platform routing |
 | `public` | Public address allocated to this EIP; internet-routable where provider policy allows | Direct access, VMs, static IP |
 
-“Shared pool” describes where a `cloud` address is allocated from; it does not mean multiple Projects use the same allocated address at the same time. Each `EIp` owns one allocation until the resource is deleted.
+"Shared pool" describes where a `cloud` address is allocated from; it does not mean multiple Projects use the same allocated address at the same time. Each `EIp` owns one allocation until the resource is deleted.
 
 ### Create an EIP
 
@@ -79,7 +79,7 @@ spec:
     targetPort: 443
 ```
 
-### Use the Default Gateway EIP
+### Use the default Gateway EIP
 
 For projects with `egressNetworkType: public`, the default gateway EIP is public and can be shared across services:
 
@@ -109,17 +109,17 @@ Deleting an EIP that is bound to a service or FIP will disrupt connectivity. Rem
 Floating IPs provide **1:1 NAT** between an external IP and a VM's internal
 IP. All ports are mapped, while the guest keeps its private address.
 
-### When to Use FIPs
+### When to use FIPs
 
-- **Direct VM access** — SSH, RDP, or another inbound protocol
-- **All-port mapping** — appliances or services that need more ports than a
+- **Direct VM access**: SSH, RDP, or another inbound protocol
+- **All-port mapping**: appliances or services that need more ports than a
   practical LoadBalancer definition
-- **Service-free setup** — point the FIP at a VM without creating a
+- **Service-free setup**: point the FIP at a VM without creating a
   LoadBalancer Service
 
 ### Create a FIP for a VM
 
-The FIP uses `vmTarget` to automatically resolve the VM's internal IP via the QEMU guest agent:
+The FIP uses `vmTarget` to automatically resolve the VM's internal IP through the QEMU guest agent:
 
 ```yaml
 apiVersion: kube-dc.com/v1
@@ -163,7 +163,7 @@ The auto-allocated EIP is released automatically.
 
 ---
 
-## FIP and LoadBalancer Conflict
+## FIP and LoadBalancer conflict
 
 :::warning Important Limitation
 A VM/pod **cannot simultaneously** be:
@@ -180,7 +180,7 @@ Public FIPs create source-based policy routes that redirect ALL outbound traffic
 
 ---
 
-## Quick Reference
+## Quick reference
 
 | Task | Resource | Key Field |
 |------|----------|-----------|
@@ -192,7 +192,7 @@ Public FIPs create source-based policy routes that redirect ALL outbound traffic
 
 ---
 
-## Next Steps
+## Next steps
 
-- [VPC & Private Networking](private-networking.md) — Project isolation and subnets
-- [Service Exposure Guide](service-exposure.md) — Complete reference for Gateway Routes, LoadBalancers, and advanced options
+- [VPC and private networking](private-networking.md): Project isolation and subnets
+- [Service exposure](service-exposure.md): Complete reference for Gateway Routes, LoadBalancers, and advanced options

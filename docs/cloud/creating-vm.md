@@ -1,26 +1,26 @@
-# Deploying VMs
+# Deploy VMs
 
 This guide walks you through deploying virtual machines in Kube-DC using both the Console UI and kubectl manifests.
 
-## Prerequisites
+## Before you begin
 
 - A Kube-DC Cloud [project](first-project.md)
-- [CLI access](cli-kubeconfig.md) configured — `kubectl` working against your project
+- [CLI access](cli-kubeconfig.md) configured, with `kubectl` working against your Project
 - (Optional) The [`virtctl`](https://kubevirt.io/user-guide/user_workloads/virtctl_client_tool/) plugin for VM console access
 
-## VM Components
+## VM components
 
 Kube-DC virtualization is powered by [KubeVirt](https://kubevirt.io/) and uses three main resources:
 
-- **DataVolume** — manages the VM's disk image (downloads cloud images, provisions PVCs)
-- **VirtualMachine** — defines the VM configuration, resources, and lifecycle
-- **VirtualMachineInstance (VMI)** — represents a running VM instance
+- **DataVolume**: manages the VM's disk image (downloads cloud images, provisions PVCs)
+- **VirtualMachine**: defines the VM configuration, resources, and lifecycle
+- **VirtualMachineInstance (VMI)**: represents a running VM instance
 
 ---
 
-## Creating a VM via Console UI
+## Create a VM in the console
 
-### Step 1: Open VM Creation
+### Step 1: Open VM creation
 
 1. Select your project from the sidebar
 2. Navigate to **Virtual Machines**
@@ -30,23 +30,23 @@ Kube-DC virtualization is powered by [KubeVirt](https://kubevirt.io/) and uses t
 
 ### Step 2: Configure the VM
 
-1. **VM Name** — choose a name (e.g., `ubuntu`)
-2. **Operating System** — select from available images (Ubuntu 22.04 / 24.04 / 26.04, Debian 12, CentOS Stream 9, Fedora 42, openSUSE Leap 15.6, Alpine 3.21, Gentoo, Windows 11)
-3. **Version** *(optional, advanced)* — most Linux families now expose multiple maintained versions (e.g., Ubuntu 24.04 currently keeps `20260321`, `20260225`, `20260209`, `20260131`). Leave the dropdown on **Latest** to take the newest mirrored bytes — Kube-DC keeps `/latest/` pointing at the freshest version per family, refreshed weekly. Pin a specific version only if you need reproducibility against a known build.
-4. **vCPUs** and **RAM** — set resources based on your workload
-5. **Root Storage Size** — set disk size (e.g., 12 GB for Linux, 70 GB for Windows).
+1. **VM Name**: choose a name (for example, `ubuntu`)
+2. **Operating System**: select from available images (Ubuntu 22.04 / 24.04 / 26.04, Debian 12, CentOS Stream 9, Fedora 42, openSUSE Leap 15.6, Alpine 3.21, Gentoo, Windows 11)
+3. **Version** *(optional, advanced)*: most Linux families expose several maintained versions. Ubuntu 24.04, for example, keeps `20260321`, `20260225`, `20260209`, and `20260131`. Leave the dropdown on **Latest** to take the newest mirrored bytes. Kube-DC keeps `/latest/` pointing at the freshest version per family, refreshed weekly. Pin a specific version only if you need reproducibility against a known build.
+4. **vCPUs** and **RAM**: set the resources from your workload's needs
+5. **Root Storage Size**: set disk size (for example, 12 GB for Linux, 70 GB for Windows).
    The value is a floor as well as a size: a VM is created by cloning a golden image,
    so the request cannot be smaller than that golden. Ask for more and the extra space
-   is yours — the disk is grown to your requested size before the VM starts, and the
+   is yours. The platform grows the disk to your requested size before the VM starts, and the
    guest filesystem expands into it on first boot. On Windows that expansion happens
    during the first-boot sequence, so `C:` reaches its full size a few minutes after
    the VM is created rather than instantly.
-6. **Root disk storage** — the real storage choice for the VM (see [below](#root-disk-storage)):
-   - **Local disk (default)** — node-local storage; best durable-write latency. No snapshots, no live migration.
-   - **Shared RBD** — shared Ceph-backed storage; supports snapshots and (optionally) live migration. Slower durable writes.
-   - When **Shared RBD** is selected, an **Enable live migration** checkbox appears — tick it to let the VM move between nodes during maintenance (available when the OS has a Block golden and the cluster has ≥2 CPU-compatible nodes).
+6. **Root disk storage**: the real storage choice for the VM (see [below](#root-disk-storage)):
+   - **Local disk (default)**: node-local storage; best durable-write latency. No snapshots, no live migration.
+   - **Shared RBD**: shared Ceph-backed storage; supports snapshots and (optionally) live migration. Slower durable writes.
+   - When **Shared RBD** is selected, an **Enable live migration** checkbox appears. Select it to let the VM move between nodes during maintenance (available when the OS has a Block golden and the cluster has ≥2 CPU-compatible nodes).
 7. **Accelerator** *(shown only when Dedicated GPU VM passthrough is enabled and
-   currently available to your project)* — keep **No GPU** for an ordinary VM,
+   available to your Project)*: keep **No GPU** for an ordinary VM,
    or select an available Dedicated GPU VM profile. Shared GPU/HAMi pod capacity
    does not make this option available. GPU VMs cannot live migrate; the wizard
    clears live migration and maintenance requires a shutdown/restart. Follow the
@@ -57,7 +57,7 @@ Kube-DC virtualization is powered by [KubeVirt](https://kubevirt.io/) and uses t
 A compact summary under the selector shows exactly what will be provisioned
 (root disk, provisioning, snapshots, live migration) before you submit.
 
-### Step 3: Review and Create
+### Step 3: Review and create
 
 Click **Next** to review the generated YAML, then **Finish** to create the VM.
 
@@ -65,21 +65,21 @@ Click **Next** to review the generated YAML, then **Finish** to create the VM.
 
 The VM will appear in the list. Wait for the status to reach **Running**.
 
-### Managing VMs
+### Manage VMs
 
-Click on a VM to view its details — OS info, status, performance metrics, and conditions.
+Click a VM to view its details: the OS, the status, the performance metrics, and the conditions.
 
 ![VM Details](images/vm-details-view.png)
 
 From the details page you can:
 
-- **Launch Remote Console** — graphical console in the browser
-- **Launch SSH Terminal** — web-based SSH terminal
-- **Start / Stop / Restart / Delete** — manage the VM lifecycle
+- **Launch Remote Console**: graphical console in the browser
+- **Launch SSH Terminal**: web-based SSH terminal
+- **Start / Stop / Restart / Delete**: manage the VM lifecycle
 
 ---
 
-## Creating a VM via kubectl
+## Create a VM with kubectl
 
 The resources below are created in your active Project. Multus requires a
 Kubernetes-qualified network name, so replace `<project-backing-namespace>`
@@ -89,7 +89,7 @@ with the current Project's backing namespace. You can print it with
 ### Ubuntu 24.04
 
 <details>
-<summary>Ubuntu 24.04 — DataVolume + VirtualMachine manifest</summary>
+<summary>Ubuntu 24.04: DataVolume and VirtualMachine manifest</summary>
 
 ```yaml
 apiVersion: cdi.kubevirt.io/v1beta1
@@ -175,14 +175,14 @@ kubectl apply -f ubuntu-vm.yaml
 ```
 
 :::tip SSH Key Injection
-The `accessCredentials` section injects your SSH public key from the `authorized-keys-default` secret into the VM via the QEMU guest agent. The `users` field must match the default user for the OS image (`ubuntu` for Ubuntu, `debian` for Debian).
+The `accessCredentials` section injects your SSH public key from the `authorized-keys-default` secret into the VM through the QEMU guest agent. The `users` field must match the default user for the OS image (`ubuntu` for Ubuntu, `debian` for Debian).
 :::
 
-### Accessing VMs via SSH
+### Access a VM with SSH
 
-Once the VM is running, you can SSH into it using the private key stored in your project's `ssh-keypair-default` secret.
+After the VM is running, you can SSH into it using the private key stored in your project's `ssh-keypair-default` secret.
 
-#### Step 1: Extract the SSH Private Key
+#### Step 1: Extract the SSH private key
 
 ```bash
 # Extract the private key from the secret
@@ -190,7 +190,7 @@ kubectl get secret ssh-keypair-default -n <project-backing-namespace> -o jsonpat
 chmod 600 /tmp/vm_ssh_key
 ```
 
-#### Step 2: Get the VM's IP Address
+#### Step 2: Get the VM's IP address
 
 For VMs with a Floating IP (FIP):
 ```bash
@@ -204,7 +204,7 @@ For VMs without FIP (internal access only):
 kubectl get vmi <vm-name> -n <project-backing-namespace> -o jsonpath='{.status.interfaces[0].ipAddress}'
 ```
 
-#### Step 3: Connect via SSH
+#### Step 3: Connect over SSH
 
 ```bash
 # SSH using the extracted private key
@@ -224,7 +224,7 @@ ssh -i /tmp/vm_ssh_key <username>@<ip-address>
 ### Debian 12
 
 <details>
-<summary>Debian 12 — DataVolume + VirtualMachine manifest</summary>
+<summary>Debian 12: DataVolume and VirtualMachine manifest</summary>
 
 ```yaml
 apiVersion: cdi.kubevirt.io/v1beta1
@@ -311,20 +311,20 @@ spec:
 the Operating System dropdown, set Root Storage to **70 GB**, and create. The console
 clones a pre-built golden (VirtIO drivers, QEMU guest agent and SSH/RDP already
 installed) and applies the correct UEFI + TPM + Hyper-V configuration automatically.
-The VM boots to the Windows lock screen in a few minutes — open **Launch Remote
+The VM boots to the Windows lock screen in a few minutes. Open **Launch Remote
 Console** to use it.
 
 :::tip Storage quota
 A Windows golden is ~75 GB, so its clone needs **~75–80 GB of free storage quota** in
 your project. If the project is near its storage limit the clone fails with a quota
-error — free space or request more before creating a Windows VM.
+error. Free space, or request more, before you create a Windows VM.
 :::
 
 The kubectl equivalent, showing the UEFI boot, TPM and Hyper-V features Windows
 requires:
 
 <details>
-<summary>Windows 11 — DataVolume + VirtualMachine manifest</summary>
+<summary>Windows 11: DataVolume and VirtualMachine manifest</summary>
 
 ```yaml
 apiVersion: cdi.kubevirt.io/v1beta1
@@ -436,34 +436,35 @@ tier: **where does the root disk live?**
 
 | Root disk | What you get | Trade-off |
 |---|---|---|
-| **Local disk (default)** | Node-local storage. **Best durable-write latency.** | Lives on one node — no volume snapshots, and a node drain stops the VM. |
+| **Local disk (default)** | Node-local storage. **Best durable-write latency.** | Lives on one node. There are no volume snapshots, and a node drain stops the VM. |
 | **Shared RBD** | Shared Ceph-backed storage. Supports **snapshots** and (optionally) **live migration**. | Higher durable-write latency for fsync-heavy workloads. |
 
-The decision most users make is simply: **do I want the fastest disk writes, or shared
-storage features (snapshots, live migration)?** Local disk cannot live-migrate because
-it is local to one node — that limitation is inherent, not a policy.
+The decision comes down to one question: **do you want the fastest disk writes,
+or the shared-storage features (snapshots, live migration)?** A local disk
+cannot live-migrate, because it belongs to one node. That limit is inherent,
+not a policy.
 
 When you pick **Shared RBD**, two things follow:
 
-- **Provisioning** — if a prepared *golden* image exists for the OS, Kube-DC clones it
+- **Provisioning**: if a prepared *golden* image exists for the OS, Kube-DC clones it
   (the VM boots in seconds); otherwise it imports the image on first boot. This is
-  automatic — you don't choose it.
-- **Enable live migration** *(checkbox)* — opt in to let the VM move between nodes during
+  automatic. You do not choose it.
+- **Enable live migration** *(checkbox)*: opt in to let the VM move between nodes during
   maintenance. Available when the OS has a *Block* golden and the cluster has ≥2
   CPU-compatible nodes; it uses RWX **Block** mode and a pinned CPU model.
 
 Operators: the cluster-side mechanics (storage tiers, enabling RBD, migration pools, the
 CPU-headroom rule) are in [VM storage tiers & live migration](/platform/vm-storage-tiers).
 
-### Create an HA (live-migratable) VM — the simple way
+### Create a live-migratable VM the simple way
 
-1. In **+ Create VM**, choose your OS (e.g. Ubuntu 24.04) and set CPU / RAM / storage.
+1. In **+ Create VM**, choose your OS (for example, Ubuntu 24.04) and set CPU / RAM / storage.
 2. Under **Root disk storage**, select **Shared RBD**.
 3. Tick **Enable live migration**. If your cluster has more than one CPU pool, pick the
    **Migration pool** to pin to.
 4. Review the summary, click **Next → Finish**.
 
-That's it — the VM comes up live-migratable. During node maintenance, Kube-DC can live-migrate it to another compatible node. Application availability still depends on guest, storage, network, and migration health.
+The VM comes up live-migratable. During node maintenance, Kube-DC can live-migrate it to another compatible node. Application availability still depends on the health of the guest, the storage, the network, and the migration.
 
 :::warning CPU headroom for migration
 A live migration briefly runs **two copies** of the VM (source + target) while memory
@@ -473,14 +474,14 @@ you free capacity. Prefer smaller HA VMs, or migrate them one at a time.
 
 ### The generated manifest
 
-Choosing **Shared RBD + live migration** renders explicit KubeVirt resources — there is
+**Shared RBD** with **live migration** renders explicit KubeVirt resources. There is
 no hidden magic and no mutating webhook. Kube-DC also stamps two descriptive labels
 (`kube-dc.com/vm-profile`, `kube-dc.com/storage-tier`) so the choice is visible in
-`kubectl`, but **nothing depends on them** — the spec fields below are the source of
+`kubectl`, but **nothing depends on them**. The following spec fields are the source of
 truth. You can write the same manifest by hand:
 
 <details>
-<summary>Ubuntu 24.04 — HA / live-migratable VM (generated manifest)</summary>
+<summary>Ubuntu 24.04: live-migratable VM (generated manifest)</summary>
 
 ```yaml
 # Root disk: an RWX Block clone of the OS's Block golden snapshot.
@@ -575,7 +576,7 @@ kubectl get vmi ubuntu -n <project-backing-namespace> \
 # LiveMigratable=True StorageLiveMigratable=True → good
 ```
 
-### Monitor VM Status
+### Monitor VM status
 
 ```bash
 # List VMs
@@ -590,9 +591,9 @@ kubectl get vmi
 
 ---
 
-## Exposing VMs with Floating IPs
+## Expose a VM with a floating IP
 
-Floating IPs (FIPs) map a public address to a VM through one-to-one NAT. The FIP automatically resolves the VM's internal IP via the QEMU guest agent — no need to look up IP addresses manually.
+Floating IPs (FIPs) map a public address to a VM through one-to-one NAT. The FIP resolves the VM's internal IP through the QEMU guest agent, so you do not look up IP addresses by hand.
 
 ```yaml
 apiVersion: kube-dc.com/v1
@@ -631,9 +632,9 @@ ssh debian@198.51.100.16
 When using `externalNetworkType: public` on a FIP, a dedicated public EIP is automatically allocated and bound. You don't need to create an EIP separately.
 :::
 
-### Exposing VM Ports via LoadBalancer
+### Expose VM ports with a LoadBalancer Service
 
-For exposing specific ports (e.g., SSH on a non-standard port) without a dedicated public IP, use a LoadBalancer service:
+For exposing specific ports (for example, SSH on a non-standard port) without a dedicated public IP, use a LoadBalancer service:
 
 ```yaml
 apiVersion: v1
@@ -652,32 +653,32 @@ spec:
     targetPort: 22
 ```
 
-This binds to the project's shared EIP. Access via:
+This binds to the Project's shared EIP. Connect to:
 
 ```bash
 ssh -p 2222 ubuntu@<project-eip>
 ```
 
-See the [Service Exposure Guide](service-exposure.md) for more options including HTTPS routes and dedicated EIPs.
+See the [Service exposure](service-exposure.md) for more options including HTTPS routes and dedicated EIPs.
 
 ---
 
-## Best Practices
+## Best practices
 
-- **Use SSH keys** — the `authorized-keys-default` secret is auto-created per project; add your public keys there
-- **Enable guest agent** — always include `qemu-guest-agent` in cloud-init for proper IP reporting, readiness probes, and SSH key injection
-- **Right-size resources** — Linux VMs typically need 1 vCPU / 1 GB RAM minimum; Windows needs 2 vCPUs / 8 GB RAM
-- **Use readiness probes** — `guestAgentPing` ensures the VM is fully booted before being marked Ready
+- **Use SSH keys**: the `authorized-keys-default` secret is auto-created per project; add your public keys there
+- **Enable guest agent**: always include `qemu-guest-agent` in cloud-init for proper IP reporting, readiness probes, and SSH key injection
+- **Right-size resources**: Linux VMs typically need 1 vCPU / 1 GB RAM minimum; Windows needs 2 vCPUs / 8 GB RAM
+- **Use readiness probes**: `guestAgentPing` ensures the VM is fully booted before being marked Ready
 
 ## Troubleshooting
 
 | Issue | Check |
 |-------|-------|
-| VM stuck in provisioning | `kubectl get dv` — check DataVolume download progress |
-| VM running but not Ready | `kubectl get vmi` — verify guest agent is connected |
+| VM stuck in provisioning | Run `kubectl get dv` to check the DataVolume download progress |
+| VM running but not Ready | Run `kubectl get vmi` to verify that the guest agent is connected |
 | No IP assigned | Check `networkName` matches your project's default network |
 | SSH key not injected | Verify `authorized-keys-default` secret exists and guest agent is running |
-| Docker in the VM: `git clone` / `docker pull` / `apt-get` hangs then fails, but `curl` works | Docker's default MTU (1500) is larger than the project network's 1400. Set `{"mtu": 1400}` in `/etc/docker/daemon.json` and restart Docker — see [Network MTU](networking-overview.md#network-mtu-1400) |
+| Docker in the VM: `git clone` / `docker pull` / `apt-get` hangs then fails, but `curl` works | Docker's default MTU (1500) is larger than the project network's 1400. Set `{"mtu": 1400}` in `/etc/docker/daemon.json`, then restart Docker. See [Network MTU](networking-overview.md#network-mtu-1400) |
 
 ```bash
 # Check events for errors
@@ -691,9 +692,9 @@ kubectl get pods -l kubevirt.io/domain=ubuntu
 kubectl logs <virt-launcher-pod> -c compute
 ```
 
-## Next Steps
+## Next steps
 
-- [Connecting to VMs](connecting-vm.md) — SSH access and remote console options
-- [VM Lifecycle](vm-lifecycle.md) — Start, stop, restart, and snapshot VMs
-- [Service Exposure](service-exposure.md) — Expose VM services to the internet
-- [Public & Floating IPs](public-floating-ips.md) — Manage IP addresses
+- [Connecting to VMs](connecting-vm.md): SSH access and remote console options
+- [VM lifecycle](vm-lifecycle.md): Start, stop, restart, and snapshot VMs
+- [Service exposure](service-exposure.md): Expose VM services to the internet
+- [Public and floating IPs](public-floating-ips.md): Manage IP addresses

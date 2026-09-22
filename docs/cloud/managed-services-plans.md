@@ -1,4 +1,4 @@
-# Classes and Plans
+# Classes and plans
 
 Every `ManagedService` names three catalog entries that the provider defines:
 a class, a plan and a connectivity class. They decide what kind of service you
@@ -110,7 +110,7 @@ Internal access through `tenant-native` needs no exposure entitlement.
 
 | Plan field | Effect |
 |------------|--------|
-| `exposure.gateway` | Allows `parameters.expose.type: gateway`, the PostgreSQL direct-TLS Gateway. See [External Access](postgresql-external-access.md) |
+| `exposure.gateway` | Allows `parameters.expose.type: gateway`, the PostgreSQL direct-TLS Gateway. See [External access](postgresql-external-access.md) |
 
 Ask your provider which other external access options, if any, your plan
 offers.
@@ -148,7 +148,7 @@ recorded and then refused in status:
 | `ServiceOperation` | `status.phase` is `Rejected` | `PlanNotEntitled`, with a message such as `plan <plan> does not allow <operation type>` |
 | `ServiceOperation` | `status.phase` is `AwaitingApproval` | `ApprovalRequired`: the plan requires provider approval |
 
-See [Create a PostgreSQL Service](postgresql-create.md#common-refusals) for
+See [Create a PostgreSQL service](postgresql-create.md#common-refusals) for
 the full list.
 
 ## When the catalog changes

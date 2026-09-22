@@ -1,4 +1,4 @@
-# Retiring db-manager
+# Retire db-manager
 
 `KdcDatabase` (`db.kube-dc.com/v1alpha1`), operated by the db-manager
 controller, was Kube-DC's first database product. It is deprecated: managed

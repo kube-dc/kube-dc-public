@@ -1,19 +1,19 @@
-# Connecting to Your VM
+# Connect to your VM
 
 This guide covers supported ways to access a virtual machine in Kube-DC: browser consoles, direct SSH, and serial or VNC sessions.
 
-## Prerequisites
+## Before you begin
 
-- A running [Virtual Machine](creating-vm.md)
+- A running [Virtual machine](creating-vm.md)
 - [CLI access](cli-kubeconfig.md) configured for kubectl/virtctl methods
 
 ---
 
-## Console Access via UI
+## Console access in the web interface
 
-The Console UI provides instant browser-based access to your VMs — no SSH keys or network configuration required.
+The console gives you browser access to your VMs. It needs no SSH keys and no network configuration.
 
-### Launch Browser Console
+### Launch browser console
 
 1. Navigate to **Virtual Machines** in your project
 2. Click on your VM name to open the details page
@@ -21,9 +21,9 @@ The Console UI provides instant browser-based access to your VMs — no SSH keys
 
 ![VM Console Access Options](images/connecting-vm.png)
 
-**Remote Console** opens a VNC session in your browser — useful for VMs with desktop environments or when you need to access the boot process or BIOS.
+**Remote Console** opens a VNC session in your browser. Use it for VMs with a desktop environment, and when you need the boot process or the BIOS.
 
-**SSH Terminal** opens a web-based terminal connected via SSH — works if the VM has the QEMU guest agent running and SSH keys configured.
+**SSH Terminal** opens a web terminal connected over SSH. It works when the VM runs the QEMU guest agent and has SSH keys configured.
 
 :::tip Pasting into the remote console
 Open the arrow tab on the left side of the VNC window, select **Clipboard**,
@@ -39,15 +39,15 @@ not paste and may display `^V`; use **Type into VM** there.
 
 :::tip VNC User Access
 For VNC access with password authentication:
-1. Access the VM via SSH or serial console
+1. Access the VM over SSH or serial console
 2. Create a user with `useradd -m <username>`
 3. Set a password with `passwd <username>`
-4. The user can now log in via the VNC console using these credentials
+4. The user can now log in through the VNC console using these credentials
 :::
 
 ---
 
-## SSH Access via Floating IP
+## SSH access through a floating IP
 
 For direct SSH access from your local machine, assign a [Floating IP](public-floating-ips.md) to your VM:
 
@@ -68,21 +68,21 @@ kubectl apply -f fip.yaml
 kubectl get fip my-vm-fip
 ```
 
-Once the FIP is Ready, SSH directly to the external IP:
+After the FIP is Ready, SSH directly to the external IP:
 
 ```bash
 ssh ubuntu@198.51.100.16
 ```
 
-See [Deploying VMs](creating-vm.md#exposing-vms-with-floating-ips) for complete FIP configuration.
+For the complete FIP configuration, see [Deploy VMs](creating-vm.md#expose-a-vm-with-a-floating-ip).
 
 ---
 
-## SSH Access via LoadBalancer
+## SSH access through a LoadBalancer Service
 
 To expose SSH without using a Floating IP, create a LoadBalancer service.
 
-### Using Default Gateway EIP
+### Use the default gateway EIP
 
 For projects with `egressNetworkType: public`, the default gateway EIP is public:
 
@@ -103,7 +103,7 @@ spec:
     targetPort: 22
 ```
 
-### Using Dedicated Public EIP
+### Use a dedicated public EIP
 
 For projects with `egressNetworkType: cloud`, create a dedicated public EIP:
 
@@ -142,19 +142,19 @@ Connect using the LoadBalancer IP and custom port:
 ssh -p 2222 ubuntu@<loadbalancer-ip>
 ```
 
-For more options, see the [Service Exposure Guide](service-exposure.md).
+For more options, see the [Service exposure](service-exposure.md).
 
 ---
 
-## VirtCtl Console Access
+## VirtCtl console access
 
-The `virtctl` CLI provides direct serial console access without network connectivity — useful for troubleshooting network issues or accessing VMs during boot.
+The `virtctl` CLI gives you serial console access without network connectivity. Use it to troubleshoot network problems, and to reach a VM during boot.
 
 ### Install virtctl
 
 Install a `virtctl` release compatible with the platform KubeVirt version. Follow the [official KubeVirt installation guide](https://kubevirt.io/user-guide/user_workloads/virtctl_client_tool/), which covers release binaries and the Krew plugin.
 
-### Serial Console
+### Serial console
 
 ```bash
 # Open interactive console (press Ctrl+] to exit)
@@ -162,7 +162,7 @@ virtctl console ubuntu
 
 ```
 
-### VNC Session
+### VNC session
 
 ```bash
 # Open the session in the configured VNC viewer
@@ -188,13 +188,13 @@ diagnostic role that grants the subresource explicitly.
 
 ---
 
-## Windows VMs — RDP and SSH
+## Windows VMs: RDP and SSH
 
 Windows VMs are reached the same way as Linux ones, but the login itself works
 differently, and knowing which mechanism supplies what saves a lot of guessing.
 
 **The account is `kube-dc`**, the same login name the rest of the platform uses. It is
-created on first boot, so a VM that has only just started may not have it yet — give
+created on first boot, so a VM that has only started might not have it yet. Give
 first boot a few minutes before concluding anything is wrong.
 
 **Two ways in, and they are provisioned by different mechanisms:**
@@ -212,9 +212,9 @@ Attach a floating IP to the VM, then point an RDP client at it:
 kubectl get fip <vm-name> -o jsonpath='{.status.externalIP}'
 ```
 
-- **macOS** — Windows App (formerly Microsoft Remote Desktop), from the App Store
-- **Linux** — `xfreerdp /v:<floating-ip> /u:kube-dc` or Remmina
-- **Windows** — `mstsc /v:<floating-ip>`
+- **macOS**: Windows App (formerly Microsoft Remote Desktop), from the App Store
+- **Linux**: `xfreerdp /v:<floating-ip> /u:kube-dc` or Remmina
+- **Windows**: `mstsc /v:<floating-ip>`
 
 The password is generated when the VM is created and stored in a Secret alongside it.
 In the UI it is on the VM's detail page; from the CLI:
@@ -227,7 +227,7 @@ kubectl get secret <vm-name>-console-credentials -o jsonpath='{.data}' | \
 
 ### SSH
 
-SSH works exactly as it does on Linux — your project key is installed into the
+SSH works as it does on Linux. Your Project key is installed into the
 `kube-dc` account on first boot:
 
 ```bash
@@ -242,13 +242,13 @@ way you would expect.
 A Windows first boot does noticeably more work than a Linux one: it specialises the
 image, creates the account, applies the password and key, and **reboots once** partway
 through. Until that finishes you may see RDP answering while SSH does not, or the
-reverse — services come up at different points, and the machine reboots in between.
+reverse, because services come up at different points and the machine reboots in between.
 
 On slower (HDD-backed) storage this can take considerably longer than on NVMe. Before
 concluding a VM is broken, check the graphical console: a VM sitting on
 "Getting devices ready" or "Starting services" is still working, not stuck.
 
-## Connection Method Comparison
+## Connection method comparison
 
 | Method | Use Case | Requires Network | Requires Public IP |
 |--------|----------|------------------|-------------------|
@@ -257,25 +257,25 @@ concluding a VM is broken, check the graphical console: a VM sitting on
 | **Floating IP** | Direct SSH from anywhere | Yes | Yes |
 | **LoadBalancer** | Shared IP, custom port | Yes | Optional |
 | **virtctl console** | Serial console, boot access | No | No |
-| **virtctl vnc** | VNC via API tunnel | No | No |
+| **virtctl vnc** | VNC through API tunnel | No | No |
 
 ---
 
 ## Troubleshooting
 
-### SSH Connection Refused
+### SSH connection refused
 
 - Verify guest agent is running: `kubectl get vmi ubuntu -o jsonpath='{.status.conditions[?(@.type=="AgentConnected")].status}'`
 - Check if SSH keys are injected: `virtctl console ubuntu` and verify `~/.ssh/authorized_keys`
 - Confirm SSH daemon is running inside the VM: `systemctl status sshd`
 
-### VNC Console Black Screen
+### VNC console black screen
 
-- VM may still be booting — wait for ReadinessProbe to show True: `kubectl get vm ubuntu -o jsonpath='{.status.ready}'`
+- The VM might still be booting. Wait for the readiness probe to report True: `kubectl get vm ubuntu -o jsonpath='{.status.ready}'`
 - Check if the VM has a graphical environment installed
-- Try accessing via serial console: `virtctl console ubuntu`
+- Try the serial console: `virtctl console ubuntu`
 
-### Cannot Access via Floating IP
+### You cannot reach the VM through its floating IP
 
 - Verify FIP status: `kubectl get fip -o wide`
 - Check if `externalIP` is assigned and `ready: true`
@@ -283,8 +283,8 @@ concluding a VM is broken, check the graphical console: a VM sitting on
 
 ---
 
-## Next Steps
+## Next steps
 
-- [Managing VM Lifecycle](vm-lifecycle.md) — Start, stop, restart VMs
-- [Public & Floating IPs](public-floating-ips.md) — Manage IP addresses
-- [Service Exposure](service-exposure.md) — Expose VM services with HTTPS
+- [Managing VM Lifecycle](vm-lifecycle.md): Start, stop, restart VMs
+- [Public and floating IPs](public-floating-ips.md): Manage IP addresses
+- [Service exposure](service-exposure.md): Expose VM services with HTTPS

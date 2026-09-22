@@ -1,4 +1,4 @@
-# Data Protection and Recovery
+# Data protection and recovery
 
 Backups in Kube-DC are service-specific. There is no single Project backup that
 automatically protects every VM disk, database, object, and Kubernetes resource.
@@ -22,18 +22,18 @@ operator-owned, and a metadata-only capture is not a VM or PVC data backup.
 Contact your provider when you need a platform-level recovery service.
 :::
 
-## Managed Services Backups
+## Managed service backups
 
 A `ManagedService` takes scheduled backups when both the plan's
 `backup.enabled` and the service's backup settings are on. Take an on-demand
 backup with a `Backup` operation or **Back up now** in the console, read the
 history from `ServiceBackup` records or the **Backups** tab, and restore into a
 new service; PostgreSQL also restores in place and offers point-in-time
-recovery. See [Backups and Restore](postgresql-backup-restore.md) and the
+recovery. See [Backups and restore](postgresql-backup-restore.md) and the
 limits on each family page.
 
 For the in-Project placement, deleting a Project deletes its services without a
-final backup; see [Deleting a Project](managed-services-status-deletion.md#deleting-a-project).
+final backup; see [Delete a Project](managed-services-status-deletion.md#delete-a-project).
 
 ## Databases still on db-manager
 
@@ -43,7 +43,7 @@ the console, and confirm that the database reports a successful backup before
 relying on it. See
 [Migrating from db-manager databases](managed-services-migration.md).
 
-## Managed Cluster Snapshots
+## Managed Cluster snapshots
 
 Managed Cluster backups are etcd snapshots. They protect Kubernetes API state,
 including resources stored in etcd. They do **not** copy application data from
@@ -67,11 +67,11 @@ Scheduled snapshots require the platform's managed backup bucket to be
 available. Check the cluster backup status rather than assuming backup is
 enabled on every installation.
 
-## Applications and Persistent Volumes
+## Applications and persistent volumes
 
 A PVC is storage, not a backup. For stateful applications, use a
 consistency-aware tool that understands the data format, then write the backup
-to a different failure domain such as [Object Storage](object-storage.md).
+to a different failure domain such as [Object storage](object-storage.md).
 
 Examples include:
 
@@ -83,7 +83,7 @@ Examples include:
 A storage clone in the same system is useful for testing, but it is not a
 disaster-recovery copy by itself.
 
-## Virtual Machines
+## Virtual machines
 
 Back up data from inside the guest or with an application-consistent storage
 workflow approved by the provider. A VM manifest contains hardware and network
@@ -99,14 +99,14 @@ For recoverability, keep:
 Do not remove VM, PVC, or snapshot finalizers to force a restore or deletion.
 That can orphan storage and make recovery harder.
 
-## Object Storage
+## Object storage
 
 Object storage is a destination for backups, not automatically a backup of
 itself. Decide whether your application needs versioning, retention, replication,
 or an export to another account or provider. Test access with the same
 credentials and endpoint the restore process will use.
 
-## Define the Recovery Objective
+## Define the recovery objective
 
 For each production workload, record:
 
@@ -120,11 +120,11 @@ For each production workload, record:
 Run a restore test on a schedule. A successful upload proves that a backup was
 written; only a restore test proves that it is usable.
 
-## Next Steps
+## Next steps
 
 - [Managed Services: Backups and Restore](postgresql-backup-restore.md)
 - [Migrating from db-manager databases](managed-services-migration.md)
 - [Managed Clusters](cluster-management.md)
-- [Object Storage](object-storage.md)
-- [Block Storage](block-storage.md)
+- [Object storage](object-storage.md)
+- [Block storage](block-storage.md)
 - [GitOps](gitops.md)

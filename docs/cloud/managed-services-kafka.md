@@ -156,7 +156,9 @@ this family.
 
 ## Limits
 
-| | |
+The following table lists the limits of a managed Kafka service:
+
+| Property | Limit |
 |---|---|
 | Versions | 4.2 and 4.3 release lines, KRaft only |
 | High availability | Production plan: three controllers and at least three brokers; a broker loss is covered by topic replication |

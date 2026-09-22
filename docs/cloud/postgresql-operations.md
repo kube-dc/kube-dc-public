@@ -1,4 +1,4 @@
-# Day-2 Operations
+# Day-2 operations
 
 A `ServiceOperation` asks the platform to perform one action on a service, such
 as a backup, a scale change, a switchover or an upgrade. Each operation is an
@@ -8,7 +8,7 @@ and the service's state, runs it, and records the outcome in its status.
 This page explains how operations run and lists every PostgreSQL operation
 type with its parameters, the plan fields it needs and its limits. To restore a
 backup into a new service, create a new `ManagedService` with `restoreFrom`
-instead; see [Backups and Restore](postgresql-backup-restore.md).
+instead; see [Backups and restore](postgresql-backup-restore.md).
 
 ## Before you begin
 
@@ -142,7 +142,7 @@ back into the manifest.
 - Before you create a new operation after `Failed` or `Rejected`, make sure the
   earlier one did not already make changes: execution can begin before the
   displayed phase shows `Running`. When you cannot tell, keep the operation and
-  ask your provider for its execution outcome. Once retrying is safe, fix the
+  ask your provider for its execution outcome. When retrying is safe, fix the
   cause and create a new operation with a new name and a new `idempotencyKey`.
 - An accepted operation is not rejected because its result is slow to appear; it
   stays queued.
@@ -217,14 +217,14 @@ plan fields a type depends on.
 
 | Type | Parameters | Other plan fields | Requirements and limits |
 |------|------------|-------------------|-------------------------|
-| `Backup` | None | `backup.enabled` | Backups must also be on for the service (`parameters.backup.enabled`). See [Backups and Restore](postgresql-backup-restore.md#take-a-backup-now) |
+| `Backup` | None | `backup.enabled` | Backups must also be on for the service (`parameters.backup.enabled`). See [Backups and restore](postgresql-backup-restore.md#take-a-backup-now) |
 | `RestoreInPlace` | `engineUID`, `acknowledgeDataLoss: true`, and exactly one of `backupID` or `targetTime` | `capacity.allocationProtocol: v1`, `backup.enabled`, and the backup's major version: an image of that version in `allowedImages` or, when `allowedImages` is empty, `engineVersion` equal to it | Destructive. See [Restore in place](postgresql-backup-restore.md#restore-in-place) |
 | `Scale` | `instances`: integer | `topology.minInstances`, `topology.maxInstances` | See [Scale](#scale) |
 | `Resize` | `cpu`, `memory`: quantity strings. Omit one to keep its current value | `capacity.computeBounds`, `capacity.allocationProtocol: v1` | See [Resize](#resize) |
 | `ExpandStorage` | `size`: quantity | `capacity.maxStorage` | Refused on storage that cannot expand. See [Expand storage](#expand-storage) |
 | `Switchover` | `targetInstance`: optional, a ready replica | None | Two or more instances and a healthy service |
 | `Failover` | `targetInstance`: optional, a running replica | None | Two or more instances. Can lose data |
-| `RotateCredentials` | `role`; `resyncRootUID` only after an in-place restore | `credentials.allowExistingUsers` for an existing-user role | See [Credentials and Rotation](postgresql-credentials.md) |
+| `RotateCredentials` | `role`; `resyncRootUID` only after an in-place restore | `credentials.allowExistingUsers` for an existing-user role | See [Credentials and rotation](postgresql-credentials.md) |
 | `MinorUpgrade` | `imageName` | `allowedImages` | Same major version only. See [Upgrades](#upgrades) |
 | `MajorUpgrade` | `imageName` | `allowedImages`, `backup.enabled` | The database is offline during the upgrade. See [Upgrades](#upgrades) |
 | `UpdateParameters` | `parameters`: map of settings to string values; `resetParameters`: list of setting names | None | See [PostgreSQL settings](#postgresql-settings) |
@@ -388,7 +388,7 @@ spec:
 ### PostgreSQL settings
 
 `UpdateParameters` changes allow-listed settings; the list is in
-[Create a PostgreSQL Service](postgresql-create.md#parameter-reference).
+[Create a PostgreSQL service](postgresql-create.md#parameter-reference).
 
 - Give every value in `parameters` as a string.
 - `resetParameters` returns the listed settings to their managed defaults. It

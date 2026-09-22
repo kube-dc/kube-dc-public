@@ -104,3 +104,23 @@ func SnapshotRoleParams() map[string]string {
 		"token_no_default_policy":          "true",
 	}
 }
+
+// PublisherPolicyHCL is restricted to reserved service credential paths.
+//
+//go:embed policies/kube-dc-services-hub.hcl
+var PublisherPolicyHCL string
+
+const PublisherPolicyName = "kube-dc-services-hub"
+const PublisherRoleName = "kube-dc-services-hub"
+const PublisherSAName = "kube-dc-services-hub"
+const PublisherSAns = "kube-dc-services"
+
+func PublisherRoleParams() map[string]string {
+	return map[string]string{
+		"bound_service_account_names":      PublisherSAName,
+		"bound_service_account_namespaces": PublisherSAns,
+		"policies":                         PublisherPolicyName,
+		"token_ttl":                        TokenTTL, "token_max_ttl": TokenMaxTTL,
+		"token_no_default_policy": "true",
+	}
+}

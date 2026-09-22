@@ -1,6 +1,6 @@
 import {EtcdEncryptionDiagram} from '@site/src/components/Diagram/PlatformTopologyDiagrams';
 
-# Managed Cluster etcd Encryption at Rest
+# Managed Cluster etcd encryption at rest
 
 How `KdcCluster` resources enable encryption at rest for a Managed Cluster's
 control-plane etcd, what cluster operators need to provide on the
@@ -26,7 +26,7 @@ k8s:enc:kms:v2:kube-dc-kms-plugin:vault:vN:<wrapped DEK> <AES-256-GCM ciphertext
 Each row carries its own random **Data Encryption Key** (DEK). The DEK
 is wrapped by a per-cluster **Key Encryption Key** (KEK) that lives in
 OpenBao Transit and never leaves OpenBao in plaintext. Reading a row
-requires unwrapping the DEK through OpenBao — i.e. anyone with raw
+requires unwrapping the DEK through OpenBao. Anyone with raw
 disk access to the etcd PVC sees only ciphertext.
 
 This is independent of the **backup envelope** described in
@@ -39,7 +39,7 @@ OpenBao.
 ## What this does NOT protect
 
 - **Managed Cluster workload data on PVCs.** Application state, database tables,
-  uploaded files — none of that goes through this path. Project users who need
+  uploaded files. None of that goes through this path. Project users who need
   application-level encryption use their own mechanisms (LUKS-backed
   StorageClass, application-side encryption, Velero with restic).
 - **The management cluster's own etcd.** This page covers Managed Cluster
@@ -48,7 +48,7 @@ OpenBao.
 - **Kubernetes resources outside the encrypted list.** Phase-1 default
   is `[secrets]`; Project users can select `[secrets, configmaps]`. Other
   resources (`leases`, `events`, `endpoints`, `pods`) remain in
-  plaintext — they have high write rates and low sensitivity, so
+  plaintext, because they have high write rates and low sensitivity, so
   encrypting them would multiply apiserver and KMS load without a
   proportional security gain.
 
@@ -107,11 +107,11 @@ run **without** encryption. There is no silent fallback.
 
 Two binaries the platform ships:
 
-- **`shalb/kube-dc-kms-plugin`** — small Go gRPC server that talks
+- **`shalb/kube-dc-kms-plugin`**: small Go gRPC server that talks
   Kubernetes KMS v2 protocol on a Unix Domain Socket. Runs as a
   native sidecar (Kubernetes 1.29+ `restartPolicy: Always` on an
   init container).
-- **`shalb/kube-dc-k8-manager`** — extends the existing controller
+- **`shalb/kube-dc-k8-manager`**: extends the existing controller
   manager. On reconcile of an encrypted `KdcCluster` it:
 
   1. Auto-creates a `KMSKey` CR (`<cluster>-etcd`, purpose `etcd`,
@@ -127,19 +127,19 @@ Two binaries the platform ships:
 
 One Go binary in the kube-dc-manager (NOT the same as k8-manager):
 
-- **`KdcClusterEncryptionReconciler`** in `kube-dc-manager` — watches
+- **`KdcClusterEncryptionReconciler`** in `kube-dc-manager` watches
   `KdcCluster`, reads its resolved `KMSKey`, and provisions the OpenBao
   ACL policy + Kubernetes-auth role bound to the per-cluster SA. The
   SA is forward-declared in the policy before the kdccluster reconciler
-  creates it — that's intentional and lets OpenBao accept the binding
+  creates it. That is intentional, and it lets OpenBao accept the binding
   immediately without races.
 
 ---
 
-## Enabling encryption on a Managed Cluster
+## Enable encryption on a Managed Cluster
 
 Project users enable it through the `KdcCluster` spec. The
-operator's role is to ensure the platform prerequisites are met (above)
+operator's role is to ensure the platform prerequisites are met
 and then verify the reconciler did its job.
 
 ### What the Project user submits
@@ -157,7 +157,7 @@ spec:
   encryption:
     etcd:
       enabled: true              # the toggle
-      # Everything else defaults — resources=[secrets], keyRef auto.
+      # Everything else defaults: resources=[secrets], keyRef auto.
 ```
 
 ### What the operator checks afterwards
@@ -173,7 +173,7 @@ spec:
 
 If everything is green the cluster is encrypted. To prove it
 bit-for-bit, an operator with platform-admin etcdctl access can read
-a fresh row from the Kamaji DataStore — every encrypted value carries
+a fresh row from the Kamaji DataStore. Every encrypted value carries
 the `k8s:enc:kms:v2:bao:` wire prefix. Project-user exec into the etcd Pod
 is blocked by the cluster's `restrict-pod-exec-in-projects`
 ValidatingAdmissionPolicy, so this verification is operator-only.
@@ -182,7 +182,7 @@ ValidatingAdmissionPolicy, so this verification is operator-only.
 
 ## KEK rotation
 
-The Key Encryption Key — the OpenBao Transit key that wraps every DEK —
+The key encryption key, the OpenBao Transit key that wraps every DEK,
 rotates on a schedule the **Project user** chooses. The platform owns nothing
 here except OpenBao itself; rotation is driven by the M3 KMSKey
 reconciler in the kube-dc-manager, which we lean on rather than ship a
@@ -206,7 +206,7 @@ Validation bounds (rejected at reconcile time with a clear
 | Rule |
 |---|
 | `enabled: true` requires `interval` |
-| Interval units must be `d`, `h`, `m`, `s` — `w` is NOT supported (M3 parser does not accept weeks) |
+| Interval units must be `d`, `h`, `m`, or `s`. `w` is NOT supported, because the M3 parser does not accept weeks |
 | Interval ≥ 7d (OpenBao Transit's own `min_rotation_interval` floor) |
 | Interval ≤ 730d |
 | Interval ≥ `spec.backup.retentionDays * 24h` when backups are enabled |
@@ -220,7 +220,7 @@ Validation bounds (rejected at reconcile time with a clear
    Bulk re-wrap is deferred to phase 6 (`kube-dc cluster rewrap-etcd`).
 4. **`min_decryption_version` is NEVER advanced by automation.** Old
    DEKs and old backups remain decryptable indefinitely. See §
-   "Advancing `min_decryption_version`" below — that's a manual +
+   "Advancing `min_decryption_version`". That is a manual +
    irreversible operator gesture.
 
 ### Project observability
@@ -238,7 +238,7 @@ status:
       minDecryptionVersion: 1           # operator-controlled; never moves on its own
 ```
 
-The same data is on the underlying `KMSKey/<cluster>-etcd` —
+The same data is on the underlying `KMSKey/<cluster>-etcd`.
 the `KdcCluster` mirror makes the state available to Project users.
 
 ### Operator-initiated rotation outside the schedule
@@ -263,18 +263,18 @@ Three paths, in order of preference:
 
 ---
 
-## Advancing `min_decryption_version`
+## Advance `min_decryption_version`
 
 The single irreversible operator action. Advancing
 `min_decryption_version` to `N` makes any DEK wrapped with a version
-below `N` **undecryptable forever** — that includes etcd rows and S3
+below `N` **undecryptable for ever**. That includes etcd rows and S3
 backups.
 
 **Use only when:**
 
 - A KEK version is suspected compromised AND
 - Every backup wrapped with that version has aged out of retention OR
-  been re-wrapped via the deferred `kube-dc cluster rewrap-backups` CLI
+  been re-wrapped through the deferred `kube-dc cluster rewrap-backups` CLI
 
 **Never use as a routine operation.** No automation does this; the
 controllers explicitly refuse. Pre-flight checklist for the manual
@@ -285,7 +285,7 @@ operator action:
    to advance if any version is below the target.
 2. Confirm every workload using this KEK has either re-wrapped or
    aged out of the affected version.
-3. Confirm OpenBao audit traceability — every advance lands in the
+3. Confirm OpenBao audit traceability. Every advance lands in the
    audit log.
 4. Issue the advance against OpenBao:
 
@@ -295,7 +295,7 @@ operator action:
      min_decryption_version=N
    ```
 
-5. File the incident regardless of outcome — even successful advances
+5. File the incident whatever the outcome. Even successful advances
    are unusual enough to warrant an operator note.
 
 ---
@@ -317,7 +317,7 @@ long ones surface as apiserver errors on encrypted resource reads/writes.
 If the apiserver does NOT auto-recover after OpenBao returns, restart
 the TCP pod (`kubectl -n <ns> delete pod -l kamaji.clastix.io/name=<cluster>-cp`).
 That forces a fresh kms-plugin login on next pod start. If even that
-doesn't recover, it's a P0 — file a ticket with the kms-plugin logs
+does not recover, it is a P0. File a ticket with the kms-plugin logs
 attached.
 
 ### Transit key accidental delete
@@ -339,10 +339,10 @@ Symptom: TCP pod CrashLoops with the kms-plugin sidecar logging
 
 Cause: OpenBao ACL policy or Kubernetes-auth role drifted from the
 expected shape. The kube-dc-manager's `KdcClusterEncryptionReconciler`
-re-asserts these on every reconcile — usually just deleting the role
+re-asserts these on every reconcile, so deleting the role
 or policy out-of-band and letting the controller put it back fixes it.
 
-Verify via:
+Verify through:
 
 ```bash
 bao read -namespace=<org> auth/k8s-host/role/tcp-<cluster>
@@ -354,7 +354,7 @@ include `tcp-<cluster>`.
 
 ---
 
-## Removing encryption from a cluster
+## Remove encryption from a cluster
 
 This is intentionally not a one-step operation. Setting
 `spec.encryption.etcd.enabled: false` on a cluster that previously
@@ -363,7 +363,7 @@ unreadable because the apiserver would no longer have a KMS provider
 configured to unwrap them.
 
 The proper flow uses the two-step `disableRequested` migration documented
-in the design (§12.3) and runbook §8 — phase-1 implementation is
+in the design (§12.3) and in runbook §8. The phase-1 implementation is
 deferred. Until the migration controller lands, the platform-admin
 break-glass is:
 
@@ -373,12 +373,12 @@ kubectl -n <ns> annotate kdccluster <name> \
 ```
 
 That bypasses the safety guard. **Use only when the existing etcd rows
-are already known unrecoverable** (e.g. OpenBao permanently lost). The
+are already known unrecoverable** (for example, OpenBao permanently lost). The
 annotation is audit-flagged on every reconcile.
 
 ---
 
 ## Cross-references
 
-- [Provisioning a Cluster](/cloud/provisioning-cluster) — Project user-facing toggle
-- [Managed Cluster etcd Backup and Restore](managed-k8s-etcd-backup-restore.md) — backup envelope encryption companion
+- [Provisioning a Cluster](/cloud/provisioning-cluster): Project user-facing toggle
+- [Managed Cluster etcd Backup and Restore](managed-k8s-etcd-backup-restore.md): backup envelope encryption companion

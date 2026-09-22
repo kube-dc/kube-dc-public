@@ -1,4 +1,4 @@
-# Connect Applications
+# Connect applications
 
 An application connects to a PostgreSQL `ManagedService` through a
 `ServiceBinding`. The binding asks the platform to deliver one credential role
@@ -9,7 +9,7 @@ certificate verification.
 ## Before you begin
 
 - A PostgreSQL service that is `Ready` with a current configuration. See
-  [Create a PostgreSQL Service](postgresql-create.md#read-the-status).
+  [Create a PostgreSQL service](postgresql-create.md#read-the-status).
 - The service UID:
 
   ```bash
@@ -45,7 +45,7 @@ A binding also selects one endpoint of the service:
 
 Other endpoint names can appear in `status.endpoints`, depending on your plan
 and the service's exposure settings. They are not covered on this page. For the
-`gateway` endpoint, see [External Access](postgresql-external-access.md).
+`gateway` endpoint, see [External access](postgresql-external-access.md).
 
 List the endpoints the service publishes and whether each one passed its last
 probe:
@@ -64,7 +64,7 @@ kubectl get managedservice orders-db -n my-project \
   read-only access.
 - In `pooled` endpoint `transaction` mode, session state does not survive
   between transactions. See the `pooler` parameters in
-  [Create a PostgreSQL Service](postgresql-create.md#parameter-reference).
+  [Create a PostgreSQL service](postgresql-create.md#parameter-reference).
 - Do not build host names yourself. Use the `host` key the binding delivers.
 
 ## Create a binding
@@ -88,7 +88,7 @@ metadata:
 spec:
   serviceRef:
     name: orders-db
-  # The service's metadata.uid.
+  # Optional. The service's metadata.uid, when you know it.
   serviceUID: REPLACE_WITH_SERVICE_UID
   role: owner
   consumer:
@@ -100,6 +100,15 @@ spec:
     endpointName: read-write
 ```
 
+Leave `serviceUID` out when you apply the binding alongside the service it
+names, from a manifest set or a GitOps repository: you cannot know a UID for a
+service that does not exist yet. The platform then records the instance the name
+resolved to in `status.serviceRef`, and that recording pins the binding from
+then on — if the service is later deleted and a new one takes its name, the
+binding is refused rather than re-pointed, exactly as a `serviceUID` you set
+yourself would be. Set it when you already hold the UID, which is what the
+console does.
+
 ```bash
 kubectl apply -f orders-api-db.yaml
 kubectl get servicebinding orders-api-db -n my-project -w
@@ -108,7 +117,7 @@ kubectl get servicebinding orders-api-db -n my-project -w
 | Field | Description |
 |-------|-------------|
 | `spec.serviceRef.name` | The `ManagedService` name. Cannot change |
-| `spec.serviceUID` | The `ManagedService` UID. Always set it. Cannot change |
+| `spec.serviceUID` | The `ManagedService` UID. Optional; omit it when the service does not exist yet. Cannot change |
 | `spec.role` | The credential role. Cannot change |
 | `spec.consumer.kind`, `spec.consumer.name` | The workload identity the credential is for, normally a `ServiceAccount` |
 | `spec.consumer.namespace` | Must be the Project namespace. Defaults to it |
@@ -442,7 +451,7 @@ workloads to another `Secret` before you delete a binding they still use.
 kubectl delete servicebinding orders-api-db -n my-project
 ```
 
-## Coming from a db-manager database
+## Move from a db-manager database
 
 The Secret a `KdcDatabase` or a `DatabaseCredentialPolicy` produced uses
 different key names. The mapping, and how to move the data, is in

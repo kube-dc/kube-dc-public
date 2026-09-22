@@ -72,7 +72,8 @@ import (
 //     prefix (kube-dc-svc-*) in every Org and mount, so a tenant-created
 //     ManagedSecret under that prefix cannot have this controller write the
 //     credential on their behalf (2026-09-13).
-const PolicyGeneration = 3
+//   - Generation 4: dedicated managed-service KV publisher and CAS retirement.
+const PolicyGeneration = 5
 
 // AnnotationPolicyGeneration stores the last-stamped generation
 // number on svc/openbao. Distinct from AnnotationControllerAuthInstalled

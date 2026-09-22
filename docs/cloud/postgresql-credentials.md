@@ -1,4 +1,4 @@
-# Credentials and Rotation
+# Credentials and rotation
 
 This page covers how PostgreSQL credentials change after a service is created:
 rotating a credential on demand with a `RotateCredentials` operation, rotating
@@ -7,12 +7,12 @@ existing SQL login, reading credential status without a binding, and the
 break-glass superuser entitlement.
 
 To deliver a credential to an application, see
-[Connect Applications](postgresql-connect.md).
+[Connect applications](postgresql-connect.md).
 
 ## Before you begin
 
 - A PostgreSQL service that is `Ready` with a current configuration. See
-  [Create a PostgreSQL Service](postgresql-create.md#read-the-status).
+  [Create a PostgreSQL service](postgresql-create.md#read-the-status).
 - The service UID:
 
   ```bash
@@ -407,7 +407,7 @@ the SQL login or delete credential Secrets as cleanup.
 - **New service from a backup.** The new service has its own UID and its own
   credentials. Create bindings and credential policies for it with the new UID.
 
-See [Backups and Restore](postgresql-backup-restore.md).
+See [Backups and restore](postgresql-backup-restore.md).
 
 ## Break-glass superuser access
 

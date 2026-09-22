@@ -211,7 +211,7 @@ const config: Config = {
             return '';
           }
           // Every .md file under a docs directory, as a sorted '/'-separated path relative to it,
-          // so documents in sub-directories (for example platform/partner-api/) are indexed too.
+          // so documents in sub-directories are indexed too.
           function listMarkdownFiles(dir: string, prefix = ''): string[] {
             return fs.readdirSync(dir, {withFileTypes: true}).flatMap((entry: {name: string; isDirectory(): boolean; isFile(): boolean}) => {
               const relative = prefix ? `${prefix}/${entry.name}` : entry.name;

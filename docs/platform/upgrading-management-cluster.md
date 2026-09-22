@@ -1,4 +1,4 @@
-# Upgrading a Management Cluster (RKE2)
+# Upgrade a management cluster (RKE2)
 
 This guide describes how to upgrade the Kubernetes version of a Kube-DC
 **management cluster** (the RKE2 cluster that runs the controllers, KubeVirt,
@@ -16,12 +16,12 @@ nodes, set a target version, and the controller **cordons → upgrades → uncor
 each node in a controlled, serialized order. This replaces error-prone manual
 `curl … | INSTALL_RKE2_VERSION=… sh` runs and keeps the fleet consistent.
 
-## Hard constraints — read first
+## Hard constraints: read these first
 
 | Constraint | What it means for you |
 |---|---|
-| **No minor-version skipping** | Kubernetes does not support jumping the control plane more than one minor at a time. Upgrade **one minor per pass** (e.g. `1.32 → 1.33 → 1.34`), not straight to the target. |
-| **No downgrade** | RKE2 cannot be rolled back. If a pass breaks the API server or CNI, there is no easy recovery — **validate every pass before the next**. |
+| **No minor-version skipping** | Kubernetes does not support jumping the control plane more than one minor at a time. Upgrade **one minor per pass** (for example, `1.32 → 1.33 → 1.34`), not straight to the target. |
+| **No downgrade** | RKE2 cannot be rolled back. If a pass breaks the API server or CNI, there is no easy recovery. **Validate every pass before the next.** |
 | **CNI / KubeVirt support windows** | Kube-OVN and KubeVirt are each certified against a range of Kubernetes versions. Before targeting a brand-new minor, confirm your installed Kube-OVN and KubeVirt versions support it. Don't outrun your data-plane. |
 | **Single control-plane** | If the cluster has one server node, its RKE2 restart is a brief (~1–2 min) full API-server outage per pass. Plan for it. |
 
@@ -31,7 +31,7 @@ each node in a controlled, serialized order. This replaces error-prone manual
 
 ## Pre-flight checklist
 
-Run these before starting — they prevent the most common mid-upgrade stalls:
+Run these before you start. They prevent the most common mid-upgrade stalls:
 
 - **Node disk headroom.** Each upgrade pulls the new RKE2 release (~1–2 GiB) onto
   every node. Ensure each node has comfortable free space; a node near its disk
@@ -43,7 +43,7 @@ Run these before starting — they prevent the most common mid-upgrade stalls:
   every node has the same, adequate `max-pods` (Kube-DC's bootstrap sets it by
   memory tier; nodes installed by older tooling may be on the default 110).
 - **Eviction thresholds.** Never set a disk-eviction threshold *tighter* than a
-  node's current free space — on a legitimately-full node it triggers
+  node's free space, so on a legitimately full node it triggers
   `DiskPressure` immediately. Match RKE2's default (`nodefs.available<5%`) or
   looser on storage-dense nodes.
 - **OpenBao re-seal.** OpenBao seals on every pod restart. If a node hosting the
@@ -57,12 +57,12 @@ Run these before starting — they prevent the most common mid-upgrade stalls:
 ### 1. Install the controller (once per cluster)
 
 Vendor the SUC release manifests (`crd.yaml` + `system-upgrade-controller.yaml`)
-into your GitOps repo and apply them — in a Kube-DC fleet this is an
+into your GitOps repo and apply them. In a Kube-DC fleet this is an
 `infrastructure/system-upgrade-controller/` kustomization wired as its own Flux
 `Kustomization`. The controller runs in the `system-upgrade` namespace and does
 nothing until a `Plan` exists.
 
-> Keep the **controller** in GitOps but apply the **upgrade `Plan`s manually** —
+> Keep the **controller** in GitOps, but apply the **upgrade `Plan`s by hand**.
 > a GitOps-managed Plan would re-apply on every reconcile and could re-run.
 
 ### 2. Opt nodes in
@@ -71,9 +71,9 @@ nothing until a `Plan` exists.
 kubectl label node <all-nodes> rke2-upgrade=true --overwrite
 ```
 
-### 3. Apply the Plans (first minor)
+### 3. Apply the plans (first minor)
 
-Two Plans — one for control-plane (`rke2-server`) and one for workers
+There are two Plans, one for the control plane (`rke2-server`) and one for workers
 (`rke2-agent`). The agent Plan's `prepare` step blocks until the server Plan
 finishes, so the control plane always upgrades first. Both use
 `concurrency: 1` (one node at a time).
@@ -135,7 +135,7 @@ kubectl get vmi -A                                  # VMs still Running
 kubectl get pods -A | grep -vE 'Running|Completed'  # nothing stuck
 ```
 
-If healthy, advance both Plans to the next minor — SUC re-runs because the
+If it is healthy, advance both Plans to the next minor. SUC re-runs, because the
 version hash changes:
 
 ```bash
@@ -150,7 +150,7 @@ Repeat until you reach the final target. When done, you can clear the target:
 kubectl -n system-upgrade delete plan rke2-server rke2-agent
 ```
 
-## KubeVirt VMs: cordon-only vs drain
+## KubeVirt VMs: cordon-only compared with drain
 
 The example Plans above are **cordon-only** (no `drain:`). This is the right
 default when VMs are **not** live-migratable (`evictionStrategy: None`): a drain
@@ -185,4 +185,4 @@ Symptom: the node stays on the old version and
 - Re-check CNI, KubeVirt VMs, and every operator pod.
 - **Re-unseal OpenBao** if its pod restarted.
 - The OIDC-webhook API-server flag lives in `/etc/rancher/rke2/config.yaml` and
-  survives the binary swap — no re-cutover needed.
+  survives the binary swap, and no re-cutover is needed.

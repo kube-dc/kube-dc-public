@@ -1,6 +1,6 @@
 import {IdentityTenancyDiagram} from '@site/src/components/Diagram/ResourceModelDiagrams';
 
-# Multi-Tenancy and Access Control
+# Multi-tenancy and access control
 
 Kube-DC presents three product concepts to users: **Organizations**, **Projects**,
 and **Organization Groups**. Kubernetes namespaces, RBAC objects, and Keycloak
@@ -93,7 +93,7 @@ The generated backing namespace for this example is `acme-production`. A
 namespace alone is not a Project: creating one manually does not provision the
 VPC, identity, quota, DNS, or platform services.
 
-## Organization Groups
+## Organization groups
 
 An Organization Group assigns roles to a set of users on a Project-by-Project
 basis. One group can have different roles in different Projects. RoleBindings

@@ -75,18 +75,6 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'Managed Services',
-      collapsed: true,
-      items: [
-        { type: 'doc', id: 'managed-services-overview', label: 'Overview' },
-        { type: 'doc', id: 'managed-services-enable', label: 'Enabling on an Installation' },
-        { type: 'doc', id: 'managed-services-catalog', label: 'Publishing the Catalog' },
-        { type: 'doc', id: 'managed-services-operations', label: 'Operating the Service' },
-        { type: 'doc', id: 'managed-services-retire-db-manager', label: 'Retiring db-manager' },
-      ],
-    },
-    {
-      type: 'category',
       label: 'Managed Clusters',
       collapsed: true,
       items: [
@@ -110,26 +98,7 @@ const sidebars: SidebarsConfig = {
         'observability',
         'upgrading-management-cluster',
         'billing-plans-configuration',
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Partner API',
-      collapsed: true,
-      items: [
-        'partner-api/overview',
-        'partner-api/http-tutorial',
-        'partner-api/authentication',
-        'partner-api/provisioning',
-        'partner-api/idempotency',
-        'partner-api/console-login',
-        'partner-api/plans-quota-capacity',
-        'partner-api/lifecycle',
-        'partner-api/usage-billing',
-        'partner-api/webhooks',
-        'partner-api/errors',
-        'partner-api/pagination',
-        'partner-api/going-live',
+        'platform-api',
       ],
     },
     {

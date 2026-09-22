@@ -1,7 +1,7 @@
-# External Access
+# External access
 
 A PostgreSQL service is reachable from inside your Project through its internal
-endpoints; see [Connect Applications](postgresql-connect.md). This page covers
+endpoints; see [Connect applications](postgresql-connect.md). This page covers
 the one external access option this chapter documents: the **PostgreSQL
 direct-TLS Gateway**.
 
@@ -20,7 +20,7 @@ this chapter.
 
 - A PostgreSQL service in the in-Project placement this chapter covers
   (`placement.mode: ProviderShared`). See
-  [Create a PostgreSQL Service](postgresql-create.md).
+  [Create a PostgreSQL service](postgresql-create.md).
 - PostgreSQL major version 17 or 18. The version comes from your plan's
   `engineVersion`.
 - A plan whose `exposure.gateway` field is set. You cannot read the plan; ask
@@ -53,7 +53,7 @@ This example shows the manifest of `orders-db` with Gateway access. Save it as
 `orders-db.yaml`:
 
 This is the `orders-db` manifest from
-[Create a PostgreSQL Service](postgresql-create.md) with only `expose.type`
+[Create a PostgreSQL service](postgresql-create.md) with only `expose.type`
 added. Keep every other field exactly as you applied it: applying a manifest
 that drops a create-only or operation-only field requests its removal, and
 that change is refused.
@@ -332,7 +332,7 @@ The platform removes the Gateway route. The internal endpoints, the data and
 the internal bindings do not change. Connections through the Gateway may end.
 A client that copied the credential still has the password; rotate the
 credential if it must stop working. See
-[Credentials and Rotation](postgresql-credentials.md).
+[Credentials and rotation](postgresql-credentials.md).
 
 While a binding still uses the `gateway` endpoint, the change is refused: the
 service reports `Accepted=False` with reason `ParameterSchemaRejected` and the
@@ -355,7 +355,7 @@ its `deletionPolicy`:
 | `Retain` | The platform stops managing the service, and the resources it created, including the Gateway route, are kept. Gateway behaviour under `Retain` is not yet qualified. Turn off Gateway access before you delete the service |
 | `SnapshotAndDelete` | Not yet qualified with Gateway access. Turn off Gateway access before you delete the service |
 
-See [Status and Deletion](managed-services-status-deletion.md).
+See [Status and deletion](managed-services-status-deletion.md).
 
 ## Limits
 

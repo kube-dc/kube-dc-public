@@ -5,19 +5,19 @@ import {
 } from '@site/src/components/Diagram/NetworkingArchitectureDiagrams';
 import RoutedNetworkDiagram from '@site/src/components/Diagram/RoutedNetworkDiagram';
 
-# Networking Architecture
+# Networking architecture
 
 Kube-DC uses Kube-OVN for Project VPCs and external-address routing, Multus for additional interfaces, and Envoy Gateway for HTTP, HTTPS, and gRPC exposure.
 
-## Quick Navigation
+## Quick navigation
 
 | Section | Description |
 |---------|-------------|
-| [Network Types](#external-network-types) | Cloud vs Public networks |
-| [Physical Layer](#physical-network-layer) | VLANs and provider bridges |
+| [Network types](#external-network-types) | Cloud networks and public networks |
+| [Physical network layer](#physical-network-layer) | VLANs and provider bridges |
 | [OVN Architecture](#ovn-logical-network) | VPCs, subnets, routers |
-| [Service Exposure](#service-exposure) | LoadBalancers, Gateway Routes |
-| [Datacenter VLAN attachment](#attaching-a-project-to-a-datacenter-vlan) | Putting a project on a datacenter VLAN |
+| [Service exposure](#service-exposure) | LoadBalancers, Gateway Routes |
+| [Datacenter VLAN attachment](#attach-a-project-to-a-datacenter-vlan) | How to put a Project on a datacenter VLAN |
 | [Envoy Gateway](#envoy-gateway) | HTTP/HTTPS/gRPC routing |
 
 ---
@@ -227,7 +227,7 @@ broadcast domain. The physical network, address plan, and node cabling become
 part of the isolation boundary. The Project's VPC policies do not isolate
 traffic carried on that secondary underlay interface.
 
-### Attaching a Project to a datacenter VLAN
+### Attach a Project to a datacenter VLAN
 
 An operator declares a physical `FabricSegment` and allocates it to an
 Organization. An Organization administrator can then bind the allocation to a
@@ -237,7 +237,7 @@ segment and eligible nodes are ready.
 - **Operators:** [Datacenter VLAN attachment](tenant-vlan-attachment.md)
 - **Users:** [Datacenter VLANs](/cloud/datacenter-vlans)
 
-### Attaching a Project VPC to a routed network
+### Attach a Project VPC to a routed network
 
 A Routed Network gives the whole Project VPC destination-specific reachability
 to approved external prefixes. Kube-DC operates redundant routing gateways and
@@ -259,8 +259,8 @@ flowchart LR
 
 <RoutedNetworkDiagram />
 
-- **Operators:** [Routed Networks](routed-networks.md)
-- **Users:** [Routed Networks](/cloud/routed-networks)
+- **Operators:** [Routed networks](routed-networks.md)
+- **Users:** [Routed networks](/cloud/routed-networks)
 
 ## Network security
 
@@ -310,7 +310,7 @@ routing separately.
 Envoy runs as a Deployment on the **host network**, one replica per node labelled
 `kube-dc.com/ingress` (required anti-affinity, so two replicas cannot share a node), and
 binds those nodes' `:80` and `:443` directly. Because the packet arrives at the node rather
-than being forwarded through the Service, Envoy sees the **real client address** — which is
+than being forwarded through the Service, Envoy receives the **real client address**, which is
 what per-client rate limits, source allowlists and honest audit logs depend on.
 
 Binding privileged ports means the `envoy` container runs as UID 0. It keeps the rest of
@@ -323,7 +323,7 @@ to bind every listener.
 
 :::caution Host-bind changes what a NetworkPolicy sees
 Because Envoy is on the host network, everything it proxies to an upstream arrives with a
-**node IP** as its source — not a pod IP in `envoy-gateway-system`. A NetworkPolicy that
+**node IP** as its source, not a pod IP in `envoy-gateway-system`. A NetworkPolicy that
 admits Envoy with
 
 ```yaml
@@ -354,7 +354,7 @@ the pinned Kube-OVN version skips hostNetwork pods when building selected ports,
 a non-hostNetwork proxy hop, or SNATing Envoy's upstreams into a controlled range.
 
 **Do not derive that CIDR from the node's LAN prefix.** On at least one cluster in this fleet
-the recorded node CIDR is a *public* /26 while the management addresses are private — a
+the recorded node CIDR is a *public* /26 while the management addresses are private. A
 derived value there would have admitted a prefix containing none of the real sources. Set it
 from the addresses the ingress nodes actually egress with, and let
 `scripts/frontdoor-check.sh preflight` confirm containment.
@@ -364,13 +364,13 @@ from the addresses the ingress nodes actually egress with, and let
 admits nothing.
 :::
 
-**Which address** reaches those nodes is a separate, per-cluster choice —
+**Which address** reaches those nodes is a separate, per-cluster choice.
 `INGRESS_ADDRESS_LAYER`:
 
 | Layer | Address | Service shape |
 |---|---|---|
 | `metallb-l2` / `metallb-bgp` (recommended) | a MetalLB VIP, announced only from a node holding a **ready** Envoy | `LoadBalancer`, `loadBalancerClass: metallb`, `externalTrafficPolicy: Local`, `externalIPs` cleared |
-| `none` | the ingress nodes' own addresses via wildcard DNS | `ClusterIP` retaining `externalIPs` |
+| `none` | the ingress nodes' own addresses through wildcard DNS | `ClusterIP` retaining `externalIPs` |
 
 Health-gated announcement is the practical difference: on a MetalLB layer the address moves
 to another already-serving node during a node loss or a rolling update, so the front door
@@ -381,8 +381,8 @@ for a VIP, `gateway-config/components/address-metallb`) rather than per-cluster
 `EnvoyProxy` edits. Envoy Gateway itself does not make a private Cloud address reachable
 from the internet.
 
-## Related Documentation
+## Related documentation
 
-- [Service Exposure Guide](/cloud/service-exposure) - How to expose services
+- [Service exposure](/cloud/service-exposure) - How to expose services
 - [Virtual Machines](/cloud/creating-vm) - VM networking
 - [User & Group Management](/cloud/team-management) - RBAC for network resources

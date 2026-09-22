@@ -166,6 +166,15 @@ func SetupControllerAuth(ctx context.Context, opts SetupControllerAuthOptions) e
 		return fmt.Errorf("write role %s: %w", SnapshotRoleName, err)
 	}
 
+	fmt.Fprintf(out, "[openbao] applying policy %s\n", PublisherPolicyName)
+	if err := opts.OpenBao.ApplyPolicy(ctx, opts.Token, PublisherPolicyName, PublisherPolicyHCL); err != nil {
+		return fmt.Errorf("apply policy %s: %w", PublisherPolicyName, err)
+	}
+	fmt.Fprintf(out, "[openbao] writing role auth/%s/role/%s (bound to %s/%s)\n", KubernetesAuthPath, PublisherRoleName, PublisherSAns, PublisherSAName)
+	if err := opts.OpenBao.WriteAuthRole(ctx, opts.Token, KubernetesAuthPath, PublisherRoleName, PublisherRoleParams()); err != nil {
+		return fmt.Errorf("write role %s: %w", PublisherRoleName, err)
+	}
+
 	// Step 7 — annotation stamps. Two markers:
 	//
 	//   - AnnotationControllerAuthInstalled (RFC3339 timestamp of last

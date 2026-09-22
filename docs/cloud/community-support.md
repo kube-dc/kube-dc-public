@@ -1,10 +1,10 @@
-# Community and Support
+# Community and support
 
 Use community channels for general questions and the support contact associated
 with your account for private, billing, availability, or security-sensitive
 issues.
 
-## Self-Service
+## Help yourself first
 
 Start with:
 
@@ -17,7 +17,7 @@ The [Kube-DC Slack community](https://join.slack.com/t/kube-dc/shared_invite/zt-
 is available for community conversation. Do not post credentials, kubeconfigs,
 tokens, private logs, customer data, or security reports in a public channel.
 
-## Open an Issue
+## Open an issue
 
 Use GitHub for reproducible bugs in public components. Include:
 
@@ -31,12 +31,12 @@ Use GitHub for reproducible bugs in public components. Include:
 Before posting, remove Organization names if private, Project data, IP addresses,
 tokens, Secret values, kubeconfigs, and customer information.
 
-## Contact Support
+## Contact support
 
 For account-specific help, use the support channel included with your
 subscription or email [support@kube-dc.com](mailto:support@kube-dc.com).
-Response targets and coverage are defined by your subscription or support
-agreement; this page does not add an SLA.
+Your subscription or support agreement defines the response targets and the
+coverage. This page does not add a service-level agreement.
 
 Include:
 
@@ -52,7 +52,7 @@ Never send a bearer token, password, private key, kubeconfig, or unredacted
 Secret. Support can request a safer diagnostic through the authenticated
 channel when needed.
 
-## Route the Request
+## Route the request
 
 | Request | Best channel |
 |---------|--------------|

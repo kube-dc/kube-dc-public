@@ -1,10 +1,10 @@
-# Fleet Management
+# Fleet management
 
 This chapter covers the **Fleet** tab of `kube-dc bootstrap` and the kubeconfig writer (`kube-dc bootstrap kubeconfig`).
 
 ## Browse the fleet (`kube-dc bootstrap`)
 
-The no-arg form opens the integrated bootstrap TUI on the **Fleet** tab — your single dashboard for every cluster the team operates. From there `]` / `[` cycle to other tabs (e.g. **Contexts**), and `Tab` cycles pane focus *within* the Fleet view.
+The no-arg form opens the integrated bootstrap TUI on the **Fleet** tab, the single dashboard for every cluster the team operates. From there `]` / `[` cycle to other tabs (for example, **Contexts**), and `Tab` cycles pane focus *within* the Fleet view.
 
 ```bash
 kube-dc bootstrap
@@ -26,7 +26,7 @@ The screen has two panes: **cluster list** (top) and **cluster details** (bottom
   - Details pane focused → arrows move the cursor within the Kustomizations sub-list (or scroll the viewport when no Kustomization rows are present).
 - `Esc` from any non-list pane jumps focus back to the cluster list.
 
-This mirrors UEFI/BIOS setup, `htop`'s field selector, and `dialog`-based installers — fewer collisions per screen because a key like `↵` can mean different things depending on which pane is focused.
+This mirrors UEFI and BIOS setup, `htop`'s field selector, and `dialog`-based installers. There are fewer collisions per screen, because a key such as `↵` can mean different things depending on which pane has focus.
 
 ### Actionable status (`↵` on a row runs the suggested fix)
 
@@ -34,9 +34,9 @@ When a cluster row's status detail says `not logged in. Run: kube-dc login --dom
 
 For Ready rows, `↵` shifts focus into the details pane so you can drill into Kustomizations directly without a `Tab`.
 
-### Drill-down for Kustomizations (right-side panel)
+### Drill-down for kustomizations (right-side panel)
 
-When the **details pane** has focus and a Kustomization row is selected, pressing **`↵`** opens a right-side drill-down panel showing the full condition Reason and Message — useful when a Kustomization is `✗ NoReadyCondition` or `Reconciliation failed` and you need to see *why* without leaving the TUI.
+When the **details pane** has focus and a Kustomization row is selected, pressing **`↵`** opens a right-side drill-down panel showing the full condition Reason and Message. Use it when a Kustomization is `✗ NoReadyCondition` or `Reconciliation failed` and you need to see *why* without leaving the TUI.
 
 - The bottom pane splits 60/40: details on the left, drill-down on the right.
 - Focus moves to the drill-down panel automatically. Arrow keys scroll its content.
@@ -45,7 +45,7 @@ When the **details pane** has focus and a Kustomization row is selected, pressin
 
 ### Keys
 
-The help bar at the bottom only lists keys that are **actionable in the current state** (e.g. `↵ open` only when the cursor sits on a row that has something to open). Press `?` for the expanded list.
+The help bar at the bottom only lists keys that are **actionable in the current state** (for example, `↵ open` only when the cursor sits on a row that has something to open). Press `?` for the expanded list.
 
 | Key | Action |
 |---|---|
@@ -53,23 +53,23 @@ The help bar at the bottom only lists keys that are **actionable in the current 
 | `Tab` / `Shift+Tab` | Cycle pane focus (list ↔ details ↔ drill-down) |
 | `↵` | List: run row's FixAction (admin login) when present, else step into details. Details: open Kustomization drill-down. |
 | `Esc` | Close drill-down / return focus to list |
-| `L` | **Admin login for the selected cluster** — suspends the TUI, runs `kube-dc login --domain X --admin` (browser opens), then resumes and re-probes the row. Works on any row regardless of FixAction. |
+| `L` | **Admin login for the selected cluster.** Suspends the TUI, runs `kube-dc login --domain X --admin` so the browser opens, then resumes and re-probes the row. Works on any row regardless of FixAction. |
 | `l` | Organization login (the Organization prompt is not yet available here; run `kube-dc login --org` outside the TUI). |
 | `r` | Refresh (re-runs probes against every cluster) |
 | `?` | Toggle full help |
 | `q` | Quit |
 
-The status pills auto-refresh every 60 s in the background — you don't need to keep hitting `r`.
+The status pills refresh every 60 s in the background, so you do not need to keep pressing `r`.
 
 :::tip First-time state
-Every row will show `Unreachable` until you log in to the cluster (the probe needs a working OIDC token to call the API server). Just press `↵` on a row — the TUI auto-routes to admin login. No `Tab`, no copy-paste.
+Every row will show `Unreachable` until you log in to the cluster (the probe needs a working OIDC token to call the API server). Press `↵` on a row, and the TUI routes to admin login. There is no `Tab` and no copy-paste.
 :::
 
 ---
 
 ## Get a kubeconfig (`kube-dc bootstrap kubeconfig`)
 
-Materialise a kubeconfig context for one cluster — without committing credentials anywhere.
+Materialize a kubeconfig context for one cluster, without committing credentials anywhere.
 
 ```bash
 kube-dc bootstrap kubeconfig <cluster>
@@ -99,7 +99,7 @@ What it does:
 
 - Reads `clusters/<cluster>/cluster-config.env` from the fleet.
 - Probes the API server's TLS handshake to fetch the cluster CA (or skips when system trust covers it).
-- Writes ONE new context — `kube-dc/<cluster>/admin` (default) or `kube-dc/<cluster>/<realm>` (Organization-realm override) — into your `~/.kube/config`, leaving every other context alone.
+- Writes ONE new context into your `~/.kube/config`, leaving every other context alone. The name is `kube-dc/<cluster>/admin` by default, or `kube-dc/<cluster>/<realm>` with an Organization-realm override.
 - The user entry's exec plugin **always pins `--realm`** in args, so kubectl never silently picks up the wrong cached identity.
 
 Flags:

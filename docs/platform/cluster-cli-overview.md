@@ -1,11 +1,11 @@
-# Cluster Operator CLI — Overview
+# Cluster operator CLI overview
 
 The `kube-dc` CLI ships two surfaces:
 
-- **Organization-facing** — `kube-dc login` authenticates with browser-based
+- **Organization-facing**: `kube-dc login` authenticates with browser-based
   OIDC and `kube-dc use` selects a named Project context. `kube-dc ns` remains
   a compatibility selector for backing namespaces. See [CLI, Console, and IDE Access](/cloud/cli-kubeconfig).
-- **Operator-facing** (this section) — `kube-dc bootstrap …`. Bubble Tea TUIs and subcommands for cluster operators: browse a fleet of clusters, log in as a platform admin, manage kubeconfig contexts safely, recover via break-glass when OIDC is broken.
+- **Operator-facing** (this section): `kube-dc bootstrap …`. Bubble Tea TUIs and subcommands for cluster operators: browse a fleet of clusters, log in as a platform admin, manage kubeconfig contexts safely, recover through break-glass when OIDC is broken.
 
 This chapter set is a hands-on guide to the operator surface. Skim the headings; run the commands you need.
 
@@ -36,7 +36,7 @@ node removal, endpoint anchors, authentication, and break-glass recovery.
 Preview supported operations where a dry-run is available and keep durable
 configuration in Git.
 
-If you don't have a fleet repo yet, see [Installation Guide](installation-guide.md) for greenfield setup.
+If you don't have a fleet repo yet, see [Installation guide](installation-guide.md) for greenfield setup.
 
 ---
 
@@ -50,7 +50,7 @@ Select an approved immutable version, download the matching platform asset, and
 verify it against that release's checksum before installing it. Do not build an
 operator workflow around the mutable `latest` URL.
 
-The [Installation Guide](installation-guide.md#phase-1--server-preparation)
+The [Installation guide](installation-guide.md#phase-1-server-preparation)
 contains the complete Linux and macOS checksum procedure.
 
 ### From source
@@ -91,7 +91,7 @@ Add it to your shell rc (`.zshrc`, `.bashrc`, …) so every new terminal session
 
 ## What's in the CLI
 
-`kube-dc bootstrap` is a single integrated TUI with a top tab bar — every interactive screen is reachable as a named tab. Press `]` / `[` to cycle tabs, or `1` / `2` / … to jump directly. The cobra subcommand you run only decides which tab is active on launch:
+`kube-dc bootstrap` is a single integrated TUI with a top tab bar. Every interactive screen is reachable as a named tab. Press `]` / `[` to cycle tabs, or `1` / `2` / … to jump directly. The cobra subcommand you run only decides which tab is active on launch:
 
 | Subcommand | Opens on tab |
 |---|---|
@@ -105,7 +105,7 @@ The chapters that follow cover each tab in detail, plus the non-TUI subcommands 
 | Chapter | Surface | Purpose |
 |---|---|---|
 | [Fleet Management](cluster-cli-fleet.md) | Fleet tab + `kube-dc bootstrap kubeconfig` | Browse the fleet; materialise a kubeconfig for a named cluster |
-| [Platform Admin Login](cluster-cli-admin-login.md) | `kube-dc login --admin` | OIDC against the master Keycloak realm; `cluster-admin` via `platform:admin` group |
+| [Platform Admin Login](cluster-cli-admin-login.md) | `kube-dc login --admin` | OIDC against the master Keycloak realm; `cluster-admin` through `platform:admin` group |
 | [Context Manager](cluster-cli-context-manager.md) | Contexts tab | kubectx-aware view of `~/.kube/config` with identity tagging |
 | [Break-Glass Recovery](cluster-cli-break-glass.md) | `kube-dc bootstrap break-glass …` | SOPS-encrypted static-token kubeconfig for OIDC-down recovery |
-| [Common Checks & Troubleshooting](cluster-cli-troubleshooting.md) | – | Health checks, JWT debugging, common errors |
+| [Common Checks and troubleshooting](cluster-cli-troubleshooting.md) | None | Health checks, JWT debugging, common errors |

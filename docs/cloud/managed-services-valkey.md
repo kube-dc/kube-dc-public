@@ -182,7 +182,7 @@ the backup. There is no restore in place. The procedure is the same as for
 PostgreSQL; see
 [Restore into a new service](postgresql-backup-restore.md#restore-into-a-new-service).
 
-## Deleting a service
+## Delete a service
 
 - **`Delete`** removes the members, the data volume, the snapshot volume of a
   single node, and the delivered credentials. Backups already in the bucket
@@ -195,7 +195,7 @@ PostgreSQL; see
   capacity, and only withdraws management.
 
 Deletion protection must be turned off in its own update before a delete is
-accepted; see [Status and Deletion](managed-services-status-deletion.md).
+accepted; see [Status and deletion](managed-services-status-deletion.md).
 
 ## Limits
 

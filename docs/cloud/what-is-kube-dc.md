@@ -2,19 +2,34 @@ import {CloudResourceModelDiagram} from '@site/src/components/Diagram/ResourceMo
 
 # What is Kube-DC?
 
-**Kube-DC** is an open-source, Kubernetes-native cloud platform that delivers multi-tenant compute, networking, storage, and data services on shared infrastructure. It gives Organizations one consistent API and web console for governed **Projects**, virtual machines, Managed Clusters, databases, and the cloud resources around them.
+Kube-DC is a Kubernetes-native cloud platform. It delivers
+multi-tenant compute, networking, storage, and data services on shared
+infrastructure. An Organization gets one API and one web console for its
+Projects, virtual machines, Managed Clusters, databases, and the cloud
+resources around them.
 
-**Kube-DC Cloud** is the hosted offering built with Kube-DC: the service provider operates the platform underneath; you manage your Organization, Projects, access, workloads and services.
+Kube-DC Cloud is the hosted offering built with Kube-DC. The service provider
+operates the platform underneath. You manage your Organization, Projects,
+access, workloads, and services.
 
 ## What you can run
 
-- **Projects** — the default way to deploy. Take your Project's kubeconfig and run applications, jobs, services, VMs and compatible Helm charts directly — no cluster to provision first. → [Projects](kubernetes-projects.md)
-- **Virtual Machines** — Linux and Windows guests with cloud-init, persistent storage, browser console and SSH, on the same network as your containers
-- **Managed Clusters** — a tenant-controlled cluster of your own, provisioned by the platform, for software that needs operators, CRDs or other cluster-scoped control
-- **Managed Databases** — PostgreSQL and MariaDB with scheduled credential rotation
-- **Networking** — a private network (VPC) per Project, public and floating IPs, load balancers, HTTPS ingress with automatic certificates
-- **Storage & data** — block volumes for pods and VMs, S3-compatible object buckets, backups
-- **Security services** — managed secrets, certificates, database credentials and encryption keys
+- **Projects**: the default way to deploy. Take your Project's kubeconfig and
+  run applications, jobs, services, VMs, and compatible Helm charts directly.
+  There is no cluster to provision first. See [Projects](kubernetes-projects.md).
+- **Virtual machines**: Linux and Windows guests with cloud-init, persistent
+  storage, a browser console, and SSH, on the same network as your containers.
+- **Managed Clusters**: a tenant-controlled cluster of your own, provisioned by
+  the platform, for software that needs operators, custom resource definitions,
+  or other cluster-scoped control.
+- **Managed databases**: PostgreSQL and MariaDB with scheduled credential
+  rotation.
+- **Networking**: a private network (VPC) per Project, public and floating IPs,
+  load balancers, and HTTPS ingress with automatic certificates.
+- **Storage and data**: block volumes for pods and VMs, S3-compatible object
+  buckets, and backups.
+- **Security services**: managed secrets, certificates, database credentials,
+  and encryption keys.
 
 ## The mental model
 
@@ -35,34 +50,50 @@ Organization                 ← identity, members, billing
 
 <CloudResourceModelDiagram />
 
-An **Organization** is the account boundary: it owns an organization-scoped identity realm (SSO), membership and billing.
+An **Organization** is the account boundary. It owns an organization-scoped
+identity realm (SSO), membership, and billing.
 
-A **Project** is the working boundary for a team or environment. It combines a Kubernetes backing namespace, Project RBAC, a private network, an optional quota, and a kubeconfig for direct API access — ready the moment it exists.
+A **Project** is the working boundary for a team or an environment. It combines
+a Kubernetes backing namespace, Project RBAC, a private network, an optional
+quota, and a kubeconfig for direct API access. All of this is ready the moment
+the Project exists.
 
-Within a Project you choose the execution boundary per workload:
+Within a Project you choose the execution boundary for each workload:
 
-- Deploy **directly in the Project** for supported namespaced resources and unprivileged workloads — the fast, default path.
-- Create a **Managed Cluster** when the software needs control of Kubernetes at cluster scope (operators, CRDs, multiple namespaces, privileged access).
+- Deploy **directly in the Project** for supported namespaced resources and
+  unprivileged workloads. This is the default path.
+- Create a **Managed Cluster** when the software needs control of Kubernetes at
+  cluster scope: operators, custom resource definitions, multiple namespaces,
+  or privileged access.
 
-These are separate deployment targets with separate API endpoints — a choice you make upfront, not a migration you perform later.
+The two are separate deployment targets with separate API endpoints. Choose
+before you deploy. You cannot migrate a workload from one to the other later.
 
 ![Kube-DC manage organization view](images/kube-dc-manage-org-view.png)
 
 ## Kubernetes-native management
 
-Kube-DC exposes its cloud services through Kubernetes APIs installed and operated by the platform. Everything you can click in the console is a Kubernetes resource in your Project, so the same state is available to:
+Kube-DC exposes its cloud services through Kubernetes APIs that the platform
+installs and operates. Everything you can click in the console is a Kubernetes
+resource in your Project. The same state is therefore available to:
 
 - The Kube-DC web console
 - `kubectl` and the Kubernetes API
-- **Compatible Helm charts** — charts whose rendered resources use the Project's supported namespaced APIs
+- Compatible Helm charts, meaning charts whose rendered resources use the
+  Project's supported namespaced APIs
 - Terraform, through the Kubernetes provider
-- An externally managed GitOps controller (Argo CD, Flux) targeting your Project kubeconfig
-- AI coding assistants, via [agent skills](ai-ide-integration.md)
+- An externally managed GitOps controller such as Argo CD or Flux, pointed at
+  your Project kubeconfig
+- AI coding assistants, through [agent skills](ai-ide-integration.md)
 
-A Project does not permit tenants to install cluster-level extensions — see [Projects](kubernetes-projects.md) for the exact capability boundary.
+A Project does not let tenants install cluster-level extensions. For the exact
+capability boundary, see [Projects](kubernetes-projects.md).
 
 ## Next steps
 
-- [Core Concepts](core-concepts.md) — the Organization/Project model, isolation and deployment modes
-- [Projects](kubernetes-projects.md) — deploy without provisioning a cluster
-- [Creating Your First Project](first-project.md) — create the first working boundary
+- [Core concepts](core-concepts.md) describes the Organization and Project
+  model, isolation, and deployment modes.
+- [Projects](kubernetes-projects.md) shows how to deploy without provisioning a
+  cluster.
+- [Create your first Project](first-project.md) walks through the first working
+  boundary.

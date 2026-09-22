@@ -1,26 +1,31 @@
-# Deploy Your First Kubernetes Application
+# Deploy your first Kubernetes application
 
 This guide deploys a small web service to a Kube-DC Project and publishes it
-through the shared HTTP gateway. It uses only namespaced resources supported by Projects.
+through the shared HTTP gateway. It uses only the namespaced resources that
+Projects support.
 
-## Prerequisites
+## Before you begin
 
-- A [Project](first-project.md) with available CPU, memory, Pod, and IP quota
-- [CLI access](cli-kubeconfig.md) with `kubectl` connected to that Project
+You need:
+
+- A [Project](first-project.md) with free CPU, memory, pod, and IP quota
+- [CLI access](cli-kubeconfig.md), with `kubectl` connected to that Project
 - The `developer` or `admin` role
 
-Confirm the current context and backing namespace:
+To confirm the current context and backing namespace, run:
 
 ```bash
 kubectl config current-context
 kubectl config view --minify -o jsonpath='{..namespace}'
 ```
 
-The backing namespace normally follows `{organization}-{project}`, for example `acme-demo`.
+The backing namespace normally follows `{organization}-{project}`, for example
+`acme-demo`.
 
-## 1. Deploy the Workload
+## 1. Deploy the workload
 
-Create a two-replica web Deployment. The image listens on port 8080 and does not require root privileges.
+Create a web Deployment with two replicas. The image listens on port 8080 and
+does not need root privileges. Use the following manifest:
 
 ```yaml
 apiVersion: apps/v1
@@ -81,43 +86,45 @@ kubectl apply -f hello.yaml
 kubectl rollout status deployment/hello
 ```
 
-## 2. Check the Application
+## 2. Check the application
 
-Verify the Pods and Service:
+To verify the pods and the Service, run:
 
 ```bash
 kubectl get pods -l app=hello
 kubectl get service hello
 ```
 
-A Pod in `Running` state is not automatically proof that the application is healthy. The rollout command waits for the Deployment readiness condition.
+A pod in the `Running` state is not proof that the application is healthy. The
+rollout command waits for the Deployment readiness condition.
 
-## 3. Open the Endpoint
+## 3. Open the endpoint
 
-The Service annotation asks the platform to create a Gateway Route and DNS
-name. Read the assigned hostname from the Service:
+The Service annotation asks the platform to create a Gateway Route and a DNS
+name. To read the assigned hostname from the Service, run:
 
 ```bash
 kubectl get service hello \
   -o jsonpath='{.metadata.annotations.service\.nlb\.kube-dc\.com/route-hostname-status}'
 ```
 
-Open `http://<assigned-hostname>` after the route is ready. DNS propagation can
-finish after the Pods become ready.
+After the route is ready, open `http://HOSTNAME`. Replace `HOSTNAME` with the
+value the preceding command printed. DNS propagation can finish after the pods
+become ready.
 
-If no hostname appears, inspect the Service status and events:
+If no hostname appears, inspect the Service status and its events:
 
 ```bash
 kubectl describe service hello
 kubectl get events --sort-by=.lastTimestamp
 ```
 
-See [Service Exposure](service-exposure.md) to add HTTPS with the required
-Issuer, or to use custom hostnames, TCP/UDP services, EIPs, and FIPs.
+To add HTTPS with the required Issuer, or to use custom hostnames, TCP and UDP
+services, EIPs, and FIPs, see [Service exposure](service-exposure.md).
 
-## Update the Application
+## Update the application
 
-Change the image or configuration in `hello.yaml`, then apply it again:
+Change the image or the configuration in `hello.yaml`, then apply it again:
 
 ```bash
 kubectl apply -f hello.yaml
@@ -125,17 +132,21 @@ kubectl rollout status deployment/hello
 kubectl rollout history deployment/hello
 ```
 
-Kubernetes rolls out the new ReplicaSet according to the Deployment strategy. Availability depends on readiness checks, capacity, and application behavior.
+Kubernetes rolls out the new ReplicaSet according to the Deployment strategy.
+Availability depends on readiness checks, capacity, and application behavior.
 
-## Clean Up
+## Clean up
+
+To remove the Deployment and the Service, run:
 
 ```bash
 kubectl delete -f hello.yaml
 ```
 
-This deletes the Deployment and Service. Confirm that the Service and its route have finished cleanup before reusing any dedicated address associated with it.
+Before you reuse any dedicated address the Service held, confirm that the
+Service and its route have finished cleanup.
 
-## Next Steps
+## Next steps
 
 - [Deploy a WordPress stack](deploy-wordpress-stack.md)
 - [Choose a service exposure method](service-exposure.md)

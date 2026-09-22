@@ -45,7 +45,7 @@ that names an unpublished plan is refused.
 | `ServiceOperation` | Project | One immutable day-2 action on a service, such as `Scale`, `Backup` or `RotateCredentials` |
 | `ServiceCredentialPolicy` | Project | A rotation schedule for one credential role of a service |
 | `ServiceBackup` | Project | Read-only backup history records |
-| `ManagedServiceClass`, `ManagedServicePlan`, `ConnectivityClass` | Cluster | The provider's catalog. Tenants cannot list or read it; see [Classes and Plans](managed-services-plans.md) |
+| `ManagedServiceClass`, `ManagedServicePlan`, `ConnectivityClass` | Cluster | The provider's catalog. Tenants cannot list or read it; see [Classes and plans](managed-services-plans.md) |
 
 A typical workflow has four steps:
 
@@ -59,8 +59,8 @@ In the console, choosing **Kubernetes Secret** on the last step of creation
 does steps 2 and 3 for you and names the Secret `<service>-owner`.
 
 The PostgreSQL pages of this chapter walk through the full procedure with
-manifests: [Create a PostgreSQL Service](postgresql-create.md) and
-[Connect Applications](postgresql-connect.md). The other family pages show
+manifests: [Create a PostgreSQL service](postgresql-create.md) and
+[Connect applications](postgresql-connect.md). The other family pages show
 what differs for their engine.
 
 ### The service UID
@@ -116,7 +116,7 @@ resources, or through the console, which does the same.
 
 ## Project roles
 
-The standard Project roles (see [User and Group Management](team-management.md))
+The standard Project roles (see [User and group management](team-management.md))
 grant the following access to Managed Services resources:
 
 | Action | `admin` | `developer` | `project-manager` | `user` |
@@ -151,7 +151,7 @@ every delivered credential. This also applies to the engine's own credential
 Secrets that `ManagedService.status.credentials` refers to. Place workloads
 and teams that must not share database credentials in separate Projects.
 
-## Deleting services and Projects
+## Delete a service or a Project
 
 A `ManagedService` has two deletion settings:
 
@@ -161,8 +161,8 @@ A `ManagedService` has two deletion settings:
 - `spec.deletionProtection: true` refuses deletion of the `ManagedService`
   until you set it to `false` in a separate update.
 
-See [Create a PostgreSQL Service](postgresql-create.md#service-fields) and
-[Status and Deletion](managed-services-status-deletion.md) for details.
+See [Create a PostgreSQL service](postgresql-create.md#service-fields) and
+[Status and deletion](managed-services-status-deletion.md) for details.
 
 :::warning Deleting a Project deletes its services without a final backup
 For the in-Project placement covered by this chapter, a service runs in the
@@ -177,15 +177,15 @@ you need to keep.
 
 ## Next steps
 
-- [Using the Console](managed-services-console.md): the catalog, the creation
+- [Use the console](managed-services-console.md): the catalog, the creation
   sheet and the service page.
-- [Classes and Plans](managed-services-plans.md): the class, plan and
+- [Classes and plans](managed-services-plans.md): the class, plan and
   connectivity names to use, and the plan fields that decide what a service
   may do.
-- [Create a PostgreSQL Service](postgresql-create.md) and
-  [Connect Applications](postgresql-connect.md): the full manifest procedure.
+- [Create a PostgreSQL service](postgresql-create.md) and
+  [Connect applications](postgresql-connect.md): the full manifest procedure.
 - [MySQL and MariaDB](managed-services-mysql-mariadb.md),
   [ClickHouse](managed-services-clickhouse.md),
   [Valkey](managed-services-valkey.md), [Kafka](managed-services-kafka.md).
-- [Status and Deletion](managed-services-status-deletion.md)
+- [Status and deletion](managed-services-status-deletion.md)
 - [Migrating from db-manager databases](managed-services-migration.md)

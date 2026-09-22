@@ -69,7 +69,7 @@ API and publicly trusted Keycloak can be used together. This changes the older
 behavior where supplying that flag also replaced Keycloak's root store.
 
 For privately issued platform HTTPS certificates, the operator must supply an
-out-of-band trusted bundle containing the required API and Keycloak CAs via
+out-of-band trusted bundle containing the required API and Keycloak CAs through
 `--ca-cert`. Discovery never learns trust from an unverified HTTPS connection.
 
 If the API is publicly issued or a working CA is already configured, login does

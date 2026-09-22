@@ -1,4 +1,4 @@
-# Kube-DC Platform
+# Kube-DC platform
 
 Kube-DC is a Kubernetes-based platform for Organizations to run virtual
 machines, containers, managed data services, object storage, and Managed

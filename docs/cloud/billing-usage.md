@@ -1,17 +1,17 @@
-# Billing & Usage
+# Billing and usage
 
-The **Billing & Subscriptions** section lets you monitor resource consumption, manage your subscription plan, add extra capacity, and control payment for your entire organization — all from a single page under **Manage Organization → Billing**.
+The **Billing & Subscriptions** section lets you monitor resource consumption, manage your subscription plan, add extra capacity, and control payment for your whole Organization, all from one page under **Manage Organization > Billing**.
 
-## Overview Dashboard
+## Overview dashboard
 
 ![Billing overview](images/billing-subsciption-view.png)
 
 The **Overview** tab shows your current state at a glance:
 
-- **Current Plan** — Active plan name and subscription start date
-- **Monthly Cost** — Total cost broken down as base plan + active add-ons
-- **Active Add-ons** — Turbo packages currently applied to the organization
-- **Resource Usage** — Live progress bars for every quota dimension:
+- **Current Plan**: Active plan name and subscription start date
+- **Monthly Cost**: Total cost broken down as base plan + active add-ons
+- **Active Add-ons**: Turbo packages currently applied to the organization
+- **Resource Usage**: Live progress bars for every quota dimension:
   - CPU (cores used / total available)
   - Memory (GiB used / total available)
   - NVMe Storage (GiB used / total available)
@@ -22,17 +22,17 @@ The **Overview** tab shows your current state at a glance:
 The progress bars change color as usage rises: green → yellow → red. A resource shown in red is at or near its limit and may block new deployments.
 
 From the Overview you can also:
-- **View Plans** — Browse and switch subscription plans
-- **Manage Add-ons** — Add or remove Turbo capacity packages
-- **Manage Payment** — Open the configured billing provider to update billing details
+- **View Plans**: Browse and switch subscription plans
+- **Manage Add-ons**: Add or remove Turbo capacity packages
+- **Manage Payment**: Open the configured billing provider to update billing details
 
 ---
 
-## Subscription Plans
+## Subscription plans
 
 ![Available plans](images/billing-subsciption-plans.png)
 
-Kube-DC Cloud currently offers the plans below. Plan names, prices, and
+Kube-DC Cloud offers the following plans. Plan names, prices, and
 entitlements can vary by installation; the **Available Plans** tab in your
 console is the source of truth.
 
@@ -57,7 +57,7 @@ entitlement.
 
 Some installations offer a **GPU alternative for each tier**. When they do, the
 plan grid shows a **Standard / With GPU** switch: the tiers are otherwise
-identical — same CPU, memory, storage, IPv4 and pod limits — and the GPU version
+identical, with the same CPU, memory, storage, IPv4, and pod limits. The GPU version
 adds a shared GPU allocation to the same tier.
 
 A GPU plan lists what it includes:
@@ -75,7 +75,7 @@ queue until one frees up.
 :::
 
 If you do not see the switch, this installation does not sell GPU as part of a
-plan. GPU may still be available as an add-on — check the **Add-ons** section of
+plan. A GPU can still be available as an add-on. Check the **Add-ons** section of
 your Billing page, or ask your provider.
 
 :::tip Plan with measurements
@@ -87,7 +87,7 @@ capacity guarantee.
 
 ---
 
-## Understanding Resource Quotas
+## Understand resource quotas
 
 All resources in your plan are **shared across all projects** in your organization. The quota is applied at the organization level, and any combination of usage across your projects counts toward it.
 
@@ -103,11 +103,11 @@ Projects `development`, `staging`, and `production`:
 
 The Organization still has 1 vCPU and 2 GiB available.
 
-There is no per-Project quota split by default — Projects draw from the same shared pool. If one Project is idle, another can use all available resources. Organization admins can optionally set per-Project limits to prevent one Project from consuming everything; see [Per-Project Resource Limits](#per-project-resource-limits).
+There is no per-Project quota split by default. Projects draw from the same shared pool. If one Project is idle, another can use all available resources. Organization admins can optionally set per-Project limits to prevent one Project from consuming everything; see [Per-Project resource limits](#per-project-resource-limits).
 
 The **Public IPv4** dimension counts only `EIp` resources with `externalNetworkType: public` across the Organization namespace and all Project backing namespaces. Cloud/private External IPs do not consume this public-address quota. A Floating IP that automatically creates a public `EIp` consumes one slot through that `EIp`.
 
-### Guaranteed Capacity
+### Guaranteed capacity
 
 The current Kube-DC Cloud plans use a 1.0 allocation ratio: the CPU and memory
 shown in the plan are the organization quota, not a smaller reservation backed
@@ -121,13 +121,13 @@ capacity around temporary usage above that value.
 
 ---
 
-## Resource Limits for Workloads
+## Resource limits for workloads
 
 Kubernetes enforces organization quota from workload resource requests and
 limits. When a container omits them, the Project's LimitRange applies the
 defaults shown below.
 
-### Automatic Defaults
+### Automatic defaults
 
 **You do not need to manually set resource values on every workload.** The platform automatically applies default CPU and memory values to any container that doesn't specify them. These defaults are sized based on your active plan:
 
@@ -146,15 +146,15 @@ defaults shown below.
 **Requests** reserve schedulable capacity. **Limits** cap runtime use: CPU is
 throttled, while exceeding a memory limit can terminate the container for OOM.
 
-### What This Means in Practice
+### What this means in practice
 
-- A pod deployed without any resource declarations (e.g., a raw Kubernetes deployment with no `resources:` block) will automatically receive the plan's default request and limit values.
-- KubeVirt virtual machines translate their vCPU and memory settings into pod-level resource values automatically — no manual configuration needed.
+- A pod deployed without any resource declarations (for example, a raw Kubernetes deployment with no `resources:` block) will automatically receive the plan's default request and limit values.
+- KubeVirt virtual machines translate their vCPU and memory settings into pod-level resource values automatically. You configure nothing by hand.
 - The **max per container** cap prevents a single runaway container from consuming your entire organization's quota. If you need a container larger than the plan's max, contact support or upgrade to a higher plan.
 
-### When Workloads Are Rejected
+### When workloads are rejected
 
-Once your organization's quota is fully consumed, new workloads will fail to start with an error such as:
+After your organization's quota is fully consumed, new workloads will fail to start with an error such as:
 
 ```
 Error from server (Forbidden): pods "api" is forbidden: exceeded quota: plan-quota, requested: requests.cpu=500m, used: requests.cpu=8, limited: requests.cpu=8
@@ -167,11 +167,11 @@ To resolve this:
 
 ---
 
-## Turbo Add-ons
+## Turbo add-ons
 
 ![Turbo add-ons](images/billing-subsciptions-addons.png)
 
-Turbo Add-ons let you boost your organization's resources without switching plans. Add-ons are applied to your **entire organization** and stack — you can add the same package multiple times.
+Turbo Add-ons let you boost your organization's resources without switching plans. Add-ons apply to your **whole Organization**, and they stack. You can add the same package more than once.
 
 | | **Turbo x1** | **Turbo x2** |
 |---|---|---|
@@ -187,14 +187,14 @@ Turbo Add-ons let you boost your organization's resources without switching plan
 
 This matches the Overview screenshot above where Monthly Cost shows €158.
 
-### Adding a Turbo Add-on
+### Add a Turbo add-on
 
 1. Navigate to **Manage Organization → Billing → Turbo Add-ons**
 2. Click **Add Another** on the desired package
 3. Wait for the billing provider to confirm the purchase and for the updated
    quota to appear in the Billing overview
 
-### Removing a Turbo Add-on
+### Remove a Turbo add-on
 
 1. Navigate to **Manage Organization → Billing → Turbo Add-ons**
 2. Click **Remove 1** on the package you want to reduce
@@ -205,16 +205,16 @@ Before removing an add-on, ensure your current resource usage fits within the re
 
 ---
 
-## Managing Your Subscription
+## Manage your subscription
 
-### Subscribing to a Plan
+### Subscribe to a plan
 
 1. Navigate to **Manage Organization → Billing → Available Plans**
 2. Click **Subscribe** on your desired plan
 3. Complete checkout with the billing provider configured for your installation
 4. Return to the Billing overview and wait for the subscription to show **Active** before deploying
 
-### Changing Plans
+### Change your plan
 
 You can upgrade or downgrade at any time from the **Available Plans** tab.
 
@@ -226,7 +226,7 @@ change. Any proration is shown during checkout or in the provider portal.
 
 **On downgrade:** The system checks whether your current resource usage fits within the new plan before allowing the change. If you are over the target plan's limits, you will need to scale down workloads first.
 
-### Canceling Your Subscription
+### Cancel your subscription
 
 1. Navigate to **Manage Organization → Billing → Subscription**
 2. Click **Cancel Subscription**
@@ -239,7 +239,7 @@ provider confirms the terminal state.
 
 ---
 
-## Subscription Status
+## Subscription status
 
 | Status | Resources | New Deployments | Payment |
 |--------|-----------|-----------------|---------|
@@ -249,12 +249,12 @@ provider confirms the terminal state.
 | **Suspended** | Minimal only | ❌ Blocked | Payment failed |
 | **Canceled** | Minimal only, workloads paused | ❌ Blocked | Expired |
 
-### What Happens When a Subscription Is Suspended
+### What happens when a subscription is suspended
 
 If a payment fails, the subscription moves to `suspended`:
 
-1. **7-day grace period** — all existing workloads continue running, but new deployments are blocked
-2. **After 7 days** — if payment is still not resolved:
+1. **7-day grace period**: all existing workloads continue running, but new deployments are blocked
+2. **After 7 days**: if payment is still not resolved:
    - All Deployments and StatefulSets are scaled to zero replicas
    - CronJobs are suspended
    - The organization quota drops to a minimal holding allocation
@@ -267,26 +267,26 @@ If your subscription is suspended or canceled, click **Subscribe** from the **Av
 
 ---
 
-## Managing Payment
+## Manage payment
 
 Click **Manage Payment** from the Billing Overview to open the payment portal
 configured for your installation. Available actions depend on that provider and
 can include:
 
-- **Update payment method** — Change credit card or SEPA details
-- **Download invoices** — Access billing history and PDF receipts
-- **View upcoming charges** — Preview the next billing cycle
-- **Update billing address** — Change the address shown on invoices
+- **Update payment method**: Change credit card or SEPA details
+- **Download invoices**: Access billing history and PDF receipts
+- **View upcoming charges**: Preview the next billing cycle
+- **Update billing address**: Change the address shown on invoices
 
 Use the provider's **Return** action to come back to the Kube-DC console.
 
 ---
 
-## Per-Project Resource Limits
+## Per-Project resource limits
 
 By default, all projects share the organization quota with no individual caps. Organization administrators can optionally cap individual projects to prevent a single project from consuming the entire budget.
 
-### Setting Limits in the UI
+### Set limits in the console
 
 1. Navigate to **Manage Organization → Projects**
 2. Click the project you want to limit
@@ -295,7 +295,7 @@ By default, all projects share the organization quota with no individual caps. O
 
 The panel shows the organization's total quota alongside the per-project fields so you can see what is available.
 
-### How Limits Are Applied
+### How limits are applied
 
 The effective limit for a resource is the lower of the Project cap and the
 organization's remaining quota. Remove the cap from the **Resource Quotas**
@@ -308,7 +308,7 @@ through the platform service.
 
 ---
 
-## Tracking Usage with kubectl
+## Track usage with kubectl
 
 The platform exposes resource usage directly on the `Organization` and `Project` custom resources so you can query quota state from the command line without logging into the UI. Usage updates are asynchronous. Organization quota is event-driven; Project
 quota also reacts to `ResourceQuota` changes and has a periodic 5–7 minute
@@ -335,11 +335,11 @@ Example output:
 }
 ```
 
-- **cpu** — cores used / available (decimal, e.g. `18.975` = 18,975 millicores)
-- **memory / storage** — GiB consumed vs plan limit
-- **publicIPv4** — count of public External IPs in use across all projects
-- **objectStorage** — hard limit from plan; `used` is populated asynchronously from object storage stats
-- **lastUpdated** — timestamp of last controller refresh
+- **cpu**: cores used / available (decimal, for example, `18.975` = 18,975 millicores)
+- **memory** and **storage**: the GiB consumed, against the plan limit
+- **publicIPv4**: count of public External IPs in use across all projects
+- **objectStorage**: hard limit from plan; `used` is populated asynchronously from object storage stats
+- **lastUpdated**: timestamp of last controller refresh
 
 Check a single field:
 
@@ -370,7 +370,7 @@ Example output:
 ```
 
 - **hard** shows the organization limit when no `project-quota` exists. When one is configured, each classic dimension shows only its explicit per-project cap; an omitted dimension remains pooled and is not presented as a project cap
-- **perProjectQuotaSet** — `true` if an admin has applied an explicit per-project `ResourceQuota`
+- **perProjectQuotaSet**: `true` if an admin has applied an explicit per-project `ResourceQuota`
 
 ### All projects at a glance
 
@@ -418,7 +418,7 @@ The `hrq.hnc.x-k8s.io` quota is the organization-wide HNC propagated limit. The 
 - The Overview shows current usage for each resource
 - Scale down or delete workloads until usage falls within the target plan's limits, then retry
 
-**IPv4 at 100% — cannot create new LoadBalancer services**
+**IPv4 at 100%: you cannot create a LoadBalancer Service**
 - Dev Pool and Pro Pool include 1 dedicated IPv4 with no burst
 - Scale Pool includes 3 IPv4 addresses
 - Add-ons do not include additional IPv4 addresses; upgrade to Scale Pool for more

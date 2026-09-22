@@ -25,9 +25,9 @@ objects are in [Appendix: the objects behind the layer](#appendix-the-objects-be
 With `INGRESS_ADDRESS_LAYER=none` the Envoy Service keeps a static `externalIPs` entry
 pointing at one node's own address. That works and needs nothing from your network, but:
 
-- **no failover** — the address belongs to a single node, so losing that node removes
+- **no failover**: the address belongs to a single node, so losing that node removes
   external access until DNS or the address is moved by hand;
-- **no health gating** — nothing withdraws the address when the Envoy on that node stops
+- **no health gating**: nothing withdraws the address when the Envoy on that node stops
   serving, so a rolling update of the front door has a visible gap;
 - the address is **pinned in the Service spec** rather than requested.
 
@@ -66,37 +66,37 @@ the node address would keep capturing `:443` alongside the VIP.
 
 :::caution The VIP request must be explicit
 The pool is created with `autoAssign: false`, so a Service only gets an address if it
-**asks** for one — `address-metallb` emits
+**asks** for one. `address-metallb` emits
 `metallb.universe.tf/loadBalancerIPs: ${METALLB_FLOATING_IP}` for exactly that reason.
 
 This matters more than it looks. A Service that holds an address without requesting it has
 a *sticky* allocation: it keeps working indefinitely, and cannot re-acquire the same address
-if it is ever recreated — the front door would come back with no address at all. If you
+if it is ever recreated, and the front door would come back with no address at all. If you
 inherit a cluster in that state (`metallb.io/ip-allocated-from-pool` present but no
 `loadBalancerIPs` request and no `spec.loadBalancerIP`), add the request **before** anything
 that might recreate the Service. It is a no-op while the Service exists.
 :::
 
-## Prerequisites
+## Before you begin
 
 - The VIP is in the same L2 segment as the ingress nodes (for `metallb-l2`), or reachable
-  via the configured BGP peer (for `metallb-bgp`).
+  through the configured BGP peer (for `metallb-bgp`).
 - Every node that may announce it runs a MetalLB **speaker** and carries
-  `ovn.kubernetes.io/external-gw` — the shared advertisement selects on that label.
-- The ingress set (`kube-dc.com/ingress`) is a **subset** of the announcer set — now
+  `ovn.kubernetes.io/external-gw`. The shared advertisement selects on that label.
+- The ingress set (`kube-dc.com/ingress`) is a **subset** of the announcer set.
   enforced in both directions: `kube-dc bootstrap init` refuses a non-subset set before
   writing anything, and `frontdoor-check.sh preflight` refuses it against the live
   cluster. A *partial* overlap is refused too: the single node in both sets can announce,
   which makes it a point of failure that looks like HA. See
   [the co-location invariant](#when-the-vip-is-announced-by-nobody).
-- On CloudSigma: the masters' public NICs must be in **manual** mode via the CloudSigma
+- On CloudSigma: the masters' public NICs must be in **manual** mode through the CloudSigma
   API, which allows traffic for all subscribed IPs on that NIC including the VIP. Without
   it, traffic for an IP not explicitly assigned is dropped. The VIP must be a subscribed
   (owned) address.
 
 ## Verify
 
-Start with the scripted check — it covers the cases that every other signal reports as
+Start with the scripted check. It covers the cases that every other signal reports as
 healthy:
 
 ```bash
@@ -130,13 +130,13 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://console.<DOMAIN>
 Worth doing once per cluster, because it is the property you chose this layer for.
 
 ```bash
-# 1. note the announcing node (see above), then drain it
+# 1. note the announcing node from the preceding command, then drain it
 kubectl drain <node> --ignore-daemonsets --delete-emptydir-data
 
 # 2. the announcement should move to another node with a ready Envoy
 kubectl -n envoy-gateway-system get events --sort-by=.lastTimestamp | grep -i announc
 
-# 3. traffic should keep working throughout — probe continuously, do not spot-check
+# 3. traffic should keep working throughout: probe continuously, do not spot-check
 while true; do curl -sS -o /dev/null -w '%{http_code} ' --max-time 3 https://console.<DOMAIN>; sleep 1; done
 
 # 4. put it back
@@ -157,7 +157,7 @@ allocate from its pool, fail with "no available IPs", and leave project Services
 Two halves, both already wired:
 
 1. `addons/metallb` sets the Helm value `loadBalancerClass: metallb`, which adds
-   `--lb-class=metallb` to the controller — MetalLB then only considers Services carrying
+   `--lb-class=metallb` to the controller. MetalLB then considers only the Services carrying
    that class.
 2. `address-metallb` sets `envoyService.loadBalancerClass` as a **first-class field** on the
    `EnvoyProxy`, so Envoy Gateway puts it on the Service at creation time.
@@ -175,7 +175,7 @@ The one front-door failure that is completely silent. MetalLB announces only fro
 and under `Local` a node announces only while it holds a ready local Envoy. So the address
 lives on the **intersection** of those two sets. If they are disjoint, nothing announces
 it: the Service shows its external IP, the pods are `Ready`, Flux is green, and the address
-is simply dark. You find out by curling it — or by running `frontdoor-check.sh preflight`,
+is dark. You find out by curling it, or by running `frontdoor-check.sh preflight`,
 which compares the two sets for you.
 
 ### The Service has an address but nothing answers
@@ -201,7 +201,7 @@ its probes, and logs `cannot bind '0.0.0.0:443': Permission denied` for every li
 
 ## Rollback
 
-Roll back **through git** — the Service is generated from the `EnvoyProxy` CR, so a manual
+Roll back **through git**. The Service is generated from the `EnvoyProxy` CR, so a manual
 edit is reverted on the next reconcile.
 
 1. Remove `gateway-config/components/address-metallb` from the cluster's `platform`
@@ -209,7 +209,7 @@ edit is reverted on the next reconcile.
 2. Set `INGRESS_ADDRESS_LAYER=none` and the derived `ENVOY_SERVICE_TYPE=ClusterIP`,
    `ENVOY_LB_CLASS=null`, `ENVOY_TRAFFIC_POLICY=null` in `cluster-config.env`.
 3. Commit, push, reconcile. `host-bind` re-asserts `externalIPs` from `NODE_EXTERNAL_IP`,
-   which is what gives the Gateway an address again — you do not re-apply it by hand.
+   which is what gives the Gateway an address again. You do not re-apply it by hand.
 4. Point wildcard/API DNS back at the node address.
 5. Uninstall MetalLB only after the node-address path is confirmed serving.
 
@@ -218,7 +218,7 @@ Confirm with `scripts/frontdoor-check.sh smoke <cluster> <kubeconfig>`.
 ## Appendix: the objects behind the layer
 
 For reference, and for non-Kube-DC clusters. On a Kube-DC cluster these are produced by the
-addon layers and the component above — do not apply them by hand.
+addon layers and the preceding component. Do not apply them by hand.
 
 ```yaml
 # IPAddressPool: autoAssign false, so only a Service that requests it gets the address.
@@ -246,6 +246,7 @@ spec:
         ovn.kubernetes.io/external-gw: "true"
 ```
 
-The resulting Service shape — `LoadBalancer`, class `metallb`, `externalTrafficPolicy:
-Local`, the `loadBalancerIPs` request, and no `externalIPs` — is what
+The resulting Service shape is `LoadBalancer`, class `metallb`,
+`externalTrafficPolicy: Local`, the `loadBalancerIPs` request, and no
+`externalIPs`. That shape is what
 `gateway-config/components/address-metallb` renders onto the `EnvoyProxy`.

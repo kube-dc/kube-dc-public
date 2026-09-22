@@ -135,7 +135,7 @@ Security and Product accepted the following residual risks on 2026-08-07:
    are in the [GPU supply-chain policy](gpu-supply-chain.md); SBOM and scan
    disposition are part of the release record.
 3. **Capacity is not reservation.** Quota entitlement does not guarantee a free
-   physical device — a reserved product requires the separate operational
+   physical device. A reserved product requires the separate operational
    contract in [GPU capacity reservations](gpu-capacity-reservations.md).
 4. **Guest support is qualified per combination.** The VM attachment lifecycle
    is proven; each guest OS, driver and CUDA combination is qualified before it

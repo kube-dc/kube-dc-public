@@ -1,4 +1,4 @@
-# KMS (Key Management Service)
+# KMS (key management service)
 
 Kube-DC KMS lets you create non-exportable symmetric encryption keys in a
 Project. The key material is held by OpenBao Transit and is never returned to
@@ -54,7 +54,7 @@ from the dashboard or CLI because the create endpoint relies on object-level
 `create` permission. The advanced YAML editor likewise relies on `update`, and a
 direct Kubernetes API client can set the field with `CREATE`, `UPDATE`, or
 `PATCH`. Kubernetes RBAC authorizes those object-level verbs rather than one
-field, and no admission policy currently adds the missing field-level check.
+field, and no admission policy adds the missing field-level check.
 
 Until that guard is deployed, treat `project-manager` as able to schedule KMS
 key deletion. Do not rely on the `admin` / `project-manager` distinction as a

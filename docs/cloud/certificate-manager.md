@@ -1,4 +1,4 @@
-# Certificate Manager
+# Certificate manager
 
 Kube-DC's Certificate Manager gives every Project on-demand X.509
 certificates without making you reach for ACME accounts, CA private
@@ -9,11 +9,11 @@ it expires.
 
 Two trust roots are available:
 
-- **Private** — issued by your Organization's intermediate CA for internal
+- **Private**: issued by your Organization's intermediate CA for internal
   TLS, mTLS, client authentication, or code signing. It is not trusted by the
   public internet. Distribute the Organization trust chain to every client
   that must validate it; Managed Clusters do not receive it automatically.
-- **Public** — issued via ACME (Let's Encrypt by default) through
+- **Public**: issued with ACME (Let's Encrypt by default) through
   Kube-DC's existing cert-manager path. Trusted by any browser; only
   usable for SANs the Organization is allowed to issue under.
 
@@ -42,13 +42,13 @@ spec:
 
 Three fields drive what's issued:
 
-- **type** — `private` (Organization intermediate CA) or `public` (ACME).
-- **purpose** — picks the x509 key-usages bundle:
-  - `server` — server TLS auth
-  - `client` — client TLS auth (for mTLS clients)
-  - `mtls` — both server + client (for services that do both)
-  - `code-signing` — code-signing extended key usage
-- **dnsNames** — SANs. Validated against your Organization's allowed
+- **type**: `private` (Organization intermediate CA) or `public` (ACME).
+- **purpose**: picks the x509 key-usages bundle:
+  - `server`: server TLS auth
+  - `client`: client TLS auth (for mTLS clients)
+  - `mtls`: both server + client (for services that do both)
+  - `code-signing`: code-signing extended key usage
+- **dnsNames**: SANs. Validated against your Organization's allowed
   certificate domains by an admission webhook; you can't issue a cert
   for someone else's domain.
 
@@ -139,7 +139,7 @@ kubectl get secret api-tls -o yaml
 # data:
 #   tls.crt: <base64 PEM cert chain>
 #   tls.key: <base64 PEM private key>
-#   ca.crt:  <base64 PEM issuing CA chain — present for type=private>
+#   ca.crt:  <base64 PEM issuing CA chain, present for type=private>
 ```
 
 Mount it like any TLS secret:
@@ -159,7 +159,7 @@ spec:
 ```
 
 For a Gateway you manage, reference the projected Secret in the Listener's
-`certificateRefs`. Kube-DC [Service Exposure](service-exposure.md) is a
+`certificateRefs`. Kube-DC [Service exposure](service-exposure.md) is a
 separate flow: `expose-route: "https"` creates a raw cert-manager
 `Certificate` through the Project's `letsencrypt` Issuer. It does not create a
 `ManagedCertificate`. Use `tls-secret` when you want a route to consume a
@@ -217,7 +217,7 @@ inside an existing container.
 kube-dc certificates delete api-tls --yes
 ```
 
-(`--yes` is required — the CLI refuses to delete without explicit
+(`--yes` is required, because the CLI refuses to delete without explicit
 confirmation.)
 
 Deleting the ManagedCertificate removes its owned cert-manager Certificate.
@@ -226,10 +226,10 @@ owner references are not enabled on every installation. Move workloads away
 from the Secret first, then verify and delete any retained Secret explicitly
 when it is no longer needed.
 
-## Use with Service Exposure
+## Use with Service exposure
 
 Most TLS use is for HTTPS / mTLS endpoints reached through the
-[Service Exposure](service-exposure.md) layer. Set
+[Service exposure](service-exposure.md) layer. Set
 `service.nlb.kube-dc.com/expose-route: "https"` on a LoadBalancer Service
 after creating the Project's `letsencrypt` Issuer. The route controller creates
 and owns a cert-manager `Certificate`; it does not create a
@@ -269,7 +269,7 @@ renewals are not recorded as user API actions.
   Let's Encrypt because its upstream rate limits apply. Kube-DC does not expose
   a separate rate-limit counter. Use `private` for non-internet-facing trust.
 - **Key algorithm defaults come from cert-manager and the configured issuer.**
-  ManagedCertificate does not currently expose a private-key algorithm field;
+  ManagedCertificate does not expose a private-key algorithm field;
   inspect the resulting Certificate when the exact key profile matters.
 - **No CSR-based mode.** You can't bring your own private key today;
   cert-manager generates one for every issuance. Use the underlying
@@ -277,9 +277,9 @@ renewals are not recorded as user API actions.
 
 ## Reference
 
-- [Service Exposure](service-exposure.md) — Issuer-backed TLS for Gateway
+- [Service exposure](service-exposure.md): Issuer-backed TLS for Gateway
   routes
-- [KMS](kms.md) — encryption keys (separate from x509)
-- [Secrets Manager](secrets-manager.md) — storing the cert + key pair
+- [KMS](kms.md): encryption keys (separate from x509)
+- [Secrets Manager](secrets-manager.md): storing the cert + key pair
   yourself if needed
 - cert-manager docs: [cert-manager.io/docs/](https://cert-manager.io/docs/)

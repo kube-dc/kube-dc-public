@@ -1,7 +1,7 @@
 import {Metal3RemediationDiagram} from '@site/src/components/Diagram/PlatformFlowDiagrams';
 import {Metal3TopologyDiagram} from '@site/src/components/Diagram/PlatformTopologyDiagrams';
 
-# Metal3 Bare-Metal Worker Nodes
+# Metal3 bare-metal worker nodes
 
 This guide covers a qualified bare-metal worker workflow for the Kube-DC
 management cluster using [Metal3](https://metal3.io/), Bare Metal Operator,
@@ -65,17 +65,17 @@ Network Connectivity:
 
 <Metal3TopologyDiagram />
 
-### How It Works
+### How it works
 
-1. **Enroll** — Register each bare-metal server as a `BareMetalHost` (BMH) CR with its BMC address and credentials
-2. **Inspect** — Ironic powers on the server via BMC, PXE-boots a ramdisk, and collects hardware inventory (CPUs, RAM, disks, NICs, MAC addresses)
-3. **Provision** — When a `MachineDeployment` scales up, CAPM3 selects an `available` BMH, writes an OS image to disk via Ironic, and injects cloud-init user/network data
-4. **Join** — The provisioned server boots into Ubuntu with RKE2 agent pre-configured, joins the management cluster, and becomes a schedulable worker node
-5. **Heal** — `MachineHealthCheck` monitors node health; if a node becomes unhealthy, the Metal3 remediation controller power-cycles it via BMC or reprovisions it
+1. **Enroll**: Register each bare-metal server as a `BareMetalHost` (BMH) CR with its BMC address and credentials
+2. **Inspect**: Ironic powers on the server through BMC, PXE-boots a ramdisk, and collects hardware inventory (CPUs, RAM, disks, NICs, MAC addresses)
+3. **Provision**: When a `MachineDeployment` scales up, CAPM3 selects an `available` BMH, writes an OS image to disk through Ironic, and injects cloud-init user/network data
+4. **Join**: The provisioned server boots into Ubuntu with RKE2 agent pre-configured, joins the management cluster, and becomes a schedulable worker node
+5. **Heal**: `MachineHealthCheck` monitors node health; if a node becomes unhealthy, the Metal3 remediation controller power-cycles it through BMC or reprovisions it
 
-## Prerequisites
+## Before you begin
 
-### Hardware Requirements
+### Hardware requirements
 
 | Requirement | Details |
 |-------------|---------|
@@ -85,7 +85,7 @@ Network Connectivity:
 | **Network interfaces** | Interfaces required by the selected management and provider-network topology; a trunk is needed only when that topology carries VLANs |
 | **Storage** | At least one disk for OS installation (SSD recommended, 100 GB+) |
 
-### Network Requirements
+### Network requirements
 
 The management cluster nodes must be able to reach:
 
@@ -101,17 +101,17 @@ VLAN merely because a control-plane node has it. Match Kube-OVN
 ProviderNetwork node selection and interface configuration to the actual
 cabling. See the [network model](installation-overview.md#network-model).
 
-### Software Requirements
+### Software requirements
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| **Kube-DC management cluster** | Required | Compatible installed cluster; three server nodes are the reference HA profile in the [Installation Guide](installation-guide.md) |
+| **Kube-DC management cluster** | Required | Compatible installed cluster; three server nodes are the reference HA profile in the [Installation guide](installation-guide.md) |
 | **cert-manager** | Already installed | Deployed by the kube-dc installer (Flux) |
 | **Cluster API core** | Already installed | Deployed by the kube-dc installer (Flux) |
 | **CAPM3 + BMO + Ironic** | To be installed | This guide covers installation |
 | **OS disk image** | To be prepared | Ubuntu 24.04 with RKE2 agent pre-baked |
 
-### Information to Collect
+### Information to collect
 
 Before proceeding, gather the following for **each worker server**:
 
@@ -119,14 +119,14 @@ Before proceeding, gather the following for **each worker server**:
 |------|---------|---------------|
 | BMC IP address | `192.168.1.101` | Check BMC/iDRAC web UI or server documentation |
 | BMC protocol | `redfish-virtualmedia` | Depends on hardware vendor (see [supported hardware](https://book.metal3.io/bmo/supported_hardware)) |
-| BMC credentials | `admin` / `password` | Set via BMC web interface |
+| BMC credentials | `admin` / `password` | Set through BMC web interface |
 | Boot NIC MAC address | `aa:bb:cc:dd:ee:01` | Check `ip link` output or BMC hardware inventory |
 | Management NIC name | `eth0` or `eno1` | Varies by hardware; inspect after first boot |
 | Trunk NIC name | `eth1` or `enp94s0f0np0` | The VLAN-capable NIC connected to cloud/provider switch |
 
 ---
 
-## Phase 1 — Install Metal3 Components
+## Phase 1: install the Metal3 components
 
 ### 1.1 Initialize CAPM3
 
@@ -137,13 +137,13 @@ clusterctl init --infrastructure metal3 --ipam metal3
 ```
 
 This installs:
-- **CAPM3** — Cluster API Provider Metal3 (manages `Metal3Machine`, `Metal3MachineTemplate`)
-- **Metal3 IPAM** — IP address management for static IP assignment during provisioning
-- **Bare Metal Operator (BMO)** — Manages `BareMetalHost` lifecycle
+- **CAPM3**: Cluster API Provider Metal3 (manages `Metal3Machine`, `Metal3MachineTemplate`)
+- **Metal3 IPAM**: IP address management for static IP assignment during provisioning
+- **Bare Metal Operator (BMO)**: Manages `BareMetalHost` lifecycle
 
 ### 1.2 Deploy Ironic
 
-Ironic is the provisioning engine that Metal3 uses to interact with hardware via BMC protocols. Deploy it using the Ironic Standalone Operator:
+Ironic is the provisioning engine that Metal3 uses to interact with hardware through BMC protocols. Deploy it using the Ironic Standalone Operator:
 
 ```bash
 # Install Ironic Standalone Operator
@@ -181,11 +181,11 @@ kubectl create ns baremetal-operator-system
 kubectl apply -f ironic.yaml
 ```
 
-:::warning PXE vs Virtual Media
-If your qualified hardware supports **Redfish Virtual Media**, you can skip the PXE DHCP configuration. Virtual Media mounts the boot ISO directly via BMC, avoiding PXE network complexity. Use BMC addresses like `redfish-virtualmedia://192.168.1.101/redfish/v1/Systems/1` in your BareMetalHost specs.
+:::warning PXE compared with Virtual Media
+If your qualified hardware supports **Redfish Virtual Media**, you can skip the PXE DHCP configuration. Virtual Media mounts the boot ISO directly through BMC, avoiding PXE network complexity. Use BMC addresses like `redfish-virtualmedia://192.168.1.101/redfish/v1/Systems/1` in your BareMetalHost specs.
 :::
 
-### 1.3 Verify Metal3 Stack
+### 1.3 Verify Metal3 stack
 
 ```bash
 # Check all Metal3 components are running
@@ -195,12 +195,12 @@ kubectl get pods -n ironic-standalone-operator-system
 
 # Verify CRDs are installed
 kubectl api-resources | grep metal3
-# Expected: baremetalhosts, metal3machines, metal3machinetemplates, etc.
+# Expected: baremetalhosts, metal3machines, and metal3machinetemplates
 ```
 
 ---
 
-## Phase 2 — Prepare the Worker OS Image
+## Phase 2: prepare the worker OS image
 
 Metal3 provisions servers by writing a disk image. This image must contain:
 - **Ubuntu 24.04 LTS** base system
@@ -208,7 +208,7 @@ Metal3 provisions servers by writing a disk image. This image must contain:
 - **cloud-init** for first-boot configuration (network, hostname, cluster join)
 - **Kernel modules** required by Kube-OVN (`openvswitch`, `nf_conntrack`)
 
-### 2.1 Build the Image
+### 2.1 Build the image
 
 Use a tool like [image-builder](https://github.com/kubernetes-sigs/image-builder) or create a custom image with Packer:
 
@@ -229,9 +229,9 @@ virt-customize -a noble-server-cloudimg-amd64.img \
   --run-command 'rm -f /etc/resolv.conf && echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" > /etc/resolv.conf'
 ```
 
-### 2.2 Host the Image
+### 2.2 Host the image
 
-Make the image available via HTTP from a server reachable by Ironic:
+Make the image available over HTTP from a server reachable by Ironic:
 
 ```bash
 # Compute checksum
@@ -243,9 +243,9 @@ sha256sum noble-server-cloudimg-amd64.img > noble-server-cloudimg-amd64.img.sha2
 
 ---
 
-## Phase 3 — Enroll Bare-Metal Hosts
+## Phase 3: enroll the bare-metal hosts
 
-### 3.1 Create BMC Credentials
+### 3.1 Create BMC credentials
 
 Create a Kubernetes secret for each worker server's BMC credentials:
 
@@ -276,7 +276,7 @@ stringData:
 kubectl apply -f bmh-secrets.yaml
 ```
 
-### 3.2 Create BareMetalHost Resources
+### 3.2 Create BareMetalHost resources
 
 Register each server with its BMC address, boot MAC, and boot mode:
 
@@ -321,7 +321,7 @@ spec:
 kubectl apply -f baremetalhosts.yaml
 ```
 
-### 3.3 Wait for Inspection
+### 3.3 Wait for inspection
 
 Watch the BMH resources progress through `registering` → `inspecting` → `available`:
 
@@ -335,8 +335,8 @@ kubectl get bmh -n baremetal-operator-system -w
 # worker-2   available               true             5m
 ```
 
-Once a BMH reaches `available`, Ironic has successfully:
-- Powered on the server via BMC
+After a BMH reaches `available`, Ironic has successfully:
+- Powered on the server through BMC
 - PXE-booted a ramdisk
 - Collected hardware inventory (CPUs, RAM, disks, NICs with MAC addresses)
 - Powered the server back off
@@ -347,13 +347,13 @@ Inspect the discovered hardware:
 kubectl get bmh worker-1 -n baremetal-operator-system -o jsonpath='{.status.hardware}' | jq .
 ```
 
-This shows all discovered NICs, disks, CPU, and RAM — essential for configuring network data templates.
+This shows every discovered NIC and disk, plus the CPU and the RAM. You need these values to configure the network data templates.
 
 ---
 
-## Phase 4 — Configure CAPI Resources for Worker Provisioning
+## Phase 4: configure the CAPI resources for worker provisioning
 
-### 4.1 Create Metal3 IPAM Pool
+### 4.1 Create Metal3 IPAM pool
 
 Define an IP pool for worker management network addresses:
 
@@ -380,7 +380,7 @@ kubectl apply -f ippool-mgmt.yaml
 
 ### 4.2 Create Metal3DataTemplate
 
-The `Metal3DataTemplate` defines how network data and metadata are generated for each provisioned worker. This is critical — it tells cloud-init how to configure the server's network interfaces.
+The `Metal3DataTemplate` defines how network data and metadata are generated for each provisioned worker. This is critical, because it tells cloud-init how to configure the server's network interfaces.
 
 ```yaml
 # metal3datatemplate.yaml
@@ -398,13 +398,13 @@ spec:
   networkData:
     links:
       ethernets:
-        # Management NIC — carries Kubernetes API, SSH, node-to-node traffic
+        # Management NIC: carries Kubernetes API, SSH, node-to-node traffic
         - id: mgmt-nic
           macAddress:
             fromHostInterface: eth0       # Matched against BMH hardware inventory
           type: phy
           mtu: 1500
-        # Trunk NIC — carries cloud and provider VLANs
+        # Trunk NIC: carries cloud and provider VLANs
         # Do NOT assign an IP; Kube-OVN manages this via OVS bridges
         - id: trunk-nic
           macAddress:
@@ -432,7 +432,7 @@ kubectl apply -f metal3datatemplate.yaml
 ```
 
 :::warning NIC Name Matching
-The `fromHostInterface` values (`eth0`, `eth1`) must match the NIC names discovered during BMH inspection. Check `kubectl get bmh worker-1 -o jsonpath='{.status.hardware.nics}'` to see the actual interface names on your hardware. If NICs have different names across servers, use MAC-based matching or ensure consistent naming via udev rules in the OS image.
+The `fromHostInterface` values (`eth0`, `eth1`) must match the NIC names discovered during BMH inspection. Check `kubectl get bmh worker-1 -o jsonpath='{.status.hardware.nics}'` to see the actual interface names on your hardware. If NICs have different names across servers, use MAC-based matching or ensure consistent naming through udev rules in the OS image.
 :::
 
 ### 4.3 Create Metal3MachineTemplate
@@ -579,13 +579,13 @@ Provisioning time depends on firmware, cleaning policy, image size, and network 
 
 ---
 
-## Phase 5 — Post-Provisioning Network Configuration
+## Phase 5: post-provisioning network configuration
 
 After worker nodes join the cluster, configure Kube-OVN networking to include them.
 
 ### 5.1 Update ProviderNetwork
 
-The Kube-OVN `ProviderNetwork` must include the worker nodes so they can participate in cloud and provider VLAN traffic. If workers have the **same trunk NIC name** as the masters, they are automatically included via `defaultInterface`. If NICs differ, add `customInterfaces`:
+The Kube-OVN `ProviderNetwork` must include the worker nodes so they can participate in cloud and provider VLAN traffic. If workers have the **same trunk NIC name** as the masters, they are automatically included through `defaultInterface`. If NICs differ, add `customInterfaces`:
 
 ```bash
 # Check what NIC names the workers have
@@ -622,9 +622,9 @@ kubectl get provider-networks ext-cloud -o jsonpath='{.status.readyNodes}' | jq 
 # Expected: ["master-1", "master-2", "master-3", "worker-1", "worker-2"]
 ```
 
-### 5.2 Node Labels
+### 5.2 Node labels
 
-Worker nodes provisioned by Metal3 do **not** need the `kube-ovn/role=master` label — that is only for control-plane nodes running OVN Northbound/Southbound databases. However, verify these labels are **absent** on workers:
+Worker nodes provisioned by Metal3 do **not** need the `kube-ovn/role=master` label. That label is only for control-plane nodes that run the OVN Northbound and Southbound databases. However, verify these labels are **absent** on workers:
 
 ```bash
 # Workers should NOT have these labels:
@@ -634,11 +634,11 @@ kubectl get node worker-1 --show-labels | grep -E 'kube-ovn/role|kube-dc-manager
 
 | Label | Masters | Workers | Purpose |
 |-------|---------|---------|---------|
-| `kube-ovn/role=master` | ✅ Yes | ❌ No | Runs OVN central databases |
-| `kube-dc-manager=true` | ✅ Yes | ❌ No | Schedules Kube-DC control-plane pods |
-| `node-role.kubernetes.io/worker` | ❌ No | ✅ Yes (auto) | Standard Kubernetes worker role |
+| `kube-ovn/role=master` | Yes | No | Runs OVN central databases |
+| `kube-dc-manager=true` | Yes | No | Schedules Kube-DC control-plane pods |
+| `node-role.kubernetes.io/worker` | No | Yes (auto) | Standard Kubernetes worker role |
 
-### 5.3 Verify Worker Networking
+### 5.3 Verify worker networking
 
 After the ProviderNetwork is updated, Kube-OVN creates OVS bridges on the worker nodes:
 
@@ -654,13 +654,13 @@ kubectl get provider-networks ext-cloud -o jsonpath='{.status.vlans}'
 
 ---
 
-## Phase 6 — Health Checks and Auto-Remediation
+## Phase 6: health checks and auto-remediation
 
 Metal3 supports automated health checking and remediation of worker nodes through CAPI `MachineHealthCheck` and `Metal3RemediationTemplate` resources.
 
 ### 6.1 Create Metal3RemediationTemplate
 
-The remediation template defines the strategy for handling unhealthy nodes. The **reboot** strategy is recommended for bare metal — it power-cycles the server via BMC rather than reprovisioning from scratch:
+The remediation template defines the strategy for handling unhealthy nodes. Use the **reboot** strategy for bare metal. It power-cycles the server through the BMC instead of reprovisioning from scratch:
 
 ```yaml
 # metal3remediationtemplate.yaml
@@ -696,7 +696,7 @@ spec:
   # Safety valve: don't remediate if >40% of nodes are unhealthy
   maxUnhealthy: 40%
   # Time to wait for a new node to join before considering it unhealthy
-  nodeStartupTimeout: 30m                 # Bare metal is slow — allow 30 minutes
+  nodeStartupTimeout: 30m                 # Bare metal is slow: allow 30 minutes
   # Conditions that trigger remediation
   unhealthyConditions:
     - type: Ready
@@ -717,7 +717,7 @@ kubectl apply -f metal3remediationtemplate.yaml
 kubectl apply -f machinehealthcheck.yaml
 ```
 
-### 6.3 How Remediation Works
+### 6.3 How remediation works
 
 When a worker node becomes unhealthy:
 
@@ -750,7 +750,7 @@ When a worker node becomes unhealthy:
 
 <Metal3RemediationDiagram />
 
-### 6.4 Monitor Health Checks
+### 6.4 Monitor health checks
 
 ```bash
 # Check MachineHealthCheck status
@@ -765,9 +765,9 @@ kubectl get machines -n baremetal-operator-system -o wide
 
 ---
 
-## Scaling Workers
+## Scale the worker pool
 
-### Scale Up
+### Scale up
 
 Increase replicas in the MachineDeployment:
 
@@ -780,7 +780,7 @@ CAPM3 will select `available` BareMetalHosts and provision them. Remember to:
 1. Update the `ProviderNetwork` if new workers have different NIC names
 2. Ensure enough BareMetalHosts are enrolled and in `available` state
 
-### Scale Down
+### Scale down
 
 ```bash
 kubectl scale machinedeployment kube-dc-workers \
@@ -789,45 +789,45 @@ kubectl scale machinedeployment kube-dc-workers \
 
 CAPM3 will:
 1. Cordon and drain the selected worker
-2. Power off the server via BMC
+2. Power off the server through BMC
 3. Clean the disk (per `automatedCleaningMode`)
 4. Return the BMH to `available` state for future use
 
 ---
 
-## Best Practices
+## Best practices
 
-### Disk Management
+### Disk management
 
 - **Set `rootDeviceHints`** on BareMetalHosts to ensure the OS is installed on the correct disk, especially on servers with multiple drives
 - **Use `automatedCleaningMode: metadata`** to wipe partition tables between provisions without full disk erase (saves time)
 - For sensitive environments, use `automatedCleaningMode: disk` for full disk wipe
 
-### BMC Security
+### BMC security
 
-- Use **Redfish Virtual Media** over IPMI when possible — it's more secure and reliable
+- Use **Redfish Virtual Media** instead of IPMI where you can. It is more secure and more reliable
 - Enable **TLS** on BMC interfaces and avoid `disableCertificateVerification: true` in production
 - Rotate BMC credentials regularly and store them as Kubernetes Secrets
 
-### Image Management
+### Image management
 
 - **Pre-bake** RKE2 agent, kernel modules, and system packages into the OS image to reduce first-boot time
-- Maintain versioned images (e.g., `ubuntu-24.04-rke2-v1.35.0.qcow2`) for reproducible deployments
-- Host images on a local HTTP server within the management network — downloading from the internet during provisioning is slow and unreliable
+- Maintain versioned images (for example, `ubuntu-24.04-rke2-v1.35.0.qcow2`) for reproducible deployments
+- Host images on a local HTTP server inside the management network. A download from the internet during provisioning is slow and unreliable
 
-### Node Reuse
+### Node reuse
 
-- Metal3 supports **node reuse** during rolling upgrades — instead of provisioning a fresh BMH, it reprovisions the same server with a new image
+- Metal3 supports **node reuse** during rolling upgrades. Instead of provisioning a fresh BMH, it reprovisions the same server with a new image
 - Enable this by using the scale-in upgrade strategy on MachineDeployments
 - This significantly reduces upgrade time for bare-metal clusters
 
-### Monitoring and Alerting
+### Monitoring and alerting
 
-- Set up **Prometheus alerts** for BMH state changes (e.g., `error`, `provisioning failed`)
+- Set up **Prometheus alerts** for BMH state changes (for example, `error`, `provisioning failed`)
 - Monitor the `MachineHealthCheck` targets count and current healthy/unhealthy ratios
-- Alert on `Metal3Remediation` objects being created — they indicate node failures
+- Alert on the creation of `Metal3Remediation` objects. They indicate node failures
 
-### ProviderNetwork Consistency
+### ProviderNetwork consistency
 
 - Use `defaultInterface` only after verifying the provider interface name on every eligible node; firmware and slot layout can change names even on the same hardware model.
 - Use `customInterfaces` when a node's provider interface differs from the default.
@@ -837,24 +837,24 @@ CAPM3 will:
 
 ## Troubleshooting
 
-### BMH Stuck in "registering"
+### BMH stuck in "registering"
 
 ```bash
 kubectl get bmh worker-1 -n baremetal-operator-system -o yaml | grep -A5 errorMessage
 ```
 
 Common causes:
-- BMC IP unreachable from management cluster — check network/firewall
-- Wrong BMC credentials — verify the Secret
-- Unsupported BMC protocol — check [Metal3 supported hardware](https://book.metal3.io/bmo/supported_hardware)
+- The BMC IP is unreachable from the management cluster. Check the network and the firewall.
+- The BMC credentials are wrong. Verify the Secret.
+- The BMC protocol is not supported. See [Metal3 supported hardware](https://book.metal3.io/bmo/supported_hardware).
 
-### BMH Stuck in "inspecting"
+### BMH stuck in "inspecting"
 
-- Server failed to PXE boot — check BIOS boot order, PXE NIC settings
-- Ironic ramdisk didn't start — check Ironic logs: `kubectl logs -n baremetal-operator-system -l app=ironic`
-- Virtual Media mount failed — ensure BMC firmware supports the protocol
+- The server failed to PXE boot. Check the BIOS boot order and the PXE NIC settings.
+- The Ironic ramdisk did not start. Check the Ironic logs: `kubectl logs -n baremetal-operator-system -l app=ironic`.
+- The Virtual Media mount failed. Confirm that the BMC firmware supports the protocol.
 
-### Worker Node Not Joining Cluster
+### Worker node not joining the cluster
 
 ```bash
 # Check RKE2 agent logs on the worker (via BMC console or SSH)
@@ -866,7 +866,7 @@ sudo journalctl -u rke2-agent -f
 # - DNS resolution failing (check /etc/resolv.conf)
 ```
 
-### Kube-OVN Not Working on Worker
+### Kube-OVN not working on worker
 
 ```bash
 kubectl get pods -n kube-system -l app=kube-ovn-cni --field-selector spec.nodeName=worker-1
@@ -877,11 +877,11 @@ Common cause: Worker's trunk NIC not matched in ProviderNetwork. Fix by adding a
 
 ---
 
-## Related Documentation
+## Related documentation
 
-- [Installation Overview](installation-overview.md) — Reference architecture and network prerequisites
-- [Installation Guide](installation-guide.md) — Management cluster deployment
-- [Networking Architecture](architecture-networking.md) — Kube-OVN, VLANs, VPCs, service exposure
-- [Deploy MetalLB HA](deploy-metallb-ha.md) — Floating IP for Envoy Gateway
-- [Metal3 User Guide](https://book.metal3.io/) — Upstream Metal3 documentation
-- [CAPM3 Remediation](https://book.metal3.io/capm3/remediaton.html) — Health check and remediation details
+- [Installation overview](installation-overview.md): Reference architecture and network prerequisites
+- [Installation guide](installation-guide.md): Management cluster deployment
+- [Networking architecture](architecture-networking.md): Kube-OVN, VLANs, VPCs, service exposure
+- [Deploy MetalLB HA](deploy-metallb-ha.md): Floating IP for Envoy Gateway
+- [Metal3 User Guide](https://book.metal3.io/): Upstream Metal3 documentation
+- [CAPM3 Remediation](https://book.metal3.io/capm3/remediaton.html): Health check and remediation details

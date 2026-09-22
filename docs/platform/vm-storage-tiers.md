@@ -10,13 +10,13 @@ cluster, and how live migration works. For end-user VM creation see
 
 | Tier | StorageClass / mode | Best for | Trade-off |
 |---|---|---|---|
-| **Default** | `local-path` (Filesystem, RWO) | single-node & write-sensitive VMs — databases, anything fsync-heavy | node-local (no HA, **not** live-migratable); **fastest durable writes** |
+| **Default** | `local-path` (Filesystem, RWO) | Single-node and write-sensitive VMs: databases and anything fsync-heavy | node-local (no HA, **not** live-migratable); **fastest durable writes** |
 | **Instant-clone** | `rbd-vm` **Filesystem**, RWO | fast boot from a shared golden, HA data | HA, but RWO ⇒ **not** live-migratable |
 | **Migratable (HA)** | `rbd-vm` **Block**, RWX | HA **+ live migration** (maintenance, rebalancing) | RWX-Block ⇒ live-migratable, at a **much longer durable-write latency tail** |
 
 **`rbd-vm` is an HA / mobility tier, not a universal performance tier.** On a
 representative NVMe node, synchronous 4k fio showed rbd-vm durable writes ≈ **64×
-slower** than node-local disk (single-digit-ms vs ~100µs); reads and streaming
+slower** than a node-local disk: single-digit milliseconds against about 100µs. Reads and streaming
 throughput are competitive. So the default StorageClass stays `local-path`, and the
 UI never silently prefers `rbd-vm`. Put latency-sensitive/fsync-heavy VMs (databases)
 on `local-path`.
@@ -24,32 +24,32 @@ on `local-path`.
 ## How tenants pick a tier: storage-first, not "profiles"
 
 End users don't pick a StorageClass directly, and they don't pick a "tier" by name. The
-Console asks the real infrastructure question — **Root disk storage: Local disk vs
-Shared RBD** — and treats snapshots + live migration as capabilities of shared storage:
+Console asks the real infrastructure question, **Root disk storage: local disk or
+Shared RBD**, and treats snapshots and live migration as capabilities of shared storage:
 
 | UI choice | Tier above | Rendered spec |
 |---|---|---|
 | **Local disk** | Default | cluster default (non-rbd) StorageClass, RWO Filesystem |
-| **Shared RBD** (no golden) | — | `rbd-vm` RWO import (CDI DataVolume) |
+| **Shared RBD** (no golden) | None | `rbd-vm` RWO import (CDI DataVolume) |
 | **Shared RBD** (golden present) | Instant-clone | `rbd-vm` FS clone from the OS's golden snapshot |
 | **Shared RBD + Enable live migration** | Migratable (HA) | `rbd-vm` **RWX Block** clone + `evictionStrategy: LiveMigrate` + pinned `cpu.model` |
 
 **Shared RBD** appears only when the `rbd-vm` StorageClass exists on the cluster; under
-it, **provisioning** (prepared-golden clone vs import) is chosen automatically, and the
+it, the platform chooses **provisioning** automatically, either a prepared-golden clone or an import, and the
 **Enable live migration** checkbox is offered only when the OS has a *Block* golden
-**and** a migration pool exists. The UI renders **explicit KubeVirt resources** — no
+**and** a migration pool exists. The UI renders **explicit KubeVirt resources**, with no
 mutating webhook, no server-side expansion. See the user-facing walkthrough + generated
 manifest in [Creating a VM → Root disk storage](/cloud/creating-vm#root-disk-storage).
 
 **Descriptive labels (non-authoritative).** Rendered VMs and their root PVC/DataVolume
 carry `kube-dc.com/vm-profile` (`default` | `shared-rbd` | `instant-clone` |
 `migratable`) and `kube-dc.com/storage-tier` (`<class>` | `rbd-vm-fs` | `rbd-vm-block`)
-so the choice is greppable in `kubectl`. **Nothing depends on them** — the spec fields
+so the choice is greppable in `kubectl`. **Nothing depends on them.** The spec fields
 (accessModes/volumeMode/storageClassName, evictionStrategy, cpu.model) are the source
 of truth, and KubeVirt computes `LiveMigratable` from those, not from a label. Editing
 or dropping a label does not change VM behaviour.
 
-## Enabling the Ceph-RBD tiers on a cluster
+## Enable the Ceph-RBD tiers on a cluster
 
 Both RBD tiers are **opt-in per cluster** and require: Rook `HEALTH_OK`, a Ready
 `CephBlockPool`, the RBD CSI driver, and a snapshot controller.
@@ -59,14 +59,14 @@ Both RBD tiers are **opt-in per cluster** and require: Rook `HEALTH_OK`, a Ready
 Wire the `rbd-vm` component as its own Flux Kustomization (it is intentionally
 excluded from the shared platform path so clusters opt in). The http golden images
 resolve their S3 host from the cluster config, so the Kustomization **must** enable
-`postBuild.substituteFrom` the cluster-config ConfigMap. Once applied, the platform's
+`postBuild.substituteFrom` the cluster-config ConfigMap. After you apply it, the platform's
 per-project seeder makes each project a same-namespace snapshot of every golden, and
 VM creation from a matching OS becomes a ~1s copy-on-write clone.
 
 ### 2. The RWX-Block (migratable) golden
 
 The live-migratable root is an **RWX-Block** clone, and CDI cannot populate a Block
-volume — so a small **privileged converter Job** builds the Block golden with
+volume, so a small **privileged converter Job** builds the Block golden with
 `qemu-img convert`, isolated in its own namespace, then snapshots it. This is opt-in
 on top of the FS tier and adds:
 
@@ -84,23 +84,23 @@ as-built internals are in the private `rbd-block-golden-and-seeding` doc.
 ## Live migration
 
 When a VM's root is RWX-Block and the cluster has a **migration pool**, the VM is
-live-migratable — its `VirtualMachineInstance` reports `LiveMigratable: True` and
+live-migratable. Its `VirtualMachineInstance` reports `LiveMigratable: True`, and
 `StorageLiveMigratable: True`.
 
 ### Migration pools (the CPU constraint)
 
-You **cannot live-migrate a VM across incompatible CPUs** (e.g. AMD ↔ Intel). A
+You **cannot live-migrate a VM across incompatible CPUs** (for example, AMD ↔ Intel). A
 *migration pool* is a set of **≥2 schedulable, Ready, un-cordoned nodes of the same
 vendor** that share a CPU model. The platform derives pools from the KubeVirt
 node-labeller and the UI enables the **Enable live migration** checkbox (under Shared
 RBD) only when a pool exists **and** a Block golden exists for the selected OS.
-Migratable VMs are pinned to the pool's CPU model so they land on — and stay within —
+Migratable VMs are pinned to the pool's CPU model, so they land on, and stay within,
 that pool.
 
 On a mixed cluster (say 1 AMD node + 2 Intel nodes) there is exactly one pool (the two
 Intel nodes); the lone AMD node can host VMs but they aren't migratable.
 
-### Triggering & prerequisites
+### Triggers and prerequisites
 
 - The UI sets `evictionStrategy: LiveMigrate` on migratable VMs, so a node drain
   live-migrates them automatically. To trigger manually, create a
@@ -111,10 +111,10 @@ Intel nodes); the lone AMD node can host VMs but they aren't migratable.
   the VM's CPU** or the migration is rejected (`migrationRejectedByResourceQuota`) and
   sits Pending with no target pod. Keep headroom, or migrate smaller VMs first.
   :::
-- Storage: a large golden clone needs matching free **storage** quota — e.g. a ~75Gi
+- Storage: a large golden clone needs matching free **storage** quota. A ~75Gi
   Windows golden needs ~75–80Gi free before the clone will provision.
 
-### Verifying
+### Verify the result
 
 ```bash
 # Is the VM migratable?

@@ -1,28 +1,28 @@
-# Managing VM Lifecycle
+# Manage the VM lifecycle
 
-This guide covers VM lifecycle operations — starting, stopping, restarting, pausing, and deleting virtual machines.
+This guide covers the VM lifecycle operations: start, stop, restart, pause, and delete.
 
-## Prerequisites
+## Before you begin
 
-- A [Virtual Machine](creating-vm.md) created in your project
+- A [Virtual machine](creating-vm.md) created in your project
 - [CLI access](cli-kubeconfig.md) configured for kubectl/virtctl methods
 
 ---
 
-## Start, Stop, and Restart
+## Start, stop, and restart
 
-### Start, stop, or restart via the console
+### Start, stop, or restart in the console
 
 1. Navigate to **Virtual Machines** in your project
 2. Click on your VM name to open the details page
 3. Use the action buttons:
-   - **Start** — boot a stopped VM
-   - **Stop** — gracefully shut down a running VM
-   - **Restart** — reboot a running VM
+   - **Start**: boot a stopped VM
+   - **Stop**: gracefully shut down a running VM
+   - **Restart**: reboot a running VM
 
-The UI shows the current VM status (`Running`, `Stopped`, `Starting`, etc.) and updates automatically.
+The console shows the current VM status, such as `Running`, `Stopped`, or `Starting`, and it updates the value automatically.
 
-### Start, stop, or restart via kubectl
+### Start, stop, or restart with kubectl
 
 #### Start a VM
 
@@ -50,9 +50,9 @@ kubectl patch vm ubuntu --type merge -p '{"spec":{"running":false}}'
 virtctl restart ubuntu
 ```
 
-This performs a graceful reboot — sends ACPI shutdown signal to the guest OS, waits for it to terminate, then starts it again.
+This performs a graceful reboot. It sends an ACPI shutdown signal to the guest OS, waits for the guest to stop, then starts the VM again.
 
-:::tip Restart vs Stop+Start
+:::tip Restart compared with stop and start
 `virtctl restart` reboots the guest. Persistent disks survive, but memory and process state do not. Use **Pause** when you need to preserve memory state temporarily.
 :::
 
@@ -63,7 +63,7 @@ compatible capacity, so do not rely on stable device identity. See
 [Dedicated GPU VM guest setup](gpu-vm-guests.md) for the complete lifecycle.
 :::
 
-### Check VM Status
+### Check VM status
 
 ```bash
 # List VMs with status
@@ -77,23 +77,23 @@ kubectl get vm ubuntu -w
 ```
 
 Common statuses:
-- `Running` — the virtual machine instance is running; use guest-agent or application health checks to determine guest readiness
-- `Stopped` — VM is powered off
-- `Starting` — VM is booting up
-- `Stopping` — VM is shutting down
-- `Paused` — VM is frozen in memory
+- `Running`: the virtual machine instance is running; use guest-agent or application health checks to determine guest readiness
+- `Stopped`: VM is powered off
+- `Starting`: VM is booting up
+- `Stopping`: VM is shutting down
+- `Paused`: VM is frozen in memory
 
 ---
 
-## Pause and Unpause
+## Pause and unpause
 
-Pausing a VM freezes its state in memory — useful for temporarily suspending a VM without fully shutting it down. Resume is instant.
+A pause freezes the VM's state in memory. Use it to suspend a VM without a full shutdown. The resume is instant.
 
-### Pause or unpause via the console
+### Pause or unpause in the console
 
 From the VM details page:
-- **Pause** — freeze the VM (CPU stops, memory preserved)
-- **Unpause** — resume from paused state
+- **Pause**: freeze the VM (CPU stops, memory preserved)
+- **Unpause**: resume from paused state
 
 ### Via kubectl/virtctl
 
@@ -111,9 +111,9 @@ Check if a VM is paused:
 kubectl get vmi ubuntu -o jsonpath='{.status.conditions[?(@.type=="Paused")].status}'
 ```
 
-:::note Pause vs Stop
-- **Pause** preserves exact memory state — instant resume, but consumes memory
-- **Stop** shuts down the OS — slow boot, but frees all resources
+:::note Pause compared with stop
+- **Pause** keeps the exact memory state. The resume is instant, but the VM keeps its memory.
+- **Stop** shuts the OS down. The boot is slow, but the VM frees all its resources.
 :::
 
 ---
@@ -122,14 +122,14 @@ kubectl get vmi ubuntu -o jsonpath='{.status.conditions[?(@.type=="Paused")].sta
 
 Deleting a VM removes the VirtualMachine resource and terminates the running instance. DataVolumes are preserved by default.
 
-### Delete via the console
+### Delete in the console
 
 1. Navigate to **Virtual Machines**
 2. Click on the VM name
 3. Click **Delete**
 4. Confirm the deletion
 
-### Delete via kubectl
+### Delete with kubectl
 
 ```bash
 # Delete the VM
@@ -139,7 +139,7 @@ kubectl delete vm ubuntu
 kubectl delete vm ubuntu --wait=true
 ```
 
-### Clean Up DataVolumes
+### Clean up DataVolumes
 
 VM deletion does **not** automatically delete DataVolumes (disk images). To fully remove all VM data:
 
@@ -158,7 +158,7 @@ kubectl delete dv ubuntu-data
 Deleting DataVolumes is permanent. Ensure you have backups before removing disk images.
 :::
 
-### A VM Is Stuck Deleting
+### A VM is stuck in deletion
 
 Collect `kubectl describe vm <name>`, the related VMI and DataVolume status, and recent events before escalating to your platform operator. Do not remove finalizers from a Project account: bypassing controller cleanup can orphan disks, launcher pods, or network resources.
 
@@ -182,11 +182,11 @@ These commands use KubeVirt subresources and require the corresponding Project r
 
 ---
 
-## Graceful Shutdown
+## Graceful shutdown
 
 VMs use ACPI shutdown signals for graceful termination. The guest OS receives a shutdown request and can cleanly unmount filesystems before powering off.
 
-### Configure Termination Grace Period
+### Configure termination grace period
 
 ```yaml
 spec:
@@ -207,7 +207,7 @@ terminationGracePeriodSeconds: 300  # 5 minutes
 
 ## Troubleshooting
 
-### VM Won't Start
+### VM won't start
 
 ```bash
 # Check VM status and events
@@ -226,7 +226,7 @@ Common causes:
 - Insufficient node resources (CPU/memory)
 - Invalid cloud-init configuration
 
-### VM Won't Stop
+### The VM does not stop
 
 Request a normal stop and watch both resources:
 
@@ -240,7 +240,7 @@ vm ubuntu` and `kubectl describe vmi ubuntu`, then contact support. Force-deleti
 a VMI can abruptly terminate the guest, lose unwritten data, and conflict with
 KubeVirt reconciliation; it is an operator recovery action, not a routine stop.
 
-### VM Stuck in "Starting"
+### The VM is stuck in "Starting"
 
 ```bash
 # Check pod status
@@ -258,8 +258,8 @@ capacity or a platform scheduling failure, send the VM and event details to supp
 
 ---
 
-## Next Steps
+## Next steps
 
-- [Connecting to VMs](connecting-vm.md) — Access methods (SSH, VNC, console)
-- [Creating VMs](creating-vm.md) — Deploy new virtual machines
-- [Service Exposure](service-exposure.md) — Expose VM services externally
+- [Connecting to VMs](connecting-vm.md): Access methods (SSH, VNC, console)
+- [Creating VMs](creating-vm.md): Deploy new virtual machines
+- [Service exposure](service-exposure.md): Expose VM services externally

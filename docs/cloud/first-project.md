@@ -1,73 +1,87 @@
-# Creating Your First Project
+# Create your first Project
 
-A **Project** is the working boundary for applications, virtual machines, databases, and Managed Clusters. Kube-DC backs it with a namespace named `{organization}-{project}`, Project RBAC, a private network, optional quota, and a Project kubeconfig. The namespace is an implementation detail, so the console and this guide call the environment by its Project name.
+A **Project** is the working boundary for applications, virtual machines,
+databases, and Managed Clusters. Kube-DC backs each Project with a namespace
+named `{organization}-{project}`, Project RBAC, a private network, an optional
+quota, and a Project kubeconfig. The namespace is an implementation detail, so
+the console and this guide call the environment by its Project name.
 
-## Prerequisites
+## Before you begin
 
-- A Kube-DC Cloud account ([Sign Up](sign-up-login.md))
-- Organization Admin access
-- Basic understanding of [Core Concepts](core-concepts.md)
+You need:
 
-## Create a New Project
+- A Kube-DC Cloud account. See [Sign up and sign in](sign-up-login.md).
+- Organization Admin access.
+- Familiarity with [Core concepts](core-concepts.md).
 
-To start, navigate to the **Projects** tab in the main sidebar.
+## Create a Project
 
-Click the **Create New Project** button in the top right corner. The creation wizard will appear.
+1. In the main sidebar, click **Projects**.
+2. In the top right corner, click **Create New Project**. The creation wizard
+   opens.
 
-![Create new project](images/project-1.png)
+   ![Create new project](images/project-1.png)
 
-## Configure Project Settings
+3. In the Project Configuration step, set the Project's basic properties:
 
-In the Project Configuration step, define the Project's basic properties:
+   - **Project Name**: a unique name, for example `dev`, `staging`, or
+     `production`.
+   - **CIDR Block**: the internal IP range for this Project's private network,
+     for example `10.0.0.0/16`.
+   - **Egress Network Type**: how workloads in this Project reach the internet.
+     For help with this field, see
+     [Choose a network type](#choose-a-network-type).
 
-- **Project Name** — Enter a unique name (e.g., `dev`, `staging`, `production`)
-- **CIDR Block** — Define the internal IP range for this project's private network (e.g., `10.0.0.0/16`)
-- **Egress Network Type** — Choose how workloads in this project access the internet
+4. Click **Next**. Kube-DC shows the Kubernetes manifest it applies for this
+   Project.
 
-### Which network type should I choose?
+   ![Review project YAML](images/project-3.png)
 
-The network type selects the address pool for the Project default gateway. Both types keep workloads on private addresses and use source NAT (SNAT) for outbound traffic. This choice is immutable after creation.
+5. Review the configuration, then click **Create Project**.
 
-Every provider offers **Cloud**. **Public** appears only when the provider has enabled Public Project creation.
-
-| Type | Default gateway | Choose it when |
-|------|-----------------|----------------|
-| **Cloud** | Cloud-internal address | The normal choice for applications exposed through Gateway Routes or separately allocated EIPs |
-| **Public** | Internet-routable address | The Project needs a public source address at its default gateway |
-
-Neither option exposes a workload by itself. Create a Gateway Route, LoadBalancer Service, or FIP for inbound access. Address availability and cost depend on your provider and quota. See [How Networking Works](networking-overview.md).
-
-## Review & Create
-
-1. Click **Next** to proceed to the Review step
-2. Kube-DC shows you the underlying Kubernetes Manifest (YAML) that will be applied — this transparency allows advanced users to understand exactly what is being created
-3. Review the configuration
-4. Click **Create Project**
-
-![Review project YAML](images/project-3.png)
-
-Once created, your new project will appear in the list with a status of **Ready**.
+The Project appears in the list with the status **Ready**.
 
 ![Project ready](images/project-4.png)
 
-## Setting Resource Quotas (Optional)
+## Choose a network type
 
-By default, a Project shares the full resource pool of your Organization. To prevent one project from consuming all resources, you can set specific limits.
+The network type selects the address pool for the Project default gateway. Both
+types keep workloads on private addresses and use source NAT (SNAT) for
+outbound traffic. You cannot change the network type after you create the
+Project.
 
-1. In the Projects list, click the **Details** button next to your project
-2. In the "Resource Quotas" section, click **Set Quota**
-3. Define the limits for this project:
-   - **CPU** — Max CPU cores
-   - **Memory** — Max RAM (in GiB)
-   - **Storage** — Max disk space (in GiB)
-   - **Pods** — Maximum number of Pods
-4. Click **Save Quota**
+Every provider offers **Cloud**. **Public** appears only when the provider
+enables public Project creation. The following table compares the two types:
+
+| Type | Default gateway | Choose it when |
+|------|-----------------|----------------|
+| Cloud | Cloud-internal address | The normal choice for applications exposed through Gateway Routes or separately allocated EIPs |
+| Public | Internet-routable address | The Project needs a public source address at its default gateway |
+
+Neither type exposes a workload by itself. To accept inbound traffic, create a
+Gateway Route, a LoadBalancer Service, or a floating IP. Address availability
+and cost depend on your provider and your quota. See
+[How networking works](networking-overview.md).
+
+## Optional: set a resource quota
+
+By default, a Project shares the full resource pool of your Organization. Set a
+quota to stop one Project from consuming all of it.
+
+1. In the Projects list, click **Details** next to your Project.
+2. In the **Resource Quotas** section, click **Set Quota**.
+3. Set the limits for this Project:
+
+   - **CPU**: the maximum number of CPU cores.
+   - **Memory**: the maximum RAM in GiB.
+   - **Storage**: the maximum disk space in GiB.
+   - **Pods**: the maximum number of pods.
+
+4. Click **Save Quota**.
 
 ![Resource quotas](images/project-5.png)
 
-## Next Steps
+## Next steps
 
-Once your project is created:
-
-- [Deploy Your First Application](deploy-first-app.md)
-- [Create a Virtual Machine](creating-vm.md)
+- [Deploy your first application](deploy-first-app.md)
+- [Create a virtual machine](creating-vm.md)

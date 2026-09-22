@@ -1,4 +1,4 @@
-# Migrating from db-manager Databases
+# Migrate from db-manager databases
 
 `KdcDatabase` (`db.kube-dc.com/v1alpha1`), operated by db-manager, was
 Kube-DC's first database product. It is **deprecated**. Managed Services is
@@ -29,10 +29,10 @@ Project, repoint the application, and delete the old database.
 
 1. **Create the managed service** with the same engine, a plan whose capacity
    covers the old database, and the same database name. PostgreSQL:
-   [Create a PostgreSQL Service](postgresql-create.md); MariaDB:
+   [Create a PostgreSQL service](postgresql-create.md); MariaDB:
    [MySQL and MariaDB](managed-services-mysql-mariadb.md). Wait for `Ready`.
 2. **Bind a credential** for the migration: an `owner` binding whose Secret
-   the copy Job reads. See [Connect Applications](postgresql-connect.md).
+   the copy Job reads. See [Connect applications](postgresql-connect.md).
 3. **Freeze writes** to the old database (stop the application or put it in
    read-only mode) and **copy the data** with one of the Jobs below. The Job
    runs in your Project, reads the old engine Secret and the new binding
@@ -187,7 +187,7 @@ check the server's name; binding Secrets always verify it.
 | `spec.parameters` | `spec.parameters.postgresql.parameters` or `parameters.settings` | Allow-listed settings with string values |
 | `spec.backup.*` | `spec.parameters.backup.*` (PostgreSQL) or the plan's schedule | Within the plan's backup bounds |
 | `spec.backup.s3Endpoint`, `spec.backup.s3CredentialSecret` | `spec.parameters.backup.store` (PostgreSQL) | Needs the plan's `backup.allowedCustomEndpoints`; `CreateOnly` |
-| `spec.expose.type` | `spec.parameters.expose.type` (PostgreSQL) | `gateway` and `loadbalancer` need plan entitlements; see [External Access](postgresql-external-access.md) |
+| `spec.expose.type` | `spec.parameters.expose.type` (PostgreSQL) | `gateway` and `loadbalancer` need plan entitlements; see [External access](postgresql-external-access.md) |
 | `spec.breakGlass.enableSuperuserAccess` | `spec.parameters.breakGlass.enableSuperuserAccess` (PostgreSQL) | Needs the plan's `credentials.allowBreakGlass` |
 | `spec.restoreFrom.backupName`, `.targetTime` | `spec.restoreFrom.serviceRef`, `.serviceUID`, `.backupRef` or `.targetTime` | The source is a `ManagedService` in the same Project and its `ServiceBackup` record |
 | None | `spec.deletionPolicy`, `spec.deletionProtection` | New. The default policy is `Retain` |
@@ -216,7 +216,7 @@ check the server's name; binding Secrets always verify it.
 
 Deleting a `DatabaseCredentialPolicy` removes the Secret it projected.
 Deleting a `ServiceCredentialPolicy` of a declared role keeps its bindings and
-their Secrets. See [Credentials and Rotation](postgresql-credentials.md).
+their Secrets. See [Credentials and rotation](postgresql-credentials.md).
 
 ## While you still run a KdcDatabase
 

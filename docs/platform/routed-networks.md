@@ -1,6 +1,6 @@
 import RoutedNetworkDiagram from '@site/src/components/Diagram/RoutedNetworkDiagram';
 
-# Operating Routed Networks
+# Operate routed networks
 
 Routed Networks connect an entire Project VPC to approved external IPv4
 destinations through platform-managed eBGP gateways. They are for corporate
@@ -63,7 +63,7 @@ FIP workload cannot send the corporate destination through its Internet
 gateway. OVN evaluates policy before static routes, which is why the drop is a
 transition/unhealthy state rather than permanently armed.
 
-## Prerequisites
+## Before you begin
 
 Before creating a fabric, verify:
 
@@ -210,7 +210,7 @@ spec:
 ```
 
 An empty `allowedPrefixes` list means import nothing. It is safe and valid. A
-default route is not a shortcut for “all corporate networks”; enumerate the
+default route is not a shortcut for "all corporate networks"; enumerate the
 destinations that the Organization is allowed to reach.
 
 ```bash
