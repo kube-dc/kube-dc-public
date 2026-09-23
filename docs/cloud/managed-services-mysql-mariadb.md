@@ -155,8 +155,8 @@ verified logical archive (`mysqldump`-style for MySQL, `mariadb-dump`-style
 for MariaDB) of the application database in your Project's backup bucket.
 There is no point-in-time recovery and no restore in place.
 
-Restore into a new service with a `RestoreToNew` operation or a new
-`ManagedService` with `spec.restoreFrom`, exactly as for PostgreSQL:
+Restore into a new service with a `RestoreToNew` operation.
+Select an exact backup record and a compatible target plan. See
 [Restore into a new service](postgresql-backup-restore.md#restore-into-a-new-service).
 The new service may use a different plan, which is also how you move a MySQL
 service to a larger size.

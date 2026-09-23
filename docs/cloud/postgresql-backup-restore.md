@@ -171,7 +171,7 @@ kubectl get servicebackups -n my-project \
 | `spec.backupName` | The name the backup had when it was taken. A `Backup` operation reports it in `status.result.backupName` |
 | `spec.planName` | The plan of the service at the time. Provenance only |
 | `status.backup.phase` | `Pending`, `Running`, `Completed` or `Failed` |
-| `status.backup.id` | The backup ID. Use it as `backupID` in a restore |
+| `status.backup.id` | Physical backup ID. In-place restore uses this value. Restore-to-new uses the catalog record name and UID |
 | `status.backup.engineMajor` | The PostgreSQL major version that wrote the backup |
 | `status.backup.startedAt`, `status.backup.completedAt` | When the backup started and completed |
 | `status.backup.message` | A message from the backup, for example why it failed |
@@ -191,117 +191,120 @@ is a legacy diagnostic, not a point-in-time recovery limit; use
 
 ## Choose a restore
 
-| | Restore into a new service | Restore in place |
-|--|----------------------------|------------------|
-| How | Create a new `ManagedService` with `spec.restoreFrom` | Create a `RestoreInPlace` operation |
-| Existing service | Not changed | Its engine and data volumes are replaced. Changes after the restore point are lost |
-| Service name and UID | New | Unchanged |
-| Bindings and credentials | New. Create bindings for the new service | Bindings are kept |
-| Works after the source service was deleted | Yes, in the same Project | Not applicable |
-| Your plan must allow | The backup's PostgreSQL major version: `engineVersion` equal to it, or an image of that version in `allowedImages` | `RestoreInPlace` in `operations.allowed`, `capacity.allocationProtocol: v1`, `backup.enabled`, and the backup's major version: an image of that version in `allowedImages` or, when `allowedImages` is empty, `engineVersion` equal to it |
+The two restore paths use different requests:
 
-Both kinds select the restore point in the same way, with `backupID` or
-`targetTime` but not both:
-
-| Selector | Restores |
-|----------|----------|
-| `backupID` | The database as of that backup's first consistent state. Changes committed after the backup are not included |
-| `targetTime` | The database as of that time: recovery stops before the first transaction committed after it. See [Point-in-time recovery](#point-in-time-recovery) |
-
-This page covers restores that name exactly one selector.
+| Property | Restore into a new service | Restore in place |
+|---|---|---|
+| Request | `RestoreToNew` operation with `spec.restore` | `RestoreInPlace` operation with `spec.parameters` |
+| Source service | Can remain active or can already be deleted | Must exist with the exact service and engine UIDs |
+| Data | Creates another service | Replaces existing data. Later changes are lost |
+| Identity | New service name, UID, and credentials | Existing service identity remains |
+| Backup selection | Exact `ServiceBackup` name and UID, with optional `targetTime` | Physical `backupID` or `targetTime` |
+| Plan policy | Target plan must support the family, version, and `RestoreToNew` | Existing plan must permit `RestoreInPlace` |
 
 ## Restore into a new service
 
-1. Choose a `Completed` backup from the history and note its source name
-   (`spec.serviceRef.name`), source UID (`spec.serviceUID`), backup ID
-   (`status.backup.id`) and major version (`status.backup.engineMajor`).
-2. Write a manifest for the new service with a new name. As for any service,
-   the plan must include `ProviderShared` in `allowedPlacementModes` and
-   `tenant-native` in `allowedConnectivityClasses`. Save it as
-   `orders-db-restored.yaml`:
+A `RestoreToNew` operation selects a retained catalog record and an explicit target configuration.
+Do not create `ManagedService.spec.restoreFrom` yourself. The platform generates that field and binds it to the restore operation.
+
+Before you start, confirm that the target plan permits the backup's family and engine major version.
+Use a full engine release qualified by that plan. A restore does not perform a major upgrade.
+
+1. Read the selected backup record:
+
+   ```bash
+   kubectl get servicebackup <backup-record> -n <project> -o yaml
+   ```
+
+   Replace `<backup-record>` with the catalog record name and `<project>` with the Project namespace.
+   Check `status.backup.phase`, `status.recovery`, and the archive retention deadline.
+   Record `metadata.uid`, `spec.serviceRef.name`, and `spec.serviceUID`.
+
+2. Save this request as `restore-orders.yaml`:
 
    ```yaml
    apiVersion: services.kube-dc.com/v1alpha1
-   kind: ManagedService
+   kind: ServiceOperation
    metadata:
-     name: orders-db-restored
-     namespace: my-project
+     name: restore-orders-1
+     namespace: <project>
    spec:
-     classRef:
-       name: postgresql
-     planRef:
-       name: postgresql-production
-     placement:
-       mode: ProviderShared
-     connectivity:
-       classRef:
-         name: tenant-native
-     restoreFrom:
-       serviceRef:
-         name: orders-db
-       # spec.serviceUID of the selected ServiceBackup: the UID of the service
-       # that took the backup, even if a service with that name was recreated.
-       serviceUID: REPLACE_WITH_SOURCE_SERVICE_UID
-       # status.backup.id of the selected ServiceBackup, for example 20260115T104721.
-       # For point-in-time recovery, replace backupID with a targetTime,
-       # for example: targetTime: "2026-01-15T10:40:00Z"
-       backupID: REPLACE_WITH_BACKUP_ID
-     # Omit engineVersion: the restore uses the major version recorded on the backup.
-     topology:
-       instances: 1
-     storage:
-       # Recommended: at least the size of the source's data volumes.
-       size: 20Gi
-     parameters:
-       # Recommended: the same database and owner names as the source service.
-       database: orders
-       owner: orders
-     deletionPolicy: Retain
-     deletionProtection: true
+     serviceRef:
+       name: <source-service>
+     serviceUID: <source-uid>
+     type: RestoreToNew
+     idempotencyKey: restore-orders-1
+     restore:
+       backupRef:
+         name: <backup-record>
+         uid: <backup-record-uid>
+       target:
+         name: orders-restored
+         planRef:
+           name: <target-plan>
+         engineVersion: "<qualified-version>"
+         placement:
+           mode: ProviderShared
+           dataPlaneRef:
+             name: <data-plane>
+         connectivity:
+           classRef:
+             name: tenant-native
+         storage:
+           size: 20Gi
+         parameters:
+           database: orders
+           owner: orders
+     execution:
+       window: Immediate
    ```
 
-3. Check it with a server-side dry run, then apply it and wait for the service:
+   Replace the source and backup placeholders with values from the selected record.
+   Replace `<target-plan>`, `<qualified-version>`, and `<data-plane>` with compatible values from your provider.
+   Adjust storage and database names for the backup. Omitted capacity fields use target plan defaults.
+
+3. Validate the request:
 
    ```bash
-   kubectl apply --dry-run=server -f orders-db-restored.yaml
-   kubectl apply -f orders-db-restored.yaml
-   kubectl get managedservice orders-db-restored -n my-project -w
+   kubectl apply --dry-run=server -f restore-orders.yaml
    ```
 
-4. When the service is `Ready`, create bindings for it with its own UID, check
-   your data, and then move your applications. Create any credential policies
-   again for the new service.
+4. Submit the request:
 
-`restoreFrom` fields:
+   ```bash
+   kubectl apply -f restore-orders.yaml
+   ```
 
-| Field | Description |
-|-------|-------------|
-| `serviceRef.name` | The name of the service that took the backup. That service may already be deleted |
-| `serviceUID` | The UID of the service that took the backup. Set it; the backup history is matched on it |
-| `backupID` | The `status.backup.id` of a `Completed` backup of that service |
-| `targetTime` | A point in time in RFC 3339 format. We recommend UTC with whole seconds |
+5. Watch the operation:
 
-- The new service runs the PostgreSQL major version that wrote the backup
-  (`status.backup.engineMajor`), not the source service's current version. When
-  that version equals the plan's `engineVersion`, the plan offers it. When it
-  differs, the plan's `allowedImages` must include an image of that version;
-  otherwise the restore is refused.
-- Omit `spec.engineVersion`. If you set it, it must equal the plan's
-  `engineVersion`, and a backup written by another major version is then
-  refused.
-- The source service is not changed. The new service gets its own credentials
-  and its own backup destination.
-- `restoreFrom` can be set only when the service is created, and a service
-  cannot restore from itself.
-- The dry run checks the API schema and admission policies only. The backup is
-  resolved after the object is created. A refused source shows
-  `Reconciled=False` with reason `RestoreSourceInvalid` and a message naming the
-  cause, and a service that never had an accepted configuration moves to phase
-  `Failed`. Because `restoreFrom` cannot change, set `deletionProtection: false`
-  on the refused service in a separate update, then delete it and create a
-  corrected one.
-- If the source service used its own backup store (`parameters.backup.store`),
-  keep the `Secret` named there for as long as you may need to restore.
+   ```bash
+   kubectl get serviceoperation restore-orders-1 -n <project> -w
+   ```
+
+6. After `Succeeded`, check that `orders-restored` is `Ready`.
+7. Create a binding with the restored service's own UID.
+8. Verify the recovered data through that binding before you move application traffic.
+
+The source service remains unchanged. The target receives fresh credentials and `deletionPolicy: Retain`.
+Recreate required credential policies for the target.
+
+The restore contract uses these fields:
+
+| Field | Purpose |
+|---|---|
+| `spec.serviceRef.name`, `spec.serviceUID` | Identify the historical source, including a deleted source |
+| `spec.restore.backupRef` | Pins the catalog record by name and UID |
+| `spec.restore.targetTime` | Optional PostgreSQL recovery time within this exact backup's verified window |
+| `spec.restore.target` | Defines the target plan, engine release, placement, connectivity, and optional sizing |
+
+`spec.parameters` is invalid for `RestoreToNew`.
+Use `spec.restore.target.parameters` only for engine settings.
+The target plan controls approval and the maintenance window.
+A dry run checks the request schema. It does not prove that the archive can be restored.
+
+For point-in-time recovery, add a whole-second RFC 3339 `spec.restore.targetTime`.
+Omit it to restore the selected backup's consistency point.
+Use [Point-in-time recovery](#point-in-time-recovery) to check the window.
 
 ## Restore in place
 
@@ -427,8 +430,8 @@ Set exactly one of `backupID` and `targetTime`. Any other parameter is refused.
 | The service name and `metadata.uid` | `status.engineDetails.engineUID` |
 | `ServiceBinding` objects; an owner binding and its CA were verified to keep working | The engine and its data volumes are replaced |
 | Credential policies and existing backup history records | Data written after the restore point is gone |
-| | Backups taken afterwards use a new archive location and are recorded under the same service UID |
-| | Existing SQL logins managed by credential policies need a resync |
+| No additional preserved field | Backups taken afterwards use a new archive location and are recorded under the same service UID |
+| No additional preserved field | Existing SQL logins managed by credential policies need a resync |
 
 ### While the restore runs
 
@@ -474,7 +477,8 @@ How a target is chosen and used:
 
 - The target must be inside the `earliest` to `latest` window of a `Completed`
   backup of the service, and after that backup's completion.
-- When several windows cover the target, the backup that completed last is used.
+- `RestoreToNew` uses the exact backup selected in `restore.backupRef`.
+- An in-place restore selects a suitable same-service backup for its requested time.
 - Recovery stops before the first transaction committed after the target.
 - We recommend UTC with whole seconds, for example `2026-01-15T10:40:00Z`.
 
@@ -486,9 +490,7 @@ The window trails the present:
 - When backups are turned off, the window stops advancing.
 
 A target outside every verified window is refused before any database is
-created or replaced. A new service reports `Reconciled=False` with reason
-`RestoreSourceInvalid` and phase `Failed`. An in-place restore is `Rejected`
-with `RestoreSourceInvalid`.
+created or replaced. Read the restore operation's `status.reason` and `status.message` for the refusal.
 
 ## Limits
 

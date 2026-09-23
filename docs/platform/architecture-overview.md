@@ -5,7 +5,7 @@ import ArchitecturalLayersDiagram from '@site/src/components/Diagram/Architectur
 # Architecture overview
 
 Kube-DC turns one Kubernetes management cluster into a multi-tenant platform
-for virtual machines, containers, managed databases, object storage, and
+for virtual machines, containers, managed services, object storage, and
 Managed Clusters. Users work with **Organizations** and **Projects**;
 controllers translate those product objects into Kubernetes, identity,
 networking, storage, and observability resources.
@@ -28,7 +28,7 @@ flowchart TB
 
   ProjectA --> VM[Virtual machines]
   ProjectA --> Apps[Container workloads]
-  ProjectA --> Data[Databases and object storage]
+  ProjectA --> Data[Managed services and object storage]
   ProjectA --> Managed[Managed Cluster]
 ```
 
@@ -126,7 +126,7 @@ flowchart TB
 | Networking | Project VPCs, egress, external addresses, Services, ingress | Kube-OVN, Multus, MetalLB, Envoy Gateway |
 | Virtualization | VM lifecycle, images, console access, live-migration-capable storage paths | KubeVirt, CDI, CSI |
 | Managed Clusters | Control-plane and worker lifecycle | Kamaji, Cluster API, provider controllers |
-| Data services | Managed databases, block volumes, and S3-compatible buckets | CloudNativePG, MariaDB operator, CSI, Rook Ceph |
+| Managed services and storage | Catalog services, block volumes, and S3-compatible buckets | Services hub and runners, family adapters, native operators, CSI, Rook Ceph |
 | Security services | Managed secrets, certificates, and encryption keys | OpenBao, External Secrets, cert-manager |
 | Observability | Organization- and Project-scoped metrics, logs, alerts, and dashboards | Grafana, Mimir, Loki, Prometheus Operator |
 

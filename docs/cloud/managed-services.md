@@ -1,191 +1,151 @@
-# Managed Services
+# Managed services
 
-Managed Services runs a provider-operated data service inside your Project:
-a PostgreSQL, MySQL, MariaDB or ClickHouse database, a Valkey cache or a Kafka
-cluster. You choose an engine and a plan; the platform provisions the engine,
-issues its certificates, holds its credentials, backs it up, runs your
-day-2 operations and reports what it actually applied. You never operate the
-engine yourself.
+import {ManagedServicesModelDiagram} from '@site/src/components/Diagram/ManagedServicesDiagrams';
 
-You can work from the [console](managed-services-console.md), or describe the
-service with Kubernetes resources in the `services.kube-dc.com/v1alpha1` API
-and apply them with `kubectl` or your GitOps pipeline. Both paths create the
-same objects, and the console offers the exact YAML for every request it
-makes.
+As a Project member, use managed services to run software that your provider operates for you.
+Select a service and plan from the catalog. Then connect your application through a service binding.
+Use the console, Kubernetes manifests, or GitOps to manage the same resources.
 
-:::warning db-manager databases are deprecated
-Managed Services replaces the earlier `KdcDatabase` product operated by
-db-manager. Its console area remains only for the organizations and Projects
-your provider has listed as still running such databases, and new databases
-cannot be created that way. See
-[Migrating from db-manager databases](managed-services-migration.md).
-:::
+The catalog can contain databases, caches, message brokers, analytics systems, and applications.
+Each installation publishes its own selection. The catalog is extensible and is not limited to the examples in this guide.
+A service appears only after the provider installs its integration and publishes a plan.
 
-## Families
+<ManagedServicesModelDiagram />
 
-| Family | Class | What the plans offer | Backups |
-|--------|-------|----------------------|---------|
-| [PostgreSQL](postgresql-create.md) | `postgresql` | One instance, or a replicated cluster with automatic failover, a connection pooler and read-only credentials | Scheduled backups to object storage with continuous archiving, point-in-time recovery, restore into a new service or in place |
-| [MySQL](managed-services-mysql-mariadb.md) | `mysql` | One server with a Router, or a Group Replication cluster behind Routers | Scheduled verified logical archives, restore into a new service |
-| [MariaDB](managed-services-mysql-mariadb.md) | `mariadb` | One server, or a Galera cluster where published | Scheduled verified logical archives, restore into a new service |
-| [ClickHouse](managed-services-clickhouse.md) | `clickhouse` | One server with its own Keeper, or two replicas of one shard behind one address | Scheduled verified native archives, restore into a new service |
-| [Valkey](managed-services-valkey.md) | `valkey` | One node, or a Sentinel-managed set where published | On-demand snapshots only; not a recovery facility |
-| [Kafka](managed-services-kafka.md) | `kafka` | Controllers and brokers sized by the plan | None; durability is replication |
+## Choose a service
 
-Which families and plans your Project can use is decided by your provider.
-The console shows only what is published for your installation; a manifest
-that names an unpublished plan is refused.
+The following families have guides. These examples do not define the complete catalog:
+
+| Family | Purpose | Data protection |
+|---|---|---|
+| [PostgreSQL](postgresql-create.md) | Relational database | Base backups and continuous log archives. Point-in-time recovery requires plan support |
+| [MySQL and MariaDB](managed-services-mysql-mariadb.md) | Relational databases | Verified logical archives. Restore creates a new service |
+| [ClickHouse](managed-services-clickhouse.md) | Analytical database | Verified native archives. Restore creates a new service |
+| [Valkey](managed-services-valkey.md) | Cache and key-value store | RDB archives on backup-enabled plans. Restore creates a new service |
+| [Kafka](managed-services-kafka.md) | Event streaming | Metadata export only. Message protection depends on replication and external copies |
+
+Read the published plan before you select a service.
+Check its capacity, topology, operations, backup policy, and support responsibilities.
+A Production or HA label does not, by itself, promise a recovery time or protection from site failure.
+See [Classes and plans](managed-services-plans.md).
 
 ## Resource model
 
-| Resource | Scope | What it is |
-|----------|-------|------------|
-| `ManagedService` | Project | One service instance: its class, plan, placement, connectivity and parameters |
-| `ServiceBinding` | Project | A request to deliver one credential role of a service as a Kubernetes `Secret` in the Project |
-| `ServiceOperation` | Project | One immutable day-2 action on a service, such as `Scale`, `Backup` or `RotateCredentials` |
-| `ServiceCredentialPolicy` | Project | A rotation schedule for one credential role of a service |
-| `ServiceBackup` | Project | Read-only backup history records |
-| `ManagedServiceClass`, `ManagedServicePlan`, `ConnectivityClass` | Cluster | The provider's catalog. Tenants cannot list or read it; see [Classes and plans](managed-services-plans.md) |
+The managed services API uses `services.kube-dc.com/v1alpha1`.
+These resources have the same purpose across service families:
 
-A typical workflow has four steps:
+| Resource | Scope | Purpose |
+|---|---|---|
+| `ManagedService` | Project | Selects the class, plan, placement, connectivity, and service settings |
+| `ServiceBinding` | Project | Delivers one credential role as a Kubernetes Secret |
+| `ServiceOperation` | Project | Records one immutable action and its result |
+| `ServiceCredentialPolicy` | Project | Sets a credential rotation schedule |
+| `ServiceBackup` | Project | Records backup history and available recovery information |
+| `ManagedServiceClass` | Cluster | Defines a service family, parameters, endpoints, credential roles, and operations |
+| `ManagedServicePlan` | Cluster | Defines versions, capacity limits, allowed operations, and provider policy |
+| `ConnectivityClass` | Cluster | Defines how applications reach a service |
 
-1. Create a `ManagedService` and wait until it is ready.
-2. Read the service's UID from `metadata.uid`.
-3. Create a `ServiceBinding` that names the service and pins that UID. The
-   platform delivers a `Secret` with connection details and credentials.
-4. Point your application at that `Secret`.
+Project roles cannot read the cluster catalog directly.
+The console shows the published catalog through a filtered API response. Ask your provider for catalog names when you write manifests.
 
-In the console, choosing **Kubernetes Secret** on the last step of creation
-does steps 2 and 3 for you and names the Secret `<service>-owner`.
+A normal connection procedure has four steps:
 
-The PostgreSQL pages of this chapter walk through the full procedure with
-manifests: [Create a PostgreSQL service](postgresql-create.md) and
-[Connect applications](postgresql-connect.md). The other family pages show
-what differs for their engine.
+1. Create a `ManagedService` from a published plan.
+2. Wait for its `Ready` condition.
+3. Create a `ServiceBinding` with the service name and UID.
+4. Configure your application to read the delivered Secret.
+
+The console can create the binding after it creates the service.
+See [Use the console](managed-services-console.md) or [Create a PostgreSQL service](postgresql-create.md) for a complete procedure.
 
 ### The service UID
 
-Resource names can be reused. If you delete `orders-db` and create a new
-`orders-db`, the new service has a different `metadata.uid` and different data.
-Bindings, operations and credential policies carry `spec.serviceUID` so that
-they act on the exact service you meant:
+The UID identifies one service throughout its life. Kubernetes assigns it when it creates the resource.
+Deleting and recreating a service with the same name produces a different UID.
 
-- A binding or operation whose `serviceUID` does not match the current service
-  of that name is refused with reason `ServiceIdentityChanged`. Create a new
-  one for the new service.
-- A `ServiceCredentialPolicy` requires `serviceUID`.
-- An operation without `serviceUID` is accepted by the API and then acts on
-  whichever service currently holds the name. Always set `serviceUID`.
+Operations and credential policies require `spec.serviceUID`.
+Set it on bindings too, so each request identifies the intended service.
+A mismatched UID causes `ServiceIdentityChanged`.
+Create the service first, then read its UID for resources that refer to it.
+For a restore from a deleted source, use the source UID in the selected `ServiceBackup` record.
 
-Because the UID exists only after the service is created, create the service
-first and the objects that reference it second. A GitOps pipeline must read
-the UID and pin it rather than drop the field.
+### Changes after creation
 
-### Day-2 changes
+Each class assigns a mutation rule to its parameters:
 
-Each class parameter belongs to a mutation class that decides how it can
-change after creation:
+| Rule | How to change the value |
+|---|---|
+| `CreateOnly` | Create another service with the required value |
+| `OnlineDesired` | Edit the service manifest or use **Settings** in the console |
+| `OperationOnly` | Submit the matching `ServiceOperation` |
 
-| Mutation class | How to change it |
-|----------------|------------------|
-| `CreateOnly` | It cannot change. Create a new service instead |
-| `OnlineDesired` | Edit the `ManagedService` and apply the complete manifest, or change it in the console's **Settings** tab |
-| `OperationOnly` | Create a `ServiceOperation`, or use the matching action in the console. Editing the value on the `ManagedService` is refused |
+Operation support depends on both the service integration and the plan.
+See [Managed service operations](managed-services-operations.md) for actions, approval, execution windows, and results.
+An accepted request is not proof of completion. Read the service conditions and operation status.
 
-Each family page lists its parameters and their mutation classes.
+## Responsibilities
 
-Applying a manifest or creating an operation only records your request.
-Completion comes from status: the service's `Accepted` and `Ready` conditions,
-and the operation's `status.phase`. Your plan decides which operations are
-allowed at all and which ones wait for provider approval.
+The provider and the Project team have different responsibilities:
 
-## What the provider owns and what you own
+| Provider | Project team |
+|---|---|
+| Publish qualified classes, plans, and connectivity options | Select a plan that meets application needs |
+| Install and operate service engines and their controllers | Manage application data, queries, and client behavior |
+| Provide capacity and execute supported operations | Request changes and check their results |
+| Execute backups where the plan enables them | Select retention within plan limits and test restores |
+| Deliver credentials and execute supported rotation | Control Secret access and refresh application credentials |
+| Approve operations that require approval | Allow time for approval and maintenance |
 
-| The provider | You |
-|--------------|-----|
-| The catalog: classes, plans and connectivity classes | The `ManagedService` manifest and the choices you make within your plan |
-| Provisioning and running the engine, including automatic failover when your plan enables `topology.ha` and your service has two or more instances | Which workloads receive credentials, through `ServiceBinding` resources |
-| Executing operations, and scheduled backups when your plan sets `backup.enabled: true` | When to request operations, and verifying their results |
-| Capacity, placement, backup storage and engine upgrades available in the plan | Your data model, schema, SQL grants, and application connection handling and retries |
-| Approving operations that your plan marks as approval-gated | Testing that you can restore your data |
-
-The platform protects the engine's own objects (database cluster, volumes,
-engine Secrets and ServiceAccounts) from Project identities. Change a service
-only through its `ManagedService`, `ServiceOperation` and `ServiceBinding`
-resources, or through the console, which does the same.
+The platform protects service-owned workloads, volumes, and credentials from direct tenant modification.
+Use managed services resources or the console to change a service.
 
 ## Project roles
 
-The standard Project roles (see [User and group management](team-management.md))
-grant the following access to Managed Services resources:
+Standard Project roles grant the following access:
 
 | Action | `admin` | `developer` | `project-manager` | `user` |
-|--------|---------|-------------|-------------------|--------|
-| View services, bindings, operations, credential policies and their status | ✅ | ✅ | ✅ | ✅ |
-| View `ServiceBackup` history | ✅ | ✅ | ✅ | ✅ |
-| Create, edit and delete `ManagedService` resources | ✅ | ✅ | ❌ | ❌ |
-| Create and delete `ServiceBinding` resources | ✅ | ✅ | ❌ | ❌ |
-| Create a `ServiceOperation`, or cancel one before it runs | ✅ | ✅ | ❌ | ❌ |
-| Create and delete `ServiceCredentialPolicy` resources | ✅ | ✅ | ❌ | ❌ |
-| Change an existing `ServiceCredentialPolicy` (interval, pause) | ✅ | ✅ | ✅ | ❌ |
-| Read delivered credential `Secret` objects | ✅ | ✅ | ✅ | ❌ |
-| Approve an approval-gated operation | ❌ | ❌ | ❌ | ❌ |
-| Write the status of any Managed Services resource | ❌ | ❌ | ❌ | ❌ |
-| Read the catalog (classes, plans, connectivity classes) | ❌ | ❌ | ❌ | ❌ |
+|---|---|---|---|---|
+| Read services, bindings, operations, policies, and backup history | Yes | Yes | Yes | Yes |
+| Create, edit, or delete services | Yes | Yes | No | No |
+| Create or delete bindings and rotation policies | Yes | Yes | No | No |
+| Create operations or request cancellation before execution | Yes | Yes | No | No |
+| Change an existing rotation policy | Yes | Yes | Yes | No |
+| Read delivered credential Secrets | Yes | Yes | Yes | No |
+| Approve operations or write resource status | No | No | No | No |
+| Read cluster catalog resources directly | No | No | No | No |
 
-`project-manager` is read-mostly by design. It cannot create or cancel
-`ServiceOperation` resources, and it cannot create or delete bindings or
-policies. Approval of approval-gated operations belongs to the provider; ask
-your provider when an operation waits in `AwaitingApproval`.
+See [User and group management](team-management.md) for role assignment.
+Ask your provider when an operation waits in `AwaitingApproval`.
 
 ## The Project is the credential boundary
 
-A `ServiceBinding` delivers its `Secret` into the same Project as the service.
-For the in-Project placement this chapter covers, a binding whose consumer is
-in another namespace is refused with reason `ConsumerNamespaceRejected`.
+For in-Project placement, a binding delivers credentials into the service's Project.
+A binding to another namespace is refused with `ConsumerNamespaceRejected`.
 
-Inside a Project, the consumer named on a binding does not restrict who can
-read the delivered `Secret`. Every identity that can read Secrets in the
-Project, which includes `admin`, `developer` and `project-manager`, can read
-every delivered credential. This also applies to the engine's own credential
-Secrets that `ManagedService.status.credentials` refers to. Place workloads
-and teams that must not share database credentials in separate Projects.
+The consumer on a binding does not restrict who can read its Secret.
+Project identities with Secret read permission can read delivered credentials.
+Use separate Projects for teams or workloads that must not share credentials.
 
 ## Delete a service or a Project
 
-A `ManagedService` has two deletion settings:
+`spec.deletionPolicy` selects `Retain`, `SnapshotAndDelete`, or `Delete`.
+The default is `Retain`. Available policies depend on the plan and service family.
+`spec.deletionProtection: true` blocks deletion of the service resource until you disable protection in a separate update.
 
-- `spec.deletionPolicy` decides what happens to the engine and its data when
-  you delete the `ManagedService`: `Retain` (the default), `SnapshotAndDelete`
-  or `Delete`.
-- `spec.deletionProtection: true` refuses deletion of the `ManagedService`
-  until you set it to `false` in a separate update.
-
-See [Create a PostgreSQL service](postgresql-create.md#service-fields) and
-[Status and deletion](managed-services-status-deletion.md) for details.
-
-:::warning Deleting a Project deletes its services without a final backup
-For the in-Project placement covered by this chapter, a service runs in the
-Project's own namespace: its `status.instanceNamespace` is the Project
-namespace. When the Project is deleted, every such service is deleted together
-with its data volumes. This happens whatever `deletionPolicy` says and
-regardless of `deletionProtection` or any delete confirmation. No final backup
-is taken. Those settings protect a service from being deleted on its own, not
-from deletion of its Project. Before you delete a Project, copy out any data
-you need to keep.
+:::warning Project deletion removes service data
+For in-Project placement, deleting a Project removes its services and data volumes without a final backup.
+Service deletion policies and deletion protection do not prevent Project deletion.
+Copy required data outside the Project before you delete it.
 :::
+
+See [Status and deletion](managed-services-status-deletion.md) for retained resources, backup records, and deletion checks.
 
 ## Next steps
 
-- [Use the console](managed-services-console.md): the catalog, the creation
-  sheet and the service page.
-- [Classes and plans](managed-services-plans.md): the class, plan and
-  connectivity names to use, and the plan fields that decide what a service
-  may do.
-- [Create a PostgreSQL service](postgresql-create.md) and
-  [Connect applications](postgresql-connect.md): the full manifest procedure.
-- [MySQL and MariaDB](managed-services-mysql-mariadb.md),
-  [ClickHouse](managed-services-clickhouse.md),
-  [Valkey](managed-services-valkey.md), [Kafka](managed-services-kafka.md).
-- [Status and deletion](managed-services-status-deletion.md)
-- [Migrating from db-manager databases](managed-services-migration.md)
+Use these guides for your next task:
+
+- [Use the console](managed-services-console.md).
+- [Select a class and plan](managed-services-plans.md).
+- [Run a managed service operation](managed-services-operations.md).
+- [Connect an application](postgresql-connect.md).
+- [Protect and recover data](backups-snapshots.md).

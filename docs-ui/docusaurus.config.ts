@@ -112,7 +112,7 @@ const config: Config = {
           'Multi-tenant organization management',
           'Virtual machine lifecycle management via KubeVirt',
           'Managed Clusters (Kamaji + Cluster API)',
-          'Managed databases (PostgreSQL, MariaDB)',
+          'Extensible managed services catalog',
           'Public and floating IP management (OVN)',
           'S3-compatible object storage (Rook Ceph)',
           'Block storage with persistent volumes',
@@ -164,7 +164,7 @@ const config: Config = {
           const cloudDir = path.resolve(__dirname, '../docs/cloud');
           const platformDir = path.resolve(__dirname, '../docs/platform');
           const siteUrl = 'https://docs.kube-dc.com';
-          const description = 'Kube-DC is an open-source Kubernetes Data Center platform. It provides multi-tenancy, virtual machines (KubeVirt), Managed Clusters (Kamaji + Cluster API), managed databases, OVN networking with public/floating IPs, S3 object storage, block storage, backups, SSO, RBAC, and billing.';
+          const description = 'Kube-DC is an open-source Kubernetes Data Center platform. It provides multi-tenancy, virtual machines (KubeVirt), Managed Clusters (Kamaji + Cluster API), managed services, OVN networking with public/floating IPs, S3 object storage, block storage, backups, SSO, RBAC, and billing.';
 
           const header = `# Kube-DC Documentation\n\n> ${description}\n`;
           const indexLines: string[] = [header, `For the complete documentation in a single file, see: ${siteUrl}/llms-full.txt\n`];

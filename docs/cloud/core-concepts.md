@@ -74,7 +74,7 @@ cluster to provision or operate. See [Projects](kubernetes-projects.md).
 - Persistent volume claims and S3-compatible object buckets
 - Linux and Windows virtual machines
 - External IPs, floating IPs, and load balancers
-- Managed PostgreSQL and MariaDB databases
+- Managed services from the provider catalog
 - Certificates, secrets, KMS keys, and database credential policies
 - Managed Clusters and platform-managed protection services
 

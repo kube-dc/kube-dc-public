@@ -8,15 +8,6 @@ description: Organization identity, Project RBAC and network boundaries, keys, s
 import DatasheetFigure from '@site/src/components/DatasheetFigure';
 import {IdentityTenancyDiagram} from '@site/src/components/Diagram/ResourceModelDiagrams';
 
-# DRAFT — Kube-DC Function Datasheet: Security, identity, and keys
-
-> 🚧 **Working draft — not for distribution.** Companion to the
-> [platform datasheet](draft-artifact-a-datasheet.md). Claims trace to the
-> [claim ledger](claim-ledger-a-cloud.md) and published product docs;
-> publication gates per [datasheet-plan.md](datasheet-plan.md).
-
----
-
 # Security, identity, and keys
 
 **Separate tenant identity, permissions, networks, keys, and secrets at the
@@ -82,8 +73,9 @@ flowchart LR
   backed by non-exportable keys in the platform's secrets backend
   (OpenBao Transit): encrypt/decrypt happens as an API operation — key
   material never leaves the backend.
-- Used by the platform itself where it matters: managed-database backups
-  and managed-cluster snapshot encryption reference tenant KMS keys.
+- Managed Cluster snapshot encryption can reference a Project KMS key.
+  Managed service backup encryption depends on the family and deployment.
+  A KMS resource alone does not prove that backup files are encrypted.
 - Envelope encryption is the documented pattern for large payloads.
 
 ## Secrets management
@@ -125,14 +117,3 @@ flowchart LR
 | Workload and guest-OS security | — | ✅ |
 
 ---
-
-## Draft apparatus (stripped at publication)
-
-Evidence: realm-per-organization is the platform's identity architecture
-(controller-managed); exec/attach block verified live at the admission
-policy (ledger row 5); KMS keys and their use in backup encryption
-verified live (rows 20, 24–25); secrets/certificates per published
-product docs. Deliberately not claimed: audit-log retention/coverage,
-compliance certifications, encryption-at-rest beyond the §9 table of the
-platform datasheet (G-23 matrix pending), "complete isolation" wording
-anywhere.

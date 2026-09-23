@@ -9,15 +9,6 @@ import DatasheetFigure from '@site/src/components/DatasheetFigure';
 import {VlanAllocationDiagram} from '@site/src/components/Diagram/CloudFlowDiagrams';
 import RoutedNetworkDiagram from '@site/src/components/Diagram/RoutedNetworkDiagram';
 
-# DRAFT — Kube-DC Function Datasheet: Networking, VLAN attachment, and BGP
-
-> 🚧 **Working draft — not for distribution.** Companion to the
-> [platform datasheet](draft-artifact-a-datasheet.md). Claims trace to the
-> [claim ledger](claim-ledger-a-cloud.md) and published product docs;
-> publication gates per [datasheet-plan.md](datasheet-plan.md).
-
----
-
 # Networking, VLAN attachment, and BGP
 
 **Give each project an isolated VPC, with controlled paths to public services
@@ -163,15 +154,3 @@ datacenter network design.
 | DNS for published hostnames | Platform zone provided | ✅ own domains via CNAME |
 
 ---
-
-## Draft apparatus (stripped at publication)
-
-Evidence: per-project VPC, per-LB EIPs, FIp→VM mapping observed live
-(ledger rows 3, 22); HTTPS route + automatic certificate verified in the
-application-stack E2E (row 7); VLAN attachment and per-org pools proven on
-a customer deployment with published documentation (row 23 — keep the
-"by arrangement/deployment-dependent" nature in the platform context: it
-requires trunked fabric); managed BGP routing, filtering, HA and fail-closed
-behavior verified on kube-dev (row 44). Not claimed: tenant-authored
-NetworkPolicies, universal TLS, arbitrary cross-project routing, universal
-BFD or ECMP support.

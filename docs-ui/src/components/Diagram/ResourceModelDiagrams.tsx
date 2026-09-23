@@ -46,7 +46,7 @@ export function IdentityTenancyDiagram(): React.JSX.Element {
   return (
     <ExplainerDiagram
       caption="Identity claims establish API access, while Organization Groups map roles independently into each Project; workloads and Managed Clusters remain governed by their authorized Project."
-      description="A user signs in through Keycloak and presents group claims to the Kubernetes API. An Organization contains an Organization Group and production and development Projects. The group maps a role into each Project, and each Project contains virtual machines, Pods, databases, and Managed Clusters."
+      description="A user signs in through Keycloak and presents group claims to the Kubernetes API. An Organization contains an Organization Group and production and development Projects. The group maps a role into each Project, and each Project contains virtual machines, Pods, managed services, and Managed Clusters."
       diagramId="identity-tenancy-explainer"
       minWidth={840}
       title="Kube-DC identity and tenancy model"
@@ -73,8 +73,8 @@ export function IdentityTenancyDiagram(): React.JSX.Element {
       <DiagramNode detail="membership mapping" height={72} title="Organization Group" width={240} x={300} y={315} />
       <DiagramNode detail="backing namespace" height={72} title="Project: production" tone="accent" width={250} x={20} y={445} />
       <DiagramNode detail="backing namespace" height={72} title="Project: development" width={250} x={570} y={445} />
-      <DiagramNode detail={['VMs · Pods · databases', 'Managed Clusters']} height={72} icon={ApplicationIcon} title="Governed workloads" width={250} x={20} y={545} />
-      <DiagramNode detail={['VMs · Pods · databases', 'Managed Clusters']} height={72} icon={ApplicationIcon} title="Governed workloads" width={250} x={570} y={545} />
+      <DiagramNode detail={['VMs · Pods · services', 'Managed Clusters']} height={72} icon={ApplicationIcon} title="Governed workloads" width={250} x={20} y={545} />
+      <DiagramNode detail={['VMs · Pods · services', 'Managed Clusters']} height={72} icon={ApplicationIcon} title="Governed workloads" width={250} x={570} y={545} />
     </ExplainerDiagram>
   );
 }

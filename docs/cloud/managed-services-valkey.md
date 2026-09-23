@@ -176,10 +176,10 @@ write a durable RDB archive to your Project's backup bucket and record it as a
 Dev keeps 7. There is no point-in-time recovery: a restore returns the data as
 it was when that snapshot was taken.
 
-Restore is always into a **new service**: a `RestoreToNew` operation, or a new
-`ManagedService` with `spec.restoreFrom` naming the source service, its UID and
-the backup. There is no restore in place. The procedure is the same as for
-PostgreSQL; see
+Restore is always into a **new service** through a `RestoreToNew` operation.
+Select the backup record by name and UID, then specify a compatible Valkey target plan and full engine release.
+Do not set `targetTime`. There is no point-in-time recovery or restore in place.
+Use the shared request structure in
 [Restore into a new service](postgresql-backup-restore.md#restore-into-a-new-service).
 
 ## Delete a service

@@ -58,7 +58,7 @@ export function ControllerTopologyDiagram(): React.JSX.Element {
 
       <DiagramNode detail={['Organization · Project', 'OrganizationGroup']} height={82} title="Product CRDs" width={250} x={30} y={194} />
       <DiagramNode detail="EIp · FIp" height={72} icon={NetworkIcon} title="Network CRDs" width={250} x={30} y={329} />
-      <DiagramNode detail={['ManagedSecret · KMSKey', 'certificate · DB policy']} height={88} title="Security CRDs" width={250} x={30} y={451} />
+      <DiagramNode detail={['ManagedSecret · KMSKey', 'ManagedCertificate']} height={88} title="Security CRDs" width={250} x={30} y={451} />
       <DiagramNode detail={['Service · Secret', 'ConfigMap · Namespace']} height={82} title="Core resources" width={250} x={30} y={590} />
 
       <DiagramNode detail={['Organization +', 'Project']} height={82} icon={ControllerIcon} title="Product controllers" tone="accent" width={250} x={370} y={194} />
@@ -185,8 +185,8 @@ export function ControllerNetworkFlowDiagram(): React.JSX.Element {
 export function ControllerSecurityFlowDiagram(): React.JSX.Element {
   return (
     <ExplainerDiagram
-      caption="Each Project-scoped security resource has a dedicated controller and backend path; controller conditions converge separately in Project status without exposing platform credentials."
-      description="ManagedSecret, ManagedCertificate, KMSKey, and DatabaseCredentialPolicy resources in a Project backing namespace are handled by dedicated security controllers. Secret sync uses OpenBao and writes a projected Kubernetes Secret. Certificate sync uses OpenBao and cert-manager to create a Certificate. KMS key sync uses OpenBao. Database credential policy sync uses OpenBao and the database manager and writes a projected Secret. All four controllers report to Project status aggregation."
+      caption="Security controllers reconcile Project resources. Managed services use their own hub, runner, and binding path for credential rotation."
+      description="ManagedSecret, ManagedCertificate, KMSKey, and ServiceCredentialPolicy resources in a Project backing namespace are handled by dedicated security controllers. Secret sync uses OpenBao and writes a projected Kubernetes Secret. Certificate sync uses OpenBao and cert-manager to create a Certificate. KMS key sync uses OpenBao. The managed services hub requests credential rotation through a runner. Bindings receive updated Secrets. The service reports its own status. Other security controllers report to Project status aggregation."
       diagramId="controller-security-flow-explainer"
       minWidth={1000}
       textScale={1.12}
@@ -206,14 +206,12 @@ export function ControllerSecurityFlowDiagram(): React.JSX.Element {
       <DiagramEdge d="M630 460 C675 460 675 218 700 218" kind="control" />
 
       <DiagramEdge d="M310 590 H350" />
-      <DiagramEdge d="M630 580 C680 580 680 232 700 232" kind="control" />
-      <DiagramEdge d="M260 626 V650 H680 V610 H700" kind="control" />
+      <DiagramEdge d="M630 590 H700" kind="control" />
       <DiagramEdge d="M490 631 C490 676 170 676 170 688 V700" />
 
       <DiagramEdge d="M630 200 C650 200 650 830 700 830" kind="asynchronous" />
       <DiagramEdge d="M630 330 C660 330 660 830 700 830" kind="asynchronous" />
       <DiagramEdge d="M630 460 C670 460 670 830 700 830" kind="asynchronous" />
-      <DiagramEdge d="M630 590 C680 590 680 830 700 830" kind="asynchronous" />
 
       <DiagramBoundary height={800} label="PROJECT BACKING NAMESPACE" labelWidth={285} width={310} x={20} y={70} />
       <DiagramBoundary height={800} label="SECURITY CONTROLLERS" labelWidth={225} width={300} x={340} y={70} />
@@ -222,18 +220,18 @@ export function ControllerSecurityFlowDiagram(): React.JSX.Element {
       <DiagramNode detail="source resource" height={72} title="ManagedSecret" width={280} x={30} y={164} />
       <DiagramNode detail="source resource" height={72} title="ManagedCertificate" width={280} x={30} y={294} />
       <DiagramNode detail="source resource" height={72} title="KMSKey" width={280} x={30} y={424} />
-      <DiagramNode detail="source resource" height={72} title="DatabaseCredentialPolicy" width={280} x={30} y={554} />
-      <DiagramNode detail="ManagedSecret + DB policy" height={72} title="Projected Secret" width={280} x={30} y={700} />
+      <DiagramNode detail="source resource" height={72} title="ServiceCredentialPolicy" width={280} x={30} y={554} />
+      <DiagramNode detail="managed secret or binding" height={72} title="Projected Secret" width={280} x={30} y={700} />
       <DiagramNode detail="cert-manager output" height={72} title="Certificate" width={280} x={30} y={800} />
 
       <DiagramNode detail="secret reconciliation" height={72} icon={ControllerIcon} title="Secret sync" tone="accent" width={280} x={350} y={164} />
       <DiagramNode detail={['certificate', 'reconciliation']} height={82} icon={ControllerIcon} title="Certificate sync" tone="accent" width={280} x={350} y={289} />
       <DiagramNode detail="key reconciliation" height={72} icon={ControllerIcon} title="KMS key sync" tone="accent" width={280} x={350} y={424} />
-      <DiagramNode detail={['credential', 'reconciliation']} height={82} icon={ControllerIcon} title="DB policy sync" tone="accent" width={280} x={350} y={549} />
+      <DiagramNode detail={['credential', 'reconciliation']} height={82} icon={ControllerIcon} title="Services hub" tone="accent" width={280} x={350} y={549} />
 
       <DiagramNode detail="secret + key backend" height={72} icon={SecurityIcon} title="OpenBao" width={270} x={700} y={164} />
       <DiagramNode detail="certificate issuer" height={72} icon={SecurityIcon} title="cert-manager" width={270} x={700} y={314} />
-      <DiagramNode detail="credential source" height={72} icon={DataIcon} title="Database manager" width={270} x={700} y={554} />
+      <DiagramNode detail="credential rotation" height={72} icon={DataIcon} title="Service runner" width={270} x={700} y={554} />
       <DiagramNode detail="controller conditions" height={72} title="Project status" width={270} x={700} y={794} />
     </ExplainerDiagram>
   );

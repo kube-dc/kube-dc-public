@@ -55,38 +55,11 @@ export function ManagedKubernetesUpgradeDiagram(): React.JSX.Element {
   );
 }
 
-export function ManagedDatabaseProtectionDiagram(): React.JSX.Element {
-  return (
-    <ExplainerDiagram
-      caption="Applications keep one read-write endpoint while engine replication and operator promotion protect service continuity; scheduled and on-demand backups land in Project S3 for new-name or in-place restore."
-      description="An application connects through a stable read-write endpoint to the current database primary. The primary replicates to an available replica, which the operator can promote after an eligible failure. Scheduled and on-demand backups are written to Project S3 and can restore a database under a new name or in place. Backup-artifact encryption is deployment-qualified separately."
-      diagramId="datasheet-managed-database-protection"
-      minWidth={900}
-      title="Managed database availability and backup path"
-      viewBox="0 0 900 480"
-    >
-      <DiagramEdge d="M260 133 H285" />
-      <DiagramEdge d="M565 133 H620" />
-      <DiagramEdge d="M710 174 C710 215 530 215 530 255" kind="asynchronous" />
-      <DiagramEdge d="M425 337 C425 365 300 365 300 390" kind="data" />
-      <DiagramEdge d="M475 337 C475 365 650 365 650 390" kind="data" />
-      <DiagramSectionLabel label="SERVE · REPLICATE · BACK UP · RESTORE" lineTo={872} x={28} y={28} />
-      <DiagramNode detail="stable RW endpoint" height={82} icon={ApplicationIcon} title="Application" tone="source" width={230} x={30} y={92} />
-      <DiagramNode detail="current writer" height={82} icon={DataIcon} title="Primary" tone="accent" width={280} x={285} y={92} />
-      <DiagramNode detail="promotion target" height={82} icon={DataIcon} title="Replica" width={250} x={620} y={92} />
-      <DiagramBoundary height={155} label="PROJECT DATA PROTECTION" labelWidth={280} width={820} x={40} y={210} />
-      <DiagramNode detail={['scheduled + on demand', 'artifact encryption qualified per site']} height={82} icon={StorageIcon} title="Project S3 backups" tone="storage" width={360} x={270} y={255} />
-      <DiagramNode detail="new name" height={72} icon={DataIcon} title="Restore copy" width={260} x={170} y={390} />
-      <DiagramNode detail="controlled outage" height={72} icon={DataIcon} title="In-place restore" width={260} x={520} y={390} />
-    </ExplainerDiagram>
-  );
-}
-
 export function DataProtectionDiagram(): React.JSX.Element {
   return (
     <ExplainerDiagram
-      caption="Each service protects its own data class: databases and Managed Cluster etcd use Project S3, VM and volume snapshots stay in the storage pool, and an enterprise backup integration is required for copies outside the platform's storage failure domain."
-      description="Managed databases write scheduled and on-demand backups to Project S3 and restore from it. Managed Cluster etcd writes scheduled snapshots to the same Project service and restores supported datastore topologies. Virtual machine and PersistentVolume snapshots remain in the platform storage pool. Git contains desired platform configuration, not workload backups. An operator-configured enterprise integration copies protected data off site when required."
+      caption="Each service protects its own data class: backup-enabled services and Managed Cluster etcd use Project S3, VM and volume snapshots stay in the storage pool, and an enterprise backup integration is required for copies outside the platform's storage failure domain."
+      description="Managed services use family-specific backup and restore mechanisms where the plan enables them. Managed Cluster etcd writes scheduled snapshots to the same Project service and restores supported datastore topologies. Virtual machine and PersistentVolume snapshots remain in the platform storage pool. Git contains desired platform configuration, not workload backups. An operator-configured enterprise integration copies protected data off site when required."
       diagramId="datasheet-data-protection"
       minWidth={900}
       title="Service-owned data protection boundaries"
@@ -98,9 +71,9 @@ export function DataProtectionDiagram(): React.JSX.Element {
       <DiagramEdge d="M280 521 H340" kind="data" />
       <DiagramSectionLabel label="BACKUP SCOPE FOLLOWS THE DATA OWNER" lineTo={872} x={28} y={28} />
       <DiagramBoundary height={370} label="PROJECT S3 · SERVICE BACKUPS" labelWidth={260} width={300} x={320} y={70} />
-      <DiagramNode detail="service owner" height={82} icon={DataIcon} title="Managed databases" width={250} x={30} y={125} />
+      <DiagramNode detail="service owner" height={82} icon={DataIcon} title="Managed services" width={250} x={30} y={125} />
       <DiagramNode detail="service owner" height={82} icon={KubernetesIcon} title="Managed Clusters" width={250} x={30} y={265} />
-      <DiagramNode detail={['scheduled + on demand', 'encryption qualified per site']} height={82} icon={StorageIcon} title="Database backups" tone="storage" width={250} x={340} y={125} />
+      <DiagramNode detail={['plan-defined backups', 'test recovery']} height={82} icon={StorageIcon} title="Service backups" tone="storage" width={250} x={340} y={125} />
       <DiagramNode detail={['scheduled snapshots', 'restore by topology']} height={82} icon={StorageIcon} title="etcd snapshots" tone="storage" width={250} x={340} y={265} />
       <DiagramNode detail={['off-site copy', 'separate domain']} height={102} icon={StorageIcon} title="Enterprise backup" tone="external" width={220} x={650} y={204} />
       <DiagramNode detail="point-in-time copies" height={82} icon={ComputeIcon} title="VMs + volumes" width={250} x={30} y={480} />

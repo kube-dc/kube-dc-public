@@ -90,7 +90,7 @@ export default function Home(): ReactNode {
             items={[
               'Platform and Tenancy Model',
               'Managed Clusters and Virtual Machines',
-              'Databases, Networking, and Storage',
+              'Managed Services, Networking, and Storage',
               'Security and Observability',
               'GPU Service Models',
             ]}

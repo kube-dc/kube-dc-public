@@ -10,18 +10,6 @@ import DatasheetFigure from '@site/src/components/DatasheetFigure';
 import {ManagedClusterTopologyDiagram} from '@site/src/components/Diagram/CloudTopologyDiagrams';
 import {ManagedKubernetesSizingDiagram, ManagedKubernetesUpgradeDiagram} from '@site/src/components/Diagram/DatasheetDiagrams';
 
-# DRAFT — Kube-DC Function Datasheet: Managed Kubernetes clusters
-
-> 🚧 **Working draft — not for distribution.** Companion to the
-> [platform datasheet](draft-artifact-a-datasheet.md); modeled on the
-> finished CloudSigma managed-Kubernetes datasheet
-> (`kubernetes-cluster/docs/managed-kubernetes-datasheet.md`) with all
-> provider-specific content removed. Claims trace to the
-> [claim ledger](claim-ledger-a-cloud.md) and operator source; publication
-> gates per [datasheet-plan.md](datasheet-plan.md).
-
----
-
 # Managed Kubernetes clusters
 
 **Each team gets its own Kubernetes API. Your platform team operates the
@@ -250,18 +238,3 @@ planes centrally. The operator defines coverage and retention.
 | Network exposure of cluster workloads | Platform provides EIPs/routes | ✅ configures |
 
 ---
-
-## Draft apparatus (stripped at publication)
-
-Evidence: hosted-CP provisioning, endpoints, kubeconfigs, VPA-on-by-default,
-snapshot + restore verified live on the production deployment (ledger rows
-8–14, 27–28); VPA semantics and upgrade staging verified in operator
-source; per-pool autoscaling fields verified in the API (scaling behavior
-verified on the CloudSigma-provider deployment — generic claim kept to the
-feature, not to timings). Not claimed: etcd encryption at rest (backup
-encryption only), cross-site DR, restore of multi-replica datastores,
-provisioning timings as commitments.
-
-📷 Captures: cluster summary = S-03; worker-pool autoscaling = S-04.
-The Grafana control-plane-log view remains a separate observability capture
-gap and must not be represented by S-04.

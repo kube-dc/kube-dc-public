@@ -1,6 +1,6 @@
 ---
 name: manage-database-credentials
-description: Deliver a managed service credential role to a workload with a ServiceBinding Secret, rotate it now with a RotateCredentials operation, or rotate it on a schedule with a ServiceCredentialPolicy. Replaces the deprecated DatabaseCredentialPolicy of db-manager databases.
+description: Deliver a managed service credential role to a workload with a ServiceBinding Secret, rotate it now with a RotateCredentials operation, or rotate it on a schedule with a ServiceCredentialPolicy.
 ---
 
 ## Prerequisites
@@ -115,11 +115,3 @@ Deleting a policy of a declared role keeps the bindings and their Secrets.
 
 Report the binding name, role, Secret name and keys, the credential version,
 and for a rotation the operation phase. Never print `password` or `uri`.
-
-## Deprecated: DatabaseCredentialPolicy
-
-`DatabaseCredentialPolicy` rotated passwords of deprecated `KdcDatabase`
-databases and projected them into a Secret with `dsn` and `database` keys.
-Never create one. When a Project still has one, keep it until the database is
-migrated (`docs/cloud/managed-services-migration.md`), then delete it with the
-`KdcDatabase`.

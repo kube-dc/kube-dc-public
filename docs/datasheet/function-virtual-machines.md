@@ -8,15 +8,6 @@ description: Linux and Windows virtual machines, storage profiles, networking, l
 import DatasheetFigure from '@site/src/components/DatasheetFigure';
 import {VirtualizationResourceDiagram} from '@site/src/components/Diagram/ResourceModelDiagrams';
 
-# DRAFT — Kube-DC Function Datasheet: Virtual machines
-
-> 🚧 **Working draft — not for distribution.** Companion to the
-> [platform datasheet](draft-artifact-a-datasheet.md). Claims trace to the
-> [claim ledger](claim-ledger-a-cloud.md) and published product docs;
-> publication gates per [datasheet-plan.md](datasheet-plan.md).
-
----
-
 # Virtual machines
 
 **Run existing virtual-machine workloads beside Kubernetes applications.**
@@ -157,13 +148,3 @@ this function is that they run as VMs, on the same platform your
 containerized services use.
 
 ---
-
-## Draft apparatus (stripped at publication)
-
-Evidence: instant-clone provisioning, migration-eligibility conditions and
-online snapshot verified live (ledger rows 15–17); profiles and manifests
-per published product docs (`creating-vm.md`); Windows per prepared-image
-pipeline (ledger row 35 — owner-asserted, no live drill yet); GPU stated
-in its own chapter. Not claimed: "runs unchanged" migration, universal live
-migration, VM backup as a service, provisioning timings as commitments.
-Clone size must be ≥ the prepared image size (docs correction pending).

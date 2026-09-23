@@ -83,24 +83,25 @@ password in the Deployment:
 ```yaml
 env:
   - name: DB_HOST
-    value: "{database}-rw.{project-backing-namespace}.svc"
+    valueFrom: { secretKeyRef: { name: "{binding-secret}", key: host } }
   - name: DB_PORT
-    value: "5432"
+    valueFrom: { secretKeyRef: { name: "{binding-secret}", key: port } }
   - name: DB_NAME
-    value: "{database-name}"
+    valueFrom: { secretKeyRef: { name: "{binding-secret}", key: dbname } }
   - name: DB_USER
-    value: "app"
+    valueFrom: { secretKeyRef: { name: "{binding-secret}", key: username } }
   - name: DB_PASSWORD
     valueFrom:
       secretKeyRef:
-        name: "{database}-app"
+        name: "{binding-secret}"
         key: password
 ```
 
-That example is PostgreSQL. For MariaDB, use the endpoint and bootstrap Secret
-selected by its replica count in `create-database`. If a
-`DatabaseCredentialPolicy` manages the user, use the policy's projected Secret;
-the engine bootstrap Secret becomes stale after rotation.
+That example is PostgreSQL. For MySQL and MariaDB, use the `database` key for
+`DB_NAME`. Mount the binding's `ca.crt` and configure the client to verify TLS,
+as shown in [connection patterns](../create-database/db-connection-patterns.md).
+The binding Secret follows credential rotation. Restart Pods that read
+credentials from environment variables after rotation.
 
 Prefer a Helm chart option such as `existingSecretPasswordKey` when its expected
 key differs. A manually copied bridge Secret does not follow password rotation

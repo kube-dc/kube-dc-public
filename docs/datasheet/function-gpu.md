@@ -7,33 +7,6 @@ description: Shared GPU slices for containers and dedicated GPU virtual machines
 
 import {GpuServiceModelDiagram} from '@site/src/components/Diagram/DatasheetDiagrams';
 
-# DRAFT — Kube-DC Function Datasheet: GPU services
-
-> 🚧 **Working draft — not for distribution.** Companion to the
-> [platform datasheet](draft-artifact-a-datasheet.md). Status per owner
-> direction 2026-08-07: shared GPU is **in production use** (live tenant
-> workloads on the reference deployment) — the "preview" label is retired.
-> Dedicated GPU VMs are described as an available capability with the
-> qualification requirements the product enforces. Claims trace to the
-> published GPU documentation, the chart's product catalog and the
-> [claim ledger](claim-ledger-a-cloud.md).
->
-> ✅ **Public docs aligned 2026-08-07** — the preview/pilot status language
-> was removed from `docs/cloud/gpu-shared-workloads.md`,
-> `docs/cloud/gpu-vm-guests.md` and the operator-side `docs/platform/gpu-*`
-> runbooks, so the mirrored documentation no longer contradicts this
-> collateral. Technical caveats (cooperative compute share, no live
-> migration for GPU VMs, per-deployment qualification) were kept
-> deliberately — they are properties, not maturity labels.
->
-> ⚠ **One open item for you:** `docs/platform/gpu-threat-model.md` still
-> carries **"Status: ready for Security and Product approval"**. That is a
-> sign-off record, not a wording choice — confirm the approval and it can
-> read as approved; until then a security reviewer may read it as
-> unfinished governance.
-
----
-
 # GPU services
 
 **Offer fixed GPU shares to containers or attach a complete GPU to a virtual
@@ -169,32 +142,3 @@ upgrades.
 | Workload design, drivers inside VM guests, performance tuning | — | ✅ |
 
 ---
-
-## Draft apparatus (stripped at publication)
-
-Evidence: shared-GPU product model, enforced memory slice, cooperative
-compute share, queuing-vs-reservation semantics and per-model quota per
-`docs/cloud/gpu-shared-workloads.md`; dedicated-VM passthrough, image/driver
-matrix and no-live-migration per `docs/cloud/gpu-vm-guests.md`; reservations
-vs entitlement per `docs/platform/gpu-capacity-reservations.md`; node-mode
-transitions, upgrade gate, supply chain and threat model per the
-corresponding `docs/platform/gpu-*.md` runbooks; catalog shape and the
-per-capability enablement controls per `charts/kube-dc/values.yaml`.
-
-**Production-use evidence, verified live 2026-08-07** (reference deployment
-cloudacropolis): full GPU stack running (GPU operator, NVIDIA driver
-daemonset, container toolkit, DCGM exporter, HAMi device plugin);
-DeviceClasses `kube-dc-nvidia-v100-shared-8g` and `hami-core-gpu…` present
-for 21 days; a tenant Stable-Diffusion workload holding an
-`allocated,reserved` ResourceClaim for 8 days; ResourceClaimTemplates in
-two tenant projects; deviceclass quota lines across 17 project namespaces.
-**Asymmetry to respect:** no GPU-attached VM was running at the time of
-check — the shared-GPU path has live tenant usage, the dedicated-VM path
-does not on this deployment, which is why §2 describes capability and
-qualification rather than claiming production use.
-
-**Not claimed:** vGPU (deliberately unqualified), MIG, performance figures
-or guarantees, GPU as a security boundary for shared containers,
-supported-guest breadth beyond the published qualification matrix,
-GPU-VM production usage. Keep the cooperative-share caveat and the
-per-deployment qualification framing in every customer-facing version.

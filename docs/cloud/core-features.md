@@ -16,7 +16,7 @@ Organization
 └── Project
     ├── Applications
     ├── Virtual machines
-    ├── Managed databases
+    ├── Managed services
     └── Managed Clusters
 ```
 
@@ -40,7 +40,7 @@ A Project provides a focused Kubernetes environment for application teams:
 - Deployments, StatefulSets, Jobs, Services, and autoscaling
 - KubeVirt virtual machines
 - Persistent and object storage
-- Managed PostgreSQL and MariaDB
+- Managed services from the provider catalog
 - Project-scoped identities, roles, secrets, certificates, and encryption keys
 - Cloud or public gateway networking with explicit inbound exposure
 - An optional Project quota within the Organization's shared plan
@@ -92,11 +92,11 @@ LoadBalancer Service for selected ports, or a floating IP for direct VM access.
 
 ## Managed services
 
-Kube-DC provisions and operates databases, caches, and message brokers inside a
-Project, from a catalog that the provider publishes: PostgreSQL, MySQL,
-MariaDB, ClickHouse, Valkey, and Kafka. A plan sets the capacity, the backups,
-and the operations you can request. Credentials reach your workloads as
-Kubernetes Secrets.
+Kube-DC provisions and operates services from a provider catalog.
+Families can cover databases, caches, message brokers, analytics, and applications.
+Each plan sets capacity, topology, backup policy, and allowed operations.
+Bindings deliver application credentials as Kubernetes Secrets.
+The examples in this guide do not limit the catalog.
 
 Availability depends on the plan's topology and on how your application handles
 connections. A single instance is not highly available.

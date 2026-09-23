@@ -27,15 +27,13 @@ StorageClasses, NetworkPolicies, CronJobs, or privileged/host access.
 | `Project` | `kube-dc.com/v1` | Organization namespace; creates a governed workload boundary |
 | `EIp`, `FIp` | `kube-dc.com/v1` | Project backing namespace; external/floating addresses |
 | `KdcCluster` | `k8s.kube-dc.com/v1alpha1` | Project backing namespace; Managed Cluster |
-| `ManagedService` | `services.kube-dc.com/v1alpha1` | Project backing namespace; a managed PostgreSQL, MySQL, MariaDB, ClickHouse, Valkey or Kafka service |
+| `ManagedService` | `services.kube-dc.com/v1alpha1` | Project backing namespace; a service from the provider's catalog, with a class and plan |
 | `ServiceBinding` | `services.kube-dc.com/v1alpha1` | Project backing namespace; delivers one credential role of a service as a Secret |
 | `ServiceOperation` | `services.kube-dc.com/v1alpha1` | Project backing namespace; one immutable day-2 action (backup, scale, rotate, upgrade) |
 | `ServiceCredentialPolicy` | `services.kube-dc.com/v1alpha1` | Project backing namespace; scheduled credential rotation |
-| `KdcDatabase` | `db.kube-dc.com/v1alpha1` | **Deprecated.** Existing db-manager databases only; create no new ones |
 | `ManagedSecret` | `security.kube-dc.com/v1alpha1` | Project backing namespace; OpenBao-backed secret intent |
 | `ManagedCertificate` | `security.kube-dc.com/v1alpha1` | Project backing namespace; managed X.509 certificate |
 | `KMSKey` | `security.kube-dc.com/v1alpha1` | Project backing namespace; OpenBao Transit key |
-| `DatabaseCredentialPolicy` | `security.kube-dc.com/v1alpha1` | **Deprecated** with `KdcDatabase`; use `ServiceCredentialPolicy` |
 | `VirtualMachine` | `kubevirt.io/v1` | Project backing namespace; KubeVirt VM |
 | `DataVolume` | `cdi.kubevirt.io/v1beta1` | Project backing namespace; VM disk |
 | `ObjectBucketClaim` | `objectbucket.io/v1alpha1` | Project backing namespace; S3 bucket claim |
@@ -146,9 +144,10 @@ an EIP when the Service is deleted.
   TLS-only with the platform's own CA. Set `placement.mode: ProviderShared`
   and `connectivity.classRef.name: tenant-native`; tenants cannot list the
   cluster-scoped plans, so use the names the console or the provider gives.
-- `KdcDatabase` and `DatabaseCredentialPolicy` are deprecated: never create
-  them. Existing ones keep working until the tenant migrates; see the
-  migration guide.
+- The catalog can grow beyond databases, caches, and messaging. Use only the
+  classes, plans, and operations that the installation offers. For recovery,
+  use `RestoreToNew` with a typed `spec.restore` request; the platform generates
+  the target service's restore fields.
 - PostgreSQL Gateway exposure needs a plan entitlement and PostgreSQL 17+
   direct-TLS clients. Standard roles cannot use port-forward.
 - Gateway HTTPS creates a raw cert-manager `Certificate`, not a
@@ -167,6 +166,6 @@ an EIP when the Service is deleted.
 - [Projects](docs/cloud/kubernetes-projects.md)
 - [Service exposure](docs/cloud/service-exposure.md)
 - [Managed services](docs/cloud/managed-services.md)
-- [Migrating from db-manager databases](docs/cloud/managed-services-migration.md)
+- [Managed service operations](docs/cloud/managed-services-operations.md)
 - [Managed Cluster operations](docs/cloud/cluster-management.md)
 - [Full documentation for agents](https://docs.kube-dc.com/llms-full.txt)

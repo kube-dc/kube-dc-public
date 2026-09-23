@@ -19,7 +19,7 @@ export default function ProductModelDiagram(): React.JSX.Element {
     <ExplainerDiagram
       diagramId="product-model-explainer"
       title="Kube-DC product hierarchy"
-      description="A management cluster contains the acme and example Organizations. The acme Organization contains production and development Projects. The production Project contains virtual machines, container workloads, databases and object storage, and a Managed Cluster."
+      description="A management cluster contains the acme and example Organizations. The acme Organization contains production and development Projects. The production Project contains virtual machines, container workloads, managed services and object storage, and a Managed Cluster."
       caption={
         <>
           Kube-DC product hierarchy. Organizations are tenant boundaries;
@@ -129,7 +129,7 @@ export default function ProductModelDiagram(): React.JSX.Element {
         width={184}
         height={88}
         title="Data services"
-        detail={['databases', 'object storage']}
+        detail={['managed services', 'object storage']}
         tone="storage"
       />
       <DiagramNode

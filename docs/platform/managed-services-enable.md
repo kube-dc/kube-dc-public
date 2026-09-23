@@ -1,42 +1,29 @@
 # Enable managed services on a Kube-DC installation
 
-Managed services give a tenant a database or a message broker they ask for as a
-Kubernetes object and never operate: Kube-DC places it, issues its
-certificates, holds its credentials, backs it up, restores it and meters it.
+As a platform operator, use this procedure to install the managed services control plane and publish selected service plans.
+The installation is opt-in. Enable only the families that you qualify on the target cluster.
 
-This page is for the operator of a Kube-DC installation. It covers turning the
-feature on, choosing which engines you offer, and upgrading it later.
+## Before you begin
 
-**A cluster that does not want managed services does nothing.** Nothing on this
-page is in the shared platform tree, so an installation that never creates the
-two Flux Kustomizations below has no hub, no catalog and no tenant-visible
-plans. The CloudSigma sites run this way deliberately.
+Check these prerequisites:
+
+- A working Kube-DC installation with a Fleet repository and Flux.
+- A compatible services release with reviewed hub, runner, and catalog pins.
+- Storage roles, capacity budgets, and connectivity for the selected plans.
+- The native operators required by the selected families.
+- A reachable HTTPS backup endpoint for plans that require object storage.
 
 ## What an installation offers
 
-| Family | Development plan | Production plan | Backups |
-|---|---|---|---|
-| PostgreSQL | 1 instance | 3 instances, replicated | object store, PITR |
-| MySQL | 1 server + Router | 3 Group Replication members + 2 Routers | verified logical archive |
-| MariaDB | 1 server | 3-member Galera *(unpublished)* | verified logical archive |
-| ClickHouse | 1 server + Keeper | 2 replicas + 3 Keepers | verified native archive |
-| Valkey | 1 node | 3 nodes, Sentinel | RDB snapshot |
-| Kafka | 1 controller | 3 controllers, 3+ brokers | none; replication provides the durability |
+The catalog defines the available services.
+A family component supplies its class, bundle, and plans.
+The provider selects components for each installation and publishes only qualified plans.
+See [Publish the catalog](managed-services-catalog.md).
 
-Every family offers create, bind, credential rotation, storage expansion,
-backup and restore-into-a-new-service. A plan marked *unpublished* ships
-implemented but annotated `services.kube-dc.com/console: disabled`, so tenants
-do not see it: its HA-specific checks have not been run. Publish one by setting
-that annotation to `enabled` once you have run them on your own cluster — and
-bump the plan's `revision`, or the catalog gate refuses content that changed
-under an unchanged one.
-
-MariaDB's Galera shape is the one still unpublished, and not for want of
-testing: the operator's Galera `Init` step creates the engine's storage claim
-itself, and `managed-references.kube-dc.com` refuses a reserved claim name from
-any creator that does not carry the platform marker. The Standalone shape is
-unaffected, because there the StatefulSet creates its claims from a template
-that already carries it.
+Operations differ by family.
+For example, MySQL and ClickHouse have fixed compute and storage after creation in their documented integrations.
+Valkey supports archive recovery on backup-enabled plans. Kafka exports metadata without message data.
+Do not infer operation support from a plan's name or tier.
 
 ## Turn it on
 
@@ -45,11 +32,11 @@ that already carries it.
 In `clusters/<name>/cluster-config.env`. The release values come from the
 starter's `bootstrap/release-pins.env`; the rest describe this cluster.
 
-```sh
-SERVICES_CHART_VERSION=v0.9.0-rc1
-SERVICES_HUB_TAG=v0.9.0-rc1
-SERVICES_RUNNER_TAG=v0.9.0-rc1
-SERVICES_RUNNER_IMAGE=shalb/kube-dc-services-runner:v0.9.0-rc1
+```text
+SERVICES_CHART_VERSION=<services-release>
+SERVICES_HUB_TAG=<hub-tag>
+SERVICES_RUNNER_TAG=<runner-tag>
+SERVICES_RUNNER_IMAGE=<runner-image>
 
 # This cluster's identity as a services site.
 SERVICES_CELL_ID=cell-<name>
@@ -70,7 +57,10 @@ SERVICES_PG_OPERATOR_VERSION=1.29.2
 SERVICES_PG_STORAGE_CLASSES=[rbd-vm]
 ```
 
-`SERVICES_STORAGE_ROLES` is the important one. A published plan asks for the
+Replace the release and image placeholders with the reviewed release pins.
+Replace `<name>` with the installation identifier. These are Fleet values, not shell commands.
+
+`SERVICES_STORAGE_ROLES` maps logical storage roles to local classes. A published plan asks for the
 `database` *role*, not a class name, because class names differ between
 installations. Map the role to a class that supports volume expansion.
 
@@ -83,7 +73,8 @@ the ServiceAccount the hub acts as on this cluster, its token, the scoped
 read-only ClusterRole and the binding, and tells the hub that this plane is
 itself. Nothing has to be applied by hand.
 
-Copy `clusters/stage/services.yaml` and change nothing but the components list.
+Use the Fleet services Kustomization as a template.
+Review its namespace, substitutions, dependencies, and selected components for the target installation.
 
 ### 3. The catalog
 
@@ -122,7 +113,7 @@ Selecting a family component without its operator gives you a bundle that
 never becomes ready and placements that are refused with "family bundle not
 ready".
 
-### 5. Check it
+### 5. Verify the installation
 
 ```sh
 kubectl get servicedataplane <name>-platform \
@@ -133,39 +124,34 @@ Every bundle must be ready. `does not pin a runner version` means
 `SERVICES_RUNNER_TAG` rendered empty. `rollout pending` is the ordinary window
 between the hub rolling out and the catalog applying, and clears by itself.
 
-Then create one service from a Development plan, bind it, and delete it.
+Then create a test service and connect an application through a binding.
+Test the operations and recovery paths that the plan offers before publication.
+Verify deletion and retained resources after the test.
 
 ## What tenants see in the console
 
 The console shows managed services to every organization of the installation
-by default. Two groups of variables in `cluster-config.env` tune that, and the
-chart renders them into the console's runtime configuration:
+by default. The following variables in `cluster-config.env` control visibility.
+The chart renders them into the console runtime configuration:
 
 ```sh
 # Managed services in the tenant console. The default is every organization;
-# list organizations instead to run a pilot. CloudSigma installations never
-# show the area.
+# list organizations instead to run a pilot. The runtime configuration controls visibility.
 KUBE_DC_UI_MANAGED_SERVICES_ALL_ORGANIZATIONS=true
 KUBE_DC_UI_MANAGED_SERVICES_ORGANIZATIONS=[]
-
-# The deprecated db-manager Databases area, only for tenants that still run
-# KdcDatabase resources. Empty lists retire it for everyone.
-KUBE_DC_UI_LEGACY_DATABASES_ORGANIZATIONS=[]
-KUBE_DC_UI_LEGACY_DATABASES_PROJECTS=[]
 ```
 
 A tenant's console lists exactly the classes whose plans are published for
 the cluster and not annotated `services.kube-dc.com/console: disabled`; the
 creation sheet groups the plans of a class into Dev, Production and HA tiers.
-See [Publishing the catalog](managed-services-catalog.md) and
-[Retiring db-manager](managed-services-retire-db-manager.md).
+See [Publish the catalog](managed-services-catalog.md).
 
 ## Upgrade
 
 The hub, the runner and the catalog are **one release**. The catalog in the
 fleet tree describes the adapters the released runner compiles, and a class
 whose blueprint digest does not match the running hub stops being `Verified`.
-new placements are refused while everything already running keeps its pinned
+New placements are refused while existing services keep their pinned
 revision.
 
 So move `SERVICES_CHART_VERSION`, `SERVICES_HUB_TAG`, `SERVICES_RUNNER_TAG` and

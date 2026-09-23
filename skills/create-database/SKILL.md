@@ -1,6 +1,6 @@
 ---
 name: create-database
-description: Create a managed database (PostgreSQL, MySQL, MariaDB, ClickHouse) or Valkey cache in a Kube-DC Project as a ManagedService, deliver its credential to workloads with a ServiceBinding Secret, and prepare backup and restore workflows. KdcDatabase is deprecated; never create one.
+description: Create a managed database (PostgreSQL, MySQL, MariaDB, ClickHouse) or Valkey cache in a Kube-DC Project as a ManagedService, deliver its credential to workloads with a ServiceBinding Secret, and prepare backup and restore workflows.
 ---
 
 ## Prerequisites
@@ -15,6 +15,10 @@ description: Create a managed database (PostgreSQL, MySQL, MariaDB, ClickHouse) 
   user does not know, ask before applying.
 
 ## 1. Choose the Engine and Plan
+
+These examples cover selected catalog families. Other integrations can use the
+same managed service model. Check the installation's catalog and plan before
+you use a family or operation.
 
 | Need | Class | Standard plans | Notes |
 |---|---|---|---|
@@ -80,7 +84,8 @@ Rules the API enforces:
   `instances`.
 
 Apply with a server-side dry run first, then wait for readiness and record
-the UID, which every binding, operation and policy must pin:
+the UID. Operations require it. Pin it in bindings and policies so that they
+cannot attach to a replacement service with the same name:
 
 ```bash
 kubectl apply --dry-run=server -f service.yaml
@@ -149,10 +154,11 @@ external exposure. Do not build host names; use the binding Secret's `host`.
 
 Scheduled backups run when the plan enables them (daily on the standard
 plans). An on-demand backup is a `ServiceOperation` of type `Backup`; history
-is the read-only `ServiceBackup` list. Restore is into a new service for every
-family (`RestoreToNew` operation or `spec.restoreFrom` on a new
-`ManagedService`); PostgreSQL also restores in place and offers point-in-time
-recovery. Kafka backs up metadata only. See
+is the read-only `ServiceBackup` list. Where the family and plan support
+recovery, submit a `RestoreToNew` operation with a typed `spec.restore` block.
+Do not create `ManagedService.spec.restoreFrom` yourself. PostgreSQL also
+supports in-place restore and point-in-time recovery when the plan permits
+them. Kafka backs up metadata only. See
 [backup-restore-patterns.md](backup-restore-patterns.md).
 
 ## Verification
@@ -166,11 +172,3 @@ kubectl describe secret {service-name}-owner -n {backing-namespace}   # keys onl
 
 Report the service name, plan, phase, the binding Secret name and its keys.
 Never print `password` or `uri`.
-
-## Deprecated: KdcDatabase
-
-`KdcDatabase` and `DatabaseCredentialPolicy` are deprecated. Never create
-them. If the Project has one, point the user to the migration guide
-(`docs/cloud/managed-services-migration.md`): create the managed service,
-copy the data with the engine's dump tool from a Job in the Project, repoint
-the application at the binding Secret, delete the `KdcDatabase`.

@@ -1,203 +1,214 @@
 # Operate managed services
 
-Day-2 for the operator: what tenants wait on you for, what to check after a
-release, and the procedures that change a running installation safely. Tenant
-day-2 is in the cloud documentation, starting with
-[Day-2 Operations](/cloud/postgresql-operations).
+As a platform operator, use this guide to approve requests, inspect service state, and manage catalog changes.
+Tenant procedures are in [Managed service operations](/cloud/managed-services-operations).
+The class and plan determine available actions for each service.
 
-## Approvals
+## Approve an operation
 
-Operation types a plan lists in `operations.allowed` but not in
-`operations.autoApprove` wait in phase `AwaitingApproval`. Only a member of
-the operator groups may approve:
+An operation waits in `AwaitingApproval` when its type is allowed but absent from the plan's `operations.autoApprove` list.
+Only authorized operator identities can approve it.
 
-```sh
-kubectl -n <project> get serviceoperations
-kubectl -n <project> annotate serviceoperation <name> services.kube-dc.com/approved=true
+1. List the Project's operations:
+
+   ```bash
+   kubectl get serviceoperations -n <project>
+   ```
+
+2. Inspect the request and its target service before approval:
+
+   ```bash
+   kubectl get serviceoperation <operation> -n <project> -o yaml
+   ```
+
+3. Approve the selected operation:
+
+   ```bash
+   kubectl annotate serviceoperation <operation> -n <project> \
+     services.kube-dc.com/approved=true
+   ```
+
+4. Check its final phase and the service's observed state.
+
+Replace `<project>` with the Project namespace and `<operation>` with the request name.
+The platform admin console uses the same approval contract.
+Admission refuses approval annotations from tenant identities.
+Platform-generated credential policy operations have additional controls and require `system:masters` for approval or cancellation.
+
+## Read service status
+
+These fields distinguish the requested configuration from observed results:
+
+| Field or condition | Meaning |
+|---|---|
+| `Ready` | Required acceptance, placement, reconciliation, connectivity, and backup checks passed |
+| `Stale=True` | The hub lacks recent data-plane observations. Local engine operation can continue |
+| `Frozen=True` | Ownership drift blocks mutation until the operator resolves it |
+| `CatalogPinned=False` | The published catalog differs from the instance's pinned revisions |
+| `status.acceptedRevision` | Revision accepted by the control plane |
+| `status.appliedRevision` | Revision that the runner reports as applied |
+| `status.effectiveConfiguration` | Observed configuration, including completed operation changes |
+
+A running Pod does not prove that the service is ready.
+Check endpoint verification and backup readiness where the plan requires them.
+After a change, compare accepted and applied revisions and inspect operation results.
+
+## Verify a release
+
+The hub, runner, and catalog must remain compatible.
+After a release, inspect the target data plane:
+
+```bash
+kubectl get servicedataplane <plane> -o yaml
 ```
 
-Admission refuses the annotation from anyone else, including the tenant. The
-platform admin console lists waiting operations and approves them with the
-same effect. Operations a `ServiceCredentialPolicy` generates carry the
-platform marker and can be cancelled or approved only by `system:masters`.
+Replace `<plane>` with the registered data-plane name.
+Check `status.ready`, runner version, family bundles, and reported capability checks.
+A missing runner version or an unready bundle can block placement.
 
-Other operator-only annotations on a `ManagedService`:
+Use a disposable Project to verify the published service contract:
 
-| Annotation | Effect |
-|------------|--------|
-| `services.kube-dc.com/adopt-catalog=<token>` | Move the instance to the current catalog revisions. See [Catalog adoption](#catalog-adoption) |
-| `services.kube-dc.com/accept-parameters=<generation>` | Accept a parameter snapshot the hub refused as drift; honoured for the current generation only, then removed |
+1. Create a service from each plan that changed.
+2. Connect an application through a binding with certificate verification enabled.
+3. Test the operations that changed, including approval and capacity refusals.
+4. For backup-enabled plans, restore a backup and verify application data.
+5. Verify tenant role restrictions and service-owned resource protection.
+6. Delete test resources and inspect retained data and credentials.
 
-Tenants may set `services.kube-dc.com/cancel: "true"` on an operation that
-has not started, and `services.kube-dc.com/confirm-delete=<name>` on a
-service with `deletionPolicy: Delete`.
+Run these checks against the target installation.
+Unit tests and console fixtures do not prove network access, storage behavior, or recovery on that installation.
 
-## Read the status honestly
+## Adopt a catalog revision
 
-- `Ready` needs `Accepted`, `Placed`, `Reconciled`, `ConnectivityReady` (an
-  active probe from the promised location) and `BackupReady` when the plan
-  enables backups. A green pod is not Ready.
-- `Stale=True` means the hub has not observed the data plane recently; the
-  instance keeps running under its local operator.
-- `Frozen=True` means dangerous mutation is blocked because of ownership
-  drift; an operator repair or accept decision is required.
-- `CatalogPinned=False` means the catalog changed after placement; the
-  instance keeps its pinned revisions until you adopt the new catalog for it.
-- `status.acceptedRevision` and `status.appliedRevision` differ while a change
-  is in flight. Accepted is not applied.
+A class or plan change does not automatically reconfigure placed services.
+Read the `CatalogPinned` condition to obtain the exact adoption token:
 
-## After a release
-
-The hub, the runner and the catalog are one release. After moving the pins:
-
-```sh
-kubectl get servicedataplane <plane> \
-  -o jsonpath='{.status.ready}{"\n"}{range .status.bundles[*]}{.family}{"\t"}{.ready}{"\t"}{.message}{"\n"}{end}'
+```bash
+kubectl get managedservice <service> -n <project> \
+  -o jsonpath='{range .status.conditions[?(@.type=="CatalogPinned")]}{.message}{"\n"}{end}'
 ```
 
-Bundle readiness is an AND across families: one bad pin refuses placements for
-every family. `rollout pending` is the ordinary window between the runner
-rolling out and the catalog applying; `does not pin a runner version` means
-`SERVICES_RUNNER_TAG` rendered empty. When moving a runner by hand, change the
-bundle's `spec.runner.image` and `spec.runner.version` together; the readiness
-gate compares the version label the runner reports with the bundle.
+Replace `<service>` with the instance name.
+The token identifies the class revision, plan revision, and a digest of the target pins.
 
-Then create one service from a Development plan, bind it, and delete it.
+After you review the change, apply that token:
 
-## Catalog adoption
-
-A changed class, plan or adapter never rebuilds a placed instance on its own.
-You move it explicitly, in the tenant's maintenance window:
-
-```sh
-kubectl -n <project> get msvc <name> -o jsonpath='{range .status.conditions[?(@.type=="CatalogPinned")]}{.message}{"\n"}{end}'
-kubectl -n <project> annotate msvc <name> services.kube-dc.com/adopt-catalog=<token>
+```bash
+kubectl annotate managedservice <service> -n <project> \
+  services.kube-dc.com/adopt-catalog=<token>
 ```
 
-The token is `<classRevision>/<planRevision>/<8-hex digest of the pin set>`,
-printed in the `CatalogPinned` condition. It names exactly one target, is
-consumed once, and any later pin change needs a new token. The hub signs a
-new revision from the current catalog, the runner applies it, and
-`CatalogPinned` returns to `True`. A change of the connectivity class cannot
-be adopted; it needs a new placement.
+Replace `<token>` with the token from the condition.
+The hub consumes it once. A later catalog change requires another token.
+Wait for the applied revision and `CatalogPinned=True`.
+Changing the connectivity class requires a separate placement.
 
-The order for an adapter (family code) upgrade that never breaks a running
-instance: roll the runner bundle, bump the class's adapter version, blueprint
-digest and revision, wait for `Verified`, then adopt instance by instance.
-Instances not adopted keep working on their pins indefinitely.
+For an adapter upgrade, use this order:
 
-## Backups and restore
+1. Release the compatible runner bundle.
+2. Publish the class adapter version, blueprint digest, and revision.
+3. Wait for class verification.
+4. Adopt the catalog for selected instances during approved maintenance.
+5. Verify each instance before you continue.
 
-Backups land in the Project's `db-backups` bucket (or the plane store the plan
-names). `ServiceBackup` records are the tenant's catalog and survive source
-deletion; `status.recovery.retainUntil` bounds how long the archive is kept.
-Restore into a new service reads only backups taken on the target's own data
-plane: **cross-plane restore and instance migration are not supported in this
-release.** A drain therefore ends with the tenant recreating the service
-elsewhere from an export they hold, or with the plane staying up.
+The operator-only `services.kube-dc.com/accept-parameters` annotation accepts a refused parameter snapshot for one generation.
+Use it only after you investigate the drift. It is not a routine tenant configuration path.
 
-PostgreSQL restore in place preserves the service identity and replaces the
-engine; it needs the tenant's explicit `engineUID`, data-loss
-acknowledgement and `deletionProtection: false`. Deleting a Project deletes
-its in-Project instances with their data and takes no final backup, whatever
-the deletion policy says; a `ProjectDeleted` event records it.
+## Capacity changes
 
-## Growing a service, and moving from Development to Production
+The family integration defines supported changes. The plan can restrict them further.
+These documented integrations illustrate the differences:
 
-A tenant asking "can I start small and grow?" is really asking three separate
-questions, and only two of them have a yes.
-
-**At creation, pick anywhere in the plan's range.** A plan's `computeBounds`
-and its `storage`..`maxStorage` band bound what a tenant may choose when the
-service is created, whether or not the plan offers `Resize` afterwards. A
-MySQL Development service can be created at 4 CPU and 8Gi on day one. The
-console publishes these as the plan's tunables.
-
-**After creation, growth depends on the family.** Each adapter declares whether
-compute, storage and member count may change after the engine exists, and the
-plan's `operations.allowed` decides which of those a tenant may ask for:
-
-| Family | CPU / memory | Storage | Members |
+| Family | CPU and memory | Storage | Members |
 |---|---|---|---|
 | PostgreSQL | `Resize` | `ExpandStorage` | `Scale` |
-| Kafka | fixed after create | `ExpandStorage` | `Scale` |
-| Valkey | `Resize` | `ExpandStorage` | fixed after create |
-| MariaDB | `Resize` | `ExpandStorage` | fixed after create |
-| MySQL | fixed after create | fixed after create | fixed after create |
-| ClickHouse | fixed after create | fixed after create | fixed after create |
+| Kafka | Fixed after creation | `ExpandStorage` | `Scale` for brokers |
+| Valkey | `Resize` | `ExpandStorage` | Fixed by class |
+| MariaDB | `Resize` | `ExpandStorage` | Fixed by class |
+| MySQL | Fixed after creation | Fixed after creation | Fixed by plan |
+| ClickHouse | Fixed after creation | Fixed after creation | Fixed by plan |
 
-MySQL and ClickHouse are fixed for the same reason: their operators read the
-pod spec and the volume template only when they build the StatefulSet, and
-patching a generated StatefulSet is not something the platform does. Sizing
-those two is a decision made once, at creation, which is why their plans
-still carry wide `computeBounds`.
+Creation-time bounds do not imply support for later resizing.
+These examples are not a complete catalog or a contract for additional families.
+Check the class operation declarations and the plan's `operations.allowed` field.
 
-**Becoming the Production shape is never in place.** The topology is a property
-of the plan, not of the instance: Standalone versus Galera, one InnoDB member
-versus three with Routers, one ClickHouse server versus two replicas behind a
-Keeper quorum, or a single Valkey against Sentinel, which is a different class
-again (`valkey-ha`). No operation turns one into the other.
+A service cannot change its class or plan reference in place.
+For a compatible backup-enabled family, `RestoreToNew` can create a target with another plan.
+Set the target plan in `spec.restore.target.planRef`.
+It must accept the archive family, format, and engine major version.
+The tenant verifies data and changes application connections after recovery.
 
-The supported path is a restore:
+Kafka metadata exports do not contain message data.
+A move to another Kafka cluster requires a separate message transfer procedure.
 
-1. `Backup` on the Development service.
-2. `RestoreToNew` with `target.planRef` naming the **Production** plan.
+## Backup and recovery
 
-The hub allows a restore to cross plans. It requires the target plan to belong
-to the same *family* (not the same class), the engine major line to match the
-backup's, the target plan to be Verified and to allow `RestoreToNew`. The new
-service starts with fresh credentials and `deletionPolicy: Retain`; the source
-is untouched, so the cutover is the tenant's to make and to reverse.
+A plan selects Project or provider backup storage.
+Project-backed plans commonly use the `db-backups` bucket claim.
+Use a verified HTTPS endpoint reachable from all backup and recovery clients.
 
-Every family offers this except **Kafka**, which has no `RestoreToNew` at all.
-Its backups carry metadata, not message data. Moving a Kafka cluster means
-creating the new one and mirroring topics into it, outside the platform.
+A `ServiceBackup` record can outlive its source service.
+Inspect recovery metadata, the retention deadline, and archive availability before you approve a restore.
+Do not infer a cross-plane migration capability from the presence of `RestoreToNew`.
+Use only placement and recovery combinations qualified for that installation.
 
-## Data planes
+PostgreSQL restore in place requires the exact engine UID, data-loss confirmation, and disabled service deletion protection.
+It replaces existing data. The tenant must verify recovery before application writes resume.
+See [Backups and restore](/cloud/postgresql-backup-restore).
 
-```sh
-kubectl get sdp                       # READY, runner version, egress self-check
-kubectl get sdp <name> -o yaml        # capabilities, bundles, inventory
+For in-Project placement, Project deletion removes services and data volumes without a final backup.
+Service deletion policies do not prevent this.
+
+## Data-plane lifecycle
+
+Inspect registered planes before you change placement availability:
+
+```bash
+kubectl get servicedataplanes
+kubectl get servicedataplane <plane> -o yaml
 ```
 
-`spec.lifecycle` moves a plane through `Paused`, `Draining` (refuses new
-placements) and `Decommissioning` (detaches every deployment with `Retain`;
-data stays). Delete or retain the instances first and wait for their deletion
-receipts: a destructive deletion policy is not released while the
-`ServiceDataPlane` object is missing.
+`spec.lifecycle` controls placement and retirement.
+`Paused` and `Draining` restrict placement. `Decommissioning` withdraws management with data retention.
+Resolve each instance and verify its deletion or retention result before you remove the data-plane registration.
+Destructive cleanup requires a valid data-plane identity.
 
-Retiring a family from a plane removes nothing by itself. Inventory every
-instance of the family and decide its fate, remove the family from
-`spec.families`, remove the runner and the operator only where this cell
-installed them and no retained engine still depends on them, and delete the
-`ServiceFamilyBundle` last; its finalizer holds the deletion while anything
-still references it. Never delete a generated `kube-dc-service-family-*`
-ClusterProfile directly.
+To retire a family, follow this sequence:
 
-## Evidence, usage and audit
+1. Inventory its managed and retained instances.
+2. Agree a deletion, retention, or replacement procedure for each instance.
+3. Remove the family from the plane's offered families after the instance work completes.
+4. Remove its runner and operator only when no retained engine needs them.
+5. Delete the family bundle last.
 
-```sh
-kubectl -n kube-dc-services get serviceevidences        # immutable, by digest
-kubectl -n <project> get msvc <name> -o jsonpath='{.status.usage}'
+The bundle finalizer blocks deletion while references remain.
+Do not delete generated family ClusterProfiles directly.
+
+## Evidence and usage
+
+Inspect evidence and service usage with these commands:
+
+```bash
+kubectl get serviceevidences -n kube-dc-services
+kubectl get managedservice <service> -n <project> \
+  -o jsonpath='{.status.usage}{"\n"}'
 ```
 
-Evidence is removed after its retention (90 days; 365 for deletions): export
-what must outlive that. Usage totals come from sequenced runner batches; gaps
-are counted, never guessed. The API server audit policy records every Secret
-request and every write to the managed-services resources at metadata level;
-never pass a credential as an exec argument, since request URIs are recorded.
+Export evidence that must outlive its configured retention.
+The runner reports sequenced usage batches. Gaps remain visible instead of becoming estimated measurements.
+Audit policy records managed services writes and Secret access as metadata.
+Keep credential values out of command arguments that can appear in request records.
 
-## The tenant console
+## Console configuration
 
-Tenants see managed services for every organization unless the cluster sets
-`KUBE_DC_UI_MANAGED_SERVICES_ALL_ORGANIZATIONS=false` and lists
-organizations, and they see the deprecated db-manager Databases area only
-where the cluster lists them (`KUBE_DC_UI_LEGACY_DATABASES_*`). The console's
-metrics route reads the platform Prometheus for the instance namespace;
-`PROM_URL` on the backend must point at it for the Overview tiles to fill.
+Runtime configuration controls which organizations can use managed services.
+Set `KUBE_DC_UI_MANAGED_SERVICES_ALL_ORGANIZATIONS=false` and list organizations to restrict visibility.
+Visibility does not replace API authorization.
 
-## Related
+The backend's `PROM_URL` must point to a compatible metrics source for service metrics to appear.
+A missing metrics view does not prove that the service is unhealthy.
 
-- [Managed services overview](managed-services-overview.md)
-- [Publishing the catalog](managed-services-catalog.md)
-- [Retiring db-manager](managed-services-retire-db-manager.md)
+## Next steps
+
+See [Publish the catalog](managed-services-catalog.md) for plan revisions and family qualification.
+See [Managed service operations](/cloud/managed-services-operations) for the tenant request and result contract.

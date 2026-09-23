@@ -22,7 +22,7 @@ access, workloads, and services.
 - **Managed Clusters**: a tenant-controlled cluster of your own, provisioned by
   the platform, for software that needs operators, custom resource definitions,
   or other cluster-scoped control.
-- **Managed databases**: PostgreSQL and MariaDB with scheduled credential
+- **Managed services**: a provider catalog with service-specific operations and credential
   rotation.
 - **Networking**: a private network (VPC) per Project, public and floating IPs,
   load balancers, and HTTPS ingress with automatic certificates.

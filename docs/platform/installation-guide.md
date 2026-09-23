@@ -1140,7 +1140,7 @@ The same runs automatically during `kube-dc bootstrap init` when
 RKE2 boots cert-only (Phase 2). Until the apiserver is pointed at the
 oidc-webhook-authenticator, **every Keycloak JWT returns HTTP 401**. Tenant
 `kubectl`, the console's Manage-Organization calls, and the k8-manager /
-db-manager operators all fail. The cluster meanwhile looks perfectly healthy:
+managed service operators all fail. The cluster meanwhile looks perfectly healthy:
 Flux is green, every pod is Ready, and nothing anywhere says "nobody can log
 in".
 
@@ -1476,7 +1476,7 @@ The two paths carry different traffic and are wired differently:
   (production incident 2026-08-11), which is exactly why the old listener +
   "drop it behind NAT" patch were retired.
 - **`:443`** (`tls-passthrough-wildcard`, hostname `*.<domain>`) carries the
-  **managed Kubernetes clusters**. A tenant's kubeconfig points at
+  **Managed Clusters**. A tenant's kubeconfig points at
   `https://<cluster>-cp-<namespace>.<domain>:443`, and Envoy passes the TLS
   session through to that Kamaji control plane. Managed clusters never use
   `:6443`.

@@ -3,7 +3,7 @@ title: Kube-DC Platform Datasheet
 slug: /
 sidebar_label: Overview
 hide_title: true
-description: A multi-tenant private cloud platform for virtual machines, Kubernetes, databases, networking and storage on infrastructure you own.
+description: A multi-tenant private cloud platform for virtual machines, Kubernetes, managed services, networking, and storage on infrastructure you own.
 ---
 
 import DatasheetFigure from '@site/src/components/DatasheetFigure';
@@ -13,29 +13,16 @@ import {ManagedClusterTopologyDiagram} from '@site/src/components/Diagram/CloudT
 import {DataProtectionDiagram} from '@site/src/components/Diagram/DatasheetDiagrams';
 import RoutedNetworkDiagram from '@site/src/components/Diagram/RoutedNetworkDiagram';
 
-# DRAFT — Kube-DC Platform Datasheet
-
-> 🚧 **Working draft — not for distribution.** Repositioned 2026-08-07 per
-> owner direction: the datasheet's buyer is an **organization installing and
-> operating Kube-DC on its own infrastructure** (public-sector bodies, large
-> retail, universities, datacenter operators). Product-led voice; every claim
-> is backed by a row in [claim-ledger-a-cloud.md](claim-ledger-a-cloud.md)
-> or the published product docs — evidence stays in the ledger, not in this
-> prose. Publication gates: [datasheet-plan.md](datasheet-plan.md).
-> Screenshot placeholders `📷 S-xx` — capture list at the end.
-
----
-
 # Kube-DC
 
-**Run virtual machines, Kubernetes, databases, and storage on infrastructure
+**Run virtual machines, Kubernetes, managed services, and storage on infrastructure
 you control.**
 
 <div className="datasheet-download"><strong>Printable version:</strong>{' '}<a download href={require('./kube-dc-platform-datasheet-a4.pdf').default}>Download the A4 PDF</a>.</div>
 
 Kube-DC turns your servers into a self-service private cloud. Departments and
 teams work in isolated projects with their own networks, virtual machines,
-Kubernetes clusters, databases, and storage. Your platform team sets capacity,
+Kubernetes clusters, managed services, and storage. Your platform team sets capacity,
 security, and cost controls for the whole environment, while your data stays in
 your datacenter.
 
@@ -60,7 +47,7 @@ several teams or customers:
 - **Tenancy that reaches the network.** Every project gets its own VPC and
   subnet, not just a namespace label.
 - **Self-service with central controls.** Teams provision VMs, clusters,
-  databases, storage, and public endpoints within the quotas you set. They can
+  managed services, storage, and public endpoints within the quotas you set. They can
   use the web console, `kubectl`, the CLI, or a supported coding assistant.
 - **Runs on standard x86-64 servers.** A platform starts at three nodes;
   capacity grows by adding nodes. Production sizing is validated against
@@ -85,7 +72,7 @@ flowchart TB
       subgraph PRJ1["Project A — own VPC, RBAC, quota"]
         W1["Apps & Helm"]
         W2["VMs"]
-        W3[("Managed DBs")]
+        W3[("Managed services")]
       end
       subgraph PRJ2["Project B — own VPC, RBAC, quota"]
         W4["Managed K8s cluster"]
@@ -104,7 +91,7 @@ flowchart TB
 
 Kube-DC runs on a Kubernetes management cluster on your servers. Its
 controllers turn product resources such as organizations, projects, machines,
-clusters, databases, and keys into the underlying networking, virtualization,
+clusters, managed services, and keys into the underlying networking, virtualization,
 identity, storage, ingress, and observability resources.
 
 The operating model has three levels:
@@ -222,17 +209,19 @@ flowchart LR
 
 <ManagedClusterTopologyDiagram />
 
-## Managed databases
+## Managed services
 
-- PostgreSQL and MariaDB, provisioned by manifest or console.
-- Multi-replica engine replication; after an eligible primary failure an
-  available replica is promoted automatically — behavior depends on your
-  deployment's topology and capacity.
-- Scheduled and on-demand backups to the project's S3 bucket,
-  envelope-encrypted when a KMS key is configured; restore into a new
-  database or in place.
-- Auto-generated credentials delivered as Kubernetes Secrets; optional
-  credential-rotation policies.
+Teams select services from an extensible catalog through the console or Kubernetes API.
+The provider publishes classes and plans for databases, caches, message brokers, analytics systems, and applications.
+Each plan defines capacity, topology, operations, recovery, and support responsibilities.
+
+The hub checks requests and signs instructions. Runners execute them through service-specific integrations and report the result.
+Bindings deliver application credentials as Kubernetes Secrets.
+Revision pins, approval rules, and maintenance windows control changes to running services.
+
+The shared API gives teams consistent provisioning, access, and operation records as the catalog grows.
+Backup, restore, scaling, upgrades, and hibernation depend on the selected family and plan.
+See the [managed services datasheet](function-managed-databases.md) for the design, advantages, and operation model.
 
 ## GPU services
 
@@ -351,20 +340,21 @@ selling the platform as a service.
 
 ## Data protection
 
-Each managed service carries its own protection: database backups to
-project S3 (envelope-encrypted when a KMS key is configured);
-managed-cluster etcd snapshots and restore; VM and volume snapshots on
-demand. Platform configuration lives in Git as desired state — it is not a
-backup of service or workload data. For copies that must survive site or
-storage loss, integrate the platform's S3 endpoints and snapshot APIs with
-your enterprise backup system — Kube-DC does not replace it.
+Protection depends on the resource and its plan.
+Backup-enabled managed services use their family's backup and recovery mechanism.
+Managed Cluster snapshots protect etcd state. VM and volume snapshots remain in their storage pool.
+
+A KMS key alone does not prove that a backup file is encrypted.
+Verify the complete encryption and recovery path for the selected deployment.
+Git stores desired configuration, not service or workload data.
+For site recovery, arrange and test copies outside the platform's storage failure domain.
 
 <details data-github-only>
 <summary>Diagram source for GitHub</summary>
 
 ```mermaid
 flowchart LR
-  DB[("Managed databases")] -- "scheduled + on-demand;<br/>KMS-encrypted when configured" --> S3[("Project S3")]
+  DB[("Managed services")] -- "backups where supported;<br/>family and plan define recovery" --> S3[("Project S3")]
   MK["Managed-cluster etcd"] -- "scheduled snapshots" --> S3
   VOL["VM & volume snapshots"] --> CEPH[("Storage pool")]
   GITC[("Platform config in Git —<br/>desired state, not a backup")]
@@ -427,7 +417,7 @@ commits.
 Kube-DC integrates named upstream open-source components: Kubernetes,
 KubeVirt (virtualization), Kube-OVN (SDN), Rook-Ceph (storage), Keycloak
 (identity), Kamaji + Cluster API (hosted control planes), CloudNativePG
-and the MariaDB operator (databases), OpenBao (keys and secrets), Envoy
+and other family operators (managed services), OpenBao (keys and secrets), Envoy
 Gateway and cert-manager (ingress and TLS), Prometheus/Mimir/Loki/Grafana
 (observability), Flux (GitOps). Component versions are pinned per Kube-DC
 release. Workloads built on standard Kubernetes objects and standard VM
@@ -450,7 +440,7 @@ with full technical depth:
 |---|---|
 | Managed Kubernetes clusters | [function-managed-kubernetes.md](function-managed-kubernetes.md) |
 | Virtual machines | [function-virtual-machines.md](function-virtual-machines.md) |
-| Managed databases | [function-managed-databases.md](function-managed-databases.md) |
+| Managed services | [function-managed-databases.md](function-managed-databases.md) |
 | Networking, VLAN attachment & BGP | [function-networking.md](function-networking.md) |
 | Storage & object storage | [function-storage.md](function-storage.md) |
 | Security, identity & keys | [function-security.md](function-security.md) |
@@ -458,36 +448,3 @@ with full technical depth:
 | GPU services | [function-gpu.md](function-gpu.md) |
 
 ---
-
-## Draft apparatus (stripped at publication)
-
-**Claim discipline.** No uptime figures, no TCO claims, no exclusivity
-wording, no "complete isolation", no editions. Live-migration is stated
-conditionally (shared block profile). Windows guests per prepared-image
-path. Managed-cluster restore currently supports single-replica etcd — the
-datasheet omits restore-topology detail; the technical specification
-(Artifact B) carries it. Backing evidence:
-[claim-ledger-a-cloud.md](claim-ledger-a-cloud.md) + published docs.
-
-**Publication gates** (unchanged, [datasheet-plan.md](datasheet-plan.md)):
-G-19 licence position before any "open-source platform" claim beyond the
-component enumeration; G-20b before leading with VM data-protection against
-vSphere; G-27/G-22 release manifest behind "pinned per release"; final
-adversarial review (G-40) before distribution.
-
-**📷 Capture list (owner).** Each capture embeds exactly once, in the
-document listed. PNG at natural size, per the docs image conventions.
-
-| ID | Document · section | Suggested filename | View | Must show |
-|---|---|---|---|---|
-| S-01 | Umbrella · Multi-tenancy | `platform-org-projects.png` | Console: organization with several projects | Org context, project list, quotas |
-| S-02 | *(covered)* | — | Product-model and architectural-layers React SVG explainers | Organization → Projects → governed services; management and infrastructure layers |
-| S-03 | Managed K8s fn · §4 | `S-03.png` | Cluster summary | readiness, API endpoint, kubeconfig, replicas, workers, encryption status |
-| S-04 | Managed K8s fn · §4 | `S-04.png` | Worker Pool Configuration | per-pool replicas, autoscaling bounds and idle-node behavior |
-| S-05 | VMs fn · §4 | reused `docs/cloud/images/connecting-vm.png` | VM Guest OS panel | console preview and console/SSH launch actions |
-| S-06 | Observability fn · §1 | **missing** | Organization Grafana | tenant-scoped workload dashboard and managed-cluster control-plane telemetry |
-| S-07 | VMs fn · §2 | `platform-vm-create.png` | Console: create VM | Image catalog, Standard/Migratable profile choice, sizing |
-| S-08 | Databases fn · §4 | `platform-db-backups.png` | Console: database detail → Backups tab | Backup list, take-snapshot action, schedule/retention |
-| S-09 | Networking fn · §4 | reused `docs/platform/images/vlan-admin-2-allocations.png` | Console: VLAN allocation | Organization delegation and Project assignment *(recapture fictional values before publication)* |
-| S-10 | Security fn · §1 | reused `docs/cloud/images/edit-org-group-view.png` | Console: Organization Group | directory role → Project role mapping |
-| S-11 | Umbrella · Operating the platform | `platform-admin-console.png` | Administration console | Organizations/plans or storage-health view |

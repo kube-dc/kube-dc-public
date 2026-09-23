@@ -51,7 +51,7 @@ Project capability boundary.
 - **Networking:** a private VPC per Project, HTTP/HTTPS Gateway routes, direct
   LoadBalancer services, external and floating IPs, and operator-assigned
   datacenter VLANs.
-- **Data services:** managed PostgreSQL and MariaDB, block storage, S3-compatible
+- **Data services:** an extensible managed services catalog, block storage, S3-compatible
   object storage, snapshots, and restore workflows.
 - **Security services:** managed secrets, certificates, database credential
   rotation, KMS keys, Project RBAC, and platform policy enforcement.
@@ -79,8 +79,7 @@ The published site is available at [docs.kube-dc.com](https://docs.kube-dc.com).
 
 ## Community
 
-Kube-DC is open source. Bug reports, design discussions, and contributions are
-welcome.
+Bug reports, design discussions, and contributions are welcome.
 
 - [GitHub Issues](https://github.com/kube-dc/kube-dc-public/issues)
 - [GitHub Discussions](https://github.com/kube-dc/kube-dc-public/discussions)

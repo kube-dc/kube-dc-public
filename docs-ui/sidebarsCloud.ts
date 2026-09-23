@@ -176,8 +176,8 @@ const sidebars: SidebarsConfig = {
         },
         {
           type: 'doc',
-          id: 'managed-services-migration',
-          label: 'Migrate from db-manager',
+          id: 'managed-services-operations',
+          label: 'Operations',
         },
       ],
     },

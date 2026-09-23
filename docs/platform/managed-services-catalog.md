@@ -1,8 +1,8 @@
 # Publish the catalog
 
-The catalog is what tenants can ask for: one `ManagedServiceClass` per family,
-one or more `ManagedServicePlan` per class, and the `ConnectivityClass`
-`tenant-native`. It lives in the fleet repository under
+As a platform operator, publish the classes, plans, and connectivity options that tenants can select.
+A family can have multiple classes, such as single-node and replicated variants.
+Each class can have multiple plans. It lives in the fleet repository under
 `platform/kube-dc-services-catalog/` and reaches a cluster through the Flux
 Kustomization `services-catalog`, which the cluster opts into with
 `clusters/<name>/services-catalog.yaml`. Nothing in the catalog is edited by
@@ -13,7 +13,7 @@ hand on a cluster.
 | Path | Content |
 |------|---------|
 | `tenant-native.yaml`, `postgresql.yaml` | The base: the connectivity class and the PostgreSQL bundle, class and plans |
-| `components/<family>/` | One component per additional family: `mysql`, `mariadb`, `clickhouse`, `valkey`, `kafka`, `forgejo`. Each carries the `ServiceFamilyBundle`, the `ManagedServiceClass` and the family's plans |
+| `components/<family>/` | One component per additional family, such as `mysql`, `valkey`, or `forgejo`. Each carries the `ServiceFamilyBundle`, the `ManagedServiceClass` and the family's plans |
 | `components/shared-service-plans/` | The standard Development and Production plans for PostgreSQL, Kafka and Valkey, with the sizing table in its README |
 | `components/data-plane/` | Registers the cluster's own data plane |
 | `components/postgresql-gateway/`, `components/postgresql-public-loadbalancer/` | Exposure entitlements, where the cluster has a shared TLS listener or a public address pool |
@@ -82,7 +82,7 @@ topology is highly available with more than one member as HA.
 A plan asks for the storage **role** `database`, not a class name, because
 class names differ between installations. The data plane maps it:
 
-```sh
+```text
 SERVICES_STORAGE_ROLES={database: rbd-vm}
 SERVICES_STORAGE_BUDGETS={rbd-vm: 500Gi}
 ```
@@ -91,8 +91,7 @@ Map the role to a class that supports volume expansion; local-path storage
 does not, and `ExpandStorage` is refused on it.
 
 Backups go to the Project's own bucket by default: `backup.objectStoreSource:
-ProjectBucketClaim` with `objectBucketClaimName: db-backups`, the same claim
-db-manager used, so a Project keeps one backup bucket across both products.
+ProjectBucketClaim` with `objectBucketClaimName: db-backups`. Each Project has its own backup bucket.
 `objectStoreEndpoint` must be the endpoint the pods reach, `https://<S3
 hostname>`, not the in-cluster service. `Plane` instead uses the plan's own
 endpoint and bucket with the cell's credential. The shared plans back up daily
@@ -123,6 +122,17 @@ Regenerate the digest in the services repository with
 move `SERVICES_RUNNER_TAG`, the bundle's `revision` and the class in one
 commit.
 
+## Extend the catalog
+
+The catalog is not a fixed list of engines.
+An additional service requires a family adapter, parameter schema, credential and endpoint contracts, and declared operation support.
+Its bundle must pin compatible runner and operator versions.
+Define capacity, isolation, connectivity, usage meters, and recovery responsibilities before you publish a plan.
+
+Catalog entries alone do not implement a service.
+For any additional database, workflow system, or application, qualify its integration on the target infrastructure first.
+Publish only implemented operations. Describe unsupported recovery or scaling paths in the plan's responsibility statement.
+
 ## Add a family to a cluster
 
 1. Install or attest the engine operator (see the operator table on
@@ -133,9 +143,10 @@ commit.
 2. Select `components/<family>` in the cluster's `services-catalog.yaml`.
 3. Wait until `kubectl get servicedataplane <plane>` reports the bundle ready
    and the class `Verified`.
-4. Create one service from the Development plan, bind it, back it up, restore
-   it into a new service and delete it. Only then leave the console annotation
-   at `enabled`.
+4. Create a test service and verify a binding with an application client.
+5. Test each operation that the plan offers, including recovery where supported.
+6. Test access restrictions, quotas, deletion, and retained resources.
+7. Publish the console annotation only after the checks pass.
 
 ## Related
 

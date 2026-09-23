@@ -84,6 +84,17 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Managed services',
+      collapsed: true,
+      items: [
+        'managed-services-overview',
+        'managed-services-enable',
+        'managed-services-catalog',
+        'managed-services-operations',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Storage',
       collapsed: true,
       items: [

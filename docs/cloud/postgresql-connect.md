@@ -450,9 +450,3 @@ workloads to another `Secret` before you delete a binding they still use.
 ```bash
 kubectl delete servicebinding orders-api-db -n my-project
 ```
-
-## Move from a db-manager database
-
-The Secret a `KdcDatabase` or a `DatabaseCredentialPolicy` produced uses
-different key names. The mapping, and how to move the data, is in
-[Migrating from db-manager databases](managed-services-migration.md).

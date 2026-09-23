@@ -1,7 +1,7 @@
 # Kube-DC platform
 
 Kube-DC is a Kubernetes-based platform for Organizations to run virtual
-machines, containers, managed data services, object storage, and Managed
+machines, containers, managed services, object storage, and Managed
 Clusters. This section is for the operators who install, secure, and
 run the management cluster.
 
@@ -15,8 +15,7 @@ run the management cluster.
 | Understand Organizations, Projects, and access | [Multi-tenancy and access control](architecture-multi-tenancy.md) |
 | Design provider and Project networks | [Networking architecture](architecture-networking.md) |
 | Operate internal platform endpoints | [Internal platform endpoints](internal-platform-endpoints.md) |
-| Offer managed databases, caches and brokers to tenants | [Managed services overview](managed-services-overview.md), [Enabling managed services](managed-services-enable.md), [Publishing the catalog](managed-services-catalog.md), [Operating the service](managed-services-operations.md) |
-| Retire the deprecated db-manager databases | [Retiring db-manager](managed-services-retire-db-manager.md) |
+| Publish and operate a managed services catalog | [Managed services overview](managed-services-overview.md), [Enabling managed services](managed-services-enable.md), [Publishing the catalog](managed-services-catalog.md), [Operating the service](managed-services-operations.md) |
 | Review platform controls and trust boundaries | [Security model](security-model.md) |
 | Operate metrics, logs, alerts, and dashboards | [Observability](observability.md) |
 | Provision and bill organizations from a hosting portal | [Provisioning API for hosting providers](platform-api.md) |

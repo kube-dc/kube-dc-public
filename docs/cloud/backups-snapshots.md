@@ -8,7 +8,8 @@ Start by identifying the data owner:
 | Resource | Supported protection path | What it protects |
 |----------|---------------------------|------------------|
 | Managed service (PostgreSQL, MySQL, MariaDB, ClickHouse) | Scheduled and on-demand backups, restore into a new service, or restore in place for PostgreSQL | Database data, archived WAL where the family has it, and `ServiceBackup` history records |
-| Managed service (Valkey, Kafka) | No recovery facility; see the family page | Rebuildable data: caches, and topics protected by replication |
+| Managed service (Valkey) | RDB archives on backup-enabled plans, with restore into a new service | Snapshot data. No point-in-time recovery |
+| Managed service (Kafka) | Metadata export and topic replication | Metadata exports exclude messages. Replication is not a backup |
 | Managed Cluster | etcd snapshots | Kubernetes API state in that Managed Cluster |
 | Application files on a PVC | Application-native backup to object storage | Files selected by the application |
 | Object storage bucket | Application retention, versioning, or replication policy | Objects covered by that policy |
@@ -35,13 +36,6 @@ limits on each family page.
 For the in-Project placement, deleting a Project deletes its services without a
 final backup; see [Delete a Project](managed-services-status-deletion.md#delete-a-project).
 
-## Databases still on db-manager
-
-`KdcDatabase` databases are deprecated. Their backups keep running until you
-migrate; configure them on the resource or in the deprecated Databases view of
-the console, and confirm that the database reports a successful backup before
-relying on it. See
-[Migrating from db-manager databases](managed-services-migration.md).
 
 ## Managed Cluster snapshots
 
@@ -123,7 +117,6 @@ written; only a restore test proves that it is usable.
 ## Next steps
 
 - [Managed Services: Backups and Restore](postgresql-backup-restore.md)
-- [Migrating from db-manager databases](managed-services-migration.md)
 - [Managed Clusters](cluster-management.md)
 - [Object storage](object-storage.md)
 - [Block storage](block-storage.md)

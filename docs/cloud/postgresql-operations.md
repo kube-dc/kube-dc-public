@@ -1,4 +1,4 @@
-# Day-2 operations
+# PostgreSQL operations
 
 A `ServiceOperation` asks the platform to perform one action on a service, such
 as a backup, a scale change, a switchover or an upgrade. Each operation is an
@@ -7,8 +7,8 @@ and the service's state, runs it, and records the outcome in its status.
 
 This page explains how operations run and lists every PostgreSQL operation
 type with its parameters, the plan fields it needs and its limits. To restore a
-backup into a new service, create a new `ManagedService` with `restoreFrom`
-instead; see [Backups and restore](postgresql-backup-restore.md).
+backup into a new service, submit a `RestoreToNew` operation with `spec.restore`.
+See [Backups and restore](postgresql-backup-restore.md).
 
 ## Before you begin
 
@@ -64,7 +64,7 @@ kubectl get serviceoperation orders-db-parameters-1 -n my-project -w
 |-------|----------|-------------|
 | `metadata.name` | Yes | A name for this one request |
 | `spec.serviceRef.name` | Yes | The `ManagedService` name |
-| `spec.serviceUID` | Set it | The `ManagedService` UID. See [Service identity](#service-identity) |
+| `spec.serviceUID` | Yes | The `ManagedService` UID. See [Service identity](#service-identity) |
 | `spec.type` | Yes | The operation type. See [Operation types](#operation-types) |
 | `spec.idempotencyKey` | Yes | 1 to 128 characters that identify this request across retries |
 | `spec.parameters` | Depends on the type | The type's parameters |
@@ -127,9 +127,8 @@ back into the manifest.
 - If `serviceUID` does not match the current service of that name, the
   operation is `Rejected` with `ServiceIdentityChanged`. Create a new operation
   for the new service.
-- An operation without `serviceUID` can pass API admission. `RestoreInPlace`
-  and rotations of an existing-user role are refused without it; other
-  operations then act on whichever service holds the name. Always set it.
+- Every operation requires `serviceUID`. Read the UID before you submit the request.
+  For `RestoreToNew`, use the historical source UID from the selected backup record.
 
 ### Retries and idempotency
 

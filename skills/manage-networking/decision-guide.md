@@ -6,8 +6,8 @@
 | TLS passthrough with a valid backend certificate | Gateway TLSRoute |
 | Arbitrary TCP or UDP ports | EIP-backed LoadBalancer Service |
 | SSH or direct access to one VM interface | FIP |
-| Managed database from a workstation | `KdcDatabase.spec.expose.type: loadbalancer` |
-| Internal application-to-database traffic | Engine Service on the Project VPC |
+| Managed service from a workstation | Use the family's supported exposure method and plan entitlement; see [PostgreSQL external access](../../docs/cloud/postgresql-external-access.md) |
+| Internal application-to-service traffic | Read the endpoint from the `ServiceBinding` Secret |
 | Whole Project VPC to approved corporate/datacenter prefixes | Organization-authorized Routed Network |
 | Selected workloads directly on a physical L2 segment | Datacenter VLAN |
 

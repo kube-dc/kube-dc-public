@@ -7,15 +7,6 @@ description: Multi-tenant metrics, logs, dashboards and platform monitoring with
 
 import {ObservabilityPipelineDiagram} from '@site/src/components/Diagram/DatasheetDiagrams';
 
-# DRAFT — Kube-DC Function Datasheet: Observability
-
-> 🚧 **Working draft — not for distribution.** Companion to the
-> [platform datasheet](draft-artifact-a-datasheet.md). Claims trace to the
-> [claim ledger](claim-ledger-a-cloud.md), operator source and published
-> product docs; publication gates per [datasheet-plan.md](datasheet-plan.md).
-
----
-
 # Observability
 
 **Each organization receives its own view of metrics, logs, and dashboards.**
@@ -41,7 +32,6 @@ monitoring stack.
   organization's managed Kubernetes clusters surface in its Grafana — API
   servers and controllers are watchable without filing a ticket.
 
-📷 S-06 — an organization's Grafana dashboard.
 
 <details data-github-only>
 <summary>Diagram source for GitHub</summary>
@@ -93,16 +83,3 @@ The platform team monitors the platform itself from the same tooling:
 | Platform alerting and response | ✅ | reports suspected platform issues |
 
 ---
-
-## Draft apparatus (stripped at publication)
-
-Evidence: automatic per-organization provisioning (Grafana organizations,
-dashboards, metrics tenants) is controller behavior in operator source
-(organization reconciler maintains Grafana orgs/dashboards and metrics
-tenants); the metrics store runs with multi-tenancy enabled (verified
-live, ledger row 31); managed-cluster CP telemetry pending on-service
-re-capture (row 32 / capture S-06). Not claimed: retention values as
-commitments (operator-defined), tenant-authored alerting unless
-configured, coverage guarantees. 📷 Capture S-06 must show an Organization
-Grafana view and managed-cluster control-plane telemetry; no Grafana capture
-is currently present.

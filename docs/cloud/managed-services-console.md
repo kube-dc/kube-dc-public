@@ -1,100 +1,140 @@
 # Use the console
 
-Everything in this chapter can be done from the Kube-DC console as well as
-with manifests. The console shows the same objects the manifests create, so
-you can start in one and continue in the other: every creation flow offers
-the exact YAML it is about to submit.
+import DatasheetFigure from '@site/src/components/DatasheetFigure';
 
-Open **Managed services** in the Project navigation. Whether the entry is
-present depends on your provider having enabled managed services for your
-organization.
+As a Project member, use the console to create, connect, and operate managed services.
+The console and manifests use the same managed services API.
+The console offers YAML for supported creation and operation requests.
+
+## Before you begin
+
+Check these requirements:
+
+- Your provider enables managed services for your organization and publishes at least one plan.
+- You have the Project `admin` or `developer` role to create services or request operations.
+- You know the capacity, availability, and recovery needs of your application.
+
+Open **Managed services** in the Project navigation.
+Read-only roles can inspect services and status.
 
 ## The catalog
 
-The catalog lists every engine your provider publishes for your Project,
-grouped by what it is for: databases, caches and key-value stores, streaming
-and messaging, search and analytics, storage, applications. A tile shows the
-product mark, the engine version, one sentence about the engine and a tag
-such as GA, Beta or Popular. Search by engine name or narrow the list by
-category.
+Select **New service** to open the creation sheet.
+Its **Engine** step groups published services by category.
+Search by name or select a category to narrow the list.
+Each tile describes the service and the versions available through published plans.
 
-An engine appears only when at least one of its plans is published for your
-installation. If an engine you expect is missing, ask your provider.
+The catalog can contain databases, caches, message brokers, analytics systems, and applications.
+The selection depends on your installation. A missing service requires a provider integration and published plan.
+
+<DatasheetFigure
+  alt="New managed service sheet with service categories and a summary of the selected plan"
+  caption="The creation sheet shows published services. This example uses demonstration data from the current UI. Your catalog can differ."
+  src={require('./images/managed-services-catalog.png').default}
+/>
 
 ## Create a service
 
-**New service** opens a three-step sheet.
+The creation sheet has three steps:
 
-1. **Engine.** Pick a tile. The summary rail on the right fills in with the
-   defaults of the recommended plan.
-2. **Size.** Choose a tier: *Dev* for development and previews, *Production*
-   (recommended) for backed-up services with predictable capacity, *HA* where
-   the family offers automatic failover. Each tier is one of the provider's
-   published plans, and the sheet lists its facts: compute, backups, failover
-   or storage expansion. Below the tiers, sliders move storage, CPU, memory
-   and the number of instances within what the plan allows. Families that
-   are sized by their shard shape, such as ClickHouse, show *Replicas per
-   shard* instead of instances. A slider that says *Fixed by this tier*
-   cannot move on that plan. **Advanced · pick a published plan** lists every
-   plan by name for the cases the tiers do not cover.
-3. **Name & access.** The name is prefilled (`pg-1`, `ch-1`, and so on) and
-   must be unique in the Project. *Deliver credentials to* creates the owner
-   credential as a Kubernetes Secret named `<service>-owner` in the Project
-   as soon as the service is ready; choose *Later* to grant access per
-   workload afterwards from **Users & access**. *Reachability* is the
-   connectivity class; *Project only* publishes the service inside your
-   Project's network and allocates no public address. **Advanced · engine
-   settings and deletion** holds the engine parameters the class exposes,
-   deletion protection and the deletion policy.
+1. In **Engine**, select a service.
+2. In **Size**, select a plan tier and adjust capacity within its limits.
+3. In **Name & access**, set the name, credential delivery, connectivity, and optional engine settings.
 
-The rail always shows what you will get: engine and version, tier, compute,
-storage, topology, backups, network and the Secret name, followed by the
-outcomes in plain words. **or get the YAML for GitOps** in the footer shows the
-`ManagedService` manifest (and the `ServiceBinding` when you chose Secret
-delivery) exactly as the console will submit them, with a copy button. Commit
-that YAML to your repository and apply it with your pipeline instead of
-pressing **Deploy**, if that is how your Project is managed. The two paths
-produce the same objects; see [Create a PostgreSQL service](postgresql-create.md)
-for the manifest fields.
+Use **Advanced · pick a published plan** when you need a plan outside the suggested tiers.
+Check the plan facts for backups, failover, and supported capacity changes.
+A Production or HA label does not replace those facts.
 
-**Deploy** submits the request. The bell in the header follows it: the
-notification names the engine and the service and links to it, and it turns
-into a success or failure notice when the platform reports the outcome. A
-request the platform refuses stays in the sheet with the reason, so you can
-correct it and retry with the same idempotency key.
+A setting marked **Fixed by this tier** cannot change for that plan.
+Some families use instances. Others use shards and replicas per shard.
+See [Classes and plans](managed-services-plans.md) for the common contract.
+
+For credential delivery, select **Kubernetes Secret** or **Later**.
+Secret delivery creates a binding after the service exists.
+The default Secret name is `<service>-owner`, where `<service>` is the name you select.
+With **Later**, create the binding from **Users & access** after creation.
+
+The summary shows the selected version, plan, capacity, topology, backup policy, network, and Secret name.
+To inspect the request before submission, select **or get the YAML for GitOps**.
+If you use GitOps, save the manifest and apply it through your pipeline.
+Otherwise, select **Deploy**.
+
+Wait for the service to report **Ready** before you connect an application.
+The notification records the request outcome and links to the service.
+If the request fails, read the reason before you retry.
 
 ## The service page
 
-Every service has one page with five tabs. The header shows the product mark,
-the name, the status pill (Ready, Provisioning, an operation in progress such
-as *Backing up*, Hibernated, Failed) and a **Running ⇄ Hibernated** switch on
-plans that allow hibernation. While something is happening to the service, a
-line above the tabs says what and since when, and links to where to follow it.
+The service header shows identity, version, and state.
+Where the plan supports hibernation, the header also provides a control to stop or resume service compute.
 
-| Tab | What it holds |
-|-----|---------------|
-| **Overview** | The **Connect** card with the endpoint, TLS requirement and copy-paste snippets for the engine's own client, common drivers and a `.env` block, all reading credentials from the delivered Secret; who is connected (bindings); the facts of the service; the actions the plan offers, each labelled with its effect; recent activity |
-| **Settings** | Compute & storage (capacity rows change through actions such as *Resize compute* or *Expand storage*), Backups, Connectivity, the engine's parameters with the plan default shown in grey, Deletion, Advanced. Changes are staged and applied together after **Review & apply**, which shows the resulting request |
-| **Users & access** | Bindings (which workload receives which credential role over which endpoint) and rotation policies. Create a binding here when you chose *Later* at creation |
-| **Backups** | Backup history with its recovery window, **Back up now**, and restore into a new service or in place where the family supports it |
-| **Events** | Change history, platform events and conditions, newest first |
+<DatasheetFigure
+  alt="Managed service Overview with connection instructions, service facts, metrics, credential bindings, and plan actions"
+  caption="The Overview groups application access and service operations. Values shown here are demonstration data."
+  src={require('./images/managed-services-overview.png').default}
+/>
 
-**View YAML** shows the live object. The same window has an **Edit YAML**
-switch; **Validate with Kubernetes** runs a server-side dry run before you
-save, so a refused change never leaves the window.
+The page organizes details into these areas:
+
+| Area | Purpose |
+|---|---|
+| **Overview** | Connection instructions, service facts, bindings, actions, and recent activity |
+| **Metrics** | Service measurements from a configured metrics source |
+| **Backups** | Backup history and supported recovery actions |
+| **Users & access** | Credential bindings and rotation policies |
+| **Settings** | Capacity, backups, connectivity, engine parameters, and deletion settings |
+| **Events** | Change history, platform events, and conditions |
+| **YAML** | Resource inspection and supported edits |
+
+Available controls depend on the class, plan, state, and your role.
+A missing measurement does not prove that the service is unhealthy.
+
+## Connect an application
+
+Use the **Connect** card for the service endpoint, TLS requirements, and client examples.
+The examples read credentials from the delivered Secret.
+Load the supplied CA certificate when the service requires it.
+Do not disable certificate verification to make a connection succeed.
+
+Use **Users & access** to create a binding for a supported credential role.
+Project Secret permissions control who can read the resulting credential.
+See [Connect applications](postgresql-connect.md) for a complete PostgreSQL example.
+
+## Change settings or request an operation
+
+Use **Settings** for fields that permit direct updates.
+Select **Review & apply** to inspect the proposed request before you submit it.
+Capacity and lifecycle actions use operations when the class requires them.
+
+The **YAML** view can validate an edit with **Validate with Kubernetes** before you save it.
+Validation checks admission. It does not prove that the controller can complete the change.
+
+After any change, check the operation result and service conditions.
+An accepted request can still wait for approval or fail execution checks.
+See [Managed service operations](managed-services-operations.md) for phases, execution windows, and cancellation.
+
+## Check backups and recovery
+
+Open **Backups** to inspect history where the service supports backups.
+A `Completed` record describes a past backup. It does not prove that the archive remains available.
+Use the selected record's recovery information before you request a restore.
+
+<DatasheetFigure
+  alt="Managed service Backups tab with status, origin, method, completion time, and the Back up now action"
+  caption="Backup history and recovery actions depend on the selected service and plan. This screenshot uses demonstration data."
+  src={require('./images/managed-services-backups.png').default}
+/>
+
+After recovery, connect through a binding and verify application data.
+See [Backups and restore](postgresql-backup-restore.md) for the PostgreSQL procedure and the family guide for other services.
 
 ## Lists and row actions
 
-The list of services shows the engine mark, name, status and plan for every
-service in the Project, newest first. A row's menu offers the lifecycle
-actions of that service, including **Resume** for a hibernated service, and
-the list header offers **resume all** when several are hibernated.
+The service list shows each instance's family, status, and plan.
+Use its filters to find a service.
+Row menus provide supported actions, including **Resume** for a hibernated service.
+Check each resulting operation when you request a bulk action.
 
-## Deprecated: the databases area
+## Next steps
 
-Databases created with the earlier db-manager product (`KdcDatabase`) are
-deprecated. The **Databases** entry appears only for the organizations and
-Projects your provider has listed as still running them, with a notice that
-new databases are managed services. Everyone else does not see it, and a
-bookmarked link explains where to go. See
-[Migrating from db-manager databases](managed-services-migration.md).
+Use [Status and deletion](managed-services-status-deletion.md) before you remove a service or Project.

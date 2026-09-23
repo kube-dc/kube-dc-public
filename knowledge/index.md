@@ -12,15 +12,13 @@ Master catalog for AI agents. Read this first, then dive into specific files as 
 | `EIp` | `kube-dc.com` | `v1` | — | External IP allocation (cloud or public) |
 | `FIp` | `kube-dc.com` | `v1` | — | Floating IP — 1:1 NAT to VM/pod |
 | `KdcCluster` | `k8s.kube-dc.com` | `v1alpha1` | `kdc-cl` | Managed Kubernetes cluster (Kamaji + CAPI) |
-| `ManagedService` | `services.kube-dc.com` | `v1alpha1` | `msvc` | Managed PostgreSQL, MySQL, MariaDB, ClickHouse, Valkey or Kafka |
+| `ManagedService` | `services.kube-dc.com` | `v1alpha1` | `msvc` | Service from the provider's catalog, with a class and plan |
 | `ServiceBinding` | `services.kube-dc.com` | `v1alpha1` | | Credential role delivered as a Secret |
 | `ServiceOperation` | `services.kube-dc.com` | `v1alpha1` | | One day-2 action on a service |
 | `ServiceCredentialPolicy` | `services.kube-dc.com` | `v1alpha1` | | Scheduled credential rotation |
-| `KdcDatabase` | `db.kube-dc.com` | `v1alpha1` | `kdcdb` | Deprecated db-manager database; migrate to `ManagedService` |
 | `ManagedSecret` | `security.kube-dc.com` | `v1alpha1` | — | Project secret backed by OpenBao, optionally projected into a K8s Secret via ESO |
 | `ManagedCertificate` | `security.kube-dc.com` | `v1alpha1` | `mcert` | x509 cert from Org private CA or public ACME, auto-renewed |
 | `KMSKey` | `security.kube-dc.com` | `v1alpha1` | — | Per-project encryption key backed by OpenBao Transit |
-| `DatabaseCredentialPolicy` | `security.kube-dc.com` | `v1alpha1` | `dbcp` | Deprecated with `KdcDatabase`; use `ServiceCredentialPolicy` |
 | `VirtualMachine` | `kubevirt.io` | `v1` | `vm` | KubeVirt VM definition |
 | `DataVolume` | `cdi.kubevirt.io` | `v1beta1` | `dv` | VM disk import (http) or blank |
 | `ObjectBucketClaim` | `objectbucket.io` | `v1alpha1` | `obc` | S3 bucket claim (Rook-Ceph) |
@@ -57,7 +55,7 @@ Skills location: `skills/{skill-name}/SKILL.md`
 | File | Topic | Size |
 |------|-------|------|
 | `service-exposure.md` | Gateway routes, EIP, FIP, all exposure patterns | ~700 lines |
-| `managed-services.md` and the Managed Services chapter | Catalog, plans, console, PostgreSQL create/connect/credentials/operations/backups/external access, MySQL and MariaDB, ClickHouse, Valkey, Kafka, status and deletion, migration from db-manager | ~3,500 lines |
+| `managed-services.md` and the Managed Services chapter | Catalog, plans, console, operations, bindings, backups, recovery, family guides, status, and deletion | Varies by guide |
 | `creating-vm.md` | VM deployment, SSH access, cloud-init | ~210 lines |
 | `cluster-management.md` | K8s cluster scaling, upgrading, storage, troubleshooting | ~390 lines |
 | `provisioning-cluster.md` | Creating managed K8s clusters, including etcd-at-rest encryption + KEK rotation toggles | ~300 lines |
@@ -74,7 +72,7 @@ Skills location: `skills/{skill-name}/SKILL.md`
 | `kms.md` | KMSKey CRD, direct encrypt/decrypt, envelope encryption with Go + Python helpers, rotation, min_decryption_version | ~350 lines |
 | `certificate-manager.md` | ManagedCertificate CRD, private CA vs ACME public, mTLS / code-signing | ~250 lines |
 | `postgresql-credentials.md` | ServiceBinding delivery, RotateCredentials, ServiceCredentialPolicy for declared roles and existing logins, break-glass | ~450 lines |
-| `managed-services-migration.md` | db-manager deprecation, copy Jobs and field mappings for moving a KdcDatabase to a ManagedService | ~230 lines |
+| `managed-services-operations.md` | Shared operation contract, supported types, approval, cancellation, and results | ~160 lines |
 | `backups-snapshots.md` | Velero workload backups + managed-K8s etcd backup envelope mode | ~530 lines |
 
 ### Platform Operator Guide (`docs/platform/`)
@@ -106,10 +104,8 @@ Skills location: `skills/{skill-name}/SKILL.md`
 | Org namespace | `{org}` | `shalb` |
 | Project namespace | `{org}-{project}` | `shalb-docs` |
 | Auto hostname | `{svc}-{ns}.kube-dc.cloud` | `nginx-shalb-docs.kube-dc.cloud` |
-| DB endpoint (PG) | `{name}-rw.{ns}.svc:5432` | `docs-pg-rw.shalb-docs.svc:5432` |
-| DB secret (PG) | `{name}-app` | `docs-pg-app` |
-| DB endpoint (Maria) | `{name}.{ns}.svc:3306` | `my-mariadb.shalb-docs.svc:3306` |
-| DB secret (Maria) | `{name}-password` | `my-mariadb-password` |
+| Managed service endpoint | Read `host` and `port` from the binding Secret | Do not infer an engine Service name |
+| Managed service Secret | `ServiceBinding.spec.delivery.secretName` | Keys depend on the family; see `create-database` |
 | SSH keypair | `ssh-keypair-default` | per project |
 | Cluster kubeconfig | `{cluster}-cp-admin-kubeconfig` | data key: `admin.conf` (external URL) |
 | VM network | `{ns}/default` | `shalb-docs/default` |

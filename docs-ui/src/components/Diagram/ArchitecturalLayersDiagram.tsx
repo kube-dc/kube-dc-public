@@ -81,7 +81,7 @@ export default function ArchitecturalLayersDiagram(): React.JSX.Element {
 
       <DiagramNode detail={["Kube-OVN · Multus", "Envoy Gateway"]} height={78} icon={NetworkIcon} title="Networking" width={220} x={60} y={480} />
       <DiagramNode detail="KubeVirt · CDI" height={78} icon={ComputeIcon} title="Compute" width={220} x={310} y={480} />
-      <DiagramNode detail={["CSI · Rook Ceph", "managed databases"]} height={78} icon={DataServiceIcon} title="Data services" width={220} x={560} y={480} />
+      <DiagramNode detail={["CSI · Rook Ceph", "managed services"]} height={78} icon={DataServiceIcon} title="Data services" width={220} x={560} y={480} />
       <DiagramNode detail={["backing namespace", "Organization + Project"]} height={82} title="Project workloads" width={220} x={180} y={600} />
       <DiagramNode detail={["separate API", "authorization · CNI"]} height={82} icon={KubernetesIcon} title="Managed Clusters" width={300} x={450} y={600} />
 

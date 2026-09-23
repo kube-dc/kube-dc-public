@@ -168,23 +168,21 @@ Acceptance must test both boundaries:
   Set `hosting.dnsNames: [s3.${DOMAIN}]` (+ `advertiseEndpoint`) on the
   `CephObjectStore`, and add `*.s3.${DOMAIN}` to the S3 HTTPRoute hostnames.
   otherwise S3 clients get 301/404 and CNPG WAL archiving fails.
-- **CNPG/barman cannot verify a private CA** (boto bundles its own certs and
-  `barmanObjectStore` exposes no CA knob from the KdcDatabase layer): add a
-  **plain-HTTP S3 route** on the Gateway's `:80` listener and set the
-  databases' `spec.backup.s3Endpoint: http://s3.${DOMAIN}`. Traffic stays
-  on-cluster through the vpc-dns→ClusterIP mapping. **Pair it with an Envoy
-  Gateway `SecurityPolicy`** that restricts the route to RFC1918 client CIDRs.
-  the `:80` listener is otherwise reachable by anything that can reach the
-  Gateway. *Durable fix (tracked): endpointCA support in db-manager.*
+- **Managed service backups require verified HTTPS.** Configure the plan's
+  `backup.objectStoreEndpoint` with an HTTPS endpoint reachable from the data plane.
+  Test certificate trust from every backup and recovery client before you publish the plan.
+  A controller trust bundle does not automatically configure engine tools such as barman.
+  If a family cannot use the private CA, provide an endpoint it can verify or keep that plan unpublished.
+  Do not substitute a public HTTP route or disable certificate verification.
 - **OpenBao OIDC discovery**: OpenBao verifies the Keycloak discovery URL with
   its *own* trust store; the manager forwards its private-CA bundle as
   `oidc_discovery_ca_pem` automatically (from `SSL_CERT_DIR` extras). Without
   it every Organization sync logs `400 error checking oidc discovery URL`.
 - `OPENBAO_URL=http://openbao.openbao.svc:8200` (the internal service). The
   public `bao.${DOMAIN}` host is generally unreachable from
-  `external-secrets-system` and from db-manager's engine registration;
+  `external-secrets-system` and from managed service controllers;
   without this, SecretStores show `unable to create client` and
-  DatabaseCredentialPolicies stay `engine-not-ready`.
+  credential delivery can fail.
 
 ## 5. Managed Cluster add-ons
 
@@ -255,13 +253,15 @@ watch over VNC.
 
 ## 9. Verification checklist
 
+Set `CA_BUNDLE` to the trusted CA bundle file before these checks:
+
 ```bash
 # tenant pod → platform endpoints (all must answer, not timeout):
-curl -sk https://login.${DOMAIN}/            # 30x
-curl -sk https://s3.${DOMAIN}/               # 200
-curl -sk https://kube-api.${DOMAIN}:6443/livez  # 401
+curl --cacert "$CA_BUNDLE" -sS https://login.${DOMAIN}/            # 30x
+curl --cacert "$CA_BUNDLE" -sS https://s3.${DOMAIN}/               # 200
+curl --cacert "$CA_BUNDLE" -sS https://kube-api.${DOMAIN}:6443/livez  # 401
 # managed cluster: node Ready, csr-approver Running, coredns 2/2, CSI DS ready
-# DB: KdcDatabase Ready, DBCP Ready=True, CNPG ContinuousArchiving=True
+# Services: ManagedService Ready, ServiceBinding Ready, backup and restore verified
 # goldens: kubectl -n golden-images get volumesnapshot (READYTOUSE=true)
 # spegel: ss -tln | grep :5001 on servers
 ```

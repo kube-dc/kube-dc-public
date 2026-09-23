@@ -15,8 +15,8 @@ creation.
 
 ## Names to use
 
-Class names are the same on every installation. Plan names are the provider's
-choice; installations that publish the standard shared plans use
+Class and plan names come from the provider catalog.
+The following names are examples from the standard catalog; installations that publish the standard shared plans use
 `<family>-development` and `<family>-production`, which the console shows as
 the Dev and Production tiers.
 
@@ -29,7 +29,7 @@ the Dev and Production tiers.
 | Valkey | `valkey` (single node), `valkey-ha` (Sentinel) | `valkey-development`, `valkey-production` |
 | Kafka | `kafka` | `kafka-development`, `kafka-production` |
 
-The only connectivity class today is `tenant-native`. It publishes the service
+The standard shared plans use `tenant-native`. It publishes the service
 as internal Services inside your Project's network. Workloads in the same
 Project connect to them directly. It allocates no public address.
 
@@ -46,8 +46,7 @@ contents can differ between Kube-DC installations.
 
 ## What a plan decides
 
-A plan is revisioned, and its values differ between installations. The tables
-below list the plan fields that decide what your service may do. Where a
+A plan is revisioned, and its values differ between installations. The following tables list the plan fields that decide what your service may do. Where a
 feature depends on a field, your plan must allow it before you can use it. Ask
 your provider for the current values of your plan.
 
@@ -65,7 +64,7 @@ your provider for the current values of your plan.
 | `topology.minInstances`, `topology.maxInstances` | The range allowed for `spec.topology.instances` and for `Scale` operations |
 | `topology.defaultInstances` | The instance count when you omit `spec.topology.instances` |
 | `topology.minShards`, `topology.maxShards`, `topology.defaultShards`, `topology.minReplicasPerShard`, `topology.maxReplicasPerShard`, `topology.defaultReplicasPerShard` | The shard shape of a sharded family (ClickHouse), used with `spec.topology.shards` and `spec.topology.replicasPerShard` instead of `instances`. A plan declares exactly one of the two shapes |
-| `topology.ha` | When `true`, the plan provides automatic failover for services with two or more instances |
+| `topology.ha` | Declares a high-availability topology. The family defines member, quorum, and failover requirements |
 | `maxInstancesPerProject` | How many services on this plan one Project may have. `0` means no limit |
 
 ### Storage
@@ -119,7 +118,7 @@ offers.
 
 | Plan field | Effect |
 |------------|--------|
-| `backup.enabled` | Whether the plan provides scheduled backups and continuous WAL archiving |
+| `backup.enabled` | Enables the family's backup mechanism. Continuous WAL archiving applies to PostgreSQL, not every family |
 | `backup.schedule`, `backup.retentionDays` | The schedule and retention a service inherits when it does not set its own |
 | `backup.minRetentionDays`, `backup.maxRetentionDays` | The range allowed for `parameters.backup.retentionDays`. The defaults are 1 and 365 days |
 | `backup.minScheduleIntervalMinutes` | The minimum spacing allowed between scheduled backups in `parameters.backup.schedule`. The default is 60 minutes |

@@ -7,15 +7,6 @@ description: Block, shared and S3-compatible object storage from a Kube-DC platf
 
 import {StorageServiceDiagram} from '@site/src/components/Diagram/DatasheetDiagrams';
 
-# DRAFT — Kube-DC Function Datasheet: Storage and object storage
-
-> 🚧 **Working draft — not for distribution.** Companion to the
-> [platform datasheet](draft-artifact-a-datasheet.md). Claims trace to the
-> [claim ledger](claim-ledger-a-cloud.md) and published product docs;
-> publication gates per [datasheet-plan.md](datasheet-plan.md).
-
----
-
 # Storage and object storage
 
 **Provide block, shared, and S3-compatible storage through standard Kubernetes
@@ -114,14 +105,3 @@ platform; it is not a backup. The protection stack is layered:
 | Backup of application data | S3 + snapshot APIs provided | ✅ owns |
 
 ---
-
-## Draft apparatus (stripped at publication)
-
-Evidence: RWX shared volumes and OBC bucket contract verified in the
-application-stack E2E (ledger row 7); instant clones and golden-image
-catalog verified live (row 15); platform backups landing in project S3
-verified (rows 19, 27). Deliberately not claimed: durability figures,
-replication factors, aggregate capacity guarantees — all
-deployment-defined on the buyer's hardware (the per-org object-storage
-quota model does not bound aggregate capacity; sizing guidance belongs to
-the architecture review, not the datasheet).

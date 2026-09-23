@@ -147,8 +147,8 @@ Production plan, 7 on Dev). A backup covers the application database only:
 anything you create in another database is not archived and is deleted with
 the service. There is no point-in-time recovery and no restore in place.
 
-Restore into a new service with a `RestoreToNew` operation or a new
-`ManagedService` with `spec.restoreFrom`; see
+Restore into a new service with a `RestoreToNew` operation.
+Select an exact backup record and a compatible target plan. See
 [Restore into a new service](postgresql-backup-restore.md#restore-into-a-new-service).
 The new service owns its own Keeper, so its tables never rejoin the source's
 replication group.

@@ -1,164 +1,104 @@
 ---
-title: Managed databases
+title: Managed services
 slug: managed-databases
 hide_title: true
-description: Managed PostgreSQL and MariaDB provisioning, access, backups, restore and tenant responsibilities on Kube-DC.
+description: An extensible service catalog with shared provisioning, access, operation, and recovery controls.
 ---
 
 import DatasheetFigure from '@site/src/components/DatasheetFigure';
-import {ManagedDatabaseProtectionDiagram} from '@site/src/components/Diagram/DatasheetDiagrams';
+import {ManagedServicesModelDiagram, ManagedServicesOperationDiagram} from '@site/src/components/Diagram/ManagedServicesDiagrams';
 
-# DRAFT — Kube-DC Function Datasheet: Managed databases
+# Managed services
 
-> 🚧 **Working draft — not for distribution.** Companion to the
-> [platform datasheet](draft-artifact-a-datasheet.md). Claims trace to the
-> [claim ledger](claim-ledger-a-cloud.md) and published product docs;
-> publication gates per [datasheet-plan.md](datasheet-plan.md).
+Kube-DC gives platform teams one control model for services that they operate for tenants.
+Teams select a service and a published plan. The platform provisions the service and reports its state.
+Applications receive connection details through Kubernetes Secrets.
 
----
+## Design
 
-# Managed databases
+The design separates provider policy from service implementation:
 
-**Teams provision PostgreSQL and MariaDB without operating the database
-engine themselves.**
+- A **class** defines a service family's parameters, endpoints, credentials, and supported operations.
+- A **plan** defines versions, capacity limits, topology, backups, approval rules, and support responsibilities.
+- A **hub** checks requests, selects placement, and signs instructions.
+- A **runner** applies those instructions through a family adapter and reports the result.
 
-A tenant creates a database from a short manifest or a console form. Platform
-controllers manage the engine, replication, and backups. The tenant receives a
-stable endpoint and a Kubernetes Secret containing the credentials.
+The console and Kubernetes API use the same resources.
+Each service pins catalog revisions. A catalog edit does not automatically move existing services to another revision.
 
-## Engines and provisioning
+<ManagedServicesModelDiagram />
 
-PostgreSQL and MariaDB, in the versions published by the platform's
-catalog. A database is one resource:
+## An extensible catalog
 
-```yaml
-apiVersion: db.kube-dc.com/v1alpha1
-kind: KdcDatabase
-metadata:
-  name: orders
-  namespace: acme-shop
-spec:
-  engine: postgresql
-  version: "16"
-  databaseName: orders
-  username: app
-  cpu: "1"
-  memory: 2Gi
-  storage: 20Gi
-  replicas: 2
-  backup:
-    enabled: true
-    schedule: "0 2 * * *"
-    retentionDays: 7
-```
+Service families can cover relational databases, caches, event streaming, analytics, and applications.
+Documented examples include PostgreSQL, MySQL, MariaDB, ClickHouse, Valkey, and Kafka.
+These examples are not a fixed product list.
 
-The platform provisions the engine, storage and credentials from the
-manifest, exposing a stable in-project endpoint (`orders-rw.<project>.svc`
-for PostgreSQL; a primary-routing endpoint for MariaDB) and an
-auto-generated credentials Secret.
+Providers add a family integration, qualify it on their infrastructure, and publish its plans.
+A service name alone does not imply availability. The installation's published catalog defines what tenants can select.
+Each integration declares its own operations and recovery limits.
 
-## Topology and failover
+## Operations
 
-- **1 replica** — standalone instance.
-- **2+ replicas** — engine-level replication: PostgreSQL streaming
-  replication; MariaDB primary–replica replication. With sufficient
-  independent failure domains and capacity, instances schedule across
-  separate hosts, and after an eligible primary failure the operator
-  promotes an available replica automatically — recovery behavior depends
-  on engine state and deployment topology, and the read-write endpoint
-  follows the current primary.
+The shared operation model provides a consistent request and result record:
 
-<details data-github-only>
-<summary>Diagram source for GitHub</summary>
+| Area | Operations, where supported |
+|---|---|
+| Capacity | Scale members, resize CPU and memory, and expand storage |
+| Configuration | Change supported parameters and upgrade engine versions |
+| Access | Deliver credentials, rotate passwords, and set rotation policies |
+| Availability | Switch the primary, recover from failure, hibernate, and resume |
+| Recovery | Take backups, restore into another service, and restore in place |
+| Family-specific tasks | Run actions defined by the service integration |
 
-```mermaid
-flowchart LR
-  APP["Application"] -- "stable RW endpoint" --> DBC
-  subgraph DBC["Database cluster"]
-    P[("Primary")] -- "replication" --> R[("Replica —<br/>separate failure domain<br/>where available")]
-    P -. "on eligible failure:<br/>automatic promotion" .-> R
-  end
-  DBC -- "scheduled + on-demand backups;<br/>envelope-encrypted when a<br/>KMS key is configured" --> S3[("Project S3")]
-  S3 -- "restore — new name<br/>or in place" --> NEW[("Restored database")]
-```
+Plans control which operations tenants can request.
+The platform checks identity, entitlement, capacity, approval, and maintenance conditions before execution.
+Immutable operation records retain progress and results.
 
-</details>
-
-<ManagedDatabaseProtectionDiagram />
-
-A practical note for multi-replica databases: the resource reports `Ready`
-when the service is available; check instance readiness before assuming
-full redundancy after creation or maintenance.
-
-## Credentials
-
-- Connection details and passwords are generated by the platform and
-  delivered as Kubernetes Secrets — applications consume them as
-  environment variables or mounted files; nothing is typed or emailed.
-- **Credential-rotation policies** rotate static passwords on a schedule
-  and project the current credential into a stable Secret your workloads
-  reference.
-
-## Backups
-
-- **Scheduled backups** per database — cron schedule and retention days in
-  the manifest — written to the project's S3-compatible bucket.
-- **On-demand snapshots** any time, from the console or by creating a
-  backup resource.
-- **Per-database encryption**: reference a project KMS key and backups are
-  envelope-encrypted with a key that never leaves the platform's secrets
-  backend.
-- For PostgreSQL, point-in-time recovery is available within the backup
-  window where continuous archiving is enabled.
+<ManagedServicesOperationDiagram />
 
 <DatasheetFigure
-  alt="Managed PostgreSQL Backups tab showing a daily schedule, seven-day retention, S3 destination, manual backup action and completed backup history"
-  caption="Database protection is visible and operable from the service itself: schedule, retention, destination, on-demand backup and completion history share one view."
-  src={require('./img/S-08.png').default}
+  alt="Managed service Overview with connection details, metrics, bindings, and available operations"
+  caption="One service page presents access, observed state, and plan actions. The screenshot uses demonstration data from the current UI."
+  src={require('../cloud/images/managed-services-overview.png').default}
 />
 
-## Restore
+## Advantages
 
-Two documented paths:
+The common design provides these benefits:
 
-- **Restore into a new database** (recommended): create a new
-  `KdcDatabase` with `spec.restoreFrom` naming the backup — verify the
-  recovered data, then switch applications over. The source database keeps
-  running.
-- **In-place restore** (destructive): trigger by annotation on the
-  existing database; the platform re-bootstraps it from the chosen backup.
-  Plan a maintenance window — current data is replaced.
+- **Consistent control:** teams use the same resources for different service families.
+- **Provider policy:** plans limit capacity and operations before tenants request changes.
+- **Repeatable configuration:** teams can review manifests and apply them through GitOps.
+- **Controlled change:** approval rules, maintenance windows, and revision pins limit unintended changes.
+- **Visible results:** service conditions and operation records distinguish accepted requests from completed work.
+- **Catalog growth:** providers can add integrations without a separate tenant control model for each service.
 
-## Configuration and lifecycle
+## Data protection and access
 
-- Resources (CPU, memory) and engine parameters adjustable per database;
-  some changes restart instances or trigger failover — applications should
-  reconnect and retry.
-- Storage grows online (increase only).
-- Version changes are maintenance operations: verify a current backup
-  first, then move.
+Backup support depends on the family and plan.
+PostgreSQL supports base backups and point-in-time recovery where configured.
+MySQL, MariaDB, ClickHouse, and Valkey use their documented archive formats.
+Kafka metadata exports do not contain message data.
+
+Replication does not replace a backup.
+High availability also depends on independent failure domains, available capacity, and the selected topology.
+Tenants must test restores and arrange separate copies when site recovery is required.
+
+A binding delivers one credential role into the Project.
+Project Secret permissions control who can read it.
+Applications must reload credentials after rotation and reconnect after service interruptions.
 
 ## Responsibilities
 
-| Concern | Your platform team | Tenant |
-|---|---|---|
-| Engine operation, replication, failover | ✅ (controllers) | — |
-| Backup execution and storage | Controllers execute scheduled backups | ✅ schedule/retention choice, on-demand runs |
-| Restore | Mechanism provided | ✅ initiates, verifies recovered data |
-| Credentials delivery and rotation | ✅ | ✅ application usage hygiene |
-| Schema, queries, application-level integrity | — | ✅ |
-| Off-platform backup copies | S3 endpoints provided | ✅ via enterprise backup |
+Responsibilities remain explicit for each plan:
 
----
+| Platform team | Tenant team |
+|---|---|
+| Publish qualified integrations and plans | Select a plan for the workload |
+| Operate controllers, engines, and capacity | Manage application data and client behavior |
+| Execute supported backups and maintenance | Set allowed policies and verify recovery |
+| Enforce access and approval controls | Assign Project roles and protect delivered credentials |
 
-## Draft apparatus (stripped at publication)
-
-Evidence: cross-host replication and automatic failover verified live for
-both engines (ledger row 18); backup + restore-to-new-name verified
-including the generated credentials Secret (row 19, re-verified
-2026-08-07); KMS backup encryption verified (row 20); readiness semantics
-row 21; in-place restore and PITR per published docs and engine mechanisms
-(CNPG recovery); credential-rotation policies per the published
-DatabaseCredentialPolicy documentation and CLI. Not claimed: failover
-timings as commitments, durability figures (deployment-dependent), HA
-beyond engine replication, failover as an unconditional outcome.
+For procedures, see [Managed services](/cloud/managed-services).
+For installation and catalog design, see [Managed services architecture](/platform/managed-services-overview).

@@ -109,7 +109,7 @@ kubectl get managedservice orders-db -n my-project -o jsonpath='{.metadata.uid}{
 | `spec.retry` | No | Request one new attempt for a failed declarative change, naming its attempt ID from status |
 | `spec.deletionPolicy` | No | What deleting the `ManagedService` does to the engine and its data. Default `Retain`. Must be one of the plan's `allowedDeletionPolicies` |
 | `spec.deletionProtection` | No | While `true`, deleting the `ManagedService` is refused. Set it to `false` in a separate update before you delete |
-| `spec.restoreFrom` | No | Creates the service from a backup of another service. See [Backups and restore](postgresql-backup-restore.md#restore-into-a-new-service). Cannot change |
+| `spec.restoreFrom` | Platform-generated | The platform sets this field for a catalog-backed `RestoreToNew` operation. See [Backups and restore](postgresql-backup-restore.md#restore-into-a-new-service) |
 
 The sizing fields used to live under `spec.parameters`. Manifests that still
 carry `parameters.cpu`, `parameters.memory`, `parameters.instances`,

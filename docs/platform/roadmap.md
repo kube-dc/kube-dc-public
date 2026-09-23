@@ -14,7 +14,7 @@ in your Fleet repository. A roadmap entry is not an API or support contract.
 | Organizations and Projects | Available | Identity, Project RBAC, quota hierarchy, and isolated Project VPCs |
 | Virtual machines | Available | Linux and Windows VM lifecycle, images, console access, and storage profiles |
 | Managed Clusters | Available | Kamaji control planes, supported worker providers, upgrades, etcd backup, and optional etcd encryption |
-| Managed databases | Available | PostgreSQL and MariaDB workflows documented in the cloud guide |
+| Managed services | Available by installation | Extensible catalog with family-specific operations and recovery. See the [managed services guide](/cloud/managed-services) |
 | Object storage | Available when configured | Per-Project S3-compatible buckets backed by Rook Ceph |
 | External networking | Available when configured | Cloud/public EIPs, FIPs, LoadBalancer Services, Gateway routes, and delegated datacenter VLANs |
 | Observability | Available when configured | Organization views over Project metrics, logs, alerts, and dashboards |

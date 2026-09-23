@@ -31,7 +31,7 @@ flowchart TB
   subgraph API["Kubernetes API"]
     ProductCRDs["Organization and Project CRDs<br/>Organization, Project, OrganizationGroup"]
     NetworkCRDs["Network CRDs<br/>EIp, FIp"]
-    SecurityCRDs["Security CRDs<br/>ManagedSecret, ManagedCertificate,<br/>KMSKey, DatabaseCredentialPolicy"]
+    SecurityCRDs["Security CRDs<br/>ManagedSecret, ManagedCertificate,<br/>KMSKey"]
     CoreResources["Core resources<br/>Service, Secret, ConfigMap, Namespace"]
   end
 
@@ -209,7 +209,7 @@ flowchart TB
     MS["ManagedSecret"]
     MC["ManagedCertificate"]
     KMS["KMSKey"]
-    DCP["DatabaseCredentialPolicy"]
+    DCP["ServiceCredentialPolicy"]
     AppSecret["Projected Kubernetes Secret"]
     Certificate["cert-manager Certificate"]
   end
@@ -218,14 +218,14 @@ flowchart TB
     SecretCtl["Secret sync"]
     CertCtl["Certificate sync"]
     KMSCtl["KMS key sync"]
-    DBPolicyCtl["Database credential policy sync"]
+    DBPolicyCtl["Managed services hub"]
     StatusCtl["Project status aggregation"]
   end
 
   subgraph Backends["Security backends"]
     Bao["OpenBao"]
     CM["cert-manager"]
-    DB["Database manager"]
+    DB["Service runner"]
   end
 
   MS --> SecretCtl --> Bao
@@ -235,14 +235,12 @@ flowchart TB
   CertCtl --> CM --> Certificate
 
   KMS --> KMSCtl --> Bao
-  DCP --> DBPolicyCtl --> Bao
-  DCP --> DB
+  DCP --> DBPolicyCtl --> DB
   DBPolicyCtl --> AppSecret
 
   SecretCtl --> StatusCtl
   CertCtl --> StatusCtl
   KMSCtl --> StatusCtl
-  DBPolicyCtl --> StatusCtl
 ```
 
 </details>
