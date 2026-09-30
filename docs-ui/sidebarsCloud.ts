@@ -171,6 +171,11 @@ const sidebars: SidebarsConfig = {
         },
         {
           type: 'doc',
+          id: 'managed-services-github-runners',
+          label: 'GitHub Actions runners',
+        },
+        {
+          type: 'doc',
           id: 'managed-services-console',
           label: 'Manage services in the console',
         },

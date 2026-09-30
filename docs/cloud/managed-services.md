@@ -23,6 +23,7 @@ The following families have guides. These examples do not define the complete ca
 | [ClickHouse](managed-services-clickhouse.md) | Analytical database | Verified native archives. Restore creates a new service |
 | [Valkey](managed-services-valkey.md) | Cache and key-value store | RDB archives on backup-enabled plans. Restore creates a new service |
 | [Kafka](managed-services-kafka.md) | Event streaming | Metadata export only. Message protection depends on replication and external copies |
+| [GitHub Actions runners](managed-services-github-runners.md) | Ephemeral CI workers and Dockerfile builds | GitHub keeps workflow history and artifacts; workspaces are temporary |
 
 Read the published plan before you select a service.
 Check its capacity, topology, operations, backup policy, and support responsibilities.
