@@ -18,6 +18,7 @@ run the management cluster.
 | Publish and operate a managed services catalog | [Managed services overview](managed-services-overview.md), [Enabling managed services](managed-services-enable.md), [Publishing the catalog](managed-services-catalog.md), [Operating the service](managed-services-operations.md) |
 | Review platform controls and trust boundaries | [Security model](security-model.md) |
 | Operate metrics, logs, alerts, and dashboards | [Observability](observability.md) |
+| Send operator alerts to Slack and Opsgenie | [Set up alert notifications with Fleet](fleet-alert-notifications.md) |
 | Provision and bill organizations from a hosting portal | [Provisioning API for hosting providers](platform-api.md) |
 
 ## Product vocabulary

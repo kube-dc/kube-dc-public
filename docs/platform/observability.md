@@ -198,6 +198,11 @@ re-provision.
 
 ## 4. Alert rules
 
+To connect platform alerts to Slack and Opsgenie, follow
+[Set up alert notifications with Fleet](fleet-alert-notifications.md).
+That guide covers per-installation configuration, console activation,
+delivery tests, and rollback for the management cluster's Alertmanager.
+
 ### 4.1 Where rules live
 
 | Rule type | Storage location | Who manages |
