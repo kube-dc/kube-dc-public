@@ -107,6 +107,7 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       items: [
         'observability',
+        'fleet-alert-notifications',
         'upgrading-management-cluster',
         'billing-plans-configuration',
         'platform-api',
