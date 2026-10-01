@@ -193,8 +193,9 @@ reduce its temporary layers or contact support. Jobs have a 60-minute lifetime.
 shell-only pool to Buildx, let active jobs finish, delete the old pool with
 normal draining, retain its OpenBao ManagedSecret, and create a Buildx pool.
 Copy the new `runs-on` target into affected workflows and run a test job before
-resuming regular builds. A project may have one pool, so this replacement
-interrupts that pool. If the replacement fails, create a shell-only pool again
+resuming regular builds. Concurrent pools in one Project are not yet a
+qualified preview configuration, so this replacement interrupts the old pool.
+If the replacement fails, create a shell-only pool again
 and use its newly reported target, or temporarily route the workflow to another
 runner you control.
 
@@ -210,12 +211,14 @@ runner you control.
 | `docker build` or Compose fails | Use `docker buildx build --push` for a Dockerfile, or choose a different runtime for Compose/services. |
 | Metrics show no current CPU | An idle pool has no worker pod to measure. Check the last observation and historical graph; a stale or unavailable message points to collection trouble. |
 
-To delete a declarative pool, set `deletionProtection: false`, apply the
-change, then confirm and delete the ManagedService:
+To delete a declarative pool, confirm the specific service, clear deletion
+protection, then delete the ManagedService:
 
 ```sh
 kubectl annotate managedservice github-ci -n PROJECT_NAMESPACE \
   services.kube-dc.com/confirm-delete=github-ci --overwrite
+kubectl patch managedservice github-ci -n PROJECT_NAMESPACE --type=merge \
+  -p '{"spec":{"deletionProtection":false}}'
 kubectl delete managedservice github-ci -n PROJECT_NAMESPACE
 ```
 
