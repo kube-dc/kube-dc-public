@@ -6,6 +6,10 @@ runs each accepted job in a temporary worker pod and stores the runner
 registration credential in your project's OpenBao secret store.
 
 The published `github-runner-preview` plan has one concurrent worker slot.
+Every Cloud project can find the offer in the catalog. If its CPU or memory
+quota cannot host the minimum worker and builder, the card shows the
+requirements and a support path; creation becomes available after the project
+qualifies.
 Kube-DC support owns this no-charge preview. Usage-based billing and paid
 service terms will be announced only after measurement and pricing are
 qualified. If creation or a job remains stuck, use your account's support
@@ -56,8 +60,9 @@ has not passed runner admission. Review its quota and network/secret
 prerequisites, then ask [Kube-DC support](mailto:support@kube-dc.com) to help
 qualify it. The card does not permit creating a pool until admission succeeds.
 
-Zero worker pods while idle is expected. The Metrics page keeps recent CPU and
-memory history. It does not report GitHub queue length or job result.
+Zero worker pods while idle is expected. During a job, Metrics shows the
+running worker count and current CPU/memory samples; it keeps recent history
+after the pod exits. It does not report GitHub queue length or job result.
 
 ## Build and push a Dockerfile
 
@@ -198,6 +203,7 @@ runner you control.
 | Symptom | Check |
 | --- | --- |
 | Service waits for a credential | Open **Secrets** and check synchronization and token repository access. |
+| Service reports a GitHub repository verification refusal | Check that the repository is private and the fine-grained token targets that exact repository, has **Administration: Read and write**, has not expired, and has any required organization approval. Save a corrected token in the same ManagedSecret; the controller retries. |
 | Job remains queued | Match `runs-on` to **Connect**, check **Ready**, available worker slots, and starting-worker events. GitHub owns the actual queue. |
 | Service reports **Capacity unavailable** | A worker pod could not start. Check both project and organization CPU/memory quota against the pool's Settings reservation. Reduce worker size or ask Kube-DC support to review available capacity, then rerun the GitHub job. |
 | Buildx fails to start | Check project and organization quota, builder image pull, and temporary disk; compare the Settings reservation with the available limits. |
