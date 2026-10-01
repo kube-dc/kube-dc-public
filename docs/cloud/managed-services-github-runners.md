@@ -8,8 +8,10 @@ registration credential in your project's OpenBao secret store.
 The published `github-runner-preview` plan has one concurrent worker slot.
 Kube-DC support owns this no-charge preview. Usage-based billing and paid
 service terms will be announced only after measurement and pricing are
-qualified. Contact Kube-DC support through your usual support channel if
-creation or a job remains stuck.
+qualified. If creation or a job remains stuck, use your account's support
+channel or email [support@kube-dc.com](mailto:support@kube-dc.com). Include
+the Project and runner name, approximate time, and sanitized status or events;
+never send the GitHub token.
 New pools include a temporary Buildx builder for Dockerfile builds. Shell jobs
 also run on that pool. Docker Compose, Docker daemon commands, job/service
 containers, persistent workspaces, and private worker images are unavailable.
