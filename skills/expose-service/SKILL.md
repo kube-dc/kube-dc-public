@@ -130,6 +130,25 @@ A `public` address is internet-routable subject to firewall policy. A
 `cloud` address is reachable only from networks configured by the provider.
 The availability of either pool is installation-specific.
 
+### Client Source Restrictions
+
+On an installation with qualified direct-Service source-range enforcement,
+restrict an EIP-backed LoadBalancer through `spec.loadBalancerSourceRanges`.
+Omitting this field or using `[]` adds no source restriction. A `/32` selects
+one client address; `0.0.0.0/0` explicitly permits every IPv4 source.
+
+The Kube-DC controller accepts at most 32 IPv4 CIDRs, validates every entry,
+and normalizes host bits and duplicates. Use the actual source addresses after
+any client-side NAT. Verify access from both an allowed and a denied source;
+an allocated IP alone does not prove enforcement.
+
+Do not infer Gateway client filtering from a Service's source ranges. Envoy
+proxies the connection and can use a different backend path. Controller
+enforcement for `network.kube-dc.com/allowed-cidrs` exists in source, but is
+not yet a qualified installation capability. Do not recommend or apply it
+until the installation supports its admission, enforcement, and readiness
+contract.
+
 See [eip-loadbalancer-examples.yaml](eip-loadbalancer-examples.yaml).
 
 ## Annotation Reference

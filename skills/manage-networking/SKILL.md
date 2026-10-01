@@ -77,6 +77,14 @@ required EIP. Do not create a second EIP for the same FIP. Alternatively, an
 advanced manifest can reference an existing EIP with `spec.eip`, but
 `spec.eip` and `spec.externalNetworkType` are mutually exclusive.
 
+FIP has no supported per-client CIDR field in this implementation. It adds no
+source restriction by default; existing network and workload firewalls still
+apply. Do not set the reserved future `spec.allowedCIDRs` field or assume that
+storing an annotation filters FIP traffic. For a workload that needs a supported
+source-restricted external endpoint, evaluate an EIP-backed Service with
+`spec.loadBalancerSourceRanges` on a qualified installation, preserving the
+FIP/LoadBalancer target-conflict rules.
+
 ## Inspect Status
 
 ```bash
