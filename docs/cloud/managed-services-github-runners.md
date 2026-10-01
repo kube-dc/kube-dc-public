@@ -193,17 +193,17 @@ reduce its temporary layers or contact support. Jobs have a 60-minute lifetime.
 shell-only pool to Buildx, let active jobs finish, delete the old pool with
 normal draining, retain its OpenBao ManagedSecret, and create a Buildx pool.
 Copy the new `runs-on` target into affected workflows and run a test job before
-resuming regular builds. Concurrent pools in one Project are not yet a
-qualified preview configuration, so this replacement interrupts the old pool.
-If the replacement fails, create a shell-only pool again
-and use its newly reported target, or temporarily route the workflow to another
-runner you control.
+resuming regular builds. The preview plan permits one pool per Project; a
+replacement can be created only after the old service finishes deleting.
+If the replacement fails, create a shell-only pool again and use its newly
+reported target, or temporarily route the workflow to another runner you control.
 
 ## Troubleshoot and delete
 
 | Symptom | Check |
 | --- | --- |
 | Service waits for a credential | Open **Secrets** and check synchronization and token repository access. |
+| A second pool reports `PlanQuotaExceeded` | Wait for the old pool to finish draining and deleting, then retry the new pool. The preview permits one pool per Project. |
 | Service reports a GitHub repository verification refusal | Check that the repository is private and the fine-grained token targets that exact repository, has **Administration: Read and write**, has not expired, and has any required organization approval. Save a corrected token in the same ManagedSecret; the controller retries. |
 | Job remains queued | Match `runs-on` to **Connect**, check **Ready**, available worker slots, and starting-worker events. GitHub owns the actual queue. |
 | Service reports **Capacity unavailable** | A worker pod could not start. Check both project and organization CPU/memory quota against the pool's Settings reservation. Reduce worker size or ask Kube-DC support to review available capacity, then rerun the GitHub job. |
