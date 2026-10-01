@@ -30,8 +30,11 @@ The pool does not supply a Kubernetes or application credential to jobs.
 - Check project and organization quota: the default 1 vCPU/2 GiB worker profile reserves
   3.2 vCPU and 6.25 GiB for the active/replacement workers, builders, and
   listener headroom. A Buildx builder requests 500m CPU/1 GiB per job pod;
-  the reservation includes a second builder for replacement. Worker sizing
-  changes this total.
+  the reservation includes a second builder for replacement. The smallest
+  profile needs at least 2.2 vCPU/4.25 GiB of request quota, 2.7 vCPU/3.25 GiB
+  of limit quota, and five Pod slots. Worker sizing changes the reservation.
+  A job can also wait for free quota when other workloads use the Project or
+  Organization allowance.
 
 ## Create a pool in the console
 
@@ -47,6 +50,11 @@ The pool does not supply a Kubernetes or application credential to jobs.
    open **Connect** and copy the exact workflow target.
 5. Use the **Run a job** example in a trusted branch. Confirm the job succeeds
    in GitHub and the worker count returns to zero afterward.
+
+If the runner appears as **Unavailable** in the engine catalog, this Project
+has not passed runner admission. Review its quota and network/secret
+prerequisites, then ask [Kube-DC support](mailto:support@kube-dc.com) to help
+qualify it. The card does not permit creating a pool until admission succeeds.
 
 Zero worker pods while idle is expected. The Metrics page keeps recent CPU and
 memory history. It does not report GitHub queue length or job result.
