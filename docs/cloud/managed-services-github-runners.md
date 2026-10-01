@@ -27,7 +27,7 @@ The pool does not supply a Kubernetes or application credential to jobs.
 - Have permission to create managed services and to write/read the selected
   project secret. Authorized project Secret readers and the shared ARC controller
   can use the registration token. It never belongs in a workflow or Git commit.
-- Check the project quota: the default 1 vCPU/2 GiB worker profile reserves
+- Check project and organization quota: the default 1 vCPU/2 GiB worker profile reserves
   3.2 vCPU and 6.25 GiB for the active/replacement workers, builders, and
   listener headroom. A Buildx builder requests 500m CPU/1 GiB per job pod;
   the reservation includes a second builder for replacement. Worker sizing
@@ -191,7 +191,8 @@ runner you control.
 | --- | --- |
 | Service waits for a credential | Open **Secrets** and check synchronization and token repository access. |
 | Job remains queued | Match `runs-on` to **Connect**, check **Ready**, available worker slots, and starting-worker events. GitHub owns the actual queue. |
-| Buildx fails to start | Check project quota, builder image pull, and temporary disk; compare the Settings reservation with your project limit. |
+| Service reports **Capacity unavailable** | A worker pod could not start. Check both project and organization CPU/memory quota against the pool's Settings reservation. Reduce worker size or ask Kube-DC support to review available capacity, then rerun the GitHub job. |
+| Buildx fails to start | Check project and organization quota, builder image pull, and temporary disk; compare the Settings reservation with the available limits. |
 | `docker build` or Compose fails | Use `docker buildx build --push` for a Dockerfile, or choose a different runtime for Compose/services. |
 | Metrics show no current CPU | An idle pool has no worker pod to measure. Check the last observation and historical graph; a stale or unavailable message points to collection trouble. |
 
