@@ -31,14 +31,20 @@ The pool does not supply a Kubernetes or application credential to jobs.
 - Have permission to create managed services and to write/read the selected
   project secret. Authorized project Secret readers and the shared ARC controller
   can use the registration token. It never belongs in a workflow or Git commit.
-- Check project and organization quota: the default 1 vCPU/2 GiB worker profile reserves
-  3.2 vCPU and 6.25 GiB for the active/replacement workers, builders, and
-  listener headroom. A Buildx builder requests 500m CPU/1 GiB per job pod;
-  the reservation includes a second builder for replacement. The smallest
-  profile needs at least 2.2 vCPU/4.25 GiB of request quota, 2.7 vCPU/3.25 GiB
-  of limit quota, and five Pod slots. Worker sizing changes the reservation.
-  A job can also wait for free quota when other workloads use the Project or
-  Organization allowance.
+- Check project and organization quota. A Buildx pool reserves an active worker
+  and a possible replacement before it accepts jobs. The pool reservation also
+  includes listener headroom, which runs outside your Organization quota:
+
+  | Worker size | Pool reservation | Organization worker requests | Organization worker limits | Worker Pod slots |
+  | --- | --- | --- | --- | --- |
+  | 1 vCPU / 2 GiB | 3.2 vCPU / 6.25 GiB | 3 vCPU / 6 GiB | 6 vCPU / 8 GiB | 2 |
+  | 500m CPU / 1 GiB | 2.2 vCPU / 4.25 GiB | 2 vCPU / 4 GiB | 5 vCPU / 6 GiB | 2 |
+
+  Other workloads and idle runner pools also use Organization headroom. If
+  there is not enough room, the service is rejected before placement with
+  `OrganizationQuotaExceeded`. Reduce worker size or ask Kube-DC support to
+  review your quota. A later workload can still consume free quota before a
+  worker starts; in that case, the pool reports **Capacity unavailable**.
 
 ## Create a pool in the console
 
@@ -50,6 +56,10 @@ The pool does not supply a Kubernetes or application credential to jobs.
    worker image by digest. These choices are fixed at creation.
 3. In **Name & access**, enter the service name and private repository owner/name.
    Select a same-project ManagedSecret or enter a token to save in OpenBao.
+   If you just created the Project, wait for its Secrets status to become Ready
+   before saving the token. If the first value write returns an OpenBao 403
+   while the Project role is enrolling, retry the write to the same
+   ManagedSecret; you do not need to create another secret.
 4. Review the configuration and create the service. When it reports **Ready**,
    open **Connect** and copy the exact workflow target.
 5. Use the **Run a job** example in a trusted branch. Confirm the job succeeds
@@ -207,6 +217,7 @@ reported target, or temporarily route the workflow to another runner you control
 | Service reports a GitHub repository verification refusal | Check that the repository is private and the fine-grained token targets that exact repository, has **Administration: Read and write**, has not expired, and has any required organization approval. Save a corrected token in the same ManagedSecret; the controller retries. |
 | Job remains queued | Match `runs-on` to **Connect**, check **Ready**, available worker slots, and starting-worker events. GitHub owns the actual queue. |
 | Service reports **Capacity unavailable** | A worker pod could not start. Check both project and organization CPU/memory quota against the pool's Settings reservation. Reduce worker size or ask Kube-DC support to review available capacity, then rerun the GitHub job. |
+| Service is **Rejected** with `OrganizationQuotaExceeded` | The Organization cannot reserve the active and replacement workers for this pool. Reduce worker size, free capacity held by another pool, or ask Kube-DC support to review quota; then retry creation. |
 | Buildx fails to start | Check project and organization quota, builder image pull, and temporary disk; compare the Settings reservation with the available limits. |
 | `docker build` or Compose fails | Use `docker buildx build --push` for a Dockerfile, or choose a different runtime for Compose/services. |
 | Metrics show no current CPU | An idle pool has no worker pod to measure. Check the last observation and historical graph; a stale or unavailable message points to collection trouble. |
