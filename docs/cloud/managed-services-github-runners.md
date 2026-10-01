@@ -165,8 +165,10 @@ by `sha256` digest. It must run as UID/GID 1001 and provide the ARC runner
 entrypoint/workspace. A Buildx pool's image must also contain Docker CLI and
 the Buildx plugin. Build tools into the image; workflow steps run without sudo.
 Worker workspace is temporary, capped at 2 GiB. The worker container has a
-4 GiB ephemeral-storage limit; the builder has separate limits and temporary
-state. Jobs have a 60-minute lifetime.
+4 GiB ephemeral-storage limit. The Buildx builder has a separate 8 GiB
+temporary state volume and 10 GiB ephemeral-storage limit. Worker CPU/memory
+sizing does not raise those disk limits. If a Dockerfile build exceeds them,
+reduce its temporary layers or contact support. Jobs have a 60-minute lifetime.
 
 `buildMode`, image, and size are fixed at creation. To move an existing
 shell-only pool to Buildx, let active jobs finish, delete the old pool with
