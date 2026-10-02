@@ -127,7 +127,9 @@ Replication in the Production shape applies to tables you declare with a
 `Replicated*` engine, not to every table. Create replicated tables for data
 that must survive the loss of a replica.
 
-## Day-2 operations
+## Supported operations {#day-2-operations}
+
+For request format, approval, and results, see [Request an operation](managed-services-operations.md).
 
 | Operation | What it does |
 |-----------|--------------|
@@ -138,7 +140,7 @@ that must survive the loss of a replica.
 There is no resize, storage expansion, scaling, upgrade or hibernation for
 this family in the current release. Rotation on a schedule uses a
 `ServiceCredentialPolicy`; see
-[Credentials and rotation](postgresql-credentials.md).
+[Credentials and rotation](managed-services-credentials.md).
 
 ## Backups and restore
 
@@ -149,7 +151,7 @@ the service. There is no point-in-time recovery and no restore in place.
 
 Restore into a new service with a `RestoreToNew` operation.
 Select an exact backup record and a compatible target plan. See
-[Restore into a new service](postgresql-backup-restore.md#restore-into-a-new-service).
+[Restore into a new service](managed-services-backup-restore.md#restore-into-a-new-service).
 The new service owns its own Keeper, so its tables never rejoin the source's
 replication group.
 

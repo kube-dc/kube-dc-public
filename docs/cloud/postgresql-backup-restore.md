@@ -1,4 +1,4 @@
-# Backups and restore
+# PostgreSQL backups and recovery
 
 When both the plan's `backup.enabled` and the service's
 `parameters.backup.enabled` are `true`, a PostgreSQL service takes scheduled base
@@ -11,6 +11,9 @@ service, from a selected backup or a point in time.
 Restore a backup into a new service and check your data before you depend on
 it.
 :::
+
+For other families and the shared restore request, see [Back up and restore managed services](managed-services-backup-restore.md).
+This page adds PostgreSQL backup settings, in-place restore, and point-in-time recovery.
 
 ## Before you begin
 
@@ -27,7 +30,7 @@ it.
   its services and their data volumes whatever their deletion settings, without
   a final backup, and also removes the Project's backup history records. Copy
   out any data you need first. See
-  [Delete a Project](managed-services-status-deletion.md#delete-a-project).
+  [Delete a Project](postgresql-deletion.md#delete-a-project).
 
 Throughout this page, replace `my-project` with your Project's backing
 namespace.
@@ -89,7 +92,7 @@ kubectl get managedservice orders-db -n my-project \
 
 Until an edit is applied, these keys show the previous values; confirm that the
 configuration is current as described in
-[Read the status](postgresql-create.md#read-the-status). A `nextScheduledAt`
+[Read the status](managed-services-status.md#read-the-status). A `nextScheduledAt`
 value is not proof that a backup completed; use `status.lastBackup` and the
 backup history for that.
 
@@ -139,7 +142,7 @@ The platform records each observed backup of a service as a `ServiceBackup` in
 the Project. Project roles can read the records but cannot create, change or
 delete them. A record has no owner, so it is kept after its service is deleted.
 Deleting the Project removes the records. See
-[What remains after deletion](managed-services-status-deletion.md#what-remains-after-deletion).
+[What remains after deletion](postgresql-deletion.md#what-remains-after-deletion).
 
 List the backups of a service by its UID:
 
@@ -305,6 +308,58 @@ A dry run checks the request schema. It does not prove that the archive can be r
 For point-in-time recovery, add a whole-second RFC 3339 `spec.restore.targetTime`.
 Omit it to restore the selected backup's consistency point.
 Use [Point-in-time recovery](#point-in-time-recovery) to check the window.
+
+### When a restore into a new service is refused
+
+A refused restore ends with the operation in phase `Rejected`. Read its
+`status.reason` and `status.message`:
+
+| Reason | Message | Meaning |
+|---|---|---|
+| `ParameterSchemaRejected` | `RestoreToNew requires typed spec.restore with exact backupRef and an explicit new target` | `spec.restore` is missing or incomplete, `spec.parameters` is set, or the target has the source's name |
+| `RestoreSourceInvalid` | For example `backup has no unexpired retained recovery authority`, `targetTime is outside this backup's verified recovery window` or `target engine family and version must match the selected backup writer major` | The backup record, its retention, the recovery time or the target's engine release does not fit the request |
+| `PlanNotEntitled` | `target plan does not allow RestoreToNew` | Choose a target plan that allows it |
+| `PlanQuotaExceeded` | `plan <plan> allows <n> instances per project; delete an instance on this plan or restore into another plan` | The Project already has as many services on the target plan as its `maxInstancesPerProject` allows. No target is created |
+| `OperationConflict` | `duplicate idempotencyKey; see <operation>` | An earlier operation used the same `idempotencyKey` |
+
+Every restored service counts toward its plan's `maxInstancesPerProject`, like
+any other service on that plan. A service that was refused before the platform
+placed it, in phase `Rejected`, does not count. You cannot read the plan, so
+ask your provider for its limit, and count the services in the Project:
+
+```bash
+kubectl get managedservices -n <project>
+```
+
+A service can count although you do not see it, or see it as `Rejected`: a
+deleted service while the platform has not finished removing it or has kept its
+engine under `Retain`, and a service that was refused after the platform had
+placed it. If a restore is refused although you count fewer services than the
+limit, ask your provider.
+
+If you restore regularly, for example to test recovery, delete each restored
+service when you have finished with it. A restored service has
+`deletionPolicy: Retain`, which keeps its engine and volumes in the Project.
+To remove them, set `Delete` and the confirmation annotation before you delete
+the service, as described in
+[Delete a service](postgresql-deletion.md#delete-a-service).
+
+A target can also fail after it was created. The operation then ends `Rejected`
+and reports the target's own reason:
+
+| Target phase | Operation message | What the target reports |
+|---|---|---|
+| `Rejected` | `restore target is Rejected: <message>` | `Accepted=False` with the same reason, for example `PlanQuotaExceeded` when another service took the last place on the plan in the meantime. While you do not edit the target, its message ends with `its restore operation has ended: delete this target and restore again` |
+| `Failed` | `restore target is Failed: <message>` | `Placed=False` when the platform could not place the target, otherwise `Reconciled=False` with `RestoreSourceInvalid` |
+
+In both cases the target cannot continue. Delete it, remove the cause, and
+submit a new operation with a new name and `idempotencyKey`.
+
+Earlier releases reported a full plan differently: the operation ended with
+reason `AdapterFailed` and the message `restore target is Rejected`, and the
+target reported `RestoreSourceInvalid` with
+`restore execution claim does not authorize this target`. If you see this pair,
+compare the number of services on the target plan with the plan's limit.
 
 ## Restore in place
 

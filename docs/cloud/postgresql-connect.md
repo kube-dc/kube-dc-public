@@ -1,4 +1,4 @@
-# Connect applications
+# Connect applications to PostgreSQL
 
 An application connects to a PostgreSQL `ManagedService` through a
 `ServiceBinding`. The binding asks the platform to deliver one credential role
@@ -6,10 +6,12 @@ of the service as a Kubernetes `Secret` in your Project. Your workload reads
 the connection details from that `Secret` and connects over TLS with full
 certificate verification.
 
+For the shared binding contract and other services, see [Connect applications to a managed service](managed-services-connect.md).
+
 ## Before you begin
 
 - A PostgreSQL service that is `Ready` with a current configuration. See
-  [Create a PostgreSQL service](postgresql-create.md#read-the-status).
+  [Create a PostgreSQL service](managed-services-status.md#read-the-status).
 - The service UID:
 
   ```bash

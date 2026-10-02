@@ -132,7 +132,9 @@ tables without one are refused by the server. Galera (MariaDB Production)
 switches the write endpoint to another member after a failure; applications
 must reconnect and retry.
 
-## Day-2 operations
+## Supported operations {#day-2-operations}
+
+For request format, approval, and results, see [Request an operation](managed-services-operations.md).
 
 | Operation | MySQL | MariaDB | What it does |
 |-----------|-------|---------|--------------|
@@ -144,8 +146,7 @@ must reconnect and retry.
 
 Every type must be in your plan's `operations.allowed`. Rotation is also
 available on a schedule through a `ServiceCredentialPolicy`; see
-[Credentials and rotation](postgresql-credentials.md), which applies to these
-classes with the roles `owner` and `readonly`.
+[Credentials and rotation](managed-services-credentials.md), using the roles `owner` and `readonly`.
 
 ## Backups and restore
 
@@ -157,7 +158,7 @@ There is no point-in-time recovery and no restore in place.
 
 Restore into a new service with a `RestoreToNew` operation.
 Select an exact backup record and a compatible target plan. See
-[Restore into a new service](postgresql-backup-restore.md#restore-into-a-new-service).
+[Restore into a new service](managed-services-backup-restore.md#restore-into-a-new-service).
 The new service may use a different plan, which is also how you move a MySQL
 service to a larger size.
 
