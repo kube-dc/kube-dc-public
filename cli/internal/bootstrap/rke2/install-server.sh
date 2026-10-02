@@ -798,6 +798,8 @@ kubelet-arg:
   - kube-reserved=${KUBELET_KUBE_RESERVED}
   - eviction-hard=${KUBELET_EVICTION_HARD}
   - max-pods=${KUBELET_MAX_PODS}
+  # Bound tenant processes/threads before they exhaust the node PID table.
+  - pod-max-pids=4096
   # Pin the kubelet default explicitly: the kubepods cgroup stays capped at
   # allocatable, so a future RKE2/kubelet default change cannot silently drop
   # the cap that keeps system-reserved/kube-reserved out of tenant reach.
@@ -863,6 +865,8 @@ kubelet-arg:
   - kube-reserved=${KUBELET_KUBE_RESERVED}
   - eviction-hard=${KUBELET_EVICTION_HARD}
   - max-pods=${KUBELET_MAX_PODS}
+  # Bound tenant processes/threads before they exhaust the node PID table.
+  - pod-max-pids=4096
   # Pin the kubelet default explicitly: the kubepods cgroup stays capped at
   # allocatable, so a future RKE2/kubelet default change cannot silently drop
   # the cap that keeps system-reserved/kube-reserved out of tenant reach.

@@ -467,6 +467,8 @@ kubelet-arg:
   - kube-reserved=${KUBELET_KUBE_RESERVED}
   - eviction-hard=${KUBELET_EVICTION_HARD}
   - max-pods=${KUBELET_MAX_PODS}
+  # Shared by every container/thread in a Pod, including rootless builders.
+  - pod-max-pids=4096
 EOF
 
 log_info "Config written to ${RANCHER_DIR}/config.yaml"
