@@ -68,39 +68,6 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'Managed Clusters',
-      collapsed: true,
-      items: [
-        'provisioning-cluster',
-        'cluster-management',
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Virtual Machines',
-      collapsed: true,
-      items: [
-        'creating-vm',
-        'connecting-vm',
-        'vm-lifecycle',
-        'gpu-vm-guests',
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Networking',
-      collapsed: true,
-      items: [
-        'networking-overview',
-        'public-floating-ips',
-        'private-networking',
-        'routed-networks',
-        'datacenter-vlans',
-        'service-exposure',
-      ],
-    },
-    {
-      type: 'category',
       label: 'Managed Services',
       collapsed: true,
       items: [
@@ -144,6 +111,39 @@ const sidebars: SidebarsConfig = {
         {type: 'doc', id: 'managed-services-clickhouse', label: 'ClickHouse'},
         {type: 'doc', id: 'managed-services-kafka', label: 'Kafka'},
         {type: 'doc', id: 'managed-services-github-runners', label: 'GitHub Actions runners'},
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Managed Clusters',
+      collapsed: true,
+      items: [
+        'provisioning-cluster',
+        'cluster-management',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Virtual Machines',
+      collapsed: true,
+      items: [
+        'creating-vm',
+        'connecting-vm',
+        'vm-lifecycle',
+        'gpu-vm-guests',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Networking',
+      collapsed: true,
+      items: [
+        'networking-overview',
+        'public-floating-ips',
+        'private-networking',
+        'routed-networks',
+        'datacenter-vlans',
+        'service-exposure',
       ],
     },
     {
