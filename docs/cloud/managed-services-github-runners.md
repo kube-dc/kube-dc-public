@@ -144,6 +144,27 @@ kube-dc secrets put github-runner-auth --namespace PROJECT_NAMESPACE \
   --from-file=github_token=TOKEN_FILE
 ```
 
+If the console backend is unavailable, you can write through an already
+authorized OpenBao client. Its policy must permit this secret's path in your
+Project KV mount, not other Projects. Configure `BAO_ADDR` with your verified
+OpenBao URL and `BAO_NAMESPACE` with your Organization name, then authenticate
+that client. For a Project named `dev`, replace `PROJECT_NAMESPACE` and
+`TOKEN_FILE` below:
+
+```sh
+version=$(bao kv put -format=json -mount=kv-dev github-runner-auth \
+  github_token=- < TOKEN_FILE | jq -r '.data.version')
+kubectl annotate managedsecret github-runner-auth -n PROJECT_NAMESPACE \
+  "security.kube-dc.com/value-version=$version" --overwrite
+```
+
+The token travels through standard input, outside Git and shell history. The
+annotation starts secret synchronization promptly; without it, the one-minute
+refresh interval still applies. This path needs a pre-authorized OpenBao client
+and Project-scoped Kubernetes access. Ask Kube-DC support for a narrowly scoped
+automation role if you do not already have one. The regular `kube-dc secrets
+put` command above remains the simpler path when the backend is available.
+
 Apply the service after replacing `PROJECT_NAMESPACE`, `OWNER`, and
 `REPOSITORY`. Omitting `parameters.buildMode` selects Buildx for a newly created
 pool; set it to `none` explicitly for a shell-only pool:
