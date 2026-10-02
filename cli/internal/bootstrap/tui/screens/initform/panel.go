@@ -57,14 +57,6 @@ func defaultPanelKeys() panelKeyMap {
 // --- small layout helpers (local to initform; the screens package has
 // its own copies, but that's a different package) ---
 
-func joinSpaced(width int, left, right string) string {
-	pad := width - lipgloss.Width(left) - lipgloss.Width(right)
-	if pad < 1 {
-		pad = 1
-	}
-	return left + strings.Repeat(" ", pad) + right
-}
-
 func padRight(s string, n int) string {
 	if w := lipgloss.Width(s); w < n {
 		return s + strings.Repeat(" ", n-w)
@@ -99,11 +91,13 @@ const (
 	panelText   panelKind = iota // free-text input
 	panelSelect                  // one of Options (enter cycles)
 	panelToggle                  // bool (enter flips)
+	panelRadio                   // mutually exclusive choice
 	panelAction                  // e.g. Apply (enter triggers)
 )
 
 // panelField is one editable setting (or an action row).
 type panelField struct {
+	Action   string
 	Section  string
 	Label    string
 	Desc     string
@@ -132,7 +126,7 @@ func panelFields() []panelField {
 			Get: func(s *State) string { return boolStr(get(s)) },
 			Set: func(s *State, v string) { set(s, v == "yes") }}
 	}
-	isPublic := func(s *State) bool { return s.Preset == string(clusterinit.PresetCloudPublicVLAN) }
+	isPublic := func(s *State) bool { return clusterinit.PresetHasPublicNetwork(clusterinit.Preset(s.Preset)) }
 	// A VIP layer is what makes the MetalLB detail fields meaningful; under
 	// "none" MetalLB is not installed at all, so showing them would invite the
 	// incoherent config the validator refuses.
@@ -171,6 +165,8 @@ func panelFields() []panelField {
 			func(s *State) string { return s.SSHHost }, func(s *State, v string) { s.SSHHost = v }, nil),
 		txt("Basics", "Operator email", "cert-manager / Let's Encrypt", true,
 			func(s *State) string { return s.Email }, func(s *State, v string) { s.Email = v }, clusterinit.ValidateEmailField),
+		sel("Basics", "Installation kind", "kube-dc or CloudSigma; CloudSigma keeps managed services off", []string{"kube-dc", "cloudsigma"},
+			func(s *State) string { return s.InstallationKind }, func(s *State, v string) { s.InstallationKind = v }),
 		sel("Basics", "Mode", "install (fresh) / adopt (existing overlay) / resume", []string{"install", "adopt", "resume"},
 			func(s *State) string { return s.Mode }, func(s *State, v string) { s.Mode = v }),
 
@@ -237,19 +233,19 @@ func panelFields() []panelField {
 			func(s *State) string { return s.MetalLBHoldTime }, func(s *State, v string) { s.MetalLBHoldTime = v }, nil).with(isBGP),
 
 		// --- Object storage ---
-		sel("Storage", "Object storage", "REQUIRED — Mimir/Loki/tenant buckets depend on it", []string{"rook-ceph-multi-node", "rook-ceph-local", "rook-ceph-pvc", "disabled"},
+		sel("Storage", "Object storage", "Required for metrics, logs, tenant buckets, and backups. Inspect hosts to choose a layout.", []string{"rook-ceph-multi-node", "rook-ceph-local", "rook-ceph-pvc"},
 			func(s *State) string { return s.OSMode }, func(s *State, v string) { s.OSMode = v }),
 		txt("Storage", "OSD node", "node hosting the OSD", false,
 			func(s *State) string { return s.OSDNode }, func(s *State, v string) { s.OSDNode = v }, clusterinit.ValidateK8sNodeNameField).with(osIs("rook-ceph-local")),
-		txt("Storage", "OSD size (GB)", "default 500", false,
+		txt("Storage", "Backing file size (GiB)", "Only for file-backed storage. A raw disk needs no backing file.", false,
 			func(s *State) string { return s.OSDSizeGB }, func(s *State, v string) { s.OSDSizeGB = v }, validateOptionalInt).with(osIs("rook-ceph-local")),
-		txt("Storage", "OSD device", "empty = loop0 (loop file)", false,
+		txt("Storage", "OSD device", "A checked raw disk, or loop0 for an evaluation backing file.", false,
 			func(s *State) string { return s.OSDDevice }, func(s *State, v string) { s.OSDDevice = v }, clusterinit.ValidateDeviceNameField).with(osIs("rook-ceph-local")),
 		txt("Storage", "Ceph node 1", "NODE=DEVICE, e.g. host5-a=sdb", false,
 			func(s *State) string { return s.CephNode1 }, func(s *State, v string) { s.CephNode1 = v }, clusterinit.ValidateNodeDevicePairField).with(osIs("rook-ceph-multi-node")),
 		txt("Storage", "Ceph node 2", "NODE=DEVICE", false,
 			func(s *State) string { return s.CephNode2 }, func(s *State, v string) { s.CephNode2 = v }, clusterinit.ValidateNodeDevicePairField).with(osIs("rook-ceph-multi-node")),
-		txt("Storage", "Ceph node 3", "NODE=DEVICE (exactly 3 in v1)", false,
+		txt("Storage", "Ceph node 3", "NODE=DEVICE (optional third server)", false,
 			func(s *State) string { return s.CephNode3 }, func(s *State, v string) { s.CephNode3 = v }, clusterinit.ValidateNodeDevicePairField).with(osIs("rook-ceph-multi-node")),
 		txt("Storage", "StorageClass", "backing SC for OSD PVCs", false,
 			func(s *State) string { return s.StorageClass }, func(s *State, v string) { s.StorageClass = v }, clusterinit.ValidateStorageClassField).with(osIs("rook-ceph-pvc")),
@@ -257,12 +253,20 @@ func panelFields() []panelField {
 			func(s *State) string { return s.CephOSDCount }, func(s *State, v string) { s.CephOSDCount = v }, validateOptionalInt).with(osIs("rook-ceph-pvc")),
 		txt("Storage", "OSD volume size (GB)", "size of each PVC-backed OSD (empty = fleet default)", false,
 			func(s *State) string { return s.CephOSDVolumeSize }, func(s *State, v string) { s.CephOSDVolumeSize = v }, validateOptionalInt).with(osIs("rook-ceph-pvc")),
-		txt("Storage", "Ceph replication size", "CEPH_REPLICATION_SIZE — OSD replica count (1 = dev/no-redundancy, 2-3 = HA; empty = default)", false,
-			func(s *State) string { return s.CephReplicationSize }, func(s *State, v string) { s.CephReplicationSize = v }, validateOptionalInt).with(func(s *State) bool {
-			return s.OSMode != "" && s.OSMode != string(clusterinit.RookDisabled)
+		txt("Storage", "Data copies", "Default: one on a single storage server, two on two or more servers.", false,
+			func(s *State) string { return s.storageReplication() }, func(s *State, v string) { s.CephReplicationSize = v }, validateOptionalInt).with(func(s *State) bool {
+			return s.OSMode == string(clusterinit.RookCephMultiNode) || s.OSMode == string(clusterinit.RookCephPVC)
 		}),
 		toggle("Storage", "Object storage DISABLED consent", "REQUIRED to proceed with disabled (no metrics/logs storage)",
 			func(s *State) bool { return s.DisabledConsent }, func(s *State, v bool) { s.DisabledConsent = v }).with(osIs("disabled")),
+		sel("Storage", "Managed services", "auto enables all six families when storage and budget qualify", []string{"auto", "on", "off"},
+			func(s *State) string { return s.ManagedServicesMode }, func(s *State, v string) { s.ManagedServicesMode = v }),
+		txt("Storage", "Services database class", "optional expandable block StorageClass; derived when possible", false,
+			func(s *State) string { return s.ServicesDatabaseClass }, func(s *State, v string) { s.ServicesDatabaseClass = v }, nil),
+		txt("Storage", "Services storage budget", "optional bounded quantity, e.g. 100Gi", false,
+			func(s *State) string { return s.ServicesStorageBudget }, func(s *State, v string) { s.ServicesStorageBudget = v }, nil),
+		txt("Storage", "Services egress probes", "comma-separated HTTPS URLs; default ghcr.io/v2/", false,
+			func(s *State) string { return s.ServicesEgressProbes }, func(s *State, v string) { s.ServicesEgressProbes = v }, nil),
 
 		// VM root-disk storage — optional. Shown only when object storage is a
 		// rook-ceph-* mode (shared-rbd needs the rbd-pool CephBlockPool those
@@ -314,6 +318,8 @@ func panelFields() []panelField {
 		toggle("Gates", "Allow node without /dev/kvm", "proceed when no node exposes /dev/kvm (nested/cloud VMs); VM workloads (KubeVirt / managed-K8s) won't schedule until one does",
 			func(s *State) bool { return s.AllowNoKubevirtEligible }, func(s *State, v bool) { s.AllowNoKubevirtEligible = v }),
 
+		// --- Complete environment input ---
+		{Section: "Configuration", Label: "Environment settings", Kind: panelAction},
 		// --- Review ---
 		{Section: "Review", Label: "Apply this configuration", Desc: "validate + build the plan + install", Kind: panelAction},
 	}
@@ -350,9 +356,13 @@ func sectionsOf(fields []panelField) []string {
 
 // PanelModel is the Bubble Tea model for the install settings panel.
 type PanelModel struct {
-	st     *State
-	fields []panelField
-	hint   string // sibling object-storage hint (rendered in Review)
+	workflow     *panelWorkflow
+	light        bool
+	manualScroll bool
+	configFilter string
+	st           *State
+	fields       []panelField
+	hint         string // sibling object-storage hint (rendered in Review)
 
 	secCursor   int
 	fieldCursor int // index into the CURRENT section's visible fields
@@ -441,10 +451,13 @@ func (m *PanelModel) clampCursors() {
 	m.clampFieldCursor()
 }
 
-func (m *PanelModel) Init() tea.Cmd { return nil }
+func (m *PanelModel) Init() tea.Cmd { return tea.RequestBackgroundColor }
 
 // visibleInSection returns the currently-visible fields of section i.
 func (m *PanelModel) visibleInSection(section string) []panelField {
+	if section == "Configuration" {
+		return m.configurationFields()
+	}
 	var out []panelField
 	for _, f := range m.fields {
 		if f.Section == section && f.visible(m.st) {
@@ -545,8 +558,15 @@ func (m *PanelModel) MarkEmbedded() {
 // Apply's consent error is tolerated — the draft captures whatever is
 // filled and reloads via `init --config <draftPath>`.
 func (m *PanelModel) saveDraft() {
-	scratch := &clusterinit.InitOptions{}
-	_ = m.st.Apply(scratch)
+	if m.workflow != nil && m.workflow.services.Demo != nil {
+		m.saveDemoDraft()
+		return
+	}
+	scratch, err := m.st.draftOptions()
+	if err != nil {
+		m.notice = "save failed: " + err.Error()
+		return
+	}
 	if err := clusterinit.WriteSpec(scratch, m.draftPath); err != nil {
 		m.notice = "save failed: " + err.Error()
 		return

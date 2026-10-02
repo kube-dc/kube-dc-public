@@ -159,6 +159,49 @@ See [Backups and restore](/cloud/postgresql-backup-restore).
 For in-Project placement, Project deletion removes services and data volumes without a final backup.
 Service deletion policies do not prevent this.
 
+## Archive key rotation
+
+An `ObjectBucketKeyRotation` replaces the key of a Project bucket, such as the `db-backups`
+claim that managed services use as their archive, without breaking the services that use it.
+The manager records archive consumers in a per-claim registry and closes it while a rotation
+runs. It publishes the new key into the claim Secret and waits until each consumer is retired,
+released, or, with live-writer handoff, has acknowledged the new key. Only then does it revoke
+the old key.
+
+Two core chart values control it. Both default to `false`:
+
+| Value | Effect |
+| --- | --- |
+| `managedServiceCredentials.archiveBrokerRotationEnabled` | Rotations may run. While `false`, a new rotation waits in `Pending` with reason `BrokerRotationDisabled` and creates no key, lock or finalizer. |
+| `managedServiceCredentials.archiveLiveWriterHandoffEnabled` | A running service may acknowledge the new key through its services runner instead of being retired: MySQL, MariaDB, ClickHouse and Valkey at their next archive Job, PostgreSQL after a CNPG credential reload and drain. PostgreSQL replication-group members, services still reading a source archive (including every service restored in place), OpenBao-reference and carried credentials stay blocked. Takes effect only with `archiveBrokerRotationEnabled`, and needs a services runner that writes guarded handoff records. |
+
+**Abandon.** A rotation that cannot finish is ended by setting `spec.abandon.reason`, through
+the console API route or `kubectl patch`. Project admins hold `patch` on rotations for this.
+Abandoning revokes nothing. The rotation ends as `Abandoned`, both keys stay valid, and the
+claim lock records them, up to eight entries. The next rotation of the claim that succeeds
+revokes them, after its own consumers have switched. A stall ends the rotation by abandon only
+when the same evidence persists for ten minutes. Transient API or RGW errors are retried.
+Read the rotation's Ready condition and `status.abandon` for the blocker, the outcome and the
+state of the old key.
+
+**Manual exit.** When the rotation's authority cannot be verified (Ready `AuthorityPending`), or
+RGW refuses a read the abandon itself needs (Ready `AbandonVerificationRefused`), a cluster
+administrator ends the rotation by hand. The exact steps and their order are in
+`kubectl explain objectbucketkeyrotation.spec.abandon`:
+
+1. Remove the rotation and its finalizer.
+2. Clear the lock and registry that name its UID.
+3. Delete its intent Secret.
+
+Follow that order, or the controller takes the claim lock again. Two admission policies,
+`kube-dc-archive-rotation-finalizer` and `kube-dc-archive-rotation-locks`, allow these edits only
+to the manager and cluster administrators.
+
+**Rollout.** Ship the chart, which carries the CRD, with or before the manager. An older CRD
+rejects the `Abandoned` phase and prunes `spec.abandon`. Rolling the manager back after an
+`Abandoned` rotation exists re-locks the claim and stalls on the deleted intent. Delete the
+`Abandoned` rotations before a rollback: their cleanup is already complete.
+
 ## Data-plane lifecycle
 
 Inspect registered planes before you change placement availability:

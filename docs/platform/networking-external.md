@@ -4,6 +4,11 @@ import {ExternalNetworksDiagram} from '@site/src/components/Diagram/PlatformTopo
 
 This guide explains how to add additional external networks to Kube-DC alongside the default cloud network.
 
+For a new installation, first use
+[Choose an installation network layout](installer-network-layouts.md). It covers
+the TUI choices, per-server interfaces, address reservations, and the separate
+platform ingress decision.
+
 ## Overview
 
 The configuration demonstrates how to add a second external network (public) to an existing Kube-DC setup that already has a cloud external network, using multiple VLANs on a single physical interface per node.

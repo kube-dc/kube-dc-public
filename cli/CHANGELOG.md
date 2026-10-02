@@ -1,5 +1,11 @@
 # kube-dc CLI changelog
 
+## v0.9.1 — qualification pending
+
+- Add guarded managed-services bootstrap and rebuild preparation for new installations. The CLI validates the live Flux push target, manager inventory, backup admission, and catalog publication gates before changing service state.
+- Require the matching `v0.9.1` fleet-starter artifact for new installations. Existing installations are not upgraded by this CLI release.
+- The release remains a candidate until a physical greenfield installation, backup/restore, and service-admission checks pass. Do not tag or publish `v0.9.1` before those checks.
+
 ## v0.8.3 — 2026-09-16
 
 - Complete the aligned UI migration bundle with correct handling of successful empty RGW key-deletion responses.

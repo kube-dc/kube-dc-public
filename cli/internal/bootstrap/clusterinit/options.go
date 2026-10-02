@@ -182,11 +182,8 @@ type InitOptions struct {
 	RookOSDNode   string
 	RookOSDSizeGB int
 	RookOSDDevice string // optional; fleet template defaults to loop0
-	// CephNodes maps node name → OSD device for rook-ceph-multi-node
-	// (`--ceph-node host6-a=sdb`, exactly 3 in v1 — the fleet
-	// mode template is 3-slot; 2-host topologies hand-patch slot 3,
-	// see clusters/atlantis/object-storage/). Sorted keys map
-	// to CEPH_NODE_{1..3} deterministically.
+	// CephNodes maps one to three server names to raw OSD devices.
+	// Generated patches size the Fleet template to the selected topology.
 	CephNodes map[string]string
 	// rook-ceph-pvc companions → CEPH_OSD_{STORAGE_CLASS,COUNT,
 	// VOLUME_SIZE_GB}. Count/size 0 = fleet template defaults (2/200).
@@ -203,6 +200,18 @@ type InitOptions struct {
 	// preflight so the install is not blocked/warned on nodes that will never run
 	// VMs.
 	NoKubeVirt bool
+
+	// Greenfield managed services are a reviewed installer choice. Empty fields
+	// are tolerated by older internal callers until the CLI input gate resolves
+	// them; the Fleet scaffold itself requires an explicit installation kind.
+	InstallationKind        string
+	ManagedServicesMode     string // auto (default), on, off
+	ServicesDatabaseClass   string
+	ServicesStorageBudget   string
+	ServicesEgressProbeURLs []string
+	// Verified from the live target cluster for an explicit class. The
+	// observation is transient; the resolved plan mode still records its effect.
+	ServicesClassExpansionVerified bool
 
 	// --- VM root-disk storage (PRD docs/prd/vm-storage-mode.md) ---
 	// OPTIONAL, default `local` (unlike RookMode, omitting it never
@@ -330,6 +339,17 @@ type InitOptions struct {
 	AllowUnassignedGPUs  bool
 	VGPUSecretReady      bool
 
+	// PAYG opts this installation into Kube-DC's pay-as-you-go usage
+	// billing (`--payg`, default off). The scaffold then writes the
+	// platform/payg Flux layer, PAYG_ENABLED=true, a freshly generated
+	// PAYG_INSTALLATION_UID, the products revision, the metering database
+	// login (SOPS) and its CNPG role — see payg.go. A dedicated typed flag,
+	// not `--addon=payg`: --addon fails closed (ErrAddonsNotImplemented) and
+	// PAYG is not an addons.yaml layer — it flips a chart value and mints an
+	// installation identity. Requires BILLING_PROVIDER stripe or whmcs;
+	// refused for installations billed by a partner.
+	PAYG bool
+
 	// --- Addons ---
 	// Addons is the de-duplicated list of `--addon` values.
 	// Validated against the registry (metallb, sso-google,
@@ -354,7 +374,11 @@ type InitOptions struct {
 	// is expected to run `bootstrap adopt <cluster> --pin-versions` first;
 	// this flag is the lab/dev escape.
 	AllowUnpinnedAdopt bool
+	SSHHostKeySHA256   string
 	SSHHost            string
+	PrimaryNode        string
+	NodeSSHHosts       map[string]string
+	NodeSSHHostKeys    map[string]string
 	NoSSH              bool
 	// NoOIDCCutover skips the finalize step that points every
 	// kube-apiserver at the OIDC webhook. Default false — the cutover is
@@ -521,6 +545,9 @@ var ErrVMStorageNeedsRookRBDPool = errors.New("init: --vm-storage-mode=shared-rb
 // Refuses leading/trailing `/` and `--`.
 var clusterNameRegex = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$`)
 
+// ValidClusterName uses the same Fleet path contract as InitOptions.Validate.
+func ValidClusterName(name string) bool { return clusterNameRegex.MatchString(name) }
+
 // domainRegex is a permissive FQDN check — at least one dot, valid
 // label chars. Not RFC-1035-perfect, but rejects obvious typos like
 // `https://foo.example` (we want the host only) and dotted IPs.
@@ -541,32 +568,12 @@ var domainRegex = regexp.MustCompile(`^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-
 // Structural runs first because cross-flag rules depend on parsed
 // values.
 func (o *InitOptions) Validate() error {
-	var errs []string
-
-	// Structural — every field's own contract.
-	errs = append(errs, validateName(o.Name)...)
-	errs = append(errs, validateDomain(o.Domain)...)
-	errs = append(errs, validateNodeIP(o.NodeExternalIP)...)
-	errs = append(errs, validateEmail(o.Email)...)
-	errs = append(errs, validatePreset(o.Preset)...)
-	errs = append(errs, validateMode(o.Mode)...)
-	errs = append(errs, validateFleetMode(o.FleetMode)...)
-	errs = append(errs, validateObjectStorage(o)...)
-	errs = append(errs, validateVMStorage(o)...)
-	errs = append(errs, validateGPU(o)...)
-	errs = append(errs, validateAddons(o.Addons)...)
-	errs = append(errs, validateNodeNICs(o.NodeNICs)...)
-	errs = append(errs, validateSets(o.Sets)...)
-	if err := ValidateTLSMode(o.TLSMode, o.TLSCert, o.TLSKey); err != nil {
-		errs = append(errs, err.Error())
+	if err := ValidateSSHHostKeyField(o.SSHHostKeySHA256); err != nil {
+		return err
 	}
-	if err := validateDNS01Flags(o); err != nil {
-		errs = append(errs, err.Error())
-	}
-	errs = append(errs, validateIngressNodes(o)...)
 
-	if len(errs) > 0 {
-		return fmt.Errorf("%w: %s", ErrValidation, strings.Join(errs, "; "))
+	if err := o.ValidateFields(); err != nil {
+		return err
 	}
 
 	// Cross-flag — only checked after structural pass so we don't
@@ -697,6 +704,54 @@ func (o *InitOptions) Validate() error {
 	return nil
 }
 
+// ValidateFields checks values that can be checked without reading a live
+// cluster or resolving an installation mode. Setup compilation uses the same
+// field rules as the established init command.
+func (o *InitOptions) ValidateFields() error {
+	var errs []string
+
+	// Structural — every field's own contract.
+	errs = append(errs, validateName(o.Name)...)
+	errs = append(errs, validateDomain(o.Domain)...)
+	errs = append(errs, validateNodeIP(o.NodeExternalIP)...)
+	errs = append(errs, validateEmail(o.Email)...)
+	errs = append(errs, validatePreset(o.Preset)...)
+	errs = append(errs, validateMode(o.Mode)...)
+	errs = append(errs, validateFleetMode(o.FleetMode)...)
+	errs = append(errs, validateObjectStorage(o)...)
+	errs = append(errs, validateVMStorage(o)...)
+	errs = append(errs, validateGPU(o)...)
+	errs = append(errs, validateAddons(o.Addons)...)
+	errs = append(errs, validatePAYG(o)...)
+	errs = append(errs, validateNodeNICs(o.NodeNICs)...)
+	errs = append(errs, validateNodeSSHHosts(o.PrimaryNode, o.NodeSSHHosts)...)
+	errs = append(errs, validateNodeSSHHostKeys(o.NodeSSHHostKeys)...)
+	errs = append(errs, validateSets(o.Sets)...)
+	// Validate typed overrides before planning. VLAN values retain the
+	// established preset error contract, including ErrPresetInvalidValue.
+	for _, key := range SpecOrderedKeys(o.Sets) {
+		if key == "EXT_NET_VLAN_ID" || key == "EXT_PUBLIC_VLAN_ID" {
+			continue
+		}
+		if err := validateKnownSetting(key, o.Sets[key]); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
+	if err := ValidateTLSMode(o.TLSMode, o.TLSCert, o.TLSKey); err != nil {
+		errs = append(errs, err.Error())
+	}
+	if err := validateDNS01Flags(o); err != nil {
+		errs = append(errs, err.Error())
+	}
+	errs = append(errs, validateIngressNodes(o)...)
+
+	if len(errs) > 0 {
+		return fmt.Errorf("%w: %s", ErrValidation, strings.Join(errs, "; "))
+	}
+
+	return nil
+}
+
 // --- Structural validators (small, table-friendly, each returns []string
 // so multiple rules per option can compose) ---
 
@@ -704,7 +759,7 @@ func validateName(name string) []string {
 	if name == "" {
 		return []string{"--name is required"}
 	}
-	if !clusterNameRegex.MatchString(name) {
+	if !ValidClusterName(name) {
 		return []string{fmt.Sprintf("--name %q must be lowercase letters/digits/dashes (optionally nested with /, e.g. eu/dc1)", name)}
 	}
 	return nil
@@ -830,8 +885,8 @@ func validateObjectStorage(o *InitOptions) []string {
 		case !k8sNodeNameRegex.MatchString(o.RookOSDNode):
 			errs = append(errs, fmt.Sprintf("--rook-osd-node %q is not a valid Kubernetes node name (lowercase RFC 1123: a-z, 0-9, '-', '.')", o.RookOSDNode))
 		}
-		if o.RookOSDSizeGB <= 0 {
-			errs = append(errs, "--object-storage-mode=rook-ceph-local requires --rook-osd-size-gb > 0")
+		if o.RookOSDSizeGB < 0 || ((o.RookOSDDevice == "" || loopDeviceRegex.MatchString(strings.TrimPrefix(o.RookOSDDevice, "/dev/"))) && o.RookOSDSizeGB == 0) {
+			errs = append(errs, "--rook-osd-size-gb must not be negative; loop-backed storage requires a value > 0")
 		}
 		// Canonicalize the obvious operator spelling: lsblk shows bare
 		// names but muscle memory types /dev/… (field report 2026-07-23
@@ -844,12 +899,14 @@ func validateObjectStorage(o *InitOptions) []string {
 		}
 
 	case RookCephMultiNode:
-		// → CEPH_NODE_{1..3} + devices. Exactly 3 in v1: the fleet
-		// mode template is 3-slot (design call 2026-07-04 — don't
-		// parameterise until the fleet mode itself supports N slots;
-		// 2-host topologies hand-patch slot 3 in their overlay).
-		if len(o.CephNodes) != 3 {
-			errs = append(errs, fmt.Sprintf("--object-storage-mode=rook-ceph-multi-node requires exactly 3 --ceph-node NODE=DEVICE entries (got %d; the fleet mode template is 3-slot — 2-host topologies hand-patch slot 3 in their object-storage overlay)", len(o.CephNodes)))
+		if len(o.CephNodes) < 1 || len(o.CephNodes) > 3 {
+			errs = append(errs, fmt.Sprintf("--object-storage-mode=rook-ceph-multi-node requires 1 to 3 --ceph-node NODE=DEVICE entries (got %d)", len(o.CephNodes)))
+		}
+		replicas, err := objectStorageReplication(o.RookMode, len(o.CephNodes), o.Sets["CEPH_REPLICATION_SIZE"])
+		if err != nil {
+			errs = append(errs, err.Error())
+		} else if len(o.CephNodes) > 0 && replicas > len(o.CephNodes) {
+			errs = append(errs, "CEPH_REPLICATION_SIZE cannot exceed the number of selected storage servers")
 		}
 		// Canonicalize /dev/-prefixed devices (same rationale as
 		// --rook-osd-device above) before validation + the scaffold
@@ -868,7 +925,7 @@ func validateObjectStorage(o *InitOptions) []string {
 			if !k8sNodeNameRegex.MatchString(node) {
 				errs = append(errs, fmt.Sprintf("--ceph-node node %q is not a valid Kubernetes node name (lowercase RFC 1123: a-z, 0-9, '-', '.')", node))
 			}
-			if !deviceNameRegex.MatchString(dev) {
+			if !deviceNameRegex.MatchString(dev) || loopDeviceRegex.MatchString(dev) {
 				errs = append(errs, fmt.Sprintf("--ceph-node device %q (node %s) is not a valid device name (e.g. sdb, nvme0n1)", dev, node))
 			}
 		}
@@ -1045,6 +1102,11 @@ func validateSets(sets map[string]string) []string {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
+		switch k {
+		case "INSTALLATION_KIND", "SERVICES_INSTALLATION", "SERVICES_CELL_ID", "SERVICES_DATAPLANE_NAME", "SERVICES_DATAPLANE_UID", "SERVICES_RUNNER_SELF", "SERVICES_FAMILIES", "SERVICES_UNMANAGED_OPERATORS", "SERVICES_STORAGE_ROLES", "SERVICES_STORAGE_BUDGETS", "SERVICES_PG_STORAGE_CLASSES", "SERVICES_EGRESS_PROBE_URLS", "SERVICES_OPENBAO_ADDRESS", "SERVICES_RECOVERY_PUBLIC_URL", "SERVICES_RECOVERY_GATEWAY_ENABLED", "SERVICES_RECOVERY_GATEWAY_PARENT", "SERVICES_RECOVERY_GATEWAY_PARENT_NAMESPACE", "SERVICES_RECOVERY_GATEWAY_SECTION", "KUBE_DC_UI_MANAGED_SERVICES_ALL_ORGANIZATIONS", "KUBE_DC_MANAGER_REPLICAS", "KUBE_DC_MANAGER_SINGLE_REPLICA_ACCEPTED":
+			errs = append(errs, fmt.Sprintf("--set %s is generated by the installer; use --installation-kind and --managed-services", k))
+			continue
+		}
 		if k == "" {
 			errs = append(errs, "--set key cannot be empty")
 			continue

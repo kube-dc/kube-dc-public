@@ -2,10 +2,15 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 )
 
 // TestResolveStarterDigest exercises the manifest-HEAD path including
@@ -44,6 +49,82 @@ func TestResolveStarterDigest(t *testing.T) {
 	}
 	if !tokenIssued {
 		t.Errorf("expected the anonymous token dance to run")
+	}
+}
+
+func TestRequireGreenfieldStarterDigest(t *testing.T) {
+	o := &clusterinit.InitOptions{FleetMode: clusterinit.FleetNewRepo, StarterRef: "oci://ghcr.io/kube-dc/fleet-starter:v1"}
+	if err := requireGreenfieldStarterDigest(o); err == nil {
+		t.Fatal("mutable greenfield starter accepted")
+	}
+	o.StarterRef += "@sha256:" + strings.Repeat("a", 64)
+	if err := requireGreenfieldStarterDigest(o); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{
+		"garbage@sha256:" + strings.Repeat("a", 64),
+		"oci://ghcr.io/x@sha256:" + strings.Repeat("A", 64),
+		"oci://ghcr.io/x?query@sha256:" + strings.Repeat("a", 64),
+	} {
+		o.StarterRef = bad
+		if err := requireGreenfieldStarterDigest(o); err == nil {
+			t.Errorf("invalid starter ref %q accepted", bad)
+		}
+	}
+	o.FleetMode = clusterinit.FleetExistingFleet
+	o.StarterRef = "oci://ghcr.io/kube-dc/fleet-starter:v1"
+	if err := requireGreenfieldStarterDigest(o); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestExistingStarterDoesNotRequireRegistryPin(t *testing.T) {
+	repo := t.TempDir()
+	for _, marker := range []string{
+		"bootstrap/add-cluster.sh",
+		"infrastructure/kube-ovn-network-public/kustomization.yaml",
+		"infrastructure/ext-net-bridge-tag/kustomization.yaml",
+		"platform/kustomization.yaml",
+		"addons/metallb/kustomization.yaml",
+		"addons/metallb-config/kustomization.yaml",
+		"addons/metallb-config-bgp/kustomization.yaml",
+		"scripts/install-prerequisites.sh",
+	} {
+		path := filepath.Join(repo, marker)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("test"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, mode := range []clusterinit.FleetMode{clusterinit.FleetExistingRepo, clusterinit.FleetNewRepo} {
+		o := &clusterinit.InitOptions{FleetMode: mode, Repo: repo, StarterRef: "oci://127.0.0.1:1/unavailable:v1"}
+		var out strings.Builder
+		if ref := starterRefForPlan(&out, o); ref != o.StarterRef {
+			t.Fatalf("%s: changed local starter ref to %q", mode, ref)
+		}
+		if out.Len() != 0 {
+			t.Fatalf("%s: contacted registry for local starter: %q", mode, out.String())
+		}
+		if err := requireGreenfieldStarterDigest(o); err != nil {
+			t.Fatalf("%s: rejected local starter: %v", mode, err)
+		}
+		reviewed := o.StarterRef + "@sha256:" + strings.Repeat("a", 64)
+		if got := starterRefForReplay(&out, o, reviewed); got != reviewed {
+			t.Fatalf("%s: resumed plan changed reviewed ref to %q", mode, got)
+		}
+	}
+	// The default starter ref must also replay with its saved digest when a
+	// first attempt has already extracted the starter.
+	o := &clusterinit.InitOptions{FleetMode: clusterinit.FleetNewRepo, Repo: repo}
+	reviewed := resolveStarterRef("") + "@sha256:" + strings.Repeat("b", 64)
+	if got := starterRefForReplay(io.Discard, o, reviewed); got != reviewed {
+		t.Fatalf("default ref replay changed reviewed digest to %q", got)
+	}
+	o.StarterRef = "oci://ghcr.io/other/starter@sha256:" + strings.Repeat("c", 64)
+	if got := starterRefForReplay(io.Discard, o, reviewed); got != o.StarterRef {
+		t.Fatalf("explicit ref change was hidden by replay: %q", got)
 	}
 }
 

@@ -58,7 +58,7 @@ type gpuReconcileTarget struct {
 	step clusterinit.StepID
 }
 
-func runReconcileWatchWithGPU(ctx context.Context, out io.Writer, flux fluxWatcher, rep clusterinit.StepReporter, gpu clusterinit.GPUConfig) error {
+func runReconcileWatchWithGPU(ctx context.Context, out io.Writer, flux fluxWatcher, rep clusterinit.StepReporter, gpu clusterinit.GPUConfig, stallCheck ...func(context.Context) error) error {
 	targets := gpuReconcileTargets(gpu)
 	completed := make(map[clusterinit.StepID]bool, len(targets))
 	rep.Start(clusterinit.StepReconcile)
@@ -77,7 +77,7 @@ func runReconcileWatchWithGPU(ctx context.Context, out io.Writer, flux fluxWatch
 	for _, target := range targets {
 		required = append(required, target.name)
 	}
-	err := watchReconcileTargets(ctx, out, flux, reconcileBudget, required, onReady)
+	err := watchReconcileTargets(ctx, out, flux, reconcileBudget, required, onReady, stallCheck...)
 	rep.Done(clusterinit.StepReconcile, err)
 	for _, target := range targets {
 		if completed[target.step] {
@@ -110,7 +110,7 @@ func watchReconcile(ctx context.Context, out io.Writer, flux fluxWatcher, budget
 	return watchReconcileTargets(ctx, out, flux, budget, nil, nil)
 }
 
-func watchReconcileTargets(ctx context.Context, out io.Writer, flux fluxWatcher, budget time.Duration, required []string, onReady func(string)) error {
+func watchReconcileTargets(ctx context.Context, out io.Writer, flux fluxWatcher, budget time.Duration, required []string, onReady func(string), stallCheck ...func(context.Context) error) error {
 	wctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 
@@ -200,6 +200,11 @@ func watchReconcileTargets(ctx context.Context, out io.Writer, flux fluxWatcher,
 			hr[ev.Namespace+"/"+ev.Name] = ev.Ready
 		case <-ticker.C:
 			report()
+			for _, check := range stallCheck {
+				if err := check(wctx); err != nil {
+					return err
+				}
+			}
 			if converged() {
 				return nil
 			}
@@ -214,17 +219,21 @@ func checkConverged(converged func() bool, budget time.Duration) error {
 	return fmt.Errorf("platform still reconciling after %s (Flux continues in the background; check `kube-dc bootstrap status`)", budget)
 }
 
-// openBaoFinalized reports whether OpenBao is already initialized on this
-// cluster (the openbao Service carries the bootstrap-finalized
-// annotation). Makes the finalize phase resumable: openbao.Init is
-// deliberately non-idempotent ("running twice is an error"), so on a
-// re-run we SKIP it rather than fail. Any read error → not-finalized
-// (safer to attempt than to wrongly skip on a fresh cluster).
-func openBaoFinalized(ctx context.Context, k8s interface {
+// openBaoResumeMarkers reads both markers. The bootstrap marker alone does not
+// prove controller auth was installed, and an unreadable marker must not
+// trigger a non-idempotent init attempt.
+func openBaoResumeMarkers(ctx context.Context, k8s interface {
 	GetServiceAnnotation(ctx context.Context, ns, svc, key string) (string, error)
-}) bool {
+}) (initialized, controllerAuth bool, err error) {
 	v, err := k8s.GetServiceAnnotation(ctx, "openbao", "openbao", openbao.AnnotationBootstrapFinalized)
-	return err == nil && strings.TrimSpace(v) != ""
+	if err != nil {
+		return false, false, err
+	}
+	a, err := k8s.GetServiceAnnotation(ctx, "openbao", "openbao", openbao.AnnotationControllerAuthInstalled)
+	if err != nil {
+		return false, false, err
+	}
+	return strings.TrimSpace(v) != "", strings.TrimSpace(a) != "", nil
 }
 
 // --- access summary (Feature: admin access + keycloak password + SSO) ---
@@ -246,7 +255,7 @@ func openBaoFinalized(ctx context.Context, k8s interface {
 //     live yet and prints ONLY the rerun command(s) for the step(s) that
 //     actually deferred — never telling the operator to rerun a step
 //     that already succeeded.
-func accessBlock(ctx context.Context, o *clusterinit.InitOptions, sops sopsDecrypter, withPassword, obDeferred, kcDeferred bool) string {
+func accessBlock(ctx context.Context, o *clusterinit.InitOptions, sops sopsDecrypter, withPassword, obDeferred, kcDeferred, controllerAuthMissing bool) string {
 	d := o.Domain
 	var b strings.Builder
 	b.WriteString("\n══════════════════════════════ ACCESS ══════════════════════════════\n")
@@ -254,7 +263,11 @@ func accessBlock(ctx context.Context, o *clusterinit.InitOptions, sops sopsDecry
 		b.WriteString(fmt.Sprintf("Cluster %q is installed, but a finalize step is still completing —\n", o.Name))
 		b.WriteString("SSO below becomes available once it finishes. Re-run:\n")
 		if obDeferred {
-			b.WriteString(fmt.Sprintf("    kube-dc bootstrap openbao init %s --repo %s\n", o.Name, o.Repo))
+			if controllerAuthMissing {
+				b.WriteString(fmt.Sprintf("    kube-dc bootstrap openbao setup-controller-auth %s --repo %s\n", o.Name, o.Repo))
+			} else {
+				b.WriteString(fmt.Sprintf("    kube-dc bootstrap openbao status %s --repo %s\n", o.Name, o.Repo))
+			}
 		}
 		if kcDeferred {
 			b.WriteString(fmt.Sprintf("    kube-dc bootstrap keycloak init %s --repo %s\n", o.Name, o.Repo))

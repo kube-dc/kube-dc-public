@@ -312,3 +312,19 @@ func TestCheckDomainCollision_IgnoresEmptySiblingDomain(t *testing.T) {
 		t.Errorf("empty sibling domain shouldn't collide, got %v", err)
 	}
 }
+
+func TestInheritFromSiblingsLeavesCNPGComponentPinsAlone(t *testing.T) {
+	got := InheritFromSiblings([]SiblingCluster{{Name: "old", Env: map[string]string{
+		"CNPG_VERSION": "0.25.0", "SERVICES_PG_OPERATOR_VERSION": "1.27.1",
+		"SERVICES_HUB_TAG": "reviewed-tag",
+	}}})
+	if _, exists := got.Defaults["CNPG_VERSION"]; exists {
+		t.Fatal("inherited a chart version that the selected CNPG component owns")
+	}
+	if _, exists := got.Defaults["SERVICES_PG_OPERATOR_VERSION"]; exists {
+		t.Fatal("inherited an operator version that the selected CNPG component owns")
+	}
+	if got.Defaults["SERVICES_HUB_TAG"] != "reviewed-tag" {
+		t.Fatal("discarded an unrelated services release pin")
+	}
+}

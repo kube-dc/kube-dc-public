@@ -1,8 +1,8 @@
 package clusterinit
 
 import (
+	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,19 +33,23 @@ const InitPrefix = "KUBE_DC_INIT_"
 
 // Orchestration (install-only) canonical keys.
 const (
-	KeyMode         = InitPrefix + "MODE"
-	KeyFleetMode    = InitPrefix + "FLEET_MODE"
-	KeyPreset       = InitPrefix + "PRESET"
-	KeyProvider     = InitPrefix + "PROVIDER"
-	KeyGitHubOwner  = InitPrefix + "GITHUB_OWNER"
-	KeyGitHubRepo   = InitPrefix + "GITHUB_REPO"
-	KeyRepo         = InitPrefix + "REPO"
-	KeySSHHost      = InitPrefix + "SSH_HOST"
-	KeyAllowDNS     = InitPrefix + "ALLOW_DNS_NOT_READY"
-	KeyAllowNoKVM   = InitPrefix + "ALLOW_NO_KVM"
-	KeyAllowUnpin   = InitPrefix + "ALLOW_UNPINNED_ADOPT"
-	KeyNoS3Exposure = InitPrefix + "NO_S3_EXPOSURE"
-	KeyNoKubeVirt   = InitPrefix + "NO_KUBEVIRT"
+	KeyMode             = InitPrefix + "MODE"
+	KeyFleetMode        = InitPrefix + "FLEET_MODE"
+	KeyPreset           = InitPrefix + "PRESET"
+	KeyProvider         = InitPrefix + "PROVIDER"
+	KeyGitHubOwner      = InitPrefix + "GITHUB_OWNER"
+	KeyGitHubRepo       = InitPrefix + "GITHUB_REPO"
+	KeyRepo             = InitPrefix + "REPO"
+	KeySSHHostKeySHA256 = InitPrefix + "SSH_HOST_KEY_SHA256"
+	KeyPrimaryNode      = InitPrefix + "PRIMARY_NODE"
+	KeyNodeSSHHosts     = InitPrefix + "NODE_SSH_HOSTS"
+	KeyNodeSSHHostKeys  = InitPrefix + "NODE_SSH_HOST_KEYS"
+	KeySSHHost          = InitPrefix + "SSH_HOST"
+	KeyAllowDNS         = InitPrefix + "ALLOW_DNS_NOT_READY"
+	KeyAllowNoKVM       = InitPrefix + "ALLOW_NO_KVM"
+	KeyAllowUnpin       = InitPrefix + "ALLOW_UNPINNED_ADOPT"
+	KeyNoS3Exposure     = InitPrefix + "NO_S3_EXPOSURE"
+	KeyNoKubeVirt       = InitPrefix + "NO_KUBEVIRT"
 	// KeyNodeEgress is install-only by design: live cluster-config.env uses
 	// EXT_NET_NODE_EGRESS_ENABLED, but clone-from-sibling must never inherit this
 	// site-specific internet-gateway escape hatch.
@@ -64,6 +68,11 @@ const (
 	KeyGPUPlatform        = InitPrefix + "GPU_PLATFORM"
 	KeyGPUAllowUnassigned = InitPrefix + "GPU_ALLOW_UNASSIGNED"
 	KeyVGPUSecretReady    = InitPrefix + "VGPU_SECRET_READY"
+	// KeyPAYG is install-only on purpose: --payg mints an installation
+	// identity, so a saved spec must carry the DECISION, never the live
+	// PAYG_ENABLED/PAYG_INSTALLATION_UID of the cluster it was taken from.
+	KeyPAYG                 = InitPrefix + "PAYG"
+	KeyServicesEgressProbes = InitPrefix + "SERVICES_EGRESS_PROBES"
 )
 
 // orchestrationKeys is the full set of install-only KUBE_DC_INIT_* keys the
@@ -74,12 +83,15 @@ const (
 // silent no-op. Keep this in sync with the const block above.
 var orchestrationKeys = map[string]bool{
 	KeyMode: true, KeyFleetMode: true, KeyPreset: true, KeyProvider: true,
-	KeyGitHubOwner: true, KeyGitHubRepo: true, KeyRepo: true, KeySSHHost: true,
+	KeyGitHubOwner: true, KeyGitHubRepo: true, KeyRepo: true, KeySSHHost: true, KeySSHHostKeySHA256: true,
+	KeyPrimaryNode: true, KeyNodeSSHHosts: true, KeyNodeSSHHostKeys: true,
 	KeyAllowDNS: true, KeyAllowNoKVM: true, KeyAllowUnpin: true, KeyNoS3Exposure: true,
 	KeyNoKubeVirt: true,
 	KeyNodeEgress: true, KeyNodeNICs: true, KeyIngressNodes: true,
 	KeyVMStorageMode: true, KeyVMGolden: true, KeyVMGoldenBlock: true,
 	KeyGPUPlatform: true, KeyGPUAllowUnassigned: true, KeyVGPUSecretReady: true,
+	KeyPAYG:                 true,
+	KeyServicesEgressProbes: true,
 }
 
 // IsOrchestrationKey reports whether fullKey (WITH the KUBE_DC_INIT_ prefix) is a
@@ -90,6 +102,14 @@ var orchestrationKeys = map[string]bool{
 // predicate keeps the env path and ImportMap from drifting — a mismatch silently
 // drops the input (the VM_STORAGE_MODE / INGRESS_NODES class of bug).
 func IsOrchestrationKey(fullKey string) bool {
+	if fullKey == KeySpecVersion {
+		return true
+	}
+	for _, b := range inputStringBindings {
+		if b.key == fullKey {
+			return true
+		}
+	}
 	return orchestrationKeys[fullKey]
 }
 
@@ -136,7 +156,7 @@ var denyImportExact = map[string]bool{
 	// Whether anchors own the nodes' default routes is a property of THIS
 	// cluster's host provisioning, never of a sibling's.
 	"EXT_NET_PUBLIC_ANCHOR_DEFAULT_ROUTE": true,
-	"EXT_NET_NAME": true, "EXT_NET_TYPE": true, "EXT_NET_CIDR": true,
+	"EXT_NET_NAME":                        true, "EXT_NET_TYPE": true, "EXT_NET_CIDR": true,
 	"EXT_NET_NODE_EGRESS_ENABLED": true,
 	"EXT_NET_GATEWAY":             true, "EXT_NET_EXCLUDE_IPS": true,
 	// The management SNAT address is THIS cluster's router-port address; a
@@ -144,6 +164,19 @@ var denyImportExact = map[string]bool{
 	"EXT_NET_MGMT_SNAT_IP":    true,
 	"DEFAULT_GW_NETWORK_TYPE": true, "DEFAULT_EIP_NETWORK_TYPE": true,
 	"DEFAULT_FIP_NETWORK_TYPE": true, "DEFAULT_SVC_LB_NETWORK_TYPE": true,
+	// PAYG is opted into per installation (--payg), never cloned: the UID is
+	// part of every usage fact's identity (two installations sharing one
+	// merge their billing histories), the products revision names the
+	// sibling, and PAYG_ENABLED alone would switch on the chart's billing
+	// wiring with no metering service behind it. PAYG_METERING_IMAGE is
+	// already denied as an artifact pin (isVersionKey).
+	"PAYG_ENABLED": true, "PAYG_INSTALLATION_UID": true, "PAYG_INSTALLATION_BINDING": true,
+	"PAYG_PRODUCTS_REVISION":                        true,
+	"INSTALLATION_KIND":                             true,
+	"SERVICES_INSTALLATION":                         true,
+	"KUBE_DC_UI_MANAGED_SERVICES_ALL_ORGANIZATIONS": true,
+	"KUBE_DC_MANAGER_REPLICAS":                      true,
+	"KUBE_DC_MANAGER_SINGLE_REPLICA_ACCEPTED":       true,
 	// Cross-VPC allowlists are ADDRESSES OF THE SIBLING, never of the clone.
 	// The main entry is the sibling's management-VPC SNAT address, which
 	// kube-ovn allocated out of the SIBLING's external subnet; the rest are its
@@ -161,11 +194,9 @@ var denyImportExact = map[string]bool{
 }
 
 // denyImport reports whether a source key is scaffold/preset-owned and must
-// not ride into a clone: the exact set above, plus any version/image tag
-// (suffix _VERSION / _TAG — every component pin).
+// not ride into a clone: the exact set above, plus recognized artifact pins.
 func denyImport(k string) bool {
-	return denyImportExact[k] ||
-		strings.HasSuffix(k, "_VERSION") || strings.HasSuffix(k, "_TAG")
+	return denyImportExact[k] || isVersionKey(k) || strings.HasPrefix(k, "SERVICES_")
 }
 
 // maxCephSlots is the fixed multi-node OSD slot count (v1 fleet template).
@@ -178,6 +209,7 @@ const maxCephSlots = 3
 // specOrder is the canonical write order for a saved spec (identity →
 // network → storage → orchestration), so `--save-config` diffs are stable.
 var specOrder = []string{
+	KeySpecVersion,
 	// Tenant Networking v2. NODE_CIDR and INFRA_ATTACHMENT_ROUTES are
 	// deny-imported (they are node-specific), but they still belong in the
 	// ordering so --save-config output is complete and stable for the cluster
@@ -208,8 +240,9 @@ var specOrder = []string{
 	"HAMI_VERSION", "HAMI_KUBE_SCHEDULER_VERSION", "GPU_NODE_MODES", "GPU_PROFILES",
 	KeyGPUAllowUnassigned, KeyVGPUSecretReady,
 	KeyMode, KeyFleetMode, KeyPreset, KeyProvider,
-	KeyGitHubOwner, KeyGitHubRepo, KeyRepo, KeySSHHost,
-	KeyAllowDNS, KeyAllowNoKVM, KeyAllowUnpin, KeyNoS3Exposure, KeyNoKubeVirt,
+	KeyGitHubOwner, KeyGitHubRepo, KeyRepo, KeySSHHost, KeySSHHostKeySHA256, KeyPrimaryNode, KeyNodeSSHHosts, KeyNodeSSHHostKeys,
+	KeyAllowDNS, KeyAllowNoKVM, KeyAllowUnpin, KeyNoS3Exposure, KeyNoKubeVirt, KeyPAYG,
+	InitPrefix + "INSTALLATION_KIND", InitPrefix + "MANAGED_SERVICES", InitPrefix + "SERVICES_DATABASE_CLASS", InitPrefix + "SERVICES_STORAGE_BUDGET", KeyServicesEgressProbes,
 }
 
 // parsePrefillBool accepts the env-file truthy spellings.
@@ -237,7 +270,8 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 	if o.CephNodes == nil {
 		o.CephNodes = map[string]string{}
 	}
-	seen := map[string]bool{}
+	seen := map[string]bool{KeySpecVersion: true}
+	restore := src[KeySpecVersion] == InputSpecVersion
 
 	str := func(key, flag string, dst *string) {
 		v, ok := src[key]
@@ -245,7 +279,7 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 			return
 		}
 		seen[key] = true
-		if !flagChanged(flag) && strings.TrimSpace(v) != "" {
+		if !flagChanged(flag) && (restore || strings.TrimSpace(v) != "") {
 			*dst = strings.TrimSpace(v)
 		}
 	}
@@ -352,6 +386,29 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 
 	// --- orchestration (install-only) ---
 	str(KeySSHHost, "ssh-host", &o.SSHHost)
+	str(KeySSHHostKeySHA256, "ssh-host-key-sha256", &o.SSHHostKeySHA256)
+	str(KeyPrimaryNode, "primary-node", &o.PrimaryNode)
+	if raw, ok := src[KeyNodeSSHHosts]; ok {
+		seen[KeyNodeSSHHosts] = true
+		if !flagChanged("node-ssh-host") {
+			pairs, err := ParseSetPairs(splitCSVList(raw))
+			if err == nil {
+				o.NodeSSHHosts = pairs
+			}
+		}
+	}
+	if raw, ok := src[KeyNodeSSHHostKeys]; ok {
+		seen[KeyNodeSSHHostKeys] = true
+		if !flagChanged("node-ssh-host-key") {
+			pairs, err := ParseSetPairs(splitCSVList(raw))
+			if err == nil {
+				o.NodeSSHHostKeys = pairs
+			}
+		}
+	}
+	for _, b := range inputStringBindings {
+		str(b.key, b.flag, b.field(o))
+	}
 	str(KeyRepo, "repo", &o.Repo)
 	str(KeyGitHubOwner, "github-owner", &o.GitHubOwner)
 	str(KeyGitHubRepo, "github-repo", &o.GitHubRepo)
@@ -398,6 +455,21 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 	boolean(KeyAllowUnpin, "allow-unpinned-adopt", &o.AllowUnpinnedAdopt)
 	boolean(KeyNoS3Exposure, "no-s3-exposure", &o.NoS3Exposure)
 	boolean(KeyNoKubeVirt, "no-kubevirt", &o.NoKubeVirt)
+	boolean(KeyPAYG, "payg", &o.PAYG)
+	if v, ok := src[KeyServicesEgressProbes]; ok {
+		seen[KeyServicesEgressProbes] = true
+		if !flagChanged("services-egress-probe") {
+			if err := json.Unmarshal([]byte(v), &o.ServicesEgressProbeURLs); err != nil {
+				o.ServicesEgressProbeURLs = []string{v} // Resolver reports the invalid input.
+			}
+		}
+	}
+	if v, ok := src[PAYGEnabledKey]; ok && parsePrefillBool(v) && !o.PAYG {
+		// Denied below (never cloned), but say so: an operator cloning a
+		// PAYG installation may expect the new one to bill too.
+		o.PrefillNotes = append(o.PrefillNotes,
+			"the source has PAYG_ENABLED=true; PAYG is opted into per installation and is not cloned — pass --payg to enable it here (a new installation UID is generated)")
+	}
 	if v, ok := src[KeyNodeEgress]; ok {
 		seen[KeyNodeEgress] = true
 		if _, explicitlySet := o.Sets["EXT_NET_NODE_EGRESS_ENABLED"]; !explicitlySet {
@@ -501,7 +573,7 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 		if seen[k] {
 			continue
 		}
-		if denyImport(k) {
+		if IsSecretConfigKey(k) || (denyImport(k) && !restore) {
 			ignored = append(ignored, k)
 			continue
 		}
@@ -516,7 +588,7 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 					"that setting use the prefixed name; otherwise it is kept as "+
 					"cluster-config as written", k, InitPrefix+k))
 		}
-		if _, already := o.Sets[k]; !already && strings.TrimSpace(v) != "" {
+		if _, already := o.Sets[k]; !already && (restore || strings.TrimSpace(v) != "") {
 			o.Sets[k] = strings.TrimSpace(v)
 		}
 	}
@@ -544,13 +616,16 @@ func promotedTLS(k string) bool {
 }
 
 func ExportMap(o *InitOptions) map[string]string {
-	m := map[string]string{}
+	m := map[string]string{KeySpecVersion: InputSpecVersion}
 	put := func(k, v string) {
 		if strings.TrimSpace(v) != "" {
 			m[k] = strings.TrimSpace(v)
 		}
 	}
 	put("CLUSTER_NAME", o.Name)
+	for _, b := range inputStringBindings {
+		put(b.key, *b.field(o))
+	}
 	put("DOMAIN", o.Domain)
 	put("NODE_EXTERNAL_IP", o.NodeExternalIP)
 	put("EMAIL", o.Email)
@@ -617,7 +692,9 @@ func ExportMap(o *InitOptions) map[string]string {
 			put(k, platformIngressVIPPersisted(v))
 			continue
 		}
-		put(k, v)
+		// Explicit empty values disable optional defaults (for example an
+		// active image digest). Keep the distinction from an absent key.
+		m[k] = strings.TrimSpace(v)
 	}
 	// Persist what was REQUESTED, never the resolved verdict. A spec that
 	// froze `install` would read back on the next run as an explicit operator
@@ -633,6 +710,22 @@ func ExportMap(o *InitOptions) map[string]string {
 	put(KeyGitHubRepo, o.GitHubRepo)
 	put(KeyRepo, o.Repo)
 	put(KeySSHHost, o.SSHHost)
+	put(KeySSHHostKeySHA256, o.SSHHostKeySHA256)
+	put(KeyPrimaryNode, o.PrimaryNode)
+	if len(o.NodeSSHHosts) > 0 {
+		pairs := make([]string, 0, len(o.NodeSSHHosts))
+		for _, node := range SpecOrderedKeys(o.NodeSSHHosts) {
+			pairs = append(pairs, node+"="+o.NodeSSHHosts[node])
+		}
+		put(KeyNodeSSHHosts, strings.Join(pairs, ","))
+	}
+	if len(o.NodeSSHHostKeys) > 0 {
+		pairs := make([]string, 0, len(o.NodeSSHHostKeys))
+		for _, node := range SpecOrderedKeys(o.NodeSSHHostKeys) {
+			pairs = append(pairs, node+"="+o.NodeSSHHostKeys[node])
+		}
+		put(KeyNodeSSHHostKeys, strings.Join(pairs, ","))
+	}
 	if len(o.NodeNICs) > 0 {
 		nodes := make([]string, 0, len(o.NodeNICs))
 		for node := range o.NodeNICs {
@@ -662,6 +755,13 @@ func ExportMap(o *InitOptions) map[string]string {
 	}
 	if o.NoKubeVirt {
 		m[KeyNoKubeVirt] = "true"
+	}
+	if o.PAYG {
+		m[KeyPAYG] = "true"
+	}
+	if len(o.ServicesEgressProbeURLs) > 0 {
+		encoded, _ := json.Marshal(o.ServicesEgressProbeURLs)
+		m[KeyServicesEgressProbes] = string(encoded)
 	}
 	if o.GPUPlatform != "" {
 		put(KeyGPUPlatform, string(o.GPUPlatform))
@@ -696,16 +796,37 @@ func ExportMap(o *InitOptions) map[string]string {
 // (ExportMap omits it). Shared by `init --save-config` and the TUI's 'S'
 // save-draft so both produce an identical, re-loadable file.
 func WriteSpec(o *InitOptions, path string) error {
+	e, err := inputSpecEnv(o)
+	if err != nil {
+		return err
+	}
+	return e.Write(path)
+}
+
+// RenderSpec shows the same input file WriteSpec saves. Scaffold adds the
+// selected Fleet defaults, release pins, and host-derived values at apply.
+func RenderSpec(o *InitOptions) (string, error) {
+	e, err := inputSpecEnv(o)
+	if err != nil {
+		return "", err
+	}
+	return e.Render(), nil
+}
+
+func inputSpecEnv(o *InitOptions) (*config.Env, error) {
 	m := ExportMap(o)
+	if err := ValidateInputSpec(m); err != nil {
+		return nil, err
+	}
 	e := config.NewEnv()
-	e.AppendComment("kube-dc bootstrap init spec")
-	e.AppendComment("Config keys mirror cluster-config.env; KUBE_DC_INIT_* are install-only (stripped on scaffold).")
-	e.AppendComment("Reuse: kube-dc bootstrap init --config " + filepath.Base(path))
+	e.AppendComment("# kube-dc bootstrap init spec")
+	e.AppendComment("# Config keys mirror cluster-config.env; KUBE_DC_INIT_* are install-only.")
+	e.AppendComment("# Reuse with kube-dc bootstrap init --config FILE. Do not source this file.")
 	e.AppendBlank()
 	for _, k := range SpecOrderedKeys(m) {
 		e.Set(k, m[k])
 	}
-	return e.Write(path)
+	return e, nil
 }
 
 // SpecOrderedKeys returns the canonical write order for the keys present

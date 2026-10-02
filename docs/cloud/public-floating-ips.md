@@ -7,6 +7,12 @@ Kube-DC provides two address resources for Project egress and inbound access:
 - **Floating IP (FIP)**: a 1:1 NAT mapping between an external address and a
   specific VM or Pod
 
+Floating IPs do not currently support a per-client IP/CIDR allowlist. The
+reserved `spec.allowedCIDRs` field rejects restrictive values; omitted, empty,
+or `0.0.0.0/0` leaves the FIP open to all IPv4 sources. Use a qualified
+EIP-backed LoadBalancer Service with `spec.loadBalancerSourceRanges` when the
+workload can be exposed through selected TCP/UDP ports instead.
+
 ---
 
 ## Manage IPs in the console

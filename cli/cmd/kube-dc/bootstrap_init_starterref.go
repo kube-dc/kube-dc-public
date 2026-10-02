@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 )
 
 // Starter-ref digest pinning (review P1 2026-07-20): a TAG is mutable —
@@ -18,10 +20,9 @@ import (
 // Resolution is a registry manifest HEAD (Docker-Content-Digest header)
 // with the anonymous bearer-token dance ghcr uses. Plain-HTTP is only
 // attempted for loopback registries (the local test harness). On
-// resolution failure the tag ref is kept with a loud WARNING — an
-// air-gapped/dev registry mustn't brick init, and the plan hash still
-// pins the exact STRING used, so review/apply stay consistent within a
-// binary; the digest is the cross-version guarantee when reachable.
+// resolution failure the tag ref is kept with a warning. The greenfield
+// plan gate below then refuses the mutable ref before review. Existing Fleet
+// paths can continue because they do not pull a starter.
 
 const starterDigestTimeout = 10 * time.Second
 
@@ -33,11 +34,46 @@ func pinStarterDigest(out io.Writer, ref string) string {
 	}
 	digest, err := resolveStarterDigest(ref)
 	if err != nil {
-		fmt.Fprintf(out, "WARNING: could not resolve %s to a digest (%v) — proceeding with the mutable tag; the plan pins the tag string only\n", ref, err)
+		fmt.Fprintf(out, "WARNING: could not resolve %s to a digest (%v); greenfield plans require an immutable starter ref\n", ref, err)
 		return ref
 	}
 	fmt.Fprintf(out, "starter ref pinned: %s@%s\n", ref, digest)
 	return ref + "@" + digest
+}
+
+func starterRefForPlan(out io.Writer, o *clusterinit.InitOptions) string {
+	ref := resolveStarterRef(o.StarterRef)
+	if o.Repo != "" && clusterinit.StarterShapePresent(o.Repo) {
+		return ref // no registry call when the starter is already on disk
+	}
+	return pinStarterDigest(out, ref)
+}
+
+// An apply-plan retry may find the starter that the first attempt extracted.
+// Keep the reviewed digest when the caller supplied the same tag (or relied
+// on the default), so local progress cannot invalidate a saved plan.
+func starterRefForReplay(out io.Writer, o *clusterinit.InitOptions, reviewed string) string {
+	ref := resolveStarterRef(o.StarterRef)
+	if o.Repo != "" && clusterinit.StarterShapePresent(o.Repo) {
+		reviewedTag, _, _ := strings.Cut(reviewed, "@sha256:")
+		if o.StarterRef == "" || reviewedTag == ref {
+			return reviewed
+		}
+	}
+	return pinStarterDigest(out, ref)
+}
+
+// A greenfield plan must identify the exact artifact it will extract. An
+// existing Fleet checkout or a repo with the starter shape does not pull an
+// artifact, so a historical tag remains valid for those paths.
+func requireGreenfieldStarterDigest(o *clusterinit.InitOptions) error {
+	if o.FleetMode == clusterinit.FleetExistingFleet || o.Repo != "" && clusterinit.StarterShapePresent(o.Repo) {
+		return nil
+	}
+	if err := clusterinit.ValidateStarterOCIRef(o.StarterRef); err != nil {
+		return fmt.Errorf("fleet starter %q requires a valid immutable OCI ref before extraction; retry when the registry is available or provide a digest-pinned --starter-ref: %w", o.StarterRef, err)
+	}
+	return nil
 }
 
 // resolveStarterDigest HEADs the manifest for an oci://host/path:tag
@@ -56,7 +92,7 @@ func resolveStarterDigest(ref string) (string, error) {
 		return "", fmt.Errorf("ref has no repository path")
 	}
 	scheme := "https"
-	if strings.HasPrefix(host, "127.") || strings.HasPrefix(host, "localhost") {
+	if clusterinit.IsLoopbackRegistryHost(host) {
 		scheme = "http" // loopback test registries are plain HTTP
 	}
 	url := fmt.Sprintf("%s://%s/v2/%s/manifests/%s", scheme, host, repoPath, tag)

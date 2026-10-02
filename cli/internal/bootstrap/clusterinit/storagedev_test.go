@@ -92,6 +92,7 @@ func TestProbeStorageDevice(t *testing.T) {
 		// verdict — only the exact sentinel line counts (codex LOW).
 		{"shell noise containing EMPTY is not a verdict", &devSSH{out: "EMPTY environment variable FOO\n"}, "sdb", StorageDevUnknown},
 		{"sentinel wins even amid rc banner lines", &devSSH{out: "Welcome to Ubuntu\nKDCPROBE:INUSE\nLast login: today\n"}, "sdb", StorageDevInUse},
+		{"duplicate sentinel cannot certify empty", &devSSH{out: "KDCPROBE:EMPTY\nKDCPROBE:INUSE\n"}, "sdb", StorageDevUnknown},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -112,4 +113,38 @@ func TestProbeStorageDevice_NilSSHErrors(t *testing.T) {
 	if _, err := ProbeStorageDevice(context.Background(), StorageDeviceProbeOptions{Device: "sdb"}); err == nil {
 		t.Fatal("want error for a nil SSH client")
 	}
+}
+
+func TestRawOSDApplyGateRejectsEveryUnconfirmedState(t *testing.T) {
+	for _, state := range []StorageDeviceState{StorageDevMissing, StorageDevInUse, StorageDevUnknown, ""} {
+		if err := RequireEmptyStorageDevice(StorageDeviceResult{Node: "node-1", Device: "sdb", State: state}); err == nil {
+			t.Fatalf("apply accepted %q disk", state)
+		}
+	}
+	if err := RequireEmptyStorageDevice(StorageDeviceResult{Node: "node-1", Device: "sdb", State: StorageDevEmpty}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRawOSDProbeChecksHoldersAndSignatures(t *testing.T) {
+	ssh := &captureDiskSSH{devSSH: devSSH{out: "KDCPROBE:UNKNOWN\n"}}
+	_, err := ProbeStorageDevice(context.Background(), StorageDeviceProbeOptions{SSH: ssh, Node: "node-1", Device: "sdb"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"/holders", "wipefs -n", "lsblk -dnro RO", "lsblk -nro NAME"} {
+		if !strings.Contains(ssh.command, required) {
+			t.Fatalf("raw disk probe omitted %s", required)
+		}
+	}
+}
+
+type captureDiskSSH struct {
+	devSSH
+	command string
+}
+
+func (s *captureDiskSSH) Run(_ context.Context, _ ports.SSHHost, command string) ([]byte, error) {
+	s.command = command
+	return []byte(s.out), s.err
 }

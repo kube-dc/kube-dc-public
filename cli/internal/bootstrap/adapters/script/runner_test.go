@@ -3,6 +3,7 @@ package script
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -437,6 +438,57 @@ func contains(slice []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestPinnedChildRunnerUsesOnlyVerifiedKubeconfig(t *testing.T) {
+	dir := t.TempDir()
+	bootstrapDir := filepath.Join(dir, "bootstrap")
+	if err := os.MkdirAll(bootstrapDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"flux-install.sh", "add-cluster.sh"} {
+		body := "#!/bin/sh\nprintf '%s\\n%s' \"$KUBECONFIG\" \"$4\" > \"$KUBE_DC_TEST_OUTPUT\"\n"
+		if err := os.WriteFile(filepath.Join(bootstrapDir, name), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("KUBECONFIG", "/ambient/wrong.yaml")
+	childPath := filepath.Join(dir, "child.yaml")
+	runner := New(dir, "", nil).WithPinnedKubeconfig(childPath)
+	for _, tc := range []struct {
+		name ports.ScriptKind
+		args []string
+	}{
+		{ports.ScriptFluxInstall, []string{"test", "--new-cluster"}},
+		{ports.ScriptAddCluster, []string{"test", "example.test", "192.0.2.10"}},
+	} {
+		output := filepath.Join(dir, string(tc.name)+".target")
+		lines, err := runner.Run(context.Background(), tc.name, map[string]string{"KUBE_DC_TEST_OUTPUT": output, "SCAFFOLD_INSTALLATION_KIND": "kube-dc"}, tc.args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for range lines {
+		}
+		got, err := os.ReadFile(output)
+		if err != nil || !strings.HasPrefix(string(got), childPath+"\n") {
+			t.Fatalf("script %s used %q, %v; want verified path", tc.name, got, err)
+		}
+		if tc.name == ports.ScriptAddCluster && string(got) != childPath+"\n"+childPath {
+			t.Fatalf("add-cluster did not receive verified positional config: %q", got)
+		}
+		if err := os.Remove(output); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := runner.Run(context.Background(), tc.name, map[string]string{"KUBECONFIG": "/another/cluster.yaml", "KUBE_DC_TEST_OUTPUT": output}, tc.args...); err == nil {
+			t.Fatalf("script %s accepted conflicting kubeconfig", tc.name)
+		}
+		if _, err := os.Stat(output); !os.IsNotExist(err) {
+			t.Fatalf("script %s started after conflicting target: %v", tc.name, err)
+		}
+	}
+	if _, err := runner.Run(context.Background(), ports.ScriptAddCluster, nil, "test", "example.test", "192.0.2.10", "/another/cluster.yaml"); err == nil {
+		t.Fatal("add-cluster accepted conflicting positional kubeconfig")
+	}
 }
 
 // Ensure the package-level scriptPaths registry covers every

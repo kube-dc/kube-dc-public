@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -22,12 +23,9 @@ import (
 // after Apply + flux-install + fetch-kubeconfig, i.e. once Flux is
 // reconciling the platform.
 //
-// **Everything here is BEST-EFFORT.** The cluster is already up and
-// reconciling by the time we get here; a finalize failure (OpenBao not
-// up within budget, Keycloak still reconciling, a transient exec error)
-// is reported as a deferred milestone with an exact re-run command, NOT
-// a hard error that would mask a successful install. This matches the
-// pre-full-flow world where these were manual post-install steps.
+// Finalization continues after a deferred milestone so every available
+// recovery action is reported. The returned result prevents the caller from
+// reporting completion while any required milestone is unmet.
 //
 // Auth: the top-of-flow session (runApplyEngine) was built BEFORE
 // fetch-kubeconfig and may have no cluster. We rebuild a session against
@@ -48,9 +46,12 @@ import (
 // (e.g. a same-named cluster from an earlier install). Every place below
 // that would otherwise assert "--kube-context o.Name is always valid" only
 // does so when fetchVerified is true — see postApplyBreakGlassOptions.
-func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, rep clusterinit.StepReporter, fetchVerified bool) {
+func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, rep clusterinit.StepReporter, fetchVerified, managedServices bool) (result clusterinit.FinalizationResult) {
 	fmt.Fprintln(out, "[post] Flux is reconciling — tracking convergence, then finalizing OpenBao + Keycloak")
 	gpu := o.GPU()
+	recorder := clusterinit.NewFinalizationRecorder(rep, gpu.Platform == clusterinit.GPUPlatformEnabled, gpu.HAMiEnabled, managedServices)
+	rep = recorder
+	defer func() { result = recorder.Result() }()
 
 	// Rebuild the session on the fetched admin kubeconfig (see doc).
 	kubeconfig := clusterinit.DefaultKubeconfigPath()
@@ -66,6 +67,9 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 		rep.Skip(clusterinit.StepOpenBao, reason)
 		rep.Skip(clusterinit.StepKeycloakOIDC, reason)
 		rep.Skip(clusterinit.StepOIDCCutover, reason)
+		if managedServices {
+			rep.Skip(clusterinit.StepManagedServices, reason)
+		}
 		finalizeHint(out, o, kubeconfig, fetchVerified)
 		return
 	}
@@ -113,7 +117,36 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 	// --- Reconcile watch (Feature: track Flux reconciliation). Best-
 	// effort: a budget expiry surfaces as a ✗ milestone but the finalize
 	// steps still run (they have their own readiness waits).
-	reconcileErr := runReconcileWatchWithGPU(ctx, out, session.Flux, rep, gpu)
+	var stallChecks []func(context.Context) error
+	if managedServices {
+		pins, pinsErr := managedServicesOverlayPins(o.Repo, o.Name)
+		stallReader, readerErr := pinnedManagedServicesKubectl(ctx, kubeconfig)
+		stallChecks = append(stallChecks, func(checkCtx context.Context) error {
+			if pinsErr != nil {
+				return pinsErr
+			}
+			if readerErr != nil {
+				return readerErr
+			}
+			live, err := stallReader.Get(checkCtx, "flux-system", "configmap", "cluster-config")
+			if err != nil {
+				if strings.Contains(err.Error(), "NotFound") || strings.Contains(err.Error(), "not found") {
+					return nil
+				}
+				return err
+			}
+			ready, err := managedServicesResetTargetReady(live, pins)
+			if err != nil || !ready {
+				return err
+			}
+			reset, err := resetStalledManagedServicesReleases(checkCtx, stallReader, false)
+			if reset {
+				fmt.Fprintln(out, "[reconcile] requested a bounded first-install operator reset")
+			}
+			return err
+		})
+	}
+	reconcileErr := runReconcileWatchWithGPU(ctx, out, session.Flux, rep, gpu, stallChecks...)
 	if reconcileErr == nil && gpu.Platform == clusterinit.GPUPlatformEnabled {
 		writeGPUInstallCompletion(out)
 	}
@@ -125,18 +158,20 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 	// Resumable: skip entirely if OpenBao is already finalized (Init is
 	// non-idempotent), so a re-run of `init` doesn't error here.
 	obErr := step(rep, clusterinit.StepOpenBao, func() error {
-		if openBaoFinalized(ctx, session.K8s) {
-			fmt.Fprintln(out, "[finalize] OpenBao already initialized — skipping (resume)")
-			return nil
-		}
-		if err := waitPodRunning(ctx, out, session.K8s, openBaoNamespace, openBaoPod, finalizeReadyBudget); err != nil {
-			return err
-		}
-		return openbao.Init(ctx, postApplyOpenBaoInitOptions(o, session, token, out))
+		return runOpenBaoResumeOrInit(ctx, out, o.Name, session.K8s,
+			func() error {
+				return waitPodRunning(ctx, out, session.K8s, openBaoNamespace, openBaoPod, finalizeReadyBudget)
+			},
+			func() error { return openbao.Init(ctx, postApplyOpenBaoInitOptions(o, session, token, out)) })
 	})
 	if obErr != nil {
 		fmt.Fprintf(out, "[finalize] OpenBao init deferred (%v)\n", obErr)
-		fmt.Fprintf(out, "[finalize]   re-run once ready: kube-dc bootstrap openbao init %s --repo %s\n", o.Name, shellQuote(o.Repo))
+		if errors.Is(obErr, errOpenBaoControllerAuthMissing) {
+			fmt.Fprintf(out, "[finalize]   finish controller auth: kube-dc bootstrap openbao setup-controller-auth %s --repo %s\n", o.Name, shellQuote(o.Repo))
+		} else {
+			fmt.Fprintf(out, "[finalize]   check state first: kube-dc bootstrap openbao status %s --repo %s\n", o.Name, shellQuote(o.Repo))
+			fmt.Fprintf(out, "[finalize]   if uninitialized, re-run: kube-dc bootstrap openbao init %s --repo %s\n", o.Name, shellQuote(o.Repo))
+		}
 	}
 
 	// --- Keycloak: keycloak.Init self-polls the master-realm OIDC
@@ -240,6 +275,15 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 		fmt.Fprintf(out, "[finalize]   (add --ssh-host user@host per node if this machine cannot reach their internal IPs)\n")
 		fmt.Fprintf(out, "[finalize]   then confirm with: kube-dc bootstrap accept %s --domain %s\n", o.Name, o.Domain)
 	}
+	if managedServices {
+		serviceErr := step(rep, clusterinit.StepManagedServices, func() error {
+			return finalizeManagedServices(ctx, out, o, session, kubeconfig, token, oidcCutoverSSHUser(o), fetchVerified, cutErr == nil && !o.NoOIDCCutover, nil)
+		})
+		if serviceErr != nil {
+			fmt.Fprintf(out, "[finalize] managed-services publication or admission deferred: %v\n", serviceErr)
+			fmt.Fprintf(out, "[finalize]   inspect and resume: kube-dc bootstrap services finalize %s --repo %s\n", o.Name, shellQuote(o.Repo))
+		}
+	}
 
 	// --- Access summary (Feature: admin access + keycloak password +
 	// SSO). Two outputs:
@@ -255,9 +299,10 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 	// rerun command(s) for what actually deferred — never telling the
 	// operator to rerun a step that already succeeded.
 	obDeferred, kcDeferred := obErr != nil, kcErr != nil
-	fmt.Fprint(out, accessBlock(ctx, o, session.SOPS, false /*withPassword*/, obDeferred, kcDeferred))
+	controllerAuthMissing := errors.Is(obErr, errOpenBaoControllerAuthMissing)
+	fmt.Fprint(out, accessBlock(ctx, o, session.SOPS, false /*withPassword*/, obDeferred, kcDeferred, controllerAuthMissing))
 	if !o.NoTTY {
-		o.AccessSummary = accessBlock(ctx, o, session.SOPS, true /*withPassword*/, obDeferred, kcDeferred)
+		o.AccessSummary = accessBlock(ctx, o, session.SOPS, true /*withPassword*/, obDeferred, kcDeferred, controllerAuthMissing)
 	}
 
 	// The access block ends with credentials and URLs, which reads as "you are
@@ -273,6 +318,35 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 			o.AccessSummary += b.String()
 		}
 	}
+	return
+}
+
+var errOpenBaoControllerAuthMissing = errors.New("OpenBao is initialized but controller authentication is not installed")
+
+// runOpenBaoResumeOrInit makes the non-idempotent init decision from live
+// markers. An unreadable or inconsistent state is action required; it must
+// never be treated as a fresh cluster.
+func runOpenBaoResumeOrInit(ctx context.Context, out io.Writer, cluster string, annotations interface {
+	GetServiceAnnotation(context.Context, string, string, string) (string, error)
+}, wait, init func() error) error {
+	initialized, authInstalled, err := openBaoResumeMarkers(ctx, annotations)
+	if err != nil {
+		return fmt.Errorf("read OpenBao resume markers: %w", err)
+	}
+	if initialized && !authInstalled {
+		return errOpenBaoControllerAuthMissing
+	}
+	if authInstalled && !initialized {
+		return fmt.Errorf("OpenBao controller auth marker exists without bootstrap marker; inspect `kube-dc bootstrap openbao status %s`", cluster)
+	}
+	if initialized {
+		fmt.Fprintln(out, "[finalize] OpenBao already initialized — skipping (resume)")
+		return nil
+	}
+	if err := wait(); err != nil {
+		return err
+	}
+	return init()
 }
 
 // writeCutoverOutstandingBanner is the last thing an install prints when the
@@ -462,8 +536,9 @@ var (
 // refuses a partial set, because a half-wired cluster gives intermittent 401s
 // as kubectl load-balances across apiservers — a symptom that reads like a
 // clock or Keycloak fault and costs far more than the un-wired case. Node
-// discovery therefore comes from the live cluster, not from whatever single
-// --ssh-host init happened to use.
+// discovery therefore comes from the live cluster. The install's SSH targets
+// override the addresses for matching nodes, since a nested or bastion-reached
+// control plane may have InternalIPs this workstation cannot route to.
 //
 // Re-running is safe: the cutover is idempotent and snapshots each node's
 // config before touching it.
@@ -482,6 +557,7 @@ func runFinalizeOIDCCutover(ctx context.Context, out io.Writer, o *clusterinit.I
 	if err != nil {
 		return err
 	}
+	nodes = overrideFinalizeCutoverHosts(nodes, o)
 	fmt.Fprintf(out, "[finalize] wiring %d control-plane node(s) to the OIDC webhook\n", len(nodes))
 
 	res, err := oidccutover.Run(ctx, oidccutover.Options{
@@ -507,6 +583,29 @@ func runFinalizeOIDCCutover(ctx context.Context, out io.Writer, o *clusterinit.I
 	fmt.Fprintf(out, "[finalize] OIDC cutover: %d node(s) wired, %d already wired\n",
 		len(res.Wired), len(res.AlreadyWired))
 	return nil
+}
+
+// overrideFinalizeCutoverHosts keeps the complete live control-plane set and
+// only changes how its known members are reached. In particular, --ssh-host
+// applies to the primary (or the sole node) and --node-ssh-host supplies any
+// additional per-node routes through a bastion.
+func overrideFinalizeCutoverHosts(nodes []oidccutover.Node, o *clusterinit.InitOptions) []oidccutover.Node {
+	if o == nil {
+		return nodes
+	}
+	for i := range nodes {
+		raw := o.NodeSSHHosts[nodes[i].Name]
+		if raw == "" && o.SSHHost != "" && (nodes[i].Name == o.PrimaryNode || len(nodes) == 1) {
+			raw = o.SSHHost
+		}
+		if raw == "" {
+			continue
+		}
+		// A bare alias may specify its own User in ssh_config. Do not
+		// overwrite it with the primary node's --ssh-host user.
+		nodes[i].Host = parseSSHHostArg(raw)
+	}
+	return nodes
 }
 
 // cutoverRerunCommand renders the command that finishes the job by hand.

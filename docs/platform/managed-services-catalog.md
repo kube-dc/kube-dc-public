@@ -14,7 +14,7 @@ hand on a cluster.
 |------|---------|
 | `tenant-native.yaml`, `postgresql.yaml` | The base: the connectivity class and the PostgreSQL bundle, class and plans |
 | `components/<family>/` | One component per additional family, such as `mysql`, `valkey`, or `forgejo`. Each carries the `ServiceFamilyBundle`, the `ManagedServiceClass` and the family's plans |
-| `components/shared-service-plans/` | The standard Development and Production plans for PostgreSQL, Kafka and Valkey, with the sizing table in its README |
+| `components/shared-service-plans/` | The Development and Production plans for PostgreSQL, Kafka and Valkey, with the sizing table in its README. The MySQL, MariaDB and ClickHouse components define their own Development and Production pairs. |
 | `components/data-plane/` | Registers the cluster's own data plane |
 | `components/postgresql-gateway/`, `components/postgresql-public-loadbalancer/` | Exposure entitlements, where the cluster has a shared TLS listener or a public address pool |
 | `components/console*/` | Console publication of plans on clusters that predate the annotation being the default |

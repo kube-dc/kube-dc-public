@@ -87,6 +87,29 @@ func TestPatchPlatformRegistryListener_ComposesBeforeNextSpecKey(t *testing.T) {
 	}
 }
 
+func TestPatchPlatformRegistryListener_ComposesWithIndentlessSequence(t *testing.T) {
+	input := strings.Split(genPlatformYAML+"  patches:\n  - target:\n      kind: Gateway\n    patch: |\n      - op: add\n        path: /spec/listeners/-\n  postBuild:\n    substitute: {}\n", "\n")
+	got, changed, err := patchPlatformRegistryListener(input)
+	if err != nil || !changed {
+		t.Fatalf("patch: changed=%v err=%v", changed, err)
+	}
+	joined := strings.Join(got, "\n")
+	var parsed struct {
+		Spec struct {
+			Patches []any `yaml:"patches"`
+		} `yaml:"spec"`
+	}
+	if err := yaml.Unmarshal([]byte(joined), &parsed); err != nil {
+		t.Fatalf("composed platform.yaml is invalid: %v\n%s", err, joined)
+	}
+	if len(parsed.Spec.Patches) != 2 {
+		t.Fatalf("want both patches, got %d:\n%s", len(parsed.Spec.Patches), joined)
+	}
+	if strings.Index(joined, registryListenerMarker) > strings.Index(joined, "  postBuild:") {
+		t.Fatalf("listener must remain inside patches list:\n%s", joined)
+	}
+}
+
 func TestPatchPlatformRegistryListener_NoAddonMeansNoPatch(t *testing.T) {
 	fleet := tempFleet(t, "c1", "platform/tenant-addons")
 	if err := WriteImageAccel(fleet, "c1", ImageAccelSpec{Enabled: true, S3: false}, nil); err != nil {

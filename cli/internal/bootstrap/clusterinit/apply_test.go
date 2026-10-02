@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/config"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
 
@@ -253,6 +254,35 @@ func TestApply_FluxInstall_GitHubEnv_Propagated(t *testing.T) {
 	}
 	if _, gitlab := fluxCall.Env["GITLAB_TOKEN"]; gitlab {
 		t.Errorf("GITLAB_TOKEN should NOT be set on github provider; env=%v", fluxCall.Env)
+	}
+}
+
+func TestApply_FluxInstallUsesVerifiedChildKubeconfig(t *testing.T) {
+	t.Setenv("KUBECONFIG", "/operator/unrelated.yaml")
+	repo := applyFleet(t)
+	runner := applyRunner(t, repo)
+	opts := atlantisApplyOpts(t, repo, runner, &fakeGit{preSHA: "abc123"})
+	opts.KubeconfigPath = "/guided/private/child.yaml"
+	if err := Apply(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+	var foundScaffold, foundFlux bool
+	for _, call := range runner.calls {
+		switch call.Kind {
+		case ports.ScriptAddCluster:
+			foundScaffold = true
+			if len(call.Args) < 4 || call.Args[3] != opts.KubeconfigPath {
+				t.Fatalf("scaffold did not receive the verified child path: %v", call.Args)
+			}
+		case ports.ScriptFluxInstall:
+			foundFlux = true
+			if call.Env["KUBECONFIG"] != opts.KubeconfigPath {
+				t.Fatalf("Flux could inherit an unrelated kubeconfig: %v", call.Env)
+			}
+		}
+	}
+	if !foundScaffold || !foundFlux {
+		t.Fatalf("apply did not reach both scripts: %+v", runner.calls)
 	}
 }
 
@@ -771,6 +801,152 @@ func TestApply_Resume_PushFailure_BlocksFluxInstall(t *testing.T) {
 	for _, c := range runner.calls {
 		if c.Kind == ports.ScriptFluxInstall {
 			t.Fatal("flux-install ran despite resume push failure")
+		}
+	}
+}
+
+// TestApply_Resume_RefusesPAYGOnNonPAYGOverlay: a resume writes nothing, so
+// --payg against an overlay scaffolded without PAYG must refuse before the
+// push/flux-install instead of reporting success with PAYG still off.
+func TestApply_Resume_RefusesPAYGOnNonPAYGOverlay(t *testing.T) {
+	repo := applyFleet(t)
+	overlay := filepath.Join(repo, "clusters", "atlantis")
+	if err := os.MkdirAll(overlay, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(overlay, "cluster-config.env"), []byte("CLUSTER_NAME=atlantis\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runner := applyRunner(t, repo)
+	git := &fakeGit{preSHA: "abc123", commitSHA: "def456"}
+	opts := atlantisApplyOpts(t, repo, runner, git)
+	opts.PAYG = true
+
+	err := Apply(context.Background(), opts)
+	if !errors.Is(err, ErrPAYGChangeOnResume) {
+		t.Fatalf("want ErrPAYGChangeOnResume, got %v", err)
+	}
+	if git.pushed {
+		t.Fatal("a refused resume must not push")
+	}
+	for _, c := range runner.calls {
+		if c.Kind == ports.ScriptFluxInstall {
+			t.Fatal("flux-install ran despite the refused resume")
+		}
+	}
+}
+
+func paygApplyOpts(t *testing.T, repo string, runner ports.ScriptRunner, git ports.GitClient) ApplyOptions {
+	t.Helper()
+	opts := atlantisApplyOpts(t, repo, runner, git)
+	opts.Sets = paygSets("stripe")
+	opts.NodeNICs = nil // the PAYG fake add-cluster.sh writes no infra-core layer
+	opts.PAYG = true
+	return opts
+}
+
+// A transient sops failure in the PAYG step fails the scaffold and removes
+// the half-written overlay, so the retry is a clean first scaffold that
+// succeeds — not a resume the PAYG guard would reject.
+func TestApply_PAYG_SopsFailureThenRetry(t *testing.T) {
+	fixPAYGClock(t)
+	repo := applyFleet(t)
+	writePAYGStarter(t, repo)
+	clusterDir := filepath.Join(repo, "clusters", "atlantis")
+
+	failingSopsOnPath(t)
+	git := &fakeGit{preSHA: "abc123", commitSHA: "def456"}
+	err := Apply(context.Background(), paygApplyOpts(t, repo, paygAddClusterRunner(t, repo), git))
+	if err == nil || !strings.Contains(err.Error(), "no age identity") {
+		t.Fatalf("first run: want the sops failure, got %v", err)
+	}
+	if _, statErr := os.Stat(clusterDir); !os.IsNotExist(statErr) {
+		t.Fatalf("a failed PAYG scaffold must not leave an overlay for the retry to trip over (stat=%v)", statErr)
+	}
+	if git.commitCall != 0 || git.pushed {
+		t.Fatal("nothing may be committed or pushed by the failed run")
+	}
+
+	fakeSopsOnPath(t)
+	git = &fakeGit{preSHA: "abc123", commitSHA: "def456"}
+	if err := Apply(context.Background(), paygApplyOpts(t, repo, paygAddClusterRunner(t, repo), git)); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	env, err := config.LoadEnv(filepath.Join(clusterDir, "cluster-config.env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := inspectPAYGOverlay(repo, "atlantis", "kdc.atlantis.example.com", env)
+	if err != nil || !st.present || len(st.missing) > 0 {
+		t.Fatalf("retry left an incomplete PAYG contract: present=%v missing=%v err=%v", st.present, st.missing, err)
+	}
+	if git.commitCall != 1 || !git.pushed {
+		t.Fatalf("retry must commit and push once (commits=%d pushed=%v)", git.commitCall, git.pushed)
+	}
+}
+
+// A PAYG scaffold that was cut short and committed is completed by a resume
+// with --payg, re-checked, and committed so the resume push carries it.
+func TestApply_Resume_CompletesPartialPAYG(t *testing.T) {
+	fakeSopsOnPath(t)
+	fixPAYGClock(t)
+	repo := applyFleet(t)
+	writePAYGStarter(t, repo)
+	// First, a full scaffold (as a prior run would have produced) ...
+	if err := Scaffold(context.Background(), ScaffoldOptions{
+		Plan:      &Plan{ClusterName: "atlantis", Domain: "kdc.atlantis.example.com", Preset: PresetCloudPublicVLAN},
+		FleetRepo: repo, NodeExternalIP: "203.0.113.52", Sets: paygSets("stripe"), PAYG: true,
+		Runner: paygAddClusterRunner(t, repo),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// ... then cut short: the layer file and the role patch never landed.
+	clusterDir := filepath.Join(repo, "clusters", "atlantis")
+	_ = os.Remove(filepath.Join(clusterDir, paygLayerFileName))
+	if err := os.WriteFile(filepath.Join(clusterDir, "platform.yaml"), []byte(addClusterPlatformYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uidBefore := envValue(readFile(t, filepath.Join(clusterDir, "cluster-config.env")), PAYGInstallationUIDKey)
+
+	runner := paygAddClusterRunner(t, repo)
+	git := &fakeGit{preSHA: "abc123", commitSHA: "def456"}
+	if err := Apply(context.Background(), paygApplyOpts(t, repo, runner, git)); err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if git.commitCall != 1 || !git.pushed {
+		t.Fatalf("the completion must be committed and pushed (commits=%d pushed=%v)", git.commitCall, git.pushed)
+	}
+	env, _ := config.LoadEnv(filepath.Join(clusterDir, "cluster-config.env"))
+	if st, err := inspectPAYGOverlay(repo, "atlantis", "kdc.atlantis.example.com", env); err != nil || len(st.missing) > 0 {
+		t.Fatalf("contract after completion: missing=%v err=%v", st.missing, err)
+	}
+	if got := paygEnvValue(env, PAYGInstallationUIDKey); got != uidBefore {
+		t.Fatalf("completion changed the installation UID: %s -> %s", uidBefore, got)
+	}
+}
+
+// An overlay copied from another installation keeps that installation's UID;
+// a resume must refuse it — with or without --payg — instead of pushing it.
+func TestApply_Resume_RefusesCopiedPAYGIdentity(t *testing.T) {
+	for _, payg := range []bool{false, true} {
+		repo := applyFleet(t)
+		overlay := filepath.Join(repo, "clusters", "atlantis")
+		if err := os.MkdirAll(overlay, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		env := "CLUSTER_NAME=atlantis\nBILLING_PROVIDER=stripe\nPAYG_ENABLED=true\n" +
+			"PAYG_INSTALLATION_UID=11111111-2222-4333-8444-555555555555\nPAYG_INSTALLATION_BINDING=source/source.example.com\n"
+		if err := os.WriteFile(filepath.Join(overlay, "cluster-config.env"), []byte(env), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		git := &fakeGit{preSHA: "abc123", commitSHA: "def456"}
+		opts := atlantisApplyOpts(t, repo, applyRunner(t, repo), git)
+		opts.PAYG = payg
+		if err := Apply(context.Background(), opts); !errors.Is(err, ErrPAYGIdentity) {
+			t.Fatalf("payg=%v: want ErrPAYGIdentity, got %v", payg, err)
+		}
+		if git.pushed {
+			t.Fatalf("payg=%v: a copied identity must not be pushed", payg)
 		}
 	}
 }

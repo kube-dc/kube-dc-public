@@ -91,14 +91,23 @@ Add it to your shell rc (`.zshrc`, `.bashrc`, …) so every new terminal session
 
 ## What's in the CLI
 
-`kube-dc bootstrap` is a single integrated TUI with a top tab bar. Every interactive screen is reachable as a named tab. Press `]` / `[` to cycle tabs, or `1` / `2` / … to jump directly. The cobra subcommand you run only decides which tab is active on launch:
+`kube-dc bootstrap` opens a TUI with Fleet, Contexts, and New Cluster tabs.
+Press `]` or `[` to cycle tabs, or `1`, `2`, or `3` to select a tab. When you
+edit a text field, these keys enter text. Finish or cancel the edit before
+you change tabs.
 
 | Subcommand | Opens on tab |
 |---|---|
-| `kube-dc bootstrap` | Fleet |
+| `kube-dc bootstrap` | Fleet when a checkout exists; otherwise New Cluster |
 | `kube-dc bootstrap context` | Contexts |
+| `kube-dc bootstrap init` | Standalone New Cluster form |
 
 Inside any tab, `Tab` and `Shift+Tab` cycle focus between the panes of that screen (cluster list ↔ details ↔ drill-down). Top-tab and pane-focus navigation are intentionally distinct keys so they never collide.
+
+New Cluster uses the same form, validation, plan confirmation, and installation
+path as `bootstrap init`. Its Hosts section can read interfaces and disk
+candidates through SSH after you request discovery. See the
+[interactive installation procedure](installation-guide.md#331-interactive-panel--reusable-config---config----save-config).
 
 The chapters that follow cover each tab in detail, plus the non-TUI subcommands (`break-glass`, `kubeconfig`, `login`).
 

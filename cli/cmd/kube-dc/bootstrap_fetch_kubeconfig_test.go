@@ -116,8 +116,9 @@ func TestParseSSHHostArg_TruthTable(t *testing.T) {
 	}{
 		{"master", ports.SSHHost{Alias: "master"}},
 		{"acme-master", ports.SSHHost{Alias: "acme-master"}},
-		{"operator@master.acme.com", ports.SSHHost{User: "operator", Hostname: "master.acme.com"}},
-		{"root@10.0.0.1", ports.SSHHost{User: "root", Hostname: "10.0.0.1"}},
+		{"operator@master.acme.com", ports.SSHHost{User: "operator", Alias: "master.acme.com"}},
+		{"root@10.0.0.1", ports.SSHHost{User: "root", Alias: "10.0.0.1"}},
+		{"root@127.0.0.1:2226", ports.SSHHost{User: "root", Alias: "127.0.0.1", Port: 2226}},
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {

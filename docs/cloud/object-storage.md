@@ -133,6 +133,33 @@ kubectl get secret my-bucket -n acme-production -o jsonpath='{.data.AWS_SECRET_A
 
 Per-bucket keys are scoped to that specific bucket only.
 
+### Rotate a per-bucket key
+
+Where your platform operator has enabled key rotation, a Project admin can replace a bucket's
+key while managed services keep using the bucket as their backup archive. A rotation creates a
+new key and writes it into the bucket's Secret. It then waits until every managed service that
+reads or writes the bucket has switched to the new key or no longer exists, and only then
+revokes the old key. The console does not offer rotation yet; use the API with your console
+session token:
+
+```text
+POST https://backend.<your-domain>/api/object-storage/<project-namespace>/buckets/<bucket>/key-rotations
+{"idempotencyKey": "rotate-2026-10", "claimUID": "<ObjectBucketClaim UID>",
+ "sourceSecretUID": "<bucket Secret UID>", "gracePeriodSeconds": 300}
+```
+
+The two UIDs pin the bucket and its Secret as you saw them; a changed incarnation is refused.
+Repeat the same request safely: the idempotency key names one rotation. `GET` on the same path
+lists rotations, and `GET .../key-rotations/<rotation>` shows one, including its phase and why it
+waits.
+
+A rotation that can never finish (for example, a service that cannot switch keys) can be
+**abandoned**: `POST .../key-rotations/<rotation>/abandon` with
+`{"rotationUID": "<uid>", "reason": "<why>"}`. Abandoning revokes nothing. Both the old and the
+new key stay valid, the rotation ends as `Abandoned`, and the next rotation of the bucket that
+succeeds retires the keys this one left behind. An abandon cannot be withdrawn. While a key is
+being revoked, an abandon waits until that step finishes.
+
 ## Use S3 tools
 
 The examples below use a bucket's per-bucket credentials. Set `S3_ENDPOINT` to the endpoint shown in the bucket detail or Access Keys view.

@@ -1,5 +1,5 @@
 ▸   GPU platform             ‹ enabled ›  ←→
-      disabled / inventory only / install products
+    disabled / inventory only / install products
     Driver source            ‹ gpu-operator ›  ←→
   ✓ GPU Operator version     v26.3.3
   ✓ NVIDIA driver version    580.126.20

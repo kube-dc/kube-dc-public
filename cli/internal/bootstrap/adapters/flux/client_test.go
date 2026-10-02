@@ -2,11 +2,14 @@ package flux
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/rest"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
@@ -188,6 +191,40 @@ func TestBootstrap_TokenInEnvNotArgv(t *testing.T) {
 	}
 	if !envOK {
 		t.Errorf("GITHUB_TOKEN not in env: %v", capturedEnv)
+	}
+}
+
+func TestVerifiedChildFluxBootstrapPinsSubprocessKubeconfig(t *testing.T) {
+	dir := t.TempDir()
+	output := filepath.Join(dir, "target")
+	if err := os.WriteFile(filepath.Join(dir, "flux"), []byte("#!/bin/sh\nprintf %s \"$KUBECONFIG\" > \"$KUBE_DC_TEST_OUTPUT\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("KUBE_DC_TEST_OUTPUT", output)
+	t.Setenv("KUBECONFIG", "/ambient/wrong.yaml")
+	childPath := filepath.Join(dir, "child.yaml")
+	c, err := NewWithConfig(&rest.Config{Host: "https://127.0.0.1:6443"}, childPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := ports.FluxBootstrapOpts{GitHubOwner: "acme", GitHubRepo: "fleet", Path: "clusters/test", Token: "test-token"}
+	if err := c.Bootstrap(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(output)
+	if err != nil || string(got) != childPath {
+		t.Fatalf("Flux subprocess used %q, %v; want verified child path", got, err)
+	}
+	if err := os.Remove(output); err != nil {
+		t.Fatal(err)
+	}
+	opts.Kubeconfig = "/another/cluster.yaml"
+	if err := c.Bootstrap(context.Background(), opts); err == nil {
+		t.Fatal("conflicting Flux kubeconfig was accepted")
+	}
+	if _, err := os.Stat(output); !os.IsNotExist(err) {
+		t.Fatalf("Flux subprocess started after conflicting target: %v", err)
 	}
 }
 

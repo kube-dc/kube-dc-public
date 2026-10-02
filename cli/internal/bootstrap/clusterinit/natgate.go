@@ -402,6 +402,7 @@ var ownedPlatformPatchMarkers = []string{
 	byoWildcardTLSMarker,          // byo-wildcard ACME Certificate suppression
 	dns01Route53Marker,            // ClusterIssuer solvers → Route53 DNS-01
 	dns01CloudflareMarker,         // ClusterIssuer solvers → Cloudflare DNS-01 (all or wildcards)
+	paygDBRoleMarker,              // CNPG managed role for the PAYG collector (--payg)
 }
 
 // EgressGatewayProbeOptions parameterizes ProbeEgressGateway.

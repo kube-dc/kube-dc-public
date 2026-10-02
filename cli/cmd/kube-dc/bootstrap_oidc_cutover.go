@@ -205,8 +205,9 @@ func resolveCutoverNodes(ctx context.Context, kubeconfigPath string, sshHosts []
 				"be reached automatically — name every control-plane host with --ssh-host instead", f.Name)
 		}
 		nodes = append(nodes, oidccutover.Node{
-			Name: f.Name,
-			Host: ports.SSHHost{Hostname: f.InternalIP, User: sshUser},
+			Name:       f.Name,
+			InternalIP: f.InternalIP,
+			Host:       ports.SSHHost{Hostname: f.InternalIP, User: sshUser},
 		})
 	}
 	if len(nodes) == 0 {

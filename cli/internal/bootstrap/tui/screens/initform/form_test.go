@@ -161,6 +161,24 @@ func TestEquivalentFlags_RoundTripsTheSurface(t *testing.T) {
 	}
 }
 
+// --payg has no panel row; a --config that carried it must still reach the
+// command the operator is shown, and off must stay off.
+func TestEquivalentFlags_PAYG(t *testing.T) {
+	for _, on := range []bool{false, true} {
+		o := &clusterinit.InitOptions{Yes: true, PAYG: on}
+		st := baseState()
+		if err := st.Apply(o); err != nil {
+			t.Fatal(err)
+		}
+		if o.PAYG != on {
+			t.Fatalf("the panel changed PAYG from %v", on)
+		}
+		if got := strings.Contains(st.EquivalentFlags(o), "--payg"); got != on {
+			t.Errorf("PAYG=%v but --payg in equivalent flags = %v", on, got)
+		}
+	}
+}
+
 // The "equivalent" command must be actually equivalent for rook-ceph-pvc
 // sizing — --ceph-osd-count / --ceph-osd-volume-size-gb, not just the
 // storage class (scriptability promise).

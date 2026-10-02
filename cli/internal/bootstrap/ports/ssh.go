@@ -52,11 +52,45 @@ type SSHClient interface {
 	Put(ctx context.Context, host SSHHost, remotePath string, body []byte, mode uint32) error
 }
 
+// CappedSSHClient limits combined stdout and stderr while the remote command
+// runs. Read-only inventory uses this contract so a host cannot make the
+// installer buffer unbounded output before it checks the response size.
+type CappedSSHClient interface {
+	SSHClient
+	RunCapped(ctx context.Context, host SSHHost, cmd string, maxBytes int) ([]byte, error)
+}
+
+// SSHHostKeyEvidence identifies the target key accepted during one SSH
+// handshake. A caller must still compare the fingerprint with a trusted value.
+type SSHHostKeyEvidence struct {
+	Address           string `json:"address"`
+	Algorithm         string `json:"algorithm"`
+	FingerprintSHA256 string `json:"fingerprintSHA256"`
+}
+
+// CappedSSHHostKeyClient returns target-key evidence from the same connection
+// that runs the bounded read command. Jump-host keys are checked but omitted.
+type CappedSSHHostKeyClient interface {
+	CappedSSHClient
+	RunCappedWithHostKey(ctx context.Context, host SSHHost, cmd string, maxBytes int) ([]byte, SSHHostKeyEvidence, error)
+}
+
+// GuardedPutSSHClient wraps the privileged upload command on the same SSH
+// connection. The guard must preserve stdin and hold ownership through the
+// actual write; a separate pre-upload check cannot fence an upload.
+type GuardedPutSSHClient interface {
+	CappedSSHHostKeyClient
+	PutGuarded(context.Context, SSHHost, string, []byte, uint32, func(string) (string, error)) error
+}
+
 // SSHHost identifies an SSH endpoint. When `Alias` matches a Host block
 // in `~/.ssh/config`, the adapter resolves the rest from the config and
 // the other fields here are overrides. When `Alias` is empty, the
 // adapter requires at least Hostname (+ defaults User="root", Port=22).
 type SSHHost struct {
+	// ExpectedHostKeySHA256 adds a per-request target pin to known_hosts
+	// verification. It never relaxes known_hosts or applies to jump hosts.
+	ExpectedHostKeySHA256 string
 	// Alias is a name from the operator's `~/.ssh/config` Host block
 	// (e.g. "node-c3" or "bastion"). Optional.
 	Alias string

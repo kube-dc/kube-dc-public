@@ -17,6 +17,10 @@ import (
 	"github.com/shalb/kube-dc/cli/internal/alerts"
 	alertstui "github.com/shalb/kube-dc/cli/internal/alerts/tui"
 	"github.com/shalb/kube-dc/cli/internal/auth"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/tui/screens"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/tui/screens/installrun"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/tui/screens/setupcheck"
 	"github.com/shalb/kube-dc/cli/internal/config"
 	"github.com/shalb/kube-dc/cli/internal/jwt"
 	"github.com/shalb/kube-dc/cli/internal/kubeconfig"
@@ -102,6 +106,15 @@ func classifyExecuteErr(err error) (code int, msg string) {
 	if err == nil {
 		return 0, ""
 	}
+	if errors.Is(err, setupcheck.ErrCancelled) {
+		return 130, "setup check stopped"
+	}
+	if errors.Is(err, screens.ErrDemoStopped) {
+		return 130, "setup demo stopped"
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, installrun.ErrAborted) {
+		return 130, "installation stopped; check completed and uncertain effects before continuing"
+	}
 	var de *doctorExitCodeErr
 	if errors.As(err, &de) {
 		return de.ExitCode(), ""
@@ -120,6 +133,10 @@ func classifyExecuteErr(err error) (code int, msg string) {
 	var ce *exitCodeError
 	if errors.As(err, &ce) {
 		return ce.ExitCode(), ce.Error()
+	}
+	var ae *clusterinit.ActionRequiredError
+	if errors.As(err, &ae) {
+		return ae.ExitCode(), ae.Error()
 	}
 	return 1, err.Error()
 }

@@ -118,9 +118,10 @@ var sentinelMarkers = map[ports.ScriptKind][2]string{
 
 // Runner implements ports.ScriptRunner.
 type Runner struct {
-	fleetRepo  string
-	kubeDCRepo string // optional; required only for ScriptRoot=RootKubeDC entries
-	cb         ports.SentinelCallback
+	fleetRepo        string
+	kubeDCRepo       string // optional; required only for ScriptRoot=RootKubeDC entries
+	cb               ports.SentinelCallback
+	pinnedKubeconfig string
 
 	// cmdFactory builds the *exec.Cmd to invoke. Production builds it
 	// from the script path resolved via scriptPaths; tests override
@@ -158,8 +159,36 @@ func (r *Runner) WithSentinelCallback(cb ports.SentinelCallback) ports.ScriptRun
 	return &cp
 }
 
+// WithPinnedKubeconfig binds every script in a verified child session to its
+// private kubeconfig. A conflicting environment value or add-cluster argument
+// is rejected before a subprocess starts.
+func (r *Runner) WithPinnedKubeconfig(path string) *Runner {
+	cp := *r
+	cp.pinnedKubeconfig = path
+	return &cp
+}
+
 // Run implements ports.ScriptRunner.Run.
 func (r *Runner) Run(ctx context.Context, name ports.ScriptKind, env map[string]string, args ...string) (<-chan ports.Line, error) {
+	if r.pinnedKubeconfig != "" {
+		if supplied := env["KUBECONFIG"]; supplied != "" && supplied != r.pinnedKubeconfig {
+			return nil, fmt.Errorf("script %s: kubeconfig differs from the verified child session", name)
+		}
+		envCopy := make(map[string]string, len(env)+1)
+		for key, value := range env {
+			envCopy[key] = value
+		}
+		envCopy["KUBECONFIG"] = r.pinnedKubeconfig
+		env = envCopy
+		if name == ports.ScriptAddCluster {
+			if len(args) >= 4 && args[3] != r.pinnedKubeconfig {
+				return nil, fmt.Errorf("script %s: kubeconfig argument differs from the verified child session", name)
+			}
+			if len(args) == 3 {
+				args = append(append([]string(nil), args...), r.pinnedKubeconfig)
+			}
+		}
+	}
 	cmd, err := r.cmdFactory(ctx, name, env, args)
 	if err != nil {
 		return nil, err

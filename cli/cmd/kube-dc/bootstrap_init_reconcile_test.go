@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/openbao"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
 
@@ -34,8 +35,9 @@ type fakeSOPS struct {
 func (f fakeSOPS) Decrypt(context.Context, string) ([]byte, error) { return f.data, f.err }
 
 type fakeAnno struct {
-	v   string
-	err error
+	bootstrap string
+	auth      string
+	err       error
 }
 
 type recordingStepReporter struct {
@@ -63,8 +65,17 @@ func (r *recordingStepReporter) Skip(id clusterinit.StepID, reason string) {
 	r.skipped[id] = reason
 }
 
-func (f fakeAnno) GetServiceAnnotation(context.Context, string, string, string) (string, error) {
-	return f.v, f.err
+func (f fakeAnno) GetServiceAnnotation(_ context.Context, _, _, key string) (string, error) {
+	if f.err != nil {
+		return "", f.err
+	}
+	if key == openbao.AnnotationBootstrapFinalized {
+		return f.bootstrap, nil
+	}
+	if key == openbao.AnnotationControllerAuthInstalled {
+		return f.auth, nil
+	}
+	return "", nil
 }
 
 // --- reconcile watch ---
@@ -224,7 +235,7 @@ func TestAccessBlock(t *testing.T) {
 	}
 
 	// withPassword=true (interactive terminal) → the real password shows.
-	withPw := accessBlock(context.Background(), o, sops, true, false, false)
+	withPw := accessBlock(context.Background(), o, sops, true, false, false, false)
 	for _, want := range append([]string{"shown-pw"}, urls...) {
 		if !strings.Contains(withPw, want) {
 			t.Fatalf("withPassword block missing %q:\n%s", want, withPw)
@@ -233,7 +244,7 @@ func TestAccessBlock(t *testing.T) {
 
 	// withPassword=false (plain/CI) → MUST NOT leak the password; shows
 	// the kubectl retrieval hint instead. (P1 fix.)
-	noPw := accessBlock(context.Background(), o, sops, false, false, false)
+	noPw := accessBlock(context.Background(), o, sops, false, false, false, false)
 	if strings.Contains(noPw, "shown-pw") {
 		t.Fatalf("plain/CI access block leaked the password:\n%s", noPw)
 	}
@@ -247,27 +258,27 @@ func TestAccessBlock(t *testing.T) {
 	}
 
 	// Deferred specificity (P2 fix): only the deferred step's rerun cmd.
-	obOnly := accessBlock(context.Background(), o, sops, true, true /*ob*/, false /*kc*/)
-	if !strings.Contains(obOnly, "openbao init eu-dc1") {
-		t.Fatalf("openbao-deferred block missing openbao rerun:\n%s", obOnly)
+	obOnly := accessBlock(context.Background(), o, sops, true, true /*ob*/, false /*kc*/, false)
+	if !strings.Contains(obOnly, "openbao status eu-dc1") {
+		t.Fatalf("openbao-deferred block missing safe status check:\n%s", obOnly)
 	}
 	if strings.Contains(obOnly, "keycloak init eu-dc1") {
 		t.Fatalf("openbao-deferred block wrongly told operator to rerun keycloak:\n%s", obOnly)
 	}
-	kcOnly := accessBlock(context.Background(), o, sops, true, false /*ob*/, true /*kc*/)
+	kcOnly := accessBlock(context.Background(), o, sops, true, false /*ob*/, true /*kc*/, false)
 	if !strings.Contains(kcOnly, "keycloak init eu-dc1") {
 		t.Fatalf("keycloak-deferred block missing keycloak rerun:\n%s", kcOnly)
 	}
 	if strings.Contains(kcOnly, "openbao init eu-dc1") {
 		t.Fatalf("keycloak-deferred block wrongly told operator to rerun openbao:\n%s", kcOnly)
 	}
-	both := accessBlock(context.Background(), o, sops, true, true, true)
-	if !strings.Contains(both, "openbao init eu-dc1") || !strings.Contains(both, "keycloak init eu-dc1") {
+	both := accessBlock(context.Background(), o, sops, true, true, true, false)
+	if !strings.Contains(both, "openbao status eu-dc1") || !strings.Contains(both, "keycloak init eu-dc1") {
 		t.Fatalf("both-deferred block missing a rerun cmd:\n%s", both)
 	}
 
 	// Decrypt failure with withPassword=true → kubectl hint, no crash.
-	fallback := accessBlock(context.Background(), o, fakeSOPS{err: context.DeadlineExceeded}, true, false, false)
+	fallback := accessBlock(context.Background(), o, fakeSOPS{err: context.DeadlineExceeded}, true, false, false, false)
 	if !strings.Contains(fallback, "kubectl -n keycloak get secret keycloak") {
 		t.Fatalf("expected kubectl fallback on decrypt failure:\n%s", fallback)
 	}
@@ -275,15 +286,56 @@ func TestAccessBlock(t *testing.T) {
 
 // --- openbao finalized (resume gate) ---
 
-func TestOpenBaoFinalized(t *testing.T) {
+func TestOpenBaoResumeMarkers(t *testing.T) {
 	ctx := context.Background()
-	if !openBaoFinalized(ctx, fakeAnno{v: "2026-07-08T00:00:00Z"}) {
-		t.Fatal("annotated service should report finalized=true")
+	tests := []struct {
+		name               string
+		fake               fakeAnno
+		wantInit, wantAuth bool
+		wantErr            bool
+	}{
+		{"complete", fakeAnno{bootstrap: "2026-07-08T00:00:00Z", auth: "2026-07-08T00:10:00Z"}, true, true, false},
+		{"controller auth missing", fakeAnno{bootstrap: "2026-07-08T00:00:00Z"}, true, false, false},
+		{"fresh", fakeAnno{}, false, false, false},
+		{"unreadable", fakeAnno{err: context.DeadlineExceeded}, false, false, true},
 	}
-	if openBaoFinalized(ctx, fakeAnno{v: ""}) {
-		t.Fatal("empty annotation should report finalized=false")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			init, auth, err := openBaoResumeMarkers(ctx, tc.fake)
+			if init != tc.wantInit || auth != tc.wantAuth || (err != nil) != tc.wantErr {
+				t.Fatalf("got initialized=%v auth=%v error=%v, want initialized=%v auth=%v error=%v", init, auth, err, tc.wantInit, tc.wantAuth, tc.wantErr)
+			}
+		})
 	}
-	if openBaoFinalized(ctx, fakeAnno{err: context.DeadlineExceeded}) {
-		t.Fatal("read error should report finalized=false (safer to attempt)")
+	o := &clusterinit.InitOptions{Name: "example", Repo: "/fleet"}
+	status := accessBlock(ctx, o, fakeSOPS{}, false, true, false, true)
+	if !strings.Contains(status, "openbao setup-controller-auth example") || strings.Contains(status, "openbao init example") {
+		t.Fatalf("partial resume needs controller-auth recovery, got:\n%s", status)
+	}
+}
+
+func TestRunOpenBaoResumeOrInitFailClosed(t *testing.T) {
+	tests := []struct {
+		name              string
+		state             fakeAnno
+		wantErr           bool
+		wantWait, wantRun int
+	}{
+		{name: "fresh", state: fakeAnno{}, wantWait: 1, wantRun: 1},
+		{name: "complete", state: fakeAnno{bootstrap: "done", auth: "done"}},
+		{name: "controller auth missing", state: fakeAnno{bootstrap: "done"}, wantErr: true},
+		{name: "inconsistent", state: fakeAnno{auth: "done"}, wantErr: true},
+		{name: "unreadable", state: fakeAnno{err: context.DeadlineExceeded}, wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			waits, runs := 0, 0
+			var out bytes.Buffer
+			err := runOpenBaoResumeOrInit(context.Background(), &out, "example", tc.state,
+				func() error { waits++; return nil }, func() error { runs++; return nil })
+			if (err != nil) != tc.wantErr || waits != tc.wantWait || runs != tc.wantRun {
+				t.Fatalf("err=%v waits=%d init runs=%d; want err=%v waits=%d runs=%d", err, waits, runs, tc.wantErr, tc.wantWait, tc.wantRun)
+			}
+		})
 	}
 }

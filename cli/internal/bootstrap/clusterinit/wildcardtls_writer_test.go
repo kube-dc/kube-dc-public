@@ -98,15 +98,15 @@ func TestWriteWildcardTLS_FullShape(t *testing.T) {
 		t.Fatalf("secret file not in kustomization resources:\n%s", kust)
 	}
 
-	// platform.yaml gains the 12 platform suppressions; registry-depot its 1.
+	// platform.yaml gains the 13 platform suppressions; registry-depot its 1.
 	plat, _ := os.ReadFile(filepath.Join(clusterDir, "platform.yaml"))
 	if !strings.Contains(string(plat), byoWildcardTLSMarker) ||
 		!strings.Contains(string(plat), "name: wildcard-tls") ||
 		!strings.Contains(string(plat), "$patch: delete") {
 		t.Fatalf("platform.yaml missing suppression patches:\n%s", plat)
 	}
-	if got := strings.Count(string(plat), "$patch: delete"); got != 12 {
-		t.Fatalf("platform.yaml must suppress exactly the 12 platform Certificates, got %d", got)
+	if got := strings.Count(string(plat), "$patch: delete"); got != 13 {
+		t.Fatalf("platform.yaml must suppress exactly the 13 platform Certificates, got %d", got)
 	}
 	depot, _ := os.ReadFile(filepath.Join(clusterDir, "registry-depot.yaml"))
 	if !strings.Contains(string(depot), "name: registry-tls") ||
@@ -141,7 +141,7 @@ func TestWriteWildcardTLS_OptionalLayersSkipped(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := WriteWildcardTLS(fleet, "c1", "example.com", m, nil); err == nil {
-		t.Fatal("a missing platform.yaml must be a hard error — the 12 platform Certificates would go unsuppressed")
+		t.Fatal("a missing platform.yaml must be a hard error — the 13 platform Certificates would go unsuppressed")
 	}
 }
 

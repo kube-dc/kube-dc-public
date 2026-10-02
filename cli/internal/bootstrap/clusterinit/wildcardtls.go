@@ -61,6 +61,7 @@ type wildcardSecretTarget struct {
 func wildcardSecretTargets() []wildcardSecretTarget {
 	return []wildcardSecretTarget{
 		{Name: "wildcard-tls", Namespace: "envoy-gateway-system"},
+		{Name: "managed-services-recovery-tls", Namespace: "envoy-gateway-system"},
 		{Name: "login.%s-tls", Namespace: "keycloak", DomainTemplated: true},
 		{Name: "kube-dc-frontend-tls", Namespace: "kube-dc"},
 		{Name: "kube-dc-backend-tls", Namespace: "kube-dc"},
@@ -96,6 +97,7 @@ func suppressedCertificates() []suppressedCertificate {
 	}
 	return []suppressedCertificate{
 		p("wildcard-tls", "envoy-gateway-system"),
+		p("managed-services-recovery", "envoy-gateway-system"),
 		p("login-tls", "keycloak"),
 		p("kube-dc-frontend-tls", "kube-dc"),
 		p("kube-dc-backend-tls", "kube-dc"),

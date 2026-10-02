@@ -167,20 +167,21 @@ func TestSuppressedCertificatesAreCoveredByWildcardSecrets(t *testing.T) {
 	}
 	// Certificate name -> the secret it issues into (from the fleet manifests).
 	issuesInto := map[string]string{
-		"envoy-gateway-system/wildcard-tls":  "envoy-gateway-system/wildcard-tls",
-		"keycloak/login-tls":                 "keycloak/login.example.com-tls",
-		"kube-dc/kube-dc-frontend-tls":       "kube-dc/kube-dc-frontend-tls",
-		"kube-dc/kube-dc-backend-tls":        "kube-dc/kube-dc-backend-tls",
-		"kube-dc/kube-dc-admin-frontend-tls": "kube-dc/kube-dc-admin-frontend-tls",
-		"monitoring/tls-grafana":             "monitoring/tls-grafana",
-		"monitoring/tls-mimir-query":         "monitoring/tls-mimir-query",
-		"monitoring/tls-loki-query":          "monitoring/tls-loki-query",
-		"monitoring/tls-mimir-ruler":         "monitoring/tls-mimir-ruler",
-		"monitoring/tls-mimir-alertmanager":  "monitoring/tls-mimir-alertmanager",
-		"flux-system/tls-flux":               "flux-system/tls-flux",
-		"openbao/tls-openbao":                "openbao/tls-openbao",
-		"kube-dc/registry-tls":               "kube-dc/registry-server-tls",
-		"rook-ceph/s3-tls":                   "rook-ceph/s3-server-tls",
+		"envoy-gateway-system/wildcard-tls":              "envoy-gateway-system/wildcard-tls",
+		"envoy-gateway-system/managed-services-recovery": "envoy-gateway-system/managed-services-recovery-tls",
+		"keycloak/login-tls":                             "keycloak/login.example.com-tls",
+		"kube-dc/kube-dc-frontend-tls":                   "kube-dc/kube-dc-frontend-tls",
+		"kube-dc/kube-dc-backend-tls":                    "kube-dc/kube-dc-backend-tls",
+		"kube-dc/kube-dc-admin-frontend-tls":             "kube-dc/kube-dc-admin-frontend-tls",
+		"monitoring/tls-grafana":                         "monitoring/tls-grafana",
+		"monitoring/tls-mimir-query":                     "monitoring/tls-mimir-query",
+		"monitoring/tls-loki-query":                      "monitoring/tls-loki-query",
+		"monitoring/tls-mimir-ruler":                     "monitoring/tls-mimir-ruler",
+		"monitoring/tls-mimir-alertmanager":              "monitoring/tls-mimir-alertmanager",
+		"flux-system/tls-flux":                           "flux-system/tls-flux",
+		"openbao/tls-openbao":                            "openbao/tls-openbao",
+		"kube-dc/registry-tls":                           "kube-dc/registry-server-tls",
+		"rook-ceph/s3-tls":                               "rook-ceph/s3-server-tls",
 	}
 	for _, c := range suppressedCertificates() {
 		key := c.Namespace + "/" + c.Name

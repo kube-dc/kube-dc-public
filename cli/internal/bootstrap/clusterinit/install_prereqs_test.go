@@ -110,6 +110,20 @@ func TestInstallPrereqs_AllPresent_NoOp(t *testing.T) {
 	}
 }
 
+func TestInstallPrereqs_OptionalMissingDoesNotInstall(t *testing.T) {
+	runner := &fakePrereqRunner{}
+	res, err := InstallPrereqs(context.Background(), InstallPrereqsOptions{
+		Runner: runner,
+		Probes: probeSet(map[string]ports.Result{
+			"kubectl": presentResult,
+			"bao":     {Status: ports.StatusMissing, Severity: ports.SeverityInfo},
+		}),
+	})
+	if err != nil || res.InstallRan || runner.calls != 0 || len(res.MissingBefore) != 0 {
+		t.Fatalf("optional tool triggered install: result=%+v calls=%d err=%v", res, runner.calls, err)
+	}
+}
+
 // TestInstallPrereqs_MissingWithAssumeYes_RunsAndReprobes — the
 // canonical CI path: --yes is set, so consent is granted; the
 // engine runs the script; re-probes report the tool is now

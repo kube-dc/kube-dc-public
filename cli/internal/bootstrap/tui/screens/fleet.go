@@ -4,10 +4,12 @@ package screens
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image/color"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -51,6 +53,7 @@ type FleetModel struct {
 	loading      bool
 	err          error
 	lastLoadedAt time.Time
+	fleetAbsent  bool
 
 	// Per-cluster probe results, keyed by Cluster.Name.
 	statuses map[string]discover.ProbeResult
@@ -114,11 +117,20 @@ func (m *FleetModel) loadCmd() tea.Cmd {
 		_ = context.Background
 		clusters, err := discover.ListClusters(m.repoRoot)
 		if err != nil {
+			// A clean workstation has no Fleet checkout yet. Keep the Fleet
+			// tab usable after the operator backs out of New Cluster.
+			if errors.Is(err, os.ErrNotExist) {
+				if _, statErr := os.Stat(filepath.Join(m.repoRoot, "clusters")); errors.Is(statErr, os.ErrNotExist) {
+					return emptyFleetMsg{at: time.Now()}
+				}
+			}
 			return bttui.FleetErrorMsg{Err: err}
 		}
 		return bttui.FleetLoadedMsg{Clusters: clusters, At: time.Now()}
 	}
 }
+
+type emptyFleetMsg struct{ at time.Time }
 
 // Update handles messages and key events.
 func (m *FleetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -130,6 +142,7 @@ func (m *FleetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case bttui.FleetLoadedMsg:
 		m.loading = false
 		m.err = nil
+		m.fleetAbsent = false
 		m.clusters = msg.Clusters
 		m.lastLoadedAt = msg.At
 		if m.selected >= len(m.clusters) {
@@ -137,6 +150,15 @@ func (m *FleetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.refreshDetails()
 		return m, tea.Batch(m.probeAllCmds()...)
+	case emptyFleetMsg:
+		m.loading = false
+		m.err = nil
+		m.fleetAbsent = true
+		m.clusters = nil
+		m.statuses = map[string]discover.ProbeResult{}
+		m.lastLoadedAt = msg.at
+		m.refreshDetails()
+		return m, nil
 	case bttui.FleetErrorMsg:
 		m.loading = false
 		m.err = msg.Err
@@ -1088,6 +1110,9 @@ func (m *FleetModel) renderList(maxW int) string {
 		return bttui.Muted.Render("loading clusters…")
 	}
 	if len(m.clusters) == 0 {
+		if m.fleetAbsent {
+			return bttui.Muted.Render("No Fleet yet. Open New Cluster to begin.")
+		}
 		return bttui.Muted.Render("no clusters found in fleet repo")
 	}
 

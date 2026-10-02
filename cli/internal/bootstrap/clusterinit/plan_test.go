@@ -365,7 +365,7 @@ func TestLoadPlan_RejectsWrongSchemaVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
-	p.Version = "v999"
+	p.Version = "v9" // valid in the previous CLI, but missing ManagerNodes
 	// Re-hash so the file is self-consistent but version drifts.
 	hash, _ := p.computeHash()
 	p.PlanHash = hash

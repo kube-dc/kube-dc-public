@@ -148,6 +148,7 @@ func TestFooterText_CompletionFailureAndAbort(t *testing.T) {
 	}{
 		{name: "complete", m: model{finished: true, logPath: "/tmp/install.log"}, want: "install complete"},
 		{name: "failed", m: model{finished: true, runErr: errors.New("boom"), logPath: "/tmp/install.log"}, want: "rerun the same command"},
+		{name: "action required", m: model{finished: true, runErr: &clusterinit.ActionRequiredError{Steps: []clusterinit.StepID{clusterinit.StepOIDCCutover}}, logPath: "/tmp/install.log"}, want: "action required"},
 		{name: "aborting", m: model{aborting: true, logPath: "/tmp/install.log"}, want: "waiting for cleanup"},
 	}
 	for _, tc := range tests {
@@ -203,6 +204,45 @@ func TestLineWriter_RedactsAndFlushesTranscript(t *testing.T) {
 	joined := strings.Join(ui, "\n")
 	if strings.Contains(joined, "QWxhZGRpbjpvcGVu") || !strings.Contains(joined, bootlog.RedactedMarker) {
 		t.Fatalf("viewport lines not redacted consistently: %s", joined)
+	}
+}
+
+func TestSafeLogTextRemovesTerminalCommands(t *testing.T) {
+	input := "ready\x1b[2J\x1b]52;c;Y2xpcGJvYXJk\x07\r\x00\t✓"
+	got := safeLogText(input)
+	if got != "ready\t✓" {
+		t.Fatalf("safeLogText = %q", got)
+	}
+	if got := summarize("bad\x1b[2J\x1b]52;c;YQ==\x07\r"); got != "bad" {
+		t.Fatalf("summarize = %q", got)
+	}
+}
+
+func TestLineWriterRedactsSecretSplitByTerminalColor(t *testing.T) {
+	secret := "AGE-SECRET-KEY-1" + strings.Repeat("A", 58)
+	colored := secret[:22] + "\x1b[31m" + secret[22:40] + "\x1b[0m" + secret[40:]
+	var transcript bytes.Buffer
+	ch := make(chan tea.Msg, 1)
+	lw := &lineWriter{ctx: context.Background(), sub: ch, file: &transcript}
+	if _, err := lw.Write([]byte(colored + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(transcript.String(), secret) || !strings.Contains(transcript.String(), bootlog.RedactedMarker) {
+		t.Fatalf("secret was not redacted after ANSI normalization: %q", transcript.String())
+	}
+	msg := (<-ch).(logMsg)
+	if strings.Contains(msg.line, secret) || !strings.Contains(msg.line, bootlog.RedactedMarker) {
+		t.Fatalf("secret reached TUI: %q", msg.line)
+	}
+}
+
+func TestVisibleLogsAreBounded(t *testing.T) {
+	m := newTestModel(nil)
+	for i := 0; i <= maxVisibleLogLines; i++ {
+		m.Update(logMsg{line: fmt.Sprint(i)})
+	}
+	if len(m.logs) != maxVisibleLogLines || m.logs[0] != "1" {
+		t.Fatalf("visible logs = %d, first = %q", len(m.logs), m.logs[0])
 	}
 }
 

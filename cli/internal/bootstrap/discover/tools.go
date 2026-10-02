@@ -40,17 +40,22 @@ import (
 // against the fleet-repo root (the wire-layer's --repo flag value).
 const InstallPrereqsHint = "Install via scripts/install-prerequisites.sh (in the kube-dc-fleet repo)"
 
-// MinVersions are the floors from installer-ux §4.2. Tools below the
-// floor return StatusPartial + SeverityWarn (operational risk; not a
-// hard blocker because some shipped versions of these tools are
-// version-stamped oddly).
+// MinVersions are the baseline syntax floors used by the local tool probes.
+// The generic doctor reports an older tool as a warning. A selected setup
+// operation requires a readable, supported version before apply continues.
 var MinVersions = map[string]Semver{
-	"kubectl": {1, 28, 0},
-	"flux":    {2, 4, 0},
-	"sops":    {3, 9, 0},
-	"age":     {1, 1, 0},
-	"git":     {2, 30, 0},
-	"gh":      {2, 40, 0},
+	"kubectl":    {1, 28, 0},
+	"flux":       {2, 4, 0},
+	"sops":       {3, 9, 0},
+	"age":        {1, 1, 0},
+	"age-keygen": {1, 1, 0},
+	"git":        {2, 30, 0},
+	"gh":         {2, 40, 0},
+	"helm":       {3, 0, 0},
+	"kustomize":  {4, 0, 0},
+	"yq":         {4, 0, 0},
+	"clusterctl": {1, 0, 0},
+	"glab":       {1, 0, 0},
 	// `ssh` and `bao` have no floor in the contract — we just check
 	// presence.
 }
@@ -178,6 +183,28 @@ func AllToolProbes() []ports.Probe {
 		newGHProbe(realExec),
 		newSSHProbe(realExec),
 		newBaoProbe(realExec),
+	}
+}
+
+// newSimpleVersionProbe covers tools whose version command contains one
+// ordinary semantic version. The release profile supplies any tighter range.
+func newSimpleVersionProbe(name string, e execHook, args ...string) *ToolProbe {
+	return &ToolProbe{
+		name: name,
+		exec: e,
+		versionFn: func(ctx context.Context, e execHook) (Semver, string, error) {
+			stdout, stderr, err := e(ctx, name, args...)
+			if err != nil {
+				return Semver{}, "", err
+			}
+			output := strings.TrimSpace(string(stdout) + " " + string(stderr))
+			raw := semverRegex.FindString(output)
+			if raw == "" {
+				return Semver{}, "", fmt.Errorf("no version in %s output", name)
+			}
+			version, err := ParseSemver(raw)
+			return version, raw, err
+		},
 	}
 }
 

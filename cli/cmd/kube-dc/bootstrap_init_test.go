@@ -47,6 +47,7 @@ func validAtlantisArgs() []string {
 		// `disabled` (no companion flags needed); rook-* modes are
 		// live (OS-2) — mode-specific tests override explicitly.
 		"--object-storage-mode=disabled",
+		"--installation-kind=kube-dc",
 		// cloud+public-vlan preset required keys.
 		"--set=EXT_NET_VLAN_ID=1103",
 		"--set=EXT_NET_INTERFACE=bond0",
@@ -546,6 +547,7 @@ func TestBootstrapInit_DryRun_GitLab_Allowed(t *testing.T) {
 		"--github-owner=acme-group",
 		"--github-repo=kdc-fleet",
 		"--object-storage-mode=disabled", // baseline: no companions needed; rook modes live (OS-2)
+		"--installation-kind=kube-dc",
 		"--set=EXT_NET_VLAN_ID=1103",
 		"--set=EXT_NET_INTERFACE=bond0",
 		"--set=EXT_PUBLIC_VLAN_ID=1100",
@@ -860,6 +862,78 @@ func TestBootstrapInit_Addon_FailsClosed(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "addons.yaml") {
 		t.Errorf("error should point at the manual addons.yaml path, got %q", err.Error())
+	}
+}
+
+// --- PAYG usage billing (--payg, default off) ------------------------
+
+func TestBootstrapInit_PAYG_OffByDefault_PlansNothing(t *testing.T) {
+	body, err := runInitCmd(t, validAtlantisArgs())
+	if err != nil {
+		t.Fatalf("dry-run: %v\n%s", err, body)
+	}
+	for _, absent := range []string{"payg.yaml", "metering-db.enc.yaml", "kube_dc_metering", "PAYG"} {
+		if strings.Contains(body, absent) {
+			t.Errorf("PAYG is off by default, but the plan mentions %q:\n%s", absent, body)
+		}
+	}
+}
+
+func TestBootstrapInit_PAYG_PlansTheWiring(t *testing.T) {
+	body, err := runInitCmd(t, append(validAtlantisArgs(), "--payg", "--set=BILLING_PROVIDER=stripe"))
+	if err != nil {
+		t.Fatalf("dry-run with --payg: %v\n%s", err, body)
+	}
+	for _, want := range []string{
+		"clusters/atlantis/payg.yaml",
+		"clusters/atlantis/metering-db.enc.yaml",
+		"CNPG managed role kube_dc_metering",
+		"a new PAYG_INSTALLATION_UID",
+		"wire PAYG usage billing",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("--payg plan missing %q\nFULL:\n%s", want, body)
+		}
+	}
+}
+
+func TestBootstrapInit_PAYG_Refusals(t *testing.T) {
+	cases := []struct {
+		name    string
+		args    []string
+		wantSub string
+	}{
+		// Kube-DC must be the installation's billing provider.
+		{"no billing provider", append(validAtlantisArgs(), "--payg"), "BILLING_PROVIDER is not set"},
+		{"provider none", append(validAtlantisArgs(), "--payg", "--set=BILLING_PROVIDER=none"), "BILLING_PROVIDER=none"},
+		{"billed by a partner",
+			append(validAtlantisArgs(), "--payg", "--set=BILLING_PROVIDER=stripe", "--set=CLOUDSIGMA_CHART_VERSION=0.1.0"), "billed by a partner"},
+		{"switch via --set", append(validAtlantisArgs(), "--set=PAYG_ENABLED=true"), "use --payg"},
+		{"copied installation UID",
+			append(validAtlantisArgs(), "--payg", "--set=PAYG_INSTALLATION_UID=11111111-2222-4333-8444-555555555555"), "never copied"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := runInitCmd(t, tc.args)
+			if !errors.Is(err, clusterinit.ErrValidation) || !strings.Contains(err.Error(), tc.wantSub) {
+				t.Fatalf("want ErrValidation containing %q, got %v", tc.wantSub, err)
+			}
+		})
+	}
+}
+
+// --payg is plan shape: a plan reviewed without it must not apply with it.
+func TestBootstrapInit_ApplyPlan_RefusesOnPAYGDrift(t *testing.T) {
+	repo := setupValidFleet(t)
+	planPath := filepath.Join(t.TempDir(), "plan.json")
+	// Same provider on both runs: only --payg differs.
+	if _, err := runInitCmdWithRepo(t, repo, append(validAtlantisArgs(), "--set=BILLING_PROVIDER=stripe", "--plan-file="+planPath)); err != nil {
+		t.Fatalf("dry-run prep: %v", err)
+	}
+	args := append(filterFlag(validAtlantisArgs(), "--dry-run"), "--set=BILLING_PROVIDER=stripe", "--payg", "--apply-plan="+planPath, "--yes")
+	body, err := runInitCmdWithRepo(t, repo, args)
+	if !errors.Is(err, clusterinit.ErrPlanInputDrift) {
+		t.Fatalf("expected ErrPlanInputDrift, got %v\n%s", err, body)
 	}
 }
 

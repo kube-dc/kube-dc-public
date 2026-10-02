@@ -123,7 +123,8 @@ var scriptContracts = map[ports.ScriptKind]scriptContract{
 		// with ENVOY_LB_CLASS=null — an explicit null on a typed field, which server-side
 		// apply rejects and force: true turns into a DELETION of the EnvoyProxy.
 		// Optional: absent means the script keeps its metallb-l2 default.
-		optionalEnv: []string{"SCAFFOLD_INGRESS_ADDRESS_LAYER"},
+		requiredEnv: []string{"SCAFFOLD_INSTALLATION_KIND"},
+		optionalEnv: []string{"SCAFFOLD_INGRESS_ADDRESS_LAYER", "SCAFFOLD_MANAGED_SERVICES", "SCAFFOLD_SERVICES_DATABASE_CLASS", "SCAFFOLD_SERVICES_STORAGE_BUDGET", "SCAFFOLD_SERVICES_EGRESS_PROBE_URLS", "SCAFFOLD_SERVICES_PRIVATE_CA", "SCAFFOLD_SERVICES_INTERNAL_GATEWAY", "SCAFFOLD_SERVICES_SYSTEM_DNS_IPS", "SCAFFOLD_MANAGER_NODES", "SCAFFOLD_SCHEDULABLE_NODES", "SCAFFOLD_KUBECONFIG_PATH", "PYTHONDONTWRITEBYTECODE"},
 	},
 	ports.ScriptFluxInstall: {
 		// Only KUBECONFIG is universally required. Token env is

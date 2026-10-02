@@ -47,6 +47,9 @@ var (
 type Client struct {
 	rest *rest.Config
 	dyn  dynamic.Interface
+	// Bound only for a verified child session. A Flux subprocess must use
+	// this same file and cannot select a different cluster per call.
+	pinnedKubeconfig string
 
 	// runFluxCmd builds the `flux` invocation. Tests swap to inject a
 	// canned exit code without requiring the binary to exist.
@@ -64,11 +67,29 @@ func New(kubeconfigPath string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("flux: load kubeconfig: %w", err)
 	}
+	return newWithConfig(cfg, "")
+}
+
+// NewWithConfig keeps an already verified direct child API transport for
+// in-process Flux watches and reconciles. Subprocesses are pinned to the
+// matching private kubeconfig.
+func NewWithConfig(cfg *rest.Config, kubeconfigPath string) (*Client, error) {
+	if kubeconfigPath == "" {
+		return nil, fmt.Errorf("flux: verified child kubeconfig path is required")
+	}
+	return newWithConfig(cfg, kubeconfigPath)
+}
+
+func newWithConfig(cfg *rest.Config, pinnedKubeconfig string) (*Client, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("flux: verified API config is required")
+	}
+	cfg = rest.CopyConfig(cfg)
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("flux: build dynamic client: %w", err)
 	}
-	c := &Client{rest: cfg, dyn: dyn}
+	c := &Client{rest: cfg, dyn: dyn, pinnedKubeconfig: pinnedKubeconfig}
 	c.runFluxCmd = realFluxCmd
 	return c, nil
 }
@@ -98,8 +119,15 @@ func (c *Client) Bootstrap(ctx context.Context, opts ports.FluxBootstrapOpts) er
 	env := []string{
 		"GITHUB_TOKEN=" + opts.Token,
 	}
-	if opts.Kubeconfig != "" {
-		env = append(env, "KUBECONFIG="+opts.Kubeconfig)
+	kubeconfig := opts.Kubeconfig
+	if c.pinnedKubeconfig != "" {
+		if kubeconfig != "" && kubeconfig != c.pinnedKubeconfig {
+			return fmt.Errorf("flux: bootstrap kubeconfig differs from the verified child session")
+		}
+		kubeconfig = c.pinnedKubeconfig
+	}
+	if kubeconfig != "" {
+		env = append(env, "KUBECONFIG="+kubeconfig)
 	}
 
 	_, stderr, err := c.runFluxCmd(ctx, env, args...)

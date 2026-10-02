@@ -128,6 +128,12 @@ type ApplyOptions struct {
 	// TrustedCA is validated public CA material (Scaffold step 12).
 	TrustedCA *TrustedCAMaterial
 
+	// PAYG is the operator's --payg (Scaffold step 13). Every resume checks
+	// the PAYG pieces an overlay carries (identity, billing rule, login,
+	// layer, role patch); --payg only authorizes completing a partial setup
+	// (CheckPAYGOnResume).
+	PAYG bool
+
 	// GPU carries the validated, non-secret accelerator fleet contract.
 	GPU GPUConfig
 
@@ -320,6 +326,18 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 	// work. Skip cleanup in that case.
 	clusterDir := filepath.Join(opts.FleetRepo, "clusters", opts.Plan.ClusterName)
 	resuming := false
+	completePAYG := false // resume found a partial PAYG scaffold to finish
+	var systemDNSIPs []string
+	if opts.Plan.ManagedServicesMode == "on" && opts.SingleIPNAT {
+		if opts.K8s == nil {
+			return fmt.Errorf("apply: managed-services internal gateway requires a live cluster connection to resolve system DNS ingress nodes")
+		}
+		_, addresses, err := IngressHostCIDRFor(ctx, opts.K8s, opts.Plan.IngressNodes)
+		if err != nil {
+			return fmt.Errorf("apply: managed-services system DNS: %w", err)
+		}
+		systemDNSIPs = addresses
+	}
 	rep.Start(StepScaffold)
 	if err := Scaffold(ctx, ScaffoldOptions{
 		Plan:              opts.Plan,
@@ -335,8 +353,10 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 		DNS01Route53:      opts.DNS01Route53,
 		DNS01Cloudflare:   opts.DNS01Cloudflare,
 		TrustedCA:         opts.TrustedCA,
+		PAYG:              opts.PAYG,
 		GPU:               opts.GPU,
 		SingleIPNAT:       opts.SingleIPNAT,
+		SystemDNSIPs:      systemDNSIPs,
 		ControlPlaneNodes: opts.ControlPlaneNodes,
 		KubeconfigPath:    opts.KubeconfigPath,
 		Runner:            opts.Runner,
@@ -350,6 +370,12 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 				rep.Done(StepScaffold, fdErr)
 				return fdErr
 			}
+			complete, pErr := CheckPAYGOnResume(opts.FleetRepo, opts.Plan.ClusterName, opts.Plan.Domain, opts.PAYG)
+			if pErr != nil {
+				rep.Done(StepScaffold, pErr)
+				return pErr
+			}
+			completePAYG = complete
 			// RESUME (retry/restart): the overlay already exists from a
 			// prior apply. Rather than fail, skip re-scaffolding and
 			// continue — the Phase-2 clean-tree gate already confirmed
@@ -414,6 +440,27 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 		}
 	}
 
+	// Phase 3c: a PAYG scaffold that was cut short (some of its pieces are in
+	// the committed overlay, some are not). CheckPAYGOnResume already refused
+	// a foreign identity or an overlay with no PAYG at all; here the missing
+	// pieces are written, the whole contract is re-checked, and the result is
+	// committed so the resume push carries it.
+	if resuming && completePAYG {
+		changed, err := CompletePAYGOnResume(opts.FleetRepo, opts.Plan.ClusterName, opts.Plan.Domain, out)
+		if err != nil {
+			return fmt.Errorf("apply: complete PAYG on resumed overlay: %w", err)
+		}
+		if changed {
+			msg := fmt.Sprintf("chore(%s): complete PAYG wiring via kube-dc CLI", opts.Plan.ClusterName)
+			sha, cerr := opts.Git.Commit(ctx, opts.FleetRepo, msg)
+			if cerr != nil {
+				return fmt.Errorf("apply: commit PAYG completion (the completed files are uncommitted in clusters/%s — commit or discard them): %w", opts.Plan.ClusterName, cerr)
+			}
+			fmt.Fprintf(out, "[apply] PAYG wiring completed on existing overlay — commit=%s\n", sha)
+			rotated = true
+		}
+	}
+
 	// Phase 4: commit + push (atomic with rollback on push failure).
 	// On resume the overlay is already COMMITTED (the clean-tree gate
 	// proved nothing is uncommitted, and an untracked overlay would have
@@ -437,7 +484,7 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 					// commit this run created must not survive a failed push
 					// (codex pass-2, P1). preSHA predates it; a PRIOR run's
 					// unpushed overlay commit is below preSHA and untouched.
-					fmt.Fprintf(out, "[apply] resume push failed; rolling back this run's TLS rotation commit to %s\n", preSHA)
+					fmt.Fprintf(out, "[apply] resume push failed; rolling back this run's resume commit(s) to %s\n", preSHA)
 					if rerr := opts.Git.ResetHard(ctx, opts.FleetRepo, preSHA); rerr != nil {
 						return fmt.Errorf("apply: resume push failed AND rotation rollback failed (manual recovery needed): push=%w; rollback=%v", perr, rerr)
 					}
@@ -544,6 +591,12 @@ func runFluxInstall(ctx context.Context, opts ApplyOptions, out io.Writer) error
 	}
 	env := map[string]string{
 		"KUBE_DC_PROVIDER": string(provider),
+	}
+	// A verified child-cluster kubeconfig must also govern the Flux script.
+	// The runner otherwise inherits the workstation's KUBECONFIG, which may
+	// point to an unrelated cluster even though Scaffold received this path.
+	if opts.KubeconfigPath != "" {
+		env["KUBECONFIG"] = opts.KubeconfigPath
 	}
 	if opts.GitHubOwner != "" {
 		env["GITHUB_OWNER"] = opts.GitHubOwner

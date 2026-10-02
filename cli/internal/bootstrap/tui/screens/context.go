@@ -401,7 +401,7 @@ func (m *ContextModel) execLoginCmd(admin bool) tea.Cmd {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return bttui.LoginDoneMsg{Cluster: e.Name, Admin: admin, Err: err}
+		return bttui.LoginDoneMsg{Cluster: e.Name, Admin: admin, FromContext: true, Err: err}
 	})
 }
 

@@ -16,8 +16,9 @@ const WebhookNamespace = "oidc-webhook-authenticator"
 
 // Node pairs a control-plane node with the SSH endpoint that reaches it.
 type Node struct {
-	Name string
-	Host ports.SSHHost
+	Name       string
+	InternalIP string // live Node address; SSH may use a different public host or alias
+	Host       ports.SSHHost
 }
 
 // Options drives Run.

@@ -73,7 +73,7 @@ import (
 //     ManagedSecret under that prefix cannot have this controller write the
 //     credential on their behalf (2026-09-13).
 //   - Generation 4: dedicated managed-service KV publisher and CAS retirement.
-const PolicyGeneration = 5
+const PolicyGeneration = 6
 
 // AnnotationPolicyGeneration stores the last-stamped generation
 // number on svc/openbao. Distinct from AnnotationControllerAuthInstalled
