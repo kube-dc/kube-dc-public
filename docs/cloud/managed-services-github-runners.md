@@ -249,6 +249,9 @@ reported target, or temporarily route the workflow to another runner you control
 | Service is **Rejected** with `OrganizationQuotaExceeded` | The Organization cannot reserve the active and replacement workers for this pool. Reduce worker size, free capacity held by another pool, or ask Kube-DC support to review quota; then retry creation. |
 | Buildx fails to start | Check project and organization quota, builder image pull, and temporary disk; compare the Settings reservation with the available limits. |
 | `docker build` or Compose fails | Use `docker buildx build --push` for a Dockerfile, or choose a different runtime for Compose/services. |
+| Service reports `WorkerEvicted` or `WorkerExecutionFailed` | Check project **Events** and the GitHub job. The workspace limit is 2 GiB and the shared process/thread limit is 4,096. If the interrupted job remains running at GitHub, cancel it there before retrying. The service reports the failure while ARC completes registration cleanup. |
+| Deletion reports `DeregistrationBlocked` | Keep the same ManagedSecret and save a valid token for the same repository with **Administration: Read and write**. Deletion retries automatically after the credential syncs. The service retains its cleanup credential until GitHub deregistration completes; do not remove finalizers or delete the source to force cleanup. Contact Kube-DC support if repository access cannot be restored. |
+| Observation is stale or unavailable | Read the last-observation time and check **Events**. Displayed counts are the last known state. An idle historical graph can retain samples after a worker exits; no current sample does not mean zero usage. |
 | Metrics show no current CPU | An idle pool has no worker pod to measure. Check the last observation and historical graph; a stale or unavailable message points to collection trouble. |
 
 To delete a declarative pool, confirm the specific service, clear deletion
@@ -263,5 +266,9 @@ kubectl delete managedservice github-ci -n PROJECT_NAMESPACE
 ```
 
 Deletion stops new workers and drains active work for up to 60 minutes before
-ARC cleanup. The source ManagedSecret remains. Revoke the registration token
-in GitHub and delete the retained project secret when you no longer use it.
+ARC cleanup. If GitHub is unavailable or the token is revoked, deletion stays
+pending and retains the cleanup credential. Restore GitHub connectivity or
+save a valid token in the same ManagedSecret, then wait for the service to
+disappear. The source ManagedSecret remains after successful deletion. Revoke
+the registration token in GitHub and delete the retained project secret when
+you no longer use it.
