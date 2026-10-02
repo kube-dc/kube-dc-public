@@ -235,7 +235,8 @@ reported target, or temporarily route the workflow to another runner you control
 
 | Symptom | Check |
 | --- | --- |
-| Service waits for a credential | Open **Secrets** and check synchronization and token repository access. |
+| Service waits for a credential | Open **Secrets**. If the source is synced, check the token's repository access. If it is not synced, check its status and events before changing the token. |
+| Secret sync reports `x509` or certificate verification errors | Contact Kube-DC support with the Project, secret name, and a sanitized event. The OpenBao trust connection needs provider repair; replacing the GitHub token will not fix it. Do not disable certificate verification or send the token to support. |
 | A second pool reports `PlanQuotaExceeded` | Wait for the old pool to finish draining and deleting, then retry the new pool. The preview permits one pool per Project. |
 | Service reports a GitHub repository verification refusal | Check that the repository is private and the fine-grained token targets that exact repository, has **Administration: Read and write**, has not expired, and has any required organization approval. Save a corrected token in the same ManagedSecret; the controller retries. |
 | Service reports that `github_token` contains whitespace or control characters | Replace the value with a file containing only the token, without a trailing newline or spaces. Save it to the same ManagedSecret; the pool retries. |
