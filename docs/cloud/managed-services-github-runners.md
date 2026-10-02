@@ -220,7 +220,11 @@ Worker workspace is temporary, capped at 2 GiB. The worker container has a
 4 GiB ephemeral-storage limit. The Buildx builder has a separate 8 GiB
 temporary state volume and 10 GiB ephemeral-storage limit. Worker CPU/memory
 sizing does not raise those disk limits. If a Dockerfile build exceeds them,
-reduce its temporary layers or contact support. Jobs have a 60-minute lifetime.
+reduce its temporary layers or contact support. Each new worker Pod has a
+shared limit of 4,096 processes and threads across the worker and its Buildx
+builder. Worker CPU/memory sizing does not raise this limit. If a tool cannot
+start more processes or threads, reduce its parallelism or contact Kube-DC
+support. Jobs have a 60-minute lifetime.
 
 `buildMode`, image, and size are fixed at creation. To move an existing
 shell-only pool to Buildx, let active jobs finish, delete the old pool with
