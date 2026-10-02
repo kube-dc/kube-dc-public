@@ -329,6 +329,12 @@ var errOpenBaoControllerAuthMissing = errors.New("OpenBao is initialized but con
 func runOpenBaoResumeOrInit(ctx context.Context, out io.Writer, cluster string, annotations interface {
 	GetServiceAnnotation(context.Context, string, string, string) (string, error)
 }, wait, init func() error) error {
+	// Flux may have applied the HelmRelease before its Service and Pod exist.
+	// Wait for the exec-able Pod before inspecting markers; never interpret a
+	// missing Service or an unreadable marker as permission to initialize.
+	if err := wait(); err != nil {
+		return err
+	}
 	initialized, authInstalled, err := openBaoResumeMarkers(ctx, annotations)
 	if err != nil {
 		return fmt.Errorf("read OpenBao resume markers: %w", err)
@@ -342,9 +348,6 @@ func runOpenBaoResumeOrInit(ctx context.Context, out io.Writer, cluster string, 
 	if initialized {
 		fmt.Fprintln(out, "[finalize] OpenBao already initialized — skipping (resume)")
 		return nil
-	}
-	if err := wait(); err != nil {
-		return err
 	}
 	return init()
 }

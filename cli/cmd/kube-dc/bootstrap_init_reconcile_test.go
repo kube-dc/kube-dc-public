@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -322,10 +324,11 @@ func TestRunOpenBaoResumeOrInitFailClosed(t *testing.T) {
 		wantWait, wantRun int
 	}{
 		{name: "fresh", state: fakeAnno{}, wantWait: 1, wantRun: 1},
-		{name: "complete", state: fakeAnno{bootstrap: "done", auth: "done"}},
-		{name: "controller auth missing", state: fakeAnno{bootstrap: "done"}, wantErr: true},
-		{name: "inconsistent", state: fakeAnno{auth: "done"}, wantErr: true},
-		{name: "unreadable", state: fakeAnno{err: context.DeadlineExceeded}, wantErr: true},
+		{name: "complete", state: fakeAnno{bootstrap: "done", auth: "done"}, wantWait: 1},
+		{name: "controller auth missing", state: fakeAnno{bootstrap: "done"}, wantErr: true, wantWait: 1},
+		{name: "inconsistent", state: fakeAnno{auth: "done"}, wantErr: true, wantWait: 1},
+		{name: "unreadable", state: fakeAnno{err: context.DeadlineExceeded}, wantErr: true, wantWait: 1},
+		{name: "forbidden", state: fakeAnno{err: errors.New("Forbidden")}, wantErr: true, wantWait: 1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -337,5 +340,27 @@ func TestRunOpenBaoResumeOrInitFailClosed(t *testing.T) {
 				t.Fatalf("err=%v waits=%d init runs=%d; want err=%v waits=%d runs=%d", err, waits, runs, tc.wantErr, tc.wantWait, tc.wantRun)
 			}
 		})
+	}
+}
+
+func TestOpenBaoResumeReadsMarkersAfterDeployment(t *testing.T) {
+	state := fakeAnno{err: errors.New("service not found")}
+	runs := 0
+	err := runOpenBaoResumeOrInit(context.Background(), io.Discard, "example", &state,
+		func() error {
+			state = fakeAnno{bootstrap: "done", auth: "done"}
+			return nil
+		}, func() error { runs++; return nil })
+	if err != nil || runs != 0 {
+		t.Fatalf("deployed finalized service must resume without initializing: err=%v runs=%d", err, runs)
+	}
+}
+
+func TestOpenBaoResumeWaitFailureDoesNotInitialize(t *testing.T) {
+	runs := 0
+	err := runOpenBaoResumeOrInit(context.Background(), io.Discard, "example", fakeAnno{},
+		func() error { return context.DeadlineExceeded }, func() error { runs++; return nil })
+	if !errors.Is(err, context.DeadlineExceeded) || runs != 0 {
+		t.Fatalf("wait failure must stop initialization: err=%v runs=%d", err, runs)
 	}
 }

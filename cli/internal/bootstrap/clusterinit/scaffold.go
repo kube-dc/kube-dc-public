@@ -389,13 +389,14 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// (8) External kube-api front door. Off-Envoy is the DEFAULT for every new
 	// cluster and every address layer, and the base gateway no longer ships a
 	// :6443 Envoy listener at all: the starter's add-cluster.sh selects
-	// front-door/components/kube-api-off-envoy and seeds KUBE_API_ARRIVAL_IP.
+	// front-door/components/kube-api-native-endpoints and seeds KUBE_API_ARRIVAL_IP.
 	// We NEVER route :6443 through Envoy on a host-bind cluster — it collides
 	// with the apiserver on control-plane ingress nodes (production incident
 	// 2026-08-11), which is exactly what the old collision-detection + listener
 	// removal (WriteSingleIPNATPatch) and the static-EndpointSlice bridge
 	// (WriteExternalKubeAPIVIP) worked around. Both are retired: there is no
-	// listener to remove, and endpoints are controller-managed and self-healing.
+	// listener to remove. Native EndpointSlices discover Ready apiserver mirror
+	// Pods without depending on kube-dc-manager during first installation.
 	//
 	// The only remaining CLI job is to resolve KUBE_API_ARRIVAL_IP to a real
 	// address — on a MetalLB layer the scaffold leaves CHANGEME because the VIP
