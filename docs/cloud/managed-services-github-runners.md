@@ -10,9 +10,12 @@ Every Cloud project can find the offer in the catalog. If its CPU or memory
 quota cannot host the minimum worker and builder, the card shows the
 requirements and a support path; creation becomes available after the project
 qualifies.
-Kube-DC support owns this no-charge preview. Usage-based billing and paid
-service terms will be announced only after measurement and pricing are
-qualified. If creation or a job remains stuck, use your account's support
+There is no additional runner service, management, or per-job charge. Your
+existing Kube-DC resource terms apply to the compute and other resources you
+consume. Pool reservations control available capacity; they are not a separate
+runner charge. Shared ARC control-plane overhead has no separate runner fee.
+Kube-DC support handles this preview under your existing account support terms;
+it adds no separate SLA or response-time promise. If creation or a job remains stuck, use your account's support
 channel or email [support@kube-dc.com](mailto:support@kube-dc.com). Include
 the Project and runner name, approximate time, and sanitized status or events;
 never send the GitHub token.
