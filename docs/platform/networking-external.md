@@ -302,6 +302,20 @@ Keep backend capabilities off until their traffic and authenticated console
 acceptance pass. Scope removal and gate rollback require the restricted-resource
 inventory and withdrawal procedure described here.
 
+After bounded qualification, delete owned restrictive FIPs first and verify
+their actual NAT and ACL/group rows are absent. Remove the remaining owned
+workloads and addresses through normal finalizers. Set the gate false while
+retaining the nonempty UID map, then verify every serving webhook replica and
+the elected controller disabled. Clear the map only in a separate reviewed
+change after that verification.
+
+For VM migration acceptance, record the same VMI UID moving between distinct
+nodes, denied-client isolation during the move, fresh recovery controls and
+allowed-client interruptions. A successful migration does not establish
+uninterrupted endpoint availability. Compare large or fragmented traffic with
+a working open baseline; a denied fragment without an allowed control does
+not qualify filtering.
+
 Backend method availability can be limited to qualified namespaces through
 `backend.exposureSourcePolicy.namespaces`; managed API availability has its own
 namespace list. Gateway LoadBalancer Services require both direct and Gateway
