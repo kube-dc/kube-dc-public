@@ -29,7 +29,7 @@ metadata:
     service.nlb.kube-dc.com/expose-route: "https"
     service.nlb.kube-dc.com/route-port: "8080"
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: "{application-label}"
   ports:
@@ -47,7 +47,7 @@ metadata:
     service.nlb.kube-dc.com/expose-route: "https"
     service.nlb.kube-dc.com/route-hostname: "app.example.com"
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: "{application-label}"
   ports:
@@ -65,7 +65,7 @@ metadata:
   annotations:
     service.nlb.kube-dc.com/expose-route: "tls-passthrough"
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: "{application-label}"
   ports:

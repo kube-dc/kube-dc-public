@@ -55,7 +55,7 @@ spec:
 
 This Issuer is a prerequisite, not something the Service creates.
 
-### Annotate a LoadBalancer Service
+### Annotate a route-only Service
 
 ```yaml
 apiVersion: v1
@@ -71,7 +71,7 @@ metadata:
     # service.nlb.kube-dc.com/route-hostname: "app.example.com"
     # service.nlb.kube-dc.com/tls-issuer: "letsencrypt"
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: "{application-label}"
   ports:
@@ -79,6 +79,9 @@ spec:
     port: 8080
     targetPort: 8080
 ```
+
+This route-only Service allocates no EIP. For an existing Gateway LoadBalancer,
+retain its Service type and EIP binding during client-list edits.
 
 The controller assigns a hostname under the installation's configured domain
 unless `route-hostname` is set. Read it from
@@ -149,7 +152,10 @@ installation has matching admission, Envoy source preservation, policy
 controllers and readiness contracts before applying restrictive intent.
 A Gateway LoadBalancer requires both Gateway and backing-EIP qualification;
 its nonempty native list must match the restrictive annotation. Do not apply
-this annotation to arbitrary native routes and assume enforcement.
+this annotation to arbitrary native routes and assume enforcement. The console
+uses route-only ClusterIP creation for Gateway exposure and lets you edit client
+CIDRs in **Networking** > **Load Balancers** > **Edit** > **Reach** when the
+required method capabilities are qualified.
 
 All methods are open by default: absent annotation or JSON `[]` requests no
 additional source restriction. Invalid JSON, `null`, bare IPs and IPv6 are

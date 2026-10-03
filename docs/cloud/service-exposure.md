@@ -63,8 +63,11 @@ Gateway filtering requires qualified source-IP preservation, Envoy policies and
 attachment admission. Service source ranges alone do not restrict the shared
 Gateway. When a Gateway Service also has a LoadBalancer, its nonempty native
 list must match the restrictive annotation and both exposure paths must be
-qualified. Controller-managed route-only Services use ClusterIP and allocate no
-EIP. Arbitrary native HTTPRoutes/TLSRoutes do not gain filtering from this
+qualified. Gateway-only Services created in the console and controller-managed
+route-only Services use ClusterIP and allocate no EIP. Editing an existing
+Gateway LoadBalancer retains its Service type and EIP binding. Its client list
+requires both Gateway and direct enforcement before you can change it in the
+console. Arbitrary native HTTPRoutes/TLSRoutes do not gain filtering from this
 annotation.
 
 A qualified Floating IP uses `spec.allowedCIDRs`; see
