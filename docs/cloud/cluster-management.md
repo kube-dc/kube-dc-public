@@ -23,6 +23,39 @@ The cluster detail view's **Kubeconfig** action downloads the same data. If the
 external Secret does not exist, the API endpoint is private. Enable external
 API exposure or connect through an operator-approved private network path.
 
+## Restrict public Kubernetes API clients
+
+Qualified ProjectInternal clusters accept `spec.publicAPIAllowedCIDRs` on the
+platform `KdcCluster`. This list restricts the public API endpoint and preserves
+the separate private worker transport:
+
+```yaml
+spec:
+  network:
+    controlPlaneEndpointMode: ProjectInternal
+  publicApiEndpoint: true
+  publicAPIAllowedCIDRs:
+    - 198.51.100.7/32
+```
+
+This excerpt is not a complete cluster definition. Choose ProjectInternal at
+creation and provide the installation's measured worker MTU. For an existing
+cluster, keep its current endpoint mode; that mode is immutable. New clusters are open by default. Removing the field or
+setting `[]` requests unrestricted public API access. Restrictive lists are
+rejected for External topology because its public API and worker transport are
+shared. Do not restrict that shared transport with an unrelated annotation.
+
+The console exposes this control only when the operator qualifies the matching
+backend and controllers. Its detail view separates requested access from current
+controller evidence. Verify access using the real CA and cluster credentials
+from allowed and denied client addresses. Use the installation's measured working
+worker MTU; source filtering does not repair an incorrect network MTU.
+
+For REST exposure updates, omitting `publicAPIAllowedCIDRs` preserves the current
+list. Sending `[]` explicitly clears it. Disabling public API exposure remains a
+separate operation. Services deployed inside this Managed Cluster have their
+own exposure policy, described below.
+
 ## Expose a Service with a LoadBalancer
 
 When you create a `Service` of type `LoadBalancer` inside your Managed Cluster, the Cloud Controller Manager (CCM) provisions a real LoadBalancer service in the platform cluster, giving your application an external IP.

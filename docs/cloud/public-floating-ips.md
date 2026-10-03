@@ -7,6 +7,14 @@ Kube-DC provides two address resources for Project egress and inbound access:
 - **Floating IP (FIP)**: a 1:1 NAT mapping between an external address and a
   specific VM or Pod
 
+Floating IP client allowlists require a qualified installation with the
+operator's FIP source-policy capability enabled. The capability is disabled
+by default; restrictive `spec.allowedCIDRs` values are rejected while disabled.
+Omitted, empty, or `0.0.0.0/0` leaves the FIP open to all IPv4 sources. Confirm
+availability with your platform operator before using a restrictive list.
+A qualified EIP-backed LoadBalancer Service also supports
+`spec.loadBalancerSourceRanges` for selected TCP/UDP ports.
+
 ---
 
 ## Manage IPs in the console
@@ -152,6 +160,31 @@ ssh ubuntu@198.51.100.5
 :::tip Automatic EIP
 When using `externalNetworkType: public`, a dedicated public EIP is automatically allocated and bound to the FIP. You don't need to create an EIP separately.
 :::
+
+### Restrict Floating IP clients
+
+On an installation qualified for your FIP topology, add a list to the existing
+FIP manifest:
+
+```yaml
+spec:
+  allowedCIDRs:
+    - 198.51.100.7/32
+```
+
+Use up to 32 IPv4 CIDRs. Removing the field or submitting `[]` requests open
+access. Wait for a current-generation Ready condition with
+`status.sourcePolicySpecHash` and `status.sourcePolicyRevision`, then verify
+from allowed and denied source addresses. A generic Ready boolean alone does
+not attest the source policy. Restrictive changes fail closed when the
+controller cannot verify the required ACL, NAT and chassis barrier.
+
+Restricted FIPs require an exclusive EIP and a target inside the owning Project.
+A router-interface address cannot serve the required restricted DNAT path.
+VM interface changes, migration, ICMP and return traffic require topology-specific
+qualification. Check operator availability rather than inferring support from
+schema presence. Quota addons increase allocation entitlement; they do not add
+addresses to a full routed pool.
 
 ### Delete a FIP
 

@@ -77,13 +77,18 @@ required EIP. Do not create a second EIP for the same FIP. Alternatively, an
 advanced manifest can reference an existing EIP with `spec.eip`, but
 `spec.eip` and `spec.externalNetworkType` are mutually exclusive.
 
-FIP has no supported per-client CIDR field in this implementation. It adds no
-source restriction by default; existing network and workload firewalls still
-apply. Do not set the reserved future `spec.allowedCIDRs` field or assume that
-storing an annotation filters FIP traffic. For a workload that needs a supported
-source-restricted external endpoint, evaluate an EIP-backed Service with
-`spec.loadBalancerSourceRanges` on a qualified installation, preserving the
-FIP/LoadBalancer target-conflict rules.
+A qualified installation supports `FIp.spec.allowedCIDRs`, up to 32 IPv4 CIDRs.
+The controller gate is disabled by default and rejects new restrictive intent
+while unavailable. Omission, `[]` and `/0` request open IPv4 access; invalid
+entries never clear protection. Confirm the provider has qualified the actual
+public/cloud pool, target topology, return traffic and lifecycle before use.
+
+Wait for a current-generation Ready condition plus `sourcePolicySpecHash` and
+`sourcePolicyRevision`, then verify allowed and denied source traffic. A generic
+Ready boolean or stored schema field does not prove protection. Restricted FIPs
+need an exclusive EIP and a target in the owning Project; a router interface
+address cannot be the restricted DNAT address. Preserve FIP/LoadBalancer target
+conflict rules. Billing quota addons do not expand a full physical routed pool.
 
 ## Inspect Status
 

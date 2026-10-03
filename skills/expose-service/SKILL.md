@@ -142,12 +142,20 @@ and normalizes host bits and duplicates. Use the actual source addresses after
 any client-side NAT. Verify access from both an allowed and a denied source;
 an allocated IP alone does not prove enforcement.
 
-Do not infer Gateway client filtering from a Service's source ranges. Envoy
-proxies the connection and can use a different backend path. Controller
-enforcement for `network.kube-dc.com/allowed-cidrs` exists in source, but is
-not yet a qualified installation capability. Do not recommend or apply it
-until the installation supports its admission, enforcement, and readiness
-contract.
+For qualified Gateway exposure, use JSON
+`network.kube-dc.com/allowed-cidrs: '["198.51.100.7/32"]'` on the parent Service.
+Native Service ranges alone do not protect the shared Gateway. Confirm the
+installation has matching admission, Envoy source preservation, policy
+controllers and readiness contracts before applying restrictive intent.
+A Gateway LoadBalancer requires both Gateway and backing-EIP qualification;
+its nonempty native list must match the restrictive annotation. Do not apply
+this annotation to arbitrary native routes and assume enforcement.
+
+All methods are open by default: absent annotation or JSON `[]` requests no
+additional source restriction. Invalid JSON, `null`, bare IPs and IPv6 are
+errors. Verify the current controller acknowledgment and real allowed/denied
+traffic; keep saved intent separate from applied protection. For Floating IPs,
+use the `manage-networking` skill's qualified `spec.allowedCIDRs` contract.
 
 See [eip-loadbalancer-examples.yaml](eip-loadbalancer-examples.yaml).
 

@@ -4,6 +4,11 @@ import {ExternalNetworksDiagram} from '@site/src/components/Diagram/PlatformTopo
 
 This guide explains how to add additional external networks to Kube-DC alongside the default cloud network.
 
+For a new installation, first use
+[Choose an installation network layout](installer-network-layouts.md). It covers
+the TUI choices, per-server interfaces, address reservations, and the separate
+platform ingress decision.
+
 ## Overview
 
 The configuration demonstrates how to add a second external network (public) to an existing Kube-DC setup that already has a cloud external network, using multiple VLANs on a single physical interface per node.
@@ -259,3 +264,42 @@ kubectl get subnet ext-public -o yaml
 # Test from pod
 kubectl exec -n [namespace] [pod] -- wget -qO- http://httpbin.org/ip
 ```
+
+## Qualify client source restrictions
+
+Qualify direct LoadBalancer, Gateway and FIP support separately. Schema presence
+and controller Ready pods do not establish enforcement. Preserve client source
+addresses on the actual ingress path; Envoy must authorize the socket peer or
+an explicitly trusted proxy chain, rather than arbitrary forwarding headers.
+The exact source-preservation configuration depends on the address layer and
+its local endpoint availability.
+
+The platform chart defaults `manager.fipSourcePolicy.enabled`,
+`manager.webhook.protectExposureRoutes`, `backend.exposureSourcePolicy` methods,
+and `backend.managedK8sPublicAPISourcePolicy` to disabled. Before publishing
+availability, install matching controller/CRD/backend versions, configure exact
+producer ServiceAccount identities, protect shared Gateway attachments and
+controller acknowledgments, and qualify allowed/denied traffic, tightening,
+return traffic, update/removal, restart, deletion and address reuse. FIP needs
+router-port ACL support and verified NAT/chassis convergence. HTTP-01 needs the
+bounded cert-manager identity, Service certificate ownership and reviewed
+platform namespace UID pins, including renewal acceptance under the guard.
+
+Backend method availability can be limited to qualified namespaces through
+`backend.exposureSourcePolicy.namespaces`; managed API availability has its own
+namespace list. Gateway LoadBalancer Services require both direct and Gateway
+qualification. Do not publish a generic capability for untested protocols,
+database families, VM migrations or shared External worker transport.
+
+Retain image/chart digests, producer commits, dependency versions, ingress
+topology and packet evidence for each installation. Platform chart release
+preflight requires an explicit clean producer commit and compares its source-
+policy schema to the chart. This prevents schema skew; it does not verify the
+selected image's provenance or qualify the installation. Repeat packet
+qualification when OVN, Envoy, network topology or policy producers change.
+
+Before downgrade or disabling a gate, inventory restricted resources. Keep a
+controller that enforces them, or withdraw their external exposure and verify
+unreachability before installing an older version. Never delete protection
+while leaving a restricted endpoint reachable. A public address quota addon
+cannot resolve exhaustion of the physical routed address pool.

@@ -172,3 +172,20 @@ kubectl describe secret {service-name}-owner -n {backing-namespace}   # keys onl
 
 Report the service name, plan, phase, the binding Secret name and its keys.
 Never print `password` or `uri`.
+
+## Optional PostgreSQL Client CIDRs
+
+For an operator-qualified PostgreSQL public LoadBalancer or managed Gateway
+plan, `spec.parameters.expose.allowedCIDRs` is an optional JSON/YAML array of
+at most 32 IPv4 CIDRs. Use `/32` for one client and account for client NAT.
+Omission on a new endpoint means unrestricted. On an existing signed
+restriction, omission preserves the list, including exposure switches;
+`allowedCIDRs: []` explicitly requests open access. Keep the rest of the
+ManagedService parameters intact.
+
+Do not invent plan flags or apply this policy to another database family.
+Managed Gateway requires the provider's qualified managed-route plan and core
+route ownership/admission/source-preservation contracts. Wait for the current
+signed revision and binding, then use its CA, TLS server name and selected
+external address for a real authenticated SQL query from allowed and denied
+clients. Internal engine health is not independent public-reachability proof.

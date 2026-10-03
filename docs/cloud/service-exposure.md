@@ -25,6 +25,60 @@ for direct access to a VM. Both Project network types support these methods.
 | Selected TCP or UDP ports | LoadBalancer Service + EIP | Address and ports dedicated to the Service |
 | Direct VM access | Floating IP | One-to-one NAT to the VM |
 
+### Restrict client addresses
+
+For a direct EIP-backed LoadBalancer Service in a Kube-DC Project, set
+`spec.loadBalancerSourceRanges` to IPv4 CIDRs allowed to connect. Omit the
+field or set `[]` to add no source restriction. Use `/32` for one client
+address and account for any client NAT.
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: private-api
+spec:
+  type: LoadBalancer
+  loadBalancerSourceRanges:
+    - 198.51.100.7/32
+  selector:
+    app: private-api
+  ports:
+    - port: 443
+      targetPort: 8443
+```
+
+This filters the Service's external TCP/UDP ports on installations qualified
+for Kube-DC source-range enforcement. Test from one allowed and one denied
+source. For a Gateway route, set its separate JSON annotation:
+
+```yaml
+metadata:
+  annotations:
+    service.nlb.kube-dc.com/expose-route: "https"
+    network.kube-dc.com/allowed-cidrs: '["198.51.100.7/32"]'
+```
+
+Gateway filtering requires qualified source-IP preservation, Envoy policies and
+attachment admission. Service source ranges alone do not restrict the shared
+Gateway. When a Gateway Service also has a LoadBalancer, its nonempty native
+list must match the restrictive annotation and both exposure paths must be
+qualified. Controller-managed route-only Services use ClusterIP and allocate no
+EIP. Arbitrary native HTTPRoutes/TLSRoutes do not gain filtering from this
+annotation.
+
+A qualified Floating IP uses `spec.allowedCIDRs`; see
+[External and floating IPs](public-floating-ips.md#restrict-floating-ip-clients).
+Every list accepts at most 32 IPv4 CIDRs. Bare addresses, IPv6, malformed lists
+and invalid entries alongside `/0` are rejected. `[]`, omission and `/0` request
+unrestricted IPv4 access; they do not bypass other access controls.
+
+The console enables these controls only for operator-qualified methods and
+separates requested access from controller enforcement evidence. An allocated
+IP or a saved manifest does not prove protection. A Service inside a managed
+Kubernetes cluster uses that cluster's LoadBalancer provider; check its support
+before relying on the same field there.
+
 > **Note**: Both network types support EIPs and LoadBalancers. The difference is where EIPs are allocated from.
 
 ## Project network types

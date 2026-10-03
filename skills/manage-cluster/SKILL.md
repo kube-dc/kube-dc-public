@@ -32,6 +32,22 @@ Cluster API Secrets as workstation substitutes.
 
 See [kubeconfig-access.md](kubeconfig-access.md).
 
+## Restrict Public API Clients
+
+On an operator-qualified installation, a ProjectInternal cluster accepts
+`spec.publicAPIAllowedCIDRs` with up to 32 IPv4 CIDRs. Confirm
+`spec.network.controlPlaneEndpointMode: ProjectInternal`; do not change that
+immutable topology on an existing cluster. External worker/API shared transport
+rejects restrictive lists. New clusters are open by default; removing the field
+or setting `[]` restores open public API intent without disabling exposure.
+
+Update the existing cluster manifest or use a current UID/resourceVersion-pinned
+patch. Verify the projected owned public API Service, current policy evidence,
+and authenticated access from allowed and denied sources with the real CA.
+Confirm private workers remain Ready. The REST exposure endpoint preserves the
+list when the parameter is omitted; `[]` explicitly clears it. Use the measured
+working worker MTU offered by the installation.
+
 ## Scale a Worker Pool
 
 Inspect the current pool list before patching:
