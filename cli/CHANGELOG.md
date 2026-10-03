@@ -1,10 +1,12 @@
 # kube-dc CLI changelog
 
-## v0.9.1 — qualification pending
+## v0.9.1 — 2026-10-03
 
-- Add guarded managed-services bootstrap and rebuild preparation for new installations. The CLI validates the live Flux push target, manager inventory, backup admission, and catalog publication gates before changing service state.
-- Require the matching `v0.9.1` fleet-starter artifact for new installations. Existing installations are not upgraded by this CLI release.
-- The release remains a candidate until a physical greenfield installation, backup/restore, and service-admission checks pass. Do not tag or publish `v0.9.1` before those checks.
+- Install the six managed-service families with verified Development and Production plans using the matching `v0.9.1` fleet-starter artifact.
+- Add guarded managed-services enablement, rebuild preparation and a read-only `bootstrap services verify` gate for installation and component upgrades.
+- Correct first-install API endpoint discovery, Flux controller/policy ordering and OpenBao initialization ordering. Preserve verified TLS, backup admission and live GitOps target checks.
+- Qualify a clean single-node development installation and a verified-TLS tenant service backup, RestoreToNew and confirmed deletion. A bounded Flux source-controller replacement also recovered artifact retrieval without policy changes.
+- Existing installations retain their Fleet pins; this CLI release does not upgrade them automatically.
 
 ## v0.8.3 — 2026-09-16
 
