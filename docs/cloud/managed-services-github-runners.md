@@ -24,6 +24,10 @@ The pool does not supply a Kubernetes or application credential to jobs.
 ## Before you begin
 
 - Use a private GitHub.com repository whose workflow contributors you trust.
+  In **Settings → Actions → General**, keep **Run workflows from fork pull
+  requests** disabled. Do not enable forwarding write tokens or secrets to fork
+  workflows. Treat `pull_request_target` and workflows that check out untrusted
+  code as privileged: this preview is for trusted workflows only.
 - Create a short-lived [fine-grained GitHub personal access token](https://github.com/settings/personal-access-tokens/new)
   restricted to that repository. Grant **Repository permissions → Administration:
   Read and write**. An organization might require approval before the token
@@ -274,6 +278,7 @@ reported target, or temporarily route the workflow to another runner you control
 | A second pool reports `PlanQuotaExceeded` | Wait for the old pool to finish draining and deleting, then retry the new pool. The preview permits one pool per Project. |
 | Service reports a GitHub repository verification refusal | Check that the repository is private and the fine-grained token targets that exact repository, has **Administration: Read and write**, has not expired, and has any required organization approval. Save a corrected token in the same ManagedSecret; the controller retries. |
 | Service reports that `github_token` contains whitespace or control characters | Replace the value with a file containing only the token, without a trailing newline or spaces. Save it to the same ManagedSecret; the pool retries. |
+| Repository was made public | The controller pauses the pool until the repository is private and verification succeeds. After **Ready** returns, cancel and rerun jobs submitted while it was public; automatic replay of those queued jobs is not qualified. |
 | Job remains queued | Match `runs-on` to **Connect**, check **Ready**, available worker slots, and starting-worker events. GitHub owns the actual queue. |
 | Service reports **Capacity unavailable** | A worker pod could not start. Check both project and organization CPU/memory quota against the pool's Settings reservation. Reduce worker size or ask Kube-DC support to review available capacity, then rerun the GitHub job. |
 | Service is **Rejected** with `OrganizationQuotaExceeded` | The Organization cannot reserve the active and replacement workers for this pool. Reduce worker size, free capacity held by another pool, or ask Kube-DC support to review quota; then retry creation. |
