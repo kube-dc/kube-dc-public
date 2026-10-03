@@ -219,6 +219,28 @@ permission checks. The console shows the same service when it is available.
 
 ## Customize workers and migrate an existing pool
 
+The managed worker includes Git, Python 3 with PyYAML, Docker CLI, and Buildx.
+GitHub JavaScript actions run on Node 24. The runner's .NET runtime is for the
+runner itself; it does not include an application .NET SDK. Node.js application
+tools and npm are not bundled. Install the application runtime with a setup
+action in your workflow, or include it in your custom worker image.
+
+Use `docker --version` and `docker buildx inspect --bootstrap` to check the
+available build tools. `docker version` contacts a Docker daemon, which this
+service does not provide.
+
+To extend the managed worker, use this qualified base image:
+
+```dockerfile
+FROM docker.io/shalb/kube-dc-github-runner@sha256:e71d15ad6cfe1a83b09da3ff245dcc74878323dabe034b7d66b64bddfd704ab0
+USER root
+# Install your build tools here, then restore the required worker user.
+USER 1001:1001
+```
+
+Publish your custom image, scan its dependencies, and select its immutable
+digest when creating the pool. You maintain the tools added to your image.
+
 Select 500m–4 CPU and 1–8 GiB of memory for each worker at creation. A custom
 worker image must be a public `ghcr.io` or `docker.io` Linux amd64 image named
 by `sha256` digest. It must run as UID/GID 1001 and provide the ARC runner
