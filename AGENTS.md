@@ -80,8 +80,10 @@ shared quota, and Organization Groups.
 
 ### Hostname-based web traffic
 
-Use a `LoadBalancer` Service with a Gateway route for HTTP, HTTPS, or TLS
-passthrough:
+Use a `ClusterIP` Service with a Gateway route for route-only HTTP, HTTPS, or
+TLS passthrough. Existing Gateway LoadBalancer Services retain their direct EIP
+binding when edited; restrictive lists on combined exposure require both methods
+to be qualified:
 
 ```yaml
 metadata:

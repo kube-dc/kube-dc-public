@@ -285,6 +285,28 @@ router-port ACL support and verified NAT/chassis convergence. HTTP-01 needs the
 bounded cert-manager identity, Service certificate ownership and reviewed
 platform namespace UID pins, including renewal acceptance under the guard.
 
+### Plan shared Gateway listener capacity
+
+The Gateway API schema permits at most 64 listeners on one Gateway. Count
+platform listeners, dynamic HTTPS listeners and dedicated restricted TLS
+listeners together. Tenant admission preflights allocation and the controller
+checks capacity again on every optimistic update retry. A full Gateway rejects
+a new listener with `platform Gateway listener capacity exhausted (64/64)`; it
+does not fall back to unrestricted forwarding. Admission does not reserve a
+slot, so a competing allocation can still fail during reconciliation.
+
+Existing owned listeners can be edited at capacity; a mode change that allocates
+another listener can be rejected. Metadata updates,
+certificate renewal and exposure removal do not need another slot. Remove
+unused exposure through its owning Service and verify listener cleanup. Do not
+manually delete active listeners or their ownership annotations to free capacity.
+Automatic sharding is not implemented. Provide separately qualified Gateway
+capacity before onboarding more listener-based exposures; tenant-owned Gateways
+require their own admission and source-policy qualification. Do not fill the
+shared live Gateway to test exhaustion.
+
+### Qualify Floating IP restrictions
+
 For a bounded FIP qualification, set `manager.fipSourcePolicy.namespaceUIDs`
 to an object mapping each qualification namespace to its live Kubernetes UID.
 Admission and NAT publication verify that exact namespace incarnation through

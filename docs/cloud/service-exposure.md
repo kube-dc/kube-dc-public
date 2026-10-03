@@ -70,6 +70,14 @@ requires both Gateway and direct enforcement before you can change it in the
 console. Arbitrary native HTTPRoutes/TLSRoutes do not gain filtering from this
 annotation.
 
+The shared Gateway supports at most 64 listeners, including platform listeners.
+HTTPS and restricted TLS passthrough each need a dedicated listener. When all
+slots are occupied, new listener requests fail with `platform Gateway listener
+capacity exhausted`. Existing owned listeners remain editable and removable;
+a mode change that needs another listener can be rejected. Contact
+your operator to release unused listeners or provide separate Gateway capacity.
+HTTP and unrestricted TLS passthrough reuse shared listeners.
+
 A qualified Floating IP uses `spec.allowedCIDRs`; see
 [External and floating IPs](public-floating-ips.md#restrict-floating-ip-clients).
 Every list accepts at most 32 IPv4 CIDRs. Bare addresses, IPv6, malformed lists
