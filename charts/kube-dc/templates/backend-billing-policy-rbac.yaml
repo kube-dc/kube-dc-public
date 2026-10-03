@@ -1,0 +1,41 @@
+{{- /*
+PAYG P05 (ADR-001 D8). The backend reads -- never writes -- the billing policy
+that governs an organization, to refuse legacy billing writes the policy would
+ignore. Policies live only in the platform namespace, so this is a Role there,
+not a cluster-wide grant.
+
+Without it every read is 403, which the backend must treat as "cannot tell":
+provider webhooks would be deferred and purchases refused with 503 for every
+organization. The grant ships whether or not the billing service is enabled,
+because a policy can exist without it.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "kube-dc.backend.serviceAccountName" . }}-billing-policy-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.backend.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["billing.kube-dc.com"]
+    resources: ["organizationbillingpolicies"]
+    # `list` is for the Organizations table: it joins every organization to
+    # its policy with ONE read instead of a get per row, so a pay-as-you-go
+    # organization stops reading as "No plan" there.
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "kube-dc.backend.serviceAccountName" . }}-billing-policy-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.backend.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kube-dc.backend.serviceAccountName" . }}-billing-policy-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kube-dc.backend.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}

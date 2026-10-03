@@ -1,0 +1,80 @@
+# =============================================================================
+# ValidatingAdmissionPolicy: protect Organization allocation and suspension
+#
+# Organization admins may patch their own Organization (description, contact,
+# security). They must not grant themselves capacity or lift a suspension, so:
+#   - setting/changing/clearing spec.quota requires the custom verb "allocate"
+#   - setting/changing/clearing spec.suspension requires the custom verb "suspend"
+#   - setting/changing/clearing spec.externalCommerce requires "allocate"
+# on organizations, checked through RBAC for the exact object. Both are enforced
+# on CREATE as well as UPDATE, so a caller allowed to create Organizations cannot
+# create one that is already sized.
+#
+# Billing annotations are protected on UPDATE by protect-kube-dc-resource-
+# annotations; this policy closes the CREATE side for callers outside the
+# platform's own service accounts.
+# =============================================================================
+
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: protect-organization-policy
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["kube-dc.com"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["organizations"]
+  variables:
+    - name: isCreate
+      expression: "request.operation == 'CREATE'"
+    - name: platformCaller
+      expression: >-
+        request.userInfo.username.startsWith('system:serviceaccount:kube-dc:') ||
+        ('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups)
+    - name: quotaChanged
+      expression: >-
+        variables.isCreate ? has(object.spec.quota) :
+        (has(object.spec.quota) != has(oldObject.spec.quota) ||
+         (has(object.spec.quota) && object.spec.quota != oldObject.spec.quota))
+    - name: suspensionChanged
+      expression: >-
+        variables.isCreate ? has(object.spec.suspension) :
+        (has(object.spec.suspension) != has(oldObject.spec.suspension) ||
+         (has(object.spec.suspension) && object.spec.suspension != oldObject.spec.suspension))
+    - name: commerceChanged
+      expression: >-
+        variables.isCreate ? has(object.spec.externalCommerce) :
+        (has(object.spec.externalCommerce) != has(oldObject.spec.externalCommerce) ||
+         (has(object.spec.externalCommerce) && object.spec.externalCommerce != oldObject.spec.externalCommerce))
+    - name: target
+      expression: >-
+        authorizer.group('kube-dc.com').resource('organizations')
+          .namespace(object.metadata.namespace).name(object.metadata.name)
+  validations:
+    - expression: "!variables.quotaChanged || variables.target.check('allocate').allowed()"
+      message: "Changing spec.quota requires the 'allocate' permission on this organization."
+      reason: Forbidden
+    - expression: "!variables.commerceChanged || variables.target.check('allocate').allowed()"
+      message: "Changing spec.externalCommerce requires the 'allocate' permission on this organization."
+      reason: Forbidden
+    - expression: "!variables.suspensionChanged || variables.target.check('suspend').allowed()"
+      message: "Changing spec.suspension requires the 'suspend' permission on this organization."
+      reason: Forbidden
+    - expression: >-
+        !variables.isCreate || variables.platformCaller ||
+        !has(object.metadata.annotations) ||
+        !object.metadata.annotations.exists(k, k.startsWith('billing.kube-dc.com/'))
+      message: "billing.kube-dc.com/ annotations are managed by the platform and cannot be set when creating an organization."
+      reason: Forbidden
+
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: protect-organization-policy
+spec:
+  policyName: protect-organization-policy
+  validationActions: [Deny]

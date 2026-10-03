@@ -42,10 +42,18 @@ spec:
             - name: http
               containerPort: 80 # {{ .Values.frontend.service.port }}
               protocol: TCP
-          {{- with .Values.frontend.extraEnv }}
           env:
+            {{- /* The image proxies /api to this upstream; the chart names its own
+               backend Service unless extraEnv already sets it. */}}
+            {{- $upstream := false }}
+            {{- range .Values.frontend.extraEnv }}{{- if eq .name "UI_BACKEND_UPSTREAM" }}{{- $upstream = true }}{{- end }}{{- end }}
+            {{- if not $upstream }}
+            - name: UI_BACKEND_UPSTREAM
+              value: {{ printf "%s:%v" (include "kube-dc.backend.fullname" .) .Values.backend.service.port | quote }}
+            {{- end }}
+            {{- with .Values.frontend.extraEnv }}
             {{- toYaml . | nindent 12 }}
-          {{- end }}
+            {{- end }}
           livenessProbe:
             {{- toYaml .Values.frontend.livenessProbe | nindent 12 }}
           readinessProbe:

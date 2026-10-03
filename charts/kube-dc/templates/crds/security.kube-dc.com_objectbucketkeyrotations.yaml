@@ -1,0 +1,455 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    helm.sh/resource-policy: keep
+    controller-gen.kubebuilder.io/version: v0.16.4
+  name: objectbucketkeyrotations.security.kube-dc.com
+spec:
+  group: security.kube-dc.com
+  names:
+    kind: ObjectBucketKeyRotation
+    listKind: ObjectBucketKeyRotationList
+    plural: objectbucketkeyrotations
+    shortNames:
+    - obkr
+    singular: objectbucketkeyrotation
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.claimRef.name
+      name: Claim
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ObjectBucketKeyRotation rotates one Rook-owned claim's shared archive key.
+          Creation is a Project administrator capability, separate from service control.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              ObjectBucketKeyRotationSpec is the rotation intent. Every field is immutable;
+              the one change allowed after creation is setting spec.abandon, once. An
+              abandon can never be withdrawn or changed.
+            properties:
+              abandon:
+                description: |-
+                  Abandon ends a stalled rotation without revoking the old key. A rotation
+                  that has not created a replacement key is cancelled; one creating or
+                  publishing it finishes publication first. One revoking the old key is not
+                  interrupted, and may succeed instead, unless it lost its intent or a check
+                  before revocation (claim Secret changed, new key rejected, intent
+                  replaced, consumer reads or the registry write refused) has failed for
+                  ten minutes. A step that keeps failing with evidence for ten minutes is
+                  abandoned from what the claim Secret and RGW show: verified only when the
+                  Secret holds a new key RGW accepts. A claim
+                  or Secret gone or replaced for ten minutes is abandoned unverified. The
+                  rotation ends Abandoned, reporting which keys stay valid, and the next
+                  rotation that succeeds retires the keys this one left behind. Abandon is
+                  set once and can never be withdrawn or changed.
+
+                  An abandon waits while the rotation's authority does not verify for any
+                  other reason (Ready AuthorityPending, outcome Pending, names the part to
+                  restore: the Project, the claim, its ObjectBucket or the claim Secret's
+                  contents), and while RGW refuses, or answers for another identity, a read
+                  the abandon itself needs (Ready AbandonVerificationRefused). If that can never be resolved, a cluster
+                  administrator ends the rotation by hand, in this order, so that the
+                  controller cannot take the claim lock again:
+                   1. Note this rotation's UID (metadata.uid), status.intentSecretRef
+                      (namespace, name and UID), status.previousFingerprint and
+                      status.currentFingerprint.
+                   2. Delete the rotation and remove its
+                      security.kube-dc.com/archive-key-retirement finalizer, so the
+                      controller stops acting on it.
+                   3. Then, in the services cell namespace, set data.rotationUID to "" in
+                      the claim lock (the archive-lock-* ConfigMap whose data.rotationUID is
+                      the noted UID) and in the claim's archive registry (the
+                      archive-consumers-* ConfigMap whose data.rotationUID is the noted UID).
+                      Identify them by that UID, never by name pattern alone, and never
+                      change a lock or registry that names another rotation. Do this only
+                      once the rotation is gone, and check afterwards that data.rotationUID
+                      is still empty (a controller pass already in flight can write it back
+                      once; clear it again).
+                   4. Delete the intent Secret the noted status.intentSecretRef names
+                      (namespace, name and UID). If status.intentSecretRef is empty (its
+                      status write was lost), the intent is the Secret in the cell
+                      namespace labelled security.kube-dc.com/rotation-uid with the noted
+                      UID.
+                  The keys the rotation left valid (the noted fingerprints) are then not
+                  recorded. Leaving them is the safe choice: they stay valid and a later
+                  successful rotation reports them as untracked. Revoke one by hand only if
+                  it is not the key the claim Secret holds and after confirming that no
+                  consumer still uses it.
+                properties:
+                  reason:
+                    description: Reason records why the rotation was abandoned.
+                    maxLength: 256
+                    minLength: 1
+                    type: string
+                required:
+                - reason
+                type: object
+                x-kubernetes-validations:
+                - message: abandon cannot be changed
+                  rule: self == oldSelf
+              claimRef:
+                description: ServiceAuthorityReference always names one object incarnation.
+                properties:
+                  name:
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                  namespace:
+                    maxLength: 63
+                    minLength: 1
+                    type: string
+                  uid:
+                    maxLength: 64
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                - namespace
+                - uid
+                type: object
+                x-kubernetes-validations:
+                - message: claimRef is immutable
+                  rule: self == oldSelf
+              gracePeriodSeconds:
+                default: 300
+                description: |-
+                  Consumers outside managed services must reload the OBC Secret during this
+                  overlap. Managed consumers additionally require positive acknowledgement.
+                format: int32
+                maximum: 86400
+                minimum: 60
+                type: integer
+                x-kubernetes-validations:
+                - message: gracePeriodSeconds is immutable
+                  rule: self == oldSelf
+              projectNamespaceUID:
+                maxLength: 64
+                minLength: 1
+                type: string
+                x-kubernetes-validations:
+                - message: projectNamespaceUID is immutable
+                  rule: self == oldSelf
+              projectRef:
+                description: ServiceAuthorityReference always names one object incarnation.
+                properties:
+                  name:
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                  namespace:
+                    maxLength: 63
+                    minLength: 1
+                    type: string
+                  uid:
+                    maxLength: 64
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                - namespace
+                - uid
+                type: object
+                x-kubernetes-validations:
+                - message: projectRef is immutable
+                  rule: self == oldSelf
+              sourceSecretUID:
+                description: |-
+                  SourceSecretUID binds the Rook projection incarnation. Rotation updates its
+                  values in place, preserving the identity used by historical backup records.
+                maxLength: 64
+                minLength: 1
+                type: string
+                x-kubernetes-validations:
+                - message: sourceSecretUID is immutable
+                  rule: self == oldSelf
+            required:
+            - claimRef
+            - projectNamespaceUID
+            - projectRef
+            - sourceSecretUID
+            type: object
+            x-kubernetes-validations:
+            - message: abandon cannot be withdrawn or changed
+              rule: '!has(oldSelf.abandon) || (has(self.abandon) && self.abandon ==
+                oldSelf.abandon)'
+          status:
+            properties:
+              abandon:
+                description: Abandon reports the handling of spec.abandon.
+                properties:
+                  abandonedAt:
+                    description: AbandonedAt is when the rotation became Abandoned.
+                    format: date-time
+                    type: string
+                  blockedMessage:
+                    maxLength: 1024
+                    type: string
+                  blockedReason:
+                    description: |-
+                      BlockedReason and BlockedMessage are the Ready reason and message the
+                      rotation last reported before its first abandon evaluation: what kept it
+                      from finishing. They are written once and never overwritten.
+                    maxLength: 1024
+                    type: string
+                  observedAt:
+                    description: ObservedAt is when the controller first saw the abandon
+                      request.
+                    format: date-time
+                    type: string
+                  oldKeyState:
+                    description: |-
+                      OldKeyState is whether the claim user's keyring still held the old key
+                      when the rotation was abandoned.
+                    enum:
+                    - Present
+                    - Absent
+                    - Unknown
+                    type: string
+                  outcome:
+                    description: |-
+                      Outcome is Deferred while the rotation finishes publishing or revoking,
+                      Pending while the abandon is refused with a named Ready reason, and
+                      Abandoned, Cancelled (no replacement key existed) or Superseded (the
+                      rotation succeeded first) at the end.
+                    enum:
+                    - Deferred
+                    - Pending
+                    - Abandoned
+                    - Cancelled
+                    - Superseded
+                    type: string
+                  result:
+                    description: |-
+                      Result is the Abandoned reason, derived from evidence: OldKeyRetained or
+                      OldKeyRevoked when the published key was verified; RotationNotPublished
+                      when the claim Secret still holds the old key; NewKeyUnverified when the
+                      claim Secret holds a new key RGW does not accept; AuthorityUnverified when
+                      the claim or its Secret could not be verified.
+                    enum:
+                    - OldKeyRetained
+                    - OldKeyRevoked
+                    - RotationNotPublished
+                    - NewKeyUnverified
+                    - AuthorityUnverified
+                    type: string
+                  retirement:
+                    description: |-
+                      Retirement is Recorded once the claim's provider lock records the keys
+                      this rotation left valid, so the next successful rotation retires them;
+                      Skipped when they were not recorded (the Project is being deleted, or the
+                      claim's lock no longer exists).
+                    enum:
+                    - Recorded
+                    - Skipped
+                    type: string
+                  stalledReason:
+                    description: |-
+                      StalledReason and StalledSince track, while the abandon waits, the first
+                      of consecutive failures of one cause, each backed by evidence: RGW
+                      rejecting or refusing the candidate or the new key (a conflicting key, an
+                      explicit rejection, a definitive 4xx), the claim Secret write refused
+                      (403, 422), consumer reads or the archive registry write refused (403)
+                      while revoking, a changed claim Secret, a missing or replaced intent, a
+                      claim or Secret gone or replaced.
+                      The stalled rotation is abandoned only after that cause has failed for
+                      ten minutes. The count restarts when that cause's own check passes, when
+                      the phase changes, or when evidence of another cause replaces it. A
+                      transient error (a failed read, RGW unavailable, 5xx, 408, 429, a
+                      conflict) is a retry: it neither starts, replaces nor ends a stall.
+                    maxLength: 128
+                    type: string
+                  stalledSince:
+                    format: date-time
+                    type: string
+                  verified:
+                    description: |-
+                      Verified is true when the claim Secret held the published key and RGW
+                      accepted it when the rotation was abandoned.
+                    type: boolean
+                type: object
+              completedAt:
+                format: date-time
+                type: string
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              currentFingerprint:
+                type: string
+              intentSecretRef:
+                description: IntentSecretRef is provider-only material, never a tenant
+                  reveal target.
+                properties:
+                  name:
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                  namespace:
+                    maxLength: 63
+                    minLength: 1
+                    type: string
+                  uid:
+                    maxLength: 64
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                - namespace
+                - uid
+                type: object
+              objectBucketUID:
+                type: string
+              phase:
+                enum:
+                - Pending
+                - Preparing
+                - Publishing
+                - AwaitingConsumers
+                - Revoking
+                - Succeeded
+                - Cancelled
+                - Abandoned
+                type: string
+              previousFingerprint:
+                description: Fingerprints are public lineage; key values never appear
+                  in this API.
+                type: string
+              publishedAt:
+                format: date-time
+                type: string
+              retiringKeys:
+                description: |-
+                  RetiringKeys are the keys abandoned predecessors left valid, copied from
+                  the claim's provider lock when this rotation recorded its intent. The
+                  rotation revokes them after its own old key is rejected.
+                items:
+                  description: |-
+                    RetainedArchiveKey is one abandoned rotation's key pair that this rotation
+                    retires. Fingerprints are public lineage; key values never appear here.
+                  properties:
+                    abandonedAt:
+                      format: date-time
+                      type: string
+                    currentFingerprint:
+                      maxLength: 64
+                      type: string
+                    previousFingerprint:
+                      maxLength: 64
+                      type: string
+                    rotationName:
+                      maxLength: 253
+                      type: string
+                    rotationUID:
+                      maxLength: 64
+                      type: string
+                  required:
+                  - currentFingerprint
+                  - previousFingerprint
+                  - rotationUID
+                  type: object
+                maxItems: 8
+                type: array
+                x-kubernetes-list-type: atomic
+              rgwUser:
+                type: string
+              sourceResourceVersion:
+                type: string
+              untrackedKeys:
+                description: |-
+                  UntrackedKeys counts the keys the claim user's keyring still held when the
+                  rotation succeeded besides its current key, its revoked old key and the
+                  retiring keys it revoked: keys no rotation tracks, and retained keys whose
+                  recorded access key ID disagrees with the keyring. They are reported,
+                  never revoked.
+                format: int32
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

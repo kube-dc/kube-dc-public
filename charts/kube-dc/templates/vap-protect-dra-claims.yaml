@@ -33,7 +33,7 @@ spec:
           'system:serviceaccount:kube-system:generic-garbage-collector',
           'system:kube-controller-manager'])
     - name: exclude-cluster-admins
-      expression: "!has(request.userInfo.groups) || !('system:masters' in request.userInfo.groups)"
+      expression: "!has(request.userInfo.groups) || !(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))"
   validations:
     - expression: "false"
       message: "DRA claim templates are managed by kube-dc and cannot be changed directly."
@@ -82,7 +82,7 @@ spec:
           'system:serviceaccount:kube-system:namespace-controller',
           'system:serviceaccount:kube-system:generic-garbage-collector'])
     - name: exclude-cluster-admins
-      expression: "!has(request.userInfo.groups) || !('system:masters' in request.userInfo.groups)"
+      expression: "!has(request.userInfo.groups) || !(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))"
   validations:
     - expression: "false"
       message: "DRA resource claims are generated and cannot be changed directly."
@@ -136,7 +136,7 @@ spec:
           'system:serviceaccount:kube-system:generic-garbage-collector',
           'system:kube-controller-manager'])
     - name: exclude-cluster-admins
-      expression: "!has(request.userInfo.groups) || !('system:masters' in request.userInfo.groups)"
+      expression: "!has(request.userInfo.groups) || !(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))"
   validations:
     - expression: "false"
       message: "DRA GPU Deployments must be managed through the kube-dc API."

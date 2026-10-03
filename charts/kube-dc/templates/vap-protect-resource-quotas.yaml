@@ -42,7 +42,7 @@ spec:
           ])
     - name: exclude-cluster-admins
       expression: >-
-        !('system:masters' in request.userInfo.groups)
+        !(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))
   validations:
     - expression: "false"
       message: "This ResourceQuota is managed by kube-dc and cannot be changed directly."

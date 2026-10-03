@@ -1,0 +1,261 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    helm.sh/resource-policy: keep
+    controller-gen.kubebuilder.io/version: v0.16.4
+  name: servicedatabaseroles.security.kube-dc.com
+spec:
+  group: security.kube-dc.com
+  names:
+    kind: ServiceDatabaseRole
+    listKind: ServiceDatabaseRoleList
+    plural: servicedatabaseroles
+    singular: servicedatabaserole
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ServiceDatabaseRole is the provider journal behind one ServiceBinding
+          generation. It owns exactly one Bao role and any static native projection.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              bindingGeneration:
+                format: int64
+                minimum: 1
+                type: integer
+              bindingRef:
+                description: ServiceAuthorityReference always names one object incarnation.
+                properties:
+                  name:
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                  namespace:
+                    maxLength: 63
+                    minLength: 1
+                    type: string
+                  uid:
+                    maxLength: 64
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                - namespace
+                - uid
+                type: object
+              connectionRef:
+                description: ServiceAuthorityReference always names one object incarnation.
+                properties:
+                  name:
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                  namespace:
+                    maxLength: 63
+                    minLength: 1
+                    type: string
+                  uid:
+                    maxLength: 64
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                - namespace
+                - uid
+                type: object
+              defaultTTLSeconds:
+                format: int64
+                maximum: 86400
+                minimum: 60
+                type: integer
+              maxTTLSeconds:
+                format: int64
+                maximum: 604800
+                minimum: 60
+                type: integer
+              mode:
+                enum:
+                - Static
+                - Dynamic
+                type: string
+              privilege:
+                description: Privilege selects a provider-defined SQL grant, not a
+                  SQL identifier.
+                enum:
+                - owner
+                - app
+                - readonly
+                type: string
+              rotationPeriodSeconds:
+                format: int64
+                maximum: 31536000
+                minimum: 60
+                type: integer
+              targetSecretName:
+                description: Empty for direct OpenBao reads. Static projection is
+                  in BindingRef.Namespace.
+                maxLength: 253
+                type: string
+            required:
+            - bindingGeneration
+            - bindingRef
+            - connectionRef
+            - defaultTTLSeconds
+            - maxTTLSeconds
+            - mode
+            - privilege
+            - rotationPeriodSeconds
+            type: object
+            x-kubernetes-validations:
+            - message: database role authority is immutable
+              rule: self == oldSelf
+            - message: maximum TTL must cover default TTL
+              rule: self.maxTTLSeconds >= self.defaultTTLSeconds
+            - message: dynamic credentials are issued to the caller, never a shared
+                Secret
+              rule: self.mode != 'Dynamic' || !has(self.targetSecretName) || size(self.targetSecretName)
+                == 0
+          status:
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              contractVersion:
+                description: |-
+                  ContractVersion is the journal status contract version
+                  (databasecontract.StatusContractVersion) whose readiness conditions
+                  this status reports; it is independent of the Bao command encoding.
+                  Absent on journals written by a provider that predates the entitlement
+                  gate (version 2).
+                format: int64
+                minimum: 0
+                type: integer
+              credentialVersion:
+                format: int64
+                type: integer
+              fingerprint:
+                type: string
+              mount:
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+              path:
+                type: string
+              role:
+                type: string
+              roleOID:
+                description: RoleOID detects same-name SQL role replacement after
+                  creation.
+                format: int64
+                type: integer
+              secretRef:
+                description: ServiceAuthorityReference always names one object incarnation.
+                properties:
+                  name:
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                  namespace:
+                    maxLength: 63
+                    minLength: 1
+                    type: string
+                  uid:
+                    maxLength: 64
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                - namespace
+                - uid
+                type: object
+              username:
+                description: Username is a generated static username; dynamic values
+                  are never stored.
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

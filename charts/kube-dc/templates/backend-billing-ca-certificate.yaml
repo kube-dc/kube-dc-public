@@ -1,0 +1,44 @@
+{{- $billingIssuer := include "kube-dc.billing.caIssuerName" . }}
+{{- if and (include "kube-dc.billing.serviceURL" .) $billingIssuer }}
+{{- /*
+The backend's own certificate from the billing service's CA.
+
+Its purpose is the `ca.crt` cert-manager writes beside it: that is the trust
+anchor the backend verifies the billing service with. Requesting a certificate
+rather than copying a secret is what makes this durable -- the CA is renewed by
+cert-manager and this secret is renewed with it, so nothing silently expires
+into a backend that cannot reach the billing service.
+
+The certificate is a real identity rather than a placeholder, so the same
+secret can carry client authentication if the billing API ever asks for mTLS.
+
+Rendered only on a PAYG installation (billing.payg.enabled): the URL and the
+issuer both come from the kube-dc.billing.* helpers, which are empty when
+PAYG is off.
+*/}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "kube-dc.backend.fullname" . }}-billing-ca
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.backend.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "kube-dc.backend.fullname" . }}-billing-ca
+  duration: 8760h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  commonName: {{ include "kube-dc.backend.fullname" . }}.{{ .Release.Namespace }}.svc
+  dnsNames:
+    - {{ include "kube-dc.backend.fullname" . }}.{{ .Release.Namespace }}.svc
+    - {{ include "kube-dc.backend.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+  usages:
+    - digital signature
+    - key encipherment
+    - client auth
+  issuerRef:
+    name: {{ $billingIssuer | quote }}
+    kind: {{ (((.Values.billing | default dict).service | default dict).caIssuer | default dict).kind | default "ClusterIssuer" }}
+{{- end }}

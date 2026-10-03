@@ -46,10 +46,18 @@ spec:
           # the image's baked-in env.js (see admin-frontend-configmap.yaml). The admin
           # image has NO entrypoint that regenerates env.js from env vars, so the mount
           # below — not env: — is authoritative for BACKEND_URL/KEYCLOAK_URL/etc.
-          {{- with .Values.adminFrontend.extraEnv }}
           env:
+            {{- /* The image proxies /api to this upstream; the chart names its own
+               backend Service unless extraEnv already sets it. */}}
+            {{- $upstream := false }}
+            {{- range .Values.adminFrontend.extraEnv }}{{- if eq .name "UI_BACKEND_UPSTREAM" }}{{- $upstream = true }}{{- end }}{{- end }}
+            {{- if not $upstream }}
+            - name: UI_BACKEND_UPSTREAM
+              value: {{ printf "%s:%v" (include "kube-dc.backend.fullname" .) .Values.backend.service.port | quote }}
+            {{- end }}
+            {{- with .Values.adminFrontend.extraEnv }}
             {{- toYaml . | nindent 12 }}
-          {{- end }}
+            {{- end }}
           livenessProbe:
             {{- toYaml .Values.adminFrontend.livenessProbe | nindent 12 }}
           readinessProbe:

@@ -36,7 +36,7 @@ spec:
             && 'network.kube-dc.com/routing-fabric' in oldObject.metadata.labels)
   validations:
     - expression: >-
-        (has(request.userInfo.groups) && 'system:masters' in request.userInfo.groups)
+        (has(request.userInfo.groups) && ('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))
         || request.userInfo.username == {{ $managerUser | quote }}
         || request.userInfo.username == {{ $ovnUser | quote }}
         || request.userInfo.username == 'system:serviceaccount:kube-system:generic-garbage-collector'
@@ -66,7 +66,7 @@ spec:
         resources: ["vpcs"]
   validations:
     - expression: >-
-        (has(request.userInfo.groups) && 'system:masters' in request.userInfo.groups)
+        (has(request.userInfo.groups) && ('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))
         || request.userInfo.username == {{ $managerUser | quote }}
         || ((has(object.spec.staticRoutes) == has(oldObject.spec.staticRoutes))
             && (!has(object.spec.staticRoutes) || object.spec.staticRoutes == oldObject.spec.staticRoutes)

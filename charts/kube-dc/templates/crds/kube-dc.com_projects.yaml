@@ -3,7 +3,6 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    helm.sh/resource-policy: keep
     controller-gen.kubebuilder.io/version: v0.16.4
   name: projects.kube-dc.com
 spec:
@@ -41,7 +40,10 @@ spec:
             description: ProjectSpec defines the desired state of Project.
             properties:
               cidrBlock:
-                description: CidrBlock general VPC subnet IP range
+                description: |-
+                  CidrBlock general VPC subnet IP range. When omitted, the controller
+                  allocates the next free block of the platform's project CIDR pool and
+                  records it here before building the project network.
                 type: string
               egressNetworkType:
                 description: |-
@@ -84,7 +86,6 @@ spec:
                     type: integer
                 type: object
             required:
-            - cidrBlock
             - egressNetworkType
             type: object
             x-kubernetes-validations:
@@ -448,6 +449,10 @@ spec:
                           Synced=True.
                         type: integer
                     type: object
+                  databaseMount:
+                    description: DatabaseMount is the Project-owned managed-services
+                      database engine.
+                    type: string
                   kms:
                     description: KMS summarises KMSKey rollup.
                     properties:
@@ -507,6 +512,19 @@ spec:
                           Synced=True.
                         type: integer
                     type: object
+                  servicePublicationMount:
+                    description: |-
+                      ServicePublicationMount is the separate Project-UID-bound KV v2 mount.
+                      Retirement preserves its value-free CAS tombstones; it is never reused.
+                    type: string
+                  servicePublicationSecretStore:
+                    description: ServicePublicationSecretStore delivers provider-owned
+                      credentials through ESO.
+                    type: string
+                  servicePublicationServiceAccount:
+                    description: ServicePublicationServiceAccount is the Project-incarnation
+                      ESO identity.
+                    type: string
                   syncServiceAccount:
                     description: |-
                       SyncServiceAccount is the dedicated ServiceAccount used by ESO to

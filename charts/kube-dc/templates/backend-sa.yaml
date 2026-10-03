@@ -21,12 +21,61 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 rules:
-  # Only product catalog reads use the backend identity. The services UI
-  # authorizes the Project caller first and returns a redacted projection.
-  # Instance, operation, binding and Secret requests use the caller's token.
+  {{- if .Values.platformApi.enabled }}
+  # The platform internal listener verifies the extension API server's token.
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  # Superadmin Provisioning API page (controllers/admin/provisioningApi.js):
+  # machine clients are RBAC bindings. Kubernetes lets an identity bind only
+  # the roles it may `bind` (or whose permissions it holds), so `bind` is
+  # limited to the provisioning roles; `use` on organizationprefixes lets it
+  # create and bind the per-prefix roles.
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterrolebindings", "clusterroles"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles"]
+    resourceNames: ["kube-dc:provisioner", "kube-dc:platform:users", "kube-dc:platform:console-login", "kube-dc:platform:usage-reader"]
+    verbs: ["bind"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles"]
+    resourceNames: ["kube-dc:platform:plan-reader"]
+    verbs: ["bind"]
+  - apiGroups: ["kube-dc.com"]
+    resources: ["organizationprefixes"]
+    verbs: ["use"]
+  - apiGroups: ["apiregistration.k8s.io"]
+    resources: ["apiservices"]
+    resourceNames: ["v1alpha1.platform.kube-dc.com"]
+    verbs: ["get"]
+  {{- end }}
+  # Catalog and provider authority resolution use the backend identity.
+  # Instance, operation and binding requests first authorize the Project caller;
+  # credential operations always use that caller's OpenBao token.
   - apiGroups: ["services.kube-dc.com"]
     resources: ["managedserviceclasses", "managedserviceplans", "connectivityclasses"]
     verbs: ["get", "list"]
+  # Provider publication references contain no values. Caller ManagedSecret
+  # and OpenBao authorization remain mandatory for reveal.
+  - apiGroups: ["services.kube-dc.com"]
+    resources: ["credentialpublications"]
+    verbs: ["get"]
+  # Value-free database journals and the exact native placement authority.
+  - apiGroups: ["security.kube-dc.com"]
+    resources: ["servicedatabaseconnections", "servicedatabaseroles"]
+    verbs: ["get"]
+  # Lease revocation finds a binding's role journal when the binding has
+  # withdrawn its reference (provider not Ready, e.g. a closed gate).
+  - apiGroups: ["security.kube-dc.com"]
+    resources: ["servicedatabaseroles"]
+    verbs: ["list"]
+  - apiGroups: ["services.kube-dc.com"]
+    resources: ["serviceplacements", "servicedeployments", "servicedataplanes"]
+    verbs: ["get"]
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters"]
+    verbs: ["get"]
   # The operator views under /api/admin/managed-services are cluster-wide by
   # nature (every Project's instances, every data plane, the operations parked
   # for a provider), so they read with this identity behind the master-realm
@@ -152,14 +201,11 @@ rules:
   - apiGroups: ["kube-dc.com"]
     resources: ["organizations"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # Partner API credentials (docs/prd/partner-api-prd.md). The superadmin console
-  # creates/edits/deletes Partner CRs (controllers/admin/partnersController.js);
-  # the Partner API reads them on every authenticated call to resolve scopes,
-  # limits and suspension. API key records are Secrets, already covered by the
-  # core rule above.
+  # Custom verbs checked by protect-organization-policy: the admin console sets
+  # an organization's explicit spec.quota ("allocate") and spec.suspension ("suspend").
   - apiGroups: ["kube-dc.com"]
-    resources: ["partners"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    resources: ["organizations"]
+    verbs: ["allocate", "suspend"]
   # Admin console group management (controllers/admin/groupsController.js)
   # creates/deletes OrganizationGroup CRs in the org namespace.
   - apiGroups: ["kube-dc.com"]
@@ -195,6 +241,11 @@ rules:
   - apiGroups: ["kube-dc.com"]
     resources: ["fabricsegments", "projectnetworks"]
     verbs: ["get", "list", "watch", "create", "delete"]
+  # Project-scoped VM address choices read only the owning subnet's arena,
+  # after caller RBAC; tenants receive no cluster-wide reservation access.
+  - apiGroups: ["kube-dc.com"]
+    resources: ["addressarenas"]
+    verbs: ["get"]
   # Per-org VLAN pools (docs/prd/tenant-vlan-org-pool.md). The allocation decides
   # which ORGANIZATION may bind a wire, so writing one is a platform-admin act:
   # the admin console does it with this identity behind requireSuperadmin, and
@@ -252,7 +303,7 @@ rules:
       - cephobjectstores
     verbs: ["get", "list"]
   - apiGroups: ["objectbucket.io"]
-    resources: ["objectbucketclaims"]
+    resources: ["objectbucketclaims", "objectbuckets"]
     verbs: ["get", "list"]
   # Flux reconciliation (Reconciliation admin page): get/list for the read view;
   # patch for the admin actions — force-sync (reconcile.fluxcd.io/requestedAt

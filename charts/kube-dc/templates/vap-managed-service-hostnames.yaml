@@ -25,12 +25,21 @@ spec:
         resources: ["ingresses"]
         operations: ["CREATE", "UPDATE"]
   matchConditions:
-    # Only the services runner originates managed hostnames. Core's Service
-    # route controller needs no exemption: its tenant inputs are gated below.
-    - name: exclude-services-runner-and-admins
+    # The runner owns managed Service inputs. The core manager may update that
+    # marked Service and create its owned TLSRoute; tenant writes remain gated.
+    - name: exclude-managed-route-controllers-and-admins
       expression: >-
-        !('system:masters' in request.userInfo.groups) &&
-        request.userInfo.username != {{ printf "system:serviceaccount:%s:kube-dc-service-runner" (.Values.projectPolicies.protectManagedServices.runnerNamespace | default "kube-dc-service-runner") | toJson }}
+        !(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups)) &&
+        request.userInfo.username != {{ printf "system:serviceaccount:%s:kube-dc-service-runner" (.Values.projectPolicies.protectManagedServices.runnerNamespace | default "kube-dc-service-runner") | toJson }} &&
+        !(request.userInfo.username == {{ printf "system:serviceaccount:%s:%s" .Release.Namespace (include "kube-dc.manager.serviceAccountName" .) | toJson }} &&
+          ((request.resource.group == '' && request.resource.resource == 'services' &&
+            'services.kube-dc.com/managed-by' in object.metadata.?labels.orValue({}) &&
+            object.metadata.?labels.orValue({})['services.kube-dc.com/managed-by'] == 'kube-dc-services') ||
+           (request.resource.group == 'gateway.networking.k8s.io' && request.resource.resource == 'tlsroutes' &&
+            'kube-dc.com/managed-by' in object.metadata.?labels.orValue({}) &&
+            object.metadata.?labels.orValue({})['kube-dc.com/managed-by'] == 'service-lb-controller' &&
+            'kube-dc.com/source-service' in object.metadata.?labels.orValue({}) &&
+            object.metadata.?labels.orValue({})['kube-dc.com/source-service'] != '')))
   variables:
     - name: annotations
       expression: "object.metadata.?annotations.orValue({})"

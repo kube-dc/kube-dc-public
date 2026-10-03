@@ -42,7 +42,7 @@ spec:
       {{- end }}
       containers:
       - name: manager
-        image: "{{ .Values.k8Manager.image.repository }}:{{ .Values.k8Manager.image.tag }}"
+        image: "{{ .Values.k8Manager.image.repository }}:{{ .Values.k8Manager.image.tag }}{{ with .Values.k8Manager.image.digest }}@{{ . }}{{ end }}"
         imagePullPolicy: {{ .Values.k8Manager.image.pullPolicy | default "IfNotPresent" }}
         command:
         - /manager

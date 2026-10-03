@@ -50,6 +50,141 @@ spec:
                 maxLength: 256
                 minLength: 5
                 type: string
+              externalCommerce:
+                description: |-
+                  ExternalCommerce, when present, means the organization buys its capacity
+                  outside Kube-DC (for example from a hosting provider that sets
+                  spec.quota). The console then offers no plans, add-ons or checkout, the
+                  billing API refuses purchases, and users are pointed to the provider.
+                  Setting, changing or clearing it requires the custom "allocate" verb.
+                properties:
+                  portalURL:
+                    description: PortalURL is the provider's customer portal, where
+                      users buy capacity.
+                    maxLength: 2048
+                    pattern: ^https://[^\s@]+$
+                    type: string
+                  providerName:
+                    description: ProviderName is shown to the organization's users,
+                      e.g. "Webdock".
+                    maxLength: 64
+                    minLength: 1
+                    type: string
+                required:
+                - providerName
+                type: object
+              quota:
+                description: |-
+                  Quota is the explicit capacity granted to this organization. When set it
+                  takes precedence over any billing plan: the amounts become the
+                  organization's HierarchicalResourceQuota, public IP, load balancer, object
+                  storage and GPU limits. Setting or changing it requires the custom
+                  "allocate" verb on organizations (protect-organization-policy).
+                properties:
+                  cpu:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      CPU is the total CPU requests the organization may use, excluding the
+                      per-project system overhead the platform adds on top.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  gpu:
+                    additionalProperties:
+                      description: OrganizationGPUGrant is the capacity granted for
+                        one GPU catalog profile.
+                      properties:
+                        corePercent:
+                          format: int64
+                          minimum: 0
+                          type: integer
+                        devices:
+                          format: int64
+                          minimum: 0
+                          type: integer
+                        memoryMiB:
+                          format: int64
+                          minimum: 0
+                          type: integer
+                        shares:
+                          format: int64
+                          minimum: 0
+                          type: integer
+                      type: object
+                    description: |-
+                      GPU maps a GPU catalog profile id to the capacity granted for it. Unknown
+                      or disabled profiles are rejected by the controller.
+                    maxProperties: 32
+                    type: object
+                  loadBalancers:
+                    description: LoadBalancers caps the number of LoadBalancer Services
+                      across all projects.
+                    format: int64
+                    minimum: 0
+                    type: integer
+                  memory:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      Memory is the total memory requests the organization may use, excluding
+                      the per-project system overhead the platform adds on top.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  objectStorage:
+                    description: ObjectStorage is the S3 capacity. Omitted means no
+                      object storage.
+                    properties:
+                      buckets:
+                        description: Buckets caps the number of buckets; 0 means the
+                          platform default.
+                        format: int32
+                        minimum: 0
+                        type: integer
+                      size:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: Size is the total object storage capacity, e.g.
+                          "1Ti".
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                    required:
+                    - size
+                    type: object
+                  pods:
+                    description: Pods caps the number of pods across all projects.
+                    format: int64
+                    minimum: 0
+                    type: integer
+                  publicIPs:
+                    description: PublicIPs caps the number of public IPv4 addresses
+                      (EIPs) across all projects.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  storage:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: Storage is the total persistent volume capacity the
+                      organization may request.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  templatePlan:
+                    description: |-
+                      TemplatePlan names a billing plan that supplies policy shape only (burst
+                      ratio and LimitRange defaults). It never contributes capacity.
+                    maxLength: 63
+                    type: string
+                type: object
+                x-kubernetes-validations:
+                - message: quota must set at least one dimension; use explicit zeroes
+                    for no capacity
+                  rule: has(self.cpu) || has(self.memory) || has(self.storage) ||
+                    has(self.pods) || has(self.loadBalancers) || has(self.publicIPs)
+                    || has(self.objectStorage) || has(self.gpu)
               security:
                 description: |-
                   Security holds Organization-level security policy declarations.
@@ -122,6 +257,26 @@ spec:
                     x-kubernetes-list-map-keys:
                     - project
                     x-kubernetes-list-type: map
+                type: object
+              suspension:
+                description: |-
+                  Suspension, when present, suspends the organization independently of any
+                  billing subscription state. Setting, changing or clearing it requires the
+                  custom "suspend" verb on organizations, so a billing integration cannot
+                  release an operator's suspension and vice versa.
+                properties:
+                  reason:
+                    description: Reason is shown to operators and the organization's
+                      users.
+                    maxLength: 256
+                    type: string
+                  stopWorkloads:
+                    description: |-
+                      StopWorkloads scales the organization's workloads down while keeping all
+                      data. When false the organization is held: its quota drops to the
+                      platform's suspended floor but running workloads are not stopped.
+                      Clearing the suspension restores workloads that were stopped.
+                    type: boolean
                 type: object
             required:
             - email

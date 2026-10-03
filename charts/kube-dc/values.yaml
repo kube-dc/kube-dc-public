@@ -347,6 +347,14 @@ manager:
         # - namespace: monitoring
         #   name: prometheus-k8s
 
+  # Enable only after FIP traffic and lifecycle qualification on this installation.
+  fipSourcePolicy:
+    enabled: false
+    # Optional qualification scope: exact namespace names mapped to live UIDs.
+    # Empty means installation-wide when enabled. Recreated namespaces must be
+    # explicitly qualified again; open FIPs are unaffected by this scope.
+    namespaceUIDs: {}
+
   # Admission webhooks for security.kube-dc.com/v1alpha1 (M0-T03).
   # Adds Service + cert-manager Certificate + Mutating/Validating
   # configurations covering ManagedSecret, ManagedCertificate, KMSKey,
@@ -358,6 +366,17 @@ manager:
   # defaulting + validation will be bypassed.
   webhook:
     enabled: true
+    # Enable after every manager replica serves the route-claim handler.
+    # Requires source preservation and installation traffic qualification.
+    protectExposureRoutes: false
+    # Exact platform identities only. Audit and migrate existing tenant routes
+    # before activation; tenants then use expose-route on the shared Gateway.
+    exposureRouteTrustedProducers: []
+    # Exact cert-manager identity; it receives only a verified HTTP-01 exception.
+    exposureACMEControllerUsername: ""
+    # Explicit platform Certificate namespace UID pins. Tenant Certificates
+    # require a current Service-owned HTTPS hostname instead.
+    exposureACMEPlatformNamespaceUIDs: {}
 
   # Accept a SINGLE manager replica while its admission fails closed.
   #
@@ -540,12 +559,12 @@ manager:
   image:
     repository: shalb/kube-dc-manager
     pullPolicy: IfNotPresent
-    # Empty string falls back to .Chart.AppVersion in the deployment
-    # template — keeps the chart's default tag in lock-step with its
-    # version. Per-cluster overrides come from the fleet's HelmRelease
-    # (KUBE_DC_MANAGER_TAG in cluster-config.env), which lets ops pin
-    # to a specific dev image without re-cutting the chart.
-    tag: ""
+    # Optional immutable digest; the tag remains the release label.
+    digest: ""
+    # Explicit manager default for the scope-aware release. appVersion retains
+    # the deployed bundle label and other components' fallback tags. Fleet
+    # supplies the installation's reviewed tag and immutable digest.
+    tag: v0.9.1-exposure-scope.20261003.1
 
   imagePullSecrets: []
   nameOverride: ""
@@ -568,15 +587,26 @@ manager:
 
 
 ui:
-  # Opt in only with images built from github.com/kube-dc/ui and Console API v1.
-  enabled: false
+  # The console images from github.com/kube-dc/ui (0.9 and later) read the
+  # rendered runtime-config.json and refuse to start without it, so this is on.
+  # Set false only for a legacy frontend image older than 0.8.
+  enabled: true
   environment: production
   environmentLabel: ""
   defaultOrganization: ""
+  # Managed services are the database offer of the 0.9 console: on for every
+  # organization unless the installation is CloudSigma or lists organizations.
   managedServices:
     installation: kube-dc
     organizations: []
-    allOrganizations: false
+    allOrganizations: true
+  # The db-manager (KdcDatabase) Databases area is deprecated. It stays only
+  # for the organizations and project namespaces (<org>-<project>) listed
+  # here, while their databases are migrated; everyone else sees managed
+  # services alone.
+  legacyDatabases:
+    organizations: []
+    projects: []
   buildLabel: ""
 
 frontend:
@@ -761,6 +791,36 @@ adminFrontend:
   tolerations: []
   affinity: {}
 
+# Platform machine identities (docs/prd/webdock-php-sdk-and-partner-removal.md).
+# Each entry is a Keycloak master-realm service-account client whose tokens
+# carry the "kube-dc-machine" audience. It is bound to kube-dc:provisioner and
+# may only manage organizations named <prefix>-*. `grants` adds extension API
+# permissions (platformApi): users, consolelogins, organizationusages, and
+# plans (read the billing-plans catalog).
+#   - clientId: webdock-portal
+#     prefix: wd
+#     grants: [users, consolelogins, organizationusages, plans]
+platformMachines: []
+
+# platform.kube-dc.com/v1alpha1 extension API (users, consolelogins,
+# organizationusages), served by `manager platform-apiserver` through the
+# aggregation layer. Requires cert-manager (APIService CA injection).
+platformApi:
+  enabled: false
+  replicaCount: 1
+  # The console backend's internal listener; its own ClusterIP Service,
+  # never routed by the Gateway.
+  backendPort: 3340
+  # Audience of the projected token presented to that listener.
+  backendAudience: kube-dc-platform-internal
+  # Console that one-click logins (consolelogins) open; empty = the platform
+  # console URL. Set it to serve provider customers a different console,
+  # e.g. https://console.example.com/next/.
+  consoleUrl: ""
+  resources:
+    requests:
+      memory: 64Mi
+
 backend:
   # CLI bootstrap publishes the API server CA over the backend's trusted HTTPS
   # endpoint. By default it reads the projected service-account ca.crt. Override
@@ -769,7 +829,8 @@ backend:
     caConfigMapName: ""
     caKey: ca.crt
   consoleApi:
-    enabled: false
+    # Console API v1 at /api/ui/v1, required by the 0.9 console images.
+    enabled: true
     # Kubernetes service DNS and mounted CA; override only for a verified endpoint.
     kubernetesApiUrl: https://kubernetes.default.svc
     kubernetesCaFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
@@ -782,6 +843,19 @@ backend:
   managedK8sInternalEndpointNamespaces: []
   # Measured IPv4 worker link MTU; required before enabling internal endpoints.
   managedK8sWorkerMTU: 0
+  # Enable only after qualifying the exact k8-manager/core versions, guarded
+  # Gateway publication, and original client IP preservation. Schema presence
+  # alone does not prove enforcement. Empty namespaces applies installation-wide.
+  managedK8sPublicAPISourcePolicy: false
+  managedK8sPublicAPISourcePolicyNamespaces: []
+  # Console/API availability is an operator attestation for each qualified path.
+  # Keep false until the immutable producer/core/admission/dataplane combination
+  # passes acceptance. These flags do not configure OVN or Envoy enforcement.
+  exposureSourcePolicy:
+    directLoadBalancer: false
+    gateway: false
+    floatingIP: false
+    namespaces: []
   # Verify TLS certificates on every outbound HTTPS call (API server, Keycloak,
   # OpenBao, Loki, object storage).
   #
@@ -839,6 +913,8 @@ backend:
   # they live inside the pool and are not listed here. List every range the
   # cluster uses, or narrow `pool` to a range you know is dedicated to
   # projects. Defaults cover only the standard kube-dc in-cluster networks.
+  # The manager uses the same values to allocate spec.cidrBlock for Projects
+  # created without one.
   projectCidr:
     # Supernet the suggestions are carved from.
     pool: "10.0.0.0/8"
@@ -896,7 +972,9 @@ backend:
     from: "" # e.g., "noreply@example.com"
     fromName: "Kube-DC"
   
-  replicaCount: 2
+  # Console API v1 keeps tickets and relays in one process: one replica,
+  # Recreate strategy, autoscaling off (see templates/ui-validation.yaml).
+  replicaCount: 1
   extraEnv: []
       # - name: PROM_URL
       #   value: "http://prometheus:9090"
@@ -1081,6 +1159,8 @@ k8Manager:
     repository: shalb/kube-dc-k8-manager
     pullPolicy: IfNotPresent
     tag: "v0.8.3"
+    # Optional immutable digest for installation-qualified controller releases.
+    digest: ""
 
   # External endpoint for the infrastructure cluster API
   # Required for CCMs running in VPC-isolated namespaces that cannot reach kubernetes.default.svc
@@ -1167,6 +1247,162 @@ k8Manager:
 
 # Billing configuration
 billing:
+  # Pay-as-you-go (PAYG) billing, per installation: `payg.enabled: true` or
+  # `false`. UNSET by default, and unset means OFF -- the right answer for
+  # every installation that bills its customers somewhere else (a plan
+  # provider, a hosting partner's own billing) or not at all.
+  #
+  # Unset is not quite the same as false. An installation that sets any
+  # billing.service link value (url, caIssuer.name, caSecretName) with this
+  # switch unset fails to render: it was running PAYG before the switch
+  # existed, and upgrading it must not silently drop PAYG. Set true to keep
+  # PAYG, or false to turn it off.
+  #
+  # On, the chart wires the backend to the billing service: BILLING_SERVICE_URL
+  # and its projected token and CA (below), which in turn registers the admin
+  # billing-policy, hold, settlement and rate-card routes, the tenant
+  # managed-service quote and budget routes, and reports `payg: true` to both
+  # consoles so they show the PAYG admin pages and price panels.
+  #
+  # Off, none of that exists: the backend gets no billing-service link even if
+  # billing.service.url is set (an installation cannot half-enable PAYG), the
+  # routes answer 404 like any unknown path, and the consoles hide every PAYG
+  # surface. The OrganizationBillingPolicy CRD, the backend's read-only policy
+  # Role and the optional admission policy ship either way; an organization
+  # with no policy is billed exactly as before. Self-service PAYG signup
+  # (policy.selfService.enabled) requires this switch, and the chart refuses
+  # to render one without the other.
+  #
+  # Turning it on also needs the metering deployment's billing API, its CA
+  # issuer, and this backend's service account in the billing API's
+  # BILLING_API_ALLOWED_CALLERS. See docs/platform/payg-billing.md.
+  #
+  #   payg:
+  #     enabled: true    # or false
+  payg: {}
+
+  # How the backend reaches the billing service (the metering process), which
+  # is the only writer of an OrganizationBillingPolicy. Used ONLY when
+  # payg.enabled is true. Empty by default, and a PAYG installation then gets
+  # the in-cluster metering service,
+  #   https://kube-dc-metering.monitoring.svc.cluster.local:8443/internal/billing/v1
+  # verified through the `kube-dc-billing-ca-issuer` ClusterIssuer (unless
+  # caIssuer.name or caSecretName says otherwise). Set it only when the billing
+  # service lives somewhere else.
+  #
+  # The billing API checks the token's AUDIENCE, so the token is projected for
+  # it specifically and cannot be replayed elsewhere. The API also checks the
+  # caller against its own BILLING_API_ALLOWED_CALLERS, so this backend's
+  # service account has to be named there too.
+  #
+  # The CA secret must exist in THIS release's namespace -- a pod cannot mount
+  # a secret from another one -- so an installation whose metering runs
+  # elsewhere has to copy or reflect it here.
+  service:
+    # Empty means the in-cluster default above (when payg.enabled).
+    # Must be https, and its host must match the service certificate's SAN.
+    url: ""
+    audience: kube-dc-billing
+    # How the backend gets the CA that signed the billing service's
+    # certificate. Two ways, and exactly one must be set.
+    #
+    # caIssuer is the durable one and the one to prefer. cert-manager mints a
+    # certificate for the backend IN THIS NAMESPACE from the same CA that
+    # signed the billing service, and its secret carries `ca.crt`. Nothing is
+    # copied between namespaces, and when the CA rotates the backend's copy
+    # rotates with it -- a static copy of a CA is a time bomb set to the
+    # issuer's renewal date.
+    #
+    # The issuer must be a real CA (or Vault/Venafi) issuer. A selfSigned
+    # issuer cannot serve this: every certificate it signs is its own root, so
+    # two certificates from it share no trust and `ca.crt` would not verify
+    # the billing service at all.
+    #
+    # With payg.enabled, an empty url and neither name nor caSecretName set,
+    # the name defaults to `kube-dc-billing-ca-issuer`.
+    caIssuer:
+      name: ""
+      kind: ClusterIssuer
+    # Or name a secret already present in this namespace that carries the CA.
+    # Use it when something else already maintains one here; remember that it
+    # has to be kept in step with the issuer's renewals.
+    caSecretName: ""
+    caKey: ca.crt
+
+  # Per-organization billing policies (PAYG). See
+  # docs/prd/payg/adr/ADR-001-authoritative-writers-and-storage.md.
+  #
+  # The OrganizationBillingPolicy CRD itself always ships with the chart and is
+  # inert: an organization with no policy is enforced exactly as it is today.
+  # These switches control the parts that change who may do what.
+  policy:
+    # Restrict CREATE/UPDATE/DELETE of OrganizationBillingPolicy (spec and
+    # status) to platform service accounts in the release namespace and to
+    # cluster administrators. Off by default: until the billing coordinator
+    # exists there is nothing legitimate for it to protect, and an admission
+    # policy naming identities that do not exist yet is confusing during a
+    # rollout rather than useful.
+    admissionEnabled: false
+    # Further identities allowed to write policies when admission is on, as
+    # full usernames. The billing service runs inside the metering process,
+    # which lives outside the release namespace, e.g.
+    #   - system:serviceaccount:monitoring:kube-dc-metering
+    additionalWriters: []
+
+    # Self-service PAYG: let someone choose pay as you go when they register an
+    # organization, instead of a plan or a trial.
+    #
+    # OFF by default, and the default is the whole point. A PAYG organization
+    # carries no plan annotation, and the manager skips the
+    # HierarchicalResourceQuota entirely for a plan-less organization -- so a
+    # PAYG organization whose policy is not enforced has NO ceiling at all, not
+    # a small one. Turning this on without a manager that applies policies
+    # would let anyone who can reach the signup form take unlimited capacity.
+    # The registration path checks that a ceiling was actually applied and
+    # removes the organization if it was not, but the safe default still
+    # belongs here.
+    #
+    # Requires billing.payg.enabled: the chart fails to render with this on
+    # and PAYG off, rather than ship a signup path to a billing service the
+    # backend was never wired to.
+    selfService:
+      enabled: false
+      # A trial is a free window on a plan; PAYG has no plan, so it gets no
+      # trial. A validated payment card is what takes the trial's place as the
+      # thing standing between an email address and real capacity. Leave this
+      # true unless you intend open signup: setting it false means anyone who
+      # can register gets an organization with the ceiling below.
+      requireCardValidation: true
+      # Names a provider that can actually authorise a card. Empty means none
+      # can, which is the current state -- selecting `stripe` as the billing
+      # provider does not by itself make a card verifiable at signup.
+      cardValidationProvider: ""
+      # `shadow` measures usage without charging for it. Keep it until the
+      # platform can really take money, or the console will tell a customer
+      # they are being billed when nothing can bill them.
+      collectionMode: shadow
+      # The published rate card new organizations are rated against, as
+      # <cardId>@<revision> (e.g. eur-standard@2026-10).
+      #
+      # REQUIRED when selfService is enabled. It is not a nicety: the billing
+      # contract refuses a payg policy without one ("payg requires
+      # rateCardRevision as <cardId>@<revision>"), so leaving it empty means
+      # every signup creates an organization, is refused 422 and has the
+      # organization deleted again. The backend therefore treats an empty or
+      # malformed value as a misconfiguration and does not offer PAYG at all.
+      #
+      # The revision does not have to resolve to prices. On a `shadow`
+      # installation it deliberately does not -- usage is measured and shown,
+      # and nothing is charged. It records which card the organization will be
+      # rated against once there is one.
+      rateCardRevision: ""
+      # The starting ceiling, in the SafetyLimits shape. Empty uses the
+      # backend's default (the Scale Pool shape: 16 CPU / 56Gi / 320Gi / 500
+      # pods / 3 public IPv4 / 500Gi object storage, with scale-pool LimitRange
+      # defaults). Set it deliberately: this ceiling is what bounds the damage
+      # from an abusive signup.
+      limits: {}
+
   # Billing provider: "none" (quota-only), "stripe", or "whmcs"
   # Default is "none" so a fresh install boots without pre-existing
   # billing secrets (stripe-billing / whmcs-credentials). Installs
@@ -1508,10 +1744,10 @@ billing:
         cpuPerProject: 0
         memPerProject: 0
       addons:
-        extra-ipv4-3:
-          displayName: "+3 Dedicated IPv4"
-          description: "+3 public IPv4 addresses"
-          price: 15
+        extra-ipv4-1:
+          displayName: "+1 Public IPv4"
+          description: "One additional public IPv4 address"
+          price: 5
           currency: "EUR"
           # Counted, not measured: public addresses are whole slots, so this is a
           # plain integer rather than a resource.Quantity like cpu/memory/storage.
@@ -1519,9 +1755,25 @@ billing:
           # (internal/organization/plan_resources.go). Without that, the ONLY way to
           # give one organisation more addresses was to raise the shared plan, which
           # raises it for every tenant on that plan.
-          ipv4: 3
+          #
+          # Granted PER UNIT, deliberately: the grant is multiplied by the
+          # quantity the customer buys, so one SKU covers every number of
+          # addresses. This replaced a fixed "+3 Dedicated IPv4" block, which
+          # could not express "I want two" and — having no provider mapping at
+          # all — was unsellable on both Stripe and WHMCS.
+          ipv4: 1
           # selfService is deliberately left at the default: this is an ordinary
           # purchasable addon, not an internal-only grant.
+          providers:
+            # Blank until an operator creates the Price: a Stripe cluster fails
+            # the purchase closed rather than charging the wrong amount.
+            stripe:
+              priceId: ""
+            # Exact, case-sensitive WHMCS option name. Must be a QUANTITY-type
+            # configurable option — that quantity is what multiplies the grant
+            # above, and is how a customer picks the number of addresses.
+            whmcs:
+              configurableOptionName: "Public IPv4"
         turbo-x1:
           displayName: "Turbo x1"
           description: "+4 GB RAM • +2 vCPU"
@@ -2629,7 +2881,7 @@ routedNetwork:
   enabled: false
   backend: frr-project-gateway
   namespace: kube-dc-routing
-  gatewayImage: shalb/kube-dc-routing-gateway:v0.8.3
+  gatewayImage: shalb/kube-dc-routing-gateway:v0.9.0
   frrImage: quay.io/frrouting/frr:10.4.1
   routingLinkPool: 100.65.0.0/16
   # Exact identity allowed to maintain kube-ovn finalizers/status on protected
@@ -2767,6 +3019,10 @@ projectPolicies:
   # rook (bucket claims), sveltos (bundle delivery).
   protectManagedServices:
     enabled: true
+    # Enable only after every manager replica serves the versioned validator.
+    # The services runner separately verifies this guard before fast creation.
+    valkeyStartup:
+      enabled: false
     validationActions: ["Deny"]
     # PHASE 2 of the instance-write judge (a registered family whose
     # operator runs inside the project namespace under a per-instance
@@ -2783,10 +3039,31 @@ projectPolicies:
     # Default true since chart v0.6.46 (phase 2); v0.6.45 shipped the stanzas
     # with it false and was observed on every target cluster first.
     instanceWritesJudgedByWebhook: true
+    # PHASE 2 of the pod-condition judge: a registered family may let its
+    # instance account set declared conditions on its OWN member pods
+    # (instanceWrites {group: "", resource: pods, subresource: status,
+    # conditionTypes: [...]} -- the Oracle MySQL Operator's sidecar reports
+    # mysql.oracle.com/configured, without which no member becomes Ready).
+    # Phase 1 is the managed-instance-pod-conditions webhook stanza, rendered
+    # as soon as a family declares such a write, while the policies still
+    # refuse it. Flip this to true only once every target cluster serves that
+    # stanza; the webhook, which proves the account and the pod by UID and
+    # admits a change to the declared conditions only, is then its sole judge.
+    # While this is false on a cluster that already registers such a family,
+    # the symptom is the ORIGINAL block, not a new one: the members stay
+    # Provisioning and the API server refuses the sidecar's pods/status write
+    # ("this object is managed by the platform"). That is phase 1 working as
+    # intended, not a regression -- flip this once the stanza is served.
+    # The marker policies keep judging pods/status in both phases: a status
+    # update can carry labels, and the judge only sees marked pods.
+    instancePodConditionsJudgedByWebhook: false
     # Two-phase Pooler status handoff: install the manager/guard first, then
     # enable once every replica serves /validate-cnpg-pooler-status. The
     # services runner must bind its reserved SA to the live Pooler's UID.
     poolerStatusJudgedByWebhook: false
+    # Install/verify the fail-closed publication webhook first; only then enable.
+    # Never exempt the shared ESO namespace from managed-object protection.
+    publicationWritesJudgedByWebhook: false
     # The introduction policy below is rendered only while this is true. It
     # is true by default (a fresh cluster has nothing to migrate). A cluster
     # whose managed databases predate db-manager v0.5.23 pins this chart with
@@ -2821,6 +3098,7 @@ projectPolicies:
       - kube-dc
       - kube-system
       - kube-dc-service-runner
+      - arc-systems
       - kube-dc-services
       - cnpg-system
       - mariadb-system
@@ -2855,3 +3133,109 @@ notifications:
   # Capture is always durable; enable sending after SMTP/support and staged
   # release validation. Historical suspensions are never automatically backfilled.
   enabled: false
+
+# Must match the namespace of the installed services hub. Project cleanup scans
+# journals across namespaces, so a configuration mismatch cannot skip retirement.
+managedServiceCredentials:
+  # Enable after all hub writers use permanent archive-consumer registration.
+  # Keep disabled during mixed-version upgrades. It gates upstream key
+  # retirement and, since C06 step 6, key creation: while it is off a new
+  # ObjectBucketKeyRotation waits in Pending (BrokerRotationDisabled) and creates
+  # no key it could never retire; enabling it later proceeds. Abandoning a
+  # rotation (spec.abandon) works either way.
+  archiveBrokerRotationEnabled: false
+  # Accept a live archive writer (a registered ManagedService that still runs)
+  # once its runner has acknowledged the rotated key (C06 live writer handoff):
+  # in-place claim Secret delivery on the shared Kube-DC plane: the Job
+  # families (MySQL, MariaDB, ClickHouse, Valkey) switch at the next Job,
+  # PostgreSQL after the CNPG credential reload and drain (or hibernated, with
+  # no live process), and any family whose applied revision runs no archive
+  # (NoArchiveWriter). PostgreSQL replication group members and restores that
+  # still read a source archive (including every service restored in place,
+  # which keeps its restore source), OpenBaoReference, carried delivery and
+  # Direct members stay blocked. A stalled rotation is ended with spec.abandon
+  # (C06 step 6). Takes effect only together with archiveBrokerRotationEnabled, and
+  # needs a services runner that writes guarded handoff records (kube-dc-services
+  # C06 step 3; PostgreSQL step 4).
+  archiveLiveWriterHandoffEnabled: false
+  esoServiceAccount: system:serviceaccount:external-secrets-system:external-secrets
+  cellNamespace: kube-dc-services
+  # Namespace of the pre-C05-step-2 database TLS shard Secrets
+  # (kube-dc-service-database-tls-00..0f). The manager no longer writes them:
+  # since v0.3.0 the plugin takes its TLS material inline in the Bao connection.
+  # It only removes each connection's old files from them.
+  databaseTLSNamespace: openbao
+  # Installation gate for OpenBao database-engine credentials (C05). While off,
+  # nothing new is provisioned: a ServiceDatabaseConnection/ServiceDatabaseRole
+  # stays pending with reason EntitlementDisabled (no finalizer, first TLS
+  # material, Bao mount, connection or role, SQL login or first credential
+  # delivery, except that a Project forging the projection's owner label can
+  # have an already provisioned role's own credential delivered); retirement
+  # of existing journals always runs and no journal is
+  # deleted by the gate. The manager treats a missing or unparsable value as
+  # off. Rendered as SERVICES_DATABASE_ENGINE_ENABLED. Set per cluster: fleet
+  # HelmRelease value `${KUBE_DC_DATABASE_ENGINE_ENABLED:=false}` from
+  # cluster-config.env.
+  # Turning it off again is not a kill switch. Connections Bao already
+  # acknowledged keep their certificate and Bao connection (inline TLS
+  # material) current, and Static credentials already delivered keep following
+  # the password Bao rotates, so existing applications keep working, Bao can
+  # still revoke leases and console revoke works. Existing Dynamic roles keep
+  # issuing through direct Bao reads for as long as the gate stays closed. The
+  # plan flag allowDatabaseEngine is the kill path.
+  databaseEngine:
+    enabled: false
+    # Name of the local ServiceDataPlane when it uses its own Kubernetes
+    # ServiceAccount token Secret. It must match the services hub's self plane.
+    selfDataPlaneName: ""
+    # C05 coordinator caller only. Off by default; this does not turn on
+    # reader_clearance in PostgreSQL or grant database-engine entitlement.
+    # Enable for Stage qualification together with the reviewed policy and
+    # lease/sweeper path; do not offer credentials before the full C05 gate.
+    readerCoordinatorEnabled: false
+    # Separately arm the PostgreSQL retirement policy after a complete
+    # topology observation, before the all-instance reader pass. Keep off
+    # until sweeper and lease handling pass
+    # Stage qualification; it requires readerCoordinatorEnabled.
+    readerClearancePolicyEnabled: false
+    # BaoReplicasQualified (C05 step 2, journal contract version 3). The
+    # database plugin binary reaches every OpenBao replica through an init
+    # container of the OpenBao StatefulSet (deployed by the fleet, not this
+    # chart) that copies it into the plugin directory. The manager provisions
+    # a new connection or role only while that StatefulSet has converged on
+    # one revision whose template pins the init container to this digest and
+    # every replica completed it from an image whose ID is this digest; until
+    # then journals report BaoReplicasQualified=False and Ready=False with
+    # reason BaoReplicasNotQualified. Retirement never waits for it; an
+    # acknowledged connection and a delivered Static credential are maintained
+    # while it is False. Empty digest: no replica qualifies. Rendered as
+    # SERVICES_DATABASE_BAO_NAMESPACE, SERVICES_DATABASE_BAO_STATEFULSET,
+    # SERVICES_DATABASE_PLUGIN_INIT_CONTAINER and
+    # SERVICES_DATABASE_PLUGIN_IMAGE_DIGEST. Register the plugin binary's
+    # sha256 at the catalog version the manager names
+    # (hack/register-managed-postgresql-plugin.sh) once every replica has it.
+    # The replica check follows the StatefulSet's update revision, so it works
+    # with the OnDelete update strategy the fleet uses: replace every pod after
+    # changing the init container.
+    # This build names plugin v0.4.0 (C05 step 3: phased retirement and an
+    # in-place journal migration; the connection configuration is v0.3.0's).
+    # Every catalog version checks the same plugin file name, so replacing the
+    # binary fails connections still naming the previous version until this
+    # manager rewrites them; roll the manager right after the OpenBao pods.
+    # Rollback to a manager that names v0.3.0 keeps the SQL journals working
+    # but needs the v0.3.0 binary back in the init container on every replica.
+    # Rollback to a manager that names plugin v0.2.0 is not safe: it cannot
+    # renew an inline (v0.3.0 or later) connection, so Static credential
+    # delivery stops at once (delivered Secrets go stale at their next Bao
+    # rotation), Bao revokes only until the stored certificate expires (the
+    # connection's status.tlsExpiresAt) and only while the current binary
+    # stays on every replica, and its Dynamic role retirement blocks
+    # meanwhile. Never force-revoke leases (that skips SQL login retirement).
+    # Roll forward (details at PluginVersion in
+    # internal/databasecontract/command.go).
+    openBao:
+      namespace: openbao
+      statefulSet: openbao
+      pluginInitContainer: kube-dc-postgresql-plugin
+      # sha256:<64 lowercase hex> registry digest of the plugin image.
+      pluginImageDigest: ""

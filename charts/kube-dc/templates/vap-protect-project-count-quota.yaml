@@ -1,0 +1,59 @@
+# Native Project object-count quotas live in organization namespaces, outside
+# the project-only binding for HRQ quotas. Reserve this name cluster-wide so a
+# namespace label edit cannot remove the admission guard.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: protect-kube-dc-project-count-quota
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["resourcequotas", "resourcequotas/status"]
+  matchConditions:
+    - name: reserved-quota-name
+      expression: >-
+        (request.operation == 'DELETE' ? oldObject.metadata.name : object.metadata.name)
+        == 'kube-dc-project-count'
+    - name: exclude-manager
+      expression: >-
+        request.userInfo.username !=
+        'system:serviceaccount:{{ .Release.Namespace }}:{{ include "kube-dc.manager.serviceAccountName" . }}'
+    - name: exclude-namespace-teardown
+      expression: >-
+        !(request.operation == 'DELETE' && request.userInfo.username in [
+          'system:serviceaccount:kube-system:namespace-controller',
+          'system:serviceaccount:kube-system:generic-garbage-collector',
+          'system:kube-controller-manager'
+        ])
+    - name: exclude-quota-accounting
+      expression: >-
+        !(has(request.subResource) && request.subResource == 'status' && request.userInfo.username in [
+          'system:serviceaccount:kube-system:resourcequota-controller',
+          'system:kube-controller-manager', 'system:apiserver'
+        ])
+    - name: exclude-garbage-collector-finalizers
+      expression: >-
+        !(request.operation == 'UPDATE' && (!has(request.subResource) || request.subResource == '') &&
+          request.userInfo.username in ['system:serviceaccount:kube-system:generic-garbage-collector',
+            'system:kube-controller-manager'] &&
+          object.spec == oldObject.spec &&
+          has(object.status) == has(oldObject.status) &&
+          (!has(object.status) || object.status == oldObject.status))
+    - name: exclude-cluster-admins
+      expression: "!(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))"
+  validations:
+    - expression: "false"
+      message: "The organization Project count quota is managed by kube-dc."
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: protect-kube-dc-project-count-quota
+spec:
+  policyName: protect-kube-dc-project-count-quota
+  validationActions: [Deny]

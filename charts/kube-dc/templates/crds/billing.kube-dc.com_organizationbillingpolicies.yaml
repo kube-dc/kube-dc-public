@@ -1,0 +1,657 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.4
+    helm.sh/resource-policy: keep
+  name: organizationbillingpolicies.billing.kube-dc.com
+spec:
+  group: billing.kube-dc.com
+  names:
+    kind: OrganizationBillingPolicy
+    listKind: OrganizationBillingPolicyList
+    plural: organizationbillingpolicies
+    shortNames:
+      - obp
+    singular: organizationbillingpolicy
+  scope: Namespaced
+  versions:
+    - additionalPrinterColumns:
+        - jsonPath: .spec.organizationRef.name
+          name: Organization
+          type: string
+        - jsonPath: .spec.mode
+          name: Mode
+          type: string
+        - jsonPath: .spec.commerceOwner
+          name: Owner
+          type: string
+        - jsonPath: .spec.collectionMode
+          name: Collection
+          type: string
+        - jsonPath: .spec.revision
+          name: Revision
+          type: string
+        - jsonPath: .status.enforcement.observedPolicyRevision
+          name: Applied
+          type: string
+        - jsonPath: .status.transition.state
+          name: Transition
+          type: string
+        - jsonPath: .status.accountState
+          name: Account
+          type: string
+      name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: |-
+            OrganizationBillingPolicy is the operator-owned commercial policy for one
+            organization.
+
+            Its absence means legacy behaviour, bit-for-bit: an installation that never
+            creates one behaves exactly as it does today. Its presence in an INVALID
+            state does not mean unmanaged -- the manager makes no write to the existing
+            enforcement objects and reports a Blocked condition, so the organization
+            keeps the ceilings last known to be correct.
+          properties:
+            apiVersion:
+              description: |-
+                APIVersion defines the versioned schema of this representation of an object.
+                Servers should convert recognized schemas to the latest internal value, and
+                may reject unrecognized values.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+              type: string
+            kind:
+              description: |-
+                Kind is a string value representing the REST resource this object represents.
+                Servers may infer this from the endpoint the client submits requests to.
+                Cannot be updated.
+                In CamelCase.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: |-
+                OrganizationBillingPolicySpec is the desired commercial policy.
+
+                It deliberately carries no price. Prices live in immutable rate revisions and
+                are referenced by id, so changing a price is a new revision rather than an
+                edit to an organization's policy -- which is what lets last month's usage
+                still be explained by last month's rates.
+              properties:
+                account:
+                  description: |-
+                    AccountRef is the commercial account, and for a partner-owned account the
+                    partner and its own customer reference.
+                  properties:
+                    accountId:
+                      description: |-
+                        AccountID is the billing account. Immutable: moving an organization
+                        between accounts is a commercial migration, not a field edit.
+                      maxLength: 128
+                      type: string
+                      x-kubernetes-validations:
+                        - message: accountId is immutable
+                          rule: self == oldSelf
+                    externalCustomerRef:
+                      description: |-
+                        ExternalCustomerRef is the commerce owner's own customer identifier. It
+                        is opaque here and is never an authorization credential.
+                      maxLength: 256
+                      type: string
+                    partnerId:
+                      description: |-
+                        PartnerID is required when commerceOwner is partner and must be absent
+                        otherwise. The CEL rule on the spec enforces the pairing.
+                      maxLength: 128
+                      type: string
+                  required:
+                    - accountId
+                  type: object
+                collectionMode:
+                  description: |-
+                    CollectionMode separates measuring from charging. PAYG estimates run in
+                    shadow long before anything is billable.
+                  enum:
+                    - shadow
+                    - billable
+                  type: string
+                commerceOwner:
+                  description: |-
+                    CommerceOwner says who invoices the customer. It is immutable: adopting a
+                    partner's customer into platform retail billing is a commercial handover,
+                    not a mode switch, and must not be possible through an ordinary edit.
+                  enum:
+                    - platform
+                    - partner
+                  type: string
+                  x-kubernetes-validations:
+                    - message: commerceOwner is immutable; transferring an account between a partner and the platform is a separate commercial handover
+                      rule: self == oldSelf
+                contractVersion:
+                  description: ContractVersion pins the payload contract this policy was written against.
+                  enum:
+                    - payg.kube-dc.com/v1alpha1
+                  type: string
+                limits:
+                  description: |-
+                    SafetyLimits is the complete set of ceilings the organization keeps.
+
+                    PAYG does not mean unlimited. Every surface the platform already enforces --
+                    HRQ, LimitRange defaults, public IPv4, object storage, GPU profiles, project
+                    count, per-class storage and managed-service instances -- stays enforced, and
+                    a PAYG policy that sets none of them is rejected rather than treated as
+                    unlimited.
+
+                    Absent and zero are different. An absent field is not managed by this policy
+                    and preserves whatever the legacy annotation path produced; an explicit 0 is
+                    denial. That is why the counts are pointers.
+
+                    Quantities are resource.Quantity, so the API server rejects "8 cores" at
+                    admission rather than accepting desired state no controller could ever apply.
+                  properties:
+                    accelerators:
+                      additionalProperties:
+                        description: |-
+                          AcceleratorGrant is one GPU profile entitlement. At least one dimension must
+                          be set: a grant with none is not a ceiling, and accepting it would make a
+                          policy look managed while granting nothing.
+                        properties:
+                          corePercent:
+                            format: int64
+                            maximum: 2147483647
+                            minimum: 0
+                            type: integer
+                          devices:
+                            format: int64
+                            maximum: 2147483647
+                            minimum: 0
+                            type: integer
+                          memoryMiB:
+                            format: int64
+                            maximum: 2147483647
+                            minimum: 0
+                            type: integer
+                          shares:
+                            format: int64
+                            maximum: 2147483647
+                            minimum: 0
+                            type: integer
+                        type: object
+                        x-kubernetes-validations:
+                          - message: an accelerator grant must set at least one dimension
+                            rule: has(self.devices) || has(self.shares) || has(self.memoryMiB) || has(self.corePercent)
+                      description: |-
+                        Accelerators maps a catalog GPU profile id to its grant. Resolution goes
+                        through the existing catalog validation, so an unknown or disabled profile
+                        is refused rather than producing a quota the scheduler can never satisfy.
+                      maxProperties: 32
+                      type: object
+                    defaultsPolicy:
+                      description: |-
+                        DefaultsPolicy names the LimitRange default and burst policy to apply, so
+                        a PAYG organization gets defaults without purchasing a fictitious plan.
+                        Without it an unspecified request becomes unmetered capacity.
+                      maxLength: 63
+                      type: string
+                    limitsCpu:
+                      anyOf:
+                        - type: integer
+                        - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    limitsMemory:
+                      anyOf:
+                        - type: integer
+                        - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    loadBalancers:
+                      format: int64
+                      maximum: 2147483647
+                      minimum: 0
+                      type: integer
+                    objectStorageBuckets:
+                      format: int64
+                      maximum: 2147483647
+                      minimum: 0
+                      type: integer
+                    objectStorageBytes:
+                      anyOf:
+                        - type: integer
+                        - type: string
+                      description: |-
+                        ObjectStorageBytes and ObjectStorageBuckets are S3 ceilings. A capacity
+                        ceiling is not an occupied-storage measurement and is never billable
+                        usage on its own.
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    pods:
+                      format: int64
+                      maximum: 2147483647
+                      minimum: 0
+                      type: integer
+                    projects:
+                      description: |-
+                        Projects caps how many projects the organization may hold. It is separate
+                        from the per-project quotas, which continue to constrain each project.
+                      format: int64
+                      maximum: 2147483647
+                      minimum: 0
+                      type: integer
+                    publicIpv4:
+                      format: int64
+                      maximum: 2147483647
+                      minimum: 0
+                      type: integer
+                    requestsCpu:
+                      anyOf:
+                        - type: integer
+                        - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    requestsMemory:
+                      anyOf:
+                        - type: integer
+                        - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    requestsStorage:
+                      anyOf:
+                        - type: integer
+                        - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    serviceInstances:
+                      additionalProperties:
+                        format: int64
+                        type: integer
+                      description: ServiceInstances caps managed-service instances per family.
+                      maxProperties: 32
+                      type: object
+                    storageClasses:
+                      additionalProperties:
+                        anyOf:
+                          - type: integer
+                          - type: string
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      description: |-
+                        StorageClasses caps capacity per qualified storage product.
+
+                        The key is a StorageClass UID, never a class name. A class deleted and
+                        recreated with the same name is a different product with different
+                        qualified properties, and it must not inherit a purchased tier's ceiling.
+                      maxProperties: 64
+                      type: object
+                  type: object
+                limitsRevision:
+                  description: |-
+                    LimitsRevision versions the limits document itself, so a ceiling change is
+                    auditable independently of a rate change.
+                  maxLength: 64
+                  pattern: ^[1-9][0-9]{0,18}$
+                  type: string
+                mode:
+                  description: |-
+                    Mode is the infrastructure charging default. It is NOT the charge basis
+                    of every product item: a fixed pool and a separately charged PostgreSQL
+                    coexist in one organization, each with its own basis.
+                  enum:
+                    - quota_only
+                    - fixed
+                    - payg
+                  type: string
+                organizationRef:
+                  description: |-
+                    OrganizationRef binds a policy to exactly one organization.
+
+                    Both fields are required and the whole reference is immutable. Binding by
+                    name alone is what would let a deleted-and-recreated organization inherit the
+                    previous one's commercial terms; binding by UID alone would lose the
+                    human-readable identity every operator screen needs.
+                  properties:
+                    name:
+                      description: Name is the Organization's name, which is also its namespace.
+                      maxLength: 63
+                      pattern: ^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$
+                      type: string
+                    uid:
+                      description: |-
+                        UID is the Organization's Kubernetes UID. A policy whose UID does not
+                        match the live object is invalid and enforces nothing; it never falls
+                        back to matching on the name.
+                      pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                      type: string
+                  required:
+                    - name
+                    - uid
+                  type: object
+                  x-kubernetes-validations:
+                    - message: the organization a billing policy is bound to is immutable
+                      rule: self == oldSelf
+                rateCardRevision:
+                  description: |-
+                    RateCardRevision is the immutable catalog revision this organization is
+                    rated against, as <cardId>@<revision>.
+                  maxLength: 129
+                  pattern: ^[a-z0-9][a-z0-9._-]{0,63}@[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$
+                  type: string
+                requestedEffectiveAt:
+                  description: |-
+                    RequestedEffectiveAt is when the operator asked for this policy to take
+                    effect. Activation happens no earlier than both this time and verified
+                    readiness, and is never backdated.
+                  format: date-time
+                  type: string
+                revision:
+                  description: |-
+                    Revision is the organization's monotonically increasing policy revision,
+                    carried as a string because every number on this contract is a string.
+
+                    Numbers are never reused: billing.policy_revisions is keyed on
+                    (organization_uid, revision). Reuse would let the coordinator mistake the
+                    manager's observedPolicyRevision from a PREVIOUS revision 7 for readiness
+                    of a new one.
+
+                    The API server also refuses a decrease. The coordinator never lowers
+                    it, so a lower revision can only be a stale request arriving late -- an
+                    apply the apiserver commits after its client gave up, or a superseded
+                    writer -- and it must not overwrite a newer policy.
+                  maxLength: 19
+                  pattern: ^[1-9][0-9]{0,18}$
+                  type: string
+                  x-kubernetes-validations:
+                    - message: spec.revision never decreases; a request carrying an older revision is refused
+                      rule: int(self) >= int(oldSelf)
+              required:
+                - account
+                - collectionMode
+                - commerceOwner
+                - contractVersion
+                - limits
+                - limitsRevision
+                - mode
+                - organizationRef
+                - requestedEffectiveAt
+                - revision
+              type: object
+              x-kubernetes-validations:
+                - message: a partner-owned account requires account.partnerId, and a platform-owned account must not carry one
+                  rule: (self.commerceOwner == 'partner') == has(self.account.partnerId)
+                - message: payg requires an explicit rateCardRevision
+                  rule: self.mode != 'payg' || has(self.rateCardRevision)
+                - message: quota_only must not reference a rate card
+                  rule: self.mode != 'quota_only' || !has(self.rateCardRevision)
+            status:
+              description: |-
+                OrganizationBillingPolicyStatus is the observed state.
+
+                Two writers own disjoint subtrees under server-side apply: the billing
+                service owns transition, accountState, holds and providerHandoff; the manager
+                owns enforcement. Neither ever applies a document containing the other's
+                subtree -- see billingcontract.TransitionPatch and EnforcementPatch.
+              properties:
+                accountState:
+                  description: |-
+                    AccountState is DERIVED from the active holds, never set directly. With no
+                    active hold it is active; otherwise it is the most restrictive effect.
+                  enum:
+                    - active
+                    - growth_blocked
+                    - suspended
+                    - retained
+                    - closed
+                  type: string
+                conditions:
+                  description: |-
+                    Conditions carry Transition* and Enforcement* types. The prefixes are
+                    disjoint so the two writers never contend for one condition.
+                  items:
+                    description: Condition contains details for one aspect of the current state of this API Resource.
+                    properties:
+                      lastTransitionTime:
+                        description: |-
+                          lastTransitionTime is the last time the condition transitioned from one status to another.
+                          This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                        format: date-time
+                        type: string
+                      message:
+                        description: |-
+                          message is a human readable message indicating details about the transition.
+                          This may be an empty string.
+                        maxLength: 32768
+                        type: string
+                      observedGeneration:
+                        description: |-
+                          observedGeneration represents the .metadata.generation that the condition was set based upon.
+                          For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                          with respect to the current state of the instance.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      reason:
+                        description: |-
+                          reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                          Producers of specific condition types may define expected values and meanings for this field,
+                          and whether the values are considered a guaranteed API.
+                          The value should be a CamelCase string.
+                          This field may not be empty.
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                        type: string
+                      status:
+                        description: status of the condition, one of True, False, Unknown.
+                        enum:
+                          - 'True'
+                          - 'False'
+                          - Unknown
+                        type: string
+                      type:
+                        description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        type: string
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    type: object
+                  type: array
+                  x-kubernetes-list-map-keys:
+                    - type
+                  x-kubernetes-list-type: map
+                contractVersion:
+                  type: string
+                enforcement:
+                  description: |-
+                    EnforcementStatus is written ONLY by the kube-dc manager (ADR-001 D5).
+
+                    ObservedPolicyRevision is the contract between the two writers: the
+                    coordinator may not declare a transition Active until this equals
+                    spec.revision and Applied is true. A backend PATCH returning 200 is not
+                    applied entitlement.
+                  properties:
+                    applied:
+                      type: boolean
+                    observedLimitsRevision:
+                      type: string
+                    observedPolicyRevision:
+                      type: string
+                    surfaces:
+                      additionalProperties:
+                        description: SurfaceStatus is one enforcement surface's observed state.
+                        properties:
+                          applied:
+                            type: boolean
+                          reason:
+                            maxLength: 512
+                            type: string
+                        required:
+                          - applied
+                        type: object
+                      description: |-
+                        Surfaces reports each enforcement surface separately, so a partially
+                        applied policy is visible instead of being averaged into one boolean.
+                        A surface the limits require but that reports nothing is not "applied";
+                        the coordinator checks presence, not just value.
+                      maxProperties: 16
+                      type: object
+                    updatedAt:
+                      format: date-time
+                      type: string
+                  type: object
+                holds:
+                  items:
+                    description: |-
+                      Hold is a read-only projection of a durable hold record.
+
+                      Holds are owned by their issuer. Clearing a provider payment hold cannot
+                      clear an operator or security hold, and a mode switch clears none of them.
+                      The authoritative records live in billing.account_holds; this projection
+                      exists so an operator reading the CR sees why an account is restricted.
+                    properties:
+                      clearedAt:
+                        format: date-time
+                        type: string
+                      createdAt:
+                        format: date-time
+                        type: string
+                      effect:
+                        enum:
+                          - growth_blocked
+                          - suspended
+                          - retained
+                          - closed
+                        type: string
+                      generation:
+                        description: |-
+                          Generation is the issuer's monotonic counter. A replayed older generation
+                          from a delayed provider webhook cannot release a newer hold.
+                        pattern: ^[1-9][0-9]{0,18}$
+                        type: string
+                      id:
+                        type: string
+                      issuer:
+                        enum:
+                          - operator
+                          - provider
+                          - security
+                          - partner
+                        type: string
+                      reason:
+                        maxLength: 512
+                        type: string
+                      recoveryCriteria:
+                        description: |-
+                          RecoveryCriteria states what must become true before the issuer may clear
+                          it. An unverifiable payment state is not one of them: unknown never
+                          silently releases a hold.
+                        maxLength: 512
+                        type: string
+                    required:
+                      - createdAt
+                      - effect
+                      - generation
+                      - id
+                      - issuer
+                      - reason
+                      - recoveryCriteria
+                    type: object
+                  maxItems: 32
+                  type: array
+                providerHandoff:
+                  description: |-
+                    ProviderHandoff preserves the previous commercial binding as evidence.
+
+                    Clearing plan-id is not a handoff. If a handoff cannot be completed the old
+                    commercial state is preserved and the transition is reported Blocked, because
+                    simply clearing the reference leaves recurring payments and reconciliation
+                    running against a subscription nobody owns any more.
+                  properties:
+                    completed:
+                      type: boolean
+                    completedAt:
+                      format: date-time
+                      type: string
+                    previousPlanId:
+                      maxLength: 128
+                      type: string
+                    previousProvider:
+                      maxLength: 64
+                      type: string
+                    previousSubscriptionId:
+                      maxLength: 256
+                      type: string
+                    required:
+                      type: boolean
+                  required:
+                    - required
+                  type: object
+                transition:
+                  description: |-
+                    TransitionStatus is written ONLY by the billing service, which is the single
+                    activation coordinator (ADR-001 D5).
+                  properties:
+                    effectiveAt:
+                      description: |-
+                        EffectiveAt is set only once the transition is Active, and records when
+                        the policy actually took effect. It may be later than requested and is
+                        never earlier.
+                      format: date-time
+                      type: string
+                    id:
+                      description: ID is stable for the life of one requested transition.
+                      type: string
+                    idempotencyKey:
+                      description: |-
+                        IdempotencyKey is the caller's key. Replaying it with an identical body
+                        returns this same transition; replaying with a different body conflicts.
+                      type: string
+                    ordinal:
+                      description: |-
+                        Ordinal orders an organization's transitions and Version orders the
+                        changes of one transition. A projection with a smaller (ordinal,
+                        version) never replaces a larger one: that is how a late republish of
+                        an older state is recognised. Positive integers as strings.
+                      pattern: ^[1-9][0-9]{0,18}$
+                      type: string
+                    reason:
+                      type: string
+                    requestedRevision:
+                      description: RequestedRevision is the policy revision this transition is driving to.
+                      type: string
+                    retryable:
+                      description: |-
+                        Retryable distinguishes a transient failure from one that needs an
+                        operator decision.
+                      type: boolean
+                    state:
+                      enum:
+                        - Requested
+                        - Validating
+                        - Preparing
+                        - Scheduled
+                        - Active
+                        - Blocked
+                        - Failed
+                        - Cancelled
+                      type: string
+                    updatedAt:
+                      format: date-time
+                      type: string
+                    version:
+                      pattern: ^[1-9][0-9]{0,18}$
+                      type: string
+                  type: object
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}

@@ -39,6 +39,11 @@ spec:
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE"]
         resources: ["resourceclaimtemplates"]
+  matchConditions:
+    - name: exclude-cluster-admins
+      expression: >-
+        !has(request.userInfo.groups) ||
+        !('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups)
   validations:
     - expression: >-
         has(object.metadata.labels) &&
@@ -109,6 +114,10 @@ spec:
         operations: ["CREATE", "UPDATE"]
         resources: ["deployments"]
   matchConditions:
+    - name: exclude-cluster-admins
+      expression: >-
+        !has(request.userInfo.groups) ||
+        !('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups)
     - name: has-dra-contract
       expression: >-
         has(object.spec.template.spec.resourceClaims) ||
@@ -216,6 +225,10 @@ spec:
         operations: ["CREATE", "UPDATE"]
         resources: ["pods", "pods/ephemeralcontainers"]
   matchConditions:
+    - name: exclude-cluster-admins
+      expression: >-
+        !has(request.userInfo.groups) ||
+        !('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups)
     - name: has-dra-contract
       expression: >-
         has(object.spec.resourceClaims) ||

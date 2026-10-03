@@ -1,0 +1,68 @@
+# =============================================================================
+# ValidatingAdmissionPolicy: confine platform machine identities
+#
+# Machine identities (username prefix "machine:", see platform.machines) may
+# only create namespaces and write Organizations, Projects and
+# OrganizationGroups whose namespace is named <prefix>-* for a prefix they hold
+# `use` on (organizationprefixes/<prefix>, granted per identity through RBAC).
+# A namespace they create carries no labels or annotations, so it cannot opt
+# into platform, project or pod-security behaviour (only the labels the API
+# server and HNC's mutating webhook add are accepted). An Organization must be
+# named after its namespace.
+# =============================================================================
+
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: restrict-machine-identities
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["namespaces"]
+      - apiGroups: ["kube-dc.com"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["organizations", "projects", "organizationgroups"]
+  matchConditions:
+    - name: machine-identities-only
+      expression: "request.userInfo.username.startsWith('machine:')"
+  variables:
+    - name: isNamespace
+      expression: "request.resource.group == '' && request.resource.resource == 'namespaces'"
+    - name: target
+      expression: "variables.isNamespace ? request.name : request.namespace"
+    - name: prefix
+      expression: "variables.target.contains('-') ? variables.target.split('-')[0] : ''"
+  validations:
+    - expression: >-
+        variables.prefix != '' &&
+        authorizer.group('kube-dc.com').resource('organizationprefixes').name(variables.prefix).check('use').allowed()
+      messageExpression: >-
+        'machine identities may only manage namespaces named <prefix>-* for a prefix granted to them; "' + variables.target + '" is not'
+      reason: Forbidden
+    - expression: >-
+        !variables.isNamespace || request.operation != 'CREATE' ||
+        ((!has(object.metadata.labels) || object.metadata.labels.all(k,
+            k == 'kubernetes.io/metadata.name' ||
+            (k == 'hnc.x-k8s.io/included-namespace' && object.metadata.labels[k] == 'true'))) &&
+         (!has(object.metadata.annotations) || size(object.metadata.annotations) == 0))
+      message: "Namespaces created by machine identities must not carry labels or annotations."
+      reason: Forbidden
+    - expression: >-
+        request.resource.resource != 'organizations' || request.operation == 'DELETE' ||
+        object.metadata.name == request.namespace
+      message: "An Organization must be named after its namespace."
+      reason: Invalid
+
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: restrict-machine-identities
+spec:
+  policyName: restrict-machine-identities
+  validationActions: [Deny]

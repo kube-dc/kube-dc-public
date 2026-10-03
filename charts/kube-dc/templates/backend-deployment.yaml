@@ -1,6 +1,19 @@
 {{- if and .Values.backend.managedK8sInternalEndpoints (or (lt (int .Values.backend.managedK8sWorkerMTU) 576) (gt (int .Values.backend.managedK8sWorkerMTU) 9000)) }}
 {{- fail "backend.managedK8sInternalEndpoints requires a measured backend.managedK8sWorkerMTU (576..9000)" }}
 {{- end }}
+{{- /* The backend's effective link to the billing service: empty unless
+billing.payg.enabled (see kube-dc.billing.* in _helpers.tpl). The billing maps
+are read through `default dict` so an override that nulls one of them renders
+instead of failing on a nil pointer. */}}
+{{- $billingURL := include "kube-dc.billing.serviceURL" . }}
+{{- $billingIssuer := include "kube-dc.billing.caIssuerName" . }}
+{{- $payg := include "kube-dc.billing.paygEnabled" . }}
+{{- $billingValues := .Values.billing | default dict }}
+{{- $billingService := $billingValues.service | default dict }}
+{{- $selfService := ($billingValues.policy | default dict).selfService | default dict }}
+{{- if and $selfService.enabled (not $payg) }}
+{{- fail "billing.policy.selfService.enabled requires billing.payg.enabled=true: self-service PAYG signup needs the billing service, which the backend is wired to only on a PAYG installation" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -60,6 +73,11 @@ spec:
               containerPort: {{ .Values.backend.metrics.port }}
               protocol: TCP
             {{- end }}
+            {{- if .Values.platformApi.enabled }}
+            - name: platform-int
+              containerPort: {{ .Values.platformApi.backendPort }}
+              protocol: TCP
+            {{- end }}
           env:
             - name: KUBE_DC_BACKEND_VERSION
               value: {{ .Values.backend.image.tag | default .Chart.AppVersion | quote }}
@@ -88,6 +106,10 @@ spec:
               value: {{ .Values.routedNetwork.enabled | quote }}
             - name: UI_GPU_ENABLED
               value: {{ .Values.gpu.enabled | default false | quote }}
+            - name: UI_NETWORK_SOURCE_POLICY_CAPABILITIES
+              value: {{ dict "directLoadBalancer" .Values.backend.exposureSourcePolicy.directLoadBalancer "gateway" .Values.backend.exposureSourcePolicy.gateway "floatingIP" .Values.backend.exposureSourcePolicy.floatingIP | toJson | quote }}
+            - name: UI_NETWORK_SOURCE_POLICY_NAMESPACES
+              value: {{ join "," .Values.backend.exposureSourcePolicy.namespaces | quote }}
             {{- end }}
             - name: MANAGED_K8S_WORKER_MTU
               value: {{ .Values.backend.managedK8sWorkerMTU | default 0 | quote }}
@@ -95,12 +117,22 @@ spec:
               value: {{ .Values.backend.managedK8sInternalEndpoints | default false | quote }}
             - name: MANAGED_K8S_INTERNAL_ENDPOINT_NAMESPACES
               value: {{ join "," .Values.backend.managedK8sInternalEndpointNamespaces | quote }}
+            - name: MANAGED_K8S_PUBLIC_API_SOURCE_POLICY_ENABLED
+              value: {{ .Values.backend.managedK8sPublicAPISourcePolicy | default false | quote }}
+            - name: MANAGED_K8S_PUBLIC_API_SOURCE_POLICY_NAMESPACES
+              value: {{ join "," .Values.backend.managedK8sPublicAPISourcePolicyNamespaces | quote }}
             - name: NAMESPACE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: BRAND_PRODUCT_NAME
               value: {{ (.Values.branding | default dict).productName | default "Kube-DC" | quote }}
+            # The identity theme reads the public profile from the console
+            # origin. Allow only the configured Keycloak origin for CORS.
+            - name: BRANDING_IDENTITY_ORIGIN
+              value: {{ .Values.manager.keycloakSecret.url | default "" | quote }}
+            - name: BRANDING_IDENTITY_CONFIGURED
+              value: {{ (.Values.branding | default dict).identityRuntimeConfigured | default false | quote }}
             - name: BRAND_PRIMARY_COLOR
               value: {{ (.Values.branding | default dict).primaryColor | default "#002952" | quote }}
             - name: BRAND_ACCENT_COLOR
@@ -115,6 +147,18 @@ spec:
               value: {{ dig "stripeSignupRemindersEnabled" true (.Values.notifications | default dict) | quote }}
             - name: BILLING_NOTIFICATIONS_ENABLED
               value: {{ ((.Values.notifications | default dict).enabled | default false) | quote }}
+            {{- if .Values.platformApi.enabled }}
+            - name: PLATFORM_INTERNAL_PORT
+              value: {{ .Values.platformApi.backendPort | quote }}
+            - name: PLATFORM_INTERNAL_AUDIENCE
+              value: {{ .Values.platformApi.backendAudience | quote }}
+            - name: PLATFORM_APISERVER_SERVICE_ACCOUNT
+              value: {{ printf "system:serviceaccount:%s:%s-platform-apiserver" .Release.Namespace (include "kube-dc.manager.fullname" .) | quote }}
+            {{- with .Values.platformApi.consoleUrl }}
+            - name: PLATFORM_CONSOLE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
             {{- if .Values.backend.metrics.enabled }}
             - name: METRICS_PORT
               value: {{ .Values.backend.metrics.port | quote }}
@@ -233,6 +277,56 @@ spec:
             {{- if ne .Values.billing.provider "none" }}
             - name: BILLING_PROVIDER
               value: "{{ .Values.billing.provider }}"
+            {{- end }}
+            {{- if $billingURL }}
+            {{- /*
+            How the backend reaches the billing service, which is the only
+            writer of an OrganizationBillingPolicy (ADR-001 D8). Rendered only
+            on a PAYG installation (billing.payg.enabled). Its presence is
+            what registers the admin policy/hold/settlement/rate-card routes
+            and the tenant quote and budget routes, and what /system/features
+            and the admin console report as `payg`; without it none exist.
+
+            The token is PROJECTED with the service's own audience, so it
+            cannot be replayed against the Kubernetes API or any other
+            audience-checking service. The billing API refuses a token minted
+            for anything else.
+            */}}
+            - name: BILLING_SERVICE_URL
+              value: {{ $billingURL | quote }}
+            - name: BILLING_SERVICE_TOKEN_FILE
+              value: /var/run/secrets/billing/token
+            - name: BILLING_SERVICE_CA_FILE
+              value: /etc/kube-dc/billing-ca/ca.crt
+            {{- end }}
+            {{- with $selfService }}
+            {{- if and .enabled $payg }}
+            {{- /*
+            Self-service PAYG at signup. Only rendered when an operator turns
+            it on: a PAYG organization carries no plan annotation, so one whose
+            policy is not enforced has NO quota at all, and the registration
+            path refuses rather than create one. See
+            ui/backend/util/paygSelfService.js.
+            */}}
+            - name: PAYG_SELF_SERVICE_ENABLED
+              value: "true"
+            - name: PAYG_SELF_SERVICE_REQUIRE_CARD
+              value: {{ .requireCardValidation | quote }}
+            {{- with .cardValidationProvider }}
+            - name: PAYG_CARD_VALIDATION_PROVIDER
+              value: {{ . | quote }}
+            {{- end }}
+            - name: PAYG_SELF_SERVICE_COLLECTION_MODE
+              value: {{ .collectionMode | quote }}
+            {{- with .rateCardRevision }}
+            - name: PAYG_SELF_SERVICE_RATE_CARD
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .limits }}
+            - name: PAYG_SELF_SERVICE_LIMITS
+              value: {{ toJson .limits | quote }}
+            {{- end }}
+            {{- end }}
             {{- end }}
             {{- if eq .Values.billing.provider "stripe" }}
             - name: STRIPE_SECRET_KEY
@@ -397,8 +491,16 @@ spec:
             {{- toYaml .Values.backend.readinessProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
-          {{- if or .Values.backend.volumeMounts .Values.backend.trustedCA.configMapName (.Values.backend.cliDiscovery | default dict).caConfigMapName }}
+          {{- if or .Values.backend.volumeMounts .Values.backend.trustedCA.configMapName (.Values.backend.cliDiscovery | default dict).caConfigMapName $billingURL }}
           volumeMounts:
+            {{- if $billingURL }}
+            - name: billing-token
+              mountPath: /var/run/secrets/billing
+              readOnly: true
+            - name: billing-ca
+              mountPath: /etc/kube-dc/billing-ca
+              readOnly: true
+            {{- end }}
             {{- if (.Values.backend.cliDiscovery | default dict).caConfigMapName }}
             - name: cli-api-ca
               mountPath: /etc/kube-dc/api-ca
@@ -413,8 +515,31 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- end }}
-      {{- if or .Values.backend.volumes .Values.backend.trustedCA.configMapName (.Values.backend.cliDiscovery | default dict).caConfigMapName }}
+      {{- if or .Values.backend.volumes .Values.backend.trustedCA.configMapName (.Values.backend.cliDiscovery | default dict).caConfigMapName $billingURL }}
       volumes:
+        {{- if $billingURL }}
+        - name: billing-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: {{ $billingService.audience | default "kube-dc-billing" | quote }}
+                  expirationSeconds: 3600
+        - name: billing-ca
+          secret:
+            {{- if $billingIssuer }}
+            {{- /* cert-manager mints it here and renews it with the CA. */}}
+            secretName: {{ include "kube-dc.backend.fullname" . }}-billing-ca
+            items:
+              - key: ca.crt
+                path: ca.crt
+            {{- else }}
+            secretName: {{ required "billing.service needs either caIssuer.name or caSecretName when url is set: the backend cannot verify the billing service without its CA" $billingService.caSecretName | quote }}
+            items:
+              - key: {{ $billingService.caKey | default "ca.crt" | quote }}
+                path: ca.crt
+            {{- end }}
+        {{- end }}
         {{- if (.Values.backend.cliDiscovery | default dict).caConfigMapName }}
         - name: cli-api-ca
           configMap:

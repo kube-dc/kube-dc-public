@@ -37,7 +37,8 @@ still holds `*` on `*` over the platform's engine.
 #
 # Who may still touch them: platform ServiceAccounts (the runner, the engine
 # operators, kube-dc, kube-system, and the rest of the list below), cluster
-# admins, nodes, the scheduler and controller-manager identities — and the
+# admins (system:masters or the master-realm platform:admin group), nodes,
+# the scheduler and controller-manager identities — and the
 # engine's own per-instance ServiceAccount: CNPG runs each instance under a
 # ServiceAccount named after its Cluster, in the project namespace, and the
 # instance manager writes the Cluster's and its Backups' status with it. That
@@ -81,7 +82,7 @@ still holds `*` on `*` over the platform's engine.
 - name: exclude-cluster-admins
   expression: >-
     !has(request.userInfo) || !has(request.userInfo.groups) ||
-    !('system:masters' in request.userInfo.groups)
+    !('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups)
 {{- if .nodes }}
 - name: exclude-node-users
   expression: >-
@@ -148,6 +149,8 @@ spec:
            overwrite it. They pass below only for objects they provably own. */}}
     {{- include "kube-dc.managedServicesPolicy.matchConditions" (dict "namespaces" (without (include "kube-dc.managedServices.exemptNamespaces" $ | fromJsonArray) "cert-manager" "rook-ceph") "controlPlane" true "nodes" true) | nindent 4 }}
 {{- include "kube-dc.instanceWrites.handoff" $ | nindent 4 }}
+{{- include "kube-dc.instancePodConditions.handoff" $ | nindent 4 }}
+{{- include "kube-dc.publicationWrites.handoff" $ | nindent 4 }}
   variables:
     # CREATE has no oldObject; DELETE has no object.
     - name: oldLabels
@@ -296,6 +299,7 @@ spec:
   matchConditions:
     {{- include "kube-dc.managedServicesPolicy.matchConditions" (dict "namespaces" (include "kube-dc.managedServices.exemptNamespaces" $ | fromJsonArray) "controlPlane" true "nodes" true) | nindent 4 }}
 {{- include "kube-dc.instanceWrites.handoff" $ | nindent 4 }}
+{{- include "kube-dc.publicationWrites.handoff" $ | nindent 4 }}
   variables:
     # The marker, the instance identity the runner reads, and the engine
     # operators' selector keys: a tenant pod carrying an engine's selector
@@ -337,8 +341,8 @@ spec:
 # operator is about to use -- the same UID gains the markers and the owner
 # reference, and a token the tenant minted against it earlier passes every
 # check (round 129). So the transition unmarked -> marked on UPDATE is refused
-# for EVERY identity but cluster admins (system:masters: the audited, by-hand
-# migration of objects that predate markers). No service account is exempt --
+# for EVERY identity but cluster admins (system:masters or platform:admin:
+# the audited, by-hand migration of objects that predate markers). No service account is exempt --
 # not the runner either: a server-side apply over an object that already
 # exists is an UPDATE, and the runner's own ownership guard never applies
 # over a name it does not own by instance UID (round 130). An operator's
@@ -368,7 +372,7 @@ spec:
     - name: exclude-cluster-admins
       expression: >-
         !has(request.userInfo) || !has(request.userInfo.groups) ||
-        !('system:masters' in request.userInfo.groups)
+        !('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups)
   variables:
     - name: oldLabels
       expression: "has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}"

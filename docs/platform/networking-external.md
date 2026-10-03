@@ -285,6 +285,23 @@ router-port ACL support and verified NAT/chassis convergence. HTTP-01 needs the
 bounded cert-manager identity, Service certificate ownership and reviewed
 platform namespace UID pins, including renewal acceptance under the guard.
 
+For a bounded FIP qualification, set `manager.fipSourcePolicy.namespaceUIDs`
+to an object mapping each qualification namespace to its live Kubernetes UID.
+Admission and NAT publication verify that exact namespace incarnation through
+the API. Restrictive requests outside the scope fail; losing the scope withdraws
+the owned NAT. Open FIPs remain unrestricted and can still be created or edited.
+The scope has no enabling effect while `manager.fipSourcePolicy.enabled` is
+false. An empty object with the gate true retains installation-wide enablement.
+Do not use an empty scope for a bounded qualification.
+
+Deploy the scope-aware manager and chart with the gate false first. Verify the
+immutable image and exact UID map on every manager/webhook replica before
+separately reviewing the gate change. An older replica ignores the scope and
+can admit restrictions outside it if enablement accompanies the image rollout.
+Keep backend capabilities off until their traffic and authenticated console
+acceptance pass. Scope removal and gate rollback require the restricted-resource
+inventory and withdrawal procedure described here.
+
 Backend method availability can be limited to qualified namespaces through
 `backend.exposureSourcePolicy.namespaces`; managed API availability has its own
 namespace list. Gateway LoadBalancer Services require both direct and Gateway

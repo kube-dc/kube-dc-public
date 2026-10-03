@@ -1,0 +1,341 @@
+{{- if .Values.platformApi.enabled }}
+{{- /*
+=============================================================================
+platform.kube-dc.com/v1alpha1 extension API
+(docs/prd/webdock-php-sdk-and-partner-removal.md §3.4).
+
+`manager platform-apiserver` is registered through the aggregation layer. The
+kube-apiserver authenticates every caller and the extension server authorizes
+the exact verb/resource/namespace/name with a SubjectAccessReview, so the
+same RBAC that governs native resources governs users, consolelogins and
+organizationusages. Business work is done by the console backend's internal
+listener, which accepts only this server's ServiceAccount (TokenReview on a
+projected token with a dedicated audience) and is exposed by its own
+ClusterIP Service that no HTTPRoute references.
+=============================================================================
+*/ -}}
+{{- $name := printf "%s-platform-apiserver" (include "kube-dc.manager.fullname" .) }}
+{{- $backendInternal := printf "%s-platform-internal" (include "kube-dc.backend.fullname" .) }}
+{{- $pa := .Values.platformApi }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: platform-apiserver
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+# Delegated authentication (TokenReview) and authorization (SubjectAccessReview).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-dc:platform-apiserver:auth-delegator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
+# Front-proxy client CA and allowed request-header names.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kube-dc:platform-apiserver:authentication-reader
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: extension-apiserver-authentication-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
+# Organization readiness/UID and project names; nothing else is read.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-dc:platform-apiserver
+rules:
+  - apiGroups: ["kube-dc.com"]
+    resources: ["organizations", "projects"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-dc:platform-apiserver
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-dc:platform-apiserver
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $name }}-selfsigned
+  namespace: {{ .Release.Namespace }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $name }}-serving-cert
+  namespace: {{ .Release.Namespace }}
+spec:
+  secretName: {{ $name }}-serving-cert
+  duration: 8760h   # 1 year
+  renewBefore: 720h # 30 days
+  dnsNames:
+    - {{ $name }}.{{ .Release.Namespace }}.svc
+    - {{ $name }}.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: {{ $name }}-selfsigned
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: platform-apiserver
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: {{ $pa.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: platform-apiserver
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: platform-apiserver
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        {{- include "kube-dc.podVersionLabel" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $name }}
+      {{- with .Values.manager.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: platform-apiserver
+          image: "{{ .Values.manager.image.repository }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}{{ with .Values.manager.image.digest }}@{{ . }}{{ end }}"
+          imagePullPolicy: {{ .Values.manager.image.pullPolicy | default "IfNotPresent" }}
+          command: ["/manager"]
+          args:
+            - platform-apiserver
+            - --secure-port=8443
+            - --tls-cert-file=/etc/platform-apiserver/tls/tls.crt
+            - --tls-private-key-file=/etc/platform-apiserver/tls/tls.key
+            - --backend-url=http://{{ $backendInternal }}.{{ .Release.Namespace }}.svc:{{ $pa.backendPort }}
+            - --backend-token-file=/var/run/secrets/kube-dc/backend/token
+          ports:
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: https
+              scheme: HTTPS
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          {{- with $pa.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/platform-apiserver/tls
+              readOnly: true
+            - name: backend-token
+              mountPath: /var/run/secrets/kube-dc/backend
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ $name }}-serving-cert
+        # Audience-bound: the kube-apiserver rejects it and the backend accepts
+        # only this audience and this ServiceAccount.
+        - name: backend-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: {{ $pa.backendAudience | quote }}
+                  expirationSeconds: 3600
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.manager.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.manager.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: platform-apiserver
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: https
+      port: 443
+      targetPort: https
+      protocol: TCP
+---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1alpha1.platform.kube-dc.com
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ $name }}-serving-cert
+spec:
+  group: platform.kube-dc.com
+  version: v1alpha1
+  groupPriorityMinimum: 1000
+  versionPriority: 15
+  service:
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+    port: 443
+---
+# The backend's internal listener. Deliberately a separate Service: no
+# HTTPRoute references it, so the Gateway never exposes it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $backendInternal }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.backend.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "kube-dc.backend.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: platform-internal
+      port: {{ $pa.backendPort }}
+      targetPort: platform-int
+      protocol: TCP
+{{- end }}
+---
+# =============================================================================
+# Extension permissions. Separate from kube-dc:provisioner on purpose:
+# creating Organizations does not imply managing their users, signing into
+# them or reading their usage. Grant each explicitly (platformMachines[].grants
+# or your own bindings).
+# =============================================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-dc:platform:users
+rules:
+  - apiGroups: ["platform.kube-dc.com"]
+    resources: ["users"]
+    verbs: ["get", "list", "create", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-dc:platform:console-login
+rules:
+  - apiGroups: ["platform.kube-dc.com"]
+    resources: ["consolelogins"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-dc:platform:usage-reader
+rules:
+  - apiGroups: ["platform.kube-dc.com"]
+    resources: ["organizationusages"]
+    verbs: ["get"]
+---
+# The plan catalog (sizing templates for spec.quota.templatePlan). It holds
+# plan and add-on definitions only, no credentials.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kube-dc:platform:plan-reader
+  namespace: {{ .Release.Namespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["billing-plans"]
+    verbs: ["get"]
+{{- $roles := dict "users" "kube-dc:platform:users" "consolelogins" "kube-dc:platform:console-login" "organizationusages" "kube-dc:platform:usage-reader" }}
+{{- $ns := .Release.Namespace }}
+{{- range .Values.platformMachines }}
+{{- $client := .clientId }}
+{{- range (.grants | default list) }}
+{{- if eq . "plans" }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kube-dc:platform:plan-reader:{{ $client }}
+  namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kube-dc:platform:plan-reader
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: machine:service-account-{{ $client }}
+{{- continue }}
+{{- end }}
+{{- $role := get $roles . }}
+{{- if not $role }}
+{{- fail (printf "platformMachines[].grants: %q is not one of users, consolelogins, organizationusages, plans" .) }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $role }}:{{ $client }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $role }}
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: machine:service-account-{{ $client }}
+{{- end }}
+{{- end }}

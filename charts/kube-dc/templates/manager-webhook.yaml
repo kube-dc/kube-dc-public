@@ -1,3 +1,42 @@
+{{- if and (or .Values.backend.managedK8sPublicAPISourcePolicy .Values.backend.exposureSourcePolicy.directLoadBalancer .Values.backend.exposureSourcePolicy.gateway) (not .Values.manager.webhook.protectExposureRoutes) -}}
+{{- fail "source-policy API availability requires manager.webhook.protectExposureRoutes and qualified controller acknowledgements" -}}
+{{- end -}}
+{{- if and .Values.backend.exposureSourcePolicy.floatingIP (not .Values.manager.fipSourcePolicy.enabled) -}}
+{{- fail "Floating IP API availability requires manager.fipSourcePolicy.enabled" -}}
+{{- end -}}
+{{- if and .Values.manager.fipSourcePolicy.enabled (not .Values.manager.webhook.enabled) -}}
+{{- fail "manager.fipSourcePolicy.enabled requires manager.webhook.enabled" -}}
+{{- end -}}
+{{- if not (kindIs "map" .Values.manager.fipSourcePolicy.namespaceUIDs) -}}
+{{- fail "manager.fipSourcePolicy.namespaceUIDs must be an object" -}}
+{{- end -}}
+{{- range $namespace, $uid := .Values.manager.fipSourcePolicy.namespaceUIDs -}}
+{{- if or (gt (len $namespace) 63) (not (regexMatch "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" $namespace)) (not (kindIs "string" $uid)) -}}
+{{- fail "manager.fipSourcePolicy.namespaceUIDs requires exact namespace names and UUIDs" -}}
+{{- end -}}
+{{- if not (regexMatch "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$" $uid) -}}
+{{- fail "manager.fipSourcePolicy.namespaceUIDs requires exact namespace names and UUIDs" -}}
+{{- end -}}
+{{- end -}}
+{{- range .Values.manager.webhook.exposureRouteTrustedProducers -}}
+{{- if not (regexMatch "^system:serviceaccount:[a-z0-9.-]+:[a-z0-9.-]+$" .) -}}
+{{- fail "manager.webhook.exposureRouteTrustedProducers must contain exact service-account usernames" -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.manager.webhook.protectExposureRoutes (not .Values.manager.webhook.enabled) -}}
+{{- fail "manager.webhook.protectExposureRoutes requires manager.webhook.enabled" -}}
+{{- end -}}
+{{- if and .Values.manager.webhook.exposureACMEControllerUsername (not (regexMatch "^system:serviceaccount:[a-z0-9.-]+:[a-z0-9.-]+$" .Values.manager.webhook.exposureACMEControllerUsername)) -}}
+{{- fail "manager.webhook.exposureACMEControllerUsername must be an exact service-account username" -}}
+{{- end -}}
+{{- range $namespace, $uid := .Values.manager.webhook.exposureACMEPlatformNamespaceUIDs -}}
+{{- if or (not (regexMatch "^[a-z0-9][a-z0-9.-]*$" $namespace)) (not (regexMatch "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$" $uid)) -}}
+{{- fail "manager.webhook.exposureACMEPlatformNamespaceUIDs requires exact namespace names and UUIDs" -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.manager.webhook.protectExposureRoutes (not .Values.manager.webhook.exposureACMEControllerUsername) -}}
+{{- fail "manager.webhook.protectExposureRoutes requires an exact exposureACMEControllerUsername" -}}
+{{- end -}}
 {{- if .Values.manager.webhook.enabled -}}
 # Admission webhooks for security.kube-dc.com/v1alpha1 (M0-T03 / B-004).
 # Comprises:
@@ -173,6 +212,20 @@ webhooks:
         apiVersions: ["v1"]
         operations: ["CREATE"]
         resources: ["jobs"]
+      # Custom ownership hops (for example Sentinel) must inherit the root's
+      # marker before their own workload children are created.
+{{- range .Values.serviceFamilies.extra }}
+{{- range .engineRoots }}
+{{- range .via }}
+{{- if and .operatorCreatesChildren (not (has .group (list "" "apps" "batch"))) }}
+      - apiGroups: [{{ .group | quote }}]
+        apiVersions: [{{ .version | quote }}]
+        operations: ["CREATE"]
+        resources: [{{ .resource | quote }}]
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
       - apiGroups: ["snapshot.storage.k8s.io"]
         apiVersions: ["v1"]
         operations: ["CREATE"]
@@ -657,7 +710,8 @@ webhooks:
 {{- include "kube-dc.serviceFamilies.validateInstanceWrites" $ }}
 {{- $statusWrites := include "kube-dc.serviceFamilies.instanceStatusWrites" $ | fromJsonArray }}
 {{- $coreWrites := include "kube-dc.serviceFamilies.instanceCoreWrites" $ | fromJsonArray }}
-{{- if or $statusWrites $coreWrites }}
+{{- $podConditions := include "kube-dc.serviceFamilies.instancePodConditionWrites" $ }}
+{{- if or $statusWrites $coreWrites $podConditions }}
   # A registered family whose operator runs INSIDE the project namespace under
   # an account it creates per instance (Strimzi's entity operator): the
   # writes that account must make -- the status of the family's operation
@@ -714,6 +768,144 @@ webhooks:
         operations: ["CREATE", "UPDATE", "DELETE"]
         resources: {{ toJson $coreWrites }}
 {{- end }}
+{{- if $podConditions }}
+  # An operator sidecar reporting its own readiness gate (the Oracle MySQL
+  # Operator sets mysql.oracle.com/configured on its member pod). Only the
+  # instance account's writes to MARKED pods come here: the kubelet and every
+  # tenant pod keep their status path free of the manager. The judge admits
+  # the declared conditions on the pod the token is bound to and nothing else.
+  - name: managed-instance-pod-conditions.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    objectSelector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: Exists}
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-family-instance-writes
+    matchConditions:
+      - name: instance-account
+        expression: {{ include "kube-dc.serviceFamilies.instanceIdentityCEL" $ | quote }}
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["pods/status"]
+{{- end }}
+{{- end }}
+{{- if .Values.projectPolicies.protectManagedServices.enabled }}
+  # Phase 1: install independently of policy delegation. Old managers return
+  # 404 (Fail), so rolling upgrades cannot admit an unjudged projection.
+  - name: service-publication-writes.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    matchConditions:
+      - name: exact-eso-account
+        expression: {{ printf "request.userInfo.username == '%s'" (include "kube-dc.publicationESO.serviceAccount" .) | quote }}
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-service-publication-writes
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["secrets"]
+        scope: Namespaced
+      - apiGroups: ["external-secrets.io"]
+        apiVersions: ["*"]
+        operations: ["UPDATE"]
+        resources: ["externalsecrets/status"]
+        scope: Namespaced
+{{- end }}
+  - name: vfipsourcepolicy.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-fip-source-policy
+    rules:
+      - apiGroups: ["kube-dc.com"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["fips"]
+        scope: Namespaced
+{{- if .Values.manager.webhook.protectExposureRoutes }}
+  - name: vexposurerouteclaims.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-exposure-route-claims
+    rules:
+      - apiGroups: ["gateway.networking.k8s.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["httproutes", "tlsroutes", "grpcroutes", "tcproutes", "udproutes"]
+        scope: Namespaced
+      - apiGroups: ["gateway.networking.k8s.io", "gateway.networking.x-k8s.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["listenersets", "xlistenersets"]
+        scope: Namespaced
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["services", "pods", "endpoints"]
+        scope: Namespaced
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CONNECT"]
+        resources: ["pods/exec", "pods/attach", "pods/portforward"]
+        scope: Namespaced
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["pods/ephemeralcontainers"]
+        scope: Namespaced
+      - apiGroups: ["discovery.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["endpointslices"]
+        scope: Namespaced
+      - apiGroups: ["gateway.envoyproxy.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["backends"]
+        scope: Namespaced
+      - apiGroups: ["acme.cert-manager.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["challenges", "orders"]
+        scope: Namespaced
+      - apiGroups: ["cert-manager.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["certificates", "certificaterequests"]
+        scope: Namespaced
 {{- end }}
   - name: vservicenetworktype.kube-dc.com
     admissionReviewVersions: ["v1"]

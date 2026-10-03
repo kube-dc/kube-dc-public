@@ -103,7 +103,7 @@ at startup, so a resource that matches nothing is refused there.
     - name: exclude-cluster-admins
       expression: >-
         !has(request.userInfo) || !has(request.userInfo.groups) ||
-        !('system:masters' in request.userInfo.groups)
+        !(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))
     - name: exclude-node-users
       expression: >-
         !has(request.userInfo) || !has(request.userInfo.groups) ||
@@ -239,6 +239,121 @@ a confused deputy for a platform-owned workload. Nothing else.
     # A tenant cannot reach it (not the operator SA) nor forge the signature
     # onto a foreign privileged pod (relabeling one is itself an UPDATE this
     # policy governs, and that pod lacks the mariadb name label).
+    # Native family operators may reconcile selector labels on their existing
+    # marked Pods. This does not grant Pod creation, spec changes, new owner
+    # edges, or changes to the platform identity/protection metadata.
+    - name: familyOperatorPodLabelUpdate
+      expression: >-
+        request.operation == 'UPDATE'
+        && request.resource.group == '' && request.resource.resource == 'pods'
+        && (!has(request.subResource) || request.subResource == '')
+        && oldObject != null
+        && 'services.kube-dc.com/managed-by' in oldObject.metadata.?labels.orValue({})
+        && object.spec == oldObject.spec
+        && object.metadata.?annotations.orValue({}) == oldObject.metadata.?annotations.orValue({})
+        && object.metadata.?ownerReferences.orValue([]) == oldObject.metadata.?ownerReferences.orValue([])
+        && object.metadata.?finalizers.orValue([]) == oldObject.metadata.?finalizers.orValue([])
+        && object.metadata.?ownerReferences.orValue([]).size() == 1
+        && object.metadata.ownerReferences[0].?controller.orValue(false)
+        && object.metadata.ownerReferences[0].apiVersion == 'apps/v1'
+        && object.metadata.ownerReferences[0].kind == 'StatefulSet'
+        && (false
+{{- range .Values.serviceFamilies.extra }}
+{{- if and .operatorServiceAccounts .selectorKeys }}
+          || (variables.reqUser in {{ .operatorServiceAccounts | toJson }}
+            && {{ .selectorKeys | toJson }}.exists(k, k in oldObject.metadata.?labels.orValue({}))
+            && object.metadata.?labels.orValue({}).all(k,
+              k in {{ .selectorKeys | toJson }} ||
+              (k in oldObject.metadata.?labels.orValue({}) && object.metadata.labels[k] == oldObject.metadata.labels[k]))
+            && oldObject.metadata.?labels.orValue({}).all(k,
+              k in {{ .selectorKeys | toJson }} ||
+              (k in object.metadata.?labels.orValue({}) && oldObject.metadata.labels[k] == object.metadata.labels[k])))
+{{- end }}
+{{- end }})
+    # An engine operator also records its own members' state in metadata the
+    # platform does not interpret. The Oracle MySQL operator, on the very pods
+    # it manages through a StatefulSet, writes the label
+    # mysql.oracle.com/cluster-role, the annotation
+    # mysql.oracle.com/membership-info and the finalizer
+    # mysql.oracle.com/membership in ONE patch (cluster_api.py
+    # update_membership_status / add_member_finalizer), so the label-only
+    # variable above never matches it and the owner rule denied every
+    # membership update: the group view could not be recorded and no member
+    # ever reached its readiness gate (found live on stage 2026-09-20).
+    #
+    # This is the same carve-out, widened to annotations and finalizers for
+    # the OWNER rule only -- deliberately NOT reused by the reserved-annotation
+    # rules above, which keep judging this request: an operator still cannot
+    # declare network.kube-dc.com/requires-role, and infra-attachment stays the
+    # webhook's to stamp. Labels remain confined to the family's selectorKeys
+    # (the classifier reads labels), spec and owner edges must not change, and
+    # no key or finalizer of a kube-dc.com domain may be added, changed or
+    # removed, so the managed-by marker, the platform's own annotations and its
+    # finalizers are out of reach. A finalizer the operator adds and never
+    # removes is bounded: the family runner releases a stale one after its
+    # grace window.
+    - name: familyOperatorPodMetadataUpdate
+      expression: >-
+        request.operation == 'UPDATE'
+        && request.resource.group == '' && request.resource.resource == 'pods'
+        && (!has(request.subResource) || request.subResource == '')
+        && oldObject != null
+        && 'services.kube-dc.com/managed-by' in oldObject.metadata.?labels.orValue({})
+        && object.spec == oldObject.spec
+        && object.metadata.?ownerReferences.orValue([]) == oldObject.metadata.?ownerReferences.orValue([])
+        && object.metadata.?ownerReferences.orValue([]).size() == 1
+        && object.metadata.ownerReferences[0].?controller.orValue(false)
+        && object.metadata.ownerReferences[0].apiVersion == 'apps/v1'
+        && object.metadata.ownerReferences[0].kind == 'StatefulSet'
+        && (false
+{{- range .Values.serviceFamilies.extra }}
+{{- if and .operatorServiceAccounts .selectorKeys }}
+{{- /* Domains the platform itself reads on a pod: its own, Kubernetes' and the CNI's. */}}
+{{- $platform := toJson (list "kube-dc.com/" "kubernetes.io/" "k8s.io/" "cncf.io/") }}
+{{- $domains := list }}
+{{- range .engineRoots }}{{ if .group }}{{ $d := printf "%s/" .group }}{{ if not (has $d $domains) }}{{ $domains = append $domains $d }}{{ end }}{{ end }}{{ end }}
+{{- range $d := $domains }}{{ if or (hasPrefix "kube-dc.com/" $d) (contains ".kube-dc.com/" $d) (hasPrefix "ovn.kubernetes.io/" $d) (hasPrefix "k8s.v1.cni.cncf.io/" $d) }}{{ fail (printf "serviceFamilies.extra: engine API group %q is a platform domain; an operator may not be granted its pod metadata" $d) }}{{ end }}{{ end }}
+          || (variables.reqUser in {{ .operatorServiceAccounts | toJson }}
+            && {{ .selectorKeys | toJson }}.exists(k, k in oldObject.metadata.?labels.orValue({}))
+            && object.metadata.?labels.orValue({}).all(k,
+              k in {{ .selectorKeys | toJson }} ||
+              (k in oldObject.metadata.?labels.orValue({}) && object.metadata.labels[k] == oldObject.metadata.labels[k]))
+            && oldObject.metadata.?labels.orValue({}).all(k,
+              k in {{ .selectorKeys | toJson }} ||
+              (k in object.metadata.?labels.orValue({}) && oldObject.metadata.labels[k] == object.metadata.labels[k]))
+{{- /*
+An annotation or finalizer may change only when it is the family's OWN (a key
+under one of its engine API domains) or belongs to nobody the platform reads.
+"not kube-dc.com" alone was too wide: an instance pod's management-NIC
+constraints live in ovn.kubernetes.io/security_groups, /routes and
+/port_security, which the infra-attachment mutator stamps at CREATE and no
+webhook re-validates on UPDATE, so a compromised family operator could have
+widened its own member's reach (Fable follow-up review, 2026-09-20). The
+family's own domains alone proved too narrow in the other direction, measured
+on stage: an operator's framework writes its own bookkeeping in the same patch
+(kopf adds kopf.zalando.org/last-handled-configuration and its finalizer to
+every pod it handles), and refusing that refuses the membership write with it.
+So: the family's domains always pass, and everything else must stay clear of
+the domains the platform itself interprets.
+*/}}
+            && object.metadata.?annotations.orValue({}).all(k,
+              (k in oldObject.metadata.?annotations.orValue({}) && object.metadata.annotations[k] == oldObject.metadata.annotations[k])
+              || {{ $domains | toJson }}.exists(d, k.startsWith(d))
+              || !{{ $platform }}.exists(p, k.contains(p)))
+            && oldObject.metadata.?annotations.orValue({}).all(k,
+              (k in object.metadata.?annotations.orValue({}) && oldObject.metadata.annotations[k] == object.metadata.annotations[k])
+              || {{ $domains | toJson }}.exists(d, k.startsWith(d))
+              || !{{ $platform }}.exists(p, k.contains(p)))
+            && object.metadata.?finalizers.orValue([]).all(f,
+              f in oldObject.metadata.?finalizers.orValue([])
+              || {{ $domains | toJson }}.exists(d, f.startsWith(d))
+              || !{{ $platform }}.exists(p, f.contains(p)))
+            && oldObject.metadata.?finalizers.orValue([]).all(f,
+              f in object.metadata.?finalizers.orValue([])
+              || {{ $domains | toJson }}.exists(d, f.startsWith(d))
+              || !{{ $platform }}.exists(p, f.contains(p))))
+{{- end }}
+{{- end }})
     - name: podMariadbInstance
       expression: >-
         ('app.kubernetes.io/name' in variables.labels && variables.labels['app.kubernetes.io/name'] == 'mariadb')
@@ -273,6 +388,90 @@ a confused deputy for a platform-owned workload. Nothing else.
                !({{ include "kube-dc.identity.trustedEdge" . }}) ||
                (o.apiVersion == 'apps/v1' && o.kind == 'StatefulSet'))
           && variables.podMariadbInstance
+    # The services hub retries a StrimziPodSet after its exact Kafka and
+    # NodePool UIDs are durable in ManagedService status. The initial Pod
+    # CREATE can race that attestation and be refused by the attachment gate.
+    # Permit only the one retry annotation on an existing, marked PodSet;
+    # the hub cannot create a new owner edge or change its Pods or labels.
+    - name: serviceHubKafkaPodSetRetry
+      expression: >-
+        variables.reqUser == 'system:serviceaccount:kube-dc-services:kube-dc-services-hub'
+        && request.operation == 'UPDATE'
+        && request.resource.group == 'core.strimzi.io'
+        && request.resource.resource == 'strimzipodsets'
+        && (!has(request.subResource) || request.subResource == '')
+        && oldObject != null
+        && object.metadata.?labels.orValue({}) == oldObject.metadata.?labels.orValue({})
+        && object.metadata.labels['services.kube-dc.com/managed-by'] == 'kube-dc-services'
+        && 'services.kube-dc.com/instance-uid' in object.metadata.labels
+        && object.metadata.labels['services.kube-dc.com/instance-uid'] != ''
+        && object.spec == oldObject.spec
+        && object.metadata.?ownerReferences.orValue([]) == oldObject.metadata.?ownerReferences.orValue([])
+        && object.metadata.?ownerReferences.orValue([]).size() == 1
+        && object.metadata.ownerReferences[0].apiVersion == 'kafka.strimzi.io/v1'
+        && object.metadata.ownerReferences[0].kind == 'KafkaNodePool'
+        && object.metadata.ownerReferences[0].uid != ''
+        && object.metadata.?finalizers.orValue([]) == oldObject.metadata.?finalizers.orValue([])
+        && 'services.kube-dc.com/attestation-retry' in object.metadata.?annotations.orValue({})
+        && object.metadata.annotations['services.kube-dc.com/attestation-retry'].matches('^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$')
+        && object.metadata.annotations.all(k,
+             k == 'services.kube-dc.com/attestation-retry'
+             || (k in oldObject.metadata.?annotations.orValue({}) && object.metadata.annotations[k] == oldObject.metadata.annotations[k]))
+        && oldObject.metadata.?annotations.orValue({}).all(k,
+             k == 'services.kube-dc.com/attestation-retry'
+             || (k in object.metadata.annotations && oldObject.metadata.annotations[k] == object.metadata.annotations[k]))
+    # The Oracle MySQL operator does not propagate day-2 podSpec compute
+    # changes to its generated StatefulSet. The service runner patches only
+    # mysql/initmysql resources on that existing, operator-owned member set.
+    # Compare every other field at each level, including image, identity,
+    # volumes and controller ownership; CREATE and other families stay denied.
+    - name: serviceRunnerMySQLMemberResize
+      expression: >-
+        variables.reqUser == {{ printf "system:serviceaccount:%s:kube-dc-service-runner" (.Values.projectPolicies.protectManagedServices.runnerNamespace | default "kube-dc-service-runner") | toJson }}
+        && request.operation == 'UPDATE'
+        && request.resource.group == 'apps' && request.resource.resource == 'statefulsets'
+        && (!has(request.subResource) || request.subResource == '')
+        && oldObject != null
+        && object.metadata.uid == oldObject.metadata.uid
+        && object.metadata.?labels.orValue({}) == oldObject.metadata.?labels.orValue({})
+        && object.metadata.labels['services.kube-dc.com/managed-by'] == 'kube-dc-services'
+        && object.metadata.labels['services.kube-dc.com/family'] == 'mysql'
+        && 'services.kube-dc.com/instance-uid' in object.metadata.labels
+        && object.metadata.labels['services.kube-dc.com/instance-uid'] != ''
+        && object.metadata.?annotations.orValue({}) == oldObject.metadata.?annotations.orValue({})
+        && object.metadata.?finalizers.orValue([]) == oldObject.metadata.?finalizers.orValue([])
+        && object.metadata.?ownerReferences.orValue([]) == oldObject.metadata.?ownerReferences.orValue([])
+        && object.metadata.?ownerReferences.orValue([]).size() == 1
+        && object.metadata.ownerReferences[0].?controller.orValue(false)
+        && object.metadata.ownerReferences[0].apiVersion == 'mysql.oracle.com/v2'
+        && object.metadata.ownerReferences[0].kind == 'InnoDBCluster'
+        && object.metadata.ownerReferences[0].uid != ''
+        && object.spec.filter(k, k != 'template').size() == oldObject.spec.filter(k, k != 'template').size()
+        && object.spec.filter(k, k != 'template').all(k,
+             k in oldObject.spec.filter(k, k != 'template') && object.spec[k] == oldObject.spec[k])
+        && object.spec.template.metadata == oldObject.spec.template.metadata
+        && object.spec.template.spec.filter(k, k != 'containers' && k != 'initContainers').size() == oldObject.spec.template.spec.filter(k, k != 'containers' && k != 'initContainers').size()
+        && object.spec.template.spec.filter(k, k != 'containers' && k != 'initContainers').all(k,
+             k in oldObject.spec.template.spec.filter(k, k != 'containers' && k != 'initContainers')
+             && object.spec.template.spec[k] == oldObject.spec.template.spec[k])
+        && object.spec.template.spec.containers.map(c, c.name) == oldObject.spec.template.spec.containers.map(c, c.name)
+        && object.spec.template.spec.initContainers.map(c, c.name) == oldObject.spec.template.spec.initContainers.map(c, c.name)
+        && object.spec.template.spec.containers.all(c,
+             oldObject.spec.template.spec.containers.exists(o,
+               o.name == c.name && (c.name != 'mysql' ? c == o :
+                 (c.filter(k, k != 'resources').size() == o.filter(k, k != 'resources').size()
+                  && c.filter(k, k != 'resources').all(k,
+                       k in o.filter(k, k != 'resources') && c[k] == o[k])
+                  && c.resources.requests.all(k, k in ['cpu', 'memory'])
+                  && c.resources.limits.all(k, k in ['cpu', 'memory'])))))
+        && object.spec.template.spec.initContainers.all(c,
+             oldObject.spec.template.spec.initContainers.exists(o,
+               o.name == c.name && (c.name != 'initmysql' ? c == o :
+                 (c.filter(k, k != 'resources').size() == o.filter(k, k != 'resources').size()
+                  && c.filter(k, k != 'resources').all(k,
+                       k in o.filter(k, k != 'resources') && c[k] == o[k])
+                  && c.resources.requests.all(k, k in ['cpu', 'memory'])
+                  && c.resources.limits.all(k, k in ['cpu', 'memory'])))))
     # CDI (KubeVirt's disk importer) creates bare importer/uploadserver/clone-source
     # pods DIRECTLY as cdi-sa (not via a kube-system controller), so they hit this
     # policy; the infra-attachment mutating webhook then stamps the marker and rule
@@ -339,7 +538,7 @@ a confused deputy for a platform-owned workload. Nothing else.
         variables.cdiWorkerPodCreate
         || variables.certManagerHTTP01PodCreate
         || (variables.reqUser == 'system:serviceaccount:cnpg-system:cnpg-cloudnative-pg')
-        || variables.mariadbOperatorOwnPodUpdate
+        || variables.mariadbOperatorOwnPodUpdate || variables.familyOperatorPodLabelUpdate
 {{- if .Values.manager.infraAttachment.enabled }}
         || (has(namespaceObject.metadata.labels)
             && 'network.kube-dc.com/infra-attachment' in namespaceObject.metadata.labels
@@ -381,7 +580,10 @@ a confused deputy for a platform-owned workload. Nothing else.
         !variables.ownerTrusted
         || (variables.reqUser == 'system:serviceaccount:cnpg-system:cnpg-cloudnative-pg' && variables.ownerCnpg)
         || (variables.reqUser == 'system:serviceaccount:mariadb-system:mariadb-operator' && variables.ownerMariadb)
-        || variables.mariadbOperatorOwnPodUpdate
+        || variables.mariadbOperatorOwnPodUpdate || variables.familyOperatorPodLabelUpdate
+        || variables.familyOperatorPodMetadataUpdate
+        || variables.serviceHubKafkaPodSetRetry
+        || variables.serviceRunnerMySQLMemberResize
 {{- range .Values.serviceFamilies.extra }}
 {{- $var := printf "ownerFamily_%s" (.name | replace "-" "_") }}
 {{- range .operatorServiceAccounts }}

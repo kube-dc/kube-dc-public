@@ -1,0 +1,102 @@
+{{- if .Values.billing.policy.admissionEnabled }}
+# =============================================================================
+# ValidatingAdmissionPolicy: only the platform writes billing policies.
+#
+# An OrganizationBillingPolicy carries an organization's billing mode, its
+# commerce owner, the rate revision it is priced against and its safety
+# ceilings. None of that may be writable by an organization admin -- a tenant
+# who could edit it could raise their own quota or move themselves out of a
+# partner's account.
+#
+# Scope is deliberately narrow: this matches ONE resource and its status, which
+# nothing else in the platform writes. It consults no other object and has no
+# dependency on anything existing first, so it cannot reproduce the 2026-09-04
+# outage where a gate that refused "not yet existing" objects broke every VM
+# creation. The worst case of a mistake here is that billing policies cannot be
+# edited, not that tenant workloads stop.
+#
+# Writers (ADR-001 D5/D7):
+#   - the billing coordinator: spec and status.transition
+#   - the kube-dc manager: status.enforcement, and DELETE on organization teardown
+#   - cluster administrators, for break-glass
+# The first two are service accounts in this namespace. Break-glass means the
+# system:masters or the master-realm platform:admin group. A cluster-admin
+# RBAC binding alone does not grant this exception: tenant and integration
+# identities must not gain billing authority through broad RBAC grants.
+#
+# Kubernetes' own cleanup is also let through, for DELETE and for an UPDATE that
+# leaves the spec untouched (the garbage collector removes its own
+# foregroundDeletion/orphan finalizer with a PATCH): the namespace controller
+# (uninstall removes this namespace) and the garbage collector.
+# Blocking them would not protect a policy -- it would wedge a namespace in
+# Terminating, which is how a teardown-blocking webhook has hurt this platform
+# before. When kube-controller-manager runs without per-controller credentials
+# both act as system:kube-controller-manager, so that identity is exempted the
+# same way.
+# =============================================================================
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: protect-kube-dc-billing-policies
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["billing.kube-dc.com"]
+        apiVersions: ["*"]
+        # CREATE is listed on purpose. An UPDATE-only rule, like the one that
+        # protects Organization annotations, would let anyone create a policy
+        # for an organization that does not have one yet -- or delete one and
+        # create a replacement.
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources:
+          - "organizationbillingpolicies"
+          - "organizationbillingpolicies/status"
+  matchConditions:
+    - name: exclude-platform-service-accounts
+      expression: >-
+        !request.userInfo.username.startsWith('system:serviceaccount:{{ .Release.Namespace }}:')
+    - name: exclude-cluster-admins
+      expression: >-
+        !(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))
+    - name: exclude-configured-writers
+      # billing.policy.additionalWriters: the billing service when it runs
+      # outside the release namespace. Exact usernames, never a prefix.
+      expression: >-
+        !(request.userInfo.username in {{ .Values.billing.policy.additionalWriters | default list | toJson }})
+    - name: exclude-kubernetes-cleanup
+      # DELETE, and a metadata-only UPDATE of the object itself: foreground and
+      # orphan deletion finish with the garbage collector PATCHing its own
+      # finalizer off the object, and refusing that leaves the policy -- and
+      # then its namespace -- stuck terminating. The spec must be unchanged,
+      # so this identity still cannot rewrite a customer's billing, and the
+      # status subresource is not included. request.subResource is ABSENT, not
+      # empty, for the object itself; reading it unguarded is an evaluation
+      # error, which failurePolicy Fail turns into a denial.
+      expression: >-
+        !(request.userInfo.username in [
+            'system:serviceaccount:kube-system:namespace-controller',
+            'system:serviceaccount:kube-system:generic-garbage-collector',
+            'system:kube-controller-manager']
+          && (request.operation == 'DELETE'
+            || (request.operation == 'UPDATE'
+                && (!has(request.subResource) || request.subResource == '')
+                && object.spec == oldObject.spec)))
+  validations:
+    - expression: "false"
+      # 403, not the default 422: the request is not malformed, the caller is
+      # not allowed to make it.
+      reason: Forbidden
+      message: >-
+        OrganizationBillingPolicy is written only by the platform. Change an
+        organization's billing through the admin API, which records who asked
+        and keeps the commercial history.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: protect-kube-dc-billing-policies
+spec:
+  policyName: protect-kube-dc-billing-policies
+  validationActions: [Deny]
+{{- end }}

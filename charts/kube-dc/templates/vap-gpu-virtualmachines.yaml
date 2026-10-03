@@ -31,7 +31,7 @@ spec:
     - name: exclude-cluster-admins
       expression: >-
         !has(request.userInfo) || !has(request.userInfo.groups) ||
-        !('system:masters' in request.userInfo.groups)
+        !(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))
   variables:
     - name: guestSpec
       expression: object.spec.template.spec
@@ -84,7 +84,7 @@ spec:
     - name: exclude-cluster-admins
       expression: >-
         !has(request.userInfo) || !has(request.userInfo.groups) ||
-        !('system:masters' in request.userInfo.groups)
+        !(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))
   variables:
     - name: guestSpec
       expression: object.spec

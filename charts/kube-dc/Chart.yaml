@@ -352,7 +352,74 @@ type: application
 # config; handed one it cannot parse Talos retries "config not found" forever and
 # never reaches maintenance mode, so apid never starts). With no disk it boots to
 # maintenance in ~4s, AgentConnected=True, and the Talos API answers on :50000.
-version: v0.8.3
+#
+# v0.8.5: a registered service family may declare the pod conditions its
+# per-instance account sets on its OWN member pods (instanceWrites {group: "",
+# resource: pods, subresource: status, conditionTypes: [...]}). The Oracle
+# MySQL Operator's sidecar reports mysql.oracle.com/configured that way, and
+# the protect policy refused it, so no MySQL member could ever become Ready.
+# The manager judges the write with the provenance it already proves by UID
+# and admits a change to the declared conditions alone; a dedicated webhook
+# stanza matches only marked pods and instance-shaped accounts, so the
+# kubelet's status path never depends on the manager. The policy hand-off is
+# phase 2 (projectPolicies.protectManagedServices.instancePodConditionsJudgedByWebhook,
+# default false) and belongs to the object policy only -- the marker policies
+# keep judging pods/status, because a status write can carry labels.
+# appVersion moves with it: the judge is manager code.
+#
+# v0.8.9 (CHART-ONLY, manager stays v0.8.5): v0.8.8 confined a family operator's
+# pod annotations and finalizers to the family's own engine API domains, which
+# is too narrow in practice — an operator's framework writes its own bookkeeping
+# in the same patch (kopf's last-handled-configuration annotation and its
+# finalizer), so the membership write was refused with it and no MySQL member
+# reached its readiness gate (measured on stage before this shipped anywhere
+# else). A key may now change when it is the family's own OR when it belongs to
+# no domain the platform reads: kube-dc.com/, kubernetes.io/, k8s.io/, cncf.io/.
+# The ovn.kubernetes.io/* surface v0.8.7 left open stays closed.
+# v0.8.8 (CHART-ONLY, manager stays v0.8.5): confine a family operator's pod
+# metadata latitude to its OWN engine API domains. v0.8.7 froze only keys
+# containing kube-dc.com/, but an instance pod's management-NIC constraints live
+# in ovn.kubernetes.io/security_groups, /routes and /port_security, which the
+# infra-attachment mutator stamps at CREATE and nothing re-validates on UPDATE:
+# a compromised family operator could have widened its own member's reach
+# (Fable follow-up review of the MySQL stage rollout). The allowed prefixes now
+# come from the registry's engineRoots groups, so MySQL's operator may write
+# mysql.oracle.com/* and nothing else; a family declaring no API group of its
+# own keeps strict equality.
+# v0.8.7 (CHART-ONLY, manager stays v0.8.5): a registered family's operator may
+# record its own members' membership metadata. The Oracle MySQL operator writes
+# a selector label, an annotation and a finalizer in ONE patch on the pods it
+# manages through a StatefulSet, so the label-only carve-out never matched and
+# reserve-platform-identities-in-projects denied every membership update (no
+# member reached its readiness gate; seen live on stage). The widened carve-out
+# serves the owner rule alone: the reserved-annotation rules keep judging the
+# same request, labels stay confined to the family's selectorKeys, and no
+# kube-dc.com annotation or finalizer may be touched.
+# v0.8.6 (CHART-ONLY, manager stays v0.8.5): keep the core pods/status write
+# out of the managed-instance-status stanza. That stanza is scoped by resource
+# alone -- any identity's write of those resources is judged -- which is right
+# for a family's own operation CRs and wrong for the core group: with
+# pods/status in it, EVERY kubelet pod status update in a project namespace
+# went through a fail-closed webhook. Seen live on stage right after the
+# v0.8.5 roll. The core writes keep their own identity-scoped stanzas.
+#
+# Next release (label taken at release time): C06 step 6, abandoning a stalled
+# archive key rotation. The
+# ObjectBucketKeyRotation CRD gains spec.abandon (per-field CEL immutability),
+# the Abandoned phase and the abandon/retiring-key status; project admins get
+# patch on rotations; two ValidatingAdmissionPolicies keep the
+# archive-key-retirement finalizer and the archive-lock-* ConfigMaps in the
+# cell namespace with the rotation controller. appVersion moves with it: the
+# manager writes Abandoned and retires the keys an abandon left valid. Ship
+# the CRD before (or with) the manager: an older CRD rejects the Abandoned
+# phase and prunes spec.abandon. Rolling the manager back after an Abandoned
+# rotation exists re-locks the claim and stalls on the deleted intent (release
+# notes). The templates changed, so the release step must bump version and
+# appVersion here: Flux does not roll a chart whose version did not move. Ship
+# the backend abandon route with or after the manager: an older manager's
+# typed Update drops spec.abandon, the withdraw rule then rejects the write,
+# and it can neither add nor remove the finalizer on an abandoned rotation.
+version: v0.9.1-exposure-scope.20261003.1
 
 # v0.6.5: reconcile every Grafana Mimir datasource to the chart gateway so
 # query, health, and Ruler APIs share one supported endpoint.
@@ -365,4 +432,6 @@ version: v0.8.3
 # appVersion to v0.4.2 stops a bare `helm install` from pairing new RBAC/chart
 # with old component images. The v0.4.19 release unit must publish v0.4.9 for
 # manager, backend, tenant frontend, and admin frontend before chart rollout.
-appVersion: v0.8.3
+# Manager-only qualification release: retain the deployed bundle version
+# label and fallback tags. The manager default is pinned explicitly in values.
+appVersion: v0.9.1-valkey-startup-stage.20261003.1

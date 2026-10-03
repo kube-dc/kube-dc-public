@@ -1,0 +1,102 @@
+{{- $cell := required "managedServiceCredentials.cellNamespace is required" .Values.managedServiceCredentials.cellNamespace }}
+# =============================================================================
+# Archive key rotation guards (C06 step 6).
+#
+# Project administrators may patch an ObjectBucketKeyRotation to abandon it
+# (spec.abandon; CEL keeps every other spec field immutable). Two provider
+# records must stay out of their reach, and out of reach of the services hub
+# and runner, which can write ConfigMaps cluster-wide:
+#
+#   1. The security.kube-dc.com/archive-key-retirement finalizer. Stripping it
+#      would skip the rotation's cleanup and strand the claim lock, the
+#      archive registry closure and the record of keys an abandon left valid.
+#   2. The per-claim lock ConfigMaps archive-lock-* in the cell namespace. They
+#      serialize rotations of one claim and record the keys abandoned rotations
+#      left valid (data.retainedKeys), which the next rotation revokes.
+#
+# The rotation controller (the kube-dc manager) may update
+# objectbucketkeyrotations/finalizers cluster-wide; no tenant role grants that,
+# a namespaced patch cannot satisfy a cluster-scope check, and neither the hub
+# nor the runner holds it. Cluster administrators keep break-glass.
+#
+# failurePolicy Fail on a narrow surface: a guard bug is visible, never silent.
+# =============================================================================
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: kube-dc-archive-rotation-finalizer
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["security.kube-dc.com"]
+        apiVersions: ["*"]
+        resources: ["objectbucketkeyrotations"]
+        operations: ["UPDATE"]
+  matchConditions:
+    # Only the transition that removes this finalizer is judged. Both sides are
+    # guarded with has(): removing the last finalizer leaves
+    # metadata.finalizers absent, and an unguarded read would be a CEL error
+    # that, under Fail, would also deny the manager and wedge namespace
+    # teardown. Other finalizers, and objects without this one, pass.
+    - name: removes-archive-key-retirement-finalizer
+      expression: >-
+        has(oldObject.metadata.finalizers) &&
+        'security.kube-dc.com/archive-key-retirement' in oldObject.metadata.finalizers &&
+        !(has(object.metadata.finalizers) &&
+        'security.kube-dc.com/archive-key-retirement' in object.metadata.finalizers)
+  validations:
+    - expression: >-
+        authorizer.group('security.kube-dc.com').resource('objectbucketkeyrotations').subresource('finalizers').check('update').allowed()
+      reason: Forbidden
+      message: >-
+        only the rotation controller removes the archive-key-retirement
+        finalizer; to end a stalled rotation set spec.abandon
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: kube-dc-archive-rotation-finalizer
+spec:
+  policyName: kube-dc-archive-rotation-finalizer
+  validationActions: [Deny]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: kube-dc-archive-rotation-locks
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ $cell | quote }}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["configmaps"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+  matchConditions:
+    - name: archive-rotation-lock
+      expression: >-
+        (object != null && (object.metadata.name.startsWith('archive-lock-') ||
+        (has(object.metadata.labels) && 'security.kube-dc.com/archive-lock' in object.metadata.labels))) ||
+        (oldObject != null && (oldObject.metadata.name.startsWith('archive-lock-') ||
+        (has(oldObject.metadata.labels) && 'security.kube-dc.com/archive-lock' in oldObject.metadata.labels)))
+  validations:
+    # Deleting the cell namespace deletes its locks through the namespace
+    # controller; blocking that would wedge the namespace in Terminating.
+    # The authorizer term is last.
+    - expression: >-
+        (object == null && namespaceObject != null && has(namespaceObject.metadata.deletionTimestamp)) ||
+        authorizer.group('security.kube-dc.com').resource('objectbucketkeyrotations').subresource('finalizers').check('update').allowed()
+      reason: Forbidden
+      message: archive rotation locks are written only by the rotation controller
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: kube-dc-archive-rotation-locks
+spec:
+  policyName: kube-dc-archive-rotation-locks
+  validationActions: [Deny]

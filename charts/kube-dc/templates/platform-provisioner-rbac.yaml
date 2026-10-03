@@ -1,0 +1,75 @@
+# =============================================================================
+# Platform provisioner role and machine identities
+# (docs/prd/webdock-php-sdk-and-partner-removal.md §3.2).
+#
+# kube-dc:provisioner lets an automation identity create organization
+# namespaces, Organizations and Projects, size (allocate) and suspend them and
+# delete Organizations (the Organization finalizer tears down its Projects and
+# namespace). It grants no RBAC, Secret or workload access.
+#
+# Each platformMachines entry binds a Keycloak master-realm service-account
+# client (username machine:service-account-<clientId>, see the
+# platform.machines OpenIDConnect entry) to that role, and grants it `use` on
+# organizationprefixes/<prefix>: restrict-machine-identities only lets it manage
+# namespaces and Organizations named <prefix>-*.
+# =============================================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-dc:provisioner
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch", "create"]
+  - apiGroups: ["kube-dc.com"]
+    resources: ["organizations"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "allocate", "suspend"]
+  - apiGroups: ["kube-dc.com"]
+    resources: ["projects"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["kube-dc.com"]
+    resources: ["organizationgroups"]
+    verbs: ["get", "list", "watch"]
+{{- range .Values.platformMachines }}
+{{- $client := required "platformMachines[].clientId is required" .clientId }}
+{{- $prefix := required "platformMachines[].prefix is required" .prefix }}
+{{- if not (regexMatch "^[a-z0-9]{1,16}$" $prefix) }}
+{{- fail (printf "platformMachines[].prefix %q must be 1-16 lowercase letters or digits" $prefix) }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-dc:provisioner:{{ $client }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-dc:provisioner
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: machine:service-account-{{ $client }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-dc:organization-prefix:{{ $prefix }}
+rules:
+  - apiGroups: ["kube-dc.com"]
+    resources: ["organizationprefixes"]
+    resourceNames: [{{ $prefix | quote }}]
+    verbs: ["use"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-dc:organization-prefix:{{ $prefix }}:{{ $client }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-dc:organization-prefix:{{ $prefix }}
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: machine:service-account-{{ $client }}
+{{- end }}

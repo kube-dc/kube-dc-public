@@ -1,5 +1,5 @@
 {{- if and (include "kube-dc.manager.failClosedAdmission" .) (lt (int .Values.manager.replicaCount) 2) (not .Values.manager.singleReplicaAdmissionAccepted) }}
-{{- fail "This installation has fail-closed manager admission (projectNetwork, routedNetwork or projectPolicies.protectManagedServices) and requires manager.replicaCount >= 2: with one replica, every rollout, drain or eviction is a window in which tenant pods, claims and Secrets cannot be created, and a node loss is an outage. Set manager.replicaCount to at least 2 (and ensure two nodes match manager.nodeSelector), or set manager.singleReplicaAdmissionAccepted=true to accept a not-highly-available installation." }}
+{{- fail "This installation has fail-closed manager admission (projectNetwork, routedNetwork, managed-services protection or exposure route claims) and requires manager.replicaCount >= 2: with one replica, every rollout, drain or eviction is a window in which tenant pods, claims and Secrets cannot be created, and a node loss is an outage. Set manager.replicaCount to at least 2 (and ensure two nodes match manager.nodeSelector), or set manager.singleReplicaAdmissionAccepted=true to accept a not-highly-available installation." }}
 {{- end }}
 apiVersion: apps/v1
 kind: Deployment
@@ -98,8 +98,65 @@ spec:
           # would resolve to the platform's own CephObjectStoreUser and Secret.
           # Threaded from the same value that creates the user, so the two
           # cannot drift — see templates/s3-platform-admin-user.yaml.
+          - name: SERVICES_DATABASE_TLS_NAMESPACE
+            value: {{ required "managedServiceCredentials.databaseTLSNamespace is required" .Values.managedServiceCredentials.databaseTLSNamespace | quote }}
+          - name: SERVICES_PUBLICATION_ESO_SERVICE_ACCOUNT
+            value: {{ include "kube-dc.publicationESO.serviceAccount" . | quote }}
+          - name: SERVICES_ARCHIVE_BROKER_ROTATION_ENABLED
+            value: {{ .Values.managedServiceCredentials.archiveBrokerRotationEnabled | default false | quote }}
+          - name: SERVICES_ARCHIVE_LIVE_WRITER_HANDOFF_ENABLED
+            value: {{ .Values.managedServiceCredentials.archiveLiveWriterHandoffEnabled | default false | quote }}
+          # C05 installation gate; the manager treats absent/unparsable as off.
+          - name: SERVICES_DATABASE_ENGINE_ENABLED
+            value: {{ dig "databaseEngine" "enabled" false .Values.managedServiceCredentials | toString | quote }}
+          - name: SERVICES_DATABASE_SELF_DATAPLANE_NAME
+            value: {{ dig "databaseEngine" "selfDataPlaneName" "" .Values.managedServiceCredentials | quote }}
+          - name: SERVICES_DATABASE_READER_COORDINATOR_ENABLED
+            value: {{ dig "databaseEngine" "readerCoordinatorEnabled" false .Values.managedServiceCredentials | toString | quote }}
+          {{- $readerCoordinator := eq (toString (dig "databaseEngine" "readerCoordinatorEnabled" false .Values.managedServiceCredentials)) "true" }}
+          {{- $readerPolicy := eq (toString (dig "databaseEngine" "readerClearancePolicyEnabled" false .Values.managedServiceCredentials)) "true" }}
+          {{- if and $readerPolicy (not $readerCoordinator) }}
+          {{- fail "managedServiceCredentials.databaseEngine.readerClearancePolicyEnabled requires readerCoordinatorEnabled" }}
+          {{- end }}
+          - name: SERVICES_DATABASE_READER_POLICY_ENABLED
+            value: {{ $readerPolicy | quote }}
+          # C05 BaoReplicasQualified: the OpenBao StatefulSet whose every
+          # replica must run the plugin init container from this digest.
+          {{- $databaseBao := dig "databaseEngine" "openBao" dict .Values.managedServiceCredentials }}
+          {{- $pluginDigest := $databaseBao.pluginImageDigest | default "" }}
+          {{- if and $pluginDigest (not (regexMatch "^sha256:[a-f0-9]{64}$" $pluginDigest)) }}
+          {{- fail "managedServiceCredentials.databaseEngine.openBao.pluginImageDigest must be sha256:<64 lowercase hex>" }}
+          {{- end }}
+          - name: SERVICES_DATABASE_BAO_NAMESPACE
+            value: {{ $databaseBao.namespace | default "openbao" | quote }}
+          - name: SERVICES_DATABASE_BAO_STATEFULSET
+            value: {{ $databaseBao.statefulSet | default "openbao" | quote }}
+          - name: SERVICES_DATABASE_PLUGIN_INIT_CONTAINER
+            value: {{ $databaseBao.pluginInitContainer | default "kube-dc-postgresql-plugin" | quote }}
+          - name: SERVICES_DATABASE_PLUGIN_IMAGE_DIGEST
+            value: {{ $pluginDigest | quote }}
+          - name: SERVICES_CELL_NAMESPACE
+            value: {{ required "managedServiceCredentials.cellNamespace is required" .Values.managedServiceCredentials.cellNamespace | quote }}
+          - name: ROOK_NAMESPACE
+            value: {{ .Values.objectStorage.rookNamespace | quote }}
+          - name: CEPH_STORE_NAME
+            value: {{ .Values.objectStorage.cephStoreName | quote }}
+          {{- if .Values.s3Endpoint }}
+          - name: S3_ENDPOINT
+            value: {{ .Values.s3Endpoint | quote }}
+          {{- end }}
           - name: S3_PLATFORM_ADMIN_USER
             value: {{ .Values.objectStorage.platformAdminUser.name | quote }}
+          # Automatic Project spec.cidrBlock allocation uses the same pool as
+          # the backend's CIDR suggestion (values.yaml backend.projectCidr).
+          {{- with .Values.backend.projectCidr }}
+          - name: PROJECT_CIDR_POOL
+            value: {{ .pool | quote }}
+          - name: PROJECT_CIDR_PREFIX
+            value: {{ .prefix | quote }}
+          - name: PROJECT_CIDR_RESERVED
+            value: {{ join "," .reserved | quote }}
+          {{- end }}
           # Platform ServiceAccount namespaces the managed-services token gate
           # exempts; the same list the protect-managed-services policy uses.
           - name: MANAGED_SERVICES_EXEMPT_SA_NAMESPACES
@@ -175,6 +232,18 @@ spec:
           # wire becomes reachable.
           - name: PROJECT_NETWORK_ENABLED
             value: {{ .Values.projectNetwork.enabled | quote }}
+          - name: FIP_SOURCE_POLICY_ENABLED
+            value: {{ .Values.manager.fipSourcePolicy.enabled | quote }}
+          - name: FIP_SOURCE_POLICY_NAMESPACE_UIDS
+            value: {{ toJson .Values.manager.fipSourcePolicy.namespaceUIDs | quote }}
+          - name: EXPOSURE_ROUTE_TRUSTED_PRODUCERS
+            value: {{ join "," .Values.manager.webhook.exposureRouteTrustedProducers | quote }}
+          - name: EXPOSURE_ACME_CONTROLLER_USERNAME
+            value: {{ .Values.manager.webhook.exposureACMEControllerUsername | quote }}
+          - name: EXPOSURE_ACME_PLATFORM_NAMESPACE_UIDS
+            value: {{ toJson .Values.manager.webhook.exposureACMEPlatformNamespaceUIDs | quote }}
+          - name: EXPOSURE_ROUTE_CONTROLLER_USERNAME
+            value: {{ printf "system:serviceaccount:%s:%s" .Release.Namespace (include "kube-dc.manager.serviceAccountName" .) | quote }}
           - name: PROJECT_NETWORK_CONTROLLER_USERNAME
             value: {{ printf "system:serviceaccount:%s:%s" .Release.Namespace (include "kube-dc.manager.serviceAccountName" .) | quote }}
           - name: KUBE_DC_SERVICE_FAMILIES_FILE
@@ -240,7 +309,7 @@ spec:
           {{- toYaml . | nindent 10 }}
           {{- end }}
 
-        image: "{{ .Values.manager.image.repository }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}"
+        image: "{{ .Values.manager.image.repository }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}{{ with .Values.manager.image.digest }}@{{ . }}{{ end }}"
         # manager.image.pullPolicy existed in values.yaml and was set to Always
         # by the fleet, but this template never referenced it — so the container
         # silently took Kubernetes' default (IfNotPresent for a non-:latest tag).

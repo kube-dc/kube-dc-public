@@ -247,7 +247,7 @@ mode remains upgrade-neutral. Explicit modes form the new fleet contract.
 kube-dc.manager.failClosedAdmission — "this installation depends on the
 manager's admission being available". THREE features put a fail-closed webhook
 on the ordinary tenant path: tenant-VLAN attachment (projectNetwork), routed
-networks, and managed-services protection. They must share ONE definition:
+networks, managed-services protection, and exposure route claims. They share one definition:
 the budget, the replica floor and the node spread were previously derived from
 different subsets of them, so a managed-services-only installation got the
 budget but neither a replica floor nor a spread, and both manager replicas
@@ -255,7 +255,7 @@ could land on one node while ordinary tenant Pod/PVC/Secret admission depended
 on them (release-boundary review 2026-09-05, F3).
 */}}
 {{- define "kube-dc.manager.failClosedAdmission" -}}
-{{- if and .Values.manager.webhook.enabled (or .Values.projectNetwork.enabled .Values.routedNetwork.enabled .Values.projectPolicies.protectManagedServices.enabled) -}}
+{{- if and .Values.manager.webhook.enabled (or .Values.projectNetwork.enabled .Values.routedNetwork.enabled .Values.projectPolicies.protectManagedServices.enabled .Values.manager.webhook.protectExposureRoutes .Values.manager.fipSourcePolicy.enabled) -}}
 true
 {{- end -}}
 {{- end }}
@@ -524,6 +524,26 @@ status subresource of one of the family's operation resources, or a core
 Secret/ConfigMap without subresource; writes need an account. The affixes and
 resources render into CEL and YAML literals. Renders nothing.
 */}}
+{{- /*
+kube-dc.serviceFamilies.validatePodConditions -- the condition types an
+instance account may set on its own member pods (pods/status): 1-8 qualified
+<domain>/<name> types, none of Kubernetes' or the platform's, each once. The
+manager refuses the same (internal/servicefamily validConditionType).
+*/}}
+{{- define "kube-dc.serviceFamilies.validatePodConditions" -}}
+{{- $condRe := `^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)+/[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$` -}}
+{{- $family := .family -}}
+{{- if or (not .types) (gt (len .types) 8) }}{{ fail (printf "serviceFamilies.extra %s: instance write pods/status must name 1-8 conditionTypes the account may set" $family) }}{{ end }}
+{{- $seen := list }}
+{{- range $t := .types }}
+{{- if or (not (kindIs "string" $t)) (not (regexMatch $condRe $t)) (gt (len $t) 316) }}{{ fail (printf "serviceFamilies.extra %s: pod condition type %q must be a qualified <domain>/<name>" $family (toString $t)) }}{{ end }}
+{{- $prefix := index (splitList "/" $t) 0 }}
+{{- range $r := list "kubernetes.io" "k8s.io" "kube-dc.com" }}{{ if or (eq $prefix $r) (hasSuffix (printf ".%s" $r) $prefix) }}{{ fail (printf "serviceFamilies.extra %s: pod condition type %q belongs to Kubernetes or the platform" $family $t) }}{{ end }}{{ end }}
+{{- if has $t $seen }}{{ fail (printf "serviceFamilies.extra %s: pod condition type %q is listed twice" $family $t) }}{{ end }}
+{{- $seen = append $seen $t }}
+{{- end }}
+{{- end }}
+
 {{- define "kube-dc.serviceFamilies.validateInstanceWrites" -}}
 {{- $affixRe := "^[a-z0-9-]*$" -}}
 {{- $resourceRe := "^[a-z][a-z0-9]*$" -}}
@@ -551,8 +571,12 @@ resources render into CEL and YAML literals. Renders nothing.
 {{- $seenWrites = append $seenWrites $key }}
 {{- if not (regexMatch $groupRe $g) }}{{ fail (printf "serviceFamilies.extra %s: instance write group %q is not an API group" $family.name $g) }}{{ end }}
 {{- if not (regexMatch $resourceRe (.resource | default "")) }}{{ fail (printf "serviceFamilies.extra %s: instance write resource %q is not a resource name" $family.name (.resource | default "")) }}{{ end }}
-{{- if eq $g "" }}
-{{- if or $sub (not (has .resource (list "secrets" "configmaps"))) }}{{ fail (printf "serviceFamilies.extra %s: core instance write %q: only secrets and configmaps, without subresource" $family.name .resource) }}{{ end }}
+{{- $types := .conditionTypes | default list }}
+{{- if and $types (not (and (eq $g "") (eq .resource "pods") (eq $sub "status"))) }}{{ fail (printf "serviceFamilies.extra %s: instance write %s/%s: conditionTypes apply only to pods/status" $family.name .resource $sub) }}{{ end }}
+{{- if and (eq $g "") (eq .resource "pods") (eq $sub "status") }}
+{{- include "kube-dc.serviceFamilies.validatePodConditions" (dict "family" $family.name "types" $types) }}
+{{- else if eq $g "" }}
+{{- if or $sub (not (has .resource (list "secrets" "configmaps"))) }}{{ fail (printf "serviceFamilies.extra %s: core instance write %q: only secrets and configmaps, without subresource, or the declared conditions of its own pods (pods/status)" $family.name .resource) }}{{ end }}
 {{- else }}
 {{- if ne $sub "status" }}{{ fail (printf "serviceFamilies.extra %s: instance write %s/%s: outside core only a status subresource" $family.name .resource $sub) }}{{ end }}
 {{- $known := false }}
@@ -588,13 +612,29 @@ list of core resource names.
 */}}
 {{- define "kube-dc.serviceFamilies.instanceStatusWrites" -}}
 {{- $out := list -}}
-{{- range .Values.serviceFamilies.extra }}{{ range .engineRoots }}{{ if .instanceServiceAccount }}{{ range (.instanceWrites | default list) }}{{ if eq (.subresource | default "") "status" }}{{ $out = append $out (dict "group" (.group | default "") "resource" .resource) }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end -}}
+{{- /* Operation-resource statuses only. That stanza is scoped by resource
+       alone -- ANY identity's write of those custom resources is judged --
+       which is right for a family's own operation CRs and wrong for the core
+       group: pods/status would put every kubelet status update in a project
+       namespace behind a fail-closed webhook. The core writes have their own
+       identity-scoped stanzas (instanceCoreWrites, instancePodConditionWrites). */}}
+{{- range .Values.serviceFamilies.extra }}{{ range .engineRoots }}{{ if .instanceServiceAccount }}{{ range (.instanceWrites | default list) }}{{ if and (eq (.subresource | default "") "status") (ne (.group | default "") "") }}{{ $out = append $out (dict "group" .group "resource" .resource) }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end -}}
 {{ toJson $out }}
 {{- end }}
 {{- define "kube-dc.serviceFamilies.instanceCoreWrites" -}}
 {{- $out := list -}}
-{{- range .Values.serviceFamilies.extra }}{{ range .engineRoots }}{{ if .instanceServiceAccount }}{{ range (.instanceWrites | default list) }}{{ if and (eq (.group | default "") "") (not (has .resource $out)) }}{{ $out = append $out .resource }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end -}}
+{{- range .Values.serviceFamilies.extra }}{{ range .engineRoots }}{{ if .instanceServiceAccount }}{{ range (.instanceWrites | default list) }}{{ if and (eq (.group | default "") "") (not (.subresource | default "")) (not (has .resource $out)) }}{{ $out = append $out .resource }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end -}}
 {{ toJson $out }}
+{{- end }}
+{{- /*
+kube-dc.serviceFamilies.instancePodConditionWrites -- "true" when a registered
+root lets its instance account set declared conditions of its own pods
+(pods/status); empty otherwise.
+*/}}
+{{- define "kube-dc.serviceFamilies.instancePodConditionWrites" -}}
+{{- $out := false -}}
+{{- range .Values.serviceFamilies.extra }}{{ range .engineRoots }}{{ if .instanceServiceAccount }}{{ range (.instanceWrites | default list) }}{{ if and (eq (.group | default "") "") (eq .resource "pods") (eq (.subresource | default "") "status") }}{{ $out = true }}{{ end }}{{ end }}{{ end }}{{ end }}{{ end -}}
+{{- if $out }}true{{ end -}}
 {{- end }}
 
 {{- /*
@@ -612,7 +652,33 @@ the request, the webhook proves it. Renders nothing otherwise.
 - name: exclude-instance-account-core-writes
   expression: >-
     !({{ include "kube-dc.serviceFamilies.instanceIdentityCEL" . }} &&
-      request.resource.group == '' && request.resource.resource in {{ toJson $cores }})
+      request.resource.group == '' && request.resource.resource in {{ toJson $cores }} &&
+      (!has(request.subResource) || request.subResource == ''))
+{{- end }}
+{{- end }}
+
+{{- /*
+kube-dc.instancePodConditions.handoff -- the same phase-2 hand-off for the
+pod conditions an instance account sets on its own member pods. It belongs to
+the OBJECT policy ONLY. The MARKER policies must keep judging pods/status,
+because a pod's status update can carry labels (the pod status strategy
+resets spec and ownerReferences, not metadata.labels) and the judging webhook
+stanza only sees MARKED pods: excluding the markers policy as well would
+leave a status write on an UNMARKED pod judged by nobody, and an account
+merely shaped like an instance account could stamp an engine's selector key
+(mysql.oracle.com/cluster, cnpg.io/cluster, strimzi.io/cluster) on its own
+pod -- the EndpointSlice controller would then route that engine's traffic to
+it, and the family's capacity inventory would refuse the instance. The
+legitimate gate write changes no label, so the markers policy admits it
+unchanged.
+*/}}
+{{- define "kube-dc.instancePodConditions.handoff" -}}
+{{- if and .Values.projectPolicies.protectManagedServices.instancePodConditionsJudgedByWebhook (include "kube-dc.serviceFamilies.instancePodConditionWrites" .) }}
+- name: exclude-instance-account-pod-conditions
+  expression: >-
+    !({{ include "kube-dc.serviceFamilies.instanceIdentityCEL" . }} &&
+      request.resource.group == '' && request.resource.resource == 'pods' &&
+      has(request.subResource) && request.subResource == 'status')
 {{- end }}
 {{- end }}
 
@@ -632,3 +698,88 @@ an operator copy markers: only the platform's roots carry them.
 {{- range .Values.serviceFamilies.extra }}{{ range .operatorServiceAccounts }}{{ if not (has . $out) }}{{ $out = append $out . }}{{ end }}{{ end }}{{ end -}}
 {{ join "," $out }}
 {{- end }}
+
+{{/* The webhook and policy handoff must select exactly the same controller. */}}
+{{- define "kube-dc.publicationESO.serviceAccount" -}}
+{{- $sa := .Values.managedServiceCredentials.esoServiceAccount | default "system:serviceaccount:external-secrets-system:external-secrets" -}}
+{{- if not (regexMatch "^system:serviceaccount:[a-z0-9]([-a-z0-9]*[a-z0-9])?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" $sa) }}{{ fail "managedServiceCredentials.esoServiceAccount must be one exact ServiceAccount username" }}{{ end -}}
+{{- $sa -}}
+{{- end -}}
+{{- define "kube-dc.publicationWrites.handoff" -}}
+{{- if .Values.projectPolicies.protectManagedServices.publicationWritesJudgedByWebhook }}
+- name: publication-writes-judged-by-webhook
+  expression: >-
+    !(request.userInfo.username == '{{ include "kube-dc.publicationESO.serviceAccount" . }}' &&
+      ((request.resource.group == '' && request.resource.resource == 'secrets' && (!has(request.subResource) || request.subResource == '')) ||
+       (request.resource.group == 'external-secrets.io' && request.resource.resource == 'externalsecrets' && has(request.subResource) && request.subResource == 'status')))
+{{- end }}
+{{- end }}
+
+{{/*
+PAYG billing, per installation (billing.payg.enabled; unset means off).
+
+kube-dc.billing.paygEnabled is "true" or empty. kube-dc.billing.serviceURL and
+kube-dc.billing.caIssuerName are the backend's EFFECTIVE link to the billing
+service, and every template reads them instead of billing.service directly:
+
+- PAYG off: both are empty, whatever billing.service says. An installation
+  that bills elsewhere must not get half of PAYG -- a stray url would register
+  the admin policy routes and the tenant price quotes against a service that
+  bills nobody.
+- PAYG on, no url: the in-cluster metering deployment's billing API, verified
+  through the kube-dc-billing-ca-issuer ClusterIssuer unless caIssuer.name or
+  caSecretName names the CA some other way.
+- PAYG on, url set: that url, with caIssuer.name (or caSecretName) as given.
+
+The switch is TRI-STATE on purpose. Unset is off, but an installation that
+set billing.service.* before the switch existed was running PAYG; upgrading it
+with the switch unset would silently drop its billing wiring, routes and
+pages. So unset plus any billing.service link value fails the render and asks
+for an explicit true or false.
+
+Every nested map is read through `default dict`: an override that sets one of
+them to null must not turn into a nil-pointer template error.
+*/}}
+{{- define "kube-dc.billing.paygEnabled" -}}
+{{- $billing := .Values.billing | default dict -}}
+{{- $payg := $billing.payg | default dict -}}
+{{- $service := $billing.service | default dict -}}
+{{- $caIssuer := $service.caIssuer | default dict -}}
+{{- $explicit := and (hasKey $payg "enabled") (not (kindIs "invalid" $payg.enabled)) -}}
+{{- if not $explicit -}}
+{{- $set := "" -}}
+{{- if $service.url -}}{{- $set = "billing.service.url" -}}
+{{- else if $caIssuer.name -}}{{- $set = "billing.service.caIssuer.name" -}}
+{{- else if $service.caSecretName -}}{{- $set = "billing.service.caSecretName" -}}
+{{- end -}}
+{{- if $set -}}
+{{- fail (printf "%s is set: set billing.payg.enabled explicitly — true to keep PAYG, false to turn it off (see docs/platform/payg-billing.md)" $set) -}}
+{{- end -}}
+{{- else -}}
+{{- $value := toString $payg.enabled -}}
+{{- if not (has $value (list "true" "false")) -}}
+{{- fail (printf "billing.payg.enabled must be true or false, got %q" $value) -}}
+{{- end -}}
+{{- if eq $value "true" -}}
+true
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "kube-dc.billing.serviceURL" -}}
+{{- if include "kube-dc.billing.paygEnabled" . -}}
+{{- ((.Values.billing | default dict).service | default dict).url | default "https://kube-dc-metering.monitoring.svc.cluster.local:8443/internal/billing/v1" -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "kube-dc.billing.caIssuerName" -}}
+{{- if include "kube-dc.billing.paygEnabled" . -}}
+{{- $service := (.Values.billing | default dict).service | default dict -}}
+{{- $issuer := ($service.caIssuer | default dict).name -}}
+{{- if $issuer -}}
+{{- $issuer -}}
+{{- else if and (not $service.url) (not $service.caSecretName) -}}
+kube-dc-billing-ca-issuer
+{{- end -}}
+{{- end -}}
+{{- end -}}

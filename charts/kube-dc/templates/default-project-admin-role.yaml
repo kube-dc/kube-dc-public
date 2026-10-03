@@ -98,7 +98,7 @@ rules:
   resources: [virtualmachines, virtualmachineinstances]
   verbs: ["*"]
 - apiGroups: [subresources.kubevirt.io]
-  resources: [virtualmachineinstances/guestosinfo, virtualmachineinstances/console, virtualmachineinstances/vnc]
+  resources: [virtualmachineinstances/guestosinfo, virtualmachineinstances/filesystemlist, virtualmachineinstances/console, virtualmachineinstances/vnc]
   verbs: [get]
 - apiGroups: [subresources.kubevirt.io]
   resources: [virtualmachines/start, virtualmachines/stop, virtualmachines/restart, virtualmachines/addvolume, virtualmachines/removevolume, virtualmachines/migrate, virtualmachines/memorydump, virtualmachines/pause]
@@ -196,10 +196,19 @@ rules:
 # Managed services (kube-dc-services): the tenant-facing objects, same rights
 # as KdcDatabase. Placements are the hub's; readable so status makes sense.
 - apiGroups: [services.kube-dc.com]
-  resources: [managedservices, serviceoperations, servicebindings, servicecredentialpolicies]
+  resources: [managedservices, serviceoperations, servicebindings, servicecredentialpolicies, replicationgroups]
   verbs: [create, get, list, watch, delete, patch, update]
+# D1: a Project admin registers one of the Project's KdcClusters as a managed
+# services data plane with a ServiceDataPlaneGrant. The spec is immutable, so
+# no update or patch; the hub writes its status.
 - apiGroups: [services.kube-dc.com]
-  resources: [managedservices/status, serviceoperations/status, servicebindings/status, servicecredentialpolicies/status, serviceplacements, serviceplacements/status, servicebackups, servicebackups/status]
+  resources: [servicedataplanegrants]
+  verbs: [create, get, list, watch, delete]
+- apiGroups: [services.kube-dc.com]
+  resources: [servicedataplanegrants/status]
+  verbs: [get, list, watch]
+- apiGroups: [services.kube-dc.com]
+  resources: [managedservices/status, serviceoperations/status, servicebindings/status, servicecredentialpolicies/status, serviceplacements, serviceplacements/status, servicebackups, servicebackups/status, replicationgroups/status, topologychanges, topologychanges/status]
   verbs: [get, list, watch]
 # Database Engine Resources (CNPG + MariaDB operator)
 # `clusters` and `mariadbs` reads let the UI surface engine-side recovery
@@ -228,6 +237,13 @@ rules:
 # the backend; the backend re-uses the user's JWT against the K8s
 # API so these RBAC rules govern what tenants can do without the
 # OpenBao policy layer (defence in depth).
+# Archive rotation affects a shared Project claim and is admin-only. patch sets
+# spec.abandon, once (CEL keeps every other spec field immutable); the
+# kube-dc-archive-rotation-finalizer policy keeps the retirement finalizer
+# with the rotation controller. No update: nothing else is writable.
+- apiGroups: [security.kube-dc.com]
+  resources: [objectbucketkeyrotations]
+  verbs: [create, get, list, watch, delete, patch]
 - apiGroups: [security.kube-dc.com]
   resources: [managedsecrets, managedcertificates, kmskeys, databasecredentialpolicies]
   verbs: ["*"]
@@ -299,7 +315,7 @@ rules:
   resources: [virtualmachines, virtualmachineinstances]
   verbs: ["*"]
 - apiGroups: [subresources.kubevirt.io]
-  resources: [virtualmachineinstances/guestosinfo, virtualmachineinstances/console, virtualmachineinstances/vnc]
+  resources: [virtualmachineinstances/guestosinfo, virtualmachineinstances/filesystemlist, virtualmachineinstances/console, virtualmachineinstances/vnc]
   verbs: [get]
 - apiGroups: [subresources.kubevirt.io]
   resources: [virtualmachines/start, virtualmachines/stop, virtualmachines/restart, virtualmachines/addvolume, virtualmachines/removevolume, virtualmachines/migrate, virtualmachines/memorydump, virtualmachines/pause]
@@ -378,10 +394,14 @@ rules:
 # Managed services (kube-dc-services): the tenant-facing objects, same rights
 # as KdcDatabase. Placements are the hub's; readable so status makes sense.
 - apiGroups: [services.kube-dc.com]
-  resources: [managedservices, serviceoperations, servicebindings, servicecredentialpolicies]
+  resources: [managedservices, serviceoperations, servicebindings, servicecredentialpolicies, replicationgroups]
   verbs: [create, get, list, watch, delete, patch, update]
+# D1: grants are the Project admin's; other roles read them.
 - apiGroups: [services.kube-dc.com]
-  resources: [managedservices/status, serviceoperations/status, servicebindings/status, servicecredentialpolicies/status, serviceplacements, serviceplacements/status, servicebackups, servicebackups/status]
+  resources: [servicedataplanegrants, servicedataplanegrants/status]
+  verbs: [get, list, watch]
+- apiGroups: [services.kube-dc.com]
+  resources: [managedservices/status, serviceoperations/status, servicebindings/status, servicecredentialpolicies/status, serviceplacements, serviceplacements/status, servicebackups, servicebackups/status, replicationgroups/status, topologychanges, topologychanges/status]
   verbs: [get, list, watch]
 # Database Engine Resources (CNPG + MariaDB operator)
 # `clusters` and `mariadbs` reads let the UI surface engine-side recovery
@@ -481,7 +501,7 @@ rules:
   resources: [virtualmachines, virtualmachineinstances]
   verbs: [get, list, watch]
 - apiGroups: [subresources.kubevirt.io]
-  resources: [virtualmachineinstances/guestosinfo, virtualmachineinstances/console, virtualmachineinstances/vnc]
+  resources: [virtualmachineinstances/guestosinfo, virtualmachineinstances/filesystemlist, virtualmachineinstances/console, virtualmachineinstances/vnc]
   verbs: [get]
 # CDI - read only
 - apiGroups: [cdi.kubevirt.io]
@@ -552,7 +572,7 @@ rules:
   verbs: [get, list, watch]
 # Managed services (kube-dc-services) - read only
 - apiGroups: [services.kube-dc.com]
-  resources: [managedservices, managedservices/status, serviceoperations, serviceoperations/status, servicebindings, servicebindings/status, servicecredentialpolicies, servicecredentialpolicies/status, serviceplacements, serviceplacements/status, servicebackups, servicebackups/status]
+  resources: [replicationgroups, managedservices, managedservices/status, serviceoperations, serviceoperations/status, servicebindings, servicebindings/status, servicecredentialpolicies, servicecredentialpolicies/status, serviceplacements, serviceplacements/status, servicebackups, servicebackups/status, replicationgroups/status, topologychanges, topologychanges/status, servicedataplanegrants, servicedataplanegrants/status]
   verbs: [get, list, watch]
 # Match legacy credential-policy access: project-manager may pause or adjust
 # an existing schedule, but may not create/delete policy objects.
@@ -648,7 +668,7 @@ rules:
   resources: [virtualmachines, virtualmachineinstances]
   verbs: [get, list]
 - apiGroups: [subresources.kubevirt.io]
-  resources: [virtualmachineinstances/guestosinfo]
+  resources: [virtualmachineinstances/guestosinfo, virtualmachineinstances/filesystemlist]
   verbs: [get]
 # CDI - read only
 - apiGroups: [cdi.kubevirt.io]
@@ -718,7 +738,7 @@ rules:
 # Service metadata is readable like the legacy database metadata; no values,
 # engine writes, placement mutation or credential operations are granted.
 - apiGroups: [services.kube-dc.com]
-  resources: [managedservices, managedservices/status, serviceoperations, serviceoperations/status, servicebindings, servicebindings/status, servicecredentialpolicies, servicecredentialpolicies/status, serviceplacements, serviceplacements/status, servicebackups, servicebackups/status]
+  resources: [replicationgroups, managedservices, managedservices/status, serviceoperations, serviceoperations/status, servicebindings, servicebindings/status, servicecredentialpolicies, servicecredentialpolicies/status, serviceplacements, serviceplacements/status, servicebackups, servicebackups/status, replicationgroups/status, topologychanges, topologychanges/status, servicedataplanegrants, servicedataplanegrants/status]
   verbs: [get, list, watch]
 # Database Engine Resources - read only
 - apiGroups: [postgresql.cnpg.io]
