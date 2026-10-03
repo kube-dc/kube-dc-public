@@ -46,6 +46,14 @@ The pool does not supply a Kubernetes or application credential to jobs.
   review your quota. A later workload can still consume free quota before a
   worker starts; in that case, the pool reports **Capacity unavailable**.
 
+- Creation also checks whether a recently observed Linux amd64 node can fit
+  one worker, its builder, and listener headroom. A default 1 vCPU / 2 GiB
+  Buildx pool needs at least 1.7 vCPU / 3.25 GiB free on one eligible node;
+  a 500m CPU / 1 GiB pool needs 1.2 vCPU / 2.25 GiB. Free resources spread
+  across several nodes do not satisfy this check. Idle pools keep capacity
+  holds until deletion releases their reservation. This admission check does
+  not guarantee future scheduling or simultaneous replacement workers.
+
 ## Create a pool in the console
 
 1. Open your project, then select **Managed services → New service → GitHub
@@ -247,6 +255,7 @@ reported target, or temporarily route the workflow to another runner you control
 | Job remains queued | Match `runs-on` to **Connect**, check **Ready**, available worker slots, and starting-worker events. GitHub owns the actual queue. |
 | Service reports **Capacity unavailable** | A worker pod could not start. Check both project and organization CPU/memory quota against the pool's Settings reservation. Reduce worker size or ask Kube-DC support to review available capacity, then rerun the GitHub job. |
 | Service is **Rejected** with `OrganizationQuotaExceeded` | The Organization cannot reserve the active and replacement workers for this pool. Reduce worker size, free capacity held by another pool, or ask Kube-DC support to review quota; then retry creation. |
+| Service is **Pending** with `NoQualifiedDataPlane` and insufficient physical node headroom | No eligible node currently fits the worker, builder and listener footprint. More aggregate quota alone does not resolve this. Choose a smaller worker when creating a replacement pool, or ask Kube-DC support to review node capacity and idle reservations. Keep the OpenBao source until the old pool finishes normal deletion. |
 | Buildx fails to start | Check project and organization quota, builder image pull, and temporary disk; compare the Settings reservation with the available limits. |
 | `docker build` or Compose fails | Use `docker buildx build --push` for a Dockerfile, or choose a different runtime for Compose/services. |
 | Service reports `WorkerEvicted` or `WorkerExecutionFailed` | Check project **Events** and the GitHub job. The workspace limit is 2 GiB and the shared process/thread limit is 4,096. If the interrupted job remains running at GitHub, cancel it there before retrying. The service reports the failure while ARC completes registration cleanup. |
