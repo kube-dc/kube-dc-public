@@ -19,6 +19,7 @@ package rke2
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -46,8 +47,10 @@ const defaultRKE2Version = "v1.36.3+rke2r1"
 
 // InstallOptions parameterizes a single control-plane node install.
 type InstallOptions struct {
-	SSH  ports.SSHClient
-	Host ports.SSHHost
+	// BeforeConfigure runs after private staging and before any durable host changes.
+	BeforeConfigure func(context.Context) error
+	SSH             ports.SSHClient
+	Host            ports.SSHHost
 
 	// NodeName is the RKE2 node-name (also the kube-ovn master label
 	// target). Required — must match what the operator uses elsewhere
@@ -75,6 +78,7 @@ type InstallOptions struct {
 
 	// RKE2Version overrides defaultRKE2Version.
 	RKE2Version string
+	Artifacts   *ArtifactSet
 	// TrustedCA is the platform's private CA, installed into this node's OS
 	// trust store before RKE2 starts. Nil = public CAs only.
 	//
@@ -242,13 +246,22 @@ func (o InstallOptions) isJoin() bool { return o.JoinToken != "" && o.JoinServer
 // With JoinToken+JoinServer set it joins the node as an ADDITIONAL
 // control-plane instead (same embedded install-server.sh, driven with
 // its two join positional args).
-func Install(ctx context.Context, o InstallOptions) error {
+func Install(ctx context.Context, o InstallOptions) (resultErr error) {
 	out := o.Out
 	if out == nil {
 		out = io.Discard
 	}
 	if err := o.validate(); err != nil {
 		return err
+	}
+	if o.Artifacts != nil {
+		version := o.RKE2Version
+		if version == "" {
+			version = defaultRKE2Version
+		}
+		if err := o.Artifacts.Validate(version); err != nil {
+			return err
+		}
 	}
 
 	// Resolve the node's primary internal IP if the operator didn't
@@ -287,6 +300,30 @@ func Install(ctx context.Context, o InstallOptions) error {
 		}
 	}
 
+	if o.Artifacts != nil {
+		version := o.RKE2Version
+		if version == "" {
+			version = defaultRKE2Version
+		}
+		artifactEnv, cleanup, err := stageArtifacts(ctx, o.SSH, o.Host, *o.Artifacts, version, o.TrustedCA)
+		if cleanup != nil {
+			defer func() { resultErr = errors.Join(resultErr, cleanup()) }()
+		}
+		if err != nil {
+			return err
+		}
+		for key, value := range artifactEnv {
+			env[key] = value
+		}
+	}
+	if o.BeforeConfigure != nil {
+		if err := o.BeforeConfigure(ctx); err != nil {
+			return err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	// Push the CA bundle first: the installer refuses to continue if the file
 	// it was told about is missing, which is the right failure but a confusing
 	// one to hit because of ordering.
@@ -303,7 +340,11 @@ func Install(ctx context.Context, o InstallOptions) error {
 
 	// Push the installer.
 	fmt.Fprintf(out, "[install] pushing RKE2 installer to %s\n", remoteScriptPath)
-	if err := o.SSH.Put(ctx, o.Host, remoteScriptPath, installServerScript, 0o755); err != nil {
+	scriptPath := remoteScriptPath
+	if o.Artifacts != nil {
+		scriptPath = env["INSTALL_RKE2_ARTIFACT_PATH"] + "/install-server.sh"
+	}
+	if err := o.SSH.Put(ctx, o.Host, scriptPath, installServerScript, 0o755); err != nil {
 		return fmt.Errorf("rke2 install: push installer: %w", err)
 	}
 
@@ -319,10 +360,11 @@ func Install(ctx context.Context, o InstallOptions) error {
 	} else {
 		fmt.Fprintln(out, "[install] running RKE2 installer (writes config, installs + starts rke2-server — ~2-4 min)...")
 	}
-	cmd := remoteInstallCmd(env, remoteScriptPath)
+	var joinArgs []string
 	if o.isJoin() {
-		cmd += " " + shellQuote(o.JoinToken) + " " + shellQuote(o.JoinServer)
+		joinArgs = []string{o.JoinToken, o.JoinServer}
 	}
+	cmd := reviewedScriptCommand(env, scriptPath, installServerScript, o.Artifacts != nil, joinArgs...)
 	res, err := o.SSH.Run(ctx, o.Host, cmd)
 	if len(res) > 0 {
 		fmt.Fprintln(out, indent(redactToken(string(res), o.JoinToken), "    | "))

@@ -19,6 +19,7 @@ import (
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/discover"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/mock"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
+	"k8s.io/client-go/rest"
 )
 
 // ErrRealAdaptersNotReady is preserved as a sentinel for callers that
@@ -54,6 +55,28 @@ func newRealSession(opts Options) (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap: build flux adapter: %w", err)
 	}
+	return assembleRealSession(opts, k8sClient, fluxClient, false), nil
+}
+
+// NewRealSessionWithConfig builds real ports from a verified API transport.
+// It always ignores KUBE_DC_MOCK. The explicit kubeconfig path is retained for
+// subprocess fallbacks; callers must verify that file separately.
+func NewRealSessionWithConfig(opts Options, cfg *rest.Config) (*Session, error) {
+	if opts.Kubeconfig == "" || cfg == nil {
+		return nil, fmt.Errorf("bootstrap: verified child session needs a kubeconfig path and API transport")
+	}
+	k8sClient, err := k8s.NewWithConfig(cfg, opts.Kubeconfig)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap: build child k8s adapter: %w", err)
+	}
+	fluxClient, err := flux.NewWithConfig(cfg, opts.Kubeconfig)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap: build child flux adapter: %w", err)
+	}
+	return assembleRealSession(opts, k8sClient, fluxClient, true), nil
+}
+
+func assembleRealSession(opts Options, k8sClient ports.K8sClient, fluxClient ports.FluxClient, pinKubeconfig bool) *Session {
 
 	// ScriptRunner needs both fleet + kube-dc roots. The kube-dc repo
 	// is resolved from the operator's environment ($KUBE_DC_REPO) or
@@ -62,6 +85,9 @@ func newRealSession(opts Options) (*Session, error) {
 	// adapter returns a clear "configure --kube-dc-repo" error if
 	// invoked unconfigured.
 	scripts := script.New(opts.FleetRepoPath, os.Getenv("KUBE_DC_REPO"), nil)
+	if pinKubeconfig {
+		scripts = scripts.WithPinnedKubeconfig(opts.Kubeconfig)
+	}
 
 	_, cancel := context.WithCancel(context.Background())
 	return &Session{
@@ -79,7 +105,7 @@ func newRealSession(opts Options) (*Session, error) {
 		SSH:       ssh.New(),
 		Probe:     nil, // discover layer constructs probes on demand
 		cancel:    cancel,
-	}, nil
+	}
 }
 
 // newMockSession wires the mock package's Session into the parent

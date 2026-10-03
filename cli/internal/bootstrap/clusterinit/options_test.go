@@ -81,10 +81,10 @@ func TestValidate_Structural(t *testing.T) {
 			o.RookOSDNode = ""
 			o.RookOSDSizeGB = 500
 		}, "rook-osd-node"},
-		{"multi-node needs exactly 3 ceph-nodes", func(o *InitOptions) {
+		{"multi-node needs at least one ceph-node", func(o *InitOptions) {
 			o.RookMode = RookCephMultiNode
-			o.CephNodes = map[string]string{"srv6": "sdb", "srv7": "sdb"}
-		}, "exactly 3"},
+			o.CephNodes = nil
+		}, "1 to 3"},
 		{"pvc needs storage-class", func(o *InitOptions) { o.RookMode = RookCephPVC }, "ceph-storage-class"},
 		// Semantic value validation (reviewer P2 2026-07-04): every
 		// companion value lands verbatim in cluster-config.env, so
@@ -257,15 +257,31 @@ func TestValidate_ObjectStorageMode(t *testing.T) {
 // TestValidate_ObjectStorageMode_CompanionsStillEnforced — OS-2
 // removed the rook-* fail-closed gate, but the structural companion
 // requirements stay: an incomplete multi-node config must keep
-// erroring with the specific "exactly 3" message, never slip through
+// erroring with the specific "1 to 3" message, never slip through
 // to a scaffold that would write CEPH_NODE_3= (empty) into
 // cluster-config.env.
 func TestValidate_ObjectStorageMode_CompanionsStillEnforced(t *testing.T) {
 	o := validBase()
 	o.RookMode = RookCephMultiNode // no CephNodes
 	err := o.Validate()
-	if !errors.Is(err, ErrValidation) || !strings.Contains(err.Error(), "exactly 3") {
-		t.Fatalf("expected structural 'exactly 3' error, got %v", err)
+	if !errors.Is(err, ErrValidation) || !strings.Contains(err.Error(), "1 to 3") {
+		t.Fatalf("expected structural '1 to 3' error, got %v", err)
+	}
+}
+
+func TestLocalRawDeviceDoesNotRequireBackingFileSize(t *testing.T) {
+	for _, tc := range []struct {
+		device string
+		size   int
+		valid  bool
+	}{
+		{"sdb", 0, true}, {"/dev/nvme1n1", 0, true}, {"sdb", -1, false}, {"loop0", 0, false}, {"", 0, false}, {"loop0", 50, true},
+	} {
+		o := validBase()
+		o.RookMode, o.RookOSDNode, o.RookOSDDevice, o.RookOSDSizeGB = RookCephLocal, "server-1", tc.device, tc.size
+		if err := o.Validate(); (err == nil) != tc.valid {
+			t.Errorf("device=%q size=%d: %v", tc.device, tc.size, err)
+		}
 	}
 }
 

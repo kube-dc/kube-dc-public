@@ -1,8 +1,9 @@
 # Classes and plans
 
-Every `ManagedService` names three catalog entries that the provider defines:
-a class, a plan and a connectivity class. They decide what kind of service you
-get, what it may do, and how your workloads reach it.
+As a Project member, use this reference to choose a service class, plan, and connectivity class.
+Your provider publishes these catalog entries. They define the service, its allowed operations, and how applications reach it.
+
+Each `ManagedService` selects these entries:
 
 | Catalog entry | Field on `ManagedService` | What it decides |
 |---------------|---------------------------|-----------------|
@@ -147,7 +148,7 @@ recorded and then refused in status:
 | `ServiceOperation` | `status.phase` is `Rejected` | `PlanNotEntitled`, with a message such as `plan <plan> does not allow <operation type>` |
 | `ServiceOperation` | `status.phase` is `AwaitingApproval` | `ApprovalRequired`: the plan requires provider approval |
 
-See [Create a PostgreSQL service](postgresql-create.md#common-refusals) for
+See [Common refusals](managed-services-status.md#common-refusals) for
 the full list.
 
 ## When the catalog changes

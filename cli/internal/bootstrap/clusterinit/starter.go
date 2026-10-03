@@ -479,6 +479,10 @@ func starterSchemaVersion(dir string) (version int, manifestSha string) {
 // no manifest) passes unverified — the v1 population. Closing that
 // residual hole needs artifact signing (PRD Phase 1).
 func verifyStarterManifest(dir string) error {
+	return verifyStarterManifestExcept(dir, nil)
+}
+
+func verifyStarterManifestExcept(dir string, generated map[string]bool) error {
 	schema, wantManifestSha := starterSchemaVersion(dir)
 	manifestPath := filepath.Join(dir, ".starter-manifest")
 	raw, err := os.ReadFile(manifestPath)
@@ -583,7 +587,7 @@ func verifyStarterManifest(dir string) error {
 				note("walk error under %s: %v", tree, rerr)
 				return nil //nolint:nilerr // recorded as a problem; keep scanning
 			}
-			if _, ok := want[filepath.ToSlash(rel)]; !ok {
+			if _, ok := want[filepath.ToSlash(rel)]; !ok && !generated[filepath.ToSlash(rel)] {
 				note("unlisted file: %s", filepath.ToSlash(rel))
 			}
 			return nil
@@ -596,6 +600,26 @@ func verifyStarterManifest(dir string) error {
 		return fmt.Errorf("%s", strings.Join(problems, "; "))
 	}
 	return nil
+}
+
+// VerifyReviewedStarter requires the baseline contract for guided review.
+// Legacy starter acquisition retains its compatibility path.
+func VerifyReviewedStarter(dir string) error {
+	schema, _ := starterSchemaVersion(dir)
+	if schema < 2 || !StarterShapePresent(dir) {
+		return fmt.Errorf("review requires a complete schema-v2 starter with a manifest")
+	}
+	generated := map[string]bool{}
+	const credential = "platform/registry-depot/secret.enc.yaml"
+	if _, err := os.Lstat(filepath.Join(dir, credential)); err == nil {
+		if err := verifyRegistryDepotCredential(dir); err != nil {
+			return err
+		}
+		generated[credential] = true
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	return verifyStarterManifestExcept(dir, generated)
 }
 
 // isOctalMode accepts the manifest's normalized mode field (3-4 octal

@@ -14,6 +14,7 @@ package installrun
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image/color"
 	"io"
@@ -22,10 +23,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 	bootlog "github.com/shalb/kube-dc/cli/internal/bootstrap/log"
@@ -148,6 +151,8 @@ type tickMsg struct{}
 
 const spinnerInterval = 120 * time.Millisecond
 
+const maxVisibleLogLines = 2000
+
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 var (
@@ -253,13 +258,29 @@ func (w *lineWriter) Flush() error {
 }
 
 func (w *lineWriter) emitLocked(line string) {
-	line = bootlog.RedactStreamLine(line)
+	line = bootlog.RedactStreamLine(safeLogText(line))
 	if w.file != nil && w.err == nil {
 		if _, err := fmt.Fprintln(w.file, line); err != nil {
 			w.err = err
 		}
 	}
 	sendMsg(w.ctx, w.sub, logMsg{line: line})
+}
+
+// safeLogText removes terminal commands from remote output before it reaches
+// either the alternate screen or a transcript viewed in a terminal. Keep
+// normal Unicode and tabs so diagnostic text remains readable.
+func safeLogText(s string) string {
+	s = ansi.Strip(s)
+	return strings.Map(func(r rune) rune {
+		if r == '\t' {
+			return r
+		}
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 func sendMsg(ctx context.Context, sub chan<- tea.Msg, msg tea.Msg) {
@@ -373,6 +394,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitForMsg(m.sub)
 	case logMsg:
 		m.logs = append(m.logs, msg.line)
+		if len(m.logs) > maxVisibleLogLines {
+			copy(m.logs, m.logs[1:])
+			m.logs = m.logs[:maxVisibleLogLines]
+		}
 		return m, waitForMsg(m.sub)
 	case finishedMsg:
 		m.finished = true
@@ -544,7 +569,11 @@ func (m *model) headline() string {
 func (m *model) statusPill() string {
 	switch {
 	case m.finished && m.aborting:
-		return lipgloss.NewStyle().Foreground(colSkip).Render("◌ aborted")
+		return lipgloss.NewStyle().Foreground(colSkip).Render("◌ stopped")
+	case m.finished && errors.Is(m.runErr, context.Canceled):
+		return lipgloss.NewStyle().Foreground(colSkip).Render("◌ stopped")
+	case m.finished && actionRequired(m.runErr):
+		return lipgloss.NewStyle().Foreground(colSkip).Render("! action required")
 	case m.finished && m.runErr != nil:
 		return lipgloss.NewStyle().Foreground(colFail).Render("✗ failed")
 	case m.finished:
@@ -563,9 +592,15 @@ func (m *model) footerText() string {
 	}
 	if m.finished {
 		if m.aborting {
-			return "◌ install aborted after cleanup — scroll ↑↓ to review · press q to exit" + logHint
+			return "◌ installation stopped — check completed and uncertain effects · press q to exit" + logHint
+		}
+		if errors.Is(m.runErr, context.Canceled) {
+			return "◌ installation stopped — check completed and uncertain effects · press q to exit" + logHint
 		}
 		if m.runErr != nil {
+			if actionRequired(m.runErr) {
+				return "! action required — review the outstanding steps and re-run after fixing them · press q to exit" + logHint
+			}
 			return "✗ install failed — fix the failed step and rerun the same command (resumes) · press q to exit" + logHint
 		}
 		return "✓ install complete — scroll ↑↓ to review · press q to exit" + logHint
@@ -575,6 +610,11 @@ func (m *model) footerText() string {
 	}
 	done, total := m.progress()
 	return fmt.Sprintf("%d/%d done · ↑↓ scroll · pgup/pgdn page · G follow · q abort%s", done, total, logHint)
+}
+
+func actionRequired(err error) bool {
+	var required *clusterinit.ActionRequiredError
+	return errors.As(err, &required)
 }
 
 func (m *model) progress() (done, total int) {
@@ -666,7 +706,7 @@ func truncate(s string, max int) string {
 }
 
 func summarize(s string) string {
-	s = strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
+	s = strings.TrimSpace(bootlog.RedactStreamLine(safeLogText(strings.ReplaceAll(s, "\n", " "))))
 	return truncate(s, 120)
 }
 

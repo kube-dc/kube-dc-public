@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -174,16 +173,12 @@ accepts a --ssh-key flag — operators put keys in their ssh config.`,
 	return cmd
 }
 
-// parseSSHHostArg splits `user@host` into an SSHHost struct. When
-// there's no `@`, the whole string becomes the Alias (which the
-// port adapter resolves via ~/.ssh/config). Empty user defaults to
-// the adapter's fallback (`root` per port docs).
+// parseSSHHostArg resolves [user@]host[:port] and keeps ssh_config aliases
+// available for both bare and user-qualified targets.
 func parseSSHHostArg(raw string) ports.SSHHost {
-	if i := strings.Index(raw, "@"); i > 0 {
-		return ports.SSHHost{
-			User:     raw[:i],
-			Hostname: raw[i+1:],
-		}
+	host, err := ports.ParseSSHHostTarget(raw)
+	if err != nil {
+		return ports.SSHHost{Alias: raw}
 	}
-	return ports.SSHHost{Alias: raw}
+	return host
 }

@@ -11,6 +11,7 @@ const sidebars: SidebarsConfig = {
         'quickstart',
         'installation-overview',
         'installation-guide',
+        'installer-network-layouts',
         'restricted-egress-operation',
       ],
     },
@@ -107,8 +108,10 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       items: [
         'observability',
+        'fleet-alert-notifications',
         'upgrading-management-cluster',
         'billing-plans-configuration',
+        'payg-billing',
         'platform-api',
       ],
     },

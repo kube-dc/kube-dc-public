@@ -1,14 +1,9 @@
 # PostgreSQL operations
 
-A `ServiceOperation` asks the platform to perform one action on a service, such
-as a backup, a scale change, a switchover or an upgrade. Each operation is an
-immutable record: you create it once, the platform checks it against your plan
-and the service's state, runs it, and records the outcome in its status.
-
-This page explains how operations run and lists every PostgreSQL operation
-type with its parameters, the plan fields it needs and its limits. To restore a
-backup into a new service, submit a `RestoreToNew` operation with `spec.restore`.
-See [Backups and restore](postgresql-backup-restore.md).
+As a Project administrator or developer, use this reference to change PostgreSQL capacity, settings, topology, and engine versions.
+Each operation lists its parameters, plan requirements, and limits.
+For backups and recovery, see [PostgreSQL backups and recovery](postgresql-backup-restore.md).
+For the shared request lifecycle, see [Request a managed service operation](managed-services-operations.md).
 
 ## Before you begin
 
@@ -64,131 +59,34 @@ kubectl get serviceoperation orders-db-parameters-1 -n my-project -w
 |-------|----------|-------------|
 | `metadata.name` | Yes | A name for this one request |
 | `spec.serviceRef.name` | Yes | The `ManagedService` name |
-| `spec.serviceUID` | Yes | The `ManagedService` UID. See [Service identity](#service-identity) |
+| `spec.serviceUID` | Yes | The `ManagedService` UID. See [Service identity](managed-services.md#the-service-uid) |
 | `spec.type` | Yes | The operation type. See [Operation types](#operation-types) |
 | `spec.idempotencyKey` | Yes | 1 to 128 characters that identify this request across retries |
 | `spec.parameters` | Depends on the type | The type's parameters |
-| `spec.execution.window` | No | `Immediate`, the default, or `NextPlanWindow`. See [Execution windows](#execution-windows) |
+| `spec.execution.window` | No | `Immediate`, the default, or `NextPlanWindow`. See [Execution windows](managed-services-operations.md#approval-and-execution-windows) |
 
 The whole `spec` is immutable. An attempt to change it is refused with
 `ServiceOperation spec is immutable`.
 
 ## How an operation runs
 
-| `status.phase` | Set when |
-|----------------|----------|
-| `Pending` | The operation waits. `status.reason` names the cause, for example `OperationConflict` (another operation of the same group is active), `AwaitingMaintenanceWindow`, or `ClassNotVerified` (the class or plan is disabled or not verified) |
-| `Preflight` | The service is not yet placed with an accepted configuration (`PendingCommit`), or capacity for the operation is still being requested |
-| `AwaitingApproval` | The plan does not auto-approve this type (`ApprovalRequired`) |
-| `Accepted` | The queueing checks described below passed and the operation is queued for execution. Checks at execution time can still refuse it |
-| `Running` | Execution has started |
-| `Succeeded` | Execution completed. `status.reason` is `Completed` |
-| `Rejected` | A check refused the operation. `status.reason` names the check. A service identity or plan entitlement check can also reject an operation after it was accepted, and execution can begin before the displayed phase shows `Running`, so `Rejected` alone does not prove that nothing was executed |
-| `Failed` | Execution started and ended without success. `status.reason` and `status.message` say why |
-| `Cancelled` | The operation was withdrawn before execution |
+See [Operation phases and results](managed-services-operations.md#read-the-result).
+PostgreSQL checks plan bounds and engine health before execution and before each change.
+A refusal after execution starts normally ends in `Failed` with reason `PreflightFailed`.
+An in-place restore that has started recovery can remain `Running` while it retries. Keep that operation and contact your provider.
 
-Before an operation is queued, the platform checks, in this order: the service
-identity, a cancel request, whether the plan allows the type, the idempotency
-key, whether the service is placed, whether the service is frozen, other active
-operations of the same group, approval, and the execution window.
+<span id="service-identity" />
+<span id="retries-and-idempotency" />
+<span id="execution-windows" />
+<span id="approval" />
+<span id="cancel-an-operation" />
 
-Checks specific to the type, such as plan bounds and the health of the service,
-run before execution starts and again immediately before every change the
-operation makes:
+Shared request rules apply to PostgreSQL:
 
-- When a check refuses before execution starts, the operation ends `Rejected`
-  with the check's reason, for example `StorageNotExpandable`.
-- When a check refuses after execution has started, the operation normally ends
-  `Failed` with reason `PreflightFailed`, and `status.message` names the check.
-  An in-place restore that has begun recovery is the exception: it can stay
-  `Running` while it retries. Keep that operation and ask your provider.
-
-Read the outcome:
-
-```bash
-kubectl get serviceoperation orders-db-parameters-1 -n my-project \
-  -o jsonpath='phase={.status.phase} reason={.status.reason}{"\n"}message={.status.message}{"\n"}started={.status.startedAt} completed={.status.completedAt}{"\n"}result={.status.result}{"\n"}'
-kubectl get events -n my-project --field-selector involvedObject.name=orders-db-parameters-1
-```
-
-| Field | Contents |
-|-------|----------|
-| `status.reason`, `status.message` | Why the operation is in its phase |
-| `status.acceptedAt`, `status.startedAt`, `status.completedAt` | Timestamps |
-| `status.checkpoints` | Steps the operation has recorded |
-| `status.result` | A bounded result map. Keys that look like passwords, secrets or tokens are removed |
-
-After an operation succeeds, values it changed appear in the service's
-`status.effectiveConfiguration`, not in `spec.parameters`. Do not copy them
-back into the manifest.
-
-### Service identity
-
-- If `serviceUID` does not match the current service of that name, the
-  operation is `Rejected` with `ServiceIdentityChanged`. Create a new operation
-  for the new service.
-- Every operation requires `serviceUID`. Read the UID before you submit the request.
-  For `RestoreToNew`, use the historical source UID from the selected backup record.
-
-### Retries and idempotency
-
-- To retry a submission whose result you did not see, apply the same manifest
-  again, with the same name and `idempotencyKey`. The existing record is kept
-  and the action is not repeated.
-- A new operation with the same `idempotencyKey` as an earlier operation on the
-  same service is `Rejected` with `OperationConflict`, unless the earlier one
-  ended `Failed` or `Rejected`.
-- Before you create a new operation after `Failed` or `Rejected`, make sure the
-  earlier one did not already make changes: execution can begin before the
-  displayed phase shows `Running`. When you cannot tell, keep the operation and
-  ask your provider for its execution outcome. When retrying is safe, fix the
-  cause and create a new operation with a new name and a new `idempotencyKey`.
-- An accepted operation is not rejected because its result is slow to appear; it
-  stays queued.
-- A Project identity can delete an operation record only after it reaches
-  `Succeeded`, `Failed`, `Rejected` or `Cancelled`.
-
-### Execution windows
-
-| `execution.window` | When the operation may start |
-|--------------------|------------------------------|
-| `Immediate` | As soon as its checks pass |
-| `NextPlanWindow` | Inside the plan's recurring maintenance window. Until then the operation is `Pending` with reason `AwaitingMaintenanceWindow`, and the message names the window and the time until it opens |
-
-The plan's `maintenance` field defines the window with `maintenance.day` (`Mon`
-to `Sun`, or `Any`), `maintenance.startHour` in UTC and
-`maintenance.durationMinutes`. If your plan has no `maintenance` window, an
-operation with `NextPlanWindow` is `Rejected` with `PlanNotEntitled`. The
-approval check comes before the window check, so neither window skips
-approval.
-
-### Approval
-
-Types listed in the plan's `operations.autoApprove` run without approval. Every
-other allowed type stops in `AwaitingApproval` with reason `ApprovalRequired`
-before it is queued.
-
-Approval belongs to your provider. The status message names an approval
-annotation, but admission refuses that annotation from Project identities. Ask
-your provider to approve the operation, or cancel it if you no longer need it.
-
-### Cancel an operation
-
-You can ask to withdraw an operation you created until it starts running:
-
-```bash
-kubectl annotate serviceoperation orders-db-parameters-1 -n my-project services.kube-dc.com/cancel=true
-```
-
-- If execution has not started, the operation ends `Cancelled` with reason
-  `Cancelled` and the message `withdrawn before execution`.
-- A `Running` operation continues and cannot be cancelled.
-- If execution has advanced before the operation's displayed phase caught up,
-  the cancel request can be refused with a message that starts with
-  `cancel refused:`. The operation then continues.
-- Operations created by a `ServiceCredentialPolicy` carry the label
-  `services.kube-dc.com/managed-by`, and Project identities cannot change them,
-  so you cannot cancel them.
+- [Pin the service UID](managed-services.md#the-service-uid) before submitting a request.
+- [Retry with the same name and key](managed-services-operations.md#retries-and-idempotency) when a submission's outcome is uncertain.
+- [Check approval and execution windows](managed-services-operations.md#approval-and-execution-windows) when a request waits.
+- [Request cancellation](managed-services-operations.md#cancel-a-waiting-operation) before execution starts.
 
 ### Operations that wait for each other
 

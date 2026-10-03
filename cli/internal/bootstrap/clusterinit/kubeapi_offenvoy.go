@@ -13,7 +13,7 @@ import (
 // the starter left it as the CHANGEME placeholder.
 //
 // Off-Envoy kube-api is the default management-API front door on every new
-// cluster (front-door/components/kube-api-off-envoy): a selectorless
+// cluster (front-door/components/kube-api-native-endpoints): a Pod-selected
 // ClusterIP + externalIPs Service on :6443 whose externalIP is
 // ${KUBE_API_ARRIVAL_IP} — the address external kube-api arrives on at node
 // PREROUTING. add-cluster.sh already sets that to the node's own address on a

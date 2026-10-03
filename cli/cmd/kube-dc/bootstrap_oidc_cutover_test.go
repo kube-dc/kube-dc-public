@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/oidccutover"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
 
 // The cutover became an automatic finalize step because operators did not know
@@ -48,6 +50,38 @@ func TestOIDCCutoverSSHUser(t *testing.T) {
 	}
 	if got := oidcCutoverSSHUser(nil); got != "" {
 		t.Fatalf("oidcCutoverSSHUser(nil) = %q, want empty", got)
+	}
+}
+
+func TestFinalizeCutoverUsesInstallSSHTargetsWithoutDroppingNodes(t *testing.T) {
+	nodes := []oidccutover.Node{
+		{Name: "master-1", Host: ports.SSHHost{Hostname: "10.77.0.110"}},
+		{Name: "master-2", Host: ports.SSHHost{Hostname: "10.77.0.111"}},
+		{Name: "master-3", Host: ports.SSHHost{Hostname: "10.77.0.112"}},
+	}
+	o := &clusterinit.InitOptions{
+		PrimaryNode:  "master-1",
+		SSHHost:      "c08-primary",
+		NodeSSHHosts: map[string]string{"master-2": "ubuntu@192.0.2.22", "master-3": "c08-third"},
+	}
+	got := overrideFinalizeCutoverHosts(nodes, o)
+	if len(got) != 3 || got[0].Host.Alias != "c08-primary" ||
+		got[1].Host.Alias != "192.0.2.22" || got[1].Host.User != "ubuntu" ||
+		got[2].Host.Alias != "c08-third" {
+		t.Fatalf("cutover did not retain all live nodes with the install's SSH routes: %+v", got)
+	}
+	sole := overrideFinalizeCutoverHosts([]oidccutover.Node{{Name: "master-1", Host: ports.SSHHost{Hostname: "10.77.0.110"}}},
+		&clusterinit.InitOptions{SSHHost: "c08-primary"})
+	if sole[0].Host.Alias != "c08-primary" {
+		t.Fatalf("single-node cutover ignored init --ssh-host: %+v", sole)
+	}
+	alias := overrideFinalizeCutoverHosts([]oidccutover.Node{
+		{Name: "master-1", Host: ports.SSHHost{Hostname: "10.77.0.110"}},
+		{Name: "master-2", Host: ports.SSHHost{Hostname: "10.77.0.111"}},
+	}, &clusterinit.InitOptions{PrimaryNode: "master-1", SSHHost: "root@192.0.2.1",
+		NodeSSHHosts: map[string]string{"master-2": "secondary-alias"}})
+	if alias[1].Host.Alias != "secondary-alias" || alias[1].Host.User != "" {
+		t.Fatalf("per-node alias must retain its ssh_config User: %+v", alias[1].Host)
 	}
 }
 

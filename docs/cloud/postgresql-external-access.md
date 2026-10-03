@@ -1,4 +1,4 @@
-# External access
+# PostgreSQL external access
 
 A PostgreSQL service is reachable from inside your Project through its internal
 endpoints; see [Connect applications](postgresql-connect.md). This page covers
@@ -15,6 +15,8 @@ your internal endpoints stay unchanged.
 Other external access options depend on your provider. They are not covered in
 this chapter.
 :::
+
+This guide covers PostgreSQL Gateway access. Other families have their own connectivity limits; see [Choose a service](managed-services.md#choose-a-service).
 
 ## Before you begin
 
@@ -101,7 +103,7 @@ kubectl get managedservice orders-db -n my-project -w
 ```
 
 Wait until the service is `Ready` and its configuration is current, as
-described in [Is the result current?](postgresql-create.md#is-the-result-current)
+described in [Is the result current?](managed-services-status.md#is-the-result-current)
 
 Turning Gateway access on for an existing service has been qualified. Setting
 `expose.type: gateway` in the first manifest of a new service is not yet
@@ -355,7 +357,7 @@ its `deletionPolicy`:
 | `Retain` | The platform stops managing the service, and the resources it created, including the Gateway route, are kept. Gateway behaviour under `Retain` is not yet qualified. Turn off Gateway access before you delete the service |
 | `SnapshotAndDelete` | Not yet qualified with Gateway access. Turn off Gateway access before you delete the service |
 
-See [Status and deletion](managed-services-status-deletion.md).
+See [Status and deletion](postgresql-deletion.md).
 
 ## Limits
 

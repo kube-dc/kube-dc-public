@@ -3,7 +3,7 @@
 import {ManagedServicesModelDiagram} from '@site/src/components/Diagram/ManagedServicesDiagrams';
 
 As a Project member, use managed services to run software that your provider operates for you.
-Select a service and plan from the catalog. Then connect your application through a service binding.
+Select a service and plan from the catalog. For services that publish application credentials, connect through a service binding.
 Use the console, Kubernetes manifests, or GitOps to manage the same resources.
 
 The catalog can contain databases, caches, message brokers, analytics systems, and applications.
@@ -12,13 +12,29 @@ A service appears only after the provider installs its integration and publishes
 
 <ManagedServicesModelDiagram />
 
+## Find your task
+
+Use **Common tasks** for workflows shared by service families.
+Use a service's guide for its parameters, supported operations, clients, and recovery limits.
+
+| Task | Start here |
+|---|---|
+| Choose capacity and availability | [Classes and plans](managed-services-plans.md) |
+| Create or manage a service through the browser | [Use the console](managed-services-console.md) |
+| Deliver credentials to an application | [Connect applications](managed-services-connect.md) |
+| Change passwords manually or on a schedule | [Rotate credentials](managed-services-credentials.md) |
+| Request a change and follow its result | [Request an operation](managed-services-operations.md) |
+| Select a backup and recover a service | [Back up and restore](managed-services-backup-restore.md) |
+| Diagnose readiness or a refused change | [Check status and troubleshoot](managed-services-status.md) |
+| Remove a service and check what remains | [Delete a service](managed-services-status-deletion.md) |
+
 ## Choose a service
 
 The following families have guides. These examples do not define the complete catalog:
 
 | Family | Purpose | Data protection |
 |---|---|---|
-| [PostgreSQL](postgresql-create.md) | Relational database | Base backups and continuous log archives. Point-in-time recovery requires plan support |
+| [PostgreSQL](postgresql.md) | Relational database | Base backups and continuous log archives. Point-in-time recovery requires plan support |
 | [MySQL and MariaDB](managed-services-mysql-mariadb.md) | Relational databases | Verified logical archives. Restore creates a new service |
 | [ClickHouse](managed-services-clickhouse.md) | Analytical database | Verified native archives. Restore creates a new service |
 | [Valkey](managed-services-valkey.md) | Cache and key-value store | RDB archives on backup-enabled plans. Restore creates a new service |
@@ -49,15 +65,16 @@ These resources have the same purpose across service families:
 Project roles cannot read the cluster catalog directly.
 The console shows the published catalog through a filtered API response. Ask your provider for catalog names when you write manifests.
 
-A normal connection procedure has four steps:
+For a service that publishes application credentials, follow these steps:
 
 1. Create a `ManagedService` from a published plan.
 2. Wait for its `Ready` condition.
 3. Create a `ServiceBinding` with the service name and UID.
 4. Configure your application to read the delivered Secret.
 
-The console can create the binding after it creates the service.
-See [Use the console](managed-services-console.md) or [Create a PostgreSQL service](postgresql-create.md) for a complete procedure.
+The console can create a binding after it creates the service.
+See [Use the console](managed-services-console.md) or [Connect applications](managed-services-connect.md) for the shared procedure.
+GitHub Actions runners have a separate pool and GitHub authorization workflow; see [GitHub Actions runners](managed-services-github-runners.md).
 
 ### The service UID
 
@@ -139,7 +156,7 @@ Service deletion policies and deletion protection do not prevent Project deletio
 Copy required data outside the Project before you delete it.
 :::
 
-See [Status and deletion](managed-services-status-deletion.md) for retained resources, backup records, and deletion checks.
+See [Delete a managed service](managed-services-status-deletion.md) for retained resources, backup records, and deletion checks.
 
 ## Next steps
 
@@ -148,5 +165,5 @@ Use these guides for your next task:
 - [Use the console](managed-services-console.md).
 - [Select a class and plan](managed-services-plans.md).
 - [Run a managed service operation](managed-services-operations.md).
-- [Connect an application](postgresql-connect.md).
+- [Connect an application](managed-services-connect.md).
 - [Protect and recover data](backups-snapshots.md).

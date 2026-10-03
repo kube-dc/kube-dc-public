@@ -206,14 +206,14 @@ func InstallPrereqs(ctx context.Context, opts InstallPrereqsOptions) (*InstallPr
 	return res, nil
 }
 
-// detectMissingTools runs each probe and returns names of those
-// whose Result.Status is StatusMissing. Sorted alphabetically so
-// operator-facing lists are stable across re-runs.
+// detectMissingTools returns missing required tools. Informational probes
+// such as the local bao CLI must not trigger installation: the Fleet script
+// does not install them, and the selected operation does not need them.
 func detectMissingTools(ctx context.Context, probes []ports.Probe) []string {
 	var missing []string
 	for _, p := range probes {
 		r := p.Run(ctx)
-		if r.Status == ports.StatusMissing {
+		if r.Status == ports.StatusMissing && r.Severity == ports.SeverityBlocker {
 			missing = append(missing, p.Name())
 		}
 	}

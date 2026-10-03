@@ -29,7 +29,7 @@ func TestInstallSteps_Conditionals(t *testing.T) {
 				NoPush:           false,
 				Finalize:         true,
 			},
-			want: "prepare,install-prereqs,dns,kubevirt-eligibility,nat-probe,egress-gateway,create-repo,configure-remote,scaffold,commit-push,flux-install,fetch-kubeconfig,break-glass,reconcile,openbao-init,keycloak-oidc,oidc-cutover",
+			want: "prepare,install-prereqs,dns,kubevirt-eligibility,nat-probe,egress-gateway,create-repo,configure-remote,ingress-nodes,scaffold,commit-push,flux-install,fetch-kubeconfig,break-glass,reconcile,openbao-init,keycloak-oidc,oidc-cutover",
 		},
 		{
 			name: "ssh + raw-device rook mode plans the OSD device check after egress",
@@ -39,7 +39,7 @@ func TestInstallSteps_Conditionals(t *testing.T) {
 				StorageDevCheck:  true,
 				NoPush:           true,
 			},
-			want: "prepare,dns,kubevirt-eligibility,nat-probe,egress-gateway,storage-device,scaffold,commit-push,fetch-kubeconfig",
+			want: "prepare,dns,kubevirt-eligibility,nat-probe,egress-gateway,storage-device,ingress-nodes,scaffold,commit-push,fetch-kubeconfig",
 		},
 		{
 			name: "GPU flow tracks ownership operator HAMi and product readiness",
@@ -49,7 +49,7 @@ func TestInstallSteps_Conditionals(t *testing.T) {
 				GPUEnabled:       true,
 				HAMiEnabled:      true,
 			},
-			want: "prepare,dns,kubevirt-eligibility,scaffold,commit-push,flux-install,break-glass,reconcile,gpu-inventory,gpu-operator,gpu-hami,gpu-product,openbao-init,keycloak-oidc,oidc-cutover",
+			want: "prepare,dns,kubevirt-eligibility,ingress-nodes,scaffold,commit-push,flux-install,break-glass,reconcile,gpu-inventory,gpu-operator,gpu-hami,gpu-product,openbao-init,keycloak-oidc,oidc-cutover",
 		},
 		{
 			name: "no-push: no flux-install, no create-repo, no finalize",
@@ -59,7 +59,7 @@ func TestInstallSteps_Conditionals(t *testing.T) {
 				NoPush:        true,
 				Finalize:      false,
 			},
-			want: "prepare,install-prereqs,dns,kubevirt-eligibility,nat-probe,egress-gateway,scaffold,commit-push,fetch-kubeconfig",
+			want: "prepare,install-prereqs,dns,kubevirt-eligibility,nat-probe,egress-gateway,ingress-nodes,scaffold,commit-push,fetch-kubeconfig",
 		},
 		{
 			name: "no ssh, no prereqs, adopt gate",
@@ -71,7 +71,7 @@ func TestInstallSteps_Conditionals(t *testing.T) {
 				NoPush:           false,
 				Finalize:         true,
 			},
-			want: "prepare,dns,kubevirt-eligibility,adopt-gate,scaffold,commit-push,flux-install,break-glass,reconcile,openbao-init,keycloak-oidc,oidc-cutover",
+			want: "prepare,dns,kubevirt-eligibility,adopt-gate,ingress-nodes,scaffold,commit-push,flux-install,break-glass,reconcile,openbao-init,keycloak-oidc,oidc-cutover",
 		},
 	}
 	for _, tc := range tests {

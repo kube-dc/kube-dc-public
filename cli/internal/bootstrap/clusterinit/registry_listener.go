@@ -82,18 +82,29 @@ func patchPlatformRegistryListener(lines []string) ([]string, bool, error) {
 
 	entry := strings.Split(registryListenerPatchEntry, "\n")
 	if patches >= 0 {
-		// Insert before the next two-space-indented spec sibling, or at
-		// EOF when patches is the final key. Four-or-more-space lines are
-		// part of the patches list; blank lines and comments stay with it.
+		// YAML permits a sequence at the same indentation as its key. Match
+		// the existing list indentation, and do not mistake a two-space
+		// sequence item for the next spec key.
 		insert := len(lines)
+		itemIndent := 4
 		for i := patches + 1; i < len(lines); i++ {
 			trimmed := strings.TrimSpace(lines[i])
 			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 				continue
 			}
-			if strings.HasPrefix(lines[i], "  ") && !strings.HasPrefix(lines[i], "    ") {
+			if strings.HasPrefix(lines[i], "  - ") && itemIndent == 4 {
+				itemIndent = 2
+			}
+			if strings.HasPrefix(lines[i], "  ") && !strings.HasPrefix(lines[i], "    ") && !strings.HasPrefix(lines[i], "  - ") {
 				insert = i
 				break
+			}
+		}
+		if itemIndent == 2 {
+			for i := range entry {
+				if strings.HasPrefix(entry[i], "  ") {
+					entry[i] = entry[i][2:]
+				}
 			}
 		}
 		result := make([]string, 0, len(lines)+len(entry))

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
@@ -14,12 +15,8 @@ import (
 )
 
 // bootstrapCmd registers `kube-dc bootstrap` and its subcommands. The
-// no-arg form lands on the multi-cluster fleet view; everything else
-// (install, adopt, status, config, doctor, add-node) jumps into the
-// same Bubble Tea screen graph at a different entry point.
-//
-// See docs/prd/installer-prd.md §4.1 for the full surface; v1 ships
-// just the fleet landing.
+// no-arg form opens the integrated Fleet, Contexts, and New Cluster screens.
+// Subcommands also provide standalone installation and management operations.
 func bootstrapCmd() *cobra.Command {
 	var fleetRepo string
 
@@ -31,9 +28,9 @@ bootstrap suite (bootstrap/{flux-install,add-cluster,...}.sh). Running
 it without arguments lands on the multi-cluster fleet view, listing
 every cluster overlay in the configured fleet repo with status pills.
 
-The fleet repo path defaults to ~/.kube-dc/fleet (set up by future
-'fleet init'); for now point at a local clone with --repo or the
-KUBE_DC_FLEET environment variable.`,
+The fleet repo path defaults to ~/.kube-dc/fleet. On a clean workstation,
+Bootstrap opens the new-cluster form. To inspect an existing fleet, pass
+--repo or set KUBE_DC_FLEET.`,
 		Example: `  # Show the fleet landing screen against a local clone
   kube-dc bootstrap --repo ~/projects/kube-dc-fleet
 
@@ -49,21 +46,23 @@ KUBE_DC_FLEET environment variable.`,
 			telemetry.Count(cmd.CommandPath())
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			repo, err := resolveFleetRepo(fleetRepo)
+			repo, startTab, err := bootstrapLandingRepo(fleetRepo)
 			if err != nil {
 				return err
 			}
-			root := screens.NewRootModel(repo, screens.RootTabFleet)
+			root := screens.NewRootModel(repo, startTab)
+			root.ConfigureInitServices(bootstrapPanelServices(cmd.Context()))
+			defer root.Close()
 			if err := bttui.RunRoot(func() tea.Model { return root }); err != nil {
 				return err
 			}
-			// The Init tab hands off rather than installing in-TUI: an
-			// Applied panel exits the program and we print the exact
-			// command to run (same equivalent-flags contract the
-			// standalone `bootstrap init` panel prints on Review).
-			if eq, ok := root.InitResult(); ok {
-				fmt.Fprintf(cmd.OutOrStdout(),
-					"\nInit settings captured. Run the install with:\n\n%s  --yes\n", eq)
+			if options, ok := root.AcceptedInit(); ok {
+				init := bootstrapInitCmdWithOptions(&repo, options)
+				init.SetContext(cmd.Context())
+				init.SetIn(cmd.InOrStdin())
+				init.SetOut(cmd.OutOrStdout())
+				init.SetErr(cmd.ErrOrStderr())
+				return init.RunE(init, nil)
 			}
 			return nil
 		},
@@ -85,6 +84,7 @@ KUBE_DC_FLEET environment variable.`,
 	cmd.AddCommand(bootstrapDoctorCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapStatusCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapInitCmd(&fleetRepo))
+	cmd.AddCommand(bootstrapSetupCmd())
 	cmd.AddCommand(bootstrapOpenBaoCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapKeycloakCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapAccessCmd(&fleetRepo))
@@ -93,8 +93,49 @@ KUBE_DC_FLEET environment variable.`,
 	cmd.AddCommand(bootstrapAnchorsCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapAddNodeCmd())
 	cmd.AddCommand(bootstrapGPUCmd(&fleetRepo))
+	cmd.AddCommand(bootstrapServicesCmd(&fleetRepo))
 
 	return cmd
+}
+
+// bootstrapLandingRepo keeps the no-argument TUI usable on a clean workstation.
+// An absent target is a prospective Fleet path, not a broken checkout. Other
+// subcommands still use resolveFleetRepo when they require an existing Fleet.
+func bootstrapLandingRepo(flag string) (string, screens.RootTab, error) {
+	candidate := flag
+	if candidate == "" {
+		candidate = os.Getenv("KUBE_DC_FLEET")
+	}
+	if candidate == "" {
+		home, homeErr := os.UserHomeDir()
+		if homeErr != nil {
+			return "", screens.RootTabInit, fmt.Errorf("resolve default Fleet path: %w", homeErr)
+		}
+		candidate = filepath.Join(home, ".kube-dc", "fleet")
+	}
+	if strings.HasPrefix(candidate, "~/") {
+		home, homeErr := os.UserHomeDir()
+		if homeErr != nil {
+			return "", screens.RootTabInit, fmt.Errorf("expand Fleet path: %w", homeErr)
+		}
+		candidate = filepath.Join(home, candidate[2:])
+	}
+	if candidate == "~" {
+		return "", screens.RootTabInit, fmt.Errorf("Fleet path must be a directory for the cluster, not the home directory")
+	}
+	abs, err := filepath.Abs(candidate)
+	if err != nil {
+		return "", screens.RootTabInit, fmt.Errorf("resolve Fleet path: %w", err)
+	}
+	if st, statErr := os.Stat(abs); statErr == nil && !st.IsDir() {
+		return "", screens.RootTabInit, fmt.Errorf("Fleet path %s is a file", abs)
+	} else if statErr != nil && !os.IsNotExist(statErr) {
+		return "", screens.RootTabInit, fmt.Errorf("inspect Fleet path: %w", statErr)
+	}
+	if clusters, statErr := os.Stat(filepath.Join(abs, "clusters")); statErr == nil && clusters.IsDir() {
+		return abs, screens.RootTabFleet, nil
+	}
+	return abs, screens.RootTabInit, nil
 }
 
 // resolveFleetRepo picks the fleet repo path from (in order): the --repo

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +38,45 @@ type fakeScriptCall struct {
 	Kind ports.ScriptKind
 	Env  map[string]string
 	Args []string
+}
+
+func TestScaffoldPassesReviewedManagerCountAndSuppressesPythonBytecode(t *testing.T) {
+	fleet := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(fleet, "bootstrap"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fleet, "bootstrap/add-cluster.sh"), []byte("# scaffold-capability: managed-services-v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, kind, mode, count string }{
+		{"kube-dc on single", "kube-dc", "on", "1"},
+		{"kube-dc off single", "kube-dc", "off", "1"},
+		{"cloudsigma off single", "cloudsigma", "off", "1"},
+		{"kube-dc on three", "kube-dc", "on", "3"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &fakeScriptRunner{runErr: errors.New("stop after env capture")}
+			count, _ := strconv.Atoi(tc.count)
+			err := Scaffold(context.Background(), ScaffoldOptions{
+				Plan: &Plan{ClusterName: "demo", Domain: "example.test", InstallationKind: tc.kind,
+					ManagedServicesMode: tc.mode, ManagerNodes: count, ServicesDatabaseClass: "ceph-block",
+					ServicesStorageBudget: "50Gi", ServicesEgressProbeURLs: []string{"https://ghcr.io/v2/"}},
+				FleetRepo: fleet, NodeExternalIP: "192.0.2.10", Runner: runner,
+			})
+			if err == nil || len(runner.calls) != 1 {
+				t.Fatalf("expected one stopped script call, got %v and %d calls", err, len(runner.calls))
+			}
+			env := runner.calls[0].Env
+			for key, want := range map[string]string{
+				"SCAFFOLD_MANAGER_NODES": tc.count, "SCAFFOLD_SCHEDULABLE_NODES": tc.count,
+				"PYTHONDONTWRITEBYTECODE": "1",
+			} {
+				if env[key] != want {
+					t.Errorf("%s = %q, want %q", key, env[key], want)
+				}
+			}
+		})
+	}
 }
 
 // WithSentinelCallback satisfies the ports.ScriptRunner interface

@@ -128,7 +128,9 @@ cluster of three or more brokers. New services default to one topic partition
 per broker; consumer-group parallelism is bounded by partitions, not by
 replicas.
 
-## Day-2 operations
+## Supported operations {#day-2-operations}
+
+For request format, approval, and results, see [Request an operation](managed-services-operations.md).
 
 | Operation | What it does |
 |-----------|--------------|

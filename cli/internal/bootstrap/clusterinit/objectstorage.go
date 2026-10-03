@@ -17,7 +17,7 @@
 //     in Go per the 2026-07-04 design call: no more bash conditional
 //     surface after the add-cluster.sh heredoc footgun).
 //  4. kustomization.yaml — resources gains infra-object-storage.yaml.
-//  5. cluster-config.env — per-mode CEPH_* + S3_HOSTNAME env keys.
+//  5. cluster-config.env — selected mode, per-mode CEPH_*, and S3_HOSTNAME.
 //
 // `disabled` writes the DEGRADED wiring instead (OS-4 v2, PRD §6):
 // the OBJECT_STORAGE_DISABLED=true env key (suspends Mimir + Loki
@@ -39,9 +39,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/config"
+	"gopkg.in/yaml.v3"
 )
 
 // ObjectStorageSpec bundles the OS-1 InitOptions fields the scaffold
@@ -59,7 +61,8 @@ type ObjectStorageSpec struct {
 
 	// rook-ceph-multi-node — node → device; sorted keys map to
 	// CEPH_NODE_{1..3} deterministically.
-	CephNodes map[string]string
+	CephNodes       map[string]string
+	ReplicationSize int // zero selects the topology default
 
 	// rook-ceph-pvc
 	StorageClass    string
@@ -73,12 +76,14 @@ type ObjectStorageSpec struct {
 
 // ObjectStorage projects the spec out of InitOptions.
 func (o *InitOptions) ObjectStorage() ObjectStorageSpec {
+	replicas, _ := objectStorageReplication(o.RookMode, len(o.CephNodes), o.Sets["CEPH_REPLICATION_SIZE"])
 	return ObjectStorageSpec{
 		Mode:            o.RookMode,
 		OSDNode:         o.RookOSDNode,
 		OSDSizeGB:       o.RookOSDSizeGB,
 		OSDDevice:       o.RookOSDDevice,
 		CephNodes:       o.CephNodes,
+		ReplicationSize: replicas,
 		StorageClass:    o.CephStorageClass,
 		OSDCount:        o.CephOSDCount,
 		OSDVolumeSizeGB: o.CephOSDVolumeSizeGB,
@@ -135,6 +140,12 @@ func WriteObjectStorage(fleetRepo, clusterName, domain string, spec ObjectStorag
 	}
 	if !scaffoldsObjectStorage(spec.Mode) {
 		return fmt.Errorf("object-storage: mode %q has no scaffold (fleet-side stub)", spec.Mode)
+	}
+
+	if spec.Mode == RookCephMultiNode {
+		if len(spec.CephNodes) < 1 || len(spec.CephNodes) > 3 || spec.replication() < 1 || spec.replication() > len(spec.CephNodes) {
+			return fmt.Errorf("object-storage: select 1 to 3 storage servers and no more replicas than servers")
+		}
 	}
 
 	// (1) overlay
@@ -251,7 +262,7 @@ func writeS3ListenerPatch(clusterDir, envBody string, out io.Writer) error {
 				if !strings.HasPrefix(t, "hostname:") {
 					continue
 				}
-				want := "            hostname: \"" + host + "\""
+				want := lines[j][:len(lines[j])-len(strings.TrimLeft(lines[j], " "))] + "hostname: \"" + host + "\""
 				if lines[j] != want {
 					lines[j] = want
 					changed = true
@@ -263,9 +274,19 @@ func writeS3ListenerPatch(clusterDir, envBody string, out io.Writer) error {
 			return lines, changed, nil
 		}
 		hasPatches := false
-		for _, l := range lines {
+		itemIndent := 4 // add-cluster.sh emits four-space list items
+		for i, l := range lines {
 			if strings.TrimSpace(l) == "patches:" {
 				hasPatches = true
+				// A previous scaffold step can round-trip this YAML with
+				// indentless sequences (`patches:\n  - target:`). Match the
+				// existing sequence or the appended entry makes invalid YAML.
+				for _, next := range lines[i+1:] {
+					if strings.HasPrefix(strings.TrimSpace(next), "- target:") {
+						itemIndent = len(next) - len(strings.TrimLeft(next, " "))
+						break
+					}
+				}
 				break
 			}
 		}
@@ -276,9 +297,19 @@ func writeS3ListenerPatch(clusterDir, envBody string, out io.Writer) error {
 		block := entry
 		if !hasPatches {
 			block = "  patches:\n" + entry
+		} else if itemIndent != 4 {
+			var shifted []string
+			for _, line := range strings.Split(strings.TrimRight(entry, "\n"), "\n") {
+				indent := len(line) - len(strings.TrimLeft(line, " "))
+				shifted = append(shifted, strings.Repeat(" ", indent+itemIndent-4)+strings.TrimLeft(line, " "))
+			}
+			block = strings.Join(shifted, "\n") + "\n"
 		}
 		outLines := append([]string{}, lines[:end]...)
 		outLines = append(outLines, strings.Split(strings.TrimRight(block, "\n"), "\n")...)
+		if err := yaml.Unmarshal([]byte(strings.Join(outLines, "\n")), new(any)); err != nil {
+			return nil, false, fmt.Errorf("S3 listener patch would make platform.yaml invalid: %w", err)
+		}
 		fmt.Fprintf(out, "[scaffold] https-s3 Gateway listener patch → platform.yaml (hostname %s)\n", host)
 		return outLines, true, nil
 	})
@@ -308,6 +339,18 @@ func objectStorageOverlayYAML(clusterName string, spec ObjectStorageSpec) string
 	b.WriteString("  - " + ups + "infrastructure/object-storage/bucket-provisioning\n")
 	if !spec.NoS3Exposure {
 		b.WriteString("  - " + ups + "infrastructure/object-storage/exposure\n")
+	}
+	// A raw local disk must not also create the mode's default sparse file
+	// and loop devices. Keep the shared Fleet resources and remove only its
+	// two preparation Jobs in this cluster's generated overlay.
+	if spec.Mode == RookCephLocal && spec.OSDDevice != "" && !loopDeviceRegex.MatchString(strings.TrimPrefix(spec.OSDDevice, "/dev/")) {
+		b.WriteString("patches:\n")
+		for _, name := range []string{"ceph-disk-prep", "ceph-disk-prep-2"} {
+			b.WriteString("  - target:\n      group: batch\n      version: v1\n      kind: Job\n      name: " + name + "\n      namespace: rook-ceph\n    patch: |\n      apiVersion: batch/v1\n      kind: Job\n      metadata:\n        name: " + name + "\n        namespace: rook-ceph\n      $patch: delete\n")
+		}
+	}
+	if spec.Mode == RookCephMultiNode {
+		b.WriteString(multiNodeStoragePatches(spec))
 	}
 	return b.String()
 }
@@ -549,6 +592,7 @@ func objectStorageEnvKeys(domain string, spec ObjectStorageSpec) [][2]string {
 		return [][2]string{{"OBJECT_STORAGE_DISABLED", "true"}}
 	}
 	var kv [][2]string
+	kv = append(kv, [2]string{"OBJECT_STORAGE_MODE", string(spec.Mode)})
 	host := spec.S3Hostname
 	if host == "" {
 		host = "s3." + domain
@@ -568,6 +612,7 @@ func objectStorageEnvKeys(domain string, spec ObjectStorageSpec) [][2]string {
 		// rook-ceph-local CephBlockPool reads CEPH_REPLICATION_SIZE.
 		kv = append(kv, [2]string{"CEPH_REPLICATION_SIZE", "1"})
 	case RookCephMultiNode:
+		kv = append(kv, [2]string{"CEPH_REPLICATION_SIZE", strconv.Itoa(spec.replication())})
 		// Sorted node names → slots 1..3, deterministically.
 		nodes := make([]string, 0, len(spec.CephNodes))
 		for n := range spec.CephNodes {

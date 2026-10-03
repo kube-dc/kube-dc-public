@@ -2,11 +2,13 @@ package clusterinit
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -133,6 +135,10 @@ type ScaffoldOptions struct {
 	// TrustedCA is validated public CA material for manager/backend/OIDC/OpenBao.
 	TrustedCA *TrustedCAMaterial
 
+	// PAYG wires opt-in PAYG usage billing (step 13, payg.go). False writes
+	// nothing PAYG-related.
+	PAYG bool
+
 	// SingleIPNAT triggers the findings-17/17b wiring (step 8): the
 	// node sits behind a 1:1 NAT with only one IP, so the scaffolded
 	// platform.yaml gets a patches entry removing the Gateway's 6443
@@ -140,6 +146,10 @@ type ScaffoldOptions struct {
 	// DetectArrivingIP; NodeExternalIP already carries the ARRIVING
 	// (internal) IP when this is true.
 	SingleIPNAT bool
+	// SystemDNSIPs are the ingress nodes' live InternalIPs. System pods need
+	// their port-80 listeners for cert-manager HTTP-01 self-checks; tenant
+	// VPC pods use the separate private HTTPS VIP.
+	SystemDNSIPs []string
 
 	// ControlPlaneNodes are the real control-plane node NAMES, resolved from
 	// the live cluster when one is reachable. Empty means "unknown", which
@@ -255,7 +265,42 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// server-side apply rejects and force: true converts into a DELETION of the
 	// EnvoyProxy. Reproduced; see scripts/check_layer_coherence.py, which now fails any
 	// overlay whose layer and components disagree.
-	scaffoldEnv := map[string]string{}
+	// The Fleet helper imports Python modules from scripts/. Preparation reviews
+	// every shared source file, so bytecode emitted there is an unreviewed write.
+	scaffoldEnv := map[string]string{"PYTHONDONTWRITEBYTECODE": "1"}
+	if opts.Plan.InstallationKind != "" {
+		scaffoldEnv["SCAFFOLD_INSTALLATION_KIND"] = opts.Plan.InstallationKind
+		scaffoldEnv["SCAFFOLD_MANAGED_SERVICES"] = opts.Plan.ManagedServicesMode
+		count := opts.Plan.ManagerNodes
+		if count < 1 {
+			return fmt.Errorf("scaffold: installation requires a reviewed manager-node count")
+		}
+		scaffoldEnv["SCAFFOLD_MANAGER_NODES"] = strconv.Itoa(count)
+		scaffoldEnv["SCAFFOLD_SCHEDULABLE_NODES"] = strconv.Itoa(count)
+		if opts.Plan.ManagedServicesMode == "on" {
+			body, err := os.ReadFile(filepath.Join(opts.FleetRepo, "bootstrap", "add-cluster.sh"))
+			if err != nil || !strings.Contains(string(body), "# scaffold-capability: managed-services-v1") {
+				return fmt.Errorf("scaffold: managed services need a fleet or starter revision with managed-services-v1 support")
+			}
+			scaffoldEnv["SCAFFOLD_SERVICES_DATABASE_CLASS"] = opts.Plan.ServicesDatabaseClass
+			scaffoldEnv["SCAFFOLD_SERVICES_STORAGE_BUDGET"] = opts.Plan.ServicesStorageBudget
+			if opts.SingleIPNAT {
+				scaffoldEnv["SCAFFOLD_SERVICES_INTERNAL_GATEWAY"] = "true"
+				if len(opts.SystemDNSIPs) == 0 {
+					return fmt.Errorf("scaffold: managed-services internal gateway needs live ingress-node InternalIPs for system DNS")
+				}
+				scaffoldEnv["SCAFFOLD_SERVICES_SYSTEM_DNS_IPS"] = strings.Join(opts.SystemDNSIPs, ",")
+			}
+			probes, err := json.Marshal(opts.Plan.ServicesEgressProbeURLs)
+			if err != nil {
+				return fmt.Errorf("scaffold: encode services egress probes: %w", err)
+			}
+			scaffoldEnv["SCAFFOLD_SERVICES_EGRESS_PROBE_URLS"] = string(probes)
+			if opts.TrustedCA != nil {
+				scaffoldEnv["SCAFFOLD_SERVICES_PRIVATE_CA"] = "true"
+			}
+		}
+	}
 	if opts.Plan.IngressAddressLayer != "" {
 		scaffoldEnv["SCAFFOLD_INGRESS_ADDRESS_LAYER"] = opts.Plan.IngressAddressLayer
 	}
@@ -344,13 +389,14 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// (8) External kube-api front door. Off-Envoy is the DEFAULT for every new
 	// cluster and every address layer, and the base gateway no longer ships a
 	// :6443 Envoy listener at all: the starter's add-cluster.sh selects
-	// front-door/components/kube-api-off-envoy and seeds KUBE_API_ARRIVAL_IP.
+	// front-door/components/kube-api-native-endpoints and seeds KUBE_API_ARRIVAL_IP.
 	// We NEVER route :6443 through Envoy on a host-bind cluster — it collides
 	// with the apiserver on control-plane ingress nodes (production incident
 	// 2026-08-11), which is exactly what the old collision-detection + listener
 	// removal (WriteSingleIPNATPatch) and the static-EndpointSlice bridge
 	// (WriteExternalKubeAPIVIP) worked around. Both are retired: there is no
-	// listener to remove, and endpoints are controller-managed and self-healing.
+	// listener to remove. Native EndpointSlices discover Ready apiserver mirror
+	// Pods without depending on kube-dc-manager during first installation.
 	//
 	// The only remaining CLI job is to resolve KUBE_API_ARRIVAL_IP to a real
 	// address — on a MetalLB layer the scaffold leaves CHANGEME because the VIP
@@ -366,6 +412,11 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// the OvnEip from it before kube-ovn's external-gateway handler wakes.
 	if err := ResolveMgmtSnatIP(opts.FleetRepo, opts.Plan.ClusterName, out); err != nil {
 		return fmt.Errorf("scaffold: %w", err)
+	}
+	if opts.Plan.ManagedServicesMode == "on" && opts.SingleIPNAT {
+		if err := ResolveManagedServicesInternalNetwork(opts.FleetRepo, opts.Plan.ClusterName, opts.Plan.IngressNodes, out); err != nil {
+			return fmt.Errorf("scaffold: %w", err)
+		}
 	}
 
 	// (9) VM root-disk storage wiring — rbd-vm.yaml (base + goldens Flux
@@ -440,6 +491,64 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// backend; manager propagates the same bundle to OIDC and OpenBao.
 	if err := WriteTrustedCA(opts.FleetRepo, opts.Plan.ClusterName, opts.TrustedCA, out); err != nil {
 		return fmt.Errorf("scaffold: %w", err)
+	}
+
+	// (13) PAYG usage billing (--payg) — the platform/payg layer, the PAYG_*
+	// switch + generated installation identity, the metering database login
+	// (SOPS) and its CNPG role. LAST: its platform.yaml entry appends to the
+	// patches list the earlier writers may have started, and it reads the
+	// metering image pin postProcessClusterConfig (5) settled. No-op when off.
+	if err := WritePAYG(opts.FleetRepo, opts.Plan.ClusterName, opts.Plan.Domain, opts.PAYG, out); err != nil {
+		return fmt.Errorf("scaffold: %w", err)
+	}
+	if opts.Plan.ManagedServicesMode == "on" {
+		// Render the complete overlay and record its new, suspended catalog
+		// revisions before the scaffold commit. HEAD is the starter/fleet
+		// checkout's immutable baseline; it works before a remote exists.
+		lockPath := filepath.Join(opts.FleetRepo, "platform", "kube-dc-services-catalog", "revisions.lock")
+		previousLock, readErr := os.ReadFile(lockPath)
+		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+			return fmt.Errorf("scaffold: read catalog lock: %w", readErr)
+		}
+		args := []string{"scripts/services-catalog-render-test.sh", "--update", "--include-suspended"}
+		if _, err := os.Stat(filepath.Join(opts.FleetRepo, ".git")); errors.Is(err, os.ErrNotExist) {
+			// A safety-review preparation copies only reviewed Fleet source,
+			// without .git. Give the gate an immutable copy of that source
+			// lock as its baseline; publication verifies those exact bytes.
+			if errors.Is(readErr, os.ErrNotExist) {
+				args = append(args, "--base-lock", "none")
+			} else {
+				baseline, err := os.CreateTemp("", "kube-dc-catalog-baseline-*")
+				if err != nil {
+					return fmt.Errorf("scaffold: catalog baseline: %w", err)
+				}
+				defer os.Remove(baseline.Name())
+				if _, err := baseline.Write(previousLock); err != nil {
+					baseline.Close()
+					return fmt.Errorf("scaffold: catalog baseline: %w", err)
+				}
+				if err := baseline.Close(); err != nil {
+					return fmt.Errorf("scaffold: catalog baseline: %w", err)
+				}
+				args = append(args, "--base-lock", baseline.Name())
+			}
+		} else if err != nil {
+			return fmt.Errorf("scaffold: inspect Fleet revision: %w", err)
+		}
+		args = append(args, opts.Plan.ClusterName)
+		cmd := exec.CommandContext(ctx, "bash", args...)
+		cmd.Dir = opts.FleetRepo
+		cmd.Env = append(os.Environ(), "SERVICES_CATALOG_BASE_REF=HEAD")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			if errors.Is(readErr, os.ErrNotExist) {
+				_ = os.Remove(lockPath)
+			} else if restoreErr := os.WriteFile(lockPath, previousLock, 0o644); restoreErr != nil {
+				return fmt.Errorf("scaffold: services catalog gate failed (%w), and restoring the lock failed: %w", err, restoreErr)
+			}
+			return fmt.Errorf("scaffold: services catalog revision gate: %w: %s", err, strings.TrimSpace(string(output)))
+		}
+		fmt.Fprintln(out, "[scaffold] suspended managed-services catalog revisions recorded")
 	}
 
 	fmt.Fprintf(out, "[scaffold] cluster overlay created at %s\n", clusterDir)
@@ -601,8 +710,16 @@ func postProcessClusterConfig(path string, plan *Plan, sets map[string]string, n
 		return fmt.Errorf("scaffold: EnvMapFor: %w", err)
 	}
 	for k, v := range plan.InheritedDefaults {
+		if plan.ManagedServicesMode == "on" && (k == "SERVICES_PG_OPERATOR_VERSION" || k == "CNPG_VERSION") {
+			continue // the selected CNPG component owns both pins
+		}
 		if _, set := sets[k]; set {
 			continue // operator override beats inheritance
+		}
+		if strings.HasSuffix(k, "_DIGEST") {
+			if _, tagOverride := sets[strings.TrimSuffix(k, "_DIGEST")+"_TAG"]; tagOverride {
+				continue // a new tag must not keep the sibling's active digest
+			}
 		}
 		// Use the inherited value only if it's not in the
 		// preset's defaults (preset defaults already cover
@@ -612,6 +729,19 @@ func postProcessClusterConfig(path string, plan *Plan, sets map[string]string, n
 	if len(gpu) > 0 {
 		for k, v := range GPUConfigEnv(gpu[0]) {
 			merged[k] = v
+		}
+	}
+	// A tag-only selection explicitly leaves digest mode. Otherwise an
+	// embedded starter digest could override the reviewed tag after merge.
+	for k := range merged {
+		if !strings.HasSuffix(k, "_TAG") {
+			continue
+		}
+		digest := strings.TrimSuffix(k, "_TAG") + "_DIGEST"
+		if _, selected := merged[digest]; !selected {
+			if _, inTemplate := env.Get(digest); inTemplate {
+				merged[digest] = ""
+			}
 		}
 	}
 

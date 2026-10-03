@@ -60,3 +60,19 @@ func TestEmbeddedInstaller_RKE2VersionMatchesConst(t *testing.T) {
 		}
 	}
 }
+
+// All install paths need the same per-Pod kernel task budget. Checking both
+// server branches catches a join path silently retaining the unlimited default.
+func TestEmbeddedInstaller_PodProcessBudget(t *testing.T) {
+	for name, scenario := range map[string]struct {
+		script []byte
+		blocks int
+	}{
+		"server": {installServerScript, 2},
+		"agent":  {installAgentScript, 1},
+	} {
+		if got := strings.Count(string(scenario.script), "  - pod-max-pids=4096\n"); got != scenario.blocks {
+			t.Errorf("%s installer protects %d of %d kubelet configuration blocks", name, got, scenario.blocks)
+		}
+	}
+}

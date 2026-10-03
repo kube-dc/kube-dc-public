@@ -68,6 +68,53 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Managed Services',
+      collapsed: true,
+      items: [
+        {
+          type: 'doc',
+          id: 'managed-services',
+          label: 'Overview',
+        },
+        {
+          type: 'category',
+          label: 'Common tasks',
+          collapsed: true,
+          items: [
+            {type: 'doc', id: 'managed-services-plans', label: 'Choose a class and plan'},
+            {type: 'doc', id: 'managed-services-console', label: 'Use the console'},
+            {type: 'doc', id: 'managed-services-connect', label: 'Connect applications'},
+            {type: 'doc', id: 'managed-services-credentials', label: 'Rotate credentials'},
+            {type: 'doc', id: 'managed-services-operations', label: 'Request an operation'},
+            {type: 'doc', id: 'managed-services-backup-restore', label: 'Back up and restore'},
+            {type: 'doc', id: 'managed-services-status', label: 'Check status and troubleshoot'},
+            {type: 'doc', id: 'managed-services-status-deletion', label: 'Delete a service'},
+          ],
+        },
+        {
+          type: 'category',
+          label: 'PostgreSQL',
+          collapsed: true,
+          link: {type: 'doc', id: 'postgresql'},
+          items: [
+            {type: 'doc', id: 'postgresql-create', label: 'Create a service'},
+            {type: 'doc', id: 'postgresql-connect', label: 'Connect applications'},
+            {type: 'doc', id: 'postgresql-credentials', label: 'Credentials and SQL logins'},
+            {type: 'doc', id: 'postgresql-operations', label: 'Scale, configure, and upgrade'},
+            {type: 'doc', id: 'postgresql-backup-restore', label: 'Backups and recovery'},
+            {type: 'doc', id: 'postgresql-external-access', label: 'External access'},
+            {type: 'doc', id: 'postgresql-deletion', label: 'Deletion and retained resources'},
+          ],
+        },
+        {type: 'doc', id: 'managed-services-mysql-mariadb', label: 'MySQL and MariaDB'},
+        {type: 'doc', id: 'managed-services-valkey', label: 'Valkey'},
+        {type: 'doc', id: 'managed-services-clickhouse', label: 'ClickHouse'},
+        {type: 'doc', id: 'managed-services-kafka', label: 'Kafka'},
+        {type: 'doc', id: 'managed-services-github-runners', label: 'GitHub Actions runners'},
+      ],
+    },
+    {
+      type: 'category',
       label: 'Managed Clusters',
       collapsed: true,
       items: [
@@ -97,93 +144,6 @@ const sidebars: SidebarsConfig = {
         'routed-networks',
         'datacenter-vlans',
         'service-exposure',
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Managed Services',
-      collapsed: true,
-      items: [
-        {
-          type: 'doc',
-          id: 'managed-services',
-          label: 'Overview',
-        },
-        {
-          type: 'doc',
-          id: 'managed-services-plans',
-          label: 'Classes and Plans',
-        },
-        {
-          type: 'doc',
-          id: 'postgresql-create',
-          label: 'Create a PostgreSQL Service',
-        },
-        {
-          type: 'doc',
-          id: 'postgresql-connect',
-          label: 'Connect Applications',
-        },
-        {
-          type: 'doc',
-          id: 'postgresql-credentials',
-          label: 'Credentials and Rotation',
-        },
-        {
-          type: 'doc',
-          id: 'postgresql-operations',
-          label: 'Day-2 Operations',
-        },
-        {
-          type: 'doc',
-          id: 'postgresql-backup-restore',
-          label: 'Backups and Restore',
-        },
-        {
-          type: 'doc',
-          id: 'postgresql-external-access',
-          label: 'External Access',
-        },
-        {
-          type: 'doc',
-          id: 'managed-services-status-deletion',
-          label: 'Status and Deletion',
-        },
-        {
-          type: 'doc',
-          id: 'managed-services-mysql-mariadb',
-          label: 'MySQL and MariaDB',
-        },
-        {
-          type: 'doc',
-          id: 'managed-services-valkey',
-          label: 'Valkey',
-        },
-        {
-          type: 'doc',
-          id: 'managed-services-clickhouse',
-          label: 'ClickHouse',
-        },
-        {
-          type: 'doc',
-          id: 'managed-services-kafka',
-          label: 'Kafka',
-        },
-        {
-          type: 'doc',
-          id: 'managed-services-github-runners',
-          label: 'GitHub Actions runners',
-        },
-        {
-          type: 'doc',
-          id: 'managed-services-console',
-          label: 'Manage services in the console',
-        },
-        {
-          type: 'doc',
-          id: 'managed-services-operations',
-          label: 'Operations',
-        },
       ],
     },
     {

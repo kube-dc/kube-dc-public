@@ -67,15 +67,15 @@ kubectl get managedservice shop-db -n my-project -o jsonpath='{.metadata.uid}{"\
 
 | Field | MySQL | MariaDB |
 |-------|-------|---------|
-| `spec.compute.cpu`, `spec.compute.memory` | Fixed at creation | `Resize` operation |
-| `spec.storage.size` | Fixed at creation | `ExpandStorage` operation |
+| `spec.compute.cpu`, `spec.compute.memory` | `Resize` operation | `Resize` operation |
+| `spec.storage.size` | `ExpandStorage` operation | `ExpandStorage` operation |
 | `spec.topology.instances` | Fixed at creation | Fixed at creation |
 | `spec.engineVersion` | The plan's release line; a new version means a new plan | Same |
 | `parameters.settings` | Fixed at creation | Fixed at creation |
 
-A MySQL service is therefore sized once. To move to a larger size, take a
-backup and restore it into a new service on a larger plan. See
-[Backups and restore](#backups-and-restore).
+Both engines support compute resizing and storage expansion within the selected plan's bounds.
+Use operations instead of editing these fields on an existing service.
+To change plans, [restore into a new service](#backups-and-restore).
 
 ## Connect an application
 
@@ -132,20 +132,47 @@ tables without one are refused by the server. Galera (MariaDB Production)
 switches the write endpoint to another member after a failure; applications
 must reconnect and retry.
 
-## Day-2 operations
+## Supported operations {#day-2-operations}
+
+For request format, approval, and results, see [Request an operation](managed-services-operations.md).
 
 | Operation | MySQL | MariaDB | What it does |
 |-----------|-------|---------|--------------|
 | `Backup` | ✅ | ✅ | Takes a verified logical archive and records it as a `ServiceBackup` |
 | `RestoreToNew` | ✅ | ✅ | Creates a new service from a completed backup |
 | `RotateCredentials` | ✅ | ✅ | New password for `owner` or `readonly`, republished to every binding of that role |
-| `Resize` | ❌ | ✅ | CPU and memory within the plan's bounds |
-| `ExpandStorage` | ❌ | ✅ | Grows the data volume, never shrinks |
+| `Resize` | ✅ | ✅ | Changes CPU and memory per database member within the plan's bounds |
+| `ExpandStorage` | ✅ | ✅ | Grows member data volumes within the plan's storage limit; requires expandable storage |
 
 Every type must be in your plan's `operations.allowed`. Rotation is also
 available on a schedule through a `ServiceCredentialPolicy`; see
-[Credentials and rotation](postgresql-credentials.md), which applies to these
-classes with the roles `owner` and `readonly`.
+[Credentials and rotation](managed-services-credentials.md), using the roles `owner` and `readonly`.
+
+### Resize compute or expand storage
+
+Both operations are available on the standard MySQL Development and Production plans.
+Your installation's plan determines the allowed sizes, approval requirements, and available capacity.
+
+Use these parameters in a `ServiceOperation`:
+
+| Operation | `spec.parameters` | Requirements |
+|---|---|---|
+| `Resize` | `cpu` and/or `memory`, as Kubernetes quantity strings | The resulting values must fit the plan's compute bounds. Omitted values keep their existing setting |
+| `ExpandStorage` | `size`, as a Kubernetes quantity string | The requested size must exceed the current size and stay within the plan's maximum. The storage class must support expansion |
+
+MySQL compute resizing performs a controlled restart of database members.
+Allow for connection interruptions and configure clients to reconnect.
+Storage expansion preserves existing data volumes and cannot shrink them.
+The member count stays fixed.
+
+1. Prepare an operation manifest using the [shared request format](managed-services-operations.md#submit-an-operation).
+   Set the service name, UID, and a unique operation name and idempotency key.
+2. Replace the example's `spec.type` and entire `spec.parameters` object using the table in this section.
+3. Submit the request and wait for `Succeeded`.
+4. [Check service status](managed-services-status.md#is-the-result-current) and confirm the resulting values in `status.effectiveConfiguration`.
+5. Verify that your application reconnects and can read its data.
+
+For a second change, create a separate operation. An operation's specification is immutable.
 
 ## Backups and restore
 
@@ -157,9 +184,8 @@ There is no point-in-time recovery and no restore in place.
 
 Restore into a new service with a `RestoreToNew` operation.
 Select an exact backup record and a compatible target plan. See
-[Restore into a new service](postgresql-backup-restore.md#restore-into-a-new-service).
-The new service may use a different plan, which is also how you move a MySQL
-service to a larger size.
+[Restore into a new service](managed-services-backup-restore.md#restore-into-a-new-service).
+The restored service can use a different compatible plan. Use this path when the required size exceeds your existing plan's bounds.
 
 ## Deletion
 
@@ -173,6 +199,6 @@ Project deletes the service and its data without a final backup.
 |---|---|---|
 | Versions | 8.4 release line | 11.8 release line |
 | High availability | Production plan: Group Replication, automatic primary election; every table needs a primary key | Production plan: Galera, automatic write endpoint move; reconnect after a primary change |
-| Sizing after creation | None | CPU, memory and storage |
+| Sizing after creation | CPU and memory through `Resize`; storage growth through `ExpandStorage` | Same |
 | Point-in-time recovery | No | No |
 | Exposure | Inside the Project only | Inside the Project only |

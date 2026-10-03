@@ -195,25 +195,7 @@ func (e *Env) Write(path string) error {
 	}
 	tmpPath := tmp.Name()
 
-	var b strings.Builder
-	for i, l := range e.lines {
-		switch l.kind {
-		case lineKV:
-			b.WriteString(l.key)
-			b.WriteByte('=')
-			b.WriteString(l.value)
-		case lineComment, lineBlank:
-			b.WriteString(l.raw)
-		}
-		if i < len(e.lines)-1 || true {
-			// Always write a trailing newline so the file is
-			// well-formed (most parsers, including ours, tolerate
-			// either shape; explicit terminator is cleaner).
-			b.WriteByte('\n')
-		}
-	}
-
-	if _, werr := tmp.WriteString(b.String()); werr != nil {
+	if _, werr := tmp.WriteString(e.Render()); werr != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("env: write %s: %w", tmpPath, werr)
@@ -269,4 +251,22 @@ func unquote(s string) string {
 		return s[1 : len(s)-1]
 	}
 	return s
+}
+
+// Render returns the exact environment text that Write stores.
+func (e *Env) Render() string {
+	var b strings.Builder
+	for _, l := range e.lines {
+		switch l.kind {
+		case lineKV:
+			b.WriteString(l.key)
+			b.WriteByte('=')
+			b.WriteString(l.value)
+		case lineComment, lineBlank:
+			b.WriteString(l.raw)
+		}
+		b.WriteByte('\n')
+	}
+
+	return b.String()
 }

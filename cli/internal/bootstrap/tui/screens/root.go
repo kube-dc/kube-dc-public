@@ -1,6 +1,7 @@
 package screens
 
 import (
+	"github.com/charmbracelet/x/ansi"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,9 +39,13 @@ type RootModel struct {
 	// Init-tab plumbing (T6 root-router embed). initOpts is the
 	// InitOptions the embedded panel writes into on Apply; initPanel is
 	// the live panel model (rebuilt fresh when the operator backs out
-	// so a later visit starts clean). Read post-run via InitResult.
-	initOpts  *clusterinit.InitOptions
-	initPanel *initform.PanelModel
+	// so a later visit starts clean). Read post-run via AcceptedInit.
+	initOpts      *clusterinit.InitOptions
+	initPanel     *initform.PanelModel
+	panelServices *initform.PanelServices
+	resetInit     func() (*clusterinit.InitOptions, *initform.PanelModel)
+	simulated     bool
+	stopped       bool
 }
 
 // tabSpec is one entry in the top tab bar.
@@ -91,8 +96,8 @@ func NewRootModel(repoRoot string, startTab RootTab) *RootModel {
 	// remain ordinary editable fields. No live-cluster probe here: the
 	// gather is synchronous (3s budget) and would delay every
 	// `bootstrap` launch; the standalone `bootstrap init` path carries
-	// it. On Apply the root program exits and the cobra layer prints
-	// the equivalent init command.
+	// it. On Apply the root program exits and passes typed options to
+	// the existing init plan, confirmation, and installation pipeline.
 	initOpts, initPanel := newInitTabPanel(repoRoot)
 
 	r := &RootModel{
@@ -131,6 +136,16 @@ func (m *RootModel) Init() tea.Cmd {
 // shortcut quits the whole program from any tab.
 func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case initform.PanelEvent:
+		if msg.Owner != m.initPanel {
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.tabs[int(RootTabInit)].model, cmd = m.initPanel.Update(msg)
+		return m, cmd
+	case tea.BackgroundColorMsg:
+		_, cmd := m.initPanel.Update(msg)
+		return m, cmd
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		// Reserve one row for the tab bar; forward the reduced size to
@@ -145,6 +160,22 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, tea.Batch(cmds...)
+	case bttui.FleetLoadedMsg, bttui.FleetErrorMsg, bttui.ClusterProbeMsg,
+		bttui.TickMsg, bttui.ActionDoneMsg, emptyFleetMsg:
+		// Fleet probes and refreshes continue while the operator uses
+		// Contexts or New Cluster. Otherwise their results are discarded
+		// by the active tab and a clean launch stays "loading" forever.
+		var cmd tea.Cmd
+		m.tabs[int(RootTabFleet)].model, cmd = m.tabs[int(RootTabFleet)].model.Update(msg)
+		return m, cmd
+	case bttui.LoginDoneMsg:
+		target := RootTabFleet
+		if msg.FromContext {
+			target = RootTabContext
+		}
+		var cmd tea.Cmd
+		m.tabs[int(target)].model, cmd = m.tabs[int(target)].model.Update(msg)
+		return m, cmd
 	case tea.KeyPressMsg:
 		// A modal tab (the init panel) owns its keys DYNAMICALLY
 		// (manual TTY finding 2026-07-20 — a static always-modal gate
@@ -157,6 +188,8 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		//     forwardToActive), and Ctrl+C quits globally.
 		if m.tabs[m.active].modal {
 			if msg.String() == "ctrl+c" {
+				m.stopped = true
+				m.Close()
 				return m, tea.Quit
 			}
 			if m.initPanel != nil && m.initPanel.Editing() {
@@ -182,6 +215,8 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch {
 		case key.Matches(msg, m.keys.Quit):
+			m.stopped = msg.String() == "ctrl+c"
+			m.Close()
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.TopTabNext):
 			m.active = (m.active + 1) % len(m.tabs)
@@ -207,10 +242,10 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	// Forward everything else (unhandled keys, ticks, probe completions)
-	// to the ACTIVE screen. Both non-modal tabs are coherent under this:
-	// Fleet is the start tab and owns the async probes/ticks it starts;
-	// Contexts loads synchronously in its constructor (Init is a no-op),
-	// so it has no in-flight async result that could be dropped here.
+	// to the active screen. Fleet-owned background messages were routed above
+	// so a clean-workstation launch can begin on New Cluster without losing the
+	// Fleet load or its refresh timer. Contexts loads synchronously in its
+	// constructor (Init is a no-op).
 	return m.forwardToActive(msg)
 }
 
@@ -219,7 +254,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // becomes "back to Fleet" with a fresh panel (its tea.Quit is
 // swallowed — quitting the whole program because the operator backed
 // out of one tab is wrong); an APPLIED panel lets the quit through so
-// the cobra layer can print the equivalent init command (InitResult).
+// the cobra layer can continue through the existing init plan and confirmation.
 func (m *RootModel) forwardToActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.tabs[m.active].model, cmd = m.tabs[m.active].model.Update(msg)
@@ -228,7 +263,16 @@ func (m *RootModel) forwardToActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Discard = fresh FORM, same CONTEXT — the rebuilt panel
 			// re-inherits the root's fleet repo/mode, exactly like the
 			// first visit.
-			m.initOpts, m.initPanel = newInitTabPanel(m.repoRoot)
+			m.initPanel.Close()
+			if m.resetInit != nil {
+				m.initOpts, m.initPanel = m.resetInit()
+			} else {
+				m.initOpts, m.initPanel = newInitTabPanel(m.repoRoot)
+			}
+			if m.panelServices != nil {
+				m.initPanel.ConfigureServices(*m.panelServices)
+			}
+			m.initPanel.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height - 1})
 			m.tabs[m.active].model = m.initPanel
 			m.active = int(RootTabFleet)
 			return m, nil // swallow the panel's tea.Quit
@@ -257,6 +301,9 @@ func (m *RootModel) View() tea.View {
 // frame wraps rendered content in a tea.View carrying the program's
 // terminal-mode flags (v2 declares these on the View, not the program).
 func (m *RootModel) frame(content string) tea.View {
+	if os.Getenv("NO_COLOR") != "" {
+		content = ansi.Strip(content)
+	}
 	v := tea.NewView(content)
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
@@ -281,11 +328,14 @@ func (m *RootModel) renderTabBar() string {
 	bar := strings.Join(parts, "  ")
 	// Right-side hint so operators discover ]/[ without opening help.
 	hint := bttui.Muted.Render("] / [ cycle")
+	if m.simulated {
+		hint = bttui.KeyLabel.Render("SIMULATED · ] / [ cycle")
+	}
 	pad := m.width - lipgloss.Width(bar) - lipgloss.Width(hint)
 	if pad < 1 {
 		pad = 1
 	}
-	return " " + bar + strings.Repeat(" ", pad) + hint
+	return " " + ansi.Truncate(bar+strings.Repeat(" ", max(1, pad-1))+hint, max(1, m.width-1), "…")
 }
 
 // newInitTabPanel builds the New Cluster tab's options+panel with the
@@ -332,22 +382,6 @@ func hasFleetSiblings(repoRoot string) bool {
 		}
 	}
 	return false
-}
-
-// InitResult reports the embedded init panel's outcome after the
-// program exits: the equivalent `kube-dc bootstrap init …` command and
-// true when the operator completed Apply; ("", false) otherwise. The
-// cobra `bootstrap` entry prints the command so the operator can run
-// the actual install (the root TUI never runs the apply engine itself).
-func (m *RootModel) InitResult() (string, bool) {
-	if m.initPanel == nil || m.initOpts == nil {
-		return "", false
-	}
-	eq, err := m.initPanel.Result(m.initOpts)
-	if err != nil {
-		return "", false
-	}
-	return eq, true
 }
 
 // contextLoadErrorModel is the placeholder we render in place of the

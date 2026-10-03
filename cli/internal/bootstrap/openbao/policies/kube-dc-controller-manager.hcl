@@ -127,3 +127,8 @@ path "+/+/static-roles/kube-dc-svc-*" { capabilities = ["create","read","update"
 path "+/+/static-creds/kube-dc-svc-*" { capabilities = ["read"] }
 path "+/+/rotate-role/kube-dc-svc-*"  { capabilities = ["update"] }
 path "+/sys/leases/revoke-prefix/+/creds/kube-dc-svc-*" { capabilities = ["update","sudo"] }
+# Only the platform controller holds these namespace-wide grants. It lists
+# OpenBao's failed revocations, filters exact managed-connection lease IDs in
+# code, then retries them with sync=true. Never grant revoke-force here.
+path "+/sys/leases"         { capabilities = ["read","sudo"] }
+path "+/sys/leases/revoke"  { capabilities = ["update"] }

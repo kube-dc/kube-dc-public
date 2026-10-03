@@ -23,13 +23,9 @@ import (
 // Refuse domain collision. Use most-recently-modified sibling as
 // the template."
 //
-// **What "version pin" means here**: any key matching one of the
-// suffix patterns *_VERSION, *_CHART_VERSION, or *_TAG. This
-// catches the full set the live `cloud/cluster-config.env` carries
-// today (KUBE_DC_VERSION, KUBE_DC_MANAGER_TAG, OPENBAO_VERSION,
-// OPENBAO_CHART_VERSION, KUBE_OVN_VERSION, etc.) without
-// hardcoding an allow-list that would silently miss future
-// additions.
+// Pins include chart versions, image tags, digests, full image references,
+// and recognized image repository keys. Parts of one image reference come
+// from the same sibling; different components can still use different siblings.
 
 // SiblingCluster is one prior cluster's relevant facts for
 // inheritance. Populated by the cobra layer from
@@ -82,11 +78,14 @@ var versionKeySuffixes = []string{
 	"_VERSION",
 	"_CHART_VERSION",
 	"_TAG",
+	"_DIGEST",
+	"_IMAGE",
+	"_IMAGE_REPOSITORY",
+	"_IMAGE_REPO",
 }
 
 // isVersionKey reports whether a cluster-config.env key looks like
-// a version pin. Exported so callers (tests, future engine slices)
-// can run the same check without re-importing the suffix list.
+// an artifact pin. Import and inheritance share this classification.
 func isVersionKey(key string) bool {
 	for _, suf := range versionKeySuffixes {
 		if strings.HasSuffix(key, suf) {
@@ -184,10 +183,22 @@ func InheritFromSiblings(siblings []SiblingCluster) InheritanceResult {
 	})
 
 	out := make(map[string]string)
+	// Select all parts of an image reference from one sibling. An older
+	// digest must never silently override a newer sibling's tag.
+	imageOwner := map[string]string{}
 	for _, s := range ordered {
 		for k, v := range s.Env {
 			if !isVersionKey(k) {
 				continue
+			}
+			if k == "SERVICES_PG_OPERATOR_VERSION" || k == "CNPG_VERSION" {
+				continue // the staged CNPG component chooses this pair
+			}
+			if stem := imagePinStem(k); stem != "" {
+				if owner, exists := imageOwner[stem]; exists && owner != s.Name {
+					continue
+				}
+				imageOwner[stem] = s.Name
 			}
 			if _, alreadySet := out[k]; alreadySet {
 				continue // older sibling — newer winner already set
@@ -200,6 +211,15 @@ func InheritFromSiblings(siblings []SiblingCluster) InheritanceResult {
 		Defaults:     out,
 		TemplateName: template.Name,
 	}
+}
+
+func imagePinStem(key string) string {
+	for _, suffix := range []string{"_TAG", "_DIGEST", "_IMAGE_REPOSITORY", "_IMAGE_REPO"} {
+		if strings.HasSuffix(key, suffix) {
+			return strings.TrimSuffix(key, suffix)
+		}
+	}
+	return ""
 }
 
 // CheckDomainCollision returns ErrDomainCollision when `newDomain`

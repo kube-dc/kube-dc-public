@@ -73,6 +73,12 @@ Every list accepts at most 32 IPv4 CIDRs. Bare addresses, IPv6, malformed lists
 and invalid entries alongside `/0` are rejected. `[]`, omission and `/0` request
 unrestricted IPv4 access; they do not bypass other access controls.
 
+To set the list in the console, open **Networking** > **Load Balancers**,
+select **Create Load Balancer**, and enter **Allowed client IPv4 CIDRs** in the
+**Reach** step. You can change the list later: open the LoadBalancer, select
+**Edit**, and return to **Reach**. Empty creation leaves access open; clearing
+an existing list requests open access. Leaving the field untouched preserves it.
+
 The console enables these controls only for operator-qualified methods and
 separates requested access from controller enforcement evidence. An allocated
 IP or a saved manifest does not prove protection. A Service inside a managed

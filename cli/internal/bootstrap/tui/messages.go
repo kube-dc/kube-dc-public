@@ -34,9 +34,10 @@ type TickMsg struct{}
 // receiving screen can re-probe just that row instead of all of them).
 // Err is non-nil when the subprocess exited with a non-zero status.
 type LoginDoneMsg struct {
-	Cluster string
-	Admin   bool
-	Err     error
+	Cluster     string
+	Admin       bool
+	FromContext bool // origin screen; the root routes completion even after tab changes
+	Err         error
 }
 
 // ActionDoneMsg carries the result of a dispatched per-cluster action

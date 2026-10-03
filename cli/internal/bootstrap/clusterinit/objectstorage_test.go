@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // --- fixtures: the add-cluster.sh-generated shapes the patchers target ---
@@ -212,12 +214,12 @@ func TestObjectStorageEnvKeys_PerMode(t *testing.T) {
 		{
 			"local with device",
 			ObjectStorageSpec{Mode: RookCephLocal, OSDNode: "host6-a", OSDSizeGB: 500, OSDDevice: "sdb"},
-			[]string{"S3_HOSTNAME=s3.atlantis.example.com", "CEPH_LOCAL_OSD_NODE=host6-a", "CEPH_LOCAL_OSD_SIZE_GB=500", "CEPH_LOCAL_OSD_DEVICE=sdb", "CEPH_REPLICATION_SIZE=1"},
+			[]string{"OBJECT_STORAGE_MODE=rook-ceph-local", "S3_HOSTNAME=s3.atlantis.example.com", "CEPH_LOCAL_OSD_NODE=host6-a", "CEPH_LOCAL_OSD_SIZE_GB=500", "CEPH_LOCAL_OSD_DEVICE=sdb", "CEPH_REPLICATION_SIZE=1"},
 		},
 		{
 			"local default device omitted",
 			ObjectStorageSpec{Mode: RookCephLocal, OSDNode: "host6-a", OSDSizeGB: 500},
-			[]string{"S3_HOSTNAME=s3.atlantis.example.com", "CEPH_LOCAL_OSD_NODE=host6-a", "CEPH_LOCAL_OSD_SIZE_GB=500", "CEPH_REPLICATION_SIZE=1"},
+			[]string{"OBJECT_STORAGE_MODE=rook-ceph-local", "S3_HOSTNAME=s3.atlantis.example.com", "CEPH_LOCAL_OSD_NODE=host6-a", "CEPH_LOCAL_OSD_SIZE_GB=500", "CEPH_REPLICATION_SIZE=1"},
 		},
 		{
 			"multi-node sorted slots",
@@ -225,7 +227,9 @@ func TestObjectStorageEnvKeys_PerMode(t *testing.T) {
 				"host7-a": "sdc", "host5-a": "sdb", "host6-a": "sdb",
 			}},
 			[]string{
+				"OBJECT_STORAGE_MODE=rook-ceph-multi-node",
 				"S3_HOSTNAME=s3.atlantis.example.com",
+				"CEPH_REPLICATION_SIZE=2",
 				"CEPH_NODE_1=host5-a", "CEPH_NODE_1_DEVICE=sdb",
 				"CEPH_NODE_2=host6-a", "CEPH_NODE_2_DEVICE=sdb",
 				"CEPH_NODE_3=host7-a", "CEPH_NODE_3_DEVICE=sdc",
@@ -234,17 +238,17 @@ func TestObjectStorageEnvKeys_PerMode(t *testing.T) {
 		{
 			"pvc with defaults elided",
 			ObjectStorageSpec{Mode: RookCephPVC, StorageClass: "fast-ssd"},
-			[]string{"S3_HOSTNAME=s3.atlantis.example.com", "CEPH_OSD_STORAGE_CLASS=fast-ssd"},
+			[]string{"OBJECT_STORAGE_MODE=rook-ceph-pvc", "S3_HOSTNAME=s3.atlantis.example.com", "CEPH_OSD_STORAGE_CLASS=fast-ssd"},
 		},
 		{
 			"pvc explicit counts",
 			ObjectStorageSpec{Mode: RookCephPVC, StorageClass: "fast-ssd", OSDCount: 3, OSDVolumeSizeGB: 400},
-			[]string{"S3_HOSTNAME=s3.atlantis.example.com", "CEPH_OSD_STORAGE_CLASS=fast-ssd", "CEPH_OSD_COUNT=3", "CEPH_OSD_VOLUME_SIZE_GB=400"},
+			[]string{"OBJECT_STORAGE_MODE=rook-ceph-pvc", "S3_HOSTNAME=s3.atlantis.example.com", "CEPH_OSD_STORAGE_CLASS=fast-ssd", "CEPH_OSD_COUNT=3", "CEPH_OSD_VOLUME_SIZE_GB=400"},
 		},
 		{
 			"explicit s3 hostname wins",
 			ObjectStorageSpec{Mode: RookCephPVC, StorageClass: "fast-ssd", S3Hostname: "objects.example.net"},
-			[]string{"S3_HOSTNAME=objects.example.net", "CEPH_OSD_STORAGE_CLASS=fast-ssd"},
+			[]string{"OBJECT_STORAGE_MODE=rook-ceph-pvc", "S3_HOSTNAME=objects.example.net", "CEPH_OSD_STORAGE_CLASS=fast-ssd"},
 		},
 		{
 			// OS-4: disabled carries exactly the suspend gate — no
@@ -330,6 +334,7 @@ func TestWriteObjectStorage_EndToEnd(t *testing.T) {
 
 	env, _ := os.ReadFile(filepath.Join(dir, "cluster-config.env"))
 	for _, want := range []string{
+		"OBJECT_STORAGE_MODE=rook-ceph-multi-node",
 		"S3_HOSTNAME=s3.atlantis.example.com",
 		"CEPH_NODE_1=host5-a", "CEPH_NODE_3_DEVICE=sdc",
 	} {
@@ -473,5 +478,56 @@ func TestWriteS3ListenerPatch(t *testing.T) {
 	// A CHANGEME hostname with exposure enabled is a refusal, not a silent skip.
 	if err := writeS3ListenerPatch(dir, "S3_HOSTNAME=CHANGEME\n", io.Discard); err == nil {
 		t.Error("CHANGEME S3_HOSTNAME must be refused when exposure is enabled")
+	}
+}
+
+func TestWriteS3ListenerPatchAfterIndentlessScaffoldRewrite(t *testing.T) {
+	dir := t.TempDir()
+	// The managed-services scaffold re-encodes platform.yaml with an
+	// indentless patches sequence before object storage adds its listener.
+	seed := `apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: platform
+spec:
+  path: ./platform
+  patches:
+  - target:
+      kind: HelmRelease
+      name: kube-dc
+    patch: "- op: add\n  path: /spec/values/backend/managedK8sInternalEndpoints\n  value: false\n"
+`
+	if err := os.WriteFile(filepath.Join(dir, "platform.yaml"), []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeS3ListenerPatch(dir, "S3_HOSTNAME=s3.pilot.example.com\n", io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "platform.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Spec struct {
+			Patches []struct {
+				Patch string `yaml:"patch"`
+			} `yaml:"patches"`
+		} `yaml:"spec"`
+	}
+	if err := yaml.Unmarshal(body, &manifest); err != nil {
+		t.Fatalf("scaffolded platform.yaml is invalid: %v", err)
+	}
+	if len(manifest.Spec.Patches) != 2 || !strings.Contains(manifest.Spec.Patches[1].Patch, "name: https-s3") {
+		t.Fatalf("S3 listener not appended as a second patch: %+v", manifest.Spec.Patches)
+	}
+	if err := writeS3ListenerPatch(dir, "S3_HOSTNAME=objects.pilot.example.com\n", io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	body, _ = os.ReadFile(filepath.Join(dir, "platform.yaml"))
+	if err := yaml.Unmarshal(body, &manifest); err != nil {
+		t.Fatalf("updated platform.yaml is invalid: %v", err)
+	}
+	if !strings.Contains(manifest.Spec.Patches[1].Patch, `hostname: "objects.pilot.example.com"`) {
+		t.Fatalf("S3 listener hostname was not updated: %s", manifest.Spec.Patches[1].Patch)
 	}
 }

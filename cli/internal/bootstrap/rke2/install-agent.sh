@@ -19,6 +19,19 @@
 
 set -euo pipefail
 
+# The guided engine stages immutable installer and archive bytes in a root-owned
+# directory. Verify them before config, resolver, sysctl, trust or service writes.
+if [[ -n "${KDC_RKE2_INSTALLER:-}" ]]; then
+    [[ "${KDC_RKE2_INSTALLER}" =~ ^/var/lib/kube-dc-rke2\.[A-Za-z0-9]+/install\.sh$ ]]
+    [[ "${KDC_RKE2_INSTALLER_SHA256:-}" =~ ^[0-9a-f]{64}$ ]]
+    [[ "${INSTALL_RKE2_ARTIFACT_PATH:-}" == "${KDC_RKE2_INSTALLER%/install.sh}" ]]
+    printf '%s  %s\n' "${KDC_RKE2_INSTALLER_SHA256}" "${KDC_RKE2_INSTALLER}" | sha256sum --check --status
+    case "$(uname -m)" in x86_64) KDC_ARCH=amd64;; aarch64) KDC_ARCH=arm64;; *) exit 1;; esac
+    (cd "${INSTALL_RKE2_ARTIFACT_PATH}" && sha256sum --check --status "sha256sum-${KDC_ARCH}.txt")
+    [[ "${RKE2_DNS_PUBLIC_FALLBACK:-false}" != true ]]
+    export INSTALL_RKE2_METHOD=tar
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -308,7 +321,7 @@ fi
 # then disabled systemd-resolved and replaced /etc/resolv.conf with public
 # resolvers. On a corporate network that breaks every internal name AND sends
 # every subsequent query to a third party — from a node whose DNS was fine.
-if ! getent hosts get.rke2.io >/dev/null 2>&1; then
+if [[ -z "${KDC_RKE2_INSTALLER:-}" ]] && ! getent hosts get.rke2.io >/dev/null 2>&1; then
     # DEFAULT: do NOT touch the resolver. On a corporate or air-gapped network,
     # silently replacing /etc/resolv.conf with public DNS breaks every internal
     # name and leaks queries to a third party — from a node whose DNS was a
@@ -467,6 +480,8 @@ kubelet-arg:
   - kube-reserved=${KUBELET_KUBE_RESERVED}
   - eviction-hard=${KUBELET_EVICTION_HARD}
   - max-pods=${KUBELET_MAX_PODS}
+  # Shared by every container/thread in a Pod, including rootless builders.
+  - pod-max-pids=4096
 EOF
 
 log_info "Config written to ${RANCHER_DIR}/config.yaml"
@@ -475,7 +490,11 @@ log_info "Config written to ${RANCHER_DIR}/config.yaml"
 log_info "Installing RKE2 agent ${RKE2_VERSION}..."
 export INSTALL_RKE2_VERSION="${RKE2_VERSION}"
 export INSTALL_RKE2_TYPE="agent"
-curl -sfL https://get.rke2.io | sh -
+if [[ -n "${KDC_RKE2_INSTALLER:-}" ]]; then
+    sh "${KDC_RKE2_INSTALLER}"
+else
+    curl -sfL https://get.rke2.io | sh -
+fi
 
 # Enable and start service
 log_info "Enabling rke2-agent service..."

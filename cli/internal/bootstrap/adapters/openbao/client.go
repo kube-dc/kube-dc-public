@@ -404,6 +404,12 @@ func (c *Client) GenerateRoot(ctx context.Context, shares [][]byte) ([]byte, err
 		if lastErr == nil {
 			return tok, nil
 		}
+		// OpenBao 2.6 moved the CLI command to authenticated endpoints.
+		// Bootstrap has no token yet, so use the explicitly enabled legacy
+		// ceremony API when that command returns permission denied.
+		if (strings.Contains(lastErr.Error(), "403") && strings.Contains(lastErr.Error(), "permission denied")) || strings.Contains(lastErr.Error(), "generate-root -generate-otp") {
+			return c.generateRootLegacy(ctx, pod, shares)
+		}
 		// Only retry if the failure mode might be the WS-drop edge
 		// case — "did not land after N attempts" (intermediate share
 		// dropped beyond our recovery budget) or "auto-cleared"
@@ -1075,18 +1081,29 @@ func (c *Client) activePodCached(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	fallback := ""
 	for _, pod := range pods {
 		st, err := c.Status(ctx, pod)
 		if err != nil {
 			continue
 		}
-		if st.HAMode == "active" || (!st.Sealed && st.HAMode == "") {
+		if st.HAMode == "active" {
 			c.mu.Lock()
 			c.activePod = pod
 			c.activePodFetch = time.Now()
 			c.mu.Unlock()
 			return pod, nil
 		}
+		if !st.Sealed && st.HAMode == "" && fallback == "" {
+			fallback = pod
+		}
+	}
+	if fallback != "" {
+		c.mu.Lock()
+		c.activePod = fallback
+		c.activePodFetch = time.Now()
+		c.mu.Unlock()
+		return fallback, nil
 	}
 	return "", fmt.Errorf("openbao: no active (unsealed) pod found among %v", pods)
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"sort"
 
 	"gopkg.in/yaml.v3"
@@ -111,19 +112,17 @@ func BuildCustomInterfacesPatch(nodeNICs map[string]string) (string, error) {
 	}
 	innerYAML := innerBuf.String()
 
-	// Build the outer Kustomize patches block. The target's
-	// `name:` field needs the literal `${EXT_NET_NAME}` placeholder
-	// (Flux's postBuild.substituteFrom replaces it at apply time);
-	// the `\$\{…\}` escaping shown in clusters/cloud isn't actually
-	// in the file content — that's docs-only escaping. The raw
-	// file has `name: ${EXT_NET_NAME}`.
+	// Kustomize matches target names as regular expressions BEFORE Flux
+	// substitutes environment values. Escape the literal placeholder so
+	// the per-node mapping reaches the ProviderNetwork instead of matching
+	// no resource. Keep the name selector to avoid changing another provider.
 	outer := map[string]any{
 		"patches": []map[string]any{{
 			"target": map[string]any{
 				"group":   "kubeovn.io",
 				"version": "v1",
 				"kind":    "ProviderNetwork",
-				"name":    "${EXT_NET_NAME}",
+				"name":    regexp.QuoteMeta("${EXT_NET_NAME}"),
 			},
 			"patch": innerYAML,
 		}},
@@ -296,7 +295,7 @@ func appendCustomInterfacesPatch(doc *yaml.Node, nodeNICs map[string]string) err
 							{Kind: yaml.ScalarNode, Value: "group"}, {Kind: yaml.ScalarNode, Value: "kubeovn.io"},
 							{Kind: yaml.ScalarNode, Value: "version"}, {Kind: yaml.ScalarNode, Value: "v1"},
 							{Kind: yaml.ScalarNode, Value: "kind"}, {Kind: yaml.ScalarNode, Value: "ProviderNetwork"},
-							{Kind: yaml.ScalarNode, Value: "name"}, {Kind: yaml.ScalarNode, Value: "${EXT_NET_NAME}"},
+							{Kind: yaml.ScalarNode, Value: "name"}, {Kind: yaml.ScalarNode, Value: regexp.QuoteMeta("${EXT_NET_NAME}")},
 						},
 					},
 					{Kind: yaml.ScalarNode, Value: "patch"},

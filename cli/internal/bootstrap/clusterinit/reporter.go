@@ -60,7 +60,8 @@ const (
 	// FINALIZE step and cannot move earlier: kube-apiserver refuses to start
 	// when pointed at a webhook kubeconfig that does not exist yet, and that
 	// file only appears once Flux has brought up infra-core.
-	StepOIDCCutover StepID = "oidc-cutover"
+	StepOIDCCutover     StepID = "oidc-cutover"
+	StepManagedServices StepID = "managed-services"
 	// StepBreakGlass adopts the static-token cluster-admin recovery
 	// kubeconfig into the fleet repo (installer-prd §16.3.3). Unlike every
 	// other finalize step it has NO platform dependency — the ServiceAccount
@@ -129,7 +130,7 @@ func InstallSteps(o InstallStepInputs) []Step {
 	var steps []Step
 	add := func(id StepID, title string) { steps = append(steps, Step{ID: id, Title: title}) }
 
-	add(StepPrepare, "Prepare local session")
+	add(StepPrepare, "Prepare local tools")
 	if o.Starter {
 		// Before install-prereqs: scripts/install-prerequisites.sh and
 		// bootstrap/add-cluster.sh both live INSIDE the starter trees.
@@ -156,6 +157,7 @@ func InstallSteps(o InstallStepInputs) []Step {
 	if o.NewRepoRemote {
 		add(StepRemote, "Configure fleet remote")
 	}
+	add(StepIngressNodes, "Set ingress node labels")
 	add(StepScaffold, "Scaffold cluster overlay")
 	if o.NoPush {
 		add(StepCommitPush, "Commit (local only)")
@@ -188,6 +190,9 @@ func InstallSteps(o InstallStepInputs) []Step {
 		add(StepOpenBao, "Initialize OpenBao")
 		add(StepKeycloakOIDC, "Configure Keycloak OIDC")
 		add(StepOIDCCutover, "Wire apiservers to OIDC")
+		if o.ManagedServices {
+			add(StepManagedServices, "Publish managed-services catalog and backup admission")
+		}
 	}
 	return steps
 }
@@ -208,6 +213,7 @@ type InstallStepInputs struct {
 	Finalize        bool // drive OpenBao/Keycloak after reconcile (!NoPush)
 	GPUEnabled      bool // track GPU Flux layers when products are installed
 	HAMiEnabled     bool // include the HAMi layer in GPU progress
+	ManagedServices bool // publish the reviewed managed-services installation
 }
 
 // GPUInstallStepIDs returns the terminal milestones that must be skipped when

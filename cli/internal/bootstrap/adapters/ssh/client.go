@@ -132,6 +132,8 @@ func New(opts ...Option) *Client {
 
 // Compile-time assertion.
 var _ ports.SSHClient = (*Client)(nil)
+var _ ports.CappedSSHClient = (*Client)(nil)
+var _ ports.CappedSSHHostKeyClient = (*Client)(nil)
 
 // ---------- ports.SSHClient ----------
 
@@ -160,18 +162,84 @@ func (c *Client) Run(ctx context.Context, host ports.SSHHost, cmd string) ([]byt
 	return out.Bytes(), nil
 }
 
+// RunCapped uses the same verified SSH connection as Run, but bounds the
+// combined stdout and stderr buffer while data arrives from the host.
+func (c *Client) RunCapped(ctx context.Context, host ports.SSHHost, cmd string, maxBytes int) ([]byte, error) {
+	out, _, err := c.runCappedWithHostKey(ctx, host, cmd, maxBytes, false)
+	return out, err
+}
+
+// RunCappedWithHostKey records the target key after the configured callback
+// accepts it. The evidence belongs to the same SSH connection as the read.
+func (c *Client) RunCappedWithHostKey(ctx context.Context, host ports.SSHHost, cmd string, maxBytes int) ([]byte, ports.SSHHostKeyEvidence, error) {
+	return c.runCappedWithHostKey(ctx, host, cmd, maxBytes, true)
+}
+
+func (c *Client) runCappedWithHostKey(ctx context.Context, host ports.SSHHost, cmd string, maxBytes int, capture bool) ([]byte, ports.SSHHostKeyEvidence, error) {
+	var evidence ports.SSHHostKeyEvidence
+	var evidenceMu sync.Mutex
+	snapshot := func() ports.SSHHostKeyEvidence {
+		evidenceMu.Lock()
+		defer evidenceMu.Unlock()
+		return evidence
+	}
+	if cmd == "" || maxBytes < 1 {
+		return nil, evidence, fmt.Errorf("ssh: capped run requires a command and positive byte limit")
+	}
+	var observe func(string, ssh.PublicKey)
+	if capture {
+		observe = func(address string, key ssh.PublicKey) {
+			evidenceMu.Lock()
+			defer evidenceMu.Unlock()
+			evidence = ports.SSHHostKeyEvidence{Address: address, Algorithm: key.Type(), FingerprintSHA256: ssh.FingerprintSHA256(key)}
+		}
+	}
+	session, client, cleanup, err := c.dialSessionWithHostKey(ctx, host, observe)
+	if err != nil {
+		return nil, ports.SSHHostKeyEvidence{}, err
+	}
+	defer cleanup()
+	out := syncBuffer{max: maxBytes}
+	session.Stdout = &out
+	session.Stderr = &out
+	runErr := runSessionWithCtx(ctx, session, client, cmd)
+	if out.Exceeded() {
+		return out.Bytes(), snapshot(), fmt.Errorf("ssh: output from %s exceeded %d bytes", sshTarget(host), maxBytes)
+	}
+	if runErr != nil {
+		return out.Bytes(), snapshot(), fmt.Errorf("ssh: run %q on %s: %w", cmd, sshTarget(host), runErr)
+	}
+	return out.Bytes(), snapshot(), nil
+}
+
 // syncBuffer is a goroutine-safe bytes.Buffer for the combined
 // stdout+stderr capture in Run (the ssh library writes the two streams
 // from different goroutines).
 type syncBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
+	mu       sync.Mutex
+	buf      bytes.Buffer
+	max      int
+	exceeded bool
 }
 
 func (s *syncBuffer) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.max > 0 && s.buf.Len()+len(p) > s.max {
+		remaining := s.max - s.buf.Len()
+		if remaining > 0 {
+			_, _ = s.buf.Write(p[:remaining])
+		}
+		s.exceeded = true
+		return len(p), nil
+	}
 	return s.buf.Write(p)
+}
+
+func (s *syncBuffer) Exceeded() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.exceeded
 }
 
 func (s *syncBuffer) Bytes() []byte {
@@ -224,6 +292,17 @@ func (c *Client) Fetch(ctx context.Context, host ports.SSHHost, remotePath strin
 }
 
 func (c *Client) Put(ctx context.Context, host ports.SSHHost, remotePath string, body []byte, mode uint32) error {
+	return c.put(ctx, host, remotePath, body, mode, nil)
+}
+
+func (c *Client) PutGuarded(ctx context.Context, host ports.SSHHost, remotePath string, body []byte, mode uint32, guard func(string) (string, error)) error {
+	if guard == nil {
+		return fmt.Errorf("ssh: upload ownership guard is required")
+	}
+	return c.put(ctx, host, remotePath, body, mode, guard)
+}
+
+func (c *Client) put(ctx context.Context, host ports.SSHHost, remotePath string, body []byte, mode uint32, guard func(string) (string, error)) error {
 	if remotePath == "" {
 		return fmt.Errorf("ssh: empty remote path")
 	}
@@ -273,6 +352,12 @@ func (c *Client) Put(ctx context.Context, host ports.SSHHost, remotePath string,
 	cmd := fmt.Sprintf(
 		"if [ \"$(id -u)\" -ne 0 ] && command -v sudo >/dev/null 2>&1; then exec sudo -n %s; else exec %s; fi",
 		write, write)
+	if guard != nil {
+		cmd, err = guard(cmd)
+		if err != nil {
+			return err
+		}
+	}
 	if err := runSessionWithCtx(ctx, session, client, cmd); err != nil {
 		return fmt.Errorf("ssh: put %s on %s: %w (stderr: %s)",
 			remotePath, sshTarget(host), err, bytes.TrimSpace(stderr.Bytes()))
@@ -294,13 +379,11 @@ func runSessionWithCtx(ctx context.Context, session *ssh.Session, client *ssh.Cl
 	case err := <-done:
 		return err
 	case <-ctx.Done():
-		// Try to send SIGTERM first so the remote command gets a
-		// chance to clean up; not all sshd builds honour Signal so
-		// fall through to closing the session/client.
-		_ = session.Signal(ssh.SIGTERM)
-		_ = session.Close()
+		// A signal request can wait for a server reply. Close the transport
+		// first so cancellation also works when the server stops replying.
 		_ = client.Close()
-		<-done // drain so the goroutine exits before we return
+		_ = session.Close()
+		<-done // Wait for SSH's copy goroutines before callers read their buffers.
 		return ctx.Err()
 	}
 }
@@ -313,15 +396,49 @@ func runSessionWithCtx(ctx context.Context, session *ssh.Session, client *ssh.Cl
 // func that tears down the session, the target client, AND every jump
 // client in the chain.
 func (c *Client) dialSession(ctx context.Context, host ports.SSHHost) (*ssh.Session, *ssh.Client, func(), error) {
-	client, cleanupClient, err := c.dialClient(ctx, host)
+	return c.dialSessionWithHostKey(ctx, host, nil)
+}
+
+func (c *Client) dialSessionWithHostKey(ctx context.Context, host ports.SSHHost, observe func(string, ssh.PublicKey)) (*ssh.Session, *ssh.Client, func(), error) {
+	client, cleanupClient, err := c.dialClientWithHostKey(ctx, host, observe)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	session, err := client.NewSession()
-	if err != nil {
-		cleanupClient()
-		return nil, nil, nil, fmt.Errorf("ssh: new session on %s: %w", sshTarget(host), err)
+	// NewSession opens an SSH channel and can wait indefinitely on a server
+	// that completed authentication but never answers the channel request.
+	// Closing the client on cancellation also interrupts this gap between
+	// dialing and runSessionWithCtx.
+	type openedSession struct {
+		session *ssh.Session
+		err     error
 	}
+	opened := make(chan openedSession, 1)
+	go func() {
+		session, err := client.NewSession()
+		if ctx.Err() != nil && session != nil {
+			_ = session.Close()
+		}
+		opened <- openedSession{session: session, err: err}
+	}()
+	var result openedSession
+	select {
+	case result = <-opened:
+		if err := ctx.Err(); err != nil {
+			if result.session != nil {
+				_ = result.session.Close()
+			}
+			cleanupClient()
+			return nil, nil, nil, err
+		}
+	case <-ctx.Done():
+		cleanupClient()
+		return nil, nil, nil, ctx.Err()
+	}
+	if result.err != nil {
+		cleanupClient()
+		return nil, nil, nil, fmt.Errorf("ssh: new session on %s: %w", sshTarget(host), result.err)
+	}
+	session := result.session
 	cleanup := func() {
 		_ = session.Close()
 		cleanupClient()
@@ -335,6 +452,10 @@ func (c *Client) dialSession(ctx context.Context, host ports.SSHHost) (*ssh.Sess
 // every jump client in reverse order. Every hop's host key is verified
 // through the same known_hosts callback.
 func (c *Client) dialClient(ctx context.Context, host ports.SSHHost) (*ssh.Client, func(), error) {
+	return c.dialClientWithHostKey(ctx, host, nil)
+}
+
+func (c *Client) dialClientWithHostKey(ctx context.Context, host ports.SSHHost, observe func(string, ssh.PublicKey)) (*ssh.Client, func(), error) {
 	hostCfg, err := c.resolveHostConfig(host)
 	if err != nil {
 		return nil, nil, err
@@ -365,7 +486,7 @@ func (c *Client) dialClient(ctx context.Context, host ports.SSHHost) (*ssh.Clien
 	}
 
 	// Finally dial the target through the last jump (or directly).
-	target, err := c.handshakeClient(ctx, proxy, hostCfg)
+	target, err := c.handshakeClientWithHostKey(ctx, proxy, hostCfg, observe)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
@@ -380,6 +501,10 @@ func (c *Client) dialClient(ctx context.Context, host ports.SSHHost) (*ssh.Clien
 // ctx for TCP dial AND handshake (Timeout in ClientConfig caps the
 // handshake; ctx cancel short-circuits via conn.Close from a watcher).
 func (c *Client) handshakeClient(ctx context.Context, proxy *ssh.Client, hostCfg hostConfig) (*ssh.Client, error) {
+	return c.handshakeClientWithHostKey(ctx, proxy, hostCfg, nil)
+}
+
+func (c *Client) handshakeClientWithHostKey(ctx context.Context, proxy *ssh.Client, hostCfg hostConfig, observe func(string, ssh.PublicKey)) (*ssh.Client, error) {
 	authMethods, err := c.loadAuth(hostCfg.IdentityFile)
 	if err != nil {
 		return nil, err
@@ -393,6 +518,21 @@ func (c *Client) handshakeClient(ctx context.Context, proxy *ssh.Client, hostCfg
 	hostKeyCallback, err := c.hostKeyCallback()
 	if err != nil {
 		return nil, fmt.Errorf("ssh: host-key verification setup: %w", err)
+	}
+	if observe != nil || hostCfg.ExpectedHostKeySHA256 != "" {
+		verified := hostKeyCallback
+		hostKeyCallback = func(address string, remote net.Addr, key ssh.PublicKey) error {
+			if err := verified(address, remote, key); err != nil {
+				return err
+			}
+			if hostCfg.ExpectedHostKeySHA256 != "" && ssh.FingerprintSHA256(key) != hostCfg.ExpectedHostKeySHA256 {
+				return fmt.Errorf("ssh: target host key does not match the expected SHA256 fingerprint")
+			}
+			if observe != nil {
+				observe(address, key)
+			}
+			return nil
+		}
 	}
 	clientCfg := &ssh.ClientConfig{
 		User:            hostCfg.User,
@@ -458,10 +598,11 @@ func (c *Client) dialOnce(ctx context.Context, proxy *ssh.Client, addr string, c
 }
 
 type hostConfig struct {
-	Hostname     string
-	User         string
-	Port         int
-	IdentityFile string
+	ExpectedHostKeySHA256 string
+	Hostname              string
+	User                  string
+	Port                  int
+	IdentityFile          string
 	// ProxyJump is the resolved jump chain (each entry a
 	// `[user@]host[:port]` spec), left-to-right. Empty → direct.
 	ProxyJump []string
@@ -709,10 +850,11 @@ func splitHostForKeyscan(hostname string) string {
 
 func (c *Client) resolveHostConfig(h ports.SSHHost) (hostConfig, error) {
 	cfg := hostConfig{
-		Hostname:     h.Hostname,
-		User:         h.User,
-		Port:         h.Port,
-		IdentityFile: "",
+		ExpectedHostKeySHA256: h.ExpectedHostKeySHA256,
+		Hostname:              h.Hostname,
+		User:                  h.User,
+		Port:                  h.Port,
+		IdentityFile:          "",
 	}
 
 	// Pull ssh_config entries when an alias is set, OR when the

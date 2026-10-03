@@ -122,7 +122,9 @@ Most client libraries need TLS enabled explicitly and the CA passed in; a client
 that connects without TLS fails to handshake. The console's **Connect** card
 shows the same connection for `valkey-cli`, Node, Python, Go and a `.env` file.
 
-## Day-2 operations
+## Supported operations {#day-2-operations}
+
+For request format, approval, and results, see [Request an operation](managed-services-operations.md).
 
 Request an operation with a `ServiceOperation`, or use the action in the
 console. Which ones your plan allows, and which run without provider approval,
@@ -180,7 +182,7 @@ Restore is always into a **new service** through a `RestoreToNew` operation.
 Select the backup record by name and UID, then specify a compatible Valkey target plan and full engine release.
 Do not set `targetTime`. There is no point-in-time recovery or restore in place.
 Use the shared request structure in
-[Restore into a new service](postgresql-backup-restore.md#restore-into-a-new-service).
+[Restore into a new service](managed-services-backup-restore.md#restore-into-a-new-service).
 
 ## Delete a service
 

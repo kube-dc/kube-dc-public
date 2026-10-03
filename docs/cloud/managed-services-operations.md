@@ -1,4 +1,4 @@
-# Managed service operations
+# Request a managed service operation
 
 import {ManagedServicesOperationDiagram} from '@site/src/components/Diagram/ManagedServicesDiagrams';
 
@@ -105,9 +105,34 @@ Project roles cannot approve their own requests.
 `NextPlanWindow` waits for the recurring maintenance window in the plan.
 It does not bypass approval, capacity checks, or operation conflicts.
 
+The plan defines its recurring window with `maintenance.day` (`Mon` to `Sun`, or `Any`),
+`maintenance.startHour` in UTC, and `maintenance.durationMinutes`.
+Without a plan window, `NextPlanWindow` is rejected with `PlanNotEntitled`.
+For `RestoreToNew`, use the target plan's policy; see [Restore into a new service](managed-services-backup-restore.md#restore-into-a-new-service).
+
 Each operation has an immutable specification and an idempotency key.
 To retry an uncertain submission, apply the same manifest with the same name and key.
 Do not submit a replacement until you know whether the first operation changed the service.
+
+## Retries and idempotency
+
+Follow these rules when a request times out or fails:
+
+- To retry a submission whose result you did not see, apply the same manifest
+  again, with the same name and `idempotencyKey`. The existing record is kept
+  and the action is not repeated.
+- A new operation with the same `idempotencyKey` as an earlier operation on the
+  same service is `Rejected` with `OperationConflict`, unless the earlier one
+  ended `Failed` or `Rejected`.
+- Before you create a new operation after `Failed` or `Rejected`, make sure the
+  earlier one did not already make changes: execution can begin before the
+  displayed phase shows `Running`. When you cannot tell, keep the operation and
+  ask your provider for its execution outcome. When retrying is safe, fix the
+  cause and create a new operation with a new name and a new `idempotencyKey`.
+- An accepted operation is not rejected because its result is slow to appear; it
+  stays queued.
+- A Project identity can delete an operation record only after it reaches
+  `Succeeded`, `Failed`, `Rejected` or `Cancelled`.
 
 ## Read the result
 
@@ -135,6 +160,7 @@ Replace `<operation>` with the operation name.
 Check `status.reason`, `status.message`, timestamps, checkpoints, and result fields.
 For capacity or parameter changes, also check the service's `status.effectiveConfiguration` and `Ready` condition.
 Operation results describe applied changes without rewriting the tenant's manifest.
+Do not copy operation-only changes back into the creation manifest.
 
 ## Cancel a waiting operation
 
@@ -146,16 +172,20 @@ kubectl annotate serviceoperation <operation> -n <project> \
 ```
 
 Wait for `Cancelled`. A cancellation request can lose a race with execution.
+A running operation continues. Project identities cannot cancel operations created by a credential policy.
 Deleting the operation is not an instruction to reverse changes.
 
 ## Service-specific procedures
 
 Use the appropriate procedure and its supported operation list:
 
-- [PostgreSQL operations](postgresql-operations.md) and [backup recovery](postgresql-backup-restore.md).
+- [PostgreSQL operations](postgresql-operations.md).
 - [MySQL and MariaDB](managed-services-mysql-mariadb.md).
 - [ClickHouse](managed-services-clickhouse.md).
 - [Valkey](managed-services-valkey.md).
 - [Kafka](managed-services-kafka.md).
+
+For shared backup and recovery requests, see [Back up and restore](managed-services-backup-restore.md).
+For scheduled credential rotation, see [Rotate credentials](managed-services-credentials.md).
 
 For another catalog service, use the operation schema and responsibility statement published by your provider.

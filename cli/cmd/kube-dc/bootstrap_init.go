@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/huh"
+	"charm.land/huh/v2"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -57,10 +57,17 @@ import (
 // default "Error: ... \n Usage: ..." block would just add noise on
 // validation failure. Help output via `--help` still works.
 func bootstrapInitCmd(fleetRepo *string) *cobra.Command {
+	return bootstrapInitCmdWithOptions(fleetRepo, nil)
+}
+
+// accepted carries the reviewed panel values into the existing init pipeline.
+// It skips only input collection; validation, plan, confirmation, and execution
+// use the same path as standalone init. In particular it never implies --yes.
+func bootstrapInitCmdWithOptions(fleetRepo *string, accepted *clusterinit.InitOptions) *cobra.Command {
 	o := &clusterinit.InitOptions{}
 	var (
-		setFlags, nodeNICFlags, addonFlags, cephNodeFlags, gpuNodeModeFlags, gpuSSHHostMapFlags []string
-		gpuSSHHostOverrides                                                                     map[string]string
+		setFlags, nodeNICFlags, nodeSSHHostFlags, nodeSSHHostKeyFlags, addonFlags, cephNodeFlags, gpuNodeModeFlags, gpuSSHHostMapFlags []string
+		gpuSSHHostOverrides                                                                                                            map[string]string
 		// --object-storage-mode is canonical (OS-1); --rook-mode is a
 		// deprecated alias for one release. Bound to separate vars so
 		// RunE can detect a conflicting double-set instead of silently
@@ -130,6 +137,16 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 			} else {
 				o.NodeNICs = pairs
 			}
+			if pairs, err := clusterinit.ParseSetPairs(nodeSSHHostFlags); err != nil {
+				return fmt.Errorf("--node-ssh-host: %w", err)
+			} else {
+				o.NodeSSHHosts = pairs
+			}
+			if pairs, err := clusterinit.ParseSetPairs(nodeSSHHostKeyFlags); err != nil {
+				return fmt.Errorf("--node-ssh-host-key: %w", err)
+			} else {
+				o.NodeSSHHostKeys = pairs
+			}
 			if pairs, err := clusterinit.ParseSetPairs(cephNodeFlags); err != nil {
 				return fmt.Errorf("--ceph-node: %w", err)
 			} else if len(pairs) > 0 {
@@ -161,6 +178,10 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 				o.RookMode = clusterinit.RookMode(objectStorageModeFlag)
 			case rookModeAliasFlag != "":
 				o.RookMode = clusterinit.RookMode(rookModeAliasFlag)
+			}
+
+			if accepted != nil {
+				*o = *accepted
 			}
 
 			// --repo is the persistent flag from the parent bootstrap
@@ -209,8 +230,10 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 			// file) + KUBE_DC_INIT_* env BEFORE the wizard/validation, so
 			// the panel opens pre-filled and explicit flags still win
 			// (precedence via cmd.Flags().Changed). See clusterinit/prefill.go.
-			if err := applyInitPrefill(cmd, o, configPath); err != nil {
-				return err
+			if accepted == nil {
+				if err := applyInitPrefill(cmd, o, configPath); err != nil {
+					return err
+				}
 			}
 
 			// `--no-tty` auto-toggles when stdout is captured (tests,
@@ -229,7 +252,12 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 			// unchanged (thin-generator contract, OS-5 §7.1). A
 			// cancelled form aborts cleanly with options untouched.
 			wizardFlags := ""
-			if bareInitInvocation(cmd) && !o.NoTTY {
+			if accepted != nil && !o.NoTTY && !o.DryRun {
+				state := &initform.State{}
+				state.FromOptions(o)
+				wizardFlags = state.EquivalentFlags(o)
+			}
+			if accepted == nil && bareInitInvocation(cmd) && !o.NoTTY {
 				// Sibling-mode hint (OS-5 §7.3): computed against a
 				// copy forced to existing-fleet — at this point the
 				// operator hasn't picked a fleet mode yet, and the
@@ -239,7 +267,7 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 				// T6+: the Proxmox-style settings panel (RunPanel)
 				// replaced the sequential huh form. A cancelled panel
 				// aborts init cleanly.
-				eq, err := initform.RunPanel(o, siblingObjectStorageModeHint(&hintOpts), gatherPanelProbe(cmd.Context()))
+				eq, err := initform.RunPanel(o, siblingObjectStorageModeHint(&hintOpts), panelProbeForTarget(cmd.Context(), o), bootstrapPanelServices(cmd.Context()))
 				if err != nil {
 					if errors.Is(err, initform.ErrPanelCancelled) {
 						return nil
@@ -273,6 +301,18 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 					}
 				}
 				return err
+			}
+			if o.InstallationKind == "" {
+				return fmt.Errorf("init: --installation-kind is required (kube-dc or cloudsigma)")
+			}
+			if err := deriveServicesStorageBudget(cmd.Context(), o); err != nil {
+				return fmt.Errorf("init: %w", err)
+			}
+			if err := verifyServicesDatabaseClass(cmd.Context(), o); err != nil {
+				return fmt.Errorf("init: %w", err)
+			}
+			if _, err := clusterinit.ResolveManagedServices(o); err != nil {
+				return fmt.Errorf("init: %w", err)
 			}
 			// M4-T05 GitLab fail-closed boundary RETIRED (properly
 			// this time): the coordinated `kube-dc-fleet` PR
@@ -548,6 +588,10 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"Override a cluster-config.env key (repeatable; KEY=VALUE; SCREAMING_SNAKE_CASE; values may contain commas)")
 	cmd.Flags().StringSliceVar(&nodeNICFlags, "node-nic", nil,
 		"Per-node primary NIC (repeatable; NODE=IFACE; drives the customInterfaces patch)")
+	cmd.Flags().StringSliceVar(&nodeSSHHostFlags, "node-ssh-host", nil,
+		"SSH target for each additional raw Ceph disk node (repeatable; NODE=user@host; strict known_hosts)")
+	cmd.Flags().StringSliceVar(&nodeSSHHostKeyFlags, "node-ssh-host-key", nil,
+		"Expected server host key for a raw Ceph disk node (repeatable; NODE=SHA256:fingerprint)")
 
 	// --- Object storage (OS-1) ---
 	// REQUIRED, no default: the old silent default-to-disabled shipped
@@ -565,11 +609,11 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 	cmd.Flags().StringVar(&o.RookOSDNode, "rook-osd-node", "",
 		"Node hosting the OSD for --object-storage-mode=rook-ceph-local")
 	cmd.Flags().IntVar(&o.RookOSDSizeGB, "rook-osd-size-gb", 0,
-		"OSD size in GB for --object-storage-mode=rook-ceph-local")
+		"Backing file size in GiB for local loop storage; not required for a raw disk")
 	cmd.Flags().StringVar(&o.RookOSDDevice, "rook-osd-device", "",
 		"OSD device for --object-storage-mode=rook-ceph-local (default: fleet template's loop0)")
 	cmd.Flags().StringSliceVar(&cephNodeFlags, "ceph-node", nil,
-		"OSD node for --object-storage-mode=rook-ceph-multi-node (repeatable; NODE=DEVICE; exactly 3)")
+		"OSD node for --object-storage-mode=rook-ceph-multi-node (repeatable; NODE=DEVICE; 1 to 3 servers)")
 	cmd.Flags().StringVar(&o.CephStorageClass, "ceph-storage-class", "",
 		"StorageClass backing OSD PVCs for --object-storage-mode=rook-ceph-pvc")
 	cmd.Flags().IntVar(&o.CephOSDCount, "ceph-osd-count", 0,
@@ -582,6 +626,18 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"Skip the S3 exposure layer (Certificate + HTTPRoute) — cluster-internal S3 only")
 	cmd.Flags().BoolVar(&o.NoKubeVirt, "no-kubevirt", false,
 		"VMs are out of scope for this cluster (e.g. cs/CloudSigma) — skip the KubeVirt-eligibility (KVM) preflight")
+	cmd.Flags().StringVar(&o.InstallationKind, "installation-kind", "",
+		"Installation kind (required: kube-dc or cloudsigma); determines managed-services qualification")
+	cmd.Flags().StringVar(&o.ManagedServicesMode, "managed-services", "auto",
+		"Managed services on, off, or auto (auto enables on qualified kube-dc storage)")
+	cmd.Flags().StringVar(&o.ServicesDatabaseClass, "services-database-class", "",
+		"Expandable database StorageClass for managed services (normally derived from storage topology)")
+	cmd.Flags().StringVar(&o.ServicesStorageBudget, "services-storage-budget", "",
+		"Bounded managed-services storage allocation, for example 100Gi")
+	cmd.Flags().StringSliceVar(&o.ServicesEgressProbeURLs, "services-egress-probe", nil,
+		"HTTPS URL used to verify managed-services egress (repeatable)")
+	cmd.Flags().BoolVar(&o.PAYG, "payg", false,
+		"Enable Kube-DC PAYG usage billing on this NEW installation (default off): scaffolds the platform/payg metering + billing layer, PAYG_ENABLED=true, a freshly generated PAYG_INSTALLATION_UID, PAYG_PRODUCTS_REVISION=<name>-<yyyymmdd>, the metering database login (SOPS) and its CNPG role. Requires --set BILLING_PROVIDER=stripe or whmcs; refused for installations billed by a partner. See docs/platform/installation-guide.md")
 	cmd.Flags().BoolVar(&o.ImageAcceleration, "image-acceleration", true,
 		"Wire the on-cluster image path (tenant-addons + cdi-os-mirror + registry-depot zot) into the scaffold; spegel (RKE2 embedded registry) is enabled per node by bootstrap install (default: true)")
 	cmd.Flags().StringVar(&o.IngressAddressLayer, "ingress-address-layer", "",
@@ -664,6 +720,8 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"With --mode=adopt: proceed even when pre-existing components aren't version-pinned to their live versions (RISKY — Flux's first reconcile may upgrade/restart them; run `bootstrap adopt --pin-versions` first instead)")
 	cmd.Flags().StringVar(&o.SSHHost, "ssh-host", "",
 		"SSH host for auto-kubeconfig-pull (M4-T06; deferred — operator must pass kubeconfig manually for v1)")
+	cmd.Flags().StringVar(&o.SSHHostKeySHA256, "ssh-host-key-sha256", "", "Expected target SHA256 fingerprint, in addition to known_hosts verification")
+	cmd.Flags().StringVar(&o.PrimaryNode, "primary-node", "", "Kubernetes node name reached by --ssh-host; required to map its raw Ceph disk in a multi-node install")
 	cmd.Flags().BoolVar(&o.NoSSH, "no-ssh", false,
 		"Skip the SSH kubeconfig-pull step. NOTE: this also skips the OIDC-webhook cutover, "+
 			"which needs SSH to the control-plane nodes — the install then finishes with every "+
@@ -912,7 +970,10 @@ func runInitDryRun(out io.Writer, o *clusterinit.InitOptions) error {
 	// empty override must hash as the CONCRETE version this binary
 	// resolves, or a plan reviewed under v0.5.1 could be applied by
 	// v0.5.2 and silently pull the newer starter.
-	o.StarterRef = pinStarterDigest(out, resolveStarterRef(o.StarterRef))
+	o.StarterRef = starterRefForPlan(out, o)
+	if err := requireGreenfieldStarterDigest(o); err != nil {
+		return err
+	}
 	plan, err := clusterinit.BuildPlan(o, fleet)
 	if err != nil {
 		return fmt.Errorf("build plan: %w", err)
@@ -962,17 +1023,20 @@ func runInitApplyPlan(ctx context.Context, out io.Writer, o *clusterinit.InitOpt
 	fmt.Fprintln(out, "=== kube-dc bootstrap init — APPLY-PLAN ===")
 	fmt.Fprintf(out, "Plan source: %s\n", o.ApplyPlan)
 
-	// Same ref-pin as the dry-run/apply paths (review P1 2026-07-20):
-	// the saved plan hashed the CONCRETE starter ref this binary
-	// resolves; re-deriving from a raw empty override here would
-	// mismatch every plan this same binary just wrote — and a plan
-	// written by a DIFFERENT version fails verification loudly, which
-	// is exactly the version-drift protection the pin exists for.
-	o.StarterRef = pinStarterDigest(out, resolveStarterRef(o.StarterRef))
-
+	// The saved plan records the reviewed ref. When a previous attempt
+	// already extracted the starter, replay uses that ref without a
+	// registry call. Otherwise the current tag is resolved again and
+	// VerifyApplyPlanInput detects any changed digest.
 	plan, err := clusterinit.LoadPlan(o.ApplyPlan)
 	if err != nil {
 		return fmt.Errorf("load plan: %w", err)
+	}
+	if plan.ManagedServicesMode == "on" && o.ServicesDatabaseClass != "" && !o.ServicesClassExpansionVerified {
+		return fmt.Errorf("apply plan: explicit managed-services StorageClass must still allow volume expansion on the verified target cluster")
+	}
+	o.StarterRef = starterRefForReplay(out, o, plan.StarterRef)
+	if err := requireGreenfieldStarterDigest(o); err != nil {
+		return err
 	}
 	if err := clusterinit.VerifyApplyPlanInput(plan, o); err != nil {
 		return fmt.Errorf("verify plan inputs: %w", err)
@@ -996,7 +1060,10 @@ func runInitDefaultApply(ctx context.Context, out io.Writer, o *clusterinit.Init
 	// empty override must hash as the CONCRETE version this binary
 	// resolves, or a plan reviewed under v0.5.1 could be applied by
 	// v0.5.2 and silently pull the newer starter.
-	o.StarterRef = pinStarterDigest(out, resolveStarterRef(o.StarterRef))
+	o.StarterRef = starterRefForPlan(out, o)
+	if err := requireGreenfieldStarterDigest(o); err != nil {
+		return err
+	}
 	plan, err := clusterinit.BuildPlan(o, fleet)
 	if err != nil {
 		return fmt.Errorf("build plan: %w", err)
@@ -1136,6 +1203,10 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	// checklist up front. The finalize steps run only when there's a
 	// pushed, reconciling cluster to finalize against.
 	sshEnabled := o.SSHHost != "" && !o.NoSSH
+	rawOSDs := o.ObjectStorage().RawOSDDevices()
+	if err := validateRawOSDApplyInputs(o, sshEnabled); err != nil {
+		return err
+	}
 	gpu := o.GPU()
 	// Run the starter step for EVERY greenfield mode — EnsureStarter
 	// itself decides pull vs skip vs REPAIR (shape present with broken
@@ -1148,14 +1219,24 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		Starter:          starterNeeded,
 		Adopt:            o.Mode == clusterinit.ModeAdopt,
 		SSH:              sshEnabled,
-		StorageDevCheck:  sshEnabled && len(o.ObjectStorage().RawOSDDevices()) > 0,
+		StorageDevCheck:  o.Mode == clusterinit.ModeInstall && len(rawOSDs) > 0,
 		NewRepoCreate:    plan.FleetMode == clusterinit.FleetNewRepo && !o.NoCreateRepo && !o.NoPush,
 		NewRepoRemote:    plan.FleetMode == clusterinit.FleetNewRepo && !o.NoPush,
 		NoPush:           o.NoPush,
 		Finalize:         !o.NoPush,
 		GPUEnabled:       gpu.Platform == clusterinit.GPUPlatformEnabled,
 		HAMiEnabled:      gpu.HAMiEnabled,
+		ManagedServices:  plan.ManagedServicesMode == "on",
 	}))
+	if os.Getenv("KUBE_DC_MOCK") == "" {
+		checks, err := initWorkstationChecks(ctx, o)
+		if err != nil {
+			return fmt.Errorf("apply: check local tools: %w", err)
+		}
+		if blocked := manualToolBlockers(checks, !o.NoInstallPrereqs); len(blocked) != 0 {
+			return fmt.Errorf("apply: install or upgrade these local tools before continuing: %s", strings.Join(blocked, ", "))
+		}
+	}
 
 	// GitLab fail-closed guard retired — the coordinated
 	// `kube-dc-fleet` PR made `flux-install.sh` provider-aware.
@@ -1212,28 +1293,35 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		}
 	}
 
+	// Starter acquisition and the prerequisite script need no Kubernetes
+	// client. Build only their local adapters here; a clean workstation may
+	// have no kubeconfig and may not have Flux installed yet.
 	var session *bootstrap.Session
+	var starterPuller interface {
+		PullArtifact(context.Context, string, string) error
+	}
+	var starterGit ports.GitClient
+	var prereqRunner ports.ScriptRunner
 	if err := step(rep, clusterinit.StepPrepare, func() error {
-		var e error
-		session, e = bootstrap.NewSession(bootstrap.Options{
-			FleetRepoPath: o.Repo,
-		})
-		return e
-	}); err != nil {
-		if o.SSHHost == "" && !clusterinit.HaveUsableKubeconfig() {
-			return fmt.Errorf("apply: build session: %w\n\n"+
-				"There is no usable kubeconfig on this machine, and no --ssh-host was given for me to "+
-				"fetch one. Either point KUBECONFIG at the cluster from Phase 2, or pull it first:\n"+
-				"  kube-dc bootstrap fetch-kubeconfig %s --ssh-host <user@control-plane> --domain %s --set-current",
-				err, o.Name, o.Domain)
+		if os.Getenv("KUBE_DC_MOCK") != "" {
+			var err error
+			session, err = bootstrap.NewSession(bootstrap.Options{FleetRepoPath: o.Repo})
+			if err != nil {
+				return err
+			}
+			starterPuller, starterGit, prereqRunner = session.Flux, session.Git, session.Scripts
+			return nil
 		}
-		// Mock-mode + non-kubeconfig real flows both return errors
-		// here; the engine NEEDS a real session for the apply
-		// path, so surface the failure directly. (Mock-mode apply
-		// is a future concern — the M5 OpenBao mock can run end-to-
-		// end against scenario fixtures, but T12 doesn't gate
-		// behind that yet.)
-		return fmt.Errorf("apply: build session: %w", err)
+		var err error
+		starterPuller = clusterinit.OCIPuller{}
+		starterGit, err = bootstrap.NewGitOnly()
+		if err != nil {
+			return err
+		}
+		prereqRunner, err = bootstrap.NewScriptOnly(o.Repo)
+		return err
+	}); err != nil {
+		return fmt.Errorf("apply: prepare local adapters: %w", err)
 	}
 	if session != nil {
 		defer session.Close()
@@ -1250,8 +1338,8 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 			_, e := clusterinit.EnsureStarter(ctx, clusterinit.EnsureStarterOptions{
 				RepoPath: o.Repo,
 				Ref:      o.StarterRef, // pinned pre-plan; see runInitDryRun/DefaultApply
-				Flux:     session.Flux,
-				Git:      session.Git,
+				Flux:     starterPuller,
+				Git:      starterGit,
 				Out:      out,
 			})
 			return e
@@ -1259,16 +1347,6 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 			return fmt.Errorf("apply: fleet starter: %w", err)
 		}
 	}
-	// Age-key enrollment WITH generation — the ONE place it may mutate:
-	// after the plan gate and the live-mode re-probe above, after the
-	// starter is present (generate-age-key.sh lives inside it — P0 ordering
-	// fix, review 2026-07-20), and before scaffold needs the key for SOPS.
-	// Unconditional (not only under starterNeeded): a starter-shaped repo
-	// with no age.key must also generate HERE, not in RunE (codex 2026-08-16).
-	if err := validateAgeKeyEnrollment(ctx, out, o, true); err != nil {
-		return fmt.Errorf("apply: age key: %w", err)
-	}
-
 	// M4-T07 auto-install prereqs. Runs FIRST — before DNS / NFD /
 	// create-repo / Apply — so a missing binary surfaces before we
 	// commit + push. Gated on `!--no-install-prereqs`. Consent
@@ -1280,8 +1358,17 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	// missing → no ScriptRunner call, cheap.
 	if !o.NoInstallPrereqs {
 		if err := step(rep, clusterinit.StepInstallPrereqs, func() error {
+			var probes []ports.Probe
+			if os.Getenv("KUBE_DC_MOCK") == "" {
+				var err error
+				probes, err = discover.ToolProbesFor(initToolSelection(o))
+				if err != nil {
+					return err
+				}
+			}
 			_, e := clusterinit.InstallPrereqs(ctx, clusterinit.InstallPrereqsOptions{
-				Runner: session.Scripts,
+				Runner: prereqRunner,
+				Probes: probes,
 				Assume: o.Yes,
 				Out:    out,
 			})
@@ -1294,6 +1381,46 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 			}
 			return fmt.Errorf("apply: %w", err)
 		}
+	}
+	if os.Getenv("KUBE_DC_MOCK") == "" {
+		checks, err := discover.CheckRequiredTools(ctx, initToolSelection(o))
+		if err != nil {
+			return fmt.Errorf("apply: check required local tools: %w", err)
+		}
+		var unavailable []string
+		for _, check := range checks {
+			if check.Result.Status != ports.StatusInstalled && check.Result.Status != ports.StatusManaged {
+				unavailable = append(unavailable, fmt.Sprintf("%s (%s)", check.Requirement.Name, check.Result.Detail))
+			}
+		}
+		if len(unavailable) != 0 {
+			return fmt.Errorf("apply: required local tools are not ready: %s", strings.Join(unavailable, "; "))
+		}
+	}
+	// Age-key generation uses the starter script and age-keygen, so it must
+	// follow prerequisite installation. The starter's .gitignore has already
+	// been checked to exclude age.key from commits.
+	if err := validateAgeKeyEnrollment(ctx, out, o, true); err != nil {
+		return fmt.Errorf("apply: age key: %w", err)
+	}
+
+	// Cluster adapters are constructed only after local preparation. They
+	// still require a kubeconfig; the existing fetch and target checks above
+	// guard the cluster that the subsequent steps will mutate.
+	if session == nil {
+		var err error
+		session, err = bootstrap.NewSession(bootstrap.Options{FleetRepoPath: o.Repo})
+		if err != nil {
+			if o.SSHHost == "" && !clusterinit.HaveUsableKubeconfig() {
+				return fmt.Errorf("apply: build session: %w\n\n"+
+					"There is no usable kubeconfig on this machine, and no --ssh-host was given for me to "+
+					"fetch one. Either point KUBECONFIG at the cluster from Phase 2, or pull it first:\n"+
+					"  kube-dc bootstrap fetch-kubeconfig %s --ssh-host <user@control-plane> --domain %s --set-current",
+					err, o.Name, o.Domain)
+			}
+			return fmt.Errorf("apply: build session: %w", err)
+		}
+		defer session.Close()
 	}
 
 	// M4-T08: DNS verification gate. Runs BEFORE the token
@@ -1393,7 +1520,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 			}
 			arriving, nat, err := clusterinit.DetectArrivingIP(ctx, clusterinit.ArrivingIPOptions{
 				SSH:      sshClient,
-				Host:     parseSSHHostArg(o.SSHHost),
+				Host:     initSSHHost(o),
 				PublicIP: o.NodeExternalIP,
 				Out:      out,
 			})
@@ -1424,7 +1551,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 				}
 				cidr, err := clusterinit.DetectNodeCIDR(ctx, clusterinit.ArrivingIPOptions{
 					SSH:      sshClient,
-					Host:     parseSSHHostArg(o.SSHHost),
+					Host:     initSSHHost(o),
 					PublicIP: o.NodeExternalIP,
 					Out:      out,
 				})
@@ -1463,7 +1590,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 				}
 				res, perr := clusterinit.ProbeEgressGateway(ctx, clusterinit.EgressGatewayProbeOptions{
 					SSH:       sshClient,
-					Host:      parseSSHHostArg(o.SSHHost),
+					Host:      initSSHHost(o),
 					Gateway:   gw,
 					ExtIface:  strings.TrimSpace(env["EXT_NET_INTERFACE"]),
 					AnchorIPs: env["EXT_NET_ANCHOR_IPS"],
@@ -1491,49 +1618,40 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 			})
 		}
 
-		// Raw OSD block-device presence (B3). Fail-open like the probes above:
-		// object storage silently never comes up when an OSD device is missing
-		// or already carries data (rook refuses a non-empty device) — yet every
-		// other step reports green. Only explicitly configured raw devices are
-		// checked; loop-file backings are created at install time. Ceph nodes
-		// resolve as ssh_config aliases, the same convention as GPU/anchor hosts.
-		if rawDevs := o.ObjectStorage().RawOSDDevices(); len(rawDevs) > 0 {
-			_ = step(rep, clusterinit.StepStorageDev, func() error {
+		// Recheck explicitly selected raw OSD devices before writing Fleet
+		// configuration. Rook cannot consume a missing, occupied, or unknown
+		// device. Loop backings are created by Fleet and have no raw disk here.
+		if rawDevs := rawOSDs; o.Mode == clusterinit.ModeInstall && len(rawDevs) > 0 {
+			if err := step(rep, clusterinit.StepStorageDev, func() error {
 				sshClient, serr := bootstrap.NewSSHOnly()
 				if serr != nil {
-					fmt.Fprintf(out, "[apply] WARNING: OSD device check skipped (ssh adapter: %v)\n", serr)
-					return nil
+					return fmt.Errorf("OSD device check requires SSH: %w", serr)
 				}
-				resolve := anchors.NewHostResolver(nil)
 				for _, nd := range rawDevs {
 					node, dev := nd[0], nd[1]
+					target, terr := rawOSDTarget(o, node)
+					if terr != nil {
+						return terr
+					}
 					res, perr := clusterinit.ProbeStorageDevice(ctx, clusterinit.StorageDeviceProbeOptions{
 						SSH:    sshClient,
-						Host:   resolve(node),
+						Host:   target,
 						Node:   node,
 						Device: dev,
 						Out:    out,
 					})
 					if perr != nil {
-						fmt.Fprintf(out, "[apply] WARNING: OSD device check failed for %s on %s (%v)\n", dev, node, perr)
-						continue
+						return fmt.Errorf("OSD device check failed for %s on %s: %w", dev, node, perr)
 					}
-					switch res.State {
-					case clusterinit.StorageDevEmpty:
-						fmt.Fprintf(out, "[apply] OSD device /dev/%s on %s: empty block device — ready for rook\n", dev, node)
-					case clusterinit.StorageDevMissing:
-						fmt.Fprintf(out, "[apply] WARNING: OSD device /dev/%s does NOT exist on node %s.\n", dev, node)
-						fmt.Fprintf(out, "[apply]          rook will never bring the OSD up and object storage (Mimir/Loki/CNPG WAL) stays dead.\n")
-						fmt.Fprintf(out, "[apply]          Attach the disk or correct the device before relying on object storage.\n")
-					case clusterinit.StorageDevInUse:
-						fmt.Fprintf(out, "[apply] WARNING: OSD device /dev/%s on node %s already has data (filesystem/partitions/mount).\n", dev, node)
-						fmt.Fprintf(out, "[apply]          rook REFUSES a non-empty device — wipe it (wipefs -a /dev/%s) or pick an empty disk.\n", dev)
-					default: // Unknown — fail-open
-						fmt.Fprintf(out, "[apply] OSD device /dev/%s on %s: not verified (%s)\n", dev, node, res.Detail)
+					if err := clusterinit.RequireEmptyStorageDevice(res); err != nil {
+						return err
 					}
+					fmt.Fprintf(out, "[apply] OSD device /dev/%s on %s: empty block device — ready for rook\n", dev, node)
 				}
 				return nil
-			})
+			}); err != nil {
+				return fmt.Errorf("apply: %w", err)
+			}
 		}
 	} else if nodeCIDR == "" {
 		// --no-ssh has no discovery source at all: no SSH, and no cluster
@@ -1678,6 +1796,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		DNS01Route53:      dns01,
 		DNS01Cloudflare:   cf,
 		TrustedCA:         trustedCA,
+		PAYG:              o.PAYG,
 		GPU:               o.GPU(),
 		// Hand the script-side discovery the SAME kubeconfig this process loads —
 		// but only when it has been verified to target THIS cluster (the guard a
@@ -1733,17 +1852,14 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		}
 	}
 
-	// Finalize phase (full-flow): once Flux is reconciling, poll the
-	// platform HelmReleases to readiness and drive the post-reconcile
-	// steps that used to be separate operator commands — OpenBao
-	// init/unseal/controller-auth + Keycloak OIDC. Skipped under
-	// --no-push (no live cluster) and when there was no kubeconfig to
-	// reach. Every finalize step is BEST-EFFORT: the cluster is
-	// already up + reconciling, so a finalize failure is a warning
-	// with a re-run hint, never a hard error that would mask a
-	// successful install.
+	// Finalize phase (full-flow): keep collecting re-run hints when a
+	// required milestone defers, then report Action required rather than
+	// claiming a complete installation.
 	if !o.NoPush {
+		var finalization clusterinit.FinalizationResult
 		if sshEnabled && !fetchOK {
+			recorder := clusterinit.NewFinalizationRecorder(rep, gpu.Platform == clusterinit.GPUPlatformEnabled, gpu.HAMiEnabled, plan.ManagedServicesMode == "on")
+			rep = recorder
 			reason := fmt.Sprintf("kubeconfig fetch failed: %v", fetchErr)
 			rep.Skip(clusterinit.StepBreakGlass, reason)
 			rep.Skip(clusterinit.StepReconcile, reason)
@@ -1756,16 +1872,28 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 			// successful install and no mention of the one step whose absence
 			// makes every Keycloak login fail.
 			rep.Skip(clusterinit.StepOIDCCutover, reason)
+			if plan.ManagedServicesMode == "on" {
+				rep.Skip(clusterinit.StepManagedServices, reason)
+			}
 			fmt.Fprintln(out, "[post] skipped because the fresh admin kubeconfig was not fetched; refusing to guess from the current context")
 			finalizeHint(out, o, "", false)
+			finalization = recorder.Result()
 		} else {
 			// fetchVerified: true exactly when sshEnabled && fetchOK — the ONLY
 			// case where fetch-kubeconfig actually renamed a context to o.Name
 			// for THIS run. On --no-ssh this branch also runs (finalize is not
 			// gated on SSH) with fetchVerified=false, so runPostApply knows not
 			// to assert a --kube-context guarantee it cannot back up.
-			runPostApply(ctx, out, o, rep, sshEnabled && fetchOK)
+			finalization = runPostApply(ctx, out, o, rep, sshEnabled && fetchOK, plan.ManagedServicesMode == "on")
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := finalization.ActionRequired(); err != nil {
+			return err
+		}
+	} else if plan.ManagedServicesMode == "on" {
+		fmt.Fprintf(out, "[post] managed-services catalog remains suspended under --no-push; after pushing and reconciling the overlay, run kube-dc bootstrap services finalize %s --repo %s\n", o.Name, shellQuote(o.Repo))
 	}
 	return nil
 }
@@ -1808,7 +1936,7 @@ func autoFetchKubeconfig(ctx context.Context, out io.Writer, o *clusterinit.Init
 	}
 	cfg, err := clusterinit.FetchKubeconfig(ctx, clusterinit.FetchKubeconfigOptions{
 		SSH:         sshClient,
-		Host:        parseSSHHostArg(o.SSHHost),
+		Host:        initSSHHost(o),
 		ClusterName: o.Name,
 		Domain:      o.Domain,
 		Out:         out,
@@ -2071,6 +2199,9 @@ func applyInitPrefill(cmd *cobra.Command, o *clusterinit.InitOptions, configPath
 	if len(merged) == 0 {
 		return nil
 	}
+	if err := clusterinit.ValidateInputSpec(merged); err != nil {
+		return fmt.Errorf("init --config: %w", err)
+	}
 	ignored := clusterinit.ImportMap(o, merged, cmd.Flags().Changed)
 	out := cmd.OutOrStdout()
 	if configPath != "" {
@@ -2297,11 +2428,12 @@ func assertRequiredFlagsRegistered(fs *pflag.FlagSet) error {
 	required := []string{
 		"preset", "mode", "name", "domain", "node-external-ip", "email",
 		"fleet-mode", "provider", "github-owner", "github-repo", "github-token",
-		"set", "node-nic",
+		"set", "node-nic", "node-ssh-host", "node-ssh-host-key", "primary-node",
 		"object-storage-mode", "rook-mode", // rook-mode = deprecated alias, one release
 		"rook-osd-node", "rook-osd-size-gb", "rook-osd-device",
 		"ceph-node", "ceph-storage-class", "ceph-osd-count", "ceph-osd-volume-size-gb",
-		"s3-hostname", "no-s3-exposure",
+		"s3-hostname", "no-s3-exposure", "payg", "installation-kind", "managed-services",
+		"services-database-class", "services-storage-budget", "services-egress-probe",
 		"vm-storage-mode", "vm-golden", "vm-golden-block",
 		"ingress-address-layer", "ingress-node",
 		"tls-mode", "tls-cert", "tls-key", "trusted-ca-bundle",
@@ -2311,7 +2443,7 @@ func assertRequiredFlagsRegistered(fs *pflag.FlagSet) error {
 		"hami-enabled", "gpu-shared-allocator", "hami-version", "hami-scheduler-version", "gpu-node-mode", "gpu-ssh-host-map", "gpu-kubeconfig", "gpu-profile",
 		"allow-unassigned-gpus", "vgpu-secret-ready",
 		"addon",
-		"allow-dns-not-ready", "ssh-host", "no-ssh", "no-oidc-cutover", "no-install-prereqs", "no-create-repo",
+		"allow-dns-not-ready", "ssh-host", "ssh-host-key-sha256", "no-ssh", "no-oidc-cutover", "no-install-prereqs", "no-create-repo",
 		"starter-ref", "mirror-registry", "bundle-pull-secret", "openbao-shares-out",
 		"dry-run", "plan-file", "apply-plan", "no-push", "no-tty", "yes",
 	}

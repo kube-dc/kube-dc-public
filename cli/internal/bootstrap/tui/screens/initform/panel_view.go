@@ -6,12 +6,12 @@ import (
 	"sort"
 	"strings"
 
+	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
-	bttui "github.com/shalb/kube-dc/cli/internal/bootstrap/tui"
 )
 
 // ErrPanelCancelled is returned by RunPanel when the operator quits the
@@ -19,9 +19,27 @@ import (
 var ErrPanelCancelled = errors.New("install panel cancelled")
 
 func (m *PanelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	before := fingerprint(m.st)
+	defer func() {
+		if before != fingerprint(m.st) {
+			m.changed()
+		}
+		if w := m.workflow; w != nil && m.currentSection() == "Review" && w.review.CanRun && w.reviewHash == m.stateHash() {
+			w.reviewedHash = w.reviewHash
+		}
+	}()
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
+		if msg.Width > 0 && msg.Height > 0 {
+			m.width, m.height = msg.Width, msg.Height
+		}
+		return m, nil
+	case tea.BackgroundColorMsg:
+		m.light = !msg.IsDark()
+		m.input.SetStyles(textinput.DefaultStyles(!m.light))
+		return m, nil
+	case PanelEvent:
+		m.handlePanelEvent(msg)
 		return m, nil
 	case tea.MouseWheelMsg:
 		// Wheel scrolls the fields pane (the only scrollable region).
@@ -32,10 +50,32 @@ func (m *PanelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyPressMsg:
+		if msg.String() == "ctrl+c" {
+			m.Close()
+			m.cancelled = true
+			return m, tea.Quit
+		}
+		if m.tooSmall() {
+			return m, nil
+		}
+		if m.Busy() {
+			if msg.String() == "q" {
+				m.Close()
+				m.cancelled = true
+				return m, tea.Quit
+			}
+			return m, nil
+		}
 		if m.editing {
 			return m.updateEditing(msg)
 		}
 		return m.updateNav(msg)
+	default:
+		if m.editing && !m.tooSmall() {
+			var cmd tea.Cmd
+			m.input, cmd = m.input.Update(msg)
+			return m, cmd
+		}
 	}
 	return m, nil
 }
@@ -89,6 +129,7 @@ func (m *PanelModel) updateNav(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		// nav mode — while a text field is being edited, updateEditing
 		// owns the keys ('q' types a char, esc cancels the edit).
 		m.cancelled = true
+		m.Close()
 		return m, tea.Quit
 	case "esc":
 		// Esc is "back", never an exit — same as the Fleet TUI, where Esc
@@ -100,6 +141,13 @@ func (m *PanelModel) updateNav(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "?":
 		m.showHelp = !m.showHelp
+		return m, nil
+	case "space", " ":
+		if m.focus == focusFields {
+			if f := m.editingField(); f != nil && f.Kind == panelRadio {
+				return m.activate()
+			}
+		}
 		return m, nil
 	case "tab":
 		// Toggle focus both ways (a single, obvious key).
@@ -143,6 +191,7 @@ func (m *PanelModel) updateNav(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "up", "k":
+		m.manualScroll = false
 		if m.focus == focusSections {
 			if m.secCursor > 0 {
 				m.secCursor--
@@ -153,6 +202,7 @@ func (m *PanelModel) updateNav(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "down", "j":
+		m.manualScroll = false
 		if m.focus == focusSections {
 			if m.secCursor < len(m.visibleSections())-1 {
 				m.secCursor++
@@ -167,6 +217,20 @@ func (m *PanelModel) updateNav(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		// from any pane, even with required fields still blank.
 		m.saveDraft()
 		return m, nil
+	case "pgup", "pgdown":
+		m.manualScroll = true
+		if msg.String() == "pgup" {
+			m.fieldsVP.ScrollUp(5)
+		} else {
+			m.fieldsVP.ScrollDown(5)
+		}
+		return m, nil
+	case "n":
+		return m, m.primaryAction()
+	case "r":
+		if m.workflow != nil {
+			return m, m.startReadiness()
+		}
 	case "enter":
 		return m.activate()
 	}
@@ -189,10 +253,13 @@ func (m *PanelModel) activate() (tea.Model, tea.Cmd) {
 	case panelText:
 		m.editError = ""
 		m.editing = true
+		m.input.CharLimit = 512
+		if f.Section == "Configuration" {
+			m.input.CharLimit = 1 << 20
+		}
 		m.input.SetValue(f.Get(m.st))
 		m.input.CursorEnd()
-		m.input.Focus()
-		return m, nil
+		return m, m.input.Focus()
 	case panelSelect:
 		f.Set(m.st, cycleOption(f.Options, f.Get(m.st)))
 		m.clampCursors() // a mode/preset/OSMode change can hide/show fields+sections
@@ -201,8 +268,18 @@ func (m *PanelModel) activate() (tea.Model, tea.Cmd) {
 		cur := f.Get(m.st) == "yes"
 		f.Set(m.st, boolStr(!cur))
 		return m, nil
-	case panelAction:
+	case panelRadio, panelAction:
+		if f.Action != "" {
+			return m, m.activateWorkflow(f.Action)
+		}
+		if m.workflow != nil && m.workflow.services.Session != nil {
+			return m, m.startSession("session-gates")
+		}
 		if len(m.validationErrors()) == 0 {
+			if reason := m.discoveryBlocker(); reason != "" {
+				m.notice = reason
+				return m, nil
+			}
 			m.applied = true
 			return m, tea.Quit
 		}
@@ -255,98 +332,6 @@ func ensureLineVisible(vp *viewport.Model, line int) {
 	}
 }
 
-func (m *PanelModel) View() tea.View {
-	if m.width == 0 || m.height == 0 {
-		return m.frame("Initializing…")
-	}
-	w := m.width - 2
-	verrs := m.validationErrors()
-
-	// Title: brand + mode·preset on the left, a compact live STATUS on the
-	// right (✓ ready / N need attention / transient notice).
-	var status string
-	switch {
-	case m.notice != "":
-		status = lipgloss.NewStyle().Foreground(lipgloss.Color("#5794F2")).Render(m.notice)
-	case m.editing && m.editError != "":
-		status = lipgloss.NewStyle().Foreground(colorWarnFG()).Render("⚠ " + m.editError)
-	case len(verrs) > 0:
-		status = lipgloss.NewStyle().Foreground(colorWarnFG()).Render(fmt.Sprintf("⚠ %d setting(s) need attention", len(verrs)))
-	default:
-		status = lipgloss.NewStyle().Foreground(lipgloss.Color("#2F9E72")).Render("✓ ready — open Review → Apply")
-	}
-	title := joinSpaced(w,
-		bttui.Title.Render(" Kube-DC — New Cluster ")+"  "+bttui.Muted.Render(m.st.Mode+" · "+nonEmptyOr(m.st.Preset, "preset?")),
-		status)
-
-	// Footer help bar (dynamic height): short by default, full on '?'.
-	m.help.SetWidth(w)
-	var footer string
-	if m.showHelp {
-		footer = m.help.FullHelpView(m.keys.FullHelp())
-	} else {
-		footer = m.help.ShortHelpView(m.keys.ShortHelp())
-	}
-	footerH := lipgloss.Height(footer)
-
-	// Body height = total − title(1) − footer(N). Best-practice: measure,
-	// don't hardcode.
-	bodyH := m.height - 1 - footerH
-	if bodyH < 8 {
-		bodyH = 8
-	}
-
-	// Left: sections. Right: the selected section's fields (scrollable).
-	leftW := 22
-	rightW := w - leftW - 1
-	if rightW < 30 {
-		rightW = 30
-	}
-
-	secStyle := bttui.ListPane
-	fldStyle := bttui.DetailsPane
-	if m.focus == focusSections {
-		secStyle = bttui.ListPaneFocused
-	} else {
-		fldStyle = bttui.DetailsPaneFocused
-	}
-	left := secStyle.Width(leftW).Height(bodyH - 2).Render(m.renderSections())
-
-	// Fields pane: fixed section header + a scrolling viewport of the fields
-	// so a long section (Network/Storage) never overflows the pane.
-	hdr := bttui.Title.Render(" " + m.currentSection() + " ")
-	vpH := bodyH - 2 /*border*/ - 2 /*hdr+blank*/
-	if vpH < 3 {
-		vpH = 3
-	}
-	m.fieldsVP.SetWidth(rightW - 2 /*border*/ - 2 /*padding*/)
-	m.fieldsVP.SetHeight(vpH)
-	content, cursorLine := m.renderFieldsBody(rightW - 4)
-	m.fieldsVP.SetContent(content)
-	if m.focus == focusFields {
-		ensureLineVisible(&m.fieldsVP, cursorLine)
-	}
-	// Scroll affordance in the header when there's more below/above.
-	scroll := ""
-	if m.fieldsVP.TotalLineCount() > m.fieldsVP.Height() {
-		scroll = "  " + bttui.Muted.Render(fmt.Sprintf("%3.0f%% ↑↓", m.fieldsVP.ScrollPercent()*100))
-	}
-	fieldsInner := hdr + scroll + "\n\n" + m.fieldsVP.View()
-	right := fldStyle.Width(rightW).Height(bodyH - 2).Render(fieldsInner)
-
-	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
-	return m.frame(lipgloss.JoinVertical(lipgloss.Left, title, body, footer))
-}
-
-// frame wraps content in the panel's top-level tea.View (alt-screen +
-// mouse, v2-declarative). Every View() path goes through here.
-func (m *PanelModel) frame(content string) tea.View {
-	v := tea.NewView(bttui.AppStyle.Render(content))
-	v.AltScreen = true
-	v.MouseMode = tea.MouseModeCellMotion
-	return v
-}
-
 func (m *PanelModel) renderSections() string {
 	var b strings.Builder
 	verrs := m.validationErrors()
@@ -362,9 +347,9 @@ func (m *PanelModel) renderSections() string {
 		marker := "  "
 		if i == m.secCursor {
 			if m.focus == focusSections {
-				marker = bttui.KeyLabel.Render("▸ ")
+				marker = m.theme().accent.Render("▸ ")
 			} else {
-				marker = bttui.Muted.Render("▸ ")
+				marker = m.theme().muted.Render("▸ ")
 			}
 		}
 		// ⚠ if a field needs attention, ✓ once the section is satisfied.
@@ -375,7 +360,10 @@ func (m *PanelModel) renderSections() string {
 		case len(m.visibleInSection(s)) > 0:
 			badge = " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#2F9E72")).Render("✓")
 		}
-		b.WriteString(marker + bttui.Text.Render(s) + badge + "\n")
+		if override, ok := m.workflowBadge(s); ok && !secErr(s) {
+			badge = override
+		}
+		b.WriteString(marker + m.theme().text.Render(s) + badge + "\n")
 	}
 	return b.String()
 }
@@ -389,16 +377,23 @@ func (m *PanelModel) renderFieldsBody(maxW int) (string, int) {
 	var b strings.Builder
 	cursorLine := 0
 	if len(fs) == 0 {
-		b.WriteString(bttui.Muted.Render("(no settings)"))
+		b.WriteString(m.theme().muted.Render("(no settings)"))
 		return b.String(), 0
 	}
 	okStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#2F9E72"))
 	warnStyle := lipgloss.NewStyle().Foreground(colorWarnFG())
+	labelWidth := 24
+	if m.currentSection() == "Configuration" {
+		for _, f := range fs {
+			labelWidth = max(labelWidth, lipgloss.Width(f.Label))
+		}
+		labelWidth = min(labelWidth, max(24, maxW/2))
+	}
 	for i, f := range fs {
 		focused := m.focus == focusFields && i == m.fieldCursor
 		cursor := "  "
 		if focused {
-			cursor = bttui.KeyLabel.Render("▸ ")
+			cursor = m.theme().accent.Render("▸ ")
 			cursorLine = strings.Count(b.String(), "\n") // this row's line
 		}
 		// Label + required marker.
@@ -419,11 +414,18 @@ func (m *PanelModel) renderFieldsBody(maxW int) (string, int) {
 		}
 		val := ""
 		if f.Get != nil {
-			val = f.Get(m.st)
+			val = safeText(f.Get(m.st))
 		}
-		row := cursor + glyph + " " + bttui.Text.Render(padRight(lbl, 24)) + " "
+		row := cursor + glyph + " " + m.theme().text.Render(padRight(lbl, labelWidth)) + " "
+		if f.Kind == panelRadio {
+			mark := "( )"
+			if val == "yes" {
+				mark = "(●)"
+			}
+			row = cursor + m.theme().accent.Render(mark) + " " + m.theme().text.Render(lbl)
+		}
 		if m.editing && focused {
-			b.WriteString(row + m.input.View() + "\n")
+			b.WriteString(row + "\n  " + m.input.View() + "\n")
 			if m.editError != "" {
 				b.WriteString("      " + warnStyle.Render(m.editError) + "\n")
 			}
@@ -431,42 +433,46 @@ func (m *PanelModel) renderFieldsBody(maxW int) (string, int) {
 			var shown string
 			switch f.Kind {
 			case panelSelect:
-				shown = bttui.Text.Render("‹ "+val+" ›") + "  " + bttui.Muted.Render("←→")
+				shown = m.theme().text.Render("‹ "+val+" ›") + "  " + m.theme().muted.Render("←→")
 			case panelToggle:
 				box := "[ ]"
 				if val == "yes" {
 					box = "[x]"
 				}
-				shown = box + "  " + bttui.Muted.Render("↵")
+				shown = box + "  " + m.theme().muted.Render("↵")
+			case panelRadio:
+				shown = ""
 			case panelAction:
-				shown = bttui.KeyLabel.Render("[ enter ]")
+				shown = m.theme().accent.Render("[ enter ]")
 			case panelText:
 				if val == "" {
-					shown = bttui.Muted.Render("(empty)")
+					shown = m.theme().muted.Render("(empty)")
 				} else {
-					shown = val
+					shown = safeText(val)
 				}
 			}
 			b.WriteString(row + shown + "\n")
 		}
 		if focused && f.Desc != "" {
-			b.WriteString("      " + bttui.Muted.Render(f.Desc) + "\n")
+			for _, line := range wrapPlain(f.Desc, maxW-4) {
+				b.WriteString("    " + m.theme().muted.Render(line) + "\n")
+			}
 		}
 	}
 	// Review section: show the equivalent flags preview + any hint.
-	if m.currentSection() == "Review" {
+	if m.currentSection() == "Review" && (m.workflow == nil || m.workflow.services.Demo == nil) {
 		b.WriteString("\n")
 		if verrs := m.validationErrors(); len(verrs) > 0 {
-			b.WriteString(bttui.Muted.Render("blocked — fix:") + "\n")
+			b.WriteString(m.theme().muted.Render("blocked — fix:") + "\n")
 			for _, e := range verrs {
 				b.WriteString("  " + lipgloss.NewStyle().Foreground(colorWarnFG()).Render("⚠ "+e) + "\n")
 			}
 		} else if flags, err := m.equivalentPreview(); err != nil {
 			b.WriteString(lipgloss.NewStyle().Foreground(colorWarnFG()).Render("⚠ cannot build preview: "+err.Error()) + "\n")
 		} else {
-			b.WriteString(bttui.Muted.Render("equivalent command (safe preview):") + "\n")
+			b.WriteString(m.theme().muted.Render("equivalent command (safe preview):") + "\n")
 			for _, line := range strings.Split(flags, "\n") {
-				b.WriteString("  " + bttui.Text.Render(line) + "\n")
+				b.WriteString("  " + m.theme().text.Render(safeText(line)) + "\n")
 			}
 		}
 		// Advanced overlay keys carried from a prefill/clone that have no
@@ -478,16 +484,27 @@ func (m *PanelModel) renderFieldsBody(maxW int) (string, int) {
 				keys = append(keys, k)
 			}
 			sort.Strings(keys)
-			b.WriteString("\n" + bttui.Muted.Render(fmt.Sprintf("advanced (--set): %d preserved key(s)", len(keys))) + "\n")
+			b.WriteString("\n" + m.theme().muted.Render(fmt.Sprintf("advanced (--set): %d preserved key(s)", len(keys))) + "\n")
 			for _, k := range keys {
-				b.WriteString("  " + bttui.Muted.Render(k+"="+m.st.ExtraSets[k]) + "\n")
+				b.WriteString("  " + m.theme().muted.Render(safeText(k+"="+m.st.ExtraSets[k])) + "\n")
+			}
+		}
+		if o, err := m.st.draftOptions(); err == nil {
+			if text, err := clusterinit.RenderSpec(o); err == nil {
+				b.WriteString("\n" + m.theme().accent.Render("Install input file · S saves this configuration") + "\n")
+				b.WriteString(m.theme().muted.Render("Edit all input keys in Configuration. Fleet defaults and patches are generated during installation.") + "\n")
+				for _, line := range strings.Split(text, "\n") {
+					b.WriteString(m.theme().text.Render(safeText(line)) + "\n")
+				}
+			} else {
+				b.WriteString("\n" + m.theme().bad.Render(safeText(err.Error())) + "\n")
 			}
 		}
 		if m.hint != "" {
-			b.WriteString("\n" + bttui.Muted.Render(m.hint) + "\n")
+			b.WriteString("\n" + m.theme().muted.Render(safeText(m.hint)) + "\n")
 		}
 	}
-	return b.String(), cursorLine
+	return m.finishBody(b.String(), cursorLine, maxW)
 }
 
 func (m *PanelModel) equivalentPreview() (string, error) {
@@ -513,7 +530,7 @@ func nonEmptyOr(s, fallback string) string {
 func initialState(o *clusterinit.InitOptions) *State {
 	// Wizard defaults first (first-time user)…
 	st := &State{
-		Mode: string(clusterinit.ModeInstall), Provider: "github", Preset: string(clusterinit.PresetCloudVLAN),
+		Mode: string(clusterinit.ModeInstall), OSMode: string(clusterinit.RookCephMultiNode), Provider: "github", Preset: string(clusterinit.PresetCloudVLAN), InstallationKind: "kube-dc", ManagedServicesMode: "auto",
 		// NOTE: the front-door default is applied AFTER the prefill overlay,
 		// not here — see the block below FromOptions. Seeding it here would
 		// convert an untouched recommendation into an explicit answer for a
@@ -594,8 +611,12 @@ func (m *PanelModel) Result(o *clusterinit.InitOptions) (string, error) {
 // equivalent-flags rendering. A cancelled panel returns
 // ErrPanelCancelled and leaves o untouched. See NewEmbeddedPanel for
 // the probe contract.
-func RunPanel(o *clusterinit.InitOptions, siblingHint string, probe *ProbePrefill) (string, error) {
+func RunPanel(o *clusterinit.InitOptions, siblingHint string, probe *ProbePrefill, services ...PanelServices) (string, error) {
 	m := NewEmbeddedPanel(o, siblingHint, probe)
+	if len(services) > 0 {
+		m.ConfigureServices(services[0])
+	}
+	defer m.Close()
 	res, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return "", err

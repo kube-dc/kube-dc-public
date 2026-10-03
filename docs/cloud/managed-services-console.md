@@ -98,7 +98,7 @@ Do not disable certificate verification to make a connection succeed.
 
 Use **Users & access** to create a binding for a supported credential role.
 Project Secret permissions control who can read the resulting credential.
-See [Connect applications](postgresql-connect.md) for a complete PostgreSQL example.
+See [Connect applications](managed-services-connect.md) for the shared binding procedure and family-specific client guides.
 
 ## Change settings or request an operation
 
@@ -126,7 +126,7 @@ Use the selected record's recovery information before you request a restore.
 />
 
 After recovery, connect through a binding and verify application data.
-See [Backups and restore](postgresql-backup-restore.md) for the PostgreSQL procedure and the family guide for other services.
+See [Back up and restore](managed-services-backup-restore.md) for backup contents, record selection, and the shared restore request.
 
 ## Lists and row actions
 
@@ -137,4 +137,4 @@ Check each resulting operation when you request a bulk action.
 
 ## Next steps
 
-Use [Status and deletion](managed-services-status-deletion.md) before you remove a service or Project.
+Use [Delete a managed service](managed-services-status-deletion.md) before you remove a service or Project.

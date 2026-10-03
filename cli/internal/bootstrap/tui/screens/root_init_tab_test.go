@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
+	bttui "github.com/shalb/kube-dc/cli/internal/bootstrap/tui"
 )
 
 // Tests for the T6 root-router embed: the Init tab hosts the settings
@@ -137,15 +138,43 @@ func TestRootInitTab_PanelCancelReturnsToFleetFresh(t *testing.T) {
 	if r.initPanel == before {
 		t.Errorf("cancelled panel must be rebuilt fresh for the next visit")
 	}
-	if _, ok := r.InitResult(); ok {
+	if _, ok := r.AcceptedInit(); ok {
 		t.Errorf("InitResult must be false after a cancel")
 	}
 }
 
 func TestRootInitTab_InitResultFalseByDefault(t *testing.T) {
 	r := newTestRoot(t)
-	if eq, ok := r.InitResult(); ok || eq != "" {
-		t.Errorf("fresh root must have no init result (eq=%q ok=%v)", eq, ok)
+	if eq, ok := r.AcceptedInit(); ok || eq != nil {
+		t.Errorf("fresh root must have no init result (options=%+v ok=%v)", eq, ok)
+	}
+}
+
+func TestRootCleanWorkstationShowsNewClusterAndEmptyFleet(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("KUBECONFIG", filepath.Join(home, "missing-kubeconfig"))
+	missing := filepath.Join(home, "fleet")
+	r := NewRootModel(missing, RootTabInit)
+	r.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	if r.active != int(RootTabInit) || r.initOpts.Repo != missing {
+		t.Fatalf("clean entry active=%d repo=%q", r.active, r.initOpts.Repo)
+	}
+	msg := r.tabs[0].model.(*FleetModel).loadCmd()()
+	r.Update(msg)
+	r.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	if r.active != int(RootTabFleet) || !strings.Contains(r.tabs[0].model.View().Content, "No Fleet yet") {
+		t.Fatalf("back from new-cluster form did not show an empty Fleet: %s", r.tabs[0].model.View().Content)
+	}
+}
+
+func TestRootRoutesFleetLoginCompletionAcrossTabs(t *testing.T) {
+	r := NewRootModel(t.TempDir(), RootTabInit)
+	fleet := r.tabs[int(RootTabFleet)].model.(*FleetModel)
+	fleet.pendingActionFor = "example"
+	r.Update(bttui.LoginDoneMsg{Cluster: "example", Admin: true})
+	if fleet.pendingActionFor != "" {
+		t.Fatal("Fleet login completion was discarded while New Cluster was active")
 	}
 }
 

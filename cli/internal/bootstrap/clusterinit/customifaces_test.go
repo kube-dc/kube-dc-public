@@ -92,7 +92,7 @@ func TestBuildCustomInterfacesPatch_TargetShape(t *testing.T) {
 		"group: kubeovn.io",
 		"version: v1",
 		"kind: ProviderNetwork",
-		"name: ${EXT_NET_NAME}",
+		`name: \$\{EXT_NET_NAME\}`,
 		"op: add",
 		"path: /spec/customInterfaces",
 	} {

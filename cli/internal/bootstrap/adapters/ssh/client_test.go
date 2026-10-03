@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -140,6 +141,24 @@ func TestCappedWriter_AccumulatedOverflow(t *testing.T) {
 	}
 }
 
+func TestSyncBufferCapsCombinedStreams(t *testing.T) {
+	out := syncBuffer{max: 5}
+	var wg sync.WaitGroup
+	for _, data := range []string{"stdout", "stderr"} {
+		wg.Add(1)
+		go func(data string) {
+			defer wg.Done()
+			if n, err := out.Write([]byte(data)); err != nil || n != len(data) {
+				t.Errorf("capped stream write = %d, %v", n, err)
+			}
+		}(data)
+	}
+	wg.Wait()
+	if !out.Exceeded() || len(out.Bytes()) != 5 {
+		t.Fatalf("combined streams escaped byte limit: length=%d exceeded=%v", len(out.Bytes()), out.Exceeded())
+	}
+}
+
 func TestSSHTarget(t *testing.T) {
 	if got := sshTarget(ports.SSHHost{Alias: "bastion"}); got != "bastion" {
 		t.Errorf("Alias case: %q", got)
@@ -194,6 +213,248 @@ func TestRun_ContextCancel_TerminatesDial(t *testing.T) {
 	}
 	if !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "canceled") {
 		t.Errorf("error should surface cancellation: %v", err)
+	}
+}
+
+func TestRunCapped_ContextCancelClosesStalledSessionOpen(t *testing.T) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := ssh.NewSignerFromKey(privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverConfig := &ssh.ServerConfig{PasswordCallback: func(ssh.ConnMetadata, []byte) (*ssh.Permissions, error) { return nil, nil }}
+	serverConfig.AddHostKey(signer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	releaseServer := make(chan struct{})
+	defer close(releaseServer)
+	channelSeen := make(chan struct{})
+	go func() {
+		serverConn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer serverConn.Close()
+		conn, channels, requests, err := ssh.NewServerConn(serverConn, serverConfig)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		go ssh.DiscardRequests(requests)
+		select {
+		case <-channels:
+			close(channelSeen)
+			<-releaseServer // never accept or reject the session channel
+		case <-releaseServer:
+		}
+	}()
+	client := &Client{
+		dialContext:            (&net.Dialer{}).DialContext,
+		loadAuth:               func(string) ([]ssh.AuthMethod, error) { return []ssh.AuthMethod{ssh.Password("test")}, nil },
+		hostKeyCallbackForTest: ssh.InsecureIgnoreHostKey(),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := client.RunCapped(ctx, ports.SSHHost{Hostname: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port}, "cat /etc/machine-id", 1024)
+		result <- err
+	}()
+	select {
+	case <-channelSeen:
+	case <-time.After(3 * time.Second):
+		t.Fatal("test did not reach the stalled session channel in time")
+	}
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("stalled session open ignored cancellation: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("stalled session open did not stop after cancellation")
+	}
+}
+
+func TestRunCappedWithHostKeyReturnsVerifiedTargetKey(t *testing.T) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := ssh.NewSignerFromKey(privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverConfig := &ssh.ServerConfig{PasswordCallback: func(ssh.ConnMetadata, []byte) (*ssh.Permissions, error) { return nil, nil }}
+	serverConfig.Config.RekeyThreshold = 1024
+	serverConfig.AddHostKey(signer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	knownHosts := filepath.Join(t.TempDir(), "known_hosts")
+	line := knownhosts.Line([]string{knownhosts.Normalize(listener.Addr().String())}, signer.PublicKey()) + "\n"
+	if err := os.WriteFile(knownHosts, []byte(line), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SSH_KNOWN_HOSTS", knownHosts)
+	verified, err := knownhosts.New(knownHosts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keyChecks atomic.Int32
+	rekeyObserved := make(chan struct{})
+	payload := bytes.Repeat([]byte("ready\n"), 24000)
+	serverDone := make(chan error, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		defer conn.Close()
+		serverConn, channels, requests, err := ssh.NewServerConn(conn, serverConfig)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		defer serverConn.Close()
+		go ssh.DiscardRequests(requests)
+		newChannel := <-channels
+		channel, channelRequests, err := newChannel.Accept()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		defer channel.Close()
+		request := <-channelRequests
+		if request.Type != "exec" {
+			serverDone <- fmt.Errorf("unexpected request %s", request.Type)
+			return
+		}
+		_ = request.Reply(true, nil)
+		_, err = channel.Write(payload)
+		if err == nil {
+			select {
+			case <-rekeyObserved:
+			case <-time.After(3 * time.Second):
+				err = fmt.Errorf("host-key callback did not observe rekeying")
+			}
+		}
+		if err == nil {
+			_, err = channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+		}
+		// Close the channel, then keep the transport alive until the client
+		// consumes the exit status and disconnects. A timed sleep can lose
+		// packets queued by rekeying on a slow or race-enabled test runner.
+		_ = channel.Close()
+		serverDone <- err
+		_ = serverConn.Wait()
+	}()
+	client := New()
+	client.loadAuth = func(string) ([]ssh.AuthMethod, error) { return []ssh.AuthMethod{ssh.Password("test")}, nil }
+	client.hostKeyCallbackForTest = func(address string, remote net.Addr, key ssh.PublicKey) error {
+		if keyChecks.Add(1) == 2 {
+			close(rekeyObserved)
+		}
+		return verified(address, remote, key)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	output, evidence, err := client.RunCappedWithHostKey(ctx, ports.SSHHost{Hostname: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port}, "test command", len(payload)+1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(output, payload) || evidence.FingerprintSHA256 != ssh.FingerprintSHA256(signer.PublicKey()) || evidence.Algorithm != signer.PublicKey().Type() || evidence.Address == "" {
+		t.Fatalf("incorrect verified evidence: output bytes=%d evidence=%+v", len(output), evidence)
+	}
+	if keyChecks.Load() < 2 {
+		t.Fatalf("test did not force a host-key callback during rekey: %d", keyChecks.Load())
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunCapped_ContextCancelClosesStalledExecRequest(t *testing.T) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := ssh.NewSignerFromKey(privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverConfig := &ssh.ServerConfig{PasswordCallback: func(ssh.ConnMetadata, []byte) (*ssh.Permissions, error) { return nil, nil }}
+	serverConfig.AddHostKey(signer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	releaseServer := make(chan struct{})
+	defer close(releaseServer)
+	execSeen := make(chan struct{})
+	go func() {
+		serverConn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer serverConn.Close()
+		conn, channels, requests, err := ssh.NewServerConn(serverConn, serverConfig)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		go ssh.DiscardRequests(requests)
+		select {
+		case newChannel := <-channels:
+			channel, channelRequests, err := newChannel.Accept()
+			if err != nil {
+				return
+			}
+			defer channel.Close()
+			select {
+			case <-channelRequests:
+				close(execSeen)
+				<-releaseServer // never reply to the exec request
+			case <-releaseServer:
+			}
+		case <-releaseServer:
+		}
+	}()
+	client := &Client{
+		dialContext:            (&net.Dialer{}).DialContext,
+		loadAuth:               func(string) ([]ssh.AuthMethod, error) { return []ssh.AuthMethod{ssh.Password("test")}, nil },
+		hostKeyCallbackForTest: ssh.InsecureIgnoreHostKey(),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := client.RunCapped(ctx, ports.SSHHost{Hostname: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port}, "cat /etc/machine-id", 1024)
+		result <- err
+	}()
+	select {
+	case <-execSeen:
+	case <-time.After(3 * time.Second):
+		t.Fatal("test did not reach the stalled exec request in time")
+	}
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("stalled exec request ignored cancellation: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("stalled exec request did not stop after cancellation")
 	}
 }
 
@@ -430,5 +691,92 @@ func TestWantKeyTypes_RSAOffersSHA2Variants(t *testing.T) {
 	got := wantKeyTypes([]knownhosts.KnownKey{{Key: edKey}})
 	if len(got) != 1 || got[0] != ssh.KeyAlgoED25519 {
 		t.Errorf("ed25519 must map to itself only, got %v", got)
+	}
+}
+
+func TestExpectedPinIsCheckedBeforeRemoteSessionAndDoesNotReplaceTrust(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		trust bool
+		match bool
+	}{{"mismatch", true, false}, {"matching-pin-untrusted", false, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			signer, err := ssh.NewSignerFromKey(privateKey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			config := &ssh.ServerConfig{NoClientAuth: true}
+			config.AddHostKey(signer)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+			var sessions atomic.Int32
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				server, channels, requests, err := ssh.NewServerConn(conn, config)
+				if err != nil {
+					return
+				}
+				defer server.Close()
+				go ssh.DiscardRequests(requests)
+				for ch := range channels {
+					sessions.Add(1)
+					ch.Reject(ssh.Prohibited, "test refuses sessions")
+				}
+			}()
+			client := New()
+			client.loadAuth = func(string) ([]ssh.AuthMethod, error) { return nil, nil }
+			client.hostKeyCallbackForTest = func(string, net.Addr, ssh.PublicKey) error {
+				if !tc.trust {
+					return errors.New("known_hosts rejected")
+				}
+				return nil
+			}
+			pin := "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+			if tc.match {
+				pin = ssh.FingerprintSHA256(signer.PublicKey())
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			_, err = client.RunCapped(ctx, ports.SSHHost{Hostname: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port, ExpectedHostKeySHA256: pin}, "cat /etc/machine-id", 1024)
+			if err == nil {
+				t.Fatal("identity failure permitted a command")
+			}
+			<-done
+			if sessions.Load() != 0 {
+				t.Fatal("remote session opened before pin/trust was accepted")
+			}
+		})
+	}
+}
+
+func TestExpectedPinBelongsOnlyToTargetRequest(t *testing.T) {
+	client := New()
+	pinned, err := client.resolveHostConfig(ports.SSHHost{Hostname: "192.0.2.10", ProxyJump: "jump", ExpectedHostKeySHA256: "expected"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := client.resolveHostConfig(ports.SSHHost{Hostname: "192.0.2.11"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hop, err := client.resolveHopConfig(ports.SSHHost{Hostname: "192.0.2.12"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pinned.ExpectedHostKeySHA256 != "expected" || other.ExpectedHostKeySHA256 != "" || hop.ExpectedHostKeySHA256 != "" {
+		t.Fatal("pin leaked to another host or jump")
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -22,7 +23,12 @@ func runInitInstallTUI(ctx context.Context, postOut io.Writer, o *clusterinit.In
 		return runInit(ctx, out, o, modeRes, rep)
 	})
 	if res != nil && res.LogPath != "" {
-		if err != nil {
+		var outstanding *clusterinit.ActionRequiredError
+		if errors.Is(err, context.Canceled) || errors.Is(err, installrun.ErrAborted) {
+			fmt.Fprintf(postOut, "Installation stopped. Check effects before continuing. Log: %s\n", res.LogPath)
+		} else if errors.As(err, &outstanding) {
+			fmt.Fprintf(postOut, "Installation needs action. Log: %s\n", res.LogPath)
+		} else if err != nil {
 			fmt.Fprintf(postOut, "Install failed. Log: %s\n", res.LogPath)
 		} else {
 			fmt.Fprintf(postOut, "Install complete. Log: %s\n", res.LogPath)

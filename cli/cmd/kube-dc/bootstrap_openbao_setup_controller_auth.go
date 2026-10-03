@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -35,6 +39,8 @@ import (
 // argv, never logged.
 func bootstrapOpenBaoSetupControllerAuthCmd(fleetRepo *string) *cobra.Command {
 	var refreshPolicy bool
+	var databasePluginDigest string
+	var rootTokenStdin bool
 	cmd := &cobra.Command{
 		Use:   "setup-controller-auth <cluster-name>",
 		Short: "Provision OpenBao Kubernetes-auth policies and workload roles",
@@ -95,66 +101,86 @@ Use:
 				defer session.Close()
 			}
 			out := cmd.OutOrStdout()
-
-			// (1) Validate the fleet overlay exists.
-			secretsPath := filepath.Join(repo, "clusters", clusterName, "secrets.enc.yaml")
-			if _, err := os.Stat(secretsPath); err != nil {
-				return fmt.Errorf("openbao setup-controller-auth: secrets.enc.yaml not found at %s: %w", secretsPath, err)
-			}
-
-			// (2) Decrypt the SOPS file + extract 3 threshold shares.
-			//     Reuses the unseal engine's helper so we get identical
-			//     parser tolerance (CR/LF, optional quotes, both flat
-			//     and stringData layouts).
-			decrypted, err := session.SOPS.Decrypt(cmd.Context(), secretsPath)
-			if err != nil {
-				return fmt.Errorf("openbao setup-controller-auth: decrypt %s: %w", secretsPath, err)
-			}
-			defer func() {
-				for i := range decrypted {
-					decrypted[i] = 0
-				}
-			}()
-			shares, err := openbao.ExtractThresholdShares(decrypted)
-			if err != nil {
-				return fmt.Errorf("openbao setup-controller-auth: %w", err)
-			}
-			defer func() {
-				for _, s := range shares {
-					for i := range s {
-						s[i] = 0
-					}
-				}
-			}()
-
-			// (3) Generate a temporary root token from the shares.
-			//     Defer RevokeSelf IMMEDIATELY so any subsequent error
-			//     unwinds with revocation still guaranteed.
-			fmt.Fprintln(out, "[openbao] running generate-root ceremony (single-use token)")
-			tok, err := session.OpenBao.GenerateRoot(cmd.Context(), shares)
-			if err != nil {
-				return fmt.Errorf("openbao setup-controller-auth: generate-root: %w", err)
-			}
 			buf := secrets.NewBuffer()
 			defer buf.Scrub()
-			// We hold tok in a buf so the outer Scrub() catches it on
-			// any path including panics. The defer below revokes via
-			// the adapter before Scrub() zeroes the bytes.
-			buf.SetRootToken(tok)
-			// Caller scrubs the slice the adapter returned us — drop
-			// our local reference so only buf's copy is alive.
-			for i := range tok {
-				tok[i] = 0
-			}
+			// Register cleanup before any preflight for an externally issued
+			// token. Use a fresh context even if the command was canceled.
 			defer func() {
 				rtok, _ := buf.RootToken()
 				if len(rtok) == 0 {
 					return
 				}
-				if rerr := session.OpenBao.RevokeSelf(cmd.Context(), rtok); rerr != nil {
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+				defer cancel()
+				if rerr := session.OpenBao.RevokeSelf(cleanupCtx, rtok); rerr != nil {
 					fmt.Fprintf(out, "[openbao] WARNING: root token revoke failed: %v — manual remediation may be required\n", rerr)
 				}
 			}()
+
+			if rootTokenStdin {
+				// For operators using a local port-forward ceremony. The token
+				// stays off argv and disk and is revoked on every exit path.
+				raw, err := io.ReadAll(io.LimitReader(os.Stdin, 4097))
+				if err != nil {
+					return fmt.Errorf("openbao setup-controller-auth: read root token: %w", err)
+				}
+				tok := bytes.TrimSpace(raw)
+				if len(tok) == 0 || len(tok) > 256 {
+					for i := range raw {
+						raw[i] = 0
+					}
+					return fmt.Errorf("openbao setup-controller-auth: invalid root token length")
+				}
+				buf.SetRootToken(tok)
+				for i := range raw {
+					raw[i] = 0
+				}
+			}
+
+			var pluginQualification qualifiedDatabasePlugin
+			if databasePluginDigest != "" {
+				pluginQualification, err = qualifyDatabasePlugin(cmd.Context(), session.OpenBao, session.K8s, databasePluginDigest)
+				if err != nil {
+					return err
+				}
+			}
+
+			if !rootTokenStdin {
+				// Decrypt shares only for the built-in root ceremony.
+				secretsPath := filepath.Join(repo, "clusters", clusterName, "secrets.enc.yaml")
+				if _, err := os.Stat(secretsPath); err != nil {
+					return fmt.Errorf("openbao setup-controller-auth: secrets.enc.yaml not found at %s: %w", secretsPath, err)
+				}
+				decrypted, err := session.SOPS.Decrypt(cmd.Context(), secretsPath)
+				if err != nil {
+					return fmt.Errorf("openbao setup-controller-auth: decrypt %s: %w", secretsPath, err)
+				}
+				defer func() {
+					for i := range decrypted {
+						decrypted[i] = 0
+					}
+				}()
+				shares, err := openbao.ExtractThresholdShares(decrypted)
+				if err != nil {
+					return fmt.Errorf("openbao setup-controller-auth: %w", err)
+				}
+				defer func() {
+					for _, s := range shares {
+						for i := range s {
+							s[i] = 0
+						}
+					}
+				}()
+				fmt.Fprintln(out, "[openbao] running generate-root ceremony (single-use token)")
+				tok, err := session.OpenBao.GenerateRoot(cmd.Context(), shares)
+				if err != nil {
+					return fmt.Errorf("openbao setup-controller-auth: generate-root: %w", err)
+				}
+				buf.SetRootToken(tok)
+				for i := range tok {
+					tok[i] = 0
+				}
+			}
 
 			// (4) Resolve refresh mode.
 			mode := openbao.RefreshFull
@@ -173,10 +199,33 @@ Use:
 			}); err != nil {
 				return fmt.Errorf("openbao setup-controller-auth: %w", err)
 			}
+			if pluginQualification.active != "" {
+				// A generate-root ceremony can span a leader election. Verify the
+				// voters and Raft membership again. A missing success marker is
+				// retried once because kubectl exec can drop the output stream.
+				for attempt := 0; attempt < 2; attempt++ {
+					pluginQualification, err = qualifyDatabasePlugin(cmd.Context(), session.OpenBao, session.K8s, databasePluginDigest)
+					if err != nil {
+						return err
+					}
+					if err = verifyDatabasePluginPeers(cmd.Context(), session.K8s, pluginQualification, rtok); err != nil {
+						return err
+					}
+					if err = registerDatabasePlugin(cmd.Context(), session.K8s, pluginQualification.active, rtok, databasePluginDigest); err == nil {
+						break
+					}
+				}
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(out, "[openbao] registered PostgreSQL database plugin v0.4.0 after verifying every voter")
+			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&refreshPolicy, "refresh-policy", false,
 		"Skip auth-enable + auth-configure; only rewrite policies AND roles. Use after a chart upgrade extends the HCL or rotates role params.")
+	cmd.Flags().StringVar(&databasePluginDigest, "database-plugin-sha256", "", "Verify the v0.4.0 plugin executable on every OpenBao voter, then register it during this single-use root ceremony")
+	cmd.Flags().BoolVar(&rootTokenStdin, "root-token-stdin", false, "Read a one-use root token from stdin instead of running an in-pod generate-root ceremony; the token is revoked before exit")
 	return cmd
 }

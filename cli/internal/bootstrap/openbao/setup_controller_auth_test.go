@@ -509,10 +509,15 @@ func TestEmbeddedHCL_HasExpectedPaths(t *testing.T) {
 		`path "+/database/roles/+"`, // M4 DBCP
 		`path "+/database/static-roles/+"`,
 		`path "+/database/static-creds/+"`,
+		`path "+/sys/leases"`,
+		`path "+/sys/leases/revoke"`,
 	} {
 		if !strings.Contains(ManagerPolicyHCL, want) {
 			t.Errorf("ManagerPolicyHCL missing %q (HCL extraction may have dropped it)", want)
 		}
+	}
+	if strings.Contains(ManagerPolicyHCL, "sys/leases/revoke-force") {
+		t.Fatal("manager policy must never discard database revocation failures")
 	}
 	for _, want := range []string{
 		`path "+/transit/encrypt/+"`,   // db-manager DEK wrap

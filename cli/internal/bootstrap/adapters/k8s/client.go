@@ -110,6 +110,16 @@ func New(kubeconfigPath string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	return NewWithConfig(cfg, kubeconfigPath)
+}
+
+// NewWithConfig keeps an already verified transport, including its direct
+// endpoint and proxy policy. kubeconfigPath is used only by kubectl fallback.
+func NewWithConfig(cfg *rest.Config, kubeconfigPath string) (*Client, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("k8s: verified API config is required")
+	}
+	cfg = rest.CopyConfig(cfg)
 	core, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("k8s: build core client: %w", err)

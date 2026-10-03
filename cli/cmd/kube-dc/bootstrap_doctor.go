@@ -132,6 +132,7 @@ via lipgloss. Honours NO_COLOR=1 per no-color.org.`,
 	// than a main-factory probe because its output shape (full
 	// classification report) doesn't fit the unified probe table.
 	cmd.AddCommand(bootstrapDoctorTopologyCmd())
+	cmd.AddCommand(bootstrapDoctorServicesCmd(fleetRepo))
 
 	// --post-rke2 was specified in the M1-T06 plan but its
 	// semantics (relax cluster probes for fresh-RKE2 NotReady

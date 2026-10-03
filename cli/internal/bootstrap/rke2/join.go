@@ -2,6 +2,7 @@ package rke2
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -32,7 +33,9 @@ const nodeTokenPath = "/var/lib/rancher/rke2/server/node-token"
 // the internal supervisor IP, never a NAT/floating public IP), then the
 // agent is installed on the worker.
 type JoinWorkerOptions struct {
-	SSH ports.SSHClient
+	// BeforeConfigure runs after private staging and before any durable host changes.
+	BeforeConfigure func(context.Context) error
+	SSH             ports.SSHClient
 
 	// Worker is the NEW node being joined.
 	Worker     ports.SSHHost
@@ -53,6 +56,7 @@ type JoinWorkerOptions struct {
 	CPPort int
 
 	RKE2Version string
+	Artifacts   *ArtifactSet
 	// TrustedCA is the platform's private CA, installed into this worker's OS
 	// trust store before rke2-agent starts. A worker pulls its own images, so it
 	// needs node trust exactly as much as a server does — omitting it here would
@@ -70,13 +74,22 @@ type JoinWorkerOptions struct {
 // JoinWorker installs an rke2-agent on the worker and joins it to the
 // cluster. Idempotent (skips when rke2-agent is already active unless
 // --force).
-func JoinWorker(ctx context.Context, o JoinWorkerOptions) error {
+func JoinWorker(ctx context.Context, o JoinWorkerOptions) (resultErr error) {
 	out := o.Out
 	if out == nil {
 		out = io.Discard
 	}
 	if o.SSH == nil {
 		return fmt.Errorf("%w: SSH client", ErrMissingDependency)
+	}
+	if o.Artifacts != nil {
+		version := o.RKE2Version
+		if version == "" {
+			version = defaultRKE2Version
+		}
+		if err := o.Artifacts.Validate(version); err != nil {
+			return err
+		}
 	}
 	if o.WorkerName == "" {
 		return fmt.Errorf("%w: WorkerName", ErrMissingDependency)
@@ -137,12 +150,40 @@ func JoinWorker(ctx context.Context, o JoinWorkerOptions) error {
 	}
 
 	fmt.Fprintf(out, "[join] pushing RKE2 agent installer to %s\n", remoteAgentScriptPath)
+	artifactEnv := map[string]string{}
+	if o.Artifacts != nil {
+		version := o.RKE2Version
+		if version == "" {
+			version = defaultRKE2Version
+		}
+		var cleanup func() error
+		var err error
+		artifactEnv, cleanup, err = stageArtifacts(ctx, o.SSH, o.Worker, *o.Artifacts, version, o.TrustedCA)
+		if cleanup != nil {
+			defer func() { resultErr = errors.Join(resultErr, cleanup()) }()
+		}
+		if err != nil {
+			return err
+		}
+	}
+	if o.BeforeConfigure != nil {
+		if err := o.BeforeConfigure(ctx); err != nil {
+			return err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if o.TrustedCA != nil {
 		if err := o.SSH.Put(ctx, o.Worker, remoteTrustedCAPath, o.TrustedCA.PEM, 0o600); err != nil {
 			return fmt.Errorf("rke2 join: push trusted CA bundle: %w", err)
 		}
 	}
-	if err := o.SSH.Put(ctx, o.Worker, remoteAgentScriptPath, installAgentScript, 0o755); err != nil {
+	scriptPath := remoteAgentScriptPath
+	if o.Artifacts != nil {
+		scriptPath = artifactEnv["INSTALL_RKE2_ARTIFACT_PATH"] + "/install-agent.sh"
+	}
+	if err := o.SSH.Put(ctx, o.Worker, scriptPath, installAgentScript, 0o755); err != nil {
 		return fmt.Errorf("rke2 join: push agent installer: %w", err)
 	}
 
@@ -176,7 +217,10 @@ func JoinWorker(ctx context.Context, o JoinWorkerOptions) error {
 	if o.DisableEmbeddedRegistry {
 		env["EMBEDDED_REGISTRY"] = "false"
 	}
-	cmd := remoteAgentCmd(env, remoteAgentScriptPath, o.JoinToken, o.CPHost, o.WorkerIP)
+	for key, value := range artifactEnv {
+		env[key] = value
+	}
+	cmd := reviewedAgentCommand(env, scriptPath, o.JoinToken, o.CPHost, o.WorkerIP, o.Artifacts != nil)
 	res, err := o.SSH.Run(ctx, o.Worker, cmd)
 	if len(res) > 0 {
 		fmt.Fprintln(out, indent(redactToken(string(res), o.JoinToken), "    | "))
