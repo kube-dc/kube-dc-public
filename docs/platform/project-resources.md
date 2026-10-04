@@ -83,7 +83,9 @@ effective rules can be inspected in the backing namespace.
 When their platform dependencies are installed, reconciliation can also
 prepare:
 
-- the `managed-k8s-backups` ObjectBucketClaim for Managed Cluster etcd backups;
+- the `managed-k8s-backups` ObjectBucketClaim for Managed Cluster etcd backups.
+  New bucket names are bounded to 63 characters; long namespace names use a
+  truncated prefix and namespace hash. Existing buckets keep their names;
 - golden image snapshots for fast VM cloning on the supported RBD storage path;
 - security-service state for managed secrets, certificates, and KMS keys.
 

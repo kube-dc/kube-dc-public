@@ -50,10 +50,17 @@ when Rook Ceph object storage is available.
 |---|---|
 | Schedule: `0 2 * * *` (02:00 UTC daily) | `KdcCluster.spec.backup.schedule` |
 | Retention: 7 days (S3 lifecycle policy) | `KdcCluster.spec.backup.retentionDays` |
-| Bucket: `<projectNamespace>-managed-k8s-backups` | `KdcCluster.spec.backup.destinationPath` |
+| Bucket: name recorded by the `managed-k8s-backups` OBC | `KdcCluster.spec.backup.destinationPath` |
 | Object key (plaintext): `<cluster>/<cluster>-<ts>.db` | (not configurable) |
 | Object key (envelope-encrypted): `<cluster>/<cluster>-<ts>/` (a directory of 3 objects; see Encrypted backups) | (not configurable) |
 | S3 endpoint: `S3_ENDPOINT` controller environment (for example, `https://s3.<domain>`) | `KdcCluster.spec.backup.s3Endpoint` |
+
+New bucket names retain `<projectNamespace>-managed-k8s-backups` when it fits
+S3's 63-character limit. Longer names use a truncated namespace prefix and a
+16-character namespace hash. Existing buckets keep their names. The controller
+reads `BUCKET_NAME` from the OBC ConfigMap for the default backup destination;
+`spec.backup.destinationPath` still overrides that destination. Use the OBC's
+recorded bucket name when listing, restoring, or migrating snapshots.
 
 Snapshot size and upload duration depend on the Managed Cluster's API state,
 etcd history, object storage, and network path. The CronJob is gated on the OBC
@@ -75,7 +82,7 @@ For each snapshot under envelope mode, three sibling objects land in
 S3 instead of one:
 
 ```
-s3://<projectNS>-managed-k8s-backups/<cluster>/<cluster>-<ts>/
+s3://<bucketName>/<cluster>/<cluster>-<ts>/
   ├── snapshot.db.enc      NONCE(12B) || CIPHERTEXT || GCM_TAG(16B)
   ├── dek.wrapped          vault:vN:... the OpenBao-wrapped DEK
   └── metadata.json        schemaVersion + transitKey + transitKeyVersion +

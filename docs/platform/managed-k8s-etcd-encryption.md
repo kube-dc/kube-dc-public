@@ -280,7 +280,8 @@ backups.
 controllers explicitly refuse. Pre-flight checklist for the manual
 operator action:
 
-1. Inventory every S3 backup under `s3://<projectNS>-managed-k8s-backups/`
+1. Read the bucket name from the Project's `managed-k8s-backups` OBC, then
+   inventory every S3 backup under `s3://<bucketName>/`
    and parse each `metadata.json` for its `transitKeyVersion`. Refuse
    to advance if any version is below the target.
 2. Confirm every workload using this KEK has either re-wrapped or

@@ -74,7 +74,7 @@ spec:
                   destinationPath:
                     description: |-
                       DestinationPath overrides the default S3 URI for snapshot uploads.
-                      Default: s3://<projectNamespace>-managed-k8s-backups/<clusterName>/
+                      Default: s3://<OBCBucketName>/<clusterName>/, using the Project OBC ConfigMap.
                     type: string
                   enabled:
                     default: true
