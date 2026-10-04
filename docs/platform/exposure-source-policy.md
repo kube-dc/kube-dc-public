@@ -75,12 +75,25 @@ python3 hack/audit-exposure-installation.py \
   --output /tmp/exposure-installation-inventory.json
 ```
 
-The helper exports no Secret data. Its report includes direct shared-Gateway
-attachments, current Service UID ownership, HTTP01 certificates and unresolved
-issuers, deployment-owned manager Pods, configured controls, and address-pool
-capacity. Candidate namespace pins require operator review. The helper does not
-resolve route attachments through ListenerSet or XListenerSet, prove serving
-webhook endpoint ownership, or perform admission or packet acceptance.
+The helper exports no Secret data. Its report includes configured shared-Gateway
+parent paths through Gateway, ListenerSet and XListenerSet references, current
+Service UID ownership, HTTP01 certificates and unresolved issuers, manager Pods,
+configured controls, and address-pool capacity. Missing, cyclic and unsupported
+parent references remain findings, including when another parent reaches the
+shared Gateway. Parent reachability does not prove Accepted or Programmed status,
+listener permission, or a serving ingress path. Candidate namespace pins require
+operator review. Missing-parent findings cover ListenerSet/XListenerSet references;
+other Gateway parents are outside the shared-Gateway audit target.
+
+For the exposure webhook, the report follows its configured Service to
+EndpointSlices and records Service owner UIDs, target Pod UIDs, address matches,
+ports, raw endpoint conditions and Pod-to-ReplicaSet-to-Deployment ownership.
+Foreign and unresolved endpoints remain visible. The leader Lease includes its
+UID, resource version, expiry observation and a Pod candidate inferred from the
+holder name; this is not authenticated writer attribution. The GET sequence is
+not an atomic snapshot. Compare resource versions and audit start/end times,
+then verify the actual TLS handler and authenticated admission behavior. The
+helper does not perform admission or packet acceptance.
 
 ## Accept the installation
 
