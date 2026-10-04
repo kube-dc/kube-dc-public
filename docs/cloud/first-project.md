@@ -81,6 +81,23 @@ quota to stop one Project from consuming all of it.
 
 ![Resource quotas](images/project-5.png)
 
+## Delete a Project
+
+You need Organization administrator access. Deleting a Project permanently
+removes its workloads, storage, networking, and access. Back up any data you
+want to retain before deleting it.
+
+1. Open **Organization > Projects** and select the Project name.
+2. On the Project detail screen, select **Delete project**.
+3. Enter the exact Project name, then select **Delete**.
+
+The console shows **Deleting** until infrastructure cleanup finishes. Quotas
+and members are unavailable during deletion. If the Project has been replaced
+under the same name, refresh its details before confirming again.
+
+For cleanup order and troubleshooting, see
+[Project deletion behavior](../platform/project-resources.md#deletion-behavior).
+
 ## Next steps
 
 - [Deploy your first application](deploy-first-app.md)
