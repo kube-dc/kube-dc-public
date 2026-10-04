@@ -182,6 +182,20 @@ at startup, so a resource that matches nothing is refused there.
                o.apiVersion == 'postgresql.cnpg.io/v1' && o.kind == 'Pooler')
           && 'network.kube-dc.com/requires-role' in variables.annotations
           && variables.annotations['network.kube-dc.com/requires-role'] == 'management-api-client'
+{{- if and .Values.manager.webhook.enabled .Values.projectPolicies.protectManagedServices.enabled .Values.projectPolicies.protectManagedServices.postgresqlStartup.enabled }}
+    # The PostgreSQL webhook verifies live UID ownership and material inputs.
+    # Keep the broad kdc-* reservation; admit only CNPG's guarded native children.
+    - name: postgresqlStartupAccount
+      expression: >-
+        variables.sa.startsWith('kdc-pg-v1-')
+        && variables.reqUser == 'system:serviceaccount:cnpg-system:cnpg-cloudnative-pg'
+        && variables.ownerCnpg
+        && object.metadata.?ownerReferences.orValue([]).exists(o,
+             o.apiVersion == 'postgresql.cnpg.io/v1'
+             && (o.kind == 'Cluster' || o.kind == 'Pooler')
+             && o.?controller.orValue(false)
+             && o.name == variables.sa)
+{{- end }}
     # mariadb-operator's DIRECT children — the StatefulSet it creates and its
     # bootstrap Jobs — ARE controller-owned by the MariaDB CR, so this matches
     # them (and only them: scoped to the exact engine GVK, like ownerCnpg).
@@ -616,6 +630,9 @@ the domains the platform itself interprets.
     # the platform's own RBAC.
     - expression: >-
         variables.sa == '' ||
+{{- if and .Values.manager.webhook.enabled .Values.projectPolicies.protectManagedServices.enabled .Values.projectPolicies.protectManagedServices.postgresqlStartup.enabled }}
+        variables.postgresqlStartupAccount ||
+{{- end }}
         !(variables.sa.endsWith('-cluster-autoscaler') ||
           variables.sa.startsWith('kccm-') || variables.sa.startsWith('csccm-') ||
           variables.sa.endsWith('-kubevirt-csi-controller') ||

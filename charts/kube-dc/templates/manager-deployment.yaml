@@ -238,6 +238,8 @@ spec:
             value: {{ toJson .Values.manager.fipSourcePolicy.namespaceUIDs | quote }}
           - name: EXPOSURE_ROUTE_TRUSTED_PRODUCERS
             value: {{ join "," .Values.manager.webhook.exposureRouteTrustedProducers | quote }}
+          - name: EXPOSURE_ROUTE_PRODUCER_NAMESPACE_UIDS
+            value: {{ .Values.manager.webhook.exposureRouteProducerNamespaceUIDs | toJson | quote }}
           - name: EXPOSURE_ACME_CONTROLLER_USERNAME
             value: {{ .Values.manager.webhook.exposureACMEControllerUsername | quote }}
           - name: EXPOSURE_ACME_PLATFORM_NAMESPACE_UIDS

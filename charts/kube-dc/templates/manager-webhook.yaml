@@ -23,6 +23,25 @@
 {{- fail "manager.webhook.exposureRouteTrustedProducers must contain exact service-account usernames" -}}
 {{- end -}}
 {{- end -}}
+{{- if not (kindIs "map" .Values.manager.webhook.exposureRouteProducerNamespaceUIDs) -}}
+{{- fail "manager.webhook.exposureRouteProducerNamespaceUIDs must be an object" -}}
+{{- end -}}
+{{- range $producer, $scopes := .Values.manager.webhook.exposureRouteProducerNamespaceUIDs -}}
+{{- if not (has $producer $.Values.manager.webhook.exposureRouteTrustedProducers) -}}
+{{- fail "manager.webhook.exposureRouteProducerNamespaceUIDs keys must be configured trusted producers" -}}
+{{- end -}}
+{{- if not (kindIs "map" $scopes) -}}
+{{- fail "manager.webhook.exposureRouteProducerNamespaceUIDs producer scopes must be objects" -}}
+{{- end -}}
+{{- range $namespace, $uid := $scopes -}}
+{{- if not (kindIs "string" $uid) -}}
+{{- fail "manager.webhook.exposureRouteProducerNamespaceUIDs requires exact namespace names and UUIDs" -}}
+{{- end -}}
+{{- if or (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $namespace)) (gt (len $namespace) 63) (not (regexMatch "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$" $uid)) -}}
+{{- fail "manager.webhook.exposureRouteProducerNamespaceUIDs requires exact namespace names and UUIDs" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- if and .Values.manager.webhook.protectExposureRoutes (not .Values.manager.webhook.enabled) -}}
 {{- fail "manager.webhook.protectExposureRoutes requires manager.webhook.enabled" -}}
 {{- end -}}
@@ -191,6 +210,12 @@ webhooks:
           (request.userInfo.username == 'system:kube-controller-manager' ||
            [{{ range $i, $ns := (include "kube-dc.managedServices.exemptNamespaces" $ | fromJsonArray) }}{{ if $i }}, {{ end }}'system:serviceaccount:{{ $ns }}:'{{ end }}].exists(prefix,
             request.userInfo.username.startsWith(prefix)))
+{{- if and .Values.manager.webhook.enabled .Values.projectPolicies.protectManagedServices.enabled .Values.projectPolicies.protectManagedServices.postgresqlStartup.enabled }}
+      - name: cnpg-pooler-rbac-only
+        expression: >-
+          request.resource.group != 'rbac.authorization.k8s.io' ||
+          request.userInfo.username == 'system:serviceaccount:cnpg-system:cnpg-cloudnative-pg'
+{{- end }}
     clientConfig:
       service:
         name: {{ include "kube-dc.manager.fullname" . }}-webhook
@@ -212,6 +237,14 @@ webhooks:
         apiVersions: ["v1"]
         operations: ["CREATE"]
         resources: ["jobs"]
+{{- if and .Values.manager.webhook.enabled .Values.projectPolicies.protectManagedServices.enabled .Values.projectPolicies.protectManagedServices.postgresqlStartup.enabled }}
+      # CNPG derives the pooler Role and RoleBinding from the marked Pooler.
+      # Apply the same live-owner UID inheritance before startup validation.
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["roles", "rolebindings"]
+{{- end }}
       # Custom ownership hops (for example Sentinel) must inherit the root's
       # marker before their own workload children are created.
 {{- range .Values.serviceFamilies.extra }}

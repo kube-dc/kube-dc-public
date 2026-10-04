@@ -419,7 +419,7 @@ type: application
 # the backend abandon route with or after the manager: an older manager's
 # typed Update drops spec.abandon, the withdraw rule then rejects the write,
 # and it can neither add nor remove the finalizer on an abandoned rotation.
-version: v0.9.1-exposure-scope.20261003.1
+version: v0.9.1-exposure-scoped.20261004.1
 
 # v0.6.5: reconcile every Grafana Mimir datasource to the chart gateway so
 # query, health, and Ruler APIs share one supported endpoint.

@@ -14,6 +14,7 @@ run the management cluster.
 | Install the platform | [Installation guide](installation-guide.md) |
 | Understand Organizations, Projects, and access | [Multi-tenancy and access control](architecture-multi-tenancy.md) |
 | Design provider and Project networks | [Networking architecture](architecture-networking.md) |
+| Qualify client restrictions for exposed workloads | [Exposure source policies](exposure-source-policy.md) |
 | Operate internal platform endpoints | [Internal platform endpoints](internal-platform-endpoints.md) |
 | Publish and operate a managed services catalog | [Managed services overview](managed-services-overview.md), [Enabling managed services](managed-services-enable.md), [Publishing the catalog](managed-services-catalog.md), [Operating the service](managed-services-operations.md) |
 | Review platform controls and trust boundaries | [Security model](security-model.md) |

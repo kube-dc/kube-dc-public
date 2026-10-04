@@ -372,6 +372,11 @@ manager:
     # Exact platform identities only. Audit and migrate existing tenant routes
     # before activation; tenants then use expose-route on the shared Gateway.
     exposureRouteTrustedProducers: []
+    # Optional per-producer namespace UID pins for native shared-Gateway routes.
+    # An absent producer entry retains legacy trust. An explicit empty entry
+    # denies all its native attachments. A recreated namespace needs new pins.
+    # This does not qualify managed producer hostname concurrency.
+    exposureRouteProducerNamespaceUIDs: {}
     # Exact cert-manager identity; it receives only a verified HTTP-01 exception.
     exposureACMEControllerUsername: ""
     # Explicit platform Certificate namespace UID pins. Tenant Certificates
@@ -564,7 +569,7 @@ manager:
     # Explicit manager default for the scope-aware release. appVersion retains
     # the deployed bundle label and other components' fallback tags. Fleet
     # supplies the installation's reviewed tag and immutable digest.
-    tag: v0.9.1-exposure-scope.20261003.1
+    tag: v0.9.1-exposure-scoped.20261004.1
 
   imagePullSecrets: []
   nameOverride: ""
@@ -867,6 +872,11 @@ backend:
   # first — a cluster whose API server is reached by an address its certificate
   # does not cover will fail every call.
   tlsVerify: false
+  # Default-deny authentication for /api: every request needs a verified
+  # Keycloak token unless the route is public by design. "report" logs what it
+  # would refuse ("[auth] would refuse ..."), "enforce" answers 401, "off".
+  # Prove a cluster's callers in report mode before enforcing.
+  authMode: report
   # Keycloak admin client for the Admin Console.
   #
   # The Admin Console's Keycloak-backed pages (Platform Admins, Auth & SSO)
@@ -968,7 +978,11 @@ backend:
     port: "587"
     secure: "false" # "true" for port 465
     user: "" # SMTP username
-    password: "" # SMTP password (use secret reference in production)
+    password: "" # SMTP password; the chart stores it in <backend>-smtp-credentials
+    # Or name a Secret the installation manages; then `password` is ignored and
+    # no Secret is rendered.
+    existingSecret: ""
+    existingSecretKey: "password"
     from: "" # e.g., "noreply@example.com"
     fromName: "Kube-DC"
   
@@ -978,6 +992,30 @@ backend:
   extraEnv: []
       # - name: PROM_URL
       #   value: "http://prometheus:9090"
+  # Background workers (billing reconciler, signup reminders, billing
+  # notifications) in their own Deployment: one replica, Recreate, so exactly
+  # one copy runs however the API is scaled. The API pods then get
+  # BACKEND_WORKERS=false. Off by default because it needs a backend image
+  # that ships worker.js; with it off the workers run inside the API process,
+  # and the chart refuses more than one API replica (they would run twice).
+  # Same image, env, volumes and service account as the API.
+  worker:
+    enabled: false
+    healthPort: 8080
+    resources:
+      requests:
+        cpu: 20m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+    livenessProbe:
+      httpGet:
+        path: /healthz
+        port: health
+      initialDelaySeconds: 10
+      periodSeconds: 30
+      failureThreshold: 3
+
   image:
     repository: shalb/kube-dc-ui-backend
     pullPolicy: IfNotPresent
@@ -1158,7 +1196,7 @@ k8Manager:
   image:
     repository: shalb/kube-dc-k8-manager
     pullPolicy: IfNotPresent
-    tag: "v0.8.3"
+    tag: "v0.9.1-exposure-managed.20261004.1"
     # Optional immutable digest for installation-qualified controller releases.
     digest: ""
 
@@ -3021,6 +3059,10 @@ projectPolicies:
     enabled: true
     # Enable only after every manager replica serves the versioned validator.
     # The services runner separately verifies this guard before fast creation.
+    # Reserved PostgreSQL ownership domain. Default off until native and
+    # later-feature compatibility is qualified. Does not remove the 90s wait.
+    postgresqlStartup:
+      enabled: false
     valkeyStartup:
       enabled: false
     validationActions: ["Deny"]

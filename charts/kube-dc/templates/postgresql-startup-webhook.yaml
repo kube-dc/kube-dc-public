@@ -1,0 +1,44 @@
+{{- if and .Values.manager.webhook.enabled .Values.projectPolicies.protectManagedServices.enabled .Values.projectPolicies.protectManagedServices.postgresqlStartup.enabled }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: kube-dc-postgresql-startup-v1
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "kube-dc.manager.fullname" . }}-webhook-serving-cert
+webhooks:
+  - name: postgresql-development-startup-v1.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-postgresql-development-startup-v1
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods/binding"]
+        scope: Namespaced
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["secrets", "configmaps", "serviceaccounts", "persistentvolumeclaims", "services", "pods"]
+        scope: Namespaced
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "replicasets"]
+        scope: Namespaced
+      - apiGroups: ["batch", "rbac.authorization.k8s.io", "postgresql.cnpg.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "roles", "rolebindings", "clusters", "backups", "scheduledbackups", "poolers", "publications", "subscriptions", "databases"]
+        scope: Namespaced
+{{- end }}

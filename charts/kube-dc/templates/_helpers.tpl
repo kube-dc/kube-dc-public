@@ -97,6 +97,24 @@ app.kubernetes.io/name: {{ include "kube-dc.backend.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
+{{- /* The backend worker Deployment's pods. Their name differs from the API's
+so the backend Service (and anything else selecting the API pods) never
+matches them. */}}
+{{- define "kube-dc.backend.worker.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "kube-dc.backend.name" . }}-worker
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: worker
+{{- end }}
+
+{{- define "kube-dc.backend.worker.labels" -}}
+helm.sh/chart: {{ include "kube-dc.chart" . }}
+{{ include "kube-dc.backend.worker.selectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
 {{- define "kube-dc.frontend.serviceAccountName" -}}
 {{- default (include "kube-dc.frontend.fullname" .) .Values.frontend.serviceAccount.name }}
 {{- end }}

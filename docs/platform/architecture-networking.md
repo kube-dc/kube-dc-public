@@ -275,6 +275,8 @@ flowchart LR
 
 See the [Security model](security-model.md) for router-policy behavior,
 allowlists, admission controls, and residual risk.
+For per-endpoint client IPv4 restrictions, see
+[Qualify exposure source policies](exposure-source-policy.md).
 
 ## Envoy Gateway
 

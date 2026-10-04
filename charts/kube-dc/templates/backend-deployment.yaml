@@ -14,13 +14,38 @@ instead of failing on a nil pointer. */}}
 {{- if and $selfService.enabled (not $payg) }}
 {{- fail "billing.policy.selfService.enabled requires billing.payg.enabled=true: self-service PAYG signup needs the billing service, which the backend is wired to only on a PAYG installation" }}
 {{- end }}
+{{- /* Background workers (ui/backend/jobs/workers.js) write cluster state and
+send email, so exactly one copy may run. With backend.worker.enabled they run in
+a second Deployment rendered from this same template (one replica, Recreate,
+`node worker.js`), so its env and volumes cannot drift from the API's; without
+it they run inside the API process, which therefore must not scale. */}}
+{{- $worker := .Values.backend.worker | default dict }}
+{{- if and (not $worker.enabled) (or .Values.backend.autoscaling.enabled (gt (int .Values.backend.replicaCount) 1)) }}
+{{- fail "backend.replicaCount > 1 or backend.autoscaling.enabled requires backend.worker.enabled=true: without the worker Deployment every API replica runs the billing reconciler and the email workers" }}
+{{- end }}
+{{- $roles := list "api" }}
+{{- if $worker.enabled }}{{- $roles = append $roles "worker" }}{{- end }}
+{{- range $role := $roles }}
+{{- with $ }}
+{{- $isWorker := eq $role "worker" }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "kube-dc.backend.fullname" . }}
+  name: {{ include "kube-dc.backend.fullname" . }}{{ if $isWorker }}-worker{{ end }}
   labels:
+    {{- if $isWorker }}
+    {{- include "kube-dc.backend.worker.labels" . | nindent 4 }}
+    {{- else }}
     {{- include "kube-dc.backend.labels" . | nindent 4 }}
+    {{- end }}
 spec:
+  {{- if $isWorker }}
+  # One copy, never two: Recreate stops the old pod before the new one starts.
+  strategy:
+    type: Recreate
+  replicas: 1
+  {{- else }}
   {{- if .Values.backend.consoleApi.enabled }}
   strategy:
     type: Recreate
@@ -28,9 +53,14 @@ spec:
   {{- if not .Values.backend.autoscaling.enabled }}
   replicas: {{ .Values.backend.replicaCount }}
   {{- end }}
+  {{- end }}
   selector:
     matchLabels:
+      {{- if $isWorker }}
+      {{- include "kube-dc.backend.worker.selectorLabels" . | nindent 6 }}
+      {{- else }}
       {{- include "kube-dc.backend.selectorLabels" . | nindent 6 }}
+      {{- end }}
   template:
     metadata:
       annotations:
@@ -41,11 +71,19 @@ spec:
         # that only changed the Secret. See
         # kube-dc/docs/prd/public-projects-gate.md (F2 review fix).
         checksum/master-config: {{ include (print $.Template.BasePath "/manager-secret.yaml") . | sha256sum }}
+        {{- if .Values.backend.smtp.enabled }}
+        # Rolls the pods when the SMTP password changes.
+        checksum/smtp-credentials: {{ include (print $.Template.BasePath "/backend-smtp-credentials.yaml") . | sha256sum }}
+        {{- end }}
         {{- with .Values.backend.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
+        {{- if $isWorker }}
+        {{- include "kube-dc.backend.worker.selectorLabels" . | nindent 8 }}
+        {{- else }}
         {{- include "kube-dc.backend.selectorLabels" . | nindent 8 }}
+        {{- end }}
         {{- include "kube-dc.podVersionLabel" . | nindent 8 }}
         {{- with .Values.backend.podLabels }}
         {{- toYaml . | nindent 8 }}
@@ -59,11 +97,19 @@ spec:
       securityContext:
         {{- toYaml .Values.backend.podSecurityContext | nindent 8 }}
       containers:
-        - name: {{ .Chart.Name }}
+        - name: {{ if $isWorker }}worker{{ else }}{{ .Chart.Name }}{{ end }}
           securityContext:
             {{- toYaml .Values.backend.securityContext | nindent 12 }}
           image: {{ include "kube-dc.ui.image" (dict "image" .Values.backend.image "appVersion" .Chart.AppVersion) | quote }}
           imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          {{- if $isWorker }}
+          # The image ENTRYPOINT (TLS trust bundle) still runs; only CMD changes.
+          args: ["node", "worker.js"]
+          ports:
+            - name: health
+              containerPort: {{ $worker.healthPort | default 8080 }}
+              protocol: TCP
+          {{- else }}
           ports:
             - name: http
               containerPort: 3333 #{{ .Values.backend.service.port }}
@@ -78,10 +124,19 @@ spec:
               containerPort: {{ .Values.platformApi.backendPort }}
               protocol: TCP
             {{- end }}
+          {{- end }}
           env:
             - name: KUBE_DC_BACKEND_VERSION
               value: {{ .Values.backend.image.tag | default .Chart.AppVersion | quote }}
-            {{- if .Values.backend.consoleApi.enabled }}
+            {{- if $isWorker }}
+            - name: WORKER_HEALTH_PORT
+              value: {{ $worker.healthPort | default 8080 | quote }}
+            {{- else if $worker.enabled }}
+            # The worker Deployment runs the background workers.
+            - name: BACKEND_WORKERS
+              value: "false"
+            {{- end }}
+            {{- if and .Values.backend.consoleApi.enabled (not $isWorker) }}
             - name: UI_API_ENABLED
               value: "true"
             - name: UI_API_REPLICAS
@@ -159,7 +214,7 @@ spec:
               value: {{ . | quote }}
             {{- end }}
             {{- end }}
-            {{- if .Values.backend.metrics.enabled }}
+            {{- if and .Values.backend.metrics.enabled (not $isWorker) }}
             - name: METRICS_PORT
               value: {{ .Values.backend.metrics.port | quote }}
             {{- end }}
@@ -267,8 +322,12 @@ spec:
               value: "{{ .Values.backend.smtp.secure }}"
             - name: SMTP_USER
               value: "{{ .Values.backend.smtp.user }}"
+            # From a Secret, never the spec (templates/backend-smtp-credentials.yaml).
             - name: SMTP_PASS
-              value: "{{ .Values.backend.smtp.password }}"
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.smtp.existingSecret | default (printf "%s-smtp-credentials" (include "kube-dc.backend.fullname" .)) | quote }}
+                  key: {{ .Values.backend.smtp.existingSecretKey | default "password" | quote }}
             - name: SMTP_FROM
               value: "{{ .Values.backend.smtp.from }}"
             - name: SMTP_FROM_NAME
@@ -469,6 +528,10 @@ spec:
             # verifies — see ui/backend/util/k8sVerifiedRequest.js.
             - name: BACKEND_TLS_VERIFY
               value: {{ .Values.backend.tlsVerify | default false | quote }}
+            # Default-deny authentication for /api (ui/backend/util/apiAuthentication.js):
+            # report logs what it would refuse, enforce answers 401, off skips it.
+            - name: API_AUTH_MODE
+              value: {{ .Values.backend.authMode | default "report" | quote }}
             {{- if .Values.backend.trustedCA.configMapName }}
             # Node does NOT read SSL_CERT_DIR (the manager's mechanism). It reads
             # NODE_EXTRA_CA_CERTS — a single FILE, appended to the bundled roots,
@@ -481,6 +544,14 @@ spec:
           {{- with .Values.backend.extraEnv }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- if $isWorker }}
+          {{- with $worker.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml ($worker.resources | default dict) | nindent 12 }}
+          {{- else }}
           {{- with .Values.backend.startupProbe }}
           startupProbe:
             {{- toYaml . | nindent 12 }}
@@ -491,6 +562,7 @@ spec:
             {{- toYaml .Values.backend.readinessProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
+          {{- end }}
           {{- if or .Values.backend.volumeMounts .Values.backend.trustedCA.configMapName (.Values.backend.cliDiscovery | default dict).caConfigMapName $billingURL }}
           volumeMounts:
             {{- if $billingURL }}
@@ -569,3 +641,5 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+{{- end }}
+{{- end }}
