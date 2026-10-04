@@ -422,9 +422,28 @@ preserving the Service UID, EIP binding and hostname. The aggregate passes
 direct HTTP use the shared EIP. Gateway HTTP matches the requested lists across
 three separately selected ingress nodes.
 
-The temporary namespace capability scope is closed after acceptance. Global
-controls and FIP enforcement remain disabled pending the remaining qualification
-gates. This subset does not qualify Cloud, all lifecycle paths, or other managed
-consumers. Installation capability publication remains a separate reviewed
-rollout. Empty lists request open access; do not describe requested intent as
+The temporary namespace capability scope is closed after acceptance. At this
+checkpoint, global controls and FIP enforcement remain disabled. The subsequent
+owner-approved Stage validation rollout is recorded separately. This traffic
+subset does not qualify Cloud, all lifecycle paths, or other managed consumers.
+Installation capability publication remains a separate reviewed rollout. Empty lists request open access; do not describe requested intent as
 verified enforcement without current path-specific evidence.
+
+
+### Stage control availability (2026-10-04)
+
+A separately reviewed, owner-approved rollout enables direct LoadBalancer,
+Gateway, and FIP controls across Stage for validation. Empty lists remain open.
+Authenticated browser inspection verifies open-default creation fields and
+editable CIDR fields on existing Service and FIP forms, with all network
+mutations blocked. Eleven browser checks, 12 post-convergence health checks,
+and 206 resource/Gateway preservation checks pass. Earlier direct/Gateway
+traffic results remain a separate acceptance subset.
+
+The Stage public address pool has no free addresses despite quota headroom.
+This rollout does not qualify fresh independent public Stage FIP traffic or
+inherit Cloud qualification. Unsupported topology remains unavailable; require
+current enforcement evidence after a restrictive write. Production capability
+publication, broader lifecycle/failover, and consumer qualification remain
+separate release gates. Before disabling enforcement, inventory restrictions
+and retain their enforcement or normally withdraw external exposure.
