@@ -285,6 +285,27 @@ router-port ACL support and verified NAT/chassis convergence. HTTP-01 needs the
 bounded cert-manager identity, Service certificate ownership and reviewed
 platform namespace UID pins, including renewal acceptance under the guard.
 
+### Verify Gateway transport and ingress maintenance
+
+Test fresh allowed-client TLS connections and the first application response on
+every ingress node. A successful handshake followed by a read timeout is an
+availability failure. Use valid CA/SNI controls when testing client-certificate
+rejection; do not count an application read timeout as source denial.
+
+For host-network Envoy reaching Service addresses through loopback and an OVN
+overlay, verify the upstream TCP maximum segment size (MSS) fits the actual
+path MTU. If the node advertises a loopback-sized MSS before Service DNAT,
+qualify an installation-specific Envoy upstream TCP socket setting. Verify the
+bootstrap and active cluster configuration on every serving replica, and inspect
+fresh upstream SYNs. An MSS value qualified on one installation does not qualify
+another installation or UDP fragmentation.
+
+Verify which physical nodes the public frontdoor reaches during rolling ingress
+maintenance. Multiple ready Envoy replicas and `maxUnavailable: 1` do not ensure
+continuous service when the public address targets one node and traffic requires
+a local endpoint. Measure existing endpoint availability through rotation and
+verify recovery before claiming high availability.
+
 ### Preserve shared Gateway hostname ownership
 
 Service-generated HTTP, HTTPS, and TLS passthrough share an atomic hostname
@@ -303,6 +324,10 @@ A conflicting Gateway hostname produces a `GatewayHostnameConflict` Service
 event and a fixed 10-second retry. After another owner releases its claim,
 waiting Services can retry without the controller's increasing error backoff.
 Unknown API, ledger, or cleanup failures remain errors.
+During a hostname edit, a previously published route can retain its old hostname
+and UID-bound claim while the requested hostname is unavailable. This does not
+publish the conflicting name. Source tightening still withdraws unsafe forwarding
+before the retry.
 
 Keep tenant Gateway metadata writes denied. Deploy the reservation-aware binary
 on every leader-capable controller and serving webhook replica before qualifying
