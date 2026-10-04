@@ -101,7 +101,10 @@ an existing list requests open access. Leaving the field untouched preserves it.
 
 The console enables these controls only for operator-qualified methods and
 separates requested access from controller enforcement evidence. An allocated
-IP or a saved manifest does not prove protection. A Service inside a managed
+IP or a saved manifest does not prove protection. If a LoadBalancer Service also
+uses `expose-route`, **Applied** requires current controller acknowledgments for
+both its direct address and Gateway route. A missing or stale acknowledgment
+keeps the report **Pending**. A Service inside a managed
 Kubernetes cluster uses that cluster's LoadBalancer provider; check its support
 before relying on the same field there.
 
