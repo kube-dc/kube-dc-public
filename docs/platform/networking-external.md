@@ -285,6 +285,30 @@ router-port ACL support and verified NAT/chassis convergence. HTTP-01 needs the
 bounded cert-manager identity, Service certificate ownership and reviewed
 platform namespace UID pins, including renewal acceptance under the guard.
 
+### Preserve shared Gateway hostname ownership
+
+Service-generated HTTP, HTTPS, and TLS passthrough share an atomic hostname
+reservation ledger on the platform Gateway. Records bind namespace, Service name,
+and Service UID. Resource-version updates serialize exact and wildcard overlap
+checks across controller replicas. Reservations survive certificate and policy
+waits, route withdrawal, source-list transitions, and controller restarts.
+
+The controller imports existing UID-proven publications before withdrawing them.
+A protected Service marker also discovers cancellation before the first route
+exists. Cleanup releases a reservation after fresh owned-route and listener
+absence; orphan cleanup uses exact UID ownership and UID/resource-version delete
+preconditions. It never transfers a claim to a same-name replacement Service.
+
+Keep tenant Gateway metadata writes denied. Deploy the reservation-aware binary
+on every leader-capable controller and serving webhook replica before qualifying
+concurrent ownership. Trusted native route producers remain outside this
+Service-reservation guarantee and require separate ownership review. Malformed
+records and annotation growth above 240 KiB stop new claims; source tightening
+still withdraws unsafe forwarding. Do not manually remove ownership records to
+resolve a conflict. Remove obsolete exposure through the Service lifecycle and
+verify withdrawal. A downgrade to a binary without this ledger requires separate
+hostname-ownership qualification.
+
 ### Plan shared Gateway listener capacity
 
 The Gateway API schema permits at most 64 listeners on one Gateway. Count

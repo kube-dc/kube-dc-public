@@ -78,6 +78,13 @@ a mode change that needs another listener can be rejected. Contact
 your operator to release unused listeners or provide separate Gateway capacity.
 HTTP and unrestricted TLS passthrough reuse shared listeners.
 
+Hostnames are exclusive across HTTP, HTTPS, and TLS passthrough on the shared
+Gateway. An exact name conflicts with an overlapping wildcard. The controller
+retains your Service's hostname while its certificate or source policy is
+pending, including transitions between open and restricted access. Removing
+exposure releases the name after the controller confirms route and listener
+withdrawal. A conflicting request stays unpublished.
+
 A qualified Floating IP uses `spec.allowedCIDRs`; see
 [External and floating IPs](public-floating-ips.md#restrict-floating-ip-clients).
 Every list accepts at most 32 IPv4 CIDRs. Bare addresses, IPv6, malformed lists
