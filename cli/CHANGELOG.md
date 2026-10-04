@@ -1,5 +1,13 @@
 # kube-dc CLI changelog
 
+## v0.9.2 — 2026-10-04
+
+- Use the matched `v0.9.2` fleet-starter with the qualified services runtime, including faster operation convergence and PostgreSQL recovery-window refresh after a primary timeline change.
+- Align the new-installation PostgreSQL catalog with its compiled adapter and pin every packaged component explicitly. Keep installation-specific activation receipts out of the starter.
+- Preserve existing UI, backend and sibling image pins. New installations keep startup acceleration disabled until their own ownership safeguards are qualified.
+- Validate registry artifacts, generated installation manifests and compiled catalog contracts. The clean-install evidence remains the v0.9.1 qualification; this refresh does not claim another fresh-install run.
+- Existing installations retain their Fleet pins; this CLI release does not upgrade them automatically.
+
 ## v0.9.1 — 2026-10-03
 
 - Install the six managed-service families with verified Development and Production plans using the matching `v0.9.1` fleet-starter artifact.
