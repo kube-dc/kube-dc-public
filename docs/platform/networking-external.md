@@ -410,3 +410,21 @@ controller that enforces them, or withdraw their external exposure and verify
 unreachability before installing an older version. Never delete protection
 while leaving a restricted endpoint reachable. A public address quota addon
 cannot resolve exhaustion of the physical routed address pool.
+
+### Console qualification on Stage (2026-10-04)
+
+The recorded Stage console subset verifies restricted LoadBalancer creation
+and later edits, including source inversion and clearing the list. It also
+verifies edits on an existing LoadBalancer with an `expose-route` Gateway route,
+preserving the Service UID, EIP binding and hostname. The aggregate passes
+21 browser/API checks and 132 independent-source packet probes, including
+24 baseline probes retained from an earlier attempt. Direct TCP/UDP and combined
+direct HTTP use the shared EIP. Gateway HTTP matches the requested lists across
+three separately selected ingress nodes.
+
+The temporary namespace capability scope is closed after acceptance. Global
+controls and FIP enforcement remain disabled pending the remaining qualification
+gates. This subset does not qualify Cloud, all lifecycle paths, or other managed
+consumers. Installation capability publication remains a separate reviewed
+rollout. Empty lists request open access; do not describe requested intent as
+verified enforcement without current path-specific evidence.
