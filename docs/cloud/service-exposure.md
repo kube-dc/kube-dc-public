@@ -83,7 +83,9 @@ Gateway. An exact name conflicts with an overlapping wildcard. The controller
 retains your Service's hostname while its certificate or source policy is
 pending, including transitions between open and restricted access. Removing
 exposure releases the name after the controller confirms route and listener
-withdrawal. A conflicting request stays unpublished.
+withdrawal. A conflicting Gateway route stays unpublished. The controller
+reports a `GatewayHostnameConflict` event and retries every 10 seconds. After
+the other owner releases the hostname, the next retry can publish your route.
 
 A qualified Floating IP uses `spec.allowedCIDRs`; see
 [External and floating IPs](public-floating-ips.md#restrict-floating-ip-clients).

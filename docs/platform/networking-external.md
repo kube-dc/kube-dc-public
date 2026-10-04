@@ -299,6 +299,11 @@ exists. Cleanup releases a reservation after fresh owned-route and listener
 absence; orphan cleanup uses exact UID ownership and UID/resource-version delete
 preconditions. It never transfers a claim to a same-name replacement Service.
 
+A conflicting Gateway hostname produces a `GatewayHostnameConflict` Service
+event and a fixed 10-second retry. After another owner releases its claim,
+waiting Services can retry without the controller's increasing error backoff.
+Unknown API, ledger, or cleanup failures remain errors.
+
 Keep tenant Gateway metadata writes denied. Deploy the reservation-aware binary
 on every leader-capable controller and serving webhook replica before qualifying
 concurrent ownership. Trusted native route producers remain outside this
