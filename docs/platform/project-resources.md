@@ -111,19 +111,36 @@ reports a `LimitCheck` condition until capacity becomes available.
 
 ## Deletion behavior
 
-Deleting a Project is a coordinated teardown, not only a namespace deletion.
-The controller:
+To delete a Project in the console, open **Organization > Projects**, select
+its name, and select **Delete project**. Enter the exact Project name to confirm.
+You need Organization administrator access. Deletion permanently removes the
+Project's workloads, storage, networking, and access.
+
+The console confirms the displayed Project UID. If another Project replaces it
+under the same name, deletion returns `409`; refresh and review that Project
+before confirming again. The console shows **Deleting** while cleanup runs and
+stops requesting namespace quotas and members. A Project that is being deleted
+returns `409` from the quota API; this does not grant any additional access.
+
+Deleting a Project is a coordinated teardown. The controller first removes its
+permissions from Organization Groups, preserving each group and its permissions
+for other Projects. The controller:
 
 1. removes cluster-scoped golden snapshot content owned by the Project;
 2. drains external-state workloads such as Managed Clusters and object buckets;
 3. removes public egress and default SNAT state;
 4. releases external addresses and VPC DNS resources;
 5. deletes the backing namespace so namespaced workloads and addresses drain;
-6. removes the Kube-OVN subnet and VPC;
-7. cleans up per-Project identity and security-service state.
+6. normally deletes retained Pod IP allocations after the namespace disappears,
+   including StatefulSet or VM allocations on the infrastructure network;
+7. waits for Kube-OVN to release those allocations, then removes the subnet and VPC;
+8. cleans up per-Project identity and security-service state.
 
 Finalizers protect this order. A Project can remain `Terminating` while a
-dependent controller releases infrastructure.
+dependent controller releases infrastructure. When a resource disappears,
+its completed deletion clears any earlier timeout condition. A timeout for an
+external IP can therefore be historical; inspect the latest Project conditions
+and the remaining resources to find the active blocker.
 
 ## Troubleshoot deletion
 
