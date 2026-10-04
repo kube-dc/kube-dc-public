@@ -411,6 +411,14 @@ unreachability before installing an older version. Never delete protection
 while leaving a restricted endpoint reachable. A public address quota addon
 cannot resolve exhaustion of the physical routed address pool.
 
+The external-subnet allocator keeps one address in reserve to reduce the risk of
+exhaustion while status updates and concurrent allocations are in flight. A known
+`v4availableIPs` value of zero or one blocks a new allocation. Before requesting
+one EIP, operators must confirm at least two reported available addresses on the
+selected subnet, as well as Organization quota. This check is advisory and does
+not reserve an address. Deleting a FIP frees its address only when the associated
+EIP allocation is also released.
+
 ### Console qualification on Stage (2026-10-04)
 
 The recorded Stage console subset verifies restricted LoadBalancer creation
@@ -440,7 +448,9 @@ mutations blocked. Eleven browser checks, 12 post-convergence health checks,
 and 206 resource/Gateway preservation checks pass. Earlier direct/Gateway
 traffic results remain a separate acceptance subset.
 
-The Stage public address pool has no free addresses despite quota headroom.
+At this rollout checkpoint, the Stage public address pool had no free addresses
+despite quota headroom. A later owner release made one address available, but
+the allocator's one-address reserve still prevented a fresh public-FIP allocation.
 This rollout does not qualify fresh independent public Stage FIP traffic or
 inherit Cloud qualification. Unsupported topology remains unavailable; require
 current enforcement evidence after a restrictive write. Production capability

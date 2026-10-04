@@ -12,6 +12,13 @@ description: Manage Kube-DC Project networking with EIp and FIp resources, Servi
 - For a Routed Network, confirm the platform has allocated it to the
   Organization and the caller is an Organization administrator.
 
+Before requesting a new public address, use `check-quota` to check both quota and
+physical pool capacity. Kube-DC reserves the last external address: at least two
+reported available addresses are needed before requesting one EIP. An authorized
+operator checks the selected subnet; a tenant must not bypass the guard or alter
+subnet RBAC. Deleting a FIP releases an address only when its EIP allocation is
+also released. Budget any new Project router address separately.
+
 ## Concepts
 
 - **Project VPC**: the isolated network created with the Project. Its default

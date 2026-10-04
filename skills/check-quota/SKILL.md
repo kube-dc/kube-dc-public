@@ -95,6 +95,27 @@ Leave operational headroom for rollouts, node maintenance, database failover,
 and autoscaling. A workload at exactly the hard limit can fail when Kubernetes
 temporarily creates a replacement Pod.
 
+## 6. Check the external address pool
+
+Public IPv4 quota does not guarantee physical address availability. An authorized
+operator must inspect the selected external subnet before allocating an EIP.
+Replace `EXTERNAL_SUBNET` with the installation's selected subnet name:
+
+```bash
+kubectl get subnets.kubeovn.io EXTERNAL_SUBNET -o jsonpath='{.status.v4availableIPs}{" available, "}{.status.v4usingIPs}{" used\n"}'
+```
+
+Kube-DC preserves one external address as a reserve. A known available count of
+zero or one blocks a new allocation; require at least two reported available
+addresses before requesting one EIP. A new Project can also allocate a public
+router address, so account for that separately. Status is asynchronous and does
+not reserve capacity for your request.
+
+If your tenant role cannot read subnets, ask the provider to verify capacity.
+Do not change RBAC or bypass the allocation guard. A quota addon does not expand
+the routed physical pool. Deleting a FIP frees its address only when its associated
+EIP allocation is also released.
+
 ## Troubleshoot quota rejection
 
 A typical API error names the ResourceQuota and exhausted resource. Capture it,
