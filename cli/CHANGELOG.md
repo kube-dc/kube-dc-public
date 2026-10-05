@@ -1,5 +1,11 @@
 # kube-dc CLI changelog
 
+## v0.9.4 — 2026-10-06
+
+- Verify MariaDB and Kafka operator attestations against their configured executable versions independently of their Helm chart versions. Reject drift in the live MariaDB and Strimzi operator, topic-operator and user-operator image pins.
+- Use the matched `v0.9.4` fleet-starter with the same reviewed manager, services controllers and native operator artifacts as v0.9.3. Existing installations retain their Fleet pins.
+- Keep additional startup acceleration profiles disabled until local qualification. This patch fixes component verification and does not claim a cold-engine startup guarantee.
+
 ## v0.9.3 — 2026-10-05
 
 - Refresh the matched fleet-starter with the reviewed manager, commercial services controllers and family operators deployed on Stage and Cloud. Preserve installation-specific authorization, catalog ownership and commercial writer identities.

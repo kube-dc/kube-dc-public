@@ -382,7 +382,7 @@ func verifyManagedServicesRelease(ctx context.Context, reader managedServicesRea
 	if nestedString(config, "data", "CLUSTER_NAME") != pins["CLUSTER_NAME"] || nestedString(config, "data", "SERVICES_CELL_ID") != pins["SERVICES_CELL_ID"] {
 		return fmt.Errorf("live cluster identity differs from the Fleet overlay")
 	}
-	for _, key := range []string{"SERVICES_CHART_VERSION", "SERVICES_HUB_DIGEST", "SERVICES_RUNNER_IMAGE", "SERVICES_PG_OPERATOR_VERSION", "MYSQL_OPERATOR_CHART_VERSION", "MYSQL_OPERATOR_VERSION", "MYSQL_OPERATOR_IMAGE_DIGEST", "MARIADB_OPERATOR_VERSION", "STRIMZI_OPERATOR_CHART_VERSION", "VALKEY_OPERATOR_CHART_VERSION", "CLICKHOUSE_OPERATOR_CHART_VERSION", "CLICKHOUSE_OPERATOR_VERSION", "CLICKHOUSE_OPERATOR_IMAGE_REPOSITORY", "CLICKHOUSE_OPERATOR_IMAGE_TAG", "CLICKHOUSE_METRICS_IMAGE_TAG"} {
+	for _, key := range []string{"SERVICES_CHART_VERSION", "SERVICES_HUB_DIGEST", "SERVICES_RUNNER_IMAGE", "SERVICES_PG_OPERATOR_VERSION", "MYSQL_OPERATOR_CHART_VERSION", "MYSQL_OPERATOR_VERSION", "MYSQL_OPERATOR_IMAGE_DIGEST", "MARIADB_OPERATOR_VERSION", "MARIADB_OPERATOR_IMAGE_REPOSITORY", "MARIADB_OPERATOR_IMAGE_TAG", "MARIADB_OPERATOR_IMAGE_DIGEST", "STRIMZI_OPERATOR_CHART_VERSION", "STRIMZI_OPERATOR_VERSION", "STRIMZI_OPERATOR_IMAGE_REGISTRY", "STRIMZI_OPERATOR_IMAGE_REPOSITORY", "STRIMZI_OPERATOR_IMAGE_NAME", "STRIMZI_OPERATOR_IMAGE_TAG", "STRIMZI_TOPIC_OPERATOR_IMAGE_REGISTRY", "STRIMZI_TOPIC_OPERATOR_IMAGE_REPOSITORY", "STRIMZI_TOPIC_OPERATOR_IMAGE_NAME", "STRIMZI_TOPIC_OPERATOR_IMAGE_TAG", "STRIMZI_USER_OPERATOR_IMAGE_REGISTRY", "STRIMZI_USER_OPERATOR_IMAGE_REPOSITORY", "STRIMZI_USER_OPERATOR_IMAGE_NAME", "STRIMZI_USER_OPERATOR_IMAGE_TAG", "VALKEY_OPERATOR_CHART_VERSION", "CLICKHOUSE_OPERATOR_CHART_VERSION", "CLICKHOUSE_OPERATOR_VERSION", "CLICKHOUSE_OPERATOR_IMAGE_REPOSITORY", "CLICKHOUSE_OPERATOR_IMAGE_TAG", "CLICKHOUSE_METRICS_IMAGE_TAG"} {
 		if pins[key] != "" && nestedString(config, "data", key) != pins[key] {
 			return fmt.Errorf("live managed-services pin %s differs from Fleet; wait for the target overlay to reconcile", key)
 		}
@@ -446,7 +446,7 @@ func verifyManagedServicesRelease(ctx context.Context, reader managedServicesRea
 	if err != nil {
 		return err
 	}
-	expectedOperators := map[string]string{"postgresql": pins["SERVICES_PG_OPERATOR_VERSION"], "mysql": pins["MYSQL_OPERATOR_VERSION"], "mariadb": pins["MARIADB_OPERATOR_VERSION"], "kafka": pins["STRIMZI_OPERATOR_CHART_VERSION"], "clickhouse": managedServicesClickHouseOperatorVersion(pins)}
+	expectedOperators := map[string]string{"postgresql": pins["SERVICES_PG_OPERATOR_VERSION"], "mysql": pins["MYSQL_OPERATOR_VERSION"], "mariadb": managedServicesMariaDBOperatorVersion(pins), "kafka": managedServicesKafkaOperatorVersion(pins), "clickhouse": managedServicesClickHouseOperatorVersion(pins)}
 	for _, raw := range nestedSlice(plane, "status", "bundles") {
 		bundle, _ := raw.(map[string]any)
 		family := nestedString(bundle, "family")
@@ -460,6 +460,20 @@ func verifyManagedServicesRelease(ctx context.Context, reader managedServicesRea
 		}
 	}
 	return nil
+}
+
+func managedServicesKafkaOperatorVersion(pins map[string]string) string {
+	if version := pins["STRIMZI_OPERATOR_VERSION"]; version != "" {
+		return version
+	}
+	return pins["STRIMZI_OPERATOR_CHART_VERSION"]
+}
+
+func managedServicesMariaDBOperatorVersion(pins map[string]string) string {
+	if version := pins["MARIADB_OPERATOR_IMAGE_TAG"]; version != "" {
+		return version
+	}
+	return pins["MARIADB_OPERATOR_VERSION"]
 }
 
 func managedServicesClickHouseOperatorVersion(pins map[string]string) string {

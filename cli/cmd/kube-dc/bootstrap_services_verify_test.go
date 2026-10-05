@@ -210,6 +210,71 @@ func TestManagedServicesReleaseVerification(t *testing.T) {
 	if err := verifyManagedServicesRelease(context.Background(), objects, pins); err != nil {
 		t.Fatal(err)
 	}
+	// MariaDB's chart and executable pins are independent. A patched image must
+	// match its catalog attestation without accepting stale live Fleet pins.
+	pins["MARIADB_OPERATOR_VERSION"] = "26.3.0"
+	pins["MARIADB_OPERATOR_IMAGE_REPOSITORY"] = "docker.io/shalb/kube-dc-mariadb-operator"
+	pins["MARIADB_OPERATOR_IMAGE_TAG"] = "26.3.0-shared-startup.20261005.6"
+	pins["MARIADB_OPERATOR_IMAGE_DIGEST"] = "sha256:patched"
+	for key, value := range pins {
+		config[key] = value
+	}
+	mariaBundle := map[string]any{"family": "mariadb", "operatorVersion": pins["MARIADB_OPERATOR_IMAGE_TAG"]}
+	objects["/servicedataplane/"]["status"] = map[string]any{"bundles": []any{mariaBundle}}
+	if err := verifyManagedServicesRelease(context.Background(), objects, pins); err != nil {
+		t.Fatalf("independently pinned MariaDB image refused: %v", err)
+	}
+	mariaBundle["operatorVersion"] = pins["MARIADB_OPERATOR_VERSION"]
+	if err := verifyManagedServicesRelease(context.Background(), objects, pins); err == nil || !strings.Contains(err.Error(), "mariadb operator attestation") {
+		t.Fatalf("old MariaDB executable attestation accepted: %v", err)
+	}
+	delete(pins, "MARIADB_OPERATOR_IMAGE_TAG")
+	if err := verifyManagedServicesRelease(context.Background(), objects, pins); err != nil {
+		t.Fatalf("default MariaDB image version refused: %v", err)
+	}
+	pins["MARIADB_OPERATOR_IMAGE_TAG"] = "26.3.0-shared-startup.20261005.6"
+	mariaBundle["operatorVersion"] = pins["MARIADB_OPERATOR_IMAGE_TAG"]
+	for _, key := range []string{"MARIADB_OPERATOR_VERSION", "MARIADB_OPERATOR_IMAGE_REPOSITORY", "MARIADB_OPERATOR_IMAGE_TAG", "MARIADB_OPERATOR_IMAGE_DIGEST"} {
+		config[key] = "stale"
+		if err := verifyManagedServicesRelease(context.Background(), objects, pins); err == nil || !strings.Contains(err.Error(), key+" differs from Fleet") {
+			t.Fatalf("stale %s accepted: %v", key, err)
+		}
+		config[key] = pins[key]
+	}
+	pins["STRIMZI_OPERATOR_CHART_VERSION"] = "1.2.0"
+	pins["STRIMZI_OPERATOR_VERSION"] = "1.2.0-kubedc.20261005.1"
+	strimziKeys := []string{"STRIMZI_OPERATOR_VERSION"}
+	for _, prefix := range []string{"STRIMZI_OPERATOR_IMAGE_", "STRIMZI_TOPIC_OPERATOR_IMAGE_", "STRIMZI_USER_OPERATOR_IMAGE_"} {
+		for key, value := range map[string]string{"REGISTRY": "docker.io", "REPOSITORY": "shalb", "NAME": "kube-dc-strimzi-operator", "TAG": "1.2.0-kubedc.20261005.1@sha256:patched"} {
+			pins[prefix+key] = value
+			strimziKeys = append(strimziKeys, prefix+key)
+		}
+	}
+	for key, value := range pins {
+		config[key] = value
+	}
+	kafkaBundle := map[string]any{"family": "kafka", "operatorVersion": pins["STRIMZI_OPERATOR_VERSION"]}
+	objects["/servicedataplane/"]["status"].(map[string]any)["bundles"] = []any{mariaBundle, kafkaBundle}
+	if err := verifyManagedServicesRelease(context.Background(), objects, pins); err != nil {
+		t.Fatalf("independently pinned Kafka operator refused: %v", err)
+	}
+	kafkaBundle["operatorVersion"] = pins["STRIMZI_OPERATOR_CHART_VERSION"]
+	if err := verifyManagedServicesRelease(context.Background(), objects, pins); err == nil || !strings.Contains(err.Error(), "kafka operator attestation") {
+		t.Fatalf("old Kafka executable attestation accepted: %v", err)
+	}
+	delete(pins, "STRIMZI_OPERATOR_VERSION")
+	if err := verifyManagedServicesRelease(context.Background(), objects, pins); err != nil {
+		t.Fatalf("default Kafka operator version refused: %v", err)
+	}
+	pins["STRIMZI_OPERATOR_VERSION"] = "1.2.0-kubedc.20261005.1"
+	kafkaBundle["operatorVersion"] = pins["STRIMZI_OPERATOR_VERSION"]
+	for _, key := range strimziKeys {
+		config[key] = "stale"
+		if err := verifyManagedServicesRelease(context.Background(), objects, pins); err == nil || !strings.Contains(err.Error(), key+" differs from Fleet") {
+			t.Fatalf("stale %s accepted: %v", key, err)
+		}
+		config[key] = pins[key]
+	}
 	config["SERVICES_CELL_ID"] = "foreign-cell"
 	if err := verifyManagedServicesRelease(context.Background(), objects, pins); err == nil || !strings.Contains(err.Error(), "identity") {
 		t.Fatalf("foreign cell accepted: %v", err)
