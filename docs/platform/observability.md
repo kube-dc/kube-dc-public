@@ -367,6 +367,43 @@ Shorter tokens reduce the replay window but increase refresh and login pressure.
 Treat a lifetime change as identity configuration and test the console, Grafana,
 CLI, and long-running API clients.
 
+### 6.5 Kube-DC component logs
+
+The manager and the backend (API and worker) write one JSON object per line.
+Alloy ships them to Loki in the `system` tenant, and Loki detects the level
+from the `level` field (`detected_level`).
+
+| Chart value | Default | Effect |
+|-------------|---------|--------|
+| `manager.logFormat` | `json` | `console` for human-readable lines |
+| `manager.logLevel` | `1` | `info` or `error`; higher numbers add debug verbosity |
+| `backend.logFormat` | `json` | `text` for `[LEVEL] ts - msg` lines |
+| `backend.logLevel` | `info` | `debug`, `info`, `warn`, `error` |
+| `backend.accessLog` | `true` | One line per HTTP request; probes and `/metrics` are skipped |
+
+Every backend response carries an `X-Request-Id` header. The backend uses the
+gateway's id when there is one. All lines logged while the request runs carry
+that id as `request_id`, with `realm` and `user` once the caller is
+authenticated. The audit log records the same id.
+
+Useful queries in Grafana Explore (`system` tenant):
+
+```logql
+# Manager errors, with the object being reconciled (the JSON `namespace`
+# field is renamed namespace_extracted next to the stream label)
+{namespace="kube-dc", container="manager"} | json | level="error"
+  | line_format "{{.controller}} {{.namespace_extracted}}/{{.name}}: {{.msg}} {{.error}}"
+
+# Everything one API request logged (id from the X-Request-Id response header)
+{namespace="kube-dc"} | json | request_id="<id>"
+
+# Slow or failing API requests
+{namespace="kube-dc"} | json | component="access" | status >= 500 or duration_ms > 2000
+
+# Backend errors by component over the last hour
+sum by (component) (count_over_time({namespace="kube-dc"} | json | level="error" [1h]))
+```
+
 ---
 
 ## 7. Troubleshooting

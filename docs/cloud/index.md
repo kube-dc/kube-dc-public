@@ -29,6 +29,8 @@ Kube-DC organization. For the operator documentation, see the
   sync selected values into Kubernetes Secrets.
 - Manage users, roles, and billing across your organization. See
   [Team management](team-management.md).
+- Automate all of it through the [Kube-DC API](api-reference.md), the same API
+  the console uses.
 
 ## Where to start
 

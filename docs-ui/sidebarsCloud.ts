@@ -64,6 +64,11 @@ const sidebars: SidebarsConfig = {
         },
         'gitops',
         'ai-ide-integration',
+        {
+          type: 'doc',
+          id: 'api-reference',
+          label: 'Automate with the API',
+        },
       ],
     },
     {

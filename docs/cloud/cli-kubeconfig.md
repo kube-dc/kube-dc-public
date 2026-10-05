@@ -331,3 +331,5 @@ The web console includes:
 
 - [Team management](team-management.md) covers role-based access control.
 - [Create a virtual machine](creating-vm.md) deploys your first VM.
+- [Automate with the API](api-reference.md) shows how to call the Kube-DC API
+  with a token from the CLI.
