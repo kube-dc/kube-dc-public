@@ -1,5 +1,13 @@
 # kube-dc CLI changelog
 
+## v0.9.3 — 2026-10-05
+
+- Refresh the matched fleet-starter with the reviewed manager, commercial services controllers and family operators deployed on Stage and Cloud. Preserve installation-specific authorization, catalog ownership and commercial writer identities.
+- Validate independent ClickHouse operator and metrics image repositories. Include the exact Strimzi operator, topic-operator and user-operator image pins in managed-services installation and component verification.
+- Keep additional shared-startup profiles disabled in new installations until their local ownership, credential, TLS and backup safeguards are qualified. This artifact refresh does not establish a cold-engine startup guarantee.
+- Verify published image/chart digests, generated installation manifests, compiled service catalog, monitoring and bootstrap ordering before publication.
+- Existing installations retain their Fleet pins; this CLI release does not upgrade them automatically.
+
 ## v0.9.2 — 2026-10-04
 
 - Use the matched `v0.9.2` fleet-starter with the qualified services runtime, including faster operation convergence and PostgreSQL recovery-window refresh after a primary timeline change.
