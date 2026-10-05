@@ -382,7 +382,7 @@ func verifyManagedServicesRelease(ctx context.Context, reader managedServicesRea
 	if nestedString(config, "data", "CLUSTER_NAME") != pins["CLUSTER_NAME"] || nestedString(config, "data", "SERVICES_CELL_ID") != pins["SERVICES_CELL_ID"] {
 		return fmt.Errorf("live cluster identity differs from the Fleet overlay")
 	}
-	for _, key := range []string{"SERVICES_CHART_VERSION", "SERVICES_HUB_DIGEST", "SERVICES_RUNNER_IMAGE", "SERVICES_PG_OPERATOR_VERSION", "MYSQL_OPERATOR_CHART_VERSION", "MYSQL_OPERATOR_VERSION", "MYSQL_OPERATOR_IMAGE_DIGEST", "MARIADB_OPERATOR_VERSION", "STRIMZI_OPERATOR_CHART_VERSION", "VALKEY_OPERATOR_CHART_VERSION", "CLICKHOUSE_OPERATOR_CHART_VERSION", "CLICKHOUSE_OPERATOR_IMAGE_TAG", "CLICKHOUSE_METRICS_IMAGE_TAG"} {
+	for _, key := range []string{"SERVICES_CHART_VERSION", "SERVICES_HUB_DIGEST", "SERVICES_RUNNER_IMAGE", "SERVICES_PG_OPERATOR_VERSION", "MYSQL_OPERATOR_CHART_VERSION", "MYSQL_OPERATOR_VERSION", "MYSQL_OPERATOR_IMAGE_DIGEST", "MARIADB_OPERATOR_VERSION", "STRIMZI_OPERATOR_CHART_VERSION", "VALKEY_OPERATOR_CHART_VERSION", "CLICKHOUSE_OPERATOR_CHART_VERSION", "CLICKHOUSE_OPERATOR_VERSION", "CLICKHOUSE_OPERATOR_IMAGE_REPOSITORY", "CLICKHOUSE_OPERATOR_IMAGE_TAG", "CLICKHOUSE_METRICS_IMAGE_TAG"} {
 		if pins[key] != "" && nestedString(config, "data", key) != pins[key] {
 			return fmt.Errorf("live managed-services pin %s differs from Fleet; wait for the target overlay to reconcile", key)
 		}
@@ -446,7 +446,7 @@ func verifyManagedServicesRelease(ctx context.Context, reader managedServicesRea
 	if err != nil {
 		return err
 	}
-	expectedOperators := map[string]string{"postgresql": pins["SERVICES_PG_OPERATOR_VERSION"], "mysql": pins["MYSQL_OPERATOR_VERSION"], "mariadb": pins["MARIADB_OPERATOR_VERSION"], "kafka": pins["STRIMZI_OPERATOR_CHART_VERSION"], "clickhouse": pins["CLICKHOUSE_OPERATOR_CHART_VERSION"]}
+	expectedOperators := map[string]string{"postgresql": pins["SERVICES_PG_OPERATOR_VERSION"], "mysql": pins["MYSQL_OPERATOR_VERSION"], "mariadb": pins["MARIADB_OPERATOR_VERSION"], "kafka": pins["STRIMZI_OPERATOR_CHART_VERSION"], "clickhouse": managedServicesClickHouseOperatorVersion(pins)}
 	for _, raw := range nestedSlice(plane, "status", "bundles") {
 		bundle, _ := raw.(map[string]any)
 		family := nestedString(bundle, "family")
@@ -460,6 +460,13 @@ func verifyManagedServicesRelease(ctx context.Context, reader managedServicesRea
 		}
 	}
 	return nil
+}
+
+func managedServicesClickHouseOperatorVersion(pins map[string]string) string {
+	if version := pins["CLICKHOUSE_OPERATOR_VERSION"]; version != "" {
+		return version
+	}
+	return pins["CLICKHOUSE_OPERATOR_CHART_VERSION"]
 }
 
 func verifyManagedServicesClickHouse(ctx context.Context, reader managedServicesReader, pins map[string]string) error {
@@ -489,7 +496,14 @@ func verifyManagedServicesClickHouse(ctx context.Context, reader managedServices
 		if tag == "" || nestedString(release, "spec", "values", image.section, "image", "tag") != tag {
 			return fmt.Errorf("ClickHouse %s image tag/digest does not match Fleet", image.section)
 		}
-		expected[image.container] = image.repository + ":" + tag
+		repository := image.repository
+		if image.section == "operator" && pins["CLICKHOUSE_OPERATOR_IMAGE_REPOSITORY"] != "" {
+			repository = pins["CLICKHOUSE_OPERATOR_IMAGE_REPOSITORY"]
+			if nestedString(release, "spec", "values", image.section, "image", "repository") != repository {
+				return fmt.Errorf("ClickHouse operator image repository does not match Fleet")
+			}
+		}
+		expected[image.container] = repository + ":" + tag
 	}
 	for _, raw := range nestedSlice(deployment, "spec", "template", "spec", "containers") {
 		container, _ := raw.(map[string]any)

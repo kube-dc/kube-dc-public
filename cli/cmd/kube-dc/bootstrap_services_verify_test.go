@@ -238,6 +238,18 @@ func TestManagedServicesReleaseVerification(t *testing.T) {
 	if err := verifyManagedServicesRelease(context.Background(), objects, pins); err == nil || !strings.Contains(err.Error(), "current generation") {
 		t.Fatalf("stale class accepted: %v", err)
 	}
+	condition["observedGeneration"] = 2
+	pins["CLICKHOUSE_OPERATOR_VERSION"] = "0.27.4-patched"
+	config["CLICKHOUSE_OPERATOR_VERSION"] = pins["CLICKHOUSE_OPERATOR_VERSION"]
+	bundle := map[string]any{"family": "clickhouse", "operatorVersion": "0.27.4"}
+	objects["/servicedataplane/"] = map[string]any{"status": map[string]any{"bundles": []any{bundle}}}
+	if err := verifyManagedServicesRelease(context.Background(), objects, pins); err == nil || !strings.Contains(err.Error(), "operator attestation") {
+		t.Fatalf("chart version accepted as patched runtime attestation: %v", err)
+	}
+	bundle["operatorVersion"] = pins["CLICKHOUSE_OPERATOR_VERSION"]
+	if err := verifyManagedServicesRelease(context.Background(), objects, pins); err != nil {
+		t.Fatalf("independent runtime version refused: %v", err)
+	}
 }
 
 func TestManagedServicesClickHouseRuntimePins(t *testing.T) {
@@ -262,6 +274,23 @@ func TestManagedServicesClickHouseRuntimePins(t *testing.T) {
 		t.Fatalf("same tag wrong operator digest accepted: %v", err)
 	}
 	operator["image"] = "altinity/clickhouse-operator:" + pins["CLICKHOUSE_OPERATOR_IMAGE_TAG"]
+	pins["CLICKHOUSE_OPERATOR_IMAGE_REPOSITORY"] = "shalb/kube-dc-clickhouse-operator"
+	operator["image"] = pins["CLICKHOUSE_OPERATOR_IMAGE_REPOSITORY"] + ":" + pins["CLICKHOUSE_OPERATOR_IMAGE_TAG"]
+	operatorValues := release["spec"].(map[string]any)["values"].(map[string]any)["operator"].(map[string]any)["image"].(map[string]any)
+	operatorValues["repository"] = pins["CLICKHOUSE_OPERATOR_IMAGE_REPOSITORY"]
+	if err := verifyManagedServicesClickHouse(context.Background(), objects, pins); err != nil {
+		t.Fatalf("pinned fork repository refused: %v", err)
+	}
+	operatorValues["repository"] = "foreign.example/operator"
+	if err := verifyManagedServicesClickHouse(context.Background(), objects, pins); err == nil || !strings.Contains(err.Error(), "repository") {
+		t.Fatalf("wrong Helm repository accepted: %v", err)
+	}
+	operatorValues["repository"] = pins["CLICKHOUSE_OPERATOR_IMAGE_REPOSITORY"]
+	operator["image"] = "altinity/clickhouse-operator:" + pins["CLICKHOUSE_OPERATOR_IMAGE_TAG"]
+	if err := verifyManagedServicesClickHouse(context.Background(), objects, pins); err == nil || !strings.Contains(err.Error(), "runtime image") {
+		t.Fatalf("wrong runtime repository accepted: %v", err)
+	}
+	operator["image"] = pins["CLICKHOUSE_OPERATOR_IMAGE_REPOSITORY"] + ":" + pins["CLICKHOUSE_OPERATOR_IMAGE_TAG"]
 	metrics["image"] = "altinity/metrics-exporter:0.27.3@sha256:old"
 	if err := verifyManagedServicesClickHouse(context.Background(), objects, pins); err == nil || !strings.Contains(err.Error(), "metrics-exporter") {
 		t.Fatalf("old metrics image accepted: %v", err)
