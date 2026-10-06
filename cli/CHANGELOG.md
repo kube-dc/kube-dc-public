@@ -1,5 +1,11 @@
 # kube-dc CLI changelog
 
+## v0.9.7 — 2026-10-06
+
+- Fix a Kafka startup deadlock: let the services hub request a native PodSet retry after its exact engine UIDs are durably attested. The manager continues to reject changes to workloads, ownership and credentials.
+- Pin the reviewed manager repair in the matching `v0.9.7` fleet-starter. Preserve other platform, UI, backend, service-controller and native operator pins.
+- Keep shared startup acceleration disabled in new installations until local qualification. This refresh does not establish a cold-engine startup guarantee.
+
 ## v0.9.6 — 2026-10-06
 
 - Pin the reviewed ClickHouse startup topology bounds and services observation recovery in the matched `v0.9.6` fleet-starter. Include the read-only native and archive inventory and the retirement-only admission probe required for safe retained-service cleanup.
