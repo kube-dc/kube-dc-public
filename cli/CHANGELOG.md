@@ -1,5 +1,11 @@
 # kube-dc CLI changelog
 
+## v0.9.9 — 2026-10-06
+
+- Bound generated ClickHouse Keeper names for fresh local services with long names. Preserve existing signed roots and qualified accelerated profiles.
+- Pin the reviewed hub correction in the matching `v0.9.9` fleet-starter. Preserve the qualified runner, manager, native operator, backend, UI and chart pins.
+- Keep startup acceleration disabled in new installations until local qualification. Provider catalogs use the annotation keys consumed by each adapter.
+
 ## v0.9.8 — 2026-10-06
 
 - Preserve the signed Kafka cluster and node-pool identities when a shared service is retained. Replacement brokers continue to receive the scoped API access needed to read their existing credentials.
