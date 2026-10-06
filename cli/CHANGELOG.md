@@ -1,5 +1,11 @@
 # kube-dc CLI changelog
 
+## v0.9.5 — 2026-10-06
+
+- Pin the reviewed manager admission repairs, MariaDB initialization-claim provenance, MySQL helper image dispatch, and services accounting and archive-retirement fixes in the matched `v0.9.5` fleet-starter.
+- Validate the exact compiled catalog, native operator image pins, and generated installation manifests. Existing installations retain their Fleet pins.
+- Keep startup acceleration disabled in new installations until local ownership, credential, TLS, capacity, and backup qualification. This artifact refresh does not establish a cold-engine startup guarantee.
+
 ## v0.9.4 — 2026-10-06
 
 - Verify MariaDB and Kafka operator attestations against their configured executable versions independently of their Helm chart versions. Reject drift in the live MariaDB and Strimzi operator, topic-operator and user-operator image pins.
