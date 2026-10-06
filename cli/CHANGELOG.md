@@ -1,8 +1,14 @@
 # kube-dc CLI changelog
 
+## v0.9.8 — 2026-10-06
+
+- Preserve the signed Kafka cluster and node-pool identities when a shared service is retained. Replacement brokers continue to receive the scoped API access needed to read their existing credentials.
+- Pin the reviewed runner repair in the matching `v0.9.8` fleet-starter. Preserve manager, hub, native operator, UI, backend and chart pins.
+- Keep shared startup acceleration disabled in new installations until local qualification. This refresh does not establish a cold-engine startup guarantee.
+
 ## v0.9.7 — 2026-10-06
 
-- Fix a Kafka startup deadlock: let the services hub request a native PodSet retry after its exact engine UIDs are durably attested. The manager continues to reject changes to workloads, ownership and credentials.
+- Fix a blocked Kafka startup retry: let the services hub request a native PodSet retry after its exact engine UIDs are durably attested. The manager continues to reject changes to workloads, ownership and credentials.
 - Pin the reviewed manager repair in the matching `v0.9.7` fleet-starter. Preserve other platform, UI, backend, service-controller and native operator pins.
 - Keep shared startup acceleration disabled in new installations until local qualification. This refresh does not establish a cold-engine startup guarantee.
 
