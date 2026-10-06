@@ -1,5 +1,11 @@
 # kube-dc CLI changelog
 
+## v0.9.6 — 2026-10-06
+
+- Pin the reviewed ClickHouse startup topology bounds and services observation recovery in the matched `v0.9.6` fleet-starter. Include the read-only native and archive inventory and the retirement-only admission probe required for safe retained-service cleanup.
+- Preserve all existing platform, UI, backend and native operator pins. Existing installations retain their own Fleet settings.
+- Keep shared startup acceleration disabled in new installations until their local ownership, credential, TLS, capacity and backup checks pass. This artifact refresh does not establish a cold-engine startup guarantee.
+
 ## v0.9.5 — 2026-10-06
 
 - Pin the reviewed manager admission repairs, MariaDB initialization-claim provenance, MySQL helper image dispatch, and services accounting and archive-retirement fixes in the matched `v0.9.5` fleet-starter.
