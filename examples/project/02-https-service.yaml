@@ -14,11 +14,10 @@
 # Example: my-secure-app-demo.stage.kube-dc.com
 #
 # Prerequisites:
-# - Apply 00-issuer.yaml first (for certificate issuance)
+# - The platform issues the certificate; no Issuer is needed
 # - Project with cloud networking (egressNetworkType: cloud)
 #
 # Usage:
-#   kubectl apply -f 00-issuer.yaml  # If not already done
 #   kubectl apply -f 02-https-service.yaml
 #
 # Verify certificate:
@@ -74,8 +73,8 @@ metadata:
     # Optional: Custom hostname (overrides auto-generated)
     # service.nlb.kube-dc.com/route-hostname: "my-app.example.com"
     
-    # Optional: Custom issuer name (default: letsencrypt)
-    # service.nlb.kube-dc.com/tls-issuer: "letsencrypt"
+    # Optional: your own dns01 or CA Issuer (default: the platform issuer)
+    # service.nlb.kube-dc.com/tls-issuer: "my-dns01-issuer"
 spec:
   type: LoadBalancer
   selector:

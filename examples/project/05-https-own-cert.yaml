@@ -24,7 +24,7 @@
 #   spec:
 #     secretName: my-custom-tls
 #     issuerRef:
-#       name: letsencrypt
+#       name: my-dns01-issuer   # your own dns01 or CA Issuer
 #       kind: Issuer
 #     dnsNames:
 #     - my-app.example.com

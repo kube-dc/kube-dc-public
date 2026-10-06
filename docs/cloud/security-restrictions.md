@@ -29,7 +29,9 @@ workflows a Project is designed for:
 - **View logs**: `kubectl logs` works normally for all your pods
 - **Monitor resources**: `kubectl top pods` for resource usage metrics
 - **Manage certificates**: Request `ManagedCertificate` resources; Project admins
-  can also create namespaced cert-manager Issuers and Certificates for routes
+  can also create namespaced cert-manager Issuers and Certificates (dns01, CA,
+  self-signed, or HTTP-01 through their own ingress). Gateway route certificates
+  come from the platform
 - **Configure autoscaling**: HorizontalPodAutoscalers for automatic scaling
 - **Backups**: Use the backup controls provided by supported managed services, such as [Managed services](managed-services.md) and [Managed Clusters](cluster-management.md)
 

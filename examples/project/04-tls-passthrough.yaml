@@ -44,7 +44,7 @@ data:
     }
 ---
 # Self-signed certificate (for demo - use cert-manager in production)
-# In production, use cert-manager with 00-issuer.yaml to generate this
+# In production, use cert-manager with your own dns01 or CA Issuer
 apiVersion: v1
 kind: Secret
 metadata:

@@ -13,55 +13,52 @@ For tenant manifests and list semantics, see
 
 | Chart value | Purpose |
 |---|---|
-| `manager.webhook.protectExposureRoutes` | Install admission protection for shared Gateway claims and protected enforcement acknowledgments |
-| `manager.webhook.exposureRouteTrustedProducers` | Identify the exact authenticated native route producers |
-| `manager.webhook.exposureRouteProducerNamespaceUIDs` | Optionally restrict each trusted producer's native shared-Gateway attachments to current namespace UIDs |
-| `manager.webhook.exposureACMEControllerUsername` | Identify cert-manager for the separately verified HTTP01 exception |
-| `manager.webhook.exposureACMEPlatformNamespaceUIDs` | Pin platform Certificate namespaces eligible for that HTTP01 exception |
 | `manager.fipSourcePolicy.enabled` | Enable Floating IP source enforcement after traffic and lifecycle acceptance |
 | `manager.fipSourcePolicy.namespaceUIDs` | Optionally limit restrictive Floating IP qualification to exact current namespaces |
 | `backend.exposureSourcePolicy` | Publish console/API availability for each qualified method; these flags do not configure OVN or Envoy |
 
-Direct LoadBalancer and Gateway availability require the exposure guard.
+| `manager.defaultTLSIssuerRef` | Select the platform issuer for Service certificates, for example `ClusterIssuer/letsencrypt-prod-http` |
+
 Floating IP availability requires its enforcement gate. A Service with both a
 Gateway route and a direct LoadBalancer needs acceptance of both paths before
 publishing its client-list control. Keep unsupported consumer modes unavailable.
 
-## Review native producers and HTTP01 ownership
+## Tenant routes and certificates
 
-Inventory existing platform and tenant routes before enabling admission. Check
-the identity each running controller actually authenticates as, its intended
-namespaces, and the source that owns each route. Flux labels and field-manager
-names do not prove authenticated identity. Include legacy routes, redirects,
-and every installed attachment kind in the compatibility review.
+Tenants never write routes on the shared Gateway. A Service with
+`service.nlb.kube-dc.com/expose-route` gets its route from the platform
+controller. Project roles grant only read access to `httproutes`, `grpcroutes`
+and `tlsroutes`. Two always-on ValidatingAdmissionPolicies apply in Project
+namespaces:
 
-For a trusted producer, an omitted namespace-scope entry preserves its existing
-native route trust. An explicit empty entry denies all of that producer's native
-shared-Gateway attachments. A nonempty entry requires a live, non-deleting
-namespace with the exact pinned UID. For example, this inactive proposal limits
-one producer to one platform namespace:
+| Policy | Rule |
+|---|---|
+| `kube-dc-tenant-service-exposure` | Only the core controller changes the enforcement acknowledgment and hostname ownership annotations; the HTTPS redirect annotation must be valid |
+| `kube-dc-tenant-certificate-issuers` | Tenant Issuers cannot solve ACME HTTP-01 on the platform Gateway, and tenant Certificates cannot use ClusterIssuers |
 
-```yaml
-manager:
-  webhook:
-    protectExposureRoutes: false
-    exposureRouteTrustedProducers:
-      - system:serviceaccount:flux-system:helm-controller
-    exposureRouteProducerNamespaceUIDs:
-      system:serviceaccount:flux-system:helm-controller:
-        platform-system: "00000000-0000-4000-8000-000000000001"
-```
+An HTTP-01 Issuer on the platform Gateway or a platform ClusterIssuer in tenant
+hands would issue certificates for hostnames the tenant does not own. Tenants
+keep dns01, CA, self-signed and own-ingress HTTP-01 Issuers. The policies only check creation and spec changes, so they
+don't affect Issuers created before the upgrade. Before publishing Gateway
+availability:
 
-Replace the example UID with the current namespace UID obtained from the
-installation. A recreated namespace needs a new review and pin. The scope map
-does not reserve hostnames or coordinate native producers with Service-owned
-hostname claims; test that concurrency separately.
+1. Set `manager.defaultTLSIssuerRef` to the platform ACME ClusterIssuer. The
+   controller then issues every Service certificate from it.
+2. Confirm that each Service certificate references that issuer and is Ready.
+3. Retire Project Issuers with HTTP-01 solvers. The inventory helper lists
+   HTTP01 certificates and their issuers. Move tenants with their own
+   Certificates on such an Issuer to `expose-route` first.
 
-Review HTTP01 independently. A native route namespace is not automatically
-eligible for a certificate exception. Tenant HTTPS certificates require current
-Service ownership and source labels. Preserve legitimate platform certificate
-issuance and renewal without granting a general route-writing exception to
-cert-manager.
+A tenant `tls-issuer` annotation can still name the tenant's own Issuer. The
+controller uses the default instead when the annotation names a ClusterIssuer
+that isn't ACME, a Project Issuer that solves HTTP-01 on the platform Gateway,
+or a Project Issuer that no longer exists. Without a configured default, a
+Project Issuer name is kept.
+
+A `ManagedCertificate` is issued by the manager, which the policy exempts. Its
+admission limits public names to the Organization's
+`spec.security.certificateDomains[].publicDnsNames`, which allows no names by
+default.
 
 ## Gather inventory
 
@@ -85,25 +82,19 @@ listener permission, or a serving ingress path. Candidate namespace pins require
 operator review. Missing-parent findings cover ListenerSet/XListenerSet references;
 other Gateway parents are outside the shared-Gateway audit target.
 
-For the exposure webhook, the report follows its configured Service to
-EndpointSlices and records Service owner UIDs, target Pod UIDs, address matches,
-ports, raw endpoint conditions and Pod-to-ReplicaSet-to-Deployment ownership.
-Foreign and unresolved endpoints remain visible. The leader Lease includes its
-UID, resource version, expiry observation and a Pod candidate inferred from the
-holder name; this is not authenticated writer attribution. The GET sequence is
-not an atomic snapshot. Compare resource versions and audit start/end times,
-then verify the actual TLS handler and authenticated admission behavior. The
-helper does not perform admission or packet acceptance.
+The report lists the tenant exposure policies and whether a legacy route
+guard webhook is still registered. The GET sequence is not an atomic snapshot.
+Compare resource versions and audit start/end times. The helper does not
+perform admission or packet acceptance.
 
 ## Accept the installation
 
 1. Record immutable core, chart, producer and UI/backend revisions and digests.
    Deploy the compatible core before a producer that delegates route ownership.
-   Verify every serving webhook endpoint runs the required handler and preserves
-   the installation's availability requirements.
-2. Test authenticated controller and tenant writes. Reject forged ownership,
-   protected acknowledgments, foreign route edits and unqualified attachments.
-   Verify existing platform producers and HTTP01 issuance and renewal still work.
+2. Test tenant writes: route writes are forbidden, and forged acknowledgments,
+   HTTP-01 Issuers on the platform Gateway and ClusterIssuer Certificates are
+   denied. Verify that
+   platform producers and Service certificate issuance and renewal still work.
 3. Test allow and deny from independent client networks on every offered public,
    cloud, primary, secondary and ingress path. Verify the observed client address
    and reject forged forwarding headers. Test omission, empty lists, explicit

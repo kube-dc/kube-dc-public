@@ -238,37 +238,9 @@ annotation gives you HTTPS with an automatically provisioned Let's Encrypt
 certificate, served by the platform cluster's Envoy Gateway. This works from
 inside Managed Clusters because the CCM propagates the annotations.
 
-### Step 1: Create the ACME Issuer (once per Project)
+The platform issues the certificate; you don't need to create an Issuer.
 
-The certificate Issuer lives in your **Project's backing namespace on the
-platform cluster** (use your Kube-DC project kubeconfig, not the Managed Cluster one):
-
-```yaml
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: letsencrypt
-  namespace: acme-production
-spec:
-  acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
-    email: your-email@example.com  # Replace with a valid email
-    privateKeySecretRef:
-      name: letsencrypt-account-key
-    solvers:
-    - http01:
-        gatewayHTTPRoute:
-          parentRefs:
-          - group: gateway.networking.k8s.io
-            kind: Gateway
-            name: eg
-            namespace: envoy-gateway-system
-```
-
-Without the Issuer, HTTPS routes stay pending: the Certificate is created but
-never issued.
-
-### Step 2: Annotate a LoadBalancer service in the Managed Cluster
+### Step 1: Annotate a LoadBalancer service in the Managed Cluster
 
 ```yaml
 apiVersion: v1
@@ -297,7 +269,7 @@ explicit hostname under the cluster's wildcard domain (or your own domain
 with DNS pointed at the Gateway).
 :::
 
-### Step 3: Verify
+### Step 2: Verify
 
 ```bash
 # Certificate + route are created in the Project's backing namespace
@@ -837,9 +809,9 @@ offers one.
 
 A complete stateful application, with MariaDB and WordPress on persistent volumes,
 exposed over HTTPS through the platform cluster's Gateway. Apply inside the
-Managed Cluster (the ACME Issuer from
-[Expose a Service with an HTTPS Gateway Route](#expose-a-service-with-an-https-gateway-route)
-must exist in your Project). Create the namespace and generate unique database
+Managed Cluster (the platform issues the HTTPS certificate, as in
+[Expose a Service with an HTTPS Gateway Route](#expose-a-service-with-an-https-gateway-route)).
+Create the namespace and generate unique database
 credentials before applying the workload manifest:
 
 ```bash

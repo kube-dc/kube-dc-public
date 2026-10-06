@@ -275,15 +275,16 @@ The exact source-preservation configuration depends on the address layer and
 its local endpoint availability.
 
 The platform chart defaults `manager.fipSourcePolicy.enabled`,
-`manager.webhook.protectExposureRoutes`, `backend.exposureSourcePolicy` methods,
-and `backend.managedK8sPublicAPISourcePolicy` to disabled. Before publishing
-availability, install matching controller/CRD/backend versions, configure exact
-producer ServiceAccount identities, protect shared Gateway attachments and
-controller acknowledgments, and qualify allowed/denied traffic, tightening,
+`backend.exposureSourcePolicy` methods and
+`backend.managedK8sPublicAPISourcePolicy` to disabled. Project roles cannot
+write shared Gateway routes, and the tenant exposure admission policies protect
+controller acknowledgments and certificate issuance. Before publishing
+availability, install matching controller/CRD/backend versions and qualify
+allowed/denied traffic, tightening,
 return traffic, update/removal, restart, deletion and address reuse. FIP needs
-router-port ACL support and verified NAT/chassis convergence. HTTP-01 needs the
-bounded cert-manager identity, Service certificate ownership and reviewed
-platform namespace UID pins, including renewal acceptance under the guard.
+router-port ACL support and verified NAT/chassis convergence. HTTP-01 needs a
+platform ACME ClusterIssuer as `manager.defaultTLSIssuerRef`, retired tenant
+HTTP-01 Issuers, and verified issuance and renewal.
 
 ### Verify Gateway transport and ingress maintenance
 

@@ -36,7 +36,8 @@ An **Organization** represents a customer account, a company, or a team. It
 owns:
 
 - An organization-scoped identity realm. Single sign-on runs on Keycloak and
-  accepts optional external identity providers.
+  accepts optional external identity providers, which your platform operator
+  connects.
 - Membership and role assignments. Invite a user once, then grant per-Project
   roles.
 - Projects.

@@ -161,7 +161,7 @@ spec:
 For a Gateway you manage, reference the projected Secret in the Listener's
 `certificateRefs`. Kube-DC [Service exposure](service-exposure.md) is a
 separate flow: `expose-route: "https"` creates a raw cert-manager
-`Certificate` through the Project's `letsencrypt` Issuer. It does not create a
+`Certificate` from the platform issuer. It does not create a
 `ManagedCertificate`. Use `tls-secret` when you want a route to consume a
 certificate Secret you manage explicitly.
 
@@ -230,8 +230,8 @@ when it is no longer needed.
 
 Most TLS use is for HTTPS / mTLS endpoints reached through the
 [Service exposure](service-exposure.md) layer. Set
-`service.nlb.kube-dc.com/expose-route: "https"` on a LoadBalancer Service
-after creating the Project's `letsencrypt` Issuer. The route controller creates
+`service.nlb.kube-dc.com/expose-route: "https"` on a LoadBalancer Service; the
+platform issues the certificate. The route controller creates
 and owns a cert-manager `Certificate`; it does not create a
 `ManagedCertificate`. See the exposure guide for the complete route workflow.
 
@@ -277,7 +277,7 @@ renewals are not recorded as user API actions.
 
 ## Reference
 
-- [Service exposure](service-exposure.md): Issuer-backed TLS for Gateway
+- [Service exposure](service-exposure.md): platform-issued TLS for Gateway
   routes
 - [KMS](kms.md): encryption keys (separate from x509)
 - [Secrets Manager](secrets-manager.md): storing the cert + key pair

@@ -21,7 +21,7 @@ the internet, how traffic flows, and which tools expose your services.
 | **EIP** (External IP) | Cloud-internal or public address used by a Project gateway or LoadBalancer Service |
 | **FIP** (Floating IP) | One-to-one NAT mapping from an external address to a VM or another selected internal IP |
 | **LoadBalancer** | Kubernetes Service that routes external traffic to pods or VMs through an EIP |
-| **Gateway Route** | HTTP or HTTPS route through the shared Envoy Gateway; HTTPS uses a configured Project Issuer |
+| **Gateway Route** | HTTP or HTTPS route through the shared Envoy Gateway; the platform issues HTTPS certificates |
 | **Routed Network** | Organization-authorized L3 routes from the whole Project VPC to approved external destinations; Internet remains unchanged |
 
 ---
@@ -100,7 +100,7 @@ continues through the existing Project gateway.
 
 ```
 Client  →  DNS (*.<configured-base-domain>)  →  Envoy Gateway (shared IP, port 443)
-        →  TLS termination (certificate from the Project's `letsencrypt` Issuer)
+        →  TLS termination (certificate issued by the platform)
         →  HTTPRoute matches hostname
         →  Backend Service  →  Pod
 ```
@@ -109,8 +109,7 @@ Client  →  DNS (*.<configured-base-domain>)  →  Envoy Gateway (shared IP, po
 
 <GatewayIngressDiagram />
 
-One shared Envoy Gateway handles HTTPS traffic. By default, each Service receives a hostname in the form `<service>-<workload-namespace>.<base-domain>`. Before creating an HTTPS route, create the namespaced `letsencrypt`
-Issuer described in [Service exposure](service-exposure.md#step-1-create-the-issuer-once-per-project).
+One shared Envoy Gateway handles HTTPS traffic. By default, each Service receives a hostname in the form `<service>-<workload-namespace>.<base-domain>`. The platform issues the HTTPS certificate; see [Service exposure](service-exposure.md).
 
 ### Inbound through EIP + LoadBalancer
 
@@ -254,7 +253,7 @@ What are you exposing?
 │
 ├── Web app or API?
 │   └── Use Gateway Route (expose-route: https)
-│       → Automatic hostname and TLS after the one-time Issuer setup
+│       → Automatic hostname and TLS
 │
 ├── VM with direct SSH/RDP access?
 │   └── Use Floating IP (FIP)
@@ -275,7 +274,7 @@ What are you exposing?
 
 | Method | Protocols | TLS | IP Type | Best For |
 |--------|-----------|-----|---------|----------|
-| **Gateway Route** | HTTP, HTTPS, TLS passthrough | Automatic for HTTPS through the configured Issuer | Shared | Web apps, APIs |
+| **Gateway Route** | HTTP, HTTPS, TLS passthrough | Automatic for HTTPS, issued by the platform | Shared | Web apps, APIs |
 | **Floating IP** | All TCP/UDP (all ports) | None | Dedicated | VM direct access |
 | **EIP + LoadBalancer** | Any TCP/UDP | Application handles | Dedicated or shared | Custom services |
 

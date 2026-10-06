@@ -14,8 +14,7 @@ for direct access to a VM. Both Project network types support these methods.
 > `LoadBalancer` Services **inside** a Managed Cluster. The cloud
 > controller manager copies them to the platform cluster at Service creation
 > time. See [Cluster management](cluster-management.md#expose-a-service-with-a-loadbalancer)
-> for the Managed Cluster specifics (Issuer prerequisite, hostname pinning,
-> public-IP quota).
+> for the Managed Cluster specifics (hostname pinning, public-IP quota).
 
 ## Quick reference
 
@@ -50,7 +49,19 @@ spec:
 
 This filters the Service's external TCP/UDP ports on installations qualified
 for Kube-DC source-range enforcement. Test from one allowed and one denied
-source. For a Gateway route, set its separate JSON annotation:
+source.
+
+A restriction applies to the whole address, so two side effects follow when the
+EIP is shared, for example with the Project gateway EIP or another Service:
+
+- A restricted port is reserved for the Service. If a Pod's outbound traffic
+  leaves the EIP from that same port, it can only reach allowed addresses.
+- With a restricted TCP port, fragmented TCP packets from addresses outside
+  the list are dropped for every port of the EIP. Ordinary TCP traffic isn't
+  fragmented, so this rarely matters.
+
+Use a dedicated EIP when either case matters. For a Gateway route, set its
+separate JSON annotation:
 
 ```yaml
 metadata:
@@ -67,8 +78,8 @@ qualified. Gateway-only Services created in the console and controller-managed
 route-only Services use ClusterIP and allocate no EIP. Editing an existing
 Gateway LoadBalancer retains its Service type and EIP binding. Its client list
 requires both Gateway and direct enforcement before you can change it in the
-console. Arbitrary native HTTPRoutes/TLSRoutes do not gain filtering from this
-annotation.
+console. Routes on the shared Gateway are created by the platform from Service
+annotations; Project roles can read them but not write them.
 
 The shared Gateway supports at most 64 listeners, including platform listeners.
 HTTPS and restricted TLS passthrough each need a dedicated listener. When all
@@ -175,7 +186,7 @@ Project network type.
 | `expose-route` | Enable Gateway route | `http`, `https`, `tls-passthrough` |
 | `route-hostname` | Custom hostname (optional) | `api.example.com` |
 | `route-port` | Target port (optional) | `8080`, `50051` |
-| `tls-issuer` | cert-manager Issuer name | `letsencrypt` (default) |
+| `tls-issuer` | Your own cert-manager Issuer (dns01, CA, self-signed, or HTTP-01 through your own ingress); default is the platform issuer | `my-dns01-issuer` |
 | `tls-secret` | User-provided TLS secret | `my-tls-secret` |
 
 #### EIP/LoadBalancer annotations
@@ -260,31 +271,9 @@ annotations:
 
 The simplest way to expose a web app with automatic TLS:
 
-#### Step 1: Create the Issuer (once per Project)
+The platform issues the certificate. You don't need to create an Issuer.
 
-```yaml
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: letsencrypt
-  namespace: acme-production
-spec:
-  acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
-    email: your-email@example.com  # Replace with valid email
-    privateKeySecretRef:
-      name: letsencrypt-account-key
-    solvers:
-    - http01:
-        gatewayHTTPRoute:
-          parentRefs:
-          - group: gateway.networking.k8s.io
-            kind: Gateway
-            name: eg
-            namespace: envoy-gateway-system
-```
-
-#### Step 2: Deploy your application
+#### Step 1: Deploy your application
 
 ```yaml
 apiVersion: apps/v1
@@ -309,7 +298,7 @@ spec:
         - containerPort: 80
 ```
 
-#### Step 3: Create LoadBalancer Service with HTTPS route
+#### Step 2: Create LoadBalancer Service with HTTPS route
 
 ```yaml
 apiVersion: v1
@@ -329,7 +318,7 @@ spec:
     targetPort: 80
 ```
 
-#### Step 4: Verify and access
+#### Step 3: Verify and access
 
 ```bash
 # Check assigned hostname
@@ -806,7 +795,7 @@ kubectl describe svc my-lb -n acme-production
 |-------|-------|----------|
 | No hostname assigned | Missing `expose-route` annotation | Add annotation |
 | Hostname status empty for HTTPS | Certificate is still pending | Check `kubectl get certificate,challenge -n acme-production` |
-| Certificate not ready | Issuer not created, ACME challenge pending, or quota prevents solver pod creation | Create Issuer first and make sure the project has free CPU/memory for cert-manager HTTP-01 solver pods |
+| Certificate not ready | ACME challenge pending, DNS not pointing at the Gateway, or quota prevents solver pod creation | Check DNS for custom hostnames and make sure the project has free CPU/memory for cert-manager HTTP-01 solver pods |
 | 503 error | Backend not ready | Check pod status |
 | EIP pending | No available IPs | Check subnet capacity |
 | Connection timeout | DNS not configured | Point DNS to Gateway/EIP |

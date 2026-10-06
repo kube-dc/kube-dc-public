@@ -1897,6 +1897,12 @@ Log in with:
 - **Username:** `admin`
 - **Password:** _(output from above)_
 
+This account is the organization's first administrator in the console. No
+tenant account, this one included, holds a Keycloak admin role in its
+organization's realm: members are managed from the console, and realm settings
+or external identity providers are changed by a platform administrator in the
+Keycloak `master` console.
+
 ### Test external connectivity
 
 ```bash

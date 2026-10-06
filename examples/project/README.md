@@ -63,8 +63,10 @@ annotations:
   # Specific port for multi-port services
   service.nlb.kube-dc.com/route-port: "8080"
   
-  # Custom issuer name (for expose-route: https)
-  service.nlb.kube-dc.com/tls-issuer: "letsencrypt"
+  # Optional: your own Issuer for expose-route: https (dns01, CA,
+  # self-signed, or HTTP-01 through your own ingress). By default the
+  # platform issues the certificate.
+  service.nlb.kube-dc.com/tls-issuer: "my-dns01-issuer"
   
   # Use your own TLS secret (skips auto-certificate creation)
   service.nlb.kube-dc.com/tls-secret: "my-custom-tls"
@@ -86,7 +88,7 @@ annotations:
 │  - LoadBalancer Service + expose-route annotation                   │
 │  - EIP, Backend, Route (auto-created by controller)                 │
 │  - Certificate + Gateway Listener (for expose-route: https)         │
-│  - Issuer (required for automatic HTTPS certificates)              │
+│  - Certificate from the platform issuer (for expose-route: https)   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -99,10 +101,8 @@ annotations:
 
 | Example | Description | File |
 |---------|-------------|------|
-| Issuer | Let's Encrypt HTTP-01 issuer | [00-issuer.yaml](00-issuer.yaml) |
 | HTTP | Simple HTTP service (auto-route) | [01-http-service.yaml](01-http-service.yaml) |
 | HTTPS | **Gateway-terminated TLS (recommended)** | [02-https-service.yaml](02-https-service.yaml) |
-| gRPC | gRPC service with TLS | [03-grpc-service.yaml](03-grpc-service.yaml) |
 | TLS Passthrough | End-to-end TLS (app terminates) | [04-tls-passthrough.yaml](04-tls-passthrough.yaml) |
 | HTTPS Own Cert | HTTPS with user-provided certificate | [05-https-own-cert.yaml](05-https-own-cert.yaml) |
 
@@ -121,16 +121,13 @@ curl "http://$HOST"
 ### HTTPS Service with Let's Encrypt
 
 ```bash
-# 1. Create issuer (one-time)
-kubectl apply -f 00-issuer.yaml
-
-# 2. Deploy HTTPS service
+# 1. Deploy HTTPS service; the platform issues its certificate
 kubectl apply -f 02-https-service.yaml
 
-# 3. Verify certificate
+# 2. Verify certificate
 kubectl get certificate
 
-# 4. Read the generated hostname, then test it
+# 3. Read the generated hostname, then test it
 HOST="$(kubectl get svc my-secure-app -o jsonpath='{.metadata.annotations.service\\.nlb\\.kube-dc\\.com/route-hostname-status}')"
 curl "https://$HOST"
 ```
@@ -179,8 +176,9 @@ kubectl get certificate
 ## Permissions
 
 Use the standard Project `admin` role for these examples. The manifests create
-Deployments, Services, and an Issuer in the Project's backing namespace; the
-platform creates the route resources. Custom roles need equivalent permissions;
+Deployments and Services in the Project's backing namespace; the platform
+creates the route and certificate resources. Project roles can read routes but
+not write them. Custom roles need equivalent permissions;
 see
 [Team Management](../../docs/cloud/team-management.md) for the supported role
 model.
@@ -209,8 +207,7 @@ kubectl describe certificate my-app-tls
 # Check challenges
 kubectl get challenges
 
-# Check issuer
-kubectl describe issuer letsencrypt
+# If the certificate stays pending, contact your platform administrator
 ```
 
 ### Service not accessible

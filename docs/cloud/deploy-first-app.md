@@ -119,7 +119,7 @@ kubectl describe service hello
 kubectl get events --sort-by=.lastTimestamp
 ```
 
-To add HTTPS with the required Issuer, or to use custom hostnames, TCP and UDP
+To add HTTPS, or to use custom hostnames, TCP and UDP
 services, EIPs, and FIPs, see [Service exposure](service-exposure.md).
 
 ## Update the application

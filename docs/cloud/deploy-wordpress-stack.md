@@ -8,7 +8,7 @@ This guide deploys a complete WordPress stack directly in a Kube-DC Project, usi
 - **Database credentials** generated and stored in a Project Secret
 - A **shared Ceph-backed volume** that two WordPress replicas and admin Jobs read and write together
 - **S3 object storage** for content archives, with per-bucket access keys
-- **HTTPS exposure with a certificate issued through the Project's ACME Issuer**
+- **HTTPS exposure with a certificate issued by the platform**
 - **Autoscaling** with a HorizontalPodAutoscaler
 - Headless WordPress installation with **WP-CLI running as a Job**
 
@@ -41,9 +41,6 @@ flowchart LR
 - A Kube-DC [Project](first-project.md) with enough CPU, memory, storage, and object-storage quota
 - [CLI access](cli-kubeconfig.md) with `kubectl` connected to the Project
 - The Project `admin` role, because the example creates workload Secrets and managed-service resources
-- A namespaced cert-manager `Issuer` named `letsencrypt`; create it once using
-  [Service Exposure: Create the Issuer](service-exposure.md#step-1-create-the-issuer-once-per-project)
-  and replace the example email address before applying it
 - Examples use `acme-production`, the backing namespace for Organization `acme` and Project `production`
 
 ## Step 1: platform services
@@ -136,7 +133,7 @@ from it, so nothing is copied into the manifest.
 
 ## Step 2: WordPress
 
-The application layer adds a Ceph-backed content volume, two co-located replicas that share it, HTTPS through the Project Issuer and a Service annotation, and an autoscaler.
+The application layer adds a Ceph-backed content volume, two co-located replicas that share it, HTTPS through a Service annotation, and an autoscaler.
 
 ```yaml title="02-wordpress.yaml"
 # Content volume on Ceph (rbd-vm). ReadWriteOnce attaches to one node;
@@ -227,8 +224,8 @@ spec:
         persistentVolumeClaim:
           claimName: wordpress-content
 ---
-# With the Project Issuer in place, this annotation asks the platform to create
-# the HTTPS listener, certificate, and route.
+# This annotation asks the platform to create the HTTPS listener, certificate,
+# and route.
 apiVersion: v1
 kind: Service
 metadata:
@@ -437,7 +434,7 @@ Use your cluster's public S3 endpoint (`https://s3.kube-dc.cloud` on Kube-DC Clo
 | Database backups | Set by the plan: daily, with 7-day retention on the Development plan |
 | Content storage | Ceph-backed PVC shared by all replicas |
 | File backups + access keys | `ObjectBucketClaim` bucket + Job |
-| HTTPS, certificate, DNS name | Project Issuer + Service annotation |
+| HTTPS, certificate, DNS name | Service annotation; the platform issues the certificate |
 | Scaling | HorizontalPodAutoscaler 2→4 |
 | Admin operations | WP-CLI Jobs on the shared volume |
 

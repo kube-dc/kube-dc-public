@@ -149,7 +149,7 @@ By default, your VMs and pods are **not accessible from the internet**. To enabl
 |--------|----------|-------|
 | **Floating IP** | Direct access to a VM on all ports | [External and floating IPs](public-floating-ips.md) |
 | **LoadBalancer + EIP** | Expose specific ports | [Service exposure](service-exposure.md) |
-| **Gateway Route** | HTTPS with a configured Project Issuer | [Service exposure](service-exposure.md) |
+| **Gateway Route** | HTTPS with a platform-issued certificate | [Service exposure](service-exposure.md) |
 
 ---
 
