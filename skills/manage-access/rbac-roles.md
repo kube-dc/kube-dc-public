@@ -48,8 +48,11 @@ rules:
     resources: ["deployments", "replicasets"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
-    resources: ["pods", "pods/log", "services", "configmaps"]
+    resources: ["pods", "services", "configmaps"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
 ```
 
 Reference it by name from the Organization API namespace:

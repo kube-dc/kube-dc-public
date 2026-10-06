@@ -279,6 +279,13 @@ spec:
     - ci-deployer   # Custom role name
 ```
 
+An Organization Group can bind a custom Role only if the Role grants nothing
+beyond the four standard Project roles combined, so a group can never grant
+more than naming those roles would. A Role that grants more, or one that
+doesn't exist yet, is not bound. The OrganizationGroup then shows a
+`RoleNotBindable` warning event naming the Role and the first permission it
+exceeds. The group picks the Role up as soon as it exists or is narrowed.
+
 ## Permission reference
 
 ### Organization API scope
@@ -332,4 +339,8 @@ spec:
 **Custom role not appearing in Organization Group editor**
 - The role must exist in the target Project's backing namespace before it can be referenced
 - Create the role with `kubectl apply` first, then reference it from the OrganizationGroup
+
+**Custom role selected but members have no access**
+- Run `kubectl describe organizationgroup <name>` and look for a `RoleNotBindable` event
+- Narrow the Role to permissions the standard Project roles grant, or create it if it doesn't exist; the group binds it automatically
 

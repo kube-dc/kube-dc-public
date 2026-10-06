@@ -99,7 +99,11 @@ referencing its name in `OrganizationGroup.spec.permissions[].roles`. See
 [rbac-roles.md](rbac-roles.md) for an example.
 
 Custom roles remain subject to Kube-DC admission policy and cannot grant
-cluster-scoped access.
+cluster-scoped access. An Organization Group binds a custom Role only if it
+grants nothing beyond the four standard Project roles combined, and only while
+the Role exists. Otherwise the binding is skipped and the OrganizationGroup gets
+a `RoleNotBindable` warning event; check it with
+`kubectl describe organizationgroup <name>`.
 
 ## User management
 
