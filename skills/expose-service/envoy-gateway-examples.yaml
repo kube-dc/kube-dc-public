@@ -1,24 +1,3 @@
-# Create once per Project backing namespace for HTTPS routes.
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: letsencrypt
-  namespace: "{backing-namespace}"
-spec:
-  acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
-    email: "{valid-email}"
-    privateKeySecretRef:
-      name: letsencrypt-account-key
-    solvers:
-    - http01:
-        gatewayHTTPRoute:
-          parentRefs:
-          - group: gateway.networking.k8s.io
-            kind: Gateway
-            name: eg
-            namespace: envoy-gateway-system
----
 # HTTPS: Gateway terminates TLS and forwards HTTP.
 apiVersion: v1
 kind: Service

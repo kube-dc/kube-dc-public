@@ -8,9 +8,9 @@ description: Request and manage a Project-scoped ManagedCertificate for private 
 Use `ManagedCertificate` when an application needs an explicitly managed
 X.509 certificate for server TLS, client authentication, mTLS, or code signing.
 
-Gateway HTTPS exposure is a separate flow. The `expose-service` skill creates
-an HTTPRoute and a raw cert-manager `Certificate` through the Project's
-`Issuer`; it does not create a `ManagedCertificate`.
+Gateway HTTPS exposure is a separate flow. With the `expose-service` skill, the
+platform creates the route and a cert-manager `Certificate` from the platform
+issuer; it does not create a `ManagedCertificate`.
 
 ## Prerequisites
 

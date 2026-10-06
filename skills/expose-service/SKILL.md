@@ -8,8 +8,8 @@ description: Expose a Service from a Kube-DC Project with a hostname-based HTTP/
 - The workload and Service selector exist in a Ready Project.
 - Know the Project's backing namespace: `{organization}-{project}`.
 - Check public IPv4 quota before requesting a public EIP.
-- For `expose-route: "https"`, create the Project's cert-manager `Issuer`
-  once before exposing the Service.
+- For `expose-route: "https"`, the platform issues the certificate. Don't
+  create an HTTP-01 Issuer for the shared Gateway: admission rejects it.
 
 ## Choose an Exposure Method
 
@@ -29,32 +29,6 @@ compatibility is unknown.
 
 ## Gateway Route
 
-### Create the HTTPS Issuer Once Per Project
-
-```yaml
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: letsencrypt
-  namespace: "{backing-namespace}"
-spec:
-  acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
-    email: "{valid-email}"
-    privateKeySecretRef:
-      name: letsencrypt-account-key
-    solvers:
-    - http01:
-        gatewayHTTPRoute:
-          parentRefs:
-          - group: gateway.networking.k8s.io
-            kind: Gateway
-            name: eg
-            namespace: envoy-gateway-system
-```
-
-This Issuer is a prerequisite, not something the Service creates.
-
 ### Annotate a route-only Service
 
 ```yaml
@@ -69,7 +43,7 @@ metadata:
     service.nlb.kube-dc.com/route-port: "{service-port}"
     # Optional:
     # service.nlb.kube-dc.com/route-hostname: "app.example.com"
-    # service.nlb.kube-dc.com/tls-issuer: "letsencrypt"
+    # service.nlb.kube-dc.com/tls-issuer: "{own-dns01-or-ca-issuer}"
 spec:
   type: ClusterIP
   selector:
@@ -175,7 +149,7 @@ All route/LB annotations below use the
 | `expose-route` | `http`, `https`, or `tls-passthrough` |
 | `route-hostname` | Optional explicit FQDN |
 | `route-port` | One selected Service port; set it on multi-port Services |
-| `tls-issuer` | Issuer name; default `letsencrypt` |
+| `tls-issuer` | Your own dns01 or CA Issuer; default is the platform issuer |
 | `tls-secret` | User-provided TLS Secret |
 | `bind-on-eip` | Bind a LoadBalancer to a named EIP |
 | `bind-on-default-gw-eip` | Bind to the Project gateway EIP |
@@ -208,7 +182,7 @@ kubectl get service {service-name} -n {backing-namespace} \
 ```
 
 If no address or hostname appears, inspect the Service, EIP, route, Certificate,
-Issuer, and endpoints. A LoadBalancer cannot route to pods that do not match its
+and endpoints. A LoadBalancer cannot route to pods that do not match its
 selector.
 
 ## Safety

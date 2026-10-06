@@ -14,8 +14,7 @@ the Project context, quota, storage, database, and exposure decisions explicit.
 - `kube-dc use {domain}/{organization}/{project}` selects the intended Project.
 - CPU, memory, pod, and storage quota have enough headroom.
 - The caller can create the required workload kinds.
-- For HTTPS, the Project already has the cert-manager `Issuer` described by the
-  `expose-service` skill.
+- For HTTPS, the platform issues the certificate; no Issuer is needed.
 
 Confirm the active backing namespace:
 
