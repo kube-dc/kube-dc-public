@@ -67,6 +67,10 @@ The essential contracts are:
 - The guest image runs QEMU Guest Agent for key injection and IP/readiness
   reporting.
 - CPU and memory fit quota with operational headroom.
+- `resources.requests` and `resources.limits` both state the VM's CPU
+  (`cores`) and memory (`guest`). Without explicit limits KubeVirt sets the
+  memory limit to about twice the request, and a VM near the plan's
+  per-workload maximum is refused.
 
 ```bash
 kubectl apply -f vm.yaml

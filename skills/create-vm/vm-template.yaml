@@ -59,8 +59,15 @@ spec:
           interfaces:
             - name: default
               bridge: {}
+        # Explicit limits equal to the VM size. Without them KubeVirt sets the
+        # memory limit to about twice the request whenever the project quota
+        # limits memory, and a VM near the plan maximum is refused.
         resources:
           requests:
+            cpu: "2"
+            memory: "{memory}"
+          limits:
+            cpu: "2"
             memory: "{memory}"
       networks:
         - name: default
