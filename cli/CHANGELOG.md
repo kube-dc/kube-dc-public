@@ -1,5 +1,14 @@
 # kube-dc CLI changelog
 
+## v0.9.10 — 2026-10-07
+
+- Pin the kube-dc platform set qualified on cloud in the matching `v0.9.10` fleet-starter: chart, manager, backend, console and admin console move together. The starter also includes the qualified managed-service observation and native-resource metrics corrections. Native operator, kamaji and other pins are unchanged.
+- Organization members are managed by the platform's own Keycloak credential after Kubernetes authorizes the caller; tenant accounts hold no Keycloak admin role, and the manager revokes earlier grants except partner service accounts.
+- An Organization Group binds a custom Role only if it grants nothing beyond the four standard Project roles combined; otherwise it raises a `RoleNotBindable` event.
+- Keep managed-service observations fresh with fair scheduling, bounded polling throughput and fewer duplicate backup checks. Preserve stale warnings and readiness safeguards.
+- Resolve database metrics through the controller-reported native resource identity, including services with generated native names.
+- Keep startup acceleration disabled in new installations until local qualification.
+
 ## v0.9.9 — 2026-10-06
 
 - Bound generated ClickHouse Keeper names for fresh local services with long names. Preserve existing signed roots and qualified accelerated profiles.

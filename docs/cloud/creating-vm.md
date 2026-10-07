@@ -86,6 +86,44 @@ Kubernetes-qualified network name, so replace `<project-backing-namespace>`
 with the current Project's backing namespace. You can print it with
 `kubectl config view --minify -o jsonpath='{..namespace}'`.
 
+### Size a VM near your plan's maximum
+
+Your plan sets a maximum CPU and memory per workload; the console shows them
+on the Project overview. A VM may use exactly that maximum. Every VM also
+needs some CPU and memory for the virtualization that runs alongside it.
+Kube-DC adds room for this to your plan's limits and to your organization's
+quota, so a VM at the maximum starts when the rest of your quota is free.
+Workloads that are already running use part of the quota. Then a VM at the
+maximum does not fit, and the console says how much is left.
+
+If your administrator set a project quota equal to the plan, the project has
+no room for this overhead: size the VM a little below the maximum, or ask for
+a larger project quota.
+
+For a VM close to the maximum, set its resource limits explicitly in the
+manifest, equal to its size. Without explicit limits, KubeVirt sets a memory
+limit of about twice the requested memory, which can exceed your plan:
+
+```yaml
+spec:
+  template:
+    spec:
+      domain:
+        cpu:
+          cores: 16
+        memory:
+          guest: 56Gi
+        resources:
+          requests:
+            cpu: "16"
+            memory: 56Gi
+          limits:
+            cpu: "16"
+            memory: 56Gi
+```
+
+VMs created in the console already set their limits.
+
 ### Ubuntu 24.04
 
 <details>

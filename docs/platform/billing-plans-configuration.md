@@ -206,6 +206,63 @@ Default resource values applied to containers that don't specify their own. With
 | `maxPVCStorage` | Maximum PVC size | `"160Gi"` |
 | `minPVCStorage` | Minimum PVC size | `"1Gi"` |
 
+`maxCPU`, `maxMemory`, `maxPodCPU` and `maxPodMemory` are the per-workload
+maxima a tenant may choose, and a VM of exactly that size must start. A VM runs
+in a KubeVirt launcher pod whose limits exceed the VM's size: KubeVirt's memory
+overhead, a console-log sidecar, and the console's memory limit of 1.1x the
+guest. The generated LimitRange therefore sets larger caps than the plan:
+
+| LimitRange cap | Value |
+|----------------|-------|
+| Container CPU | `maxCPU` |
+| Container and Pod memory | 1.1 × plan memory + plan memory / 512 + 8Mi per plan vCPU + 2Gi |
+| Pod CPU | `maxPodCPU` + 250m |
+
+The constant covers GPU/vGPU (1Gi of VFIO overhead), vTPM, probes and dedicated
+CPUs at KubeVirt's default overhead ratio. If you raise
+`additionalGuestMemoryOverheadRatio` in the KubeVirt configuration, VMs at the
+plan maximum can be refused again.
+
+The plan values are recorded on the LimitRange as the
+`kube-dc.com/workload-max-cpu`, `kube-dc.com/workload-max-memory`,
+`kube-dc.com/workload-max-pod-cpu` and `kube-dc.com/workload-max-pod-memory`
+annotations. The console reads these, so it offers workloads up to the plan
+values, not up to the larger caps. A LimitRange you manage yourself (without
+the `billing.kube-dc.com/auto-managed` label) is left alone and reported as it
+is.
+
+The organization quota (`HierarchicalResourceQuota` `plan-quota`) needs the
+same room: it counts the whole launcher pod, so with totals equal to the
+per-workload maxima a VM at the maximum never fitted, even in an empty
+organization. For plan and explicit-quota organizations the manager adds room
+for the launcher of one VM of the largest size the organization can create.
+That size is memory M = min(`maxMemory`, plan memory) and C vCPUs =
+min(`maxCPU`, plan CPU).
+
+| Quota dimension | Enforced value |
+|-----------------|----------------|
+| `requests.cpu`, `limits.cpu` | plan + 250m |
+| `requests.memory` | plan + M / 512 + 8Mi × C + 2Gi |
+| `limits.memory` | plan + 0.1 × M + M / 512 + 8Mi × C + 2Gi |
+
+Storage, pods, load balancers and GPU dimensions are not changed. No room is
+added for a billing-policy (pay-as-you-go) organization, whose limits are the
+customer's own spending ceiling, for the suspended-plan floor, for an
+accelerator-only grant, or for an explicit quota with neither a template plan
+nor a plan id (there are no per-workload maxima to size the room from).
+
+The plan values are recorded on the HRQ as `billing.kube-dc.com/entitled-requests-cpu`,
+`-limits-cpu`, `-requests-memory` and `-limits-memory`. Organization and
+project status, the console and the billing service report
+min(enforced, entitled), which is the plan's numbers. Capacity checks in the
+console use the enforced values. Reading the HRQ or its propagated `hrq.hnc.x-k8s.io`
+ResourceQuotas directly shows the larger enforced values, and usage shown
+against the plan can exceed 100% by up to that room.
+
+A project quota is not padded. A project capped at exactly the plan values
+cannot start a VM at the plan maximum; leave such a project uncapped or cap it
+above the plan.
+
 #### `suspendedPlan`
 
 Minimal resources allowed when an organization's subscription is suspended.
@@ -563,17 +620,23 @@ Base CPU requests:     8    (from plan)
 
 Burst ratio:           1.0  (from plan)
 limits.cpu = 10.3 × 1.0 = 10.3
+
+Launcher room for the largest VM (8 vCPU / 24Gi per-workload maxima):
+requests.cpu, limits.cpu  +250m
+requests.memory           +2160Mi  (24Gi / 512 + 8Mi × 8 + 2Gi)
+limits.memory             +4618Mi  (the same + 0.1 × 24Gi, rounded up)
 ```
 
-The resulting HRQ `plan-quota`:
+The resulting HRQ `plan-quota`; the plan values (`10300m`, `29056Mi`) are in
+its `billing.kube-dc.com/entitled-*` annotations:
 
 ```yaml
 spec:
   hard:
-    requests.cpu:            "10300m"
-    requests.memory:         "29056Mi"   # 24Gi + 4Gi addon + 384Mi overhead
-    limits.cpu:              "10300m"
-    limits.memory:           "29056Mi"
+    requests.cpu:            "10550m"
+    requests.memory:         "31216Mi"   # 24Gi + 4Gi addon + 384Mi overhead + launcher room
+    limits.cpu:              "10550m"
+    limits.memory:           "33674Mi"
     requests.storage:        "180Gi"     # 160Gi + 20Gi addon
     pods:                    "200"
     services.loadbalancers:  "100"
