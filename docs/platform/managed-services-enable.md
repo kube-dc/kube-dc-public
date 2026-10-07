@@ -122,7 +122,28 @@ Selecting a family component without its operator gives you a bundle that
 never becomes ready and placements that are refused with "family bundle not
 ready".
 
-### 5. Verify the installation
+### 5. Label older Rook bucket Secrets
+
+The PostgreSQL startup guard accepts a backup bucket Secret only if it carries
+`services.kube-dc.com/provenance: rook-ceph`. The platform adds this label to
+bucket Secrets that Rook creates in Project namespaces, but Secrets created
+before that labelling existed don't have it. A new PostgreSQL instance in such a
+Project then fails with `foreign PostgreSQL Secret API input db-backups`.
+
+On an installation that already has Project buckets, run the backfill before
+enabling the guard, then check that nothing is left:
+
+```sh
+hack/backfill-rook-bucket-provenance.py --kubeconfig <kubeconfig>          # report only
+hack/backfill-rook-bucket-provenance.py --kubeconfig <kubeconfig> --apply
+```
+
+The script labels a Secret only if Rook evidently created it. It must be
+controlled by its own Bound bucket claim, hold only the S3 key pair, have no
+writer other than Rook, and predate automatic labelling. It reports everything
+else and leaves it alone.
+
+### 6. Verify the installation
 
 ```sh
 kubectl get servicedataplane <name>-platform \
