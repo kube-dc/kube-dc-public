@@ -9,6 +9,8 @@
 - An Organization Group binds a custom Role only if it grants nothing beyond the four standard Project roles combined; otherwise it raises a `RoleNotBindable` event.
 - Keep managed-service observations fresh with fair scheduling, bounded polling throughput and fewer duplicate backup checks. Preserve stale warnings and readiness safeguards.
 - Resolve database metrics through the controller-reported native resource identity, including services with generated native names.
+- New installations run upstream Keycloak 26.8 (`quay.io/keycloak/keycloak`) with a CloudNativePG database instead of the Bitnami chart, whose free images stopped at 26.3. The kube-dc login theme, the `keycloak` Service and admin Secret, metrics and the OIDC finalizer are unchanged. Existing installations keep their release.
+- Every Organization's `kube-dc` sign-in client, and the platform `kube-dc-admin` and `sso-broker` clients, accept only their own callbacks: the console, the API reference, and the CLI's local callback. They previously accepted any redirect address, so a crafted link to the real sign-in page could hand a login to another site.
 - Keep startup acceleration disabled in new installations until local qualification.
 
 ## v0.9.9 — 2026-10-06
