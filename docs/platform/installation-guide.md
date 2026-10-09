@@ -1179,6 +1179,15 @@ flux reconcile kustomization platform
 kube-dc bootstrap openbao init dc1 --repo .
 ```
 
+New installations run the upstream Keycloak image (26.8, `quay.io/keycloak/keycloak`)
+as a Deployment in the `keycloak` namespace, with its database in a
+CloudNativePG cluster (`keycloak-db`). The fleet components are
+`platform/keycloak/components/keycloak-26` and `keycloak-26-remove-bitnami`;
+set `KEYCLOAK_IMAGE` in `cluster-config.env` to pin another 26.x build, and
+`KEYCLOAK_REPLICAS` / `KEYCLOAK_DB_INSTANCES` / `KEYCLOAK_DB_STORAGE` to size it.
+Clusters installed earlier keep the Bitnami chart release; moving them is a
+separate data migration.
+
 The Keycloak admin password is generated into the `keycloak` secret:
 
 ```bash

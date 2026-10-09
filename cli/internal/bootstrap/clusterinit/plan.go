@@ -1324,7 +1324,7 @@ func scriptsForOptions(o *InitOptions, fleet FleetState) []ScriptInvocation {
 	add(ScriptInvocation{
 		Kind:          "bootstrap/setup-keycloak-oidc.sh",
 		Args:          []string{o.Name},
-		DeferredUntil: "HelmRelease/keycloak Ready",
+		DeferredUntil: "Keycloak answering OIDC discovery",
 	})
 	// The apiserver cutover is the one deferred step that RESTARTS something
 	// the operator already has. It must appear in the reviewed plan for the

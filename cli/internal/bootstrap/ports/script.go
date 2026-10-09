@@ -101,7 +101,7 @@ const (
 	ScriptSetupSSORealm ScriptKind = "setup-sso-realm.sh"
 
 	// ScriptSetupKeycloakOIDC = bootstrap/setup-keycloak-oidc.sh
-	// (deferred to Phase 5 tail; runs after HelmRelease/keycloak Ready).
+	// (deferred to Phase 5 tail; runs once Keycloak answers OIDC discovery).
 	ScriptSetupKeycloakOIDC ScriptKind = "setup-keycloak-oidc.sh"
 
 	// ScriptOpenBaoSetupControllerAuth = kube-dc/hack/openbao-setup-

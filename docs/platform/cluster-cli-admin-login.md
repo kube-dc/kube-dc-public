@@ -116,6 +116,16 @@ on both creation and update. For an existing installation, rerun that script
 or enable the capability in Keycloak's client settings. Its JSON attribute is
 `"oauth2.device.authorization.grant.enabled": "true"`.
 
+The same client's **Valid redirect URIs** are `http://localhost:*` and
+`http://127.0.0.1:*` — the browser login's loopback callback and nothing
+else. The client is public, so this list alone decides where Keycloak returns
+a login code; clusters bootstrapped before 2026-10-07 carried `*`, which let
+any site that could show an administrator the real login page collect a
+platform-admin code. Rerunning `bootstrap/setup-keycloak-oidc.sh` converges an
+installed cluster. Keycloak matches a trailing `*` as a string prefix, which is
+why `http://localhost:*` admits the CLI's random port while `http://localhost/*`
+does not.
+
 ## Pre-flight on a fresh cluster
 
 The CLI side works against any cluster, but a fresh cluster needs **four** pieces wired up before `kube-dc login --admin` resolves:

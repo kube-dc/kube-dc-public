@@ -16,7 +16,7 @@ enabling a GPU profile.
 
 | Layer | Protects | Scope |
 |---|---|---|
-| OIDC and Keycloak | User identity and group claims | Platform and Organization realms |
+| OIDC and Keycloak | User identity and group claims; where a login code may be returned | Platform and Organization realms |
 | Kubernetes RBAC | Which resources a user can read or change | Organization namespaces and Project backing namespaces |
 | ValidatingAdmissionPolicy | Dangerous Pod fields, exec/attach, protected annotations, quota, and selected accelerator rules | Resources selected by each policy or binding |
 | Kube-OVN VPCs | Primary Project network separation | One VPC and workload subnet per Project |
@@ -115,9 +115,23 @@ The master configuration holds cluster-wide switches and allowlists:
   "egress_network_isolation": true,
   "egress_global_allowlist": ["10.8.0.0/24"],
   "ingress_network_isolation": true,
-  "ingress_global_allowlist": ["192.0.2.10"]
+  "ingress_global_allowlist": ["192.0.2.10"],
+  "tenant_client_extra_redirect_uris": ["https://portal.example.com/auth/callback"]
 }
 ```
+
+`tenant_client_extra_redirect_uris` extends the OAuth redirect allow-list of
+every Organization realm's `kube-dc` client. The manager registers the console
+(`<console_url>/*`), the API reference (`<backend_url>/*`, rendered by the
+chart from the backend hostname) and the CLI's loopback callback
+(`http://localhost:*`, `http://127.0.0.1:*`), and converges existing realms to
+that list — and the client's web origins to the console's origin — on each
+Keycloak sync, so an entry added by hand in Keycloak does not survive. Extras
+must be absolute `http(s)` URIs without user-info; a trailing `*` must follow
+a `/`. A bare `*`, a host-prefix wildcard or another scheme is ignored and
+logged; an extra that needs browser CORS on the token endpoint is not
+supported (exchange the code server-side). The master realm's `kube-dc-admin`
+client is held to the CLI loopback only by `bootstrap/setup-keycloak-oidc.sh`.
 
 Project-specific values are comma-separated IP addresses or CIDRs:
 
