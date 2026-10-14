@@ -77,10 +77,42 @@ aws --endpoint-url "$S3_ENDPOINT" s3 ls "s3://$BUCKET_NAME/"
 
 Do not print the Secret values.
 
+## Choose a Storage Class
+
+Ask the platform which classes suit the volume instead of guessing from names:
+
+```http
+GET /api/create-vm/{backing-namespace}/storageclasses?purpose={purpose}
+Authorization: Bearer {kube-dc-jwt}
+```
+
+| Creating | `purpose` |
+|---|---|
+| VM boot disk | `vm-root` |
+| VM data disk (DataVolume) | `vm-data` |
+| Data disk of a live-migratable VM | `vm-migratable` |
+| PersistentVolumeClaim | `volume` |
+| Restore from a VolumeSnapshot, or CSI clone of a PVC | `restore`, plus `sourceClass={source-class}` |
+
+Each entry has `value` (the class name), `modes` (supported access and volume
+mode pairs), `features` (`snapshot`, `live-migration`, `expand`, ...) and
+`nodeLocal`. Use a listed class and one of its `modes` pairs.
+
+The console and the Kube-DC API refuse unsuitable classes with `422`. A manifest
+applied with `kubectl` is not checked that way, so follow the same rules:
+
+- Never use an object-storage (bucket) class, a `scratch-*` class or a class
+  without dynamic provisioning for a volume. The claim never becomes usable.
+- A PVC restored from a VolumeSnapshot or cloned from a PVC must use a class on
+  the source's driver and storage pool, usually the source's own class:
+  `kubectl get pvc {source} -n {backing-namespace} -o jsonpath='{.spec.storageClassName}'`.
+- Leaving `storageClassName` empty means the cluster default class, which is
+  often node-local.
+
 ## VM Disks with DataVolume
 
-Choose a VM storage class offered to the Project. Prefer a digest-pinned
-registry image from the live OS image catalog:
+Use a class from `purpose=vm-data` (or `vm-root` for a boot disk). Prefer a
+digest-pinned registry image from the live OS image catalog:
 
 ```yaml
 apiVersion: cdi.kubevirt.io/v1beta1
@@ -141,8 +173,8 @@ spec:
       storage: "{size}"
 ```
 
-Choose access modes supported by the selected StorageClass. Do not assume
-ReadWriteMany or live migration support from a class name alone.
+Use a class from `purpose=volume` and an access mode from its `modes`. Do not
+assume ReadWriteMany or live migration support from a class name alone.
 
 ## Verification
 

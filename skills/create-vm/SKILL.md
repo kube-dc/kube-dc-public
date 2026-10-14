@@ -38,16 +38,24 @@ mutable tag into an apparently reproducible boot disk.
 
 ## 2. Select storage
 
-Use the VM wizard or the live storage-class endpoint:
+Use the VM wizard or the live storage-class endpoint with the disk's purpose:
 
 ```http
-GET /api/create-vm/{project-backing-namespace}/storageclasses
+GET /api/create-vm/{project-backing-namespace}/storageclasses?purpose=vm-root
 Authorization: Bearer {kube-dc-jwt}
 ```
 
-The chosen access mode and volume mode must be a supported pair for that class.
+Use `purpose=vm-data` for extra disks, and `purpose=vm-migratable` for every
+disk of a VM that must live-migrate (shared block storage only). The response
+lists only classes that suit the disk, each with its supported `modes`
+(access and volume mode pairs), `features` (`snapshot`, `live-migration`) and
+`nodeLocal`. The chosen access mode and volume mode must be one of its pairs.
 Node-local storage and shared block storage have different snapshot and live
 migration behavior. Do not infer capabilities from a class name alone.
+
+Kube-DC refuses a VM disk on an unsuitable class (for example an object-storage
+bucket class) with `422` when the VM is created through its API. A manifest
+applied with `kubectl` is not checked, so take the class from this list.
 
 ## 3. Create the DataVolume and VM
 
