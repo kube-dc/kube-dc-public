@@ -199,12 +199,21 @@ Default resource values applied to containers that don't specify their own. With
 | `defaultRequestMem` | Default memory request per container | `"256Mi"` |
 | `maxCPU` | Maximum CPU per container | `"4"` |
 | `maxMemory` | Maximum memory per container | `"12Gi"` |
-| `minCPU` | Minimum CPU per container | `"10m"` |
-| `minMemory` | Minimum memory per container | `"16Mi"` |
+| `minCPU` | Minimum CPU per container (at most `1m` is applied, see below) | `"1m"` |
+| `minMemory` | Minimum memory per container (at most `1M` is applied, see below) | `"1M"` |
 | `maxPodCPU` | Maximum CPU per pod (all containers) | `"8"` |
 | `maxPodMemory` | Maximum memory per pod (all containers) | `"24Gi"` |
 | `maxPVCStorage` | Maximum PVC size | `"160Gi"` |
 | `minPVCStorage` | Minimum PVC size | `"1Gi"` |
+
+The generated LimitRange never sets a container minimum above `1m` CPU and `1M`
+(decimal) memory, whatever the plan says. KubeVirt's support containers (the
+container-disk volume containers and its minimal init containers) request
+exactly that, and a higher minimum refuses every VM that boots from a container
+disk. An organization with neither a plan nor a billing policy keeps the
+LimitRange an earlier plan left, with only its minimum lowered to the same floor.
+LimitRanges written with this floor carry the annotation
+`kube-dc.com/min-support-container`.
 
 `maxCPU`, `maxMemory`, `maxPodCPU` and `maxPodMemory` are the per-workload
 maxima a tenant may choose, and a VM of exactly that size must start. A VM runs
@@ -490,7 +499,7 @@ data:
           maxCPU: "4"
           maxMemory: "8Gi"
           minCPU: "1m"
-          minMemory: "1Mi"
+          minMemory: "1M"
           maxPodCPU: "4"
           maxPodMemory: "8Gi"
           maxPVCStorage: "60Gi"
@@ -526,7 +535,7 @@ data:
           maxCPU: "8"
           maxMemory: "24Gi"
           minCPU: "1m"
-          minMemory: "1Mi"
+          minMemory: "1M"
           maxPodCPU: "8"
           maxPodMemory: "24Gi"
           maxPVCStorage: "160Gi"
@@ -562,7 +571,7 @@ data:
           maxCPU: "16"
           maxMemory: "56Gi"
           minCPU: "1m"
-          minMemory: "1Mi"
+          minMemory: "1M"
           maxPodCPU: "16"
           maxPodMemory: "56Gi"
           maxPVCStorage: "320Gi"

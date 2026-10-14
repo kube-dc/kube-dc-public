@@ -21,7 +21,7 @@ wraps all of it.
 | Create and delete organization namespaces | `namespaces` (create only `<prefix>-*`) |
 | Create, size, suspend, resume and delete organizations | `organizations.kube-dc.com`: `spec.quota` (verb `allocate`), `spec.suspension` (verb `suspend`), `spec.externalCommerce` |
 | Create and delete projects | `projects.kube-dc.com` (network CIDR allocated automatically) |
-| Manage console users | `users.platform.kube-dc.com` |
+| Manage console users | `users.platform.kube-dc.com` (`spec.group`: `org-admin`, `user` or `none`; `spec.projectAccess`: per-project `developer`, `project-manager` or `user`) |
 | One-click console login | `consolelogins.platform.kube-dc.com` (create only; single-use, 30 s) |
 | Usage for invoicing | `organizationusages.platform.kube-dc.com` (current, and reserved capacity integrated over a window) |
 | Read the plan catalog | ConfigMap `billing-plans` in the platform namespace |

@@ -225,6 +225,75 @@ reserved in kube-ovn IPAM. Three rules are load-bearing:
    LoadBalancer IPs in the OUTPUT path, so node-originated probes never
    reach the wire.
 
+## Gateway MTU (oversized packets from outside)
+
+Tenant pods and VMs run a smaller MTU than the external networks (kube-ovn
+derives it from the underlay; 1340 on our Stage). Without a gateway MTU, OVN routes
+a 1500-byte packet from the Internet into the overlay, where it is dropped
+without an ICMP reply, so senders never learn the smaller path MTU. UDP
+datagrams above the overlay limit are lost and TCP depends on the endpoints'
+MSS.
+
+Set `manager.ovnGatewayMTU` to the tenant pod MTU of the installation:
+
+```yaml
+manager:
+  ovnGatewayMTU: "1340"
+```
+
+The manager then sets OVN `options:gateway_mtu` on every Project router's
+gateway ports (re-checked every five minutes, so new Projects follow). OVN
+answers a larger packet entering through the gateway with ICMP "fragmentation
+needed" carrying that MTU. Use exactly the pod MTU: a lower value makes flows
+that work today depend on ICMP. Find it with `ip link show eth0` in any tenant
+pod. Empty (the default) leaves the option unset and removes a value set
+earlier, so ship the cluster's value together with the manager release that
+first carries this setting.
+
+## ARP flooding on the external switches
+
+EIPs, Floating IPs and NAT external IPs belong to the Project routers. The
+upstream gateway finds them by broadcasting ARP on the external VLAN, and OVN
+hands each such request to the router that owns the address. kube-ovn v1.15.28
+to v1.15.30 and v1.16.7 to v1.16.9 ship an OVN patch that, while the OVN option
+`bcast_arp_nd_req_flood` (`bcast_arp_req_flood` in v1.15.28 and v1.16.7) is
+unset, skips that hand-off on every switch with a localnet port. The external
+addresses then stop answering ARP: inbound traffic to EIPs and Floating IPs
+fails, and so does the return traffic for SNAT egress. kube-ovn fixed this
+later (v1.16.10 and later, and the release-1.15 branch after v1.15.30).
+
+The manager keeps both option names at `manager.ovnBcastArpNdReqFlood`:
+
+```yaml
+manager:
+  ovnBcastArpNdReqFlood: "true"   # default
+```
+
+`"true"` restores the behaviour of kube-ovn v1.15.26 and v1.15.27: the router
+that owns the address gets the request, and other broadcast ARP still goes
+to the localnet. kube-ovn
+versions without the patch ignore the option, so leave the default in place
+before, during and after a kube-ovn upgrade. `"false"` sets the upstream
+default explicitly. Use it only on a kube-ovn that carries the fix, and only
+after checking ARP from outside. `""` leaves the option to the operator. A
+manager running on a chart that predates the setting treats it as `"true"`. The
+manager writes the option within a minute of starting and re-checks it every
+five minutes after that.
+
+Check the current value and the flows on a cluster:
+
+```bash
+kubectl -n kube-system exec deploy/ovn-central -c ovn-central -- \
+  ovn-nbctl --no-leader-only --if-exists get nb_global . options:bcast_arp_nd_req_flood
+# With the flooding off, this lists a priority-90 flow ending in "action=(next;)":
+kubectl -n kube-system exec deploy/ovn-central -c ovn-central -- \
+  ovn-sbctl --no-leader-only lflow-list ext-public | grep -E 'priority=90 .*match=\(\(?eth.bcast && arp.op == 1'
+```
+
+After any kube-ovn upgrade, run `arping` from a host on the external VLAN
+against a Floating IP and a LoadBalancer EIP. Tests from inside the cluster do
+not use the gateway's ARP, so they miss this failure.
+
 ## Key points
 
 1. **Single ProviderNetwork**: Use one ProviderNetwork per physical interface with multiple VLANs attached
