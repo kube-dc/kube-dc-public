@@ -16,7 +16,7 @@ virtual-machine, data, and Managed Cluster workloads.
 Use a Project for supported namespaced applications, VMs, databases, storage,
 and platform services. Use a Managed Cluster when software needs CRDs,
 operators, multiple namespaces, cluster-scoped RBAC, admission webhooks,
-StorageClasses, NetworkPolicies, CronJobs, or privileged/host access.
+StorageClasses, NetworkPolicies, or privileged/host access.
 
 ## Resource Scope
 

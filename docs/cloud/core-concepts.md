@@ -157,7 +157,7 @@ A Helm chart is **compatible** when all four of these are true:
 4. It complies with the Project pod-security policy.
 
 Projects do not support charts that create CRDs, cluster-scoped RBAC, admission
-webhooks, StorageClasses, NetworkPolicies, CronJobs, or workloads that need
+webhooks, StorageClasses, NetworkPolicies, or workloads that need
 privileged or host access. Use a Managed Cluster for those. For the full
 boundary, and for how to check a chart before you install it, see
 [Projects](kubernetes-projects.md).

@@ -82,7 +82,6 @@ following:
 - Admission webhooks
 - StorageClasses
 - NetworkPolicies
-- CronJobs, which are readable but not writable in Projects
 - Privileged containers, or workloads that use `hostPath`, `hostNetwork`,
   `hostPID`, or `hostIPC`
 - Additional namespaces
@@ -115,8 +114,9 @@ following table maps the error to its cause:
 | Error refers to | What it means |
 |---|---|
 | CRDs, cluster RBAC, webhooks, StorageClasses | The software needs cluster scope. Use a [Managed Cluster](provisioning-cluster.md). |
-| NetworkPolicies or CronJobs | Not writable in Projects. Turn off the optional component, or use a Managed Cluster. |
+| NetworkPolicies | Not writable in Projects. Turn off the optional component, or use a Managed Cluster. |
 | Privileged or host-access settings | Reconfigure the workload as unprivileged, or use a Managed Cluster. |
+| A platform-managed CronJob | CronJobs the platform keeps in your Project, such as a Managed Cluster's etcd backup, cannot be changed or deleted. Create your own CronJob instead. |
 | A supported namespaced resource | Check your Project role and quota first. This is a permission or limit problem, not the tier boundary. |
 
 For the first three rows, retrying in another Project gives the same result,
@@ -125,7 +125,8 @@ API the Project does not expose, run `kubectl auth can-i`:
 
 ```bash
 kubectl auth can-i create deployments.apps       # yes: supported
-kubectl auth can-i create cronjobs.batch          # no: Project boundary
+kubectl auth can-i create cronjobs.batch          # yes: supported
+kubectl auth can-i create networkpolicies.networking.k8s.io   # no: Project boundary
 kubectl auth can-i create customresourcedefinitions.apiextensions.k8s.io   # no: cluster scope
 ```
 
@@ -137,7 +138,7 @@ Choose a [Managed Cluster](provisioning-cluster.md) when your software:
 - Creates cluster-scoped RBAC or admission webhooks
 - Manages StorageClasses
 - Spans multiple namespaces
-- Needs tenant-authored NetworkPolicies or CronJobs
+- Needs tenant-authored NetworkPolicies
 - Needs privileged containers or host-level access
 
 Kube-DC provisions a Managed Cluster from your Project in minutes, and the

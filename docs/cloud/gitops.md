@@ -156,7 +156,6 @@ Before enabling reconciliation, confirm that the rendered output:
 - targets exactly one Project backing namespace
 - contains no `Namespace`, CRD, ClusterRole, or StorageClass objects
 - does not require `kubectl exec` or `attach`
-- uses Jobs instead of CronJobs in a Project
 - disables chart-managed NetworkPolicies
 - declares realistic CPU, memory, and storage requests
 - keeps Secret values in a secret manager, not Git
