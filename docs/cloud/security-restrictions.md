@@ -21,7 +21,7 @@ To prevent workloads from compromising the shared infrastructure, certain Pod co
 These restrictions protect the shared platform while preserving the common
 workflows a Project is designed for:
 
-- **Deploy containers**: Pods, Deployments, StatefulSets, DaemonSets, Jobs *(CronJobs are read-only in Projects; use a [Managed Cluster](provisioning-cluster.md) for scheduled workloads)*
+- **Deploy containers**: Pods, Deployments, StatefulSets, DaemonSets, Jobs, CronJobs *(platform-managed CronJobs in a Project, such as a Managed Cluster's etcd backup, cannot be changed or deleted)*
 - **Manage storage**: PersistentVolumeClaims (block storage), emptyDir, ConfigMaps, Secrets
 - **Expose services**: LoadBalancer, ClusterIP, Ingress, Gateway API routes
 - **Create virtual machines**: KubeVirt VMs with full lifecycle management (start, stop, restart, migrate, console, VNC)
@@ -43,8 +43,8 @@ alternatives above.
 
 :::info Need cluster-scoped control?
 A Project is backed by one governed namespace on the shared platform. Project
-users cannot create namespaces, CRDs, ClusterRoles, or StorageClasses, and
-CronJobs are read-only. NetworkPolicy is not offered as a Project self-service
+users cannot create namespaces, CRDs, ClusterRoles, or StorageClasses.
+NetworkPolicy is not offered as a Project self-service
 control. Use a [Managed Cluster](provisioning-cluster.md) when an application
 needs its own Kubernetes API, operators, CRDs, multiple namespaces, or
 cluster-scoped administration.

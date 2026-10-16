@@ -46,8 +46,8 @@ A Project provides a focused Kubernetes environment for application teams:
 - An optional Project quota within the Organization's shared plan
 
 Project users cannot create namespaces, CRDs, ClusterRoles, or StorageClasses.
-Container exec and attach are blocked, CronJobs are read-only, and
-NetworkPolicy is not a self-service Project control. These boundaries protect
+Container exec and attach are blocked, and NetworkPolicy is not a
+self-service Project control. These boundaries protect
 the shared platform.
 
 Read [Projects](kubernetes-projects.md) before you adapt a Helm chart or an
