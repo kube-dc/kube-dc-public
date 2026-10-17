@@ -22,6 +22,7 @@ These restrictions protect the shared platform while preserving the common
 workflows a Project is designed for:
 
 - **Deploy containers**: Pods, Deployments, StatefulSets, DaemonSets, Jobs, CronJobs *(platform-managed CronJobs in a Project, such as a Managed Cluster's etcd backup, cannot be changed or deleted)*
+- **Run controllers**: Leases for leader election between replicas (`coordination.k8s.io`), as used by client-go `leaderelection` and most operators
 - **Manage storage**: PersistentVolumeClaims (block storage), emptyDir, ConfigMaps, Secrets
 - **Expose services**: LoadBalancer, ClusterIP, Ingress, Gateway API routes
 - **Create virtual machines**: KubeVirt VMs with full lifecycle management (start, stop, restart, migrate, console, VNC)
