@@ -96,7 +96,7 @@ and members are unavailable during deletion. If the Project has been replaced
 under the same name, refresh its details before confirming again.
 
 For cleanup order and troubleshooting, see
-[Project deletion behavior](../platform/project-resources.md#deletion-behavior).
+[Project deletion behavior](pathname:///platform/project-resources#deletion-behavior).
 
 ## Next steps
 

@@ -115,6 +115,7 @@ const sidebars: SidebarsConfig = {
         {type: 'doc', id: 'managed-services-valkey', label: 'Valkey'},
         {type: 'doc', id: 'managed-services-clickhouse', label: 'ClickHouse'},
         {type: 'doc', id: 'managed-services-kafka', label: 'Kafka'},
+        {type: 'doc', id: 'managed-services-rabbitmq', label: 'RabbitMQ'},
         {type: 'doc', id: 'managed-services-github-runners', label: 'GitHub Actions runners'},
       ],
     },

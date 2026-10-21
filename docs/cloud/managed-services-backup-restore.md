@@ -14,6 +14,7 @@ Check what the service protects before you choose a recovery method:
 | [Valkey](managed-services-valkey.md#backups-and-restore) | RDB snapshots | Restore into another service |
 | [ClickHouse](managed-services-clickhouse.md#backups-and-restore) | Native archives | Restore into another service |
 | [Kafka](managed-services-kafka.md#backups) | Metadata export | Does not back up messages or provide database-style restore |
+| [RabbitMQ](managed-services-rabbitmq.md#back-up-and-restore-definitions) | Supported application definitions; queued messages are excluded | Restore definitions into another service on the same plan, with fresh credentials |
 | [GitHub Actions runners](managed-services-github-runners.md) | No persistent worker workspace backup | GitHub retains workflow history and artifacts |
 
 Scheduled backup settings belong to the family guide and the published plan.

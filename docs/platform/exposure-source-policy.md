@@ -6,8 +6,8 @@ keeps availability flags disabled by default. Published controller artifacts
 and saved CIDRs do not establish installation qualification.
 
 For tenant manifests and list semantics, see
-[Service exposure](../cloud/service-exposure.md#restrict-client-addresses) and
-[Floating IP client restrictions](../cloud/public-floating-ips.md#restrict-floating-ip-clients).
+[Service exposure](pathname:///cloud/service-exposure#restrict-client-addresses) and
+[Floating IP client restrictions](pathname:///cloud/public-floating-ips#restrict-floating-ip-clients).
 
 ## Controls and their scope
 
