@@ -75,7 +75,9 @@ What the settings do:
   object is removed. The engine applies it after the next completed backup, so
   a backup whose record still shows a future `status.recovery.retainUntil` can
   already be gone from the archive. A restore from it passes the request
-  checks but its target never starts, and the operation can stay `Running`.
+  checks but its target fails: the operation ends `Rejected` with reason
+  `AdapterFailed` and a message such as `archive object is unavailable`. The
+  same message can come from a temporary object-store error.
   Remove that target with the cleanup steps in
   [Restore into a new service](#restore-into-a-new-service) (bindings first,
   then `Delete` with the confirmation annotation), then restore from a newer
