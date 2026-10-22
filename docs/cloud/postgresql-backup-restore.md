@@ -72,7 +72,20 @@ What the settings do:
 - **Lowering `retentionDays`** can permanently remove older recovery points.
   Reverting the manifest, for example with a Git rollback, does not bring them
   back. Retention describes a recovery window, not an exact age at which every
-  object is removed.
+  object is removed. The engine applies it after the next completed backup, so
+  a backup whose record still shows a future `status.recovery.retainUntil` can
+  already be gone from the archive. A restore from it passes the request
+  checks but its target never starts, and the operation can stay `Running`.
+  Remove that target with the cleanup steps in
+  [Restore into a new service](#restore-into-a-new-service) (bindings first,
+  then `Delete` with the confirmation annotation), then restore from a newer
+  backup. If the plan does not allow `Delete`, or the operation does not end,
+  ask your provider. Reverting the setting affects only the future: it
+  does not bring back pruned backups or extend any `retainUntil`.
+- **Raising `retentionDays`** applies only to backups recorded after the
+  change. Each backup's `status.recovery.retainUntil` is fixed when the
+  platform first records it, as its completion time plus the retention then in
+  force, and is never moved. Existing backups keep their original deadline.
 - **A backup can take longer** than the interval between scheduled runs.
 
 The service reports the policy in force in `status.engineDetails`:
@@ -266,6 +279,23 @@ Use a full engine release qualified by that plan. A restore does not perform a m
    Replace `<target-plan>`, `<qualified-version>`, and `<data-plane>` with compatible values from your provider.
    Adjust storage and database names for the backup. Omitted capacity fields use target plan defaults.
 
+   Nothing is copied from the source service or its plan, so set these target
+   fields explicitly:
+
+   - `placement.mode`: omitted, it defaults to `TenantCluster`, which a plan
+     offering only `ProviderShared` refuses. Placement cannot be changed later.
+   - `placement.siteSelector`: restate the source's selector if it had one.
+   - `placement.dataPlaneRef`: the plane that holds the backup, from the
+     record's `spec.dataPlane`.
+   - `engineVersion`: a quoted full release such as `"17.11"`. `"17"` is
+     refused, and an unquoted `17.11` is read as a number.
+   - `storage.size`: at least the size the restored data needs. It is not
+     compared with the source.
+
+   The target may use a different plan of the same engine family, for example
+   a single-instance plan for a recovery test, if that plan allows
+   `RestoreToNew`.
+
 3. Validate the request:
 
    ```bash
@@ -288,7 +318,11 @@ Use a full engine release qualified by that plan. A restore does not perform a m
 7. Create a binding with the restored service's own UID.
 8. Verify the recovered data through that binding before you move application traffic.
 
-The source service remains unchanged. The target receives fresh credentials and `deletionPolicy: Retain`.
+The source service remains unchanged. The target receives fresh credentials. Its
+deletion policy is `Retain` when the target plan allows it, otherwise `Delete`
+when the plan allows that; with neither, the operation is refused with
+`PlanNotEntitled`. The operation's `status.result.targetDeletionPolicy` shows
+which was used.
 Recreate required credential policies for the target.
 
 The restore contract uses these fields:
@@ -324,8 +358,9 @@ A refused restore ends with the operation in phase `Rejected`. Read its
 
 Every restored service counts toward its plan's `maxInstancesPerProject`, like
 any other service on that plan. A service that was refused before the platform
-placed it, in phase `Rejected`, does not count. You cannot read the plan, so
-ask your provider for its limit, and count the services in the Project:
+placed it, in phase `Rejected`, does not count. The limit is shown with the plan
+in the managed-service catalog (the console's create form). Count the services
+in the Project:
 
 ```bash
 kubectl get managedservices -n <project>
@@ -338,11 +373,24 @@ placed it. If a restore is refused although you count fewer services than the
 limit, ask your provider.
 
 If you restore regularly, for example to test recovery, delete each restored
-service when you have finished with it. A restored service has
+service when you have finished with it. A restored service usually has
 `deletionPolicy: Retain`, which keeps its engine and volumes in the Project.
-To remove them, set `Delete` and the confirmation annotation before you delete
-the service, as described in
-[Delete a service](postgresql-deletion.md#delete-a-service).
+To remove them, delete the target's bindings and credential policies, set
+`Delete` and the confirmation annotation, and then delete the service, as
+described in [Delete a service](postgresql-deletion.md#delete-a-service).
+A restored service has no deletion protection.
+
+Deleting a service does not delete its backups. Its `ServiceBackup` records and
+its object-store archive remain, including the backups the restored service
+takes itself when backups are enabled on it, starting with an immediate first
+backup. Backup settings are not copied from the source. Restore access to each
+backup ends at its `status.recovery.retainUntil`, which does not delete
+anything; no automatic process removes the archive. Ask your provider whenever
+an archive must be removed.
+
+Before a recovery test, check that the target plan allows the `Delete`
+deletion policy. If it does not, a deleted target leaves resources that only
+your provider can remove.
 
 A target can also fail after it was created. The operation then ends `Rejected`
 and reports the target's own reason:
@@ -546,6 +594,28 @@ The window trails the present:
 
 A target outside every verified window is refused before any database is
 created or replaced. Read the restore operation's `status.reason` and `status.message` for the refusal.
+
+### Test your recovery point objective
+
+To prove that a recent write is recoverable:
+
+1. Insert a marker row in the source and commit it. Take
+   `T = date_trunc('second', clock_timestamp()) + interval '1 second'` from the
+   source server, so `T` is a whole second after the commit.
+2. Pick a `Completed` backup of the source whose `status.backup.completedAt`
+   is before `T`, whose `status.backup.recoveryWindow.earliest` is at or before
+   `T`, and whose `status.recovery.retainUntil` is in the future.
+3. Wait until that backup's `status.backup.recoveryWindow.latest` is at or
+   after `T`. A later `targetTime` is refused, not queued.
+4. Submit a `RestoreToNew` with `targetTime: T`.
+5. Through a binding to the target, check that the marker is present and that
+   rows committed after `T` are absent.
+
+How far `latest` trails the present is the lag of the verified WAL horizon.
+It indicates your recovery point only while the backup's base is still in the
+archive and its restore authority has not expired; only a successful restore
+with verified data proves it. The time from submitting the operation to a
+`Ready` target with verified data is your recovery time.
 
 ## Limits
 
