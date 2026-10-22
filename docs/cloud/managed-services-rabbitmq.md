@@ -16,6 +16,18 @@ supported engine is RabbitMQ 4.3.6; an operator default does not select its vers
 
 ## Create a service
 
+Use `spec.classRef.name: rabbitmq`. The smallest plan is
+`spec.planRef.name: rabbitmq-development`. It defaults to one broker with 500m
+CPU, 1Gi memory and 10Gi storage. You can request 2Gi storage for a smaller
+development instance; 500m CPU and 1Gi memory are the minimum compute allocation.
+
+There are no required service parameters. Omit `spec.parameters` or use `{}` to
+get the application vhost `app`. The only supported parameter is `vhost`:
+
+| Parameter | Required | Default | Accepted value |
+| --- | --- | --- | --- |
+| `vhost` | No | `app` | One to 48 characters matching `^[a-z][a-z0-9_-]{0,47}$`; fixed after creation |
+
 Replace `my-project` with your Project namespace:
 
 ```yaml
@@ -85,10 +97,25 @@ spec:
     secretName: messages-app
 ```
 
-The delivered Secret contains `username`, `password`, `host`, `port`, `vhost`,
-`ca.crt` and `tls=verify-full`. Use AMQPS on port 5671 and verify both the
-certificate authority and reported hostname. The console provides Python and
-Node.js examples that read credentials from the environment and CA from a file.
+The delivered Secret has these keys. Read their decoded values rather than
+deriving a hostname or username from the managed-service name:
+
+| Key | Value |
+| --- | --- |
+| `host` | Private broker Service DNS name |
+| `port` | `5671` |
+| `username` | Username for the selected binding role |
+| `password` | Password for that role |
+| `vhost` | Application vhost; `app` unless set during creation |
+| `ca.crt` | PEM certificate authority bundle for server verification |
+| `tls` | `verify-full` |
+
+There is no `uri` key. Configure your client with the separate fields, or build
+`amqps://USERNAME:PASSWORD@HOST:5671/VHOST`, percent-encoding the username,
+password and vhost components. A URI alone does not configure trust: also load
+`ca.crt` and enable certificate-chain and hostname verification. Plaintext AMQP
+on port 5672 is not offered. The console provides Python and Node.js examples
+that read credentials from the environment and CA from a file.
 
 | Role | Permissions in the application vhost |
 | --- | --- |

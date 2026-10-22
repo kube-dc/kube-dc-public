@@ -142,7 +142,9 @@ an EIP when the Service is deleted.
   its sizing is typed (`spec.compute`, `spec.storage`, `spec.topology`,
   `spec.engineVersion`), never under `spec.parameters`. Workloads get
   credentials from a `ServiceBinding` Secret (`host`, `port`, `username`,
-  `password`, `dbname` or `database`, `uri`, `ca.crt`); every endpoint is
+  `password`, plus family-specific keys; see the service guide for the exact
+  contract). RabbitMQ adds `vhost`, `ca.crt`, and `tls`, without a `uri` key.
+  Every endpoint is
   TLS-only with the platform's own CA. Set `placement.mode: ProviderShared`
   and `connectivity.classRef.name: tenant-native`; tenants cannot list the
   cluster-scoped plans, so use the names the console or the provider gives.
