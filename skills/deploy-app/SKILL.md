@@ -185,10 +185,10 @@ hooks, and cluster-scoped resources before installation.
 ## Shared GPU workloads
 
 When Shared GPU is explicitly requested, read
-[references/shared-gpu.md](references/shared-gpu.md). Use the authenticated
-preview/create API and require confirmation before accepting queued placement.
-Do not add native GPU resources to the generic Deployment or bypass the product
-creation gate with `kubectl apply`.
+[references/shared-gpu.md](references/shared-gpu.md). Apply the fixed-product
+ResourceClaimTemplate and Deployment from that reference, and tell the user
+before applying that the workload can wait `Pending` for a free slice. Do not
+add native GPU resources to the generic Deployment.
 
 ## Verify
 

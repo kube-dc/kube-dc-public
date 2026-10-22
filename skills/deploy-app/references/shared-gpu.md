@@ -1,61 +1,122 @@
 # Shared GPU application workflow
 
 Use this workflow only when the user explicitly requests a Shared GPU workload.
+The full user guide is [Shared GPU workloads](../../../docs/cloud/gpu-shared-workloads.md).
 
 ## Preconditions
 
 1. Keep the generic CPU Deployment path for ordinary apps.
-2. Open the project's **Accelerators** card or call
-   `GET /api/capabilities/{project-backing-namespace}/gpus` with the caller's Kube-DC
-   bearer token.
-3. Continue only when:
-   - `creationEnabled` is `true`;
-   - a Shared GPU profile has `canCreate: true`;
-   - the project has headroom in shares, GPU memory, and GPU compute.
-4. Treat quota as entitlement, not reserved physical capacity. A valid request
-   can queue when every compatible GPU is busy.
+2. Check the project's GPU entitlement. Each Shared GPU product is a quota line:
 
-Do not add native GPU resource names to the generic Deployment and do not apply
-a handcrafted GPU manifest with `kubectl`. That would bypass the independent
-product creation flag and skip the platform preview. Use the gated backend
-workflow below; it builds the policy-valid Deployment and creates it with the
-caller's Kubernetes identity.
+   ```bash
+   kubectl get resourcequota -n {project-backing-namespace} -o yaml | grep deviceclass
+   # kube-dc-nvidia-v100-shared-8g.deviceclass.resource.k8s.io/devices: "1"
+   ```
 
-## Preview, then create
+   The project's **Accelerators** card, or
+   `GET /api/capabilities/{project-backing-namespace}/gpus` with the caller's
+   Kube-DC bearer token, shows the same products with their fixed memory and
+   compute values.
+3. Continue only when the project has a quota line for the requested product
+   with headroom. No quota line means the operator has not enabled Shared GPU
+   for this project: tell the user to ask the operator.
+4. Treat quota as entitlement, not reserved physical capacity. A valid workload
+   can stay `Pending` while every compatible GPU is busy. Tell the user before
+   applying.
 
-Submit this JSON shape to the preview endpoint:
+## Apply
 
-```http
-POST /api/capabilities/{project-backing-namespace}/gpus/shared-workloads/preview
-Authorization: Bearer {kube-dc-jwt}
-Content-Type: application/json
+A Shared GPU workload is two objects: a `ResourceClaimTemplate` for the fixed
+product and a `Deployment` that references it. Use the manifest from the user
+guide unchanged except for `{app-name}`, the namespace and the image. Admission
+policies reject any other change.
+
+```yaml
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: {app-name}-gpu
+  labels: &labels
+    app.kubernetes.io/name: {app-name}
+    app.kubernetes.io/managed-by: kube-dc
+    kube-dc.com/gpu-backend: dra
+    kube-dc.com/gpu-profile: nvidia-v100-hami
+  annotations: &annotations
+    kube-dc.com/gpu-workload-hash: "0000000000000000000000000000000000000000000000000000000000000000"
+    kube-dc.com/gpu-memory-mib: "8192"
+    kube-dc.com/gpu-core-percent: "25"
+spec:
+  metadata:
+    labels: *labels
+    annotations: *annotations
+  spec:
+    devices:
+      requests:
+        - name: gpu
+          exactly:
+            deviceClassName: kube-dc-nvidia-v100-shared-8g
+            allocationMode: ExactCount
+            count: 1
+            capacity:
+              requests:
+                memory: 8192Mi     # fixed by the product
+                cores: "25"        # fixed by the product
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {app-name}
+  labels: &labels
+    app.kubernetes.io/name: {app-name}
+    app.kubernetes.io/managed-by: kube-dc
+    kube-dc.com/gpu-backend: dra
+    kube-dc.com/gpu-profile: nvidia-v100-hami
+  annotations: &annotations
+    kube-dc.com/gpu-workload-hash: "0000000000000000000000000000000000000000000000000000000000000000"
+    kube-dc.com/gpu-memory-mib: "8192"
+    kube-dc.com/gpu-core-percent: "25"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate               # release the slice before reacquiring one
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {app-name}
+  template:
+    metadata:
+      labels: *labels
+      annotations: *annotations
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workload
+          image: "{glibc-cuda-image}@sha256:{64-lowercase-hex}"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            claims:
+              - name: gpu
+      resourceClaims:
+        - name: gpu
+          resourceClaimTemplateName: {app-name}-gpu
 ```
 
-```json
-{
-  "profileId": "nvidia-v100-hami",
-  "name": "{app-name}",
-  "image": "{glibc-cuda-image}@sha256:{64-lowercase-hex}",
-  "replicas": 1,
-  "memoryMiB": 8192,
-  "corePercent": 25,
-  "allowQueue": true
-}
+For another product, take its device class, profile, memory and compute values
+from the capability list; they are fixed per product.
+
+```bash
+kubectl apply -n {project-backing-namespace} -f shared-gpu.yaml
 ```
 
-The preview returns canonical YAML, aggregate quota consumption, warnings, and
-`willQueue`. Show those values to the user. Do not infer memory or compute from
-shares. Require explicit confirmation before queueing.
-
-After confirmation, send the same payload to:
-
-```http
-POST /api/capabilities/{project-backing-namespace}/gpus/shared-workloads
-```
-
-Set `allowQueue: true` only when the user accepted queueing. The backend
-rechecks authorization, catalog health, all quota dimensions, capacity, and the
-creation flag immediately before it creates the Deployment.
+A `ValidatingAdmissionPolicy ... denied` error means the manifest drifted from
+the product: compare it with the contract in the user guide.
 
 ## Guardrails
 
@@ -63,8 +124,8 @@ creation flag immediately before it creates the Deployment.
 - Do not use Alpine/musl, Docker-in-Docker, BuildKit, Kaniko, a custom runtime
   class, host namespaces, hostPath, direct devices, node selection, `envFrom`,
   privileged containers, or `CUDA_DISABLE_CONTROL`.
-- Do not set `schedulerName`; the platform's mutating admission path injects
-  the approved scheduler.
+- Do not set `schedulerName`, `nodeSelector`, `nodeName` or node affinity.
+- Do not add native GPU resource names (`nvidia.com/...`) to a Deployment.
 - Treat compute percentage as a cooperative steady-state target, not a hard
   security or performance boundary.
 - Use a Dedicated GPU VM when the workload needs a whole-device isolation
@@ -72,22 +133,23 @@ creation flag immediately before it creates the Deployment.
 
 ## Verify and release
 
-A workload can legitimately remain Pending when `willQueue` is true. Otherwise:
+A workload can legitimately remain `Pending` while it waits for a free slice.
+Otherwise:
 
 ```bash
 kubectl get deployment,pod -n {project-backing-namespace} -l app.kubernetes.io/name={app-name}
-kubectl describe pod -n {project-backing-namespace} -l app.kubernetes.io/name={app-name}
+kubectl get resourceclaim -n {project-backing-namespace} -l app.kubernetes.io/name={app-name}
+kubectl logs -n {project-backing-namespace} deploy/{app-name}
 ```
 
 Verify the application through its normal CUDA framework. Do not expose or rely
 on GPU UUID, PCI address, or node name.
 
-Release the holder through the gated API so the Deployment is removed rather
-than deleting only its current Pod:
+Release the slice by deleting both objects, not only the Pod (the Deployment
+would recreate it and keep the slice):
 
-```http
-DELETE /api/capabilities/{project-backing-namespace}/gpus/shared-workloads/{app-name}
-Authorization: Bearer {kube-dc-jwt}
+```bash
+kubectl delete -n {project-backing-namespace} -f shared-gpu.yaml
 ```
 
-Wait for all three quota dimensions to return to their expected values.
+Then check that the product's quota line returned to its previous value.
