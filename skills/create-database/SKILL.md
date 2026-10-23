@@ -8,17 +8,100 @@ description: Create a managed database (PostgreSQL, MySQL, MariaDB, ClickHouse) 
 - The target Project exists and is Ready.
 - Know its backing namespace: `{organization}-{project}`.
 - Check storage, CPU, memory and pod quota with the `check-quota` skill.
-- Know the plan names of the installation. Tenants cannot list the
-  cluster-scoped catalog; standard installations publish
-  `{family}-development` and `{family}-production`, and the console's
-  "or get the YAML for GitOps" link shows the exact names it uses. When the
-  user does not know, ask before applying.
+- Know which plan to use. Discover it from the Project's ServiceOfferings
+  when the installation serves them (step 1); otherwise use the names below.
 
-## 1. Choose the Engine and Plan
+## 1. Discover the Plan
+
+Tenants cannot read the cluster-scoped `ManagedServicePlan` objects. Where the
+provider has enabled offerings, each plan the Project may use has a read-only
+`ServiceOffering` copy (short name `so`) in the backing namespace. Check
+whether the API is served, then list:
+
+```bash
+kubectl api-resources --api-group=services.kube-dc.com | grep -i serviceofferings
+kubectl get serviceofferings -n {backing-namespace}
+```
+
+The offering name is the plan name (`spec.planRef.name`); everything is in
+`status`. Use an offering only when it is **usable**:
+
+- `status.projectionFormat` is `1` (the only format this skill knows);
+- its `Ready` condition is `True`;
+- the required fields for the next action are present: `class.family` and
+  `class.name` to select the engine, `defaults` and `constraints` for sizing,
+  `placementModes`, `connectivityClasses` and `deletionPolicies` for those
+  choices, `createExample` for a manifest.
+
+An offering without status, with another format, without `Ready=True`, or
+missing a required field is not usable: skip it and treat what it says as
+unknown.
+
+```bash
+kubectl get serviceofferings -n {backing-namespace} -o custom-columns='PLAN:.metadata.name,FORMAT:.status.projectionFormat,READY:.status.conditions[?(@.type=="Ready")].status,FAMILY:.status.class.family,CLASS:.status.class.name,PLACEMENT:.status.placementModes,CONNECTIVITY:.status.connectivityClasses,HA:.status.capabilities.ha,PER_PROJECT:.status.limits.servicesPerProject'
+kubectl get serviceoffering {plan} -n {backing-namespace} -o jsonpath='{.status.defaults}{"\n"}{.status.constraints}{"\n"}'
+kubectl get serviceoffering {plan} -n {backing-namespace} -o jsonpath='{.status.createExample}' > service.yaml
+test -s service.yaml || echo "createExample missing: do not use this offering"
+```
+
+Match the user's engine against `class.family` (for example `postgresql`),
+then use that offering's `class.name` in `spec.classRef.name`; the two can
+differ. Pick a usable offering whose `placementModes` and
+`connectivityClasses` include what the user needs. Default to
+`ProviderShared` and `tenant-native` when the offering lists them; otherwise
+use only values the offering lists.
+
+Read a usable offering by its contract:
+
+- `defaults` and `constraints` give per-instance CPU, memory and storage and
+  the topology range (`instances`, or `shards` + `replicasPerShard`, or
+  `dataReplicas`). Equal `min` and `max` mean fixed. Only the per-instance
+  CPU, memory and storage ranges may omit `min` or `max`; an absent end there
+  means the plan sets no bound at that end (storage often has only `max`).
+  Topology ranges and `backup.retentionDays` always carry both `min` and
+  `max` when present; if one is missing, do not use the offering for that
+  step. An absent default storage means the plan has no persistent storage.
+  Stay inside the bounds that are present; the service validator still checks
+  at creation.
+- `placementModes`, `connectivityClasses` and `deletionPolicies` are the only
+  values the plan accepts. Choose `deletionPolicy` from `deletionPolicies`.
+- `operations[].requiresApproval` previews which operations a new service
+  on this plan may request and which wait for the provider; `backup` gives the
+  retention range and schedule (absent means the plan takes no backups).
+- `limits.servicesPerProject` caps services on this plan per Project. Absent
+  `limits` means no per-Project limit beyond quota. Quota is a separate check
+  (`check-quota`).
+- `createExample` uses the defaults, the first placement mode and the first
+  connectivity class. Rename `metadata.name` from `example` and add the
+  family's `parameters`. If it says `TenantCluster`, either name the cluster
+  in `placement.clusterRef` or, when `placementModes` also lists
+  `ProviderShared`, switch to that for an in-Project service.
+- An offering shows the plan's last projected revision
+  (`plan.lastProjectedRevision`). A service that names the plan resolves it
+  again when it is accepted, so the accepted revision can be newer. The
+  offering is not a reservation and says nothing about existing services.
+
+A plan missing from the usable offerings means discovery cannot confirm it is
+available; it does not prove the plan is denied (projection can lag). Do not
+guess another name. Confirm with the user or provider, or let the server dry
+run and the service's `Accepted` condition decide.
+
+If the resource is not served, the read fails or is `Forbidden`, or no
+offering is usable for the request, fall back: get the plan name **and** its
+supported placement and connectivity from the console (its "or get the YAML
+for GitOps" link shows the exact values), the installation's documentation or
+the provider, or ask the user. Standard installations publish
+`{family}-development` and `{family}-production` with `ProviderShared` and
+`tenant-native`; use those only when the installation confirms them. Do not
+guess names, placement, connectivity, sizes, HA or backup retention. Never
+export offerings into Git; GitOps manages the `ManagedService`.
+
+## 2. Choose the Engine and Plan
 
 These examples cover selected catalog families. Other integrations can use the
-same managed service model. Check the installation's catalog and plan before
-you use a family or operation.
+same managed service model. Usable offerings describe the plans and settings
+last projected for the Project; the table shows the standard names and their
+usual shape only.
 
 | Need | Class | Standard plans | Notes |
 |---|---|---|---|
@@ -28,12 +111,18 @@ you use a family or operation.
 | Analytics SQL | `clickhouse` | `clickhouse-development`, `clickhouse-production` | Sized by shards × replicas, fixed at creation |
 | Cache, sessions, queues | `valkey` (one node), `valkey-ha` (Sentinel) | `valkey-development`, `valkey-production` | Data you can rebuild |
 
-Start with the Development plan unless the user asks for failover or backups
-with 14-day retention.
+Use the plan names the usable offerings list. Without offerings, use the
+installation's confirmed names, placement and connectivity. Choose any
+confirmed plan that satisfies the requested capabilities, sizing, engine
+version, placement and connectivity; prefer a development-style plan when it
+meets the request. Confirm HA (`capabilities.ha`), retention
+(`backup.retentionDays`), sizing and engine version from the offering or from
+the provider; do not assume them from the plan name.
 
-## 2. Create the Service
+## 3. Create the Service
 
-Use the template for the engine: [postgresql-template.yaml](postgresql-template.yaml),
+Start from the edited `createExample` when step 1 produced one; otherwise use
+the template for the engine: [postgresql-template.yaml](postgresql-template.yaml),
 [mysql-mariadb-template.yaml](mysql-mariadb-template.yaml),
 [clickhouse-template.yaml](clickhouse-template.yaml) or
 [valkey-template.yaml](valkey-template.yaml). The PostgreSQL shape:
@@ -50,10 +139,10 @@ spec:
   planRef:
     name: postgresql-development
   placement:
-    mode: ProviderShared          # always; the API default is refused by the plans
+    mode: ProviderShared          # set explicitly; a value the offering or the provider confirms
   connectivity:
     classRef:
-      name: tenant-native
+      name: tenant-native         # a value the offering or the provider confirms
   topology:
     instances: 1                  # within the plan's bounds
   compute:
@@ -67,7 +156,7 @@ spec:
     readonlyRole: true
     backup:
       enabled: true
-  deletionPolicy: Retain
+  deletionPolicy: Retain          # must be one of the offering's deletionPolicies
   deletionProtection: true
 ```
 
@@ -98,7 +187,7 @@ kubectl get managedservice {service-name} -n {backing-namespace} -o jsonpath='{.
 `Accepted=False` with a reason (`PlanNotEntitled`, `ParameterSchemaRejected`,
 `PlanQuotaExceeded`); fix the manifest rather than retrying.
 
-## 3. Deliver a Credential to the Application
+## 4. Deliver a Credential to the Application
 
 Create a `ServiceBinding` from [binding-template.yaml](binding-template.yaml)
 with the service UID. The platform delivers a Secret; nothing is copied into
@@ -142,7 +231,7 @@ as `existingSecretPasswordKey`; otherwise create a small bridge Secret from
 the binding Secret and recreate it after every rotation unless automation
 keeps it synchronized.
 
-## 4. Do Not Expose Externally by Default
+## 5. Do Not Expose Externally by Default
 
 Services are reachable inside the Project through `tenant-native`. PostgreSQL
 can be exposed through the direct-TLS Gateway (`parameters.expose.type:
@@ -150,7 +239,7 @@ gateway`, plan entitlement, PostgreSQL 17+ clients) or a public LoadBalancer
 (`loadbalancer`, plan entitlement plus IPv4 quota). The other families have no
 external exposure. Do not build host names; use the binding Secret's `host`.
 
-## 5. Back Up and Restore
+## 6. Back Up and Restore
 
 Scheduled backups run when the plan enables them (daily on the standard
 plans). An on-demand backup is a `ServiceOperation` of type `Backup`; history

@@ -31,6 +31,7 @@ StorageClasses, NetworkPolicies, or privileged/host access.
 | `ServiceBinding` | `services.kube-dc.com/v1alpha1` | Project backing namespace; delivers one credential role of a service as a Secret |
 | `ServiceOperation` | `services.kube-dc.com/v1alpha1` | Project backing namespace; one immutable day-2 action (backup, scale, rotate, upgrade) |
 | `ServiceCredentialPolicy` | `services.kube-dc.com/v1alpha1` | Project backing namespace; scheduled credential rotation |
+| `ServiceOffering` | `services.kube-dc.com/v1alpha1` | Project backing namespace; read-only copy of one plan offered to the Project (defaults, limits, `createExample`); only where the provider enables offerings |
 | `ManagedSecret` | `security.kube-dc.com/v1alpha1` | Project backing namespace; OpenBao-backed secret intent |
 | `ManagedCertificate` | `security.kube-dc.com/v1alpha1` | Project backing namespace; managed X.509 certificate |
 | `KMSKey` | `security.kube-dc.com/v1alpha1` | Project backing namespace; OpenBao Transit key |
@@ -145,9 +146,26 @@ an EIP when the Service is deleted.
   `password`, plus family-specific keys; see the service guide for the exact
   contract). RabbitMQ adds `vhost`, `ca.crt`, and `tls`, without a `uri` key.
   Every endpoint is
-  TLS-only with the platform's own CA. Set `placement.mode: ProviderShared`
-  and `connectivity.classRef.name: tenant-native`; tenants cannot list the
-  cluster-scoped plans, so use the names the console or the provider gives.
+  TLS-only with the platform's own CA. Tenants cannot list the cluster-scoped
+  plans. Where `kubectl get serviceofferings -n {backing-namespace}` is served,
+  use only usable offerings: `status.projectionFormat` is `1`, the `Ready`
+  condition is `True`, and the required fields for the action (`class.family`,
+  `class.name`, `defaults`, `placementModes`, `connectivityClasses`,
+  `deletionPolicies`, `createExample`) are present. Match the user's engine to
+  `class.family` and put the offering's `class.name` in `spec.classRef.name`.
+  Pick an offering whose `placementModes` and `connectivityClasses` include
+  what the user needs (`ProviderShared` and `tenant-native` by default when
+  offered) and use only its listed values. On a usable offering, absent
+  `limits` means no per-Project limit beyond quota, and an absent `min` or
+  `max` in a per-instance CPU, memory or storage range means the plan sets no
+  bound there. Topology and backup-retention ranges always carry both ends; if
+  one is missing, do not use the offering for that step. Quota and the service
+  validator still decide at creation. Without a usable offering, get the plan name and
+  its supported placement and connectivity from the console, the installation's
+  documentation or the provider, or ask the user; use `ProviderShared` and
+  `tenant-native` only when support for them is confirmed, and never guess.
+  Offerings show the plan's last projected revision for new services, not
+  existing services, remaining quota or prices.
 - The catalog can grow beyond databases, caches, and messaging. Use only the
   classes, plans, and operations that the installation offers. For recovery,
   use `RestoreToNew` with a typed `spec.restore` request; the platform generates

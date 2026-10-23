@@ -81,6 +81,26 @@ environment variables (`kubectl rollout restart deployment/{name}`). Workloads
 that mount the Secret as a file and reread it need no restart. The plan may
 require provider approval (`AwaitingApproval`); tenants cannot approve.
 
+The operation's own result decides for an existing service: phase
+`AwaitingApproval` (reason `ApprovalRequired`) means it waits for the
+provider, and phase `Rejected` with reason `PlanNotEntitled` means the
+service's plan does not allow it. A `ServiceOffering`, where the installation
+serves one, is only an advisory preview for new services: it shows the plan's
+last projected revision (`plan.lastProjectedRevision`), while an existing
+service can be pinned to an earlier one.
+If you read it, only a usable offering (`status.projectionFormat` `1`,
+`Ready=True`) that lists a `RotateCredentials` entry tells you anything: its
+`requiresApproval` suggests whether to expect a wait. A missing entry, a
+failed read, or an unusable offering proves nothing; submit the operation and
+read its phase.
+
+```bash
+kubectl get serviceoffering {plan} -n {backing-namespace} \
+  -o jsonpath='{.status.projectionFormat} {.status.conditions[?(@.type=="Ready")].status}{"\n"}{range .status.operations[*]}{.type}={.requiresApproval}{"\n"}{end}'
+kubectl get serviceoperation {operation-name} -n {backing-namespace} \
+  -o jsonpath='{.status.phase} {.status.reason} {.status.message}{"\n"}'
+```
+
 ## 3. Rotate on a schedule
 
 [rotation-policy-template.yaml](rotation-policy-template.yaml):

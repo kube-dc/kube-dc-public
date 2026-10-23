@@ -95,6 +95,41 @@ Leave operational headroom for rollouts, node maintenance, database failover,
 and autoscaling. A workload at exactly the hard limit can fail when Kubernetes
 temporarily creates a replacement Pod.
 
+### Managed services and plan offerings
+
+Where the installation serves `ServiceOffering` objects
+(`kubectl api-resources --api-group=services.kube-dc.com | grep -i serviceofferings`),
+each usable offering (`status.projectionFormat` `1`, `Ready=True`) shows a
+plan's own defaults and limits for new services. It does not show the
+Organization's or Project's remaining quota, and it reserves nothing. Combine
+the two before creating a service:
+
+```bash
+kubectl -n {project-backing-namespace} get serviceoffering {plan} \
+  -o jsonpath='{.status.projectionFormat} {.status.conditions[?(@.type=="Ready")].status}{"\n"}{.status.defaults}{"\n"}{.status.limits.servicesPerProject}{"\n"}'
+kubectl -n {project-backing-namespace} get managedservice \
+  -o custom-columns='NAME:.metadata.name,PLAN:.spec.planRef.name'
+```
+
+1. Request = per-instance CPU, memory and storage (the chosen values, or
+   `status.defaults.perInstance`) multiplied by the member count (`instances`,
+   `shards` x `replicasPerShard`, or `dataReplicas`). No default storage on a
+   usable offering means the plan has no persistent storage. On an offering
+   that is not usable, get the sizes from the provider. Add headroom for
+   backup Jobs, poolers and operations.
+2. Compare the request with the remaining headroom of both the Organization and
+   the Project (steps 2 and 3); the smaller one decides.
+3. Count existing services on the same plan against
+   `limits.servicesPerProject`. Over it, creation is refused with
+   `PlanQuotaExceeded`. On a usable offering, absent `limits` means no
+   per-Project limit beyond quota; quota (steps 2 to 4) is still checked. On an
+   offering that is not usable, the per-Project count is unknown.
+
+Offerings work the same for pay-as-you-go, fixed-plan and plan-less
+Organizations and carry no prices. In every mode, check the quota that is
+actually enforced (steps 2 to 4). Without offerings, read the plan's sizing
+from the console or ask the provider.
+
 ## 6. Check the external address pool
 
 Public IPv4 quota does not guarantee physical address availability. An authorized

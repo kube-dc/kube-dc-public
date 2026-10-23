@@ -16,6 +16,7 @@ Master catalog for AI agents. Read this first, then dive into specific files as 
 | `ServiceBinding` | `services.kube-dc.com` | `v1alpha1` | | Credential role delivered as a Secret |
 | `ServiceOperation` | `services.kube-dc.com` | `v1alpha1` | | One day-2 action on a service |
 | `ServiceCredentialPolicy` | `services.kube-dc.com` | `v1alpha1` | | Scheduled credential rotation |
+| `ServiceOffering` | `services.kube-dc.com` | `v1alpha1` | `so` | Read-only copy of a plan offered to the Project: defaults, limits, `createExample` (where enabled) |
 | `ManagedSecret` | `security.kube-dc.com` | `v1alpha1` | — | Project secret backed by OpenBao, optionally projected into a K8s Secret via ESO |
 | `ManagedCertificate` | `security.kube-dc.com` | `v1alpha1` | `mcert` | x509 cert from Org private CA or public ACME, auto-renewed |
 | `KMSKey` | `security.kube-dc.com` | `v1alpha1` | — | Per-project encryption key backed by OpenBao Transit |
@@ -55,7 +56,7 @@ Skills location: `skills/{skill-name}/SKILL.md`
 | File | Topic | Size |
 |------|-------|------|
 | `service-exposure.md` | Gateway routes, EIP, FIP, all exposure patterns | ~700 lines |
-| `managed-services.md` and the Managed Services chapter | Catalog, plans, console, operations, bindings, backups, recovery, family guides, status, and deletion | Varies by guide |
+| `managed-services.md` and the Managed Services chapter | Catalog, plans, plan offerings (`service-offerings.md`), console, operations, bindings, backups, recovery, family guides, status, and deletion | Varies by guide |
 | `creating-vm.md` | VM deployment, SSH access, cloud-init | ~210 lines |
 | `cluster-management.md` | K8s cluster scaling, upgrading, storage, troubleshooting | ~390 lines |
 | `provisioning-cluster.md` | Creating managed K8s clusters, including etcd-at-rest encryption + KEK rotation toggles | ~300 lines |
