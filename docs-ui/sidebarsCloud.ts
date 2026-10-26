@@ -87,6 +87,7 @@ const sidebars: SidebarsConfig = {
           collapsed: true,
           items: [
             {type: 'doc', id: 'managed-services-plans', label: 'Choose a class and plan'},
+            {type: 'doc', id: 'service-offerings', label: 'List available plans'},
             {type: 'doc', id: 'managed-services-console', label: 'Use the console'},
             {type: 'doc', id: 'managed-services-connect', label: 'Connect applications'},
             {type: 'doc', id: 'managed-services-credentials', label: 'Rotate credentials'},

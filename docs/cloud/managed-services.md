@@ -20,6 +20,7 @@ Use a service's guide for its parameters, supported operations, clients, and rec
 | Task | Start here |
 |---|---|
 | Choose capacity and availability | [Classes and plans](managed-services-plans.md) |
+| List the plans your Project may use | [List available plans](service-offerings.md) |
 | Create or manage a service through the browser | [Use the console](managed-services-console.md) |
 | Deliver credentials to an application | [Connect applications](managed-services-connect.md) |
 | Change passwords manually or on a schedule | [Rotate credentials](managed-services-credentials.md) |
@@ -58,12 +59,15 @@ These resources have the same purpose across service families:
 | `ServiceOperation` | Project | Records one immutable action and its result |
 | `ServiceCredentialPolicy` | Project | Sets a credential rotation schedule |
 | `ServiceBackup` | Project | Records backup history and available recovery information |
+| `ServiceOffering` | Project | Read-only copy of one plan offered to the Project, with its defaults, limits and an example manifest |
 | `ManagedServiceClass` | Cluster | Defines a service family, parameters, endpoints, credential roles, and operations |
 | `ManagedServicePlan` | Cluster | Defines versions, capacity limits, allowed operations, and provider policy |
 | `ConnectivityClass` | Cluster | Defines how applications reach a service |
 
 Project roles cannot read the cluster catalog directly.
-The console shows the published catalog through a filtered API response. Ask your provider for catalog names when you write manifests.
+The console shows the published catalog through a filtered API response.
+Where your provider has enabled service offerings, `kubectl get serviceofferings -n <project>` lists the plans offered to the Project; see [List available plans](service-offerings.md).
+Otherwise, ask your provider for catalog names when you write manifests.
 
 For a service that publishes application credentials, follow these steps:
 
@@ -130,6 +134,7 @@ Standard Project roles grant the following access:
 | Change an existing rotation policy | Yes | Yes | Yes | No |
 | Read delivered credential Secrets | Yes | Yes | Yes | No |
 | Approve operations or write resource status | No | No | No | No |
+| Read the service offerings in the Project | Yes | Yes | Yes | Yes |
 | Read cluster catalog resources directly | No | No | No | No |
 
 See [User and group management](team-management.md) for role assignment.
@@ -164,6 +169,7 @@ Use these guides for your next task:
 
 - [Use the console](managed-services-console.md).
 - [Select a class and plan](managed-services-plans.md).
+- [List the plans available to your Project](service-offerings.md).
 - [Run a managed service operation](managed-services-operations.md).
 - [Connect an application](managed-services-connect.md).
 - [Protect and recover data](backups-snapshots.md).

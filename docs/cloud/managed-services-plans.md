@@ -38,18 +38,24 @@ The console's creation sheet lists the published plans of a class under
 **Advanced · pick a published plan**, and its **or get the YAML for GitOps**
 link shows the names it selected.
 
-:::info You cannot list the catalog
+:::info List the plans offered to your Project
 Classes, plans and connectivity classes are cluster-scoped, and no Project role
 grants access to them. `kubectl get managedserviceplans` is refused for tenant
-identities. Ask your provider for the names to use. Plan names and plan
-contents can differ between Kube-DC installations.
+identities. Where your provider has enabled service offerings, list the plans
+offered to your Project, with their defaults and limits, with
+`kubectl get serviceofferings -n <project>`; see
+[List available plans](service-offerings.md). Otherwise, ask your provider for
+the names to use. Plan names and plan contents can differ between Kube-DC
+installations.
 :::
 
 ## What a plan decides
 
 A plan is revisioned, and its values differ between installations. The following tables list the plan fields that decide what your service may do. Where a
 feature depends on a field, your plan must allow it before you can use it. Ask
-your provider for the current values of your plan.
+your provider for the current values of your plan, or read the plan's
+[service offering](service-offerings.md#read-an-offering), which shows many of
+these values.
 
 ### Engine version
 
@@ -66,7 +72,7 @@ your provider for the current values of your plan.
 | `topology.defaultInstances` | The instance count when you omit `spec.topology.instances` |
 | `topology.minShards`, `topology.maxShards`, `topology.defaultShards`, `topology.minReplicasPerShard`, `topology.maxReplicasPerShard`, `topology.defaultReplicasPerShard` | The shard shape of a sharded family (ClickHouse), used with `spec.topology.shards` and `spec.topology.replicasPerShard` instead of `instances`. A plan declares exactly one of the two shapes |
 | `topology.ha` | Declares a high-availability topology. The family defines member, quorum, and failover requirements |
-| `maxInstancesPerProject` | How many services on this plan one Project may have. `0` means no limit |
+| `maxInstancesPerProject` | How many services on this plan one Project may have. `0` means no limit. A service offering shows it as `limits.servicesPerProject` |
 
 ### Storage
 
