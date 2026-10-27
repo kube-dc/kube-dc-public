@@ -68,7 +68,8 @@ Skills location: `skills/{skill-name}/SKILL.md`
 | `core-concepts.md` | Org → Project → Resources hierarchy | ~100 lines |
 | `cli-kubeconfig.md` | CLI install, kubeconfig setup, IDE integration | ~200 lines |
 | `ai-ide-integration.md` | MCP server setup for Claude/Cursor/Windsurf | ~330 lines |
-| `deploy-first-app.md` | WordPress tutorial with Helm + HTTPS | ~200 lines |
+| `deploy-first-app.md` | First app: Deployment + ClusterIP Service with an HTTP route | ~150 lines |
+| `deploy-wordpress-stack.md` | WordPress with managed MariaDB, replicated volume, S3, HTTPS route (ClusterIP, no EIP), WP-CLI Job | ~460 lines |
 | `secrets-manager.md` | ManagedSecret CRD, sync to K8s Secret, KMS comparison | ~200 lines |
 | `kms.md` | KMSKey CRD, direct encrypt/decrypt, envelope encryption with Go + Python helpers, rotation, min_decryption_version | ~350 lines |
 | `certificate-manager.md` | ManagedCertificate CRD, private CA vs ACME public, mTLS / code-signing | ~250 lines |
@@ -104,11 +105,11 @@ Skills location: `skills/{skill-name}/SKILL.md`
 |--------|---------|---------|
 | Org namespace | `{org}` | `shalb` |
 | Project namespace | `{org}-{project}` | `shalb-docs` |
-| Auto hostname | `{svc}-{ns}.kube-dc.cloud` | `nginx-shalb-docs.kube-dc.cloud` |
+| Auto hostname | `{svc}-{ns}.{installation-domain}`; read it from the Service's `route-hostname-status` annotation | `nginx-shalb-docs.kube-dc.cloud` |
 | Managed service endpoint | Read `host` and `port` from the binding Secret | Do not infer an engine Service name |
 | Managed service Secret | `ServiceBinding.spec.delivery.secretName` | Keys depend on the family; see `create-database` |
 | SSH keypair | `ssh-keypair-default` | per project |
-| Cluster kubeconfig | `{cluster}-cp-admin-kubeconfig` | data key: `admin.conf` (external URL) |
+| Cluster kubeconfig | `{cluster}-cp-admin-kubeconfig-external` | data key: `admin.conf` (external URL) |
 | VM network | `{ns}/default` | `shalb-docs/default` |
 | S3 bucket | `{ns}-{name}` | `shalb-docs-my-bucket` |
 

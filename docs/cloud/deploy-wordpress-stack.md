@@ -224,8 +224,9 @@ spec:
         persistentVolumeClaim:
           claimName: wordpress-content
 ---
-# This annotation asks the platform to create the HTTPS listener, certificate,
-# and route.
+# These annotations ask the platform to create the HTTPS listener, certificate,
+# route and an HTTP-to-HTTPS redirect. A ClusterIP Service allocates no
+# external IP; the shared Gateway serves the hostname.
 apiVersion: v1
 kind: Service
 metadata:
@@ -233,8 +234,9 @@ metadata:
   namespace: acme-production
   annotations:
     service.nlb.kube-dc.com/expose-route: https
+    service.nlb.kube-dc.com/https-redirect: "true"
 spec:
-  type: LoadBalancer        # expose-route is processed on LoadBalancer Services
+  type: ClusterIP
   selector:
     app: wordpress
   ports:
@@ -452,7 +454,7 @@ kubectl delete obc/wordpress-files
 
 | Symptom | Cause |
 |---|---|
-| No hostname/certificate appears | The Service must be `type: LoadBalancer` for `expose-route` to be processed |
+| No hostname/certificate appears | Check `kubectl get certificate,challenge -n acme-production` and the Service events (`GatewayHostnameConflict`, listener capacity). A `ClusterIP` Service is enough; `LoadBalancer` only adds a dedicated EIP |
 | Second replica `Pending` | podAffinity needs capacity on the volume's node. Free capacity, or lower the requests |
 | `wordpress-db-password` missing | The service or its binding is not Ready yet. Run `kubectl get managedservice,servicebinding -n acme-production` |
 | S3 upload times out | Use the public S3 endpoint, not the in-cluster `BUCKET_HOST` |

@@ -64,7 +64,7 @@ spec:
             cpu: 50m
             memory: 64Mi
 ---
-# LoadBalancer Service with user-provided TLS secret
+# ClusterIP Service with user-provided TLS secret
 apiVersion: v1
 kind: Service
 metadata:
@@ -80,7 +80,7 @@ metadata:
     # Required: Specify your custom hostname (must match certificate)
     service.nlb.kube-dc.com/route-hostname: "my-app.example.com"
 spec:
-  type: LoadBalancer
+  type: ClusterIP   # route only: the shared Gateway publishes it, no EIP
   selector:
     app: my-custom-cert-app
   ports:

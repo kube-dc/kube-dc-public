@@ -3,7 +3,6 @@
 #
 # This example uses automatic route creation via service annotations.
 # The controller will automatically create:
-# - EIP (external IP allocation)
 # - Backend (for Gateway routing)
 # - HTTPRoute (with auto-generated hostname)
 #
@@ -50,8 +49,8 @@ spec:
             cpu: 50m
             memory: 64Mi
 ---
-# LoadBalancer Service with automatic route exposure
-# The controller will auto-create: EIP, Backend, and HTTPRoute
+# ClusterIP Service with automatic route exposure
+# The controller will auto-create (no EIP): Backend, and HTTPRoute
 apiVersion: v1
 kind: Service
 metadata:
@@ -67,7 +66,7 @@ metadata:
     # Optional: Specific port for multi-port services
     # service.nlb.kube-dc.com/route-port: "80"
 spec:
-  type: LoadBalancer
+  type: ClusterIP   # route only: the shared Gateway publishes it, no EIP
   selector:
     app: my-app
   ports:

@@ -37,9 +37,9 @@ also released. Budget any new Project router address separately.
 | Need | Use |
 |---|---|
 | HTTP/HTTPS hostname | Gateway route via the `expose-service` skill |
-| Selected TCP/UDP ports | EIP-backed LoadBalancer |
+| Selected TCP/UDP ports | LoadBalancer on the Project gateway address (`bind-on-default-gw-eip`); a dedicated EIP only on request |
 | Direct access to one VM interface | FIP with `vmTarget` |
-| Managed database workstation access | `spec.expose.type: loadbalancer` |
+| Managed PostgreSQL workstation access | `spec.parameters.expose.type: loadbalancer` (PostgreSQL only; plan entitlement plus IPv4 quota) |
 | Whole Project reaches approved corporate prefixes | Routed Network attachment |
 
 ## Create an EIP

@@ -122,7 +122,7 @@ kubectl get virtualmachine {vm} \
 kubectl get virtualmachineinstance {vm} \
   -o jsonpath='{.status.conditions[?(@.type=="AgentConnected")].status}{"\n"}'
 kubectl get virtualmachineinstance {vm} \
-  -o jsonpath='{.status.interfaces[?(@.name=="default")].ipAddress}{"\n"}'
+  -o jsonpath='{.status.interfaces[0].ipAddress}{"\n"}'
 ```
 
 Expected signals are DataVolume `Succeeded`, VM `Running`, guest agent

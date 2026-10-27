@@ -8,4 +8,5 @@ spec:
   externalNetworkType: public
   vmTarget:
     vmName: "{vm-name}"
-    interfaceName: default
+    # interfaceName: omit for the VM's first interface ("default" in the
+    # create-vm template, "vpc_net_0" for console-created VMs)

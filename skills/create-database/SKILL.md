@@ -114,8 +114,10 @@ usual shape only.
 Use the plan names the usable offerings list. Without offerings, use the
 installation's confirmed names, placement and connectivity. Choose any
 confirmed plan that satisfies the requested capabilities, sizing, engine
-version, placement and connectivity; prefer a development-style plan when it
-meets the request. Confirm HA (`capabilities.ha`), retention
+version, placement and connectivity. Use `{family}-development` (one
+instance) unless the user asks for production or high availability; then use
+`{family}-production` (three instances, which triples the quota draw). Tell
+the user which plan you chose. Confirm HA (`capabilities.ha`), retention
 (`backup.retentionDays`), sizing and engine version from the offering or from
 the provider; do not assume them from the plan name.
 
@@ -229,7 +231,8 @@ verify the server (PostgreSQL `PGSSLROOTCERT` + `sslmode=verify-full`, MySQL
 Some Helm charts expect a different password key. Prefer a chart setting such
 as `existingSecretPasswordKey`; otherwise create a small bridge Secret from
 the binding Secret and recreate it after every rotation unless automation
-keeps it synchronized.
+keeps it synchronized. Creating Secrets needs the Project `admin` role; the
+`developer` role cannot.
 
 ## 5. Do Not Expose Externally by Default
 

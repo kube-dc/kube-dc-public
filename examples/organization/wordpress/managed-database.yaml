@@ -1,0 +1,39 @@
+# Managed MariaDB for WordPress, and a ServiceBinding that delivers its owner
+# credential to the Secret wp-db (host, port, database, username, password…).
+# Replace PROJECT_NAMESPACE with {org}-{project}, e.g. shalb-docs.
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ManagedService
+metadata:
+  name: wp-db                   # not "wp-wordpress": the platform creates Services named after it
+  namespace: PROJECT_NAMESPACE
+spec:
+  classRef:
+    name: mariadb
+  planRef:
+    name: mariadb-development   # one server; mariadb-production for a 3-node Galera cluster
+  placement:
+    mode: ProviderShared
+  connectivity:
+    classRef:
+      name: tenant-native
+  storage:
+    size: 10Gi
+  parameters:
+    database: wordpress
+  deletionPolicy: Retain
+---
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ServiceBinding
+metadata:
+  name: wp-db
+  namespace: PROJECT_NAMESPACE
+spec:
+  serviceRef:
+    name: wp-db
+  role: owner
+  consumer:
+    kind: ServiceAccount
+    name: default
+    namespace: PROJECT_NAMESPACE
+  delivery:
+    secretName: wp-db

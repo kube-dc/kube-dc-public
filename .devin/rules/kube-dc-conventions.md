@@ -4,40 +4,42 @@ trigger: always_on
 
 # Kube-DC Conventions
 
-## Namespace Rules
-- All user resources MUST be created in project namespaces (`{org}-{project}`)
-- Organization resources live in namespace `{org}`
-- Never create resources in `kube-system`, `kube-dc`, or other system namespaces
+`AGENTS.md` is the canonical product model and safety reference; read it and
+the matching `skills/<name>/SKILL.md` before changing anything. The rules most
+often missed:
 
-## CRD Naming
-- Follow Kubernetes naming conventions: lowercase, alphanumeric, hyphens
-- API groups: `kube-dc.com`, `k8s.kube-dc.com`, `db.kube-dc.com`
-- Use short names where available: `vm`, `dv`, `kdcdb`, `kdc-cl`, `obc`
+## Namespaces
+- All user resources go in the Project's backing namespace `{org}-{project}`.
+- Organization resources live in namespace `{org}`.
+- Never create resources in `kube-system`, `kube-dc` or other system namespaces.
 
-## VM Requirements
-- MUST include `qemu-guest-agent` in cloud-init
-- MUST use `networkName: {namespace}/default` with Multus bridge
-- MUST reference `authorized-keys-default` for SSH key injection
-- Use `storageClassName: local-path` for DataVolumes
+## Databases, caches and queues
+- Use managed services (`ManagedService` + `ServiceBinding`, skill
+  `create-database`), never a database in a pod or a chart's bundled database.
+- Plans are `{family}-development` (one instance, the default) and
+  `{family}-production` (HA, only when the user asks for production or HA).
+  Read the offered plans with `kubectl get serviceofferings`.
+- Read `host`, `port`, `username`, `password` from the binding Secret; every
+  endpoint is TLS-only. Do not build host names.
 
-## Service Exposure
-- HTTP/HTTPS → Gateway Route: `service.nlb.kube-dc.com/expose-route: "https"`
-- TCP/UDP → Direct EIP: create EIp + `service.nlb.kube-dc.com/bind-on-eip`
-- Never mix FIP and LoadBalancer on the same target
+## Service exposure
+- HTTP/HTTPS: a `ClusterIP` Service with
+  `service.nlb.kube-dc.com/expose-route: "https"`. The platform issues the
+  certificate and assigns `{svc}-{namespace}.{installation domain}`; no Issuer,
+  no external IP. Never `type: LoadBalancer` for web traffic.
+- TCP/UDP: a `LoadBalancer` on the Project gateway address
+  (`bind-on-default-gw-eip: "true"`); a dedicated EIP or FIP only when the user
+  asks for one, after checking quota.
+- Never make one VM or pod both a public FIP target and a cloud LoadBalancer
+  backend.
 
-## Database Conventions
-- PostgreSQL secret: `{name}-app`, endpoint: `{name}-rw.{ns}.svc:5432`
-- MariaDB secret: `{name}-password`, endpoint: `{name}.{ns}.svc:3306`
-- Default to `internal` exposure; use `gateway` only when external access is needed
+## VMs
+- Include `qemu-guest-agent` in cloud-init.
+- Use the Project's `authorized-keys-default` Secret for SSH keys.
+- Use a VM StorageClass the Project offers; do not assume `local-path`.
 
 ## Security
-- Never log passwords, kubeconfig contents, or API tokens in output
-- Users are managed via UI only (Keycloak) — no User CRD exists
-- Prefer `egressNetworkType: cloud` for new projects
-- OBC resources MUST have label `kube-dc.com/organization: {org}`
-
-## Reference
-- Docs: `docs/cloud/` and `docs/platform/`
-- Examples: `examples/`
-- Skills: `skills/`
-- Knowledge: `knowledge/`
+- Never print passwords, kubeconfig contents or API tokens.
+- Users are managed in the console (Keycloak); there is no User CRD.
+- Prefer `egressNetworkType: cloud` for new Projects.
+- Give ObjectBucketClaims the label `kube-dc.com/organization: {org}`.

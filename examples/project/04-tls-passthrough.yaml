@@ -8,7 +8,6 @@
 #
 # This example uses automatic route creation via service annotations.
 # The controller will automatically create:
-# - EIP (external IP allocation)
 # - Backend (for Gateway routing)
 # - TLSRoute (with SNI-based routing on port 443)
 #
@@ -103,8 +102,8 @@ spec:
         configMap:
           name: my-api-server-nginx-conf
 ---
-# LoadBalancer Service with automatic TLS passthrough route
-# The controller will auto-create: EIP, Backend, and TLSRoute
+# ClusterIP Service with automatic TLS passthrough route
+# The controller will auto-create (no EIP): Backend, and TLSRoute
 apiVersion: v1
 kind: Service
 metadata:
@@ -121,7 +120,7 @@ metadata:
     # Optional: Specific port for multi-port services
     # service.nlb.kube-dc.com/route-port: "6443"
 spec:
-  type: LoadBalancer
+  type: ClusterIP   # route only: the shared Gateway publishes it, no EIP
   selector:
     app: my-api-server
   ports:

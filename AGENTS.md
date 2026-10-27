@@ -69,13 +69,21 @@ shared quota, and Organization Groups.
 5. A public `FIp` creates and owns its required `EIp`; do not create both.
 6. Do not make one VM/pod both a public FIP target and a cloud LoadBalancer
    backend.
-7. For HTTPS routes, create the Project's cert-manager `Issuer` first.
+7. HTTPS routes get a platform certificate; do not create an Issuer. Set
+   `tls-issuer` only to use your own dns01 or CA Issuer.
 8. Give manually created ObjectBucketClaims the
    `kube-dc.com/organization: {organization}` label so dashboard and
    Organization usage attribution remain correct.
 9. Keep each `KdcCluster.spec.dataStore.port` unique within a Project.
 10. Treat provider domains, pools, plans, versions, and StorageClasses as
     installation-specific. Read live configuration instead of inventing them.
+11. Run databases, caches and queues as managed services (`create-database`),
+    not in pods. Use the `{family}-development` plan unless the user asks for
+    production or high availability.
+12. Publish web traffic through the shared Gateway (a `ClusterIP` Service with
+    `expose-route`), never a `LoadBalancer` with its own EIP. Use a public
+    IPv4 (EIP, FIP, `LoadBalancer`) only for non-HTTP ports or when the user
+    asks for a dedicated address, after checking quota.
 
 ## Service Exposure
 
@@ -103,7 +111,10 @@ dedicated LoadBalancer.
 
 ### Selected TCP or UDP ports
 
-Create an `EIp`, then bind a `LoadBalancer` Service:
+First try the Project gateway address: a `LoadBalancer` Service annotated
+`service.nlb.kube-dc.com/bind-on-default-gw-eip: "true"` shares it and
+allocates nothing new. For a dedicated address the user asked for, create an
+`EIp`, then bind a `LoadBalancer` Service:
 
 ```yaml
 apiVersion: kube-dc.com/v1

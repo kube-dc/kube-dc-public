@@ -70,7 +70,7 @@ metadata:
   annotations:
     service.nlb.kube-dc.com/expose-route: "http"
 spec:
-  type: LoadBalancer
+  type: ClusterIP   # the shared Gateway publishes it; no external IP is allocated
   selector:
     app: hello
   ports:

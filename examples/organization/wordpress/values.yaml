@@ -1,30 +1,28 @@
-# WordPress against an external KdcDatabase MariaDB.
-# Companion to deploy.sh in this directory.
+# WordPress against a managed MariaDB (managed-database.yaml).
+# Companion to deploy.sh in this directory, which sets externalDatabase.host,
+# port, user and database from the binding's Secret wp-db.
 #
-# Service auto-hostname: wp-wordpress-<project-namespace>.kube-dc.cloud
+# Service auto-hostname: wp-wordpress-<project-namespace>.<installation domain>
 # (Helm release "wp" + chart "wordpress" produce Service "wp-wordpress")
 
 mariadb:
   enabled: false
 
 externalDatabase:
-  host: wp-mariadb.PROJECT_NAMESPACE.svc
-  port: 3306
-  user: app
-  database: wordpress
   # Bitnami's chart hard-codes the secret key to "mariadb-password" and offers
-  # no override at v30.x. The KdcDatabase auto-secret <db>-password stores the
-  # password under key "password", so deploy.sh creates a small bridge Secret
-  # named wp-db-bridge with the chart's expected key name.
+  # no override at v30.x. The binding's Secret stores the password under key
+  # "password", so deploy.sh creates a small bridge Secret named wp-db-bridge
+  # with the chart's expected key name.
   existingSecret: wp-db-bridge
 
-# Envoy Gateway + cert-manager auto-TLS via Service annotation.
-# No Ingress, HTTPRoute, or Gateway resource is needed — the platform's
-# Service controller creates them on the operator's behalf.
+# HTTPS through the platform Gateway: a ClusterIP Service with expose-route
+# gets a hostname and a certificate and allocates no external IP. No Ingress,
+# HTTPRoute or Gateway resource is needed; the platform creates them.
 service:
-  type: LoadBalancer
+  type: ClusterIP
   annotations:
     service.nlb.kube-dc.com/expose-route: "https"
+    service.nlb.kube-dc.com/https-redirect: "true"
 
 networkPolicy:
   enabled: false

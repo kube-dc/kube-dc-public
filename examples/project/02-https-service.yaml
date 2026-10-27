@@ -4,7 +4,6 @@
 #
 # This is the SIMPLEST way to expose an HTTPS service.
 # The controller will automatically create:
-# - EIP (external IP allocation)
 # - Backend (for Gateway routing)
 # - Certificate (via cert-manager)
 # - Gateway Listener (HTTPS with certificate)
@@ -58,8 +57,8 @@ spec:
             cpu: 50m
             memory: 64Mi
 ---
-# LoadBalancer Service with automatic HTTPS route
-# The controller will auto-create: EIP, Backend, Certificate, Gateway Listener, and HTTPRoute
+# ClusterIP Service with automatic HTTPS route
+# The controller will auto-create (no EIP): Backend, Certificate, Gateway Listener, and HTTPRoute
 apiVersion: v1
 kind: Service
 metadata:
@@ -76,7 +75,7 @@ metadata:
     # Optional: your own dns01 or CA Issuer (default: the platform issuer)
     # service.nlb.kube-dc.com/tls-issuer: "my-dns01-issuer"
 spec:
-  type: LoadBalancer
+  type: ClusterIP   # route only: the shared Gateway publishes it, no EIP
   selector:
     app: my-secure-app
   ports:

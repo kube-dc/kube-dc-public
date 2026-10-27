@@ -1,134 +1,98 @@
 ---
-description: Deploy WordPress with managed MariaDB database, HTTPS exposure, and auto TLS
+description: Deploy WordPress with a managed MariaDB, a replicated volume and HTTPS through the platform Gateway
 ---
 
-WordPress (Bitnami chart) only supports MySQL/MariaDB — there is no PostgreSQL
-driver in WordPress core. Always use `engine: mariadb` for KdcDatabase.
+WordPress core has no PostgreSQL driver: use a managed MariaDB (or MySQL)
+service. The full manifest set, with explanations, is
+`docs/cloud/deploy-wordpress-stack.md`; a Helm variant is
+`examples/organization/wordpress/`.
 
 ## Steps
 
-1. Ask the user for: organization name, project name, and database name (default: `wp-mariadb`).
-   The Helm release name will be `wp` and the chart's resulting Service is `wp-wordpress`,
-   so the auto-hostname is `wp-wordpress-{org}-{project}.kube-dc.cloud`.
+1. Ask the user for the organization and project, and whether they need
+   production or high availability (default: no).
 
-2. Verify the project exists and is Ready:
+2. Select the Project and check that it is Ready and has quota:
 ```bash
-kubectl get project {project-name} -n {org-name}
+kube-dc use {domain}/{org}/{project}
+kubectl get project {project} -n {org}
+kubectl get resourcequota -n {org}-{project}
 ```
 
-3. Create a cert-manager Issuer if one doesn't exist (idempotent — skip if present):
+3. Read the MariaDB plans offered to the Project. Use `mariadb-development`
+   (one server) unless the user asked for production or HA; then
+   `mariadb-production` (3-node Galera, three times the quota). Say which you
+   chose.
+```bash
+kubectl get serviceofferings -n {org}-{project} -l services.kube-dc.com/class=mariadb
+```
+
+4. Create the database and its credential binding (`create-database` skill).
+   Name it `wordpress-db`, not `wordpress`: the platform creates Services
+   named after it.
 ```yaml
-apiVersion: cert-manager.io/v1
-kind: Issuer
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ManagedService
 metadata:
-  name: letsencrypt
+  name: wordpress-db
   namespace: {org}-{project}
 spec:
-  acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
-    email: admin@{org}.com
-    privateKeySecretRef:
-      name: letsencrypt-key
-    solvers:
-      - http01:
-          ingress:
-            ingressClassName: envoy
-```
-
-4. Create a managed MariaDB database. Note the field is `databaseName`, not `database`:
-```yaml
-apiVersion: db.kube-dc.com/v1alpha1
-kind: KdcDatabase
+  classRef: {name: mariadb}
+  planRef: {name: mariadb-development}
+  placement: {mode: ProviderShared}
+  connectivity: {classRef: {name: tenant-native}}
+  parameters: {database: wordpress}
+  deletionPolicy: Retain
+---
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ServiceBinding
 metadata:
-  name: {db-name}
+  name: wordpress-db-password
   namespace: {org}-{project}
 spec:
-  engine: mariadb
-  version: "11.4"
-  replicas: 1
-  cpu: "1"
-  memory: 2Gi
-  storage: 10Gi
-  databaseName: wordpress
-  username: app
-  expose:
-    type: internal
+  serviceRef: {name: wordpress-db}
+  role: owner
+  consumer: {kind: ServiceAccount, name: default, namespace: {org}-{project}}
+  delivery: {secretName: wordpress-db-password}
+```
+```bash
+kubectl wait --for=jsonpath='{.status.phase}'=Ready managedservice/wordpress-db -n {org}-{project} --timeout=15m
+kubectl wait --for=condition=Ready servicebinding/wordpress-db-password -n {org}-{project} --timeout=5m
 ```
 
-5. Wait for the database to be Ready (typically ~60s):
-```bash
-kubectl wait --for=jsonpath='{.status.phase}'=Ready kdcdb/{db-name} \
-  -n {org}-{project} --timeout=5m
+5. Create a PVC on a replicated class (for example `rbd-vm`, not the
+   node-local default) and the WordPress Deployment. Read `host`,
+   `username`, `password` and `database` from the Secret
+   `wordpress-db-password`, and set `WORDPRESS_CONFIG_EXTRA` so WordPress
+   honours `X-Forwarded-Proto: https` from the Gateway. Use the manifests in
+   `docs/cloud/deploy-wordpress-stack.md`.
+
+6. Publish it over HTTPS with a ClusterIP Service. The platform creates the
+   route and the certificate; there is no Issuer to create and no external IP
+   is allocated. Do not use `type: LoadBalancer`.
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: wordpress
+  namespace: {org}-{project}
+  annotations:
+    service.nlb.kube-dc.com/expose-route: https
+    service.nlb.kube-dc.com/https-redirect: "true"
+spec:
+  type: ClusterIP
+  selector: {app: wordpress}
+  ports:
+  - {name: http, port: 80, targetPort: 80}
 ```
 
-6. Create a "bridge" Secret with key `mariadb-password`. The KdcDatabase
-   auto-secret `{db-name}-password` carries the password under key `password`,
-   but the Bitnami WordPress chart hard-codes the secret key name to
-   `mariadb-password` (no `existingSecretPasswordKey` parameter at chart
-   v30.x). Without this step the WordPress pod boots into a tight CrashLoop
-   reading an empty password file:
-
+7. Wait for the hostname (set once the certificate is issued) and report it:
 ```bash
-PASSWORD=$(kubectl get secret {db-name}-password -n {org}-{project} \
-  -o jsonpath='{.data.password}' | base64 -d)
-kubectl create secret generic wp-db-bridge \
-  --namespace {org}-{project} \
-  --from-literal=mariadb-password="$PASSWORD" \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-7. Deploy WordPress using Helm. `service.type=LoadBalancer` plus the
-   `expose-route: https` annotation routes through Envoy Gateway with auto-TLS;
-   no separate Ingress or HTTPRoute is needed:
-
-```bash
-helm upgrade --install wp oci://registry-1.docker.io/bitnamicharts/wordpress \
-  --namespace {org}-{project} \
-  --version 30.0.13 \
-  --set mariadb.enabled=false \
-  --set externalDatabase.host={db-name}.{org}-{project}.svc \
-  --set externalDatabase.port=3306 \
-  --set externalDatabase.user=app \
-  --set externalDatabase.database=wordpress \
-  --set externalDatabase.existingSecret=wp-db-bridge \
-  --set service.type=LoadBalancer \
-  --set "service.annotations.service\.nlb\.kube-dc\.com/expose-route=https" \
-  --wait --timeout 5m
-```
-
-8. Verify the deployment:
-```bash
-# Pod is ready (chart names everything {release}-wordpress)
-kubectl get pods -l app.kubernetes.io/instance=wp -n {org}-{project}
-
-# Auto-assigned hostname
-kubectl get svc wp-wordpress -n {org}-{project} \
+kubectl get svc wordpress -n {org}-{project} \
   -o jsonpath='{.metadata.annotations.service\.nlb\.kube-dc\.com/route-hostname-status}'
-
-# End-to-end check (allow 1-2 min for TLS issue + propagation)
-curl -s -o /dev/null -w '%{http_code}\n' \
-  https://wp-wordpress-{org}-{project}.kube-dc.cloud
-# Expect: 200
 ```
+   If it stays empty, check `kubectl get certificate,challenge -n {org}-{project}`
+   and the Service events (`GatewayHostnameConflict`, listener capacity).
 
-9. Report to the user:
-   - Site URL: `https://wp-wordpress-{org}-{project}.kube-dc.cloud`
-   - Admin URL: `https://wp-wordpress-{org}-{project}.kube-dc.cloud/wp-admin`
-   - Admin user: `user`
-   - Admin password: retrieve with
-     `kubectl get secret wp-wordpress -n {org}-{project} -o jsonpath='{.data.wordpress-password}' | base64 -d`
-
-## Common pitfalls
-
-- **PostgreSQL backend is not supported** — WordPress core has no Postgres
-  driver. The chart will install but the pod CrashLoops on every boot trying
-  to speak MySQL protocol to a Postgres server.
-- **Skipping the bridge Secret** — `existingSecret={db-name}-password` (the
-  KdcDatabase auto-secret) does not work directly because that secret's key is
-  `password`, while the chart reads `mariadb-password`.
-- **Field name `database:` vs `databaseName:`** — only `databaseName` is
-  accepted by the KdcDatabase CRD.
-- **Helm release name vs Service name** — release `wp` with the wordpress
-  chart produces Service `wp-wordpress`, so the auto-hostname carries that
-  full name. If you want a shorter hostname, set `fullnameOverride: wp` in
-  the values, or use release name `wordpress` and override accordingly.
+8. Install WordPress headless with a WP-CLI Job (pod exec is not available in
+   Project namespaces), as shown in the guide.

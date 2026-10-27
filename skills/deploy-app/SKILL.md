@@ -70,13 +70,17 @@ Adapt the health path to the application. Do not add a probe that the image
 does not implement.
 
 When persistent data is required, create a PVC with a live Project
-StorageClass and mount it. Follow `manage-storage`; do not assume a provider
+StorageClass and mount it. The cluster default class can be node-local
+(`local-path`: no expansion, data lost with the node); prefer a replicated
+class such as the one the Project offers for volumes. Follow `manage-storage`; do not assume a provider
 class name or ReadWriteMany support.
 
 ## 2. Add a managed database when needed
 
 Use `create-database` to provision the engine the application actually
-supports. Read credentials through the documented Secret instead of putting a
+supports, as a managed service on the development plan unless the user asks
+for production or HA. Do not run a database, cache or queue in a pod, and
+disable a chart's bundled database. Read credentials through the documented Secret instead of putting a
 password in the Deployment:
 
 ```yaml
@@ -129,10 +133,14 @@ Use `ClusterIP` when only in-Project callers need the application.
 
 Follow `expose-service` for the full contract:
 
-- HTTP/HTTPS: annotate a `LoadBalancer` Service with
-  `service.nlb.kube-dc.com/expose-route`.
-- Arbitrary TCP/UDP: allocate or select an EIP and bind a `LoadBalancer`
-  Service.
+- HTTP/HTTPS: annotate a `ClusterIP` Service with
+  `service.nlb.kube-dc.com/expose-route`. The shared Gateway publishes it
+  with a hostname (and a certificate for `https`) and allocates no EIP. Do
+  not use `type: LoadBalancer` for web traffic: it allocates its own EIP,
+  usually a public IPv4 that counts against quota.
+- Arbitrary TCP/UDP: bind a `LoadBalancer` Service to the Project gateway
+  address (`bind-on-default-gw-eip: "true"`), or allocate or select an EIP
+  only when the user asks for a dedicated address.
 - TLS passthrough: the application owns its certificate.
 - Do not create a `GRPCRoute`; Kube-DC currently reconciles HTTPRoute and
   TLSRoute.
@@ -147,8 +155,9 @@ metadata:
   namespace: "{project-backing-namespace}"
   annotations:
     service.nlb.kube-dc.com/expose-route: "https"
+    service.nlb.kube-dc.com/https-redirect: "true"   # optional: HTTP -> HTTPS
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app.kubernetes.io/name: "{app}"
   ports:
@@ -176,6 +185,12 @@ helm upgrade --install {release} {chart} \
   --namespace {project-backing-namespace} \
   --values values.yaml
 ```
+
+Helm stores each release in a Secret, and the Project `developer` role cannot
+create Secrets: install charts as a Project `admin`, or render with
+`helm template` and apply the manifests. For a database, cache or queue a
+chart would bundle, disable it in the chart and use a managed service instead
+(`create-database`).
 
 Standard Project roles cannot manage NetworkPolicy. Disable a chart's optional
 NetworkPolicy objects when present, or ask the platform operator for an

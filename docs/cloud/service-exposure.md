@@ -20,7 +20,7 @@ for direct access to a VM. Both Project network types support these methods.
 
 | Need | Recommended method | Result |
 |------|--------------------|--------|
-| HTTP or HTTPS hostname | Gateway route (`expose-route`) | Shared gateway, DNS name, optional automatic TLS |
+| HTTP or HTTPS hostname | Gateway route: ClusterIP Service + `expose-route` | Shared gateway, DNS name, optional automatic TLS, no EIP |
 | Selected TCP or UDP ports | LoadBalancer Service + EIP | Address and ports dedicated to the Service |
 | Direct VM access | Floating IP | One-to-one NAT to the VM |
 
@@ -240,7 +240,11 @@ lifecycle.
 
 ### Gateway route annotations (details)
 
-Add these annotations to your `LoadBalancer` Service.
+Add these annotations to a `ClusterIP` Service. The platform publishes it on
+the shared Gateway with a hostname (and, for `https`, a certificate) and
+allocates **no EIP**. A `LoadBalancer` Service with the same annotations is
+published too, but it also gets its own EIP; use one only when the Service
+needs selected TCP or UDP ports as well (see Part 2).
 
 #### Multi-port Services
 
@@ -298,7 +302,7 @@ spec:
         - containerPort: 80
 ```
 
-#### Step 2: Create LoadBalancer Service with HTTPS route
+#### Step 2: Create a ClusterIP Service with an HTTPS route
 
 ```yaml
 apiVersion: v1
@@ -310,7 +314,7 @@ metadata:
     # Expose over HTTPS with an auto-provisioned certificate
     service.nlb.kube-dc.com/expose-route: "https"
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: my-app
   ports:
@@ -335,6 +339,11 @@ curl https://my-app-acme-production.kube-dc.cloud
 
 For HTTPS routes, hostname status is set after the certificate and route are ready. This can take a few minutes. If the command returns an empty value, check the certificate and ACME challenge status first.
 
+To redirect plain HTTP requests to HTTPS, add
+`service.nlb.kube-dc.com/https-redirect: "true"` (HTTPS routes only).
+Applications that build absolute URLs, such as WordPress, should honour the
+`X-Forwarded-Proto: https` header the Gateway sends.
+
 ### Example: Plain HTTP
 
 For non-TLS HTTP traffic:
@@ -348,7 +357,7 @@ metadata:
   annotations:
     service.nlb.kube-dc.com/expose-route: "http"
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: my-app
   ports:
@@ -371,7 +380,7 @@ metadata:
   annotations:
     service.nlb.kube-dc.com/expose-route: "tls-passthrough"
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: kube-apiserver
   ports:
@@ -407,7 +416,7 @@ metadata:
     service.nlb.kube-dc.com/expose-route: "https"
     service.nlb.kube-dc.com/route-hostname: "api.mycompany.com"
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: my-app
   ports:
@@ -440,7 +449,7 @@ metadata:
     service.nlb.kube-dc.com/tls-secret: "my-tls-secret"
     service.nlb.kube-dc.com/route-hostname: "secure.mycompany.com"
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: my-app
   ports:
@@ -807,9 +816,9 @@ kubectl describe svc my-lb -n acme-production
 
 | Need | Resource or annotation | Result |
 |------|------------------------|--------|
-| Automatic HTTPS | LoadBalancer + `expose-route: https` | Gateway terminates TLS and assigns a hostname |
-| Plain HTTP | LoadBalancer + `expose-route: http` | Gateway serves HTTP |
-| End-to-end TLS | LoadBalancer + `expose-route: tls-passthrough` | Application terminates TLS; public listener is 443 |
+| Automatic HTTPS | ClusterIP + `expose-route: https` | Gateway terminates TLS and assigns a hostname |
+| Plain HTTP | ClusterIP + `expose-route: http` | Gateway serves HTTP |
+| End-to-end TLS | ClusterIP + `expose-route: tls-passthrough` | Application terminates TLS; public listener is 443 |
 | Reuse Project gateway EIP | LoadBalancer + `bind-on-default-gw-eip: "true"` | Selected ports share the gateway address |
 | Use a selected EIP | LoadBalancer + `bind-on-eip: "name"` | Selected ports use that address |
 | Direct VM mapping | `FIp` | One-to-one NAT to the VM |

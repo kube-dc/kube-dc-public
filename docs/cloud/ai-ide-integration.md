@@ -478,7 +478,7 @@ Deploy WordPress with a managed HA MariaDB database in Project production in Org
 Expose it over HTTPS with auto TLS.
 ```
 
-With Agent Skills loaded, the agent will: create a MariaDB `ManagedService` (WordPress core has no PostgreSQL driver) and a `ServiceBinding` for its owner credential, wait for both to become Ready, build a small bridge Secret aliasing the delivered password to the chart's expected key (`mariadb-password`), deploy WordPress through `helm install` with `externalDatabase.existingSecret` pointing at the bridge, expose with `service.type=LoadBalancer` plus `service.nlb.kube-dc.com/expose-route: https`, and report the auto-generated hostname.
+With Agent Skills loaded, the agent will: create a MariaDB `ManagedService` (WordPress core has no PostgreSQL driver) on the `mariadb-production` plan because the prompt asks for HA (`mariadb-development` otherwise) and a `ServiceBinding` for its owner credential, wait for both to become Ready, deploy WordPress with the delivered credentials on a Ceph-backed volume, expose it with a `ClusterIP` Service carrying `service.nlb.kube-dc.com/expose-route: https` (no public IP), and report the auto-generated hostname. The full manifest set is in [Deploy a full WordPress stack](deploy-wordpress-stack.md).
 
 ### Create a VM with SSH access
 
@@ -487,7 +487,7 @@ Create an Ubuntu 24.04 VM called "dev-box" with 4 CPU cores and 8GB RAM
 in Project production in Organization acme. I need to SSH into it from outside the cluster.
 ```
 
-The agent will: create a DataVolume + VirtualMachine with `qemu-guest-agent`, create an EIP + LoadBalancer service for SSH, extract the SSH private key, and provide the connection command.
+The agent will: create a DataVolume + VirtualMachine with `qemu-guest-agent`, expose port 22 with a LoadBalancer Service on the Project gateway address (`bind-on-default-gw-eip`, no new IP; a dedicated EIP or floating IP only if you ask), extract the SSH private key, and provide the connection command.
 
 ### Scale a Managed Cluster
 

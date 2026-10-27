@@ -12,7 +12,7 @@ Projects with `egressNetworkType: cloud` use private IP addresses from the `ext-
 
 ## Automatic Route Creation
 
-Simply add an annotation to your LoadBalancer Service:
+Add an annotation to a ClusterIP Service:
 
 ```yaml
 apiVersion: v1
@@ -21,10 +21,10 @@ metadata:
   name: my-app
   namespace: acme-production
   annotations:
-    # Automatically creates: EIP, Backend, Certificate, Gateway Listener, HTTPRoute
+    # Automatically creates: Backend, Certificate, Gateway Listener, HTTPRoute
     service.nlb.kube-dc.com/expose-route: "https"  # or "http" or "tls-passthrough"
 spec:
-  type: LoadBalancer
+  type: ClusterIP   # no EIP; type LoadBalancer would also allocate one
   selector:
     app: my-app
   ports:
@@ -33,8 +33,7 @@ spec:
       targetPort: 8080
 ```
 
-The controller will automatically create:
-- **EIP** - External IP allocation
+The controller will automatically create (no EIP for a ClusterIP Service):
 - **Backend** - For Gateway routing
 - **HTTPRoute/TLSRoute** - With auto-generated hostname
 
@@ -85,8 +84,8 @@ annotations:
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Project: production / backing namespace: acme-production          │
 │  - Deployment/Pod running your app                                  │
-│  - LoadBalancer Service + expose-route annotation                   │
-│  - EIP, Backend, Route (auto-created by controller)                 │
+│  - ClusterIP Service + expose-route annotation                      │
+│  - Backend, Route (auto-created by controller)                      │
 │  - Certificate + Gateway Listener (for expose-route: https)         │
 │  - Certificate from the platform issuer (for expose-route: https)   │
 └─────────────────────────────────────────────────────────────────────┘
@@ -136,7 +135,7 @@ curl "https://$HOST"
 
 ```bash
 # Check auto-created resources
-kubectl get eip,backend,httproute,tlsroute
+kubectl get backend,httproute,tlsroute
 
 # Check certificate status
 kubectl get certificate
@@ -147,7 +146,7 @@ kubectl get certificate
 ### Automatic Route Creation Flow
 
 1. **Add annotation** `expose-route: https` (or `http` or `tls-passthrough`)
-2. **Controller creates** EIP, Backend, and Route automatically
+2. **Controller creates** Backend and Route automatically (no EIP)
 3. **For HTTPS**: Also creates Certificate, ReferenceGrant, and Gateway Listener
 4. **Hostname generated** as `{service}-{backing-namespace}.{base-domain}`
 5. **Gateway routes** traffic to your app via Backend
@@ -193,7 +192,7 @@ kubectl get svc my-app -o yaml | grep -A5 annotations
 
 # Inspect the Service and the Project-visible route resources
 kubectl describe svc my-app
-kubectl get eip,backend,httproute,tlsroute
+kubectl get backend,httproute,tlsroute
 
 # If no status explains the failure, contact your platform administrator
 ```
@@ -214,12 +213,12 @@ kubectl get challenges
 
 ```bash
 # Check auto-created resources
-kubectl get eip,backend,httproute,tlsroute
+kubectl get backend,httproute,tlsroute
 
 # Check route status
 kubectl get httproute -o wide
 kubectl get tlsroute -o wide
 
-# Check LoadBalancer IP
-kubectl get svc my-app -o wide
+# Check the assigned hostname
+kubectl get svc my-app -o jsonpath='{.metadata.annotations.service\.nlb\.kube-dc\.com/route-hostname-status}'
 ```

@@ -4,9 +4,10 @@ metadata:
   name: "{project}"
   namespace: "{organization}"          # Organization API namespace
 spec:
-  # Required Project VPC subnet. Choose a private range that does not overlap
-  # networks these workloads need to reach.
-  cidrBlock: "{project-cidr}"
+  # Optional Project VPC subnet; omit it and the platform allocates a free
+  # block. Set it only for a range that must not overlap networks these
+  # workloads need to reach.
+  # cidrBlock: "{project-cidr}"
 
   # Required and immutable: cloud | public
   # public is accepted only when the provider has enabled public Projects.

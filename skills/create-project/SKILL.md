@@ -41,9 +41,12 @@ See [network-types.md](network-types.md) for the decision details.
 
 ## Choose the CIDR
 
-`spec.cidrBlock` is required. Select a private subnet that does not overlap any
-network the workloads must reach through routing, VPN, peering, or attached
-networks. Do not assume `10.0.0.0/16` is appropriate for every environment.
+`spec.cidrBlock` is optional; omit it unless the user needs a specific range.
+The controller then allocates the next free block of the platform's Project
+pool and records it on the Project. When you set one, select a private subnet
+that does not overlap any network the workloads must reach through routing,
+VPN, peering, or attached networks. Do not assume `10.0.0.0/16` is
+appropriate for every environment.
 
 ## Create the Project
 

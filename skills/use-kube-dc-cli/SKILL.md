@@ -58,8 +58,10 @@ kube-dc/{platform-domain}/{organization}/{project}
 ```
 
 Use `--ca-cert /path/to/ca.crt` for a private CA. `--insecure` disables TLS
-verification and should be limited to controlled diagnostics. The exposed
-`--device-code` flag is not implemented in the current CLI.
+verification and should be limited to controlled diagnostics. On a headless
+machine or over SSH, add `--device-code`: the CLI prints a URL and a code to
+approve in a browser on another device (the Organization's Keycloak client
+must allow the device grant; CLI 0.7.12 or later).
 
 ## Select a Project
 
