@@ -185,6 +185,8 @@ kubectl get managedservices -n <project> \
 
 For any service outside the Project namespace, ask your provider about its deletion behavior.
 
+A Project deletion finishes on its own, whatever its services' deletion policies. With services in the Project it usually takes a few minutes, most of it while the database engines shut down. The Project namespace shows `Terminating` meanwhile. If it stays `Terminating` for more than 15 minutes, contact support with the Project name.
+
 ## Limits
 
 Final-backup failures, interrupted deletion, external access, and recovery after deletion require family-specific checks.
