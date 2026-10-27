@@ -58,6 +58,7 @@ A generic Kubernetes MCP server lets an AI assistant run `kubectl`, but it does 
 |-------|-------------|
 | `create-project` | Create a project with VPC networking and correct network type |
 | `deploy-app` | Deploy a containerized app with optional database and HTTPS |
+| `deploy-web-stack` | Web app + managed database + volume + HTTPS hostname (no public IP) in one procedure; WordPress, CMSs, APIs |
 | `create-vm` | Provision a VM with SSH access, cloud-init, and guest agent |
 | `create-database` | Create a managed database (PostgreSQL, MySQL, MariaDB, ClickHouse) or cache with a binding Secret and connection patterns |
 | `manage-database-credentials` | Deliver credential roles to workloads as Secrets and rotate them on demand or on a schedule |

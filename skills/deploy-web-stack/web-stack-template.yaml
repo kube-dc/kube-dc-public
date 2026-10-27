@@ -1,0 +1,123 @@
+# A web application with a managed database and an HTTPS hostname.
+# Replace {app}, {backing-namespace}, {family}, {image} and the env block.
+# Apply in order; wait for parts 1 and 2 before part 4 (see SKILL.md).
+#
+# 1. Managed database. Plans: {family}-development (1 instance, default) or
+#    {family}-production (HA, only when asked). family: postgresql | mysql | mariadb
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ManagedService
+metadata:
+  name: "{app}-db"
+  namespace: "{backing-namespace}"
+spec:
+  classRef:
+    name: "{family}"
+  planRef:
+    name: "{family}-development"
+  placement:
+    mode: ProviderShared          # required: the API default is refused
+  connectivity:
+    classRef:
+      name: tenant-native
+  storage:
+    size: 10Gi
+  parameters:
+    database: "{app}"
+  deletionPolicy: Retain
+---
+# 2. Credentials delivered to the Secret {app}-db-owner.
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ServiceBinding
+metadata:
+  name: "{app}-db-owner"
+  namespace: "{backing-namespace}"
+spec:
+  serviceRef:
+    name: "{app}-db"
+  role: owner
+  consumer:
+    kind: ServiceAccount
+    name: default
+    namespace: "{backing-namespace}"
+  delivery:
+    secretName: "{app}-db-owner"
+---
+# 3. Optional volume for files the app writes (replicated Ceph block).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: "{app}-data"
+  namespace: "{backing-namespace}"
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: rbd-vm
+  resources:
+    requests:
+      storage: 10Gi
+---
+# 4. The application, reading its database from the Secret.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "{app}"
+  namespace: "{backing-namespace}"
+spec:
+  replicas: 1                     # ReadWriteOnce volume: one replica
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "{app}"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "{app}"
+    spec:
+      containers:
+        - name: app
+          image: "{image}"
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DB_HOST
+              valueFrom: { secretKeyRef: { name: "{app}-db-owner", key: host } }
+            - name: DB_PORT
+              valueFrom: { secretKeyRef: { name: "{app}-db-owner", key: port } }
+            - name: DB_NAME             # key dbname for PostgreSQL
+              valueFrom: { secretKeyRef: { name: "{app}-db-owner", key: database } }
+            - name: DB_USER
+              valueFrom: { secretKeyRef: { name: "{app}-db-owner", key: username } }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: "{app}-db-owner", key: password } }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: "{app}-data"
+---
+# 5. HTTPS through the shared Gateway: hostname + platform certificate, no
+#    external IP. Do not change type to LoadBalancer.
+apiVersion: v1
+kind: Service
+metadata:
+  name: "{app}"
+  namespace: "{backing-namespace}"
+  annotations:
+    service.nlb.kube-dc.com/expose-route: https
+    service.nlb.kube-dc.com/https-redirect: "true"
+    # service.nlb.kube-dc.com/route-hostname: "{custom-domain}"  # after its DNS points here
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: "{app}"
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

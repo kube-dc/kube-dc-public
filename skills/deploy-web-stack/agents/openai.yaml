@@ -1,0 +1,5 @@
+interface:
+  display_name: "Deploy Web Stack"
+  short_description: "Web app + managed database + HTTPS route"
+  brand_color: "#D97706"
+  default_prompt: "Use $deploy-web-stack to deploy a web application with a managed database, a persistent volume and an HTTPS hostname in a Kube-DC Project."
