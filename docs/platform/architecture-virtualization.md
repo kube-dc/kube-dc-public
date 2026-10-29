@@ -58,6 +58,8 @@ Install and enable `qemu-guest-agent` in supported guests when you need:
 
 A restart reboots the guest and does not preserve memory state. Pause and unpause preserve memory while the VM continues to consume its assigned capacity.
 
+Which of these actions, and which guest-agent features, each catalog OS supports is listed in [VM guest capabilities by OS image](/platform/vm-guest-capabilities).
+
 ## Storage and migration
 
 Kube-DC supports two broad root-disk patterns:

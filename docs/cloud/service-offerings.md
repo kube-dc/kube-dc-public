@@ -155,7 +155,7 @@ Check that the offering is [usable](#check-that-the-offering-is-usable) and that
 
 2. Edit the file. Replace `example` with your service name, and add the service family's parameters and any sizing within `constraints`.
    See the family guide, for example [Create a PostgreSQL service](postgresql-create.md).
-   Use `placement.mode: ProviderShared`. If the offering lists no `ProviderShared` mode, ask your provider for a plan you can use.
+   When the example uses `placement.mode: TenantCluster`, name your cluster as described in [Run a service on your own cluster](managed-services-tenant-cluster.md), or use `ProviderShared` if the offering lists it.
 3. Validate and create the service:
 
    ```bash
@@ -191,7 +191,7 @@ A service over the plan's per-Project limit is refused with `PlanQuotaExceeded`.
 Offerings work the same way for every billing mode: pay-as-you-go, a fixed subscription plan, or no billing plan.
 They show plan defaults and limits, not prices.
 
-- **Pay-as-you-go:** ask your provider how resources and a managed service's management fee are charged to your Organization. Prices depend on your Organization.
+- **Pay-as-you-go:** see [Managed-service fees and resources](billing-usage.md#managed-service-fees-and-resources) for how a managed service is charged in a pay-as-you-go Organization. Prices depend on your Organization.
 - **Fixed subscription plan:** the plan sets your Organization's quota, which all its Projects share; see [Understand resource quotas](billing-usage.md#understand-resource-quotas).
 - **Organization without a billing plan:** ask your provider how managed services are charged. The absence of a plan does not mean a service is free.
 

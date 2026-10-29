@@ -1,9 +1,40 @@
 package rke2
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 )
+
+func TestEmbeddedInstallerRequiresInstallationDomain(t *testing.T) {
+	// Execute only configuration resolution, before root checks or host changes.
+	prefix, _, ok := strings.Cut(string(installServerScript), "\nPOD_CIDR=")
+	if !ok {
+		t.Fatal("configuration boundary missing")
+	}
+	for _, tc := range []struct {
+		name string
+		env  []string
+		want string
+	}{
+		{"missing", nil, ""},
+		{"explicit", []string{"DOMAIN=tenant.example.test"}, "tenant.example.test kube-api.tenant.example.test"},
+		{"legacy", []string{"CLUSTER_DOMAIN=kube-api.tenant.example.test"}, "tenant.example.test kube-api.tenant.example.test"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := exec.Command("bash", "-c", prefix+"\nprintf '%s %s' \"$DOMAIN\" \"$API_HOSTNAME\"")
+			cmd.Env = append([]string{"PATH=/usr/bin:/bin", "NODE_NAME=test", "NODE_IP=192.0.2.10"}, tc.env...)
+			out, err := cmd.CombinedOutput()
+			if tc.want == "" {
+				if err == nil || !strings.Contains(string(out), "Set DOMAIN") {
+					t.Fatalf("missing domain must refuse before host mutation: %s, %v", out, err)
+				}
+			} else if err != nil || string(out) != tc.want {
+				t.Fatalf("got %q, %v; want %q", out, err, tc.want)
+			}
+		})
+	}
+}
 
 // The embedded install-server.sh is a sanitized copy of the fleet's
 // kube-dc-fleet/bootstrap/rke2/install-server.sh. This guard pins the

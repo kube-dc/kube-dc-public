@@ -12,7 +12,7 @@
 #   NODE_NAME        - Node name (default: hostname)
 #   NODE_IP          - Node IP for K8s internal traffic (default: detected)
 #   EXTERNAL_IP      - External IP for ingress (default: NODE_IP)
-#   DOMAIN           - Cluster base domain (default: kube-dc.cloud). Pass the
+#   DOMAIN           - Cluster base domain (required). Pass the
 #                       same value that ends up in clusters/<name>/cluster-
 #                       config.env's DOMAIN= line. tls-san is generated as
 #                         [${DOMAIN}, kube-api.${DOMAIN}, ${EXTERNAL_IP},
@@ -75,9 +75,10 @@ if [[ -z "${DOMAIN}" ]]; then
     # kube-api.<domain> form. Strip the optional kube-api. prefix
     # to recover the bare domain. New callers should pass DOMAIN
     # directly to avoid this fixup.
-    DOMAIN="${CLUSTER_DOMAIN:-kube-dc.cloud}"
+    DOMAIN="${CLUSTER_DOMAIN:-}"
     DOMAIN="${DOMAIN#kube-api.}"
 fi
+[[ -n "$DOMAIN" ]] || { log_error "Set DOMAIN to this installation's base domain"; exit 1; }
 API_HOSTNAME="kube-api.${DOMAIN}"
 
 POD_CIDR="${POD_CIDR:-10.100.0.0/16}"

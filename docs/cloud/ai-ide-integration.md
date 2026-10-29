@@ -8,6 +8,138 @@ Kube-DC ships **16 Agent Skills**: structured procedures and templates that help
 
 AI coding assistants such as Claude Code, Cursor, Devin Desktop (formerly Windsurf), and VS Code with Copilot can connect to the Kube-DC management cluster in a Project context, through the **Model Context Protocol (MCP)**. After they connect, they can manage workloads, inspect logs, and diagnose resources within the permissions of that Project context.
 
+There are two ways to connect:
+
+- **Hosted MCP endpoint** (recommended): nothing to install; the app signs you in through your Organization. See the next section.
+- **Local MCP server**: a Kubernetes MCP server on your machine that uses your kubeconfig. See [How it works](#how-it-works-mcp-and-kubernetes) and the per-IDE sections below.
+
+---
+
+## Hosted MCP endpoint (no install)
+
+When your installation runs the hosted endpoint, every Organization has its
+own MCP server URL. An AI app connects to it, you sign in on your
+Organization's normal login page, and the assistant works with exactly your
+permissions. Nothing is installed and no kubeconfig or secret is stored on your
+machine.
+
+Find the URL on your project's **Overview** page (**AI apps → Connect an AI
+app**, with one-click installs for Cursor and VS Code) or, for organization
+administrators, under **Organization → Access → Machine identities → Connect an
+AI app**. It looks like `https://backend.<domain>/mcp/<organization>`.
+
+A **project URL**, `https://backend.<domain>/mcp/<organization>/<project>`,
+is the same server with that project as the default: you can ask "list my VMs"
+without naming the project. Sign-in and permissions are the same. Add one per
+project (for example `kube-dc-dev`, `kube-dc-prod`) to keep them apart.
+
+For **read-only** use, add `/read_only` to either URL (or tick **Read-only** in
+the console dialog), for example
+`https://backend.<domain>/mcp/<organization>/<project>/read_only`. The app asks
+for read access only ("Read your Kube-DC resources…" on the consent page) and
+gets only the tools that read: it can list, inspect, read logs and events, but
+cannot create, change, stop or delete anything. Where the installation enables
+it, Kubernetes itself refuses changes made with such a session's credentials. An app you already allowed full
+use keeps it until you revoke it; the connected apps list shows each app's
+access (**Full** or **Read only**).
+
+The console's **Connect an AI app** dialog shows these commands and install
+links filled in for your project:
+
+| App | How to add the URL |
+|---|---|
+| Claude Code | `claude mcp add --transport http kube-dc <url>`, then `/mcp` → **Authenticate** |
+| Cursor | **Add to Cursor** in the console, or Settings → MCP: `{ "mcpServers": { "kube-dc": { "url": "<url>" } } }` |
+| VS Code (Copilot) | **Install in VS Code** in the console, or `code --add-mcp '{"name":"kube-dc","type":"http","url":"<url>"}'`; use Agent mode |
+| Claude (web, desktop) | Settings → Connectors → **Add custom connector** |
+| ChatGPT | Add a custom MCP server (developer mode) with the URL and OAuth sign-in; on Business/Enterprise plans an admin may need to allow it |
+| Google Antigravity | MCP Servers → Manage → View raw config: `{ "mcpServers": { "kube-dc": { "serverUrl": "<url>" } } }` |
+| Mistral Le Chat | Connectors → Add connector → Custom MCP connector (Work mode) |
+
+The app opens your Organization's sign-in page the first time and asks you to
+allow it.
+
+**Add the Kube-DC skills too (recommended).** The MCP server gives the app
+tools; the [agent skills](#agent-skills-setup) give it Kube-DC's step-by-step
+procedures and manifests (managed databases, HTTPS routes, VMs…). Apps with a
+skills folder (Claude Code, Cursor, Codex, VS Code Copilot, Windsurf) load
+them after one command:
+
+```bash
+npx skills add kube-dc/kube-dc-public -g --all   # every workspace
+npx skills add kube-dc/kube-dc-public -y         # this workspace only
+```
+
+Run it again to update them. Apps without skills (ChatGPT, Claude web,
+Le Chat) need nothing extra: the MCP server itself serves the guides (see
+**Guides** below).
+
+**Tools (20).** Read: `whoami`, `list`, `get_vm`, `get_quota`, `get_logs`,
+`get_resources`. `list` takes a kind: `projects`, `vms`, `disks`,
+`snapshots`, `services`, `floating_ips`, `external_ips`, `buckets`,
+`managed_services` (with the plans the project may order), `clusters`,
+`os_images`, `storage_classes` or `events`. `get_quota` shows a project's
+quota and, for organization administrators, the organization's usage.
+Change: `create_project`, `create_vm`, `vm_power` (start, stop, restart),
+`create_floating_ip`, `create_external_ip`, `expose_vm`, `create_disk`,
+`attach_disk`, `detach_disk`, `restore_snapshot`, `create_bucket`,
+`create_managed_service`, `apply_manifest` and `delete` (a project, VM,
+disk, floating IP or external IP, or any Kubernetes object by kind and
+apiVersion). `create_managed_service` goes through the console's own
+path: its first call returns the price, and the service is created only when
+the app calls it again to confirm. Kubernetes clusters are listed; create them
+in the console. VMs get the project key pair, as in the console. Tools that delete or stop something are marked so your app
+asks you first. Everything runs as you: what you may not do in the console,
+the assistant may not do either.
+
+Administrators and connector reviewers: addresses, sign-in details, every
+tool's effect and data handling are on
+[Hosted MCP for administrators](mcp-for-administrators.md).
+
+**Safety.** Secret values are masked in `get_resources` unless the assistant
+asks to reveal them, which is recorded in the audit log (never on a read-only
+URL). Logs and events come from workloads; the server tells the app to treat
+them as data. A project URL sets a default project; it is not a boundary, as
+the tools can still name any project you may access.
+
+Every tool call is recorded in the project's audit log with you and the app
+that made it. The project Overview shows the apps used there this week and
+the changes they made (**Changes via AI apps**); the **Connect an AI app**
+dialog lists the apps you allowed. **Revoke** stops the app from signing in
+again at once; access it already holds ends within 15 minutes, when its token
+expires.
+
+**Preferred paths.** The server tells apps the platform's defaults, in its
+instructions and in the tool descriptions:
+
+- Databases, caches and queues run as managed services
+  (`create_managed_service`), not as pods. The development plan (one
+  instance) is the default; the production plan (three instances, HA) is used
+  when you ask for production or HA.
+- Web apps are published through the shared Gateway: a `ClusterIP` Service
+  with `service.nlb.kube-dc.com/expose-route: https` gets a hostname and a
+  certificate and uses no public IP. `list` with kind `services` shows the hostname once
+  it is ready; `whoami` shows the domain hostnames are created under.
+- A public IPv4 (external IP, floating IP, `LoadBalancer`) is used only for
+  non-HTTP ports or when you ask for a dedicated address; the app checks
+  `get_quota` and asks you first.
+
+**Guides.** The server also serves step-by-step guides as MCP resources and
+prompts, so apps get them with no install:
+
+- Resources `kube-dc://guide/web-stack` (app + managed database + HTTPS),
+  `wordpress`, `publish-http`, `public-ip` and `managed-database`, written in
+  terms of the tools above, and every agent skill as
+  `kube-dc://skill/<name>` (for example `kube-dc://skill/deploy-web-stack`).
+  Claude Code lets the assistant read them itself; in VS Code and Cursor you
+  attach one to the chat.
+- Prompts (slash commands in apps that support them): `deploy-web-app`,
+  `deploy-wordpress`, `publish-http` and `project-health`. A read-only URL
+  offers only `project-health`.
+
+For CI, Terraform or a local MCP server, use a
+[machine identity](machine-identities.md) instead.
+
 ---
 
 ## How it works: MCP and Kubernetes
@@ -205,7 +337,7 @@ The agent generates correct Kube-DC manifests, with the right CRD schemas, annot
 All integrations below require a valid Project context in a kubeconfig for the Kube-DC management cluster. An Organization login creates one context for each accessible Project; each context selects that Project's backing namespace.
 
 1. Log in to the Kube-DC console
-2. Click **Get CLI Access** in the dashboard
+2. On the project Overview, under **Command-line access**, click **Get kubeconfig**
 3. Follow the displayed commands to download your kubeconfig
 
 Your kubeconfig will be saved at `~/.kube/config` by default. Verify it works:
@@ -479,7 +611,7 @@ Deploy WordPress with a managed HA MariaDB database in Project production in Org
 Expose it over HTTPS with auto TLS.
 ```
 
-With Agent Skills loaded, the agent will: create a MariaDB `ManagedService` (WordPress core has no PostgreSQL driver) on the `mariadb-production` plan because the prompt asks for HA (`mariadb-development` otherwise) and a `ServiceBinding` for its owner credential, wait for both to become Ready, deploy WordPress with the delivered credentials on a Ceph-backed volume, expose it with a `ClusterIP` Service carrying `service.nlb.kube-dc.com/expose-route: https` (no public IP), and report the auto-generated hostname. The full manifest set is in [Deploy a full WordPress stack](deploy-wordpress-stack.md).
+With Agent Skills loaded or the hosted MCP endpoint, the agent will: create a MariaDB `ManagedService` (WordPress core has no PostgreSQL driver) on the `mariadb-production` plan because the prompt asks for HA (`mariadb-development` otherwise) and a `ServiceBinding` for its owner credential, wait for both to become Ready, deploy WordPress with the delivered credentials on a Ceph-backed volume, expose it with a `ClusterIP` Service carrying `service.nlb.kube-dc.com/expose-route: https` (no public IP), and report the auto-generated hostname. The full manifest set is in [Deploy a full WordPress stack](deploy-wordpress-stack.md).
 
 ### Create a VM with SSH access
 

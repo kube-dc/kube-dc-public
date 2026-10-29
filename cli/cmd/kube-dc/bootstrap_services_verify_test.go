@@ -361,3 +361,33 @@ func TestManagedServicesClickHouseRuntimePins(t *testing.T) {
 		t.Fatalf("old metrics image accepted: %v", err)
 	}
 }
+
+func TestManagedServicesOpenSearchRequiresPinnedRootlessRuntimeAndEveryHost(t *testing.T) {
+	pins := map[string]string{"OPENSEARCH_OPERATOR_IMAGE_REPOSITORY": "shalb/kube-dc-opensearch-operator", "OPENSEARCH_OPERATOR_CHART_VERSION": "3.0.14", "OPENSEARCH_OPERATOR_IMAGE_TAG": "3.0.0@sha256:" + strings.Repeat("a", 64)}
+	env := map[string]any{"name": "SKIP_INIT_CONTAINER", "value": "true"}
+	release := readyManagedRelease("3.0.14", "")
+	values := map[string]any{"manager": map[string]any{"image": map[string]any{"repository": pins["OPENSEARCH_OPERATOR_IMAGE_REPOSITORY"], "tag": pins["OPENSEARCH_OPERATOR_IMAGE_TAG"]}, "extraEnv": []any{env}}, "legacyAPI": map[string]any{"enabled": false}, "webhook": map[string]any{"enabled": true}}
+	release["spec"].(map[string]any)["values"] = values
+	container := map[string]any{"name": "operator-controller-manager", "image": pins["OPENSEARCH_OPERATOR_IMAGE_REPOSITORY"] + ":" + pins["OPENSEARCH_OPERATOR_IMAGE_TAG"], "env": []any{env}}
+	deployment := map[string]any{"metadata": map[string]any{"generation": 1}, "spec": map[string]any{"replicas": 1, "template": map[string]any{"spec": map[string]any{"containers": []any{container}}}}, "status": map[string]any{"observedGeneration": 1, "replicas": 1, "updatedReplicas": 1, "availableReplicas": 1}}
+	hostStatus := map[string]any{"observedGeneration": 1, "desiredNumberScheduled": 3, "numberReady": 3, "updatedNumberScheduled": 3, "numberUnavailable": 0}
+	ds := map[string]any{"metadata": map[string]any{"generation": 1}, "status": hostStatus}
+	objects := fakeManagedServicesReader{"opensearch-operator/helmrelease/opensearch-operator": release, "opensearch-operator/deployment/opensearch-operator": deployment, "opensearch-operator/daemonset/opensearch-node-prerequisites": ds}
+	if err := verifyManagedServicesOpenSearch(context.Background(), objects, pins); err != nil {
+		t.Fatal(err)
+	}
+	hostStatus["numberReady"] = 2
+	if err := verifyManagedServicesOpenSearch(context.Background(), objects, pins); err == nil {
+		t.Fatal("unverified host accepted")
+	}
+	hostStatus["numberReady"] = 3
+	env["value"] = "false"
+	if err := verifyManagedServicesOpenSearch(context.Background(), objects, pins); err == nil {
+		t.Fatal("root native init accepted")
+	}
+	env["value"] = "true"
+	container["image"] = "opensearchproject/opensearch-operator:3.0.0@sha256:changed"
+	if err := verifyManagedServicesOpenSearch(context.Background(), objects, pins); err == nil {
+		t.Fatal("wrong live digest accepted")
+	}
+}

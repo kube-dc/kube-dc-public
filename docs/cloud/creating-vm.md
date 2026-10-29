@@ -733,6 +733,7 @@ kubectl logs <virt-launcher-pod> -c compute
 ## Next steps
 
 - [Connecting to VMs](connecting-vm.md): SSH access and remote console options
-- [VM lifecycle](vm-lifecycle.md): Start, stop, restart, and snapshot VMs
+- [VM lifecycle](vm-lifecycle.md): Start, stop, and restart VMs
+- [Block storage](block-storage.md): Storage classes, disks and volumes
 - [Service exposure](service-exposure.md): Expose VM services to the internet
 - [Public and floating IPs](public-floating-ips.md): Manage IP addresses

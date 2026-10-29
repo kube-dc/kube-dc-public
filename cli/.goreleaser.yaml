@@ -32,6 +32,10 @@ archives:
 checksum:
   name_template: 'checksums.txt'
 
+# The CLI's self-update (internal/selfupdate) verifies each release's binary
+# against checksums.txt. Signing that list is prepared but off; to turn it on,
+# see hack/release-signing/README.md (it restores a signs: entry here).
+
 snapshot:
   name_template: "{{ .Tag }}-next"
 

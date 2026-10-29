@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"sigs.k8s.io/yaml"
+
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 )
 
@@ -152,6 +154,9 @@ func verifyManagedServicesPrepublish(ctx context.Context, reader managedServices
 		nestedString(config, "data", "SERVICES_CELL_ID") != pins["SERVICES_CELL_ID"] {
 		return result, fmt.Errorf("live cluster identity differs from the reviewed services overlay")
 	}
+	if err := verifyManagedServicesHAStorage(ctx, reader, pins, config); err != nil {
+		return result, err
+	}
 	service, err := reader.Get(ctx, "kube-dc-services", "helmrelease", "kube-dc-services")
 	if err != nil {
 		return result, err
@@ -168,6 +173,16 @@ func verifyManagedServicesPrepublish(ctx context.Context, reader managedServices
 		}
 		if !resourceReady(release) {
 			return result, fmt.Errorf("operator HelmRelease %s/%s is not Ready", operator[0], operator[1])
+		}
+	}
+	if pins["RABBITMQ_CLUSTER_OPERATOR_VERSION"] != "" || pins["RABBITMQ_TOPOLOGY_OPERATOR_VERSION"] != "" {
+		if err := verifyManagedServicesRabbitMQ(ctx, reader, pins); err != nil {
+			return result, err
+		}
+	}
+	if pins["OPENSEARCH_OPERATOR_CHART_VERSION"] != "" {
+		if err := verifyManagedServicesOpenSearch(ctx, reader, pins); err != nil {
+			return result, err
 		}
 	}
 	manager, err := reader.Get(ctx, "kube-dc", "deployment", "kube-dc-manager")
@@ -360,7 +375,7 @@ func resourceReady(object map[string]any) bool {
 	return false
 }
 
-var greenfieldFamilies = []string{"postgresql", "valkey", "kafka", "mysql", "mariadb", "clickhouse"}
+var greenfieldFamilies = []string{"postgresql", "valkey", "kafka", "mysql", "mariadb", "clickhouse", "opensearch"}
 
 var legacyServicePlans = []string{
 	"postgresql-platform-ha", "postgresql-shared", "valkey-basic", "valkey-durable",
@@ -382,7 +397,7 @@ func verifyManagedServicesRelease(ctx context.Context, reader managedServicesRea
 	if nestedString(config, "data", "CLUSTER_NAME") != pins["CLUSTER_NAME"] || nestedString(config, "data", "SERVICES_CELL_ID") != pins["SERVICES_CELL_ID"] {
 		return fmt.Errorf("live cluster identity differs from the Fleet overlay")
 	}
-	for _, key := range []string{"SERVICES_CHART_VERSION", "SERVICES_HUB_DIGEST", "SERVICES_RUNNER_IMAGE", "SERVICES_PG_OPERATOR_VERSION", "MYSQL_OPERATOR_CHART_VERSION", "MYSQL_OPERATOR_VERSION", "MYSQL_OPERATOR_IMAGE_DIGEST", "MARIADB_OPERATOR_VERSION", "MARIADB_OPERATOR_IMAGE_REPOSITORY", "MARIADB_OPERATOR_IMAGE_TAG", "MARIADB_OPERATOR_IMAGE_DIGEST", "STRIMZI_OPERATOR_CHART_VERSION", "STRIMZI_OPERATOR_VERSION", "STRIMZI_OPERATOR_IMAGE_REGISTRY", "STRIMZI_OPERATOR_IMAGE_REPOSITORY", "STRIMZI_OPERATOR_IMAGE_NAME", "STRIMZI_OPERATOR_IMAGE_TAG", "STRIMZI_TOPIC_OPERATOR_IMAGE_REGISTRY", "STRIMZI_TOPIC_OPERATOR_IMAGE_REPOSITORY", "STRIMZI_TOPIC_OPERATOR_IMAGE_NAME", "STRIMZI_TOPIC_OPERATOR_IMAGE_TAG", "STRIMZI_USER_OPERATOR_IMAGE_REGISTRY", "STRIMZI_USER_OPERATOR_IMAGE_REPOSITORY", "STRIMZI_USER_OPERATOR_IMAGE_NAME", "STRIMZI_USER_OPERATOR_IMAGE_TAG", "VALKEY_OPERATOR_CHART_VERSION", "CLICKHOUSE_OPERATOR_CHART_VERSION", "CLICKHOUSE_OPERATOR_VERSION", "CLICKHOUSE_OPERATOR_IMAGE_REPOSITORY", "CLICKHOUSE_OPERATOR_IMAGE_TAG", "CLICKHOUSE_METRICS_IMAGE_TAG"} {
+	for _, key := range []string{"SERVICES_CHART_VERSION", "SERVICES_HUB_DIGEST", "SERVICES_RUNNER_IMAGE", "SERVICES_PG_OPERATOR_VERSION", "MYSQL_OPERATOR_CHART_VERSION", "MYSQL_OPERATOR_VERSION", "MYSQL_OPERATOR_IMAGE_DIGEST", "MARIADB_OPERATOR_VERSION", "MARIADB_OPERATOR_IMAGE_REPOSITORY", "MARIADB_OPERATOR_IMAGE_TAG", "MARIADB_OPERATOR_IMAGE_DIGEST", "STRIMZI_OPERATOR_CHART_VERSION", "STRIMZI_OPERATOR_VERSION", "STRIMZI_OPERATOR_IMAGE_REGISTRY", "STRIMZI_OPERATOR_IMAGE_REPOSITORY", "STRIMZI_OPERATOR_IMAGE_NAME", "STRIMZI_OPERATOR_IMAGE_TAG", "STRIMZI_TOPIC_OPERATOR_IMAGE_REGISTRY", "STRIMZI_TOPIC_OPERATOR_IMAGE_REPOSITORY", "STRIMZI_TOPIC_OPERATOR_IMAGE_NAME", "STRIMZI_TOPIC_OPERATOR_IMAGE_TAG", "STRIMZI_USER_OPERATOR_IMAGE_REGISTRY", "STRIMZI_USER_OPERATOR_IMAGE_REPOSITORY", "STRIMZI_USER_OPERATOR_IMAGE_NAME", "STRIMZI_USER_OPERATOR_IMAGE_TAG", "VALKEY_OPERATOR_CHART_VERSION", "CLICKHOUSE_OPERATOR_CHART_VERSION", "CLICKHOUSE_OPERATOR_VERSION", "CLICKHOUSE_OPERATOR_IMAGE_REPOSITORY", "CLICKHOUSE_OPERATOR_IMAGE_TAG", "CLICKHOUSE_METRICS_IMAGE_TAG", "OPENSEARCH_OPERATOR_CHART_VERSION", "OPENSEARCH_OPERATOR_VERSION", "OPENSEARCH_OPERATOR_IMAGE_REPOSITORY", "OPENSEARCH_OPERATOR_IMAGE_TAG", "SERVICES_OPENSEARCH_ARCHIVE_IMAGE"} {
 		if pins[key] != "" && nestedString(config, "data", key) != pins[key] {
 			return fmt.Errorf("live managed-services pin %s differs from Fleet; wait for the target overlay to reconcile", key)
 		}
@@ -437,7 +452,7 @@ func verifyManagedServicesRelease(ctx context.Context, reader managedServicesRea
 		class, _ := raw.(map[string]any)
 		byName[nestedString(class, "metadata", "name")] = class
 	}
-	for _, name := range append(append([]string{}, greenfieldFamilies...), "valkey-ha") {
+	for _, name := range append(managedServiceFamilies(pins), "valkey-ha") {
 		if !conditionCurrentTrue(byName[name], "Verified") {
 			return fmt.Errorf("managed-services class %s is not Verified at its current generation", name)
 		}
@@ -446,12 +461,22 @@ func verifyManagedServicesRelease(ctx context.Context, reader managedServicesRea
 	if err != nil {
 		return err
 	}
-	expectedOperators := map[string]string{"postgresql": pins["SERVICES_PG_OPERATOR_VERSION"], "mysql": pins["MYSQL_OPERATOR_VERSION"], "mariadb": managedServicesMariaDBOperatorVersion(pins), "kafka": managedServicesKafkaOperatorVersion(pins), "clickhouse": managedServicesClickHouseOperatorVersion(pins)}
+	expectedOperators := map[string]string{"postgresql": pins["SERVICES_PG_OPERATOR_VERSION"], "mysql": pins["MYSQL_OPERATOR_VERSION"], "mariadb": managedServicesMariaDBOperatorVersion(pins), "kafka": managedServicesKafkaOperatorVersion(pins), "clickhouse": managedServicesClickHouseOperatorVersion(pins), "opensearch": pins["OPENSEARCH_OPERATOR_VERSION"], "rabbitmq": managedServicesRabbitMQOperatorVersion(pins)}
 	for _, raw := range nestedSlice(plane, "status", "bundles") {
 		bundle, _ := raw.(map[string]any)
 		family := nestedString(bundle, "family")
 		if expectedOperators[family] != "" && nestedString(bundle, "operatorVersion") != expectedOperators[family] {
 			return fmt.Errorf("managed-services %s operator attestation differs from Fleet", family)
+		}
+	}
+	if pins["RABBITMQ_CLUSTER_OPERATOR_VERSION"] != "" || pins["RABBITMQ_TOPOLOGY_OPERATOR_VERSION"] != "" {
+		if err := verifyManagedServicesRabbitMQ(ctx, reader, pins); err != nil {
+			return err
+		}
+	}
+	if pins["OPENSEARCH_OPERATOR_CHART_VERSION"] != "" {
+		if err := verifyManagedServicesOpenSearch(ctx, reader, pins); err != nil {
+			return err
 		}
 	}
 	if pins["CLICKHOUSE_OPERATOR_CHART_VERSION"] != "" {
@@ -571,7 +596,7 @@ func checkManagedServicesCatalog(ctx context.Context, reader managedServicesRead
 			bundles[nestedString(bundle, "family")] = nestedBool(bundle, "ready")
 		}
 	}
-	for _, family := range greenfieldFamilies {
+	for _, family := range managedServiceFamilies(pins) {
 		if !bundles[family] {
 			return fmt.Errorf("managed-services %s bundle is not Ready", family)
 		}
@@ -592,7 +617,7 @@ func checkManagedServicesCatalog(ctx context.Context, reader managedServicesRead
 			developmentOnly = true
 		}
 	}
-	for _, family := range greenfieldFamilies {
+	for _, family := range managedServiceFamilies(pins) {
 		for _, tier := range []string{"development", "production"} {
 			name := family + "-" + tier
 			plan := byName[name]
@@ -650,4 +675,145 @@ func waitManagedServicesPublished(ctx context.Context, reader managedServicesRea
 		case <-time.After(5 * time.Second):
 		}
 	}
+}
+
+// Run after Fleet infrastructure is Ready, immediately before publication. It
+// also covers standalone finalize and SSH-fetched kubeconfigs, independently of
+// which installer flags were supplied in this process.
+func verifyManagedServicesHAStorage(ctx context.Context, reader managedServicesReader, pins map[string]string, live map[string]any) error {
+	roles := map[string]string{}
+	if raw := pins["SERVICES_STORAGE_ROLES"]; raw != "" {
+		if err := yaml.UnmarshalStrict([]byte(raw), &roles); err != nil {
+			return fmt.Errorf("decode reviewed storage roles: %w", err)
+		}
+	}
+	class := roles["database-ha"]
+	if class == "" {
+		return nil
+	}
+	if class == roles["database"] {
+		return fmt.Errorf("HA local class must differ from expandable Development storage")
+	}
+	actual := map[string]string{}
+	if yaml.UnmarshalStrict([]byte(nestedString(live, "data", "SERVICES_STORAGE_ROLES")), &actual) != nil || actual["database-ha"] != class || actual["database"] != roles["database"] {
+		return fmt.Errorf("live HA storage roles differ from reviewed overlay")
+	}
+	sc, err := reader.Get(ctx, "", "storageclass", class)
+	if err != nil {
+		return err
+	}
+	nodes, err := reader.Get(ctx, "", "nodes", "")
+	if err != nil {
+		return err
+	}
+	scRaw, err := json.Marshal(sc)
+	if err != nil {
+		return err
+	}
+	nodesRaw, err := json.Marshal(nodes)
+	if err != nil {
+		return err
+	}
+	return verifyServicesHAStorageObjects(scRaw, nodesRaw)
+}
+
+// OpenSearch has one modern operator and a rootless shared-namespace runtime.
+// A chart-only upgrade is incomplete until the pinned Deployment also rolls.
+func managedServiceFamilies(pins map[string]string) []string {
+	families := append([]string{}, greenfieldFamilies...)
+	if pins["RABBITMQ_CLUSTER_OPERATOR_VERSION"] != "" || pins["RABBITMQ_TOPOLOGY_OPERATOR_VERSION"] != "" {
+		families = append(families, "rabbitmq")
+	}
+	return families
+}
+func managedServicesRabbitMQOperatorVersion(pins map[string]string) string {
+	if pins["RABBITMQ_CLUSTER_OPERATOR_VERSION"] == "" {
+		return ""
+	}
+	return pins["RABBITMQ_CLUSTER_OPERATOR_VERSION"] + "+topology." + pins["RABBITMQ_TOPOLOGY_OPERATOR_VERSION"]
+}
+func verifyManagedServicesRabbitMQ(ctx context.Context, reader managedServicesReader, pins map[string]string) error {
+	for _, kind := range []string{"CLUSTER", "TOPOLOGY"} {
+		version, image := pins["RABBITMQ_"+kind+"_OPERATOR_VERSION"], pins["RABBITMQ_"+kind+"_OPERATOR_IMAGE"]
+		if version == "" || !strings.Contains(image, ":"+version+"@sha256:") {
+			return fmt.Errorf("RabbitMQ requires both exact version and digest operator pins")
+		}
+		name := "rabbitmq-cluster-operator"
+		if kind == "TOPOLOGY" {
+			name = "messaging-topology-operator"
+		}
+		dep, err := reader.Get(ctx, "rabbitmq-system", "deployment", name)
+		if err != nil {
+			return err
+		}
+		if nestedInt(dep, "status", "observedGeneration") < nestedInt(dep, "metadata", "generation") ||
+			nestedInt(dep, "spec", "replicas") != 1 || nestedInt(dep, "status", "updatedReplicas") != 1 ||
+			nestedInt(dep, "status", "readyReplicas") != 1 || nestedInt(dep, "status", "replicas") != 1 {
+			return fmt.Errorf("RabbitMQ %s rollout is incomplete", name)
+		}
+		containers := nestedSlice(dep, "spec", "template", "spec", "containers")
+		if len(containers) != 1 {
+			return fmt.Errorf("RabbitMQ %s container inventory differs", name)
+		}
+		container, _ := containers[0].(map[string]any)
+		if nestedString(container, "image") != image {
+			return fmt.Errorf("RabbitMQ %s image differs from the release pin", name)
+		}
+	}
+	return nil
+}
+
+func verifyManagedServicesOpenSearch(ctx context.Context, reader managedServicesReader, pins map[string]string) error {
+	release, err := reader.Get(ctx, "opensearch-operator", "helmrelease", "opensearch-operator")
+	if err != nil {
+		return err
+	}
+	tag := pins["OPENSEARCH_OPERATOR_IMAGE_TAG"]
+	repository := pins["OPENSEARCH_OPERATOR_IMAGE_REPOSITORY"]
+	if !resourceReady(release) || tag == "" || repository == "" || !strings.Contains(tag, "@sha256:") ||
+		nestedString(release, "spec", "chart", "spec", "version") != pins["OPENSEARCH_OPERATOR_CHART_VERSION"] ||
+		nestedString(release, "spec", "values", "manager", "image", "repository") != repository ||
+		nestedString(release, "spec", "values", "manager", "image", "tag") != tag ||
+		nestedBool(release, "spec", "values", "legacyAPI", "enabled") ||
+		!nestedBool(release, "spec", "values", "webhook", "enabled") {
+		return fmt.Errorf("OpenSearch operator chart, digest or modern API gates differ from Fleet")
+	}
+	skip := false
+	for _, raw := range nestedSlice(release, "spec", "values", "manager", "extraEnv") {
+		env, _ := raw.(map[string]any)
+		if nestedString(env, "name") == "SKIP_INIT_CONTAINER" && nestedString(env, "value") == "true" {
+			skip = true
+		}
+	}
+	if !skip {
+		return fmt.Errorf("OpenSearch operator root init container must be disabled")
+	}
+	prerequisites, err := reader.Get(ctx, "opensearch-operator", "daemonset", "opensearch-node-prerequisites")
+	if err != nil {
+		return err
+	}
+	desired := nestedInt(prerequisites, "status", "desiredNumberScheduled")
+	if desired < 1 || nestedInt(prerequisites, "status", "observedGeneration") < nestedInt(prerequisites, "metadata", "generation") ||
+		nestedInt(prerequisites, "status", "numberReady") != desired || nestedInt(prerequisites, "status", "updatedNumberScheduled") != desired || nestedInt(prerequisites, "status", "numberUnavailable") != 0 {
+		return fmt.Errorf("OpenSearch host vm.max_map_count prerequisite is not verified on every selected node")
+	}
+	deployment, err := reader.Get(ctx, "opensearch-operator", "deployment", "opensearch-operator")
+	if err != nil {
+		return err
+	}
+	if !managedServicesDeploymentRolledOut(deployment) {
+		return fmt.Errorf("OpenSearch operator rollout is incomplete")
+	}
+	for _, raw := range nestedSlice(deployment, "spec", "template", "spec", "containers") {
+		container, _ := raw.(map[string]any)
+		if nestedString(container, "name") == "operator-controller-manager" && nestedString(container, "image") == repository+":"+tag {
+			for _, raw := range nestedSlice(container, "env") {
+				env, _ := raw.(map[string]any)
+				if nestedString(env, "name") == "SKIP_INIT_CONTAINER" && nestedString(env, "value") == "true" {
+					return nil
+				}
+			}
+		}
+	}
+	return fmt.Errorf("OpenSearch live operator image or rootless gate differs from Fleet")
 }

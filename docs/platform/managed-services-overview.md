@@ -37,6 +37,7 @@ For a self-hosted data plane, `SERVICES_RUNNER_SELF=true` places the hub, runner
 Standard shared plans use `ProviderShared` placement with `NamespaceSharedNodes` isolation.
 Their instances run in the tenant's Project namespace.
 Other placements require a qualified provider configuration and compatible plans.
+For services on tenants' own Managed Clusters, see [Managed services on tenant clusters](managed-services-tenant-clusters.md).
 
 ## Request flow
 

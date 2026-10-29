@@ -116,6 +116,15 @@ kubectl get vmi ubuntu -o jsonpath='{.status.conditions[?(@.type=="Paused")].sta
 - **Stop** shuts the OS down. The boot is slow, but the VM frees all its resources.
 :::
 
+:::note Guest information needs the guest agent
+Pause, restart, stop, the consoles and disk hot plug do not depend on the guest agent.
+The guest OS name, kernel and filesystem list on the VM page come from
+`qemu-guest-agent` in the guest. For an image without it, such as Gentoo, the console
+says the guest agent is not connected. Install and start `qemu-guest-agent` in the
+guest and the information appears without changing the VM. The
+[capability matrix](/platform/vm-guest-capabilities) lists each catalog image.
+:::
+
 ---
 
 ## Delete a VM

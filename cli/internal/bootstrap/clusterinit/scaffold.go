@@ -284,6 +284,13 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 			}
 			scaffoldEnv["SCAFFOLD_SERVICES_DATABASE_CLASS"] = opts.Plan.ServicesDatabaseClass
 			scaffoldEnv["SCAFFOLD_SERVICES_STORAGE_BUDGET"] = opts.Plan.ServicesStorageBudget
+			if opts.Plan.ServicesHAStorageClass != "" {
+				if !strings.Contains(string(body), "# scaffold-capability: managed-services-local-ha-v1") {
+					return fmt.Errorf("scaffold: HA local storage requires a starter with managed-services-local-ha-v1 support")
+				}
+				scaffoldEnv["SCAFFOLD_SERVICES_HA_STORAGE_CLASS"] = opts.Plan.ServicesHAStorageClass
+				scaffoldEnv["SCAFFOLD_SERVICES_HA_STORAGE_BUDGET"] = opts.Plan.ServicesHAStorageBudget
+			}
 			if opts.SingleIPNAT {
 				scaffoldEnv["SCAFFOLD_SERVICES_INTERNAL_GATEWAY"] = "true"
 				if len(opts.SystemDNSIPs) == 0 {
@@ -303,6 +310,13 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	}
 	if opts.Plan.IngressAddressLayer != "" {
 		scaffoldEnv["SCAFFOLD_INGRESS_ADDRESS_LAYER"] = opts.Plan.IngressAddressLayer
+	}
+	if rabbitPins := resolvedRabbitMQPins(opts.Plan.InheritedDefaults, opts.Sets); len(rabbitPins) > 0 {
+		encoded, err := json.Marshal(rabbitPins)
+		if err != nil {
+			return fmt.Errorf("scaffold: encode RabbitMQ pin handoff: %w", err)
+		}
+		scaffoldEnv["SCAFFOLD_SERVICES_RABBITMQ_PINS"] = string(encoded)
 	}
 	scriptArgs := []string{opts.Plan.ClusterName, opts.Plan.Domain, opts.NodeExternalIP}
 	if opts.KubeconfigPath != "" {

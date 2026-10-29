@@ -40,7 +40,12 @@ func main() {
 	// codes, so it stays the printer and cobra stays quiet.
 	rootCmd.SilenceErrors = true
 
-	if err := rootCmd.Execute(); err != nil {
+	// A newer release installs itself in the background (internal/selfupdate);
+	// finishUpdate reports it once the command is done.
+	finishUpdate := startAutoUpdate(os.Args[1:])
+	err := rootCmd.Execute()
+	finishUpdate()
+	if err != nil {
 		code, msg := classifyExecuteErr(err)
 		if msg != "" {
 			fmt.Fprintln(os.Stderr, msg)
@@ -80,8 +85,10 @@ It follows the same patterns as AWS CLI, GCloud, and other cloud provider CLIs:
 	rootCmd.AddCommand(kmsCmd())
 	rootCmd.AddCommand(dbCmd())
 	rootCmd.AddCommand(orgsCmd())
+	rootCmd.AddCommand(machineIdentitiesCmd())
 	rootCmd.AddCommand(auditCmd())
 	rootCmd.AddCommand(versionCmd())
+	rootCmd.AddCommand(updateCmd())
 	return rootCmd
 }
 

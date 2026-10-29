@@ -149,14 +149,49 @@ The `local-path` storage class provisions storage on the local disk of the node 
 - **Node-bound**: Data is stored on a specific node; the workload must run on the same node
 - **Delete reclaim policy**: When a PVC is deleted, the underlying data is removed
 
-:::info Provider-Dependent Storage Classes
-Storage classes vary by infrastructure provider. Some platforms may offer:
+### Which classes you are offered
 
-- **Network-attached storage** (for example, Ceph RBD, Longhorn): Data accessible from any node, supports live migration
-- **SSD-backed classes**: Higher IOPS for database workloads
-- **HDD-backed classes**: Cost-effective for large datasets
+The available classes depend on the infrastructure. Typical ones are node-local storage
+(`local-path`), replicated network storage such as Ceph RBD, and an object-storage class
+for buckets. Each picker in the console offers only the classes that suit what you are
+creating, and labels each one with what it can do: **Node-local**, **Snapshots**,
+**Live migration**.
 
-Check your available storage classes with `kubectl get storageclass`. Always specify the `storageClassName` in your PVC or DataVolume to ensure you get the expected storage type.
+| You are creating | Classes offered |
+|---|---|
+| VM boot disk or data disk | Block storage, node-local or replicated |
+| Data disk of a live-migratable VM | Shared block storage that supports live migration (never node-local) |
+| Volume (PersistentVolumeClaim) | Block or file storage |
+| Clone of a disk (CSI clone) | Classes on the source disk's driver and storage pool; the source's own class is always offered |
+| Volume restored from a snapshot | Classes on the snapshot's driver and storage pool; the form starts on the source volume's class and modes |
+| Managed database (KdcDatabase) | Block storage, node-local included; **Platform default** leaves the choice to the platform |
+| Managed cluster worker disk | Block storage for a persistent disk, or an ephemeral container disk with no storage class |
+
+Object-storage (bucket) classes, internal scratch classes and classes without dynamic
+provisioning are never offered for volumes. Older classes that remain only for existing
+volumes are hidden from new volumes but keep working for the volumes that use them.
+
+### What the platform refuses
+
+The same rules apply to the YAML editor and the API, not only to pickers. A create
+request is refused with a message that names the class and the reason when:
+
+- the class does not exist (`400`);
+- the class cannot hold that kind of volume, for example `ceph-bucket` for a volume or a
+  VM disk (`422`);
+- a restore or CSI clone names a class on a different driver or storage pool than its
+  source (`422`). The message names the source's class to use instead;
+- a database is grown on a class that cannot expand volumes, such as `local-path`
+  (`422`). The database keeps its current size.
+
+If the platform cannot read the storage classes (for example during an API server
+restart), it does not block the request; Kubernetes still validates the claim.
+
+:::tip Pick the class explicitly
+Leaving `storageClassName` empty uses the cluster's default class, which is often
+node-local. A volume restored from a snapshot or cloned from a disk must use a class on
+the source's driver, so name it explicitly when you write YAML yourself. Run
+`kubectl get storageclass` to see the classes on your installation.
 :::
 
 ## Create a volume

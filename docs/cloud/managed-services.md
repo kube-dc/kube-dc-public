@@ -28,6 +28,7 @@ Use a service's guide for its parameters, supported operations, clients, and rec
 | Select a backup and recover a service | [Back up and restore](managed-services-backup-restore.md) |
 | Diagnose readiness or a refused change | [Check status and troubleshoot](managed-services-status.md) |
 | Remove a service and check what remains | [Delete a service](managed-services-status-deletion.md) |
+| Run a service inside one of your Managed Clusters | [Run a service on your own cluster](managed-services-tenant-cluster.md) |
 
 ## Choose a service
 

@@ -95,3 +95,42 @@ func TestManagedServicesPlanCarriesReviewedManagerInventory(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalHAStoragePlanIsExplicitHashedAndHostBound(t *testing.T) {
+	o := validBase()
+	o.InstallationKind = "kube-dc"
+	o.ManagedServicesMode = "on"
+	o.RookMode = RookCephPVC
+	o.CephStorageClass = "ceph-block"
+	o.ServicesHAStorageClass = "local-path"
+	o.ServicesHAStorageBudget = "128Gi"
+	o.Sets = map[string]string{"KUBE_OVN_MASTER_NODES": "192.0.2.1,192.0.2.2,192.0.2.3"}
+	plan, err := BuildPlan(&o, FleetState{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ServicesHAStorageClass != "local-path" || plan.ServicesHAStorageBudget != "128Gi" || plan.ServicesDatabaseClass != "ceph-block" {
+		t.Fatalf("lost separate storage roles: %+v", plan)
+	}
+	hash, err := ComputeInputHash(&o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.ServicesHAStorageBudget = "256Gi"
+	next, _ := ComputeInputHash(&o)
+	if hash == next {
+		t.Fatal("logical budget missing from reviewed input hash")
+	}
+	o.Sets["KUBE_OVN_MASTER_NODES"] = "192.0.2.1"
+	if _, err := BuildPlan(&o, FleetState{}); err == nil {
+		t.Fatal("one-host local HA accepted")
+	}
+	for _, tc := range []struct{ class, budget, mode string }{{"local-path", "", "on"}, {"", "128Gi", "on"}, {"Bad_Name", "128Gi", "on"}, {"local-path", "0Gi", "on"}, {"ceph-block", "128Gi", "on"}, {"local-path", "128Gi", "off"}} {
+		o.ServicesHAStorageClass = tc.class
+		o.ServicesHAStorageBudget = tc.budget
+		o.ManagedServicesMode = tc.mode
+		if _, err := ResolveManagedServices(&o); err == nil {
+			t.Fatalf("invalid HA selection accepted: %+v", tc)
+		}
+	}
+}

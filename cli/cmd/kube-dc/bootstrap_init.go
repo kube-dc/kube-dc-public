@@ -311,6 +311,9 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 			if err := verifyServicesDatabaseClass(cmd.Context(), o); err != nil {
 				return fmt.Errorf("init: %w", err)
 			}
+			if err := verifyServicesHAStorage(cmd.Context(), o); err != nil {
+				return fmt.Errorf("init: %w", err)
+			}
 			if _, err := clusterinit.ResolveManagedServices(o); err != nil {
 				return fmt.Errorf("init: %w", err)
 			}
@@ -632,6 +635,10 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"Managed services on, off, or auto (auto enables on qualified kube-dc storage)")
 	cmd.Flags().StringVar(&o.ServicesDatabaseClass, "services-database-class", "",
 		"Expandable database StorageClass for managed services (normally derived from storage topology)")
+	cmd.Flags().StringVar(&o.ServicesHAStorageClass, "services-ha-storage-class", "",
+		"Local-path StorageClass for HA managed services; separate from expandable Development storage")
+	cmd.Flags().StringVar(&o.ServicesHAStorageBudget, "services-ha-storage-budget", "",
+		"Logical allocation budget for HA local storage, for example 128Gi (not a directory size limit)")
 	cmd.Flags().StringVar(&o.ServicesStorageBudget, "services-storage-budget", "",
 		"Bounded managed-services storage allocation, for example 100Gi")
 	cmd.Flags().StringSliceVar(&o.ServicesEgressProbeURLs, "services-egress-probe", nil,
@@ -1278,6 +1285,15 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 					"by re-running. Fix SSH access, or point KUBECONFIG at %s yourself",
 					server, o.Domain, o.SSHHost, ferr, o.Domain)
 			}
+		}
+	}
+
+	if o.ServicesHAStorageClass != "" && plan.Mode != clusterinit.ModeInstall {
+		if _, targets := clusterinit.KubeconfigTargetsCluster(o.Domain, o.NodeExternalIP); !targets {
+			return fmt.Errorf("apply: HA storage requires a verified target kubeconfig after fetching")
+		}
+		if err := verifyServicesHAStorage(ctx, o); err != nil {
+			return fmt.Errorf("apply: %w", err)
 		}
 	}
 
@@ -2433,7 +2449,7 @@ func assertRequiredFlagsRegistered(fs *pflag.FlagSet) error {
 		"rook-osd-node", "rook-osd-size-gb", "rook-osd-device",
 		"ceph-node", "ceph-storage-class", "ceph-osd-count", "ceph-osd-volume-size-gb",
 		"s3-hostname", "no-s3-exposure", "payg", "installation-kind", "managed-services",
-		"services-database-class", "services-storage-budget", "services-egress-probe",
+		"services-database-class", "services-storage-budget", "services-ha-storage-class", "services-ha-storage-budget", "services-egress-probe",
 		"vm-storage-mode", "vm-golden", "vm-golden-block",
 		"ingress-address-layer", "ingress-node",
 		"tls-mode", "tls-cert", "tls-key", "trusted-ca-bundle",

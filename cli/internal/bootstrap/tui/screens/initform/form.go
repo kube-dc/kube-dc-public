@@ -35,8 +35,8 @@ import (
 // untouched.
 type State struct {
 	// basics
-	Name, Domain, NodeIP, Email                                                                               string
-	InstallationKind, ManagedServicesMode, ServicesDatabaseClass, ServicesStorageBudget, ServicesEgressProbes string
+	Name, Domain, NodeIP, Email                                                                                                                                string
+	InstallationKind, ManagedServicesMode, ServicesDatabaseClass, ServicesStorageBudget, ServicesHAStorageClass, ServicesHAStorageBudget, ServicesEgressProbes string
 	// SSHHost (user@host) enables the same NAT-topology detection the
 	// flag path does: init SSH-probes whether NodeIP is actually bound on
 	// the node and, behind a 1:1 NAT / cloud FIP, writes the arriving
@@ -198,6 +198,8 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 	o.ManagedServicesMode = strings.TrimSpace(s.ManagedServicesMode)
 	o.ServicesDatabaseClass = strings.TrimSpace(s.ServicesDatabaseClass)
 	o.ServicesStorageBudget = strings.TrimSpace(s.ServicesStorageBudget)
+	o.ServicesHAStorageClass = strings.TrimSpace(s.ServicesHAStorageClass)
+	o.ServicesHAStorageBudget = strings.TrimSpace(s.ServicesHAStorageBudget)
 	o.ServicesEgressProbeURLs = splitComma(s.ServicesEgressProbes)
 	o.SSHHost = strings.TrimSpace(s.SSHHost)
 	o.SSHHostKeySHA256 = strings.TrimSpace(s.HostKeySHA256)
@@ -413,6 +415,8 @@ func (s *State) FromOptions(o *clusterinit.InitOptions) {
 	set(&s.ManagedServicesMode, o.ManagedServicesMode)
 	set(&s.ServicesDatabaseClass, o.ServicesDatabaseClass)
 	set(&s.ServicesStorageBudget, o.ServicesStorageBudget)
+	set(&s.ServicesHAStorageClass, o.ServicesHAStorageClass)
+	set(&s.ServicesHAStorageBudget, o.ServicesHAStorageBudget)
 	set(&s.ServicesEgressProbes, strings.Join(o.ServicesEgressProbeURLs, ","))
 	set(&s.SSHHost, o.SSHHost)
 	set(&s.HostKeySHA256, o.SSHHostKeySHA256)
@@ -591,6 +595,8 @@ func (s *State) EquivalentFlags(o *clusterinit.InitOptions) string {
 	add("managed-services", o.ManagedServicesMode)
 	add("services-database-class", o.ServicesDatabaseClass)
 	add("services-storage-budget", o.ServicesStorageBudget)
+	add("services-ha-storage-class", o.ServicesHAStorageClass)
+	add("services-ha-storage-budget", o.ServicesHAStorageBudget)
 	for _, probe := range o.ServicesEgressProbeURLs {
 		add("services-egress-probe", probe)
 	}

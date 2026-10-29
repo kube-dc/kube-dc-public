@@ -154,3 +154,96 @@ func probeServicesBudget(ctx context.Context, o *clusterinit.InitOptions, sshCli
 	}
 	return fmt.Sprintf("%dGi", budgetGiB), nil
 }
+
+// Existing sites must prove the class and host inventory. Greenfield local-path
+// is installed by the starter and remains gated on live catalog qualification.
+func verifyServicesHAStorage(ctx context.Context, o *clusterinit.InitOptions) error {
+	if o.ServicesHAStorageClass == "" {
+		return nil
+	}
+	if o.Mode == clusterinit.ModeInstall {
+		if o.ServicesHAStorageClass != "local-path" {
+			return fmt.Errorf("greenfield HA storage requires the starter-owned local-path class")
+		}
+		return nil // CNI and the class are created later; prepublication checks both.
+	}
+	if _, targets := clusterinit.KubeconfigTargetsCluster(o.Domain, o.NodeExternalIP); !targets {
+		if o.ServicesHAStorageClass != "local-path" {
+			return fmt.Errorf("a custom HA class requires a verified target kubeconfig")
+		}
+		return nil
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	sc, err := exec.CommandContext(probeCtx, "kubectl", "--request-timeout=5s", "get", "storageclass", o.ServicesHAStorageClass, "-o", "json").Output()
+	if err != nil {
+		return fmt.Errorf("verify HA StorageClass: %w", err)
+	}
+	nodes, err := exec.CommandContext(probeCtx, "kubectl", "--request-timeout=5s", "get", "nodes", "-o", "json").Output()
+	if err != nil {
+		return fmt.Errorf("verify HA hosts: %w", err)
+	}
+	return verifyServicesHAStorageObjects(sc, nodes)
+}
+
+func verifyServicesHAStorageObjects(sc, nodes []byte) error {
+	var storage struct {
+		Provisioner string `json:"provisioner"`
+		Binding     string `json:"volumeBindingMode"`
+	}
+	if json.Unmarshal(sc, &storage) != nil || storage.Provisioner != "rancher.io/local-path" || storage.Binding != "WaitForFirstConsumer" {
+		return fmt.Errorf("HA storage requires rancher.io/local-path with WaitForFirstConsumer")
+	}
+	var inventory struct {
+		Items []struct {
+			Metadata struct {
+				UID     string            `json:"uid"`
+				Deleted *string           `json:"deletionTimestamp"`
+				Labels  map[string]string `json:"labels"`
+			} `json:"metadata"`
+			Spec struct {
+				Unschedulable bool `json:"unschedulable"`
+				Taints        []struct {
+					Effect string `json:"effect"`
+				} `json:"taints"`
+			} `json:"spec"`
+			Status struct {
+				Conditions []struct {
+					Type   string `json:"type"`
+					Status string `json:"status"`
+				} `json:"conditions"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(nodes, &inventory); err != nil {
+		return fmt.Errorf("decode HA node inventory: %w", err)
+	}
+	hosts := map[string]bool{}
+	uids := map[string]bool{}
+	for _, node := range inventory.Items {
+		if node.Spec.Unschedulable || node.Metadata.Deleted != nil || node.Metadata.UID == "" || uids[node.Metadata.UID] {
+			continue
+		}
+		blocked := false
+		for _, taint := range node.Spec.Taints {
+			if taint.Effect == "NoSchedule" || taint.Effect == "NoExecute" {
+				blocked = true
+			}
+		}
+		ready := false
+		for _, condition := range node.Status.Conditions {
+			if condition.Type == "Ready" && condition.Status == "True" {
+				ready = true
+			}
+		}
+		host := node.Metadata.Labels["kubernetes.io/hostname"]
+		if !blocked && ready && host != "" {
+			hosts[host] = true
+			uids[node.Metadata.UID] = true
+		}
+	}
+	if len(hosts) < 3 {
+		return fmt.Errorf("HA local storage requires three Ready schedulable hosts with distinct hostname labels")
+	}
+	return nil
+}

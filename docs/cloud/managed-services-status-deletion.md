@@ -13,6 +13,7 @@ Check these requirements:
 - You have moved application traffic and preserved required data.
 - You have checked the family guide for retained resources and final-backup behavior.
 
+For a service on one of your Managed Clusters, see [Run a service on your own cluster](managed-services-tenant-cluster.md#delete-a-service).
 For another placement, ask your provider what service or Project deletion removes.
 
 ## Read the status

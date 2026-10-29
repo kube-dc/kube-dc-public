@@ -28,6 +28,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -99,13 +100,13 @@ func dbCredentialsListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
+			store, err := scope.credentialPolicies(context.Background())
 			if err != nil {
 				return err
 			}
 			ctx, cancel := ctxWithTimeout()
 			defer cancel()
-			list, err := cli.ListDBCredentialPolicies(ctx, scope.Namespace)
+			list, err := store.List(ctx, scope.Namespace)
 			if err != nil {
 				return err
 			}
@@ -139,13 +140,13 @@ func dbCredentialsDescribeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
+			store, err := scope.credentialPolicies(context.Background())
 			if err != nil {
 				return err
 			}
 			ctx, cancel := ctxWithTimeout()
 			defer cancel()
-			p, err := cli.GetDBCredentialPolicy(ctx, scope.Namespace, name)
+			p, err := store.Get(ctx, scope.Namespace, name)
 			if err != nil {
 				return err
 			}
@@ -198,7 +199,7 @@ func dbCredentialsCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
+			store, err := scope.credentialPolicies(context.Background())
 			if err != nil {
 				return err
 			}
@@ -226,7 +227,7 @@ func dbCredentialsCreateCmd() *cobra.Command {
 			}
 			ctx, cancel := ctxWithTimeout()
 			defer cancel()
-			if err := cli.CreateDBCredentialPolicy(ctx, scope.Namespace, name, backend.CreateDBCredentialPolicyOptions{Spec: spec}); err != nil {
+			if err := store.Create(ctx, scope.Namespace, name, backend.CreateDBCredentialPolicyOptions{Spec: spec}); err != nil {
 				return err
 			}
 			fmt.Printf("DatabaseCredentialPolicy %s/%s created (mode=%s, database=%s)\n",
@@ -272,13 +273,9 @@ operator emergency instead.`,
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
-			if err != nil {
-				return err
-			}
 			ctx, cancel := ctxWithTimeout()
 			defer cancel()
-			res, err := cli.RotateDBCredentialPolicy(ctx, scope.Namespace, name, rotateRoot)
+			res, err := scope.rotateDBCredentialPolicy(ctx, name, rotateRoot)
 			if err != nil {
 				return err
 			}
@@ -335,13 +332,9 @@ into terminal scrollback.`,
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
-			if err != nil {
-				return err
-			}
 			ctx, cancel := ctxWithTimeout()
 			defer cancel()
-			creds, err := cli.GetDBCredentials(ctx, scope.Namespace, name)
+			creds, err := scope.getDBCredentials(ctx, name)
 			if err != nil {
 				return err
 			}
@@ -397,13 +390,13 @@ Requires --yes to proceed.`,
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
+			store, err := scope.credentialPolicies(context.Background())
 			if err != nil {
 				return err
 			}
 			ctx, cancel := ctxWithTimeout()
 			defer cancel()
-			if err := cli.DeleteDBCredentialPolicy(ctx, scope.Namespace, name); err != nil {
+			if err := store.Delete(ctx, scope.Namespace, name); err != nil {
 				return err
 			}
 			fmt.Printf("DatabaseCredentialPolicy %s/%s deleted\n", scope.Namespace, name)
@@ -441,13 +434,9 @@ credential workflow.`,
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
-			if err != nil {
-				return err
-			}
 			ctx, cancel := ctxWithTimeout()
 			defer cancel()
-			lease, err := cli.IssueDBCredentials(ctx, scope.Namespace, name)
+			lease, err := scope.issueDBCredentials(ctx, name)
 			if err != nil {
 				return err
 			}

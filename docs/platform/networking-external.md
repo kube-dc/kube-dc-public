@@ -409,6 +409,42 @@ resolve a conflict. Remove obsolete exposure through the Service lifecycle and
 verify withdrawal. A downgrade to a binary without this ledger requires separate
 hostname-ownership qualification.
 
+### Dead HTTPS listener cleanup
+
+Service reconciles start a sweep of the platform Gateway at most once every 30
+minutes. The sweep looks at generated HTTPS listeners: listeners named
+`https-<service>-<namespace>` whose certificate reference is in that namespace.
+It removes a listener only when it can prove that the controller wrote it:
+
+- the Gateway carries the controller's `network.kube-dc.com/listener-owner-*`
+  annotation for that Service; or
+- the Gateway's `managedFields` show the field manager `manager` as the only
+  writer of that listener entry.
+
+A listener with that proof goes in these cases:
+
+- **Namespace or Service gone:** removed on the first sweep.
+- **Service still exists:** removed when two sweeps at least 15 minutes apart
+  agree that the Service no longer requests HTTPS for the listener's hostname,
+  or that the listener belongs to an earlier Service with the same name. This
+  covers removed exposure annotations, a change to HTTP or TLS passthrough, a
+  Service type the Gateway does not serve, and a changed route hostname. The
+  listener stays while the Service's own HTTPRoute still attaches to it, for
+  example while a new hostname waits for its certificate. The sweep keeps its
+  observations in memory, so a manager restart starts the 15-minute window again.
+
+A listener stays if another Service holds a hostname reservation that overlaps
+its hostname. A listener that looks generated and dead but lacks the ownership
+proof also stays. The controller logs it as `Gateway listener looks dead but
+nothing proves the controller wrote it`. Check it and remove it by hand.
+
+When the Service no longer requests HTTPS at all, the sweep first deletes the
+Certificate and ReferenceGrant that the controller created for that Service UID.
+It never deletes TLS Secrets. If that cleanup fails, the listener stays and the
+next sweep tries again. Removal re-checks each listener against fresh reads,
+under the same per-Service lock that the Service's own route reconcile takes.
+If a read fails during that check, the listener stays.
+
 ### Plan shared Gateway listener capacity
 
 The Gateway API schema permits at most 64 listeners on one Gateway. Count

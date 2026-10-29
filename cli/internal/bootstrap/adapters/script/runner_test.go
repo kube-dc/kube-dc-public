@@ -517,6 +517,8 @@ func TestScriptPaths_CoversAllExportedKinds(t *testing.T) {
 
 // Smoke test that the path resolves under the expected fleet layout.
 func TestDefaultCmdFactory_PathLayout(t *testing.T) {
+	// openbao-init.sh requires KUBECONFIG; the test must not depend on the shell's.
+	t.Setenv("KUBECONFIG", "/fleet/kubeconfig")
 	r := New("/fleet", "", nil)
 	cmd, err := r.defaultCmdFactory(context.Background(), ports.ScriptOpenBaoInit, nil, nil)
 	if err != nil {

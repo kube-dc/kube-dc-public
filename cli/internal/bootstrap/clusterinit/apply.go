@@ -8,8 +8,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 	"strings"
+
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
 
 // M4-T12 — apply.

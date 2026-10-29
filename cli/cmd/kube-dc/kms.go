@@ -102,13 +102,13 @@ func kmsKeysListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
+			ctx, cancel := ctxWithTimeout()
+			defer cancel()
+			keys, err := scope.kmsKeys(ctx)
 			if err != nil {
 				return err
 			}
-			ctx, cancel := ctxWithTimeout()
-			defer cancel()
-			list, err := cli.ListKMSKeys(ctx, scope.Namespace)
+			list, err := keys.List(ctx, scope.Namespace)
 			if err != nil {
 				return err
 			}
@@ -142,13 +142,13 @@ func kmsKeysDescribeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
+			ctx, cancel := ctxWithTimeout()
+			defer cancel()
+			keys, err := scope.kmsKeys(ctx)
 			if err != nil {
 				return err
 			}
-			ctx, cancel := ctxWithTimeout()
-			defer cancel()
-			k, err := cli.GetKMSKey(ctx, scope.Namespace, name)
+			k, err := keys.Get(ctx, scope.Namespace, name)
 			if err != nil {
 				return err
 			}
@@ -185,10 +185,6 @@ func kmsKeysCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
-			if err != nil {
-				return err
-			}
 			rot := backend.KMSKeyRotation{}
 			if enableRotation || rotation != "" {
 				rot.Enabled = true
@@ -199,7 +195,11 @@ func kmsKeysCreateCmd() *cobra.Command {
 			}
 			ctx, cancel := ctxWithTimeout()
 			defer cancel()
-			k, err := cli.CreateKMSKey(ctx, scope.Namespace, name, backend.CreateKMSKeyOptions{
+			keys, err := scope.kmsKeys(ctx)
+			if err != nil {
+				return err
+			}
+			k, err := keys.Create(ctx, scope.Namespace, name, backend.CreateKMSKeyOptions{
 				Purpose:        purpose,
 				Algorithm:      algorithm,
 				DeletionPolicy: deletionPolicy,
@@ -241,13 +241,9 @@ min-decryption-version with kube-dc kms keys set-min-decryption-version.`,
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
-			if err != nil {
-				return err
-			}
 			ctx, cancel := ctxWithTimeout()
 			defer cancel()
-			res, err := cli.RotateKMSKey(ctx, scope.Namespace, name)
+			res, err := scope.rotateKMSKey(ctx, name)
 			if err != nil {
 				return err
 			}
@@ -281,13 +277,13 @@ key in place; schedule starts a 30d countdown handled by the controller.`,
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
+			ctx, cancel := ctxWithTimeout()
+			defer cancel()
+			keys, err := scope.kmsKeys(ctx)
 			if err != nil {
 				return err
 			}
-			ctx, cancel := ctxWithTimeout()
-			defer cancel()
-			res, err := cli.DeleteKMSKey(ctx, scope.Namespace, name)
+			res, err := keys.Delete(ctx, scope.Namespace, name)
 			if err != nil {
 				return err
 			}
@@ -432,23 +428,19 @@ version prefix is required at decrypt time.`,
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
-			if err != nil {
-				return err
-			}
 			ctx, cancel := ctxWithTimeout()
 			defer cancel()
-			res, err := cli.EncryptKMS(ctx, scope.Namespace, name, backend.EncryptKMSOptions{
-				// Always use the base64 field — covers binary payloads
-				// + utf-8 alike, no risk of misinterpretation of
-				// embedded null bytes.
-				PlaintextB64: encodeBase64(b),
-				Context:      context,
-			})
+			transit, err := scope.kmsTransit(ctx)
 			if err != nil {
 				return err
 			}
-			return writeOutput(outFile, []byte(res.Ciphertext))
+			// Always base64: covers binary payloads and utf-8 alike, no
+			// risk of misinterpreting embedded null bytes.
+			ciphertext, err := transit.Encrypt(ctx, scope.Namespace, name, encodeBase64(b), context)
+			if err != nil {
+				return err
+			}
+			return writeOutput(outFile, []byte(ciphertext))
 		},
 	}
 	cmd.Flags().StringVarP(&namespace, "namespace", "n", "", "Project backing namespace (default: current context's namespace)")
@@ -484,24 +476,21 @@ func kmsDecryptCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
+			ctx, cancel := ctxWithTimeout()
+			defer cancel()
+			transit, err := scope.kmsTransit(ctx)
 			if err != nil {
 				return err
 			}
-			ctx, cancel := ctxWithTimeout()
-			defer cancel()
-			res, err := cli.DecryptKMS(ctx, scope.Namespace, name, backend.DecryptKMSOptions{
-				Ciphertext: ctTrim,
-				Context:    context,
-			})
+			plaintextB64, err := transit.Decrypt(ctx, scope.Namespace, name, ctTrim, context)
 			if err != nil {
 				return err
 			}
 			// Always write the base64-decoded raw bytes; callers can
 			// cast to string when they expect utf-8.
-			raw, err := decodeBase64(res.PlaintextB64)
+			raw, err := decodeBase64(plaintextB64)
 			if err != nil {
-				return fmt.Errorf("decrypt: bad base64 in backend response: %w", err)
+				return fmt.Errorf("decrypt: bad base64 in the response: %w", err)
 			}
 			return writeOutput(outFile, raw)
 		},

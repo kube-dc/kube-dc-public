@@ -41,6 +41,8 @@ type ManagedSecretSpec struct {
 	Description string                `json:"description,omitempty"`
 	Rotation    map[string]any        `json:"rotation,omitempty"`
 	Sync        ManagedSecretSyncSpec `json:"sync,omitempty"`
+	// PublicationRef marks managed-service credentials (read-only here).
+	PublicationRef map[string]any `json:"publicationRef,omitempty"`
 }
 
 type ManagedSecretSyncSpec struct {

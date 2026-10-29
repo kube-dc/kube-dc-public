@@ -1,10 +1,11 @@
 package screens
 
 import (
-	"github.com/charmbracelet/x/ansi"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"

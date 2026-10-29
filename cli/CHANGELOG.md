@@ -1,5 +1,29 @@
 # kube-dc CLI changelog
 
+## v0.9.11 — 2026-10-29
+
+- Add typed platform API commands, capability discovery, machine identities, and MCP integration for supported installations.
+- Verify downloaded update binaries against release checksums.
+- Reconcile fresh-install component, image digest, Services catalog, and Keycloak theme pins. Scan the portable starter for installation identities and verify its manifest and file modes.
+- Use ManagedServices for new databases; exclude legacy db-manager from the fresh-install profile.
+- Keep billing available as an explicit installation option, with provider `none` and PAYG disabled by default.
+- Include the accepted KMS ownership, PostgreSQL CA and credential isolation, backup bucket compatibility, admission, and verified console transport corrections in the coordinated platform release.
+- The CLI release is one artifact in the 0.9.11 bundle. Use the matching starter only after its final publication and installation acceptance; existing installations retain their own rollout and migration requirements.
+
+## Unreleased
+
+- `kube-dc secrets get --value`, `secrets delete --destroy` and `secrets consumers` no longer need the backend where the installation serves the typed operations: the value comes from `managedsecretvalues` (with its storage metadata), destruction from `managedsecretversiondestructions` with `allVersions` before the ManagedSecret is deleted, and the consumer scan reads workloads with your credentials. Output is unchanged. Managed-service credentials and older installations keep the backend route.
+- `kube-dc secrets import` adopts a Secret without the backend where the installation serves `managedsecretvalues`: it reads the source Secret with your credentials, creates the ManagedSecret with sync off, writes the first version (removing the ManagedSecret again if that fails), then turns sync on to the source Secret. `secrets create` writes its first value the same way. Cross-namespace import still needs `--cross-namespace`.
+- `kube-dc kms rotate`, `kube-dc db credentials get|issue|rotate` and `kube-dc secrets destroy-version` use the typed `platform.kube-dc.com` operations where served (RBAC on `kmskeys/rotate`, `databasecredentialpolicies/issue|rotate`, `databasecredentials` and `managedsecrets/destroy-version`), else the backend route; output is unchanged.
+- `kube-dc secrets put` writes through the typed `managedsecretvalues` operation where the installation serves it (RBAC `update managedsecretvalues`; audited by the installation), else the backend route. `secrets get --value` stays on the backend route for now: its output carries OpenBao version metadata the typed read does not.
+- `kube-dc kms encrypt|decrypt` use the typed `platform.kube-dc.com` operations (`kmsencryptions`, `kmsdecryptions`) where the installation serves them: Kubernetes RBAC on `kmskeys/encrypt` and `kmskeys/decrypt` decides, and the installation audits each call. Elsewhere they keep the backend route. Output and flags are unchanged.
+- The CLI knows what it talks to and keeps working with older and newer installations:
+  - Before a Project command, it reads the installation's contract from `/.well-known/kube-dc-config`: the platform release and the CLI versions it accepts. It refuses to run when the installation requires a newer CLI (`kube-dc update`), and says when a newer one is recommended. An installation without a contract, or one that cannot be reached, never blocks it.
+  - It asks Kubernetes discovery which APIs the cluster serves, and uses the newest one, falling back to the backend route older installations have. Both answers are cached for an hour per installation.
+- `kube-dc kms keys list|describe|create|delete` can use the Kubernetes KMSKey resource directly, with the same output and checks. They do so only where the cluster serves it and the installation declares that its platform audit log records Kubernetes calls on `security.kube-dc.com` (`audit.kubernetesGroups` in the contract). Everywhere else they keep the backend route, which writes the audit events itself. Encrypt, decrypt and rotation still use the backend.
+- `kube-dc certificates list|get|request|delete` and `kube-dc db credentials list|describe|create|delete` follow the same rule for ManagedCertificate and DatabaseCredentialPolicy: native where the cluster serves the resource and the installation audits `security.kube-dc.com`, the backend route everywhere else. Renewal, credential values, issue and rotate still use the backend.
+- The CLI keeps itself current. In an interactive terminal it checks for a newer release at most once a day, in the background. It installs one only when the binary matches the SHA-256 in the release's `checksums.txt`. Signed checksums are prepared and can be made mandatory later. It replaces itself atomically and says so after the command finishes. It never updates development builds, in CI, when output is not a terminal, from `kube-dc credential` (the kubectl plugin), for binaries managed by Homebrew, Nix or Snap, or when its directory is not writable. Set `KUBE_DC_NO_UPDATE=1` to turn it off. `kube-dc update` (and `--check`) does the same on demand.
+
 ## v0.9.10 — 2026-10-07
 
 - Pin the kube-dc platform set qualified on cloud in the matching `v0.9.10` fleet-starter: chart, manager, backend, console and admin console move together. The starter also includes the qualified managed-service observation and native-resource metrics corrections. Native operator, kamaji and other pins are unchanged.

@@ -207,6 +207,8 @@ type InitOptions struct {
 	InstallationKind        string
 	ManagedServicesMode     string // auto (default), on, off
 	ServicesDatabaseClass   string
+	ServicesHAStorageClass  string
+	ServicesHAStorageBudget string
 	ServicesStorageBudget   string
 	ServicesEgressProbeURLs []string
 	// Verified from the live target cluster for an explicit class. The

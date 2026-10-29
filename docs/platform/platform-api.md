@@ -24,11 +24,19 @@ wraps all of it.
 | Manage console users | `users.platform.kube-dc.com` (`spec.group`: `org-admin`, `user` or `none`; `spec.projectAccess`: per-project `developer`, `project-manager` or `user`) |
 | One-click console login | `consolelogins.platform.kube-dc.com` (create only; single-use, 30 s) |
 | Usage for invoicing | `organizationusages.platform.kube-dc.com` (current, and reserved capacity integrated over a window) |
+| Follow organization events | `platformevents.platform.kube-dc.com` (get, list, watch; quota levels and suspension, resume, payment and workload-stop changes; needs `platformEvents.enabled`) |
 | Read the plan catalog | ConfigMap `billing-plans` in the platform namespace |
 
 It cannot read workloads or Secrets, change RBAC, or touch organizations
 outside its prefix. Organization users cannot change size or lift a
 suspension set by the provider.
+
+With `spec.externalCommerce.membersManagedExternally: true` the portal is the
+only place members are added and removed: the console refuses to create or
+delete users and to approve join requests, and points to the provider. The
+owner and organization administrators still change members' groups and project
+access in the console. A superadmin can switch it per organization in the admin
+console.
 
 ## Set up a provider
 

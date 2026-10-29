@@ -237,7 +237,7 @@ func TestWritePAYG_WiresInstallation(t *testing.T) {
 		PAYGEnabledKey:             "true",
 		PAYGInstallationBindingKey: "c1/example.com",
 		PAYGProductsRevisionKey:    "c1-20261001",
-		paygConnectionLimitKey:    "30",
+		paygConnectionLimitKey:     "30",
 		PAYGMeteringImageKey:       testMeteringImage,
 	} {
 		if got := envValue(env, k); got != want {

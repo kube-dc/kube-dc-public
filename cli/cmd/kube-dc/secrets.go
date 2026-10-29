@@ -1,23 +1,23 @@
 // `kube-dc secrets` subcommand — hybrid CLI for the M1 Secrets
 // Manager (M1-T07). CRD reads / patches / soft deletes call the
 // kube-apiserver directly with the user's Keycloak JWT (the OIDC
-// webhook enforces RBAC the same way kubectl does). Value-plane
-// writes, the import saga, the destroy/version-destroy paths, and
-// the consumer scanner go via the backend at backend.<domain>/api/
-// secrets/* — those operations carry orchestration + structured
-// Loki audit emission the CLI shouldn't duplicate.
+// webhook enforces RBAC the same way kubectl does). Values, import and
+// destruction use the typed platform.kube-dc.com operations where the
+// installation serves them (it audits them), else the backend at
+// backend.<domain>/api/secrets/*. The consumer scan reads workloads
+// with the user's token.
 //
 // Verbs:
 //   create    — create a new managed secret (CR + optional first value) (k8s [+ backend])
 //   list      — GET ManagedSecrets in the namespace                 (k8s)
-//   get       — show one ManagedSecret; --value also shows KV data  (k8s + backend)
-//   describe  — alias for `get` (AWS/GCP-style)                     (k8s + backend)
-//   put       — upsert KV values from --from-literal/--from-file    (backend)
+//   get       — show one ManagedSecret; --value also shows KV data  (k8s + typed, else backend)
+//   describe  — alias for `get` (AWS/GCP-style)                     (k8s + typed, else backend)
+//   put       — upsert KV values from --from-literal/--from-file    (typed, else backend)
 //   sync      — toggle/configure spec.sync                          (k8s)
-//   import    — adopt an existing Secret                            (backend)
-//   delete    — soft-delete; --destroy also wipes KV metadata       (k8s and/or backend)
-//   destroy-version  — destroy a single KV version (admin policy)   (backend)
-//   consumers — list workloads referencing the synced Secret        (backend)
+//   import    — adopt an existing Secret                            (typed, else backend)
+//   delete    — soft-delete; --destroy also wipes KV metadata       (k8s [+ typed, else backend])
+//   destroy-version  — destroy a single KV version (admin policy)   (typed, else backend)
+//   consumers — list workloads referencing the synced Secret        (k8s)
 
 package main
 
@@ -26,14 +26,17 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/shalb/kube-dc/cli/internal/auth"
 	"github.com/shalb/kube-dc/cli/internal/backend"
 	"github.com/shalb/kube-dc/cli/internal/k8sapi"
 	"github.com/shalb/kube-dc/cli/internal/kubeconfig"
+	"github.com/shalb/kube-dc/cli/internal/platform"
 	"github.com/shalb/kube-dc/cli/pkg/credential"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -61,6 +64,8 @@ type secretsScope struct {
 	AccessToken string
 	K8sCACert   string // CA bundle for kube-apiserver (from kubeconfig)
 	K8sInsecure bool   // insecure-skip-tls-verify flag from kubeconfig
+	// The installation's contract (internal/platform); nil when it publishes none.
+	Contract *platform.Contract
 }
 
 func secretsCmd() *cobra.Command {
@@ -169,14 +174,69 @@ func resolveScope(nsOverride string) (*secretsScope, error) {
 	if i := strings.LastIndex(domain, ":"); i >= 0 {
 		domain = domain[:i]
 	}
-	return &secretsScope{
+	scope := &secretsScope{
 		Domain:      domain,
 		APIServer:   serverURL,
 		Namespace:   ns,
 		AccessToken: creds.AccessToken,
 		K8sCACert:   caCertPEM,
 		K8sInsecure: insecureSkip,
-	}, nil
+	}
+	contract, err := checkPlatformContract(scope.Domain, os.Stderr)
+	if err != nil {
+		return nil, err
+	}
+	scope.Contract = contract
+	return scope, nil
+}
+
+// checkPlatformContract refuses to run against an installation that requires
+// a newer CLI, and says (at most hourly, with the cached contract) when a newer
+// one is recommended. An installation that publishes no contract, or cannot be
+// reached, never blocks the command (internal/platform).
+func checkPlatformContract(domain string, warn io.Writer) (*platform.Contract, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	client := auth.CreateHTTPClient("", false)
+	client.Timeout = 5 * time.Second
+	contract, err := platform.FetchContract(ctx, client, platform.DefaultCache(), "https://backend."+domain+"/.well-known/kube-dc-config")
+	if err != nil {
+		return nil, nil
+	}
+	notice, err := contract.Check(version)
+	if err != nil {
+		return nil, err
+	}
+	if notice != "" {
+		fmt.Fprintln(warn, notice)
+	}
+	return contract, nil
+}
+
+// native reports whether a command may call groupVersion's resource directly:
+// the cluster serves it and the installation's platform audit log records
+// Kubernetes calls on its group. Otherwise the backend route, which writes the
+// audit event itself, stays in use.
+func (s *secretsScope) native(ctx context.Context, groupVersion, resource string) bool {
+	group := groupVersion
+	if i := strings.Index(group, "/"); i >= 0 {
+		group = group[:i]
+	}
+	if !s.Contract.Audits(group) {
+		return false
+	}
+	caps, err := s.capabilities()
+	return err == nil && caps.Serves(ctx, groupVersion, resource)
+}
+
+// capabilities says which APIs this scope's cluster serves, so a command uses
+// the newest one and falls back to the backend route on older installations.
+func (s *secretsScope) capabilities() (*platform.Capabilities, error) {
+	k8s, err := s.k8s()
+	if err != nil {
+		return nil, err
+	}
+	return platform.NewCapabilities(s.APIServer, k8s, platform.DefaultCache()), nil
 }
 
 // realmFromContext extracts the Keycloak realm from a kube-dc
@@ -204,8 +264,13 @@ func (s *secretsScope) k8s() (*k8sapi.Client, error) {
 }
 
 func (s *secretsScope) backend() (*backend.Client, error) {
-	// Backend uses the system trust store — backend.<domain> is
-	// publicly-trusted (Let's Encrypt) on every cluster we ship.
+	return newBackendClient(s)
+}
+
+// newBackendClient is replaced in tests. The backend uses the system trust
+// store — backend.<domain> is publicly-trusted (Let's Encrypt) on every
+// cluster we ship.
+var newBackendClient = func(s *secretsScope) (*backend.Client, error) {
 	return backend.New(s.Domain, s.AccessToken, "", false)
 }
 
@@ -432,18 +497,14 @@ Examples:
 				fmt.Printf("Stored values are empty — run `kube-dc secrets put %s --from-literal=KEY=VAL` to populate.\n", name)
 				return nil
 			}
-			cli, err := scope.backend()
-			if err != nil {
-				return fmt.Errorf("secret created but value-write client init failed: %w (run `kube-dc secrets put %s ...` to retry)", err, name)
-			}
-			res, err := cli.PutSecretValues(ctx, scope.Namespace, name, data)
+			version, err := scope.putSecretValues(ctx, name, data)
 			if err != nil {
 				// CR is created; tell the caller exactly how to recover.
 				return fmt.Errorf("secret created but first value-write failed: %w\n"+
 					"  Retry:   kube-dc secrets put %s --from-literal=KEY=VAL\n"+
 					"  Cleanup: kube-dc secrets delete %s --destroy", err, name, name)
 			}
-			fmt.Printf("Wrote %s/%s v%d (%d keys)\n", scope.Namespace, name, res.Version, len(data))
+			fmt.Printf("Wrote %s/%s v%d (%d keys)\n", scope.Namespace, name, version, len(data))
 			return nil
 		},
 	}
@@ -536,15 +597,11 @@ func secretsGetCmd() *cobra.Command {
 				return err
 			}
 			if withValue {
-				// Value plane: backend orchestrates OpenBao login +
-				// KV read + audit emit.
-				cli, err := scope.backend()
-				if err != nil {
-					return err
-				}
+				// Value plane: the typed operation where served (audited
+				// by the installation), else the backend route.
 				ctx, cancel := ctxWithTimeout()
 				defer cancel()
-				s, err := cli.GetSecret(ctx, scope.Namespace, name, true)
+				s, err := scope.getSecretWithValue(ctx, name)
 				if err != nil {
 					return err
 				}
@@ -622,17 +679,13 @@ Examples:
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
-			if err != nil {
-				return err
-			}
 			ctx, cancel := ctxWithTimeout()
 			defer cancel()
-			res, err := cli.PutSecretValues(ctx, scope.Namespace, name, data)
+			version, err := scope.putSecretValues(ctx, name, data)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Wrote %s/%s v%d (%d keys)\n", scope.Namespace, name, res.Version, len(data))
+			fmt.Printf("Wrote %s/%s v%d (%d keys)\n", scope.Namespace, name, version, len(data))
 			return nil
 		},
 	}
@@ -822,12 +875,24 @@ func secretsImportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			ctx, cancel := ctxWithTimeout()
+			defer cancel()
+			srcNs := fmtCoalesce(fromNs, scope.Namespace)
+			if srcNs != scope.Namespace && !allowCross {
+				return fmt.Errorf("--from-namespace %s differs from the target namespace %s; pass --cross-namespace to opt in", srcNs, scope.Namespace)
+			}
+			if caps, err := scope.capabilities(); err == nil && caps.Serves(ctx, k8sapi.PlatformGroupVersion, k8sapi.ManagedSecretValues.Plural) {
+				version, err := scope.importSecret(ctx, name, srcNs, fromName, secretType, fmtCoalesce(desc, "Imported from "+srcNs+"/"+fromName))
+				if err != nil {
+					return err
+				}
+				fmt.Printf("Imported %s/%s (version %d) from %s/%s\n", scope.Namespace, name, version, srcNs, fromName)
+				return nil
+			}
 			cli, err := scope.backend()
 			if err != nil {
 				return err
 			}
-			ctx, cancel := ctxWithTimeout()
-			defer cancel()
 			res, err := cli.ImportSecret(ctx, scope.Namespace, name, backend.ImportSecretOptions{
 				SourceSecretName:      fromName,
 				SourceSecretNamespace: fromNs,
@@ -870,15 +935,10 @@ func secretsDeleteCmd() *cobra.Command {
 				return err
 			}
 			if destroy {
-				// Backend owns the KV-first-then-CR ordering + audit;
-				// delegate so the CLI never has to reproduce that saga.
-				cli, err := scope.backend()
-				if err != nil {
-					return err
-				}
+				// Stored values first, then the ManagedSecret.
 				ctx, cancel := ctxWithTimeout()
 				defer cancel()
-				res, err := cli.DeleteSecret(ctx, scope.Namespace, name, true)
+				res, err := scope.destroySecret(ctx, name)
 				if err != nil {
 					return err
 				}
@@ -922,13 +982,9 @@ func secretsDestroyVersionCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
-			if err != nil {
-				return err
-			}
 			ctx, cancel := ctxWithTimeout()
 			defer cancel()
-			res, err := cli.DestroyKVVersion(ctx, scope.Namespace, name, version)
+			res, err := scope.destroySecretVersion(ctx, name, version)
 			if err != nil {
 				return err
 			}
@@ -960,13 +1016,9 @@ func secretsConsumersCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
-			if err != nil {
-				return err
-			}
 			ctx, cancel := ctxWithTimeout()
 			defer cancel()
-			list, err := cli.ListConsumers(ctx, scope.Namespace, name)
+			list, err := scope.listConsumers(ctx, name)
 			if err != nil {
 				return err
 			}
@@ -1056,4 +1108,62 @@ func printManagedSecret(ms *k8sapi.ManagedSecret) {
 	if ms.Status.SyncedSecretName != "" {
 		fmt.Printf("Synced as:   %s\n", ms.Status.SyncedSecretName)
 	}
+}
+
+// importSecret adopts the Secret srcNs/srcName natively: the ManagedSecret is
+// created with sync off, the first version goes through the typed value
+// write, then sync takes over the source Secret. A failed value write
+// removes the new ManagedSecret again.
+func (s *secretsScope) importSecret(ctx context.Context, name, srcNs, srcName, secretType, desc string) (int, error) {
+	k8s, err := s.k8s()
+	if err != nil {
+		return 0, err
+	}
+	data, err := k8s.SecretData(ctx, srcNs, srcName)
+	if err != nil {
+		return 0, fmt.Errorf("cannot read source secret %s/%s: %w", srcNs, srcName, err)
+	}
+	if len(data) == 0 {
+		return 0, fmt.Errorf("source secret %s/%s has no data keys to import", srcNs, srcName)
+	}
+	ms, err := buildCreateManagedSecret(createOpts{Name: name, Namespace: s.Namespace, Type: secretType, Description: desc, SyncDisabled: true})
+	if err != nil {
+		return 0, err
+	}
+	if _, err := k8s.CreateManagedSecret(ctx, ms); err != nil {
+		return 0, err
+	}
+	version, err := k8s.PutSecretValue(ctx, s.Namespace, name, data)
+	if err != nil {
+		if derr := k8s.DeleteManagedSecret(ctx, s.Namespace, name); derr != nil {
+			return 0, fmt.Errorf("value write failed: %w; removing %s also failed: %v (run `kube-dc secrets delete %s --destroy`)", err, name, derr, name)
+		}
+		return 0, fmt.Errorf("value write failed, import undone: %w", err)
+	}
+	if _, err := k8s.PatchManagedSecretSync(ctx, s.Namespace, name, map[string]any{"enabled": true, "targetSecretName": srcName, "refreshInterval": "1m"}); err != nil {
+		return version, fmt.Errorf("imported v%d but enabling sync failed: %w (run `kube-dc secrets sync %s --enabled=true --target %s`)", version, err, name, srcName)
+	}
+	return version, nil
+}
+
+// putSecretValues writes a new value version: through the typed
+// platform.kube-dc.com operation where the cluster serves it (the backend
+// audits it), else through the backend route.
+func (s *secretsScope) putSecretValues(ctx context.Context, name string, data map[string]string) (int, error) {
+	if caps, err := s.capabilities(); err == nil && caps.Serves(ctx, k8sapi.PlatformGroupVersion, k8sapi.ManagedSecretValues.Plural) {
+		k8s, err := s.k8s()
+		if err != nil {
+			return 0, err
+		}
+		return k8s.PutSecretValue(ctx, s.Namespace, name, data)
+	}
+	cli, err := s.backend()
+	if err != nil {
+		return 0, err
+	}
+	res, err := cli.PutSecretValues(ctx, s.Namespace, name, data)
+	if err != nil {
+		return 0, err
+	}
+	return res.Version, nil
 }

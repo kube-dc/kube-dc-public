@@ -141,7 +141,9 @@ type ovnVLAN struct {
 }
 
 func buildOVNVLANs(vlans, pns []map[string]any) map[string][]ovnVLAN {
-	type pnModel struct{ ifaces map[string]map[string]struct{} }
+	type pnModel struct {
+		ifaces map[string]map[string]struct{}
+	}
 	pnByName := map[string]pnModel{}
 	for _, pn := range pns {
 		name := nestedString(pn, "metadata", "name")

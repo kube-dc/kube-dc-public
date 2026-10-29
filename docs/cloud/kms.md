@@ -66,22 +66,29 @@ kubectl auth can-i create kmskeys.security.kube-dc.com -n acme-production
 kubectl auth can-i update kmskeys.security.kube-dc.com -n acme-production
 ```
 
-### Current Organization-wide Transit boundary
+### Project Transit boundary
 
-`KMSKey` resources and key names are Project-scoped, but the current standard
-human OpenBao policies are not. They grant role-level access with paths such as
-`transit/encrypt/+` and `transit/decrypt/+` inside one Organization-wide Transit
-mount.
+Standard human OpenBao policies grant access to each published key in the
+Projects assigned to the user's `OrganizationGroup`. They no longer grant
+Organization-wide `transit/encrypt/+` or `transit/decrypt/+` access. Organization
+admins retain access through their assigned Project policies. An integration
+that deliberately used another Project's key must receive a role in that
+Project before the upgrade.
 
-As a result, a user with decrypt permission in one Project could operate on
-another Project's Transit key in the same Organization if they learn its exact
-internal key name. The dashboard and CLI still resolve a `KMSKey` through the
-selected Project, but that does not change the underlying OpenBao authorization
-boundary.
+This changes the earlier Organization-wide trust contract. Key IDs, key
+material, versions, and existing ciphertext do not change. Managed Cluster
+workload roles continue to bind their ServiceAccount to their specific key.
 
-Treat the **Organization as the current KMS trust boundary**. Put mutually
-untrusted teams in separate Organizations. Per-Project Transit authorization is
-planned for Phase 3 or later and is not part of the current release.
+A platform-owned reservation binds each Transit name to its original Project
+UID and `KMSKey` name. Deleting a `KMSKey` with `retain` keeps this reservation.
+Recreating the same key in the same Project can recover its material. A new
+Project with the same name has a different UID and cannot inherit it. Deleting
+the Project can delete its key material; `retain` is not a Project backup.
+
+Keys retained before this reservation mechanism was installed need verified
+historical ownership before recovery. The controller reports
+`TransitOwnershipUnproven` instead of adopting unproven material. Platform
+operators can follow the [security upgrade procedure](../internal/security-stable-upgrade-2026-10-28.md).
 
 ### Workload identities
 

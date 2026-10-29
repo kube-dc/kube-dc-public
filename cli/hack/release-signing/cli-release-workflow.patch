@@ -1,0 +1,22 @@
+diff --git a/.github/workflows/cli-release.yaml b/.github/workflows/cli-release.yaml
+index 4d93ec6..1fccaef 100644
+--- a/.github/workflows/cli-release.yaml
++++ b/.github/workflows/cli-release.yaml
+@@ -11,6 +11,11 @@ permissions:
+ jobs:
+   release:
+     runs-on: ubuntu-latest
++    # The CLI self-update signing key (KUBE_DC_UPDATE_SIGNING_KEY) is an
++    # environment secret of "release": the environment admits only v* tags
++    # and waits for a maintainer's approval, so an edited workflow on another
++    # ref, or an unapproved run, never receives the key.
++    environment: release
+     steps:
+       - name: Checkout
+         uses: actions/checkout@v4
+@@ -53,3 +58,5 @@ jobs:
+           workdir: cli
+         env:
+           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          # Signs checksums.txt for the CLI's self-update (cli/.goreleaser.yaml signs:).
++          KUBE_DC_UPDATE_SIGNING_KEY: ${{ secrets.KUBE_DC_UPDATE_SIGNING_KEY }}

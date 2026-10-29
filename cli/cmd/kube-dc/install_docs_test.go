@@ -1,12 +1,13 @@
 package main
 
 import (
-	"github.com/spf13/cobra"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 // The quickstart is the page a first-time operator copy-pastes from, so a stale

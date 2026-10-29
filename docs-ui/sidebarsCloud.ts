@@ -66,6 +66,16 @@ const sidebars: SidebarsConfig = {
         'ai-ide-integration',
         {
           type: 'doc',
+          id: 'mcp-for-administrators',
+          label: 'Hosted MCP for Administrators',
+        },
+        {
+          type: 'doc',
+          id: 'machine-identities',
+          label: 'Machine Identities (Terraform, MCP, CI)',
+        },
+        {
+          type: 'doc',
           id: 'api-reference',
           label: 'Automate with the API',
         },
@@ -95,6 +105,7 @@ const sidebars: SidebarsConfig = {
             {type: 'doc', id: 'managed-services-backup-restore', label: 'Back up and restore'},
             {type: 'doc', id: 'managed-services-status', label: 'Check status and troubleshoot'},
             {type: 'doc', id: 'managed-services-status-deletion', label: 'Delete a service'},
+            {type: 'doc', id: 'managed-services-tenant-cluster', label: 'Run on your own cluster'},
           ],
         },
         {

@@ -19,6 +19,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"sort"
@@ -78,13 +79,13 @@ func certsListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
+			store, err := scope.certificates(context.Background())
 			if err != nil {
 				return err
 			}
 			ctx, cancel := ctxWithTimeout()
 			defer cancel()
-			list, err := cli.ListCertificates(ctx, scope.Namespace)
+			list, err := store.List(ctx, scope.Namespace)
 			if err != nil {
 				return err
 			}
@@ -118,13 +119,13 @@ func certsGetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
+			store, err := scope.certificates(context.Background())
 			if err != nil {
 				return err
 			}
 			ctx, cancel := ctxWithTimeout()
 			defer cancel()
-			cert, err := cli.GetCertificate(ctx, scope.Namespace, name)
+			cert, err := store.Get(ctx, scope.Namespace, name)
 			if err != nil {
 				return err
 			}
@@ -177,13 +178,13 @@ subsequent requests.`,
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
+			store, err := scope.certificates(context.Background())
 			if err != nil {
 				return err
 			}
 			ctx, cancel := ctxWithTimeout()
 			defer cancel()
-			cert, err := cli.CreateCertificate(ctx, scope.Namespace, name, backend.CreateCertificateOptions{
+			cert, err := store.Create(ctx, scope.Namespace, name, backend.CreateCertificateOptions{
 				Type:             certType,
 				Purpose:          purpose,
 				DnsNames:         dnsNames,
@@ -270,13 +271,13 @@ across every cert in the project — Project deletion cleans those).`,
 			if err != nil {
 				return err
 			}
-			cli, err := scope.backend()
+			store, err := scope.certificates(context.Background())
 			if err != nil {
 				return err
 			}
 			ctx, cancel := ctxWithTimeout()
 			defer cancel()
-			res, err := cli.DeleteCertificate(ctx, scope.Namespace, name)
+			res, err := store.Delete(ctx, scope.Namespace, name)
 			if err != nil {
 				return err
 			}

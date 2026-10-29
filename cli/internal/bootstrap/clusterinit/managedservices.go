@@ -18,6 +18,8 @@ type ManagedServicesSelection struct {
 	InstallationKind         string
 	Mode                     string // on or off
 	DatabaseClass            string
+	HAStorageClass           string
+	HAStorageBudget          string
 	StorageBudget            string
 	EgressProbeURLs          []string
 	NeedsClassExpansionCheck bool
@@ -45,6 +47,19 @@ func ResolveManagedServices(o *InitOptions) (ManagedServicesSelection, error) {
 	if mode != "auto" && mode != "on" && mode != "off" {
 		return result, fmt.Errorf("--managed-services must be auto, on or off")
 	}
+	haClass, haBudget := o.ServicesHAStorageClass, o.ServicesHAStorageBudget
+	if (haClass == "") != (haBudget == "") {
+		return result, fmt.Errorf("local HA storage requires both --services-ha-storage-class and --services-ha-storage-budget")
+	}
+	if haClass != "" {
+		if o.InstallationKind != "kube-dc" || mode == "off" || !validStorageClassName(haClass) {
+			return result, fmt.Errorf("local HA storage requires managed services on for a kube-dc installation and a valid class")
+		}
+		q, err := resource.ParseQuantity(haBudget)
+		if err != nil || q.Sign() <= 0 {
+			return result, fmt.Errorf("--services-ha-storage-budget must be a positive Kubernetes quantity")
+		}
+	}
 	if o.InstallationKind == "cloudsigma" {
 		if mode == "on" {
 			return result, fmt.Errorf("managed services are not qualified for CloudSigma installations")
@@ -64,6 +79,9 @@ func ResolveManagedServices(o *InitOptions) (ManagedServicesSelection, error) {
 	}
 	if class != "" && !validStorageClassName(class) {
 		return result, fmt.Errorf("--services-database-class must be a DNS subdomain with labels of at most 63 characters")
+	}
+	if haClass != "" && haClass == class {
+		return result, fmt.Errorf("local HA class must be separate from expandable Development storage")
 	}
 	budget := o.ServicesStorageBudget
 	if budget == "" && o.RookMode == RookCephPVC {
@@ -101,7 +119,7 @@ func ResolveManagedServices(o *InitOptions) (ManagedServicesSelection, error) {
 	}
 	availableBucket := o.RookMode == RookCephLocal || o.RookMode == RookCephPVC || o.RookMode == RookCephMultiNode
 	qualified := availableBucket && class != "" && budget != "" && (!result.NeedsClassExpansionCheck || o.ServicesClassExpansionVerified)
-	if mode == "on" && !qualified {
+	if (mode == "on" || haClass != "") && !qualified {
 		return result, fmt.Errorf("--managed-services=on needs a rook-ceph bucket, an expandable database class and a bounded storage budget")
 	}
 	if mode == "off" || (mode == "auto" && !qualified) {
@@ -111,6 +129,7 @@ func ResolveManagedServices(o *InitOptions) (ManagedServicesSelection, error) {
 		return result, nil
 	}
 	result.Mode, result.DatabaseClass, result.StorageBudget, result.EgressProbeURLs = "on", class, budget, probes
+	result.HAStorageClass, result.HAStorageBudget = haClass, haBudget
 	if amount, _ := resource.ParseQuantity(budget); amount.Cmp(resource.MustParse("52Gi")) < 0 {
 		result.Warnings = append(result.Warnings, "managed-services storage budget is below the combined Development defaults (52Gi)")
 	} else if amount.Cmp(resource.MustParse("60Gi")) < 0 {

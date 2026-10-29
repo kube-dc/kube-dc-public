@@ -122,13 +122,15 @@ Selecting a family component without its operator gives you a bundle that
 never becomes ready and placements that are refused with "family bundle not
 ready".
 
-### 5. Label older Rook bucket Secrets
+### 5. Verify bucket credential provenance
 
 The PostgreSQL startup guard accepts a backup bucket Secret only if it carries
 `services.kube-dc.com/provenance: rook-ceph`. The platform adds this label to
 bucket Secrets that Rook creates in Project namespaces, but Secrets created
-before that labelling existed don't have it. A new PostgreSQL instance in such a
-Project then fails with `foreign PostgreSQL Secret API input db-backups`.
+before that labelling existed don't have it. The PostgreSQL input check rejects
+an unverified bucket Secret before attempting SQL and requires provider
+verification. This can also make an existing service's connectivity condition
+false even while the native cluster and application connections remain healthy.
 
 On an installation that already has Project buckets, run the backfill before
 enabling the guard, then check that nothing is left:
@@ -141,7 +143,34 @@ hack/backfill-rook-bucket-provenance.py --kubeconfig <kubeconfig> --apply
 The script labels a Secret only if Rook evidently created it. It must be
 controlled by its own Bound bucket claim, hold only the S3 key pair, have no
 writer other than Rook, and predate automatic labelling. It reports everything
-else and leaves it alone.
+else and leaves it alone. Use the installation's verified stamping cutoff.
+If a Secret created after that cutoff lacks provenance, investigate the stamping
+gap; do not advance the cutoff to force the backfill to accept it. Independently
+verify the provider's current bucket and credential ownership before considering
+a targeted provider attestation. Current ownership verification does not establish
+who created the Secret historically.
+
+A Secret created much later than its claim (Rook provisioned the bucket late,
+for example while the object store was unavailable) is refused as "not created
+within the skew after its claim". Add `--accept-skew-with-uid-proof` to accept
+such a Secret only when Rook's own write holds its reference to the claim's
+UID and the Secret was created together with the claim's ObjectBucket, which
+is bound to the same claim UID. The report prints the proof for each Secret it
+accepts. The script never reads Secret values: it reads their metadata and the
+names of their keys.
+
+Manager builds with the `rook-bucket-provenance` controller also repair
+unmarked bucket Secrets automatically, including keys rotated by the platform.
+They verify the current pair against the RGW admin API and the exact live
+Project, claim and ObjectBucket before adding the label. Verification failures
+emit `BucketProvenancePending`; successful repairs emit
+`BucketProvenanceVerified`. Check the Project's events if a first backup waits.
+
+The metadata-only script above deliberately refuses Secrets with another writer.
+Do not relax its writer check or add provenance manually to unblock a database.
+For rotated credentials, use a manager build with provider-verified repair or
+have the platform operator run its matching provider-verification tool. The
+manager needs its configured RGW HTTPS endpoint and platform-admin identity.
 
 ### 6. Verify the installation
 

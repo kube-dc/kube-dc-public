@@ -2,6 +2,67 @@
 
 The **Billing & Subscriptions** section lets you monitor resource consumption, manage your subscription plan, add extra capacity, and control payment for your whole Organization, all from one page under **Manage Organization > Billing**.
 
+## Pay-as-you-go organizations
+
+Your provider chooses whether your Organization uses a fixed subscription or
+pay-as-you-go (PAYG). For a PAYG Organization, open **Project > Quota** to see
+month-to-date estimated spending alongside resource usage. The estimate shows
+the selected Project and Organization totals, daily spending, measured
+quantities and applicable unit prices. Daily bars split the observed cost into
+its largest products and an **Other** group. **What costs the most** ranks every
+observed product for the selected Project; its percentages describe cost, while
+the resource bars describe the Project's share of Organization consumption.
+
+On a billable rate card, the preview includes recorded compute, block storage,
+object storage, retained backups, logs, metrics and managed-service management
+fees when used. It reads elected charge quantities rather than overlapping
+collector diagnostics. The whole-hour cutoff is a query boundary: evidence
+from some sources can arrive later. The preview remains an incomplete subtotal. The statement separately applies
+the account's billing dates, coverage rules and adjustments.
+A missing observation is unknown, not a zero-cost interval.
+
+An estimate is not an invoice. **Measuring only — not charged** means billing
+is still in observation mode. A total marked **≥** includes only observed
+intervals; gaps are unknown. **Measured, not priced** means that quantity has
+no applicable price on the displayed card. Ask your provider about billing
+activation or an incomplete estimate.
+
+### Managed-service fees and resources
+
+A managed service has two parts to its PAYG cost:
+
+- **Management:** one configured plan fee per logical service for the time
+  management is active. More replicas, larger Pods or more storage do not
+  multiply this fee. Changing the management plan can change its price.
+- **Resources:** dedicated CPU, memory, block storage and other metered usage
+  are charged at their applicable rates. Service-created Pods and volumes in
+  your Project count here. Shared platform infrastructure is covered by the
+  management fee.
+
+Increasing capacity within the same management plan increases resource cost;
+the management rate stays the same. Retained volumes or backups can continue
+to incur storage charges after management stops, until that retained data is
+removed.
+
+Prices labeled per **730 hours** use a reference month. For example, a
+management rate of €5 per 730 hours costs €5 × 30 ÷ 730, or approximately
+€0.21, for 30 eligible hours, plus resource usage. The total for a calendar
+month depends on how long the service is managed during that month. Use the
+prices shown for your installation.
+
+[Service offerings](service-offerings.md) list a plan's defaults and limits,
+not its prices. Showing prices next to offerings is planned.
+
+### Monetary precision
+
+Metering keeps quantities and prices at sufficient precision to accumulate
+small charges. The approved statement rounds its net total to cents and
+allocates those cents across its lines so they add up exactly. Individual
+observations are not each rounded to a cent. The displayed month-to-date
+estimate can change as additional usage arrives and the period is reconciled.
+
+The subscription plans and add-ons below apply to fixed-plan Organizations.
+
 ## Overview dashboard
 
 ![Billing overview](images/billing-subsciption-view.png)

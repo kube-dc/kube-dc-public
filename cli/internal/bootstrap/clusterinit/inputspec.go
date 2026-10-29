@@ -24,6 +24,8 @@ var inputStringBindings = []inputStringBinding{
 	{InitPrefix + "INSTALLATION_KIND", "installation-kind", func(o *InitOptions) *string { return &o.InstallationKind }},
 	{InitPrefix + "MANAGED_SERVICES", "managed-services", func(o *InitOptions) *string { return &o.ManagedServicesMode }},
 	{InitPrefix + "SERVICES_DATABASE_CLASS", "services-database-class", func(o *InitOptions) *string { return &o.ServicesDatabaseClass }},
+	{InitPrefix + "SERVICES_HA_STORAGE_CLASS", "services-ha-storage-class", func(o *InitOptions) *string { return &o.ServicesHAStorageClass }},
+	{InitPrefix + "SERVICES_HA_STORAGE_BUDGET", "services-ha-storage-budget", func(o *InitOptions) *string { return &o.ServicesHAStorageBudget }},
 	{InitPrefix + "SERVICES_STORAGE_BUDGET", "services-storage-budget", func(o *InitOptions) *string { return &o.ServicesStorageBudget }},
 	{InitPrefix + "STARTER_REF", "starter-ref", func(o *InitOptions) *string { return &o.StarterRef }},
 	{InitPrefix + "TLS_CERT", "tls-cert", func(o *InitOptions) *string { return &o.TLSCert }},

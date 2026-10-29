@@ -65,9 +65,11 @@ kubectl get managedservice events -n my-project -w
 | `database` | The application database. Default `app`. Backups cover this database only | `CreateOnly` |
 | `limits.max_execution_time`, `limits.max_result_rows`, `limits.max_concurrent_queries_for_user`, `limits.max_threads` | Per-query limits applied to the delivered logins' profiles, as strings | `OnlineDesired` |
 
-Compute, storage size and class, and the shard shape are all fixed at
-creation. To grow, take a backup and restore it into a new service on a larger
-plan.
+Use `Resize` to change data-server CPU and memory within the plan bounds,
+and `ExpandStorage` to increase storage allocation. Qualified local HA plans
+record the larger allocation without changing native PVC requests; expandable
+volume classes grow their bound volumes. Storage class and shard shape stay
+fixed. Use RestoreToNew to move to another storage class.
 
 ## Connect an application
 

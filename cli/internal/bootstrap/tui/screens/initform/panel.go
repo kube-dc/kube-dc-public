@@ -265,6 +265,10 @@ func panelFields() []panelField {
 			func(s *State) string { return s.ServicesDatabaseClass }, func(s *State, v string) { s.ServicesDatabaseClass = v }, nil),
 		txt("Storage", "Services storage budget", "optional bounded quantity, e.g. 100Gi", false,
 			func(s *State) string { return s.ServicesStorageBudget }, func(s *State, v string) { s.ServicesStorageBudget = v }, nil),
+		txt("Storage", "Services HA local class", "optional local-path class; requires at least three hosts", false,
+			func(s *State) string { return s.ServicesHAStorageClass }, func(s *State, v string) { s.ServicesHAStorageClass = v }, nil),
+		txt("Storage", "Services HA logical budget", "allocation quantity, e.g. 128Gi; does not limit the directory", false,
+			func(s *State) string { return s.ServicesHAStorageBudget }, func(s *State, v string) { s.ServicesHAStorageBudget = v }, nil),
 		txt("Storage", "Services egress probes", "comma-separated HTTPS URLs; default ghcr.io/v2/", false,
 			func(s *State) string { return s.ServicesEgressProbes }, func(s *State, v string) { s.ServicesEgressProbes = v }, nil),
 

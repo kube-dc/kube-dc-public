@@ -289,6 +289,12 @@ osImages:
           - systemctl enable --now qemu-guest-agent
 ```
 
+An image that ships no qemu-guest-agent and cannot install one at first boot
+must say `guestAgent: false`. The wizard then delivers the SSH key through
+NoCloud and leaves out the agent readiness probe. Before offering a new family,
+qualify its day-2 actions and add it to
+[VM guest capabilities by OS image](/platform/vm-guest-capabilities).
+
 After bumping the chart on the cluster, trigger a manual refresh to
 pull the bytes:
 

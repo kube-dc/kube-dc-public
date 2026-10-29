@@ -1,9 +1,10 @@
 package main
 
 import (
-	tea "charm.land/bubbletea/v2"
 	"encoding/json"
 	"fmt"
+
+	tea "charm.land/bubbletea/v2"
 	sshadapter "github.com/shalb/kube-dc/cli/internal/bootstrap/adapters/ssh"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/tui/screens"
 

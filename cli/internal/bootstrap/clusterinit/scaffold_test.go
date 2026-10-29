@@ -3,6 +3,7 @@ package clusterinit
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -877,5 +878,65 @@ POD_CIDR=10.100.0.0/16
 	body, _ = os.ReadFile(path)
 	if !strings.Contains(string(body), "EXT_NET_MGMT_SNAT_IP=100.65.0.9") {
 		t.Errorf("explicit operator value was overwritten: %s", string(body))
+	}
+}
+
+func TestScaffoldRequiresLocalHAStarterCapability(t *testing.T) {
+	fleet := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(fleet, "bootstrap"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, supported := range []bool{false, true} {
+		body := "# scaffold-capability: managed-services-v1\n"
+		if supported {
+			body += "# scaffold-capability: managed-services-local-ha-v1\n"
+		}
+		if err := os.WriteFile(filepath.Join(fleet, "bootstrap/add-cluster.sh"), []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+		runner := &fakeScriptRunner{runErr: errors.New("stop after env capture")}
+		err := Scaffold(context.Background(), ScaffoldOptions{Plan: &Plan{ClusterName: "demo", Domain: "example.test", InstallationKind: "kube-dc", ManagedServicesMode: "on", ManagerNodes: 3, ServicesDatabaseClass: "ceph-block", ServicesStorageBudget: "100Gi", ServicesHAStorageClass: "local-path", ServicesHAStorageBudget: "128Gi"}, FleetRepo: fleet, NodeExternalIP: "192.0.2.10", Runner: runner})
+		if !supported {
+			if err == nil || len(runner.calls) != 0 {
+				t.Fatal("old starter silently ignored HA inputs")
+			}
+			continue
+		}
+		if len(runner.calls) != 1 {
+			t.Fatalf("HA scaffold not invoked: %v", err)
+		}
+		env := runner.calls[0].Env
+		if env["SCAFFOLD_SERVICES_HA_STORAGE_CLASS"] != "local-path" || env["SCAFFOLD_SERVICES_HA_STORAGE_BUDGET"] != "128Gi" {
+			t.Fatal("HA scaffold inputs lost")
+		}
+	}
+}
+
+func TestScaffoldPassesResolvedRabbitMQPinsBeforeScriptRuns(t *testing.T) {
+	fleet := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(fleet, "bootstrap"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fleet, "bootstrap/add-cluster.sh"), []byte("# scaffold-capability: managed-services-v1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	inherited := map[string]string{"RABBITMQ_CLUSTER_OPERATOR_VERSION": "old", "RABBITMQ_TOPOLOGY_OPERATOR_VERSION": "1.20.4"}
+	overrides := map[string]string{"RABBITMQ_CLUSTER_OPERATOR_VERSION": "2.23.1", "RABBITMQ_CLUSTER_OPERATOR_IMAGE": "cluster:2.23.1@sha256:" + strings.Repeat("a", 64), "RABBITMQ_TOPOLOGY_OPERATOR_IMAGE": "topology:1.20.4@sha256:" + strings.Repeat("b", 64)}
+	runner := &fakeScriptRunner{runErr: errors.New("stop after capture")}
+	err := Scaffold(context.Background(), ScaffoldOptions{Plan: &Plan{ClusterName: "demo", Domain: "example.test", InstallationKind: "kube-dc", ManagedServicesMode: "on", ManagerNodes: 3, ServicesDatabaseClass: "ceph-block", ServicesStorageBudget: "100Gi", InheritedDefaults: inherited}, Sets: overrides, FleetRepo: fleet, NodeExternalIP: "192.0.2.10", Runner: runner})
+	if err == nil || len(runner.calls) != 1 {
+		t.Fatal(err)
+	}
+	var handed map[string]string
+	if json.Unmarshal([]byte(runner.calls[0].Env["SCAFFOLD_SERVICES_RABBITMQ_PINS"]), &handed) != nil {
+		t.Fatal("missing resolved handoff")
+	}
+	for key, value := range overrides {
+		if handed[key] != value {
+			t.Fatal("explicit pin lost", key)
+		}
+	}
+	if handed["RABBITMQ_TOPOLOGY_OPERATOR_VERSION"] != "1.20.4" {
+		t.Fatal("inherited pin lost")
 	}
 }

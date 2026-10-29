@@ -4,7 +4,8 @@ Kube-DC offers three storage tiers for KubeVirt VM root disks. This page is for
 **cluster operators**: how to choose a tier, how to enable the Ceph-RBD tiers on a
 cluster, and how live migration works. For end-user VM creation see
 [Creating a VM](/cloud/creating-vm); for the golden-image mirror see
-[Managing OS Images](/platform/managing-os-images).
+[Managing OS Images](/platform/managing-os-images); for how Kube-DC decides which class
+may serve which disk see [Storage classes](/platform/storage-classes).
 
 ## The three tiers
 
