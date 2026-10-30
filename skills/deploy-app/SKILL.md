@@ -8,6 +8,28 @@ description: Deploy a containerized application to a Kube-DC Project with option
 Deploy ordinary Kubernetes workloads into a Project's backing namespace. Keep
 the Project context, quota, storage, database, and exposure decisions explicit.
 
+## With the hosted MCP server
+
+When the Kube-DC MCP connector is available, prefer its app tools over
+writing the manifests below:
+
+- `deploy_app` (project, name, image, port; optional `healthPath`, `env`,
+  `envFromSecrets` for a database binding Secret, `pullSecret` for a private
+  registry, `public: false` for in-Project only) creates or updates the
+  Deployment and a ClusterIP Service with `expose-route: https`. Call it again
+  with a new image tag to ship a new version.
+- `rollout_status` reports `ready` with the HTTPS URL, `progressing`, or
+  `failed` with the reason (image pull, crash loop, scheduling) and the
+  failing pod's last log lines. Check about 30 seconds after a deploy; a new
+  hostname gets its certificate within 1 to 3 minutes.
+- `restart` and `rollback` (to the previous revision by default) change a
+  running app: ask the user first.
+
+An app first deployed with `kubectl apply` keeps its selector; `deploy_app`
+reports a field-ownership conflict and needs `force: true` to take over.
+Use the manifests below for volumes, several containers, Helm charts or
+anything the tool does not cover.
+
 ## Prerequisites
 
 - The Project reports `status.ready: true`.
