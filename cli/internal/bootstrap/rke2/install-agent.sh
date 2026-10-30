@@ -12,7 +12,7 @@
 #   node-ip    - (Optional) This node's IP for internal traffic
 #
 # Environment variables (optional):
-#   RKE2_VERSION  - RKE2 version (default: v1.36.3+rke2r1)
+#   RKE2_VERSION  - RKE2 version (default: v1.35.9+rke2r1)
 #   NODE_NAME     - Node name (default: hostname)
 #   CP_PORT       - Control plane port (default: 9345)
 #
@@ -59,7 +59,7 @@ fi
 SERVER_TOKEN="$1"
 CP_HOST="$2"
 CP_PORT="${CP_PORT:-9345}"
-RKE2_VERSION="${RKE2_VERSION:-v1.36.3+rke2r1}"
+RKE2_VERSION="${RKE2_VERSION:-v1.35.9+rke2r1}"
 NODE_NAME="${NODE_NAME:-$(hostname)}"
 NODE_IP="${3:-$(hostname -I | awk '{print $1}')}"
 

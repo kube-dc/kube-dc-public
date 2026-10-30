@@ -11,6 +11,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"gopkg.in/yaml.v3"
+	kversion "k8s.io/apimachinery/pkg/util/version"
 )
 
 // Fleet-starter acquisition (installer-ux-prd "Fleet starter template",
@@ -110,6 +113,8 @@ type starterGit interface {
 
 // EnsureStarterOptions is the parameter bundle for EnsureStarter.
 type EnsureStarterOptions struct {
+	// ClientVersion is the actual running installer version, including prerelease metadata.
+	ClientVersion string
 	// RepoPath is the fleet repo root (--repo, already resolved).
 	RepoPath string
 	// Ref is the full OCI ref to pull, e.g.
@@ -151,6 +156,9 @@ func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (EnsureStarte
 		return EnsureStarterResult{}, fmt.Errorf("init: starter: RepoPath is required")
 	}
 	if StarterShapePresent(opts.RepoPath) {
+		if err := ValidateStarterCLI(opts.RepoPath, opts.ClientVersion); err != nil {
+			return EnsureStarterResult{}, err
+		}
 		fmt.Fprintf(out, "fleet starter already present in %s — skipping OCI pull\n", opts.RepoPath)
 		// Repair half-done runs (review P1 2026-07-20): a prior run that
 		// extracted but died before git-init/commit leaves the shape
@@ -276,6 +284,9 @@ func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (EnsureStarte
 		return EnsureStarterResult{}, fmt.Errorf(
 			"%w: %s failed manifest verification: %v — wrong ref or corrupted artifact",
 			ErrStarterArtifactInvalid, opts.Ref, err)
+	}
+	if err := ValidateStarterCLI(tmp, opts.ClientVersion); err != nil {
+		return EnsureStarterResult{}, err
 	}
 
 	// Promote: move validated top-level entries into RepoPath. Same
@@ -461,6 +472,54 @@ func starterSchemaVersion(dir string) (version int, manifestSha string) {
 	return version, manifestSha
 }
 
+// starterMetadata reads compatibility independently of the mutable shared trees.
+func starterMetadata(dir string) (schema int, minimum string, err error) {
+	raw, err := os.ReadFile(filepath.Join(dir, ".starter-version"))
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, "", nil
+	}
+	if err != nil {
+		return 0, "", err
+	}
+	var meta struct {
+		Schema  int    `yaml:"schemaVersion"`
+		Minimum string `yaml:"minCLIVersion"`
+	}
+	if err := yaml.Unmarshal(raw, &meta); err != nil {
+		return 0, "", fmt.Errorf("invalid starter compatibility metadata: %w", err)
+	}
+	if meta.Schema > 3 {
+		return 0, "", fmt.Errorf("starter schema %d requires a newer kube-dc CLI", meta.Schema)
+	}
+	if meta.Schema >= 3 && meta.Minimum == "" {
+		return 0, "", fmt.Errorf("starter schema %d requires minCLIVersion", meta.Schema)
+	}
+	if meta.Minimum != "" {
+		if _, err := kversion.ParseSemantic(meta.Minimum); err != nil {
+			return 0, "", fmt.Errorf("invalid starter minCLIVersion %q: %w", meta.Minimum, err)
+		}
+	}
+	return meta.Schema, meta.Minimum, nil
+}
+
+// ValidateStarterCLI refuses incompatible installers before copying or committing
+// starter content. Check this for existing checkouts as well as new OCI pulls.
+func ValidateStarterCLI(dir, clientVersion string) error {
+	_, minimum, err := starterMetadata(dir)
+	if err != nil {
+		return err
+	}
+	if minimum == "" {
+		return nil
+	} // historical operator checkout
+	required, _ := kversion.ParseSemantic(minimum)
+	actual, err := kversion.ParseSemantic(clientVersion)
+	if err != nil || !actual.AtLeast(required) {
+		return fmt.Errorf("fleet starter requires kube-dc CLI %s or newer; running %q — upgrade the CLI before installation", minimum, clientVersion)
+	}
+	return nil
+}
+
 // verifyStarterManifest checks an extracted artifact against its own
 // .starter-manifest (format: `<mode> <sha256> <path>` per line, `#`
 // comments, mode normalized to 755/644). Failure directions covered:
@@ -484,6 +543,10 @@ func verifyStarterManifest(dir string) error {
 
 func verifyStarterManifestExcept(dir string, generated map[string]bool) error {
 	schema, wantManifestSha := starterSchemaVersion(dir)
+	_, minimum, metaErr := starterMetadata(dir)
+	if metaErr != nil {
+		return metaErr
+	}
 	manifestPath := filepath.Join(dir, ".starter-manifest")
 	raw, err := os.ReadFile(manifestPath)
 	if errors.Is(err, os.ErrNotExist) {
@@ -508,9 +571,17 @@ func verifyStarterManifestExcept(dir string, generated map[string]bool) error {
 	type rec struct{ mode, hash string }
 	want := map[string]rec{}      // rel path → manifest record
 	folded := map[string]string{} // lowercased path → original
+	requirements := 0
 	for i, line := range strings.Split(string(raw), "\n") {
 		t := strings.TrimSpace(line)
 		if t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		if strings.HasPrefix(t, "requires-cli ") {
+			requirements++
+			if schema != 3 || requirements != 1 || t != "requires-cli "+minimum {
+				return fmt.Errorf(".starter-manifest CLI requirement differs from schema/minCLIVersion")
+			}
 			continue
 		}
 		fields := strings.SplitN(t, " ", 3)
@@ -529,6 +600,9 @@ func verifyStarterManifestExcept(dir string, generated map[string]bool) error {
 		}
 		folded[strings.ToLower(p)] = p
 		want[p] = rec{mode: fields[0], hash: fields[1]}
+	}
+	if schema == 3 && requirements != 1 {
+		return fmt.Errorf("schema-v3 manifest requires exactly one requires-cli directive")
 	}
 	if len(want) == 0 {
 		return fmt.Errorf(".starter-manifest carries no entries")

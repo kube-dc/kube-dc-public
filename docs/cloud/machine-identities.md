@@ -93,6 +93,74 @@ kubectl --kubeconfig ci.kubeconfig get organizationusages.platform.kube-dc.com m
 For a time window, request
 `/apis/platform.kube-dc.com/v1alpha1/namespaces/my-org/organizationusages/my-org?from=…&to=…&granularity=hour`.
 
+## GitHub Actions without a secret
+
+A machine identity can let one GitHub Actions workflow sign in with the
+workflow's own OIDC token instead of a client secret. Nothing is stored in
+GitHub, and each token is short-lived. Set `spec.github.subject` to the
+exact `sub` claim of the workflow's token:
+
+```yaml
+apiVersion: kube-dc.com/v1
+kind: MachineIdentity
+metadata:
+  name: app-deploy
+  namespace: my-org
+spec:
+  groups: [app-deployers]          # an Organization group with the project roles CI needs
+  tokenLifetimeSeconds: 900
+  github:
+    subject: "repo:octo@1234567/app@89012345:environment:production"
+```
+
+The subject says which repository and which job may sign in:
+
+| The workflow job has | Subject ends with |
+|---|---|
+| `environment: production` | `:environment:production` |
+| no environment, on a push to `main` | `:ref:refs/heads/main` |
+| no environment, on a pull request | `:pull_request` |
+
+Repositories created, renamed or transferred since 2026-07-15 (or opted in
+by their owner) carry immutable ids in the subject:
+`repo:<owner>@<owner-id>/<repo>@<repo-id>:...`. Get them with
+`gh api repos/<owner>/<repo> --jq '"\(.owner.id) \(.id)"'`; older
+repositories use `repo:<owner>/<repo>:...`. One identity serves one subject:
+use one identity for production and another, with fewer rights, for pull
+requests.
+
+With `spec.github` the client secret stops working and the credentials Secret
+keeps only `client-id` and `token-url`. `status.audience` is the audience the
+workflow asks GitHub for. Removing `spec.github` issues a new client secret.
+
+In the workflow:
+
+```yaml
+permissions:
+  id-token: write      # lets the job request an OIDC token
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Sign in to Kube-DC
+        env:
+          AUDIENCE: ${{ vars.KUBE_DC_AUDIENCE }}     # status.audience
+          TOKEN_URL: ${{ vars.KUBE_DC_TOKEN_URL }}   # status.tokenUrl
+          CLIENT_ID: ${{ vars.KUBE_DC_CLIENT_ID }}   # status.clientId
+        run: |
+          gh=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUDIENCE" | jq -r .value)
+          token=$(curl -fsS "$TOKEN_URL" -d grant_type=client_credentials --data-urlencode "client_id=$CLIENT_ID" \
+            -d client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer \
+            --data-urlencode "client_assertion=$gh" | jq -r .access_token)
+          echo "::add-mask::$token"
+          kubectl config set-credentials ci --token="$token"
+```
+
+A GitHub token can be exchanged once; request a new one for each sign-in.
+
 ## Rotate, disable, delete
 
 | Action | Effect |

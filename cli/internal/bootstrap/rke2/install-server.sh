@@ -8,7 +8,7 @@
 #   Join server:   ./install-server.sh <token> <server-ip>
 #
 # Environment variables (optional):
-#   RKE2_VERSION     - RKE2 version (default: v1.36.3+rke2r1)
+#   RKE2_VERSION     - RKE2 version (default: v1.35.9+rke2r1)
 #   NODE_NAME        - Node name (default: hostname)
 #   NODE_IP          - Node IP for K8s internal traffic (default: detected)
 #   EXTERNAL_IP      - External IP for ingress (default: NODE_IP)
@@ -60,7 +60,7 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 # Default configuration
-RKE2_VERSION="${RKE2_VERSION:-v1.36.3+rke2r1}"
+RKE2_VERSION="${RKE2_VERSION:-v1.35.9+rke2r1}"
 NODE_NAME="${NODE_NAME:-$(hostname)}"
 NODE_IP="${NODE_IP:-$(hostname -I | awk '{print $1}')}"
 EXTERNAL_IP="${EXTERNAL_IP:-${NODE_IP}}"

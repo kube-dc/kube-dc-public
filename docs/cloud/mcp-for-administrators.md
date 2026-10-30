@@ -125,6 +125,7 @@ Tools carry MCP annotations, so apps ask the person before a destructive one.
 | `get_quota` | read | A project's quota and usage; for Organization administrators also the Organization's usage. |
 | `get_logs` | read | The last lines of a pod's log. |
 | `get_resources` | read | Any Kubernetes object the person may read. Secret values are masked. |
+| `rollout_status` | read | Whether an app is live: ready, progressing or failed with the reason, its pods, recent log lines of a failing pod and its HTTPS URL. |
 | `create_project` | write | Creates a project. |
 | `create_vm` | write | Creates a VM, with the console's own checks (image, quota, storage). |
 | `vm_power` | destructive | Starts, stops or restarts a VM. |
@@ -137,10 +138,14 @@ Tools carry MCP annotations, so apps ask the person before a destructive one.
 | `restore_snapshot` | write | Restores a snapshot to a new disk. |
 | `create_bucket` | write | Creates an object storage bucket. |
 | `create_managed_service` | write | Orders a managed database, cache or queue: the first call returns the price, the second (after the person saw it) creates it. |
+| `deploy_app` | write | Runs a container image as an app (Deployment and Service), with an HTTPS hostname when public. Called again with a new image, it ships a new version. |
+| `restart` | destructive | Restarts every pod of an app, one by one. Apps that support it ask the person to type the name first. |
+| `rollback` | destructive | Returns an app to an earlier revision. Apps that support it ask the person to type the name first. |
 | `apply_manifest` | write | Creates or updates one Kubernetes object. |
 | `delete` | destructive | Deletes a project, VM, disk, floating IP, external IP or any Kubernetes object. Apps that support it ask the person to type the name first. |
+| `extend_preview` | write | Keeps a preview app longer before the platform removes it. |
 
-Read-only URLs offer only the six read tools.
+Read-only URLs offer only the seven read tools.
 
 ## Data handling
 

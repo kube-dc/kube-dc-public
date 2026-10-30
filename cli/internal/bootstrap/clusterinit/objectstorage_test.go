@@ -96,7 +96,7 @@ func TestInfraObjectStorageYAML_Shape(t *testing.T) {
 	body := infraObjectStorageYAML("eu/dc1", ObjectStorageSpec{Mode: RookCephPVC})
 	for _, want := range []string{
 		"name: infra-object-storage",
-		"- name: infra-core",
+		"- name: infra-storage-prerequisites",
 		"path: ./clusters/eu/dc1/object-storage",
 		"prune: false",
 		"force: true",
@@ -186,7 +186,7 @@ func TestPatchKustomizationResources_GeneratedShape(t *testing.T) {
 		t.Fatalf("patch: changed=%v err=%v", changed, err)
 	}
 	body := strings.Join(out, "\n")
-	want := "  - infrastructure.yaml\n  - infra-object-storage.yaml\n  - platform.yaml"
+	want := "  - infrastructure.yaml\n  - infra-storage-prerequisites.yaml\n  - infra-object-storage.yaml\n  - platform.yaml"
 	if !strings.Contains(body, want) {
 		t.Errorf("resources insertion wrong:\n%s", body)
 	}

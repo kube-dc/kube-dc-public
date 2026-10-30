@@ -53,7 +53,7 @@ two of them (the domain and the addresses) are painful to change afterwards.
 
 | # | Value | Example | Notes |
 |---|---|---|---|
-| 1 | Three servers, Ubuntu 24.04 | None | See the floors below |
+| 1 | Three servers, Ubuntu 26.04 | None | See the floors below |
 | 2 | Domain you control | `dc.example.com` | Wildcard DNS must point at #4 |
 | 3 | Node internal IPs | `192.168.0.11-13` | Stable, same L2, used for etcd |
 | 4 | Public address for the front door | `203.0.113.10` | Where `*.dc.example.com` resolves |

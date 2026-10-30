@@ -657,6 +657,8 @@ func TestBootstrapInit_DefaultApply_ReachesEngine(t *testing.T) {
 // fails with ErrDNSGateBlocked BEFORE reaching the apply engine.
 // Complementary regression to the "reaches engine" test above.
 func TestBootstrapInit_DefaultApply_DNSGateBlocksWithoutOptOut(t *testing.T) {
+	// The gate must be independent of the operator's kubeconfig and DNS.
+	t.Setenv("KUBE_DC_MOCK", "fresh")
 	args := validAtlantisArgs()
 	args = append(filterFlag(args, "--dry-run"), "--yes")
 	// Deliberately NO --allow-dns-not-ready — the gate should fire.
@@ -2110,8 +2112,14 @@ func TestInitEnvPrefill_Normalization(t *testing.T) {
 }
 
 func TestResolveStarterRef(t *testing.T) {
-	saved := version
-	defer func() { version = saved }()
+	saved, savedBundle := version, starterBundleVersion
+	defer func() { version, starterBundleVersion = saved, savedBundle }()
+
+	version, starterBundleVersion = "0.9.12", "v0.9.11"
+	if got := resolveStarterRef(""); got != "oci://ghcr.io/kube-dc/fleet-starter:v0.9.11" {
+		t.Fatalf("independently versioned installer selected %q", got)
+	}
+	starterBundleVersion = ""
 
 	version = "0.5.0" // GoReleaser stamps WITHOUT the leading v
 	if got := resolveStarterRef(""); got != "oci://ghcr.io/kube-dc/fleet-starter:v0.5.0" {
