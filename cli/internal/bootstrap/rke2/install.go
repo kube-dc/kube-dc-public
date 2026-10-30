@@ -43,7 +43,7 @@ const remoteScriptPath = "/tmp/kube-dc-rke2-install-server.sh"
 // defaultRKE2Version pins the RKE2 line the installer requests when the
 // operator doesn't override it. Kept in sync with the install guide +
 // the fleet script default.
-const defaultRKE2Version = "v1.36.3+rke2r1"
+const defaultRKE2Version = "v1.35.9+rke2r1"
 
 // InstallOptions parameterizes a single control-plane node install.
 type InstallOptions struct {

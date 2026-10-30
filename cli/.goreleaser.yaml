@@ -51,5 +51,9 @@ release:
   github:
     owner: kube-dc
     name: kube-dc-public
-  prerelease: auto
+  # Keep the installer downloadable for exact-digest acceptance without moving
+  # normal update clients before its bundle is promoted. Promote this release
+  # explicitly after acceptance; artifact bytes and the tag stay unchanged.
+  prerelease: true
+  make_latest: false
   name_template: "kube-dc CLI v{{.Version}}"

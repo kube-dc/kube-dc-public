@@ -743,7 +743,7 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"Skip the GitHub repo creation step (M4-T05; existing-fleet mode skips this anyway)")
 	cmd.Flags().StringVar(&o.StarterRef, "starter-ref", "",
 		"Fleet-starter OCI artifact to extract into --repo when the shared fleet trees are absent "+
-			"(default: oci://ghcr.io/kube-dc/fleet-starter:<cli-version>; dev builds use :latest). "+
+			"(default: oci://ghcr.io/kube-dc/fleet-starter:<qualified-bundle-version>; dev builds use :latest). "+
 			"A --repo that already carries the trees skips the pull")
 	cmd.Flags().StringVar(&o.MirrorRegistry, "mirror-registry", "",
 		"Container image mirror registry (airgap installs)")
@@ -2570,18 +2570,19 @@ func remoteIdentity(raw string) (host, path string, ok bool) {
 }
 
 // resolveStarterRef returns the fleet-starter OCI ref to pull:
-// operator override verbatim, else the artifact matching this binary's
-// own version (GoReleaser stamps main.version without the leading "v";
-// the artifact tags carry it). Dev builds track :latest — a dev CLI
-// against a pinned starter would mask exactly the drift dev builds
-// exist to surface.
+// operator override verbatim, else the platform bundle qualified with this CLI.
+// Development builds track latest; an empty bundle pin retains the historical
+// same-version fallback for independently built installers.
 func resolveStarterRef(override string) string {
 	if override != "" {
 		return override
 	}
-	v := version
-	if v == "" || v == "dev" {
+	if version == "" || version == "dev" {
 		return "oci://ghcr.io/kube-dc/fleet-starter:latest"
+	}
+	v := starterBundleVersion
+	if v == "" {
+		v = version
 	}
 	if !strings.HasPrefix(v, "v") {
 		v = "v" + v

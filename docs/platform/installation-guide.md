@@ -24,9 +24,19 @@ Read the [Installation overview](installation-overview.md) first to understand t
 
 ## Phase 1: server preparation
 
+For the 0.9.11 fresh Ceph profile, use Linux 7.0 or later on every node;
+FIPS mode requires Linux 7.2 or later. Ubuntu 26.04 is the selected non-FIPS
+baseline. The storage prerequisite gate holds Ceph installation if a node fails
+these checks. See [Rook's CephX client requirements](https://rook.github.io/docs/rook/v1.19/Storage-Configuration/Advanced/cephx-key-rotation/).
+Other RKE2-supported systems can be used with object storage disabled.
+
+Use CLI 0.9.12 for platform bundle 0.9.11. Their versions are independent;
+`--starter-ref` pins the platform bundle, and its metadata declares the minimum
+supported CLI version.
+
 ### 1.1 Provision servers
 
-Provision three servers with **Ubuntu 24.04 LTS**. Throughout this guide, we use:
+Provision three servers with **Ubuntu 26.04 LTS**. Throughout this guide, we use:
 
 | Hostname | Role | Management IP |
 |----------|------|---------------|
@@ -812,7 +822,7 @@ kube-dc bootstrap init \
 | `--domain` / `--node-external-ip` | Wildcard domain + the public IP it resolves to (§3.2) |
 | `--fleet-mode` | `new-repo` (CLI creates the GitHub/GitLab repo), `existing-repo`, or `existing-fleet` (add a cluster to a repo that already has siblings, and inherit their version pins) |
 | `--repo` | Local path for the fleet checkout. Point it at an **empty directory**. The CLI pulls the shared platform trees into it from the fleet-starter OCI artifact. Default when omitted: `$KUBE_DC_FLEET`, else `~/.kube-dc/fleet` |
-| `--starter-ref` | Immutable full OCI starter reference. Released CLIs default to their own version; pin it explicitly in controlled/reinstall procedures and never use `:latest` |
+| `--starter-ref` | Immutable full OCI starter reference. Released CLIs select their qualified platform bundle; pin that bundle explicitly in controlled/reinstall procedures and never use `:latest` |
 | `--github-owner` / `--github-repo` | Where the fleet repo lives (auto-created in `new-repo` mode) |
 | `--object-storage-mode` | **REQUIRED.** Working: `rook-ceph-local` (loop-file backed, single node), `rook-ceph-multi-node` (raw devices, exactly 3 nodes), `rook-ceph-pvc`. `disabled` installs a **deliberately degraded** cluster: Mimir and Loki are SUSPENDED (no metrics or logs storage), Grafana's database runs with backups and WAL archiving OFF, and alloy log-delivery errors are expected. Never use it for a customer-facing cluster. `external-ceph` and `external-s3` are **recognised but fail closed** (fleet stubs); do not select them |
 | `--ceph-node=NODE=DEVICE` | One raw block device per OSD node (repeat 3× for multi-node). The device is the **bare name** as `lsblk` shows it (`nvme1n1`, `sdb`), and a `/dev/` prefix is stripped automatically since v0.5.13. When a raw device is named (not the loop-file default) `init` probes it over SSH and **warns** if it is missing or already carries data. See the zap warning. **Re-used hardware: see the zap warning below** |
@@ -934,7 +944,7 @@ appear immediately.
 What `init` does, in order: **fetches the fleet starter** (when `--repo`
 is a fresh, empty directory, the shared platform trees (`bootstrap/`,
 `infrastructure/`, `platform/`, and `addons/`) are pulled from the
-versioned OCI artifact `oci://ghcr.io/kube-dc/fleet-starter:<cli-version>`
+versioned OCI artifact `oci://ghcr.io/kube-dc/fleet-starter:<bundle-version>`
 and committed; a directory that already carries them is used as-is and is **not upgraded**; converge an old fleet to the matching starter before init;
 override with `--starter-ref`) → generates a SOPS **age key** → creates +
 pushes the fleet repo → scaffolds `clusters/dc1/` (cloud/public networks,

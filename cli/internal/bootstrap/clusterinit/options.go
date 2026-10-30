@@ -400,7 +400,7 @@ type InitOptions struct {
 	// StarterRef overrides the fleet-starter OCI artifact pulled into
 	// --repo when the shared fleet trees are absent (greenfield
 	// new-repo/existing-repo modes). Empty = the cobra layer resolves
-	// oci://ghcr.io/kube-dc/fleet-starter:<cli-version> (or :latest for
+	// oci://ghcr.io/kube-dc/fleet-starter:<qualified-bundle-version> (or :latest for
 	// dev builds). A checkout that already has the shape skips the pull
 	// entirely, whatever this is set to.
 	StarterRef       string
