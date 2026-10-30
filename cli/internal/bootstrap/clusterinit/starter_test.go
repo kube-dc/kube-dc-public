@@ -632,3 +632,62 @@ func TestEnsureStarter_RecordsInstalledRef(t *testing.T) {
 		t.Errorf(".starter-version must record the digest of a digest-pinned ref:\n%s", b)
 	}
 }
+
+func TestStarterCLICompatibility(t *testing.T) {
+	for _, tc := range []struct {
+		client, minimum string
+		pass            bool
+	}{
+		{"0.9.12", "v0.9.12", true}, {"v0.10.0", "v0.9.12", true},
+		{"v0.9.11", "v0.9.12", false}, {"0.9.12-rc.1", "v0.9.12", false},
+		{"dev", "v0.9.12", false}, {"", "v0.9.12", false}, {"v0.9.12", "garbage", false},
+	} {
+		t.Run(tc.client+"/"+tc.minimum, func(t *testing.T) {
+			dir := t.TempDir()
+			os.WriteFile(filepath.Join(dir, ".starter-version"), []byte("schemaVersion: 3\nminCLIVersion: "+tc.minimum+"\n"), 0o644)
+			err := ValidateStarterCLI(dir, tc.client)
+			if (err == nil) != tc.pass {
+				t.Fatalf("compatibility got %v, want pass=%v", err, tc.pass)
+			}
+		})
+	}
+}
+
+func TestEnsureStarterV3RefusesBeforePromotionAndGit(t *testing.T) {
+	files := testStarterFiles(".gitignore", ".starter-version", ".starter-manifest")
+	manifest := "requires-cli v0.9.12\n" + manifestFor(starterShapeMarkers...)
+	digest := sha256.Sum256([]byte(manifest))
+	metadata := fmt.Sprintf("schemaVersion: 3\nminCLIVersion: v0.9.12\nmanifestSha256: %x\n", digest)
+	for _, client := range []string{"v0.9.11", "v0.9.12"} {
+		dir := filepath.Join(t.TempDir(), "repo")
+		git := &fakeStarterGit{}
+		puller := &fakePuller{files: files, contents: map[string]string{".starter-manifest": manifest, ".starter-version": metadata}}
+		_, err := EnsureStarter(context.Background(), EnsureStarterOptions{RepoPath: dir, Ref: testStarterRef, Flux: puller, Git: git, ClientVersion: client})
+		if client == "v0.9.11" {
+			if err == nil || !strings.Contains(err.Error(), "upgrade the CLI") {
+				t.Fatalf("old installer accepted: %v", err)
+			}
+			entries, _ := os.ReadDir(dir)
+			if len(entries) != 0 || git.initDir != "" || git.commitMsg != "" {
+				t.Fatal("incompatible starter mutated destination or git")
+			}
+		} else if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestStarterV3RequirementBoundToManifest(t *testing.T) {
+	for _, directive := range []string{"", "requires-cli v0.9.11\n", "requires-cli v0.9.12\nrequires-cli v0.9.12\n"} {
+		dir := t.TempDir()
+		os.MkdirAll(filepath.Join(dir, "platform"), 0o755)
+		os.WriteFile(filepath.Join(dir, "platform/kustomization.yaml"), []byte("x\n"), 0o644)
+		manifest := directive + manifestFor("platform/kustomization.yaml")
+		digest := sha256.Sum256([]byte(manifest))
+		os.WriteFile(filepath.Join(dir, ".starter-manifest"), []byte(manifest), 0o644)
+		os.WriteFile(filepath.Join(dir, ".starter-version"), []byte(fmt.Sprintf("schemaVersion: 3\nminCLIVersion: v0.9.12\nmanifestSha256: %x\n", digest)), 0o644)
+		if err := verifyStarterManifest(dir); err == nil {
+			t.Fatalf("accepted missing, mismatched or duplicate requirement: %q", directive)
+		}
+	}
+}

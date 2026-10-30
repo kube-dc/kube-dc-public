@@ -1221,6 +1221,9 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	// unreachable from the real CLI (review P1 2026-07-20): a retry
 	// after a died-at-commit run would skip the step and fail later.
 	starterNeeded := plan.FleetMode != clusterinit.FleetExistingFleet
+	if err := clusterinit.ValidateStarterCLI(o.Repo, version); err != nil {
+		return err
+	}
 	rep.Plan(clusterinit.InstallSteps(clusterinit.InstallStepInputs{
 		NoInstallPrereqs: o.NoInstallPrereqs,
 		Starter:          starterNeeded,
@@ -1352,11 +1355,12 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	if starterNeeded {
 		if err := step(rep, clusterinit.StepStarter, func() error {
 			_, e := clusterinit.EnsureStarter(ctx, clusterinit.EnsureStarterOptions{
-				RepoPath: o.Repo,
-				Ref:      o.StarterRef, // pinned pre-plan; see runInitDryRun/DefaultApply
-				Flux:     starterPuller,
-				Git:      starterGit,
-				Out:      out,
+				RepoPath:      o.Repo,
+				ClientVersion: version,
+				Ref:           o.StarterRef, // pinned pre-plan; see runInitDryRun/DefaultApply
+				Flux:          starterPuller,
+				Git:           starterGit,
+				Out:           out,
 			})
 			return e
 		}); err != nil {
