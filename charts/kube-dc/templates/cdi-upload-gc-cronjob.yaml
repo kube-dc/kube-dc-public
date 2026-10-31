@@ -77,10 +77,8 @@ data:
     #      catches the "upload/clone scheduled but never landed" class.
     #   2. DataVolumes in phase Failed older than GC_FAILED_HOURS (default
     #      6h): catches the "importer is in CrashLoopBackOff against a
-    #      404 URL" class. Live evidence: shalb-jumbolot/new-vm-root
-    #      ran the importer 2,838 times over 10 days because the Gentoo
-    #      catalog URL had rotated out (incident 2026-05-11). 6h is well
-    #      above the wall-clock budget of any legitimate import.
+    #      404 URL" class, including catalog images that are no longer available.
+    #      Six hours leaves enough time for supported imports to complete.
     # Audit-only unless GC_DELETE=true.
     #
     # pipefail is critical here: every pass is `kubectl ... | jq ...`,

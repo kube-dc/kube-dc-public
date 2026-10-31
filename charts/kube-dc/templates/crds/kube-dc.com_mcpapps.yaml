@@ -1,0 +1,219 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.4
+    helm.sh/resource-policy: keep
+  name: mcpapps.kube-dc.com
+spec:
+  group: kube-dc.com
+  names:
+    kind: MCPApp
+    listKind: MCPAppList
+    plural: mcpapps
+    shortNames:
+    - mcpapp
+    singular: mcpapp
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.displayName
+      name: App
+      type: string
+    - jsonPath: .status.clientId
+      name: Client
+      type: string
+    - jsonPath: .spec.access
+      name: Access
+      type: string
+    - jsonPath: .status.ready
+      name: Ready
+      type: boolean
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          MCPApp is an AI app registered by hand for an organization's hosted MCP
+          endpoint. It lives in the organization namespace.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              MCPAppSpec declares an AI app that an organization administrator registers
+              by hand for the hosted MCP endpoint (docs/prd/hosted-mcp.md): a
+              confidential Keycloak client in the organization's realm with a client ID
+              and secret to enter in the app (Claude for Enterprise, Microsoft Copilot
+              Studio's manual setup). People still sign in themselves (authorization code
+              flow with consent) and act with their own permissions.
+            properties:
+              access:
+                default: full
+                description: |-
+                  Access is what the app may ask for: full (the kube-dc:mcp scope, every
+                  tool) or read (only kube-dc:mcp:read: the read-only URLs and tools).
+                enum:
+                - full
+                - read
+                type: string
+              description:
+                description: Description is shown in the console and CLI.
+                maxLength: 256
+                type: string
+              disabled:
+                description: |-
+                  Disabled refuses new sign-ins without deleting the app; issued tokens
+                  stay valid until they expire (at most 15 minutes).
+                type: boolean
+              displayName:
+                description: |-
+                  DisplayName is what people see on the consent page and in the console's
+                  connected AI apps.
+                maxLength: 80
+                minLength: 1
+                type: string
+              redirectUris:
+                description: |-
+                  RedirectURIs the app sends people back to after sign-in, as the app's
+                  setup page gives them. A trailing * matches any path.
+                items:
+                  maxLength: 512
+                  type: string
+                maxItems: 16
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: set
+              secretGeneration:
+                description: |-
+                  SecretGeneration rotates the client secret when increased. The previous
+                  secret stops working at once, so the app must be given the new one.
+                format: int64
+                minimum: 0
+                type: integer
+            required:
+            - displayName
+            - redirectUris
+            type: object
+            x-kubernetes-validations:
+            - message: redirectUris must be https URLs, or http on localhost or 127.0.0.1
+              rule: self.redirectUris.all(u, u.matches('^https://[^/?#]+(/[^#]*)?$')
+                || u.matches('^http://(localhost|127[.]0[.]0[.]1)(:[0-9]{1,5})?(/[^#]*)?$'))
+          status:
+            description: MCPAppStatus is the observed state of an MCPApp.
+            properties:
+              clientId:
+                description: ClientID to enter in the app.
+                type: string
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              issuer:
+                description: Issuer is the organization's authorization server.
+                type: string
+              mcpUrl:
+                description: |-
+                  MCPURL is the organization's MCP endpoint (a project URL or /read_only
+                  may be used instead).
+                type: string
+              observedSecretGeneration:
+                description: ObservedSecretGeneration is the spec.secretGeneration
+                  the Secret holds.
+                format: int64
+                type: integer
+              ready:
+                description: |-
+                  Ready is true when the client exists as specified and the Secret holds
+                  its current credentials.
+                type: boolean
+              secretName:
+                description: |-
+                  SecretName is the Secret in this namespace holding the client ID and
+                  secret and the URLs the app needs. Readable by the organization's admins.
+                type: string
+              secretRotatedAt:
+                description: SecretRotatedAt is when the client secret was last issued.
+                format: date-time
+                type: string
+            required:
+            - ready
+            type: object
+        type: object
+        x-kubernetes-validations:
+        - message: name must be at most 40 characters
+          rule: size(self.metadata.name) <= 40
+    served: true
+    storage: true
+    subresources:
+      status: {}

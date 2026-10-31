@@ -28,10 +28,8 @@ spec:
     # The runner owns managed Service inputs. The core manager may update that
     # marked Service and create its owned TLSRoute; tenant writes remain gated.
     - name: exclude-managed-route-controllers-and-admins
-      expression: >-
-        !(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups)) &&
-        request.userInfo.username != {{ printf "system:serviceaccount:%s:kube-dc-service-runner" (.Values.projectPolicies.protectManagedServices.runnerNamespace | default "kube-dc-service-runner") | toJson }} &&
-        !(request.userInfo.username == {{ printf "system:serviceaccount:%s:%s" .Release.Namespace (include "kube-dc.manager.serviceAccountName" .) | toJson }} &&
+      expression: |-
+        !(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups)) && request.userInfo.username != {{ printf "system:serviceaccount:%s:kube-dc-service-runner" (.Values.projectPolicies.protectManagedServices.runnerNamespace | default "kube-dc-service-runner") | toJson }} && !(request.userInfo.username == {{ printf "system:serviceaccount:%s:%s" .Release.Namespace (include "kube-dc.manager.serviceAccountName" .) | toJson }} &&
           ((request.resource.group == '' && request.resource.resource == 'services' &&
             'services.kube-dc.com/managed-by' in object.metadata.?labels.orValue({}) &&
             object.metadata.?labels.orValue({})['services.kube-dc.com/managed-by'] == 'kube-dc-services') ||
@@ -49,18 +47,16 @@ spec:
         dyn(object.spec).?hostnames.orValue([]).all(h, !h.matches('(?i)^kdc-managed-'))
       message: "kdc-managed- hostnames are reserved for UID-bound managed-service routes"
       reason: Forbidden
-    - expression: >-
-        request.resource.group != '' ||
-        ((!('service.nlb.kube-dc.com/route-hostname' in variables.annotations) ||
+    - expression: |-
+        request.resource.group != '' || ((!('service.nlb.kube-dc.com/route-hostname' in variables.annotations) ||
           !variables.annotations['service.nlb.kube-dc.com/route-hostname'].matches('(?i)^kdc-managed-')) &&
          (!('service.nlb.kube-dc.com/expose-route' in variables.annotations) ||
           variables.annotations['service.nlb.kube-dc.com/expose-route'] == '' ||
           !object.metadata.name.startsWith('kdc-managed-')))
       message: "Service-generated routes cannot claim the reserved managed-service hostname prefix"
       reason: Forbidden
-    - expression: >-
-        request.resource.group != 'networking.k8s.io' ||
-        (dyn(object.spec).?rules.orValue([]).all(r, !r.?host.orValue('').matches('(?i)^kdc-managed-')) &&
+    - expression: |-
+        request.resource.group != 'networking.k8s.io' || (dyn(object.spec).?rules.orValue([]).all(r, !r.?host.orValue('').matches('(?i)^kdc-managed-')) &&
          dyn(object.spec).?tls.orValue([]).all(t, t.?hosts.orValue([]).all(h, !h.matches('(?i)^kdc-managed-'))))
       message: "Ingress cannot claim the reserved managed-service hostname prefix"
       reason: Forbidden

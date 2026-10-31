@@ -1,0 +1,50 @@
+{{- /*
+Kubernetes-enforced read-only MCP sessions (docs/prd/hosted-mcp.md): any change
+made with a token of a read-only AI app session is denied. Such tokens carry
+kube_dc_access=read, which the per-realm OpenIDConnect "mcp-read.<org>" (the
+manager's) copies to the user's extra. No other token has that extra, so the
+policy matches nothing else. Reads are not admission requests and pass.
+*/ -}}
+{{- $mcp := .Values.backend.mcp | default dict }}
+{{- if and $mcp.enabled $mcp.enforceReadOnly }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: kube-dc-mcp-read-only
+  labels:
+    app.kubernetes.io/name: {{ include "kube-dc.backend.name" . }}-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE", "CONNECT"]
+        resources: ["*/*"]
+        scope: "*"
+  # The API server's own requests (e.g. allocating a Service IP) carry no
+  # extra at all: has() keeps the condition from erroring on them, which with
+  # failurePolicy Fail would deny them (it did, on stage, 2026-10-26).
+  matchConditions:
+    - name: mcp-read-only-sessions
+      expression: >-
+        has(request.userInfo.extra) &&
+        'gardener.cloud/user/kube_dc_access' in request.userInfo.extra &&
+        request.userInfo.extra['gardener.cloud/user/kube_dc_access'].exists(v, v == 'read')
+  validations:
+    - expression: "false"
+      message: "Read-only AI app session: changes are not allowed."
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: kube-dc-mcp-read-only
+  labels:
+    app.kubernetes.io/name: {{ include "kube-dc.backend.name" . }}-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  policyName: kube-dc-mcp-read-only
+  validationActions: [Deny]
+{{- end }}

@@ -1,0 +1,109 @@
+{{- $root := . -}}
+{{- if and .Values.manager.webhook.enabled .Values.projectPolicies.protectManagedServices.enabled -}}
+{{- range $family, $enabled := .Values.projectPolicies.protectManagedServices.sharedStartup -}}
+{{- if $enabled }}
+{{- /* Hand-off phase 2 of a family renders its configuration from
+       sql-shared-startup-handoff.yaml instead (step 3 of
+       docs/prd/admission-webhooks-must-not-block-the-platform.md). Read
+       inline, so the template stays self-contained
+       (cicd/release/prepare-shared-startup-chart.py copies it alone);
+       kube-dc.sharedStartup.handoffPhase fails the render on any other value. */}}
+{{- $handoff := index ($root.Values.projectPolicies.protectManagedServices.sharedStartupHandoff | default dict) $family | default dict }}
+{{- if ne (toString ($handoff.handoffPhase | default 0)) "2" }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: kube-dc-{{ $family }}-shared-startup-v1
+  annotations:
+    cert-manager.io/inject-ca-from: {{ $root.Release.Namespace }}/{{ include "kube-dc.manager.fullname" $root }}-webhook-serving-cert
+webhooks:
+  - name: {{ $family }}-shared-startup-v1.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" $root }}-webhook
+        namespace: {{ $root.Release.Namespace }}
+        path: /validate-{{ $family }}-shared-startup-v1
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods/binding"]
+        scope: Namespaced
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"{{ if or (eq $family "kafka") (eq $family "valkey") (eq $family "clickhouse") }}, "DELETE"{{ end }}]
+        resources: ["pods", "secrets", "configmaps", "services", "serviceaccounts", "persistentvolumeclaims"]
+        scope: Namespaced
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"{{ if or (eq $family "kafka") (eq $family "valkey") (eq $family "clickhouse") }}, "DELETE"{{ end }}]
+        resources: ["deployments", "replicasets", "statefulsets"]
+        scope: Namespaced
+      - apiGroups: ["batch", "rbac.authorization.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"{{ if or (eq $family "kafka") (eq $family "valkey") (eq $family "clickhouse") }}, "DELETE"{{ end }}]
+        resources: ["jobs", "cronjobs", "roles", "rolebindings"]
+        scope: Namespaced
+      - apiGroups: ["cert-manager.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"{{ if or (eq $family "kafka") (eq $family "valkey") (eq $family "clickhouse") }}, "DELETE"{{ end }}]
+        resources: ["issuers", "certificates", "certificaterequests"]
+        scope: Namespaced
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["clusterroles", "clusterrolebindings"]
+        scope: Cluster
+
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["clusters", "backups", "scheduledbackups", "poolers", "databases", "publications", "subscriptions"]
+        scope: Namespaced
+      - apiGroups: ["valkey.buf.red"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"{{ if or (eq $family "kafka") (eq $family "valkey") (eq $family "clickhouse") }}, "DELETE"{{ end }}]
+        resources: ["failovers", "sentinels", "users"]
+        scope: Namespaced
+
+      - apiGroups: ["mysql.oracle.com"]
+        apiVersions: ["v2"]
+        operations: ["CREATE", "UPDATE"{{ if or (eq $family "kafka") (eq $family "valkey") (eq $family "clickhouse") }}, "DELETE"{{ end }}]
+        resources: ["innodbclusters", "mysqlbackups", "mysqlclustersetfailovers"]
+        scope: Namespaced
+
+      - apiGroups: ["k8s.mariadb.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"{{ if or (eq $family "kafka") (eq $family "valkey") (eq $family "clickhouse") }}, "DELETE"{{ end }}]
+        resources: ["mariadbs", "users", "grants", "databases", "backups", "physicalbackups", "pointintimerecoveries", "restores", "sqljobs", "maxscales", "connections"]
+        scope: Namespaced
+
+      - apiGroups: ["kafka.strimzi.io"]
+        apiVersions: ["v1", "v1beta2"]
+        operations: ["CREATE", "UPDATE"{{ if or (eq $family "kafka") (eq $family "valkey") (eq $family "clickhouse") }}, "DELETE"{{ end }}]
+        resources: ["kafkas", "kafkanodepools", "kafkausers", "kafkatopics", "strimzipodsets", "kafkaconnects", "kafkamirrormakers", "kafkamirrormaker2s", "kafkabridges", "kafkarebalances", "kafkaconnectors"]
+        scope: Namespaced
+      - apiGroups: ["core.strimzi.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"{{ if or (eq $family "kafka") (eq $family "valkey") (eq $family "clickhouse") }}, "DELETE"{{ end }}]
+        resources: ["strimzipodsets"]
+        scope: Namespaced
+
+      - apiGroups: ["clickhouse.altinity.com", "clickhouse-keeper.altinity.com"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"{{ if or (eq $family "kafka") (eq $family "valkey") (eq $family "clickhouse") }}, "DELETE"{{ end }}]
+        resources: ["clickhouseinstallations", "clickhouseinstallationtemplates", "clickhousekeeperinstallations", "clickhousekeeperinstallationtemplates"]
+        scope: Namespaced
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

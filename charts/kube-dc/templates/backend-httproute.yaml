@@ -14,16 +14,13 @@ spec:
   hostnames:
   - {{ .Values.backend.gateway.hostname }}
   rules:
-  # ttyd-backed cloud-shell / project-console WebSocket proxy. ttyd holds the
-  # WebSocket open for the lifetime of the terminal session (often many
-  # minutes / hours), so the 120s catch-all below kills active terminals with
-  # "upstream request timeout". Match this prefix first with a much longer
-  # timeout. Gateway API rule matching prefers more specific PathPrefix, so
-  # this rule fires before the `/` catch-all.
+  # Project-console terminals and the console API's VM/SSH sockets hold a
+  # WebSocket open for the whole session (often many minutes / hours), so the
+  # 120s catch-all below would kill them with "upstream request timeout".
+  # Match these prefixes first with a much longer timeout. Gateway API rule
+  # matching prefers more specific PathPrefix, so this rule fires before the
+  # `/` catch-all.
   - matches:
-    - path:
-        type: PathPrefix
-        value: /api/cloud-shell
     - path:
         type: PathPrefix
         value: /api/project-console
@@ -36,6 +33,44 @@ spec:
     backendRefs:
     - name: {{ $fullName }}
       port: {{ $svcPort }}
+  {{- $mcp := .Values.backend.mcp | default dict }}
+  {{- $mcpURL := urlParse (include "kube-dc.mcp.publicURL" .) }}
+  {{- if and $mcp.enabled (eq $mcpURL.host .Values.backend.gateway.hostname) $mcpURL.path }}
+  # The hosted MCP endpoint and its Protected Resource Metadata (RFC 9728:
+  # the well-known segment sits between the host and the path).
+  - matches:
+    - path:
+        type: PathPrefix
+        value: {{ $mcpURL.path | quote }}
+    - path:
+        type: PathPrefix
+        value: {{ printf "/.well-known/oauth-protected-resource%s" $mcpURL.path | quote }}
+    timeouts:
+      request: {{ .Values.backend.gateway.requestTimeout | default "120s" | quote }}
+      backendRequest: {{ .Values.backend.gateway.requestTimeout | default "120s" | quote }}
+    backendRefs:
+    - name: {{ $fullName }}-mcp
+      port: {{ $mcp.port | default 8090 }}
+  {{- end }}
+  {{- if include "kube-dc.backend.grafanaDedicated" . }}
+  # Grafana UID launches keep a per-user grant on the dedicated replica, and
+  # backend.dedicatedReplica.paths use its volumes.
+  - matches:
+    {{- range ((.Values.backend.dedicatedReplica | default dict).paths) }}
+    - path:
+        type: PathPrefix
+        value: {{ . | quote }}
+    {{- end }}
+    - path:
+        type: PathPrefix
+        value: /api/observability/grafana/
+    timeouts:
+      request: {{ .Values.backend.gateway.requestTimeout | default "120s" | quote }}
+      backendRequest: {{ .Values.backend.gateway.requestTimeout | default "120s" | quote }}
+    backendRefs:
+    - name: {{ $fullName }}-grafana
+      port: {{ $svcPort }}
+  {{- end }}
   - matches:
     - path:
         type: PathPrefix

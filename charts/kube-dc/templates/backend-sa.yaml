@@ -20,6 +20,13 @@ metadata:
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
+{{- /* backend.rbac.minimal: only what code running as the backend uses
+     (hack/backend-rbac-wide-live-test.sh); Secrets and platform ConfigMap
+     writes then come from Roles in backend-rbac-minimal.yaml. */}}
+{{- /* Every rule is mapped to the code that uses it in
+     docs/internal/backend-credential-audit-2026-10-25.md; grants with no code
+     were removed then (chartcontract TestBackendHoldsNoUnusedGrants). */}}
+{{- $minimal := (.Values.backend.rbac).minimal }}
 rules:
   {{- if .Values.platformApi.enabled }}
   # The platform internal listener verifies the extension API server's token.
@@ -36,7 +43,7 @@ rules:
     verbs: ["get", "list", "create", "delete"]
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["clusterroles"]
-    resourceNames: ["kube-dc:provisioner", "kube-dc:platform:users", "kube-dc:platform:console-login", "kube-dc:platform:usage-reader"]
+    resourceNames: ["kube-dc:provisioner", "kube-dc:platform:users", "kube-dc:platform:console-login", "kube-dc:platform:usage-reader", "kube-dc:platform:events-reader"]
     verbs: ["bind"]
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles"]
@@ -82,7 +89,7 @@ rules:
   # admin gate. Reads only: the tenant API still authorizes each Project caller
   # and acts with the caller's own token.
   - apiGroups: ["services.kube-dc.com"]
-    resources: ["managedservices", "servicedataplanes", "serviceplacements", "cellreservations", "servicebackups"]
+    resources: ["managedservices", "servicedataplanes", "serviceplacements", "servicebackups"]
     verbs: ["get", "list"]
   # serviceoperations also carry patch: approving a gated operation and
   # withdrawing a queued one are annotation writes on this object. The cluster
@@ -94,7 +101,11 @@ rules:
     verbs: ["get", "list", "patch"]
   - apiGroups: ["batch"]
     resources: ["jobs"]
+    {{- if $minimal }}
+    verbs: ["get", "list", "watch"]
+    {{- else }}
     verbs: ["create", "get", "list", "watch", "delete"]
+    {{- end }}
   # cronjobs (get/list): the admin OS-Images view reads the cdi-os-mirror-refresh
   # CronJob for the mirror schedule / last-run.
   - apiGroups: ["batch"]
@@ -103,36 +114,58 @@ rules:
   # volumesnapshots (get/list): the admin OS-Images view lists golden images
   # cluster-wide (golden-images + golden-images-block) with the backend SA.
   - apiGroups: ["snapshot.storage.k8s.io"]
-    resources: ["volumesnapshots"]
+    # volumesnapshotclasses: which drivers can snapshot, for the storage-class
+    # picker's badges (the caller's own StorageClass read gates it).
+    resources: ["volumesnapshots", "volumesnapshotclasses"]
     verbs: ["get", "list"]
+  {{- if $minimal }}
+  # Reads only, and no Secrets or subresources (nodes/proxy, pods/log, ...).
+  - apiGroups: [""]
+    resources: ["namespaces", "nodes", "pods", "services", "endpoints", "events",
+                "persistentvolumeclaims", "persistentvolumes", "configmaps",
+                "limitranges", "serviceaccounts", "replicationcontrollers"]
+    verbs: ["get", "list", "watch"]
+  {{- else }}
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["create", "get", "list", "watch", "delete"]
   - apiGroups: [""]
     resources: ["*"]
     verbs: ["get", "list"]
+  {{- end }}
   # The org-admin quota API verifies the caller and Project ownership with the
   # caller's JWT, then uses this identity for the controller-owned write. Direct
   # tenant Kubernetes access to ResourceQuota remains read-only.
   - apiGroups: [""]
     resources: ["resourcequotas"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: [""]
-    resources: ["customresourcedefinitions"]
-    verbs: ["get", "list"]
+  {{- if not $minimal }}
   - apiGroups: [""]
     resources: ["persistentvolumeclaims", "persistentvolumes", "services", "secrets", "serviceaccounts", "configmaps"]
     verbs: ["*"]
+  {{- end }}
   # Admin Workloads page force-deletes pods (controllers/admin/organizationController.js deletePod)
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "delete"]
+  # Shared GPU workloads (controllers/gpuCapabilitiesModule.js) create and
+  # release Deployments in tenant namespaces after authorizing the caller.
   - apiGroups: ["apps"]
     resources: ["deployments"]
+    {{- if $minimal }}
+    verbs: ["get", "list", "watch", "create", "delete"]
+    {{- else }}
     verbs: ["*"]
+    {{- end }}
+  # Narrowed to reads by backend.rbac.restrictBindings=enforce; writes then come
+  # from a Role in the platform namespace (backend-restrict-bindings.yaml).
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["rolebindings"]
+    {{- if eq (toString (.Values.backend.rbac.restrictBindings | default "off")) "enforce" }}
+    verbs: ["get", "list", "watch"]
+    {{- else }}
     verbs: ["*"]
+    {{- end }}
   - apiGroups: ["storage.k8s.io"]
     resources: ["storageclasses"]
     verbs: ["get", "list"]
@@ -142,12 +175,24 @@ rules:
   - apiGroups: ["k8s.cni.cncf.io"]
     resources: ["network-attachment-definitions"]
     verbs: ["get", "list"]
+  # Admin views list VMs; admin start/stop patches spec.running, and delete.
   - apiGroups: ["kubevirt.io"]
     resources: ["virtualmachines", "virtualmachineinstances"]
+    {{- if $minimal }}
+    verbs: ["get", "list", "watch", "patch", "delete"]
+    {{- else }}
     verbs: ["*"]
+    {{- end }}
   - apiGroups: ["kubevirt.io"]
     resources: ["kubevirts"]
     verbs: ["get", "list"]
+  {{- if $minimal }}
+  # Admin views: DataVolumes, DataImportCrons, DataSources. VM consoles use the
+  # caller's token, so no subresources.kubevirt.io here.
+  - apiGroups: ["cdi.kubevirt.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  {{- else }}
   - apiGroups: ["subresources.kubevirt.io"]
     resources: ["*"]
     verbs: ["*"]
@@ -160,23 +205,17 @@ rules:
   - apiGroups: ["pool.kubevirt.io"]
     resources: ["*"]
     verbs: ["*"]
-  - apiGroups: ["scheduling.k8s.io"]
-    resources: ["priorityclasses"]
-    verbs: ["get", "list"]
+  {{- end }}
   # Tenant-safe GPU capability discovery aggregates stable-v1 DRA inventory
   # and allocations once, then caches only redacted per-profile totals.
   - apiGroups: ["resource.k8s.io"]
-    resources: ["resourceslices", "deviceclasses"]
+    resources: ["resourceslices"]
     verbs: ["get", "list"]
-  # DRA tenant workloads are written only through the authenticated backend
-  # API. The controller creates fixed ResourceClaimTemplates; Kubernetes owns
-  # the generated ResourceClaims and their allocation subresources.
-  - apiGroups: ["resource.k8s.io"]
-    resources: ["resourceclaimtemplates"]
-    verbs: ["get", "list", "watch", "create", "delete"]
   - apiGroups: ["resource.k8s.io"]
     resources: ["resourceclaims"]
     verbs: ["get", "list", "watch"]
+  {{- if not $minimal }}
+  # Unused by backend code as itself (managed clusters use the caller's token).
   - apiGroups: ["autoscaling"]
     resources: ["horizontalpodautoscalers"]
     verbs: ["*"]
@@ -195,6 +234,7 @@ rules:
   - apiGroups: ["addons.cluster.x-k8s.io"]
     resources: ["clusterresourcesets"]
     verbs: ["*"]
+  {{- end }}
   - apiGroups: ["kubeovn.io"]
     resources: ["*"]
     verbs: ["get", "list"]
@@ -286,6 +326,11 @@ rules:
   - apiGroups: ["hnc.x-k8s.io"]
     resources: ["hierarchicalresourcequotas", "hierarchicalresourcequotas/status"]
     verbs: ["get", "list", "watch"]
+  # Project quota mutations fence logical admission on the organization CAS.
+  - apiGroups: ["hnc.x-k8s.io"]
+    resources: ["hierarchicalresourcequotas"]
+    resourceNames: ["plan-quota"]
+    verbs: ["update", "patch"]
   - apiGroups: [""]
     resources: ["namespaces"]
     verbs: ["create", "get", "list", "watch"]

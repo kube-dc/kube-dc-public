@@ -19,3 +19,29 @@ subjects:
   - kind: Group
     name: system:authenticated  # All authenticated users
     apiGroup: rbac.authorization.k8s.io
+---
+# Terraform's hashicorp/kubernetes kubernetes_manifest lists every CRD to find a
+# kind's schema, so tenants (people and machine identities) need to read them.
+# CRDs hold schemas and webhook addresses, no secrets
+# (docs/internal/platform-api-goal.md, workstream F).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: crd-reader
+rules:
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: crd-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: crd-reader
+subjects:
+  - kind: Group
+    name: system:authenticated
+    apiGroup: rbac.authorization.k8s.io

@@ -18,17 +18,31 @@ spec:
         operations: ["UPDATE"]
         resources: ["projects", "organizations", "organizationgroups"]
   matchConditions:
-    # Only enforce for non-system users
+    # Only enforce for non-system users. The platform's own ServiceAccounts
+    # (manager; backend, which stamps platform.kube-dc.com/empty-since on
+    # project-access OrganizationGroups) live in the release namespace.
     - name: exclude-system-service-accounts
       expression: >-
-        !request.userInfo.username.startsWith('system:serviceaccount:kube-dc:')
+        !request.userInfo.username.startsWith('system:serviceaccount:{{ .Release.Namespace }}:')
     - name: exclude-cluster-admins
       expression: >-
         !(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))
+  # platform.kube-dc.com/lifecycle-v1 on Organizations is the exception: the
+  # manager's lifecycle webhook writes it into a provider's own spec.suspension
+  # update, and rebuilds it from the previous object on every write that
+  # touches it, so callers cannot forge it (manager-webhook.yaml).
+  variables:
+    - name: newAnnotations
+      expression: "has(object.metadata.annotations) ? object.metadata.annotations : {}"
+    - name: oldAnnotations
+      expression: "has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}"
+    - name: exempt
+      expression: "request.resource.resource == 'organizations' ? 'platform.kube-dc.com/lifecycle-v1' : ''"
   validations:
-    - expression: >-
-        (has(object.metadata.annotations) ? object.metadata.annotations : {}) ==
-        (has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {})
+    - expression: |-
+        variables.newAnnotations.all(k, k == variables.exempt ||
+          (k in variables.oldAnnotations && variables.oldAnnotations[k] == variables.newAnnotations[k])) &&
+        variables.oldAnnotations.all(k, k == variables.exempt || k in variables.newAnnotations)
       message: "Modifying annotations on this resource is not allowed. Only system controllers can change annotations."
 
 ---

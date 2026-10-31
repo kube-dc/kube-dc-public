@@ -1,0 +1,50 @@
+{{- /*
+services/proxy in project namespaces is not available to tenant identities.
+docs/prd/admission-webhooks-remaining-design.md, item 3 (managed-connect).
+
+The managed-connect webhook refuses services/proxy to every identity outside
+platformIdentity() without any lookup: a Service's marker says nothing about
+its backends, and a tenant's own Service can select a managed engine's pods.
+That is a pure check, so it is held here, in the API server. The API server
+evaluates policies on CONNECT (restrict-pod-exec-in-projects is the model).
+From manager.webhook.narrowGatesHandoffPhase 2 the webhook no longer routes
+services/proxy and skips platform identities.
+
+No params: failurePolicy Fail cannot turn an unsynced informer into a
+refusal. Rendered from narrowGatesHandoffPhase 1, so it is installed and
+observed on every API server before the route is dropped.
+*/ -}}
+{{- $p := .Values.projectPolicies.protectManagedServices }}
+{{- if and .Values.manager.webhook.enabled $p.enabled (ne (include "kube-dc.narrowGates.phase" .) "0") }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-services-proxy
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CONNECT"]
+        resources: ["services/proxy"]
+  matchConditions:
+    - name: not-a-platform-identity
+      expression: >-
+        !{{ include "kube-dc.managedReferences.platformIdentityCEL" . }}
+  validations:
+    - expression: "false"
+      message: "services/proxy is not available to tenant identities in project namespaces"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-services-proxy
+spec:
+  policyName: managed-services-proxy
+  validationActions: {{ toJson $p.validationActions }}
+{{- end }}

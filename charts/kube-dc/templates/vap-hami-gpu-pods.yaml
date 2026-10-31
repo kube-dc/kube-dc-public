@@ -130,7 +130,7 @@ spec:
         has(object.metadata.labels) &&
         {{ $profileLabel | quote }} in object.metadata.labels
     - name: hasHamiResources
-      expression: >-
+      expression: |-
         variables.allContainers.exists(c,
           has(c.resources) &&
           {{ $hamiResourceNames | toJson }}.exists(r,
@@ -138,7 +138,7 @@ spec:
             (has(c.resources.limits) && r in c.resources.limits)))
 {{- if gt (len $vmProfiles) 0 }}
     - name: hasVMResources
-      expression: >-
+      expression: |-
         variables.allContainers.exists(c,
           has(c.resources) &&
           {{ $vmResourceNames | toJson }}.exists(r,
@@ -149,30 +149,26 @@ spec:
         variables.hasProfileLabel &&
         object.metadata.labels[{{ $profileLabel | quote }}] in {{ $vmProfileIDs | toJson }}
     - name: hasVmiOwner
-      expression: >-
-        has(object.metadata.ownerReferences) &&
-        object.metadata.ownerReferences.exists(o,
+      expression: |-
+        has(object.metadata.ownerReferences) && object.metadata.ownerReferences.exists(o,
           o.apiVersion.startsWith('kubevirt.io/') &&
           o.kind == 'VirtualMachineInstance' &&
           has(o.controller) && o.controller == true)
 {{- end }}
   validations:
-    - expression: >-
-        !variables.hasHamiResources ||
-        (variables.hasProfileLabel &&
+    - expression: |-
+        !variables.hasHamiResources || (variables.hasProfileLabel &&
          object.metadata.labels[{{ $profileLabel | quote }}] in {{ $profileIDs | toJson }})
       message: "Shared GPU requests require an enabled kube-dc GPU profile label."
-    - expression: >-
+    - expression: |-
         variables.allContainers.all(c,
           !has(c.resources) ||
           {{ $deniedHamiResourceNames | toJson }}.all(r,
             (!has(c.resources.requests) || !(r in c.resources.requests)) &&
             (!has(c.resources.limits) || !(r in c.resources.limits))))
       message: "This HAMi-native resource is not supported by the selected kube-dc GPU profile."
-    - expression: >-
-        !variables.hasProfileLabel ||
-        object.metadata.labels[{{ $profileLabel | quote }}] in {{ $draProfileIDs | toJson }} ||
-        (object.metadata.labels[{{ $profileLabel | quote }}] in {{ $profileIDs | toJson }} &&
+    - expression: |-
+        !variables.hasProfileLabel || object.metadata.labels[{{ $profileLabel | quote }}] in {{ $draProfileIDs | toJson }} || (object.metadata.labels[{{ $profileLabel | quote }}] in {{ $profileIDs | toJson }} &&
          variables.hasHamiResources){{ if gt (len $vmProfiles) 0 }} ||
         variables.hasVMProfileLabel{{ end }}
       message: "The kube-dc GPU profile label is unknown or the Pod does not request that profile."
@@ -181,9 +177,8 @@ spec:
         !variables.hasVMProfileLabel ||
         (variables.hasVMResources && variables.hasVmiOwner)
       message: "GPU VM launcher Pods must carry their VMI owner and selected device resource."
-    - expression: >-
-        !variables.hasVMResources ||
-        (variables.hasVMProfileLabel &&
+    - expression: |-
+        !variables.hasVMResources || (variables.hasVMProfileLabel &&
          variables.hasVmiOwner &&
          (request.operation != 'CREATE' ||
           request.userInfo.username == {{ $kubevirtControllerUsername | quote }}))
@@ -194,34 +189,29 @@ spec:
         size(object.spec.ephemeralContainers) == 0
       message: "Ephemeral containers cannot be attached to GPU VM launcher Pods."
 {{- end }}
-    - expression: >-
-        !variables.hasHamiResources ||
-        (!has(object.metadata.labels) ||
+    - expression: |-
+        !variables.hasHamiResources || (!has(object.metadata.labels) ||
          !('hami.io/webhook' in object.metadata.labels))
       message: "Shared GPU Pods cannot bypass the HAMi admission webhook."
-    - expression: >-
-        !variables.hasHamiResources ||
-        (has(object.spec.schedulerName) &&
+    - expression: |-
+        !variables.hasHamiResources || (has(object.spec.schedulerName) &&
          object.spec.schedulerName == {{ $schedulerName | quote }})
       message: "Shared GPU Pods must use the platform GPU scheduler."
-    - expression: >-
-        !variables.hasHamiResources ||
-        ((request.operation != 'CREATE' ||
+    - expression: |-
+        !variables.hasHamiResources || ((request.operation != 'CREATE' ||
           !has(object.spec.nodeName) || object.spec.nodeName == '') &&
          (!has(object.spec.nodeSelector) || size(object.spec.nodeSelector) == 0) &&
          (!has(object.spec.affinity) || !has(object.spec.affinity.nodeAffinity)) &&
          (!has(object.spec.runtimeClassName) || object.spec.runtimeClassName == ''))
       message: "Shared GPU Pods cannot select a node, node affinity, or custom runtime directly."
-    - expression: >-
-        !variables.hasHamiResources ||
-        ((!has(object.spec.hostNetwork) || object.spec.hostNetwork == false) &&
+    - expression: |-
+        !variables.hasHamiResources || ((!has(object.spec.hostNetwork) || object.spec.hostNetwork == false) &&
          (!has(object.spec.hostPID) || object.spec.hostPID == false) &&
          (!has(object.spec.hostIPC) || object.spec.hostIPC == false) &&
          (!has(object.spec.volumes) || object.spec.volumes.all(v, !has(v.hostPath))))
       message: "Shared GPU Pods cannot use host namespaces or hostPath volumes."
-    - expression: >-
-        !variables.hasHamiResources ||
-        variables.allContainers.all(c,
+    - expression: |-
+        !variables.hasHamiResources || variables.allContainers.all(c,
           (!has(c.securityContext) ||
            ((!has(c.securityContext.privileged) || c.securityContext.privileged == false) &&
             (!has(c.securityContext.allowPrivilegeEscalation) ||
@@ -231,19 +221,16 @@ spec:
              size(c.securityContext.capabilities.add) == 0))) &&
           (!has(c.volumeDevices) || size(c.volumeDevices) == 0))
       message: "Shared GPU Pods cannot use privileged, added-capability, device, or DinD-style access."
-    - expression: >-
-        !variables.hasHamiResources ||
-        variables.allContainers.all(c,
+    - expression: |-
+        !variables.hasHamiResources || variables.allContainers.all(c,
           !has(c.env) || c.env.all(e, e.name != 'CUDA_DISABLE_CONTROL'))
       message: "CUDA_DISABLE_CONTROL is not allowed for shared GPU Pods."
-    - expression: >-
-        !variables.hasHamiResources ||
-        variables.allContainers.all(c,
+    - expression: |-
+        !variables.hasHamiResources || variables.allContainers.all(c,
           !has(c.envFrom) || size(c.envFrom) == 0)
       message: "envFrom is not allowed for shared GPU Pods because imported variables cannot be admission-validated."
-    - expression: >-
-        !variables.hasHamiResources ||
-        variables.nonWorkloadContainers.all(c,
+    - expression: |-
+        !variables.hasHamiResources || variables.nonWorkloadContainers.all(c,
            !has(c.resources) ||
            {{ $hamiResourceNames | toJson }}.all(r,
              (!has(c.resources.requests) || !(r in c.resources.requests)) &&
@@ -252,10 +239,8 @@ spec:
 {{- range $profile := $hamiProfiles }}
 {{- $request := $profile.request }}
 {{- $profileResourceNames := list $request.countResource $request.memoryResource $request.coreResource | uniq }}
-    - expression: >-
-        !variables.hasProfileLabel ||
-        object.metadata.labels[{{ $profileLabel | quote }}] != {{ $profile.id | quote }} ||
-        variables.workloadContainers.all(c,
+    - expression: |-
+        !variables.hasProfileLabel || object.metadata.labels[{{ $profileLabel | quote }}] != {{ $profile.id | quote }} || variables.workloadContainers.all(c,
           !has(c.resources) ||
           !{{ $hamiResourceNames | toJson }}.exists(r,
             (has(c.resources.requests) && r in c.resources.requests) ||
@@ -295,10 +280,8 @@ spec:
       message: "Shared GPU requests must use equal requests/limits and the selected profile's memory/core increments."
 {{- end }}
 {{- range $profile := $vmProfiles }}
-    - expression: >-
-        !variables.hasProfileLabel ||
-        object.metadata.labels[{{ $profileLabel | quote }}] != {{ $profile.id | quote }} ||
-        (variables.workloadContainers.exists(c,
+    - expression: |-
+        !variables.hasProfileLabel || object.metadata.labels[{{ $profileLabel | quote }}] != {{ $profile.id | quote }} || (variables.workloadContainers.exists(c,
            has(c.resources) &&
            ((has(c.resources.requests) &&
              {{ $profile.resourceName | quote }} in c.resources.requests) ||

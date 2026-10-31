@@ -1,0 +1,139 @@
+{{- /*
+Hand-off phase 2 of the MySQL and MariaDB shared startup gates
+(docs/prd/admission-webhooks-must-not-block-the-platform.md, step 3;
+docs/prd/admission-webhooks-step3-sql.md). Phases 0 and 1 render the previous
+single entry from shared-startup-webhooks.yaml; phase 2 renders the same
+configuration name from here, with two entries on the same handler path:
+
+  - <family>-shared-startup-v1 (the authority entry; name, path and
+    failurePolicy Fail kept): only the family's labelled platform objects
+    (object selector on services.kube-dc.com/managed-by, the shared startup
+    contract and the family), CREATE/UPDATE, no DELETE, bookkeeping updates
+    skipped (rules 1, 2 and 5);
+  - <family>-shared-startup-references-v1 (failurePolicy Ignore): what the
+    authority entry cannot select and the policy <family>-shared-startup-
+    reserved cannot judge without lookups -- pods/binding, Kube-OVN's slr-
+    shadow Services, unlabelled RBAC (ambient grants to the protected
+    account) and unlabelled operator objects (cert-manager, CNPG, Valkey,
+    MySQL, MariaDB, Strimzi, Altinity) that reference reserved material.
+    The manager runs with this phase and admits a request on this route
+    whose lookups fail.
+
+Every unlabelled core object the handler refuses without a lookup (reserved
+names, typed references) is refused by the policy, in the API server.
+*/ -}}
+{{- $root := . -}}
+{{- $p := .Values.projectPolicies.protectManagedServices -}}
+{{- if and .Values.manager.webhook.enabled $p.enabled -}}
+{{- range $family := list "mysql" "mariadb" -}}
+{{- if and (index $p.sharedStartup $family) (eq (int (include "kube-dc.sharedStartup.handoffPhase" (dict "root" $root "family" $family))) 2) }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: kube-dc-{{ $family }}-shared-startup-v1
+  annotations:
+    cert-manager.io/inject-ca-from: {{ $root.Release.Namespace }}/{{ include "kube-dc.manager.fullname" $root }}-webhook-serving-cert
+webhooks:
+  # Rule 1: fail-closed only on the platform's own labelled objects of this
+  # family. Every request the handler judges by authority carries these
+  # labels on the new or the old object (the selector matches either).
+  - name: {{ $family }}-shared-startup-v1.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    objectSelector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: Exists}
+        - {key: services.kube-dc.com/startup-contract, operator: In, values: ["shared-service-startup-v1"]}
+        - {key: services.kube-dc.com/family, operator: In, values: [{{ $family | quote }}]}
+    # Rules 2 and 5: an UPDATE whose authority payload is unchanged -- every
+    # top-level field other than metadata and status, and every label and
+    # annotation -- changes only finalizers, ownerReferences (including
+    # blockOwnerDeletion) and server bookkeeping: what garbage collection,
+    # orphaning and namespace teardown write. It never reaches the manager.
+    # A tenant cannot make it on platform-marked objects at all
+    # (protect-managed-services-in-projects). The kube-dc-services runner
+    # checks this exact condition before it accepts the shape.
+    matchConditions:
+      - name: exclude-bookkeeping-updates
+        expression: >-
+          !(request.operation == 'UPDATE' && object.all(k, k == 'metadata' || k == 'status' || (k in oldObject && object[k] == oldObject[k])) && oldObject.all(k, k == 'metadata' || k == 'status' || k in object) && (has(object.metadata.labels) ? object.metadata.labels : {}) == (has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}) && (has(object.metadata.annotations) ? object.metadata.annotations : {}) == (has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}))
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" $root }}-webhook
+        namespace: {{ $root.Release.Namespace }}
+        path: /validate-{{ $family }}-shared-startup-v1
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods", "secrets", "configmaps", "services", "serviceaccounts", "persistentvolumeclaims"]
+        scope: Namespaced
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "replicasets", "statefulsets"]
+        scope: Namespaced
+      - apiGroups: ["batch", "rbac.authorization.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "cronjobs", "roles", "rolebindings"]
+        scope: Namespaced
+{{- include "kube-dc.sqlSharedStartup.operatorRules" . }}
+  # No object selector can keep a Binding, an unlabelled ambient RoleBinding
+  # or Kube-OVN's unlabelled shadow away, so this entry fails open. Requests
+  # the authority entry selects are excluded (they reach it instead); core
+  # objects other than shadow Services are judged by the policy, not here.
+  - name: {{ $family }}-shared-startup-references-v1.kube-dc.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Ignore
+    timeoutSeconds: 10
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    # exclude-authority-selected: a Binding always comes here (the authority
+    # entry does not route pods/binding, whatever labels the Binding carries).
+    matchConditions:
+      - name: exclude-authority-selected
+        expression: >-
+          (request.resource.resource == 'pods' && request.subResource == 'binding') || !({{ include "kube-dc.sqlSharedStartup.selectedCEL" (dict "family" $family "object" "object") }} || (request.operation == 'UPDATE' && {{ include "kube-dc.sqlSharedStartup.selectedCEL" (dict "family" $family "object" "oldObject") }}))
+      - name: only-shadow-services
+        expression: >-
+          request.resource.resource != 'services' || object.metadata.name.startsWith('slr-')
+      - name: exclude-bookkeeping-updates
+        expression: >-
+          !(request.operation == 'UPDATE' && object.all(k, k == 'metadata' || k == 'status' || (k in oldObject && object[k] == oldObject[k])) && oldObject.all(k, k == 'metadata' || k == 'status' || k in object) && (has(object.metadata.labels) ? object.metadata.labels : {}) == (has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}) && (has(object.metadata.annotations) ? object.metadata.annotations : {}) == (has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}))
+    clientConfig:
+      service:
+        name: {{ include "kube-dc.manager.fullname" $root }}-webhook
+        namespace: {{ $root.Release.Namespace }}
+        path: /validate-{{ $family }}-shared-startup-v1
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods/binding"]
+        scope: Namespaced
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["services"]
+        scope: Namespaced
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["roles", "rolebindings"]
+        scope: Namespaced
+{{- include "kube-dc.sqlSharedStartup.operatorRules" . }}
+{{- end }}
+{{- end }}
+{{- end }}
+

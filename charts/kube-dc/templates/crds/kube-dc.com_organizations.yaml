@@ -58,6 +58,14 @@ spec:
                   billing API refuses purchases, and users are pointed to the provider.
                   Setting, changing or clearing it requires the custom "allocate" verb.
                 properties:
+                  membersManagedExternally:
+                    description: |-
+                      MembersManagedExternally means the provider is the source of truth for
+                      who is a member: the console and its API refuse to add or remove users
+                      and to handle join requests, while org-admins still manage members'
+                      groups and project access. The provider adds and removes members
+                      through the platform API.
+                    type: boolean
                   portalURL:
                     description: PortalURL is the provider's customer portal, where
                       users buy capacity.
@@ -639,6 +647,11 @@ spec:
             - ready
             type: object
         type: object
+        x-kubernetes-validations:
+        - message: this organization name is reserved by the platform
+          rule: '!(self.metadata.name in [''platform'', ''machine'', ''master'', ''kube-dc'',
+            ''system'', ''admin'', ''api'', ''www'', ''login'', ''sso'', ''default'',
+            ''kube-system'', ''kube-public''])'
     served: true
     storage: true
     subresources:

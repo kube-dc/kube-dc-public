@@ -5,10 +5,23 @@ decode_html() {
     echo "$1" | sed 's/&amp;/\&/g; s/&#x2F;/\//g; s/&lt;/</g; s/&gt;/>/g; s/&quot;/"/g'
 }
 
+# Fail here rather than launch a shell that looks fine and cannot do anything.
+#
+# The kubeconfig below substitutes ${NAMESPACE} with envsubst, which turns an
+# UNSET variable into an empty string instead of failing. The result is a
+# kubeconfig with a blank namespace, kubectl silently falling back to "default",
+# and every command returning Forbidden while authentication and RBAC are both
+# perfectly correct. That cost real debugging time on two clusters.
+#
+# The Job injects this from the downward API. If it is missing, the backend
+# template is older than this image (release skew) or the image is being run
+# outside that Job.
+: "${NAMESPACE:?cloud-shell namespace was not injected -- the backend Job must set NAMESPACE from metadata.namespace}"
+
 KEYCLOAK_ENDPOINT=$(decode_html "${KEYCLOAK_ENDPOINT}")
 SERVER_ENDPOINT=$(decode_html "${SERVER_ENDPOINT}")
 
-# Extract domain from SERVER_ENDPOINT (e.g., https://kube-api.kube-dc.cloud:6443 -> kube-dc.cloud)
+# Extract domain from SERVER_ENDPOINT (e.g., https://kube-api.example.com:6443 -> example.com)
 DOMAIN=$(echo "${SERVER_ENDPOINT}" | sed -E 's|https?://kube-api\.||; s|:[0-9]+$||')
 
 # Store credentials for kube-dc CLI

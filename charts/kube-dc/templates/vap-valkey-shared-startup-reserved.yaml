@@ -1,0 +1,211 @@
+{{- /*
+The pure refusals of valkey-shared-startup-v1, as a ValidatingAdmissionPolicy.
+docs/prd/admission-webhooks-must-not-block-the-platform.md, step 3;
+docs/prd/admission-webhooks-step3-valkey-shared.md.
+
+From hand-off phase 2 the authority entry routes only objects carrying the
+platform's labels and the references entry fails open. What the handler
+(internal/webhook/core/valkey_shared_startup.go) refuses WITHOUT a lookup, on
+objects that may carry no label at all, is held here, in the API server:
+
+  - ownership (startupImmutable): a Pod, Secret, ConfigMap, Service,
+    ServiceAccount, claim, Deployment, ReplicaSet, StatefulSet, Job, CronJob
+    or cert-manager object in Valkey scope must be a startup object, and on
+    UPDATE must have been one with the same instance-uid. Valkey scope
+    (valkeySharedScope) is a name containing mss-v1-vk-, the startup contract
+    with family valkey on the new or the old object, the
+    cert-manager.io/private-key-secret-name annotation naming such material,
+    or a typed reference to it: the pod-spec inputs of Pods and workloads
+    (startupPodInputs), and for every other kind -- claims, Services,
+    cert-manager and the operators' APIs -- a string under a typed authority
+    key anywhere in the spec (valkeySharedReferences, twenty levels deep, a
+    list counting as one; deeper references are judged by the references
+    entry only). A
+    workload with a volume source startupPodInputs does not support gets the
+    spec scan too, as in the handler. A startup object carries startup-contract=
+    shared-service-startup-v1, managed-by=kube-dc-services and a non-empty
+    instance-uid (startupMarked). This is exactly the handler's verdict for
+    Secrets, ConfigMaps and ServiceAccounts, which phase 2 routes nowhere
+    else. RBAC is not here: the handler admits some grants naming a
+    protected account after its LISTs (ambientRBAC), so that judgement stays
+    on the references entry.
+  - Kube-OVN's shadows (sharedStartupShadow): a Service named slr-...
+    containing a shared-startup root (mss-v1-vk-, -my-, -ma-, -kf-, -ch-) is
+    written only by system:serviceaccount:kube-system:ovn. Deleting one is
+    also allowed to the namespace controller and in a terminating namespace,
+    so teardown never waits.
+
+Every identity is judged, as in the handler. Bookkeeping updates (authority
+payload, labels and annotations unchanged) are not judged (rules 2 and 5).
+failurePolicy: Ignore with a Deny binding: a policy that cannot be evaluated
+does not block writes; an evaluated violation is refused. Rendered from
+handoffPhase 1, so it is cached before phase 2. Needs Kubernetes 1.33 or later
+(two-variable comprehensions in the reference scan). Evaluation cost grows with
+the object; a request whose evaluation exceeds the API server's CEL budget is
+admitted (failurePolicy Ignore), never blocked.
+*/ -}}
+{{- $p := .Values.projectPolicies.protectManagedServices }}
+{{- if and .Values.manager.webhook.enabled $p.enabled $p.sharedStartup.valkey (ge (int (include "kube-dc.sharedStartup.handoffPhase" (dict "root" $ "family" "valkey"))) 1) }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: valkey-shared-startup-reserved
+spec:
+  failurePolicy: Ignore
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods", "secrets", "configmaps", "serviceaccounts", "persistentvolumeclaims"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["services"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "replicasets", "statefulsets"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "cronjobs"]
+      - apiGroups: ["cert-manager.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["issuers", "certificates", "certificaterequests"]
+      # The operators' APIs the gate routes (typed references only).
+      - apiGroups: ["valkey.buf.red"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["failovers", "sentinels", "users"]
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["clusters", "backups", "scheduledbackups", "poolers", "databases", "publications", "subscriptions"]
+      - apiGroups: ["mysql.oracle.com"]
+        apiVersions: ["v2"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["innodbclusters", "mysqlbackups", "mysqlclustersetfailovers"]
+      - apiGroups: ["k8s.mariadb.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["mariadbs", "users", "grants", "databases", "backups", "physicalbackups", "pointintimerecoveries", "restores", "sqljobs", "maxscales", "connections"]
+      - apiGroups: ["kafka.strimzi.io"]
+        apiVersions: ["v1", "v1beta2"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["kafkas", "kafkanodepools", "kafkausers", "kafkatopics", "strimzipodsets", "kafkaconnects", "kafkamirrormakers", "kafkamirrormaker2s", "kafkabridges", "kafkarebalances", "kafkaconnectors"]
+      - apiGroups: ["core.strimzi.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["strimzipodsets"]
+      - apiGroups: ["clickhouse.altinity.com", "clickhouse-keeper.altinity.com"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["clickhouseinstallations", "clickhouseinstallationtemplates", "clickhousekeeperinstallations", "clickhousekeeperinstallationtemplates"]
+  matchConditions:
+    - name: exclude-bookkeeping-updates
+      expression: >-
+        {{ include "kube-dc.valkeySharedStartup.bookkeeping" . }}
+  variables:
+    - name: deleting
+      expression: "request.operation == 'DELETE'"
+    - name: name
+      expression: "variables.deleting ? oldObject.metadata.name : (has(object.metadata.name) ? object.metadata.name : '')"
+    - name: shadow
+      expression: >-
+        request.resource.group == '' && request.resource.resource == 'services' && variables.name.startsWith('slr-') &&
+        ['mss-v1-vk-', 'mss-v1-my-', 'mss-v1-ma-', 'mss-v1-kf-', 'mss-v1-ch-'].exists(p, variables.name.contains(p))
+    - name: newLabels
+      expression: "!variables.deleting && has(object.metadata.labels) ? object.metadata.labels : {}"
+    - name: oldLabels
+      expression: "request.operation == 'UPDATE' && has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}"
+    - name: newAnnotations
+      expression: "!variables.deleting && has(object.metadata.annotations) ? object.metadata.annotations : {}"
+    - name: oldAnnotations
+      expression: "request.operation == 'UPDATE' && has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}"
+    - name: newOwned
+      expression: >-
+        variables.newLabels[?'services.kube-dc.com/startup-contract'].orValue('') == 'shared-service-startup-v1' &&
+        variables.newLabels[?'services.kube-dc.com/managed-by'].orValue('') == 'kube-dc-services' &&
+        variables.newLabels[?'services.kube-dc.com/instance-uid'].orValue('') != ''
+    - name: oldOwned
+      expression: >-
+        variables.oldLabels[?'services.kube-dc.com/startup-contract'].orValue('') == 'shared-service-startup-v1' &&
+        variables.oldLabels[?'services.kube-dc.com/managed-by'].orValue('') == 'kube-dc-services' &&
+        variables.oldLabels[?'services.kube-dc.com/instance-uid'].orValue('') == variables.newLabels[?'services.kube-dc.com/instance-uid'].orValue('')
+    - name: podSpec
+      expression: >-
+        variables.deleting ? {} :
+        request.resource.resource == 'pods' ? object.?spec.orValue({}) :
+        request.resource.resource == 'cronjobs' ? object.?spec.?jobTemplate.?spec.?template.?spec.orValue({}) :
+        request.resource.group == 'apps' || request.resource.resource == 'jobs' ? object.?spec.?template.?spec.orValue({}) : {}
+    - name: podReferences
+      expression: |-
+        variables.podSpec.?serviceAccountName.orValue('').contains('mss-v1-vk-') || variables.podSpec.?imagePullSecrets.orValue([]).exists(s, s.?name.orValue('').contains('mss-v1-vk-')) || variables.podSpec.?volumes.orValue([]).exists(v,
+          v.?secret.?secretName.orValue('').contains('mss-v1-vk-') ||
+          v.?configMap.?name.orValue('').contains('mss-v1-vk-') ||
+          v.?persistentVolumeClaim.?claimName.orValue('').contains('mss-v1-vk-') ||
+          v.?projected.?sources.orValue([]).exists(s, s.?secret.?name.orValue('').contains('mss-v1-vk-') || s.?configMap.?name.orValue('').contains('mss-v1-vk-'))) ||
+        variables.podSpec.?containers.orValue([]).exists(c,
+          c.?env.orValue([]).exists(e, e.?valueFrom.?secretKeyRef.?name.orValue('').contains('mss-v1-vk-') || e.?valueFrom.?configMapKeyRef.?name.orValue('').contains('mss-v1-vk-')) ||
+          c.?envFrom.orValue([]).exists(e, e.?secretRef.?name.orValue('').contains('mss-v1-vk-') || e.?configMapRef.?name.orValue('').contains('mss-v1-vk-'))) ||
+        variables.podSpec.?initContainers.orValue([]).exists(c,
+          c.?env.orValue([]).exists(e, e.?valueFrom.?secretKeyRef.?name.orValue('').contains('mss-v1-vk-') || e.?valueFrom.?configMapKeyRef.?name.orValue('').contains('mss-v1-vk-')) ||
+          c.?envFrom.orValue([]).exists(e, e.?secretRef.?name.orValue('').contains('mss-v1-vk-') || e.?configMapRef.?name.orValue('').contains('mss-v1-vk-'))) ||
+        variables.podSpec.?ephemeralContainers.orValue([]).exists(c,
+          c.?env.orValue([]).exists(e, e.?valueFrom.?secretKeyRef.?name.orValue('').contains('mss-v1-vk-') || e.?valueFrom.?configMapKeyRef.?name.orValue('').contains('mss-v1-vk-')) ||
+          c.?envFrom.orValue([]).exists(e, e.?secretRef.?name.orValue('').contains('mss-v1-vk-') || e.?configMapRef.?name.orValue('').contains('mss-v1-vk-')))
+    # startupPodInputs refuses these volume sources; the handler then scans
+    # the whole spec instead of the typed inputs.
+    - name: unsupportedInputs
+      expression: |-
+        variables.podSpec.?volumes.orValue([]).exists(v,
+          !(has(v.secret) || has(v.configMap) || has(v.persistentVolumeClaim) || has(v.projected) || has(v.emptyDir) || has(v.downwardAPI)) ||
+          has(v.projected) && v.projected.?sources.orValue([]).exists(s, !(has(s.secret) || has(s.configMap) || has(s.serviceAccountToken) || has(s.downwardAPI))))
+    - name: spec
+      expression: "variables.deleting ? {} : object.?spec.orValue({})"
+    # valkeySharedReferences over the spec, twenty levels deep (a list is a
+    # level). A ClickHouse pod template's env secretKeyRef is at level ten.
+    - name: specReferences
+      expression: >-
+        type(variables.spec) == map && {{ include "kube-dc.valkeySharedStartup.scan" (dict "x" "variables.spec" "d" 19) }}
+    - name: workload
+      expression: >-
+        request.resource.group == '' && request.resource.resource == 'pods' ||
+        request.resource.group == 'apps' || request.resource.group == 'batch'
+    - name: typedReferences
+      expression: |-
+        !variables.deleting && (variables.workload ?
+          variables.podReferences || variables.unsupportedInputs && variables.specReferences :
+          variables.specReferences)
+    - name: inScope
+      expression: >-
+        variables.name.contains('mss-v1-vk-') || variables.typedReferences ||
+        variables.newLabels[?'services.kube-dc.com/startup-contract'].orValue('') == 'shared-service-startup-v1' && variables.newLabels[?'services.kube-dc.com/family'].orValue('') == 'valkey' ||
+        variables.oldLabels[?'services.kube-dc.com/startup-contract'].orValue('') == 'shared-service-startup-v1' && variables.oldLabels[?'services.kube-dc.com/family'].orValue('') == 'valkey' ||
+        variables.newAnnotations[?'cert-manager.io/private-key-secret-name'].orValue('').contains('mss-v1-vk-') ||
+        variables.oldAnnotations[?'cert-manager.io/private-key-secret-name'].orValue('').contains('mss-v1-vk-')
+  validations:
+    - expression: >-
+        variables.deleting || variables.shadow || !variables.inScope ||
+        (variables.newOwned && (request.operation != 'UPDATE' || variables.oldOwned))
+      message: "Valkey shared startup ownership is immutable; foreign objects cannot use reserved Valkey material"
+      reason: Forbidden
+    - expression: >-
+        !variables.shadow || request.userInfo.username == 'system:serviceaccount:kube-system:ovn' ||
+        (variables.deleting && (request.userInfo.username == 'system:serviceaccount:kube-system:namespace-controller' || has(namespaceObject.metadata.deletionTimestamp)))
+      message: "shared startup shadow: only Kube-OVN may manage the shadow"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: valkey-shared-startup-reserved
+spec:
+  policyName: valkey-shared-startup-reserved
+  validationActions: {{ toJson $p.validationActions }}
+{{- end }}

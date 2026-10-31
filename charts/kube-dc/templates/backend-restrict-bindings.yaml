@@ -1,0 +1,108 @@
+# =============================================================================
+# Restrict what the backend's service account may bind (backend.rbac.restrictBindings)
+#
+# Kubernetes lets an identity bind any role whose permissions it already holds.
+# The backend holds a lot, so with `rolebindings: *` and `clusterrolebindings:
+# create` it could hand its own ClusterRole (or view/edit/...) to anyone. RBAC
+# cannot say "bind only these roles", so this policy does: requests made AS the
+# backend may only bind the provisioning API's roles
+# (ui/backend/controllers/admin/provisioningApi.js), and the only ClusterRoles
+# it may create are the per-prefix roles in their fixed one-rule shape. The same
+# rules apply to what it DELETES (checked on the object being deleted), so it
+# cannot remove other bindings or roles either.
+#
+#   off      nothing rendered; the ClusterRole keeps `rolebindings: *`.
+#   warn     the policy runs with [Warn, Audit]: violations are reported in the
+#            API response and audit log, nothing is refused.
+#   enforce  the policy refuses ([Deny, Audit]) and RoleBinding writes shrink to
+#            a Role in the platform namespace, the only place the backend writes
+#            them.
+#
+# Revert: set BACKEND_RESTRICT_BINDINGS=off (fleet) and reconcile. Emergency:
+# kubectl delete validatingadmissionpolicybinding restrict-backend-bindings.
+# Live test: hack/backend-rbac-bindings-live-test.sh
+# =============================================================================
+{{- $mode := toString (.Values.backend.rbac.restrictBindings | default "off") }}
+{{- if not (has $mode (list "off" "warn" "enforce")) }}
+{{- fail (printf "backend.rbac.restrictBindings must be off, warn or enforce (got %q)" $mode) }}
+{{- end }}
+{{- if ne $mode "off" }}
+{{- $backend := printf "system:serviceaccount:%s:%s" .Release.Namespace (include "kube-dc.backend.serviceAccountName" .) }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: restrict-backend-bindings
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        apiVersions: ["*"]
+        resources: ["rolebindings", "clusterrolebindings", "clusterroles"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+  matchConditions:
+    - name: backend-only
+      expression: request.userInfo.username == {{ $backend | quote }}
+  variables:
+    - name: obj
+      expression: 'request.operation == "DELETE" ? oldObject : object'
+  validations:
+    - expression: >-
+        request.resource.resource == "clusterroles" ||
+        variables.obj.roleRef.name in ["kube-dc:provisioner", "kube-dc:platform:users",
+        "kube-dc:platform:console-login", "kube-dc:platform:usage-reader",
+        "kube-dc:platform:events-reader", "kube-dc:platform:plan-reader"] ||
+        (variables.obj.roleRef.kind == "ClusterRole" &&
+        variables.obj.roleRef.name.startsWith("kube-dc:organization-prefix:"))
+      messageExpression: >-
+        "the backend may only bind (or unbind) the provisioning roles, not " + variables.obj.roleRef.name
+    - expression: >-
+        request.resource.resource != "clusterroles" ||
+        (variables.obj.metadata.name.startsWith("kube-dc:organization-prefix:") &&
+        !has(variables.obj.aggregationRule) &&
+        size(variables.obj.rules) == 1 &&
+        variables.obj.rules[0].apiGroups == ["kube-dc.com"] &&
+        variables.obj.rules[0].resources == ["organizationprefixes"] &&
+        variables.obj.rules[0].verbs == ["use"] &&
+        has(variables.obj.rules[0].resourceNames) && size(variables.obj.rules[0].resourceNames) == 1)
+      message: the backend may only create or delete organization-prefix roles (use on one organizationprefix)
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: restrict-backend-bindings
+spec:
+  policyName: restrict-backend-bindings
+  validationActions: {{ ternary (list "Deny" "Audit") (list "Warn" "Audit") (eq $mode "enforce") | toJson }}
+{{- end }}
+{{- if eq $mode "enforce" }}
+---
+# RoleBinding writes only in the platform namespace (the plan-reader grant).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "kube-dc.backend.serviceAccountName" . }}-rolebindings
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.backend.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["rolebindings"]
+    verbs: ["create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "kube-dc.backend.serviceAccountName" . }}-rolebindings
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kube-dc.backend.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kube-dc.backend.serviceAccountName" . }}-rolebindings
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kube-dc.backend.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

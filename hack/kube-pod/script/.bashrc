@@ -143,14 +143,19 @@ get_k8s_namespace() {
     fi
   fi
   
-  # Check if namespace is empty or not set
+  # The prompt must show the namespace KUBECTL WILL USE, never a friendlier
+  # guess. Showing the pod's namespace while kubectl targets "default" is what
+  # made the original incident so hard to read: the prompt said example-project and
+  # every command failed in default.
+  #
+  # So: if a context exists, its namespace wins — even when empty, where kubectl
+  # itself resolves to "default". $NAMESPACE is consulted ONLY when there is no
+  # usable context at all (no kubeconfig yet, or a broken one).
   if [ -z "$namespace" ]; then
-    # Try to get namespace from service account
-    if [ -f "/var/run/secrets/kubernetes.io/serviceaccount/namespace" ]; then
-      namespace=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace 2>/dev/null)
+    if [ ! -s "${KUBECONFIG:-$HOME/.kube/config}" ]; then
+      # No kubeconfig at all — the pod's own namespace is the best we can say.
+      namespace="$NAMESPACE"
     fi
-    
-    # If still empty, use default
     if [ -z "$namespace" ]; then
       namespace="default"
     fi

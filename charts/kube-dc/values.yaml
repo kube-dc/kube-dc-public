@@ -1,4 +1,4 @@
-kubeApiExternalUrl: "" # Required, example: "kube-api.stage.kube-dc.com:6443"
+kubeApiExternalUrl: "" # Required, example: "kube-api.example.com:6443"
 
 # How infra-side platform controllers in dual-homed project namespaces reach
 # this management cluster API. Empty mode preserves the legacy per-component
@@ -16,6 +16,15 @@ managementAPI:
   # render with a migration message.
   serviceIP: "" # exact IPv4 kubernetes.default ServiceIP; service mode only
   serviceCIDR: "" # IPv4 Service CIDR containing serviceIP; service mode only
+
+# Tenant storage-class admission (templates/vap-scratch-storage-class.yaml).
+storageGuard:
+  # Refuse tenant volumes on classes labeled storage.kube-dc.com/tier=scratch.
+  # Inert until a class carries the label.
+  scratchClasses: true
+  # Accounts in these namespaces create volumes for existing objects (CDI
+  # import/scratch volumes, KubeVirt, database operators) and are not matched.
+  exemptServiceAccountNamespaces: [cdi, kubevirt, cnpg-system, mariadb-system]
 
 # Accelerator product catalog consumed by kube-dc controllers, APIs, billing,
 # and UIs. This does not install drivers, device plugins, HAMi, or VFIO. Keep it
@@ -113,10 +122,10 @@ gpu:
 # REQUIRED for any cluster that wants S3-backed object storage (Rook
 # Ceph, external Ceph, AWS S3, MinIO, …). No hardcoded fallback by
 # design — kube-dc ships to many environments, and a default like
-# `https://s3.kube-dc.cloud` would silently route customer S3 traffic
+# `https://s3.example.com` would silently route customer S3 traffic
 # (object storage, database backups) to a domain those clusters don't
 # own.
-s3Endpoint: ""  # example: "https://s3.stage.kube-dc.com"
+s3Endpoint: ""  # example: "https://s3.example.com"
 
 # Object storage (Rook Ceph RGW).
 #
@@ -168,7 +177,7 @@ objectStorage:
 # Per-cluster public Grafana URL. Threaded into kube-dc-backend
 # (GRAFANA_URL env) for the "Open Grafana" SSO launch redirect. Same
 # rationale as s3Endpoint — no fallback, must be set per-cluster.
-grafanaUrl: ""  # example: "https://grafana.stage.kube-dc.com"
+grafanaUrl: ""  # example: "https://grafana.example.com"
 
 # Platform trust bundle (docs/prd/platform-trust-bundle.md).
 #
@@ -216,6 +225,31 @@ platformTrustBundle:
   # where that etcd cost matters more than the footgun.
   includeSystemRoots: true
 
+# The rest of the Pod Security baseline profile in project namespaces
+# (templates/vap-pod-baseline.yaml): capabilities.add, Unconfined seccomp,
+# unconfined AppArmor, procMount, hostPort.
+#   escapeActions: the same rules with NET_ADMIN and NET_RAW allowed; refuses
+#     node-escape capabilities (SYS_ADMIN, SYS_MODULE...) by default.
+#   actions: the strict baseline (no NET_ADMIN/NET_RAW). Warn + Audit by
+#     default, so VPN servers and similar keep running; add Deny once the
+#     installation's project namespaces are clean.
+podSecurityBaseline:
+  escapeActions: [Deny, Audit]
+  actions: [Warn, Audit]
+
+# Tenants cannot choose where a pod or VM plugs into OVN
+# (templates/vap-ovn-steering.yaml): only KubeVirt creates virt-launcher pods,
+# and tenant VM templates may not carry network-steering OVN annotations or
+# sidecar hooks. On UPDATE only an added or changed key is refused.
+ovnSteeringGuard:
+  actions: [Deny, Audit]
+
+# Supplemental OBC guard for legacy platform backup suffixes. Custom tenant
+# names remain supported. New platform backup claims use unpredictable generated
+# names; OBC admission is not an authorization boundary for direct S3 requests.
+bucketNameGuard:
+  actions: [Deny, Audit]
+
 manager:
   # One replica is sufficient for the default feature set. Enabling
   # projectNetwork requires at least two: its attachment admission path fails
@@ -228,20 +262,64 @@ manager:
   # a rollout or a drain. Leader election keeps one active controller; every
   # replica serves the webhooks. The PodDisruptionBudget keeps one available.
   replicaCount: 2
+  # The backend's Keycloak admin client id, when the backend is given it
+  # through extraEnv rather than backend.keycloakAdminClient.secretName. The
+  # manager grants that client per-realm roles on every realm it reconciles.
+  backendKeycloakAdminClientId: ""
+  localStorageQuotaWriters:
+    - system:serviceaccount:kube-dc-services:kube-dc-services-hub
   # Default issuer for tenant expose-route certs: "Kind/name" (e.g.
   # "ClusterIssuer/letsencrypt-prod-http") or a bare namespaced-Issuer name.
   # Empty keeps the historical per-project Issuer "letsencrypt" default.
   defaultTLSIssuerRef: ""
+  # Seconds between the OVN chassis barrier and a source-range acknowledgement.
+  sourceRangeDatapathSettleSeconds: ""
+  # Seconds before a deleted Project namespace's name may be created again
+  # (service-offering namespace reuse, rule 3). Empty = 600. Never below twice
+  # apiServerRequestTimeoutSeconds (120 with the default timeout); capped at
+  # 86400 unless that floor is higher.
+  namespaceReuseCooldownSeconds: ""
+  # Namespace reuse tombstones are ConfigMaps in the release (manager)
+  # namespace. Do not put a ResourceQuota limiting configmaps on that
+  # namespace: a refused tombstone holds the Project deletion that needs it
+  # (the manager raises KubeDcNamespaceTombstoneStoreQuota if one exists).
+  # The kube-apiserver --request-timeout of this installation, in seconds.
+  # Empty = 60 (the Kubernetes default). Set it when the API server runs with a
+  # longer timeout, so the namespace reuse cool-down floor follows it.
+  apiServerRequestTimeoutSeconds: ""
+  # OVN options:gateway_mtu on every Project router's gateway ports, e.g. "1300"
+  # where pods run MTU 1300. Packets from outside larger than this get ICMP
+  # "fragmentation needed" at the gateway instead of being lost in the overlay.
+  # Empty (default) leaves it unset.
+  ovnGatewayMTU: ""
+  # OVN NB_Global options bcast_arp_nd_req_flood and bcast_arp_req_flood.
+  # kube-ovn v1.15.28-v1.15.30 and v1.16.7-v1.16.9 ship an OVN patch that, with
+  # these unset, stops broadcast ARP for EIPs, FIPs and NAT external IPs
+  # reaching the Project routers, so they vanish from the upstream network.
+  # "true" restores the v1.15.26 behaviour and is harmless on versions without
+  # the patch. "false" sets the upstream default; "" leaves the options to the
+  # operator.
+  ovnBcastArpNdReqFlood: "true"
+  # Extra OAuth redirect URIs for every organization realm's `kube-dc` client,
+  # beyond the console, the API reference and the CLI loopback the manager
+  # registers itself. Absolute http(s) URIs; a trailing "*" must follow a "/".
+  # Example: ["https://portal.example.com/auth/callback"]
+  tenantClientExtraRedirectURIs: []
 
-  # Requests only, deliberately no limits. Without a request the manager runs
-  # BestEffort and is the first pod the kubelet evicts under node memory
-  # pressure -- cloud accumulated 43 Evicted manager pods in ten days that way,
-  # each one a silent reconcile gap. The request is what fixes it: QoS class,
-  # not the number, decides eviction order.
+  # The request keeps the manager out of BestEffort: without one it is the
+  # first pod the kubelet evicts under node memory pressure -- cloud
+  # accumulated 43 Evicted manager pods in ten days that way, each one a silent
+  # reconcile gap. QoS class, not the number, decides eviction order.
   #
-  # No limit on purpose. Steady state is ~715Mi, but a large-scale event (the
-  # 2026-07 EIP storm) drove the manager to 36GiB, and an OOMKill loop during
-  # an incident like that is worse than the eviction this prevents.
+  # The memory limit caps the damage of a runaway manager. On 2026-10-23 an
+  # rc.18 manager with no limit grew to ~25 GB within a minute on a stage
+  # control-plane node; the node's memory pressure stalled etcd and the stage
+  # control plane was down for ~3.5 h. A manager OOMKill loop is a reconcile
+  # gap; an unbounded manager can take the cluster's control plane with it.
+  # (The earlier no-limit choice followed the 2026-07 EIP storm, 36GiB.)
+  # Sized for cloud: 113 organizations, leader ~5.2GiB on rc.17, follower
+  # ~0.5GiB; stage uses 0.1-0.3GiB. Raise it per cluster when a larger
+  # installation's leader needs more; keep goMemLimit (below) under it.
   #
   # Memory only, no cpu request: memory eviction ranks pods on memory usage
   # against the memory request, so a cpu request buys nothing, while it does
@@ -250,6 +328,18 @@ manager:
   resources:
     requests:
       memory: 1Gi
+    limits:
+      memory: 8Gi
+
+  # GOMEMLIMIT for the manager container: the Go runtime's soft memory limit.
+  # Near it the garbage collector runs harder instead of letting the heap
+  # reach ~2x the live set (GOGC=100), so a large but bounded working set stays
+  # under resources.limits.memory instead of being OOM-killed at it. Empty
+  # derives it from resources.limits.memory: goMemLimitPercent of it (88% of
+  # 8Gi = ~7.04GiB). Set an explicit value (e.g. "7GiB") only together with a
+  # matching limit; the chart requires a memory limit for the manager.
+  goMemLimit: ""
+  goMemLimitPercent: 88
 
   # Go runtime profiling for incident response. Disabled by default and
   # deliberately restricted by the chart to IPv4 loopback: operators reach it
@@ -318,6 +408,8 @@ manager:
   extraVolumeMounts: []
 
   logLevel: 1 # 5 - Debug
+  # json (one JSON object per line, for Loki `| json`) or console (human-readable).
+  logFormat: json
   keycloakDebug: false
   ovnDbIps: "" # Required, example: "tcp:192.168.0.1:6641"
 
@@ -366,27 +458,134 @@ manager:
   # defaulting + validation will be bypassed.
   webhook:
     enabled: true
-    # Enable after every manager replica serves the route-claim handler.
-    # Requires source preservation and installation traffic qualification.
-    protectExposureRoutes: false
-    # Exact platform identities only. Audit and migrate existing tenant routes
-    # before activation; tenants then use expose-route on the shared Gateway.
-    exposureRouteTrustedProducers: []
-    # Optional per-producer namespace UID pins for native shared-Gateway routes.
-    # An absent producer entry retains legacy trust. An explicit empty entry
-    # denies all its native attachments. A recreated namespace needs new pins.
-    # This does not qualify managed producer hostname concurrency.
-    exposureRouteProducerNamespaceUIDs: {}
-    # Exact cert-manager identity; it receives only a verified HTTP-01 exception.
-    exposureACMEControllerUsername: ""
-    # Explicit platform Certificate namespace UID pins. Tenant Certificates
-    # require a current Service-owned HTTPS hostname instead.
-    exposureACMEPlatformNamespaceUIDs: {}
+    # Hand-off of the three broad fail-closed gates (docs/prd/
+    # admission-webhooks-must-not-block-the-platform.md, step 2b):
+    # managed-subresource (pods/binding, the scheduler binding every project
+    # pod), managed-serviceaccount-token (the kubelet's token refresh for
+    # every project pod) and vnetworkattachnamespace (every namespace write
+    # on a kube-ovn cluster).
+    #   0  (default) the current shape: all three fail closed. A chart that
+    #      reaches a cluster ahead of its manager changes nothing.
+    #   1  requires the manager image of the same release. Adds the
+    #      creation-side checks (managed-platform-creations: the platform's
+    #      marked ServiceAccounts, marked pods that name a claim, marked
+    #      MariaDBs) and the policies that will hold the gates' refusals
+    #      (managed-serviceaccount-tokens, managed-default-serviceaccount,
+    #      project-namespace-network-selectors). Then run the audit:
+    #      go run ./cmd/admission-handoff-audit (exit 0 = no conflicting
+    #      pod/account/claim/selector combination in any project).
+    #   2  only after the audit is clean on this cluster: the three gates
+    #      fail open, narrowed to the requests they could refuse, and their
+    #      handlers admit a request whose lookups fail.
+    broadGatesHandoffPhase: 0
+    # Hand-off of the child-marking mutator mark-managed-children (docs/prd/
+    # admission-webhooks-must-not-block-the-platform.md, step 4). Fail-closed
+    # today for every object a platform identity creates in a project, which
+    # includes every Pod, ReplicaSet and Job the controller manager creates
+    # for a TENANT's workload.
+    #   0  (default) the current shape. A chart that reaches a cluster ahead
+    #      of its manager changes nothing.
+    #   1  requires the manager image of the same release. Adds
+    #      mark-managed-children-controllers and
+    #      mark-managed-db-children-controllers (the controller manager's
+    #      creations that arrive carrying a platform marker, fail-closed and
+    #      selected on that marker, in front of the unchanged entry); the
+    #      manager puts a verified marked workload's markers into its pod, Job
+    #      and ephemeral claim templates at creation (not a Deployment's
+    #      ReplicaSet or other mirror of a parent's template), and
+    #      mark-managed-workload-templates restores them, best-effort and
+    #      fail-open, when a template rewrite drops one; existing gaps are
+    #      migrated deliberately (it rolls the pods); the policy
+    #      managed-workload-template-markers observes
+    #      (Warn and Audit, at every phase). Then run the audit
+    #      (cmd/admission-handoff-audit, section "childMarking": no conflicts,
+    #      NO TEMPLATE GAPS and no unretired revisions -- a migrated
+    #      workload's old ReplicaSets and ControllerRevisions, retired once
+    #      the rollout is verified) and the PRD's lifecycle contract.
+    #   2  requires the manager image of the same release and phase 1's
+    #      evidence. The controller manager leaves mark-managed-children; its unmarked
+    #      arrivals go to mark-managed-children-controllers-unmarked
+    #      (failurePolicy Ignore), so a tenant's pods never wait on the
+    #      manager. Re-run the audit after any manager outage at phase 2.
+    # Phases 3 to 5 move the OPERATORS' creations (every platform identity
+    # but the controller manager) off the fail-closed entry; see
+    # docs/prd/admission-webhooks-step4-operators-as-built.md for the entry
+    # criteria (audit, probes, the lifecycle contract per operator).
+    #   3  requires the manager of the same release and a clean
+    #      --child-marking-operators audit. Adds the policies
+    #      managed-children-arrive-marked-* (an operator's unmarked child of a
+    #      marked owner, laundered labels, a snapshot of a marked claim are
+    #      refused if they arrive without the mutator's marking),
+    #      managed-children-escaped-* and managed-snapshots-escaped (tenants
+    #      may not change or delete an unmarked child of a marked owner),
+    #      managed-children-no-secret-owners, and the probe. No routing
+    #      change.
+    #   4  the staged identities below leave the entry: their unmarked
+    #      arrivals go to mark-managed-children-operators-unmarked (Ignore).
+    #   5  every operator: mark-managed-children keeps only arrivals that
+    #      carry services.kube-dc.com/managed-by (marker-selected), a new
+    #      mark-managed-db-children-operators takes managed-db-only ones,
+    #      and every unmarked arrival goes to the Ignore entry. Only once
+    #      every operator's platform outputs arrive marked by construction
+    #      (its kube_dc_child_marking_inherited_total stays unchanged through
+    #      its lifecycle contract).
+    childMarkingHandoffPhase: 0
+    # Phase 4's staged identities: exact ServiceAccount usernames in an
+    # exempt namespace, never kube-system, the engine operators'
+    # namespaces, cert-manager, rook-ceph or a registered family's operator
+    # namespace (they move only at phase 5). An identity stays listed only
+    # with its evidence (the PRD's lifecycle contract); a name that matches
+    # no account has no effect.
+    childMarkingStagedOperators:
+      - system:serviceaccount:kube-dc:kube-dc-manager
+      - system:serviceaccount:kube-dc:kube-dc-backend
+      - system:serviceaccount:kube-dc:kube-dc-k8-manager
+      - system:serviceaccount:kube-dc:kube-dc-db-manager
+      - system:serviceaccount:kube-dc:kube-dc-manager-platform-apiserver
+      - system:serviceaccount:kube-dc-service-runner:kube-dc-service-runner
+      - system:serviceaccount:kube-dc-services:kube-dc-services-hub
+      - system:serviceaccount:arc-systems:kube-dc-arc-gha-rs-controller
+      - system:serviceaccount:projectsveltos:addon-controller
+    # Owner kinds the arrive-marked and escaped-children policies cover in
+    # addition to the built-in ones and the registry's (phase 3 and later):
+    # {group, version, kind}. The audit reports a marked kind that is neither
+    # covered nor one of the kinds excluded by design (owning no operator
+    # child; docs/prd/admission-webhooks-step4-operators-as-built.md,
+    # "Coverage"), and any child an excluded kind is found to own.
+    childMarkingProtectedOwnerKinds: []
+    # Hand-off of the narrower fail-closed entries (docs/prd/
+    # admission-webhooks-remaining-design.md, item 3 and adjacent finding 1;
+    # as built: docs/prd/admission-webhooks-narrow-entries-as-built.md):
+    # managed-connect, managed-instance-objects, service-publication-writes,
+    # cloud-shell-job, mnetworkattach, vnetworkattach and vnetworkattachnad.
+    # No new handler path and no manager variable: any manager serves every
+    # phase.
+    #   0  (default) the current shape. A chart change alone changes nothing.
+    #   1  adds the policies that take over the pure refusals
+    #      (managed-services-proxy, service-publication-eso-secrets,
+    #      cloud-shell-job-tokens, project-network-nad-deletes) and the
+    #      invariant the tenant-VLAN skip relies on
+    #      (project-default-network-off-vlans, project-default-nads), and the
+    #      managed-services policies hand only MARKED instance-account and
+    #      External Secrets writes to their webhooks. The entries are
+    #      unchanged. Before phase 2: observe each policy refusing by its own
+    #      message on EVERY API server (kubectl --server per control-plane
+    #      node, in a test project) and run the audit
+    #      (cmd/admission-handoff-audit, section "narrowGates").
+    #   2  managed-connect skips platform identities and drops services/proxy;
+    #      managed-instance-objects and service-publication-writes are
+    #      selected on the marker (the latter without DELETE); cloud-shell-job
+    #      is removed; the tenant-VLAN entries skip the two exempt shapes
+    #      and route a pod or VM UPDATE only when annotations or spec change;
+    #      vnetworkattachnad no longer matches DELETE, the manager or platform
+    #      bookkeeping. Roll back 2 -> 1, observe the restored routing on
+    #      every API server, then 1 -> 0; never 2 -> 0 directly.
+    narrowGatesHandoffPhase: 0
 
   # Accept a SINGLE manager replica while its admission fails closed.
   #
-  # projectNetwork, routedNetwork and projectPolicies.protectManagedServices
-  # each put a fail-closed webhook on the ordinary tenant path: with one
+  # projectNetwork, routedNetwork, projectPolicies.protectManagedServices and
+  # fipSourcePolicy each put a fail-closed webhook on the ordinary tenant path: with one
   # replica, every rollout, drain or eviction is a window in which tenant
   # pods, claims and Secrets cannot be created, and a node loss is an outage.
   # The chart therefore requires two replicas, and this value is the explicit,
@@ -569,7 +768,7 @@ manager:
     # Explicit manager default for the scope-aware release. appVersion retains
     # the deployed bundle label and other components' fallback tags. Fleet
     # supplies the installation's reviewed tag and immutable digest.
-    tag: v0.9.1-exposure-scoped.20261004.1
+    tag: v0.9.12-security.20261030.1
 
   imagePullSecrets: []
   nameOverride: ""
@@ -635,8 +834,8 @@ frontend:
   image:
     repository: shalb/kube-dc-ui-frontend
     pullPolicy: IfNotPresent
-    # Empty → fall back to .Chart.AppVersion (see manager.image.tag).
-    tag: ""
+    # UI artifacts follow their independent reviewed release line.
+    tag: "v0.9.13"
 
   imagePullSecrets: []
   nameOverride: ""
@@ -670,9 +869,6 @@ frontend:
     parentRef:
       name: eg
       namespace: envoy-gateway-system
-    # Per-route long-timeout override applied to the dedicated /api/cloud-shell
-    # rule so ttyd-backed terminal WebSockets survive past Envoy's 15s default.
-    longLivedTimeout: "1h"
 
   resources: {}
     # limits:
@@ -734,9 +930,9 @@ adminFrontend:
   replicaCount: 2
   image:
     repository: shalb/kube-dc-admin-frontend
-    # Empty → fall back to .Chart.AppVersion (same as manager/frontend). Fleet pins
+    # UI artifacts follow their independent reviewed release line. Fleet pins
     # KUBE_DC_ADMIN_FRONTEND_TAG → adminFrontend.image.tag for its own version line.
-    tag: ""
+    tag: "v0.9.13"
     pullPolicy: IfNotPresent
   imagePullSecrets: []
   serviceAccount:
@@ -822,9 +1018,37 @@ platformApi:
   # console URL. Set it to serve provider customers a different console,
   # e.g. https://console.example.com/next/.
   consoleUrl: ""
+  # Steady state is ~35Mi (stage, 2026-10-23). The limit bounds a runaway
+  # (the server runs the manager binary, which had no limit before); the
+  # GOMEMLIMIT derived from it (goMemLimitPercent, or an explicit goMemLimit)
+  # keeps the Go heap under it.
   resources:
     requests:
       memory: 64Mi
+    limits:
+      memory: 512Mi
+  goMemLimit: ""
+  goMemLimitPercent: 88
+
+# Platform events (docs/prd/platform-events.md): an immutable feed of quota
+# levels and organization lifecycle changes per organization, served as the
+# read-only platformevents resource of the platform API (get/list/watch) and
+# readable by machine clients with the `platformevents` grant and by the
+# organization's members. Needs platformApi.enabled and a PostgreSQL database
+# (on Kube-DC installations: database kube_dc_events in monitoring/grafana-pg).
+platformEvents:
+  enabled: false
+  # Secret in the release namespace with the database URI:
+  #   uri: postgresql://kube_dc_events:<password>@grafana-pg-rw.monitoring.svc:5432/kube_dc_events
+  databaseSecret: kube-dc-events-db
+  uriKey: uri
+  # ConfigMap in the release namespace with the CA that signed the database
+  # server certificate (verified, including the host name). For grafana-pg it
+  # is a copy of the public ca.crt of monitoring/grafana-pg-ca, refreshed by
+  # the fleet so a CNPG CA rotation reaches the backend; the CA key never
+  # leaves monitoring.
+  caConfigMap: grafana-pg-ca
+  caKey: ca.crt
 
 backend:
   # CLI bootstrap publishes the API server CA over the backend's trusted HTTPS
@@ -877,6 +1101,57 @@ backend:
   # would refuse ("[auth] would refuse ..."), "enforce" answers 401, "off".
   # Prove a cluster's callers in report mode before enforcing.
   authMode: report
+  # Tokens in the query string (?token=) on the Grafana launch route. The
+  # console sends tokens in headers, but the CloudSigma marketplace BFF still
+  # redirects the browser with ?token= until its server-to-server launch ships
+  # (docs/internal/grafana-launch-bff-design.md): a cluster serving that BFF
+  # needs "allow" until then.
+  queryTokens: refuse
+  # kube-dc CLI versions this installation accepts, served to the CLI in
+  # /.well-known/kube-dc-config with the platform release (the chart version).
+  # A CLI older than minimumVersion refuses to run and asks to be updated
+  # (released CLIs update themselves); one older than recommendedVersion says
+  # an update is available. Empty: no policy. Releases set both to the CLI
+  # released with them.
+  cli:
+    minimumVersion: ""
+    recommendedVersion: ""
+  # API groups whose Kubernetes calls reach the platform audit log on this
+  # installation (the apiserver audit policy records them and the log is
+  # shipped to Loki). The CLI calls such a group's resources directly; for any
+  # other group it keeps the backend routes, which write the audit events
+  # themselves. List a group only once that pipeline exists.
+  auditedApiGroups: []
+  rbac:
+    # What the backend's service account may bind (templates/
+    # backend-restrict-bindings.yaml). "off": unrestricted (today). "warn":
+    # a policy reports bindings outside the provisioning roles, refuses
+    # nothing. "enforce": it refuses them, and RoleBinding writes are limited
+    # to the platform namespace. Quote it: bare off is a YAML boolean.
+    restrictBindings: "off"
+    # Keep only what code running AS the backend uses (templates/backend-sa.yaml,
+    # backend-rbac-minimal.yaml; test: hack/backend-rbac-wide-live-test.sh).
+    # Drops cluster-wide Secrets, core subresources (nodes/proxy, pods/log),
+    # tenant Service/ConfigMap/PVC/SA writes, VM create/console, HPA, CAPI.
+    # Revert: false.
+    minimal: false
+    # With minimal: namespaces besides the release namespace where the backend
+    # reads Secrets (write: true also writes them). Each must exist.
+    secretNamespaces:
+      - name: monitoring             # alerting config (rw), Grafana admin (r)
+        write: true
+      - name: rook-ceph              # S3 admin credentials
+      - name: kube-dc-service-runner # managed-services runner
+  # Logging (ui/backend/util/logger.js, util/requestContext.js), for the API
+  # and the worker. logFormat json writes one JSON object per line with
+  # level, component, msg and, inside a request, request_id/realm/user — query
+  # with {namespace="kube-dc"} | json. text is the older "[LEVEL] ts - msg".
+  # logLevel: debug, info, warn, error. accessLog writes one line per HTTP
+  # request (method, path, route, status, duration_ms, ip); probes and
+  # /metrics are skipped.
+  logLevel: info
+  logFormat: json
+  accessLog: true
   # Keycloak admin client for the Admin Console.
   #
   # The Admin Console's Keycloak-backed pages (Platform Admins, Auth & SSO)
@@ -893,6 +1168,14 @@ backend:
     secretName: ""
     clientIdKey: KEYCLOAK_ADMIN_CLIENT_ID
     clientSecretKey: KEYCLOAK_ADMIN_CLIENT_SECRET
+
+  # Keycloak domain moves. When Keycloak serves a second hostname (dynamic
+  # hostname, each hostname issuing under its own URL with the same realm keys),
+  # list the other base URLs here, e.g. ["https://login.old.example.com"], so
+  # tokens issued under either hostname pass the backend's issuer checks while
+  # clients move. The primary stays manager.keycloakSecret.url. Absolute https
+  # URLs only; anything else is ignored. Empty = only the primary (default).
+  keycloakIssuerAlternateUrls: []
 
   # Private-CA trust. Set configMapName to a ConfigMap holding the CA bundle
   # when the platform's own HTTPS endpoints (Keycloak, OpenBao, S3) use a
@@ -992,6 +1275,43 @@ backend:
   extraEnv: []
       # - name: PROM_URL
       #   value: "http://prometheus:9090"
+  # Hosted MCP endpoint for tenants (docs/prd/hosted-mcp.md): mcp/server.js of
+  # this image, one endpoint per organization at <publicURL>/<org>. publicURL
+  # defaults to https://<backend.gateway.hostname>/mcp (routed by the backend
+  # HTTPRoute); a URL on another host needs its own route.
+  mcp:
+    enabled: false
+    replicaCount: 2
+    port: 8090
+    publicURL: ""
+    requesterSecretName: kube-dc-mcp-requesters
+    # AI apps that register themselves (anonymous DCR) may only use redirect
+    # URIs on these hosts, and Client ID Metadata Documents are accepted from
+    # cimdClientDomains (their metadata may also name trustedRedirectHosts).
+    # Every organization realm is configured with them by the manager.
+    # cursor.com / www.cursor.com: Cursor's cloud-agent callback;
+    # anysphere.cursor-mcp: the host of its cursor:// desktop callback.
+    # global.consent.azure-apim.net: Microsoft Copilot Studio's per-connector callback.
+    # callback.mistral.ai: Mistral Le Chat.
+    trustedRedirectHosts: [localhost, 127.0.0.1, claude.ai, claude.com, chatgpt.com, vscode.dev, cursor.com, www.cursor.com, anysphere.cursor-mcp, global.consent.azure-apim.net, callback.mistral.ai]
+    # antigravity.google: Google Antigravity (redirect on the same host).
+    cimdClientDomains: [claude.ai, vscode.dev, code.visualstudio.com, antigravity.google]
+    # Read-only URLs enforced by Kubernetes too: read-only sessions get a token
+    # (audience kube-dc-mcp-read, claim kube_dc_access=read) that a second
+    # OpenIDConnect per realm accepts, and a ValidatingAdmissionPolicy denies
+    # every change made with it. Needs the manager and backend of this chart.
+    enforceReadOnly: false
+    # Apps registered as ordinary clients under their metadata URL, because
+    # Keycloak cannot read their client ID metadata document (ChatGPT's lists
+    # token_endpoint_auth_methods_supported). jwksUrl: private_key_jwt client.
+    preregisteredApps:
+      - clientId: https://chatgpt.com/oauth/client.json
+        name: ChatGPT
+        redirectUris: [https://chatgpt.com/connector_platform_oauth_redirect, "https://chatgpt.com/connector/oauth/*"]
+        jwksUrl: https://chatgpt.com/oauth/jwks.json
+      - clientId: https://chatgpt.com/oauth/codex/client.json
+        name: Codex
+        redirectUris: [http://127.0.0.1/callback, http://localhost/callback]
   # Background workers (billing reconciler, signup reminders, billing
   # notifications) in their own Deployment: one replica, Recreate, so exactly
   # one copy runs however the API is scaled. The API pods then get
@@ -1019,8 +1339,8 @@ backend:
   image:
     repository: shalb/kube-dc-ui-backend
     pullPolicy: IfNotPresent
-    # Empty → fall back to .Chart.AppVersion (see manager.image.tag).
-    tag: ""
+    # The API documentation refresh follows its independent backend version.
+    tag: "v0.9.13"
 
   imagePullSecrets: []
   nameOverride: ""
@@ -1072,17 +1392,19 @@ backend:
     # Request timeout for the backend HTTPRoute. Org self-registration creates a
     # Keycloak realm + CRs (~30s), so keep this well above Envoy's 15s default.
     requestTimeout: "120s"
-    # Per-route long-timeout override applied to the dedicated /api/cloud-shell
-    # rule so ttyd-backed terminal WebSockets survive long sessions.
+    # Long timeout for the /api/project-console and /api/ui/v1 rule, so
+    # terminal and VM console WebSockets survive long sessions.
     longLivedTimeout: "1h"
 
-  resources: {}
-    # limits:
-    #   cpu: 100m
-    #   memory: 128Mi
-    # requests:
-    #   cpu: 100m
-    #   memory: 128Mi
+  # The backend API (Node.js). Steady state is ~120-140Mi on stage and cloud
+  # (2026-10-23). The request keeps it out of BestEffort, the first class the
+  # kubelet evicts; the limit bounds a runaway on a shared node with ~7x
+  # headroom.
+  resources:
+    requests:
+      memory: 256Mi
+    limits:
+      memory: 1Gi
 
   # The backend does outbound init (billing providers, OIDC/JWKS, CA bundle)
   # BEFORE binding :3333, and on slower clusters that takes 25-30s — longer
@@ -1119,6 +1441,23 @@ backend:
     targetCPUUtilizationPercentage: 80
     # targetMemoryUtilizationPercentage: 80
 
+  # Shared key for one-use console, SSH and download tickets (Secret key `key`,
+  # at least 32 random bytes). Required with more than one API replica; without
+  # it each pod uses its own key.
+  sealedTickets:
+    keySecretName: ""
+  # Paths served by one copy of the backend, with volumes only it mounts (e.g.
+  # a ReadWriteOnce report directory). With one API replica that pod has them;
+  # with more, the dedicated replica (kube-dc-backend-grafana) does.
+  dedicatedReplica:
+    paths: []
+    volumes: []
+    volumeMounts: []
+  # Request ceilings per minute for the whole API; each replica gets its share.
+  rateLimit:
+    apiPerMinute: 1200
+    anonPerMinute: 300
+
   # Additional volumes on the output Deployment definition.
   volumes: []
   # - name: foo
@@ -1142,6 +1481,12 @@ backend:
 k8Manager:
   enabled: true
   replicaCount: 1
+  # Optional native managed-Kubernetes fee evidence. Empty leaves it disabled.
+  # The operator-owned ConfigMap must contain canonical Config JSON in config.json.
+  # Evidence collection does not enable payable charges.
+  nativeFeeEvidence:
+    configMapName: ""
+
   # Project-internal LoadBalancer VIPs for managed Kubernetes clusters.
   # off | observe (request blocks only in projects already opted in; never labels) |
   # enable (every KubeVirt-backed managed cluster gets a VIP block and a
@@ -1153,6 +1498,30 @@ k8Manager:
   # Advanced/staging: require each managed cluster to be annotated
   # network.kube-dc.com/lb-block=enabled before it gets a VIP block.
   lbBlockRequireOptIn: false
+
+  # Automatic replacement of failed managed-cluster workers. k8-manager keeps
+  # one Cluster API MachineHealthCheck per worker pool; a worker whose Node
+  # stays NotReady past the timeout is deleted and recreated by its
+  # MachineDeployment. See kube-dc-k8-manager docs/worker-machine-health-check.md.
+  #   off    (default) nothing is created; checks created earlier are removed.
+  #   opt-in only clusters/pools with spec.workerHealthCheck.enabled=true
+  #          (or workers[].healthCheck.enabled=true).
+  #   on     every pool with two or more workers, unless the cluster or pool
+  #          sets enabled=false.
+  # Turning this on is an owner decision per installation: production tenant
+  # clusters (CloudSigma included) must not change behaviour silently.
+  # On a cluster that runs the CloudSigma CCM, k8-manager renders
+  # CLOUDSIGMA_STALE_NODE_DELETE=false into that CCM while checks are wanted
+  # (a CCM-deleted Node would be replaced at once, skipping the timeout and
+  # the drain), and arms no check until that CCM is rolled out.
+  workerHealthCheck:
+    mode: "off"
+    # Platform defaults, used when a KdcCluster does not set its own.
+    # Empty keeps the built-in value. Go durations; maxUnhealthy is a count
+    # or a percentage (CAPI rounds percentages down).
+    unhealthyTimeout: ""    # built-in 10m, allowed 5m..24h
+    nodeStartupTimeout: ""  # built-in 30m, 0 disables, else 10m..24h
+    maxUnhealthy: ""        # built-in 1 (one replacement at a time)
 
   # Management-cluster worker autoscaling (docs/prd/mgmt-worker-autoscaling.md,
   # private repo). OFF by default; CloudSigma-backed management clusters only.
@@ -1196,13 +1565,13 @@ k8Manager:
   image:
     repository: shalb/kube-dc-k8-manager
     pullPolicy: IfNotPresent
-    tag: "v0.9.1-exposure-managed.20261004.1"
+    tag: v0.9.12
     # Optional immutable digest for installation-qualified controller releases.
     digest: ""
 
   # External endpoint for the infrastructure cluster API
   # Required for CCMs running in VPC-isolated namespaces that cannot reach kubernetes.default.svc
-  # Format: "host:port" (e.g., "kube-api.stage.kube-dc.com:6443")
+  # Format: "host:port" (e.g., "kube-api.example.com:6443")
   infraAPIEndpoint: ""
 
   # M5-T04 managed-K8s etcd encryption-at-rest knobs.
@@ -1282,6 +1651,22 @@ k8Manager:
   tolerations: []
 
   affinity: {}
+
+# Typed platform.kube-dc.com operations (docs/internal/platform-api-typed-operations.md):
+# KMS encrypt/decrypt authorized by Kubernetes RBAC (create kmskeys/encrypt,
+# kmskeys/decrypt), run by the backend as each organization's kube-dc-platform
+# OpenBao role. Off: not served, the role is removed, and project roles carry
+# no grant for them. The console's KMS routes work either way.
+platformOperations:
+  enabled: false
+
+# Per-project quota caps (docs/internal/project-allocation-native.md).
+#   resourcequota: the console writes each project's ResourceQuota (as before).
+#   spec: Project.spec.quota is the cap; the controller writes the quota and
+#         the console's quota routes patch the Project. Turning this on adopts
+#         every existing cap into its Project's spec.
+projectQuota:
+  source: resourcequota
 
 # Billing configuration
 billing:
@@ -1553,7 +1938,7 @@ billing:
             maxCPU: "4"
             maxMemory: "8Gi"
             minCPU: "1m"
-            minMemory: "1Mi"
+            minMemory: "1M"
             maxPodCPU: "4"
             maxPodMemory: "8Gi"
             maxPVCStorage: "60Gi"
@@ -1596,7 +1981,7 @@ billing:
             maxCPU: "8"
             maxMemory: "24Gi"
             minCPU: "1m"
-            minMemory: "1Mi"
+            minMemory: "1M"
             maxPodCPU: "8"
             maxPodMemory: "24Gi"
             maxPVCStorage: "160Gi"
@@ -1639,7 +2024,7 @@ billing:
             maxCPU: "16"
             maxMemory: "56Gi"
             minCPU: "1m"
-            minMemory: "1Mi"
+            minMemory: "1M"
             maxPodCPU: "16"
             maxPodMemory: "56Gi"
             maxPVCStorage: "320Gi"
@@ -1685,7 +2070,7 @@ billing:
             maxCPU: "4"
             maxMemory: "8Gi"
             minCPU: "1m"
-            minMemory: "1Mi"
+            minMemory: "1M"
             maxPodCPU: "4"
             maxPodMemory: "8Gi"
             maxPVCStorage: "60Gi"
@@ -1728,7 +2113,7 @@ billing:
             maxCPU: "8"
             maxMemory: "24Gi"
             minCPU: "1m"
-            minMemory: "1Mi"
+            minMemory: "1M"
             maxPodCPU: "8"
             maxPodMemory: "24Gi"
             maxPVCStorage: "160Gi"
@@ -1768,7 +2153,7 @@ billing:
             maxCPU: "16"
             maxMemory: "56Gi"
             minCPU: "1m"
-            minMemory: "1Mi"
+            minMemory: "1M"
             maxPodCPU: "16"
             maxPodMemory: "56Gi"
             maxPVCStorage: "320Gi"
@@ -1928,7 +2313,7 @@ dbManager:
       create: false
       serviceAccounts: []
 
-  infraAPIEndpoint: "" # Required when enabled, e.g. "kube-api.stage.kube-dc.com:6443"
+  infraAPIEndpoint: "" # Required when enabled, e.g. "kube-api.example.com:6443"
 
   image:
     repository: shalb/db-manager
@@ -1939,7 +2324,7 @@ dbManager:
     # four minor lines behind the one the platform actually supports.
     # db-manager is being retired in favour of kube-dc-services; until it is,
     # this default tracks the released line.
-    tag: "v0.8.3"
+    tag: "v0.9.11-rc.2"
 
   extraEnv: []
 
@@ -2137,7 +2522,7 @@ osImages:
   # first moving qemu-guest-agent out of the first-boot package path, or every
   # tenant VM becomes unreachable for as long as its base image is stale.
   # Empty by default — chart ships upstream URLs out of the box.
-  # Override per cluster (e.g. "https://s3.kube-dc.cloud/cdi-os-images")
+  # Override per cluster (e.g. "https://s3.example.com/cdi-os-images")
   # to flip the whole catalog over to the local mirror.
   mirrorBaseURL: ""
   catalog:
@@ -2373,12 +2758,15 @@ osImages:
       firmwareType: "bios"
       machineType: "q35"
       features: "acpi"
+      # zypper, as in images/qga-bake/recipes.yaml. openSUSE has no apt-get, so
+      # the line copied from Debian could never install the agent on a cluster
+      # that serves the unbaked image (no key by agent, guestAgentPing never Ready).
       cloudInit: |
         #cloud-config
         package_update: false
         package_upgrade: false
         runcmd:
-          - command -v qemu-ga >/dev/null 2>&1 || (apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends qemu-guest-agent)
+          - command -v qemu-ga >/dev/null 2>&1 || (zypper --non-interactive --gpg-auto-import-keys refresh && zypper --non-interactive install --no-recommends qemu-guest-agent)
           - systemctl enable --now qemu-guest-agent
     - osName: "Alpine Linux 3.21"
       # Bumped from 3.19.1 -> 3.21.0 on 2026-05-12. 3.19 still works
@@ -2826,7 +3214,7 @@ kubevirtNodeIPAlias:
 # on every Flux-managed kube-dc cluster). On a cluster without Sveltos
 # CRDs, set kubeletCsrApprover.enabled=false (or install Sveltos first).
 #
-# Documented in: docs/prd/boc-tenant-kubelet-kubeproxy-observability.md
+# Configure managed-cluster kubelet, kube-proxy and observability defaults.
 kubeletCsrApprover:
   enabled: true
   # postfinance/kubelet-csr-approver chart on the upstream gh-pages repo
@@ -2919,8 +3307,8 @@ routedNetwork:
   enabled: false
   backend: frr-project-gateway
   namespace: kube-dc-routing
-  gatewayImage: shalb/kube-dc-routing-gateway:v0.9.0
-  frrImage: quay.io/frrouting/frr:10.4.1
+  gatewayImage: shalb/kube-dc-routing-gateway:v0.9.12-security.20261030.1
+  frrImage: quay.io/frrouting/frr:10.4.5@sha256:b0faf7c8f3d8b09aea1e38f77603c745a66dbf5e26ef9718527c2fbb53cc3aed
   routingLinkPool: 100.65.0.0/16
   # Exact identity allowed to maintain kube-ovn finalizers/status on protected
   # controller-owned Subnets. Never broaden this to a namespace prefix.
@@ -3044,6 +3432,38 @@ projectPolicies:
     enabled: true
     validationActions: ["Deny"]
 
+  # Tenants manage their own CronJobs; platform schedules kept in project
+  # namespaces (KdcCluster etcd backups, db-manager backup post-processing)
+  # cannot be changed or deleted from the project. Judged from the stored
+  # object: a kube-dc.com ownerReference, a *kube-dc.com/managed-by label, or
+  # app.kubernetes.io/managed-by naming one of platformManagers.
+  protectPlatformCronJobs:
+    enabled: true
+    validationActions: ["Deny"]
+    platformManagers: ["kdc-cluster-controller", "db-manager"]
+
+  # Tenants manage their own Leases (leader election). Platform Leases kept in
+  # a project namespace, marked by a kube-dc.com ownerReference or a
+  # *kube-dc.com/managed-by label, cannot be changed or deleted from the
+  # project; tenants cannot put kube-dc.com metadata on a Lease.
+  protectPlatformLeases:
+    enabled: true
+    validationActions: ["Deny"]
+
+  # Fence the manager's Role/RoleBinding writes in Project namespaces to the
+  # namespace incarnation they are for (templates/vap-fence-project-rbac.yaml):
+  # a delayed reconcile of a deleted Project can never grant its groups access
+  # in a replacement namespace of the same name. Scoped to the manager's own
+  # writes that add to a grant; never tenants, deletes, finalizers or updates
+  # that only remove RoleBinding subjects (revocation).
+  # Rollback: before (or with) rolling the manager back to a version that does
+  # not stamp kube-dc.com/project-uid, set enabled: false or
+  # validationActions: ["Warn"]; otherwise that manager's grants are refused in
+  # namespaces the newer manager created.
+  fenceProjectRBACIncarnation:
+    enabled: true
+    validationActions: ["Deny"]
+
   # Keep tenant identities off platform-managed service objects that live
   # INSIDE the project namespace (kube-dc-services in-project placement, the
   # model db-manager uses). Every such object carries
@@ -3063,8 +3483,107 @@ projectPolicies:
     # later-feature compatibility is qualified. Does not remove the 90s wait.
     postgresqlStartup:
       enabled: false
+      # Hand-off of postgresql-development-startup-v1 (docs/prd/admission-
+      # webhooks-must-not-block-the-platform.md, step 3;
+      # docs/prd/admission-webhooks-step3-postgresql.md):
+      #   0  (default) the current shape: one fail-closed entry on every
+      #      project core, RBAC and CNPG write, every pods/binding and every
+      #      Secret DELETE. A chart that reaches a cluster ahead of its
+      #      manager changes nothing.
+      #   1  requires the manager of the same release. Adds the policy
+      #      postgresql-development-startup-reserved (reserved names, typed
+      #      pod-spec/Service/RBAC references, the broker's pure DELETE rules
+      #      and the monitoring writer identity hold without the manager), so
+      #      it is cached before phase 2. The webhook configuration is
+      #      unchanged, so existing activation receipts stay valid.
+      #   2  the entry routes only the platform's labelled objects (object
+      #      selector, still fail-closed, bookkeeping updates skipped, no
+      #      DELETE); restore-broker-* writes move to a fail-closed route
+      #      selected on the broker's marker; pods/binding, unlabelled CNPG
+      #      objects and the monitoring copy check move to
+      #      postgresql-development-startup-references-v1 (failurePolicy
+      #      Ignore) and the manager admits a request there whose lookups
+      #      fail. Fast startup needs a new activation receipt for this shape
+      #      (until then the runner keeps the 90-second wait).
+      handoffPhase: 0
     valkeyStartup:
       enabled: false
+      # Hand-off of valkey-development-startup-v1 (docs/prd/admission-webhooks-
+      # must-not-block-the-platform.md, step 3; the pilot of the pattern):
+      #   0  (default) the current shape: one fail-closed entry on every
+      #      project Secret/ConfigMap write and every pods/binding. A chart
+      #      that reaches a cluster ahead of its manager changes nothing.
+      #   1  requires the manager of the same release. Adds the policy
+      #      valkey-development-startup-reserved (reserved names stay refused
+      #      without the manager), so it is cached before phase 2.
+      #   2  the entry routes only the platform's labelled objects (object
+      #      selector, still fail-closed); pods/binding moves to
+      #      valkey-development-startup-binding-v1 (failurePolicy Ignore) and
+      #      the manager admits a binding whose lookups fail. Fast startup
+      #      needs a new activation receipt for this shape (until then the
+      #      runner keeps the 90-second wait).
+      handoffPhase: 0
+    # Permanent native-consumption contracts. Enable each family only after
+    # all manager replicas and its runner/operator images are qualified.
+    sharedStartup:
+      valkey: false
+      mysql: false
+      mariadb: false
+      kafka: false
+      clickhouse: false
+    # Hand-off phases of the shared startup gates (docs/prd/admission-
+    # webhooks-must-not-block-the-platform.md, step 3), per family. They live
+    # outside sharedStartup, whose entries stay the families' on/off booleans.
+    # A family without an entry here is at phase 0. Each family moves on its
+    # own; any value other than 0, 1 or 2 fails the render.
+    sharedStartupHandoff:
+      # mysql-shared-startup-v1 and mariadb-shared-startup-v1
+      # (docs/prd/admission-webhooks-step3-sql.md):
+      #   0  (default) the current shape: one fail-closed entry on every
+      #      project core write, workload and pods/binding. A chart that
+      #      reaches a cluster ahead of its manager changes nothing.
+      #   1  requires the manager of the same release. Adds the policy
+      #      <family>-shared-startup-reserved (squatting and typed borrowing
+      #      stay refused without the manager), so it is cached before phase 2.
+      #   2  the entry routes only the platform's labelled objects of the
+      #      family (object selector, still fail-closed, no DELETE,
+      #      bookkeeping updates skipped); pods/binding, Kube-OVN shadows,
+      #      unlabelled RBAC and operator objects move to
+      #      <family>-shared-startup-references-v1 (failurePolicy Ignore), and
+      #      the manager admits a request there whose lookups fail. Fast
+      #      startup needs a new activation receipt for this shape (until
+      #      then the runner keeps the 90-second wait).
+      mysql:
+        handoffPhase: 0
+      mariadb:
+        handoffPhase: 0
+      # kafka-shared-startup-v1 and clickhouse-shared-startup-v1
+      # (docs/prd/admission-webhooks-step3-kafka-clickhouse.md), the same
+      # phases, except: phase 0 also routes operator objects and DELETE; at
+      # phase 2 the references entry takes pods/binding, Kube-OVN shadows,
+      # unlabelled operator objects and (Kafka) the entity operator's Secret
+      # writes, with no DELETE.
+      kafka:
+        handoffPhase: 0
+      clickhouse:
+        handoffPhase: 0
+      valkey:
+        # valkey-shared-startup-v1 (docs/prd/admission-webhooks-step3-valkey-shared.md):
+        #   0  (default) the current shape: one fail-closed entry on every
+        #      project core write (DELETE included) and every pods/binding. A
+        #      chart that reaches a cluster ahead of its manager changes nothing.
+        #   1  requires the manager of the same release. Adds the policy
+        #      valkey-shared-startup-reserved (reserved names, typed
+        #      references and Kube-OVN shadows stay refused without the
+        #      manager), so it is cached before phase 2.
+        #   2  the entry routes only the platform's labelled objects (object
+        #      selector, still fail-closed, no DELETE, bookkeeping updates
+        #      skipped); pods/binding, unlabelled references, RBAC and shadows
+        #      move to valkey-shared-startup-references-v1 (failurePolicy
+        #      Ignore) and the manager admits a request there whose lookups
+        #      fail. Fast startup needs a new activation receipt for this
+        #      shape (until then the runner keeps the 90-second wait).
+        handoffPhase: 0
     validationActions: ["Deny"]
     # PHASE 2 of the instance-write judge (a registered family whose
     # operator runs inside the project namespace under a per-instance
@@ -3098,11 +3617,78 @@ projectPolicies:
     # intended, not a regression -- flip this once the stanza is served.
     # The marker policies keep judging pods/status in both phases: a status
     # update can carry labels, and the judge only sees marked pods.
-    instancePodConditionsJudgedByWebhook: false
+    #
+    # Default true (phase 2) since 2026-10-09. The stanza has rendered
+    # wherever a family declares the write since chart v0.8.5, and every
+    # cluster that registers one was observed serving it before this default
+    # moved: two clusters had already flipped the flag by hand; two had
+    # not, so every new MySQL instance there sat PENDING
+    # with its sidecar refused the readiness-gate write (2026-10-09). The new
+    # install scaffold already sets true and its release gate requires it.
+    # The flag is inert where no family declares a pods/status write -- the
+    # hand-off renders nothing -- so an installation without such a family
+    # renders identically. Only the write is handed over; an instance account
+    # still has no path to its pod's metadata (the operator's membership
+    # label, annotation and finalizer are written by the operator account).
+    # The phase rule still holds for an EXISTING cluster with marked pods
+    # that has never served the stanza: set this false for the release that
+    # first registers such a family, and back to true once the stanza is
+    # observed. A fresh install needs no phase 1 (no marked pod exists during
+    # its first apply), and the install scaffold's release gate requires true.
+    instancePodConditionsJudgedByWebhook: true
     # Two-phase Pooler status handoff: install the manager/guard first, then
     # enable once every replica serves /validate-cnpg-pooler-status. The
     # services runner must bind its reserved SA to the live Pooler's UID.
     poolerStatusJudgedByWebhook: false
+    # PHASE 2 of moving managed-references.kube-dc.com's pure checks to
+    # ValidatingAdmissionPolicies (vap-managed-references.yaml;
+    # docs/prd/admission-webhooks-must-not-block-the-platform.md, step 2).
+    # The policies render in every phase. While this is false the webhook
+    # still matches tenant Secret and PodDisruptionBudget writes and every
+    # resource of an extra family's groups ("*"), so a policy and the webhook
+    # both judge those. Flip it to true only once every target cluster serves
+    # the managed-references-* policies (kubectl get
+    # validatingadmissionpolicies): the webhook then stops matching Secrets
+    # and budgets, and routes only each family's registered operations in
+    # their registered versions, and the policies are the sole judge of the
+    # rest. The webhook configuration and the policies are separate objects
+    # the API server caches independently, so flipping this in the release
+    # that introduces the policies would let the narrower webhook be observed
+    # before the policy (codex rounds 102-103).
+    pureReferenceChecksJudgedByPolicy: false
+    # Hand-off of managed-references.kube-dc.com's core rules (pods, claims,
+    # ServiceAccounts and StatefulSets that name a managed claim, account or
+    # engine) to ValidatingAdmissionPolicies with params
+    # (docs/prd/admission-webhooks-remaining-design.md, item 2; as built:
+    # docs/prd/admission-webhooks-managed-references-as-built.md):
+    #   0  (default) the current shape. A chart that reaches a cluster ahead
+    #      of its manager changes nothing.
+    #   1  requires the manager of the same release,
+    #      manager.webhook.broadGatesHandoffPhase 1 or 2, and a cluster that
+    #      already runs the step 2 policies (chart v0.9.11-rc.9 or later): it
+    #      implies pureReferenceChecksJudgedByPolicy. Adds the policies with
+    #      params (marked claims, marked accounts, MariaDB and KdcDatabase
+    #      selectors) and the cross-namespace source policy, bound Audit; the
+    #      creation route's marked-PVC rule; the narrow fail-closed entries
+    #      managed-references-claim-custody (marker-selected),
+    #      managed-references-copies and managed-references-reserved-claims.
+    #      The creation route then refuses the platform's pod until its
+    #      reserved-name claim exists, marked and not terminating. Before
+    #      setting it, run the audit (cmd/admission-handoff-audit, section
+    #      "references"): a non-empty overParamBudget (namespaces where one
+    #      pod meets more than 10 params in total: marked claims, marked
+    #      ServiceAccounts, marked MariaDBs and every KdcDatabase) needs the
+    #      owner's acceptance of the policies' latency first. Then run it
+    #      until it is clean.
+    #   2  the policies' bindings use validationActions (Deny). Routing is
+    #      unchanged. Observe each policy's own refusal on EVERY API server.
+    #   3  the core rules move to managed-references-core (failurePolicy
+    #      Ignore) and the manager admits a request there whose lookups fail;
+    #      managed-references keeps only its non-core rules. Re-run the audit
+    #      after any manager outage at phase 3.
+    # Roll back one phase at a time (3 -> 2 -> 1 -> 0), each only after the
+    # previous shape is observed on every API server and every manager pod.
+    referencesHandoffPhase: 0
     # Install/verify the fail-closed publication webhook first; only then enable.
     # Never exempt the shared ESO namespace from managed-object protection.
     publicationWritesJudgedByWebhook: false
@@ -3166,6 +3752,17 @@ branding:
   accentColor: "#40199A"
   # Enable only after installing the matching kube-dc Keycloak email theme.
   keycloakEmailThemeSync: false
+  # Tenant console sections hidden by default (superadmins change it under
+  # Configuration -> Branding & features; "Restore installation defaults"
+  # returns here). Presentation only: RBAC is unchanged. Allowed: kubernetes,
+  # managed-services, vms, clusters, databases, networking, object-storage,
+  # block-storage, security.
+  disabledSections: []
+  # Installation theme default (dark only; docs/prd/installation-theme.md §4):
+  # {version: 1, appearance: dark, tokens: {...}, font: {source: bundled,
+  # family: Inter}}. Superadmins can change it under Whitelabel -> Theme;
+  # "Reset to installation default" returns here. Invalid values are ignored.
+  theme: {}
 notifications:
   # One reminder after 24 hours, including older eligible signups. Stripe only.
   stripeSignupRemindersEnabled: true
@@ -3281,3 +3878,23 @@ managedServiceCredentials:
       pluginInitContainer: kube-dc-postgresql-plugin
       # sha256:<64 lowercase hex> registry digest of the plugin image.
       pluginImageDigest: ""
+
+# Enable only with compatible native UID writes and verified external query authorization.
+observabilityUID:
+  enabled: false
+  # Backend authorizer certificate: tls.crt/tls.key with the Service DNS SAN.
+  tlsSecretName: ""
+  # Exact protected platform tenants; no wildcard or customer tenant IDs.
+  platformTenants: []
+  # Opt-in protected Grafana queries; requires the matching Fleet login/config
+  # components. Grants live in one API process and require re-launch after restart.
+  grafanaEnabled: false
+  scopeKeySecretName: "" # Secret key `key`: 32..256 random bytes; API only.
+  grafanaProxyURL: ""
+  mimirURL: "" # Verified HTTPS query endpoint, including /prometheus base path.
+  lokiURL: "" # Verified HTTPS Loki base endpoint.
+  grafanaAdminURL: "" # Verified HTTPS Grafana admin API.
+
+# Exact native operators that require pod CLI tasks. This exempts only their
+# identity from the project CONNECT denial; Kubernetes RBAC still authorizes it.
+serviceOperatorPodExecServiceAccounts: []

@@ -2,13 +2,16 @@
 # ValidatingAdmissionPolicy: confine platform machine identities
 #
 # Machine identities (username prefix "machine:", see platform.machines) may
-# only create namespaces and write Organizations, Projects and
-# OrganizationGroups whose namespace is named <prefix>-* for a prefix they hold
-# `use` on (organizationprefixes/<prefix>, granted per identity through RBAC).
+# only create namespaces and write Organizations and Projects whose namespace
+# is named <prefix>-* for a prefix they hold `use` on
+# (organizationprefixes/<prefix>, granted per identity through RBAC).
 # A namespace they create carries no labels or annotations, so it cannot opt
 # into platform, project or pod-security behaviour (only the labels the API
 # server and HNC's mutating webhook add are accepted). An Organization must be
-# named after its namespace.
+# named after its namespace. They never write OrganizationGroups, whatever RBAC
+# they are given: per-project access goes through users.platform.kube-dc.com
+# (spec.projectAccess), whose backend writes the groups as its own
+# ServiceAccount after validating every grant.
 # =============================================================================
 
 apiVersion: admissionregistration.k8s.io/v1
@@ -44,9 +47,8 @@ spec:
       messageExpression: >-
         'machine identities may only manage namespaces named <prefix>-* for a prefix granted to them; "' + variables.target + '" is not'
       reason: Forbidden
-    - expression: >-
-        !variables.isNamespace || request.operation != 'CREATE' ||
-        ((!has(object.metadata.labels) || object.metadata.labels.all(k,
+    - expression: |-
+        !variables.isNamespace || request.operation != 'CREATE' || ((!has(object.metadata.labels) || object.metadata.labels.all(k,
             k == 'kubernetes.io/metadata.name' ||
             (k == 'hnc.x-k8s.io/included-namespace' && object.metadata.labels[k] == 'true'))) &&
          (!has(object.metadata.annotations) || size(object.metadata.annotations) == 0))
@@ -57,6 +59,9 @@ spec:
         object.metadata.name == request.namespace
       message: "An Organization must be named after its namespace."
       reason: Invalid
+    - expression: "request.resource.resource != 'organizationgroups'"
+      message: "Machine identities may not write OrganizationGroups; grant project access through users.platform.kube-dc.com spec.projectAccess."
+      reason: Forbidden
 
 ---
 apiVersion: admissionregistration.k8s.io/v1

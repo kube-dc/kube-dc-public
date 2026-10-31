@@ -1,0 +1,110 @@
+{{- /*
+Observation only: a marked workload should carry its markers into every
+template its children are created from. docs/prd/admission-webhooks-must-not-
+block-the-platform.md, step 4.
+
+From manager.webhook.childMarkingHandoffPhase 1 the child mutator PUTS the
+markers there (on creation, and mark-managed-workload-templates on a template
+rewrite), so its children arrive marked; from phase 2 inheritance for the
+controller manager's unmarked arrivals fails open. A template that still lacks
+a marker -- a workload from before phase 1 not rewritten since, a path the
+mutator does not cover -- would let an outage create a permanently unmarked
+platform child. This policy reports such writes (Warn and Audit, at every
+phase: it never denies, so it cannot stall an operator's reconcile); the hand-
+off audit reports existing gaps and blocks phase 2 on them.
+
+Judged: a marked Deployment, ReplicaSet, StatefulSet, DaemonSet,
+ReplicationController, Job or CronJob without each of its markers in its pod
+template (a CronJob also in its Job template) or in a generic ephemeral claim
+template; a marked Pod without them in an ephemeral claim template.
+StatefulSet claim templates are not judged (those claims are created
+ownerless; the mutator never inherits for them). Spec-unchanged UPDATEs are
+not judged (rule 2). Everyone is judged, cluster admins included, so an
+administrator's server-side dry-run of a gap workload shows that the policy
+evaluates and that its warnings arrive. Not rendered at phase 0.
+*/ -}}
+{{- $p := .Values.projectPolicies.protectManagedServices }}
+{{- $phase := include "kube-dc.childMarking.phase" . }}
+{{- if and $p.enabled (ne $phase "0") }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-workload-template-markers
+spec:
+  failurePolicy: Ignore
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "cronjobs"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["replicationcontrollers"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+  matchConditions:
+    - name: marked
+      expression: >-
+        has(object.metadata.labels) &&
+        ('services.kube-dc.com/managed-by' in object.metadata.labels || 'kube-dc.com/managed-db' in object.metadata.labels)
+    - name: spec-written
+      expression: "request.operation == 'CREATE' || object.spec != oldObject.spec"
+  variables:
+    - name: markers
+      expression: "['services.kube-dc.com/managed-by', 'kube-dc.com/managed-db'].filter(k, k in object.metadata.labels)"
+    - name: podTemplateLabels
+      expression: |-
+        request.resource.resource == 'cronjobs'
+          ? object.spec.?jobTemplate.?spec.?template.?metadata.?labels.orValue({})
+          : object.spec.?template.?metadata.?labels.orValue({})
+    - name: jobTemplateLabels
+      expression: "object.spec.?jobTemplate.?metadata.?labels.orValue({})"
+    - name: volumes
+      expression: |-
+        request.resource.resource == 'pods'
+          ? object.spec.?volumes.orValue([])
+          : (request.resource.resource == 'cronjobs'
+              ? object.spec.?jobTemplate.?spec.?template.?spec.?volumes.orValue([])
+              : object.spec.?template.?spec.?volumes.orValue([]))
+  validations:
+    - expression: "request.resource.resource == 'pods' || variables.markers.all(k, k in variables.podTemplateLabels)"
+      messageExpression: >-
+        'a platform-managed ' + request.resource.resource + ' must carry its markers (' + variables.markers.join(', ') +
+        ') in its pod template: its children are otherwise marked only while the kube-dc manager answers, and one created during an outage stays outside the platform protection'
+      reason: Forbidden
+    - expression: "request.resource.resource != 'cronjobs' || variables.markers.all(k, k in variables.jobTemplateLabels)"
+      messageExpression: >-
+        'a platform-managed CronJob must carry its markers (' + variables.markers.join(', ') + ') in its Job template'
+      reason: Forbidden
+    - expression: |-
+        variables.volumes.all(v, !has(v.ephemeral) ||
+          variables.markers.all(k, k in v.ephemeral.?volumeClaimTemplate.?metadata.?labels.orValue({})))
+      messageExpression: >-
+        'a platform-managed ' + request.resource.resource + ' must carry its markers (' + variables.markers.join(', ') +
+        ') in every ephemeral volume claim template'
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-workload-template-markers
+spec:
+  policyName: managed-workload-template-markers
+  # Observation only, at every phase.
+  validationActions: ["Warn", "Audit"]
+  matchResources:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+{{- end }}

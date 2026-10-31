@@ -8,15 +8,13 @@ silently drifting as rules are added.
 */}}
 {{- define "kube-dc.gpuVirtualMachineVariables" -}}
 - name: gpuDevices
-  expression: >-
-    [] +
-    (has(variables.guestSpec.domain.devices) &&
+  expression: |-
+    [] + (has(variables.guestSpec.domain.devices) &&
      has(variables.guestSpec.domain.devices.gpus) ?
      variables.guestSpec.domain.devices.gpus : [])
 - name: hostDevices
-  expression: >-
-    [] +
-    (has(variables.guestSpec.domain.devices) &&
+  expression: |-
+    [] + (has(variables.guestSpec.domain.devices) &&
      has(variables.guestSpec.domain.devices.hostDevices) ?
      variables.guestSpec.domain.devices.hostDevices : [])
 - name: hasGPU
@@ -37,14 +35,12 @@ silently drifting as rules are added.
     variables.gpuDevices.all(d, d.deviceName == {{ $profile.resourceName | quote }})
   message: "Every GPU device must match the selected kube-dc GPU profile."
 {{- end }}
-- expression: >-
-    !variables.hasGPU ||
-    (has(variables.guestSpec.evictionStrategy) &&
+- expression: |-
+    !variables.hasGPU || (has(variables.guestSpec.evictionStrategy) &&
      variables.guestSpec.evictionStrategy == 'None')
   message: "GPU virtual machines must explicitly use evictionStrategy: None."
-- expression: >-
-    !variables.hasGPU ||
-    ((!has(variables.guestSpec.nodeSelector) ||
+- expression: |-
+    !variables.hasGPU || ((!has(variables.guestSpec.nodeSelector) ||
       !(variables.guestSpec.nodeSelector.exists(k,
         k in ['kubernetes.io/hostname', 'beta.kubernetes.io/hostname']))) &&
      (!has(variables.guestSpec.affinity) ||

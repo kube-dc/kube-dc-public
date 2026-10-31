@@ -633,6 +633,68 @@ spec:
               version:
                 description: Kubernetes version for the control plane
                 type: string
+              workerHealthCheck:
+                description: |-
+                  WorkerHealthCheck configures automatic replacement of failed workers
+                  for every worker pool of this cluster: k8-manager owns one Cluster API
+                  MachineHealthCheck per pool, and a worker whose Node stays Ready=False
+                  or Ready=Unknown past the timeout is deleted and recreated by its
+                  MachineDeployment. Pools override any field with
+                  workers[].healthCheck.
+
+                  The feature is OFF unless the platform operator turned it on for this
+                  installation (k8-manager WORKER_HEALTH_CHECK_MODE=opt-in or on); in
+                  opt-in mode a cluster participates only with enabled=true here or on
+                  a pool. enabled=false opts this cluster out in every mode. A pool with
+                  fewer than two workers is never covered unless its own
+                  workers[].healthCheck.enabled is true.
+                properties:
+                  enabled:
+                    description: |-
+                      Enabled turns automatic worker replacement on or off. Unset inherits:
+                      a pool inherits the cluster value, and the cluster inherits the
+                      platform mode (on: enabled; opt-in or off: disabled). The platform
+                      mode off disables the feature regardless of this field.
+                    type: boolean
+                  maxUnhealthy:
+                    description: |-
+                      MaxUnhealthy stops all replacement in the pool while more than this
+                      many of its workers are unhealthy or still starting: an integer count
+                      or a percentage of the pool ("40%", rounded down). Platform default 1,
+                      which also means one replacement at a time (the replacement counts as
+                      unhealthy until its Node is Ready) and no replacement at all when two
+                      or more workers fail together, as in a zone or network outage.
+                      An integer must be between 0 and 2147483647; k8-manager gives a pool
+                      with any other integer no check and reports InvalidMaxUnhealthy.
+                    maxLength: 4
+                    pattern: ^(100|[1-9]?[0-9])%$
+                    x-kubernetes-int-or-string: true
+                  nodeStartupTimeoutSeconds:
+                    description: |-
+                      NodeStartupTimeoutSeconds is how long a new worker may take to
+                      register its Node before it is replaced. Platform default 1800
+                      (30 minutes; CloudSigma servers and cold KubeVirt disk imports are
+                      slow). 0 disables the startup check; otherwise the minimum is 600.
+                    format: int32
+                    maximum: 86400
+                    minimum: 0
+                    type: integer
+                    x-kubernetes-validations:
+                    - message: nodeStartupTimeoutSeconds must be 0 (disabled) or at
+                        least 600
+                      rule: self == 0 || self >= 600
+                  unhealthyTimeoutSeconds:
+                    description: |-
+                      UnhealthyTimeoutSeconds is how long a worker's Node must stay
+                      Ready=False or Ready=Unknown before the worker is replaced.
+                      Platform default 600 (10 minutes). Minimum 300: shorter values
+                      replace workers during ordinary reboots, kubelet restarts and brief
+                      network partitions.
+                    format: int32
+                    maximum: 86400
+                    minimum: 300
+                    type: integer
+                type: object
               workers:
                 description: |-
                   Worker node pools configuration (requires enableClusterAPI=true)
@@ -885,8 +947,8 @@ spec:
                             NOTE: no kubebuilder default on purpose. The former default=2000
                             was API-server-injected into every pool, so the field could never
                             be absent and CloudSigma auto-derived FEWER, DOWNCLOCKED cores
-                            from the resulting total (5 configured cores became 4 @ 2.5 GHz;
-                            BOC 2026-07-08). Existing stored pools keep their persisted value.
+                            from the resulting total (5 configured cores became 4 @ 2.5 GHz).
+                            Existing stored pools keep their persisted value.
                           format: int32
                           minimum: 1000
                           type: integer
@@ -963,24 +1025,14 @@ spec:
                           type: array
                         privateApiEndpointIP:
                           description: |-
-                            PrivateAPIEndpointIP is a static IP from the customer VLAN subnet
-                            for exposing the Kubernetes API via MetalLB LoadBalancer on the private VLAN.
-                            Must be outside the DHCP range and within the customer VLAN subnet.
-                            When set, a LoadBalancer Service is created for kube-api-proxy
-                            and a token-based private kubeconfig is generated as a Secret.
-                            Only the first pool's value is used (one endpoint per cluster).
-
-                            A BARE IPv4 address — never a CIDR. The Pattern is load-bearing: this
-                            value is copied verbatim into the tenant apiserver's certSANs, the
-                            MetalLB LoadBalancer VIP, the CCM env and a CAPI annotation, and none of
-                            those accept a prefix length. A CIDR here used to be accepted all the way
-                            down until Kamaji's vtenantcontrolplane webhook refused the
-                            TenantControlPlane ("altname is not a valid IP address"), which creates
-                            NO control plane at all — the cluster then sits in Provisioning forever
-                            with the real reason buried in a KamajiControlPlane condition the tenant
-                            cannot see (crk poc-02, marinambest, 2026-09-10: "10.8.0.1/24", 87
-                            minutes). Rejecting it at admission turns that dead end into an
-                            immediate, readable error on the create call.
+                            PrivateAPIEndpointIP is a static IPv4 address from the private VLAN subnet.
+                            It must be outside the DHCP range and within that subnet.
+                            When set, a LoadBalancer Service exposes kube-api-proxy and the controller
+                            generates a token-based private kubeconfig Secret.
+                            Only the first pool's value is used, providing one endpoint per cluster.
+                            Use a bare IPv4 address without a CIDR prefix. The address is also used
+                            for API certificate SANs and provider configuration; admission rejects
+                            prefixes before control-plane provisioning starts.
                           pattern: ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$
                           type: string
                         region:
@@ -1020,6 +1072,60 @@ spec:
                         Default kept conservative so a fresh dedicated-datastore cluster on
                         the entry tier provisions without hitting the storage quota.
                       type: string
+                    healthCheck:
+                      description: |-
+                        HealthCheck overrides spec.workerHealthCheck for this pool, field by
+                        field (an unset field inherits the cluster value, then the platform
+                        default). Setting enabled=true here is the only way to cover a pool
+                        with fewer than two workers: replacing the only worker of a pool is
+                        an outage of everything scheduled there and destroys node-local data.
+                      properties:
+                        enabled:
+                          description: |-
+                            Enabled turns automatic worker replacement on or off. Unset inherits:
+                            a pool inherits the cluster value, and the cluster inherits the
+                            platform mode (on: enabled; opt-in or off: disabled). The platform
+                            mode off disables the feature regardless of this field.
+                          type: boolean
+                        maxUnhealthy:
+                          description: |-
+                            MaxUnhealthy stops all replacement in the pool while more than this
+                            many of its workers are unhealthy or still starting: an integer count
+                            or a percentage of the pool ("40%", rounded down). Platform default 1,
+                            which also means one replacement at a time (the replacement counts as
+                            unhealthy until its Node is Ready) and no replacement at all when two
+                            or more workers fail together, as in a zone or network outage.
+                            An integer must be between 0 and 2147483647; k8-manager gives a pool
+                            with any other integer no check and reports InvalidMaxUnhealthy.
+                          maxLength: 4
+                          pattern: ^(100|[1-9]?[0-9])%$
+                          x-kubernetes-int-or-string: true
+                        nodeStartupTimeoutSeconds:
+                          description: |-
+                            NodeStartupTimeoutSeconds is how long a new worker may take to
+                            register its Node before it is replaced. Platform default 1800
+                            (30 minutes; CloudSigma servers and cold KubeVirt disk imports are
+                            slow). 0 disables the startup check; otherwise the minimum is 600.
+                          format: int32
+                          maximum: 86400
+                          minimum: 0
+                          type: integer
+                          x-kubernetes-validations:
+                          - message: nodeStartupTimeoutSeconds must be 0 (disabled)
+                              or at least 600
+                            rule: self == 0 || self >= 600
+                        unhealthyTimeoutSeconds:
+                          description: |-
+                            UnhealthyTimeoutSeconds is how long a worker's Node must stay
+                            Ready=False or Ready=Unknown before the worker is replaced.
+                            Platform default 600 (10 minutes). Minimum 300: shorter values
+                            replace workers during ordinary reboots, kubelet restarts and brief
+                            network partitions.
+                          format: int32
+                          maximum: 86400
+                          minimum: 300
+                          type: integer
+                      type: object
                     image:
                       description: |-
                         Container disk image for KubeVirt workers only
@@ -1085,6 +1191,18 @@ spec:
                       format: int32
                       minimum: 0
                       type: integer
+                    storageClassName:
+                      description: |-
+                        StorageClassName is the infrastructure StorageClass of the worker root
+                        disk. Only used when storageType=datavolume. Empty keeps the platform
+                        default, as does an empty string (local-path: node-local, fastest, but the worker stays on its
+                        host). A replicated class lets workers survive host loss; it must be
+                        suitable for a worker disk (block storage, dynamically provisioned, not
+                        a bucket or scratch class), or the pool is not rolled out.
+                        Changing it rolls the pool onto new workers.
+                      maxLength: 253
+                      pattern: ^([a-z0-9]([-a-z0-9.]*[a-z0-9])?)?$
+                      type: string
                     storageType:
                       default: datavolume
                       description: |-

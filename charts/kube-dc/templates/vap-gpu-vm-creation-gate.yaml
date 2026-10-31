@@ -1,0 +1,84 @@
+{{- /*
+=============================================================================
+ValidatingAdmissionPolicy: GPU VM creation is off unless the product gate is on
+
+The backend refuses a VirtualMachine that asks for a GPU (a GPU device or the
+GPU profile label on the VM or its template) while gpu.vmCreation.enabled is
+false (vmGPUCreatePreflight.js, GPU_VM_CREATION_DISABLED). This policy gives a
+raw Kubernetes write the same answer, so the backend route is no longer the
+only gate (docs/internal/platform-api-goal.md, workstream C).
+
+It is rendered only while GPU VM creation is off; once it is on,
+vap-gpu-virtualmachines.yaml checks profiles and devices instead.
+
+  - A new VM or VMI with GPU intent is refused.
+  - An update may keep the GPU intent an object already had, but not add it,
+    so existing GPU VMs keep working.
+  - KubeVirt's own accounts (which create VMIs for existing VMs), the
+    platform's accounts in the release namespace and cluster admins are not
+    matched.
+=============================================================================
+*/ -}}
+{{- if not (and .Values.gpu.enabled .Values.gpu.vmCreation.enabled) }}
+{{- $profileLabel := .Values.gpu.profileLabel | default "kube-dc.com/gpu-profile" }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: kube-dc-gpu-vm-creation-gate
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["kubevirt.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["virtualmachines", "virtualmachineinstances"]
+  matchConditions:
+    - name: exclude-cluster-admins
+      expression: |-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))
+    - name: exclude-platform-accounts
+      expression: |-
+        !has(request.userInfo) || !has(request.userInfo.username) ||
+        (!request.userInfo.username.startsWith('system:serviceaccount:kubevirt:') &&
+         !request.userInfo.username.startsWith('system:serviceaccount:{{ .Release.Namespace }}:'))
+  variables:
+    - name: spec
+      expression: "request.kind.kind == 'VirtualMachine' ? object.spec.template.spec : object.spec"
+    - name: intent
+      expression: |-
+        (has(variables.spec.domain.devices) && has(variables.spec.domain.devices.gpus) &&
+         size(variables.spec.domain.devices.gpus) > 0) ||
+        (has(object.metadata.labels) && {{ $profileLabel | quote }} in object.metadata.labels) ||
+        (request.kind.kind == 'VirtualMachine' && has(object.spec.template.metadata) &&
+         has(object.spec.template.metadata.labels) && {{ $profileLabel | quote }} in object.spec.template.metadata.labels)
+    - name: oldSpec
+      expression: |-
+        oldObject == null ? null :
+        (request.kind.kind == 'VirtualMachine' ? oldObject.spec.template.spec : oldObject.spec)
+    - name: hadIntent
+      expression: |-
+        oldObject != null && (
+        (has(variables.oldSpec.domain.devices) && has(variables.oldSpec.domain.devices.gpus) &&
+         size(variables.oldSpec.domain.devices.gpus) > 0) ||
+        (has(oldObject.metadata.labels) && {{ $profileLabel | quote }} in oldObject.metadata.labels) ||
+        (request.kind.kind == 'VirtualMachine' && has(oldObject.spec.template.metadata) &&
+         has(oldObject.spec.template.metadata.labels) && {{ $profileLabel | quote }} in oldObject.spec.template.metadata.labels))
+  validations:
+    - expression: "!variables.intent || variables.hadIntent"
+      message: "Dedicated GPU VM creation is not enabled on this installation."
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: kube-dc-gpu-vm-creation-gate
+spec:
+  policyName: kube-dc-gpu-vm-creation-gate
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+{{- end }}

@@ -1,3 +1,15 @@
 #!/bin/bash
-
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $OS_IMAGE_USER@$VMI_IP -i /usr/local/ssh-private-key
+# Quoting here is a SECURITY control, not style.
+#
+# This ran as:  ssh ... $OS_IMAGE_USER@$VMI_IP -i /usr/local/ssh-private-key
+# with both variables unquoted and attacker-influencable from a query parameter. A
+# username containing whitespace splits into extra argv entries, so `-oProxyCommand=...`
+# becomes an SSH OPTION and executes a command — inside a pod that mounts the tenant SSH
+# private key (codex finding 1, 2026-08-11).
+#
+# `-l "$OS_IMAGE_USER"` keeps the login name a single argument instead of splicing it
+# into a host string, and `--` stops anything beginning with `-` from being read as an
+# option. The backend validates both values as well; this is the second line.
+set -u
+exec ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+  -i /usr/local/ssh-private-key -l "$OS_IMAGE_USER" -- "$VMI_IP"

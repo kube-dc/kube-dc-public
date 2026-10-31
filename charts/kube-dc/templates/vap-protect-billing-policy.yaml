@@ -73,7 +73,7 @@ spec:
       # status subresource is not included. request.subResource is ABSENT, not
       # empty, for the object itself; reading it unguarded is an evaluation
       # error, which failurePolicy Fail turns into a denial.
-      expression: >-
+      expression: |-
         !(request.userInfo.username in [
             'system:serviceaccount:kube-system:namespace-controller',
             'system:serviceaccount:kube-system:generic-garbage-collector',

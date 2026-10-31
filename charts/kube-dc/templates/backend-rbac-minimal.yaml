@@ -1,0 +1,55 @@
+# =============================================================================
+# backend.rbac.minimal: the Secrets and platform ConfigMap writes the backend
+# makes as itself, as Roles instead of cluster-wide grants (backend-sa.yaml).
+#   release namespace  Secrets rw (impersonation, SMTP), ConfigMaps write
+#                      (billing-plans, billing-config, branding, notifications)
+#   secretNamespaces   Secrets read, or rw with write: true
+# Test: hack/backend-rbac-wide-live-test.sh. Revert: minimal=false.
+# =============================================================================
+{{- if (.Values.backend.rbac).minimal }}
+{{- $sa := include "kube-dc.backend.serviceAccountName" . }}
+{{- $labels := include "kube-dc.backend.labels" . }}
+{{- $grants := list (dict "name" .Release.Namespace "write" true "configmaps" true) }}
+{{- range .Values.backend.rbac.secretNamespaces }}
+{{- $grants = append $grants (dict "name" .name "write" .write "configmaps" false) }}
+{{- end }}
+{{- range $grants }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $sa }}-secrets
+  namespace: {{ .name }}
+  labels:
+    {{- $labels | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    {{- if .write }}
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    {{- else }}
+    verbs: ["get", "list", "watch"]
+    {{- end }}
+  {{- if .configmaps }}
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "update", "patch", "delete"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $sa }}-secrets
+  namespace: {{ .name }}
+  labels:
+    {{- $labels | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $sa }}-secrets
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- end }}

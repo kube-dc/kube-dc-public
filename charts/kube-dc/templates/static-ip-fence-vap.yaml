@@ -40,7 +40,7 @@ spec:
   - expression: "variables.consistent"
     message: "static IP requests are refused while the project's address arena is not audited consistent (kube-dc address reservation)"
     reason: Forbidden
-  - expression: >-
+  - expression: |-
       variables.ipKeys.all(k,
         (
           (k.replace('ip_address', 'logical_switch') in object.metadata.annotations

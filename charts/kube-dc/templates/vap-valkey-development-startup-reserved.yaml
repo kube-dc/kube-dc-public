@@ -1,0 +1,95 @@
+{{- /*
+The pure ownership refusals of valkey-development-startup-v1, as a
+ValidatingAdmissionPolicy. docs/prd/admission-webhooks-must-not-block-the-platform.md,
+step 3 (the pilot of the startup-gate hand-off).
+
+From hand-off phase 2 the webhook entry routes only objects carrying the
+platform's startup labels. What the handler (internal/webhook/core/
+valkey_startup_webhook.go) refuses WITHOUT a lookup, on objects that may carry
+no label at all, is held here, in the API server:
+
+  - Secrets and ConfigMaps in scope -- a name under kdc-valkey-v1-, or the
+    startup labels on the new or the old object -- whose new object is not a
+    Valkey startup object, whose old object is not one on UPDATE, or whose
+    instance-uid changes ("ownership is immutable"; Handle, secrets/configmaps);
+  - Issuers, Certificates and CertificateRequests naming reserved material
+    (name, spec.secretName, spec.ca.secretName, spec.issuerRef.name or the
+    cert-manager.io/private-key-secret-name annotation) that are not Valkey
+    startup objects (certManagerInput).
+
+A Valkey startup object carries services.kube-dc.com/startup-contract=
+valkey-development-v1, managed-by=kube-dc-services, family=valkey and a
+non-empty instance-uid (valkeyStartupObject). Every identity is judged, as in
+the handler. failurePolicy: Ignore with a Deny binding: a policy that cannot
+be evaluated does not block Secret or ConfigMap writes; an evaluated violation
+is refused. Rendered from handoffPhase 1, so it is cached before phase 2.
+*/ -}}
+{{- $p := .Values.projectPolicies.protectManagedServices }}
+{{- if and .Values.manager.webhook.enabled $p.enabled $p.valkeyStartup.enabled (ge (int ($p.valkeyStartup.handoffPhase | default 0)) 1) }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: valkey-development-startup-reserved
+spec:
+  failurePolicy: Ignore
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["secrets", "configmaps"]
+      - apiGroups: ["cert-manager.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["issuers", "certificates", "certificaterequests"]
+  variables:
+    - name: newLabels
+      expression: "has(object.metadata.labels) ? object.metadata.labels : {}"
+    - name: oldLabels
+      expression: "request.operation == 'UPDATE' && has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}"
+    - name: newOwned
+      expression: >-
+        variables.newLabels[?'services.kube-dc.com/startup-contract'].orValue('') == 'valkey-development-v1' &&
+        variables.newLabels[?'services.kube-dc.com/managed-by'].orValue('') == 'kube-dc-services' &&
+        variables.newLabels[?'services.kube-dc.com/family'].orValue('') == 'valkey' &&
+        variables.newLabels[?'services.kube-dc.com/instance-uid'].orValue('') != ''
+    - name: oldOwned
+      expression: >-
+        variables.oldLabels[?'services.kube-dc.com/startup-contract'].orValue('') == 'valkey-development-v1' &&
+        variables.oldLabels[?'services.kube-dc.com/managed-by'].orValue('') == 'kube-dc-services' &&
+        variables.oldLabels[?'services.kube-dc.com/family'].orValue('') == 'valkey' &&
+        variables.oldLabels[?'services.kube-dc.com/instance-uid'].orValue('') != ''
+    - name: name
+      expression: "has(object.metadata.name) ? object.metadata.name : ''"
+    - name: materialInScope
+      expression: >-
+        variables.name.startsWith('kdc-valkey-v1-') || variables.newOwned || variables.oldOwned
+    - name: certificateReferenced
+      expression: >-
+        variables.name.startsWith('kdc-valkey-v1-') ||
+        string(object.?spec.?secretName.orValue('')).startsWith('kdc-valkey-v1-') ||
+        string(object.?spec.?ca.?secretName.orValue('')).startsWith('kdc-valkey-v1-') ||
+        string(object.?spec.?issuerRef.?name.orValue('')).startsWith('kdc-valkey-v1-') ||
+        string(object.metadata.?annotations[?'cert-manager.io/private-key-secret-name'].orValue('')).startsWith('kdc-valkey-v1-')
+  validations:
+    - expression: |-
+        request.resource.group != '' || !variables.materialInScope || (variables.newOwned && (request.operation != 'UPDATE' ||
+          (variables.oldOwned && variables.oldLabels['services.kube-dc.com/instance-uid'] == variables.newLabels['services.kube-dc.com/instance-uid'])))
+      message: "Valkey startup material ownership is immutable"
+      reason: Forbidden
+    - expression: >-
+        request.resource.group != 'cert-manager.io' || variables.newOwned || !variables.certificateReferenced
+      message: "Valkey startup authority: reserved Valkey certificate namespace; retry"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: valkey-development-startup-reserved
+spec:
+  policyName: valkey-development-startup-reserved
+  validationActions: {{ toJson $p.validationActions }}
+{{- end }}

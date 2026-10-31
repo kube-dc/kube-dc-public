@@ -106,6 +106,39 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/component: worker
 {{- end }}
 
+{{- /* The dedicated Grafana UID replica (more than one API replica): its name
+differs from the API's, so the backend Service never selects it. */}}
+{{- define "kube-dc.backend.grafana.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "kube-dc.backend.name" . }}-grafana
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: grafana
+{{- end }}
+
+{{- define "kube-dc.backend.grafana.labels" -}}
+helm.sh/chart: {{ include "kube-dc.chart" . }}
+{{ include "kube-dc.backend.grafana.selectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{- /* True when the API scales and something must run in one copy: the
+Grafana UID launch, login check and query proxy (their grants live in one
+process), and backend.dedicatedReplica.paths with their volumes
+(docs/internal/multi-replica-api.md). The replica is kube-dc-backend-grafana. */}}
+{{- /* The hosted MCP endpoint's base URL (docs/prd/hosted-mcp.md); each
+organization is <url>/<org>. */}}
+{{- define "kube-dc.mcp.publicURL" -}}
+{{- $mcp := .Values.backend.mcp | default dict -}}
+{{- $mcp.publicURL | default (printf "https://%s/mcp" .Values.backend.gateway.hostname) -}}
+{{- end }}
+
+{{- define "kube-dc.backend.grafanaDedicated" -}}
+{{- $api := ternary (int .Values.backend.autoscaling.maxReplicas) (int .Values.backend.replicaCount) (.Values.backend.autoscaling.enabled | default false) -}}
+{{- if and (or .Values.observabilityUID.grafanaEnabled ((.Values.backend.dedicatedReplica | default dict).paths)) (gt $api 1) }}true{{ end -}}
+{{- end }}
+
 {{- define "kube-dc.backend.worker.labels" -}}
 helm.sh/chart: {{ include "kube-dc.chart" . }}
 {{ include "kube-dc.backend.worker.selectorLabels" . }}
@@ -263,9 +296,9 @@ mode remains upgrade-neutral. Explicit modes form the new fleet contract.
 
 {{/*
 kube-dc.manager.failClosedAdmission — "this installation depends on the
-manager's admission being available". THREE features put a fail-closed webhook
+manager's admission being available". FOUR features put a fail-closed webhook
 on the ordinary tenant path: tenant-VLAN attachment (projectNetwork), routed
-networks, managed-services protection, and exposure route claims. They share one definition:
+networks, managed-services protection, and FIP source policy. They share one definition:
 the budget, the replica floor and the node spread were previously derived from
 different subsets of them, so a managed-services-only installation got the
 budget but neither a replica floor nor a spread, and both manager replicas
@@ -273,7 +306,7 @@ could land on one node while ordinary tenant Pod/PVC/Secret admission depended
 on them (release-boundary review 2026-09-05, F3).
 */}}
 {{- define "kube-dc.manager.failClosedAdmission" -}}
-{{- if and .Values.manager.webhook.enabled (or .Values.projectNetwork.enabled .Values.routedNetwork.enabled .Values.projectPolicies.protectManagedServices.enabled .Values.manager.webhook.protectExposureRoutes .Values.manager.fipSourcePolicy.enabled) -}}
+{{- if and .Values.manager.webhook.enabled (or .Values.projectNetwork.enabled .Values.routedNetwork.enabled .Values.projectPolicies.protectManagedServices.enabled .Values.manager.fipSourcePolicy.enabled) -}}
 true
 {{- end -}}
 {{- end }}
@@ -662,16 +695,20 @@ family's in-project instance account over to the managed-instance-objects
 webhook, which judges them with UID-verified provenance. Rendered only when
 projectPolicies.protectManagedServices.instanceWritesJudgedByWebhook is true
 and some family declares such writes; the shape of the account name selects
-the request, the webhook proves it. Renders nothing otherwise.
+the request, the webhook proves it. From manager.webhook.narrowGatesHandoffPhase 1
+only writes of MARKED objects (old or new) are handed over (_narrow-gates.tpl):
+an instance account's unmarked writes are judged by these policies as any
+project identity's, so the webhook can be selected on the marker at phase 2.
+Renders nothing otherwise.
 */}}
 {{- define "kube-dc.instanceWrites.handoff" -}}
 {{- $cores := include "kube-dc.serviceFamilies.instanceCoreWrites" . | fromJsonArray -}}
 {{- if and .Values.projectPolicies.protectManagedServices.instanceWritesJudgedByWebhook $cores }}
 - name: exclude-instance-account-core-writes
-  expression: >-
+  expression: |-
     !({{ include "kube-dc.serviceFamilies.instanceIdentityCEL" . }} &&
       request.resource.group == '' && request.resource.resource in {{ toJson $cores }} &&
-      (!has(request.subResource) || request.subResource == ''))
+      (!has(request.subResource) || request.subResource == ''){{ include "kube-dc.narrowGates.markedClause" . }})
 {{- end }}
 {{- end }}
 
@@ -693,7 +730,7 @@ unchanged.
 {{- define "kube-dc.instancePodConditions.handoff" -}}
 {{- if and .Values.projectPolicies.protectManagedServices.instancePodConditionsJudgedByWebhook (include "kube-dc.serviceFamilies.instancePodConditionWrites" .) }}
 - name: exclude-instance-account-pod-conditions
-  expression: >-
+  expression: |-
     !({{ include "kube-dc.serviceFamilies.instanceIdentityCEL" . }} &&
       request.resource.group == '' && request.resource.resource == 'pods' &&
       has(request.subResource) && request.subResource == 'status')
@@ -726,10 +763,10 @@ an operator copy markers: only the platform's roots carry them.
 {{- define "kube-dc.publicationWrites.handoff" -}}
 {{- if .Values.projectPolicies.protectManagedServices.publicationWritesJudgedByWebhook }}
 - name: publication-writes-judged-by-webhook
-  expression: >-
+  expression: |-
     !(request.userInfo.username == '{{ include "kube-dc.publicationESO.serviceAccount" . }}' &&
       ((request.resource.group == '' && request.resource.resource == 'secrets' && (!has(request.subResource) || request.subResource == '')) ||
-       (request.resource.group == 'external-secrets.io' && request.resource.resource == 'externalsecrets' && has(request.subResource) && request.subResource == 'status')))
+       (request.resource.group == 'external-secrets.io' && request.resource.resource == 'externalsecrets' && has(request.subResource) && request.subResource == 'status')){{ include "kube-dc.narrowGates.markedClause" . }})
 {{- end }}
 {{- end }}
 
@@ -799,5 +836,138 @@ true
 {{- else if and (not $service.url) (not $service.caSecretName) -}}
 kube-dc-billing-ca-issuer
 {{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- /*
+managed-references.kube-dc.com -- CEL shared by the reference gate's
+matchConditions (manager-webhook.yaml) and the policies that carry its pure
+checks (vap-managed-references.yaml). docs/prd/admission-webhooks-must-not-block-the-platform.md,
+step 2. Each helper renders ONE line, so it can sit inside a folded scalar.
+
+platformIdentityCEL is internal/webhook/core platformIdentity() exactly: the
+cluster-admin groups, a node (in system:nodes AND named system:node:<name>),
+the control-plane users, and every ServiceAccount in the derived exempt
+namespace list the manager is given (MANAGED_SERVICES_EXEMPT_SA_NAMESPACES).
+Every handler of the gate that starts with "platform identity -> allowed" is
+skipped for these identities by the API server instead.
+*/}}
+{{- define "kube-dc.managedReferences.platformIdentityCEL" -}}
+((has(request.userInfo.groups) && request.userInfo.groups.exists(g, g == 'system:masters' || g == 'platform:admin')) || (has(request.userInfo.groups) && 'system:nodes' in request.userInfo.groups && has(request.userInfo.username) && request.userInfo.username.startsWith('system:node:')) || (has(request.userInfo.username) && (request.userInfo.username.startsWith('system:kube-') || request.userInfo.username == 'system:apiserver' || [{{ range $i, $ns := (include "kube-dc.managedServices.exemptNamespaces" . | fromJsonArray) }}{{ if $i }}, {{ end }}'system:serviceaccount:{{ $ns }}:'{{ end }}].exists(p, request.userInfo.username.startsWith(p)))))
+{{- end }}
+
+{{- /* nodeIdentityCEL is isNode(): a kubelet, in system:nodes and named
+system:node:<name>. */}}
+{{- define "kube-dc.managedReferences.nodeIdentityCEL" -}}
+(has(request.userInfo.groups) && 'system:nodes' in request.userInfo.groups && has(request.userInfo.username) && request.userInfo.username.startsWith('system:node:'))
+{{- end }}
+
+{{- /* cloneIdentityCEL is cloneIdentity() (= scaleIdentity()): the cluster-admin
+groups and the exempt ServiceAccount namespaces WITHOUT kube-system, nodes and
+the control plane -- their controllers create claims and snapshots from
+tenant-written templates. */}}
+{{- define "kube-dc.managedReferences.cloneIdentityCEL" -}}
+((has(request.userInfo.groups) && request.userInfo.groups.exists(g, g == 'system:masters' || g == 'platform:admin')) || (has(request.userInfo.username) && [{{ $first := true }}{{ range (include "kube-dc.managedServices.exemptNamespaces" . | fromJsonArray) }}{{ if ne . "kube-system" }}{{ if not $first }}, {{ end }}{{ $first = false }}'system:serviceaccount:{{ . }}:'{{ end }}{{ end }}].exists(p, request.userInfo.username.startsWith(p))))
+{{- end }}
+
+{{- /* changedCEL (dict "path" (list "spec" "source")) is the negation of the
+handler's guardedUnchanged() for one field of an UPDATE: presence differs, or
+both present and unequal. Built from has() only, so it never errors on an
+absent parent and never compares a schema object to a literal. */}}
+{{- define "kube-dc.managedReferences.changedCEL" -}}
+{{- $newHas := list -}}{{- $oldHas := list -}}{{- $prefix := "" -}}
+{{- range .path }}{{ $prefix = printf "%s.%s" $prefix . }}{{ $newHas = append $newHas (printf "has(object%s)" $prefix) }}{{ $oldHas = append $oldHas (printf "has(oldObject%s)" $prefix) }}{{ end -}}
+(({{ join " && " $newHas }}) != ({{ join " && " $oldHas }}) || (({{ join " && " $newHas }}) && object{{ $prefix }} != oldObject{{ $prefix }}))
+{{- end }}
+
+{{- /* metadataOnlyUpdateCEL: an UPDATE that changes nothing but finalizers,
+ownerReferences and server bookkeeping (resourceVersion, managedFields,
+generation) -- every top-level field other than metadata and status is
+unchanged, and so are labels and annotations. Garbage collection, the PVC
+protection controller, the Job controller and namespace teardown write
+exactly these (rule 2 of the PRD). */}}
+{{- define "kube-dc.managedReferences.metadataOnlyUpdateCEL" -}}
+(request.operation == 'UPDATE' && object.all(k, k == 'metadata' || k == 'status' || (k in oldObject && object[k] == oldObject[k])) && oldObject.all(k, k == 'metadata' || k == 'status' || k in object) && (has(object.metadata.labels) ? object.metadata.labels : {}) == (has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}) && (has(object.metadata.annotations) ? object.metadata.annotations : {}) == (has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}))
+{{- end }}
+
+{{- /* mariadbSelectorLabelsCEL: the pod carries mariadb-operator's selector
+labels (app.kubernetes.io/name=mariadb and a non-empty
+app.kubernetes.io/instance), the only labels refuseMariadbSelector() looks
+up. */}}
+{{- define "kube-dc.managedReferences.mariadbSelectorLabelsCEL" -}}
+(has(object.metadata.labels) && 'app.kubernetes.io/name' in object.metadata.labels && object.metadata.labels['app.kubernetes.io/name'] == 'mariadb' && 'app.kubernetes.io/instance' in object.metadata.labels && object.metadata.labels['app.kubernetes.io/instance'] != '')
+{{- end }}
+
+{{- /* families: what the extra service families route to the gate, as JSON.
+groups: {group: true when any operation there is judged on DELETE};
+registered: ["group|version|resource"] of every operation; known and
+deleteKnown: ["group|resource"] of every operation, and of those judged on
+DELETE in any version; passthrough: ["group|resource"]; ops: the operations. */}}
+{{- define "kube-dc.managedReferences.families" -}}
+{{- include "kube-dc.serviceFamilies.validate" . -}}
+{{- $groups := dict -}}{{- $registered := list -}}{{- $known := list -}}{{- $deleteKnown := list -}}{{- $passthrough := list -}}{{- $ops := list -}}
+{{- range .Values.serviceFamilies.extra -}}
+{{- range (.operations | default list) -}}
+{{- $g := .group | default "" -}}
+{{- $_ := set $groups $g (or (index $groups $g | default false) (.delete | default false)) -}}
+{{- $registered = append $registered (printf "%s|%s|%s" $g .version .resource) | uniq -}}
+{{- $known = append $known (printf "%s|%s" $g .resource) | uniq -}}
+{{- if .delete }}{{ $deleteKnown = append $deleteKnown (printf "%s|%s" $g .resource) | uniq }}{{ end -}}
+{{- $ops = append $ops (dict "group" $g "version" .version "resource" .resource "delete" (.delete | default false)) -}}
+{{- end -}}
+{{- range (.passthroughResources | default list) -}}
+{{- $g := .group | default "" -}}
+{{- if not (hasKey $groups $g) }}{{ $_ := set $groups $g false }}{{ end -}}
+{{- $passthrough = append $passthrough (printf "%s|%s" $g .resource) | uniq -}}
+{{- end -}}
+{{- end -}}
+{{- toJson (dict "groups" $groups "registered" $registered "known" $known "deleteKnown" $deleteKnown "passthrough" $passthrough "ops" $ops) -}}
+{{- end }}
+
+{{- /* celList renders a list of strings as a CEL list literal. */}}
+{{- define "kube-dc.managedReferences.celList" -}}
+[{{ range $i, $s := . }}{{ if $i }}, {{ end }}'{{ $s }}'{{ end }}]
+{{- end }}
+
+{{/*
+GOMEMLIMIT for a Go container from its memory limit: the Go runtime's soft
+memory limit, so the garbage collector works harder before the container
+reaches its cgroup limit instead of letting the heap grow to ~2x the live set
+(GOGC=100). Input: dict "limit" (a resources.limits.memory quantity),
+"percent" (of the limit, 50-95) and "explicit" (a GOMEMLIMIT value that wins
+when set, e.g. "7GiB"). Output: the explicit value, or the limit's bytes times
+percent/100 as a plain byte count (GOMEMLIMIT accepts a bare number of bytes),
+or "" when there is no limit. Only integer quantities with a binary or decimal
+suffix (Ki Mi Gi Ti, or k M G T as Kubernetes spells them) or none are
+understood; any other limit needs an explicit value.
+*/}}
+{{- define "kube-dc.goMemLimit" -}}
+{{- if .explicit -}}
+{{- .explicit -}}
+{{- else if .limit -}}
+{{- $q := toString .limit -}}
+{{- if not (regexMatch "^[0-9]+(Ki|Mi|Gi|Ti|k|M|G|T)?$" $q) -}}
+{{- fail (printf "cannot derive GOMEMLIMIT from memory limit %q: use an integer quantity such as 8Gi, or set the explicit GOMEMLIMIT value" $q) -}}
+{{- end -}}
+{{- $percent := int (.percent | default 88) -}}
+{{- if or (lt $percent 50) (gt $percent 95) -}}
+{{- fail (printf "goMemLimitPercent must be between 50 and 95, got %d" $percent) -}}
+{{- end -}}
+{{- $n := atoi (regexReplaceAll "^([0-9]+).*$" $q "${1}") -}}
+{{- $unit := regexReplaceAll "^[0-9]+" $q "" -}}
+{{- $mult := get (dict "" 1 "Ki" 1024 "Mi" 1048576 "Gi" 1073741824 "Ti" 1099511627776 "k" 1000 "M" 1000000 "G" 1000000000 "T" 1000000000000) $unit -}}
+{{- div (mul $n $mult $percent) 100 -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+kube-dc.memoryLimitPositive renders "true" when a memory quantity is strictly
+positive. "0", "0Gi", "0.0" or a negative value is not a limit: the kubelet
+treats a zero memory limit as none.
+*/}}
+{{- define "kube-dc.memoryLimitPositive" -}}
+{{- $q := ternary "" (toString .) (kindIs "invalid" .) | trim -}}
+{{- if and $q (not (hasPrefix "-" $q)) (not (regexMatch "^[+]?0*([.]0*)?([a-zA-Z]+)?$" $q)) -}}
+true
 {{- end -}}
 {{- end -}}

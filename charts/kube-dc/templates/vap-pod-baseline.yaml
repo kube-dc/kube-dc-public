@@ -1,0 +1,195 @@
+# =============================================================================
+# ValidatingAdmissionPolicy: the rest of the Pod Security "baseline" profile in
+# project namespaces, next to restrict-pod-security-in-projects (which blocks
+# hostPath, privileged and the host namespaces and always denies):
+#
+#   - capabilities.add only from an allowed set
+#   - no Unconfined seccomp profile (pod or container)
+#   - no Unconfined AppArmor profile (structured field or legacy annotation)
+#   - procMount Default only (Unmasked in user-namespaced pods, as the PSS)
+#   - no hostPort
+#
+# Rendered twice (security review 2026-10-27 #5):
+#
+#   restrict-pod-escape-*    the baseline set plus NET_ADMIN and NET_RAW.
+#                            podSecurityBaseline.escapeActions, default
+#                            [Deny, Audit]: it refuses what lets a pod reach
+#                            the node (SYS_ADMIN, SYS_MODULE, ALL...), and no
+#                            inventoried tenant workloads used it at rollout.
+#   restrict-pod-baseline-*  the baseline set only. podSecurityBaseline.actions,
+#                            default [Warn, Audit]: NET_ADMIN/NET_RAW is only
+#                            warned about, because tenants run VPN servers
+#                            with it (cloud) and stage tooling does too.
+#
+# Errors evaluating a policy only fail closed with Deny.
+#
+# Same exemptions as restrict-pod-security-in-projects: platform controllers
+# create pods in project namespaces (virt-launcher, Kamaji, CNPG...). The
+# template policy validates the tenant's own workload objects, where the
+# tenant is the requester.
+# =============================================================================
+{{- define "kube-dc.podBaseline.validations" }}
+    - expression: |-
+        variables.containers.all(c, !has(c.securityContext) || !has(c.securityContext.capabilities) ||
+          !has(c.securityContext.capabilities.add) ||
+          c.securityContext.capabilities.add.all(cap, cap in [{{ range $i, $c := .caps }}{{ if $i }}, {{ end }}'{{ $c }}'{{ end }}]))
+      message: "Containers in project namespaces may add only these capabilities: {{ join ", " .caps }}."
+    - expression: |-
+        (!has(variables.podSpec.securityContext) || !has(variables.podSpec.securityContext.seccompProfile) ||
+          variables.podSpec.securityContext.seccompProfile.type != 'Unconfined') &&
+        variables.containers.all(c, !has(c.securityContext) || !has(c.securityContext.seccompProfile) ||
+          c.securityContext.seccompProfile.type != 'Unconfined')
+      message: "An Unconfined seccomp profile is not allowed in project namespaces."
+    - expression: |-
+        (!has(variables.podSpec.securityContext) || !has(variables.podSpec.securityContext.appArmorProfile) ||
+          variables.podSpec.securityContext.appArmorProfile.type != 'Unconfined') &&
+        variables.containers.all(c, !has(c.securityContext) || !has(c.securityContext.appArmorProfile) ||
+          c.securityContext.appArmorProfile.type != 'Unconfined')
+      message: "An Unconfined AppArmor profile is not allowed in project namespaces."
+    # As the Pod Security Standards: Unmasked only in a user-namespaced pod.
+    - expression: |-
+        (has(variables.podSpec.hostUsers) && variables.podSpec.hostUsers == false) ||
+        variables.containers.all(c, !has(c.securityContext) || !has(c.securityContext.procMount) ||
+          c.securityContext.procMount == 'Default')
+      message: "Only the Default procMount is allowed in project namespaces (Unmasked needs hostUsers: false)."
+    - expression: |-
+        variables.containers.all(c, !has(c.ports) || c.ports.all(p, !has(p.hostPort) || p.hostPort == 0))
+      message: "hostPort is not allowed in project namespaces; expose the workload through a Service."
+    - expression: |-
+        !has(variables.podMeta.annotations) || variables.podMeta.annotations.all(k,
+          !k.startsWith('container.apparmor.security.beta.kubernetes.io/') ||
+          variables.podMeta.annotations[k] != 'unconfined')
+      message: "An unconfined AppArmor profile is not allowed in project namespaces."
+{{- end }}
+{{- define "kube-dc.podBaseline.containers" }}
+    - name: containers
+      expression: |-
+        (has(variables.podSpec.containers) ? variables.podSpec.containers : []) +
+        (has(variables.podSpec.initContainers) ? variables.podSpec.initContainers : []) +
+        (has(variables.podSpec.ephemeralContainers) ? variables.podSpec.ephemeralContainers : [])
+{{- end }}
+{{- define "kube-dc.podBaseline.adminConditions" }}
+    - name: exclude-cluster-admins
+      expression: |-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))
+    - name: exclude-node-users
+      expression: |-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !('system:nodes' in request.userInfo.groups)
+{{- end }}
+{{- define "kube-dc.podBaseline.policies" }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ .name }}-in-projects
+spec:
+  failurePolicy: {{ ternary "Fail" "Ignore" (has "Deny" .actions) }}
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods", "pods/ephemeralcontainers"]
+  matchConditions:
+    - name: exclude-system-service-accounts
+      expression: |-
+        !has(request.userInfo) || !has(request.userInfo.username) || !(['system:serviceaccount:kube-dc:',
+           'system:serviceaccount:kubevirt:',
+           'system:serviceaccount:kamaji-system:',
+           'system:serviceaccount:capi-system:',
+           'system:serviceaccount:capk-system:',
+           'system:serviceaccount:capcs-system:',
+           'system:serviceaccount:capi-k3s-bootstrap-system:',
+           'system:serviceaccount:capi-k3s-control-plane-system:',
+           'system:serviceaccount:capi-kubeadm-bootstrap-system:',
+           'system:serviceaccount:kube-system:'].exists(prefix,
+             request.userInfo.username.startsWith(prefix)))
+{{- include "kube-dc.podBaseline.adminConditions" . }}
+  variables:
+    - name: podSpec
+      expression: object.spec
+    - name: podMeta
+      expression: object.metadata
+{{- include "kube-dc.podBaseline.containers" . }}
+  validations:
+{{- include "kube-dc.podBaseline.validations" . }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ .name }}-in-projects
+spec:
+  policyName: {{ .name }}-in-projects
+  validationActions: {{ toJson .actions }}
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ .name }}-templates-in-projects
+spec:
+  failurePolicy: {{ ternary "Fail" "Ignore" (has "Deny" .actions) }}
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "cronjobs"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["replicationcontrollers"]
+  matchConditions:
+    # As restrict-pod-security-templates-in-projects: kube-system is not exempt
+    # here, its controllers create pods, not these objects.
+    - name: exclude-platform-service-accounts
+      expression: |-
+        !has(request.userInfo) || !has(request.userInfo.username) || !(['system:serviceaccount:kube-dc:',
+           'system:serviceaccount:kubevirt:',
+           'system:serviceaccount:kamaji-system:',
+           'system:serviceaccount:capi-system:',
+           'system:serviceaccount:capk-system:',
+           'system:serviceaccount:capcs-system:',
+           'system:serviceaccount:capi-kubeadm-bootstrap-system:',
+           'system:serviceaccount:capi-kubeadm-control-plane-system:',
+           'system:serviceaccount:cnpg-system:',
+           'system:serviceaccount:mariadb-system:'].exists(prefix,
+             request.userInfo.username.startsWith(prefix)))
+{{- include "kube-dc.podBaseline.adminConditions" . }}
+  variables:
+    - name: template
+      expression: |-
+        has(object.spec.jobTemplate) ? object.spec.jobTemplate.spec.template : object.spec.template
+    - name: podSpec
+      expression: variables.template.spec
+    - name: podMeta
+      expression: |-
+        has(variables.template.metadata) ? variables.template.metadata : {}
+{{- include "kube-dc.podBaseline.containers" . }}
+  validations:
+{{- include "kube-dc.podBaseline.validations" . }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ .name }}-templates-in-projects
+spec:
+  policyName: {{ .name }}-templates-in-projects
+  validationActions: {{ toJson .actions }}
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+{{- end }}
+{{- $baseline := list "AUDIT_WRITE" "CHOWN" "DAC_OVERRIDE" "FOWNER" "FSETID" "KILL" "MKNOD" "NET_BIND_SERVICE" "SETFCAP" "SETGID" "SETPCAP" "SETUID" "SYS_CHROOT" }}
+{{- include "kube-dc.podBaseline.policies" (dict "name" "restrict-pod-escape" "caps" (concat $baseline (list "NET_ADMIN" "NET_RAW")) "actions" (.Values.podSecurityBaseline.escapeActions | default (list "Deny" "Audit"))) }}
+---
+{{- include "kube-dc.podBaseline.policies" (dict "name" "restrict-pod-baseline" "caps" $baseline "actions" (.Values.podSecurityBaseline.actions | default (list "Warn" "Audit"))) }}

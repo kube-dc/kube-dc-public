@@ -1,0 +1,313 @@
+{{- /*
+Hosted MCP endpoint (docs/prd/hosted-mcp.md): the backend image's mcp/server.js
+as its own Deployment. Stateless Streamable HTTP, one endpoint per organization
+at <publicURL>/<org>. It holds no Kubernetes rights: every call uses the
+caller's token exchanged by the realm's kube-dc-mcp client, whose secrets the
+manager keeps in backend.mcp.requesterSecretName (one key per organization).
+*/ -}}
+{{- $mcp := .Values.backend.mcp | default dict }}
+{{- if $mcp.enabled }}
+{{- $name := printf "%s-mcp" (include "kube-dc.backend.fullname" .) }}
+{{- $publicURL := include "kube-dc.mcp.publicURL" . }}
+{{- if not (regexMatch "^https://[^/?#]+(/[a-z0-9-]+)*$" $publicURL) }}
+{{- fail "backend.mcp.publicURL must be an https URL without query or trailing slash" }}
+{{- end }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ include "kube-dc.backend.name" . }}-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+# No RoleBinding and no token: the server acts only with its callers' tokens.
+# Pods mount the cluster CA alone (see the ca volume).
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ include "kube-dc.backend.name" . }}-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: mcp
+spec:
+  replicas: {{ $mcp.replicaCount | default 2 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "kube-dc.backend.name" . }}-mcp
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "kube-dc.backend.name" . }}-mcp
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: mcp
+        {{- include "kube-dc.podVersionLabel" . | nindent 8 }}
+    spec:
+      {{- with .Values.backend.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ $name }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.backend.podSecurityContext | nindent 8 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "kube-dc.backend.name" . }}-mcp
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      containers:
+        - name: mcp
+          securityContext:
+            {{- toYaml .Values.backend.securityContext | nindent 12 }}
+          image: {{ include "kube-dc.ui.image" (dict "image" .Values.backend.image "appVersion" .Chart.AppVersion) | quote }}
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          # The image ENTRYPOINT (TLS trust bundle) still runs; only CMD changes.
+          args: ["node", "mcp/server.js"]
+          ports:
+            - name: http
+              containerPort: {{ $mcp.port | default 8090 }}
+            - name: metrics
+              containerPort: {{ $mcp.metricsPort | default 9464 }}
+          env:
+            - name: MCP_PORT
+              value: {{ $mcp.port | default 8090 | quote }}
+            - name: MCP_METRICS_PORT
+              value: {{ $mcp.metricsPort | default 9464 | quote }}
+            {{- with $mcp.rateLimit }}
+            # Requests a minute per person and app, and per client address.
+            - name: MCP_RATE_LIMIT_PER_USER
+              value: {{ .perUser | default 600 | quote }}
+            - name: MCP_RATE_LIMIT_PER_ADDRESS
+              value: {{ .perAddress | default 1200 | quote }}
+            {{- end }}
+            - name: MCP_PUBLIC_URL
+              value: {{ $publicURL | quote }}
+            - name: KEYCLOAK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: master-config
+                  key: url
+            # The domain expose-route hostnames are published under (whoami).
+            - name: MCP_BASE_DOMAIN
+              valueFrom:
+                secretKeyRef:
+                  name: master-config
+                  key: base_domain
+                  optional: true
+            - name: MCP_REQUESTER_SECRETS_DIR
+              value: /etc/kube-dc-mcp-requesters
+            # The console's VM logic (image catalog, enrichment, checks),
+            # called with the caller's exchanged token.
+            - name: MCP_BACKEND_URL
+              value: {{ printf "http://%s:%v" (include "kube-dc.backend.fullname" .) .Values.backend.service.port | quote }}
+            - name: KUBE_DC_BACKEND_VERSION
+              value: {{ .Values.backend.image.tag | default .Chart.AppVersion | quote }}
+            # Every tool call is an audit event (service mcp), in the same
+            # store the console's audit views read (backend.audit).
+            - name: LOKI_PUSH_URL
+              value: "{{ .Values.backend.audit.lokiPushUrl | default "http://loki-gateway.monitoring.svc:80" }}"
+            - name: LOKI_AUDIT_TENANT
+              value: "{{ .Values.backend.audit.tenant | default "system" }}"
+            - name: MCP_APP_NAMES_DIR
+              value: /etc/kube-dc-mcp-app-names
+            - name: MCP_READ_ONLY_ENFORCED
+              value: {{ $mcp.enforceReadOnly | default false | quote }}
+            - name: BACKEND_TLS_VERIFY
+              value: {{ .Values.backend.tlsVerify | default false | quote }}
+            {{- if .Values.backend.trustedCA.configMapName }}
+            - name: NODE_EXTRA_CA_CERTS
+              value: {{ printf "%s/%s" (trimSuffix "/" .Values.backend.trustedCA.mountPath) .Values.backend.trustedCA.fileName | quote }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          resources:
+            {{- toYaml ($mcp.resources | default (dict "requests" (dict "cpu" "20m" "memory" "96Mi") "limits" (dict "memory" "384Mi"))) | nindent 12 }}
+          volumeMounts:
+            # The API server's CA where the image and the server look for it
+            # (docker-entrypoint.sh, kubeClient), without a token next to it.
+            - name: ca
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+            - name: requesters
+              mountPath: /etc/kube-dc-mcp-requesters
+              readOnly: true
+            - name: app-names
+              mountPath: /etc/kube-dc-mcp-app-names
+              readOnly: true
+            {{- if .Values.backend.trustedCA.configMapName }}
+            - name: trusted-ca
+              mountPath: {{ .Values.backend.trustedCA.mountPath | quote }}
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: ca
+          projected:
+            sources:
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+        # Written by the manager; optional so the server starts before the first
+        # organization is set up (requests then answer "not set up").
+        - name: requesters
+          secret:
+            secretName: {{ $mcp.requesterSecretName | default "kube-dc-mcp-requesters" }}
+            optional: true
+        # App names for audit events, written by the manager (one key per organization).
+        - name: app-names
+          configMap:
+            name: kube-dc-mcp-app-names
+            optional: true
+        {{- if .Values.backend.trustedCA.configMapName }}
+        - name: trusted-ca
+          configMap:
+            name: {{ .Values.backend.trustedCA.configMapName | quote }}
+        {{- end }}
+{{- if gt (int ($mcp.replicaCount | default 2)) 1 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ include "kube-dc.backend.name" . }}-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "kube-dc.backend.name" . }}-mcp
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: mcp
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ include "kube-dc.backend.name" . }}-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ include "kube-dc.backend.name" . }}-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: mcp
+  ports:
+    - name: http
+      port: {{ $mcp.port | default 8090 }}
+      targetPort: http
+    - name: metrics
+      port: {{ $mcp.metricsPort | default 9464 }}
+      targetPort: metrics
+{{- if and .Values.backend.metrics.enabled .Values.backend.metrics.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ include "kube-dc.backend.name" . }}-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: monitoring
+    {{- with .Values.backend.metrics.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "kube-dc.backend.name" . }}-mcp
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      scheme: http
+      interval: {{ .Values.backend.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.backend.metrics.serviceMonitor.scrapeTimeout }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ include "kube-dc.backend.name" . }}-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: monitoring
+    release: prom-operator
+spec:
+  groups:
+    - name: kube-dc.hosted-mcp
+      rules:
+        - alert: KubeDcMcpNoMetrics
+          expr: absent(up{namespace="{{ .Release.Namespace }}",service="{{ $name }}"} == 1)
+          for: 15m
+          labels:
+            severity: warning
+            service: kube-dc-control-plane
+            owner: control-plane
+          annotations:
+            summary: No metrics from the hosted MCP server
+            description: Prometheus scrapes no ready {{ $name }} pod; AI apps may be unable to connect.
+        - alert: KubeDcMcpServerErrors
+          expr: |
+            sum(rate(kube_dc_mcp_requests_total{status="500"}[10m])) / sum(rate(kube_dc_mcp_requests_total[10m])) > 0.05
+          for: 10m
+          labels:
+            severity: warning
+            service: kube-dc-control-plane
+            owner: control-plane
+          annotations:
+            summary: The hosted MCP server answers more than 5% of requests with errors
+            description: Check the {{ $name }} logs (event mcp.request, status 500).
+        - alert: KubeDcMcpTokenExchangeFailing
+          expr: sum(rate(kube_dc_mcp_token_exchange_failures_total[10m])) > 0.05
+          for: 15m
+          labels:
+            severity: warning
+            service: kube-dc-control-plane
+            owner: control-plane
+          annotations:
+            summary: The hosted MCP server cannot exchange tokens for Kubernetes access
+            description: Keycloak token exchange with client kube-dc-mcp fails; check the realm's kube-dc-mcp client and the kube-dc-mcp-requesters Secret.
+        - alert: KubeDcMcpAuditNotWritten
+          expr: sum(increase(kube_dc_mcp_audit_failures_total[15m])) > 0
+          for: 5m
+          labels:
+            severity: warning
+            service: kube-dc-control-plane
+            owner: control-plane
+          annotations:
+            summary: Hosted MCP tool calls are not reaching the audit log
+            description: Loki refuses or cannot be reached from {{ $name }}; check the Loki NetworkPolicy admits it and LOKI_PUSH_URL.
+        - alert: KubeDcMcpToolErrors
+          expr: |
+            sum(rate(kube_dc_mcp_tool_calls_total{result="error"}[30m])) / sum(rate(kube_dc_mcp_tool_calls_total[30m])) > 0.2
+            and sum(increase(kube_dc_mcp_tool_calls_total[30m])) > 20
+          for: 15m
+          labels:
+            severity: warning
+            service: kube-dc-control-plane
+            owner: control-plane
+          annotations:
+            summary: More than 20% of hosted MCP tool calls fail
+            description: See kube_dc_mcp_tool_calls_total by tool for the failing one, and the {{ $name }} logs.
+{{- end }}
+{{- end }}

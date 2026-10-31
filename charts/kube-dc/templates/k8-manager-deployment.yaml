@@ -1,4 +1,5 @@
 {{- if .Values.k8Manager.enabled }}
+{{- $feeConfig := (.Values.k8Manager.nativeFeeEvidence | default dict).configMapName | default "" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,7 +20,9 @@ spec:
         kubectl.kubernetes.io/default-container: manager
       labels:
         {{- include "kube-dc.k8manager.selectorLabels" . | nindent 8 }}
+        {{- if not $feeConfig }}
         {{- include "kube-dc.podVersionLabel" . | nindent 8 }}
+        {{- end }}
         control-plane: kube-dc-k8-manager
     spec:
       serviceAccountName: {{ include "kube-dc.k8manager.fullname" . }}
@@ -59,6 +62,10 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
         env:
+        {{- if $feeConfig }}
+        - name: PAYG_KDC_FEE_CONFIG
+          value: /etc/kube-dc/native-fees/config.json
+        {{- end }}
         {{- if .Values.k8Manager.etcdDefaultStorageClass }}
         # Operator default for NEW tenant-etcd datastores that don't pin
         # spec.etcd.storage.storageClassName. Existing StatefulSets are
@@ -74,6 +81,24 @@ spec:
         # (network.kube-dc.com/lb-block=enabled) instead of participating by default.
         - name: LB_BLOCK_REQUIRE_OPT_IN
           value: "true"
+        {{- end }}
+        # Automatic replacement of failed managed-cluster workers (one Cluster
+        # API MachineHealthCheck per worker pool): off | opt-in | on. Off
+        # creates nothing and withdraws checks created earlier.
+        {{- $workerHealthCheck := .Values.k8Manager.workerHealthCheck | default dict }}
+        {{- $workerHealthCheckMode := $workerHealthCheck.mode }}
+        {{- if kindIs "bool" $workerHealthCheckMode }}
+        {{- /* YAML 1.1 reads unquoted on/off as booleans */}}
+        {{- $workerHealthCheckMode = ternary "on" "off" $workerHealthCheckMode }}
+        {{- end }}
+        - name: WORKER_HEALTH_CHECK_MODE
+          value: {{ ($workerHealthCheckMode | default "off") | quote }}
+        {{- range $name, $key := dict "WORKER_HEALTH_CHECK_UNHEALTHY_TIMEOUT" "unhealthyTimeout" "WORKER_HEALTH_CHECK_NODE_STARTUP_TIMEOUT" "nodeStartupTimeout" "WORKER_HEALTH_CHECK_MAX_UNHEALTHY" "maxUnhealthy" }}
+        {{- $value := get $workerHealthCheck $key }}
+        {{- if and (not (kindIs "invalid" $value)) (ne (toString $value) "") }}
+        - name: {{ $name }}
+          value: {{ toString $value | quote }}
+        {{- end }}
         {{- end }}
         - name: INFRA_API_ENDPOINT
           value: {{ include "kube-dc.managementAPIEndpoint" (list $ .Values.k8Manager.infraAPIEndpoint) | quote }}
@@ -201,19 +226,36 @@ spec:
           capabilities:
             drop:
             - ALL
-        {{- if .Values.k8Manager.mgmtAutoscaling.enabled }}
+        {{- if or .Values.k8Manager.mgmtAutoscaling.enabled $feeConfig }}
         volumeMounts:
+        {{- if $feeConfig }}
+          - name: native-fee-config
+            mountPath: /etc/kube-dc/native-fees
+            readOnly: true
+        {{- end }}
+        {{- if .Values.k8Manager.mgmtAutoscaling.enabled }}
           - name: mgmt-adapter-tls
             mountPath: /etc/mgmt-adapter-tls
             readOnly: true
         {{- end }}
-      {{- if .Values.k8Manager.mgmtAutoscaling.enabled }}
+        {{- end }}
+      {{- if or .Values.k8Manager.mgmtAutoscaling.enabled $feeConfig }}
       volumes:
+        {{- if $feeConfig }}
+        - name: native-fee-config
+          configMap:
+            name: {{ $feeConfig | quote }}
+            items:
+              - key: config.json
+                path: config.json
+        {{- end }}
+        {{- if .Values.k8Manager.mgmtAutoscaling.enabled }}
         # Serving keypair + the dedicated client CA. ca.crt in this Secret is
         # the mgmt-autoscaler-ca that signs the CA client cert — exactly the
         # bundle the adapter must trust, nothing broader.
         - name: mgmt-adapter-tls
           secret:
             secretName: mgmt-adapter-server-tls
+        {{- end }}
       {{- end }}
 {{- end }}

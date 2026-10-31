@@ -274,8 +274,11 @@ spec:
                           description: PVC size per etcd replica
                           type: string
                         storageClassName:
-                          default: local-path
-                          description: StorageClass name
+                          description: |-
+                            StorageClass name. Empty uses the k8-manager's ETCD_DEFAULT_STORAGE_CLASS
+                            (chart value k8Manager.etcdDefaultStorageClass), else local-path. No CRD
+                            default on purpose: one would be persisted into every object at
+                            admission and shadow the operator's setting forever.
                           type: string
                       type: object
                     version:

@@ -1,3 +1,8 @@
+{{- $execOperators := .Values.serviceOperatorPodExecServiceAccounts | default list -}}
+{{- if gt (len $execOperators) 32 }}{{ fail "serviceOperatorPodExecServiceAccounts permits at most 32 exact identities" }}{{ end -}}
+{{- range $execOperators -}}
+{{- if not (regexMatch "^system:serviceaccount:[a-z0-9]([-a-z0-9]*[a-z0-9])?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" .) }}{{ fail "serviceOperatorPodExecServiceAccounts requires exact ServiceAccount usernames" }}{{ end -}}
+{{- end }}
 # Deny `kubectl exec` in project namespaces for everyone except platform
 # system identities. Tenant admin tasks run as Jobs (or via the VM
 # console/VNC for VMs) — see docs/cloud/security-restrictions.md.
@@ -27,9 +32,8 @@ spec:
         resources: ["pods/exec", "pods/attach"]
   matchConditions:
     - name: exclude-system-service-accounts
-      expression: >-
-        !has(request.userInfo) || !has(request.userInfo.username) ||
-        !(['system:serviceaccount:kube-dc:',
+      expression: |-
+        !has(request.userInfo) || !has(request.userInfo.username) || !(['system:serviceaccount:kube-dc:',
            'system:serviceaccount:kubevirt:',
            'system:serviceaccount:kamaji-system:',
            'system:serviceaccount:capi-system:',
@@ -42,6 +46,11 @@ spec:
            'system:serviceaccount:mariadb-system:',
            'system:serviceaccount:kube-system:'].exists(prefix,
              request.userInfo.username.startsWith(prefix)))
+    # Opt-in is exact per operator identity; RBAC still authorizes pods/exec.
+    - name: exclude-qualified-operator-service-accounts
+      expression: >-
+        !has(request.userInfo) || !has(request.userInfo.username) ||
+        !(request.userInfo.username in {{ $execOperators | toJson }})
     - name: exclude-cluster-admins
       expression: >-
         !has(request.userInfo) || !has(request.userInfo.groups) ||

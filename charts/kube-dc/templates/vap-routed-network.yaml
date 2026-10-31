@@ -22,9 +22,8 @@ spec:
         resources: ["configmaps", "secrets", "deployments", "poddisruptionbudgets", "network-attachment-definitions", "security-groups", "subnets", "vlans", "vpcs"]
   matchConditions:
     - name: generated-routed-object
-      expression: >-
-        request.resource.group == 'kube-dc.com' && request.resource.resource == 'projectroutinggateways'
-        || (request.operation != 'DELETE' && has(object.metadata.labels)
+      expression: |-
+        request.resource.group == 'kube-dc.com' && request.resource.resource == 'projectroutinggateways' || (request.operation != 'DELETE' && has(object.metadata.labels)
             && 'network.kube-dc.com/gateway-role' in object.metadata.labels
             && object.metadata.labels['network.kube-dc.com/gateway-role'] == 'routing-gateway')
         || (request.operation != 'DELETE' && has(object.metadata.labels)
@@ -65,10 +64,8 @@ spec:
         operations: ["UPDATE"]
         resources: ["vpcs"]
   validations:
-    - expression: >-
-        (has(request.userInfo.groups) && ('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))
-        || request.userInfo.username == {{ $managerUser | quote }}
-        || ((has(object.spec.staticRoutes) == has(oldObject.spec.staticRoutes))
+    - expression: |-
+        (has(request.userInfo.groups) && ('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups)) || request.userInfo.username == {{ $managerUser | quote }} || ((has(object.spec.staticRoutes) == has(oldObject.spec.staticRoutes))
             && (!has(object.spec.staticRoutes) || object.spec.staticRoutes == oldObject.spec.staticRoutes)
             && (has(object.spec.policyRoutes) == has(oldObject.spec.policyRoutes))
             && (!has(object.spec.policyRoutes) || object.spec.policyRoutes == oldObject.spec.policyRoutes))

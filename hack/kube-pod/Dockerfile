@@ -1,86 +1,72 @@
-ARG CLOUDSHELL_VERSION=v0.8.5
-ARG KUBECTL_VERSION=v1.35.0
-ARG STERN_VERSION=1.32.0
-ARG VIRTCTL_VERSION=v1.6.0
-ARG TTYD_VERSION=1.7.8
-ARG K9S_VERSION=v0.50.4
-ARG KUBE_DC_VERSION
+# Only the static terminal HTML is copied from cloudtty; its server is not used.
+FROM ghcr.io/cloudtty/cloudshell:v0.8.5@sha256:36bcf73b3c6896fd001e80f36c72da975e64de5509526a406c133dfcf84dab3c AS cloudshell
+# Keep ZMODEM file transfer on Alpine with the maintained, security-fixed source
+# and Debian's receive-buffer fixes. Verify both publisher source archives.
+FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS lrzsz-builder
+RUN apk add --no-cache build-base curl ca-certificates patch bc
+WORKDIR /build
+RUN curl -fsSL https://deb.debian.org/debian/pool/main/l/lrzsz/lrzsz_0.13.1.orig.tar.gz -o source.tar.gz \
+    && curl -fsSL https://deb.debian.org/debian/pool/main/l/lrzsz/lrzsz_0.13.1-1.debian.tar.xz -o patches.tar.xz \
+    && printf '%s\n' \
+       '112f91059fbd118e016d800c1a5c5a1702e965d8b9bfbda6015e44e20bfb93c9  source.tar.gz' \
+       '0cede4418e5c3a2a0043f74913564fa366812c7479764c33351db7e08d762a8f  patches.tar.xz' \
+       | sha256sum -c - \
+    && mkdir source \
+    && tar -xzf source.tar.gz -C source --strip-components=1 \
+    && tar -xf patches.tar.xz -C source
+WORKDIR /build/source
+RUN while read -r name; do patch -p1 < "debian/patches/$name"; done < debian/patches/series \
+    && ./configure --disable-nls --disable-rpath --disable-Werror --program-transform-name=s/l// --prefix=/usr/local \
+    && make -j2 \
+    && make DESTDIR=/out install
+RUN --network=none make quickcheck
 
-# Add a named builder stage for cloudshell
-FROM ghcr.io/cloudtty/cloudshell:${CLOUDSHELL_VERSION} AS cloudshell
-FROM debian:12.10-slim AS base
+FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS base
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    curl \
+RUN test "$(apk --print-arch)" = x86_64 && \
+    apk upgrade --no-cache && \
+    apk add --no-cache \
+    'curl>=8.23.0-r0' \
+    'libcurl>=8.23.0-r0' \
+    'brotli-libs>=1.2.1-r0' \
     gnupg \
-    apt-transport-https \
     ca-certificates \
-    lrzsz \
     git \
     tmux \
     screen \
     jq \
     openssl \
-    gettext-base \
-    mc \
-    wget \
-    iputils-ping \
+    gettext-envsubst \
+    iputils \
     net-tools \
     openssh-client \
+    bash \
     bash-completion \
     zsh \
     fish \
     vim \
     less \
     htop \
-    dnsutils \
+    bind-tools \
     netcat-openbsd \
-    procps && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    procps \
+    coreutils \
+    util-linux
 
 # Build final image
 FROM base AS final
-
-# Redefine ARG to make it available in this build stage
-ARG KUBECTL_VERSION
-ARG STERN_VERSION
-ARG VIRTCTL_VERSION
-ARG TTYD_VERSION
-ARG K9S_VERSION
-ARG KUBE_DC_VERSION
+COPY --from=lrzsz-builder /out/usr/local/bin/ /usr/local/bin/
+COPY --from=lrzsz-builder /build/source/COPYING /usr/share/licenses/lrzsz/COPYING
+COPY --from=lrzsz-builder /build/source/debian/copyright /usr/share/licenses/lrzsz/debian-copyright
 
 # Create necessary directories
 RUN mkdir -p /usr/local/etc /scripts /root/.kube /usr/lib/ttyd \
     /etc/bash_completion.d /usr/share/zsh/site-functions \
     /root/.config/fish/completions
 
-# Install all binaries in a single layer to reduce size
-RUN set -e && \
-    curl -L -o /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" && \
-    chmod +x /usr/local/bin/kubectl && \
-    curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 && \
-    chmod 700 get_helm.sh && \
-    ./get_helm.sh --no-sudo && \
-    rm get_helm.sh && \
-    curl -LO https://github.com/stern/stern/releases/download/v${STERN_VERSION}/stern_${STERN_VERSION}_linux_amd64.tar.gz && \
-    tar -xvf stern_${STERN_VERSION}_linux_amd64.tar.gz && \
-    mv stern /usr/local/bin/stern && \
-    chmod +x /usr/local/bin/stern && \
-    curl -L -o /usr/local/bin/virtctl https://github.com/kubevirt/kubevirt/releases/download/${VIRTCTL_VERSION}/virtctl-${VIRTCTL_VERSION}-linux-amd64 && \
-    chmod +x /usr/local/bin/virtctl && \
-    ttydArch="$(uname -m)" && \
-    curl -L -o /usr/local/bin/ttyd https://github.com/cloudtty/ttyd/releases/download/${TTYD_VERSION}/ttyd.${ttydArch} && \
-    chmod +x /usr/local/bin/ttyd && \
-    test -n "${KUBE_DC_VERSION}" && \
-    curl -fsSL "https://github.com/kube-dc/kube-dc-public/releases/download/${KUBE_DC_VERSION}/kube-dc_linux_amd64" -o /tmp/kube-dc_linux_amd64 && \
-    curl -fsSL "https://github.com/kube-dc/kube-dc-public/releases/download/${KUBE_DC_VERSION}/checksums.txt" -o /tmp/checksums.txt && \
-    (cd /tmp && sha256sum -c --ignore-missing checksums.txt) && \
-    install -m 0755 /tmp/kube-dc_linux_amd64 /usr/local/bin/kube-dc && \
-    rm /tmp/kube-dc_linux_amd64 /tmp/checksums.txt && \
-    curl -sL https://github.com/derailed/k9s/releases/download/${K9S_VERSION}/k9s_Linux_amd64.tar.gz | tar xz -C /usr/local/bin k9s && \
-    chmod +x /usr/local/bin/k9s
+# Prepared from checksummed releases and the committed Go dependency locks.
+COPY tools/runtime/ /usr/local/bin/
+RUN cd /usr/local/bin && sha256sum -c checksums.sha256 && rm checksums.sha256
 
 # Generate shell completions for all tools
 RUN kubectl completion bash > /etc/bash_completion.d/kubectl && \
@@ -115,7 +101,10 @@ RUN chmod +x /scripts/*.sh /usr/local/bin/kubectl_console /usr/local/bin/ssh_con
 
 # Set default environment variables
 ENV KUBECONFIG=/root/.kube/config \
-    CLIENT_ID="kube-dc"
+    CLIENT_ID="kube-dc" \
+    HOME=/root \
+    USER=root \
+    LOGNAME=root
 
 USER root
 WORKDIR /root

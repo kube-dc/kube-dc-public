@@ -1,0 +1,85 @@
+{{- /*
+A Job labelled app.kubernetes.io/component=kube-dc-cloud-shell (on the Job or
+its pod template) carries no ServiceAccount token: it runs as "default" or no
+account, with automountServiceAccountToken: false. The label earns the pod the
+management-API client role (a /32 route to the management apiserver), so a
+token there would be authenticated access as that account.
+docs/prd/admission-webhooks-remaining-design.md, item 3 (cloud-shell-job);
+the handler is internal/webhook/core/cloudshell_job_webhook.go, which makes no
+lookup.
+
+Judged on CREATE, and on an UPDATE only when the pod template or the Job's
+label changes. Garbage collection's finalizer and ownerReference updates
+(foreground deletion, orphaning) are never judged, not even on a Job that
+predates the rule: the cloud-shell-job webhook matched them, so a manager
+outage stalled the cleanup of labelled Jobs. The audit
+(cmd/admission-handoff-audit, section narrowGates) lists live labelled Jobs
+that violate the rule.
+
+No params, failurePolicy Fail. Rendered from manager.webhook.
+narrowGatesHandoffPhase 1; the webhook entry is removed at phase 2.
+*/ -}}
+{{- if and .Values.manager.webhook.enabled (ne (include "kube-dc.narrowGates.phase" .) "0") }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: cloud-shell-job-tokens
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs"]
+  variables:
+    - name: jobLabelled
+      expression: >-
+        has(object.metadata.labels) && 'app.kubernetes.io/component' in object.metadata.labels &&
+        object.metadata.labels['app.kubernetes.io/component'] == 'kube-dc-cloud-shell'
+    - name: templateLabelled
+      expression: >-
+        has(object.spec.template.metadata) && has(object.spec.template.metadata.labels) &&
+        'app.kubernetes.io/component' in object.spec.template.metadata.labels &&
+        object.spec.template.metadata.labels['app.kubernetes.io/component'] == 'kube-dc-cloud-shell'
+    - name: oldJobLabel
+      expression: |-
+        request.operation == 'UPDATE' && has(oldObject.metadata.labels) && 'app.kubernetes.io/component' in oldObject.metadata.labels
+          ? oldObject.metadata.labels['app.kubernetes.io/component'] : ''
+    - name: newJobLabel
+      expression: |-
+        has(object.metadata.labels) && 'app.kubernetes.io/component' in object.metadata.labels
+          ? object.metadata.labels['app.kubernetes.io/component'] : ''
+    - name: judged
+      expression: |-
+        (variables.jobLabelled || variables.templateLabelled) && (request.operation == 'CREATE' || object.spec.template != oldObject.spec.template ||
+         variables.oldJobLabel != variables.newJobLabel)
+    - name: pod
+      expression: "object.spec.template.spec"
+  validations:
+    - expression: |-
+        !variables.judged || ((!has(variables.pod.serviceAccountName) || variables.pod.serviceAccountName in ['', 'default']) &&
+         (!has(variables.pod.serviceAccount) || variables.pod.serviceAccount in ['', 'default']))
+      messageExpression: >-
+        'kube-dc cloud-shell gate: a Job labelled app.kubernetes.io/component=kube-dc-cloud-shell may not run as ServiceAccount ' +
+        (has(variables.pod.serviceAccountName) && variables.pod.serviceAccountName != '' ? variables.pod.serviceAccountName : variables.pod.serviceAccount) +
+        '. That label makes the pod a management-API client, so letting it carry the token of another account would let it speak to the management apiserver as that account'
+      reason: Forbidden
+    - expression: >-
+        !variables.judged ||
+        (has(variables.pod.automountServiceAccountToken) && variables.pod.automountServiceAccountToken == false)
+      message: >-
+        kube-dc cloud-shell gate: a Job labelled app.kubernetes.io/component=kube-dc-cloud-shell must set
+        automountServiceAccountToken: false. That label grants a route to the management apiserver; a mounted
+        ServiceAccount token would turn that route into authenticated access. The console shell authenticates
+        from its kubeconfig Secret and does not need the token
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: cloud-shell-job-tokens
+spec:
+  policyName: cloud-shell-job-tokens
+  validationActions: [Deny]
+{{- end }}

@@ -1,0 +1,54 @@
+{{- $p := .Values.projectPolicies.protectManagedServices }}
+{{- if $p.enabled }}
+{{- $scopes := list
+  (dict "name" "pods" "rules" (list (dict "apiGroups" (list "") "apiVersions" (list "v1") "operations" (list "CREATE" "UPDATE") "resources" (list "pods"))) "labels" "has(object.metadata.labels) ? object.metadata.labels : {}")
+  (dict "name" "podtemplates" "rules" (list (dict "apiGroups" (list "") "apiVersions" (list "v1") "operations" (list "CREATE" "UPDATE") "resources" (list "podtemplates"))) "labels" "has(object.template) && has(object.template.metadata) && has(object.template.metadata.labels) ? object.template.metadata.labels : {}")
+  (dict "name" "workloads" "rules" (list
+    (dict "apiGroups" (list "apps") "apiVersions" (list "v1") "operations" (list "CREATE" "UPDATE") "resources" (list "deployments" "replicasets" "statefulsets" "daemonsets"))
+    (dict "apiGroups" (list "batch") "apiVersions" (list "v1") "operations" (list "CREATE" "UPDATE") "resources" (list "jobs"))
+    (dict "apiGroups" (list "") "apiVersions" (list "v1") "operations" (list "CREATE" "UPDATE") "resources" (list "replicationcontrollers"))) "labels" "has(object.spec) && has(object.spec.template) && has(object.spec.template.metadata) && has(object.spec.template.metadata.labels) ? object.spec.template.metadata.labels : {}")
+  (dict "name" "cronjobs" "rules" (list (dict "apiGroups" (list "batch") "apiVersions" (list "v1") "operations" (list "CREATE" "UPDATE") "resources" (list "cronjobs"))) "labels" "has(object.spec) && has(object.spec.jobTemplate) && has(object.spec.jobTemplate.spec) && has(object.spec.jobTemplate.spec.template) && has(object.spec.jobTemplate.spec.template.metadata) && has(object.spec.jobTemplate.spec.template.metadata.labels) ? object.spec.jobTemplate.spec.template.metadata.labels : {}")
+}}
+{{- range $scope := $scopes }}
+---
+# Reserve values in RabbitMQ's UID namespace, rather than a generic label key.
+# Template checks prevent a controller from admitting a planted Pod later.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-references-rabbitmq-{{ $scope.name }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+      - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+      {{- toYaml $scope.rules | nindent 6 }}
+  variables:
+  - name: labels
+    expression: {{ $scope.labels | quote }}
+  - name: reserved
+    expression: >-
+      'app.kubernetes.io/name' in variables.labels && variables.labels['app.kubernetes.io/name'].matches('^mss-v1-rmq-[a-f0-9]{24}$')
+  validations:
+  # |- not >-: the more-indented lines below change under a folded block when
+  # Flux's kustomize post-renderer re-serialises it (rc.12, 2026-10-17).
+  - expression: |-
+      !variables.reserved ||
+      ({{ include "kube-dc.managedReferences.platformIdentityCEL" $ }} &&
+       'services.kube-dc.com/managed-by' in variables.labels && variables.labels['services.kube-dc.com/managed-by'] == 'kube-dc-services' &&
+       'services.kube-dc.com/service-uid' in variables.labels && variables.labels['services.kube-dc.com/service-uid'] != '' &&
+       'services.kube-dc.com/instance-uid' in variables.labels && variables.labels['services.kube-dc.com/instance-uid'] == variables.labels['services.kube-dc.com/service-uid'])
+    message: RabbitMQ broker selector values are reserved for platform-managed workloads
+    reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-references-rabbitmq-{{ $scope.name }}
+spec:
+  policyName: managed-references-rabbitmq-{{ $scope.name }}
+  validationActions: {{ toJson $p.validationActions }}
+{{- end }}
+{{- end }}

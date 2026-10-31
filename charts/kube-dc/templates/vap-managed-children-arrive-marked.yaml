@@ -1,0 +1,672 @@
+{{- /*
+The operators' split of the child mutator, phase 3 and later
+(manager.webhook.childMarkingHandoffPhase; docs/prd/admission-webhooks-step4-
+operators-as-built.md). Rendered from phase 3, before any operator leaves the
+fail-closed entry mark-managed-children.kube-dc.com.
+
+An operator (a platform identity other than the controller manager) leaves the
+fail-closed entry only once its platform outputs arrive carrying the marker by
+construction. These policies are defense in depth for a renderer that regresses
+while the manager is unreachable, and the protection of an unmarked child of a
+marked owner ("escaped"), legacy or new:
+
+  managed-children-arrive-marked-<kind>   an operator's unmarked CREATE owned
+                                          (the mutator's resolution) by a
+                                          marked object of <kind>
+  managed-children-arrive-marked-labels   an operator's unmarked CREATE with a
+                                          reserved label the mutator strips
+  managed-children-no-secret-owners       an operator's CREATE owned by a
+                                          Secret or ConfigMap
+  managed-snapshots-arrive-marked         an operator's unmarked snapshot of a
+                                          marked claim
+  managed-children-escaped-<kind>         a tenant's UPDATE or DELETE of an
+                                          unmarked object owned by a marked
+                                          object of <kind>
+  managed-snapshots-escaped               a tenant's UPDATE or DELETE of an
+                                          unmarked snapshot of a marked claim
+  managed-children-status-metadata        a tenant's ownerReference or finalizer
+                                          change through a status subresource
+  managed-children-job-finished           services.kube-dc.com/job-finished set
+                                          by a tenant, on a Job that is not
+                                          finished, or not to its outcome
+
+With the manager answering, the CREATE policies refuse nothing the mutator
+admits (it marks, strips or leaves alone first); they refuse what arrives
+without its marking. failurePolicy Ignore: a policy with params returns a
+configuration error while its param informer has not synced or its CRD is not
+installed, and under Fail that would refuse every operator creation, or every
+tenant write, in every project.
+
+The probe user (kube-dc.childMarking.probeUser) is a matched identity of each
+policy, and the mutator never routes it: it is the controlled bypass that shows,
+per API server, that each policy enforces. Its probe branches refuse only a
+ConfigMap whose kube-dc.com/child-marking-probe annotation names the policy.
+Every request it makes must be a dry run (child-marking-probe-dry-run-only).
+*/ -}}
+{{- $p := .Values.projectPolicies.protectManagedServices }}
+{{- $phase := include "kube-dc.childMarking.phase" . }}
+{{- if and .Values.manager.webhook.enabled $p.enabled (has $phase (list "3" "4" "5")) }}
+{{- $probe := include "kube-dc.childMarking.probeCEL" . }}
+{{- $probeUser := include "kube-dc.childMarking.probeUser" . }}
+{{- $operator := include "kube-dc.childMarking.operatorCEL" . }}
+{{- $cnpgRBAC := "(request.resource.group != 'rbac.authorization.k8s.io' || request.userInfo.username == 'system:serviceaccount:cnpg-system:cnpg-cloudnative-pg')" }}
+{{- $marking := list }}
+{{- range (splitList "," (include "kube-dc.markingServiceAccounts" .)) }}{{ if . }}{{ $marking = append $marking . }}{{ end }}{{ end }}
+{{- $markingCEL := printf "(request.userInfo.username.startsWith('system:serviceaccount:kube-dc-service-runner:') || request.userInfo.username.startsWith('system:serviceaccount:kube-dc-services:') || request.userInfo.username in %s)" (toJson $marking) }}
+{{- $tenantExempt := without (include "kube-dc.managedServices.exemptNamespaces" . | fromJsonArray) "cert-manager" "rook-ceph" }}
+{{- $csiStatus := $p.csiStatusServiceAccounts | default (list) | toJson }}
+{{- range (include "kube-dc.childMarking.ownerKinds" . | fromJsonArray) }}
+{{- $groupRE := "^[^/]+$" }}
+{{- if .group }}{{ $groupRE = printf "^%s/[^/]+$" (replace "." "\\\\." .group) }}{{ end }}
+{{- $ownedBy := printf "[0, 1, 2, 3, 4, 5, 6, 7].exists(i, i < size(variables.refs) && variables.refs[i].uid == params.metadata.uid && variables.refs[i].name == params.metadata.name && variables.refs[i].kind == '%s' && variables.refs[i].apiVersion.matches('%s'))" .kind $groupRE }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-children-arrive-marked-{{ .name }}
+spec:
+  failurePolicy: Ignore
+  paramKind:
+    apiVersion: {{ if .group }}{{ printf "%s/%s" .group .version }}{{ else }}{{ .version }}{{ end }}
+    kind: {{ .kind }}
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    # An arrival the mutator marked, or one that arrived marked, is not
+    # matched: the marker-selected entries judge it.
+    objectSelector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: DoesNotExist}
+        - {key: kube-dc.com/managed-db, operator: DoesNotExist}
+    resourceRules:
+      {{- include "kube-dc.childMarking.policyRules" (dict "ctx" $ "ops" (list "CREATE") "sub" false) | trim | nindent 6 }}
+  matchConditions:
+    - name: operators-or-probe
+      expression: |-
+        ({{ $operator | nindent 8 | trim }} && {{ $cnpgRBAC }}) || {{ $probe }}
+  variables:
+    - name: refs
+      expression: "object.metadata.?ownerReferences.orValue([])"
+  validations:
+    # Owned as markedOwnerLabels resolves it: among the first eight owner
+    # references, the param's name, kind, group and UID.
+    - expression: {{ printf "!(%s)" $ownedBy | quote }}
+      messageExpression: >-
+        'managed-children-arrive-marked-{{ .name }}: ' + request.resource.resource + ' ' + request.namespace + '/' +
+        object.metadata.?name.orValue(object.metadata.?generateName.orValue('')) +
+        ' is owned by platform-managed {{ .kind }} ' + params.metadata.name +
+        ' (services.kube-dc.com/managed-by) and arrived without the marker the child mutator gives it: the mutator did not answer; retry once it does'
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-children-arrive-marked-{{ .name }}
+spec:
+  policyName: managed-children-arrive-marked-{{ .name }}
+  validationActions: {{ toJson $p.validationActions }}
+  paramRef:
+    selector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: Exists}
+{{- if and (eq .group "batch") (eq .kind "Job") }}
+        # A finished Job starts no more Pods: managed-children-job-finished.
+        - {key: services.kube-dc.com/job-finished, operator: DoesNotExist}
+{{- end }}
+    parameterNotFoundAction: Allow
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-children-escaped-{{ .name }}
+spec:
+  failurePolicy: Ignore
+  paramKind:
+    apiVersion: {{ if .group }}{{ printf "%s/%s" .group .version }}{{ else }}{{ .version }}{{ end }}
+    kind: {{ .kind }}
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    objectSelector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: DoesNotExist}
+        - {key: kube-dc.com/managed-db, operator: DoesNotExist}
+    resourceRules:
+      {{- include "kube-dc.childMarking.policyRules" (dict "ctx" $ "ops" (list "UPDATE" "DELETE") "sub" true) | trim | nindent 6 }}
+  # Everyone protect-managed-services-in-projects judges: never the
+  # platform's accounts (cert-manager and rook-ceph only with their own
+  # provenance, below), the control plane, cluster admins or nodes; and never
+  # a kube-system account, so garbage collection and namespace teardown are
+  # never judged whatever the exempt namespaces are.
+  matchConditions:
+    {{- include "kube-dc.managedServicesPolicy.matchConditions" (dict "namespaces" $tenantExempt "controlPlane" true "nodes" true) | trim | nindent 4 }}
+    - name: exclude-kube-system-service-accounts
+      expression: "!request.userInfo.username.startsWith('system:serviceaccount:kube-system:')"
+  variables:
+    # The OLD object: a request that removes the reference is still judged.
+    - name: refs
+      expression: "oldObject.metadata.?ownerReferences.orValue([])"
+    - name: owned
+      expression: {{ $ownedBy | quote }}
+    - name: oldLabels
+      expression: "oldObject.metadata.?labels.orValue({})"
+    - name: newLabels
+      expression: "request.operation == 'UPDATE' ? object.metadata.?labels.orValue({}) : {}"
+    - name: provenance
+      expression: "variables.oldLabels[?'services.kube-dc.com/provenance'].orValue('')"
+    - name: reservedKeys
+      expression: {{ include "kube-dc.reservedLabelKeysCEL" $ }}
+    - name: reservedUnchanged
+      expression: |-
+        request.operation != 'UPDATE' || variables.reservedKeys.all(k,
+          (k in variables.oldLabels) == (k in variables.newLabels) &&
+          (!(k in variables.oldLabels) || variables.oldLabels[k] == variables.newLabels[k]))
+    # As in protect-managed-services-in-projects: cert-manager and rook-ceph
+    # write what carries their own provenance, and Rook's CSI controllers a
+    # claim's status.
+    - name: certManagerOwn
+      expression: >-
+        request.userInfo.username.startsWith('system:serviceaccount:cert-manager:') &&
+        variables.provenance == 'cert-manager' && variables.reservedUnchanged
+    - name: rookCSIStatus
+      expression: >-
+        request.userInfo.username in {{ $csiStatus }} &&
+        request.operation == 'UPDATE' && request.resource.group == '' &&
+        request.resource.resource == 'persistentvolumeclaims' && has(request.subResource) && request.subResource == 'status' &&
+        variables.reservedUnchanged && object.spec == oldObject.spec &&
+        object.metadata.?ownerReferences.orValue([]) == oldObject.metadata.?ownerReferences.orValue([]) &&
+        object.metadata.?finalizers.orValue([]) == oldObject.metadata.?finalizers.orValue([])
+    - name: rookOwn
+      expression: >-
+        request.userInfo.username.startsWith('system:serviceaccount:rook-ceph:') &&
+        (variables.rookCSIStatus || (variables.provenance == 'rook-ceph' && variables.reservedUnchanged))
+  validations:
+    - expression: "!variables.owned || variables.certManagerOwn || variables.rookOwn"
+      messageExpression: >-
+        'managed-children-escaped-{{ .name }}: ' + request.resource.resource + ' ' + request.namespace + '/' + request.name +
+        ' is owned by platform-managed {{ .kind }} ' + params.metadata.name +
+        ' (services.kube-dc.com/managed-by) but lacks the marker; it belongs to the platform, which alone changes it'
+      reason: Forbidden
+    - expression: |-
+        !({{ $probe }} && request.operation == 'UPDATE' &&
+          object.metadata.?annotations.orValue({})[?'kube-dc.com/child-marking-probe'].orValue('') == 'managed-children-escaped-{{ .name }}')
+      message: "managed-children-escaped-{{ .name }}: probe refused"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-children-escaped-{{ .name }}
+spec:
+  policyName: managed-children-escaped-{{ .name }}
+  validationActions: {{ toJson $p.validationActions }}
+  paramRef:
+    selector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: Exists}
+{{- if and (eq .group "batch") (eq .kind "Job") }}
+        - {key: services.kube-dc.com/job-finished, operator: DoesNotExist}
+{{- end }}
+    parameterNotFoundAction: Allow
+{{- end }}
+---
+# F3: an operator that is not a marking identity creates an unmarked object
+# with a reserved label: the mutator strips it, so one that arrives with it
+# was not mutated. No params.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-children-arrive-marked-labels
+spec:
+  failurePolicy: Ignore
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    objectSelector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: DoesNotExist}
+        - {key: kube-dc.com/managed-db, operator: DoesNotExist}
+    resourceRules:
+      {{- include "kube-dc.childMarking.policyRules" (dict "ctx" $ "ops" (list "CREATE") "sub" false) | trim | nindent 6 }}
+  matchConditions:
+    - name: non-marking-operators-or-probe
+      expression: |-
+        ({{ $operator | nindent 8 | trim }} && {{ $cnpgRBAC }} &&
+         !{{ $markingCEL }}) || {{ $probe }}
+  variables:
+    - name: labels
+      expression: "object.metadata.?labels.orValue({})"
+    - name: ownProvenance
+      expression: >-
+        request.userInfo.username.startsWith('system:serviceaccount:cert-manager:') ? 'cert-manager' :
+        (request.userInfo.username.startsWith('system:serviceaccount:rook-ceph:') ? 'rook-ceph' : '')
+  validations:
+    - expression: |-
+        {{ $probe }} || (!['services.kube-dc.com/instance', 'services.kube-dc.com/instance-uid', 'services.kube-dc.com/startup-contract'].exists(k, k in variables.labels) &&
+         (!('services.kube-dc.com/provenance' in variables.labels) ||
+          (variables.ownProvenance != '' && variables.labels['services.kube-dc.com/provenance'] == variables.ownProvenance)))
+      messageExpression: >-
+        'managed-children-arrive-marked-labels: ' + request.resource.resource + ' ' + request.namespace + '/' +
+        object.metadata.?name.orValue(object.metadata.?generateName.orValue('')) +
+        ' carries a label the platform reserves and the child mutator strips from an object whose owner is not marked; it did not answer; retry once it does'
+      reason: Forbidden
+    - expression: |-
+        !({{ $probe }} &&
+          object.metadata.?annotations.orValue({})[?'kube-dc.com/child-marking-probe'].orValue('') == 'managed-children-arrive-marked-labels')
+      message: "managed-children-arrive-marked-labels: probe refused"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-children-arrive-marked-labels
+spec:
+  policyName: managed-children-arrive-marked-labels
+  validationActions: {{ toJson $p.validationActions }}
+---
+# Secrets and ConfigMaps never own an operator's child: a param policy over
+# them would make every API server keep a second copy of every Secret and
+# ConfigMap in the cluster, so instead they are not allowed as owners (marked
+# or not). The audit shows none exists before phase 3.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-children-no-secret-owners
+spec:
+  failurePolicy: Ignore
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+      {{- include "kube-dc.childMarking.policyRules" (dict "ctx" $ "ops" (list "CREATE") "sub" false) | trim | nindent 6 }}
+  matchConditions:
+    - name: operators-or-probe
+      expression: |-
+        ({{ $operator | nindent 8 | trim }} && {{ $cnpgRBAC }}) || {{ $probe }}
+  validations:
+    - expression: |-
+        !object.metadata.?ownerReferences.orValue([]).exists(r,
+          r.apiVersion == 'v1' && (r.kind == 'Secret' || r.kind == 'ConfigMap'))
+      messageExpression: >-
+        'managed-children-no-secret-owners: ' + request.resource.resource + ' ' + request.namespace + '/' +
+        object.metadata.?name.orValue(object.metadata.?generateName.orValue('')) +
+        ' names a Secret or ConfigMap as its owner; no operator child in a project may'
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-children-no-secret-owners
+spec:
+  policyName: managed-children-no-secret-owners
+  validationActions: {{ toJson $p.validationActions }}
+---
+# F5: an operator's unmarked snapshot of a marked claim (the mutator copies
+# the claim's labels onto it).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-snapshots-arrive-marked
+spec:
+  failurePolicy: Ignore
+  paramKind:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    objectSelector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: DoesNotExist}
+        - {key: kube-dc.com/managed-db, operator: DoesNotExist}
+    resourceRules:
+      - apiGroups: ["snapshot.storage.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["volumesnapshots"]
+      # The probe's branch only (see the condition).
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["configmaps"]
+  matchConditions:
+    - name: operators-or-probe
+      expression: |-
+        (request.resource.resource == 'volumesnapshots' && {{ $operator | nindent 8 | trim }}) ||
+        (request.resource.resource == 'configmaps' && {{ $probe }})
+  validations:
+    - expression: >-
+        request.resource.resource != 'volumesnapshots' ||
+        object.spec.?source.?persistentVolumeClaimName.orValue('') != params.metadata.name
+      messageExpression: >-
+        'managed-snapshots-arrive-marked: a snapshot of platform-managed claim ' + request.namespace + '/' + params.metadata.name +
+        ' arrived without the marker the child mutator gives it: the mutator did not answer; retry once it does'
+      reason: Forbidden
+    - expression: |-
+        !({{ $probe }} &&
+          object.metadata.?annotations.orValue({})[?'kube-dc.com/child-marking-probe'].orValue('') == 'managed-snapshots-arrive-marked')
+      message: "managed-snapshots-arrive-marked: probe refused"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-snapshots-arrive-marked
+spec:
+  policyName: managed-snapshots-arrive-marked
+  validationActions: {{ toJson $p.validationActions }}
+  paramRef:
+    selector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: Exists}
+    parameterNotFoundAction: Allow
+---
+# A tenant's UPDATE or DELETE of an unmarked snapshot of a marked claim.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-snapshots-escaped
+spec:
+  failurePolicy: Ignore
+  paramKind:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    objectSelector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: DoesNotExist}
+        - {key: kube-dc.com/managed-db, operator: DoesNotExist}
+    resourceRules:
+      - apiGroups: ["snapshot.storage.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["UPDATE", "DELETE"]
+        resources: ["volumesnapshots"]
+      # The probe's branch only (see the condition).
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["configmaps"]
+  matchConditions:
+    {{- include "kube-dc.managedServicesPolicy.matchConditions" (dict "namespaces" $tenantExempt "controlPlane" true "nodes" true) | trim | nindent 4 }}
+    - name: exclude-kube-system-service-accounts
+      expression: "!request.userInfo.username.startsWith('system:serviceaccount:kube-system:')"
+    - name: snapshots-or-probe
+      expression: "request.resource.resource == 'volumesnapshots' || {{ $probe }}"
+  validations:
+    - expression: >-
+        request.resource.resource != 'volumesnapshots' ||
+        oldObject.spec.?source.?persistentVolumeClaimName.orValue('') != params.metadata.name
+      messageExpression: >-
+        'managed-snapshots-escaped: snapshot ' + request.namespace + '/' + request.name + ' of platform-managed claim ' + params.metadata.name +
+        ' lacks the marker; it belongs to the platform, which alone changes it'
+      reason: Forbidden
+    - expression: |-
+        !({{ $probe }} &&
+          object.metadata.?annotations.orValue({})[?'kube-dc.com/child-marking-probe'].orValue('') == 'managed-snapshots-escaped')
+      message: "managed-snapshots-escaped: probe refused"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-snapshots-escaped
+spec:
+  policyName: managed-snapshots-escaped
+  validationActions: {{ toJson $p.validationActions }}
+  paramRef:
+    selector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: Exists}
+    parameterNotFoundAction: Allow
+---
+# A status subresource keeps most of the metadata a request sends (ownerReferences
+# and finalizers included, for workloads, Jobs, claims and Services), and the
+# escaped-children policies do not match status writes: those are the
+# controllers' and kubelets' hot paths, and a policy with params costs the API
+# server a conversion of the request per param. Without params, cheaply: no
+# tenant may change an unmarked object's ownerReferences or finalizers through
+# a status subresource (so the owner evidence of an escaped child cannot be
+# removed that way before a delete or scale). Status itself is not judged.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-children-status-metadata
+spec:
+  failurePolicy: Ignore
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    objectSelector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: DoesNotExist}
+        - {key: kube-dc.com/managed-db, operator: DoesNotExist}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["services/status", "persistentvolumeclaims/status", "pods/status", "configmaps"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["deployments/status", "replicasets/status", "statefulsets/status"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["jobs/status"]
+      - apiGroups: ["snapshot.storage.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["volumesnapshots/status"]
+{{- range $.Values.serviceFamilies.extra }}
+{{- range .engineRoots }}
+{{- range .via }}
+{{- if and .operatorCreatesChildren (not (has .group (list "" "apps" "batch"))) }}
+      - apiGroups: [{{ .group | quote }}]
+        apiVersions: [{{ .version | quote }}]
+        operations: ["UPDATE"]
+        resources: [{{ printf "%s/status" .resource | quote }}]
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+  matchConditions:
+    {{- include "kube-dc.managedServicesPolicy.matchConditions" (dict "namespaces" $tenantExempt "controlPlane" true "nodes" true) | trim | nindent 4 }}
+    - name: exclude-kube-system-service-accounts
+      expression: "!request.userInfo.username.startsWith('system:serviceaccount:kube-system:')"
+    # ConfigMaps (no status) only for the probe.
+    - name: status-or-probe
+      expression: "(has(request.subResource) && request.subResource == 'status') || {{ $probe }}"
+  validations:
+    - expression: |-
+        request.resource.resource == 'configmaps' || (object.metadata.?ownerReferences.orValue([]) == oldObject.metadata.?ownerReferences.orValue([]) &&
+         object.metadata.?finalizers.orValue([]) == oldObject.metadata.?finalizers.orValue([]))
+      messageExpression: >-
+        'managed-children-status-metadata: ' + request.resource.resource + '/status of ' + request.namespace + '/' + request.name +
+        ' may not change ownerReferences or finalizers; change them on the object itself'
+      reason: Forbidden
+    - expression: |-
+        !({{ $probe }} &&
+          object.metadata.?annotations.orValue({})[?'kube-dc.com/child-marking-probe'].orValue('') == 'managed-children-status-metadata')
+      message: "managed-children-status-metadata: probe refused"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-children-status-metadata
+spec:
+  policyName: managed-children-status-metadata
+  validationActions: {{ toJson $p.validationActions }}
+---
+# The Job param bindings above leave out a Job labelled
+# services.kube-dc.com/job-finished: the service runner adds that label to its
+# own terminal Jobs (kube-dc-services docs/finished-job-history.md), and a
+# finished Job starts no more Pods. This policy keeps the label true: it is
+# the platform's to set (a tenant may neither add, change nor remove it), and
+# whoever sets it may set it only on a Job that is finished (a Complete or
+# Failed condition, no active, terminating or uncounted Pod; a complete
+# archive Job also with its verified result frozen on it) and only to that
+# outcome. A Job is never finished when it is created. Removing the label
+# (the Job becomes a param again) is the platform's. Only Jobs carry meaning:
+# no other kind's binding reads the label. The object selector keeps every
+# other write out (an UPDATE matches when the old or the new object carries
+# the label), so the Job controller's status writes on a labelled Job that
+# keep the label are never judged.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-children-job-finished
+spec:
+  failurePolicy: Ignore
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    objectSelector:
+      matchExpressions:
+        - {key: services.kube-dc.com/job-finished, operator: Exists}
+    resourceRules:
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "jobs/status"]
+      # The probe's branch only (see the condition).
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["configmaps"]
+  matchConditions:
+    - name: jobs-or-probe
+      expression: "request.resource.resource == 'jobs' || {{ $probe }}"
+  variables:
+    - name: oldLabels
+      expression: "request.operation == 'UPDATE' ? oldObject.metadata.?labels.orValue({}) : {}"
+    - name: newLabels
+      expression: "object.metadata.?labels.orValue({})"
+    - name: changed
+      expression: |-
+        ('services.kube-dc.com/job-finished' in variables.oldLabels) != ('services.kube-dc.com/job-finished' in variables.newLabels) ||
+        ('services.kube-dc.com/job-finished' in variables.oldLabels &&
+         variables.oldLabels['services.kube-dc.com/job-finished'] != variables.newLabels['services.kube-dc.com/job-finished'])
+    # The platform's identities: its ServiceAccounts (the service runner
+    # among them), the control plane and cluster admins.
+    - name: platform
+      expression: |-
+        (has(request.userInfo.username) && (request.userInfo.username.startsWith('system:kube-') || request.userInfo.username == 'system:apiserver' ||
+          [{{ range $i, $ns := (include "kube-dc.managedServices.exemptNamespaces" $ | fromJsonArray) }}{{ if $i }}, {{ end }}'system:serviceaccount:{{ $ns }}:'{{ end }}].exists(prefix,
+            request.userInfo.username.startsWith(prefix)))) ||
+        (has(request.userInfo.groups) && ('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))
+    # The stored Job's outcome as the service runner judges it: Failed when a
+    # Failed condition is true, else Complete when a Complete condition is,
+    # and only with no active, terminating or uncounted Pod; '' otherwise and
+    # on CREATE.
+    - name: outcome
+      expression: |-
+        request.operation != 'UPDATE' ? '' :
+        (oldObject.?status.?active.orValue(0) != 0 || oldObject.?status.?terminating.orValue(0) != 0 ||
+         size(oldObject.?status.?uncountedTerminatedPods.?succeeded.orValue([])) != 0 ||
+         size(oldObject.?status.?uncountedTerminatedPods.?failed.orValue([])) != 0) ? '' :
+        (oldObject.?status.?conditions.orValue([]).exists(c, c.type == 'Failed' && c.status == 'True') ? 'Failed' :
+         (oldObject.?status.?conditions.orValue([]).exists(c, c.type == 'Complete' && c.status == 'True') ? 'Complete' : ''))
+    # A complete archive Job is labelled only once its verified result is
+    # frozen on it: until then its worker Pod's termination message is the
+    # only copy, and the escaped-children protection of an unmarked Pod of
+    # that Job lasts while the Job is a param.
+    - name: resultFrozen
+      expression: >-
+        variables.oldLabels[?'services.kube-dc.com/job-kind'].orValue('') != 'archive' ||
+        oldObject.metadata.?annotations.orValue({})[?'services.kube-dc.com/archive-result'].orValue('') != ''
+  validations:
+    - expression: "request.resource.resource != 'jobs' || !variables.changed || variables.platform"
+      messageExpression: >-
+        'managed-children-job-finished: Job ' + request.namespace + '/' + object.metadata.?name.orValue(object.metadata.?generateName.orValue('')) +
+        ': services.kube-dc.com/job-finished is set, changed or removed only by the platform'
+      reason: Forbidden
+    - expression: |-
+        request.resource.resource != 'jobs' || !variables.changed || !('services.kube-dc.com/job-finished' in variables.newLabels) ||
+        (variables.outcome != '' && variables.newLabels['services.kube-dc.com/job-finished'] == variables.outcome &&
+         (variables.outcome != 'Complete' || variables.resultFrozen))
+      messageExpression: >-
+        'managed-children-job-finished: Job ' + request.namespace + '/' + object.metadata.?name.orValue(object.metadata.?generateName.orValue('')) +
+        ' may carry services.kube-dc.com/job-finished only once it is finished (a Complete or Failed condition, no active, terminating or uncounted Pod; a complete archive Job also its frozen services.kube-dc.com/archive-result), with that outcome as the value'
+      reason: Forbidden
+    - expression: |-
+        !({{ $probe }} && request.resource.resource == 'configmaps' &&
+          object.metadata.?annotations.orValue({})[?'kube-dc.com/child-marking-probe'].orValue('') == 'managed-children-job-finished')
+      message: "managed-children-job-finished: probe refused"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-children-job-finished
+spec:
+  policyName: managed-children-job-finished
+  validationActions: {{ toJson $p.validationActions }}
+---
+# The probe user may create and update ConfigMaps in every namespace, and
+# nothing else (no read: kubectl create and replace need none) ...
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-dc-child-marking-probe
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-dc-child-marking-probe
+  labels:
+    {{- include "kube-dc.manager.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-dc-child-marking-probe
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: {{ $probeUser }}
+---
+# ... and only ever as a server-side dry run.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: child-marking-probe-dry-run-only
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: ["*"]
+        resources: ["*/*"]
+        scope: Namespaced
+  matchConditions:
+    - name: the-probe
+      expression: {{ $probe | quote }}
+  validations:
+    - expression: "request.dryRun"
+      message: "child-marking-probe@kube-dc.internal makes only server-side dry runs"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: child-marking-probe-dry-run-only
+spec:
+  policyName: child-marking-probe-dry-run-only
+  validationActions: ["Deny"]
+{{- end }}
