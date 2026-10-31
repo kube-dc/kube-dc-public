@@ -6,7 +6,7 @@
 # the source-PVC controller never produces a TLS Secret for the upload
 # server, so cdi-upload-<dv> stays in ContainerCreating forever), CDI
 # itself does NOT garbage-collect after the DEADLINE annotation passes.
-# Live evidence on cloud: bogdan-test2/cdi-upload-froma20-root was stuck
+# Live evidence on cloud: example-project/cdi-upload-froma20-root was stuck
 # in ContainerCreating for 51 days, firing 6 KubeContainerWaiting + 1
 # KubePodNotReady alerts (collapsed to 2 after C1 per-pod aggregation).
 #
@@ -88,7 +88,7 @@ data:
     # empty input to jq and the while-loop silently no-ops — script
     # exits 0 having done nothing. Live evidence: cdi-upload-gc has been
     # running for months thinking everything is clean while leaving
-    # 51-day-stuck DVs in place (bogdan-test2/cdi-upload-froma20-root).
+    # 51-day-stuck DVs in place (example-project/cdi-upload-froma20-root).
     # With pipefail, that same failure mode exits non-zero immediately
     # and trips KubeJobFailed so we see it.
     set -euo pipefail

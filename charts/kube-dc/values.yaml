@@ -2384,7 +2384,7 @@ cdiUploadGc:
   # on the deprecated bitnami/ namespace (404'd in 2026) or its
   # bitnamilegacy/ archive. See kube-dc/images/kubectl-jq/README.md
   # for the provenance and Dockerfile.
-  image: "shalb/kubectl-jq:v1.35.4"
+  image: "shalb/kubectl-jq:v1.35.9@sha256:725cf211eb49cb524923dbede54e3f32e1530a903a24e0ba53a3305aaf0cd77d"
 
 # ─────────────────────────────────────────────────────────────────────────
 # CDI mirror + importer health alerts. Sources entirely from
@@ -3276,7 +3276,7 @@ osImagePrepull:
   # "new image cold->warm" latency.
   pollMinutes: 15
   # Util image with jq (same image the cdi-upload-gc cron uses).
-  image: docker.io/shalb/kubectl-jq:v1.35.4
+  image: shalb/kubectl-jq:v1.35.9@sha256:725cf211eb49cb524923dbede54e3f32e1530a903a24e0ba53a3305aaf0cd77d
   # RKE2 paths; override for other distros.
   containerdSocket: /run/k3s/containerd/containerd.sock
   hostBinDir: /var/lib/rancher/rke2/bin

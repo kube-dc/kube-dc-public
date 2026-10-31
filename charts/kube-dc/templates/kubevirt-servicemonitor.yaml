@@ -29,7 +29,7 @@
 #   - virt-handler operational metrics carry `namespace=kubevirt`
 #     → `__tenant_id__=system` (allowlisted as a platform ns)
 #   - per-VM metrics (kubevirt_vmi_*) carry the VMI's own
-#     namespace (e.g. `bogdan-test2`) → `__tenant_id__=bogdan-test2`
+#     namespace (e.g. `example-project`) → `__tenant_id__=example-project`
 #     → routed into that tenant's Mimir org → visible in their
 #     per-tenant Grafana dashboards.
 #
