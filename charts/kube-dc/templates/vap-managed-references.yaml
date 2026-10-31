@@ -1,0 +1,346 @@
+{{- /*
+The PURE checks of managed-references.kube-dc.com, as ValidatingAdmissionPolicies.
+docs/prd/admission-webhooks-must-not-block-the-platform.md, step 2 (owner
+decision 2026-10-15: no admission webhook may be able to block all operations).
+
+A policy runs in the API server: it has no availability of its own to lose.
+Each policy below is internal/webhook/core/managed_references_webhook.go's
+check of the same name, with the same identities exempt (platformIdentity():
+the cluster-admin groups, nodes, the control plane and the derived exempt
+ServiceAccount namespaces) and the same message. The handler keeps every
+check too (chart/manager skew in either direction stays closed); what moves
+is what the webhook has to SEE:
+
+  managed-references-token-secrets       secret()                  legacy ServiceAccount-token Secrets
+  managed-references-pod-node-name       pod(), podUpdate()        spec.nodeName set by a tenant
+  managed-references-disruption-budgets  disruptionBudget()        budget selectors on the platform's markers
+  managed-references-certificate-templates certificate()           reserved keys in spec.secretTemplate
+  managed-references-mariadb-namespaces  mariadbTarget()           a cross-namespace spec.mariaDbRef
+  managed-references-family-resources    unknown(), otherVersion() a resource or version the family registry
+                                                                   does not name, in a family's groups
+
+The two-phase hand-off: these policies render in every phase; with
+projectPolicies.protectManagedServices.pureReferenceChecksJudgedByPolicy the
+webhook stops matching Secrets and budgets and routes only each family's
+registered operations, and these policies are the sole judge of the rest.
+
+Checks that stay webhook-only although they read nothing: the 64-claim bound
+on a pod (it bounds the webhook's own lookups), a missing engine reference on
+a registered operation, and an unresolvable data-source kind -- each sits on a
+request the webhook must see anyway for the lookup next to it, so a policy
+copy would narrow nothing.
+*/ -}}
+{{- $p := .Values.projectPolicies.protectManagedServices }}
+{{- if $p.enabled }}
+{{- $tenant := printf "!%s" (include "kube-dc.managedReferences.platformIdentityCEL" .) }}
+{{- $families := include "kube-dc.managedReferences.families" . | fromJson }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-references-token-secrets
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["secrets"]
+  matchConditions:
+    - name: tenant-identities
+      expression: {{ $tenant | quote }}
+  validations:
+    # The token controller fills such a Secret with a non-expiring credential
+    # for whichever account carries the name when it gets to it; no lookup
+    # can close that race, so none is attempted.
+    - expression: "!has(object.type) || object.type != 'kubernetes.io/service-account-token'"
+      message: >-
+        a kubernetes.io/service-account-token Secret is not created or changed
+        by a tenant identity in a project namespace; mint tokens with the
+        TokenRequest API (kubectl create token)
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-references-token-secrets
+spec:
+  policyName: managed-references-token-secrets
+  validationActions: {{ toJson $p.validationActions }}
+---
+# A pod created with spec.nodeName is never bound by the scheduler, and
+# pods/binding is where a pod's consumption of claims and accounts is judged
+# last. Tenants schedule through the scheduler. (A tenant cannot create a
+# marked pod -- protect-managed-service-markers-in-projects -- so the
+# handler's trusted-pod exemption never applies to a tenant's request.)
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-references-pod-node-name
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  matchConditions:
+    - name: tenant-identities
+      expression: {{ $tenant | quote }}
+  validations:
+    - expression: "request.operation != 'CREATE' || !has(object.spec.nodeName) || object.spec.nodeName == ''"
+      message: >-
+        spec.nodeName is not set by a tenant identity; use scheduling
+        constraints (nodeSelector, affinity) and let the scheduler bind the pod
+      reason: Forbidden
+    - expression: >-
+        request.operation != 'UPDATE' ||
+        (has(oldObject.spec.nodeName) && oldObject.spec.nodeName != '') ||
+        !has(object.spec.nodeName) || object.spec.nodeName == ''
+      message: "spec.nodeName is not set by a tenant identity; the scheduler binds the pod"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-references-pod-node-name
+spec:
+  policyName: managed-references-pod-node-name
+  validationActions: {{ toJson $p.validationActions }}
+---
+# A tenant budget may not select on the platform's ownership markers (a key it
+# can never set). A budget that excludes managed pods (the mark-tenant-budgets
+# mutator appends that exclusion) cannot match one whatever else it says, so
+# the exclusion is honoured first. A null selector matches no pods.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-references-disruption-budgets
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+      - apiGroups: ["policy"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["poddisruptionbudgets"]
+  matchConditions:
+    - name: tenant-identities
+      expression: {{ $tenant | quote }}
+  variables:
+    - name: expressions
+      expression: "has(object.spec.selector) && has(object.spec.selector.matchExpressions) ? object.spec.selector.matchExpressions : []"
+    - name: matchLabelKeys
+      expression: "has(object.spec.selector) && has(object.spec.selector.matchLabels) ? object.spec.selector.matchLabels.map(k, k) : []"
+  validations:
+    - expression: |-
+        !has(object.spec.selector) || variables.expressions.exists(e, e.key == 'services.kube-dc.com/managed-by' && e.operator == 'DoesNotExist') || (!variables.expressions.exists(e, e.key.startsWith('services.kube-dc.com/') || e.key == 'kube-dc.com/managed-db') &&
+         !variables.matchLabelKeys.exists(k, k.startsWith('services.kube-dc.com/') || k == 'kube-dc.com/managed-db'))
+      messageExpression: >-
+        'a PodDisruptionBudget may not select on ' +
+        (variables.expressions.map(e, e.key) + variables.matchLabelKeys).filter(k, k.startsWith('services.kube-dc.com/') || k == 'kube-dc.com/managed-db').join(', ') +
+        ': the platform\'s own ownership markers'
+      message: "a PodDisruptionBudget may not select on the platform's own ownership markers (services.kube-dc.com/*, kube-dc.com/managed-db)"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-references-disruption-budgets
+spec:
+  policyName: managed-references-disruption-budgets
+  validationActions: {{ toJson $p.validationActions }}
+---
+# cert-manager copies spec.secretTemplate onto its Secret and keeps it in sync:
+# reserved keys there would reach the Secret under an exempt identity, after
+# the child mutator's CREATE pass. Judged like the handler: on CREATE, and on
+# an UPDATE that changes secretName or secretTemplate. The reserved keys are
+# reservedKey(): the services.kube-dc.com/ namespace, kube-dc.com/managed-db,
+# and every registered family's selector keys.
+{{- $selectorKeys := list "cnpg.io/cluster" "cnpg.io/poolerName" }}
+{{- range .Values.serviceFamilies.extra }}{{ range (.selectorKeys | default list) }}{{ if not (has . $selectorKeys) }}{{ $selectorKeys = append $selectorKeys . }}{{ end }}{{ end }}{{ end }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-references-certificate-templates
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+      - apiGroups: ["cert-manager.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["certificates"]
+  matchConditions:
+    - name: tenant-identities
+      expression: {{ $tenant | quote }}
+  variables:
+    - name: reservedKeys
+      expression: {{ include "kube-dc.managedReferences.celList" (prepend $selectorKeys "kube-dc.com/managed-db") | quote }}
+    - name: judged
+      expression: >-
+        request.operation == 'CREATE' ||
+        {{ include "kube-dc.managedReferences.changedCEL" (dict "path" (list "spec" "secretName")) }} ||
+        {{ include "kube-dc.managedReferences.changedCEL" (dict "path" (list "spec" "secretTemplate")) }}
+    - name: templateKeys
+      expression: >-
+        (has(object.spec) && has(object.spec.secretTemplate) && has(object.spec.secretTemplate.labels) ? object.spec.secretTemplate.labels.map(k, k) : []) +
+        (has(object.spec) && has(object.spec.secretTemplate) && has(object.spec.secretTemplate.annotations) ? object.spec.secretTemplate.annotations.map(k, k) : [])
+  validations:
+    - expression: >-
+        !variables.judged ||
+        !variables.templateKeys.exists(k, k.startsWith('services.kube-dc.com/') || k in variables.reservedKeys)
+      messageExpression: >-
+        'spec.secretTemplate carries ' +
+        variables.templateKeys.filter(k, k.startsWith('services.kube-dc.com/') || k in variables.reservedKeys).join(', ') +
+        ', a key the platform reserves; cert-manager would copy it onto the Secret'
+      message: "spec.secretTemplate carries a key the platform reserves; cert-manager would copy it onto the Secret"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-references-certificate-templates
+spec:
+  policyName: managed-references-certificate-templates
+  validationActions: {{ toJson $p.validationActions }}
+---
+# mariadb-operator honours a cross-namespace spec.mariaDbRef; a tenant has no
+# business with another namespace's engine. Judged like the handler: on
+# CREATE, and on an UPDATE that changes one of the guarded references.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-references-mariadb-namespaces
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+      - apiGroups: ["k8s.mariadb.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["mariadbs", "pointintimerecoveries", "backups", "physicalbackups", "restores", "sqljobs", "users", "grants", "databases", "connections", "maxscales"]
+  matchConditions:
+    - name: tenant-identities
+      expression: {{ $tenant | quote }}
+  variables:
+    - name: judged
+      expression: >-
+        request.operation == 'CREATE' ||
+        {{ include "kube-dc.managedReferences.changedCEL" (dict "path" (list "spec" "mariaDbRef")) }} ||
+        {{ include "kube-dc.managedReferences.changedCEL" (dict "path" (list "spec" "bootstrapFrom")) }} ||
+        {{ include "kube-dc.managedReferences.changedCEL" (dict "path" (list "spec" "backupRef")) }} ||
+        {{ include "kube-dc.managedReferences.changedCEL" (dict "path" (list "spec" "volume")) }} ||
+        {{ include "kube-dc.managedReferences.changedCEL" (dict "path" (list "spec" "physicalBackupRef")) }}
+    - name: crossNamespace
+      expression: >-
+        has(object.spec) && has(object.spec.mariaDbRef) &&
+        has(object.spec.mariaDbRef.name) && object.spec.mariaDbRef.name != '' &&
+        has(object.spec.mariaDbRef.namespace) && object.spec.mariaDbRef.namespace != '' &&
+        object.spec.mariaDbRef.namespace != request.namespace
+  validations:
+    - expression: "!variables.judged || !variables.crossNamespace"
+      messageExpression: >-
+        'mariaDbRef names ' + string(object.spec.mariaDbRef.namespace) + '/' + string(object.spec.mariaDbRef.name) +
+        ' in another namespace; a tenant identity may reference only databases in its own'
+      message: "mariaDbRef names a database in another namespace; a tenant identity may reference only databases in its own"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-references-mariadb-namespaces
+spec:
+  policyName: managed-references-mariadb-namespaces
+  validationActions: {{ toJson $p.validationActions }}
+{{- if $families.groups }}
+---
+# An extra family's API groups are the family's: a resource there that is
+# neither a registered operation nor a declared passthrough is refused to
+# tenants -- an operation CRD the operator later replaced under another plural
+# is unknown, not unguarded (codex round 94) -- and so is a registered
+# operation in a version the registry does not name, whose engine reference
+# the gate cannot read (codex round 95). DELETE is judged in the groups where
+# some operation is judged on deletion, as the webhook routes it. Every
+# version and every resource of each group is matched (subresources are not).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-references-family-resources
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+{{- range $g, $del := $families.groups }}
+      - apiGroups: [{{ $g | quote }}]
+        apiVersions: ["*"]
+        operations: [{{ if $del }}"CREATE", "UPDATE", "DELETE"{{ else }}"CREATE", "UPDATE"{{ end }}]
+        resources: ["*"]
+{{- end }}
+  matchConditions:
+    - name: tenant-identities
+      expression: {{ $tenant | quote }}
+  variables:
+    - name: gr
+      expression: "request.resource.group + '|' + request.resource.resource"
+    - name: gvr
+      expression: "request.resource.group + '|' + request.resource.version + '|' + request.resource.resource"
+    - name: registered
+      expression: {{ include "kube-dc.managedReferences.celList" $families.registered | quote }}
+    - name: known
+      expression: {{ include "kube-dc.managedReferences.celList" $families.known | quote }}
+    - name: deleteKnown
+      expression: {{ include "kube-dc.managedReferences.celList" $families.deleteKnown | quote }}
+    - name: passthrough
+      expression: {{ include "kube-dc.managedReferences.celList" $families.passthrough | quote }}
+    - name: refusal
+      expression: |-
+        variables.gr in variables.known
+          ? request.resource.group + '/' + request.resource.version + ', Resource=' + request.resource.resource +
+            " is a service-family operation the platform's registry knows in other versions only; a tenant identity may not use it in version " +
+            request.resource.version + ' until the registry names that version (contact the platform administrator)'
+          : request.resource.group + '/' + request.resource.version + ', Resource=' + request.resource.resource +
+            " is neither a registered operation nor a declared passthrough resource of a service family (a resource the operator added or renamed); refusing rather than guessing until the platform's service-family registry names it (contact the platform administrator)"
+  validations:
+    - expression: >-
+        request.operation == 'DELETE' ||
+        variables.gvr in variables.registered || variables.gr in variables.passthrough
+      messageExpression: "variables.refusal"
+      message: "this resource or version is not named by the platform's service-family registry; a tenant identity may not use it"
+      reason: Forbidden
+    - expression: >-
+        request.operation != 'DELETE' ||
+        variables.gvr in variables.registered || variables.gr in variables.passthrough ||
+        (variables.gr in variables.known && !(variables.gr in variables.deleteKnown))
+      messageExpression: "variables.refusal"
+      message: "this resource or version is not named by the platform's service-family registry; a tenant identity may not delete it"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-references-family-resources
+spec:
+  policyName: managed-references-family-resources
+  validationActions: {{ toJson $p.validationActions }}
+{{- end }}
+{{- end }}

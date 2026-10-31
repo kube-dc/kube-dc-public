@@ -76,9 +76,12 @@ rules:
   resources: [resourceclaims]
   verbs: [get, list, watch]
 {{- end }}
+# update/patch as developer has them: admin must hold every Project role's
+# rules so an org-admin can bind any of them to the project's ServiceAccounts
+# (TestProjectAdminRoleCoversEveryProjectRole).
 - apiGroups: [apps]
   resources: [daemonsets, replicasets, statefulsets]
-  verbs: [create, get, list, watch, delete]
+  verbs: [create, get, list, watch, delete, update, patch]
 # RBAC
 - apiGroups: [rbac.authorization.k8s.io]
   resources: [roles, rolebindings]
@@ -145,16 +148,47 @@ rules:
 - apiGroups: [batch]
   resources: [jobs]
   verbs: [create, get, list, watch, delete]
-# CronJobs read — the Danger Zone "Take snapshot now" reads the daily
-# <cluster>-etcd-backup CronJob's jobTemplate so it can create a one-off
-# manual Job from the same spec. Read-only is enough.
+# CronJobs: the authority Jobs already have, plus update and patch.
+# Owner decision 2026-10-16; previously read-only.
+#
+# A CronJob is a Job with a schedule, so creating one confers nothing that
+# creating a Job does not. Every CREATE and UPDATE still passes the same three
+# project admission policies a Job passes: pod security (no host access, no
+# privileged containers), reserved platform identities (labels, owner
+# references, reserved ServiceAccounts) and managed-service template markers.
+#
+# update and patch are granted where Jobs have none because a CronJob is
+# long-lived and mutable: suspend and resume, schedule and image changes, and
+# a plain `kubectl apply` of one that already exists all need them. A Job's
+# pod template is immutable, so Jobs never needed them.
+#
+# Platform-owned CronJobs also live in project namespaces (the managed-cluster
+# <cluster>-etcd-backup, db-manager backup post-processing). Editing or
+# deleting one is NOT equivalent to creating a Job: it would stop or take over
+# the real schedule. protect-platform-cronjobs-in-projects
+# (vap-protect-platform-cronjobs.yaml) refuses tenant UPDATE and DELETE of
+# those, judged from the stored object.
+#
+# The Danger Zone "Take snapshot now" still reads the etcd-backup jobTemplate
+# to create a one-off Job from it.
 - apiGroups: [batch]
   resources: [cronjobs]
-  verbs: [get, list, watch]
+  verbs: [create, get, list, watch, update, patch, delete]
+# Leases: leader election for tenant controllers (owner decision 2026-10-17;
+# client-go's leaderelection supports no other lock since the ConfigMap lock
+# was removed). A Lease confers nothing outside the namespace; platform Leases
+# are kube-system/kube-dc, out of reach. protect-platform-leases-in-projects
+# (vap-protect-platform-leases.yaml) refuses tenant UPDATE and DELETE of a
+# platform-marked Lease should a platform controller ever elect in a project.
+- apiGroups: [coordination.k8s.io]
+  resources: [leases]
+  verbs: [create, get, list, watch, update, patch, delete]
 # Kube-DC resources
 - apiGroups: [kube-dc.com]
   resources: [eips, fips]
-  verbs: [create, get, list, watch, delete]
+  # update/patch: server-side apply (Terraform, kubectl apply --server-side)
+  # creates with PATCH. Nothing settable here that create does not allow.
+  verbs: [create, get, list, watch, update, patch, delete]
 {{- if .Values.routedNetwork.enabled }}
 - apiGroups: [kube-dc.com]
   resources: [projectrouteattachments]
@@ -179,9 +213,11 @@ rules:
   resources: [endpointslices]
   verbs: [get, list]
 # Gateway API
+# Routes on the shared Gateway are created only by platform controllers from
+# Service annotations; tenants never write them. RBAC enforces it.
 - apiGroups: [gateway.networking.k8s.io]
   resources: [httproutes, grpcroutes, tlsroutes]
-  verbs: [create, get, list, watch, delete, update, patch]
+  verbs: [get, list, watch]
 - apiGroups: [gateway.envoyproxy.io]
   resources: [backends]
   verbs: [get, list, watch]
@@ -209,6 +245,14 @@ rules:
   verbs: [get, list, watch]
 - apiGroups: [services.kube-dc.com]
   resources: [managedservices/status, serviceoperations/status, servicebindings/status, servicecredentialpolicies/status, serviceplacements, serviceplacements/status, servicebackups, servicebackups/status, replicationgroups/status, topologychanges, topologychanges/status]
+  verbs: [get, list, watch]
+# Service offerings (kube-dc-services service-offerings design, Tenant RBAC):
+# every Project role reads the plans offered to the Project and, reserved for
+# Stage 2, their prices. Read only: offerings are written by the platform's
+# kube-dc-offerings projector, never by a tenant, and nothing here grants
+# serviceofferings/status or any write verb (chart contract test).
+- apiGroups: [services.kube-dc.com]
+  resources: [serviceofferings, serviceofferingprices]
   verbs: [get, list, watch]
 # Database Engine Resources (CNPG + MariaDB operator)
 # `clusters` and `mariadbs` reads let the UI surface engine-side recovery
@@ -250,6 +294,40 @@ rules:
 - apiGroups: [security.kube-dc.com]
   resources: [managedsecrets/status, managedcertificates/status, kmskeys/status, databasecredentialpolicies/status]
   verbs: [get, list, watch]
+{{- if (.Values.platformOperations | default dict).enabled }}
+# Typed KMS operations (platform.kube-dc.com; docs/internal/platform-api-typed-operations.md),
+# the OpenBao transit tiers as RBAC: encrypt for every role, decrypt for developer+.
+- apiGroups: [platform.kube-dc.com]
+  resources: [kmsencryptions, kmsdecryptions]
+  verbs: [create]
+- apiGroups: [security.kube-dc.com]
+  resources: [kmskeys/encrypt, kmskeys/decrypt]
+  verbs: [create]
+# ManagedSecret values, the OpenBao KV tiers as RBAC: developer+ read and write.
+- apiGroups: [platform.kube-dc.com]
+  resources: [managedsecretvalues]
+  verbs: [get, update]
+# KMSKey rotation and database credentials, the OpenBao tiers as RBAC:
+# project-manager+ rotate and read static credentials; developer+ issue
+# dynamic ones.
+- apiGroups: [platform.kube-dc.com]
+  resources: [kmskeyrotations, databasecredentials, databasecredentialissues, databasecredentialrotations]
+  verbs: [create, get]
+- apiGroups: [security.kube-dc.com]
+  resources: [kmskeys/rotate, databasecredentialpolicies/issue, databasecredentialpolicies/rotate]
+  verbs: [create]
+# Destroying ManagedSecret versions for good: admin only (the OpenBao KV tier).
+- apiGroups: [platform.kube-dc.com]
+  resources: [managedsecretversiondestructions]
+  verbs: [create]
+- apiGroups: [security.kube-dc.com]
+  resources: [managedsecrets/destroy-version]
+  verbs: [create]
+# The project's platform audit log (every project role, as in the console).
+- apiGroups: [platform.kube-dc.com]
+  resources: [auditevents]
+  verbs: [list]
+{{- end }}
 
 ---
 # Developer Role - Can manage VMs, containers, workloads + project secrets (no RBAC)
@@ -353,14 +431,20 @@ rules:
 - apiGroups: [batch]
   resources: [jobs]
   verbs: [create, get, list, watch, delete]
-# CronJobs read — see admin role above.
+# CronJobs — see admin role above.
 - apiGroups: [batch]
   resources: [cronjobs]
-  verbs: [get, list, watch]
+  verbs: [create, get, list, watch, update, patch, delete]
+# Leases — see admin role above.
+- apiGroups: [coordination.k8s.io]
+  resources: [leases]
+  verbs: [create, get, list, watch, update, patch, delete]
 # Kube-DC resources
 - apiGroups: [kube-dc.com]
   resources: [eips, fips]
-  verbs: [create, get, list, watch, delete]
+  # update/patch: server-side apply (Terraform, kubectl apply --server-side)
+  # creates with PATCH. Nothing settable here that create does not allow.
+  verbs: [create, get, list, watch, update, patch, delete]
 # Cert-manager
 - apiGroups: [cert-manager.io]
   resources: [issuers, certificates]
@@ -377,9 +461,11 @@ rules:
   resources: [endpointslices]
   verbs: [get, list]
 # Gateway API
+# Routes on the shared Gateway are created only by platform controllers from
+# Service annotations; tenants never write them. RBAC enforces it.
 - apiGroups: [gateway.networking.k8s.io]
   resources: [httproutes, grpcroutes, tlsroutes]
-  verbs: [create, get, list, watch, delete, update, patch]
+  verbs: [get, list, watch]
 - apiGroups: [gateway.envoyproxy.io]
   resources: [backends]
   verbs: [get, list, watch]
@@ -402,6 +488,14 @@ rules:
   verbs: [get, list, watch]
 - apiGroups: [services.kube-dc.com]
   resources: [managedservices/status, serviceoperations/status, servicebindings/status, servicecredentialpolicies/status, serviceplacements, serviceplacements/status, servicebackups, servicebackups/status, replicationgroups/status, topologychanges, topologychanges/status]
+  verbs: [get, list, watch]
+# Service offerings (kube-dc-services service-offerings design, Tenant RBAC):
+# every Project role reads the plans offered to the Project and, reserved for
+# Stage 2, their prices. Read only: offerings are written by the platform's
+# kube-dc-offerings projector, never by a tenant, and nothing here grants
+# serviceofferings/status or any write verb (chart contract test).
+- apiGroups: [services.kube-dc.com]
+  resources: [serviceofferings, serviceofferingprices]
   verbs: [get, list, watch]
 # Database Engine Resources (CNPG + MariaDB operator)
 # `clusters` and `mariadbs` reads let the UI surface engine-side recovery
@@ -442,6 +536,32 @@ rules:
 - apiGroups: [security.kube-dc.com]
   resources: [managedsecrets/status, managedcertificates/status, kmskeys/status, databasecredentialpolicies/status]
   verbs: [get, list, watch]
+{{- if (.Values.platformOperations | default dict).enabled }}
+# Typed KMS operations (platform.kube-dc.com; docs/internal/platform-api-typed-operations.md),
+# the OpenBao transit tiers as RBAC: encrypt for every role, decrypt for developer+.
+- apiGroups: [platform.kube-dc.com]
+  resources: [kmsencryptions, kmsdecryptions]
+  verbs: [create]
+- apiGroups: [security.kube-dc.com]
+  resources: [kmskeys/encrypt, kmskeys/decrypt]
+  verbs: [create]
+# ManagedSecret values, the OpenBao KV tiers as RBAC: developer+ read and write.
+- apiGroups: [platform.kube-dc.com]
+  resources: [managedsecretvalues]
+  verbs: [get, update]
+# Database credentials, the OpenBao tiers as RBAC: developer issues dynamic
+# credentials; rotation and static credentials are project-manager+.
+- apiGroups: [platform.kube-dc.com]
+  resources: [databasecredentialissues]
+  verbs: [create]
+- apiGroups: [security.kube-dc.com]
+  resources: [databasecredentialpolicies/issue]
+  verbs: [create]
+# The project's platform audit log (every project role, as in the console).
+- apiGroups: [platform.kube-dc.com]
+  resources: [auditevents]
+  verbs: [list]
+{{- end }}
 
 ---
 # Project Manager Role - Can view all resources, manage some settings (no VM/container CRUD)
@@ -574,6 +694,14 @@ rules:
 - apiGroups: [services.kube-dc.com]
   resources: [replicationgroups, managedservices, managedservices/status, serviceoperations, serviceoperations/status, servicebindings, servicebindings/status, servicecredentialpolicies, servicecredentialpolicies/status, serviceplacements, serviceplacements/status, servicebackups, servicebackups/status, replicationgroups/status, topologychanges, topologychanges/status, servicedataplanegrants, servicedataplanegrants/status]
   verbs: [get, list, watch]
+# Service offerings (kube-dc-services service-offerings design, Tenant RBAC):
+# every Project role reads the plans offered to the Project and, reserved for
+# Stage 2, their prices. Read only: offerings are written by the platform's
+# kube-dc-offerings projector, never by a tenant, and nothing here grants
+# serviceofferings/status or any write verb (chart contract test).
+- apiGroups: [services.kube-dc.com]
+  resources: [serviceofferings, serviceofferingprices]
+  verbs: [get, list, watch]
 # Match legacy credential-policy access: project-manager may pause or adjust
 # an existing schedule, but may not create/delete policy objects.
 - apiGroups: [services.kube-dc.com]
@@ -612,6 +740,33 @@ rules:
 - apiGroups: [security.kube-dc.com]
   resources: [managedsecrets/status, managedcertificates/status, kmskeys/status, databasecredentialpolicies/status]
   verbs: [get, list, watch]
+{{- if (.Values.platformOperations | default dict).enabled }}
+# Typed KMS operations (platform.kube-dc.com; docs/internal/platform-api-typed-operations.md),
+# the OpenBao transit tiers as RBAC: encrypt for every role, decrypt for developer+.
+- apiGroups: [platform.kube-dc.com]
+  resources: [kmsencryptions, kmsdecryptions]
+  verbs: [create]
+- apiGroups: [security.kube-dc.com]
+  resources: [kmskeys/encrypt, kmskeys/decrypt]
+  verbs: [create]
+# ManagedSecret values, the OpenBao KV tiers as RBAC: developer+ read and write.
+- apiGroups: [platform.kube-dc.com]
+  resources: [managedsecretvalues]
+  verbs: [get, update]
+# KMSKey rotation and database credentials, the OpenBao tiers as RBAC:
+# project-manager+ rotate and read static credentials; developer+ issue
+# dynamic ones.
+- apiGroups: [platform.kube-dc.com]
+  resources: [kmskeyrotations, databasecredentials, databasecredentialissues, databasecredentialrotations]
+  verbs: [create, get]
+- apiGroups: [security.kube-dc.com]
+  resources: [kmskeys/rotate, databasecredentialpolicies/issue, databasecredentialpolicies/rotate]
+  verbs: [create]
+# The project's platform audit log (every project role, as in the console).
+- apiGroups: [platform.kube-dc.com]
+  resources: [auditevents]
+  verbs: [list]
+{{- end }}
 
 ---
 # User Role - Read-only access to project resources
@@ -740,6 +895,14 @@ rules:
 - apiGroups: [services.kube-dc.com]
   resources: [replicationgroups, managedservices, managedservices/status, serviceoperations, serviceoperations/status, servicebindings, servicebindings/status, servicecredentialpolicies, servicecredentialpolicies/status, serviceplacements, serviceplacements/status, servicebackups, servicebackups/status, replicationgroups/status, topologychanges, topologychanges/status, servicedataplanegrants, servicedataplanegrants/status]
   verbs: [get, list, watch]
+# Service offerings (kube-dc-services service-offerings design, Tenant RBAC):
+# every Project role reads the plans offered to the Project and, reserved for
+# Stage 2, their prices. Read only: offerings are written by the platform's
+# kube-dc-offerings projector, never by a tenant, and nothing here grants
+# serviceofferings/status or any write verb (chart contract test).
+- apiGroups: [services.kube-dc.com]
+  resources: [serviceofferings, serviceofferingprices]
+  verbs: [get, list, watch]
 # Database Engine Resources - read only
 - apiGroups: [postgresql.cnpg.io]
   resources: [backups, scheduledbackups, clusters]
@@ -764,3 +927,17 @@ rules:
 - apiGroups: [security.kube-dc.com]
   resources: [managedsecrets/status, managedcertificates/status, kmskeys/status, databasecredentialpolicies/status]
   verbs: [get, list, watch]
+{{- if (.Values.platformOperations | default dict).enabled }}
+# Typed KMS operations (platform.kube-dc.com; docs/internal/platform-api-typed-operations.md),
+# the OpenBao transit tiers as RBAC: encrypt for every role, decrypt for developer+.
+- apiGroups: [platform.kube-dc.com]
+  resources: [kmsencryptions]
+  verbs: [create]
+- apiGroups: [security.kube-dc.com]
+  resources: [kmskeys/encrypt]
+  verbs: [create]
+# The project's platform audit log (every project role, as in the console).
+- apiGroups: [platform.kube-dc.com]
+  resources: [auditevents]
+  verbs: [list]
+{{- end }}

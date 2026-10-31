@@ -1,0 +1,83 @@
+{{- /*
+The pure part of vnetworkattachnamespace.kube-dc.com, as a
+ValidatingAdmissionPolicy. docs/prd/admission-webhooks-must-not-block-the-platform.md,
+step 2b.
+
+Kube-OVN uses a Namespace's ovn.kubernetes.io/logical_switch (and the other
+network-selector annotations) as the default network of every pod in it that
+does not select one itself, so changing them on a project namespace moves a
+whole tenant. Only the exact Kube-OVN controller identity may change them.
+This is internal/webhook/core/network_attach_webhook.go's
+NamespaceNetworkValidator without its lookup: networkSelectorsChanged() -- a
+key that is Multus' networks or default-network annotation, or ends in
+.kubernetes.io/logical_switch, .kubernetes.io/logical_router or
+.kubernetes.io/vpc, is added, removed or changed (on CREATE: present).
+
+Selection: namespaces carrying the kube-dc.com/project label, before or after
+the write (an objectSelector also matches the old object, so stripping the
+label in the same update stays judged). The label is the protected project
+marker: tenant Roles grant no Namespace writes. A namespace that only a
+ProjectNetwork names, or that carries only the kube-dc.com/project
+annotation, is judged by the webhook alone.
+
+failurePolicy: Ignore -- a policy that cannot be evaluated must not block
+namespace writes; evaluated violations are refused (the binding's Deny).
+
+Recovery: an operator repairing a project namespace's selector authenticates
+with the break-glass group kube-dc:network-selector-break-glass (by
+impersonation, which only cluster administrators hold:
+kubectl --as=<admin> --as-group=kube-dc:network-selector-break-glass). The
+webhook handler exempts the same group (NamespaceNetworkBreakGlassGroup).
+
+Rendered from manager.webhook.broadGatesHandoffPhase 1, so it is cached before
+the webhook fails open at phase 2.
+*/ -}}
+{{- if and .Values.projectNetwork.enabled (ge (int .Values.manager.webhook.broadGatesHandoffPhase) 1) }}
+{{- $sel := "(k == 'k8s.v1.cni.cncf.io/networks' || k == 'v1.multus-cni.io/default-network' || k.endsWith('.kubernetes.io/logical_switch') || k.endsWith('.kubernetes.io/logical_router') || k.endsWith('.kubernetes.io/vpc'))" }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: project-namespace-network-selectors
+spec:
+  failurePolicy: Ignore
+  matchConstraints:
+    objectSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["namespaces"]
+  matchConditions:
+    - name: not-the-cni-itself
+      expression: >-
+        request.userInfo.username != '{{ required "projectNetwork.kubeOvnControllerUsername is required when projectNetwork is enabled" .Values.projectNetwork.kubeOvnControllerUsername }}'
+    - name: not-break-glass
+      expression: >-
+        !has(request.userInfo.groups) || !('kube-dc:network-selector-break-glass' in request.userInfo.groups)
+  variables:
+    - name: newAnnotations
+      expression: "has(object.metadata.annotations) ? object.metadata.annotations : {}"
+    - name: oldAnnotations
+      expression: "request.operation == 'UPDATE' && has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}"
+    - name: selectorsChanged
+      expression: |-
+        variables.newAnnotations.exists(k, {{ $sel }} &&
+          !(k in variables.oldAnnotations && variables.oldAnnotations[k] == variables.newAnnotations[k])) ||
+        variables.oldAnnotations.exists(k, {{ $sel }} && !(k in variables.newAnnotations))
+  validations:
+    - expression: "!variables.selectorsChanged"
+      messageExpression: >-
+        'tenant-VLAN attachment denied: network-select annotations on project namespace ' + object.metadata.name +
+        ' are managed by Kube-OVN and may not be changed directly'
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: project-namespace-network-selectors
+spec:
+  policyName: project-namespace-network-selectors
+  validationActions: [Deny]
+{{- end }}

@@ -21,9 +21,12 @@ cluster and fail before deleting any webhook configuration.
 {{- /*
 Two independent features put a FAIL-CLOSED webhook on the ordinary pod path:
 tenant-VLAN attachment (projectNetwork) and managed-services protection
-(managed-references / managed-subresource / the token and connect gates, all
-failurePolicy: Fail since chart v0.6.21). Either one makes a manager outage an
-outage for tenant workload creation, so the budget is rendered for either.
+(managed-references and the connect gate, failurePolicy: Fail since chart
+v0.6.21; the subresource and token gates too, until
+manager.webhook.broadGatesHandoffPhase 2 of
+docs/prd/admission-webhooks-must-not-block-the-platform.md step 2b). Either one makes a
+manager outage an outage for tenant workload creation, so the budget is
+rendered for either.
 */ -}}
 {{- /*
 Only where there are replicas to lose. A budget over a knowingly single-replica

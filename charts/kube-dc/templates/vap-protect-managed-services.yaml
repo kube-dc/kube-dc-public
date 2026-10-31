@@ -49,9 +49,12 @@ still holds `*` on `*` over the platform's engine.
 #
 # Closed residuals (each has its own gate):
 #   - a token for the per-instance ServiceAccount: the manager's
-#     managed-serviceaccount-token webhook.
-#   - pods/eviction and */scale: the manager's managed-subresource webhook;
-#     CNPG's clusters/scale is closed below.
+#     managed-serviceaccount-token webhook, and from
+#     manager.webhook.broadGatesHandoffPhase 1 the managed-serviceaccount-tokens
+#     policy (step 2b of docs/prd/admission-webhooks-must-not-block-the-platform.md;
+#     the webhook fails open from phase 2).
+#   - pods/eviction and */scale: the manager's managed-subresource webhook
+#     (fails open from phase 2); CNPG's clusters/scale is closed below.
 #   - a tenant pod mounting a managed claim or running as the engine's
 #     account: the manager's managed-pod-references webhook (decided on the
 #     pod, since tenant pods are created by kube-system controllers).
@@ -67,16 +70,14 @@ still holds `*` on `*` over the platform's engine.
        whether the control-plane identities and nodes are exempt. */}}
 {{- define "kube-dc.managedServicesPolicy.matchConditions" }}
 - name: exclude-platform-service-accounts
-  expression: >-
-    !has(request.userInfo) || !has(request.userInfo.username) ||
-    !([{{ range $i, $ns := .namespaces }}{{ if $i }},
+  expression: |-
+    !has(request.userInfo) || !has(request.userInfo.username) || !([{{ range $i, $ns := .namespaces }}{{ if $i }},
        {{ end }}'system:serviceaccount:{{ $ns }}:'{{ end }}].exists(prefix,
          request.userInfo.username.startsWith(prefix)))
 {{- if .controlPlane }}
 - name: exclude-control-plane-identities
-  expression: >-
-    !has(request.userInfo) || !has(request.userInfo.username) ||
-    !(request.userInfo.username.startsWith('system:kube-') ||
+  expression: |-
+    !has(request.userInfo) || !has(request.userInfo.username) || !(request.userInfo.username.startsWith('system:kube-') ||
       request.userInfo.username == 'system:apiserver')
 {{- end }}
 - name: exclude-cluster-admins
@@ -152,6 +153,7 @@ spec:
 {{- include "kube-dc.instancePodConditions.handoff" $ | nindent 4 }}
 {{- include "kube-dc.publicationWrites.handoff" $ | nindent 4 }}
   variables:
+    {{- include "kube-dc.mysqlRouterTLSRefresh.variable" $ | nindent 4 }}
     # CREATE has no oldObject; DELETE has no object.
     - name: oldLabels
       expression: "request.operation != 'CREATE' && has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}"
@@ -173,15 +175,13 @@ spec:
     - name: reservedKeys
       expression: {{ include "kube-dc.reservedLabelKeysCEL" . }}
     - name: reservedUnchanged
-      expression: >-
-        request.operation != 'UPDATE' ||
-        variables.reservedKeys.all(k,
+      expression: |-
+        request.operation != 'UPDATE' || variables.reservedKeys.all(k,
           (k in variables.oldLabels) == (k in variables.newLabels) &&
           (!(k in variables.oldLabels) || variables.oldLabels[k] == variables.newLabels[k]))
     - name: certManagerOwn
-      expression: >-
-        request.userInfo.username.startsWith('system:serviceaccount:cert-manager:') &&
-        (request.resource.group == 'cert-manager.io' ||
+      expression: |-
+        request.userInfo.username.startsWith('system:serviceaccount:cert-manager:') && (request.resource.group == 'cert-manager.io' ||
          ((request.operation == 'CREATE' || variables.provenance == 'cert-manager') && variables.reservedUnchanged))
     # CSI resizers update claims created by CNPG, not by Rook. Their status
     # writes cannot satisfy the bucket-child provenance predicate. Scope this
@@ -196,9 +196,8 @@ spec:
         object.metadata.?ownerReferences.orValue([]) == oldObject.metadata.?ownerReferences.orValue([]) &&
         object.metadata.?finalizers.orValue([]) == oldObject.metadata.?finalizers.orValue([])
     - name: rookOwn
-      expression: >-
-        request.userInfo.username.startsWith('system:serviceaccount:rook-ceph:') &&
-        (variables.rookCSIStatus || request.resource.group == 'objectbucket.io' ||
+      expression: |-
+        request.userInfo.username.startsWith('system:serviceaccount:rook-ceph:') && (variables.rookCSIStatus || request.resource.group == 'objectbucket.io' ||
          ((request.operation == 'CREATE' || variables.provenance == 'rook-ceph') && variables.reservedUnchanged))
     # Native managed TLSRoutes are reconciled by Envoy, not by the runner.
     # This is an exact-identity STATUS exception, not a namespace exemption.
@@ -244,16 +243,10 @@ spec:
     # v0.6.36), once every target cluster ran the stanza, excluded
     # clusters/status from this policy (matchConstraints.excludeResourceRules)
     # and the webhook became the sole judge.
-    - expression: >-
-        variables.gatewayRouteStatus ||
-        (request.userInfo.username.startsWith('system:serviceaccount:cert-manager:') && variables.certManagerOwn) ||
-        (request.userInfo.username.startsWith('system:serviceaccount:rook-ceph:') && variables.rookOwn) ||
-        (request.operation != 'CREATE' &&
-        'cnpg.io/cluster' in variables.oldLabels &&
-        request.userInfo.username ==
+    - expression: |-
+        variables.mysqlRouterTLSRefresh || variables.gatewayRouteStatus || (request.userInfo.username.startsWith('system:serviceaccount:cert-manager:') && variables.certManagerOwn) || (request.userInfo.username.startsWith('system:serviceaccount:rook-ceph:') && variables.rookOwn) || (request.operation != 'CREATE' && 'cnpg.io/cluster' in variables.oldLabels && request.userInfo.username ==
           'system:serviceaccount:' + request.namespace + ':' + variables.oldLabels['cnpg.io/cluster'] &&
-        request.resource.group == 'postgresql.cnpg.io' &&
-        (request.operation == 'DELETE' ||
+        request.resource.group == 'postgresql.cnpg.io' && (request.operation == 'DELETE' ||
           ('cnpg.io/cluster' in variables.newLabels &&
            variables.newLabels['cnpg.io/cluster'] == variables.oldLabels['cnpg.io/cluster'])))
       messageExpression: >-
@@ -313,7 +306,7 @@ spec:
   validations:
     # A marker is neither added, changed nor removed by a tenant identity: it
     # must be present in both old and new with the same value, or in neither.
-    - expression: >-
+    - expression: |-
         !variables.markers.exists(m,
           (m in variables.newLabels || m in variables.oldLabels) &&
           !(m in variables.oldLabels && m in variables.newLabels && variables.oldLabels[m] == variables.newLabels[m]))
@@ -425,13 +418,14 @@ spec:
   matchConditions:
     {{- include "kube-dc.managedServicesPolicy.matchConditions" (dict "namespaces" (include "kube-dc.managedServices.exemptNamespaces" $ | fromJsonArray) "controlPlane" true "nodes" true) | nindent 4 }}
   variables:
+    {{- include "kube-dc.mysqlRouterTLSRefresh.variable" $ | nindent 4 }}
     - name: markers
       expression: {{ include "kube-dc.reservedLabelKeysCEL" . }}
     # The workload kinds keep their pod template under spec.template, a
     # CronJob under spec.jobTemplate.spec.template, the core PodTemplate under
     # template. Every step is guarded: a missing parent must read as {}.
     - name: templateLabels
-      expression: >-
+      expression: |-
         has(object.spec) && has(object.spec.template) && has(object.spec.template.metadata) && has(object.spec.template.metadata.labels)
           ? object.spec.template.metadata.labels
           : (has(object.spec) && has(object.spec.jobTemplate) && has(object.spec.jobTemplate.spec) && has(object.spec.jobTemplate.spec.template) &&
@@ -443,7 +437,7 @@ spec:
     # templates; the labels a tenant writes here would be laundered into
     # platform-created objects.
     - name: claimTemplateLabels
-      expression: >-
+      expression: |-
         has(object.spec) && has(object.spec.volumeClaimTemplates)
           ? object.spec.volumeClaimTemplates.map(t, has(t.metadata) && has(t.metadata.labels) ? t.metadata.labels : {})
           : []
@@ -451,7 +445,7 @@ spec:
     # controller into the objects it creates; a reference to a marked owner
     # would then read as the platform's provenance. Templates carry none.
     - name: templateOwnerRefs
-      expression: >-
+      expression: |-
         (has(object.spec) && has(object.spec.template) && has(object.spec.template.metadata) && has(object.spec.template.metadata.ownerReferences)
           ? size(object.spec.template.metadata.ownerReferences) : 0) +
         (has(object.spec) && has(object.spec.jobTemplate) && has(object.spec.jobTemplate.spec) && has(object.spec.jobTemplate.spec.template) &&
@@ -467,7 +461,7 @@ spec:
         a pod template or volumeClaimTemplate may not carry ownerReferences;
         the controller sets them on what it creates
       reason: Forbidden
-    - expression: "!variables.markers.exists(m, m in variables.templateLabels)"
+    - expression: "variables.mysqlRouterTLSRefresh || !variables.markers.exists(m, m in variables.templateLabels)"
       message: >-
         a pod template may not carry services.kube-dc.com/managed-by,
         services.kube-dc.com/instance, services.kube-dc.com/instance-uid,

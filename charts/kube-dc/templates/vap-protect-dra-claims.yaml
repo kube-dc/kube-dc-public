@@ -27,7 +27,7 @@ spec:
     - name: exclude-backend
       expression: request.userInfo.username != {{ $backendUsername | quote }}
     - name: exclude-namespace-teardown
-      expression: >-
+      expression: |-
         !(request.operation == 'DELETE' && request.userInfo.username in [
           'system:serviceaccount:kube-system:namespace-controller',
           'system:serviceaccount:kube-system:generic-garbage-collector',
@@ -68,16 +68,16 @@ spec:
         resources: ["resourceclaims"]
   matchConditions:
     - name: exclude-claim-controller
-      expression: >-
+      expression: |-
         !(request.userInfo.username in [
           'system:kube-controller-manager',
           'system:serviceaccount:kube-system:resource-claim-controller'])
     - name: exclude-scheduler-finalizer
-      expression: >-
+      expression: |-
         !(request.operation == 'UPDATE' &&
           request.userInfo.username == 'system:kube-scheduler')
     - name: exclude-namespace-teardown
-      expression: >-
+      expression: |-
         !(request.operation == 'DELETE' && request.userInfo.username in [
           'system:serviceaccount:kube-system:namespace-controller',
           'system:serviceaccount:kube-system:generic-garbage-collector'])
@@ -117,7 +117,7 @@ spec:
         resources: ["deployments"]
   matchConditions:
     - name: has-dra-contract
-      expression: >-
+      expression: |-
         (request.operation == 'DELETE' ?
           (has(oldObject.spec.template.spec.resourceClaims) ||
            (has(oldObject.metadata.labels) &&
@@ -130,7 +130,7 @@ spec:
     - name: exclude-backend
       expression: request.userInfo.username != {{ $backendUsername | quote }}
     - name: exclude-namespace-teardown
-      expression: >-
+      expression: |-
         !(request.operation == 'DELETE' && request.userInfo.username in [
           'system:serviceaccount:kube-system:namespace-controller',
           'system:serviceaccount:kube-system:generic-garbage-collector',

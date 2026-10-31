@@ -41,14 +41,12 @@ spec:
         has(object.spec.template.metadata.labels) &&
         {{ $profileLabel | quote }} in object.spec.template.metadata.labels
   validations:
-    - expression: >-
-        !variables.hasGPU ||
-        (variables.hasProfileLabel &&
+    - expression: |-
+        !variables.hasGPU || (variables.hasProfileLabel &&
          object.metadata.labels[{{ $profileLabel | quote }}] in {{ $profileIDs | toJson }})
       message: "GPU VMs require an enabled kube-dc GPU profile label."
-    - expression: >-
-        !variables.hasProfileLabel ||
-        (variables.hasGPU && variables.templateHasProfileLabel &&
+    - expression: |-
+        !variables.hasProfileLabel || (variables.hasGPU && variables.templateHasProfileLabel &&
          dyn(object.spec.template.metadata).labels[{{ $profileLabel | quote }}] ==
            object.metadata.labels[{{ $profileLabel | quote }}])
       message: "The GPU profile label is unknown, missing from the VMI template, or has no GPU device."
@@ -90,9 +88,8 @@ spec:
       expression: object.spec
 {{ include "kube-dc.gpuVirtualMachineVariables" (dict "profileLabel" $profileLabel) | nindent 4 }}
   validations:
-    - expression: >-
-        !variables.hasGPU ||
-        (variables.hasProfileLabel &&
+    - expression: |-
+        !variables.hasGPU || (variables.hasProfileLabel &&
          object.metadata.labels[{{ $profileLabel | quote }}] in {{ $profileIDs | toJson }})
       message: "GPU VMIs require an enabled kube-dc GPU profile label."
     - expression: variables.hasGPU == variables.hasProfileLabel

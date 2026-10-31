@@ -1,0 +1,196 @@
+# Append-only cleanup checkpoints survive chart rollback. Keep the policy and
+# binding installed while any prospective Project receipt remains unfinished.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: protect-project-load-balancer-checkpoints
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [kube-dc.com]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [projects, projects/status, projects/finalizers]
+  variables:
+    - name: core
+      expression: >-
+        request.userInfo.username == 'system:serviceaccount:{{ .Release.Namespace }}:{{ include "kube-dc.manager.serviceAccountName" . }}'
+    - name: current
+      expression: 'has(object.metadata.annotations) ? object.metadata.annotations : {}'
+    - name: previous
+      expression: 'oldObject != null && has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}'
+    - name: oldKeys
+      expression: "variables.previous.filter(k, k.startsWith('network.kube-dc.com/lb-cleanup-'))"
+    - name: newKeys
+      expression: "variables.current.filter(k, k.startsWith('network.kube-dc.com/lb-cleanup-'))"
+    - name: held
+      expression: "has(object.metadata.finalizers) && 'network.kube-dc.com/owned-load-balancers-v1' in object.metadata.finalizers"
+    - name: previouslyHeld
+      expression: "oldObject != null && has(oldObject.metadata.finalizers) && 'network.kube-dc.com/owned-load-balancers-v1' in oldObject.metadata.finalizers"
+  validations:
+    - expression: >-
+        variables.oldKeys.all(k, k in variables.current && variables.current[k] == variables.previous[k])
+      message: Project load-balancer checkpoints cannot be changed or removed, including by their core writer.
+    - expression: >-
+        variables.newKeys.all(k, k in variables.previous || variables.core) &&
+        (!variables.held || variables.previouslyHeld || variables.core)
+      message: Only the configured core manager may introduce Project load-balancer checkpoints or their finalizer.
+    - expression: >-
+        variables.newKeys.all(k, k in ['network.kube-dc.com/lb-cleanup-plan', 'network.kube-dc.com/lb-cleanup-nonce', 'network.kube-dc.com/lb-cleanup-namespace-intent', 'network.kube-dc.com/lb-cleanup-namespace-uid', 'network.kube-dc.com/lb-cleanup-fence-intent', 'network.kube-dc.com/lb-cleanup-fence-uuid', 'network.kube-dc.com/lb-cleanup-lb-intent', 'network.kube-dc.com/lb-cleanup-lb-rows', 'network.kube-dc.com/lb-cleanup-vpc-intent', 'network.kube-dc.com/lb-cleanup-vpc-uid', 'network.kube-dc.com/lb-cleanup-subnet-intent', 'network.kube-dc.com/lb-cleanup-subnet-uid', 'network.kube-dc.com/lb-cleanup-closed', 'network.kube-dc.com/lb-cleanup-never-started', 'network.kube-dc.com/lb-cleanup-terminal', 'network.kube-dc.com/lb-cleanup-complete'] && variables.current[k] != '' && size(variables.current[k]) <= 16384)
+      message: Unknown, empty or oversized Project load-balancer checkpoints are rejected.
+    - expression: |-
+        (size(variables.newKeys) == 0 && !variables.held) || ('network.kube-dc.com/lb-cleanup-plan' in variables.current && 'network.kube-dc.com/lb-cleanup-nonce' in variables.current &&
+         variables.current['network.kube-dc.com/lb-cleanup-nonce'].matches('^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$') &&
+         variables.current['network.kube-dc.com/lb-cleanup-nonce'] != '00000000-0000-0000-0000-000000000000' &&
+         (variables.held || ('network.kube-dc.com/lb-cleanup-complete' in variables.current && variables.current['network.kube-dc.com/lb-cleanup-complete'] == variables.current['network.kube-dc.com/lb-cleanup-nonce'])))
+      message: A prospective Project requires its atomic immutable plan, nonce and cleanup finalizer until completion.
+    - expression: >-
+        !variables.previouslyHeld || variables.held ||
+        ('network.kube-dc.com/lb-cleanup-complete' in variables.previous && 'network.kube-dc.com/lb-cleanup-nonce' in variables.previous && variables.previous['network.kube-dc.com/lb-cleanup-complete'] == variables.previous['network.kube-dc.com/lb-cleanup-nonce'])
+      message: The cleanup finalizer remains until its original nonce is durably complete.
+    - expression: |-
+        variables.newKeys.all(k, !k.endsWith('-intent') || k in variables.previous ||
+          (!has(object.metadata.deletionTimestamp) && !('network.kube-dc.com/lb-cleanup-closed' in variables.current)))
+      message: Provisioning intents cannot start after Project deletion or permanent fence closure.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-namespace-intent' in variables.current) || variables.current['network.kube-dc.com/lb-cleanup-namespace-intent'] == variables.current['network.kube-dc.com/lb-cleanup-nonce']
+      message: Each provisioning or terminal checkpoint must retain the original enrollment nonce.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-fence-intent' in variables.current) || variables.current['network.kube-dc.com/lb-cleanup-fence-intent'] == variables.current['network.kube-dc.com/lb-cleanup-nonce']
+      message: Each provisioning or terminal checkpoint must retain the original enrollment nonce.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-lb-intent' in variables.current) || variables.current['network.kube-dc.com/lb-cleanup-lb-intent'] == variables.current['network.kube-dc.com/lb-cleanup-nonce']
+      message: Each provisioning or terminal checkpoint must retain the original enrollment nonce.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-vpc-intent' in variables.current) || variables.current['network.kube-dc.com/lb-cleanup-vpc-intent'] == variables.current['network.kube-dc.com/lb-cleanup-nonce']
+      message: Each provisioning or terminal checkpoint must retain the original enrollment nonce.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-subnet-intent' in variables.current) || variables.current['network.kube-dc.com/lb-cleanup-subnet-intent'] == variables.current['network.kube-dc.com/lb-cleanup-nonce']
+      message: Each provisioning or terminal checkpoint must retain the original enrollment nonce.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-closed' in variables.current) || variables.current['network.kube-dc.com/lb-cleanup-closed'] == variables.current['network.kube-dc.com/lb-cleanup-nonce']
+      message: Each provisioning or terminal checkpoint must retain the original enrollment nonce.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-terminal' in variables.current) || variables.current['network.kube-dc.com/lb-cleanup-terminal'] == variables.current['network.kube-dc.com/lb-cleanup-nonce']
+      message: Each provisioning or terminal checkpoint must retain the original enrollment nonce.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-complete' in variables.current) || variables.current['network.kube-dc.com/lb-cleanup-complete'] == variables.current['network.kube-dc.com/lb-cleanup-nonce']
+      message: Each provisioning or terminal checkpoint must retain the original enrollment nonce.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-namespace-intent' in variables.current) || ('network.kube-dc.com/lb-cleanup-plan' in variables.current && 'network.kube-dc.com/lb-cleanup-nonce' in variables.current)
+      message: Cleanup checkpoints require their original preceding ownership and operation checkpoints.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-namespace-intent' in variables.current) || 'network.kube-dc.com/lb-cleanup-namespace-intent' in variables.previous || ('network.kube-dc.com/lb-cleanup-plan' in variables.previous && 'network.kube-dc.com/lb-cleanup-nonce' in variables.previous)
+      message: Each new phase requires its prerequisite to have been persisted in an earlier API operation.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-namespace-uid' in variables.current) || ('network.kube-dc.com/lb-cleanup-namespace-intent' in variables.current)
+      message: Cleanup checkpoints require their original preceding ownership and operation checkpoints.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-namespace-uid' in variables.current) || 'network.kube-dc.com/lb-cleanup-namespace-uid' in variables.previous || ('network.kube-dc.com/lb-cleanup-namespace-intent' in variables.previous)
+      message: Each new phase requires its prerequisite to have been persisted in an earlier API operation.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-fence-intent' in variables.current) || ('network.kube-dc.com/lb-cleanup-namespace-uid' in variables.current)
+      message: Cleanup checkpoints require their original preceding ownership and operation checkpoints.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-fence-intent' in variables.current) || 'network.kube-dc.com/lb-cleanup-fence-intent' in variables.previous || ('network.kube-dc.com/lb-cleanup-namespace-uid' in variables.previous)
+      message: Each new phase requires its prerequisite to have been persisted in an earlier API operation.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-fence-uuid' in variables.current) || ('network.kube-dc.com/lb-cleanup-fence-intent' in variables.current)
+      message: Cleanup checkpoints require their original preceding ownership and operation checkpoints.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-fence-uuid' in variables.current) || 'network.kube-dc.com/lb-cleanup-fence-uuid' in variables.previous || ('network.kube-dc.com/lb-cleanup-fence-intent' in variables.previous)
+      message: Each new phase requires its prerequisite to have been persisted in an earlier API operation.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-lb-intent' in variables.current) || ('network.kube-dc.com/lb-cleanup-fence-uuid' in variables.current)
+      message: Cleanup checkpoints require their original preceding ownership and operation checkpoints.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-lb-intent' in variables.current) || 'network.kube-dc.com/lb-cleanup-lb-intent' in variables.previous || ('network.kube-dc.com/lb-cleanup-fence-uuid' in variables.previous)
+      message: Each new phase requires its prerequisite to have been persisted in an earlier API operation.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-lb-rows' in variables.current) || ('network.kube-dc.com/lb-cleanup-lb-intent' in variables.current)
+      message: Cleanup checkpoints require their original preceding ownership and operation checkpoints.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-lb-rows' in variables.current) || 'network.kube-dc.com/lb-cleanup-lb-rows' in variables.previous || ('network.kube-dc.com/lb-cleanup-lb-intent' in variables.previous)
+      message: Each new phase requires its prerequisite to have been persisted in an earlier API operation.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-vpc-intent' in variables.current) || ('network.kube-dc.com/lb-cleanup-lb-rows' in variables.current)
+      message: Cleanup checkpoints require their original preceding ownership and operation checkpoints.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-vpc-intent' in variables.current) || 'network.kube-dc.com/lb-cleanup-vpc-intent' in variables.previous || ('network.kube-dc.com/lb-cleanup-lb-rows' in variables.previous)
+      message: Each new phase requires its prerequisite to have been persisted in an earlier API operation.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-vpc-uid' in variables.current) || ('network.kube-dc.com/lb-cleanup-vpc-intent' in variables.current)
+      message: Cleanup checkpoints require their original preceding ownership and operation checkpoints.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-vpc-uid' in variables.current) || 'network.kube-dc.com/lb-cleanup-vpc-uid' in variables.previous || ('network.kube-dc.com/lb-cleanup-vpc-intent' in variables.previous)
+      message: Each new phase requires its prerequisite to have been persisted in an earlier API operation.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-subnet-intent' in variables.current) || ('network.kube-dc.com/lb-cleanup-vpc-uid' in variables.current)
+      message: Cleanup checkpoints require their original preceding ownership and operation checkpoints.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-subnet-intent' in variables.current) || 'network.kube-dc.com/lb-cleanup-subnet-intent' in variables.previous || ('network.kube-dc.com/lb-cleanup-vpc-uid' in variables.previous)
+      message: Each new phase requires its prerequisite to have been persisted in an earlier API operation.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-subnet-uid' in variables.current) || ('network.kube-dc.com/lb-cleanup-subnet-intent' in variables.current)
+      message: Cleanup checkpoints require their original preceding ownership and operation checkpoints.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-subnet-uid' in variables.current) || 'network.kube-dc.com/lb-cleanup-subnet-uid' in variables.previous || ('network.kube-dc.com/lb-cleanup-subnet-intent' in variables.previous)
+      message: Each new phase requires its prerequisite to have been persisted in an earlier API operation.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-closed' in variables.current) || ('network.kube-dc.com/lb-cleanup-plan' in variables.current && 'network.kube-dc.com/lb-cleanup-nonce' in variables.current)
+      message: Cleanup checkpoints require their original preceding ownership and operation checkpoints.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-closed' in variables.current) || 'network.kube-dc.com/lb-cleanup-closed' in variables.previous || ('network.kube-dc.com/lb-cleanup-plan' in variables.previous && 'network.kube-dc.com/lb-cleanup-nonce' in variables.previous)
+      message: Each new phase requires its prerequisite to have been persisted in an earlier API operation.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-never-started' in variables.current) || ('network.kube-dc.com/lb-cleanup-closed' in variables.current)
+      message: Cleanup checkpoints require their original preceding ownership and operation checkpoints.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-never-started' in variables.current) || 'network.kube-dc.com/lb-cleanup-never-started' in variables.previous || ('network.kube-dc.com/lb-cleanup-closed' in variables.previous)
+      message: Each new phase requires its prerequisite to have been persisted in an earlier API operation.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-terminal' in variables.current) || ('network.kube-dc.com/lb-cleanup-closed' in variables.current && 'network.kube-dc.com/lb-cleanup-never-started' in variables.current)
+      message: Cleanup checkpoints require their original preceding ownership and operation checkpoints.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-terminal' in variables.current) || 'network.kube-dc.com/lb-cleanup-terminal' in variables.previous || ('network.kube-dc.com/lb-cleanup-closed' in variables.previous && 'network.kube-dc.com/lb-cleanup-never-started' in variables.previous)
+      message: Each new phase requires its prerequisite to have been persisted in an earlier API operation.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-complete' in variables.current) || ('network.kube-dc.com/lb-cleanup-terminal' in variables.current)
+      message: Cleanup checkpoints require their original preceding ownership and operation checkpoints.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-complete' in variables.current) || 'network.kube-dc.com/lb-cleanup-complete' in variables.previous || ('network.kube-dc.com/lb-cleanup-terminal' in variables.previous)
+      message: Each new phase requires its prerequisite to have been persisted in an earlier API operation.
+    - expression: >-
+        variables.previouslyHeld || !variables.held || 'project.kube-dc.com/finalizer' in object.metadata.finalizers
+      message: Enrollment must retain the ordinary Project lifecycle finalizer atomically.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-never-started' in variables.current) || variables.current['network.kube-dc.com/lb-cleanup-never-started'] == '[' + ['namespace', 'fence', 'lb', 'vpc', 'subnet'].filter(p, !('network.kube-dc.com/lb-cleanup-' + p + '-intent' in variables.current)).map(p, '"' + p + '"').join(',') + ']'
+      message: Cancellation records must list exactly the phases whose intent never started.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-terminal' in variables.current) || !('network.kube-dc.com/lb-cleanup-namespace-intent' in variables.current) || 'network.kube-dc.com/lb-cleanup-namespace-uid' in variables.previous
+      message: A terminal receipt cannot cancel an ambiguous provisioning operation.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-terminal' in variables.current) || !('network.kube-dc.com/lb-cleanup-fence-intent' in variables.current) || 'network.kube-dc.com/lb-cleanup-fence-uuid' in variables.previous
+      message: A terminal receipt cannot cancel an ambiguous provisioning operation.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-terminal' in variables.current) || !('network.kube-dc.com/lb-cleanup-lb-intent' in variables.current) || 'network.kube-dc.com/lb-cleanup-lb-rows' in variables.previous
+      message: A terminal receipt cannot cancel an ambiguous provisioning operation.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-terminal' in variables.current) || !('network.kube-dc.com/lb-cleanup-vpc-intent' in variables.current) || 'network.kube-dc.com/lb-cleanup-vpc-uid' in variables.previous
+      message: A terminal receipt cannot cancel an ambiguous provisioning operation.
+    - expression: >-
+        !('network.kube-dc.com/lb-cleanup-terminal' in variables.current) || !('network.kube-dc.com/lb-cleanup-subnet-intent' in variables.current) || 'network.kube-dc.com/lb-cleanup-subnet-uid' in variables.previous
+      message: A terminal receipt cannot cancel an ambiguous provisioning operation.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: protect-project-load-balancer-checkpoints
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  policyName: protect-project-load-balancer-checkpoints
+  validationActions: [Deny]

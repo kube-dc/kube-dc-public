@@ -1,0 +1,8 @@
+*
+!Dockerfile
+!script/
+!script/**
+!tools/
+tools/*
+!tools/runtime/
+!tools/runtime/**

@@ -1,0 +1,355 @@
+{{- /*
+The "names a marked claim / account / engine" checks of
+managed-references.kube-dc.com, as ValidatingAdmissionPolicies whose params
+are the marked objects of the request's namespace.
+docs/prd/admission-webhooks-remaining-design.md, item 2 (owner decision
+2026-10-16: build the policy design, all seven narrowings accepted); as built:
+docs/prd/admission-webhooks-managed-references-as-built.md.
+
+  managed-references-marked-claims           paramKind PersistentVolumeClaim, the marker
+      an unmarked pod mounts a marked claim, or names one as an ephemeral
+      volume's data source
+  managed-references-marked-claim-templates  paramKind PersistentVolumeClaim, the marker
+      a tenant StatefulSet's claim template would name one
+      (<template>-<sts>-<n>)
+  managed-references-marked-accounts         paramKind ServiceAccount, the marker
+      an unmarked pod runs as a marked account
+  managed-references-mariadb-selectors       paramKind MariaDB, the marker
+      an unmarked pod carries a marked MariaDB's selector labels (CREATE, and
+      an UPDATE that changes them)
+  managed-references-kdcdatabase-selectors   paramKind KdcDatabase, every one
+      the same, for a KdcDatabase of engine mariadb (its MariaDB may be
+      unmarked)
+  managed-references-cross-namespace-sources and
+  managed-references-cross-namespace-ephemeral-sources   no params
+      a claim, or a pod's ephemeral volume template, whose dataSourceRef names
+      another namespace, from an identity that is not the clone identity
+
+A policy's expressions are typed against every kind it matches, so each
+policy matches one kind. Each policy with params decides what it can with
+label selectors and evaluates CEL once per param, without match conditions
+where it can: the API server converts the request's object to unstructured
+again for every evaluation (cost linear in the namespace's marked objects).
+
+Trust is the pod's MARKER alone (narrowing 1: the handler also requires a
+live, uid-matching, marked controller owner); project identities cannot set
+the marker, and pod templates of workload kinds carry none
+(protect-managed-service-pod-templates-in-projects). The handler keeps every
+check: the policies are what holds while the manager is unreachable.
+
+failurePolicy Ignore on the four policies with params: a policy with params
+is skipped while the API server cannot collect them (its param informer has
+not synced within a second, or the param store errs), and CEL or cost errors
+are failures too; with Fail every pod with a claim in every project would be
+refused then (step 2b H1). Evaluated violations are refused (Deny). After the
+initial sync a watch error does NOT skip the policy: it evaluates against the
+cached params, missing a claim marked meanwhile and still holding a deleted
+one until the watch resumes (narrowing 6, accepted). The parameterless policies
+fail closed, like the step 2 policies.
+
+Bound with validationActions [Audit] at phase 1, so a healthy policy cannot
+refuse the platform's own requests on a clause nobody has observed live; with
+validationActions (Deny) from phase 2.
+*/ -}}
+{{- $p := .Values.projectPolicies.protectManagedServices }}
+{{- $phase := int (include "kube-dc.referencesHandoff.phase" .) }}
+{{- if and $p.enabled (ge $phase 1) }}
+{{- $actions := list "Audit" }}
+{{- if ge $phase 2 }}{{ $actions = $p.validationActions }}{{ end }}
+{{- $platform := include "kube-dc.managedReferences.platformIdentityCEL" . }}
+{{- $clone := include "kube-dc.managedReferences.cloneIdentityCEL" . }}
+{{- $marked := include "kube-dc.referencesHandoff.markedObjectCEL" . }}
+{{- $mariadbLabels := include "kube-dc.managedReferences.mariadbSelectorLabelsCEL" . }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-references-marked-claims
+spec:
+  failurePolicy: Ignore
+  paramKind:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    # Trust is the marker (narrowing 1). A label selector, not a match
+    # condition: the API server evaluates a policy with params once per
+    # param, and every CEL evaluation converts the whole object again, so
+    # everything that can be decided without CEL is decided here, and the
+    # rest in ONE evaluation per param (no matchConditions).
+    objectSelector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: DoesNotExist}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+  variables:
+    # Each param is one marked claim of the request's namespace. Pods are
+    # judged on the pod, whoever creates them (the ReplicaSet controller
+    # creates tenants' pods).
+    - name: claim
+      expression: "params.metadata.name"
+  validations:
+    - expression: >-
+        !has(object.spec.volumes) ||
+        !object.spec.volumes.exists(v, has(v.persistentVolumeClaim) && v.persistentVolumeClaim.claimName == variables.claim)
+      messageExpression: >-
+        'a volume mounts PersistentVolumeClaim ' + request.namespace + '/' + variables.claim +
+        ', which belongs to a platform-managed service (services.kube-dc.com/managed-by); its data is reached through the service endpoints and credentials, not by mounting its storage'
+      reason: Forbidden
+    - expression: |-
+        !has(object.spec.volumes) || !object.spec.volumes.exists(v, has(v.ephemeral) && has(v.ephemeral.volumeClaimTemplate) && has(v.ephemeral.volumeClaimTemplate.spec) &&
+          ((has(v.ephemeral.volumeClaimTemplate.spec.dataSource) && v.ephemeral.volumeClaimTemplate.spec.dataSource.kind == 'PersistentVolumeClaim' &&
+            v.ephemeral.volumeClaimTemplate.spec.dataSource.name == variables.claim) ||
+           (has(v.ephemeral.volumeClaimTemplate.spec.dataSourceRef) && v.ephemeral.volumeClaimTemplate.spec.dataSourceRef.kind == 'PersistentVolumeClaim' &&
+            (!has(v.ephemeral.volumeClaimTemplate.spec.dataSourceRef.namespace) || v.ephemeral.volumeClaimTemplate.spec.dataSourceRef.namespace == '' ||
+             v.ephemeral.volumeClaimTemplate.spec.dataSourceRef.namespace == request.namespace) &&
+            v.ephemeral.volumeClaimTemplate.spec.dataSourceRef.name == variables.claim)))
+      messageExpression: >-
+        'an ephemeral volume would be copied from PersistentVolumeClaim ' + request.namespace + '/' + variables.claim +
+        ', which belongs to a platform-managed service (services.kube-dc.com/managed-by); its data is not copied by a tenant identity'
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-references-marked-claims
+spec:
+  policyName: managed-references-marked-claims
+  validationActions: {{ toJson $actions }}
+  paramRef:
+    selector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: Exists}
+    parameterNotFoundAction: Allow
+---
+# The StatefulSet half of the marked-claims check, a policy of its own: a
+# policy's expressions are typed against every kind it matches.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-references-marked-claim-templates
+spec:
+  failurePolicy: Ignore
+  paramKind:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    objectSelector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: DoesNotExist}
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["statefulsets"]
+  variables:
+    - name: claim
+      expression: "params.metadata.name"
+    # Judged on the requester, as statefulSet() does.
+    - name: tenantStatefulSet
+      expression: {{ printf "!%s && has(object.spec.volumeClaimTemplates)" $platform | quote }}
+  validations:
+    # <template>-<sts>-<ordinal>: the StatefulSet controller adopts an
+    # existing claim of that name and, under its retention policy, owns it.
+    - expression: |-
+        !variables.tenantStatefulSet || !object.spec.volumeClaimTemplates.exists(t, has(t.metadata) && has(t.metadata.name) &&
+          variables.claim.startsWith(t.metadata.name + '-' + object.metadata.name + '-') &&
+          variables.claim.substring(size(t.metadata.name) + size(object.metadata.name) + 2).matches('^[0-9]+$'))
+      messageExpression: >-
+        'a volumeClaimTemplate of StatefulSet ' + object.metadata.name + ' names platform-managed claim ' + request.namespace + '/' + variables.claim +
+        '; the StatefulSet would adopt the engine volume'
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-references-marked-claim-templates
+spec:
+  policyName: managed-references-marked-claim-templates
+  validationActions: {{ toJson $actions }}
+  paramRef:
+    selector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: Exists}
+    parameterNotFoundAction: Allow
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-references-marked-accounts
+spec:
+  failurePolicy: Ignore
+  paramKind:
+    apiVersion: v1
+    kind: ServiceAccount
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    # Trust is the marker (narrowing 1), decided by a label selector: one
+    # CEL evaluation per param, no match condition.
+    objectSelector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: DoesNotExist}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+  validations:
+    - expression: "!has(object.spec.serviceAccountName) || object.spec.serviceAccountName != params.metadata.name"
+      messageExpression: >-
+        'serviceAccountName ' + params.metadata.name +
+        ' is the identity of a platform-managed service (services.kube-dc.com/managed-by); a tenant pod runs as its own ServiceAccount'
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-references-marked-accounts
+spec:
+  policyName: managed-references-marked-accounts
+  validationActions: {{ toJson $actions }}
+  paramRef:
+    selector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: Exists}
+    parameterNotFoundAction: Allow
+{{- range $engine := list "mariadb" "kdcdatabase" }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-references-{{ $engine }}-selectors
+spec:
+  # A missing CRD is a configuration error, which Ignore admits.
+  failurePolicy: Ignore
+  paramKind:
+{{- if eq $engine "mariadb" }}
+    apiVersion: k8s.mariadb.com/v1alpha1
+    kind: MariaDB
+{{- else }}
+    apiVersion: db.kube-dc.com/v1alpha1
+    kind: KdcDatabase
+{{- end }}
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    # Only unmarked pods carrying mariadb-operator's selector key reach CEL
+    # (on UPDATE the old or the new labels): a policy with params is
+    # evaluated once per param.
+    objectSelector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: DoesNotExist}
+        - {key: app.kubernetes.io/name, operator: In, values: ["mariadb"]}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  matchConditions:
+    # mariadb-operator's Services select app.kubernetes.io/name=mariadb and
+    # app.kubernetes.io/instance=<name>. An UPDATE is judged only when it
+    # changes either label: the kubelet's and controllers' writes of a pod
+    # that already carries them are not.
+    - name: unmarked-pods-taking-a-mariadb-selector
+      expression: |-
+        !{{ $marked }} && {{ $mariadbLabels }} && (request.operation == 'CREATE' ||
+         !(has(oldObject.metadata.labels) &&
+           'app.kubernetes.io/name' in oldObject.metadata.labels && oldObject.metadata.labels['app.kubernetes.io/name'] == object.metadata.labels['app.kubernetes.io/name'] &&
+           'app.kubernetes.io/instance' in oldObject.metadata.labels && oldObject.metadata.labels['app.kubernetes.io/instance'] == object.metadata.labels['app.kubernetes.io/instance']))
+  validations:
+{{- if eq $engine "mariadb" }}
+    - expression: "object.metadata.labels['app.kubernetes.io/instance'] != params.metadata.name"
+{{- else }}
+    - expression: >-
+        object.metadata.labels['app.kubernetes.io/instance'] != params.metadata.name ||
+        !has(params.spec) || !has(params.spec.engine) || params.spec.engine != 'mariadb'
+{{- end }}
+      messageExpression: >-
+        'the pod carries the selector labels of platform-managed MariaDB ' + request.namespace + '/' + params.metadata.name +
+        ' ({{ if eq $engine "mariadb" }}MariaDB{{ else }}KdcDatabase{{ end }} services.kube-dc.com/managed-by); its Services would route the database traffic to this pod'
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-references-{{ $engine }}-selectors
+spec:
+  policyName: managed-references-{{ $engine }}-selectors
+  validationActions: {{ toJson $actions }}
+  paramRef:
+{{- if eq $engine "mariadb" }}
+    selector:
+      matchExpressions:
+        - {key: services.kube-dc.com/managed-by, operator: Exists}
+{{- else }}
+    # Every KdcDatabase of the namespace: db-manager does not mark them, and
+    # the engine decides (spec.engine).
+    selector: {}
+{{- end }}
+    parameterNotFoundAction: Allow
+{{- end }}
+---
+{{- range $kind := list "claims" "pods" }}
+---
+# A claim's data source in another namespace (dataSourceRef.namespace, the
+# CrossNamespaceVolumeDataSource API): the copies entry looks the source up
+# there while the manager is reachable; this holds without it. Identities
+# other than the clone identity are refused (kube-system's controllers create
+# claims and pods from tenant-written templates). One policy per kind: a
+# policy's expressions are typed against every kind it matches.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: managed-references-cross-namespace-{{ if eq $kind "pods" }}ephemeral-{{ end }}sources
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: [{{ if eq $kind "pods" }}"pods"{{ else }}"persistentvolumeclaims"{{ end }}]
+  matchConditions:
+    - name: not-the-clone-identity
+      expression: {{ printf "!%s" $clone | quote }}
+  validations:
+{{- if eq $kind "claims" }}
+    - expression: >-
+        !has(object.spec.dataSourceRef) || !has(object.spec.dataSourceRef.namespace) ||
+        object.spec.dataSourceRef.namespace == '' || object.spec.dataSourceRef.namespace == request.namespace
+      message: >-
+        a claim's data source is not taken from another namespace by a tenant
+        identity in a project namespace; copy data within the project
+{{- else }}
+    - expression: |-
+        !has(object.spec.volumes) || !object.spec.volumes.exists(v, has(v.ephemeral) && has(v.ephemeral.volumeClaimTemplate) && has(v.ephemeral.volumeClaimTemplate.spec) &&
+          has(v.ephemeral.volumeClaimTemplate.spec.dataSourceRef) && has(v.ephemeral.volumeClaimTemplate.spec.dataSourceRef.namespace) &&
+          v.ephemeral.volumeClaimTemplate.spec.dataSourceRef.namespace != '' && v.ephemeral.volumeClaimTemplate.spec.dataSourceRef.namespace != request.namespace)
+      message: >-
+        an ephemeral volume's data source is not taken from another namespace by
+        a tenant identity in a project namespace; copy data within the project
+{{- end }}
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: managed-references-cross-namespace-{{ if eq $kind "pods" }}ephemeral-{{ end }}sources
+spec:
+  policyName: managed-references-cross-namespace-{{ if eq $kind "pods" }}ephemeral-{{ end }}sources
+  validationActions: {{ toJson $actions }}
+{{- end }}
+{{- end }}

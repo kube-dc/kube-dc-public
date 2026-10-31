@@ -2,6 +2,10 @@
 # ValidatingAdmissionPolicy: protect controller-owned project ResourceQuotas
 # RBAC is also read-only for tenants, but this policy closes the upgrade gap for
 # project Roles that were copied before that restriction was introduced.
+#
+# With projectQuota.source=spec the manager writes project-quota from
+# Project.spec.quota, so it may also delete it (a removed cap); otherwise only
+# the backend's account deletes it, as before.
 # =============================================================================
 
 apiVersion: admissionregistration.k8s.io/v1
@@ -22,18 +26,27 @@ spec:
         (request.operation == 'DELETE' ? oldObject.metadata.name : object.metadata.name)
         in ['hrq.hnc.x-k8s.io', 'project-quota']
     - name: exclude-quota-controllers
-      expression: >-
+      expression: |-
         !(((request.operation == 'DELETE' ? oldObject.metadata.name : object.metadata.name)
              == 'project-quota' &&
            request.userInfo.username ==
              'system:serviceaccount:{{ .Release.Namespace }}:{{ include "kube-dc.backend.serviceAccountName" . }}') ||
+          ((request.operation == 'DELETE' ? oldObject.metadata.name : object.metadata.name)
+             == 'project-quota' && request.operation != 'DELETE' &&
+           (request.userInfo.username == 'system:serviceaccount:{{ .Release.Namespace }}:{{ include "kube-dc.manager.serviceAccountName" . }}' ||
+            request.userInfo.username in {{ .Values.manager.localStorageQuotaWriters | toJson }})) ||
+          {{- if eq .Values.projectQuota.source "spec" }}
+          ((request.operation == 'DELETE' ? oldObject.metadata.name : object.metadata.name)
+             == 'project-quota' && request.operation == 'DELETE' &&
+           request.userInfo.username == 'system:serviceaccount:{{ .Release.Namespace }}:{{ include "kube-dc.manager.serviceAccountName" . }}') ||
+          {{- end }}
           ((request.operation == 'DELETE' ? oldObject.metadata.name : object.metadata.name)
              == 'hrq.hnc.x-k8s.io' &&
            request.userInfo.username.startsWith('system:serviceaccount:hnc-system:')))
     # Namespace deletion must be able to remove reserved quota objects. Keep
     # this exemption DELETE-only and limited to the built-in teardown actors.
     - name: exclude-namespace-teardown-controllers
-      expression: >-
+      expression: |-
         !(request.operation == 'DELETE' &&
           request.userInfo.username in [
             'system:serviceaccount:kube-system:namespace-controller',

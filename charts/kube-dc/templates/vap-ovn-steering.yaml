@@ -1,0 +1,218 @@
+{{- $actions := .Values.ovnSteeringGuard.actions | default (list "Deny" "Audit") }}
+{{- $deny := has "Deny" $actions }}
+# =============================================================================
+# ValidatingAdmissionPolicy: tenants cannot choose where a pod or VM plugs into
+# OVN (security review 2026-10-27 #3a / reach R1).
+#
+# Kube-OVN gives pod annotations priority over the namespace binding, so
+# ovn.kubernetes.io/logical_switch (and security_groups, port_security,
+# ip_address...) on a pod put it on any subnet: ovn-default (management pod
+# network), infra-net, ext-cloud/ext-public (the shared external VLAN, where it
+# could ARP-spoof the gateway). Ordinary tenant pods are already refused by the
+# pod-infra-attachment webhook; two ways around it remained:
+#
+#   1. a bare Pod (or a workload template) labelled kubevirt.io=virt-launcher,
+#      which that webhook skips: only KubeVirt may create such pods;
+#   2. a VirtualMachine / VirtualMachineInstance template: KubeVirt copies its
+#      annotations onto the virt-launcher pod. Tenants may not set the
+#      network-steering keys there, bare or scoped to the project's default
+#      network (default.<namespace>.ovn). Tenant-VLAN keys (other providers)
+#      stay with the vnetworkattach webhook, which validates them.
+#
+# Also (review F4): tenants may not add hooks.kubevirt.io/hookSidecars, which
+# runs an image of their choice inside virt-launcher.
+#
+# On UPDATE only a key that is added or changed is refused, so an object that
+# already carries one keeps working. Platform controllers are exempt as in the
+# pod-security policies (kubevirt creates VMIs and launcher pods, capk creates
+# VMs for managed clusters). Not covered: VMs restored or cloned by KubeVirt
+# from a snapshot carry the snapshot's annotations.
+# =============================================================================
+{{- define "kube-dc.ovnSteering.adminConditions" }}
+    - name: exclude-cluster-admins
+      expression: |-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))
+    - name: exclude-node-users
+      expression: |-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !('system:nodes' in request.userInfo.groups)
+{{- end }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: restrict-virt-launcher-label-in-projects
+spec:
+  failurePolicy: {{ ternary "Fail" "Ignore" $deny }}
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+  matchConditions:
+    # Only KubeVirt creates launcher pods. kube-system is deliberately NOT
+    # exempt: a tenant Deployment with the label makes replicaset-controller
+    # the requester.
+    - name: exclude-kubevirt
+      expression: |-
+        !has(request.userInfo) || !has(request.userInfo.username) ||
+        !request.userInfo.username.startsWith('system:serviceaccount:kubevirt:')
+{{- include "kube-dc.ovnSteering.adminConditions" . }}
+  validations:
+    - expression: |-
+        !has(object.metadata.labels) || !('kubevirt.io' in object.metadata.labels) ||
+        object.metadata.labels['kubevirt.io'] != 'virt-launcher'
+      message: "Only KubeVirt creates pods labelled kubevirt.io=virt-launcher; remove the label."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: restrict-virt-launcher-label-in-projects
+spec:
+  policyName: restrict-virt-launcher-label-in-projects
+  validationActions: {{ toJson $actions }}
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: restrict-virt-launcher-label-templates-in-projects
+spec:
+  failurePolicy: {{ ternary "Fail" "Ignore" $deny }}
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "cronjobs"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["replicationcontrollers"]
+  matchConditions:
+    - name: exclude-platform-service-accounts
+      expression: |-
+        !has(request.userInfo) || !has(request.userInfo.username) || !(['system:serviceaccount:kube-dc:',
+           'system:serviceaccount:kubevirt:',
+           'system:serviceaccount:kamaji-system:',
+           'system:serviceaccount:capi-system:',
+           'system:serviceaccount:capk-system:',
+           'system:serviceaccount:capcs-system:',
+           'system:serviceaccount:capi-kubeadm-bootstrap-system:',
+           'system:serviceaccount:capi-kubeadm-control-plane-system:',
+           'system:serviceaccount:cnpg-system:',
+           'system:serviceaccount:mariadb-system:'].exists(prefix,
+             request.userInfo.username.startsWith(prefix)))
+{{- include "kube-dc.ovnSteering.adminConditions" . }}
+  variables:
+    - name: labelsOf
+      expression: |-
+        has(object.spec.jobTemplate)
+          ? (has(object.spec.jobTemplate.spec.template.metadata) && has(object.spec.jobTemplate.spec.template.metadata.labels) ? object.spec.jobTemplate.spec.template.metadata.labels : {})
+          : (has(object.spec.template) && has(object.spec.template.metadata) && has(object.spec.template.metadata.labels) ? object.spec.template.metadata.labels : {})
+    - name: launcher
+      expression: |-
+        'kubevirt.io' in variables.labelsOf && variables.labelsOf['kubevirt.io'] == 'virt-launcher'
+    # The same on the stored object (UPDATE), as a variable like labelsOf: the
+    # kinds differ (jobTemplate only on CronJob), so it is not type-checked per kind.
+    - name: oldLabels
+      expression: |-
+        request.operation != 'UPDATE' || oldObject == null ? {} :
+          (has(oldObject.spec.jobTemplate)
+            ? (has(oldObject.spec.jobTemplate.spec.template.metadata) && has(oldObject.spec.jobTemplate.spec.template.metadata.labels) ? oldObject.spec.jobTemplate.spec.template.metadata.labels : {})
+            : (has(oldObject.spec.template) && has(oldObject.spec.template.metadata) && has(oldObject.spec.template.metadata.labels) ? oldObject.spec.template.metadata.labels : {}))
+    - name: wasLauncher
+      expression: |-
+        'kubevirt.io' in variables.oldLabels && variables.oldLabels['kubevirt.io'] == 'virt-launcher'
+  validations:
+    # Refused when added; an existing template keeps working.
+    - expression: |-
+        !variables.launcher || variables.wasLauncher
+      message: "Only KubeVirt creates pods labelled kubevirt.io=virt-launcher; remove the label from the pod template."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: restrict-virt-launcher-label-templates-in-projects
+spec:
+  policyName: restrict-virt-launcher-label-templates-in-projects
+  validationActions: {{ toJson $actions }}
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: restrict-vm-network-steering-in-projects
+spec:
+  failurePolicy: {{ ternary "Fail" "Ignore" $deny }}
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["kubevirt.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["virtualmachines", "virtualmachineinstances"]
+  matchConditions:
+    # kubevirt (virt-controller creates VMIs from VMs; the VM was judged) and
+    # capk (managed-cluster VMs) are platform; the rest are tenants.
+    - name: exclude-platform-service-accounts
+      expression: |-
+        !has(request.userInfo) || !has(request.userInfo.username) || !(['system:serviceaccount:kube-dc:',
+           'system:serviceaccount:kubevirt:',
+           'system:serviceaccount:capk-system:',
+           'system:serviceaccount:capcs-system:',
+           'system:serviceaccount:capi-system:'].exists(prefix,
+             request.userInfo.username.startsWith(prefix)))
+{{- include "kube-dc.ovnSteering.adminConditions" . }}
+  variables:
+    # The annotations KubeVirt copies onto the launcher pod: a VM's template,
+    # a VMI's own.
+    - name: annotations
+      expression: |-
+        request.kind.kind == 'VirtualMachine'
+          ? (has(object.spec.template) && has(object.spec.template.metadata) && has(object.spec.template.metadata.annotations) ? object.spec.template.metadata.annotations : {})
+          : (has(object.metadata.annotations) ? object.metadata.annotations : {})
+    - name: oldAnnotations
+      expression: |-
+        request.operation != 'UPDATE' || oldObject == null ? {} :
+          (request.kind.kind == 'VirtualMachine'
+            ? (has(oldObject.spec.template) && has(oldObject.spec.template.metadata) && has(oldObject.spec.template.metadata.annotations) ? oldObject.spec.template.metadata.annotations : {})
+            : (has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}))
+    - name: steering
+      expression: |-
+        ['logical_switch', 'logical_router', 'vpc', 'subnet', 'security_groups', 'port_security',
+         'ip_address', 'ip_pool', 'mac_address', 'routes']
+    - name: refused
+      expression: |-
+        variables.annotations.filter(k,
+          (variables.steering.exists(f, k == 'ovn.kubernetes.io/' + f || k == 'default.' + request.namespace + '.ovn.kubernetes.io/' + f) ||
+           k == 'hooks.kubevirt.io/hookSidecars') &&
+          !(k in variables.oldAnnotations && variables.oldAnnotations[k] == variables.annotations[k]))
+  validations:
+    - expression: |-
+        size(variables.refused) == 0
+      messageExpression: |-
+        'VM network placement is set by the project, not by annotations; remove ' + variables.refused.join(', ') +
+        '. A tenant VLAN is attached through the project NetworkAttachmentDefinition; sidecar hooks are not available to tenants.'
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: restrict-vm-network-steering-in-projects
+spec:
+  policyName: restrict-vm-network-steering-in-projects
+  validationActions: {{ toJson $actions }}
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""

@@ -1,0 +1,27 @@
+{
+  "formatVersion": "kube-dc-routing-runtime-sources.v1",
+  "components": [
+    {
+      "name": "FRRouting",
+      "version": "10.4.5",
+      "source": "https://github.com/FRRouting/frr/tree/frr-10.4.5",
+      "upstreamImage": "quay.io/frrouting/frr:10.4.5@sha256:b0faf7c8f3d8b09aea1e38f77603c745a66dbf5e26ef9718527c2fbb53cc3aed",
+      "retainedPrograms": ["bgpd", "zebra", "vtysh"],
+      "retainedLibraries": ["libfrr.so.0", "libmlag_pb.so.0"],
+      "retainedData": "/usr/share/yang",
+      "license": "GPL-2.0-or-later"
+    },
+    {
+      "name": "libyang",
+      "version": "2.1.148+kube-dc.lyb-overflow.1",
+      "abi": "libyang.so.2",
+      "source": "https://github.com/CESNET/libyang/archive/v2.1.148.tar.gz",
+      "sourceSha256": "77a0aaaeb3df720aeb70d6896e32e2c2be099d48df73e3cfb52567051af3e44b",
+      "patch": "/usr/share/licenses/libyang/kube-dc-overflow.patch",
+      "upstreamAdvisory": "https://github.com/CESNET/libyang/security/advisories/GHSA-vw2p-pq79-92xh",
+      "license": "BSD-3-Clause"
+    }
+  ],
+  "runtimeFileChecksums": "/usr/share/kube-dc/routing-runtime.sha256",
+  "inventoryNote": "These programs and libraries are copied or built from source and have no final Alpine package database entries. Include them alongside the OS package SBOM in release qualification."
+}

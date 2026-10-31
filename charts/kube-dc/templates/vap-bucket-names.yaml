@@ -1,0 +1,67 @@
+{{- $actions := .Values.bucketNameGuard.actions | default (list "Deny" "Audit") }}
+{{- $deny := has "Deny" $actions }}
+# =============================================================================
+# ValidatingAdmissionPolicy: tenants cannot squat bucket names (security
+# review 2026-10-27 #11).
+#
+# Ceph RGW bucket names are global and an ObjectBucketClaim may name its own
+# (spec.bucketName). The platform's buckets have predictable names:
+# <namespace>-db-backups (managed services, db-manager) and
+# <namespace>-managed-k8s-backups (managed-cluster etcd backups); Rook refuses
+# a bucket another user owns, so a pre-claimed name leaves the victim's
+# backups without a bucket. For a tenant claim in a project namespace:
+#
+#   - an explicit name does not end in a legacy platform backups suffix.
+# Custom tenant names remain supported, including recreating a retained claim.
+# This is only a legacy OBC guard, NOT an S3 authorization boundary. New
+# platform backup claims use generateBucketName: the provisioner allocates an
+# unpredictable name, removing predictable-name squatting through either API.
+#
+# generateBucketName stays free (Rook appends a random suffix). Platform
+# identities (the manager, the services hub, Rook filling in a generated
+# name...) are exempt, as for the managed-references gate. On UPDATE only a
+# changed bucketName is refused.
+# =============================================================================
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: restrict-bucket-names-in-projects
+spec:
+  failurePolicy: {{ ternary "Fail" "Ignore" $deny }}
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["objectbucket.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["objectbucketclaims"]
+  matchConditions:
+    - name: tenant-requester
+      expression: |-
+        !({{ include "kube-dc.managedReferences.platformIdentityCEL" . }})
+    - name: names-a-bucket
+      expression: |-
+        has(object.spec) && has(object.spec.bucketName) && object.spec.bucketName != ''
+  variables:
+    - name: name
+      expression: |-
+        object.spec.bucketName
+    - name: unchanged
+      expression: |-
+        request.operation == 'UPDATE' && oldObject != null && has(oldObject.spec) &&
+          has(oldObject.spec.bucketName) && oldObject.spec.bucketName == variables.name
+  validations:
+    - expression: |-
+        variables.unchanged || !(variables.name.endsWith('-db-backups') || variables.name.endsWith('-managed-k8s-backups'))
+      message: "Bucket names ending in -db-backups or -managed-k8s-backups are reserved for the platform's backups."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: restrict-bucket-names-in-projects
+spec:
+  policyName: restrict-bucket-names-in-projects
+  validationActions: {{ toJson $actions }}
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""

@@ -20,33 +20,59 @@ a second Deployment rendered from this same template (one replica, Recreate,
 `node worker.js`), so its env and volumes cannot drift from the API's; without
 it they run inside the API process, which therefore must not scale. */}}
 {{- $worker := .Values.backend.worker | default dict }}
+{{- /* One-use tickets every API replica redeems (ui/backend/util/sealedTicket.js;
+docs/internal/multi-replica-api.md): the replicas share this key. */}}
+{{- $ticketKey := (.Values.backend.sealedTickets | default dict).keySecretName }}
+{{- $apiReplicas := ternary (int .Values.backend.autoscaling.maxReplicas) (int .Values.backend.replicaCount) (.Values.backend.autoscaling.enabled | default false) | max 1 }}
+{{- if and (gt $apiReplicas 1) (not $ticketKey) }}
+{{- fail "backend.replicaCount > 1 or backend.autoscaling.enabled requires backend.sealedTickets.keySecretName: console, SSH and download tickets must open on every replica" }}
+{{- end }}
+{{- $events := .Values.platformEvents | default dict }}
+{{- if and $events.enabled (not .Values.platformApi.enabled) }}
+{{- fail "platformEvents.enabled requires platformApi.enabled: events are served through the platform API" }}
+{{- end }}
 {{- if and (not $worker.enabled) (or .Values.backend.autoscaling.enabled (gt (int .Values.backend.replicaCount) 1)) }}
 {{- fail "backend.replicaCount > 1 or backend.autoscaling.enabled requires backend.worker.enabled=true: without the worker Deployment every API replica runs the billing reconciler and the email workers" }}
 {{- end }}
+{{- if .Values.observabilityUID.grafanaEnabled }}
+{{- if not .Values.observabilityUID.enabled }}{{- fail "observabilityUID.grafanaEnabled requires observabilityUID.enabled" }}{{- end }}
+{{- if not .Values.backend.trustedCA.configMapName }}{{- fail "Grafana UID proxy requires backend.trustedCA.configMapName" }}{{- end }}
+{{- end }}
+{{- $grafanaDedicated := include "kube-dc.backend.grafanaDedicated" . }}
+{{- if and $grafanaDedicated .Values.observabilityUID.grafanaEnabled (not (contains (printf "//%s-grafana." (include "kube-dc.backend.fullname" .)) (.Values.observabilityUID.grafanaProxyURL | default ""))) }}
+{{- fail (printf "observabilityUID.grafanaProxyURL must point at the dedicated Grafana replica (https://%s-grafana.<namespace>.svc:3335/...; Fleet PAYG_QUERY_BACKEND_SERVICE): only it holds the Grafana UID grants" (include "kube-dc.backend.fullname" .)) }}
+{{- end }}
 {{- $roles := list "api" }}
 {{- if $worker.enabled }}{{- $roles = append $roles "worker" }}{{- end }}
+{{- if $grafanaDedicated }}{{- $roles = append $roles "grafana" }}{{- end }}
 {{- range $role := $roles }}
 {{- with $ }}
 {{- $isWorker := eq $role "worker" }}
+{{- $isGrafana := eq $role "grafana" }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "kube-dc.backend.fullname" . }}{{ if $isWorker }}-worker{{ end }}
+  name: {{ include "kube-dc.backend.fullname" . }}{{ if $isWorker }}-worker{{ else if $isGrafana }}-grafana{{ end }}
   labels:
     {{- if $isWorker }}
     {{- include "kube-dc.backend.worker.labels" . | nindent 4 }}
+    {{- else if $isGrafana }}
+    {{- include "kube-dc.backend.grafana.labels" . | nindent 4 }}
     {{- else }}
     {{- include "kube-dc.backend.labels" . | nindent 4 }}
     {{- end }}
 spec:
-  {{- if $isWorker }}
+  {{- if or $isWorker $isGrafana }}
   # One copy, never two: Recreate stops the old pod before the new one starts.
   strategy:
     type: Recreate
   replicas: 1
   {{- else }}
-  {{- if .Values.backend.consoleApi.enabled }}
+  {{- /* One API replica keeps the console's process-local state (Grafana UID
+  grants) and must not overlap; several share tickets and leave Grafana to its
+  dedicated replica, so they roll. */}}
+  {{- if and (or .Values.backend.consoleApi.enabled .Values.observabilityUID.grafanaEnabled) (le $apiReplicas 1) }}
   strategy:
     type: Recreate
   {{- end }}
@@ -58,6 +84,8 @@ spec:
     matchLabels:
       {{- if $isWorker }}
       {{- include "kube-dc.backend.worker.selectorLabels" . | nindent 6 }}
+      {{- else if $isGrafana }}
+      {{- include "kube-dc.backend.grafana.selectorLabels" . | nindent 6 }}
       {{- else }}
       {{- include "kube-dc.backend.selectorLabels" . | nindent 6 }}
       {{- end }}
@@ -81,6 +109,8 @@ spec:
       labels:
         {{- if $isWorker }}
         {{- include "kube-dc.backend.worker.selectorLabels" . | nindent 8 }}
+        {{- else if $isGrafana }}
+        {{- include "kube-dc.backend.grafana.selectorLabels" . | nindent 8 }}
         {{- else }}
         {{- include "kube-dc.backend.selectorLabels" . | nindent 8 }}
         {{- end }}
@@ -128,6 +158,25 @@ spec:
           env:
             - name: KUBE_DC_BACKEND_VERSION
               value: {{ .Values.backend.image.tag | default .Chart.AppVersion | quote }}
+            # The platform release, and which kube-dc CLI versions it accepts:
+            # served in /.well-known/kube-dc-config so the CLI knows what it
+            # talks to (controllers/cliDiscovery.js).
+            - name: KUBE_DC_PLATFORM_VERSION
+              value: {{ .Chart.Version | quote }}
+            {{- with .Values.backend.auditedApiGroups }}
+            - name: KUBE_DC_AUDITED_API_GROUPS
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- with .Values.backend.cli }}
+            {{- with .minimumVersion }}
+            - name: KUBE_DC_CLI_MINIMUM_VERSION
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .recommendedVersion }}
+            - name: KUBE_DC_CLI_RECOMMENDED_VERSION
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
             {{- if $isWorker }}
             - name: WORKER_HEALTH_PORT
               value: {{ $worker.healthPort | default 8080 | quote }}
@@ -136,11 +185,40 @@ spec:
             - name: BACKEND_WORKERS
               value: "false"
             {{- end }}
+            {{- if and $grafanaDedicated (not $isWorker) (not $isGrafana) }}
+            # Grafana UID launches go to the dedicated replica that keeps the grants.
+            - name: GRAFANA_UID_BACKEND_URL
+              value: {{ printf "http://%s-grafana.%s.svc:%v" (include "kube-dc.backend.fullname" .) .Release.Namespace .Values.backend.service.port | quote }}
+            {{- end }}
+            {{- if not $isWorker }}
+            # Relay tokens name their pod, so another replica can forward to it
+            # (ui/backend/util/relayForward.js).
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: BACKEND_SERVICE_NAME
+              value: {{ include "kube-dc.backend.fullname" . | quote }}
+            # Per replica, so the ceiling stays backend.rateLimit whatever the count.
+            - name: RATE_LIMIT_API_PER_MINUTE
+              value: {{ div (add (int ((.Values.backend.rateLimit | default dict).apiPerMinute | default 1200)) (sub $apiReplicas 1)) $apiReplicas | quote }}
+            - name: RATE_LIMIT_ANON_PER_MINUTE
+              value: {{ div (add (int ((.Values.backend.rateLimit | default dict).anonPerMinute | default 300)) (sub $apiReplicas 1)) $apiReplicas | quote }}
+            {{- if $ticketKey }}
+            - name: SEALED_TICKET_KEY_FILE
+              value: /etc/sealed-ticket-key/key
+            {{- end }}
+            {{- end }}
             {{- if and .Values.backend.consoleApi.enabled (not $isWorker) }}
             - name: UI_API_ENABLED
               value: "true"
             - name: UI_API_REPLICAS
-              value: "1"
+              value: {{ ternary 1 $apiReplicas $isGrafana | quote }}
+            {{- if (.Values.backend.mcp | default dict).enabled }}
+            # Shown in the console (organization access) as the hosted MCP URL.
+            - name: MCP_PUBLIC_URL
+              value: {{ include "kube-dc.mcp.publicURL" . | quote }}
+            {{- end }}
             - name: UI_BACKEND_URL
               value: {{ printf "https://%s" (required "Console API requires backend.gateway.hostname" .Values.backend.gateway.hostname) | quote }}
             - name: UI_KEYCLOAK_BASE_URL
@@ -192,6 +270,11 @@ spec:
               value: {{ (.Values.branding | default dict).primaryColor | default "#002952" | quote }}
             - name: BRAND_ACCENT_COLOR
               value: {{ (.Values.branding | default dict).accentColor | default "#40199A" | quote }}
+            - name: BRAND_DISABLED_SECTIONS
+              value: {{ (.Values.branding | default dict).disabledSections | default list | join "," | quote }}
+            # Installation theme default (JSON); the Theme page overrides it.
+            - name: BRAND_THEME
+              value: {{ with (.Values.branding | default dict).theme }}{{ toJson . | quote }}{{ else }}""{{ end }}
             - name: NOTIFICATION_SUPPORT_PORTAL_URL
               value: {{ (.Values.notifications | default dict).supportPortalUrl | default "" | quote }}
             - name: NOTIFICATION_SUPPORT_EMAIL
@@ -202,6 +285,19 @@ spec:
               value: {{ dig "stripeSignupRemindersEnabled" true (.Values.notifications | default dict) | quote }}
             - name: BILLING_NOTIFICATIONS_ENABLED
               value: {{ ((.Values.notifications | default dict).enabled | default false) | quote }}
+            {{- if $events.enabled }}
+            - name: PLATFORM_EVENTS_ENABLED
+              value: "true"
+            - name: PLATFORM_EVENTS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "platformEvents.databaseSecret is required" $events.databaseSecret | quote }}
+                  key: {{ $events.uriKey | default "uri" | quote }}
+                  # Absent, the backend runs without events rather than not at all.
+                  optional: true
+            - name: PLATFORM_EVENTS_DATABASE_CA_FILE
+              value: /etc/kube-dc/platform-events-db/ca.crt
+            {{- end }}
             {{- if .Values.platformApi.enabled }}
             - name: PLATFORM_INTERNAL_PORT
               value: {{ .Values.platformApi.backendPort | quote }}
@@ -224,8 +320,6 @@ spec:
               value: {{ .Values.gpu.vmCreation.enabled | quote }}
             - name: GPU_PROFILE_LABEL
               value: {{ .Values.gpu.profileLabel | quote }}
-            - name: GPU_HAMI_SCHEDULER_NAME
-              value: {{ .Values.gpu.hamiSchedulerName | quote }}
             - name: PROM_URL
               value: "{{ .Values.backend.prometheusUrl | default "http://prom-operator-prometheus.monitoring:9090" }}"
             - name: PROJECT_SHELL_API_URL
@@ -246,18 +340,9 @@ spec:
             - name: PROJECT_SHELL_API_SERVICE_URL
               value: "{{ .Values.managementAPI.serviceIP }}:443"
             {{- end }}
-            # S3 endpoint for tenant Object Storage views, KdcDatabase
-            # backup wiring, and quota lookups. Per-cluster value —
-            # earlier versions of the JS controllers fell back to a
-            # hardcoded `https://s3.kube-dc.cloud` when the env var
-            # wasn't set, which made every non-cloud cluster's UI
-            # render the wrong S3 hostname. The fall-back is still
-            # there in code (`process.env.S3_ENDPOINT || 'https://s3.kube-dc.cloud'`)
-            # but with this chart change, the env is always set when
-            # `s3Endpoint` is provided in values, so the fallback path
-            # never runs in production. Leave the value empty in
-            # values.yaml if you want the fallback (single-cluster
-            # cloud-only deployment).
+            # Installation-owned S3 endpoint for object storage, backup wiring
+            # and quota lookups. Configure s3Endpoint for this installation;
+            # the backend does not select another installation's endpoint.
             - name: ROOK_NAMESPACE
               value: "{{ .Values.objectStorage.rookNamespace }}"
             - name: CEPH_STORE_NAME
@@ -292,6 +377,12 @@ spec:
                 secretKeyRef:
                   name: master-config
                   key: url
+            {{- with .Values.backend.keycloakIssuerAlternateUrls }}
+            # Extra Keycloak base URLs whose token issuers are accepted next to
+            # KEYCLOAK_URL, for a Keycloak domain move (see values.yaml).
+            - name: KEYCLOAK_ISSUER_ALTERNATE_URLS
+              value: {{ join "," . | quote }}
+            {{- end }}
             - name: CONSOLE_URL
               valueFrom:
                 secretKeyRef:
@@ -337,6 +428,8 @@ spec:
             - name: BILLING_PROVIDER
               value: "{{ .Values.billing.provider }}"
             {{- end }}
+            - name: PROJECT_QUOTA_SOURCE
+              value: "{{ .Values.projectQuota.source }}"
             {{- if $billingURL }}
             {{- /*
             How the backend reaches the billing service, which is the only
@@ -532,6 +625,17 @@ spec:
             # report logs what it would refuse, enforce answers 401, off skips it.
             - name: API_AUTH_MODE
               value: {{ .Values.backend.authMode | default "report" | quote }}
+            # ?token= on the Grafana launch route (ui/backend/util/queryToken.js):
+            # refuse unless an older client still sends URL tokens.
+            - name: QUERY_TOKENS
+              value: {{ .Values.backend.queryTokens | default "refuse" | quote }}
+            # Logging: ui/backend/util/logger.js and util/requestContext.js.
+            - name: LOG_LEVEL
+              value: {{ .Values.backend.logLevel | default "info" | quote }}
+            - name: LOG_FORMAT
+              value: {{ .Values.backend.logFormat | default "json" | quote }}
+            - name: ACCESS_LOG
+              value: {{ ne (toString .Values.backend.accessLog) "false" | quote }}
             {{- if .Values.backend.trustedCA.configMapName }}
             # Node does NOT read SSL_CERT_DIR (the manager's mechanism). It reads
             # NODE_EXTRA_CA_CERTS — a single FILE, appended to the bundled roots,
@@ -541,6 +645,34 @@ spec:
             - name: NODE_EXTRA_CA_CERTS
               value: {{ printf "%s/%s" (trimSuffix "/" .Values.backend.trustedCA.mountPath) .Values.backend.trustedCA.fileName | quote }}
             {{- end }}
+          {{- if and .Values.observabilityUID.enabled (not $isWorker) }}
+            - name: OBSERVABILITY_UID_TENANTS
+              value: enabled
+            - name: OBSERVABILITY_UID_PLATFORM_TENANTS
+              value: {{ join "|" .Values.observabilityUID.platformTenants | quote }}
+            - name: OBSERVABILITY_QUERY_TLS_CERT
+              value: /etc/observability-query-tls/tls.crt
+            - name: OBSERVABILITY_QUERY_TLS_KEY
+              value: /etc/observability-query-tls/tls.key
+          {{- end }}
+          {{- if and .Values.observabilityUID.grafanaEnabled (not $isWorker) }}
+            - name: GRAFANA_INTERNAL_URL
+              value: {{ required "observabilityUID.grafanaAdminURL required" .Values.observabilityUID.grafanaAdminURL | quote }}
+            - name: OBSERVABILITY_GRAFANA_UID
+              value: enabled
+            - name: GRAFANA_UID_SCOPE_KEY_FILE
+              value: /etc/grafana-uid-key/key
+            - name: GRAFANA_UID_PROXY_URL
+              value: {{ required "observabilityUID.grafanaProxyURL required" .Values.observabilityUID.grafanaProxyURL | quote }}
+            - name: GRAFANA_UID_PROXY_CA_FILE
+              value: /etc/observability-query-tls/ca.crt
+            - name: GRAFANA_UID_UPSTREAM_CA_FILE
+              value: {{ printf "%s/%s" (trimSuffix "/" .Values.backend.trustedCA.mountPath) .Values.backend.trustedCA.fileName | quote }}
+            - name: GRAFANA_UID_MIMIR_URL
+              value: {{ required "observabilityUID.mimirURL required" .Values.observabilityUID.mimirURL | quote }}
+            - name: GRAFANA_UID_LOKI_URL
+              value: {{ required "observabilityUID.lokiURL required" .Values.observabilityUID.lokiURL | quote }}
+          {{- end }}
           {{- with .Values.backend.extraEnv }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -563,8 +695,35 @@ spec:
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
           {{- end }}
-          {{- if or .Values.backend.volumeMounts .Values.backend.trustedCA.configMapName (.Values.backend.cliDiscovery | default dict).caConfigMapName $billingURL }}
+          {{- $dedicated := .Values.backend.dedicatedReplica | default dict }}
+          {{- /* Volumes for single-copy paths: on the dedicated replica when the API
+          scales, else on the one API pod. */}}
+          {{- $ownMounts := and (or $isGrafana (and (not $isWorker) (not $grafanaDedicated))) $dedicated.volumeMounts }}
+          {{- if or (and .Values.observabilityUID.enabled (not $isWorker)) .Values.backend.volumeMounts .Values.backend.trustedCA.configMapName (.Values.backend.cliDiscovery | default dict).caConfigMapName $billingURL $events.enabled (and $ticketKey (not $isWorker)) $ownMounts }}
           volumeMounts:
+            {{- if $ownMounts }}
+            {{- toYaml $dedicated.volumeMounts | nindent 12 }}
+            {{- end }}
+            {{- if and $ticketKey (not $isWorker) }}
+            - name: sealed-ticket-key
+              mountPath: /etc/sealed-ticket-key
+              readOnly: true
+            {{- end }}
+            {{- if $events.enabled }}
+            - name: platform-events-db
+              mountPath: /etc/kube-dc/platform-events-db
+              readOnly: true
+            {{- end }}
+          {{- if and .Values.observabilityUID.enabled (not $isWorker) }}
+            {{- if .Values.observabilityUID.grafanaEnabled }}
+            - name: grafana-uid-key
+              mountPath: /etc/grafana-uid-key
+              readOnly: true
+            {{- end }}
+            - name: observability-query-tls
+              mountPath: /etc/observability-query-tls
+              readOnly: true
+          {{- end }}
             {{- if $billingURL }}
             - name: billing-token
               mountPath: /var/run/secrets/billing
@@ -587,8 +746,51 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- end }}
-      {{- if or .Values.backend.volumes .Values.backend.trustedCA.configMapName (.Values.backend.cliDiscovery | default dict).caConfigMapName $billingURL }}
+      {{- $ownVolumes := and (or $isGrafana (and (not $isWorker) (not $grafanaDedicated))) ((.Values.backend.dedicatedReplica | default dict).volumes) }}
+      {{- if or (and .Values.observabilityUID.enabled (not $isWorker)) .Values.backend.volumes .Values.backend.trustedCA.configMapName (.Values.backend.cliDiscovery | default dict).caConfigMapName $billingURL $events.enabled (and $ticketKey (not $isWorker)) $ownVolumes }}
       volumes:
+        {{- if $ownVolumes }}
+        {{- toYaml $ownVolumes | nindent 8 }}
+        {{- end }}
+        {{- if and $ticketKey (not $isWorker) }}
+        - name: sealed-ticket-key
+          secret:
+            secretName: {{ $ticketKey | quote }}
+            items:
+              - key: key
+                path: key
+        {{- end }}
+        {{- if $events.enabled }}
+        - name: platform-events-db
+          configMap:
+            name: {{ required "platformEvents.caConfigMap is required" $events.caConfigMap | quote }}
+            optional: true
+            items:
+              - key: {{ $events.caKey | default "ca.crt" | quote }}
+                path: ca.crt
+        {{- end }}
+        {{- if and .Values.observabilityUID.enabled (not $isWorker) }}
+        {{- if .Values.observabilityUID.grafanaEnabled }}
+        - name: grafana-uid-key
+          secret:
+            secretName: {{ required "observabilityUID.scopeKeySecretName required" .Values.observabilityUID.scopeKeySecretName }}
+            items:
+              - key: key
+                path: key
+        {{- end }}
+        - name: observability-query-tls
+          secret:
+            secretName: {{ required "observabilityUID.tlsSecretName required for UID query authorization" .Values.observabilityUID.tlsSecretName }}
+            items:
+              - key: tls.crt
+                path: tls.crt
+              - key: tls.key
+                path: tls.key
+              {{- if .Values.observabilityUID.grafanaEnabled }}
+              - key: ca.crt
+                path: ca.crt
+              {{- end }}
+        {{- end }}
         {{- if $billingURL }}
         - name: billing-token
           projected:

@@ -185,6 +185,23 @@ spec:
               rule: self == oldSelf
           status:
             properties:
+              clientCAFingerprint:
+                description: |-
+                  ClientCAFingerprint is the public SHA-256 of the isolated client CA whose
+                  leaf OpenBao verified. Empty while using an acknowledged legacy leaf.
+                pattern: ^$|^[a-f0-9]{64}$
+                type: string
+              clientCAGeneration:
+                description: ClientCAGeneration binds that acknowledgement to this
+                  authority generation.
+                format: int64
+                minimum: 0
+                type: integer
+              clientCAIsolationSupported:
+                description: |-
+                  ClientCAIsolationSupported reports the cached-only upgrade bridge. The
+                  runner must observe it before changing an established client CA reference.
+                type: boolean
               conditions:
                 items:
                   description: Condition contains details for one aspect of the current

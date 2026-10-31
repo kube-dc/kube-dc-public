@@ -35,22 +35,19 @@ spec:
         request.userInfo.username.startsWith('system:serviceaccount:kube-dc:') ||
         ('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups)
     - name: quotaChanged
-      expression: >-
-        variables.isCreate ? has(object.spec.quota) :
-        (has(object.spec.quota) != has(oldObject.spec.quota) ||
+      expression: |-
+        variables.isCreate ? has(object.spec.quota) : (has(object.spec.quota) != has(oldObject.spec.quota) ||
          (has(object.spec.quota) && object.spec.quota != oldObject.spec.quota))
     - name: suspensionChanged
-      expression: >-
-        variables.isCreate ? has(object.spec.suspension) :
-        (has(object.spec.suspension) != has(oldObject.spec.suspension) ||
+      expression: |-
+        variables.isCreate ? has(object.spec.suspension) : (has(object.spec.suspension) != has(oldObject.spec.suspension) ||
          (has(object.spec.suspension) && object.spec.suspension != oldObject.spec.suspension))
     - name: commerceChanged
-      expression: >-
-        variables.isCreate ? has(object.spec.externalCommerce) :
-        (has(object.spec.externalCommerce) != has(oldObject.spec.externalCommerce) ||
+      expression: |-
+        variables.isCreate ? has(object.spec.externalCommerce) : (has(object.spec.externalCommerce) != has(oldObject.spec.externalCommerce) ||
          (has(object.spec.externalCommerce) && object.spec.externalCommerce != oldObject.spec.externalCommerce))
     - name: target
-      expression: >-
+      expression: |-
         authorizer.group('kube-dc.com').resource('organizations')
           .namespace(object.metadata.namespace).name(object.metadata.name)
   validations:

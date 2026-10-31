@@ -1,0 +1,104 @@
+# =============================================================================
+# ValidatingAdmissionPolicy: fence the manager's Project grants to the
+# namespace incarnation they are for
+#
+# A Project namespace is named "<org>-<project>", so a deleted namespace's
+# name can come back, for another Project (acme/web-api and acme-web/api both
+# derive "acme-web-api"). A manager reconcile that paused after its last
+# identity check, or a Role/RoleBinding write still in flight, could otherwise
+# land the previous Project's grants in the replacement namespace.
+#
+# The manager creates every Project namespace with
+# kube-dc.com/created-for-project-uid=<Project UID>, and stamps every Role and
+# RoleBinding it writes there with kube-dc.com/project-uid=<Project UID>. This
+# policy refuses a manager write that grants something (a create; a Role update
+# that changes rules; a RoleBinding update that changes roleRef or has any
+# subject the old object did not have) when the namespace carries the
+# created-for stamp and the object's stamp is missing or different.
+#
+# A RoleBinding update that only removes subjects (each new subject is, field
+# for field, one of the old ones, and roleRef is unchanged) grants nothing and
+# is never fenced: revocation -- dropping an unwanted subject, or emptying the
+# subjects of a binding that a foreign finalizer keeps after its deletion --
+# must work in every namespace, the mismatched ones included.
+#
+# Scope, deliberately narrow (owner rules: no admission check may be able to
+# block all operations; a block in one tenant must never stop another):
+#   - only the manager's own ServiceAccount (matchConditions);
+#   - only CREATE and UPDATE of Roles and RoleBindings, never DELETE;
+#   - only Project namespaces (binding namespaceSelector);
+#   - an UPDATE that does not add to the grant (finalizer or annotation
+#     changes, a Project teardown, removing subjects) is never fenced;
+#   - a namespace without the created-for stamp (created before this
+#     release, or adopted on first sight) is never fenced.
+# failurePolicy Fail is safe here for the same reason: every CEL access is
+# guarded (optional fields, has()), and anything it can refuse is a manager
+# grant write, which is then retried for that Project alone and surfaced on
+# it; tenant writes, deletes, finalizer removal and other controllers are
+# never in scope.
+#
+# Rollback: a manager older than this fence does not stamp its Roles and
+# RoleBindings, so with the fence kept it is refused every grant in namespaces
+# the newer manager created. Before (or together with) rolling the manager back
+# to such a version, set projectPolicies.fenceProjectRBACIncarnation.enabled=false
+# or validationActions: ["Warn"] (logged, not refused); restore Deny after
+# rolling forward again.
+#
+# Residual: admission reads namespaceObject from the API server's cache, and a
+# request admitted against the old namespace can commit after it is gone. Both
+# are bounded by the API server request timeout, and the namespace reuse
+# cool-down (at least twice that timeout) keeps the name absent for longer.
+# =============================================================================
+{{- if .Values.projectPolicies.fenceProjectRBACIncarnation.enabled }}
+{{- $manager := printf "system:serviceaccount:%s:%s" .Release.Namespace (include "kube-dc.manager.serviceAccountName" .) }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: fence-project-rbac-to-namespace-incarnation
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["roles", "rolebindings"]
+  matchConditions:
+    - name: only-the-manager
+      expression: |-
+        has(request.userInfo) && has(request.userInfo.username) &&
+        request.userInfo.username == {{ $manager | quote }}
+  variables:
+    - name: createdFor
+      expression: |-
+        namespaceObject == null ? '' :
+        namespaceObject.metadata.?annotations.orValue({})[?'kube-dc.com/created-for-project-uid'].orValue('')
+    - name: stamp
+      expression: |-
+        object.metadata.?annotations.orValue({})[?'kube-dc.com/project-uid'].orValue('')
+    - name: grants
+      expression: |-
+        request.operation == 'CREATE' || oldObject == null ||
+        (request.resource.resource == 'roles' ?
+          object.?rules.orValue([]) != oldObject.?rules.orValue([]) :
+          (object.?roleRef.orValue({}) != oldObject.?roleRef.orValue({}) ||
+           object.?subjects.orValue([]).exists(s, !oldObject.?subjects.orValue([]).exists(o, o == s))))
+  validations:
+    - expression: "variables.createdFor == '' || !variables.grants || variables.stamp == variables.createdFor"
+      messageExpression: |-
+        request.resource.resource + ' ' + request.namespace + '/' + request.name +
+        ' is a grant for another incarnation of this namespace (kube-dc.com/project-uid does not match the Project the namespace was created for); the manager retries it for the current Project'
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: fence-project-rbac-to-namespace-incarnation
+spec:
+  policyName: fence-project-rbac-to-namespace-incarnation
+  validationActions: {{ .Values.projectPolicies.fenceProjectRBACIncarnation.validationActions | toJson }}
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+{{- end }}

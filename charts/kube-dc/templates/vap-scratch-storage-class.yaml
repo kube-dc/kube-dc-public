@@ -1,0 +1,106 @@
+{{- /*
+=============================================================================
+ValidatingAdmissionPolicy: scratch storage classes are for platform use only
+
+A class labeled storage.kube-dc.com/tier=scratch is not host-redundant
+(docs/prd/storage-classes-and-user-snapshots.md, 4.1); the storage contract
+(pkg/storagecaps, Eligible) never offers or accepts it for a tenant purpose.
+This policy gives a raw Kubernetes write the same answer
+(docs/internal/platform-api-goal.md, workstream C, storage-class guard).
+
+  - Refused in project namespaces: a new PersistentVolumeClaim or DataVolume
+    on a scratch class, and a VirtualMachine disk template on one that the VM
+    did not already have. A claim without a class is refused when a scratch
+    class is the cluster default.
+  - The parameters are the scratch classes themselves (selected by label), so
+    the policy does nothing until a class carries the label.
+  - Not matched: cluster admins, the platform's accounts in the release
+    namespace, and the operators that create volumes for existing objects
+    (storageGuard.exemptServiceAccountNamespaces: CDI, KubeVirt, the database
+    operators). Database plan rules belong to db-manager's admission.
+  - Other refusals of the contract (object classes, no provisioner, the wrong
+    kind) only stop claims that would never bind; they stay in the console.
+=============================================================================
+*/ -}}
+{{- if .Values.storageGuard.scratchClasses }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: kube-dc-scratch-storage-class
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["persistentvolumeclaims"]
+      - apiGroups: ["cdi.kubevirt.io"]
+        apiVersions: ["v1beta1"]
+        operations: ["CREATE"]
+        resources: ["datavolumes"]
+      - apiGroups: ["kubevirt.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["virtualmachines"]
+  matchConditions:
+    - name: exclude-cluster-admins
+      expression: |-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))
+    - name: exclude-platform-accounts
+      expression: |-
+        !has(request.userInfo) || !has(request.userInfo.username) ||
+        !({{ append .Values.storageGuard.exemptServiceAccountNamespaces .Release.Namespace | uniq | toJson }}.exists(ns,
+          request.userInfo.username.startsWith('system:serviceaccount:' + ns + ':')))
+  variables:
+    - name: scratchIsDefault
+      expression: |-
+        has(params.metadata.annotations) &&
+        (params.metadata.annotations[?'storageclass.kubernetes.io/is-default-class'].orValue('') == 'true' ||
+         params.metadata.annotations[?'storageclass.beta.kubernetes.io/is-default-class'].orValue('') == 'true')
+    # The class the claim asks for ('' = the default class; '-' = not a claim).
+    - name: claimClass
+      expression: |-
+        request.kind.kind == 'PersistentVolumeClaim' ?
+          (has(object.spec.storageClassName) ? object.spec.storageClassName : '') :
+        request.kind.kind == 'DataVolume' ? (has(object.spec.storage) && has(object.spec.storage.storageClassName) ? object.spec.storage.storageClassName : (has(object.spec.pvc) && has(object.spec.pvc.storageClassName) ? object.spec.pvc.storageClassName : '')) : '-'
+    - name: claimIsScratch
+      expression: "(variables.claimClass == params.metadata.name || (variables.claimClass == '' && variables.scratchIsDefault))"
+    # VM disk templates on a scratch class, now and before the update.
+    - name: newScratchTemplates
+      expression: |-
+        request.kind.kind != 'VirtualMachine' || !has(object.spec.dataVolumeTemplates) ? [] :
+        object.spec.dataVolumeTemplates.filter(t, has(t.spec) && ((has(t.spec.storage) && has(t.spec.storage.storageClassName) ? t.spec.storage.storageClassName : (has(t.spec.pvc) && has(t.spec.pvc.storageClassName) ? t.spec.pvc.storageClassName : '')) == params.metadata.name || ((has(t.spec.storage) && has(t.spec.storage.storageClassName) ? t.spec.storage.storageClassName : (has(t.spec.pvc) && has(t.spec.pvc.storageClassName) ? t.spec.pvc.storageClassName : '')) == '' && variables.scratchIsDefault))).map(t, t.metadata.name)
+    - name: oldScratchTemplates
+      expression: |-
+        oldObject == null || !has(oldObject.spec.dataVolumeTemplates) ? [] :
+        oldObject.spec.dataVolumeTemplates.filter(t, has(t.spec) && ((has(t.spec.storage) && has(t.spec.storage.storageClassName) ? t.spec.storage.storageClassName : (has(t.spec.pvc) && has(t.spec.pvc.storageClassName) ? t.spec.pvc.storageClassName : '')) == params.metadata.name || ((has(t.spec.storage) && has(t.spec.storage.storageClassName) ? t.spec.storage.storageClassName : (has(t.spec.pvc) && has(t.spec.pvc.storageClassName) ? t.spec.pvc.storageClassName : '')) == '' && variables.scratchIsDefault))).map(t, t.metadata.name)
+  validations:
+    - expression: "!variables.claimIsScratch"
+      messageExpression: "'Storage class ' + params.metadata.name + ' is a scratch class: it is not host-redundant and is for platform use only. Choose another storage class.'"
+      reason: Forbidden
+    - expression: "variables.newScratchTemplates.all(n, n in variables.oldScratchTemplates)"
+      messageExpression: "'Storage class ' + params.metadata.name + ' is a scratch class: it is not host-redundant and is for platform use only. Choose another storage class for the VM disks.'"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: kube-dc-scratch-storage-class
+spec:
+  policyName: kube-dc-scratch-storage-class
+  validationActions: [Deny]
+  paramRef:
+    selector:
+      matchLabels:
+        storage.kube-dc.com/tier: scratch
+    parameterNotFoundAction: Allow
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+{{- end }}

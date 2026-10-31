@@ -1,0 +1,102 @@
+# =============================================================================
+# ValidatingAdmissionPolicy: keep tenants off platform CronJobs in projects
+#
+# Project admins and developers manage their own CronJobs. Platform
+# controllers also keep schedules INSIDE project namespaces: the k8-manager's
+# per-cluster etcd backup (<cluster>-etcd-backup, owned by a KdcCluster) and
+# db-manager's backup post-processing (labelled db.kube-dc.com/managed-by).
+#
+# The content policies (pod security, platform identities, managed-service
+# templates) judge only the object a request would produce, and none matches
+# DELETE. Without this policy a tenant could delete such a schedule, or in one
+# update strip its platform markers, swap the template and suspend it: the real
+# backup stops while its name and UID survive. Neither is possible by creating
+# a new Job. The decision is therefore taken from oldObject.
+#
+# A CronJob is the platform's when its stored object has an ownerReference into
+# a kube-dc.com API group, a <domain>.kube-dc.com/managed-by label, or
+# app.kubernetes.io/managed-by naming a platform controller. Platform
+# controllers, the kube-system controllers (cronjob status, garbage collection,
+# namespace teardown) and cluster admins are exempt, as in the other project
+# policies. Tenant-owned CronJobs carry none of these markers and are not
+# matched by the first validation.
+#
+# Second validation: the CronJob controller copies spec.jobTemplate.metadata
+# onto every Job it creates, and that controller is exempt everywhere. A tenant
+# CronJob could otherwise have the platform stamp kube-dc.com labels or
+# annotations (managed-by markers, protection markers) onto its Jobs, which a
+# tenant could not put on a Job it creates itself. No key in a kube-dc.com
+# domain is accepted there from a tenant.
+# =============================================================================
+{{- if .Values.projectPolicies.protectPlatformCronJobs.enabled }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: protect-platform-cronjobs-in-projects
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["cronjobs"]
+  matchConditions:
+    - name: exclude-system-service-accounts
+      expression: |-
+        !has(request.userInfo) || !has(request.userInfo.username) || !(['system:serviceaccount:kube-dc:',
+           'system:serviceaccount:kubevirt:',
+           'system:serviceaccount:kamaji-system:',
+           'system:serviceaccount:capi-system:',
+           'system:serviceaccount:capk-system:',
+           'system:serviceaccount:capcs-system:',
+           'system:serviceaccount:capi-kubeadm-bootstrap-system:',
+           'system:serviceaccount:capi-kubeadm-control-plane-system:',
+           'system:serviceaccount:kube-system:'].exists(prefix,
+             request.userInfo.username.startsWith(prefix)))
+    - name: exclude-cluster-admins
+      expression: >-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))
+    - name: exclude-node-users
+      expression: >-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !('system:nodes' in request.userInfo.groups)
+  variables:
+    - name: platformOwned
+      expression: |-
+        request.operation != 'CREATE' && oldObject != null && (
+          oldObject.metadata.?ownerReferences.orValue([]).exists(o,
+            o.apiVersion.startsWith('kube-dc.com/') ||
+            o.apiVersion.matches('^[a-z0-9.-]+\\.kube-dc\\.com/')) ||
+          oldObject.metadata.?labels.orValue({}).exists(k,
+            k == 'kube-dc.com/managed-by' || k.endsWith('.kube-dc.com/managed-by')) ||
+          oldObject.metadata.?labels.orValue({}).exists(k,
+            k == 'app.kubernetes.io/managed-by' &&
+            oldObject.metadata.labels[k] in {{ .Values.projectPolicies.protectPlatformCronJobs.platformManagers | toJson }}))
+  validations:
+    - expression: "!variables.platformOwned"
+      messageExpression: >-
+        'CronJob ' + request.namespace + '/' + request.name +
+        ' is managed by the platform; it cannot be changed or deleted from a project. Create your own CronJob instead.'
+      reason: Forbidden
+    - expression: |-
+        request.operation == 'DELETE' || !(object.spec.?jobTemplate.?metadata.?labels.orValue({}).exists(k,
+            k.startsWith('kube-dc.com/') || k.contains('.kube-dc.com/')) ||
+          object.spec.?jobTemplate.?metadata.?annotations.orValue({}).exists(k,
+            k.startsWith('kube-dc.com/') || k.contains('.kube-dc.com/')))
+      message: "labels and annotations in a kube-dc.com domain are reserved for the platform; remove them from spec.jobTemplate.metadata."
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: protect-platform-cronjobs-in-projects
+spec:
+  policyName: protect-platform-cronjobs-in-projects
+  validationActions: {{ .Values.projectPolicies.protectPlatformCronJobs.validationActions | toJson }}
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+{{- end }}

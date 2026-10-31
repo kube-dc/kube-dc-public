@@ -1,0 +1,65 @@
+{{- /*
+A ProjectNetwork's NetworkAttachmentDefinition is deleted only by the manager
+(the ProjectNetwork drain removes it once the segment has drained), or while
+its namespace terminates. docs/prd/admission-webhooks-remaining-design.md,
+adjacent finding 1; the handler's DELETE rule is NadOwnershipValidator
+(internal/webhook/core/network_attach_webhook.go), judged here from the
+Namespace object instead of from the requester's name, so it holds whether
+the controller manager runs per-controller ServiceAccounts or the shared
+system:kube-controller-manager credentials.
+
+A NAD is the ProjectNetwork's when it carries the owner label
+network.kube-dc.com/project-network or the owner-UID annotation
+network.kube-dc.com/project-network-uid (non-empty), as the handler reads them.
+Every other NAD (each project's default NAD above all) is deleted freely:
+namespace teardown deletes it, and a deleted NAD attaches nothing.
+
+From manager.webhook.narrowGatesHandoffPhase 2 the vnetworkattachnad webhook
+no longer matches DELETE, so namespace teardown no longer waits on the
+manager. No params, failurePolicy Fail. Rendered from phase 1, so it is
+installed and observed on every API server before the webhook stops matching
+DELETE.
+*/ -}}
+{{- if and .Values.manager.webhook.enabled .Values.projectNetwork.enabled (ne (include "kube-dc.narrowGates.phase" .) "0") }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: project-network-nad-deletes
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["k8s.cni.cncf.io"]
+        apiVersions: ["v1"]
+        operations: ["DELETE"]
+        resources: ["network-attachment-definitions"]
+  matchConditions:
+    - name: not-the-manager
+      expression: >-
+        request.userInfo.username != '{{ include "kube-dc.narrowGates.managerIdentity" . }}'
+  variables:
+    - name: owned
+      expression: |-
+        (has(oldObject.metadata.labels) && 'network.kube-dc.com/project-network' in oldObject.metadata.labels &&
+         oldObject.metadata.labels['network.kube-dc.com/project-network'] != '') ||
+        (has(oldObject.metadata.annotations) && 'network.kube-dc.com/project-network-uid' in oldObject.metadata.annotations &&
+         oldObject.metadata.annotations['network.kube-dc.com/project-network-uid'] != '')
+    - name: namespaceTerminating
+      expression: >-
+        namespaceObject == null || has(namespaceObject.metadata.deletionTimestamp) ||
+        (has(namespaceObject.status) && has(namespaceObject.status.phase) && namespaceObject.status.phase == 'Terminating')
+  validations:
+    - expression: "!variables.owned || variables.namespaceTerminating"
+      messageExpression: >-
+        'tenant-VLAN attachment denied: NetworkAttachmentDefinition ' + request.namespace + '/' + request.name +
+        ' is managed by a ProjectNetwork; delete the ProjectNetwork instead so the segment drains first'
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: project-network-nad-deletes
+spec:
+  policyName: project-network-nad-deletes
+  validationActions: [Deny]
+{{- end }}

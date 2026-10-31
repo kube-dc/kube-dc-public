@@ -336,7 +336,13 @@ spec:
                   pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                   x-kubernetes-int-or-string: true
                 storageClassName:
-                  description: Storage class (optional, defaults to cluster default)
+                  description: |-
+                    StorageClass for the database volumes. Optional: when empty, an existing
+                    database keeps the class it already uses (status.storageClassName); a new
+                    one gets the class that carries the platform "database" role
+                    (storage.kube-dc.com/roles) if that class can hold a database, else
+                    local-path. The class must suit a database: object-storage, scratch and
+                    no-provisioner classes are refused when the database is created.
                   type: string
                 username:
                   default: app
@@ -561,6 +567,12 @@ spec:
                     - backupName
                     - phase
                   type: object
+                storageClassName:
+                  description: |-
+                    StorageClass the database's volumes use. Recorded so that an engine
+                    object deleted and recreated keeps its storage when spec.storageClassName
+                    is empty.
+                  type: string
                 storageUsed:
                   description: Current storage usage
                   type: string

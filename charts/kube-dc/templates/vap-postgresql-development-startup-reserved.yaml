@@ -1,0 +1,342 @@
+{{- /*
+The pure ownership refusals of postgresql-development-startup-v1, as a
+ValidatingAdmissionPolicy. docs/prd/admission-webhooks-must-not-block-the-platform.md,
+step 3; docs/prd/admission-webhooks-step3-postgresql.md.
+
+From hand-off phase 2 the webhook entries route only objects carrying the
+platform's startup labels (authority), the broker's protected marker (broker)
+and, failing open, bindings, unlabelled CNPG objects and the monitoring copy
+(references). What the handler (internal/webhook/core/postgresql_startup_*.go)
+refuses WITHOUT a lookup, on objects that may carry no label at all, is held
+here, in the API server:
+
+  - objects in scope -- a name under kdc-pg-v1-, a cnpg.io/cluster or
+    cnpg.io/poolerName label naming one, or a typed reference to one on the new
+    or the old object -- whose new object is not a PostgreSQL startup object,
+    whose old object is not one on UPDATE, or whose instance-uid changes
+    ("ownership is immutable"; Handle after postgresqlStartupScope). The typed
+    references are postgresqlPodReferences' enumerable pod-spec paths (Pods,
+    and the templates of Deployments, ReplicaSets and Jobs), a Service's
+    selector, an account's secrets and imagePullSecrets, and a RoleBinding's
+    roleRef and subjects. The recursive walk over CNPG specs stays with the
+    references webhook entry;
+  - restore-broker-* Secrets without the platform marker and a restore target
+    (brokerWrite, pgBrokerRecord's label part);
+  - writes of cnpg-default-monitoring by anyone but the CNPG operator or an
+    administrator, without its app.kubernetes.io/managed-by=cloudnative-pg
+    label, or to a deleting copy (monitoringWrite's and postgresqlMonitoring's
+    pure parts; the copy comparison stays with the references entry);
+  - DELETE of a restore-broker-* Secret (brokerDelete's pure parts): allowed to
+    the namespace controller in a terminating namespace; otherwise only a valid
+    record (pgBrokerRecord's invariants except its SHA-256 name), a named
+    request carrying the Secret's UID precondition (and a matching
+    resourceVersion if it carries one), in the namespace incarnation the record
+    names, by an administrator, the services hub or the record's own data-plane
+    account, each with its exact service-account groups and a UID. The
+    handler's account-incarnation and data-plane lookups are not repeated (owner
+    question 3: cleanup stays available).
+
+Bookkeeping-only UPDATEs (no authority payload, label or annotation change) are
+not judged at all (rules 2 and 5), so garbage collection and namespace teardown
+finish on every object, foreign ones included.
+
+A PostgreSQL startup object carries services.kube-dc.com/startup-contract=
+postgresql-development-v1, managed-by=kube-dc-services, family=postgresql and a
+non-empty instance-uid (postgresqlStartupObject). Every identity is judged, as
+in the handler. failurePolicy: Ignore with a Deny binding: a policy that cannot
+be evaluated does not block project writes; an evaluated violation is refused.
+Rendered from handoffPhase 1, so it is cached before phase 2.
+*/ -}}
+{{- $p := .Values.projectPolicies.protectManagedServices }}
+{{- if and .Values.manager.webhook.enabled $p.enabled $p.postgresqlStartup.enabled (ge (int ($p.postgresqlStartup.handoffPhase | default 0)) 1) }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: postgresql-development-startup-reserved
+spec:
+  failurePolicy: Ignore
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["secrets", "configmaps", "serviceaccounts", "persistentvolumeclaims", "services", "pods"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "replicasets"]
+      - apiGroups: ["batch", "rbac.authorization.k8s.io", "postgresql.cnpg.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "roles", "rolebindings", "clusters", "backups", "scheduledbackups", "poolers", "publications", "subscriptions", "databases"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["DELETE"]
+        resources: ["secrets"]
+  matchConditions:
+    - name: broker-deletions-only
+      expression: "request.operation != 'DELETE' || oldObject.metadata.name.startsWith('restore-broker-')"
+    # Rules 2 and 5: an UPDATE that changes no authority payload, label or
+    # annotation (finalizers, ownerReferences, server bookkeeping) is never
+    # refused, so garbage collection and namespace teardown finish on every
+    # object, foreign ones included.
+    - name: exclude-bookkeeping-updates
+      expression: >-
+        !(request.operation == 'UPDATE' && object.all(k, k == 'metadata' || k == 'status' || (k in oldObject && object[k] == oldObject[k])) && oldObject.all(k, k == 'metadata' || k == 'status' || k in object) && (has(object.metadata.labels) ? object.metadata.labels : {}) == (has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}) && (has(object.metadata.annotations) ? object.metadata.annotations : {}) == (has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}))
+  variables:
+    - name: isDelete
+      expression: "request.operation == 'DELETE'"
+    - name: isUpdate
+      expression: "request.operation == 'UPDATE'"
+    - name: name
+      expression: "variables.isDelete ? oldObject.metadata.name : object.metadata.?name.orValue('')"
+    - name: newLabels
+      expression: "variables.isDelete ? {} : object.metadata.?labels.orValue({})"
+    - name: oldLabels
+      expression: "variables.isUpdate ? oldObject.metadata.?labels.orValue({}) : {}"
+    - name: newOwned
+      expression: >-
+        variables.newLabels[?'services.kube-dc.com/startup-contract'].orValue('') == 'postgresql-development-v1' &&
+        variables.newLabels[?'services.kube-dc.com/managed-by'].orValue('') == 'kube-dc-services' &&
+        variables.newLabels[?'services.kube-dc.com/family'].orValue('') == 'postgresql' &&
+        variables.newLabels[?'services.kube-dc.com/instance-uid'].orValue('') != ''
+    - name: oldOwned
+      expression: >-
+        variables.oldLabels[?'services.kube-dc.com/startup-contract'].orValue('') == 'postgresql-development-v1' &&
+        variables.oldLabels[?'services.kube-dc.com/managed-by'].orValue('') == 'kube-dc-services' &&
+        variables.oldLabels[?'services.kube-dc.com/family'].orValue('') == 'postgresql' &&
+        variables.oldLabels[?'services.kube-dc.com/instance-uid'].orValue('') != ''
+    - name: broker
+      expression: "request.resource.group == '' && request.resource.resource == 'secrets' && variables.name.startsWith('restore-broker-')"
+    - name: monitoring
+      expression: "request.resource.group == '' && request.resource.resource == 'configmaps' && variables.name == 'cnpg-default-monitoring'"
+    - name: objects
+      expression: "variables.isDelete ? [] : (variables.isUpdate ? [object, oldObject] : [object])"
+    - name: podSpecs
+      expression: >-
+        (request.resource.group == '' && request.resource.resource == 'pods') ? variables.objects.map(o, o.?spec.orValue({})) :
+        ((request.resource.group == 'apps' && request.resource.resource in ['deployments', 'replicasets']) || (request.resource.group == 'batch' && request.resource.resource == 'jobs')) ?
+        variables.objects.map(o, o.?spec.?template.?spec.orValue({})) : []
+    - name: podReferences
+      expression: |-
+        variables.podSpecs.exists(s,
+          s.?serviceAccountName.orValue('').startsWith('kdc-pg-v1-') ||
+          s.?volumes.orValue([]).exists(v,
+            v.?persistentVolumeClaim.?claimName.orValue('').startsWith('kdc-pg-v1-') ||
+            v.?secret.?secretName.orValue('').startsWith('kdc-pg-v1-') ||
+            v.?configMap.?name.orValue('').startsWith('kdc-pg-v1-') ||
+            v.?projected.?sources.orValue([]).exists(p,
+              p.?secret.?name.orValue('').startsWith('kdc-pg-v1-') || p.?configMap.?name.orValue('').startsWith('kdc-pg-v1-'))) ||
+          (s.?containers.orValue([]) + s.?initContainers.orValue([])).exists(c,
+            c.?env.orValue([]).exists(e,
+              e.?valueFrom.?secretKeyRef.?name.orValue('').startsWith('kdc-pg-v1-') || e.?valueFrom.?configMapKeyRef.?name.orValue('').startsWith('kdc-pg-v1-')) ||
+            c.?envFrom.orValue([]).exists(e,
+              e.?secretRef.?name.orValue('').startsWith('kdc-pg-v1-') || e.?configMapRef.?name.orValue('').startsWith('kdc-pg-v1-'))) ||
+          s.?imagePullSecrets.orValue([]).exists(x, x.?name.orValue('').startsWith('kdc-pg-v1-')))
+    - name: serviceReferences
+      expression: |-
+        request.resource.group == '' && request.resource.resource == 'services' && variables.objects.exists(o,
+          o.?spec.?selector.orValue({})[?'cnpg.io/cluster'].orValue('').startsWith('kdc-pg-v1-') ||
+          o.?spec.?selector.orValue({})[?'cnpg.io/poolerName'].orValue('').startsWith('kdc-pg-v1-'))
+    - name: rbacReferences
+      expression: |-
+        ((request.resource.group == '' && request.resource.resource == 'serviceaccounts') ||
+         (request.resource.group == 'rbac.authorization.k8s.io' && request.resource.resource in ['roles', 'rolebindings'])) &&
+        variables.objects.exists(o,
+          o.?secrets.orValue([]).exists(x, x.?name.orValue('').startsWith('kdc-pg-v1-')) ||
+          o.?imagePullSecrets.orValue([]).exists(x, x.?name.orValue('').startsWith('kdc-pg-v1-')) ||
+          o.?roleRef.?name.orValue('').startsWith('kdc-pg-v1-') ||
+          o.?subjects.orValue([]).exists(x, x.?name.orValue('').startsWith('kdc-pg-v1-')))
+    # Cost bounds (Astra rounds 8 and 9). failurePolicy Ignore admits an
+    # evaluation error, and the API server stops a policy that exceeds its
+    # cost budget, so no expression may run out of budget on a legal object.
+    # Every list the reference scans walk is bounded first, by size alone;
+    # an object beyond a bound is refused (the bounds validation) and its
+    # lists are never walked. The bounds are far above any real workload;
+    # what they tighten is listed in docs/prd/admission-webhooks-step3-postgresql.md.
+    - name: podListsBounded
+      expression: |-
+        variables.podSpecs.all(s,
+          size(s.?volumes.orValue([])) <= 1024 &&
+          size(s.?containers.orValue([])) + size(s.?initContainers.orValue([])) <= 128 &&
+          size(s.?imagePullSecrets.orValue([])) <= 256 &&
+          s.?volumes.orValue([]).map(v, size(v.?projected.?sources.orValue([]))).sum() <= 1024 &&
+          (s.?containers.orValue([]) + s.?initContainers.orValue([])).map(c, size(c.?env.orValue([]))).sum() <= 4096 &&
+          (s.?containers.orValue([]) + s.?initContainers.orValue([])).map(c, size(c.?envFrom.orValue([]))).sum() <= 1024)
+    - name: rbacListsBounded
+      expression: |-
+        !((request.resource.group == '' && request.resource.resource == 'serviceaccounts') ||
+          (request.resource.group == 'rbac.authorization.k8s.io' && request.resource.resource in ['roles', 'rolebindings'])) ||
+        variables.objects.all(o,
+          size(o.?secrets.orValue([])) <= 1024 && size(o.?imagePullSecrets.orValue([])) <= 1024 && size(o.?subjects.orValue([])) <= 4096)
+    - name: withinBounds
+      expression: "variables.podListsBounded && variables.rbacListsBounded"
+    - name: inScope
+      expression: |-
+        variables.objects.exists(o,
+          o.metadata.?name.orValue('').startsWith('kdc-pg-v1-') ||
+          o.metadata.?labels.orValue({})[?'cnpg.io/cluster'].orValue('').startsWith('kdc-pg-v1-') ||
+          o.metadata.?labels.orValue({})[?'cnpg.io/poolerName'].orValue('').startsWith('kdc-pg-v1-')) ||
+        variables.withinBounds && (variables.podReferences || variables.serviceReferences || variables.rbacReferences)
+    # Rule 5: garbage collection's or the Job controller's bookkeeping, held
+    # as strict as the webhook's postgresqlControllerBookkeeping (which
+    # judges labelled objects the same way): same UID and deletion state,
+    # payload and labels unchanged, only its own finalizers removed, owner
+    # references unchanged (garbage collection: a subset, each unchanged but
+    # for clearing blockOwnerDeletion), and no annotation in an authority
+    # domain (postgresqlAuthorityDomains) added, changed or removed. Whatever
+    # else it records, it gains nothing, and orphaning and teardown must not
+    # stick.
+    #
+    # Within CEL's per-expression cost limit on any legal object (Astra
+    # rounds 8 and 9): unchanged finalizers, annotations and owner references
+    # cost one shallow equality each; otherwise every walk is bounded by size
+    # first (64 finalizers, 4096 annotations of which at most 32 changed, 32
+    # owner references with fields of at most 256 characters). Beyond a bound
+    # the exemption does not apply and the request is judged like any other
+    # write. Neither controller changes annotations, and its finalizer and
+    # owner-reference updates alone are never evaluated
+    # (exclude-bookkeeping-updates), so the bounds only tighten writes those
+    # controllers do not make.
+    - name: controllerGC
+      expression: "request.userInfo.username == 'system:serviceaccount:kube-system:generic-garbage-collector'"
+    - name: controllerOwnFinalizers
+      expression: >-
+        variables.controllerGC ? ['foregroundDeletion', 'orphan'] :
+        request.userInfo.username == 'system:serviceaccount:kube-system:job-controller' ? ['batch.kubernetes.io/job-tracking'] : []
+    - name: newAnnotations
+      expression: "variables.isDelete ? {} : object.metadata.?annotations.orValue({})"
+    - name: oldAnnotations
+      expression: "variables.isUpdate ? oldObject.metadata.?annotations.orValue({}) : {}"
+    - name: changedAnnotationKeys
+      expression: >-
+        variables.newAnnotations.filter(k, !(k in variables.oldAnnotations && variables.oldAnnotations[k] == variables.newAnnotations[k])) +
+        variables.oldAnnotations.filter(k, !(k in variables.newAnnotations))
+    - name: controllerAnnotations
+      expression: >-
+        variables.newAnnotations == variables.oldAnnotations ||
+        size(variables.newAnnotations) <= 4096 && size(variables.oldAnnotations) <= 4096 &&
+        size(variables.changedAnnotationKeys) <= 32 &&
+        variables.changedAnnotationKeys.all(k, !k.matches('^([^/]*\\.)?(kubernetes\\.io|k8s\\.v1\\.cni\\.cncf\\.io|v1\\.multus-cni\\.io|kube-dc\\.com|cnpg\\.io|metallb\\.universe\\.tf|metallb\\.io|cert-manager\\.io|eks\\.amazonaws\\.com|iam\\.gke\\.io|azure\\.workload\\.identity)/'))
+    - name: newFinalizers
+      expression: "variables.isDelete ? [] : object.metadata.?finalizers.orValue([])"
+    - name: oldFinalizers
+      expression: "variables.isUpdate ? oldObject.metadata.?finalizers.orValue([]) : []"
+    - name: controllerFinalizers
+      expression: >-
+        variables.newFinalizers == variables.oldFinalizers ||
+        size(variables.oldFinalizers) <= 64 && size(variables.newFinalizers) <= 64 &&
+        variables.oldFinalizers.all(f, f in variables.newFinalizers || f in variables.controllerOwnFinalizers)
+    - name: newOwners
+      expression: "variables.isDelete ? [] : object.metadata.?ownerReferences.orValue([])"
+    - name: oldOwners
+      expression: "variables.isUpdate ? oldObject.metadata.?ownerReferences.orValue([]) : []"
+    - name: controllerOwnerCleanup
+      expression: |-
+        variables.newOwners == variables.oldOwners || variables.controllerGC && size(variables.oldOwners) <= 32 && size(variables.newOwners) <= 32 && (variables.oldOwners + variables.newOwners).all(r,
+          size(r.?apiVersion.orValue('')) <= 256 && size(r.?kind.orValue('')) <= 256 &&
+          size(r.?name.orValue('')) <= 256 && size(r.?uid.orValue('')) <= 256) &&
+        variables.newOwners.all(n,
+          variables.oldOwners.exists(p, p.uid == n.uid) &&
+          variables.oldOwners.all(p, p.uid != n.uid ||
+            p.all(k, k == 'blockOwnerDeletion' || (k in n && p[k] == n[k])) &&
+            n.all(k, k == 'blockOwnerDeletion' || k in p) &&
+            (!n.?blockOwnerDeletion.orValue(false) || p.?blockOwnerDeletion.orValue(false))))
+    - name: controllerCleanup
+      expression: >-
+        request.operation == 'UPDATE' && size(variables.controllerOwnFinalizers) > 0 &&
+        oldObject.metadata.?uid.orValue('') != '' && object.metadata.?uid.orValue('') == oldObject.metadata.?uid.orValue('') &&
+        has(object.metadata.deletionTimestamp) == has(oldObject.metadata.deletionTimestamp) &&
+        (!has(object.metadata.deletionTimestamp) || object.metadata.deletionTimestamp == oldObject.metadata.deletionTimestamp) &&
+        object.all(k, k == 'metadata' || k == 'status' || (k in oldObject && object[k] == oldObject[k])) &&
+        oldObject.all(k, k == 'metadata' || k == 'status' || k in object) &&
+        variables.newLabels == variables.oldLabels &&
+        variables.controllerFinalizers && variables.controllerAnnotations && variables.controllerOwnerCleanup
+    - name: groups
+      expression: "has(request.userInfo.groups) ? request.userInfo.groups : []"
+    - name: requesterUID
+      expression: "has(request.userInfo.uid) ? request.userInfo.uid : ''"
+    - name: admin
+      expression: "'system:masters' in variables.groups || 'platform:admin' in variables.groups"
+    - name: brokerAnnotations
+      expression: "variables.isDelete ? oldObject.metadata.?annotations.orValue({}) : {}"
+    - name: dataPlane
+      expression: "variables.brokerAnnotations[?'services.kube-dc.com/recovery-broker-data-plane'].orValue('')"
+    - name: namespaceController
+      expression: >-
+        request.userInfo.username == 'system:serviceaccount:kube-system:namespace-controller' && variables.requesterUID != '' &&
+        size(variables.groups) == 3 && ['system:serviceaccounts', 'system:serviceaccounts:kube-system', 'system:authenticated'].all(g, g in variables.groups)
+    - name: servicesAccount
+      expression: |-
+        variables.requesterUID != '' && size(variables.groups) == 3 && ['system:serviceaccounts', 'system:serviceaccounts:kube-dc-services', 'system:authenticated'].all(g, g in variables.groups) && (request.userInfo.username == 'system:serviceaccount:kube-dc-services:kube-dc-services-hub' ||
+         variables.dataPlane != '' && variables.brokerAnnotations[?'services.kube-dc.com/recovery-broker-data-plane-uid'].orValue('') != '' &&
+         request.userInfo.username == 'system:serviceaccount:kube-dc-services:dp-' + variables.dataPlane)
+    # pgBrokerRecord's pure invariants on the record being deleted. Its name
+    # is a SHA-256 of the target and operation UIDs, which CEL cannot compute;
+    # the broker route checked it when the record was written.
+    - name: brokerRecord
+      expression: |-
+        variables.isDelete && [oldObject.metadata.?labels.orValue({})].all(l,
+          l[?'services.kube-dc.com/managed-by'].orValue('') == 'kube-dc-services' &&
+          l[?'services.kube-dc.com/restore-target-uid'].orValue('') != '' &&
+          l[?'services.kube-dc.com/restore-operation-uid'].orValue('') != '' &&
+          l[?'services.kube-dc.com/restore-source-uid'].orValue('') != '' &&
+          l[?'services.kube-dc.com/service-uid'].orValue('') == l['services.kube-dc.com/restore-target-uid']) &&
+        variables.brokerAnnotations[?'services.kube-dc.com/recovery-broker-authorization'].orValue('').matches('^[0-9a-fA-F]{64}$') && variables.brokerAnnotations[?'services.kube-dc.com/recovery-broker-namespace-uid'].orValue('') != '' && size(oldObject.metadata.?ownerReferences.orValue([])) == 0 && oldObject.?type.orValue('Opaque') == 'Opaque' && !oldObject.?immutable.orValue(false) && size(oldObject.?stringData.orValue({})) == 0 && (variables.brokerAnnotations[?'services.kube-dc.com/recovery-broker-phase'].orValue('') == 'Active' ?
+          size(oldObject.?data.orValue({})) == 2 && oldObject.?data.orValue({}).all(k, size(oldObject.data[k]) > 0) :
+          variables.brokerAnnotations[?'services.kube-dc.com/recovery-broker-phase'].orValue('') in ['Withdrawn', 'Retired'] &&
+          size(oldObject.?data.orValue({})) == 0)
+    - name: teardown
+      expression: "variables.isDelete && has(namespaceObject.metadata.deletionTimestamp) && variables.namespaceController"
+    - name: preconditions
+      expression: "variables.isDelete && has(request.options) && request.options != null ? request.options.?preconditions.orValue({}) : {}"
+  validations:
+    - expression: "variables.isDelete || variables.withinBounds"
+      message: "PostgreSQL startup reference check: more entries than the policy judges (pod specs: 1024 volumes, 1024 projected sources, 128 containers, 4096 env, 1024 envFrom, 256 imagePullSecrets; accounts and roles: 1024 secrets, 1024 imagePullSecrets, 4096 subjects)"
+      reason: Forbidden
+    - expression: |-
+        variables.isDelete || variables.broker || variables.monitoring || !variables.inScope || variables.controllerCleanup || (variables.newOwned && (!variables.isUpdate || variables.oldOwned) &&
+          (!variables.oldOwned || variables.oldLabels['services.kube-dc.com/instance-uid'] == variables.newLabels['services.kube-dc.com/instance-uid']))
+      message: "PostgreSQL startup ownership is immutable; foreign objects cannot be adopted"
+      reason: Forbidden
+    - expression: |-
+        variables.isDelete || !variables.broker || variables.controllerCleanup || (variables.newLabels[?'services.kube-dc.com/managed-by'].orValue('') == 'kube-dc-services' &&
+          variables.newLabels[?'services.kube-dc.com/restore-target-uid'].orValue('') != '')
+      message: "reserved recovery broker identity is invalid"
+      reason: Forbidden
+    - expression: >-
+        variables.isDelete || !variables.monitoring || variables.admin || variables.controllerCleanup ||
+        request.userInfo.username == 'system:serviceaccount:cnpg-system:cnpg-cloudnative-pg'
+      message: "PostgreSQL default monitoring is reserved for the provider"
+      reason: Forbidden
+    - expression: >-
+        variables.isDelete || !variables.monitoring || variables.controllerCleanup ||
+        variables.newLabels[?'app.kubernetes.io/managed-by'].orValue('') == 'cloudnative-pg' && !has(object.metadata.deletionTimestamp)
+      message: "PostgreSQL monitoring differs from its live provider source"
+      reason: Forbidden
+    - expression: |-
+        !variables.isDelete || variables.teardown || (variables.brokerRecord &&
+          variables.brokerAnnotations[?'services.kube-dc.com/recovery-broker-namespace-uid'].orValue('') == string(dyn(namespaceObject).metadata.uid))
+      message: "reserved recovery broker deletion identity or namespace incarnation is invalid"
+      reason: Forbidden
+    - expression: |-
+        !variables.isDelete || variables.teardown || (request.name != '' && variables.preconditions.?uid.orValue('') == oldObject.metadata.uid &&
+          variables.preconditions.?resourceVersion.orValue(oldObject.metadata.resourceVersion) == oldObject.metadata.resourceVersion)
+      message: "broker deletion requires its exact UID precondition"
+      reason: Forbidden
+    - expression: >-
+        !variables.isDelete || variables.teardown || variables.admin || variables.servicesAccount
+      message: "recovery broker deletion requires provider cleanup authority"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: postgresql-development-startup-reserved
+spec:
+  policyName: postgresql-development-startup-reserved
+  validationActions: {{ toJson $p.validationActions }}
+{{- end }}

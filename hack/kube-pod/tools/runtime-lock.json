@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "platform": "linux/amd64",
+  "goToolchain": "go1.27.3",
+  "cliVersion": "v0.9.12",
+  "downloads": [
+    {
+      "name": "ttyd",
+      "version": "1.7.8",
+      "url": "https://github.com/cloudtty/ttyd/releases/download/1.7.8/ttyd.x86_64",
+      "downloadSHA256": "347c9b9894dfb8262f8ea00ce79db7a88edf16aba94bd99e8009a050eb3969c6",
+      "binarySHA256": "347c9b9894dfb8262f8ea00ce79db7a88edf16aba94bd99e8009a050eb3969c6",
+      "tarMember": null,
+      "publisherDigestAvailable": false
+    },
+    {
+      "name": "virtctl",
+      "version": "v1.9.1",
+      "url": "https://github.com/kubevirt/kubevirt/releases/download/v1.9.1/virtctl-v1.9.1-linux-amd64",
+      "downloadSHA256": "c289393c8186a258653594605f5199b4c171a3131e6e409ed204a96b491b782a",
+      "binarySHA256": "c289393c8186a258653594605f5199b4c171a3131e6e409ed204a96b491b782a",
+      "tarMember": null,
+      "publisherDigestAvailable": true
+    },
+    {
+      "name": "helm",
+      "version": "3.22.1",
+      "url": "https://get.helm.sh/helm-v3.22.1-linux-amd64.tar.gz",
+      "downloadSHA256": "896cf63684a42a723d61c980369d6e588330927deb13676ca0d85006dd6da0ea",
+      "binarySHA256": "46aeab5e043f62d01f7c168823b392cabc1cea3807b67906296290483791be43",
+      "tarMember": "linux-amd64/helm",
+      "publisherDigestAvailable": true
+    },
+    {
+      "name": "kube-dc",
+      "version": "v0.9.12",
+      "url": "https://github.com/kube-dc/kube-dc-public/releases/download/v0.9.12/kube-dc_linux_amd64",
+      "downloadSHA256": "834fc4bdfe7f89ff1b18e7167774e238d391b6349933de57c9be02414d0e29ff",
+      "binarySHA256": "834fc4bdfe7f89ff1b18e7167774e238d391b6349933de57c9be02414d0e29ff",
+      "tarMember": null,
+      "publisherDigestAvailable": true
+    }
+  ],
+  "goClientSHA256": {
+    "stern": "658e9bbc53b09b3f8afb4e804fd47757ab97566239c768b12dd7e2cf94fa0edb",
+    "k9s": "6a4d1294312b30392b87782b3d17cd75b566d2ee1611ca7377d20812e0c84808",
+    "kubectl": "79b434db7d2b2073df770957f1e677d05985cf0d36293aba429a24aa5409f861"
+  },
+  "cliEvidence": "docs/internal/evidence/release-0.9.11-published-cli-2026-10-30.json",
+  "assessmentEvidence": "docs/internal/evidence/release-0.9.11-cloudshell-tool-assessment-2026-10-30.json"
+}

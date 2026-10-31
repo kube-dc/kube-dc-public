@@ -130,4 +130,9 @@ rules:
 - apiGroups: [security.kube-dc.com]
   resources: [kmskeys]
   verbs: [get, list, watch]
+# A database without a storage class gets the class carrying the platform
+# "database" role (storage capability contract), read from the StorageClasses.
+- apiGroups: [storage.k8s.io]
+  resources: [storageclasses]
+  verbs: [get, list, watch]
 {{- end }}

@@ -23,20 +23,20 @@ spec:
         request.userInfo.username !=
         'system:serviceaccount:{{ .Release.Namespace }}:{{ include "kube-dc.manager.serviceAccountName" . }}'
     - name: exclude-namespace-teardown
-      expression: >-
+      expression: |-
         !(request.operation == 'DELETE' && request.userInfo.username in [
           'system:serviceaccount:kube-system:namespace-controller',
           'system:serviceaccount:kube-system:generic-garbage-collector',
           'system:kube-controller-manager'
         ])
     - name: exclude-quota-accounting
-      expression: >-
+      expression: |-
         !(has(request.subResource) && request.subResource == 'status' && request.userInfo.username in [
           'system:serviceaccount:kube-system:resourcequota-controller',
           'system:kube-controller-manager', 'system:apiserver'
         ])
     - name: exclude-garbage-collector-finalizers
-      expression: >-
+      expression: |-
         !(request.operation == 'UPDATE' && (!has(request.subResource) || request.subResource == '') &&
           request.userInfo.username in ['system:serviceaccount:kube-system:generic-garbage-collector',
             'system:kube-controller-manager'] &&

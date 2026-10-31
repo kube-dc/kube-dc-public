@@ -153,7 +153,7 @@ spec:
               likely stalling. This precedes a full worker-pool wedge.
             runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/e2e-installer-test-plan.md
         - alert: KubeDcManagerWorkersSaturated
-          expr: >-
+          expr: |-
             (max by (controller) (controller_runtime_active_workers)
               >= max by (controller) (controller_runtime_max_concurrent_reconciles))
             and (sum by (controller) (rate(controller_runtime_reconcile_total[10m])) == 0)
@@ -170,6 +170,120 @@ spec:
               completed in 10m. Defense-in-depth from controller-runtime built-ins, independent of the
               kube_dc_controller_wedged metric.
             runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/e2e-installer-test-plan.md
+    # Observability JWKS (internal/organization/client_observability_jwks.go):
+    # monitoring/observability-jwks holds every realm's signing keys for the
+    # Envoy JWT check on Mimir, Loki and Alertmanager queries. A realm whose
+    # keys are missing gets 401 there; one ConfigMap holds at most 1 MiB.
+    # Only the leader publishes, so every rule takes the max across pods.
+    - name: kube-dc.observability-jwks
+      rules:
+        - alert: KubeDcObservabilityJWKSNearLimit
+          expr: max(kube_dc_observability_jwks_configmap_bytes) > 0.8 * max(kube_dc_observability_jwks_configmap_limit_bytes)
+          for: 15m
+          labels:
+            severity: warning
+            service: kube-dc-control-plane
+            owner: control-plane
+          annotations:
+            dashboard_uid: kube-dc-manager
+            summary: The observability JWKS ConfigMap is above 80% of its 1 MiB limit
+            description: >-
+              monitoring/observability-jwks holds {{ "{{ $value | humanize1024 }}" }}B. Past the limit the
+              manager cannot publish keys for new Organizations, and their users get 401 on metrics,
+              logs and alerts queries. Plan the move to a sharded or remote key set.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/observability-jwks.md
+        - alert: KubeDcObservabilityJWKSRealmKeysNotPublished
+          expr: max(kube_dc_observability_jwks_realms{state="NotPublished"}) > 0
+          for: 15m
+          labels:
+            severity: warning
+            service: kube-dc-control-plane
+            owner: control-plane
+          annotations:
+            dashboard_uid: kube-dc-manager
+            summary: Organizations have no signing keys in the observability JWKS
+            description: >-
+              {{ "{{ $value }}" }} realm(s) have no published keys, so their users get 401 on metrics, logs
+              and alerts queries. The Organizations carry ObservabilityKeysPublished=False with the reason.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/observability-jwks.md
+        - alert: KubeDcObservabilityJWKSRealmKeysStale
+          expr: max(kube_dc_observability_jwks_realms{state="Stale"}) > 0
+          for: 1h
+          labels:
+            severity: warning
+            service: kube-dc-control-plane
+            owner: control-plane
+          annotations:
+            dashboard_uid: kube-dc-manager
+            summary: Organizations' observability signing keys cannot be refreshed
+            description: >-
+              For {{ "{{ $value }}" }} realm(s) the manager serves the keys published earlier because their
+              current keys could not be fetched or written. Tokens fail if Keycloak rotated those keys.
+              The Organizations carry ObservabilityKeysPublished with reason Stale.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/observability-jwks.md
+        - alert: KubeDcObservabilityJWKSPublishStalled
+          expr: time() - max(kube_dc_observability_jwks_last_success_timestamp_seconds) > 1800
+          for: 10m
+          labels:
+            severity: warning
+            service: kube-dc-control-plane
+            owner: control-plane
+          annotations:
+            dashboard_uid: kube-dc-manager
+            summary: The observability JWKS has not been published for 30 minutes
+            description: >-
+              The manager refreshes monitoring/observability-jwks every 5 minutes. It has not completed
+              a publish for 30 minutes, so key rotations and new Organizations are not reaching the
+              observability gateway. See kube_dc_observability_jwks_publish_failures_total by reason.
+            runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/observability-jwks.md
+    # Namespace reuse tombstones (internal/project/namespace_reuse_store.go):
+    # the barrier that holds a deleted Project namespace's name through its
+    # cool-down. It relies on the manager namespace having no ResourceQuota on
+    # ConfigMaps; a tombstone that cannot be written holds the Project
+    # deletion (or recreation) that needs it.
+    - name: kube-dc.namespace-tombstones
+      rules:
+        - alert: KubeDcNamespaceTombstoneStoreQuota
+          expr: max(kube_dc_namespace_tombstone_store_quota_limited) > 0
+          for: 5m
+          labels:
+            severity: critical
+            service: kube-dc-control-plane
+            owner: control-plane
+          annotations:
+            dashboard_uid: kube-dc-manager
+            summary: A ResourceQuota limits ConfigMaps in the kube-dc manager namespace
+            description: >-
+              Namespace tombstones are ConfigMaps in the manager namespace. With a ConfigMap quota
+              there, a tombstone can be refused and the Project deletion that needs it waits
+              indefinitely. Remove the ConfigMap limit from that ResourceQuota.
+        - alert: KubeDcNamespaceTombstoneWritesFailing
+          expr: increase(kube_dc_namespace_tombstone_write_failures_total[15m]) > 0
+          for: 15m
+          labels:
+            severity: warning
+            service: kube-dc-control-plane
+            owner: control-plane
+          annotations:
+            dashboard_uid: kube-dc-manager
+            summary: Namespace tombstone writes are failing
+            description: >-
+              Project deletions or namespace recreations are waiting for a tombstone that cannot be
+              written; the affected Projects carry a NamespaceTombstone=False condition with the reason.
+        - alert: KubeDcNamespaceTombstoneOrganizationCap
+          expr: increase(kube_dc_namespace_tombstone_organization_cap_refusals_total[15m]) > 0
+          for: 15m
+          labels:
+            severity: warning
+            service: kube-dc-control-plane
+            owner: control-plane
+          annotations:
+            dashboard_uid: kube-dc-manager
+            summary: An organization is over its cap of unreclaimed namespace tombstones
+            description: >-
+              That organization's new Project deletions wait (condition NamespaceTombstone=False,
+              reason OrganizationCapReached) until held or pending tombstones are reclaimed, usually
+              namespaces stuck terminating or Projects that cannot recreate their namespace.
     # Pod NIC address conflicts: kube-ovn's duplicate-address detection refused
     # a pod's address because another host answers for it (a tenant VM announcing
     # a nested-cluster VIP). The manager records a PodIPConflict, and in remediate
@@ -328,7 +442,7 @@ spec:
               or too small. The consumer gets no delegated LoadBalancer range — decide by hand.
             runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/prd/project-subnet-ipam-delegation.md
         - alert: KubeDcAddressArenaClaimSlotsHigh
-          expr: >-
+          expr: |-
             kube_dc_manager_address_arena_claim_slots_used
               / kube_dc_manager_address_arena_claim_slots_maximum >= 0.75
           for: 15m
@@ -381,10 +495,19 @@ spec:
       rules:
         - record: kube_dc:gpu_dra_claims:sum
           expr: sum by (profile, state) (kube_dc_gpu_dra_claims)
+        # DRA discovery runs only on the elected manager (DRACollector needs
+        # leader election). Every replica still exports the label-less driver
+        # gauges, so a standby reports driver_discovery_success=0 forever and
+        # never exports discovery_success. Judge the deployment, not each pod:
+        # max() is 1 while the leader's latest discovery succeeded and 0 when
+        # it failed. With no leader, the ex-leader's last samples stay visible
+        # until they go stale; then the driver max is 0 from the standbys and
+        # the profile aggregate is empty, which absent() catches. absent() also
+        # covers no scrapeable manager at all.
         - alert: KubeDcGPUDRADiscoveryFailed
           expr: >-
-            kube_dc_gpu_dra_discovery_success == 0
-            or kube_dc_gpu_dra_driver_discovery_success == 0
+            max by (namespace, job, profile) (kube_dc_gpu_dra_discovery_success) == 0
+            or max by (namespace, job) (kube_dc_gpu_dra_driver_discovery_success) == 0
             or absent(kube_dc_gpu_dra_discovery_success)
             or absent(kube_dc_gpu_dra_driver_discovery_success)
           for: 2m
@@ -411,12 +534,16 @@ spec:
             description: At least one desired DRA driver Pod is missing or unready. Keep Shared creation disabled and distinguish a node restart from a stale driver Pod before recovery.
             runbook_url: https://github.com/shalb/kube-dc/blob/main/docs/internal/hami-gpu-liveness.md
         - alert: KubeDcGPUDRAStaleDriverPod
+          # The driver terms come from one pod's series (the leader's) and
+          # match by labels. The inventory terms are label-less aggregates, so
+          # they need on(); without it the and never matched and this alert
+          # could not fire.
           expr: >-
             (kube_dc_gpu_dra_unready_driver_pods > 0)
             and (kube_dc_gpu_dra_driver_ready < kube_dc_gpu_dra_driver_desired)
-            and (sum(kube_dc_gpu_dra_devices) == 0)
-            and (min(kube_dc_gpu_dra_discovery_success) == 1)
             and (kube_dc_gpu_dra_driver_discovery_success == 1)
+            and on () (sum(kube_dc_gpu_dra_devices) == 0)
+            and on () (min(kube_dc_gpu_dra_discovery_success) == 1)
           # The manager first requires ten minutes since the PodReady=False
           # transition; this final dwell makes the end-to-end threshold 12m.
           for: 2m

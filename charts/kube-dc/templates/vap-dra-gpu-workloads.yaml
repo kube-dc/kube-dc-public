@@ -65,9 +65,8 @@ spec:
       message: "DRA GPU claim templates require exactly one request and no tenant constraints or config."
 {{ range $profile := $draProfiles }}
 {{ $unit := index $profile.request.presets 0 }}
-    - expression: >-
-        object.metadata.labels[{{ $profileLabel | quote }}] != {{ $profile.id | quote }} ||
-        (object.spec.spec.devices.requests[0].name == 'gpu' &&
+    - expression: |-
+        object.metadata.labels[{{ $profileLabel | quote }}] != {{ $profile.id | quote }} || (object.spec.spec.devices.requests[0].name == 'gpu' &&
          has(object.spec.spec.devices.requests[0].exactly) &&
          !has(object.spec.spec.devices.requests[0].firstAvailable) &&
          object.spec.spec.devices.requests[0].exactly.deviceClassName == {{ $profile.dra.deviceClassName | quote }} &&
@@ -119,9 +118,8 @@ spec:
         !has(request.userInfo.groups) ||
         !('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups)
     - name: has-dra-contract
-      expression: >-
-        has(object.spec.template.spec.resourceClaims) ||
-        (has(object.metadata.labels) &&
+      expression: |-
+        has(object.spec.template.spec.resourceClaims) || (has(object.metadata.labels) &&
          'kube-dc.com/gpu-backend' in object.metadata.labels &&
          object.metadata.labels['kube-dc.com/gpu-backend'] == 'dra')
   variables:
@@ -130,23 +128,15 @@ spec:
     - name: container
       expression: object.spec.template.spec.containers[0]
   validations:
-    - expression: >-
-        has(object.metadata.labels) && has(object.spec.template.metadata.labels) &&
-        has(object.metadata.annotations) && has(object.spec.template.metadata.annotations) &&
-        'kube-dc.com/gpu-workload-hash' in object.metadata.annotations &&
-        object.spec.template.metadata.annotations['kube-dc.com/gpu-workload-hash'] ==
+    - expression: |-
+        has(object.metadata.labels) && has(object.spec.template.metadata.labels) && has(object.metadata.annotations) && has(object.spec.template.metadata.annotations) && 'kube-dc.com/gpu-workload-hash' in object.metadata.annotations && object.spec.template.metadata.annotations['kube-dc.com/gpu-workload-hash'] ==
           object.metadata.annotations['kube-dc.com/gpu-workload-hash'] &&
-        object.metadata.labels['app.kubernetes.io/managed-by'] == 'kube-dc' &&
-        object.metadata.labels['kube-dc.com/gpu-backend'] == 'dra' &&
-        object.spec.template.metadata.labels == object.metadata.labels &&
-        {{ $profileLabel | quote }} in object.metadata.labels &&
-        object.metadata.labels[{{ $profileLabel | quote }}] in {{ $profileIDs | toJson }}
+        object.metadata.labels['app.kubernetes.io/managed-by'] == 'kube-dc' && object.metadata.labels['kube-dc.com/gpu-backend'] == 'dra' && object.spec.template.metadata.labels == object.metadata.labels && {{ $profileLabel | quote }} in object.metadata.labels && object.metadata.labels[{{ $profileLabel | quote }}] in {{ $profileIDs | toJson }}
       message: "DRA GPU Deployments require canonical kube-dc ownership and an enabled profile."
 {{ range $profile := $draProfiles }}
 {{ $unit := index $profile.request.presets 0 }}
-    - expression: >-
-        object.metadata.labels[{{ $profileLabel | quote }}] != {{ $profile.id | quote }} ||
-        ('kube-dc.com/gpu-memory-mib' in object.metadata.annotations &&
+    - expression: |-
+        object.metadata.labels[{{ $profileLabel | quote }}] != {{ $profile.id | quote }} || ('kube-dc.com/gpu-memory-mib' in object.metadata.annotations &&
          'kube-dc.com/gpu-core-percent' in object.metadata.annotations &&
          object.spec.template.metadata.annotations['kube-dc.com/gpu-memory-mib'] ==
            object.metadata.annotations['kube-dc.com/gpu-memory-mib'] &&
@@ -185,7 +175,7 @@ spec:
         (!has(variables.podSpec.hostIPC) || variables.podSpec.hostIPC == false) &&
         (!has(variables.podSpec.volumes) || variables.podSpec.volumes.all(v, !has(v.hostPath)))
       message: "DRA GPU Deployments cannot use host namespaces or hostPath volumes."
-    - expression: >-
+    - expression: |-
         (!has(variables.container.securityContext) ||
          ((!has(variables.container.securityContext.privileged) || variables.container.securityContext.privileged == false) &&
           (!has(variables.container.securityContext.allowPrivilegeEscalation) || variables.container.securityContext.allowPrivilegeEscalation == false) &&
@@ -230,9 +220,8 @@ spec:
         !has(request.userInfo.groups) ||
         !('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups)
     - name: has-dra-contract
-      expression: >-
-        has(object.spec.resourceClaims) ||
-        (has(object.metadata.labels) &&
+      expression: |-
+        has(object.spec.resourceClaims) || (has(object.metadata.labels) &&
          'kube-dc.com/gpu-backend' in object.metadata.labels &&
          object.metadata.labels['kube-dc.com/gpu-backend'] == 'dra')
   variables:
@@ -247,12 +236,11 @@ spec:
         {{ $profileLabel | quote }} in object.metadata.labels &&
         object.metadata.labels[{{ $profileLabel | quote }}] in {{ $profileIDs | toJson }}
       message: "DRA GPU Pods require canonical kube-dc ownership and an enabled profile."
-    - expression: >-
-        has(object.metadata.ownerReferences) &&
-        object.metadata.ownerReferences.exists(o,
+    - expression: |-
+        has(object.metadata.ownerReferences) && object.metadata.ownerReferences.exists(o,
           o.kind == 'ReplicaSet' && has(o.controller) && o.controller == true)
       message: "DRA GPU Pods must have a controlling ReplicaSet owner."
-    - expression: >-
+    - expression: |-
         request.operation != 'CREATE' || request.userInfo.username in [
           'system:kube-controller-manager',
           'system:serviceaccount:kube-system:replicaset-controller'
@@ -260,9 +248,8 @@ spec:
       message: "DRA GPU Pods must be created by the ReplicaSet controller."
 {{ range $profile := $draProfiles }}
 {{ $unit := index $profile.request.presets 0 }}
-    - expression: >-
-        object.metadata.labels[{{ $profileLabel | quote }}] != {{ $profile.id | quote }} ||
-        ('kube-dc.com/gpu-memory-mib' in object.metadata.annotations &&
+    - expression: |-
+        object.metadata.labels[{{ $profileLabel | quote }}] != {{ $profile.id | quote }} || ('kube-dc.com/gpu-memory-mib' in object.metadata.annotations &&
          'kube-dc.com/gpu-core-percent' in object.metadata.annotations &&
          object.metadata.annotations['kube-dc.com/gpu-memory-mib'] == {{ printf "%d" (int64 $unit.memoryMiB) | quote }} &&
          object.metadata.annotations['kube-dc.com/gpu-core-percent'] == {{ printf "%d" (int64 $unit.corePercent) | quote }})
@@ -294,7 +281,7 @@ spec:
         (!has(object.spec.hostIPC) || object.spec.hostIPC == false) &&
         (!has(object.spec.volumes) || object.spec.volumes.all(v, !has(v.hostPath)))
       message: "DRA GPU Pods cannot use host namespaces or hostPath volumes."
-    - expression: >-
+    - expression: |-
         (!has(variables.container.securityContext) ||
          ((!has(variables.container.securityContext.privileged) || variables.container.securityContext.privileged == false) &&
           (!has(variables.container.securityContext.allowPrivilegeEscalation) || variables.container.securityContext.allowPrivilegeEscalation == false) &&

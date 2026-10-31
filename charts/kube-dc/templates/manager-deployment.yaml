@@ -1,5 +1,5 @@
 {{- if and (include "kube-dc.manager.failClosedAdmission" .) (lt (int .Values.manager.replicaCount) 2) (not .Values.manager.singleReplicaAdmissionAccepted) }}
-{{- fail "This installation has fail-closed manager admission (projectNetwork, routedNetwork, managed-services protection or exposure route claims) and requires manager.replicaCount >= 2: with one replica, every rollout, drain or eviction is a window in which tenant pods, claims and Secrets cannot be created, and a node loss is an outage. Set manager.replicaCount to at least 2 (and ensure two nodes match manager.nodeSelector), or set manager.singleReplicaAdmissionAccepted=true to accept a not-highly-available installation." }}
+{{- fail "This installation has fail-closed manager admission (projectNetwork, routedNetwork, managed-services protection or FIP source policy) and requires manager.replicaCount >= 2: with one replica, every rollout, drain or eviction is a window in which tenant pods, claims and Secrets cannot be created, and a node loss is an outage. Set manager.replicaCount to at least 2 (and ensure two nodes match manager.nodeSelector), or set manager.singleReplicaAdmissionAccepted=true to accept a not-highly-available installation." }}
 {{- end }}
 apiVersion: apps/v1
 kind: Deployment
@@ -66,6 +66,7 @@ spec:
           - --config-secret-name=master-config
           - --config-secret-namespace=$(NAMESPACE)
           - --zap-log-level={{ .Values.manager.logLevel | default "1" }}
+          - --zap-encoder={{ .Values.manager.logFormat | default "json" }}
           - --keycloak-debug={{ .Values.manager.keycloakDebug | default "false" }}
           - --grafana-tenant-mode={{ .Values.manager.grafanaTenantMode | default "org" }}
           - --pod-ip-conflict-remediation={{ .Values.manager.podIPConflict.mode | default "observe" }}
@@ -93,6 +94,14 @@ spec:
           - --pprof-bind-address={{ .Values.manager.pprof.bindAddress }}
           {{- end }}
         env:
+          {{- $managerMemLimit := (((.Values.manager.resources | default dict).limits | default dict).memory) }}
+          {{- if or (not $managerMemLimit) (not (include "kube-dc.memoryLimitPositive" $managerMemLimit)) }}
+          {{- fail "manager.resources.limits.memory is required and must be positive: an uncapped manager can exhaust its node's memory (stage 2026-10-23); raise the value instead of removing it" }}
+          {{- end }}
+          # The Go runtime's soft memory limit, under the container's memory
+          # limit (values manager.goMemLimit / goMemLimitPercent).
+          - name: GOMEMLIMIT
+            value: {{ include "kube-dc.goMemLimit" (dict "limit" $managerMemLimit "percent" .Values.manager.goMemLimitPercent "explicit" .Values.manager.goMemLimit) | quote }}
           # The reserved object-storage admin identity. The manager refuses to
           # manage an organization of this name, because such an organization
           # would resolve to the platform's own CephObjectStoreUser and Secret.
@@ -161,6 +170,62 @@ spec:
           # exempts; the same list the protect-managed-services policy uses.
           - name: MANAGED_SERVICES_EXEMPT_SA_NAMESPACES
             value: {{ join "," (include "kube-dc.managedServices.exemptNamespaces" . | fromJsonArray) | quote }}
+          {{- $startupPhases := list }}
+          {{- with .Values.projectPolicies.protectManagedServices.valkeyStartup }}
+          {{- if and .enabled (ge (int (.handoffPhase | default 0)) 1) }}
+          {{- $startupPhases = append $startupPhases (printf "valkey-development=%d" (int .handoffPhase)) }}
+          {{- end }}
+          {{- end }}
+          {{- range $family := list "mysql" "mariadb" "valkey" }}
+          {{- $sqlPhase := int (include "kube-dc.sharedStartup.handoffPhase" (dict "root" $ "family" $family)) }}
+          {{- if and (index $.Values.projectPolicies.protectManagedServices.sharedStartup $family) (ge $sqlPhase 1) }}
+          {{- $startupPhases = append $startupPhases (printf "%s-shared=%d" $family $sqlPhase) }}
+          {{- end }}
+          {{- end }}
+          {{- range $family := list "kafka" "clickhouse" }}
+          {{- $chkPhase := int (include "kube-dc.sharedStartup.handoffPhase" (dict "root" $ "family" $family)) }}
+          {{- if and (index $.Values.projectPolicies.protectManagedServices.sharedStartup $family) (ge $chkPhase 1) }}
+          {{- $startupPhases = append $startupPhases (printf "%s-shared=%d" $family $chkPhase) }}
+          {{- end }}
+          {{- end }}
+          {{- with .Values.projectPolicies.protectManagedServices.postgresqlStartup }}
+          {{- if and .enabled (ge (int (.handoffPhase | default 0)) 1) }}
+          {{- $startupPhases = append $startupPhases (printf "postgresql-development=%d" (int .handoffPhase)) }}
+          {{- end }}
+          {{- end }}
+          {{- if $startupPhases }}
+          # Hand-off phases of the startup gates (step 3 of
+          # docs/prd/admission-webhooks-must-not-block-the-platform.md). Not
+          # rendered while every gate is at phase 0.
+          - name: ADMISSION_STARTUP_HANDOFF_PHASES
+            value: {{ join "," $startupPhases | quote }}
+          {{- end }}
+          {{- if ne (include "kube-dc.childMarking.phase" .) "0" }}
+          # Hand-off phase of the child-marking mutator (step 4 of
+          # docs/prd/admission-webhooks-must-not-block-the-platform.md): from 1
+          # it puts a verified marked workload's markers into its templates.
+          # Not rendered at phase 0, so the default chart is unchanged.
+          - name: ADMISSION_CHILD_MARKING_HANDOFF_PHASE
+            value: {{ include "kube-dc.childMarking.phase" . | quote }}
+          {{- end }}
+          {{- if ge (int .Values.manager.webhook.broadGatesHandoffPhase) 1 }}
+          # Hand-off phase of the broad admission gates (step 2b of
+          # docs/prd/admission-webhooks-must-not-block-the-platform.md); from 2
+          # the subresource and token handlers admit a request whose lookups
+          # fail. Not rendered at phase 0, so the default chart is unchanged.
+          - name: ADMISSION_BROAD_GATES_HANDOFF_PHASE
+            value: {{ int .Values.manager.webhook.broadGatesHandoffPhase | quote }}
+          {{- end }}
+          {{- if ne (include "kube-dc.referencesHandoff.phase" .) "0" }}
+          # Hand-off phase of managed-references' core rules
+          # (docs/prd/admission-webhooks-remaining-design.md, item 2): from 1
+          # the creation route refuses the platform's pod until its
+          # reserved-name claim exists, marked and not terminating; from 3 the
+          # core route admits a request whose lookups fail. Not rendered at
+          # phase 0, so the default chart is unchanged.
+          - name: ADMISSION_REFERENCES_HANDOFF_PHASE
+            value: {{ include "kube-dc.referencesHandoff.phase" . | quote }}
+          {{- end }}
           # "attested" (default): a registered chain may climb a non-controller
           # owner edge (Strimzi's StrimziPodSet -> KafkaNodePool) once the
           # manager has observed the owner-forgery guard and the marker policy
@@ -188,6 +253,42 @@ spec:
           # the absence of the variable is itself ambiguous.
           - name: BILLING_PROVIDER
             value: "{{ .Values.billing.provider }}"
+          # Who writes per-project ResourceQuotas (projectQuota.source).
+          - name: PROJECT_QUOTA_SOURCE
+            value: "{{ .Values.projectQuota.source }}"
+          {{- if .Values.backend.keycloakAdminClient.secretName }}
+          # The backend's Keycloak admin client: the manager grants it the
+          # per-realm roles it needs on every organization realm, sso and master
+          # (internal/organization/client_keycloak_backend_admin.go). Additive.
+          - name: KEYCLOAK_BACKEND_ADMIN_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.backend.keycloakAdminClient.secretName | quote }}
+                key: {{ .Values.backend.keycloakAdminClient.clientIdKey | quote }}
+          {{- else if .Values.manager.backendKeycloakAdminClientId }}
+          - name: KEYCLOAK_BACKEND_ADMIN_CLIENT_ID
+            value: {{ .Values.manager.backendKeycloakAdminClientId | quote }}
+          {{- end }}
+          {{- if (.Values.backend.mcp | default dict).enabled }}
+          # Hosted MCP: the manager sets up each organization realm for it
+          # (internal/organization/client_keycloak_mcp.go).
+          - name: MCP_PUBLIC_URL
+            value: {{ include "kube-dc.mcp.publicURL" . | quote }}
+          - name: MCP_TRUSTED_HOSTS
+            value: {{ join "," (.Values.backend.mcp.trustedRedirectHosts | default list) | quote }}
+          - name: MCP_CIMD_CLIENT_DOMAINS
+            value: {{ join "," (.Values.backend.mcp.cimdClientDomains | default list) | quote }}
+          - name: MCP_PREREGISTERED_APPS
+            value: {{ toJson (.Values.backend.mcp.preregisteredApps | default list) | quote }}
+          - name: MCP_READ_ONLY_ENFORCED
+            value: {{ .Values.backend.mcp.enforceReadOnly | default false | quote }}
+          {{- end }}
+          {{- if (.Values.platformOperations | default dict).enabled }}
+          # The backend's identity for typed platform operations: the manager
+          # writes each organization's kube-dc-platform OpenBao role for it.
+          - name: PLATFORM_OPERATIONS_SERVICE_ACCOUNT
+            value: "system:serviceaccount:{{ .Release.Namespace }}:{{ include "kube-dc.backend.serviceAccountName" . }}"
+          {{- end }}
           {{- if .Values.manager.infraAttachment.enabled }}
           {{- if not (contains "{namespace}" .Values.manager.infraAttachment.securityGroup) }}
           {{- fail "manager.infraAttachment.securityGroup must contain {namespace}" }}
@@ -236,16 +337,6 @@ spec:
             value: {{ .Values.manager.fipSourcePolicy.enabled | quote }}
           - name: FIP_SOURCE_POLICY_NAMESPACE_UIDS
             value: {{ toJson .Values.manager.fipSourcePolicy.namespaceUIDs | quote }}
-          - name: EXPOSURE_ROUTE_TRUSTED_PRODUCERS
-            value: {{ join "," .Values.manager.webhook.exposureRouteTrustedProducers | quote }}
-          - name: EXPOSURE_ROUTE_PRODUCER_NAMESPACE_UIDS
-            value: {{ .Values.manager.webhook.exposureRouteProducerNamespaceUIDs | toJson | quote }}
-          - name: EXPOSURE_ACME_CONTROLLER_USERNAME
-            value: {{ .Values.manager.webhook.exposureACMEControllerUsername | quote }}
-          - name: EXPOSURE_ACME_PLATFORM_NAMESPACE_UIDS
-            value: {{ toJson .Values.manager.webhook.exposureACMEPlatformNamespaceUIDs | quote }}
-          - name: EXPOSURE_ROUTE_CONTROLLER_USERNAME
-            value: {{ printf "system:serviceaccount:%s:%s" .Release.Namespace (include "kube-dc.manager.serviceAccountName" .) | quote }}
           - name: PROJECT_NETWORK_CONTROLLER_USERNAME
             value: {{ printf "system:serviceaccount:%s:%s" .Release.Namespace (include "kube-dc.manager.serviceAccountName" .) | quote }}
           - name: KUBE_DC_SERVICE_FAMILIES_FILE

@@ -1,0 +1,123 @@
+{{- /*
+A project's default network never sits on a VLAN. docs/prd/admission-webhooks-
+remaining-design.md, item 3 (mnetworkattach, vnetworkattach), and
+docs/prd/admission-webhooks-narrow-entries-as-built.md.
+
+From manager.webhook.narrowGatesHandoffPhase 2 the tenant-VLAN entries skip a
+pod or VM that names only its namespace's default NAD. That is safe only while
+<ns>/default cannot reach a customer's wire. The Project controller writes and
+reverts that NAD's config (type kube-ovn, provider default.<ns>.ovn), and
+kube-ovn attaches it to the Subnet whose provider matches: the project's
+overlay Subnet, which has no VLAN. This policy keeps it that way: no Subnet
+whose provider is a project default provider (default.<name>[.ovn]) may name a
+VLAN -- not only a reserved one, so a Subnet created on a wire before that wire
+is reserved cannot carry the default network onto it either. The audit
+(cmd/admission-handoff-audit, section narrowGates) reports existing ones.
+
+The same holds for the infra subnet (manager.infraAttachment.subnet), which
+the exempt shape accepts as a bare logical_switch: it never names a VLAN, so
+no later reservation can put it on a customer's wire (Astra round 5).
+
+Judged on CREATE, and on UPDATE only when spec.provider or spec.vlan changes:
+kube-ovn's status and finalizer writes are never judged. Every identity, the
+manager and cluster admins included (none of them creates such a Subnet). No
+params, failurePolicy Fail. Rendered from narrowGatesHandoffPhase 1.
+*/ -}}
+{{- if and .Values.manager.webhook.enabled .Values.projectNetwork.enabled (ne (include "kube-dc.narrowGates.phase" .) "0") }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: project-default-network-off-vlans
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["kubeovn.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["subnets"]
+  variables:
+    - name: provider
+      expression: "has(object.spec) && has(object.spec.provider) ? string(object.spec.provider) : ''"
+    - name: vlan
+      expression: "has(object.spec) && has(object.spec.vlan) ? string(object.spec.vlan) : ''"
+    - name: changed
+      expression: >-
+        request.operation == 'CREATE' ||
+        variables.provider != (has(oldObject.spec) && has(oldObject.spec.provider) ? string(oldObject.spec.provider) : '') ||
+        variables.vlan != (has(oldObject.spec) && has(oldObject.spec.vlan) ? string(oldObject.spec.vlan) : '')
+  validations:
+    - expression: >-
+        !variables.changed || variables.vlan == '' ||
+        !variables.provider.matches('^default\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.ovn)?$')
+      messageExpression: >-
+        'Subnet ' + object.metadata.name + ' carries the project default provider ' + variables.provider +
+        ' on VLAN ' + variables.vlan + ': a project default network never sits on a VLAN'
+      reason: Forbidden
+{{- with include "kube-dc.narrowGates.infraSubnet" . }}
+    - expression: >-
+        !variables.changed || variables.vlan == '' || object.metadata.name != '{{ . }}'
+      messageExpression: >-
+        'Subnet ' + object.metadata.name + ' is the infra subnet (manager.infraAttachment.subnet), which the tenant-VLAN gates trust as a bare logical_switch: it never sits on a VLAN'
+      reason: Forbidden
+{{- end }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: project-default-network-off-vlans
+spec:
+  policyName: project-default-network-off-vlans
+  validationActions: [Deny]
+{{- end }}
+{{- if and .Values.manager.webhook.enabled .Values.projectNetwork.enabled (ne (include "kube-dc.narrowGates.phase" .) "0") }}
+---
+# The second half of the invariant: a NAD named "default", in ANY namespace,
+# is written only by the manager, whose Project controller writes exactly the
+# project default network (kubedccomv1.ProjectDefaultNADConfig: type
+# kube-ovn, provider default.<namespace>.ovn, which by the policy above
+# reaches no VLAN) and reverts drift. The tenant-VLAN entries skip pods and
+# VMs that name only <ns>/default from phase 2, and vnetworkattachnad judges
+# a NAD only when it is written, so a default NAD naming a provider that is
+# reserved LATER would otherwise ride the skip onto that wire (Astra rounds 2
+# and 3). The config is not parsed here: JSON a policy reads textually can be
+# spelled so that the CNI plugins decode it differently (case-variant and
+# duplicate keys), so authorship is the check. Judged on CREATE and on an
+# UPDATE that changes spec.config; every other identity, cluster admins
+# included -- another attachment needs another name. State that predates
+# phase 1 is the audit's (narrowGates.defaultNetworkOnWire, byte-exact).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: project-default-nads
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["k8s.cni.cncf.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["network-attachment-definitions"]
+  matchConditions:
+    - name: named-default
+      expression: "object.metadata.name == 'default'"
+    - name: not-the-manager
+      expression: >-
+        request.userInfo.username != '{{ include "kube-dc.narrowGates.managerIdentity" . }}'
+  validations:
+    - expression: >-
+        request.operation == 'UPDATE' &&
+        (has(object.spec) && has(object.spec.config) ? string(object.spec.config) : '') ==
+        (has(oldObject.spec) && has(oldObject.spec.config) ? string(oldObject.spec.config) : '')
+      messageExpression: >-
+        'NetworkAttachmentDefinition ' + request.namespace + '/default is the project default network, written only by the kube-dc manager; name any other attachment differently'
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: project-default-nads
+spec:
+  policyName: project-default-nads
+  validationActions: [Deny]
+{{- end }}

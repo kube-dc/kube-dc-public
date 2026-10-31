@@ -17,8 +17,8 @@ dev / CI on a fresh cluster where Sveltos is being added later.
 # kube-dc-k8-manager: internal/controller/kdccluster_kubelet_kubeproxy.go).
 # Without this controller running in the tenant, the kubelet's serving
 # CSRs sit Pending forever and metrics-server / Prometheus can only scrape
-# kubelet metrics with `--kubelet-insecure-tls` — defeating the BOC
-# observability ask. See docs/prd/boc-tenant-kubelet-kubeproxy-observability.md.
+# kubelet metrics with `--kubelet-insecure-tls`. The approver allows
+# verified TLS for managed-cluster observability.
 #
 # Why this lives in the platform chart, not the CloudSigma chart:
 # managed-K8s is a kube-dc feature available on every kube-dc cluster

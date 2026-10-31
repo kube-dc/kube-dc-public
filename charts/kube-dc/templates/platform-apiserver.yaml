@@ -55,7 +55,9 @@ subjects:
     name: {{ $name }}
     namespace: {{ .Release.Namespace }}
 ---
-# Organization readiness/UID and project names; nothing else is read.
+# Organization readiness/UID and project names; with platformOperations, a
+# project namespace's owner, a KMSKey's transit key id and a ManagedSecret's
+# publication ref and value-version marker.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -64,6 +66,21 @@ rules:
   - apiGroups: ["kube-dc.com"]
     resources: ["organizations", "projects"]
     verbs: ["get", "list"]
+  {{- if (.Values.platformOperations | default dict).enabled }}
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get"]
+  # KMSKeys and DatabaseCredentialPolicies: the OpenBao target, and after a
+  # rotation the reconcile-requested-at annotation.
+  - apiGroups: ["security.kube-dc.com"]
+    resources: ["kmskeys", "databasecredentialpolicies"]
+    verbs: ["get", "patch"]
+  # A ManagedSecret's existence and publication ref; after a value write, its
+  # value-version annotation, which wakes the sync to the Kubernetes Secret.
+  - apiGroups: ["security.kube-dc.com"]
+    resources: ["managedsecrets"]
+    verbs: ["get", "patch"]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -144,6 +161,20 @@ spec:
             - --tls-private-key-file=/etc/platform-apiserver/tls/tls.key
             - --backend-url=http://{{ $backendInternal }}.{{ .Release.Namespace }}.svc:{{ $pa.backendPort }}
             - --backend-token-file=/var/run/secrets/kube-dc/backend/token
+            {{- if (.Values.platformEvents | default dict).enabled }}
+            - --platform-events
+            {{- end }}
+            {{- if (.Values.platformOperations | default dict).enabled }}
+            - --platform-operations
+            {{- end }}
+          {{- $paMemLimit := ((($pa.resources | default dict).limits | default dict).memory) }}
+          {{- if or $paMemLimit $pa.goMemLimit }}
+          env:
+            # The Go runtime's soft memory limit, under the container's memory
+            # limit (values platformApi.goMemLimit / goMemLimitPercent).
+            - name: GOMEMLIMIT
+              value: {{ include "kube-dc.goMemLimit" (dict "limit" $paMemLimit "percent" $pa.goMemLimitPercent "explicit" $pa.goMemLimit) | quote }}
+          {{- end }}
           ports:
             - name: https
               containerPort: 8443
@@ -286,6 +317,18 @@ rules:
     resources: ["organizationusages"]
     verbs: ["get"]
 ---
+# Platform events (docs/prd/platform-events.md), read-only. Bound per machine
+# client through the `platformevents` grant; organization members get the same
+# verbs from their organization Role.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-dc:platform:events-reader
+rules:
+  - apiGroups: ["platform.kube-dc.com"]
+    resources: ["platformevents"]
+    verbs: ["get", "list", "watch"]
+---
 # The plan catalog (sizing templates for spec.quota.templatePlan). It holds
 # plan and add-on definitions only, no credentials.
 apiVersion: rbac.authorization.k8s.io/v1
@@ -298,7 +341,7 @@ rules:
     resources: ["configmaps"]
     resourceNames: ["billing-plans"]
     verbs: ["get"]
-{{- $roles := dict "users" "kube-dc:platform:users" "consolelogins" "kube-dc:platform:console-login" "organizationusages" "kube-dc:platform:usage-reader" }}
+{{- $roles := dict "users" "kube-dc:platform:users" "consolelogins" "kube-dc:platform:console-login" "organizationusages" "kube-dc:platform:usage-reader" "platformevents" "kube-dc:platform:events-reader" }}
 {{- $ns := .Release.Namespace }}
 {{- range .Values.platformMachines }}
 {{- $client := .clientId }}
@@ -322,7 +365,7 @@ subjects:
 {{- end }}
 {{- $role := get $roles . }}
 {{- if not $role }}
-{{- fail (printf "platformMachines[].grants: %q is not one of users, consolelogins, organizationusages, plans" .) }}
+{{- fail (printf "platformMachines[].grants: %q is not one of users, consolelogins, organizationusages, platformevents, plans" .) }}
 {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1

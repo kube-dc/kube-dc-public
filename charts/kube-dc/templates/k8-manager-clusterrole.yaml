@@ -6,11 +6,15 @@ metadata:
   labels:
     {{- include "kube-dc.k8manager.labels" . | nindent 4 }}
 rules:
+# Verify the actual organization home before native Kubernetes fee adoption.
+- apiGroups: ["kube-dc.com"]
+  resources: ["organizations"]
+  verbs: ["get"]
 # Per-managed-cluster CloudSigma CCM metrics discovery.
 - apiGroups: ["monitoring.coreos.com"]
   resources: ["servicemonitors"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-# BOC #2: read the KamajiControlPlane CRD schema to detect whether the
+# Read the KamajiControlPlane CRD schema to detect whether the
 # kube-dc-forked control-plane provider is installed (kube-proxy JSON-patch
 # capability gate). Without this the gate fails closed and #2 is silently
 # never written. See kdccluster_kubelet_kubeproxy.go::kcpSupportsKubeProxyJSONPatches.
@@ -73,6 +77,15 @@ rules:
   - patch
   - update
   - watch
+# replicasets list: before arming a worker MachineHealthCheck on a CloudSigma
+# cluster, k8-manager verifies that no old CCM ReplicaSet can bring back a
+# pod that deletes Nodes (read uncached; list only).
+- apiGroups:
+  - apps
+  resources:
+  - replicasets
+  verbs:
+  - list
 - apiGroups:
   - bootstrap.cluster.x-k8s.io
   resources:
@@ -163,6 +176,22 @@ rules:
   - get
   - patch
   - update
+# machinehealthchecks: one per managed-cluster worker pool when automatic
+# worker replacement is on (k8Manager.workerHealthCheck.mode). Granted in
+# every mode: with mode off the manager still lists and deletes the checks it
+# created earlier (the off switch withdraws them).
+- apiGroups:
+  - cluster.x-k8s.io
+  resources:
+  - machinehealthchecks
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 # machinepools read-only: held ONLY to delegate to the per-cluster
 # cluster-autoscaler Role. The clusterapi provider starts an informer for
 # every discovered CAPI resource and blocks its cache sync forever on a
@@ -471,6 +500,16 @@ rules:
   - create
   - delete
   - get
+# Worker pools may name a root-disk StorageClass; k8-manager checks it can
+# hold a worker disk before rolling the pool.
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - storageclasses
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - ""
   resources:

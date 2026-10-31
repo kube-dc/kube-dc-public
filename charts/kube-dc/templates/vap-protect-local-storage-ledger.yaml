@@ -1,0 +1,38 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: protect-local-storage-ledger
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["hnc.x-k8s.io"]
+        apiVersions: ["v1alpha2"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["hierarchicalresourcequotas"]
+  matchConditions:
+    - name: organization-quota
+      expression: "request.name == 'plan-quota'"
+    - name: exclude-authorized-writers
+      expression: |-
+        !(request.userInfo.username.startsWith('system:serviceaccount:{{ .Release.Namespace }}:') ||
+          request.userInfo.username in {{ .Values.manager.localStorageQuotaWriters | toJson }} ||
+          request.userInfo.username.startsWith('system:serviceaccount:hnc-system:') ||
+          request.userInfo.groups.exists(g, g in ['system:masters', 'platform:admin']))
+    - name: exclude-namespace-teardown
+      expression: |-
+        !(request.operation == 'DELETE' && request.userInfo.username in [
+          'system:serviceaccount:kube-system:namespace-controller',
+          'system:serviceaccount:kube-system:generic-garbage-collector', 'system:kube-controller-manager'])
+  validations:
+    - expression: "false"
+      message: "The organization storage ledger and quota projection are platform managed."
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: protect-local-storage-ledger
+spec:
+  policyName: protect-local-storage-ledger
+  validationActions: [Deny]

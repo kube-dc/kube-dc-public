@@ -1,0 +1,92 @@
+# =============================================================================
+# ValidatingAdmissionPolicy: keep tenants off platform Leases in projects
+#
+# Project admins and developers manage their own coordination.k8s.io Leases
+# (leader election, owner decision 2026-10-17). A Lease enforces nothing on the
+# server: whoever can update it decides who leads. A platform controller that
+# ever elects inside a project namespace would therefore be pausable by the
+# tenant, unless its Lease is marked and refused here.
+#
+# A Lease is the platform's when its stored object has an ownerReference into a
+# kube-dc.com API group or a <domain>.kube-dc.com/managed-by label; tenant
+# UPDATE and DELETE of those are refused. A tenant also cannot put a
+# kube-dc.com label, annotation or owner on a Lease, so a tenant Lease never
+# passes for a platform one. Nor can it carry an apiserver.kubernetes.io/ label:
+# kube-apiserver finds its peers' identity Leases by that label (kube-system
+# today), so a tenant Lease must never look like one. Platform controllers, the
+# kube-system controllers and cluster admins are exempt, as in the other
+# project policies.
+# =============================================================================
+{{- if .Values.projectPolicies.protectPlatformLeases.enabled }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: protect-platform-leases-in-projects
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["coordination.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["leases"]
+  matchConditions:
+    - name: exclude-system-service-accounts
+      expression: |-
+        !has(request.userInfo) || !has(request.userInfo.username) || !(['system:serviceaccount:kube-dc:',
+           'system:serviceaccount:kubevirt:',
+           'system:serviceaccount:kamaji-system:',
+           'system:serviceaccount:capi-system:',
+           'system:serviceaccount:capk-system:',
+           'system:serviceaccount:capcs-system:',
+           'system:serviceaccount:capi-kubeadm-bootstrap-system:',
+           'system:serviceaccount:capi-kubeadm-control-plane-system:',
+           'system:serviceaccount:kube-system:'].exists(prefix,
+             request.userInfo.username.startsWith(prefix)))
+    - name: exclude-cluster-admins
+      expression: >-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !(('system:masters' in request.userInfo.groups || 'platform:admin' in request.userInfo.groups))
+    - name: exclude-node-users
+      expression: >-
+        !has(request.userInfo) || !has(request.userInfo.groups) ||
+        !('system:nodes' in request.userInfo.groups)
+  variables:
+    - name: platformOwned
+      expression: |-
+        request.operation != 'CREATE' && oldObject != null && (
+          oldObject.metadata.?ownerReferences.orValue([]).exists(o,
+            o.apiVersion.startsWith('kube-dc.com/') ||
+            o.apiVersion.matches('^[a-z0-9.-]+\\.kube-dc\\.com/')) ||
+          oldObject.metadata.?labels.orValue({}).exists(k,
+            k == 'kube-dc.com/managed-by' || k.endsWith('.kube-dc.com/managed-by')))
+  validations:
+    - expression: "!variables.platformOwned"
+      messageExpression: >-
+        'Lease ' + request.namespace + '/' + request.name +
+        ' is managed by the platform; it cannot be changed or deleted from a project. Use a Lease of your own.'
+      reason: Forbidden
+    - expression: |-
+        request.operation == 'DELETE' || !(object.metadata.?labels.orValue({}).exists(k,
+            k.startsWith('kube-dc.com/') || k.contains('.kube-dc.com/') ||
+            k.startsWith('apiserver.kubernetes.io/')) ||
+          object.metadata.?annotations.orValue({}).exists(k,
+            k.startsWith('kube-dc.com/') || k.contains('.kube-dc.com/')) ||
+          object.metadata.?ownerReferences.orValue([]).exists(o,
+            o.apiVersion.startsWith('kube-dc.com/') ||
+            o.apiVersion.matches('^[a-z0-9.-]+\\.kube-dc\\.com/')))
+      message: "labels, annotations and owners in a kube-dc.com domain, and apiserver.kubernetes.io/ labels, are reserved for the platform; remove them from the Lease."
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: protect-platform-leases-in-projects
+spec:
+  policyName: protect-platform-leases-in-projects
+  validationActions: {{ .Values.projectPolicies.protectPlatformLeases.validationActions | toJson }}
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kube-dc.com/project: ""
+{{- end }}

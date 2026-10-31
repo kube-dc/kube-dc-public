@@ -1,0 +1,225 @@
+{{- /*
+The pure refusals of mysql-shared-startup-v1 and mariadb-shared-startup-v1, as
+ValidatingAdmissionPolicies (docs/prd/admission-webhooks-must-not-block-the-
+platform.md, step 3; docs/prd/admission-webhooks-step3-sql.md).
+
+From a family's hand-off phase 2 its authority entry routes only the family's
+labelled platform objects. What the handler (internal/webhook/core/
+sql_startup_webhook.go) refuses WITHOUT a lookup, on objects that may carry no
+label at all, is held here, in the API server, for every identity:
+
+  - ownership (verify, startupImmutable): an object in scope -- a name
+    containing the family's reserved prefix (mss-v1-my- / mss-v1-ma-), or the
+    family's startup labels on the new or the old object -- whose new object
+    is not a startup object of the family, or that changes owner on UPDATE
+    (instance-uid, instance, service, service-uid). RBAC objects are in scope
+    by name only (the handler judges an unlabelled ambient grant with lookups,
+    on the references entry);
+  - typed borrowing by objects that are not the family's startup objects:
+    label values and ownerReference names (any API group but RBAC), pod-spec
+    inputs of Pods, Deployments, ReplicaSets, StatefulSets, Jobs and CronJobs
+    (service account, image pull Secrets, Secret/ConfigMap/claim volumes and
+    projections, the Secret references of CSI, CephFS, RBD, iSCSI,
+    FlexVolume, Cinder, ScaleIO, StorageOS and Azure File volumes, ephemeral
+    claim data sources, env and envFrom references), Service selector values,
+    claim data sources (also in StatefulSet claim templates), and cert-manager
+    references (secretName, ca.secretName, issuerRef.name, the private-key
+    annotation);
+  - Kube-OVN's slr-...<prefix>... shadow Services: only kube-system:ovn
+    writes them (sharedStartupShadow; the rest of that rule needs lookups).
+
+Every rule here is one the handler applies too, so phase 1 refuses nothing
+the previous entry admits. Free-text scans of tenant core objects (env
+values, annotations, command lines) are not repeated: owner decision 2 of the
+step 3 design dropped them as an authorization boundary.
+
+A startup object of the family carries services.kube-dc.com/startup-contract=
+shared-service-startup-v1, managed-by=kube-dc-services, family=<family> and a
+non-empty instance-uid (startupMarked). failurePolicy Ignore with a Deny
+binding: a policy that cannot be evaluated does not block writes; an
+evaluated violation is refused. Rendered from handoffPhase 1, so it is cached
+before phase 2.
+*/ -}}
+{{- $root := . -}}
+{{- $p := .Values.projectPolicies.protectManagedServices -}}
+{{- if and .Values.manager.webhook.enabled $p.enabled -}}
+{{- range $family := list "mysql" "mariadb" -}}
+{{- if and (index $p.sharedStartup $family) (ge (int (include "kube-dc.sharedStartup.handoffPhase" (dict "root" $root "family" $family))) 1) }}
+{{- $code := index (dict "mysql" "my" "mariadb" "ma") $family }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ $family }}-shared-startup-reserved
+spec:
+  failurePolicy: Ignore
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - {key: kube-dc.com/project, operator: Exists}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods", "secrets", "configmaps", "services", "serviceaccounts", "persistentvolumeclaims"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "replicasets", "statefulsets"]
+      - apiGroups: ["batch", "rbac.authorization.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "cronjobs", "roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+      - apiGroups: ["cert-manager.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["issuers", "certificates", "certificaterequests"]
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["clusters", "backups", "scheduledbackups", "poolers", "databases", "publications", "subscriptions"]
+      - apiGroups: ["valkey.buf.red"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["failovers", "sentinels", "users"]
+      - apiGroups: ["mysql.oracle.com"]
+        apiVersions: ["v2"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["innodbclusters", "mysqlbackups", "mysqlclustersetfailovers"]
+      - apiGroups: ["k8s.mariadb.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["mariadbs", "users", "grants", "databases", "backups", "physicalbackups", "pointintimerecoveries", "restores", "sqljobs", "maxscales", "connections"]
+      - apiGroups: ["kafka.strimzi.io"]
+        apiVersions: ["v1", "v1beta2"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["kafkas", "kafkanodepools", "kafkausers", "kafkatopics", "strimzipodsets", "kafkaconnects", "kafkamirrormakers", "kafkamirrormaker2s", "kafkabridges", "kafkarebalances", "kafkaconnectors"]
+      - apiGroups: ["core.strimzi.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["strimzipodsets"]
+      - apiGroups: ["clickhouse.altinity.com", "clickhouse-keeper.altinity.com"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["clickhouseinstallations", "clickhouseinstallationtemplates", "clickhousekeeperinstallations", "clickhousekeeperinstallationtemplates"]
+  variables:
+    - name: reserved
+      expression: "'mss-v1-{{ $code }}-'"
+    - name: newLabels
+      expression: "has(object.metadata.labels) ? object.metadata.labels : {}"
+    - name: oldLabels
+      expression: "request.operation == 'UPDATE' && has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}"
+    - name: newOwned
+      expression: >-
+        variables.newLabels[?'services.kube-dc.com/startup-contract'].orValue('') == 'shared-service-startup-v1' &&
+        variables.newLabels[?'services.kube-dc.com/managed-by'].orValue('') == 'kube-dc-services' &&
+        variables.newLabels[?'services.kube-dc.com/family'].orValue('') == '{{ $family }}' &&
+        variables.newLabels[?'services.kube-dc.com/instance-uid'].orValue('') != ''
+    - name: oldOwned
+      expression: >-
+        variables.oldLabels[?'services.kube-dc.com/startup-contract'].orValue('') == 'shared-service-startup-v1' &&
+        variables.oldLabels[?'services.kube-dc.com/managed-by'].orValue('') == 'kube-dc-services' &&
+        variables.oldLabels[?'services.kube-dc.com/family'].orValue('') == '{{ $family }}' &&
+        variables.oldLabels[?'services.kube-dc.com/instance-uid'].orValue('') != ''
+    - name: name
+      expression: "has(object.metadata.name) ? object.metadata.name : ''"
+    - name: rbac
+      expression: "request.resource.group == 'rbac.authorization.k8s.io'"
+    - name: shadow
+      expression: >-
+        request.resource.group == '' && request.resource.resource == 'services' &&
+        variables.name.startsWith('slr-') && variables.name.contains(variables.reserved)
+    - name: inScope
+      expression: |-
+        !variables.shadow && (variables.name.contains(variables.reserved) ||
+          (!variables.rbac && (variables.newOwned || variables.oldOwned)))
+    - name: podSpec
+      expression: >-
+        request.resource.group == '' && request.resource.resource == 'pods' ? object.?spec :
+        request.resource.group == 'batch' && request.resource.resource == 'cronjobs' ? object.?spec.?jobTemplate.?spec.?template.?spec :
+        request.resource.group == 'apps' || (request.resource.group == 'batch' && request.resource.resource == 'jobs') ? object.?spec.?template.?spec :
+        optional.none()
+    - name: containers
+      expression: |-
+        variables.podSpec.hasValue() ?
+          variables.podSpec.value().?containers.orValue([]) + variables.podSpec.value().?initContainers.orValue([]) + variables.podSpec.value().?ephemeralContainers.orValue([]) :
+          []
+    - name: podReferences
+      expression: |-
+        variables.podSpec.hasValue() && (
+          variables.podSpec.value().?serviceAccountName.orValue('').contains(variables.reserved) ||
+          variables.podSpec.value().?serviceAccount.orValue('').contains(variables.reserved) ||
+          variables.podSpec.value().?imagePullSecrets.orValue([]).exists(s, s.?name.orValue('').contains(variables.reserved)) ||
+          variables.podSpec.value().?volumes.orValue([]).exists(v,
+            v.?secret.?secretName.orValue('').contains(variables.reserved) ||
+            v.?configMap.?name.orValue('').contains(variables.reserved) ||
+            v.?persistentVolumeClaim.?claimName.orValue('').contains(variables.reserved) ||
+            v.?projected.?sources.orValue([]).exists(s,
+              s.?secret.?name.orValue('').contains(variables.reserved) ||
+              s.?configMap.?name.orValue('').contains(variables.reserved)) ||
+            v.?csi.?nodePublishSecretRef.?name.orValue('').contains(variables.reserved) ||
+            v.?cephfs.?secretRef.?name.orValue('').contains(variables.reserved) ||
+            v.?rbd.?secretRef.?name.orValue('').contains(variables.reserved) ||
+            v.?iscsi.?secretRef.?name.orValue('').contains(variables.reserved) ||
+            v.?flexVolume.?secretRef.?name.orValue('').contains(variables.reserved) ||
+            v.?cinder.?secretRef.?name.orValue('').contains(variables.reserved) ||
+            v.?scaleIO.?secretRef.?name.orValue('').contains(variables.reserved) ||
+            v.?storageos.?secretRef.?name.orValue('').contains(variables.reserved) ||
+            v.?azureFile.?secretName.orValue('').contains(variables.reserved) ||
+            v.?ephemeral.?volumeClaimTemplate.?spec.?dataSource.?name.orValue('').contains(variables.reserved) ||
+            v.?ephemeral.?volumeClaimTemplate.?spec.?dataSourceRef.?name.orValue('').contains(variables.reserved)) ||
+          variables.containers.exists(c,
+            c.?env.orValue([]).exists(e,
+              e.?valueFrom.?secretKeyRef.?name.orValue('').contains(variables.reserved) ||
+              e.?valueFrom.?configMapKeyRef.?name.orValue('').contains(variables.reserved)) ||
+            c.?envFrom.orValue([]).exists(e,
+              e.?secretRef.?name.orValue('').contains(variables.reserved) ||
+              e.?configMapRef.?name.orValue('').contains(variables.reserved))))
+    - name: metadataReferences
+      expression: >-
+        variables.newLabels.exists(k, variables.newLabels[k].contains(variables.reserved)) ||
+        object.metadata.?ownerReferences.orValue([]).exists(r, r.?name.orValue('').contains(variables.reserved))
+    - name: specReferences
+      expression: |-
+        (request.resource.group == '' && request.resource.resource == 'services' &&
+          object.?spec.?selector.orValue({}).exists(k, object.spec.selector[k].contains(variables.reserved))) ||
+        (request.resource.group == '' && request.resource.resource == 'persistentvolumeclaims' &&
+          (object.?spec.?dataSource.?name.orValue('').contains(variables.reserved) ||
+           object.?spec.?dataSourceRef.?name.orValue('').contains(variables.reserved))) ||
+        (request.resource.group == 'apps' && request.resource.resource == 'statefulsets' &&
+          object.?spec.?volumeClaimTemplates.orValue([]).exists(c,
+            c.?spec.?dataSource.?name.orValue('').contains(variables.reserved) ||
+            c.?spec.?dataSourceRef.?name.orValue('').contains(variables.reserved))) ||
+        (request.resource.group == 'cert-manager.io' &&
+          (string(object.?spec.?secretName.orValue('')).contains(variables.reserved) ||
+           string(object.?spec.?ca.?secretName.orValue('')).contains(variables.reserved) ||
+           string(object.?spec.?issuerRef.?name.orValue('')).contains(variables.reserved) ||
+           string(object.metadata.?annotations[?'cert-manager.io/private-key-secret-name'].orValue('')).contains(variables.reserved)))
+  validations:
+    - expression: |-
+        !variables.inScope || (variables.newOwned && (request.operation != 'UPDATE' ||
+          (variables.oldOwned &&
+           ['services.kube-dc.com/instance-uid', 'services.kube-dc.com/instance', 'services.kube-dc.com/service', 'services.kube-dc.com/service-uid'].all(k,
+             variables.oldLabels[?k].orValue('') == variables.newLabels[?k].orValue('')))))
+      message: "{{ $family }} startup authority: startup ownership is immutable; foreign objects cannot be adopted"
+      reason: Forbidden
+    - expression: >-
+        variables.newOwned || variables.rbac || variables.shadow ||
+        !(variables.metadataReferences || variables.podReferences || variables.specReferences)
+      message: "{{ $family }} startup authority: reserved SQL authority cannot be borrowed by an ordinary object"
+      reason: Forbidden
+    - expression: >-
+        !variables.shadow || request.userInfo.username == 'system:serviceaccount:kube-system:ovn'
+      message: "shared startup shadow: only Kube-OVN may manage the shadow"
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ $family }}-shared-startup-reserved
+spec:
+  policyName: {{ $family }}-shared-startup-reserved
+  validationActions: {{ toJson $p.validationActions }}
+{{- end }}
+{{- end }}
+{{- end }}

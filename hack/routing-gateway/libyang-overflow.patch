@@ -1,0 +1,86 @@
+--- a/src/parser_lyb.c
++++ b/src/parser_lyb.c
+@@ -217,6 +217,9 @@
+ 
+     lyb_read_number(&len, sizeof len, len_size, lybctx);
+ 
++    /* Backport the upstream LYB length-overflow check to the ABI 2 parser. */
++    LY_CHECK_ERR_RET(len >= SIZE_MAX, LOGERR(lybctx->ctx, LY_EINVAL, "LYB string length overflow."), LY_EINVAL);
++
+     *str = malloc((len + 1) * sizeof **str);
+     LY_CHECK_ERR_RET(!*str, LOGMEM(lybctx->ctx), LY_EMEM);
+ 
+@@ -280,6 +283,10 @@
+         /* Data size is fixed. */
+         *term_value_len = lyb_data_len;
+     }
++
++    /* ABI 2 stores the allocation size in uint32_t. Reject truncation. */
++    LY_CHECK_ERR_RET(*term_value_len >= UINT32_MAX,
++            LOGERR(lybctx->ctx, LY_EINVAL, "LYB value size overflow."), LY_EINVAL);
+ 
+     /* Allocate memory. */
+     allocated_size = *term_value_len + 1;
+--- a/tests/utests/data/test_lyb.c
++++ b/tests/utests/data/test_lyb.c
+@@ -2810,10 +2810,60 @@
+ 
+ #endif
+ 
++/* A serialized, otherwise valid document must reject an overflowing length
++ * through the public parser API, before attempting an allocation or a copy. */
++static void
++test_length_overflow(void **state)
++{
++    const char *marker = "length-overflow-marker";
++    const char *xml = "<overflow xmlns=\"urn:overflow\">length-overflow-marker</overflow>";
++    struct lyd_node *tree = NULL, *parsed = NULL;
++    char *lyb = NULL;
++    size_t i, length;
++    int opaque;
++
++    for (opaque = 1; opaque >= 0; --opaque) {
++        if (!opaque) {
++            UTEST_ADD_MODULE("module overflow { namespace 'urn:overflow'; prefix o;"
++                    "leaf overflow { type string; }}", LYS_IN_YANG, NULL, NULL);
++        }
++        assert_int_equal(lyd_parse_data_mem(UTEST_LYCTX, xml, LYD_XML,
++                LYD_PARSE_ONLY | LYD_PARSE_OPAQ, 0, &tree), LY_SUCCESS);
++        assert_int_equal(lyd_print_mem(&lyb, tree, LYD_LYB, LYD_PRINT_WITHSIBLINGS), LY_SUCCESS);
++        assert_int_equal(lyd_parse_data_mem(UTEST_LYCTX, lyb, LYD_LYB,
++                LYD_PARSE_ONLY | LYD_PARSE_OPAQ, 0, &parsed), LY_SUCCESS);
++        lyd_free_all(parsed);
++        parsed = NULL;
++        length = lyd_lyb_data_length(lyb);
++        for (i = 8; i + strlen(marker) <= length; ++i) {
++            if (!memcmp(lyb + i, marker, strlen(marker))) {
++                break;
++            }
++        }
++        assert_true(i + strlen(marker) <= length);
++        /* Both opaque strings and variable-width leaf values have an LE64
++         * length immediately before the payload in the ABI 2 LYB format. */
++        assert_int_equal((unsigned char)lyb[i - 8], strlen(marker));
++        for (size_t j = i - 7; j < i; ++j) {
++            assert_int_equal(lyb[j], 0);
++        }
++        memset(lyb + i - 8, 0xff, 8);
++        assert_int_equal(lyd_parse_data_mem(UTEST_LYCTX, lyb, LYD_LYB,
++                LYD_PARSE_ONLY | LYD_PARSE_OPAQ, 0, &parsed), LY_EINVAL);
++        assert_null(parsed);
++        CHECK_LOG_CTX((opaque ? "LYB string length overflow." : "LYB value size overflow."), NULL);
++        lyd_free_all(tree);
++        tree = NULL;
++        free(lyb);
++        lyb = NULL;
++    }
++}
++
+ int
+ main(void)
+ {
+     const struct CMUnitTest tests[] = {
++        UTEST(test_length_overflow),
+         UTEST(tests_leaflist),
+         UTEST(tests_list),
+         UTEST(tests_any),

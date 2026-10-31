@@ -85,6 +85,30 @@ spec:
                     minimum: 0
                     type: integer
                 type: object
+              quota:
+                description: |-
+                  Quota caps this project within the organization's shared pool. Each
+                  dimension must be one the organization's quota has, and no more than it
+                  (refused at admission). Absent, the project uses the shared pool. Where
+                  the installation enables it (PROJECT_QUOTA_SOURCE=spec), the controller
+                  writes the project's ResourceQuota from it; otherwise it is ignored.
+                properties:
+                  hard:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: |-
+                      Hard is the cap, with ResourceQuota names: requests.cpu,
+                      requests.memory, requests.storage, pods, or any accelerator dimension of
+                      the organization's quota.
+                    type: object
+                type: object
+                x-kubernetes-validations:
+                - message: quota.hard has at most 64 dimensions
+                  rule: '!has(self.hard) || size(self.hard) <= 64'
             required:
             - egressNetworkType
             type: object
@@ -157,6 +181,19 @@ spec:
                 type: array
               namespace:
                 description: Namespace created for project
+                type: string
+              namespaceUID:
+                description: |-
+                  NamespaceUID is the UID of the namespace incarnation the manager
+                  currently attests for this Project, copied from the Project's
+                  kube-dc.com/namespace-uid annotation ("<project UID>/<namespace UID>"),
+                  which the manager writes first. It changes only when the manager itself
+                  created a new namespace for this Project after the reuse cool-down and
+                  verified its cleanup; a namespace replaced by anything else is reported
+                  by the NamespaceIdentity condition and not recorded. Platform
+                  controllers that publish into the Project namespace (service offerings)
+                  compare it with the live namespace UID and publish nothing while it is
+                  empty or different.
                 type: string
               quotaUsage:
                 description: |-
@@ -325,6 +362,14 @@ spec:
                     - hard
                     - used
                     type: object
+                  storageAccounting:
+                    description: |-
+                      StorageAccounting identifies the storage sample's authority. A local
+                      allocation sample must not fall back to native usage if its HRQ is lost.
+                    enum:
+                    - native
+                    - local-allocation.v1
+                    type: string
                 type: object
               ready:
                 default: false
