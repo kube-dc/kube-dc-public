@@ -30,7 +30,7 @@ Master catalog for AI agents. Read this first, then dive into specific files as 
 |-------|-------------|-----------|
 | `check-quota` | Check org/project quota usage before deploying; troubleshoot exceeded-quota errors | SKILL.md |
 | `create-project` | Create project with VPC networking | SKILL.md, project-template.yaml, network-types.md |
-| `deploy-app` | Deploy containerized app with optional DB + HTTPS | SKILL.md |
+| `deploy-app` | Deploy containerized app with optional DB + HTTPS; keyless deploys and PR previews from GitHub | SKILL.md |
 | `deploy-web-stack` | Web app + managed database + volume + HTTPS hostname through the Gateway (no EIP), one procedure | SKILL.md, web-stack-template.yaml |
 | `create-vm` | Provision VM with SSH access and cloud-init | SKILL.md, vm-template.yaml |
 | `create-database` | Create a managed PostgreSQL, MySQL, MariaDB, ClickHouse or Valkey service, bind its credential to a workload, back up and restore | SKILL.md, postgresql-template.yaml, mysql-mariadb-template.yaml, clickhouse-template.yaml, valkey-template.yaml, binding-template.yaml, db-connection-patterns.md, backup-restore-patterns.md |

@@ -11,7 +11,7 @@
     {
       "name": "deploy-app",
       "type": "skill-md",
-      "description": "Deploy a containerized application to a Kube-DC project with optional database, service exposure (HTTPS via Gateway or direct EIP), and persistent storage. Covers Helm deployments and raw manifests.",
+      "description": "Deploy a containerized application to a Kube-DC project with optional database, service exposure (HTTPS via Gateway or direct EIP), and persistent storage. Covers Helm deployments, raw manifests, hosted MCP deploy tools, and keyless deploys with pull request previews from GitHub.",
       "url": "/skills/deploy-app/SKILL.md",
       "digest": "sha256:placeholder"
     },

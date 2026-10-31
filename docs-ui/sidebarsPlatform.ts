@@ -27,6 +27,7 @@ const sidebars: SidebarsConfig = {
         'internal-platform-endpoints',
         'backend-scaling',
         'hosted-mcp',
+        'github-app',
         'controller-diagram',
       ],
     },

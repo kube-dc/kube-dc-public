@@ -142,8 +142,10 @@ Tools carry MCP annotations, so apps ask the person before a destructive one.
 | `restart` | destructive | Restarts every pod of an app, one by one. Apps that support it ask the person to type the name first. |
 | `rollback` | destructive | Returns an app to an earlier revision. Apps that support it ask the person to type the name first. |
 | `apply_manifest` | write | Creates or updates one Kubernetes object. |
-| `delete` | destructive | Deletes a project, VM, disk, floating IP, external IP or any Kubernetes object. Apps that support it ask the person to type the name first. |
+| `delete` | destructive | Deletes a project, VM, disk, floating IP, external IP, event webhook or any Kubernetes object. Apps that support it ask the person to type the name first. |
 | `extend_preview` | write | Keeps a preview app longer before the platform removes it. |
+| `create_webhook` | write | Sends the organization's platform events (deploys, live hostnames, previews, alerts) to an HTTPS URL, signed. Organization admins only. |
+| `connect_repository` | write | Sets up keyless deploys from GitHub Actions for a repository: machine identities for its production (and preview) environment, plus the workflow files and repository variables to add. Organization admins only. |
 
 Read-only URLs offer only the seven read tools.
 

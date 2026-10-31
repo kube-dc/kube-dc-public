@@ -161,6 +161,28 @@ jobs:
 
 A GitHub token can be exchanged once; request a new one for each sign-in.
 
+## Deployment status on GitHub
+
+Where the installation's operator enabled it, the platform's GitHub App reports
+your rollouts to GitHub: the commit and pull request show the deployment with
+its URL, or a failure. Install the App on your repository once (on Kube-DC cloud
+and stage: [kube-dc-cloud](https://github.com/apps/kube-dc-cloud/installations/new)),
+then name the repository and commit on the Deployment:
+
+```yaml
+metadata:
+  annotations:
+    github.kube-dc.com/repository: owner/repo
+    github.kube-dc.com/sha: <commit the image was built from>
+    github.kube-dc.com/environment: production   # optional
+```
+
+The hosted MCP tool `deploy_app` sets them from its `githubRepository`,
+`githubSha` and `githubEnvironment` arguments. A workflow that deploys inside a
+GitHub `environment` already gets a deployment from GitHub Actions; add the
+annotations there only if you also want the App's status after the workflow
+ended.
+
 ## Rotate, disable, delete
 
 | Action | Effect |

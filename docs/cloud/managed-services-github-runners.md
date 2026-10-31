@@ -125,6 +125,26 @@ place of separate `docker build` and `docker push` commands. Docker Compose
 and `services:` in workflow jobs require a different runtime and are not
 supported by this plan.
 
+## Deploy to Kube-DC from the pool
+
+A job on the pool can also deploy to your project when the installation lets
+runners reach its sign-in and Kubernetes API endpoints (the operator lists
+them in the runner profile; other platform addresses stay blocked). Sign in
+without a secret with a [machine identity](machine-identities.md#github-actions-without-a-secret).
+The workflow files that the MCP tool `connect_repository` returns already
+support the pool: set the repository variable `KUBE_DC_RUNNER` to the exact
+`runs-on` target in **Connect**, and they run there instead of on
+GitHub-hosted runners. They build with the pool's Buildx builder and install
+`kubectl` when the worker image has none.
+
+```bash
+gh variable set KUBE_DC_RUNNER --body RUNNER_TARGET
+```
+
+If the sign-in step times out, the installation does not let runners reach
+its API; build and push on the pool, and deploy from elsewhere (for example
+with the MCP tool `deploy_app`).
+
 ## Create the same pool with custom resources
 
 Declarative creation uses the same plan, credential permissions, and project

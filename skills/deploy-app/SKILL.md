@@ -1,6 +1,6 @@
 ---
 name: deploy-app
-description: Deploy a containerized application to a Kube-DC Project with optional persistent storage, a managed database, external exposure, or gated Shared GPU acceleration.
+description: Deploy a containerized application to a Kube-DC Project with optional persistent storage, a managed database, external exposure, or gated Shared GPU acceleration; set up keyless deploys and pull request previews from a GitHub repository.
 ---
 
 # Deploy an Application
@@ -24,11 +24,45 @@ writing the manifests below:
   hostname gets its certificate within 1 to 3 minutes.
 - `restart` and `rollback` (to the previous revision by default) change a
   running app: ask the user first.
+- Previews: `deploy_app` with `previewHours` (for example a pull request's
+  copy, named `{app}-pr-{number}`) is removed that long after its last
+  deploy. The platform warns two hours before; `extend_preview` adds hours.
+- GitHub: pass `githubRepository` (`owner/repo`), `githubSha` (the full
+  commit) and optionally `githubEnvironment` to `deploy_app`. Where the
+  installation's GitHub App is installed on the repository, the commit and
+  pull request then show the deployment with its live URL or the failure.
+  Otherwise `rollout_status` says how to record the result with `gh api`.
+- `create_webhook` (organization admins) sends the organization's platform
+  events, such as `DeploymentRolledOut`, `DeploymentFailed` and
+  `RouteReady`, to an HTTPS URL, signed. Use it when the user wants to hear
+  about deploys elsewhere (chat, a script) instead of polling.
 
 An app first deployed with `kubectl apply` keeps its selector; `deploy_app`
 reports a field-ownership conflict and needs `force: true` to take over.
 Use the manifests below for volumes, several containers, Helm charts or
 anything the tool does not cover.
+
+## Deploy from GitHub on every push
+
+For a repository with a Dockerfile, the MCP tool `connect_repository`
+(organization admins) sets up continuous deploys without a stored secret:
+GitHub Actions signs in with its own short-lived OIDC token through a
+machine identity that accepts only that repository's environment.
+
+1. Get the repository's subject prefix:
+   `gh api repos/{owner}/{repo}/actions/oidc/customization/sub --jq .sub_claim_prefix`.
+2. Call `connect_repository` with `repository`, `subjectPrefix`, `project`,
+   `port`, and optionally `previewProject` (a copy per pull request, removed
+   when it closes or after 72 hours), `healthPath`, and `privateImage` (the
+   GHCR image is private; the user then adds a `GHCR_PULL_TOKEN` repository
+   secret with `read:packages`; never ask for the token's value).
+3. Write every returned file into the repository unchanged, run the
+   returned `gh variable set` commands, commit and push.
+
+A push to `main` then builds the image into GHCR, deploys it, and succeeds
+only when the live URL answers. To run the jobs on a Kube-DC managed runner
+pool instead of GitHub-hosted runners, set the repository variable
+`KUBE_DC_RUNNER` to the pool's `runs-on` target.
 
 ## Prerequisites
 

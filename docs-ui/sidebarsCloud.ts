@@ -76,6 +76,11 @@ const sidebars: SidebarsConfig = {
         },
         {
           type: 'doc',
+          id: 'event-webhooks',
+          label: 'Event Webhooks',
+        },
+        {
+          type: 'doc',
           id: 'api-reference',
           label: 'Automate with the API',
         },
