@@ -13,7 +13,8 @@ key belongs to the operator of that installation.
 
 | Installation | App |
 |---|---|
-| Kube-DC cloud and stage (operated by SHALB) | [kube-dc-cloud](https://github.com/apps/kube-dc-cloud), owned by the `kube-dc` GitHub organization |
+| Kube-DC cloud (operated by SHALB) | [kube-dc-cloud](https://github.com/apps/kube-dc-cloud), owned by the `kube-dc` GitHub organization |
+| Kube-DC stage (operated by SHALB) | A separate stage App, owned by the `kube-dc` GitHub organization |
 | A provider (white label) or a self-hosted installation | One you register as below, under your own name; or leave the feature off |
 
 ## Register the App
