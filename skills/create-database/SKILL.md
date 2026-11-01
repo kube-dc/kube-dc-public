@@ -64,7 +64,12 @@ Read a usable offering by its contract:
   Stay inside the bounds that are present; the service validator still checks
   at creation.
 - `placementModes`, `connectivityClasses` and `deletionPolicies` are the only
-  values the plan accepts. Choose `deletionPolicy` from `deletionPolicies`.
+  values the plan accepts. Ask the user what deleting the service later
+  should do with its data and use their answer as `deletionPolicy` (one of
+  `deletionPolicies`): `Delete` frees the data and its capacity at once,
+  `SnapshotAndDelete` keeps a final backup first, `Retain` keeps the data,
+  still charged, until an operator removes it. Do not pick one for them; the
+  hosted MCP tool `create_managed_service` asks the same question.
 - `operations[].requiresApproval` previews which operations a new service
   on this plan may request and which wait for the provider; `backup` gives the
   retention range and schedule (absent means the plan takes no backups).
@@ -158,7 +163,7 @@ spec:
     readonlyRole: true
     backup:
       enabled: true
-  deletionPolicy: Retain          # must be one of the offering's deletionPolicies
+  deletionPolicy: Retain          # the user's choice, one of the offering's deletionPolicies
   deletionProtection: true
 ```
 

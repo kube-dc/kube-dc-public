@@ -130,7 +130,9 @@ kubectl delete servicebinding/{app}-db-owner managedservice/{app}-db
 ```
 
 The template sets `deletionPolicy: Retain`: deleting the `ManagedService`
-keeps its data until the user deletes it from the console. Say so.
+keeps its data, still charged, until an operator removes it. Ask the user
+before applying whether they want that, `Delete` (data and capacity freed
+on deletion) or `SnapshotAndDelete` (a final backup first), and set it.
 
 ## When a public IP is right
 
