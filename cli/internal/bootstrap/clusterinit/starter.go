@@ -218,7 +218,9 @@ func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (EnsureStarte
 		for _, e := range entries {
 			hasContent = hasContent || e.Name() != ".git"
 		}
-		hasGit := dirExists(filepath.Join(opts.RepoPath, ".git"))
+		// .git is a file in a worktree or submodule checkout.
+		_, gitErr := os.Stat(filepath.Join(opts.RepoPath, ".git"))
+		hasGit := gitErr == nil
 		operatorRepo := opts.OperatorRepository && hasContent
 		if operatorRepo {
 			if !hasGit || !gitHasCommit(opts.RepoPath) {
@@ -245,7 +247,7 @@ func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (EnsureStarte
 				// starter-named entry there is the operator's.
 				// A starter-named entry that Git tracks is the operator's in any
 				// mode, too.
-				if operatorRepo || (hasGit && gitTracksPath(opts.RepoPath, e.Name())) {
+				if operatorRepo || (hasGit && (gitTracksPath(opts.RepoPath, e.Name()) || gitIgnoresPath(opts.RepoPath, e.Name()))) {
 					offenders = append(offenders, e.Name())
 				} else {
 					leftovers = append(leftovers, e.Name())
@@ -833,4 +835,10 @@ func gitDirtyPaths(repoPath string) (string, error) {
 func gitTracksPath(repoPath, name string) bool {
 	out, err := exec.Command("git", "-C", repoPath, "ls-files", "--", name).Output()
 	return err != nil || strings.TrimSpace(string(out)) != ""
+}
+
+// gitIgnoresPath reports whether name is ignored: ignored content is the
+// operator's local state, never an interrupted run's leftover.
+func gitIgnoresPath(repoPath, name string) bool {
+	return exec.Command("git", "-C", repoPath, "check-ignore", "-q", "--", name).Run() == nil
 }

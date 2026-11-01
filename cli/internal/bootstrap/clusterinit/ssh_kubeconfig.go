@@ -385,7 +385,6 @@ func HaveUsableKubeconfig() bool {
 	return ok
 }
 
-// currentKubeconfigServer returns the server URL of the current context.
 // currentKubeconfigContext returns the current context's name.
 func currentKubeconfigContext() string {
 	raw, err := clientcmd.NewDefaultClientConfigLoadingRules().Load()
@@ -395,6 +394,7 @@ func currentKubeconfigContext() string {
 	return raw.CurrentContext
 }
 
+// currentKubeconfigServer returns the server URL of the current context.
 func currentKubeconfigServer() (string, bool) {
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(

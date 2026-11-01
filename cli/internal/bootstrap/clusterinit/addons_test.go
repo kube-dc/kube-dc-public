@@ -1,6 +1,8 @@
 package clusterinit
 
 import (
+	"gopkg.in/yaml.v3"
+
 	"bytes"
 	"os"
 	"path/filepath"
@@ -356,5 +358,36 @@ func TestWriteAddons_MissingStarterSourceFailsBeforeWriting(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(repo, "clusters", cluster, "addons.yaml")); !os.IsNotExist(statErr) {
 		t.Fatalf("writer must not leave partial files on source validation failure: %v", statErr)
+	}
+}
+
+// The managed-services scaffold rewrites platform.yaml with the patches
+// sequence at its key's indentation. Appended entries must follow it or the
+// file is invalid YAML and Flux rejects the whole root layer.
+func TestWriteAddons_GatewayVIPPatch_FollowsTwoSpacePatchList(t *testing.T) {
+	repo, cluster := baseOverlay(t, "INGRESS_MODE=metallb-lb\n"+
+		"NODE_EXTERNAL_IP=10.0.0.30\nMETALLB_FLOATING_IP=10.0.0.30\n")
+	dir := filepath.Join(repo, "clusters", cluster)
+	platform := "apiVersion: kustomize.toolkit.fluxcd.io/v1\nkind: Kustomization\nmetadata:\n  name: platform\n  namespace: flux-system\nspec:\n  path: ./platform\n  patches:\n  - target:\n      kind: HelmRelease\n      name: kube-dc\n    patch: |\n      - op: add\n        path: /spec/values/x\n        value: 1\n"
+	if err := os.WriteFile(filepath.Join(dir, "platform.yaml"), []byte(platform), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteAddons(repo, cluster, nil); err != nil {
+		t.Fatalf("WriteAddons: %v", err)
+	}
+	var doc struct {
+		Spec struct {
+			Patches []struct {
+				Target map[string]string
+				Patch  string
+			}
+		}
+	}
+	got := read(t, dir, "platform.yaml")
+	if err := yaml.Unmarshal([]byte(got), &doc); err != nil {
+		t.Fatalf("platform.yaml is not valid YAML: %v\n%s", err, got)
+	}
+	if len(doc.Spec.Patches) != 2 || doc.Spec.Patches[1].Target["kind"] != "EnvoyProxy" {
+		t.Fatalf("patches = %+v", doc.Spec.Patches)
 	}
 }

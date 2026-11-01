@@ -458,6 +458,15 @@ func writeGatewayVIPPatch(clusterDir, envBody string, out io.Writer) error {
 		block := entries
 		if !hasPatches {
 			block = "  patches:\n" + entries
+		} else if patchListIndent(lines) == 2 {
+			// The managed-services scaffold rewrites platform.yaml with the
+			// sequence at its key's indentation; mixing four-space entries into
+			// it makes the file invalid YAML, and Flux rejects the root layer.
+			shifted := strings.Split(strings.TrimRight(entries, "\n"), "\n")
+			for i := range shifted {
+				shifted[i] = strings.TrimPrefix(shifted[i], "  ")
+			}
+			block = strings.Join(shifted, "\n") + "\n"
 		}
 		res := append([]string{}, lines[:end]...)
 		res = append(res, strings.Split(strings.TrimRight(block, "\n"), "\n")...)
@@ -523,4 +532,26 @@ func appendResourceEntry(body, name string) (string, error) {
 	out = append(out, indent+"- "+name)
 	out = append(out, lines[last+1:]...)
 	return strings.Join(out, "\n"), nil
+}
+
+// patchListIndent returns the indentation of the first item under the
+// top-level spec `patches:` key: 2 when the sequence sits at its key's
+// indentation (PyYAML's default), else 4.
+func patchListIndent(lines []string) int {
+	for i, l := range lines {
+		if strings.TrimRight(l, " ") != "  patches:" {
+			continue
+		}
+		for _, next := range lines[i+1:] {
+			t := strings.TrimSpace(next)
+			if t == "" || strings.HasPrefix(t, "#") {
+				continue
+			}
+			if strings.HasPrefix(next, "  - ") {
+				return 2
+			}
+			return 4
+		}
+	}
+	return 4
 }

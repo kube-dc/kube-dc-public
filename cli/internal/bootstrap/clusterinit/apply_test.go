@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -948,5 +949,33 @@ func TestApply_Resume_RefusesCopiedPAYGIdentity(t *testing.T) {
 		if git.pushed {
 			t.Fatalf("payg=%v: a copied identity must not be pushed", payg)
 		}
+	}
+}
+
+// A fresh scaffold that fails after Scaffold (here: a site component naming
+// a layer the overlay lacks) is rolled back, so the plain re-run does not
+// trip the clean-tree gate on this run's own files.
+func TestApply_SiteComponentFailure_RollsBackFreshScaffold(t *testing.T) {
+	repo := applyFleet(t)
+	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	runner := applyRunner(t, repo)
+	git := &fakeGit{preSHA: "PRE", commitSHA: "POST"}
+	var out bytes.Buffer
+	opts := atlantisApplyOpts(t, repo, runner, git)
+	opts.Out = &out
+	opts.SiteComponents = []SiteComponent{{Layer: "no-such-layer", Path: "install/x"}}
+	if err := Apply(context.Background(), opts); err == nil {
+		t.Fatal("expected the site component to fail")
+	}
+	if len(git.resetCalls) != 1 || git.resetCalls[0] != "PRE" {
+		t.Fatalf("ResetHard calls = %v, want [PRE]", git.resetCalls)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "clusters", "atlantis", "kustomization.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("the uncommitted overlay was left behind: %v", err)
+	}
+	if git.commitCall != 0 {
+		t.Fatal("a failed scaffold was committed")
 	}
 }

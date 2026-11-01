@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"strings"
@@ -473,9 +474,26 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 	// Phase 3d: site components. Written on a fresh scaffold (committed in
 	// Phase 4) and re-applied idempotently on resume, where a change is
 	// committed here so the resume push carries it.
+	// A fresh scaffold that fails before its commit is rolled back, like a
+	// failed Scaffold: the clean-tree gate proved every untracked path is
+	// this run's, and leaving them would make the plain re-run refuse a
+	// dirty tree.
+	abortFresh := func(cause error) error {
+		if resuming {
+			return cause
+		}
+		fmt.Fprintf(out, "[apply] rolling back this run's uncommitted scaffold to %s\n", preSHA)
+		if rerr := opts.Git.ResetHard(ctx, opts.FleetRepo, preSHA); rerr != nil {
+			return fmt.Errorf("%w (rollback failed, clean the checkout by hand: %v)", cause, rerr)
+		}
+		if outB, cerr := exec.CommandContext(ctx, "git", "-C", opts.FleetRepo, "clean", "-fdq").CombinedOutput(); cerr != nil {
+			return fmt.Errorf("%w (removing untracked scaffold files failed: %v: %s)", cause, cerr, strings.TrimSpace(string(outB)))
+		}
+		return cause
+	}
 	if len(opts.SiteComponents) > 0 {
 		if err := WriteSiteComponents(opts.FleetRepo, opts.Plan.ClusterName, opts.SiteComponents, out); err != nil {
-			return fmt.Errorf("apply: %w", err)
+			return abortFresh(fmt.Errorf("apply: %w", err))
 		}
 		if resuming {
 			diff, derr := opts.Git.Diff(ctx, opts.FleetRepo)
@@ -492,6 +510,13 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 				rotated = true
 			}
 		}
+	}
+
+	// Every generated overlay file must parse before it is committed: several
+	// writers edit the same files line by line, and invalid YAML would only
+	// surface later as a root Flux layer that never applies.
+	if err := validateOverlayYAML(clusterDir); err != nil {
+		return abortFresh(fmt.Errorf("apply: %w", err))
 	}
 
 	// Phase 4: commit + push (atomic with rollback on push failure).

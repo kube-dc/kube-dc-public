@@ -1,11 +1,11 @@
 # kube-dc CLI changelog
 
-## v0.9.13-rc.1 — 2026-11-01
+## v0.9.13-rc.2 — 2026-11-01
 
 Release candidate for the fixes found in a ten-host bare-metal rehearsal with a self-managed GitLab, a private CA, a MetalLB VIP and ten-node Ceph. Installs on that shape no longer need manual `kubectl`, Flux or file edits.
 
 - `bootstrap init` installs the starter's exact, checksummed tool versions into `~/.kube-dc/tools/bin` (with `--yes` or consent) and uses them first for every bootstrap command.
-- Push tokens are bound to the Fleet remote's host: `GITHUB_TOKEN`/`GH_TOKEN` only for github.com, `GITLAB_TOKEN` only with `--provider=gitlab`, and otherwise the credential glab or gh stored for that exact host. `openbao init` and `keycloak init` no longer send a GitHub token to a GitLab remote; an SSH remote needs no token. Self-managed GitLab hosts reach Flux bootstrap.
+- Push tokens are bound to the Fleet remote's host: `GITHUB_TOKEN`/`GH_TOKEN` only for github.com, `GITLAB_TOKEN` only with `--provider=gitlab`, and otherwise the credential glab or gh stored for that exact host. The standalone `openbao init`, `keycloak init` and `keycloak sso` commands use only that stored credential for a non-github.com HTTPS remote, so sign in with `glab auth login --hostname <host>` (or `gh auth login`). `openbao init` and `keycloak init` no longer send a GitHub token to a GitLab remote; an SSH remote needs no token. Self-managed GitLab hosts reach Flux bootstrap.
 - A fresh cluster with a private CA or an operator-supplied wildcard certificate no longer stalls: the namespaces of those root-level objects are created with them.
 - `existing-repo` mode imports the starter into a repository that already has its own content (for example `ansible/` or `install/`), keeping that content.
 - Rook Ceph overlays check that every node runs Linux 7.0 or later before writing anything. Multi-node Ceph accepts up to 16 OSD servers, `CEPH_MON_NODES` pins the monitors, and new overlays include the `ceph-block` class.
@@ -15,6 +15,7 @@ Release candidate for the fixes found in a ten-host bare-metal rehearsal with a 
 - `bootstrap accept` trusts the installation's private CA, and on an idle cluster probes the tenant gateway from the default VPC before deciding.
 - A MetalLB VIP is no longer treated as single-IP NAT, so the API passthrough listener is kept.
 - `fetch-kubeconfig --server` writes a control-plane address while the VIP is not serving yet.
+- With managed services on, the generated `platform.yaml` stays valid YAML; `init` refuses to commit an overlay file that does not parse.
 
 ## v0.9.11 — 2026-10-29
 
