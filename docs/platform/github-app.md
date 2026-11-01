@@ -15,6 +15,9 @@ key belongs to the operator of that installation.
 |---|---|
 | Kube-DC cloud (operated by SHALB) | [kube-dc-cloud](https://github.com/apps/kube-dc-cloud), owned by the `kube-dc` GitHub organization |
 | Kube-DC stage (operated by SHALB) | A separate stage App, owned by the `kube-dc` GitHub organization |
+
+With Fleet, `scripts/set-github-app.py <cluster> <app-id> <key.pem>` checks a
+key against GitHub, stores it as the SOPS-encrypted Secret and sets the App ID.
 | A provider (white label) or a self-hosted installation | One you register as below, under your own name; or leave the feature off |
 
 ## Register the App
