@@ -8,6 +8,7 @@ import (
 	"io"
 	"path/filepath"
 	"regexp"
+	"time"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
@@ -39,6 +40,12 @@ type UnsealOptions struct {
 	SOPS ports.SOPSClient
 	// OpenBao runs `bao operator unseal` per pod.
 	OpenBao ports.OpenBaoClient
+	// K8s, when set, supplies the StatefulSet's replica count so Unseal also
+	// waits for followers that the OrderedReady policy has not created yet.
+	K8s ports.K8sClient
+	// FollowerWait bounds that wait (default two minutes): a member that
+	// cannot start for another reason must not hold the command for long.
+	FollowerWait time.Duration
 	// Out is the operator-facing log writer.
 	Out io.Writer
 }
@@ -106,6 +113,91 @@ func Unseal(ctx context.Context, opts UnsealOptions) error {
 	if len(pods) == 0 {
 		return fmt.Errorf("openbao: no OpenBao pods found (HelmRelease not yet Ready?)")
 	}
+	wait := opts.FollowerWait
+	if wait == 0 {
+		wait = 2 * time.Minute
+	}
+	return unsealMembers(ctx, opts.OpenBao, opts.K8s, pods, shares, out, wait)
+}
+
+// initFollowerWait bounds how long init waits for StatefulSet members that
+// do not exist yet: each starts only after the previous one is unsealed.
+const initFollowerWait = 10 * time.Minute
+
+// followerPoll is the interval between member checks while waiting.
+var followerPoll = 5 * time.Second
+
+// unsealMembers unseals the current members, then the remaining StatefulSet
+// members as they appear: the chart's OrderedReady policy creates each
+// follower only after the previous member is Ready, which needs an unseal.
+func unsealMembers(ctx context.Context, client ports.OpenBaoClient, k8s ports.K8sClient, pods []string, shares [][]byte, out io.Writer, followerWait time.Duration) error {
+	if err := unsealPods(ctx, client, pods, shares, out); err != nil {
+		return err
+	}
+	want := openBaoReplicas(ctx, k8s)
+	if len(pods) >= want {
+		return nil
+	}
+	fmt.Fprintf(out, "[openbao] waiting for %d more member(s) to start (ordered StatefulSet)\n", want-len(pods))
+	deadline := time.Now().Add(followerWait)
+	var lastErr error
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(followerPoll):
+		}
+		current, err := client.PodList(ctx)
+		if err == nil {
+			err = unsealPods(ctx, client, current, shares, io.Discard)
+			if err == nil && len(current) >= want {
+				fmt.Fprintf(out, "[openbao] all %d member(s) unsealed\n", len(current))
+				return nil
+			}
+		}
+		if err != nil {
+			lastErr = err // a starting container cannot answer yet; keep waiting
+		}
+		if time.Now().After(deadline) {
+			if lastErr != nil {
+				return fmt.Errorf("openbao: members did not all unseal within %s: %w", followerWait, lastErr)
+			}
+			return fmt.Errorf("openbao: only %d of %d members exist after %s", len(current), want, followerWait)
+		}
+	}
+}
+
+// openBaoReplicas reads spec.replicas of openbao/openbao. Zero means unknown,
+// in which case the caller does not wait for further members.
+func openBaoReplicas(ctx context.Context, k8s ports.K8sClient) int {
+	if k8s == nil {
+		return 0
+	}
+	objs, err := k8s.ListResourceObjects(ctx, "apps", "v1", "statefulsets", "openbao")
+	if err != nil {
+		return 0
+	}
+	for _, obj := range objs {
+		meta, _ := obj["metadata"].(map[string]any)
+		spec, _ := obj["spec"].(map[string]any)
+		if meta == nil || spec == nil || meta["name"] != "openbao" {
+			continue
+		}
+		switch n := spec["replicas"].(type) {
+		case int64:
+			return int(n)
+		case float64:
+			return int(n)
+		case int:
+			return n
+		}
+	}
+	return 0
+}
+
+// unsealPods joins and unseals every sealed member with the threshold shares.
+// Init uses it too, so a fresh HA install leaves no member sealed.
+func unsealPods(ctx context.Context, client ports.OpenBaoClient, pods []string, shares [][]byte, out io.Writer) error {
 
 	// (3) Per-pod unseal. Skip pods reporting Sealed=false.
 	//
@@ -125,7 +217,7 @@ func Unseal(ctx context.Context, opts UnsealOptions) error {
 	unsealed := 0
 	alreadyUnsealed := 0
 	for _, pod := range pods {
-		st, err := opts.OpenBao.Status(ctx, pod)
+		st, err := client.Status(ctx, pod)
 		if err != nil {
 			return fmt.Errorf("openbao: status %s: %w", pod, err)
 		}
@@ -144,7 +236,7 @@ func Unseal(ctx context.Context, opts UnsealOptions) error {
 		// error).
 		if !st.Initialized && pod != leader {
 			fmt.Fprintf(out, "[openbao] %s uninitialized — raft-joining %s\n", pod, leaderURL)
-			if err := opts.OpenBao.RaftJoin(ctx, pod, leaderURL); err != nil {
+			if err := client.RaftJoin(ctx, pod, leaderURL); err != nil {
 				return fmt.Errorf("openbao: raft join %s to %s: %w", pod, leaderURL, err)
 			}
 		}
@@ -153,7 +245,7 @@ func Unseal(ctx context.Context, opts UnsealOptions) error {
 		// is incremental — after 3 it transitions from sealed to
 		// unsealed.
 		for i, share := range shares {
-			if err := opts.OpenBao.Unseal(ctx, pod, share); err != nil {
+			if err := client.Unseal(ctx, pod, share); err != nil {
 				return fmt.Errorf("openbao: unseal %s with share %d: %w", pod, i+1, err)
 			}
 		}

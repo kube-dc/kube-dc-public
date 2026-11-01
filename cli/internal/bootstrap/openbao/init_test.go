@@ -259,6 +259,11 @@ type fakeBao struct {
 	policyCalls        []string // policy names in order
 	roleCalls          []string // "<mount>/<role>" in order
 	policyErr          error    // injected error on EVERY ApplyPolicy call
+
+	// Seal model: a pod is sealed until it receives three shares; members
+	// other than the first are uninitialized until they join Raft.
+	sharesByPod map[string]int
+	joined      map[string]bool
 }
 
 func (b *fakeBao) PodList(_ context.Context) ([]string, error) {
@@ -267,20 +272,39 @@ func (b *fakeBao) PodList(_ context.Context) ([]string, error) {
 	}
 	return b.pods, nil
 }
-func (b *fakeBao) Status(_ context.Context, pod string) (ports.BaoStatus, error) {
-	return ports.BaoStatus{Pod: pod}, nil
+func (b *fakeBao) Status(ctx context.Context, pod string) (ports.BaoStatus, error) {
+	pods, _ := b.PodList(ctx)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return ports.BaoStatus{
+		Pod:         pod,
+		Initialized: pod == pods[0] || b.joined[pod],
+		Sealed:      b.sharesByPod[pod] < 3,
+	}, nil
 }
-func (b *fakeBao) Unseal(_ context.Context, _ string, share []byte) error {
+func (b *fakeBao) Unseal(_ context.Context, pod string, share []byte) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.unsealErr != nil {
 		return b.unsealErr
 	}
+	if b.sharesByPod == nil {
+		b.sharesByPod = map[string]int{}
+	}
+	b.sharesByPod[pod]++
 	b.unsealCalls = append(b.unsealCalls, share...)
 	b.unsealCalls = append(b.unsealCalls, '|')
 	return nil
 }
-func (b *fakeBao) RaftJoin(_ context.Context, _, _ string) error { return nil }
+func (b *fakeBao) RaftJoin(_ context.Context, pod, _ string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.joined == nil {
+		b.joined = map[string]bool{}
+	}
+	b.joined[pod] = true
+	return nil
+}
 func (b *fakeBao) GenerateRoot(_ context.Context, _ [][]byte) ([]byte, error) {
 	return nil, nil
 }
@@ -1014,6 +1038,81 @@ func TestInit_UnsealStdinTransport_VerifyShareValues(t *testing.T) {
 	// Annotation set.
 	if _, ok := bao.annotationsSet["openbao/kube-dc.com/openbao-bootstrap-finalized"]; !ok {
 		t.Errorf("bootstrap-finalized annotation not set: %v", bao.annotationsSet)
+	}
+}
+
+// A fresh HA install must leave no member sealed: followers join Raft and
+// receive the same threshold shares (CloudFerro rehearsal, 2026-10-31).
+func TestInit_UnsealsEveryHAMember(t *testing.T) {
+	repo := setupFleet(t)
+	runner := &fakeRunner{fireSentinel: true, sentinelPayload: []byte(canonicalShareJSON)}
+	bao := &fakeBao{pods: []string{"openbao-0", "openbao-1", "openbao-2"}}
+	opts := baseInitOpts(t, repo, runner, newFakeSOPS(), &fakeGit{preSHA: "pre", commitSHA: "post"})
+	opts.OpenBao = bao
+	if err := Init(context.Background(), opts); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	for _, pod := range bao.pods {
+		st, _ := bao.Status(context.Background(), pod)
+		if st.Sealed || !st.Initialized {
+			t.Errorf("%s left sealed=%v initialized=%v", pod, st.Sealed, st.Initialized)
+		}
+	}
+	if !bao.joined["openbao-1"] || !bao.joined["openbao-2"] || bao.joined["openbao-0"] {
+		t.Errorf("raft joins = %v, want only the followers", bao.joined)
+	}
+}
+
+// The chart starts members in order: a follower exists only after the previous
+// member is Ready. Init keeps unsealing until the StatefulSet is complete.
+type orderedBao struct {
+	*fakeBao
+	created int
+}
+
+func (b *orderedBao) PodList(ctx context.Context) ([]string, error) {
+	all := []string{"openbao-0", "openbao-1", "openbao-2"}
+	b.mu.Lock()
+	n := 1
+	for n < len(all) && b.sharesByPod[all[n-1]] >= 3 {
+		n++
+	}
+	b.created = n
+	b.mu.Unlock()
+	return all[:n], nil
+}
+
+func (b *orderedBao) Status(ctx context.Context, pod string) (ports.BaoStatus, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return ports.BaoStatus{Pod: pod, Initialized: pod == "openbao-0" || b.joined[pod], Sealed: b.sharesByPod[pod] < 3}, nil
+}
+
+type replicasK8s struct{ fakeInitK8s }
+
+func (replicasK8s) ListResourceObjects(context.Context, string, string, string, string) ([]map[string]any, error) {
+	return []map[string]any{{"metadata": map[string]any{"name": "openbao"}, "spec": map[string]any{"replicas": int64(3)}}}, nil
+}
+
+func TestInit_WaitsForOrderedFollowers(t *testing.T) {
+	followerPoll = time.Millisecond
+	t.Cleanup(func() { followerPoll = 5 * time.Second })
+	repo := setupFleet(t)
+	runner := &fakeRunner{fireSentinel: true, sentinelPayload: []byte(canonicalShareJSON)}
+	bao := &orderedBao{fakeBao: &fakeBao{}}
+	opts := baseInitOpts(t, repo, runner, newFakeSOPS(), &fakeGit{preSHA: "pre", commitSHA: "post"})
+	opts.OpenBao = bao
+	opts.K8s = &replicasK8s{}
+	if err := Init(context.Background(), opts); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if bao.created != 3 {
+		t.Fatalf("members created = %d, want 3", bao.created)
+	}
+	for _, pod := range []string{"openbao-0", "openbao-1", "openbao-2"} {
+		if bao.sharesByPod[pod] < 3 {
+			t.Errorf("%s left sealed", pod)
+		}
 	}
 }
 

@@ -84,7 +84,7 @@ func TestValidate_Structural(t *testing.T) {
 		{"multi-node needs at least one ceph-node", func(o *InitOptions) {
 			o.RookMode = RookCephMultiNode
 			o.CephNodes = nil
-		}, "1 to 3"},
+		}, "1 to 16"},
 		{"pvc needs storage-class", func(o *InitOptions) { o.RookMode = RookCephPVC }, "ceph-storage-class"},
 		// Semantic value validation (reviewer P2 2026-07-04): every
 		// companion value lands verbatim in cluster-config.env, so
@@ -257,15 +257,15 @@ func TestValidate_ObjectStorageMode(t *testing.T) {
 // TestValidate_ObjectStorageMode_CompanionsStillEnforced — OS-2
 // removed the rook-* fail-closed gate, but the structural companion
 // requirements stay: an incomplete multi-node config must keep
-// erroring with the specific "1 to 3" message, never slip through
+// erroring with the specific "1 to 16" message, never slip through
 // to a scaffold that would write CEPH_NODE_3= (empty) into
 // cluster-config.env.
 func TestValidate_ObjectStorageMode_CompanionsStillEnforced(t *testing.T) {
 	o := validBase()
 	o.RookMode = RookCephMultiNode // no CephNodes
 	err := o.Validate()
-	if !errors.Is(err, ErrValidation) || !strings.Contains(err.Error(), "1 to 3") {
-		t.Fatalf("expected structural '1 to 3' error, got %v", err)
+	if !errors.Is(err, ErrValidation) || !strings.Contains(err.Error(), "1 to 16") {
+		t.Fatalf("expected structural '1 to 16' error, got %v", err)
 	}
 }
 

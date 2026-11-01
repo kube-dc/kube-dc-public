@@ -52,7 +52,7 @@ func verifyServicesDatabaseClass(ctx context.Context, o *clusterinit.InitOptions
 	if o.InstallationKind != "kube-dc" || o.ServicesDatabaseClass == "" || o.ManagedServicesMode == "off" {
 		return nil
 	}
-	if _, targets := clusterinit.KubeconfigTargetsCluster(o.Domain, o.NodeExternalIP); !targets {
+	if _, targets := clusterinit.KubeconfigTargetsNamedCluster(o.Name, o.Domain, o.NodeExternalIP, controlPlaneAddrs(o)); !targets {
 		return nil
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
@@ -167,7 +167,7 @@ func verifyServicesHAStorage(ctx context.Context, o *clusterinit.InitOptions) er
 		}
 		return nil // CNI and the class are created later; prepublication checks both.
 	}
-	if _, targets := clusterinit.KubeconfigTargetsCluster(o.Domain, o.NodeExternalIP); !targets {
+	if _, targets := clusterinit.KubeconfigTargetsNamedCluster(o.Name, o.Domain, o.NodeExternalIP, controlPlaneAddrs(o)); !targets {
 		if o.ServicesHAStorageClass != "local-path" {
 			return fmt.Errorf("a custom HA class requires a verified target kubeconfig")
 		}

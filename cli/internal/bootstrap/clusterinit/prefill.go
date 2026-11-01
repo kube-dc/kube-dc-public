@@ -199,12 +199,30 @@ func denyImport(k string) bool {
 	return denyImportExact[k] || isVersionKey(k) || strings.HasPrefix(k, "SERVICES_")
 }
 
-// maxCephSlots is the fixed multi-node OSD slot count (v1 fleet template).
-// The scaffold writes each slot as TWO keys — CEPH_NODE_N (host) +
-// CEPH_NODE_N_DEVICE (device) — so the prefill must match that shape
-// exactly (not a combined "node=device"), or clone-from-sibling silently
-// drops the device mapping.
-const maxCephSlots = 3
+// MaxCephSlots bounds the multi-node OSD slots. The scaffold writes each slot
+// as TWO keys — CEPH_NODE_N (host) + CEPH_NODE_N_DEVICE (device) — so the
+// prefill must match that shape exactly (not a combined "node=device"), or
+// clone-from-sibling silently drops the device mapping. Generated overlays
+// list every selected slot, so the count is not tied to the Fleet template's
+// three placeholder slots.
+const MaxCephSlots = 16
+
+const maxCephSlots = MaxCephSlots
+
+// The canonical order lists every OSD slot after the first three.
+func init() {
+	for i, k := range specOrder {
+		if k != "CEPH_NODE_3_DEVICE" {
+			continue
+		}
+		extra := make([]string, 0, 2*(MaxCephSlots-3))
+		for n := 4; n <= MaxCephSlots; n++ {
+			extra = append(extra, fmt.Sprintf("CEPH_NODE_%d", n), fmt.Sprintf("CEPH_NODE_%d_DEVICE", n))
+		}
+		specOrder = append(specOrder[:i+1], append(extra, specOrder[i+1:]...)...)
+		return
+	}
+}
 
 // specOrder is the canonical write order for a saved spec (identity →
 // network → storage → orchestration), so `--save-config` diffs are stable.

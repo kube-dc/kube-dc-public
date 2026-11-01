@@ -1,5 +1,21 @@
 # kube-dc CLI changelog
 
+## v0.9.13-rc.1 — 2026-11-01
+
+Release candidate for the fixes found in a ten-host bare-metal rehearsal with a self-managed GitLab, a private CA, a MetalLB VIP and ten-node Ceph. Installs on that shape no longer need manual `kubectl`, Flux or file edits.
+
+- `bootstrap init` installs the starter's exact, checksummed tool versions into `~/.kube-dc/tools/bin` (with `--yes` or consent) and uses them first for every bootstrap command.
+- Push tokens are bound to the Fleet remote's host: `GITHUB_TOKEN`/`GH_TOKEN` only for github.com, `GITLAB_TOKEN` only with `--provider=gitlab`, and otherwise the credential glab or gh stored for that exact host. `openbao init` and `keycloak init` no longer send a GitHub token to a GitLab remote; an SSH remote needs no token. Self-managed GitLab hosts reach Flux bootstrap.
+- A fresh cluster with a private CA or an operator-supplied wildcard certificate no longer stalls: the namespaces of those root-level objects are created with them.
+- `existing-repo` mode imports the starter into a repository that already has its own content (for example `ansible/` or `install/`), keeping that content.
+- Rook Ceph overlays check that every node runs Linux 7.0 or later before writing anything. Multi-node Ceph accepts up to 16 OSD servers, `CEPH_MON_NODES` pins the monitors, and new overlays include the `ceph-block` class.
+- `KUBE_DC_INIT_SITE_COMPONENTS` (`--site-components`) attaches Kustomize Components from the Fleet repository to the generated Flux layers.
+- A resumed `init` accepts the OSD disks Ceph already owns when the overlay selected them, keeps the installed Flux, and no longer re-commits unchanged TLS material.
+- `openbao init` unseals every member, including followers the StatefulSet starts later; `openbao unseal` waits for them too.
+- `bootstrap accept` trusts the installation's private CA, and on an idle cluster probes the tenant gateway from the default VPC before deciding.
+- A MetalLB VIP is no longer treated as single-IP NAT, so the API passthrough listener is kept.
+- `fetch-kubeconfig --server` writes a control-plane address while the VIP is not serving yet.
+
 ## v0.9.11 — 2026-10-29
 
 - Add typed platform API commands, capability discovery, machine identities, and MCP integration for supported installations.

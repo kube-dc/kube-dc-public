@@ -128,6 +128,9 @@ func WriteTrustedCA(fleetRepo, clusterName string, m *TrustedCAMaterial, out io.
 	} else if err := atomicWrite(path, []byte(body), 0o644); err != nil {
 		return fmt.Errorf("trusted-ca: write %s: %w", path, err)
 	}
+	if err := ensureRootNamespaces(clusterDir, []string{"kube-dc"}); err != nil {
+		return fmt.Errorf("trusted-ca: %w", err)
+	}
 	if err := patchFileLines(filepath.Join(clusterDir, "kustomization.yaml"), patchKustomizationResource(trustedCAFileName)); err != nil {
 		return fmt.Errorf("trusted-ca: patch kustomization.yaml: %w", err)
 	}

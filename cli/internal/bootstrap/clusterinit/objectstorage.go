@@ -63,6 +63,8 @@ type ObjectStorageSpec struct {
 	// CEPH_NODE_{1..3} deterministically.
 	CephNodes       map[string]string
 	ReplicationSize int // zero selects the topology default
+	// MonNodes optionally pins the Ceph monitors (CEPH_MON_NODES).
+	MonNodes []string
 
 	// rook-ceph-pvc
 	StorageClass    string
@@ -72,6 +74,10 @@ type ObjectStorageSpec struct {
 	// shared
 	S3Hostname   string // empty = s3.<domain>
 	NoS3Exposure bool
+
+	// blockClass adds the starter's ceph-block StorageClass to a multi-node
+	// overlay. Set by WriteObjectStorage when the starter provides it.
+	blockClass bool
 }
 
 // ObjectStorage projects the spec out of InitOptions.
@@ -84,6 +90,7 @@ func (o *InitOptions) ObjectStorage() ObjectStorageSpec {
 		OSDDevice:       o.RookOSDDevice,
 		CephNodes:       o.CephNodes,
 		ReplicationSize: replicas,
+		MonNodes:        cephMonNodes(o.Sets["CEPH_MON_NODES"]),
 		StorageClass:    o.CephStorageClass,
 		OSDCount:        o.CephOSDCount,
 		OSDVolumeSizeGB: o.CephOSDVolumeSizeGB,
@@ -143,8 +150,15 @@ func WriteObjectStorage(fleetRepo, clusterName, domain string, spec ObjectStorag
 	}
 
 	if spec.Mode == RookCephMultiNode {
-		if len(spec.CephNodes) < 1 || len(spec.CephNodes) > 3 || spec.replication() < 1 || spec.replication() > len(spec.CephNodes) {
-			return fmt.Errorf("object-storage: select 1 to 3 storage servers and no more replicas than servers")
+		if len(spec.CephNodes) < 1 || len(spec.CephNodes) > MaxCephSlots || spec.replication() < 1 || spec.replication() > len(spec.CephNodes) {
+			return fmt.Errorf("object-storage: select 1 to %d storage servers and no more replicas than servers", MaxCephSlots)
+		}
+	}
+
+	// Starters that ship the multi-node ceph-block class get it in new overlays.
+	if spec.Mode == RookCephMultiNode {
+		if _, err := os.Stat(filepath.Join(fleetRepo, "infrastructure", "object-storage", "block-class", "kustomization.yaml")); err == nil {
+			spec.blockClass = true
 		}
 	}
 
@@ -343,6 +357,9 @@ func objectStorageOverlayYAML(clusterName string, spec ObjectStorageSpec) string
 	b.WriteString("  - " + ups + "infrastructure/object-storage/bucket-provisioning\n")
 	if !spec.NoS3Exposure {
 		b.WriteString("  - " + ups + "infrastructure/object-storage/exposure\n")
+	}
+	if spec.blockClass {
+		b.WriteString("  - " + ups + "infrastructure/object-storage/block-class\n")
 	}
 	// Only newly generated overlays select AES256K. Existing Fleet overlays
 	// retain their key policy until their clients and kernels are qualified.

@@ -93,6 +93,11 @@ type FetchKubeconfigOptions struct {
 	// running kube-vip or a non-standard RKE2 layout.
 	RemotePath string
 
+	// Server, when set, replaces the kube-api.<Domain> URL: for example a
+	// control-plane address before the front-door VIP serves the API. It
+	// must be an https URL that the apiserver certificate covers.
+	Server string
+
 	// Out is the operator-facing log writer. Nil is safe.
 	Out io.Writer
 }
@@ -167,6 +172,13 @@ func FetchKubeconfig(ctx context.Context, opts FetchKubeconfigOptions) (*clientc
 	// Target port is 6443 by RKE2 convention — matches the
 	// front-door kube-api Service's advertised port.
 	targetServer := fmt.Sprintf("https://kube-api.%s:6443", opts.Domain)
+	if opts.Server != "" {
+		u, err := url.Parse(opts.Server)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") {
+			return nil, fmt.Errorf("fetch-kubeconfig: --server must be an https URL such as https://192.0.2.10:6443")
+		}
+		targetServer = strings.TrimSuffix(opts.Server, "/")
+	}
 	for _, c := range cfg.Clusters {
 		c.Server = targetServer
 	}
@@ -374,6 +386,15 @@ func HaveUsableKubeconfig() bool {
 }
 
 // currentKubeconfigServer returns the server URL of the current context.
+// currentKubeconfigContext returns the current context's name.
+func currentKubeconfigContext() string {
+	raw, err := clientcmd.NewDefaultClientConfigLoadingRules().Load()
+	if err != nil || raw == nil {
+		return ""
+	}
+	return raw.CurrentContext
+}
+
 func currentKubeconfigServer() (string, bool) {
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
@@ -401,6 +422,17 @@ func currentKubeconfigServer() (string, bool) {
 // nothing matches we do not guess: the caller fetches a fresh kubeconfig for the
 // cluster being installed, which is authoritative by construction.
 func KubeconfigTargetsCluster(domain, nodeIP string) (server string, targets bool) {
+	return KubeconfigTargetsNamedCluster("", domain, nodeIP, nil)
+}
+
+// KubeconfigTargetsNamedCluster also accepts one of the cluster's own
+// control-plane addresses (KUBE_OVN_MASTER_NODES), as `fetch-kubeconfig
+// --server` writes before the VIP serves the API, but only when the current
+// context carries the cluster's name: private addresses repeat across sites.
+func KubeconfigTargetsNamedCluster(name, domain, nodeIP string, controlPlane []string) (server string, targets bool) {
+	if name == "" || currentKubeconfigContext() != name {
+		controlPlane = nil
+	}
 	server, ok := currentKubeconfigServer()
 	if !ok {
 		return "", false
@@ -417,10 +449,11 @@ func KubeconfigTargetsCluster(domain, nodeIP string) (server string, targets boo
 		return server, false
 	}
 	host := strings.ToLower(u.Hostname())
-	for _, id := range []string{
+	for _, id := range append([]string{
 		strings.TrimSpace(domain),
 		strings.TrimSpace(nodeIP),
-	} {
+	}, controlPlane...) {
+		id = strings.TrimSpace(id)
 		if id == "" {
 			continue
 		}
@@ -432,4 +465,27 @@ func KubeconfigTargetsCluster(domain, nodeIP string) (server string, targets boo
 		}
 	}
 	return server, false
+}
+
+// ControlPlaneKubeconfigServer returns the current kubeconfig's server when the
+// current context is named name and its server is one of the given
+// control-plane addresses, else "".
+func ControlPlaneKubeconfigServer(name string, controlPlane []string) string {
+	if name == "" || currentKubeconfigContext() != name {
+		return ""
+	}
+	server, ok := currentKubeconfigServer()
+	if !ok {
+		return ""
+	}
+	u, err := url.Parse(server)
+	if err != nil {
+		return ""
+	}
+	for _, a := range controlPlane {
+		if a = strings.TrimSpace(a); a != "" && strings.EqualFold(u.Hostname(), a) {
+			return server
+		}
+	}
+	return ""
 }

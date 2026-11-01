@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -125,6 +126,9 @@ type EnsureStarterOptions struct {
 	Git  starterGit
 	// Out receives one-line progress notes. Nil-safe.
 	Out io.Writer
+	// OperatorRepository is set for --fleet-mode=existing-repo: RepoPath is
+	// the operator's own committed checkout, whose content is kept.
+	OperatorRepository bool
 }
 
 // EnsureStarterResult reports what happened.
@@ -203,12 +207,50 @@ func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (EnsureStarte
 	// self-healing instead of wedged (review P1 2026-07-20). Anything
 	// else non-benign refuses.
 	if entries, err := os.ReadDir(opts.RepoPath); err == nil {
+		// An operator's committed Git checkout (existing-repo) keeps its own
+		// top-level content (for example ansible/ or install/): extraction only
+		// adds starter-owned entries, and the commit below stages them alone
+		// because Apply requires a clean tree. A starter-owned name that Git
+		// already tracks is the operator's, so it is refused, never removed.
+		// An empty (or .git-only) directory takes the fresh-extraction path in
+		// every mode.
+		hasContent := false
+		for _, e := range entries {
+			hasContent = hasContent || e.Name() != ".git"
+		}
+		hasGit := dirExists(filepath.Join(opts.RepoPath, ".git"))
+		operatorRepo := opts.OperatorRepository && hasContent
+		if operatorRepo {
+			if !hasGit || !gitHasCommit(opts.RepoPath) {
+				return EnsureStarterResult{}, fmt.Errorf("%w: --fleet-mode=existing-repo needs %s to be a Git checkout with at least one commit",
+					ErrStarterDirNotEmpty, opts.RepoPath)
+			}
+			// The starter commit stages the whole tree, so operator changes
+			// must be committed (or ignored) first.
+			dirty, err := gitDirtyPaths(opts.RepoPath)
+			if err != nil {
+				return EnsureStarterResult{}, fmt.Errorf("init: starter: read the Git status of %s: %w", opts.RepoPath, err)
+			}
+			if dirty != "" {
+				return EnsureStarterResult{}, fmt.Errorf("%w: %s has uncommitted changes; commit or remove them before importing the starter:\n%s",
+					ErrStarterDirNotEmpty, opts.RepoPath, dirty)
+			}
+		}
 		var offenders, leftovers []string
 		for _, e := range entries {
 			switch {
 			case benignPreseedEntries[e.Name()]:
 			case starterOwnedEntries[e.Name()]:
-				leftovers = append(leftovers, e.Name())
+				// In an operator repository nothing is ever removed: a
+				// starter-named entry there is the operator's.
+				// A starter-named entry that Git tracks is the operator's in any
+				// mode, too.
+				if operatorRepo || (hasGit && gitTracksPath(opts.RepoPath, e.Name())) {
+					offenders = append(offenders, e.Name())
+				} else {
+					leftovers = append(leftovers, e.Name())
+				}
+			case operatorRepo:
 			default:
 				offenders = append(offenders, e.Name())
 			}
@@ -773,4 +815,22 @@ func gitignoreExcludesAgeKey(path string) bool {
 		}
 	}
 	return false
+}
+
+func dirExists(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.IsDir()
+}
+
+// gitDirtyPaths lists modified and untracked (not ignored) paths.
+func gitDirtyPaths(repoPath string) (string, error) {
+	out, err := exec.Command("git", "-C", repoPath, "status", "--porcelain", "--untracked-files=all").Output()
+	return strings.TrimSpace(string(out)), err
+}
+
+// gitTracksPath reports whether Git tracks anything at name in repoPath.
+// An error counts as tracked, so an unreadable state never leads to removal.
+func gitTracksPath(repoPath, name string) bool {
+	out, err := exec.Command("git", "-C", repoPath, "ls-files", "--", name).Output()
+	return err != nil || strings.TrimSpace(string(out)) != ""
 }

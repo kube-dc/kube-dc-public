@@ -65,6 +65,7 @@ returns.`,
 				FleetRepo:   repo,
 				SOPS:        session.SOPS,
 				OpenBao:     session.OpenBao,
+				K8s:         session.K8s,
 				Out:         cmd.OutOrStdout(),
 			})
 		},

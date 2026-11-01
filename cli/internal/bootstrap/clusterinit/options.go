@@ -320,7 +320,10 @@ type InitOptions struct {
 	// TrustedCABundle is a local certificate-only PEM path. Its validated
 	// canonical fingerprint is plan-pinned; the public CA material is written
 	// to a ConfigMap, never to a Secret.
-	TrustedCABundle      string
+	TrustedCABundle string
+	// SiteComponents is KUBE_DC_INIT_SITE_COMPONENTS: LAYER=PATH entries that
+	// attach Fleet-repository Kustomize Components to generated Flux layers.
+	SiteComponents       string
 	TrustedCAFingerprint string
 
 	// --- Accelerators (GPU PRD section 6) ---
@@ -576,6 +579,9 @@ func (o *InitOptions) Validate() error {
 
 	if err := o.ValidateFields(); err != nil {
 		return err
+	}
+	if _, err := ParseSiteComponents(o.SiteComponents); err != nil {
+		return fmt.Errorf("%w: %v", ErrValidation, err)
 	}
 
 	// Cross-flag — only checked after structural pass so we don't
@@ -901,8 +907,22 @@ func validateObjectStorage(o *InitOptions) []string {
 		}
 
 	case RookCephMultiNode:
-		if len(o.CephNodes) < 1 || len(o.CephNodes) > 3 {
-			errs = append(errs, fmt.Sprintf("--object-storage-mode=rook-ceph-multi-node requires 1 to 3 --ceph-node NODE=DEVICE entries (got %d)", len(o.CephNodes)))
+		if len(o.CephNodes) < 1 || len(o.CephNodes) > MaxCephSlots {
+			errs = append(errs, fmt.Sprintf("--object-storage-mode=rook-ceph-multi-node requires 1 to %d --ceph-node NODE=DEVICE entries (got %d)", MaxCephSlots, len(o.CephNodes)))
+		}
+		if mons := cephMonNodes(o.Sets["CEPH_MON_NODES"]); len(mons) > 0 {
+			want := 3
+			if len(o.CephNodes) == 1 {
+				want = 1
+			}
+			if len(mons) < want {
+				errs = append(errs, fmt.Sprintf("CEPH_MON_NODES must name at least %d node(s) for the monitor count (got %d)", want, len(mons)))
+			}
+			for _, n := range mons {
+				if !k8sNodeNameRegex.MatchString(n) {
+					errs = append(errs, fmt.Sprintf("CEPH_MON_NODES entry %q is not a valid Kubernetes node name", n))
+				}
+			}
 		}
 		replicas, err := objectStorageReplication(o.RookMode, len(o.CephNodes), o.Sets["CEPH_REPLICATION_SIZE"])
 		if err != nil {

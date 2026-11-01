@@ -37,6 +37,9 @@ const (
 	StorageDevEmpty   StorageDeviceState = "empty"   // exists, block device, no fs/partitions/mounts → good
 	StorageDevMissing StorageDeviceState = "missing" // no such block device on the node
 	StorageDevInUse   StorageDeviceState = "in-use"  // has a filesystem, partitions, or a mount → rook refuses it
+	// StorageDevCeph is a whole device that carries only a Ceph BlueStore label:
+	// an OSD. Acceptable only when resuming the overlay that selected it.
+	StorageDevCeph    StorageDeviceState = "a Ceph OSD"
 	StorageDevUnknown StorageDeviceState = "unknown" // could not determine (no lsblk, node unreachable)
 )
 
@@ -127,7 +130,10 @@ func ProbeStorageDevice(ctx context.Context, opts StorageDeviceProbeOptions) (St
 			"CH=$(printf '%%s\\n' \"$ALL\" | tail -n +2); "+
 			"HOLD=$(sudo -n find \"/sys/dev/block/$MM/holders\" -mindepth 1 -maxdepth 1 -print 2>/dev/null) || { echo KDCPROBE:UNKNOWN; exit 0; }; "+
 			"WIPE=$(sudo -n wipefs -n --noheadings -O TYPE -- \"$D\" 2>/dev/null) || { echo KDCPROBE:UNKNOWN; exit 0; }; "+
-			"if [ \"$RO\" != 0 ] || [ -n \"$(printf '%%s' \"$INFO$CH$HOLD$WIPE\" | tr -d '[:space:]')\" ]; then echo KDCPROBE:INUSE; else echo KDCPROBE:EMPTY; fi",
+			"BS=ceph_bluestore; "+
+			"if [ \"$RO\" = 0 ] && [ -z \"$(printf '%%s' \"$CH$HOLD\" | tr -d '[:space:]')\" ] && [ \"$(printf '%%s' \"$WIPE\" | tr -d '[:space:]')\" = \"$BS\" ] && "+
+			"{ [ -z \"$(printf '%%s' \"$INFO\" | tr -d '[:space:]')\" ] || [ \"$(printf '%%s' \"$INFO\" | tr -d '[:space:]')\" = \"$BS\" ]; }; then echo KDCPROBE:CEPH; "+
+			"elif [ \"$RO\" != 0 ] || [ -n \"$(printf '%%s' \"$INFO$CH$HOLD$WIPE\" | tr -d '[:space:]')\" ]; then echo KDCPROBE:INUSE; else echo KDCPROBE:EMPTY; fi",
 		dev)
 	out, err := opts.SSH.Run(ctx, opts.Host, probe)
 	if err != nil {
@@ -144,8 +150,10 @@ func ProbeStorageDevice(ctx context.Context, opts StorageDeviceProbeOptions) (St
 
 // RequireEmptyStorageDevice turns a read-only observation into the apply gate.
 // The caller probes again after review and before any Fleet or host mutation.
-func RequireEmptyStorageDevice(res StorageDeviceResult) error {
-	if res.State == StorageDevEmpty {
+// resumingOverlay permits a Ceph OSD: the caller has confirmed that the
+// committed overlay already selects this device, so Rook has consumed it.
+func RequireEmptyStorageDevice(res StorageDeviceResult, resumingOverlay bool) error {
+	if res.State == StorageDevEmpty || (resumingOverlay && res.State == StorageDevCeph) {
 		return nil
 	}
 	return fmt.Errorf("selected raw OSD device /dev/%s on %s is %s; inspect the device and run readiness again", res.Device, res.Node, res.State)
@@ -165,6 +173,8 @@ func parseStorageSentinel(out string) StorageDeviceState {
 			found = StorageDevInUse
 		case "KDCPROBE:EMPTY":
 			found = StorageDevEmpty
+		case "KDCPROBE:CEPH":
+			found = StorageDevCeph
 		case "KDCPROBE:UNKNOWN":
 			found = StorageDevUnknown
 		default:

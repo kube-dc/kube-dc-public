@@ -21,6 +21,7 @@ package accept
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net"
@@ -306,16 +307,9 @@ func checkFrontDoorTLS(ctx context.Context, o Options) Check {
 			Detail: "no domain known; pass --domain to check the front door"}
 	}
 	url := "https://console." + o.Domain
-	client := o.httpClient
+	client, trust := o.httpClient, "system roots"
 	if client == nil {
-		client = &http.Client{
-			Timeout: o.HTTPTimeout,
-			Transport: &http.Transport{
-				// Explicitly NOT InsecureSkipVerify: the point is to verify.
-				TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-				DialContext:     (&net.Dialer{Timeout: o.HTTPTimeout}).DialContext,
-			},
-		}
+		client, trust = frontDoorClient(ctx, o)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
 	if err != nil {
@@ -342,7 +336,33 @@ func checkFrontDoorTLS(ctx context.Context, o Options) Check {
 			Fix:    "kubectl -n kube-dc get pods,httproutes; the front door terminates TLS but nothing serves the console"}
 	}
 	return Check{Name: name, Required: true, Outcome: Pass,
-		Detail: fmt.Sprintf("%s answered %s with a trusted certificate", url, resp.Status)}
+		Detail: fmt.Sprintf("%s answered %s with a certificate trusted by %s", url, resp.Status, trust)}
+}
+
+// frontDoorClient verifies TLS (never InsecureSkipVerify) against the system
+// roots plus, on a private-CA installation, the operator-supplied roots that
+// init recorded in kube-dc/kube-dc-private-ca: the installation's users trust
+// them, so acceptance verifies against them too.
+func frontDoorClient(ctx context.Context, o Options) (*http.Client, string) {
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+	trust := "system roots"
+	if pem, err := o.K8s.GetConfigMapData(ctx, "kube-dc", "kube-dc-private-ca", "ca.pem"); err == nil && strings.TrimSpace(pem) != "" {
+		pool, perr := x509.SystemCertPool()
+		if perr != nil || pool == nil {
+			pool = x509.NewCertPool()
+		}
+		if pool.AppendCertsFromPEM([]byte(pem)) {
+			tlsConfig.RootCAs = pool
+			trust = "system roots and the installation's private CA"
+		}
+	}
+	return &http.Client{
+		Timeout: o.HTTPTimeout,
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig,
+			DialContext:     (&net.Dialer{Timeout: o.HTTPTimeout}).DialContext,
+		},
+	}, trust
 }
 
 // checkTenancyReachable confirms the tenancy API surface exists, and warns about
@@ -530,6 +550,15 @@ ip neigh show %[1]s
 		return Check{Name: name, Required: true, Outcome: Pass,
 			Detail: fmt.Sprintf("%s is %s on the external segment, learned by OVN via %s", gw, mac, port)}
 	}
+	// OVN ages idle bindings out, so a quiet cluster may hold none. Send a
+	// few packets from default-VPC pods: the management router then ARPs the
+	// gateway, and an answer is recorded in mac_binding.
+	if triggerGatewayARP(ctx, o, gw) {
+		if port, mac := ovnGatewayMacBinding(ctx, o, gw); mac != "" {
+			return Check{Name: name, Required: true, Outcome: Pass,
+				Detail: fmt.Sprintf("%s is %s on the external segment, learned by OVN via %s after a probe from the default VPC", gw, mac, port)}
+		}
+	}
 	if probed == 0 {
 		return Check{Name: name, Required: true, Outcome: Skipped,
 			Detail: fmt.Sprintf("no probed node has a route to %s, so none could test it", gw),
@@ -538,6 +567,31 @@ ip neigh show %[1]s
 	return Check{Name: name, Required: true, Outcome: Fail,
 		Detail: fmt.Sprintf("NOTHING answers ARP for the tenant gateway %s on %d probed node(s) — every tenant VPC's default route is a black hole", gw, probed),
 		Fix:    "confirm who is meant to own this address. Provider-routed site: the upstream router/SVI is down or the VLAN is not trunked. Provider L2 with no SVI (e.g. CloudSigma): something WE ship must own it — check the bastion holds it in the right subnet, or enable EXT_NET_NODE_EGRESS_ENABLED with a gateway VIP"}
+}
+
+// triggerGatewayARP pings the gateway from up to two kube-ovn pinger Pods,
+// which sit on the default VPC. It reports whether any probe ran.
+func triggerGatewayARP(ctx context.Context, o Options, gw string) bool {
+	if net.ParseIP(gw) == nil {
+		return false
+	}
+	pods, err := o.K8s.ListPodNames(ctx, "kube-system", "app=kube-ovn-pinger")
+	if err != nil || len(pods) == 0 {
+		return false
+	}
+	if len(pods) > 2 {
+		pods = pods[:2]
+	}
+	cmd := []string{"sh", "-c", fmt.Sprintf("ping -c 2 -W 1 %s >/dev/null 2>&1; echo probed", gw)}
+	ran := false
+	for _, pod := range pods {
+		if out, err := o.K8s.PodExec(ctx, "kube-system", pod, cmd, nil); err == nil && strings.Contains(string(out), "probed") {
+			ran = true
+		} else if out, err := o.K8s.PodExecViaKubectl(ctx, "kube-system", pod, cmd, nil); err == nil && strings.Contains(string(out), "probed") {
+			ran = true
+		}
+	}
+	return ran
 }
 
 // Render writes the report as an operator-facing summary.

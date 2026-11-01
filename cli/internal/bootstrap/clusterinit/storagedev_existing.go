@@ -66,7 +66,7 @@ func RequireUnchangedRawOSDSelection(envPath string, spec ObjectStorageSpec) err
 		}
 		// An omitted slot is also a storage change. Checking only requested
 		// slots would silently accept removal of an existing OSD.
-		for i := 1; i <= 3; i++ {
+		for i := 1; i <= MaxCephSlots; i++ {
 			name := fmt.Sprintf("CEPH_NODE_%d", i)
 			for _, key := range []string{name, name + "_DEVICE"} {
 				if _, wanted := needed[key]; !wanted {
@@ -89,7 +89,10 @@ func RequireUnchangedRawOSDSelection(envPath string, spec ObjectStorageSpec) err
 }
 
 func hasRawOSDKeys(env *config.Env) bool {
-	keys := []string{"CEPH_LOCAL_OSD_DEVICE", "CEPH_NODE_1_DEVICE", "CEPH_NODE_2_DEVICE", "CEPH_NODE_3_DEVICE"}
+	keys := []string{"CEPH_LOCAL_OSD_DEVICE"}
+	for i := 1; i <= MaxCephSlots; i++ {
+		keys = append(keys, fmt.Sprintf("CEPH_NODE_%d_DEVICE", i))
+	}
 	for _, key := range keys {
 		if value, _ := env.Get(key); value != "" && !loopDeviceRegex.MatchString(strings.TrimPrefix(value, "/dev/")) {
 			return true

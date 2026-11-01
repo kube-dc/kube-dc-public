@@ -703,7 +703,9 @@ func TestFilesForOptions_ListsEveryGreenfieldScaffoldSideEffect(t *testing.T) {
 		"clusters/atlantis/addons/kustomization.yaml",
 		"clusters/atlantis/cdi-block-device-access.yaml",
 		"clusters/atlantis/ext-net-bridge-tag.yaml",
+		"clusters/atlantis/vpc-dns-nad-provider.yaml",
 		"clusters/atlantis/trusted-ca.yaml",
+		"clusters/atlantis/root-namespaces.yaml",
 		"platform/registry-depot/secret.enc.yaml",
 	} {
 		if _, ok := got[want]; !ok {

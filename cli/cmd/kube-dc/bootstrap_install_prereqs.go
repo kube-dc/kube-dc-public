@@ -87,8 +87,9 @@ Exit code:
 				Assume: yes,
 				// Use cmd.InOrStdin so cobra test harnesses can
 				// inject stdin content — reviewer P3.
-				Prompt: promptForInstallConsent(cmd.InOrStdin(), cmd.OutOrStdout()),
-				Out:    out,
+				Prompt:    promptForInstallConsent(cmd.InOrStdin(), cmd.OutOrStdout()),
+				Out:       out,
+				FleetRepo: repo,
 			})
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "bootstrap install-prereqs: %v\n", err)

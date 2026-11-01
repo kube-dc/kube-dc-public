@@ -88,7 +88,7 @@ they don't pick up Secret rotations without a restart.`,
 			out := cmd.OutOrStdout()
 			var token string
 			if !noPush {
-				token = resolveGHTokenFor("keycloak", out)
+				token = resolveGHTokenFor("keycloak", repo, out)
 			}
 
 			return keycloak.Init(cmd.Context(), keycloak.InitOptions{

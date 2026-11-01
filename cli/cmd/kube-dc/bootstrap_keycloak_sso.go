@@ -121,7 +121,7 @@ After it completes, reconcile so the platform picks the flag up:
 			out := cmd.OutOrStdout()
 			var token string
 			if !noPush {
-				token = resolveGHTokenFor("keycloak", out)
+				token = resolveGHTokenFor("keycloak", repo, out)
 			}
 
 			return keycloak.SSORealm(cmd.Context(), keycloak.SSOOptions{

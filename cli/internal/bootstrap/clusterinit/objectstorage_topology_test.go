@@ -22,7 +22,7 @@ func TestRawStorageReplicaDefaultsAndLimits(t *testing.T) {
 		valid   bool
 	}{
 		{1, "", 1, true}, {2, "", 2, true}, {3, "", 2, true}, {3, "3", 3, true}, {2, "1", 1, true},
-		{1, "2", 2, false}, {2, "3", 3, false}, {2, "0", 0, false}, {3, "4", 0, false}, {1, "wrong", 0, false}, {0, "", 1, false}, {4, "", 2, false},
+		{1, "2", 2, false}, {2, "3", 3, false}, {2, "0", 0, false}, {3, "4", 0, false}, {1, "wrong", 0, false}, {0, "", 1, false}, {4, "", 2, true}, {10, "3", 3, true}, {MaxCephSlots + 1, "", 0, false},
 	} {
 		t.Run(fmt.Sprintf("%d-servers-%s", tc.servers, tc.value), func(t *testing.T) {
 			o := validBase()
@@ -179,5 +179,65 @@ spec: {failureDomain: host, replicated: {size: 3}}
 				}
 			}
 		})
+	}
+}
+
+// Ten storage servers render ten slots, and CEPH_MON_NODES pins the monitors.
+func TestMultiNodeStoragePatchesListEverySlotAndPinMonitors(t *testing.T) {
+	spec := ObjectStorageSpec{Mode: RookCephMultiNode, CephNodes: map[string]string{}, ReplicationSize: 3,
+		MonNodes: cephMonNodes("node-03, node-01,node-02")}
+	for i := 1; i <= 10; i++ {
+		spec.CephNodes[fmt.Sprintf("node-%02d", i)] = "disk/by-id/nvme-x"
+	}
+	body := multiNodeStoragePatches(spec)
+	var doc struct {
+		Patches []struct {
+			Target struct{ Kind string }
+			Patch  string
+		}
+	}
+	if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
+		t.Fatal(err)
+	}
+	var ops []struct {
+		Path  string
+		Value any
+	}
+	for _, p := range doc.Patches {
+		if p.Target.Kind == "CephCluster" {
+			if err := json.Unmarshal([]byte(p.Patch), &ops); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	found := map[string]any{}
+	for _, op := range ops {
+		found[op.Path] = op.Value
+	}
+	nodes, _ := found["/spec/storage/nodes"].([]any)
+	if len(nodes) != 10 || !strings.Contains(fmt.Sprint(nodes[9]), "${CEPH_NODE_10}") {
+		t.Fatalf("storage nodes = %v", nodes)
+	}
+	placement := fmt.Sprint(found["/spec/placement"])
+	if !strings.Contains(placement, "[node-01 node-02 node-03]") {
+		t.Fatalf("monitor placement = %s", placement)
+	}
+	keys := objectStorageEnvKeys("example.com", spec)
+	if fmt.Sprint(keys) == "" || !strings.Contains(fmt.Sprint(keys), "CEPH_NODE_10_DEVICE") {
+		t.Fatalf("env keys = %v", keys)
+	}
+}
+
+func TestValidateCephMonNodes(t *testing.T) {
+	o := validBase()
+	o.RookMode = RookCephMultiNode
+	o.CephNodes = map[string]string{"a": "sdb", "b": "sdb", "c": "sdb", "d": "sdb"}
+	o.Sets = map[string]string{"CEPH_MON_NODES": "a,b"}
+	if err := o.Validate(); err == nil || !strings.Contains(err.Error(), "CEPH_MON_NODES") {
+		t.Fatalf("two monitors for a three-monitor cluster accepted: %v", err)
+	}
+	o.Sets["CEPH_MON_NODES"] = "a,b,c"
+	if err := o.Validate(); err != nil {
+		t.Fatal(err)
 	}
 }

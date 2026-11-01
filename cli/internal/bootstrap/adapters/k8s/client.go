@@ -313,6 +313,20 @@ func (c *Client) NodeLabels(ctx context.Context) (map[string]map[string]string, 
 // NodeInternalIPs returns each Node's InternalIP, keyed by node name. Nodes without one
 // are omitted rather than reported as empty, so a caller cannot mistake "no address" for
 // "address is the empty string".
+// NodeKernelVersions returns each Node's reported kernel release, keyed by
+// node name. It backs init's Ceph kernel gate.
+func (c *Client) NodeKernelVersions(ctx context.Context) (map[string]string, error) {
+	list, err := c.core.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("k8s: list nodes: %w", err)
+	}
+	out := make(map[string]string, len(list.Items))
+	for _, n := range list.Items {
+		out[n.Name] = n.Status.NodeInfo.KernelVersion
+	}
+	return out, nil
+}
+
 func (c *Client) NodeInternalIPs(ctx context.Context) (map[string]string, error) {
 	list, err := c.core.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {

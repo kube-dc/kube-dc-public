@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -436,5 +438,84 @@ func TestInstallPrereqs_MalformedExitCode_FailsInstall(t *testing.T) {
 	}
 	if !errors.Is(err, ports.ErrStreamBadExitCode) {
 		t.Errorf("want ports.ErrStreamBadExitCode, got %v", err)
+	}
+}
+
+// pinnedRunner answers `--check` from a queue and records every call's args.
+type pinnedRunner struct {
+	checks []int
+	calls  [][]string
+}
+
+func (r *pinnedRunner) Run(_ context.Context, _ ports.ScriptKind, _ map[string]string, args ...string) (<-chan ports.Line, error) {
+	r.calls = append(r.calls, append([]string(nil), args...))
+	code := 0
+	if len(args) > 0 && args[0] == "--check" && len(r.checks) > 0 {
+		code, r.checks = r.checks[0], r.checks[1:]
+	}
+	ch := make(chan ports.Line, 1)
+	ch <- ports.Line{Stream: ports.StreamExit, Text: fmt.Sprintf("%d", code)}
+	close(ch)
+	return ch, nil
+}
+func (r *pinnedRunner) WithSentinelCallback(ports.SentinelCallback) ports.ScriptRunner { return r }
+
+func pinnedFleet(t *testing.T) string {
+	t.Helper()
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "scripts", "tool-versions.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return repo
+}
+
+// Present-but-different tool versions are installed into the CLI's own
+// directory, which then leads PATH for the scripts that follow.
+func TestInstallPrereqs_PinnedVersionsInstalledIntoToolsDir(t *testing.T) {
+	t.Setenv("PATH", os.Getenv("PATH"))
+	dir := filepath.Join(t.TempDir(), "bin")
+	r := &pinnedRunner{checks: []int{1, 0}}
+	_, err := InstallPrereqs(context.Background(), InstallPrereqsOptions{
+		Runner: r, Probes: []ports.Probe{}, Assume: true, FleetRepo: pinnedFleet(t), ToolsDir: dir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{{"--check"}, {"--bin-dir", dir}, {"--check"}}
+	if fmt.Sprint(r.calls) != fmt.Sprint(want) {
+		t.Fatalf("calls = %v, want %v", r.calls, want)
+	}
+	if !strings.HasPrefix(os.Getenv("PATH"), dir+string(os.PathListSeparator)) {
+		t.Fatalf("PATH does not start with %s", dir)
+	}
+}
+
+func TestInstallPrereqs_PinnedVersionsNeedConsent(t *testing.T) {
+	t.Setenv("PATH", os.Getenv("PATH"))
+	r := &pinnedRunner{checks: []int{1}}
+	_, err := InstallPrereqs(context.Background(), InstallPrereqsOptions{
+		Runner: r, Probes: []ports.Probe{}, FleetRepo: pinnedFleet(t), ToolsDir: t.TempDir(),
+	})
+	if !errors.Is(err, ErrInstallPrereqsConsentRequired) {
+		t.Fatalf("err = %v", err)
+	}
+	if len(r.calls) != 1 {
+		t.Fatalf("installed without consent: %v", r.calls)
+	}
+}
+
+func TestInstallPrereqs_PinnedVersionsPresentInstallsNothing(t *testing.T) {
+	t.Setenv("PATH", os.Getenv("PATH"))
+	r := &pinnedRunner{checks: []int{0}}
+	if _, err := InstallPrereqs(context.Background(), InstallPrereqsOptions{
+		Runner: r, Probes: []ports.Probe{}, FleetRepo: pinnedFleet(t), ToolsDir: t.TempDir(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.calls) != 1 {
+		t.Fatalf("calls = %v", r.calls)
 	}
 }

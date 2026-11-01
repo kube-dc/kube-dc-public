@@ -30,9 +30,13 @@ baseline. The storage prerequisite gate holds Ceph installation if a node fails
 these checks. See [Rook's CephX client requirements](https://rook.github.io/docs/rook/v1.19/Storage-Configuration/Advanced/cephx-key-rotation/).
 Other RKE2-supported systems can be used with object storage disabled.
 
-Use CLI 0.9.12 for platform bundle 0.9.11. Their versions are independent;
+Use CLI 0.9.13 for platform bundle 0.9.11. Their versions are independent;
 `--starter-ref` pins the platform bundle, and its metadata declares the minimum
 supported CLI version.
+
+On Ubuntu 24.04, install the HWE kernel (`linux-generic-hwe-24.04`, Linux 7.0)
+and reboot each node before installing RKE2. `bootstrap init` refuses a Ceph
+installation while any node reports an older kernel.
 
 ### 1.1 Provision servers
 
@@ -309,6 +313,10 @@ also covers the `--join-server` control-plane). Host keys are verified
 strictly; for unattended runs add `--ssh-accept-new-host-keys` (records +
 trusts an **unknown** host key. A key **mismatch** is still refused as a
 possible MITM).
+
+Right after the RKE2 install, `kube-api.<domain>` may point at a front-door VIP
+that MetalLB has not announced yet. Fetch the kubeconfig against a control-plane
+address until then: `kube-dc bootstrap fetch-kubeconfig <cluster> --ssh-host … --domain … --server https://<node-ip>:6443`.
 
 > The jump covers the **SSH-driven** steps only (`connect` / `install` /
 > `fetch-kubeconfig`). Phase 3's `bootstrap init` reaches the cluster's
@@ -684,7 +692,11 @@ kube-dc bootstrap doctor --no-tty
 `doctor` checks `kubectl`, `flux`, `sops`, `age`, `git`, `gh`, `ssh` and `bao`
 (the last one for information only: the CLI runs `bao` inside the cluster, never here).
 It does NOT probe `helm`, `kustomize` or `yq`, so a green doctor is not proof
-those exist. Fix every blocker before continuing. Ensure the control-plane SSH key is
+those exist. Fix every blocker before continuing. `bootstrap init --yes` then
+installs the starter's exact, checksummed tool versions (kubectl, flux, sops,
+age, kustomize, helm, yq, clusterctl) into `~/.kube-dc/tools/bin` when the
+workstation has other versions, and every `kube-dc bootstrap` command puts that
+directory first on `PATH`; system tools are not changed. Ensure the control-plane SSH key is
 loaded (`ssh-add <key>`); the CLI reads it from `ssh-agent`, never from a key
 flag.
 
@@ -820,15 +832,16 @@ kube-dc bootstrap init \
 | `--preset` | `cloud+public-vlan` (cloud and public tenant pools), `cloud-vlan`, `internal-only` (same cloud-network defaults), or `custom`. Internal-only does not add a no-egress policy. |
 | `--name` | Cluster name. It becomes `clusters/<name>/` in the fleet repo |
 | `--domain` / `--node-external-ip` | Wildcard domain + the public IP it resolves to (§3.2) |
-| `--fleet-mode` | `new-repo` (CLI creates the GitHub/GitLab repo), `existing-repo`, or `existing-fleet` (add a cluster to a repo that already has siblings, and inherit their version pins) |
+| `--fleet-mode` | `new-repo` (CLI creates the GitHub/GitLab repo), `existing-repo` (a Git checkout that has no Fleet yet; the CLI imports the starter's shared trees and keeps the repository's own content), or `existing-fleet` (add a cluster to a repo that already has siblings, and inherit their version pins). A self-managed GitLab works in `existing-repo`/`existing-fleet` mode: the CLI reads the host from the checkout's `origin` and uses `glab`'s stored token for that host (or `GITLAB_TOKEN`) |
 | `--repo` | Local path for the fleet checkout. Point it at an **empty directory**. The CLI pulls the shared platform trees into it from the fleet-starter OCI artifact. Default when omitted: `$KUBE_DC_FLEET`, else `~/.kube-dc/fleet` |
 | `--starter-ref` | Immutable full OCI starter reference. Released CLIs select their qualified platform bundle; pin that bundle explicitly in controlled/reinstall procedures and never use `:latest` |
 | `--github-owner` / `--github-repo` | Where the fleet repo lives (auto-created in `new-repo` mode) |
-| `--object-storage-mode` | **REQUIRED.** Working: `rook-ceph-local` (loop-file backed, single node), `rook-ceph-multi-node` (raw devices, exactly 3 nodes), `rook-ceph-pvc`. `disabled` installs a **deliberately degraded** cluster: Mimir and Loki are SUSPENDED (no metrics or logs storage), Grafana's database runs with backups and WAL archiving OFF, and alloy log-delivery errors are expected. Never use it for a customer-facing cluster. `external-ceph` and `external-s3` are **recognised but fail closed** (fleet stubs); do not select them |
-| `--ceph-node=NODE=DEVICE` | One raw block device per OSD node (repeat 3× for multi-node). The device is the **bare name** as `lsblk` shows it (`nvme1n1`, `sdb`), and a `/dev/` prefix is stripped automatically since v0.5.13. When a raw device is named (not the loop-file default) `init` probes it over SSH and **warns** if it is missing or already carries data. See the zap warning. **Re-used hardware: see the zap warning below** |
+| `--object-storage-mode` | **REQUIRED.** Working: `rook-ceph-local` (loop-file backed, single node), `rook-ceph-multi-node` (raw devices, 1 to 16 nodes; `CEPH_REPLICATION_SIZE` sets the copies, `CEPH_MON_NODES` optionally pins the monitors), `rook-ceph-pvc`. `disabled` installs a **deliberately degraded** cluster: Mimir and Loki are SUSPENDED (no metrics or logs storage), Grafana's database runs with backups and WAL archiving OFF, and alloy log-delivery errors are expected. Never use it for a customer-facing cluster. `external-ceph` and `external-s3` are **recognised but fail closed** (fleet stubs); do not select them |
+| `--ceph-node=NODE=DEVICE` | One raw block device per OSD node (repeat per node, up to 16; in a `--config` file use `CEPH_NODE_<n>` and `CEPH_NODE_<n>_DEVICE`). Stable `/dev/disk/by-id/...` paths are accepted. Every OSD node except the `--ssh-host` node needs an entry in `KUBE_DC_INIT_NODE_SSH_HOSTS` so `init` can check its disk. The device is the **bare name** as `lsblk` shows it (`nvme1n1`, `sdb`), and a `/dev/` prefix is stripped automatically since v0.5.13. When a raw device is named (not the loop-file default) `init` probes it over SSH and **warns** if it is missing or already carries data. See the zap warning. **Re-used hardware: see the zap warning below** |
 | `--rook-osd-device` | `rook-ceph-local` only: OSD block device (bare name). The default is the fleet template's loop file (`loop0`, sized by `--rook-osd-size-gb`). Pass a real device for anything beyond a lab; when set, `init` probes it over SSH and warns if missing or non-empty |
 | `--ceph-storage-class` / `--ceph-osd-count` / `--ceph-osd-volume-size-gb` | `rook-ceph-pvc` only: the StorageClass backing the OSD PVCs (required), OSD PVC count (0 = fleet default 2) and size in GB (0 = fleet default 200). For clusters that already have a CSI-backed StorageClass and no raw disks |
 | `--no-kubevirt` | VMs are out of scope for this cluster (for example, a CloudSigma `cs` cluster that only runs managed Kubernetes). It skips the KubeVirt-eligibility (`/dev/kvm`) preflight, so the install does not block on nodes with no nested virtualization. **Leave it off for any cluster that will host tenant VMs.** Distinct from `--allow-no-kubevirt-eligible`, which keeps the VM feature but bypasses the *eligibility gate* on a single non-KVM node |
+| `--site-components` | `LAYER=PATH` entries (comma-separated; `KUBE_DC_INIT_SITE_COMPONENTS` in a config file). Each attaches a Kustomize Component kept in the Fleet repository to the generated Flux Kustomization named `LAYER` (`infra-core`, `platform`, `infra-object-storage`, …), with the path made relative to that layer. Use it for site settings the starter does not express, instead of editing generated files. Entries for one layer are appended in order |
 | `--ssh-host` | Control-plane SSH target. It enables kubeconfig auto-pull **and** NAT-topology detection (§3.2) |
 | `--ssh-host-key-sha256` | Expected SHA-256 fingerprint for the primary SSH target. The handshake checks this value and `known_hosts`. Use the fingerprint, not a public-key line |
 | `--set=KUBE_OVN_MASTER_NODES` | Control-plane **internal** IPs, comma-separated. The preset does not emit them, so always set this |

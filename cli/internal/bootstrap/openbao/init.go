@@ -550,9 +550,9 @@ func Init(ctx context.Context, opts InitOptions) error {
 	}
 
 	if opts.SkipControllerAuth {
-		fmt.Fprintln(out, "[openbao] init complete (--skip-controller-auth): shares encrypted, openbao-0 unsealed, finalized stamp set. Controller-auth NOT installed — run setup-controller-auth before the manager can login.")
+		fmt.Fprintln(out, "[openbao] init complete (--skip-controller-auth): shares encrypted, all members unsealed, finalized stamp set. Controller-auth NOT installed — run setup-controller-auth before the manager can login.")
 	} else {
-		fmt.Fprintln(out, "[openbao] init complete — shares encrypted, openbao-0 unsealed, controller-auth installed, finalized + controller-auth-installed stamps set")
+		fmt.Fprintln(out, "[openbao] init complete — shares encrypted, all members unsealed, controller-auth installed, finalized + controller-auth-installed stamps set")
 	}
 	return nil
 }
@@ -617,8 +617,14 @@ func postInitUnseal(ctx context.Context, opts InitOptions, buf *secrets.Buffer, 
 	if len(pods) == 0 {
 		return fmt.Errorf("no openbao pods")
 	}
-	pod := pods[0]
-	fmt.Fprintf(out, "[openbao] unsealing %s (3 shares via stdin)\n", pod)
+	shares := make([][]byte, 0, 3)
+	defer func() {
+		for _, share := range shares {
+			for j := range share {
+				share[j] = 0
+			}
+		}
+	}()
 	for i := 0; i < 3; i++ {
 		share, err := buf.Share(i)
 		if err != nil {
@@ -627,17 +633,12 @@ func postInitUnseal(ctx context.Context, opts InitOptions, buf *secrets.Buffer, 
 		if len(share) == 0 {
 			return fmt.Errorf("share %d empty", i+1)
 		}
-		if err := opts.OpenBao.Unseal(ctx, pod, share); err != nil {
-			for j := range share {
-				share[j] = 0
-			}
-			return fmt.Errorf("unseal %s with share %d: %w", pod, i+1, err)
-		}
-		for j := range share {
-			share[j] = 0
-		}
+		shares = append(shares, share)
 	}
-	return nil
+	// Every member, not only the initialized one: Raft followers stay sealed
+	// (and the StatefulSet unready) until each receives the threshold shares.
+	fmt.Fprintf(out, "[openbao] unsealing %d member(s) (3 shares via stdin)\n", len(pods))
+	return unsealMembers(ctx, opts.OpenBao, opts.K8s, pods, shares, out, initFollowerWait)
 }
 
 // postInitRevokeRoot + postInitAnnotate were removed in the M5-T08

@@ -27,7 +27,7 @@ func initSSHHost(o *clusterinit.InitOptions) ports.SSHHost {
 // Existing-cluster suggestions must refer to the selected cluster. Never use
 // an unrelated current kubeconfig to fill a new cluster's network fields.
 func panelProbeForTarget(ctx context.Context, o *clusterinit.InitOptions) *initform.ProbePrefill {
-	if _, matches := clusterinit.KubeconfigTargetsCluster(o.Domain, o.NodeExternalIP); !matches {
+	if _, matches := clusterinit.KubeconfigTargetsNamedCluster(o.Name, o.Domain, o.NodeExternalIP, controlPlaneAddrs(o)); !matches {
 		return nil
 	}
 	return gatherPanelProbe(ctx)

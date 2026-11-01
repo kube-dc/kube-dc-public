@@ -2,12 +2,14 @@ package accept
 
 import (
 	"context"
+	"encoding/pem"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
@@ -534,5 +536,74 @@ func TestTenantEgressGateway(t *testing.T) {
 				t.Fatal("a failure must tell the operator what to do next")
 			}
 		})
+	}
+}
+
+// A private-CA installation passes the front-door check without workstation
+// trust-store changes: the client adds the CA init recorded in the cluster.
+func TestFrontDoorClientTrustsInstallationPrivateCA(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	defer srv.Close()
+	caPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}))
+
+	untrusting, _ := frontDoorClient(context.Background(), Options{K8s: &fakeK8s{}, HTTPTimeout: 5 * time.Second})
+	if _, err := untrusting.Get(srv.URL); err == nil {
+		t.Fatal("a certificate from an unknown CA was accepted")
+	}
+	trusting, trust := frontDoorClient(context.Background(), Options{
+		K8s: &fakeK8s{cmData: map[string]string{"ca.pem": caPEM}}, HTTPTimeout: 5 * time.Second,
+	})
+	resp, err := trusting.Get(srv.URL)
+	if err != nil {
+		t.Fatalf("private CA not trusted: %v", err)
+	}
+	resp.Body.Close()
+	if !strings.Contains(trust, "private CA") {
+		t.Fatalf("trust = %q", trust)
+	}
+}
+
+// arpK8s models a quiet cluster: no host is on the external segment and OVN
+// holds no gateway binding until a default-VPC pod sends traffic to it.
+type arpK8s struct {
+	fakeK8s
+	pinged bool
+}
+
+func (f *arpK8s) ListPodNames(_ context.Context, _, selector string) ([]string, error) {
+	switch selector {
+	case "app=kube-ovn-cni":
+		return []string{"cni-1"}, nil
+	case "app=ovn-central":
+		return []string{"central-1"}, nil
+	case "app=kube-ovn-pinger":
+		return []string{"pinger-1"}, nil
+	}
+	return nil, nil
+}
+
+func (f *arpK8s) PodExec(_ context.Context, _, pod string, _ []string, _ []byte) ([]byte, error) {
+	switch pod {
+	case "cni-1":
+		return []byte("NOROUTE\n"), nil
+	case "pinger-1":
+		f.pinged = true
+		return []byte("probed\n"), nil
+	case "central-1":
+		if f.pinged {
+			return []byte("ovn-cluster-ext-cloud\n00:00:5e:00:01:01\n"), nil
+		}
+		return []byte("\n"), nil
+	}
+	return nil, errors.New("exec failed")
+}
+
+func TestTenantEgressGatewayProbesFromDefaultVPCWhenOVNIsIdle(t *testing.T) {
+	k := &arpK8s{fakeK8s: fakeK8s{cmData: map[string]string{
+		"enable-external-gw": "true", "external-gw-addr": "10.83.134.1/24",
+	}}}
+	c := checkTenantEgressGateway(context.Background(), Options{K8s: k})
+	if c.Outcome != Pass || !k.pinged || !strings.Contains(c.Detail, "after a probe from the default VPC") {
+		t.Fatalf("check = %+v, pinged = %v", c, k.pinged)
 	}
 }

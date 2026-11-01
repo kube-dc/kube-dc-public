@@ -150,11 +150,11 @@ func TestValidateContract_ArgCount_TooMany(t *testing.T) {
 }
 
 // Arg-count: scripts that accept 0 positional args (e.g.
-// install-prerequisites.sh) reject any args supplied. This catches
+// generate-age-key.sh) reject any args supplied. This catches
 // "I passed cluster-name to the wrong script" calls.
 func TestValidateContract_ArgCount_ZeroArgsScriptRejectsArgs(t *testing.T) {
 	err := validateContract(
-		ports.ScriptInstallPrereqs, nil, []string{"oops"},
+		ports.ScriptGenerateAgeKey, nil, []string{"oops"},
 	)
 	if err == nil || !errors.Is(err, ports.ErrInvalidArgCount) {
 		t.Errorf("expected ErrInvalidArgCount, got: %v", err)
@@ -499,4 +499,16 @@ func equalSlices(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// install-prerequisites.sh accepts the pinned-tool flags, and no more.
+func TestValidateContract_InstallPrereqsAcceptsToolFlags(t *testing.T) {
+	for _, args := range [][]string{nil, {"--check"}, {"--bin-dir", "/tmp/tools"}} {
+		if err := validateContract(ports.ScriptInstallPrereqs, nil, args); err != nil {
+			t.Errorf("args %v: %v", args, err)
+		}
+	}
+	if err := validateContract(ports.ScriptInstallPrereqs, nil, []string{"a", "b", "c"}); !errors.Is(err, ports.ErrInvalidArgCount) {
+		t.Errorf("three args: %v", err)
+	}
 }

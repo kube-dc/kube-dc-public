@@ -3,12 +3,11 @@ package main
 import (
 	"fmt"
 	"io"
-	"os/exec"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/openbao"
 )
 
@@ -88,7 +87,7 @@ choice for off-fleet backup.`,
 			// --github-token flag on this subcommand).
 			var token string
 			if !noPush {
-				token = resolveGHToken(out)
+				token = resolveGHToken(repo, out)
 			}
 
 			return openbao.Init(cmd.Context(), openbao.InitOptions{
@@ -122,32 +121,28 @@ choice for off-fleet backup.`,
 	return cmd
 }
 
-// resolveGHToken sources the GitHub PAT via `gh auth token`. The
-// openbao init subcommand doesn't take a --github-token flag (the
-// operator's `gh auth login` session is the canonical source for
-// this slice — the cluster scaffold path's --github-token override
-// is for one-shot CI runs that don't share a gh session). Returns
-// empty string on any error; the push will surface the auth
-// failure from the git adapter if a token was actually required.
-//
-// Token value is NEVER logged.
-func resolveGHToken(out io.Writer) string {
-	return resolveGHTokenFor("openbao", out)
+// resolveGHToken sources the Fleet push token for openbao init.
+func resolveGHToken(repo string, out io.Writer) string {
+	return resolveGHTokenFor("openbao", repo, out)
 }
 
-func resolveGHTokenFor(component string, out io.Writer) string {
-	cmd := exec.Command("gh", "auth", "token")
-	cmd.Stderr = io.Discard
-	stdout, err := cmd.Output()
-	if err != nil {
-		fmt.Fprintf(out, "[%s] no GitHub token resolved (gh auth token failed; push may fail if remote requires auth)\n", component)
+// finalizeTokenExec is the provider CLI seam for resolveGHTokenFor.
+var finalizeTokenExec tokenExecFn = defaultTokenExec
+
+// resolveGHTokenFor sources the push token for a Fleet commit made by a
+// finalize command. It looks the token up for the origin's own host: an SSH
+// remote needs none, a GitHub host uses gh, and any other host uses glab's
+// stored credential for that host. A GitHub token is never sent elsewhere.
+func resolveGHTokenFor(component, repo string, out io.Writer) string {
+	if fleetRemoteIsSSH(repo) {
+		fmt.Fprintf(out, "[%s] Fleet remote uses SSH; no token needed\n", component)
 		return ""
 	}
-	token := strings.TrimSpace(string(stdout))
-	if token == "" {
-		fmt.Fprintf(out, "[%s] no GitHub token resolved (gh auth token returned empty)\n", component)
-		return ""
+	host := fleetRemoteHost(repo)
+	if host == "" || host == "github.com" {
+		return resolveProviderToken(component, clusterinit.ProviderGitHub, "github.com", out, finalizeTokenExec)
 	}
-	fmt.Fprintf(out, "[%s] resolved GitHub token via gh auth token\n", component)
-	return token
+	// Another host: GitLab or GitHub Enterprise. Only what glab or gh stored
+	// for that exact host is used, never an environment token.
+	return resolveStoredHostToken(component, host, out, finalizeTokenExec)
 }

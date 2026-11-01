@@ -43,7 +43,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/discover"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
@@ -75,6 +78,100 @@ type InstallPrereqsOptions struct {
 
 	// Out is the operator-facing log writer. Nil is safe.
 	Out io.Writer
+
+	// FleetRepo, when its starter carries scripts/tool-versions.json, makes
+	// the engine enforce those exact, checksummed tool versions: missing or
+	// different versions are installed into ToolsDir, which UsePinnedTools
+	// puts first on PATH. Presence alone is not enough: the Fleet scripts
+	// refuse other versions (CloudFerro rehearsal, 2026-10-31).
+	FleetRepo string
+	// ToolsDir defaults to PinnedToolsDir().
+	ToolsDir string
+}
+
+// PinnedToolsDir is where the CLI installs the starter's pinned tools. It is
+// owned by the CLI, so a shared workstation's system tools stay unchanged.
+func PinnedToolsDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".kube-dc", "tools", "bin")
+}
+
+// UsePinnedTools puts dir first on this process's PATH when it exists. Scripts
+// the CLI runs inherit that PATH.
+func UsePinnedTools(dir string) {
+	if dir == "" {
+		return
+	}
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return
+	}
+	path := os.Getenv("PATH")
+	if path == dir || strings.HasPrefix(path, dir+string(os.PathListSeparator)) {
+		return
+	}
+	_ = os.Setenv("PATH", dir+string(os.PathListSeparator)+path)
+}
+
+// ensurePinnedTools installs the starter's locked tool versions when the
+// workstation lacks them. It reports false when the starter has no lock.
+func ensurePinnedTools(ctx context.Context, opts InstallPrereqsOptions, out io.Writer) (bool, error) {
+	if opts.FleetRepo == "" || opts.Runner == nil {
+		return false, nil
+	}
+	if _, err := os.Stat(filepath.Join(opts.FleetRepo, "scripts", "tool-versions.json")); err != nil {
+		return false, nil
+	}
+	dir := opts.ToolsDir
+	if dir == "" {
+		dir = PinnedToolsDir()
+	}
+	if dir == "" {
+		return true, fmt.Errorf("init: install-prereqs: cannot determine the home directory for pinned tools")
+	}
+	UsePinnedTools(dir)
+	run := func(args ...string) (int, error) {
+		lines, err := opts.Runner.Run(ctx, ports.ScriptInstallPrereqs, nil, args...)
+		if err != nil {
+			return 0, fmt.Errorf("init: install-prereqs: run script: %w", err)
+		}
+		return ports.Drain(lines, func(line ports.Line) { fmt.Fprintln(out, line.Text) })
+	}
+	code, err := run("--check")
+	if err != nil {
+		return true, err
+	}
+	if code == 0 {
+		fmt.Fprintln(out, "[install-prereqs] pinned tool versions present")
+		return true, nil
+	}
+	consent := opts.Assume
+	if !consent && opts.Prompt != nil {
+		consent = opts.Prompt([]string{"pinned tool versions"})
+	}
+	if !consent {
+		return true, fmt.Errorf("%w (pinned tool versions differ)", ErrInstallPrereqsConsentRequired)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return true, fmt.Errorf("init: install-prereqs: create %s: %w", dir, err)
+	}
+	UsePinnedTools(dir)
+	fmt.Fprintf(out, "[install-prereqs] installing pinned tool versions into %s\n", dir)
+	if code, err = run("--bin-dir", dir); err != nil {
+		return true, err
+	}
+	if code != 0 {
+		return true, fmt.Errorf("init: install-prereqs: pinned tool installation exited %d", code)
+	}
+	if code, err = run("--check"); err != nil {
+		return true, err
+	}
+	if code != 0 {
+		return true, fmt.Errorf("%w (pinned tool versions still differ)", ErrInstallPrereqsIncomplete)
+	}
+	return true, nil
 }
 
 // InstallPrereqsResult is the structured summary the engine
@@ -137,6 +234,9 @@ func InstallPrereqs(ctx context.Context, opts InstallPrereqsOptions) (*InstallPr
 	}
 
 	res := &InstallPrereqsResult{}
+	if _, err := ensurePinnedTools(ctx, opts, out); err != nil {
+		return res, err
+	}
 	res.MissingBefore = detectMissingTools(ctx, probes)
 	if len(res.MissingBefore) == 0 {
 		fmt.Fprintln(out, "[install-prereqs] all tools present; nothing to do")

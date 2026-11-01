@@ -513,31 +513,33 @@ type inputsForHash struct {
 	DNS01SecretKeyFingerprint string `json:"dns01SecretKeyFingerprint,omitempty"`
 	// Cloudflare DNS-01: zone + scope change the ClusterIssuer patch, the
 	// token fingerprint the SOPS artifact identity — all three are shape.
-	DNS01CloudflareZone             string                 `json:"dns01CloudflareZone,omitempty"`
-	DNS01CloudflareScope            string                 `json:"dns01CloudflareScope,omitempty"`
-	DNS01CloudflareTokenFingerprint string                 `json:"dns01CloudflareTokenFingerprint,omitempty"`
-	TrustedCAFingerprint            string                 `json:"trustedCaFingerprint,omitempty"`
-	ImageAcceleration               bool                   `json:"imageAcceleration,omitempty"`
-	VMGoldens                       []string               `json:"vmGoldens,omitempty"`
-	VMGoldensBlock                  []string               `json:"vmGoldensBlock,omitempty"`
-	GPUPlatform                     GPUPlatformMode        `json:"gpuPlatform,omitempty"`
-	GPUDriverSource                 GPUDriverSource        `json:"gpuDriverSource,omitempty"`
-	GPUOperatorVersion              string                 `json:"gpuOperatorVersion,omitempty"`
-	NVIDIADriverVersion             string                 `json:"nvidiaDriverVersion,omitempty"`
-	NVIDIAToolkitVersion            string                 `json:"nvidiaToolkitVersion,omitempty"`
-	HAMiEnabled                     bool                   `json:"hamiEnabled,omitempty"`
-	GPUSharedAllocator              GPUSharedAllocator     `json:"gpuSharedAllocator,omitempty"`
-	HAMiVersion                     string                 `json:"hamiVersion,omitempty"`
-	HAMiSchedulerVersion            string                 `json:"hamiSchedulerVersion,omitempty"`
-	GPUNodeModes                    map[string]GPUNodeMode `json:"gpuNodeModes,omitempty"`
-	GPUProfiles                     []string               `json:"gpuProfiles,omitempty"`
-	AllowUnassignedGPUs             bool                   `json:"allowUnassignedGpus,omitempty"`
-	VGPUSecretReady                 bool                   `json:"vgpuSecretReady,omitempty"`
-	Addons                          []string               `json:"addons,omitempty"`
-	PAYG                            bool                   `json:"payg,omitempty"` // shape (payg.go); omitempty keeps PAYG-off plan hashes unchanged
-	AllowDNSNotReady                bool                   `json:"allowDnsNotReady"`
-	AllowNoKubevirtEligible         bool                   `json:"allowNoKubevirtEligible"`
-	NoKubeVirt                      bool                   `json:"noKubeVirt,omitempty"`
+	DNS01CloudflareZone             string `json:"dns01CloudflareZone,omitempty"`
+	DNS01CloudflareScope            string `json:"dns01CloudflareScope,omitempty"`
+	DNS01CloudflareTokenFingerprint string `json:"dns01CloudflareTokenFingerprint,omitempty"`
+	TrustedCAFingerprint            string `json:"trustedCaFingerprint,omitempty"`
+	// SiteComponents change which components the generated layers carry.
+	SiteComponents          string                 `json:"siteComponents,omitempty"`
+	ImageAcceleration       bool                   `json:"imageAcceleration,omitempty"`
+	VMGoldens               []string               `json:"vmGoldens,omitempty"`
+	VMGoldensBlock          []string               `json:"vmGoldensBlock,omitempty"`
+	GPUPlatform             GPUPlatformMode        `json:"gpuPlatform,omitempty"`
+	GPUDriverSource         GPUDriverSource        `json:"gpuDriverSource,omitempty"`
+	GPUOperatorVersion      string                 `json:"gpuOperatorVersion,omitempty"`
+	NVIDIADriverVersion     string                 `json:"nvidiaDriverVersion,omitempty"`
+	NVIDIAToolkitVersion    string                 `json:"nvidiaToolkitVersion,omitempty"`
+	HAMiEnabled             bool                   `json:"hamiEnabled,omitempty"`
+	GPUSharedAllocator      GPUSharedAllocator     `json:"gpuSharedAllocator,omitempty"`
+	HAMiVersion             string                 `json:"hamiVersion,omitempty"`
+	HAMiSchedulerVersion    string                 `json:"hamiSchedulerVersion,omitempty"`
+	GPUNodeModes            map[string]GPUNodeMode `json:"gpuNodeModes,omitempty"`
+	GPUProfiles             []string               `json:"gpuProfiles,omitempty"`
+	AllowUnassignedGPUs     bool                   `json:"allowUnassignedGpus,omitempty"`
+	VGPUSecretReady         bool                   `json:"vgpuSecretReady,omitempty"`
+	Addons                  []string               `json:"addons,omitempty"`
+	PAYG                    bool                   `json:"payg,omitempty"` // shape (payg.go); omitempty keeps PAYG-off plan hashes unchanged
+	AllowDNSNotReady        bool                   `json:"allowDnsNotReady"`
+	AllowNoKubevirtEligible bool                   `json:"allowNoKubevirtEligible"`
+	NoKubeVirt              bool                   `json:"noKubeVirt,omitempty"`
 	// AllowUnpinnedAdopt IS substantive (like its Allow* siblings): it
 	// changes whether the --mode=adopt safety gate blocks or merely
 	// warns. Dry-run + apply MUST agree, or an operator could review a
@@ -710,6 +712,7 @@ func (o *InitOptions) inputsForHash() inputsForHash {
 		DNS01CloudflareScope:            o.DNS01CloudflareScope,
 		DNS01CloudflareTokenFingerprint: o.DNS01CloudflareTokenFingerprint,
 		TrustedCAFingerprint:            o.TrustedCAFingerprint,
+		SiteComponents:                  canonicalSiteComponents(o.SiteComponents),
 		VMGoldens:                       canonicalGoldens(o.VMGoldens),
 		VMGoldensBlock:                  canonicalGoldens(o.VMGoldensBlock),
 		GPUPlatform:                     o.GPUPlatform,
@@ -1059,6 +1062,7 @@ func filesForOptions(o *InitOptions, fleet FleetState) []PlanFile {
 		{Path: "clusters/" + base + "tenant-net-v2/infra-net.yaml", Description: "infra-net Subnet (dual-home eth0)", Action: "+"},
 		{Path: "clusters/" + base + "cdi-block-device-access.yaml", Description: "CDI block-device access policy Flux layer", Action: "+"},
 		{Path: "clusters/" + base + "ext-net-bridge-tag.yaml", Description: "external bridge, anchor and optional node-egress worker Flux layer", Action: "+"},
+		{Path: "clusters/" + base + "vpc-dns-nad-provider.yaml", Description: "vpc-dns NAD provider Subnet Flux layer (per-Project DNS)", Action: "+"},
 	}
 	if services, err := ResolveManagedServices(o); err == nil && services.Mode == "on" {
 		for _, name := range []string{"services-family-crds.yaml", "valkey-operator.yaml", "mysql-operator.yaml", "strimzi-operator.yaml", "clickhouse-operator.yaml", "opensearch-operator.yaml", "services.yaml", "services-catalog.yaml"} {
@@ -1150,6 +1154,13 @@ func filesForOptions(o *InitOptions, fleet FleetState) []PlanFile {
 		files = append(files, PlanFile{
 			Path:        "clusters/" + base + trustedCAFileName,
 			Description: "private-CA trust ConfigMap (manager + backend + OIDC + OpenBao; sha256=" + o.TrustedCAFingerprint + ")",
+			Action:      "+",
+		})
+	}
+	if o.TrustedCAFingerprint != "" || canonicalTLSMode(o.TLSMode) == TLSModeBYOWildcard {
+		files = append(files, PlanFile{
+			Path:        "clusters/" + base + rootNamespacesFileName,
+			Description: "create-only Namespaces for the root-level CA/TLS objects",
 			Action:      "+",
 		})
 	}
@@ -1867,4 +1878,19 @@ func resolvedRabbitMQPins(inherited, overrides map[string]string) map[string]str
 		}
 	}
 	return out
+}
+
+// canonicalSiteComponents renders the parsed entries so whitespace and
+// duplicate entries do not change the plan hash. Invalid input hashes raw;
+// Validate rejects it before any plan is written.
+func canonicalSiteComponents(value string) string {
+	comps, err := ParseSiteComponents(value)
+	if err != nil {
+		return value
+	}
+	parts := make([]string, 0, len(comps))
+	for _, c := range comps {
+		parts = append(parts, c.Layer+"="+c.Path)
+	}
+	return strings.Join(parts, ",")
 }

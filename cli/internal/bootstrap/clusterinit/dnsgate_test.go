@@ -143,7 +143,7 @@ func TestCheckDNSReady_Blocked(t *testing.T) {
 // TestCheckDNSReady_BlockedButAllowFlag — the same failing DNS
 // state, but the operator opted in via --allow-dns-not-ready.
 // Gate returns nil, still prints the record-set (so the operator can
-// wire it later), and adds an explicit "TLS certs will land Pending"
+// wire it later), and adds an explicit "hostnames stay unreachable"
 // warning so the escape hatch isn't silent.
 func TestCheckDNSReady_BlockedButAllowFlag(t *testing.T) {
 	dns := &fakeDNS{answers: map[string][]string{}}
@@ -163,8 +163,8 @@ func TestCheckDNSReady_BlockedButAllowFlag(t *testing.T) {
 	if !strings.Contains(got, "--allow-dns-not-ready set; proceeding") {
 		t.Errorf("expected the 'proceeding' banner, got:\n%s", got)
 	}
-	if !strings.Contains(got, "TLS certs") {
-		t.Errorf("expected the 'certs will land Pending' warning to keep the flag from being silent, got:\n%s", got)
+	if !strings.Contains(got, "stay unreachable") {
+		t.Errorf("expected the unreachable-hostnames warning to keep the flag from being silent, got:\n%s", got)
 	}
 	// Record-set is still printed so operators can still wire it.
 	if !strings.Contains(got, "*."+testDomain) {

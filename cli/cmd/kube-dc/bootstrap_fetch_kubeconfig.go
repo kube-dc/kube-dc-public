@@ -34,6 +34,7 @@ func bootstrapFetchKubeconfigCmd(fleetRepo *string) *cobra.Command {
 		sshHost      string
 		domain       string
 		remotePath   string
+		server       string
 		destPath     string
 		setCurrent   bool
 		sshJump      string
@@ -139,6 +140,7 @@ accepts a --ssh-key flag — operators put keys in their ssh config.`,
 				ClusterName: clusterName,
 				Domain:      domain,
 				RemotePath:  remotePath,
+				Server:      server,
 				Out:         out,
 			})
 			if err != nil {
@@ -160,6 +162,8 @@ accepts a --ssh-key flag — operators put keys in their ssh config.`,
 		"SSH endpoint of a control-plane node — `user@host` or a ~/.ssh/config Host alias (required)")
 	cmd.Flags().StringVar(&domain, "domain", "",
 		"Cluster public FQDN suffix — server URL rewritten to https://kube-api.<domain>:6443 (required)")
+	cmd.Flags().StringVar(&server, "server", "",
+		"API server URL to write instead of https://kube-api.<domain>:6443, e.g. a control-plane address before the VIP serves the API")
 	cmd.Flags().StringVar(&remotePath, "remote-path", "",
 		"Override the default /etc/rancher/rke2/rke2.yaml path on the master (uncommon)")
 	cmd.Flags().StringVar(&destPath, "kubeconfig", "",

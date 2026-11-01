@@ -85,6 +85,7 @@ func TestProbeStorageDevice(t *testing.T) {
 		{"empty device is ready", &devSSH{out: "KDCPROBE:EMPTY\n"}, "sdb", StorageDevEmpty},
 		{"missing device warns", &devSSH{out: "KDCPROBE:MISSING\n"}, "sdb", StorageDevMissing},
 		{"in-use device warns", &devSSH{out: "KDCPROBE:INUSE\n"}, "sdb", StorageDevInUse},
+		{"ceph osd is distinct from in-use", &devSSH{out: "KDCPROBE:CEPH\n"}, "sdb", StorageDevCeph},
 		{"no lsblk / unprivileged is unknown, not a false negative", &devSSH{out: "KDCPROBE:UNKNOWN\n"}, "sdb", StorageDevUnknown},
 		{"unreachable node fails open to unknown", &devSSH{err: errors.New("dial timeout")}, "sdb", StorageDevUnknown},
 		{"ambiguous output is unknown", &devSSH{out: "\n"}, "sdb", StorageDevUnknown},
@@ -116,13 +117,27 @@ func TestProbeStorageDevice_NilSSHErrors(t *testing.T) {
 }
 
 func TestRawOSDApplyGateRejectsEveryUnconfirmedState(t *testing.T) {
-	for _, state := range []StorageDeviceState{StorageDevMissing, StorageDevInUse, StorageDevUnknown, ""} {
-		if err := RequireEmptyStorageDevice(StorageDeviceResult{Node: "node-1", Device: "sdb", State: state}); err == nil {
+	for _, state := range []StorageDeviceState{StorageDevMissing, StorageDevInUse, StorageDevUnknown, StorageDevCeph, ""} {
+		if err := RequireEmptyStorageDevice(StorageDeviceResult{Node: "node-1", Device: "sdb", State: state}, false); err == nil {
 			t.Fatalf("apply accepted %q disk", state)
 		}
 	}
-	if err := RequireEmptyStorageDevice(StorageDeviceResult{Node: "node-1", Device: "sdb", State: StorageDevEmpty}); err != nil {
+	if err := RequireEmptyStorageDevice(StorageDeviceResult{Node: "node-1", Device: "sdb", State: StorageDevEmpty}, false); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Resuming the overlay that selected a device accepts its Ceph OSD, and only that.
+func TestRawOSDApplyGateResumeAcceptsOnlyCephOSD(t *testing.T) {
+	for _, state := range []StorageDeviceState{StorageDevMissing, StorageDevInUse, StorageDevUnknown, ""} {
+		if err := RequireEmptyStorageDevice(StorageDeviceResult{Node: "node-1", Device: "sdb", State: state}, true); err == nil {
+			t.Fatalf("resume accepted %q disk", state)
+		}
+	}
+	for _, state := range []StorageDeviceState{StorageDevEmpty, StorageDevCeph} {
+		if err := RequireEmptyStorageDevice(StorageDeviceResult{Node: "node-1", Device: "sdb", State: state}, true); err != nil {
+			t.Fatalf("resume refused %q disk: %v", state, err)
+		}
 	}
 }
 

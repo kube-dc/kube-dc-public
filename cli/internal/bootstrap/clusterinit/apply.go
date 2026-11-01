@@ -171,6 +171,14 @@ type ApplyOptions struct {
 	GitHubOwner string
 	GitHubRepo  string
 
+	// SiteComponents attach Fleet-repository Kustomize Components to
+	// generated Flux layers (KUBE_DC_INIT_SITE_COMPONENTS).
+	SiteComponents []SiteComponent
+
+	// GitHost is the Fleet remote's host. For a self-managed GitLab it reaches
+	// flux-install.sh as GITLAB_HOST, which `flux bootstrap gitlab` needs.
+	GitHost string
+
 	// NoPush skips the push step. The local commit still lands;
 	// flux-install is also skipped because Flux can't reconcile
 	// from a non-pushed commit.
@@ -462,6 +470,30 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 		}
 	}
 
+	// Phase 3d: site components. Written on a fresh scaffold (committed in
+	// Phase 4) and re-applied idempotently on resume, where a change is
+	// committed here so the resume push carries it.
+	if len(opts.SiteComponents) > 0 {
+		if err := WriteSiteComponents(opts.FleetRepo, opts.Plan.ClusterName, opts.SiteComponents, out); err != nil {
+			return fmt.Errorf("apply: %w", err)
+		}
+		if resuming {
+			diff, derr := opts.Git.Diff(ctx, opts.FleetRepo)
+			if derr != nil {
+				return fmt.Errorf("apply: diff after site components: %w", derr)
+			}
+			if len(diff.Files) > 0 {
+				msg := fmt.Sprintf("chore(%s): attach site components via kube-dc CLI", opts.Plan.ClusterName)
+				sha, cerr := opts.Git.Commit(ctx, opts.FleetRepo, msg)
+				if cerr != nil {
+					return fmt.Errorf("apply: commit site components: %w", cerr)
+				}
+				fmt.Fprintf(out, "[apply] site components attached to the existing overlay — commit=%s\n", sha)
+				rotated = true
+			}
+		}
+	}
+
 	// Phase 4: commit + push (atomic with rollback on push failure).
 	// On resume the overlay is already COMMITTED (the clean-tree gate
 	// proved nothing is uncommitted, and an untracked overlay would have
@@ -604,6 +636,9 @@ func runFluxInstall(ctx context.Context, opts ApplyOptions, out io.Writer) error
 	}
 	if opts.GitHubRepo != "" {
 		env["GITHUB_REPO"] = opts.GitHubRepo
+	}
+	if provider == ProviderGitLab && opts.GitHost != "" {
+		env["GITLAB_HOST"] = opts.GitHost
 	}
 	// Token env var name differs per provider. Set the appropriate
 	// one so the fleet script's auth branch reads it directly; the

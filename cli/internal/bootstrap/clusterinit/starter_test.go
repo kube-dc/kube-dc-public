@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -689,5 +690,148 @@ func TestStarterV3RequirementBoundToManifest(t *testing.T) {
 		if err := verifyStarterManifest(dir); err == nil {
 			t.Fatalf("accepted missing, mismatched or duplicate requirement: %q", directive)
 		}
+	}
+}
+
+// An operator repository (existing-repo) keeps its committed content; a
+// starter-owned name it already tracks is refused, never removed.
+func TestEnsureStarter_OperatorRepoKeepsContent(t *testing.T) {
+	gitRepo := func(t *testing.T, files ...string) string {
+		t.Helper()
+		dir := t.TempDir()
+		run := func(args ...string) {
+			cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+			cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.test", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.test")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("git %v: %v: %s", args, err, out)
+			}
+		}
+		run("init", "-q", "-b", "master")
+		for _, p := range files {
+			full := filepath.Join(dir, p)
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(full, []byte("x\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		run("add", "-A")
+		run("commit", "-q", "-m", "site")
+		return dir
+	}
+
+	dir := gitRepo(t, "README.md", "ansible/site.yml", "install/site.env.example", "docs/design.md")
+	// Without existing-repo mode, a populated checkout is still refused.
+	if _, err := EnsureStarter(context.Background(), EnsureStarterOptions{
+		RepoPath: dir, Ref: testStarterRef, Flux: &fakePuller{}, Git: &fakeStarterGit{},
+	}); !errors.Is(err, ErrStarterDirNotEmpty) {
+		t.Fatalf("new-repo mode accepted an operator checkout: %v", err)
+	}
+	// Uncommitted operator work is refused before anything changes.
+	if err := os.WriteFile(filepath.Join(dir, "install", "draft.txt"), []byte("wip\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := EnsureStarter(context.Background(), EnsureStarterOptions{
+		RepoPath: dir, Ref: testStarterRef, Flux: &fakePuller{}, Git: &fakeStarterGit{}, OperatorRepository: true,
+	}); !errors.Is(err, ErrStarterDirNotEmpty) || !strings.Contains(err.Error(), "draft.txt") {
+		t.Fatalf("a dirty operator tree was accepted: %v", err)
+	}
+	if err := os.Remove(filepath.Join(dir, "install", "draft.txt")); err != nil {
+		t.Fatal(err)
+	}
+	res, err := EnsureStarter(context.Background(), EnsureStarterOptions{
+		RepoPath: dir, Ref: testStarterRef, Flux: &fakePuller{}, Git: &fakeStarterGit{}, OperatorRepository: true,
+	})
+	if err != nil || !res.Extracted {
+		t.Fatalf("extraction into an operator repo: extracted=%v err=%v", res.Extracted, err)
+	}
+	for _, p := range []string{"ansible/site.yml", "install/site.env.example", "bootstrap"} {
+		if _, err := os.Stat(filepath.Join(dir, p)); err != nil {
+			t.Errorf("%s missing after extraction: %v", p, err)
+		}
+	}
+
+	// A starter-named directory in an operator repo is never removed, whether
+	// Git tracks it or it is ignored.
+	owned := gitRepo(t, "README.md", "scripts/site-tool.sh", ".gitignore")
+	if err := os.WriteFile(filepath.Join(owned, ".gitignore"), []byte("platform/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommitAll(t, owned)
+	if err := os.MkdirAll(filepath.Join(owned, "platform"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(owned, "platform", "ignored.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = EnsureStarter(context.Background(), EnsureStarterOptions{
+		RepoPath: owned, Ref: testStarterRef, Flux: &fakePuller{}, Git: &fakeStarterGit{}, OperatorRepository: true,
+	})
+	if !errors.Is(err, ErrStarterDirNotEmpty) || !strings.Contains(err.Error(), "scripts") {
+		t.Fatalf("a starter-owned directory in an operator repo was not refused: %v", err)
+	}
+	for _, p := range []string{"scripts/site-tool.sh", "platform/ignored.txt"} {
+		if _, err := os.Stat(filepath.Join(owned, p)); err != nil {
+			t.Fatalf("operator content %s was removed: %v", p, err)
+		}
+	}
+}
+
+func gitCommitAll(t *testing.T, dir string) {
+	t.Helper()
+	for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", "update"}} {
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.test", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.test")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+}
+
+// Outside existing-repo mode, a tracked starter-named directory is still the
+// operator's: refused, never removed as an interrupted run's leftover.
+func TestEnsureStarter_NewRepoKeepsTrackedStarterNames(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.test", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.test")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	for _, p := range []string{"README.md", "scripts/site-tool.sh"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, p)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, p), []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run("add", "-A")
+	run("commit", "-q", "-m", "site")
+	_, err := EnsureStarter(context.Background(), EnsureStarterOptions{
+		RepoPath: dir, Ref: testStarterRef, Flux: &fakePuller{}, Git: &fakeStarterGit{},
+	})
+	if !errors.Is(err, ErrStarterDirNotEmpty) {
+		t.Fatalf("a tracked scripts/ was not refused: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "scripts", "site-tool.sh")); err != nil {
+		t.Fatalf("tracked operator content was removed: %v", err)
+	}
+}
+
+// existing-repo with an empty clone extracts like a fresh directory.
+func TestEnsureStarter_ExistingRepoEmptyClone(t *testing.T) {
+	dir := t.TempDir()
+	if out, err := exec.Command("git", "-C", dir, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	res, err := EnsureStarter(context.Background(), EnsureStarterOptions{
+		RepoPath: dir, Ref: testStarterRef, Flux: &fakePuller{}, Git: &fakeStarterGit{}, OperatorRepository: true,
+	})
+	if err != nil || !res.Extracted {
+		t.Fatalf("extracted=%v err=%v", res.Extracted, err)
 	}
 }

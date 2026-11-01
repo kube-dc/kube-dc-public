@@ -31,6 +31,7 @@ var inputStringBindings = []inputStringBinding{
 	{InitPrefix + "TLS_CERT", "tls-cert", func(o *InitOptions) *string { return &o.TLSCert }},
 	{InitPrefix + "TLS_KEY", "tls-key", func(o *InitOptions) *string { return &o.TLSKey }},
 	{InitPrefix + "TRUSTED_CA_BUNDLE", "trusted-ca-bundle", func(o *InitOptions) *string { return &o.TrustedCABundle }},
+	{InitPrefix + "SITE_COMPONENTS", "site-components", func(o *InitOptions) *string { return &o.SiteComponents }},
 	{InitPrefix + "DNS01_ROUTE53_SECRET_KEY_FILE", "dns01-route53-secret-key-file", func(o *InitOptions) *string { return &o.DNS01Route53SecretKeyFile }},
 	{InitPrefix + "DNS01_CLOUDFLARE_API_TOKEN_FILE", "dns01-cloudflare-api-token-file", func(o *InitOptions) *string { return &o.DNS01CloudflareAPITokenFile }},
 }

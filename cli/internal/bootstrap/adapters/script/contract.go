@@ -135,7 +135,7 @@ var scriptContracts = map[ports.ScriptKind]scriptContract{
 		// KUBE_DC_PROVIDER=gitlab run doesn't spuriously refuse for
 		// missing GITHUB_TOKEN.
 		requiredEnv: []string{"KUBECONFIG"},
-		optionalEnv: []string{"GITHUB_TOKEN", "GITLAB_TOKEN", "KUBE_DC_PROVIDER", "GITHUB_OWNER", "GITHUB_REPO"},
+		optionalEnv: []string{"GITHUB_TOKEN", "GITLAB_TOKEN", "GITLAB_HOST", "KUBE_DC_PROVIDER", "GITHUB_OWNER", "GITHUB_REPO"},
 		minArgs:     1,
 		maxArgs:     2,
 		argDesc:     "<cluster-name> [--new-cluster]",
@@ -206,7 +206,8 @@ var scriptContracts = map[ports.ScriptKind]scriptContract{
 	},
 	ports.ScriptInstallPrereqs: {
 		minArgs: 0,
-		maxArgs: 0,
+		maxArgs: 2,
+		argDesc: "[--check | --bin-dir <dir>]",
 	},
 	ports.ScriptDumpClusterState: {
 		requiredEnv: []string{"KUBECONFIG"},

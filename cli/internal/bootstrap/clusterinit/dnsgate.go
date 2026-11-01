@@ -139,7 +139,7 @@ func CheckDNSReady(ctx context.Context, opts DNSGateOptions) error {
 	fmt.Fprint(out, renderDNSGateFailure(opts.Domain, opts.NodeExternalIP, r, rExplicit))
 	if opts.AllowDNSNotReady {
 		fmt.Fprintln(out, "[apply] DNS gate: --allow-dns-not-ready set; proceeding.")
-		fmt.Fprintln(out, "[apply]   TLS certs (Let's Encrypt HTTP-01) will land Pending until the records above resolve.")
+		fmt.Fprintln(out, "[apply]   Platform hostnames stay unreachable (and ACME certificates stay Pending) until the records above resolve.")
 		return nil
 	}
 	return fmt.Errorf("%w: %s (pass --allow-dns-not-ready to proceed anyway)",
@@ -159,7 +159,7 @@ func CheckDNSReady(ctx context.Context, opts DNSGateOptions) error {
 // IPv4 dotted-quad without ragged edges.
 func renderDNSGateFailure(domain, nodeIP string, r1, r2 ports.Result) string {
 	var b strings.Builder
-	b.WriteString("\nDNS records are not in place. Add the following at your registrar, then re-run --apply:\n\n")
+	b.WriteString("\nDNS records are not in place. Add the following to your DNS zone, then re-run --apply:\n\n")
 
 	// Prefer the wildcard hint (single row — B-003 canonical). Only
 	// fall back to the explicit-FQDN records when the wildcard hint

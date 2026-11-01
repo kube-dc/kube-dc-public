@@ -58,17 +58,40 @@ func multiNodeStoragePatches(s ObjectStorageSpec) string {
 	set := func(path string, value any) map[string]any {
 		return map[string]any{"op": "add", "path": path, "value": value}
 	}
-	patch("CephCluster", "rook-ceph", []map[string]any{
+	clusterOps := []map[string]any{
 		set("/spec/storage/nodes", nodes),
 		set("/spec/storage/useAllNodes", false), set("/spec/storage/useAllDevices", false),
 		set("/spec/mon/count", mon), set("/spec/mon/allowMultiplePerNode", len(names) == 2),
 		set("/spec/mgr/count", mgr),
 		set("/spec/cephConfig", map[string]any{"global": map[string]string{"osd_pool_default_size": strconv.Itoa(s.replication())}}),
-	})
+	}
+	if len(s.MonNodes) > 0 {
+		// The Fleet template has no placement block; add it whole.
+		clusterOps = append(clusterOps, set("/spec/placement", map[string]any{"mon": map[string]any{
+			"nodeAffinity": map[string]any{"requiredDuringSchedulingIgnoredDuringExecution": map[string]any{
+				"nodeSelectorTerms": []map[string]any{{"matchExpressions": []map[string]any{{
+					"key": "kubernetes.io/hostname", "operator": "In", "values": s.MonNodes,
+				}}}},
+			}},
+		}}))
+	}
+	patch("CephCluster", "rook-ceph", clusterOps)
 	replicated := map[string]any{"size": s.replication(), "requireSafeReplicaSize": s.replication() > 1}
 	patch("CephObjectStore", "my-store", []map[string]any{
 		set("/spec/metadataPool/replicated", replicated), set("/spec/dataPool/replicated", replicated), set("/spec/gateway/instances", gateways),
 	})
 	patch("CephBlockPool", "rbd-pool", []map[string]any{set("/spec/replicated", replicated)})
 	return b.String()
+}
+
+// cephMonNodes parses CEPH_MON_NODES, a comma-separated node list.
+func cephMonNodes(value string) []string {
+	var nodes []string
+	for _, n := range strings.Split(value, ",") {
+		if n = strings.TrimSpace(n); n != "" {
+			nodes = append(nodes, n)
+		}
+	}
+	sort.Strings(nodes)
+	return nodes
 }

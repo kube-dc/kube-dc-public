@@ -457,6 +457,13 @@ func WriteWildcardTLS(fleetRepo, clusterName, domain string, m *WildcardTLSMater
 			return fmt.Errorf("wildcard-tls: write %s: %w", w.path, err)
 		}
 	}
+	targetNamespaces := []string{}
+	for _, t := range wildcardSecretTargets() {
+		targetNamespaces = append(targetNamespaces, t.Namespace)
+	}
+	if err := ensureRootNamespaces(clusterDir, targetNamespaces); err != nil {
+		return fmt.Errorf("wildcard-tls: %w", err)
+	}
 	for _, stem := range skipped {
 		fmt.Fprintf(out, "[scaffold] wildcard-tls: %s.yaml absent — its ACME Certificates are not scaffolded either; if you add that layer later, re-run init or add the suppression patch by hand (docs/platform/certificates.md)\n", stem)
 	}
@@ -493,11 +500,46 @@ func sopsFileDecryptsTo(fleetRepo, path, plaintext string, mustNotLeak []string)
 	}
 	cmd := exec.Command("sops", "--decrypt", path)
 	cmd.Dir = fleetRepo
+	cmd.Env = sopsDecryptEnv(fleetRepo)
 	outB, err := cmd.Output()
 	if err != nil {
 		return false
 	}
-	return string(outB) == plaintext
+	return dropLeadingDocumentMarker(string(outB)) == dropLeadingDocumentMarker(plaintext)
+}
+
+// dropLeadingDocumentMarker removes a "---" that precedes the first document
+// (after any header comments). sops does not reproduce that marker on decrypt,
+// and it does not change the documents the file contains.
+func dropLeadingDocumentMarker(s string) string {
+	lines := strings.SplitAfter(s, "\n")
+	for i, line := range lines {
+		t := strings.TrimSpace(line)
+		if t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		if t == "---" {
+			return strings.Join(append(lines[:i:i], lines[i+1:]...), "")
+		}
+		break
+	}
+	return s
+}
+
+// sopsDecryptEnv gives sops the Fleet's own age key when the operator has not
+// selected one. Without it the decrypt-compare above always failed, so every
+// resumed init re-encrypted unchanged TLS material and committed a "rotation"
+// that restarted every dependent Flux layer.
+func sopsDecryptEnv(fleetRepo string) []string {
+	env := os.Environ()
+	if os.Getenv("SOPS_AGE_KEY_FILE") != "" || os.Getenv("SOPS_AGE_KEY") != "" {
+		return env
+	}
+	key := filepath.Join(fleetRepo, "age.key")
+	if fi, err := os.Stat(key); err == nil && fi.Mode().IsRegular() {
+		env = append(env, "SOPS_AGE_KEY_FILE="+key)
+	}
+	return env
 }
 
 // patchKustomizationSuppression appends the suppression entries to the

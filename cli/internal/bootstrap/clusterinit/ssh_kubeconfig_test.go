@@ -568,6 +568,25 @@ func TestKubeconfigTargetsCluster(t *testing.T) {
 			t.Error("the server must be reported so the operator is told what was rejected")
 		}
 	})
+	t.Run("matches a control-plane address", func(t *testing.T) {
+		write(t, "https://10.0.0.11:6443")
+		// write() names the current context "ctx".
+		if _, ok := KubeconfigTargetsNamedCluster("ctx", "dc.example.com", "203.0.113.10", []string{"10.0.0.11", "10.0.0.12"}); !ok {
+			t.Error("a context named after the cluster, addressing a control-plane node, must match")
+		}
+		if _, ok := KubeconfigTargetsNamedCluster("other-site", "dc.example.com", "203.0.113.10", []string{"10.0.0.11"}); ok {
+			t.Error("a private address alone must not identify the cluster: another site may reuse it")
+		}
+		if got := ControlPlaneKubeconfigServer("ctx", []string{"10.0.0.12", "10.0.0.11"}); got != "https://10.0.0.11:6443" {
+			t.Errorf("ControlPlaneKubeconfigServer = %q", got)
+		}
+		if _, ok := KubeconfigTargetsNamedCluster("ctx", "dc.example.com", "203.0.113.10", []string{"10.0.0.1"}); ok {
+			t.Error("a prefix of a control-plane address must not match")
+		}
+		if got := ControlPlaneKubeconfigServer("other-site", []string{"10.0.0.11"}); got != "" {
+			t.Errorf("ControlPlaneKubeconfigServer accepted another context: %q", got)
+		}
+	})
 	t.Run("no kubeconfig at all", func(t *testing.T) {
 		t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "nope"))
 		if server, ok := KubeconfigTargetsCluster("dc.example.com", "203.0.113.10"); ok || server != "" {
@@ -611,5 +630,31 @@ func TestMergeKubeconfig_BlankInterlockPreserved(t *testing.T) {
 	}
 	if loaded.CurrentContext != "" {
 		t.Errorf("a deliberately blank current-context in a populated file must stay blank; got %q", loaded.CurrentContext)
+	}
+}
+
+// Before the front-door VIP serves the API, the operator points the
+// kubeconfig at a control-plane address instead.
+func TestFetchKubeconfig_ServerOverride(t *testing.T) {
+	opts := func(server string) FetchKubeconfigOptions {
+		return FetchKubeconfigOptions{
+			SSH:         &fakeSSHClient{fetchReturn: []byte(canonicalRKE2Kubeconfig)},
+			Host:        ports.SSHHost{Alias: "master.acme"},
+			ClusterName: "acme-cloud",
+			Domain:      "acme.com",
+			Server:      server,
+		}
+	}
+	cfg, err := FetchKubeconfig(context.Background(), opts("https://192.0.2.10:6443/"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Clusters["acme-cloud"].Server; got != "https://192.0.2.10:6443" {
+		t.Fatalf("server = %q", got)
+	}
+	for _, bad := range []string{"http://192.0.2.10:6443", "192.0.2.10:6443", "https://user@192.0.2.10:6443", "https://192.0.2.10:6443/api"} {
+		if _, err := FetchKubeconfig(context.Background(), opts(bad)); err == nil {
+			t.Errorf("--server %q accepted", bad)
+		}
 	}
 }

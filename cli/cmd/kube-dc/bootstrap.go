@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 	bttui "github.com/shalb/kube-dc/cli/internal/bootstrap/tui"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/tui/screens"
 	"github.com/shalb/kube-dc/cli/internal/telemetry"
@@ -44,6 +45,9 @@ Bootstrap opens the new-cluster form. To inspect an existing fleet, pass
 		// local counter file (nothing leaves the machine).
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			telemetry.Count(cmd.CommandPath())
+			// Tools that install-prereqs pinned for the starter take
+			// precedence for every bootstrap command and the scripts it runs.
+			clusterinit.UsePinnedTools(clusterinit.PinnedToolsDir())
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			repo, startTab, err := bootstrapLandingRepo(fleetRepo)

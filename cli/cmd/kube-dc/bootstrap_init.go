@@ -222,7 +222,7 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 			// mixed one, on evidence from somebody else's cluster. Empty means
 			// the placement checks stand down, which is the right failure
 			// direction for a rule we cannot evaluate.
-			if _, targets := clusterinit.KubeconfigTargetsCluster(o.Domain, o.NodeExternalIP); targets {
+			if _, targets := clusterinit.KubeconfigTargetsNamedCluster(o.Name, o.Domain, o.NodeExternalIP, controlPlaneAddrs(o)); targets {
 				o.ControlPlaneNodes = controlPlaneNodeNames(cmd.Context())
 			}
 
@@ -569,7 +569,7 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 	cmd.Flags().StringVar((*string)(&o.FleetMode), "fleet-mode", "",
 		fmt.Sprintf("Fleet-repo relation (one of %s; required)", joinFleetModes(clusterinit.AllFleetModes)))
 	cmd.Flags().StringVar((*string)(&o.Provider), "provider", "",
-		"Remote-repo hosting provider for --fleet-mode=new-repo (`github` or `gitlab`; default github)")
+		"Remote-repo hosting provider (`github` or `gitlab`): selects the repo created in new-repo mode, the Flux bootstrap flavour and the push credential; unset with a non-github.com remote uses the credential glab or gh stored for that host")
 	cmd.Flags().StringVar(&o.GitHubOwner, "github-owner", "",
 		"Owner/group for --fleet-mode=new-repo (required in that mode; holds the GitLab group when --provider=gitlab)")
 	cmd.Flags().StringVar(&o.GitHubRepo, "github-repo", "",
@@ -670,6 +670,8 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"Path to the wildcard certificate chain, leaf first (PEM); byo-wildcard only")
 	cmd.Flags().StringVar(&o.TLSKey, "tls-key", "",
 		"Path to the matching private key (PEM); read once, committed only SOPS-encrypted, never logged; byo-wildcard only")
+	cmd.Flags().StringVar(&o.SiteComponents, "site-components", "",
+		"Comma-separated LAYER=PATH entries attaching Fleet-repository Kustomize Components to generated Flux layers (KUBE_DC_INIT_SITE_COMPONENTS)")
 	cmd.Flags().StringVar(&o.TrustedCABundle, "trusted-ca-bundle", "",
 		"Path to a certificate-only PEM CA bundle trusted by manager, backend, OIDC and OpenBao; written as a public ConfigMap and plan-pinned by SHA-256")
 	cmd.Flags().StringVar((*string)(&o.VMStorageMode), "vm-storage-mode", string(clusterinit.VMStorageLocal),
@@ -1265,7 +1267,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	// --ssh-host. It is best-effort: a failure here falls through to the session
 	// error below, which is the same outcome as before, plus an explanation.
 	if o.SSHHost != "" && !o.NoSSH {
-		server, targets := clusterinit.KubeconfigTargetsCluster(o.Domain, o.NodeExternalIP)
+		server, targets := clusterinit.KubeconfigTargetsNamedCluster(o.Name, o.Domain, o.NodeExternalIP, controlPlaneAddrs(o))
 		switch {
 		case targets:
 			fmt.Fprintf(out, "[apply] using the current kubeconfig context (%s)\n", server)
@@ -1292,7 +1294,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	}
 
 	if o.ServicesHAStorageClass != "" && plan.Mode != clusterinit.ModeInstall {
-		if _, targets := clusterinit.KubeconfigTargetsCluster(o.Domain, o.NodeExternalIP); !targets {
+		if _, targets := clusterinit.KubeconfigTargetsNamedCluster(o.Name, o.Domain, o.NodeExternalIP, controlPlaneAddrs(o)); !targets {
 			return fmt.Errorf("apply: HA storage requires a verified target kubeconfig after fetching")
 		}
 		if err := verifyServicesHAStorage(ctx, o); err != nil {
@@ -1361,6 +1363,9 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 				Flux:          starterPuller,
 				Git:           starterGit,
 				Out:           out,
+				// Only existing-repo keeps an operator's content; new-repo
+				// still refuses a populated directory.
+				OperatorRepository: plan.FleetMode == clusterinit.FleetExistingRepo,
 			})
 			return e
 		}); err != nil {
@@ -1387,10 +1392,11 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 				}
 			}
 			_, e := clusterinit.InstallPrereqs(ctx, clusterinit.InstallPrereqsOptions{
-				Runner: prereqRunner,
-				Probes: probes,
-				Assume: o.Yes,
-				Out:    out,
+				Runner:    prereqRunner,
+				Probes:    probes,
+				Assume:    o.Yes,
+				Out:       out,
+				FleetRepo: o.Repo,
 			})
 			return e
 		}); err != nil {
@@ -1485,6 +1491,19 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		return err
 	}
 
+	// New Ceph overlays use AES256K CephX keys, which need Linux 7.0+ on
+	// every node. Refuse here rather than leave the storage layer blocked.
+	if o.Mode == clusterinit.ModeInstall && session != nil && session.K8s != nil {
+		if err := clusterinit.CheckCephKernels(ctx, clusterinit.CephKernelGateOptions{
+			Nodes:       session.K8s,
+			Mode:        o.RookMode,
+			OverlayPath: filepath.Join(o.Repo, "clusters", o.Name, "object-storage", "kustomization.yaml"),
+			Out:         out,
+		}); err != nil {
+			return fmt.Errorf("apply: %w", err)
+		}
+	}
+
 	// Item 5: --mode=adopt safety gate. Consumes the resolved adopt plan
 	// (the pinned cluster-config.env) rather than silently re-detecting:
 	// re-runs adopt.PinVersions against the live cluster + the effective
@@ -1533,6 +1552,14 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		// it as a milestone that always succeeds; the log pane carries
 		// the detail (skipped / kept / arriving-IP substituted).
 		_ = step(rep, clusterinit.StepNATProbe, func() error {
+			// A MetalLB VIP is bound to no node until MetalLB announces it,
+			// so "not bound locally" is not NAT there. Treating it as NAT
+			// replaced the VIP with one node's address and dropped the
+			// 6443 passthrough listener (CloudFerro rehearsal, 2026-10-31).
+			if layer := o.IngressAddressLayer; layer == clusterinit.AddressLayerMetalLBL2 || layer == clusterinit.AddressLayerMetalLBBGP {
+				fmt.Fprintf(out, "[apply] NAT-topology probe skipped: %s is a %s VIP owned by MetalLB\n", o.NodeExternalIP, layer)
+				return nil
+			}
 			sshClient, err := bootstrap.NewSSHOnly()
 			if err != nil {
 				fmt.Fprintf(out, "[apply] WARNING: NAT-topology probe skipped (ssh adapter: %v)\n", err)
@@ -1647,6 +1674,22 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 				if serr != nil {
 					return fmt.Errorf("OSD device check requires SSH: %w", serr)
 				}
+				// A resumed install finds its OSDs already consumed by Ceph.
+				// Accept that only for the devices the existing overlay names,
+				// and only while this cluster runs its Ceph cluster: a rebuilt
+				// cluster with a kept overlay must not adopt stale OSDs from an
+				// earlier Ceph cluster.
+				resumingOverlay := false
+				envPath := filepath.Join(o.Repo, "clusters", o.Name, "cluster-config.env")
+				if _, statErr := os.Stat(envPath); statErr == nil {
+					if err := clusterinit.RequireUnchangedRawOSDSelection(envPath, o.ObjectStorage()); err != nil {
+						return err
+					}
+					if session != nil && session.K8s != nil {
+						fsid, ferr := session.K8s.GetResourceFieldFirst(ctx, "ceph.rook.io", "v1", "cephclusters", "rook-ceph", "rook-ceph", "status.ceph.fsid")
+						resumingOverlay = ferr == nil && fsid != ""
+					}
+				}
 				for _, nd := range rawDevs {
 					node, dev := nd[0], nd[1]
 					target, terr := rawOSDTarget(o, node)
@@ -1663,8 +1706,12 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 					if perr != nil {
 						return fmt.Errorf("OSD device check failed for %s on %s: %w", dev, node, perr)
 					}
-					if err := clusterinit.RequireEmptyStorageDevice(res); err != nil {
+					if err := clusterinit.RequireEmptyStorageDevice(res, resumingOverlay); err != nil {
 						return err
+					}
+					if res.State == clusterinit.StorageDevCeph {
+						fmt.Fprintf(out, "[apply] OSD device /dev/%s on %s: OSD of this cluster's running Ceph, selected by the existing overlay — resuming\n", dev, node)
+						continue
 					}
 					fmt.Fprintf(out, "[apply] OSD device /dev/%s on %s: empty block device — ready for rook\n", dev, node)
 				}
@@ -1836,9 +1883,12 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		Provider:    o.Provider,
 		GitHubOwner: o.GitHubOwner,
 		GitHubRepo:  o.GitHubRepo,
-		NoPush:      o.NoPush,
-		Out:         out,
-		Reporter:    rep,
+		GitHost:     fleetRemoteHost(o.Repo),
+		// Validated with the other options.
+		SiteComponents: siteComponents(o),
+		NoPush:         o.NoPush,
+		Out:            out,
+		Reporter:       rep,
 	}); err != nil {
 		return err
 	}
@@ -1933,7 +1983,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 // discovery would read the wrong cluster's node network, which is worse than
 // reading none.
 func applyKubeconfigPathIfTargets(o *clusterinit.InitOptions) string {
-	if _, targets := clusterinit.KubeconfigTargetsCluster(o.Domain, o.NodeExternalIP); !targets {
+	if _, targets := clusterinit.KubeconfigTargetsNamedCluster(o.Name, o.Domain, o.NodeExternalIP, controlPlaneAddrs(o)); !targets {
 		return ""
 	}
 	// A multi-file $KUBECONFIG chain is verified as the MERGED view, but the
@@ -1959,7 +2009,10 @@ func autoFetchKubeconfig(ctx context.Context, out io.Writer, o *clusterinit.Init
 		Host:        initSSHHost(o),
 		ClusterName: o.Name,
 		Domain:      o.Domain,
-		Out:         out,
+		// Keep a control-plane address the operator chose (fetch-kubeconfig
+		// --server): kube-api.<domain> may be a VIP that serves nothing yet.
+		Server: clusterinit.ControlPlaneKubeconfigServer(o.Name, controlPlaneAddrs(o)),
+		Out:    out,
 	})
 	if err != nil {
 		return err
@@ -1978,27 +2031,11 @@ func autoFetchKubeconfig(ctx context.Context, out io.Writer, o *clusterinit.Init
 	return nil
 }
 
-// resolveGitHubToken returns the operator's PAT for the
-// CommitAndPush step. Provider-aware (M4-T05 GitLab retire):
-// dispatches to `gh auth token` for github, `glab auth status --show-token`
-// for gitlab.
-//
-// Precedence (per provider):
-//
-//  1. `--github-token` flag value (explicit operator override).
-//  2. Provider-specific CLI-auth subshell — picks up the operator's
-//     existing `gh auth login` / `glab auth login` session.
-//  3. Empty string — caller (Apply) surfaces the push-auth error
-//     from the git adapter if a token was actually needed.
-//
-// Never logged. The fallback subshell output is captured into a
-// local variable and trimmed; not echoed to the operator log.
-//
-// **Naming note**: the function is still `resolveGitHubToken` for
-// backward-compat with the rest of the flow; the `--github-token`
-// flag likewise. Both carry the token for the SELECTED provider,
-// not necessarily GitHub. A future rename to `resolveRepoToken` /
-// `--repo-token` may land in a bigger UX pass.
+// resolveGitHubToken returns the push token for the Fleet remote. The name
+// and the --github-token flag predate GitLab support; both carry the token for
+// the selected provider. Precedence: the flag, the provider's environment
+// variable, then the provider CLI's stored credential for the remote's host.
+// Never logged.
 func resolveGitHubToken(o *clusterinit.InitOptions, out io.Writer) string {
 	return resolveGitHubTokenWithExec(o, out, defaultTokenExec)
 }
@@ -2008,75 +2045,187 @@ func resolveGitHubToken(o *clusterinit.InitOptions, out io.Writer) string {
 // fake that returns canned stdout/err without forking.
 type tokenExecFn func(binary string, args ...string) (stdout []byte, err error)
 
-// defaultTokenExec runs the provider CLI + captures stdout;
-// stderr is discarded (tokens must never appear in the operator's
-// log; per-command messages come from the caller instead).
+// defaultTokenExec runs the provider CLI and captures stdout, discarding
+// stderr. `glab auth status` is the exception: it reports on stderr, so its
+// combined output is returned for extractGlabToken.
 func defaultTokenExec(binary string, args ...string) ([]byte, error) {
 	cmd := exec.Command(binary, args...)
+	// glab and gh answer from token variables before their per-host stores,
+	// for any host. The CLI applies environment tokens itself, per provider
+	// and host (resolveProviderToken), so the subprocess sees none of them.
+	cmd.Env = withoutTokenEnv(os.Environ())
+	if binary == "glab" && len(args) > 1 && args[0] == "auth" && args[1] == "status" {
+		return cmd.CombinedOutput()
+	}
 	cmd.Stderr = io.Discard
 	return cmd.Output()
 }
 
-// resolveGitHubTokenWithExec is the testable form of
-// resolveGitHubToken — same logic, but the CLI subshell is
-// invoked through `execFn` so tests can seed responses.
+// resolveGitHubTokenWithExec is the testable form of resolveGitHubToken.
 func resolveGitHubTokenWithExec(o *clusterinit.InitOptions, out io.Writer, execFn tokenExecFn) string {
 	if o.GitHubToken != "" {
 		fmt.Fprintln(out, "[apply] using --github-token flag value")
 		return o.GitHubToken
 	}
-
-	// Provider dispatch. Default (empty) → github.
 	provider := o.Provider
+	host := fleetRemoteHost(o.Repo)
+	if provider == "" && host != "" && host != "github.com" {
+		// No provider was named and the remote is not github.com: use only
+		// what glab or gh stored for this exact host.
+		return resolveStoredHostToken("apply", host, out, execFn)
+	}
 	if provider == "" {
 		provider = clusterinit.ProviderGitHub
 	}
-	var (
-		binary string
-		args   []string
-		label  string
-	)
-	switch provider {
-	case clusterinit.ProviderGitLab:
-		binary, args, label = "glab", []string{"auth", "status", "--show-token"}, "glab auth status --show-token"
-	default:
-		binary, args, label = "gh", []string{"auth", "token"}, "gh auth token"
+	if host == "" {
+		host = defaultProviderHost(provider)
 	}
-
-	stdout, err := execFn(binary, args...)
-	if err != nil {
-		fmt.Fprintf(out, "[apply] no token resolved (%s failed; push may fail if remote requires auth)\n", label)
+	// The remote's host bounds which credential may be sent. GitHub
+	// environment tokens are used only for github.com (see
+	// resolveProviderToken), and a GitLab credential never goes to github.com.
+	if provider == clusterinit.ProviderGitLab && host == "github.com" {
+		fmt.Fprintf(out, "[apply] no token resolved: the Fleet remote %s does not match --provider=%s; set --provider or pass --github-token\n", host, provider)
 		return ""
 	}
-	token := strings.TrimSpace(string(stdout))
-	// glab's `--show-token` prints "Token: <value>" whereas gh's
-	// `auth token` prints just the value. Extract the trailing
-	// token portion when the shape matches "Token: xxx".
-	if provider == clusterinit.ProviderGitLab {
-		token = extractGlabToken(token)
-	}
-	if token == "" {
-		fmt.Fprintf(out, "[apply] no token resolved (%s returned empty)\n", label)
-		return ""
-	}
-	fmt.Fprintf(out, "[apply] resolved token via %s\n", label)
-	return token
+	return resolveProviderToken("apply", provider, host, out, execFn)
 }
 
-// extractGlabToken parses glab's `auth status --show-token` output
-// to isolate the token value. glab emits a multi-line status block
-// with the token on a `Token: <value>` line; this helper walks the
-// lines and returns the token, or empty when not found.
-func extractGlabToken(body string) string {
-	for _, line := range strings.Split(body, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "Token:") {
-			return strings.TrimSpace(strings.TrimPrefix(trimmed, "Token:"))
+// defaultProviderHost is the hosted service for a provider.
+func defaultProviderHost(p clusterinit.Provider) string {
+	if p == clusterinit.ProviderGitLab {
+		return "gitlab.com"
+	}
+	return "github.com"
+}
+
+// fleetRemoteHost returns the host of the Fleet checkout's origin push URL, or
+// "" when it cannot be read. Self-managed GitLab and GitHub Enterprise remotes
+// keep their own host, so their tokens are looked up for that host only.
+func fleetRemoteHost(repo string) string {
+	if repo == "" {
+		return ""
+	}
+	raw, err := exec.Command("git", "-C", repo, "remote", "get-url", "--push", "origin").Output()
+	if err != nil {
+		return ""
+	}
+	host, _, ok := remoteIdentity(string(raw))
+	if !ok {
+		return ""
+	}
+	return strings.ToLower(host)
+}
+
+// fleetRemoteIsSSH reports whether the Fleet pushes over SSH, where the git
+// adapter uses SSH credentials and a token is never sent.
+func fleetRemoteIsSSH(repo string) bool {
+	raw, err := exec.Command("git", "-C", repo, "remote", "get-url", "--push", "origin").Output()
+	if err != nil {
+		return false
+	}
+	u := strings.TrimSpace(string(raw))
+	return strings.HasPrefix(u, "ssh://") || (!strings.Contains(u, "://") && strings.Contains(u, ":"))
+}
+
+// resolveProviderToken looks a token up for one provider and host. A GitHub
+// credential is only ever returned for a GitHub host, and a GitLab credential
+// only for the GitLab host it was stored for.
+func resolveProviderToken(component string, provider clusterinit.Provider, host string, out io.Writer, execFn tokenExecFn) string {
+	if provider == clusterinit.ProviderGitLab {
+		// GITLAB_TOKEN names no host; it is for the remote the operator is
+		// installing against, which is never github.com (checked by callers).
+		if t := strings.TrimSpace(os.Getenv("GITLAB_TOKEN")); t != "" {
+			fmt.Fprintf(out, "[%s] using GITLAB_TOKEN from the environment\n", component)
+			return t
+		}
+		if raw, err := execFn("glab", "config", "get", "token", "--host", host); err == nil {
+			if t := strings.TrimSpace(string(raw)); t != "" && !strings.ContainsAny(t, " \t\n") {
+				fmt.Fprintf(out, "[%s] resolved token via glab for %s\n", component, host)
+				return t
+			}
+		}
+		label := "glab auth status --show-token"
+		raw, err := execFn("glab", "auth", "status", "--hostname", host, "--show-token")
+		if err != nil && len(raw) == 0 {
+			fmt.Fprintf(out, "[%s] no token resolved (%s failed for %s; push may fail if remote requires auth)\n", component, label, host)
+			return ""
+		}
+		if t := extractGlabToken(strings.TrimSpace(string(raw))); t != "" {
+			fmt.Fprintf(out, "[%s] resolved token via %s for %s\n", component, label, host)
+			return t
+		}
+		fmt.Fprintf(out, "[%s] no token resolved (%s returned empty for %s)\n", component, label, host)
+		return ""
+	}
+	// GITHUB_TOKEN/GH_TOKEN are github.com credentials. For any other GitHub
+	// host only gh's stored credential for that host is used.
+	for _, name := range []string{"GITHUB_TOKEN", "GH_TOKEN"} {
+		if host != "github.com" {
+			break
+		}
+		if t := strings.TrimSpace(os.Getenv(name)); t != "" {
+			fmt.Fprintf(out, "[%s] using %s from the environment\n", component, name)
+			return t
 		}
 	}
-	// Fallback: if the whole body looks like a bare token (glab
-	// versions have varied), return as-is.
-	if !strings.Contains(body, "\n") && body != "" {
+	args := []string{"auth", "token"}
+	label := "gh auth token"
+	if host != "github.com" {
+		args = append(args, "--hostname", host)
+		label += " --hostname " + host
+	}
+	raw, err := execFn("gh", args...)
+	if err != nil {
+		fmt.Fprintf(out, "[%s] no token resolved (%s failed; push may fail if remote requires auth)\n", component, label)
+		return ""
+	}
+	t := strings.TrimSpace(string(raw))
+	if t == "" {
+		fmt.Fprintf(out, "[%s] no token resolved (%s returned empty)\n", component, label)
+		return ""
+	}
+	fmt.Fprintf(out, "[%s] resolved token via %s\n", component, label)
+	return t
+}
+
+// resolveStoredHostToken returns the credential glab or gh stored for host,
+// never an environment token: the provider was inferred, so a variable meant
+// for another service must not reach this host.
+func resolveStoredHostToken(component, host string, out io.Writer, execFn tokenExecFn) string {
+	if raw, err := execFn("glab", "config", "get", "token", "--host", host); err == nil {
+		if t := strings.TrimSpace(string(raw)); t != "" && !strings.ContainsAny(t, " \t\n") {
+			fmt.Fprintf(out, "[%s] resolved token via glab for %s\n", component, host)
+			return t
+		}
+	}
+	if raw, err := execFn("glab", "auth", "status", "--hostname", host, "--show-token"); err == nil || len(raw) > 0 {
+		if t := extractGlabToken(strings.TrimSpace(string(raw))); t != "" {
+			fmt.Fprintf(out, "[%s] resolved token via glab auth status for %s\n", component, host)
+			return t
+		}
+	}
+	if raw, err := execFn("gh", "auth", "token", "--hostname", host); err == nil {
+		if t := strings.TrimSpace(string(raw)); t != "" {
+			fmt.Fprintf(out, "[%s] resolved token via gh for %s\n", component, host)
+			return t
+		}
+	}
+	fmt.Fprintf(out, "[%s] no token resolved: neither glab nor gh has a credential for %s (glab auth login --hostname %s)\n", component, host, host)
+	return ""
+}
+
+// extractGlabToken isolates the token in `glab auth status --show-token`
+// output: a "Token: <value>" line, which newer glab decorates ("✓ Token:").
+// A bare single-line body is returned as-is; anything else yields "".
+func extractGlabToken(body string) string {
+	for _, line := range strings.Split(body, "\n") {
+		if i := strings.Index(line, "Token:"); i >= 0 {
+			if f := strings.Fields(line[i+len("Token:"):]); len(f) > 0 {
+				return f[0]
+			}
+		}
+	}
+	if !strings.Contains(body, "\n") && body != "" && !strings.ContainsAny(body, " \t") {
 		return body
 	}
 	return ""
@@ -2683,4 +2832,38 @@ func loadDNS01CloudflareFromOptions(o *clusterinit.InitOptions) (*clusterinit.DN
 // compares it before any fleet mutation.
 func loadTrustedCAFromOptions(o *clusterinit.InitOptions) (*clusterinit.TrustedCAMaterial, error) {
 	return clusterinit.LoadTrustedCABundle(o.TrustedCABundle)
+}
+
+// siteComponents returns the validated KUBE_DC_INIT_SITE_COMPONENTS entries.
+func siteComponents(o *clusterinit.InitOptions) []clusterinit.SiteComponent {
+	comps, _ := clusterinit.ParseSiteComponents(o.SiteComponents)
+	return comps
+}
+
+// controlPlaneAddrs are the cluster's control-plane addresses from
+// KUBE_OVN_MASTER_NODES, which identify it as reliably as its domain.
+func controlPlaneAddrs(o *clusterinit.InitOptions) []string {
+	var addrs []string
+	for _, a := range strings.Split(o.Sets["KUBE_OVN_MASTER_NODES"], ",") {
+		if a = strings.TrimSpace(a); a != "" {
+			addrs = append(addrs, a)
+		}
+	}
+	return addrs
+}
+
+// tokenEnvNames are variables glab or gh read as a credential for any host.
+var tokenEnvNames = map[string]bool{
+	"GITLAB_TOKEN": true, "GITLAB_ACCESS_TOKEN": true, "OAUTH_TOKEN": true,
+	"GH_TOKEN": true, "GITHUB_TOKEN": true, "GH_ENTERPRISE_TOKEN": true, "GITHUB_ENTERPRISE_TOKEN": true,
+}
+
+func withoutTokenEnv(env []string) []string {
+	out := env[:0:0]
+	for _, kv := range env {
+		if name, _, _ := strings.Cut(kv, "="); !tokenEnvNames[name] {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
