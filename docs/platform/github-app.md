@@ -25,7 +25,7 @@ App has one webhook URL, so one App serves one installation.
 | Installation | App |
 |---|---|
 | Kube-DC cloud (operated by SHALB) | [kube-dc-cloud](https://github.com/apps/kube-dc-cloud), owned by the `kube-dc` GitHub organization |
-| Kube-DC stage (operated by SHALB) | `kube-dc-stage`, owned by the `kube-dc` GitHub organization |
+| Kube-DC stage (operated by SHALB) | `stage-kube-dc-com`, owned by the `kube-dc` GitHub organization |
 | A provider (white label) or a self-hosted installation | One you register as below, under your own name; or leave the feature off |
 
 With Fleet, `scripts/set-github-app.py <cluster> <app-id> <key.pem>` checks a
