@@ -42,7 +42,9 @@ GitHub Apps → New GitHub App**.
 | Homepage URL | Your product's site |
 | Webhook | **Active**. URL `https://<backend host>/github/webhook` (the chart's `backend.gateway.hostname`). Secret: a random value, for example `openssl rand -hex 32` |
 | Repository permissions (Read and write) | **Contents**, **Deployments**, **Commit statuses**, **Checks**, **Packages**, **Pull requests**, **Variables**, **Workflows**. Metadata (read) is added by GitHub. Checks: build check runs on commits; Packages: lets builds try GHCR without a registry token (not yet proven to work, see below) |
-| Subscribe to events | **Pull request**, **Push** |
+| Callback URL | `https://<backend host>/github/callback`, with **Request user authorization (OAuth) during installation** checked. After installing, GitHub sends the user there and Kube-DC returns them to the console. Reserved for a later GitHub sign-in (proving repository admin rights); the code is not used yet |
+| Setup URL | Leave empty (the Callback URL is used) |
+| Subscribe to events | **Pull request**, **Push**, **Check run**, **Repository** (re-run of a build; renamed or transferred repositories) |
 | Where can this GitHub App be installed? | **Any account**, so your customers can install it |
 
 Only deployment statuses wanted: Deployments alone is enough and the webhook
