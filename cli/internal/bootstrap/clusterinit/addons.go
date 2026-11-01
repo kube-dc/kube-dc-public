@@ -458,15 +458,8 @@ func writeGatewayVIPPatch(clusterDir, envBody string, out io.Writer) error {
 		block := entries
 		if !hasPatches {
 			block = "  patches:\n" + entries
-		} else if patchListIndent(lines) == 2 {
-			// The managed-services scaffold rewrites platform.yaml with the
-			// sequence at its key's indentation; mixing four-space entries into
-			// it makes the file invalid YAML, and Flux rejects the root layer.
-			shifted := strings.Split(strings.TrimRight(entries, "\n"), "\n")
-			for i := range shifted {
-				shifted[i] = strings.TrimPrefix(shifted[i], "  ")
-			}
-			block = strings.Join(shifted, "\n") + "\n"
+		} else {
+			block = alignPatchEntries(lines, block)
 		}
 		res := append([]string{}, lines[:end]...)
 		res = append(res, strings.Split(strings.TrimRight(block, "\n"), "\n")...)
@@ -554,4 +547,24 @@ func patchListIndent(lines []string) int {
 		}
 	}
 	return 4
+}
+
+// alignPatchEntries re-indents a block of four-space spec.patches entries to
+// match an existing list. The managed-services scaffold rewrites platform.yaml
+// with the sequence at its key's indentation; mixing four-space entries into
+// it makes the file invalid YAML, and Flux rejects the root layer.
+func alignPatchEntries(lines []string, block string) string {
+	if patchListIndent(lines) != 2 {
+		return block
+	}
+	trailing := strings.HasSuffix(block, "\n")
+	shifted := strings.Split(strings.TrimRight(block, "\n"), "\n")
+	for i := range shifted {
+		shifted[i] = strings.TrimPrefix(shifted[i], "  ")
+	}
+	out := strings.Join(shifted, "\n")
+	if trailing {
+		out += "\n"
+	}
+	return out
 }

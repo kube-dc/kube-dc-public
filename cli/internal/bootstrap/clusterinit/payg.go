@@ -347,7 +347,8 @@ func patchPlatformPAYGRole(entry string) func([]string) ([]string, bool, error) 
 				if strings.TrimSpace(l) == "" {
 					continue
 				}
-				if indent := len(l) - len(strings.TrimLeft(l, " ")); indent <= 2 {
+				// A sequence may sit at its key's indentation ("  - ").
+				if indent := len(l) - len(strings.TrimLeft(l, " ")); indent <= 2 && !strings.HasPrefix(l, "  - ") {
 					return nil, false, fmt.Errorf("spec.patches is not the last key of spec (hand-edited?) — add the PAYG role patch by hand (platform/payg/README.md step 2, marker %q)", paygDBRoleMarker)
 				}
 			}
@@ -355,6 +356,8 @@ func patchPlatformPAYGRole(entry string) func([]string) ([]string, bool, error) 
 		block := strings.TrimRight(entry, "\n")
 		if patchesAt < 0 {
 			block = "  patches:\n" + block
+		} else {
+			block = alignPatchEntries(lines, block)
 		}
 		out := make([]string, 0, end+32)
 		out = append(out, lines[:end]...)

@@ -20,6 +20,7 @@ import (
 	"io"
 	nethttp "net/http"
 	"os"
+	"os/exec"
 	osuser "os/user"
 	"path/filepath"
 	"strings"
@@ -280,10 +281,6 @@ func (c *Client) ResetHard(_ context.Context, dir, ref string) error {
 	if err != nil {
 		return fmt.Errorf("git: open %s: %w", dir, err)
 	}
-	wt, err := repo.Worktree()
-	if err != nil {
-		return fmt.Errorf("git: worktree %s: %w", dir, err)
-	}
 	target := plumbing.NewHash(ref)
 	if target.IsZero() {
 		return fmt.Errorf("git: ResetHard invalid ref %q", ref)
@@ -294,8 +291,12 @@ func (c *Client) ResetHard(_ context.Context, dir, ref string) error {
 	if err := assertAncestorOfHEAD(repo, target); err != nil {
 		return fmt.Errorf("git: ResetHard %s: %w", ref, err)
 	}
-	if err := wt.Reset(&gogit.ResetOptions{Mode: gogit.HardReset, Commit: target}); err != nil {
-		return fmt.Errorf("git: reset %s: %w", ref, err)
+	// git itself, not go-git: go-git's HardReset also deletes untracked and
+	// ignored files, which in a Fleet checkout includes the operator's
+	// age.key and installer input. `git reset --hard` restores tracked files
+	// only.
+	if out, err := exec.Command("git", "-C", dir, "reset", "--hard", "--quiet", target.String()).CombinedOutput(); err != nil {
+		return fmt.Errorf("git: reset %s: %w (%s)", ref, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

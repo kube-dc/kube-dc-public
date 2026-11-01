@@ -599,6 +599,8 @@ func patchKustomizationSuppression(stem, entries string) func([]string) ([]strin
 			strings.TrimRight(entries, "\n")
 		if !hasPatchesKey {
 			block = "  patches:\n" + block
+		} else {
+			block = alignPatchEntries(lines, block)
 		}
 		outLines := make([]string, 0, end+40)
 		outLines = append(outLines, lines[:end]...)

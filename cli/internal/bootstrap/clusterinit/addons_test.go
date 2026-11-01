@@ -391,3 +391,22 @@ func TestWriteAddons_GatewayVIPPatch_FollowsTwoSpacePatchList(t *testing.T) {
 		t.Fatalf("patches = %+v", doc.Spec.Patches)
 	}
 }
+
+// Every writer that appends to an existing spec.patches list keeps the file
+// valid when the list sits at its key's indentation.
+func TestAlignPatchEntriesKeepsTwoSpaceListValid(t *testing.T) {
+	base := "spec:\n  path: ./platform\n  patches:\n  - target:\n      kind: HelmRelease\n    patch: |\n      - op: add\n        path: /x\n        value: 1\n"
+	entry := "    # marker\n    - target:\n        kind: Certificate\n        name: c\n      patch: |\n        $patch: delete\n"
+	lines := strings.Split(strings.TrimRight(base, "\n"), "\n")
+	got := strings.Join(lines, "\n") + "\n" + alignPatchEntries(lines, entry)
+	var doc struct {
+		Spec struct{ Patches []map[string]any }
+	}
+	if err := yaml.Unmarshal([]byte(got), &doc); err != nil || len(doc.Spec.Patches) != 2 {
+		t.Fatalf("patches=%d err=%v\n%s", len(doc.Spec.Patches), err, got)
+	}
+	four := "spec:\n  patches:\n    - target:\n        kind: A\n"
+	if alignPatchEntries(strings.Split(four, "\n"), entry) != entry {
+		t.Fatal("a four-space list must keep four-space entries")
+	}
+}

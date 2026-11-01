@@ -501,6 +501,8 @@ func patchPlatformDNS01SolverWith(marker, header, entries string) func([]string)
 		block := dns01BlockBody(marker, header, entries)
 		if !hasPatchesKey {
 			block = "  patches:\n" + block
+		} else {
+			block = alignPatchEntries(lines, block)
 		}
 		outLines := make([]string, 0, end+40)
 		outLines = append(outLines, lines[:end]...)

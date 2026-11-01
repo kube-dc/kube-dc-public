@@ -241,3 +241,19 @@ func TestValidateCephMonNodes(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Rook matches a device by bare kernel name or by full /dev path only.
+func TestRookDeviceName(t *testing.T) {
+	for in, want := range map[string]string{
+		"nvme1n1": "nvme1n1", "/dev/sdb": "sdb",
+		"disk/by-id/nvme-X": "/dev/disk/by-id/nvme-X", "/dev/disk/by-id/nvme-X": "/dev/disk/by-id/nvme-X",
+	} {
+		if got := rookDeviceName(in); got != want {
+			t.Errorf("rookDeviceName(%q) = %q, want %q", in, got, want)
+		}
+	}
+	spec := ObjectStorageSpec{Mode: RookCephMultiNode, CephNodes: map[string]string{"n1": "disk/by-id/nvme-X"}, ReplicationSize: 1}
+	if !strings.Contains(fmt.Sprint(objectStorageEnvKeys("example.com", spec)), "CEPH_NODE_1_DEVICE /dev/disk/by-id/nvme-X") {
+		t.Fatalf("env keys = %v", objectStorageEnvKeys("example.com", spec))
+	}
+}

@@ -1,6 +1,6 @@
 # kube-dc CLI changelog
 
-## v0.9.13-rc.3 — 2026-11-01
+## v0.9.13-rc.4 — 2026-11-01
 
 Release candidate for the fixes found in a ten-host bare-metal rehearsal with a self-managed GitLab, a private CA, a MetalLB VIP and ten-node Ceph. Installs on that shape no longer need manual `kubectl`, Flux or file edits.
 
@@ -15,7 +15,8 @@ Release candidate for the fixes found in a ten-host bare-metal rehearsal with a 
 - `bootstrap accept` trusts the installation's private CA, and on an idle cluster probes the tenant gateway from the default VPC before deciding.
 - A MetalLB VIP is no longer treated as single-IP NAT, so the API passthrough listener is kept.
 - `fetch-kubeconfig --server` writes a control-plane address while the VIP is not serving yet.
-- With managed services on, the generated `platform.yaml` stays valid YAML; `init` refuses to commit an overlay file that does not parse.
+- With managed services on, the generated `platform.yaml` stays valid YAML; `init` refuses to commit an overlay file that does not parse, and rolls back a failed first run without touching ignored files such as `age.key`.
+- Raw OSD devices given as `/dev/disk/by-id/...` paths keep their `/dev/` prefix, which Rook needs to match them.
 
 ## v0.9.11 — 2026-10-29
 

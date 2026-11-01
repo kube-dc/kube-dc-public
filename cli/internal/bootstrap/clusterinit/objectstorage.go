@@ -628,7 +628,7 @@ func objectStorageEnvKeys(domain string, spec ObjectStorageSpec) [][2]string {
 		kv = append(kv, [2]string{"CEPH_LOCAL_OSD_NODE", spec.OSDNode})
 		kv = append(kv, [2]string{"CEPH_LOCAL_OSD_SIZE_GB", fmt.Sprintf("%d", spec.OSDSizeGB)})
 		if spec.OSDDevice != "" {
-			kv = append(kv, [2]string{"CEPH_LOCAL_OSD_DEVICE", spec.OSDDevice})
+			kv = append(kv, [2]string{"CEPH_LOCAL_OSD_DEVICE", rookDeviceName(spec.OSDDevice)})
 		}
 		// Single OSD is definitional for this mode (1 MON / 1 MGR / 1 OSD), so a
 		// size-2 RBD pool would sit permanently PG_DEGRADED / HEALTH_WARN. Pin
@@ -646,7 +646,7 @@ func objectStorageEnvKeys(domain string, spec ObjectStorageSpec) [][2]string {
 		for i, n := range nodes {
 			slot := fmt.Sprintf("%d", i+1)
 			kv = append(kv, [2]string{"CEPH_NODE_" + slot, n})
-			kv = append(kv, [2]string{"CEPH_NODE_" + slot + "_DEVICE", spec.CephNodes[n]})
+			kv = append(kv, [2]string{"CEPH_NODE_" + slot + "_DEVICE", rookDeviceName(spec.CephNodes[n])})
 		}
 	case RookCephPVC:
 		kv = append(kv, [2]string{"CEPH_OSD_STORAGE_CLASS", spec.StorageClass})
@@ -672,4 +672,16 @@ func writeObjectStorageEnv(envPath, domain string, spec ObjectStorageSpec) error
 		env.Set(kv[0], kv[1])
 	}
 	return env.Write("")
+}
+
+// rookDeviceName is the form Rook matches: a bare kernel name (nvme1n1) or a
+// full /dev path. Validation strips "/dev/", which left a stable
+// "disk/by-id/..." path that Rook matches against nothing, so no OSD was
+// created on it.
+func rookDeviceName(dev string) string {
+	dev = strings.TrimPrefix(dev, "/dev/")
+	if strings.Contains(dev, "/") {
+		return "/dev/" + dev
+	}
+	return dev
 }
