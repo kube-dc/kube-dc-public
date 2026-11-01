@@ -1,6 +1,6 @@
 # kube-dc CLI changelog
 
-## v0.9.13-rc.2 — 2026-11-01
+## v0.9.13-rc.3 — 2026-11-01
 
 Release candidate for the fixes found in a ten-host bare-metal rehearsal with a self-managed GitLab, a private CA, a MetalLB VIP and ten-node Ceph. Installs on that shape no longer need manual `kubectl`, Flux or file edits.
 
