@@ -307,8 +307,10 @@ func waitManagedServicesPrepublish(ctx context.Context, reader managedServicesRe
 		}
 		last = err
 		if stallReader, ok := reader.(managedServicesStallReader); ok {
-			if reset, resetErr := resetStalledManagedServicesReleases(deadline, stallReader, true); resetErr != nil {
+			if reset, resetErr := resetStalledManagedServicesReleases(deadline, stallReader, true); isManagedServicesStall(resetErr) {
 				return managedServicesPrepublish{}, resetErr
+			} else if resetErr != nil {
+				last = fmt.Errorf("%w; stall check retries: %v", err, resetErr)
 			} else if reset {
 				last = fmt.Errorf("%w; first-install HelmRelease reset requested", err)
 			}

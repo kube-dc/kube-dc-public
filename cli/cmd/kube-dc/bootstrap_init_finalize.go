@@ -121,6 +121,7 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 	if managedServices {
 		pins, pinsErr := managedServicesOverlayPins(o.Repo, o.Name)
 		stallReader, readerErr := pinnedManagedServicesKubectl(ctx, kubeconfig)
+		lastRetry, repeats := "", 0
 		stallChecks = append(stallChecks, func(checkCtx context.Context) error {
 			if pinsErr != nil {
 				return pinsErr
@@ -128,25 +129,29 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 			if readerErr != nil {
 				return readerErr
 			}
-			live, err := stallReader.Get(checkCtx, "flux-system", "configmap", "cluster-config")
-			if err != nil {
-				if strings.Contains(err.Error(), "NotFound") || strings.Contains(err.Error(), "not found") {
-					return nil
-				}
+			err := checkManagedServicesStall(checkCtx, out, stallReader, pins)
+			if err == nil || isManagedServicesStall(err) {
 				return err
 			}
-			ready, err := managedServicesResetTargetReady(live, pins)
-			if err != nil || !ready {
+			// A failed read or patch (an API server busy with the platform
+			// rollout) is retried on the next tick; ending the watch on it
+			// left a converging installation reported as action required.
+			// The same failure for five minutes is not transient.
+			if err.Error() != lastRetry {
+				lastRetry, repeats = err.Error(), 0
+				fmt.Fprintf(out, "[reconcile] managed-services stall check failed, retrying: %v\n", err)
+			}
+			if repeats++; repeats >= stallCheckRetries {
 				return err
 			}
-			reset, err := resetStalledManagedServicesReleases(checkCtx, stallReader, false)
-			if reset {
-				fmt.Fprintln(out, "[reconcile] requested a bounded first-install operator reset")
-			}
-			return err
+			return nil
 		})
 	}
 	reconcileErr := runReconcileWatchWithGPU(ctx, out, session.Flux, rep, gpu, stallChecks...)
+	if reconcileErr != nil {
+		fmt.Fprintf(out, "[finalize] platform convergence not confirmed (%v); finalization continues\n", reconcileErr)
+		fmt.Fprintf(out, "[finalize]   once `flux get all -A` shows every Kustomization and HelmRelease Ready, re-run `kube-dc bootstrap init` with the same --config and --repo (it resumes); a saved install plan needs a new --dry-run first\n")
+	}
 	if reconcileErr == nil && gpu.Platform == clusterinit.GPUPlatformEnabled {
 		writeGPUInstallCompletion(out)
 	}

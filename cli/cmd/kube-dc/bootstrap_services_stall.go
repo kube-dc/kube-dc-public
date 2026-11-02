@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -12,6 +14,23 @@ import (
 
 const managedServicesStallResetCount = "kube-dc.com/managed-services-stall-resets"
 
+// managedServicesStallError is a stall the CLI must not wait out: a release
+// stuck in an upgrade or still stalled after both resets, or a release or
+// cluster other than the one the overlay names. Any other error is a failed
+// read or patch, which the next poll retries.
+type managedServicesStallError struct{ msg string }
+
+func (e *managedServicesStallError) Error() string { return e.msg }
+
+func stallFailure(format string, args ...any) error {
+	return &managedServicesStallError{msg: fmt.Sprintf(format, args...)}
+}
+
+func isManagedServicesStall(err error) bool {
+	var stall *managedServicesStallError
+	return errors.As(err, &stall)
+}
+
 func managedServicesResetTargetReady(live map[string]any, pins map[string]string) (bool, error) {
 	cluster := nestedString(live, "data", "CLUSTER_NAME")
 	cell := nestedString(live, "data", "SERVICES_CELL_ID")
@@ -19,7 +38,7 @@ func managedServicesResetTargetReady(live map[string]any, pins map[string]string
 		return false, nil // Flux has not rendered the identity ConfigMap yet.
 	}
 	if cluster != pins["CLUSTER_NAME"] || cell != pins["SERVICES_CELL_ID"] {
-		return false, fmt.Errorf("managed-services reconcile target differs from the Fleet cluster and cell identity")
+		return false, stallFailure("managed-services reconcile target differs from the Fleet cluster and cell identity")
 	}
 	return true, nil
 }
@@ -72,11 +91,11 @@ func resetStalledManagedServicesReleaseOnce(ctx context.Context, reader managedS
 		return false, err
 	}
 	if nestedString(release, "metadata", "name") != name || nestedString(release, "metadata", "namespace") != namespace {
-		return false, fmt.Errorf("managed-services HelmRelease %s/%s identity mismatch", namespace, name)
+		return false, stallFailure("managed-services HelmRelease %s/%s identity mismatch", namespace, name)
 	}
 	resourceVersion := nestedString(release, "metadata", "resourceVersion")
 	if resourceVersion == "" {
-		return false, fmt.Errorf("managed-services HelmRelease %s/%s has no resourceVersion", namespace, name)
+		return false, stallFailure("managed-services HelmRelease %s/%s has no resourceVersion", namespace, name)
 	}
 	generation := nestedInt(release, "metadata", "generation")
 	stalled := false
@@ -97,7 +116,7 @@ func resetStalledManagedServicesReleaseOnce(ctx context.Context, reader managedS
 	for _, raw := range nestedSlice(release, "status", "history") {
 		entry, ok := raw.(map[string]any)
 		if ok && (nestedString(entry, "status") == "deployed" || nestedString(entry, "status") == "superseded") {
-			return false, fmt.Errorf("managed-services HelmRelease %s/%s stalled during an upgrade; no first-install reset is permitted", namespace, name)
+			return false, stallFailure("managed-services HelmRelease %s/%s stalled during an upgrade; no first-install reset is permitted", namespace, name)
 		}
 	}
 	countText := nestedString(release, "metadata", "annotations", managedServicesStallResetCount)
@@ -105,20 +124,20 @@ func resetStalledManagedServicesReleaseOnce(ctx context.Context, reader managedS
 	if countText != "" {
 		count, err = strconv.Atoi(countText)
 		if err != nil || count < 0 || count > 2 {
-			return false, fmt.Errorf("invalid stalled-release reset counter on %s/%s", namespace, name)
+			return false, stallFailure("invalid stalled-release reset counter on %s/%s", namespace, name)
 		}
 	}
 	if last := nestedString(release, "metadata", "annotations", "reconcile.fluxcd.io/resetAt"); last != "" && count > 0 {
 		when, err := time.Parse(time.RFC3339Nano, last)
 		if err != nil {
-			return false, fmt.Errorf("invalid stalled-release reset timestamp on %s/%s", namespace, name)
+			return false, stallFailure("invalid stalled-release reset timestamp on %s/%s", namespace, name)
 		}
 		if nestedString(release, "status", "lastHandledResetAt") != last || time.Since(when) < time.Minute {
 			return false, nil
 		}
 	}
 	if count >= 2 {
-		return false, fmt.Errorf("managed-services HelmRelease %s/%s remains stalled after two resets", namespace, name)
+		return false, stallFailure("managed-services HelmRelease %s/%s remains stalled after two resets", namespace, name)
 	}
 	nonce := time.Now().UTC().Format(time.RFC3339Nano)
 	if err := reader.ResetHelmRelease(ctx, namespace, name, resourceVersion, nonce, count+1); err != nil {
@@ -141,4 +160,25 @@ func resetStalledManagedServicesReleases(ctx context.Context, reader managedServ
 		anyReset = anyReset || reset
 	}
 	return anyReset, nil
+}
+
+// checkManagedServicesStall resets a stalled first install of the
+// managed-services operators, once the live cluster is the overlay's.
+func checkManagedServicesStall(ctx context.Context, out io.Writer, reader managedServicesStallReader, pins map[string]string) error {
+	live, err := reader.Get(ctx, "flux-system", "configmap", "cluster-config")
+	if err != nil {
+		if strings.Contains(err.Error(), "NotFound") || strings.Contains(err.Error(), "not found") {
+			return nil
+		}
+		return err
+	}
+	ready, err := managedServicesResetTargetReady(live, pins)
+	if err != nil || !ready {
+		return err
+	}
+	reset, err := resetStalledManagedServicesReleases(ctx, reader, false)
+	if reset {
+		fmt.Fprintln(out, "[reconcile] requested a bounded first-install operator reset")
+	}
+	return err
 }

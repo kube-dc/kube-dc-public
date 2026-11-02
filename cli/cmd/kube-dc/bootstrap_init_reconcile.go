@@ -28,6 +28,9 @@ var (
 	reconcileReportEvery = 15 * time.Second
 	// reconcileSettle confirms a passing convergence gate (see the loop).
 	reconcileSettle = 2 * time.Second
+	// stallCheckRetries ends the watch on one stall-check failure seen this
+	// many ticks in a row (five minutes at reconcileReportEvery).
+	stallCheckRetries = 20
 	// reconcileTarget is the flux-system Kustomization whose Ready
 	// condition means the platform has converged (it dependsOn the
 	// infra layers + health-checks the platform HelmReleases).

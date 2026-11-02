@@ -1,5 +1,12 @@
 # kube-dc CLI changelog
 
+## v0.9.14-rc.2 — 2026-11-02
+
+Fix from the fifth ten-host rehearsal (rc.1), which installed cleanly but exited with "action required for reconcile".
+
+- While `bootstrap init` watches the platform converge, a failed read in its check for stalled managed-services operator installs (an API server busy with the platform rollout) is retried at the next poll instead of ending the watch. Only a release stalled during an upgrade or after both resets, or a cluster that is not the overlay's, still stops it.
+- When convergence is not confirmed, `bootstrap init` now prints the reason and what to run, instead of naming only the step.
+
 ## v0.9.14-rc.1 — 2026-11-02
 
 A new installation needs no hand-written Kustomize overrides for what a bare-metal, private-CA installation previously had to add. `bootstrap init` derives it from inputs it already has and prints each decision; existing installations are never changed, because a resumed run does not add any of this.

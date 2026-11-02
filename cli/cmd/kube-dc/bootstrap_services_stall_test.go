@@ -136,3 +136,51 @@ func TestManagedServicesResetTargetIdentity(t *testing.T) {
 		})
 	}
 }
+
+type fakeStallCluster struct {
+	fakeManagedServicesStallReader
+	configErr error
+}
+
+func (f *fakeStallCluster) Get(ctx context.Context, ns, resource, name string) (map[string]any, error) {
+	if resource == "configmap" {
+		if f.configErr != nil {
+			return nil, f.configErr
+		}
+		return map[string]any{"data": map[string]any{"CLUSTER_NAME": "example", "SERVICES_CELL_ID": "cell-example"}}, nil
+	}
+	if f.release != nil && name != f.release["metadata"].(map[string]any)["name"] {
+		return nil, fmt.Errorf("NotFound")
+	}
+	return f.fakeManagedServicesStallReader.Get(ctx, ns, resource, name)
+}
+
+// A failed read is retried by the caller; only a real stall ends the watch.
+func TestCheckManagedServicesStallSeparatesStallsFromFailedReads(t *testing.T) {
+	ctx := context.Background()
+	pins := map[string]string{"CLUSTER_NAME": "example", "SERVICES_CELL_ID": "cell-example"}
+	var out strings.Builder
+
+	f := &fakeStallCluster{configErr: fmt.Errorf("read configmap/cluster-config: context deadline exceeded")}
+	if err := checkManagedServicesStall(ctx, &out, f, pins); err == nil || isManagedServicesStall(err) {
+		t.Fatalf("timed-out read: %v", err)
+	}
+	f = &fakeStallCluster{fakeManagedServicesStallReader: fakeManagedServicesStallReader{err: fmt.Errorf("i/o timeout")}}
+	if err := checkManagedServicesStall(ctx, &out, f, pins); err == nil || isManagedServicesStall(err) {
+		t.Fatalf("timed-out release read: %v", err)
+	}
+
+	f = &fakeStallCluster{fakeManagedServicesStallReader: fakeManagedServicesStallReader{release: stalledManagedServicesRelease()}}
+	f.release["status"].(map[string]any)["history"] = []any{map[string]any{"status": "deployed"}}
+	if err := checkManagedServicesStall(ctx, &out, f, pins); !isManagedServicesStall(err) || !strings.Contains(err.Error(), "during an upgrade") {
+		t.Fatalf("upgrade stall: %v", err)
+	}
+	if err := checkManagedServicesStall(ctx, &out, f, map[string]string{"CLUSTER_NAME": "other", "SERVICES_CELL_ID": "cell-example"}); !isManagedServicesStall(err) {
+		t.Fatalf("identity mismatch: %v", err)
+	}
+
+	f = &fakeStallCluster{fakeManagedServicesStallReader: fakeManagedServicesStallReader{release: stalledManagedServicesRelease()}}
+	if err := checkManagedServicesStall(ctx, &out, f, pins); err != nil || len(f.resets) != 1 || !strings.Contains(out.String(), "first-install operator reset") {
+		t.Fatalf("first-install reset: err=%v resets=%v out=%q", err, f.resets, out.String())
+	}
+}
