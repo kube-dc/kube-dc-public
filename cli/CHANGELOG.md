@@ -1,5 +1,14 @@
 # kube-dc CLI changelog
 
+## v0.9.13 — 2026-11-02
+
+Installs platform bundle 0.9.11. Same source as v0.9.13-rc.8, accepted by a clean ten-host bare-metal installation driven only by the CLI: self-managed GitLab, a private CA with operator-supplied TLS, a MetalLB VIP, ten-node Ceph with three copies and managed services. The release candidates below list every change since v0.9.12. In short:
+
+- `bootstrap init` installs its exact tool versions, works with self-managed GitLab, checks Linux 7.0 kernels and empty OSD disks (every BlueStore label copy) before writing anything, and attaches site components to the generated Flux layers.
+- A fresh private-CA or operator-TLS installation no longer stalls, and re-running `init` after any interruption resumes it, including an OpenBao initialization that stopped half-way.
+- Finalization waits for the front door and Keycloak, unseals every OpenBao member, survives lost Kubernetes exec responses, and repairs platform database backups that started before their bucket credentials existed.
+- `bootstrap accept` trusts the installation's private CA and checks the tenant gateway reliably.
+
 ## v0.9.13-rc.8 — 2026-11-02
 
 - When finalization clears a platform database backup stuck in `walArchivingFailing` (on a fresh installation this is the database's first backup), it starts a replacement backup with the same settings, so the database has a base backup now instead of after its next daily run.
