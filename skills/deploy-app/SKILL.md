@@ -1,6 +1,6 @@
 ---
 name: deploy-app
-description: Deploy a containerized application to a Kube-DC Project with optional persistent storage, a managed database, external exposure, or gated Shared GPU acceleration; set up keyless deploys and pull request previews from a GitHub repository.
+description: Deploy a containerized application to a Kube-DC Project with optional persistent storage, a managed database, external exposure, or gated Shared GPU acceleration; set up keyless deploys, builds on push and pull request previews from a GitHub repository, with a managed container registry or the user's own.
 ---
 
 # Deploy an Application
@@ -44,25 +44,56 @@ anything the tool does not cover.
 
 ## Deploy from GitHub on every push
 
-For a repository with a Dockerfile, the MCP tool `connect_repository`
-(organization admins) sets up continuous deploys without a stored secret:
-GitHub Actions signs in with its own short-lived OIDC token through a
-machine identity that accepts only that repository's environment.
+**Ask the user which path they want first**; do not pick for them:
 
-1. Get the repository's subject prefix:
-   `gh api repos/{owner}/{repo}/actions/oidc/customization/sub --jq .sub_claim_prefix`.
-2. Call `connect_repository` with `repository`, `subjectPrefix`, `project`,
-   `port`, and optionally `previewProject` (a copy per pull request, removed
-   when it closes or after 72 hours), `healthPath`, and `privateImage` (the
-   GHCR image is private; the user then adds a `GHCR_PULL_TOKEN` repository
-   secret with `read:packages`; never ask for the token's value).
-3. Write every returned file into the repository unchanged, run the
-   returned `gh variable set` commands, commit and push.
+- **(a) Recommended: managed runners and a managed registry.** Images go to a
+  Kube-DC container registry (managed service family `registry`) and CI runs
+  on a managed runner pool (family `github-runner`) or the build runs on the
+  platform. Nothing secret is stored in GitHub: CI exchanges its deploy token
+  for a 15-minute registry token, and the platform keeps each project's pull
+  Secret `kdc-registry-<registry>` fresh.
+- **(b) Their own registry**, such as GHCR. A push token is needed; the user
+  creates it and saves it in the console themselves. Never ask for a token's
+  value or paste one into a tool.
 
-A push to `main` then builds the image into GHCR, deploys it, and succeeds
-only when the live URL answers. To run the jobs on a Kube-DC managed runner
-pool instead of GitHub-hosted runners, set the repository variable
-`KUBE_DC_RUNNER` to the pool's `runs-on` target.
+Before either, the repository needs the installation's GitHub App and the
+organization's consent: the repository variable `KUBE_DC_ORGANIZATION` set to
+the organization (the console's **Deploy from GitHub → Allow this
+organization**, or `gh variable set KUBE_DC_ORGANIZATION -R owner/repo -b <org>`
+by a repository admin). The hosted MCP guide
+`kube-dc://guide/deploy-from-repository` has the full flow.
+
+Then choose how builds run (one per app; both would deploy every push twice):
+
+- **Builds on push by the platform** (no CI in the repository): `deploy_app`
+  with `buildFrom` and an `image` path without a tag. Managed registry:
+  `<registry host>/<project>/<app>`, no push Secret. Own registry: also
+  `pushSecret`, a `kubernetes.io/dockerconfigjson` Secret the user created.
+  Pushes build and deploy; pull requests build a preview when a previews
+  project is given; the commit shows a `kube-dc` check run.
+- **A GitHub Actions workflow:** `connect_repository` (organization admins)
+  sets up keyless deploys: GitHub Actions signs in with its own short-lived
+  OIDC token through a machine identity that accepts only that repository's
+  environment.
+
+  1. Get the repository's subject prefix:
+     `gh api repos/{owner}/{repo}/actions/oidc/customization/sub --jq .sub_claim_prefix`.
+  2. Call `connect_repository` with `repository`, `subjectPrefix`, `project`,
+     `port`, and optionally `previewProject` (a copy per pull request, removed
+     when it closes or after 72 hours), `healthPath`, `registry` (and
+     `registryProject`) for a managed registry, `runnerLabel` for a managed
+     runner pool, and `privateImage` for a private GHCR image (the user then
+     adds a `GHCR_PULL_TOKEN` repository secret with `read:packages`; never
+     ask for the token's value).
+  3. Write every returned file into the repository unchanged, run the
+     returned `gh variable set` commands, commit and push.
+
+  A push to `main` then builds the image, deploys it, and succeeds only when
+  the live URL answers.
+
+To push to a managed registry by hand, `registry_login` (project, registry
+name) returns a `docker login` command valid for 15 minutes with the user's
+own rights: project admins and developers push to `<project>/`, members pull.
 
 ## Prerequisites
 

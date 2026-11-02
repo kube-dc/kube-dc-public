@@ -165,8 +165,10 @@ A GitHub token can be exchanged once; request a new one for each sign-in.
 
 Where the installation's operator enabled it, the platform's GitHub App reports
 your rollouts to GitHub: the commit and pull request show the deployment with
-its URL, or a failure. Install the App on your repository once (on Kube-DC cloud
-and stage: [kube-dc-cloud](https://github.com/apps/kube-dc-cloud/installations/new)),
+its URL, or a failure. Install the App on your repository once: the console's
+[Deploy from GitHub](deploy-from-github.md) page links this installation's App
+(Kube-DC cloud: [kube-dc-cloud](https://github.com/apps/kube-dc-cloud/installations/new);
+stage: [stage-kube-dc-com](https://github.com/apps/stage-kube-dc-com/installations/new)),
 then name the repository and commit on the Deployment:
 
 ```yaml

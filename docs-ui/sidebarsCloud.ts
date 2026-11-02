@@ -62,6 +62,7 @@ const sidebars: SidebarsConfig = {
           id: 'gpu-shared-workloads',
           label: 'Run Shared GPU Workloads',
         },
+        {type: 'doc', id: 'deploy-from-github', label: 'Deploy from GitHub'},
         'gitops',
         'ai-ide-integration',
         {
@@ -134,6 +135,7 @@ const sidebars: SidebarsConfig = {
         {type: 'doc', id: 'managed-services-kafka', label: 'Kafka'},
         {type: 'doc', id: 'managed-services-rabbitmq', label: 'RabbitMQ'},
         {type: 'doc', id: 'managed-services-github-runners', label: 'GitHub Actions runners'},
+        {type: 'doc', id: 'managed-services-registry', label: 'Container registry'},
       ],
     },
     {

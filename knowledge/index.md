@@ -30,7 +30,7 @@ Master catalog for AI agents. Read this first, then dive into specific files as 
 |-------|-------------|-----------|
 | `check-quota` | Check org/project quota usage before deploying; troubleshoot exceeded-quota errors | SKILL.md |
 | `create-project` | Create project with VPC networking | SKILL.md, project-template.yaml, network-types.md |
-| `deploy-app` | Deploy containerized app with optional DB + HTTPS; keyless deploys and PR previews from GitHub | SKILL.md |
+| `deploy-app` | Deploy containerized app with optional DB + HTTPS; keyless deploys, builds on push and PR previews from GitHub, with a managed container registry or the user's own | SKILL.md |
 | `deploy-web-stack` | Web app + managed database + volume + HTTPS hostname through the Gateway (no EIP), one procedure | SKILL.md, web-stack-template.yaml |
 | `create-vm` | Provision VM with SSH access and cloud-init | SKILL.md, vm-template.yaml |
 | `create-database` | Create a managed PostgreSQL, MySQL, MariaDB, ClickHouse or Valkey service, bind its credential to a workload, back up and restore | SKILL.md, postgresql-template.yaml, mysql-mariadb-template.yaml, clickhouse-template.yaml, valkey-template.yaml, binding-template.yaml, db-connection-patterns.md, backup-restore-patterns.md |
@@ -70,6 +70,8 @@ Skills location: `skills/{skill-name}/SKILL.md`
 | `cli-kubeconfig.md` | CLI install, kubeconfig setup, IDE integration | ~200 lines |
 | `ai-ide-integration.md` | MCP server setup for Claude/Cursor/Windsurf | ~330 lines |
 | `deploy-first-app.md` | First app: Deployment + ClusterIP Service with an HTTP route | ~150 lines |
+| `deploy-from-github.md` | GitHub App install and organization consent, managed vs own registry, builds on push vs workflow, AI prompt | ~110 lines |
+| `managed-services-registry.md` | Container registry (family `registry`): plans, keyless push, pull Secrets, operations, deletion | ~150 lines |
 | `deploy-wordpress-stack.md` | WordPress with managed MariaDB, replicated volume, S3, HTTPS route (ClusterIP, no EIP), WP-CLI Job | ~460 lines |
 | `secrets-manager.md` | ManagedSecret CRD, sync to K8s Secret, KMS comparison | ~200 lines |
 | `kms.md` | KMSKey CRD, direct encrypt/decrypt, envelope encryption with Go + Python helpers, rotation, min_decryption_version | ~350 lines |

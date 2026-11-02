@@ -42,6 +42,7 @@ The following families have guides. These examples do not define the complete ca
 | [Valkey](managed-services-valkey.md) | Cache and key-value store | RDB archives on backup-enabled plans. Restore creates a new service |
 | [Kafka](managed-services-kafka.md) | Event streaming | Metadata export only. Message protection depends on replication and external copies |
 | [GitHub Actions runners](managed-services-github-runners.md) | Ephemeral CI workers and Dockerfile builds | GitHub keeps workflow history and artifacts; workspaces are temporary |
+| [Container registry](managed-services-registry.md) | Private images; CI pushes with keyless sign-in | None: images are rebuildable build artifacts |
 
 Read the published plan before you select a service.
 Check its capacity, topology, operations, backup policy, and support responsibilities.

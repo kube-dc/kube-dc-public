@@ -146,6 +146,7 @@ Tools carry MCP annotations, so apps ask the person before a destructive one.
 | `extend_preview` | write | Keeps a preview app longer before the platform removes it. |
 | `create_webhook` | write | Sends the organization's platform events (deploys, live hostnames, previews, alerts) to an HTTPS URL, signed. Organization admins only. |
 | `connect_repository` | write | Sets up keyless deploys from GitHub Actions for a repository: machine identities for its production (and preview) environment, plus the workflow files and repository variables to add. Organization admins only. |
+| `registry_login` | write | A `docker login` command for a managed container registry, valid 15 minutes, with the user's own push or pull rights. Not offered to read-only sessions. |
 
 Read-only URLs offer only the seven read tools.
 

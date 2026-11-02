@@ -17,6 +17,7 @@ a Project. Kubernetes platform software belongs in a Managed Cluster.
 - [Deploy a WordPress stack](deploy-wordpress-stack.md) combines an app with managed services.
 - [Service exposure](service-exposure.md) publishes HTTP, HTTPS, TCP, or UDP.
 - [Scaling and performance](scaling-performance.md) sizes a workload from measurements.
+- [Deploy from GitHub](deploy-from-github.md) builds and deploys a repository on every push, with pull request previews.
 - [GitOps](gitops.md) delivers from an external controller or from CI.
 
 The `{organization}-{project}` namespace backs each Project. Use the Project
