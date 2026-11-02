@@ -26,6 +26,7 @@ type cnpgReloader interface {
 	AnnotateCNPGCluster(ctx context.Context, namespace, name, key, value string) error
 	ListCNPGBackups(ctx context.Context, namespace string) ([]map[string]any, error)
 	DeleteCNPGBackup(ctx context.Context, namespace, name string) error
+	CreateCNPGBackup(ctx context.Context, backup map[string]any) error
 }
 
 var (
@@ -106,12 +107,38 @@ func clearFailedArchivingBackups(ctx context.Context, out io.Writer, k cnpgReloa
 			nestedString(b, "status", "startedAt") != "" || name == "" {
 			continue
 		}
+		// The stuck one may be the cluster's first (immediate) backup; without
+		// a replacement the cluster has no base backup until its next daily
+		// run. The replacement keeps the spec and owner (its ScheduledBackup)
+		// and is created first, so a failure at either step leaves a state
+		// the next run finishes.
+		if err := k.CreateCNPGBackup(ctx, retryBackup(b, ns, name+"-retry")); err != nil {
+			return fmt.Errorf("replace stuck backup %s/%s: %w", ns, name, err)
+		}
 		if err := k.DeleteCNPGBackup(ctx, ns, name); err != nil {
 			return fmt.Errorf("delete stuck backup %s/%s: %w", ns, name, err)
 		}
-		fmt.Fprintf(out, "[finalize] %s/%s: removed backup %s stuck in walArchivingFailing so the daily schedule runs again\n", ns, cluster, name)
+		fmt.Fprintf(out, "[finalize] %s/%s: replaced backup %s, stuck in walArchivingFailing, with %s-retry; the daily schedule runs again\n", ns, cluster, name, name)
 	}
 	return nil
+}
+
+// retryBackup is a new Backup with the stuck one's spec, labels and owner.
+func retryBackup(stuck map[string]any, namespace, name string) map[string]any {
+	meta, _ := stuck["metadata"].(map[string]any)
+	newMeta := map[string]any{"name": name, "namespace": namespace}
+	if labels, ok := meta["labels"]; ok {
+		newMeta["labels"] = labels
+	}
+	if owners, ok := meta["ownerReferences"]; ok {
+		newMeta["ownerReferences"] = owners
+	}
+	return map[string]any{
+		"apiVersion": "postgresql.cnpg.io/v1",
+		"kind":       "Backup",
+		"metadata":   newMeta,
+		"spec":       stuck["spec"],
+	}
 }
 
 func archivingWorks(cluster map[string]any) bool {
@@ -201,4 +228,23 @@ func kubectlStderr(err error) string {
 		return ": " + strings.TrimSpace(string(exitErr.Stderr))
 	}
 	return ""
+}
+
+func (k managedServicesKubectl) CreateCNPGBackup(ctx context.Context, backup map[string]any) error {
+	body, err := json.Marshal(backup)
+	if err != nil {
+		return err
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	args := append(k.kubectlArgs(), "--request-timeout=20s", "create", "--field-manager=kube-dc-cli", "-f", "-")
+	cmd := exec.CommandContext(callCtx, "kubectl", args...)
+	cmd.Stdin = strings.NewReader(string(body))
+	if output, err := cmd.CombinedOutput(); err != nil {
+		if strings.Contains(string(output), "AlreadyExists") {
+			return nil // a previous run already replaced it
+		}
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }

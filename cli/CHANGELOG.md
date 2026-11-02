@@ -1,5 +1,9 @@
 # kube-dc CLI changelog
 
+## v0.9.13-rc.8 — 2026-11-02
+
+- When finalization clears a platform database backup stuck in `walArchivingFailing` (on a fresh installation this is the database's first backup), it starts a replacement backup with the same settings, so the database has a base backup now instead of after its next daily run.
+
 ## v0.9.13-rc.7 — 2026-11-02
 
 Fixes from the second ten-host rehearsal's finalization (rc.6).

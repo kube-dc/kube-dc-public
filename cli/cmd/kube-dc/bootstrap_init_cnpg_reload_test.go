@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,8 @@ type fakeCNPGReloader struct {
 	backups   map[string][]map[string]any
 	annotated []string
 	deleted   []string
+	created   []map[string]any
+	createErr error
 	// afterReload replaces the cluster list once a reload was requested.
 	afterReload []map[string]any
 }
@@ -38,11 +41,20 @@ func (f *fakeCNPGReloader) DeleteCNPGBackup(_ context.Context, ns, name string) 
 	return nil
 }
 
+func (f *fakeCNPGReloader) CreateCNPGBackup(_ context.Context, b map[string]any) error {
+	if f.createErr != nil {
+		return f.createErr
+	}
+	f.created = append(f.created, b)
+	return nil
+}
+
 func cnpgBackup(cluster, name, phase string) map[string]any {
 	return map[string]any{
-		"metadata": map[string]any{"name": name},
-		"spec":     map[string]any{"cluster": map[string]any{"name": cluster}},
-		"status":   map[string]any{"phase": phase},
+		"metadata": map[string]any{"name": name, "namespace": "ns-of-" + cluster,
+			"ownerReferences": []any{map[string]any{"kind": "ScheduledBackup", "name": cluster + "-daily"}}},
+		"spec":   map[string]any{"cluster": map[string]any{"name": cluster}},
+		"status": map[string]any{"phase": phase},
 	}
 }
 
@@ -107,6 +119,19 @@ func TestReloadStalledPlatformArchiving(t *testing.T) {
 	if !strings.Contains(out.String(), "keycloak/keycloak-db") {
 		t.Fatalf("output %q", out.String())
 	}
+	// Each removed Backup is replaced with the same spec and owner, so the
+	// cluster gets a base backup now rather than at its next daily run.
+	if len(f.created) != 2 {
+		t.Fatalf("created %v", f.created)
+	}
+	for _, b := range f.created {
+		meta := b["metadata"].(map[string]any)
+		spec := b["spec"].(map[string]any)
+		if !strings.HasSuffix(meta["name"].(string), "-retry") || meta["ownerReferences"] == nil ||
+			spec["cluster"].(map[string]any)["name"] == "" || b["kind"] != "Backup" {
+			t.Fatalf("replacement %v", b)
+		}
+	}
 }
 
 // A reload that does not fix archiving gives up after the wait and keeps the
@@ -124,6 +149,22 @@ func TestReloadStalledPlatformArchivingGivesUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(f.deleted) != 0 || !strings.Contains(out.String(), "did not recover") {
+		t.Fatalf("deleted %v output %q", f.deleted, out.String())
+	}
+}
+
+// A failed replacement keeps the stuck Backup, so the next run retries it.
+func TestReloadStalledPlatformArchivingKeepsStuckBackupWhenReplaceFails(t *testing.T) {
+	f := &fakeCNPGReloader{
+		clusters:  []map[string]any{cnpgCluster("keycloak", "keycloak-db", "True", "")},
+		backups:   map[string][]map[string]any{"keycloak": {cnpgBackup("keycloak-db", "b", "walArchivingFailing")}},
+		createErr: errors.New("request timed out"),
+	}
+	var out bytes.Buffer
+	if err := reloadStalledPlatformArchiving(context.Background(), &out, f, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.deleted) != 0 || !strings.Contains(out.String(), "request timed out") {
 		t.Fatalf("deleted %v output %q", f.deleted, out.String())
 	}
 }
