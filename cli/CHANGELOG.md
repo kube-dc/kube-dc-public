@@ -1,5 +1,13 @@
 # kube-dc CLI changelog
 
+## v0.9.13-rc.7 — 2026-11-02
+
+Fixes from the second ten-host rehearsal's finalization (rc.6).
+
+- Finalization waits for what it talks to: the front-door layer and, where one exists, the Keycloak HelmRelease. Installations running Keycloak 26 as a plain Deployment no longer wait out the whole budget.
+- Re-running `bootstrap init` completes an OpenBao initialization that stopped after committing its shares, and the generate-root ceremony survives a lost Kubernetes exec response instead of abandoning a share that landed.
+- Platform databases whose WAL archiving started before their bucket credentials existed are reloaded during finalization, and the backups that failure left stuck are cleared so the daily base backups run.
+
 ## v0.9.13-rc.6 — 2026-11-02
 
 Fixes from the second ten-host rehearsal (rc.5).

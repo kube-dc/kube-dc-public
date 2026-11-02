@@ -149,8 +149,9 @@ func (c *Client) WatchKustomizations(ctx context.Context) (<-chan ports.Kustomiz
 	go func() {
 		defer close(out)
 		// Kustomizations we care about live in flux-system.
-		c.watchLoop(ctx, kustomizationGVR, fluxSystemNamespace, func(u *unstructured.Unstructured) bool {
+		c.watchLoop(ctx, kustomizationGVR, fluxSystemNamespace, func(u *unstructured.Unstructured, deleted bool) bool {
 			ev := kustomizationFromUnstructured(u)
+			ev.Deleted = deleted
 			select {
 			case out <- ev:
 				return true
@@ -172,8 +173,9 @@ func (c *Client) WatchHelmReleases(ctx context.Context) (<-chan ports.HelmReleas
 		// flux-system). Watch ALL namespaces ("") or the reconcile tally
 		// reports 0 HelmReleases while the platform is full of Ready ones
 		// (kube-dc E2E 2026-07-08: showed "0/0" with 7 HRs Ready).
-		c.watchLoop(ctx, helmReleaseGVR, metav1.NamespaceAll, func(u *unstructured.Unstructured) bool {
+		c.watchLoop(ctx, helmReleaseGVR, metav1.NamespaceAll, func(u *unstructured.Unstructured, deleted bool) bool {
 			ev := helmReleaseFromUnstructured(u)
+			ev.Deleted = deleted
 			select {
 			case out <- ev:
 				return true
@@ -237,7 +239,7 @@ func gvrForKind(kind string) (schema.GroupVersionResource, error) {
 // errors. emit is invoked for every successful unstructured event;
 // returning false from emit signals "consumer is gone / ctx done"
 // and unwinds the loop without further reconnects.
-func (c *Client) watchLoop(ctx context.Context, gvr schema.GroupVersionResource, namespace string, emit func(*unstructured.Unstructured) bool) {
+func (c *Client) watchLoop(ctx context.Context, gvr schema.GroupVersionResource, namespace string, emit func(u *unstructured.Unstructured, deleted bool) bool) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -263,7 +265,7 @@ func (c *Client) watchLoop(ctx context.Context, gvr schema.GroupVersionResource,
 			}
 		}
 		for i := range list.Items {
-			if !emit(&list.Items[i]) {
+			if !emit(&list.Items[i], false) {
 				return
 			}
 		}
@@ -287,7 +289,7 @@ func (c *Client) watchLoop(ctx context.Context, gvr schema.GroupVersionResource,
 // consume returns false when the consumer signalled "no more events"
 // (ctx done while sending). true means the watch ended naturally and
 // the loop should reconnect.
-func (c *Client) consume(ctx context.Context, w watch.Interface, emit func(*unstructured.Unstructured) bool) bool {
+func (c *Client) consume(ctx context.Context, w watch.Interface, emit func(u *unstructured.Unstructured, deleted bool) bool) bool {
 	defer w.Stop()
 	for {
 		select {
@@ -301,7 +303,7 @@ func (c *Client) consume(ctx context.Context, w watch.Interface, emit func(*unst
 			if !ok {
 				continue
 			}
-			if !emit(u) {
+			if !emit(u, ev.Type == watch.Deleted) {
 				return false
 			}
 		}

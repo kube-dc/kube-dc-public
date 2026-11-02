@@ -94,6 +94,7 @@ type KustomizationEvent struct {
 	Revision    string    // applied revision (commit SHA-ish)
 	LastApplied time.Time // last successful apply
 	LastAttempt time.Time // last reconcile attempt
+	Deleted     bool      // the object was deleted; the other fields are its last state
 }
 
 // HelmReleaseEvent is the same shape for HelmReleases. The dependsOn
@@ -111,4 +112,5 @@ type HelmReleaseEvent struct {
 	ChartVersion string
 	LastApplied  time.Time
 	LastAttempt  time.Time
+	Deleted      bool // the object was deleted; the other fields are its last state
 }

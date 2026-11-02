@@ -26,14 +26,17 @@ var (
 	// than 20 minutes on a ten-node site; finalization runs either way.
 	reconcileBudget      = 45 * time.Minute
 	reconcileReportEvery = 15 * time.Second
+	// reconcileSettle confirms a passing convergence gate (see the loop).
+	reconcileSettle = 2 * time.Second
 	// reconcileTarget is the flux-system Kustomization whose Ready
 	// condition means the platform has converged (it dependsOn the
 	// infra layers + health-checks the platform HelmReleases).
 	reconcileTarget = "platform"
-	// finalizeHelmReleases must be Ready before finalization talks to them.
-	// Not openbao: it is Ready only after finalization initializes and
-	// unseals it; that step waits for its Pod instead.
-	finalizeHelmReleases = []string{"keycloak/keycloak"}
+	// finalizeHelmReleasesIfPresent must be Ready before finalization talks
+	// to them, on installations that have them: Keycloak 26 runs as a plain
+	// Deployment and has no HelmRelease. Not openbao: it is Ready only after
+	// finalization initializes and unseals it; that step waits for its Pod.
+	finalizeHelmReleasesIfPresent = []string{"keycloak/keycloak"}
 	// finalizeKustomizationsIfPresent gate finalization only on installations
 	// that have them: addons-config serves the MetalLB front-door VIP.
 	finalizeKustomizationsIfPresent = []string{"addons-config"}
@@ -168,11 +171,16 @@ func watchReconcileTargets(ctx context.Context, out io.Writer, flux fluxWatcher,
 		if !ks[reconcileTarget] {
 			return false
 		}
+		// Every installation has HelmReleases: none seen means their list has
+		// not arrived yet, so an if-present target cannot be judged absent.
+		if len(hr) == 0 {
+			return false
+		}
 		// A layer without health checks is Ready once applied, before its
 		// HelmReleases run. Finalization talks to Keycloak through the front
 		// door, so wait for those (OpenBao is Ready only after finalization).
-		for _, name := range finalizeHelmReleases {
-			if !hr[name] {
+		for _, name := range finalizeHelmReleasesIfPresent {
+			if ready, seen := hr[name]; seen && !ready {
 				return false
 			}
 		}
@@ -189,6 +197,15 @@ func watchReconcileTargets(ctx context.Context, out io.Writer, flux fluxWatcher,
 		return true
 	}
 
+	// The two watches deliver their initial lists concurrently, and the
+	// if-present targets count only once seen, so a passing gate is confirmed
+	// after reconcileSettle before it is believed.
+	var settle <-chan time.Time
+	armSettle := func() {
+		if settle == nil && converged() {
+			settle = time.After(reconcileSettle)
+		}
+	}
 	for {
 		select {
 		case <-wctx.Done():
@@ -202,15 +219,17 @@ func watchReconcileTargets(ctx context.Context, out io.Writer, flux fluxWatcher,
 				}
 				continue
 			}
+			if ev.Deleted {
+				delete(ks, ev.Name)
+				armSettle()
+				continue
+			}
 			ks[ev.Name] = ev.Ready
 			if ev.Ready && onReady != nil {
 				onReady(ev.Name)
 			}
 			report()
-			if converged() {
-				fmt.Fprintf(out, "[reconcile] platform converged — %q Kustomization Ready\n", reconcileTarget)
-				return nil
-			}
+			armSettle()
 		case ev, ok := <-hrCh:
 			if !ok {
 				hrCh = nil
@@ -219,22 +238,30 @@ func watchReconcileTargets(ctx context.Context, out io.Writer, flux fluxWatcher,
 				}
 				continue
 			}
-			hr[ev.Namespace+"/"+ev.Name] = ev.Ready
+			if ev.Deleted {
+				delete(hr, ev.Namespace+"/"+ev.Name)
+			} else {
+				hr[ev.Namespace+"/"+ev.Name] = ev.Ready
+			}
+			armSettle()
+		case <-settle:
+			settle = nil
 			if converged() {
 				report()
-				fmt.Fprintf(out, "[reconcile] platform converged — %q Kustomization and %s Ready\n", reconcileTarget, strings.Join(finalizeHelmReleases, ", "))
+				fmt.Fprintf(out, "[reconcile] platform converged — %q Kustomization and the finalize targets Ready\n", reconcileTarget)
 				return nil
 			}
 		case <-ticker.C:
 			report()
+			if settle != nil {
+				continue // converging: a stall check must not fail it now
+			}
 			for _, check := range stallCheck {
 				if err := check(wctx); err != nil {
 					return err
 				}
 			}
-			if converged() {
-				return nil
-			}
+			armSettle()
 		}
 	}
 }

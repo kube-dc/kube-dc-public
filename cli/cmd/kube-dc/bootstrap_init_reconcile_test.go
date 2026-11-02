@@ -83,6 +83,9 @@ func (f fakeAnno) GetServiceAnnotation(_ context.Context, _, _, key string) (str
 
 // --- reconcile watch ---
 
+// Buffered fake events are all consumed well within this settle.
+func init() { reconcileSettle = 20 * time.Millisecond }
+
 func TestWatchReconcile_ConvergesOnPlatformReady(t *testing.T) {
 	f := &fakeFlux{
 		ks: make(chan ports.KustomizationEvent, 8),
@@ -128,8 +131,8 @@ func readyFinalizeTargets(f *fakeFlux) {
 func TestWatchReconcile_WaitsForFinalizeTargets(t *testing.T) {
 	for name, feed := range map[string]func(*fakeFlux){
 		"keycloak unready": func(f *fakeFlux) {
-			f.ks <- ports.KustomizationEvent{Name: "platform", Ready: true}
 			f.hr <- ports.HelmReleaseEvent{Namespace: "keycloak", Name: "keycloak", Ready: false}
+			f.ks <- ports.KustomizationEvent{Name: "platform", Ready: true}
 		},
 		"front door unready": func(f *fakeFlux) {
 			// The watch lists every Kustomization before Keycloak is Ready;
@@ -154,6 +157,52 @@ func TestWatchReconcile_WaitsForFinalizeTargets(t *testing.T) {
 	readyFinalizeTargets(f)
 	if err := watchReconcile(context.Background(), io.Discard, f, time.Second); err != nil {
 		t.Fatalf("an unrelated HelmRelease held convergence: %v", err)
+	}
+	// Keycloak 26 runs as a Deployment: no keycloak HelmRelease exists.
+	f = &fakeFlux{ks: make(chan ports.KustomizationEvent, 4), hr: make(chan ports.HelmReleaseEvent, 4)}
+	f.hr <- ports.HelmReleaseEvent{Namespace: "kube-system", Name: "kube-ovn", Ready: true}
+	f.ks <- ports.KustomizationEvent{Name: "addons-config", Ready: true}
+	f.ks <- ports.KustomizationEvent{Name: "platform", Ready: true}
+	if err := watchReconcile(context.Background(), io.Discard, f, time.Second); err != nil {
+		t.Fatalf("an installation without a keycloak HelmRelease never converged: %v", err)
+	}
+}
+
+// No HelmRelease seen yet means their list has not arrived: an if-present
+// target cannot be judged absent. A deleted unready HelmRelease stops counting.
+func TestWatchReconcile_HelmReleaseListAndDeletion(t *testing.T) {
+	f := &fakeFlux{ks: make(chan ports.KustomizationEvent, 2), hr: make(chan ports.HelmReleaseEvent, 4)}
+	f.ks <- ports.KustomizationEvent{Name: "platform", Ready: true}
+	if err := watchReconcile(context.Background(), io.Discard, f, 100*time.Millisecond); err == nil {
+		t.Fatal("converged before any HelmRelease was listed")
+	}
+	f = &fakeFlux{ks: make(chan ports.KustomizationEvent, 2), hr: make(chan ports.HelmReleaseEvent, 4)}
+	f.hr <- ports.HelmReleaseEvent{Namespace: "kube-system", Name: "kube-ovn", Ready: true}
+	f.hr <- ports.HelmReleaseEvent{Namespace: "keycloak", Name: "keycloak", Ready: false}
+	f.hr <- ports.HelmReleaseEvent{Namespace: "keycloak", Name: "keycloak", Deleted: true}
+	f.ks <- ports.KustomizationEvent{Name: "platform", Ready: true}
+	if err := watchReconcile(context.Background(), io.Discard, f, time.Second); err != nil {
+		t.Fatalf("a deleted HelmRelease held convergence: %v", err)
+	}
+}
+
+// A gate that passes, fails during the settle and passes again converges
+// only after the second pass.
+func TestWatchReconcile_SettleRearms(t *testing.T) {
+	f := &fakeFlux{ks: make(chan ports.KustomizationEvent, 4), hr: make(chan ports.HelmReleaseEvent, 4)}
+	f.hr <- ports.HelmReleaseEvent{Namespace: "kube-system", Name: "kube-ovn", Ready: true}
+	f.ks <- ports.KustomizationEvent{Name: "platform", Ready: true}
+	go func() {
+		f.ks <- ports.KustomizationEvent{Name: "platform", Ready: false}
+		time.Sleep(60 * time.Millisecond)
+		f.ks <- ports.KustomizationEvent{Name: "platform", Ready: true}
+	}()
+	start := time.Now()
+	if err := watchReconcile(context.Background(), io.Discard, f, 2*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(start) < 60*time.Millisecond {
+		t.Fatal("converged during the failed settle")
 	}
 }
 

@@ -298,6 +298,13 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 		}
 	}
 
+	// Platform databases that started before their bucket credentials existed.
+	if reloader, err := pinnedManagedServicesKubectl(ctx, kubeconfig); err != nil {
+		fmt.Fprintf(out, "[finalize] platform database archiving check skipped: %v\n", err)
+	} else if err := reloadStalledPlatformArchiving(ctx, out, reloader, time.Now()); err != nil {
+		fmt.Fprintf(out, "[finalize] platform database archiving check failed: %v\n", err)
+	}
+
 	// --- Access summary (Feature: admin access + keycloak password +
 	// SSO). Two outputs:
 	//   1. A redaction-safe block (URLs + kubectl retrieval hint, NO
