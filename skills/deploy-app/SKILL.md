@@ -24,6 +24,17 @@ writing the manifests below:
   hostname gets its certificate within 1 to 3 minutes.
 - `restart` and `rollback` (to the previous revision by default) change a
   running app: ask the user first.
+- Instant rollback: `deploy_app` with `warmPrevious` (for example `1h`, at
+  most `24h`; `off` removes it) keeps the previous version running as
+  `{app}-previous` after each rollout. `rollback` then switches traffic to it
+  in about a second and reports `instant: true`; when the copy is not ready it
+  starts new pods as before (`instant: false`). `rollout_status` shows the
+  copy (`warmPrevious`) and where traffic is. Tell the user the copy is billed
+  like the app's pods (one replica during the window), and that a rollback
+  does not undo database migrations: use expand/contract (add the new column
+  first, remove the old one a release later, after the window). The old
+  version gets `KUBE_DC_WARM=1` and should skip background work (cron,
+  queue consumers) while it is set. Not for previews.
 - Previews: `deploy_app` with `previewHours` (for example a pull request's
   copy, named `{app}-pr-{number}`) is removed that long after its last
   deploy. The platform warns two hours before; `extend_preview` adds hours.
@@ -319,7 +330,10 @@ an active check is required.
 ## Safety
 
 - Keep credentials in Secrets and never print them.
-- Keep resource requests below quota with rollout headroom.
+- Keep resource requests below quota with rollout headroom (a warm previous
+  version takes one more replica of quota during its window).
+- Ship schema changes expand/contract so the previous version can still run
+  after a rollback.
 - Default to internal access, then add only the exposure the caller needs.
 - Confirm PVC retention before uninstalling a Helm release; Helm commonly
   leaves claims behind.
