@@ -159,6 +159,7 @@ var denyImportExact = map[string]bool{
 	"EXT_NET_NAME":                        true, "EXT_NET_TYPE": true, "EXT_NET_CIDR": true,
 	"EXT_NET_NODE_EGRESS_ENABLED": true,
 	"EXT_NET_GATEWAY":             true, "EXT_NET_EXCLUDE_IPS": true,
+	ExtraExcludeKey: true,
 	// The management SNAT address is THIS cluster's router-port address; a
 	// sibling's would be adopted by kube-ovn and silently collide.
 	"EXT_NET_MGMT_SNAT_IP":    true,

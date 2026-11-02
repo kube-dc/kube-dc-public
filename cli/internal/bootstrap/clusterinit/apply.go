@@ -501,6 +501,18 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 		}
 		return cause
 	}
+	if !resuming {
+		if err := WriteProductComponents(ctx, ProductComponentOptions{
+			FleetRepo: opts.FleetRepo, ClusterName: opts.Plan.ClusterName,
+			Sets: opts.Sets, TrustedCA: opts.TrustedCA, K8s: nodeLabelsOf(opts.K8s),
+			PlannedManagers: opts.Plan.ManagerNodes, WildcardCertPEM: wildcardCertPEM(opts.WildcardTLS),
+		}, out); err != nil {
+			return abortFresh(fmt.Errorf("apply: product components: %w", err))
+		}
+	} else if strings.TrimSpace(opts.Sets[ExtraExcludeKey]) != "" {
+		fmt.Fprintf(out, "[apply] resume: %s is applied only when the overlay is created; change clusters/%s/%s by hand\n",
+			ExtraExcludeKey, opts.Plan.ClusterName, extNetExcludesDir)
+	}
 	if len(opts.SiteComponents) > 0 {
 		if err := WriteSiteComponents(opts.FleetRepo, opts.Plan.ClusterName, opts.SiteComponents, out); err != nil {
 			return abortFresh(fmt.Errorf("apply: %w", err))

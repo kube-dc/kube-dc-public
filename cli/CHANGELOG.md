@@ -1,5 +1,14 @@
 # kube-dc CLI changelog
 
+## v0.9.14-rc.1 — 2026-11-02
+
+A new installation needs no hand-written Kustomize overrides for what a bare-metal, private-CA installation previously had to add. `bootstrap init` derives it from inputs it already has and prints each decision; existing installations are never changed, because a resumed run does not add any of this.
+
+- Grafana's and Keycloak's PostgreSQL run on the manager nodes, one instance per node, on `local-path`, when three or more nodes carry `kube-dc-manager=true`. OpenBao's members follow when there are three or more.
+- Keycloak's PostgreSQL is archived and backed up daily like Grafana's, and the RKE2 etcd snapshot bucket is created, when Ceph object storage is installed and exposed. With operator-supplied TLS and a private CA, both databases' backups trust that CA.
+- Replicated `ceph-block` becomes the default StorageClass when VM disks are on shared RBD; `local-path` stays available by name.
+- `EXT_NET_EXTRA_EXCLUDE_IPS` reserves further addresses or ranges of the external network (comma-separated), checked against `EXT_NET_CIDR` in the plan.
+
 ## v0.9.13 — 2026-11-02
 
 Installs platform bundle 0.9.11. Same source as v0.9.13-rc.8, accepted by a clean ten-host bare-metal installation driven only by the CLI: self-managed GitLab, a private CA with operator-supplied TLS, a MetalLB VIP, ten-node Ceph with three copies and managed services. The release candidates below list every change since v0.9.12. In short:

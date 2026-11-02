@@ -727,6 +727,7 @@ func (o *InitOptions) ValidateFields() error {
 	errs = append(errs, validateMode(o.Mode)...)
 	errs = append(errs, validateFleetMode(o.FleetMode)...)
 	errs = append(errs, validateObjectStorage(o)...)
+	errs = append(errs, validateExtraExcludes(o.Sets)...)
 	errs = append(errs, validateVMStorage(o)...)
 	errs = append(errs, validateGPU(o)...)
 	errs = append(errs, validateAddons(o.Addons)...)
