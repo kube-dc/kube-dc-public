@@ -1,5 +1,12 @@
 # kube-dc CLI changelog
 
+## v0.9.14 — 2026-11-02
+
+Installs platform bundle 0.9.11. Same code as v0.9.14-rc.2, accepted by a clean ten-host bare-metal installation driven only by the CLI and the installation guide, with no hand-written overrides: `bootstrap init` exited 0 and `bootstrap accept` reported `usable`, 30 minutes from host verification to acceptance. Tenant checks passed: pod networking, a golden-image VM reachable over SSH, and managed PostgreSQL with verified TLS and a completed backup. Since v0.9.13:
+
+- `bootstrap init` derives what a bare-metal, private-CA installation used to add by hand: platform databases and OpenBao on the manager nodes, Keycloak database backups trusting the private CA, `ceph-block` as the default class with shared VM disks, and further excluded external addresses (`EXT_NET_EXTRA_EXCLUDE_IPS`). It prints each decision. Existing installations are not changed.
+- A transient API error no longer ends the convergence watch, and a watch that ends prints why and what to run.
+
 ## v0.9.14-rc.2 — 2026-11-02
 
 Fix from the fifth ten-host rehearsal (rc.1), which installed cleanly but exited with "action required for reconcile".
