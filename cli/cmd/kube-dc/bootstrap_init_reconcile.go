@@ -22,12 +22,21 @@ import (
 
 // reconcile tunables (vars so tests can shrink them).
 var (
-	reconcileBudget      = 20 * time.Minute
+	// Bare-metal Ceph, object buckets and the platform charts take longer
+	// than 20 minutes on a ten-node site; finalization runs either way.
+	reconcileBudget      = 45 * time.Minute
 	reconcileReportEvery = 15 * time.Second
 	// reconcileTarget is the flux-system Kustomization whose Ready
 	// condition means the platform has converged (it dependsOn the
 	// infra layers + health-checks the platform HelmReleases).
 	reconcileTarget = "platform"
+	// finalizeHelmReleases must be Ready before finalization talks to them.
+	// Not openbao: it is Ready only after finalization initializes and
+	// unseals it; that step waits for its Pod instead.
+	finalizeHelmReleases = []string{"keycloak/keycloak"}
+	// finalizeKustomizationsIfPresent gate finalization only on installations
+	// that have them: addons-config serves the MetalLB front-door VIP.
+	finalizeKustomizationsIfPresent = []string{"addons-config"}
 )
 
 // fluxWatcher is the narrow slice of ports.FluxClient the reconcile watch
@@ -159,6 +168,19 @@ func watchReconcileTargets(ctx context.Context, out io.Writer, flux fluxWatcher,
 		if !ks[reconcileTarget] {
 			return false
 		}
+		// A layer without health checks is Ready once applied, before its
+		// HelmReleases run. Finalization talks to Keycloak through the front
+		// door, so wait for those (OpenBao is Ready only after finalization).
+		for _, name := range finalizeHelmReleases {
+			if !hr[name] {
+				return false
+			}
+		}
+		for _, name := range finalizeKustomizationsIfPresent {
+			if ready, seen := ks[name]; seen && !ready {
+				return false
+			}
+		}
 		for _, name := range required {
 			if !ks[name] {
 				return false
@@ -198,6 +220,11 @@ func watchReconcileTargets(ctx context.Context, out io.Writer, flux fluxWatcher,
 				continue
 			}
 			hr[ev.Namespace+"/"+ev.Name] = ev.Ready
+			if converged() {
+				report()
+				fmt.Fprintf(out, "[reconcile] platform converged — %q Kustomization and %s Ready\n", reconcileTarget, strings.Join(finalizeHelmReleases, ", "))
+				return nil
+			}
 		case <-ticker.C:
 			report()
 			for _, check := range stallCheck {

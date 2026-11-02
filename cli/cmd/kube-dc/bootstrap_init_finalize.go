@@ -162,7 +162,20 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 			func() error {
 				return waitPodRunning(ctx, out, session.K8s, openBaoNamespace, openBaoPod, finalizeReadyBudget)
 			},
-			func() error { return openbao.Init(ctx, postApplyOpenBaoInitOptions(o, session, token, out)) })
+			func() error { return openbao.Init(ctx, postApplyOpenBaoInitOptions(o, session, token, out)) },
+			func() (bool, error) {
+				st, err := session.OpenBao.Status(ctx, openBaoPod)
+				return st.Initialized, err
+			},
+			func(authInstalled bool) error {
+				return openbao.ResumeCommitted(ctx, openbao.ResumeOptions{
+					Unseal: openbao.UnsealOptions{
+						ClusterName: o.Name, FleetRepo: o.Repo, SOPS: session.SOPS,
+						OpenBao: session.OpenBao, K8s: session.K8s, Out: out,
+					},
+					ControllerAuthInstalled: authInstalled,
+				})
+			})
 	})
 	if obErr != nil {
 		fmt.Fprintf(out, "[finalize] OpenBao init deferred (%v)\n", obErr)
@@ -328,7 +341,7 @@ var errOpenBaoControllerAuthMissing = errors.New("OpenBao is initialized but con
 // never be treated as a fresh cluster.
 func runOpenBaoResumeOrInit(ctx context.Context, out io.Writer, cluster string, annotations interface {
 	GetServiceAnnotation(context.Context, string, string, string) (string, error)
-}, wait, init func() error) error {
+}, wait, init func() error, liveInitialized func() (bool, error), resume func(authInstalled bool) error) error {
 	// Flux may have applied the HelmRelease before its Service and Pod exist.
 	// Wait for the exec-able Pod before inspecting markers; never interpret a
 	// missing Service or an unreadable marker as permission to initialize.
@@ -342,12 +355,22 @@ func runOpenBaoResumeOrInit(ctx context.Context, out io.Writer, cluster string, 
 	if initialized && !authInstalled {
 		return errOpenBaoControllerAuthMissing
 	}
-	if authInstalled && !initialized {
-		return fmt.Errorf("OpenBao controller auth marker exists without bootstrap marker; inspect `kube-dc bootstrap openbao status %s`", cluster)
-	}
 	if initialized {
 		fmt.Fprintln(out, "[finalize] OpenBao already initialized — skipping (resume)")
 		return nil
+	}
+	// No finalized marker. An OpenBao that reports itself initialized was
+	// initialized by an earlier run that committed its shares and stopped in
+	// Phase C (or by hand): finish from the committed shares, never re-init.
+	live, err := liveInitialized()
+	if err != nil {
+		return fmt.Errorf("read OpenBao initialization state: %w", err)
+	}
+	if live {
+		return resume(authInstalled)
+	}
+	if authInstalled {
+		return fmt.Errorf("OpenBao controller auth marker exists without bootstrap marker; inspect `kube-dc bootstrap openbao status %s`", cluster)
 	}
 	return init()
 }

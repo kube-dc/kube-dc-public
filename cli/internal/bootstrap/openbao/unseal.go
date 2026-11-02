@@ -127,6 +127,14 @@ const initFollowerWait = 10 * time.Minute
 // followerPoll is the interval between member checks while waiting.
 var followerPoll = 5 * time.Second
 
+// raftJoinWait bounds the retries of one follower's Raft join. A follower
+// that starts with the leader (parallel pod management) asks to join while
+// the just-unsealed leader is not active yet, and the leader answers
+// "failed to get raft challenge" until it is. A follower's status read is
+// retried for the same window, so one poll of the follower wait can take up
+// to twice raftJoinWait per follower beyond the follower wait itself.
+var raftJoinWait = 2 * time.Minute
+
 // unsealMembers unseals the current members, then the remaining StatefulSet
 // members as they appear: the chart's OrderedReady policy creates each
 // follower only after the previous member is Ready, which needs an unseal.
@@ -218,6 +226,10 @@ func unsealPods(ctx context.Context, client ports.OpenBaoClient, pods []string, 
 	alreadyUnsealed := 0
 	for _, pod := range pods {
 		st, err := client.Status(ctx, pod)
+		if err != nil && pod != leader {
+			// A follower started with the leader may not listen yet.
+			st, err = statusWithRetry(ctx, client, pod)
+		}
 		if err != nil {
 			return fmt.Errorf("openbao: status %s: %w", pod, err)
 		}
@@ -236,7 +248,7 @@ func unsealPods(ctx context.Context, client ports.OpenBaoClient, pods []string, 
 		// error).
 		if !st.Initialized && pod != leader {
 			fmt.Fprintf(out, "[openbao] %s uninitialized — raft-joining %s\n", pod, leaderURL)
-			if err := client.RaftJoin(ctx, pod, leaderURL); err != nil {
+			if err := raftJoinWithRetry(ctx, client, pod, leaderURL); err != nil {
 				return fmt.Errorf("openbao: raft join %s to %s: %w", pod, leaderURL, err)
 			}
 		}
@@ -254,6 +266,39 @@ func unsealPods(ctx context.Context, client ports.OpenBaoClient, pods []string, 
 	fmt.Fprintf(out, "[openbao] unseal complete — %d unsealed, %d already-unsealed (total %d pods)\n",
 		unsealed, alreadyUnsealed, len(pods))
 	return nil
+}
+
+// statusWithRetry reads a follower's status until raftJoinWait passes.
+func statusWithRetry(ctx context.Context, client ports.OpenBaoClient, pod string) (ports.BaoStatus, error) {
+	deadline := time.Now().Add(raftJoinWait)
+	for {
+		st, err := client.Status(ctx, pod)
+		if err == nil || !time.Now().Before(deadline) {
+			return st, err
+		}
+		select {
+		case <-ctx.Done():
+			return st, err
+		case <-time.After(followerPoll):
+		}
+	}
+}
+
+// raftJoinWithRetry joins pod to the leader, retrying until raftJoinWait
+// passes; the last error is returned.
+func raftJoinWithRetry(ctx context.Context, client ports.OpenBaoClient, pod, leaderURL string) error {
+	deadline := time.Now().Add(raftJoinWait)
+	for {
+		err := client.RaftJoin(ctx, pod, leaderURL)
+		if err == nil || !time.Now().Before(deadline) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(followerPoll):
+		}
+	}
 }
 
 func validateUnsealOptions(opts UnsealOptions) error {

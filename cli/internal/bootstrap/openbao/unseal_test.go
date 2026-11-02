@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
@@ -26,6 +27,11 @@ type fakeOpenBao struct {
 	statusErr   error
 	unsealErr   error
 	raftJoinErr error
+	// raftJoinFailN fails that many RaftJoin calls before the first success.
+	raftJoinFailN int
+	// statusFailN fails that many Status calls per pod before answering.
+	statusFailN int
+	statusCnt   map[string]int
 }
 
 func (b *fakeOpenBao) PodList(_ context.Context) ([]string, error) {
@@ -38,6 +44,15 @@ func (b *fakeOpenBao) Status(_ context.Context, pod string) (ports.BaoStatus, er
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.statusFailN > 0 {
+		if b.statusCnt == nil {
+			b.statusCnt = map[string]int{}
+		}
+		b.statusCnt[pod]++
+		if b.statusCnt[pod] <= b.statusFailN && pod != "openbao-0" {
+			return ports.BaoStatus{}, fmt.Errorf("dial %s:8200: connection refused", pod)
+		}
+	}
 	// Default Initialized=true to keep pre-existing tests unchanged;
 	// the F-bootstrap-2 specs set false explicitly to drive the
 	// raft-join branch.
@@ -79,6 +94,9 @@ func (b *fakeOpenBao) RaftJoin(_ context.Context, pod, _ string) error {
 		b.raftJoinCnt = map[string]int{}
 	}
 	b.raftJoinCnt[pod]++
+	if b.raftJoinCnt[pod] <= b.raftJoinFailN {
+		return fmt.Errorf("failed to join raft cluster: failed to get raft challenge")
+	}
 	if b.initialized == nil {
 		b.initialized = map[string]bool{}
 	}
@@ -275,6 +293,7 @@ func TestUnseal_AutoJoinsUninitializedFollowers(t *testing.T) {
 // RaftJoin errors must propagate (don't silently fall through to a
 // doomed unseal that would log "security barrier not initialized").
 func TestUnseal_RaftJoinErrorPropagates(t *testing.T) {
+	shortJoinRetry(t)
 	repo := setupFleet(t)
 	_ = os.WriteFile(filepath.Join(repo, "clusters", "atlantis", "secrets.enc.yaml"),
 		[]byte("stub"), 0o644)
@@ -299,6 +318,68 @@ func TestUnseal_RaftJoinErrorPropagates(t *testing.T) {
 	if bao.unsealCnt["openbao-1"] != 0 {
 		t.Errorf("openbao-1 should NOT be unsealed after join failure; got %d unseal calls",
 			bao.unsealCnt["openbao-1"])
+	}
+}
+
+func shortJoinRetry(t *testing.T) {
+	t.Helper()
+	wait, poll := raftJoinWait, followerPoll
+	raftJoinWait, followerPoll = 50*time.Millisecond, 5*time.Millisecond
+	t.Cleanup(func() { raftJoinWait, followerPoll = wait, poll })
+}
+
+// A follower started together with the leader asks to join before the
+// just-unsealed leader is active; the join is retried until it succeeds.
+func TestUnseal_RaftJoinRetriesUntilLeaderIsActive(t *testing.T) {
+	shortJoinRetry(t)
+	repo := setupFleet(t)
+	_ = os.WriteFile(filepath.Join(repo, "clusters", "atlantis", "secrets.enc.yaml"),
+		[]byte("stub"), 0o644)
+
+	sops := &fakeSOPSDecryptOnly{body: []byte(canonicalDecryptedSecrets)}
+	bao := &fakeOpenBao{
+		pods:          []string{"openbao-0", "openbao-1"},
+		sealed:        map[string]bool{"openbao-0": true, "openbao-1": true},
+		initialized:   map[string]bool{"openbao-0": true, "openbao-1": false},
+		unsealCnt:     map[string]int{},
+		raftJoinCnt:   map[string]int{},
+		raftJoinFailN: 2,
+	}
+
+	if err := Unseal(context.Background(), UnsealOptions{
+		ClusterName: "atlantis", FleetRepo: repo,
+		SOPS: sops, OpenBao: bao,
+	}); err != nil {
+		t.Fatalf("unseal: %v", err)
+	}
+	if bao.raftJoinCnt["openbao-1"] != 3 || bao.sealed["openbao-1"] {
+		t.Fatalf("join calls %d, openbao-1 sealed=%v", bao.raftJoinCnt["openbao-1"], bao.sealed["openbao-1"])
+	}
+}
+
+// A follower started with the leader may not listen yet; its status is read
+// again instead of failing the unseal.
+func TestUnseal_FollowerStatusRetriedWhileStarting(t *testing.T) {
+	shortJoinRetry(t)
+	repo := setupFleet(t)
+	_ = os.WriteFile(filepath.Join(repo, "clusters", "atlantis", "secrets.enc.yaml"),
+		[]byte("stub"), 0o644)
+	bao := &fakeOpenBao{
+		pods:        []string{"openbao-0", "openbao-1"},
+		sealed:      map[string]bool{"openbao-0": true, "openbao-1": true},
+		initialized: map[string]bool{"openbao-1": false},
+		unsealCnt:   map[string]int{},
+		raftJoinCnt: map[string]int{},
+		statusFailN: 2,
+	}
+	if err := Unseal(context.Background(), UnsealOptions{
+		ClusterName: "atlantis", FleetRepo: repo,
+		SOPS: &fakeSOPSDecryptOnly{body: []byte(canonicalDecryptedSecrets)}, OpenBao: bao,
+	}); err != nil {
+		t.Fatalf("unseal: %v", err)
+	}
+	if bao.statusCnt["openbao-1"] != 3 || bao.sealed["openbao-1"] {
+		t.Fatalf("status reads %d, openbao-1 sealed=%v", bao.statusCnt["openbao-1"], bao.sealed["openbao-1"])
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -91,6 +92,7 @@ func TestWatchReconcile_ConvergesOnPlatformReady(t *testing.T) {
 		f.hr <- ports.HelmReleaseEvent{Namespace: "kube-system", Name: "kube-ovn", Ready: true}
 		f.ks <- ports.KustomizationEvent{Name: "infra-cni", Ready: true}
 		f.ks <- ports.KustomizationEvent{Name: "platform", Ready: true}
+		readyFinalizeTargets(f)
 	}()
 	var buf bytes.Buffer
 	if err := watchReconcile(context.Background(), &buf, f, 5*time.Second); err != nil {
@@ -116,11 +118,51 @@ func TestWatchReconcile_TimesOut(t *testing.T) {
 	}
 }
 
+func readyFinalizeTargets(f *fakeFlux) {
+	f.hr <- ports.HelmReleaseEvent{Namespace: "keycloak", Name: "keycloak", Ready: true}
+}
+
+// A platform layer without health checks is Ready once applied; convergence
+// also waits for what finalization talks to: Keycloak and, where it exists,
+// the front-door layer. Other HelmReleases (OpenBao included) never hold it.
+func TestWatchReconcile_WaitsForFinalizeTargets(t *testing.T) {
+	for name, feed := range map[string]func(*fakeFlux){
+		"keycloak unready": func(f *fakeFlux) {
+			f.ks <- ports.KustomizationEvent{Name: "platform", Ready: true}
+			f.hr <- ports.HelmReleaseEvent{Namespace: "keycloak", Name: "keycloak", Ready: false}
+		},
+		"front door unready": func(f *fakeFlux) {
+			// The watch lists every Kustomization before Keycloak is Ready;
+			// the channel is FIFO, so addons-config is seen before platform.
+			f.ks <- ports.KustomizationEvent{Name: "addons-config", Ready: false}
+			f.ks <- ports.KustomizationEvent{Name: "platform", Ready: true}
+			readyFinalizeTargets(f)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := &fakeFlux{ks: make(chan ports.KustomizationEvent, 4), hr: make(chan ports.HelmReleaseEvent, 4)}
+			feed(f)
+			err := watchReconcile(context.Background(), io.Discard, f, 60*time.Millisecond)
+			if err == nil || !strings.Contains(err.Error(), "still reconciling") {
+				t.Fatalf("converged too early: %v", err)
+			}
+		})
+	}
+	f := &fakeFlux{ks: make(chan ports.KustomizationEvent, 4), hr: make(chan ports.HelmReleaseEvent, 4)}
+	f.hr <- ports.HelmReleaseEvent{Namespace: "tenant", Name: "app", Ready: false}
+	f.ks <- ports.KustomizationEvent{Name: "platform", Ready: true}
+	readyFinalizeTargets(f)
+	if err := watchReconcile(context.Background(), io.Discard, f, time.Second); err != nil {
+		t.Fatalf("an unrelated HelmRelease held convergence: %v", err)
+	}
+}
+
 func TestRunReconcileWatchWithGPU_ResumeCompletesFromReadySnapshot(t *testing.T) {
 	f := &fakeFlux{
 		ks: make(chan ports.KustomizationEvent, 8),
 		hr: make(chan ports.HelmReleaseEvent, 1),
 	}
+	readyFinalizeTargets(f)
 	// Platform arrives first: GPU-enabled convergence must still wait for the
 	// generated ownership/operator/HAMi chain instead of declaring success.
 	f.ks <- ports.KustomizationEvent{Name: "platform", Ready: true}
@@ -320,8 +362,11 @@ func TestRunOpenBaoResumeOrInitFailClosed(t *testing.T) {
 	tests := []struct {
 		name              string
 		state             fakeAnno
+		live              bool
+		liveErr           error
 		wantErr           bool
 		wantWait, wantRun int
+		wantResume        string
 	}{
 		{name: "fresh", state: fakeAnno{}, wantWait: 1, wantRun: 1},
 		{name: "complete", state: fakeAnno{bootstrap: "done", auth: "done"}, wantWait: 1},
@@ -329,19 +374,28 @@ func TestRunOpenBaoResumeOrInitFailClosed(t *testing.T) {
 		{name: "inconsistent", state: fakeAnno{auth: "done"}, wantErr: true, wantWait: 1},
 		{name: "unreadable", state: fakeAnno{err: context.DeadlineExceeded}, wantErr: true, wantWait: 1},
 		{name: "forbidden", state: fakeAnno{err: errors.New("Forbidden")}, wantErr: true, wantWait: 1},
+		{name: "committed, phase C stopped", state: fakeAnno{}, live: true, wantWait: 1, wantResume: "auth=false"},
+		{name: "committed, auth by hand", state: fakeAnno{auth: "done"}, live: true, wantWait: 1, wantResume: "auth=true"},
+		{name: "live state unreadable", state: fakeAnno{}, liveErr: context.DeadlineExceeded, wantErr: true, wantWait: 1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			waits, runs := 0, 0
+			waits, runs, resumed := 0, 0, ""
 			var out bytes.Buffer
 			err := runOpenBaoResumeOrInit(context.Background(), &out, "example", tc.state,
-				func() error { waits++; return nil }, func() error { runs++; return nil })
-			if (err != nil) != tc.wantErr || waits != tc.wantWait || runs != tc.wantRun {
-				t.Fatalf("err=%v waits=%d init runs=%d; want err=%v waits=%d runs=%d", err, waits, runs, tc.wantErr, tc.wantWait, tc.wantRun)
+				func() error { waits++; return nil }, func() error { runs++; return nil },
+				func() (bool, error) { return tc.live, tc.liveErr },
+				func(auth bool) error { resumed = fmt.Sprintf("auth=%t", auth); return nil })
+			if (err != nil) != tc.wantErr || waits != tc.wantWait || runs != tc.wantRun || resumed != tc.wantResume {
+				t.Fatalf("err=%v waits=%d init runs=%d resumed=%q; want err=%v waits=%d runs=%d resumed=%q",
+					err, waits, runs, resumed, tc.wantErr, tc.wantWait, tc.wantRun, tc.wantResume)
 			}
 		})
 	}
 }
+
+func notInitialized() (bool, error) { return false, nil }
+func noResume(bool) error           { return errors.New("unexpected resume") }
 
 func TestOpenBaoResumeReadsMarkersAfterDeployment(t *testing.T) {
 	state := fakeAnno{err: errors.New("service not found")}
@@ -350,7 +404,7 @@ func TestOpenBaoResumeReadsMarkersAfterDeployment(t *testing.T) {
 		func() error {
 			state = fakeAnno{bootstrap: "done", auth: "done"}
 			return nil
-		}, func() error { runs++; return nil })
+		}, func() error { runs++; return nil }, notInitialized, noResume)
 	if err != nil || runs != 0 {
 		t.Fatalf("deployed finalized service must resume without initializing: err=%v runs=%d", err, runs)
 	}
@@ -359,7 +413,7 @@ func TestOpenBaoResumeReadsMarkersAfterDeployment(t *testing.T) {
 func TestOpenBaoResumeWaitFailureDoesNotInitialize(t *testing.T) {
 	runs := 0
 	err := runOpenBaoResumeOrInit(context.Background(), io.Discard, "example", fakeAnno{},
-		func() error { return context.DeadlineExceeded }, func() error { runs++; return nil })
+		func() error { return context.DeadlineExceeded }, func() error { runs++; return nil }, notInitialized, noResume)
 	if !errors.Is(err, context.DeadlineExceeded) || runs != 0 {
 		t.Fatalf("wait failure must stop initialization: err=%v runs=%d", err, runs)
 	}

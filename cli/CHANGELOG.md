@@ -1,5 +1,13 @@
 # kube-dc CLI changelog
 
+## v0.9.13-rc.6 — 2026-11-02
+
+Fixes from the second ten-host rehearsal (rc.5).
+
+- `bootstrap init` starts finalization only when the platform's HelmReleases are Ready, not as soon as the platform layer is applied, so Keycloak setup no longer runs out of time while Ceph and the VIP are still coming up. It waits up to 45 minutes and finalizes either way.
+- OpenBao members that start together with the leader join it reliably: the Raft join is retried while the new leader becomes active.
+- Re-running `bootstrap init` after OpenBao init committed its shares but stopped before finishing no longer tries to initialize again: it unseals every member from the committed shares, installs controller auth with a single-use root token that it revokes, and marks OpenBao finalized.
+
 ## v0.9.13-rc.5 — 2026-11-02
 
 Fixes from the first full run of rc.4 on the ten-host rehearsal.
