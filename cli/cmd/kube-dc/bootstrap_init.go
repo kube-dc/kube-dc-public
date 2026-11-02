@@ -1555,7 +1555,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 			// A MetalLB VIP is bound to no node until MetalLB announces it,
 			// so "not bound locally" is not NAT there. Treating it as NAT
 			// replaced the VIP with one node's address and dropped the
-			// 6443 passthrough listener (CloudFerro rehearsal, 2026-10-31).
+			// 6443 passthrough listener (found in a 2026-10-31 installation rehearsal).
 			if layer := o.IngressAddressLayer; layer == clusterinit.AddressLayerMetalLBL2 || layer == clusterinit.AddressLayerMetalLBBGP {
 				fmt.Fprintf(out, "[apply] NAT-topology probe skipped: %s is a %s VIP owned by MetalLB\n", o.NodeExternalIP, layer)
 				return nil
@@ -1679,15 +1679,16 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 				// and only while this cluster runs its Ceph cluster: a rebuilt
 				// cluster with a kept overlay must not adopt stale OSDs from an
 				// earlier Ceph cluster.
-				resumingOverlay := false
+				overlaySelects, cephRunning := false, false
 				envPath := filepath.Join(o.Repo, "clusters", o.Name, "cluster-config.env")
 				if _, statErr := os.Stat(envPath); statErr == nil {
 					if err := clusterinit.RequireUnchangedRawOSDSelection(envPath, o.ObjectStorage()); err != nil {
 						return err
 					}
+					overlaySelects = true
 					if session != nil && session.K8s != nil {
 						fsid, ferr := session.K8s.GetResourceFieldFirst(ctx, "ceph.rook.io", "v1", "cephclusters", "rook-ceph", "rook-ceph", "status.ceph.fsid")
-						resumingOverlay = ferr == nil && fsid != ""
+						cephRunning = ferr == nil && fsid != ""
 					}
 				}
 				for _, nd := range rawDevs {
@@ -1706,7 +1707,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 					if perr != nil {
 						return fmt.Errorf("OSD device check failed for %s on %s: %w", dev, node, perr)
 					}
-					if err := clusterinit.RequireEmptyStorageDevice(res, resumingOverlay); err != nil {
+					if err := clusterinit.RequireEmptyStorageDevice(res, overlaySelects, cephRunning); err != nil {
 						return err
 					}
 					if res.State == clusterinit.StorageDevCeph {
@@ -1883,7 +1884,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		Provider:    o.Provider,
 		GitHubOwner: o.GitHubOwner,
 		GitHubRepo:  o.GitHubRepo,
-		GitHost:     fleetRemoteHost(o.Repo),
+		GitHost:     fleetRemoteWebHost(o.Repo),
 		// Validated with the other options.
 		SiteComponents: siteComponents(o),
 		NoPush:         o.NoPush,
@@ -2114,6 +2115,25 @@ func fleetRemoteHost(repo string) string {
 		return ""
 	}
 	return strings.ToLower(host)
+}
+
+// fleetRemoteWebHost is fleetRemoteHost with an HTTPS remote's port kept:
+// Flux's GitLab bootstrap reaches the API on it. An SSH port is not the API's,
+// and credential lookups keep using the bare host glab and gh store tokens under.
+func fleetRemoteWebHost(repo string) string {
+	host := fleetRemoteHost(repo)
+	if host == "" {
+		return ""
+	}
+	raw, err := exec.Command("git", "-C", repo, "remote", "get-url", "--push", "origin").Output()
+	if err != nil {
+		return host
+	}
+	u, err := url.Parse(strings.TrimSpace(string(raw)))
+	if err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Port() != "" {
+		return host + ":" + u.Port()
+	}
+	return host
 }
 
 // fleetRemoteIsSSH reports whether the Fleet pushes over SSH, where the git

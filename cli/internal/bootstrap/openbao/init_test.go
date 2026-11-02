@@ -1042,7 +1042,7 @@ func TestInit_UnsealStdinTransport_VerifyShareValues(t *testing.T) {
 }
 
 // A fresh HA install must leave no member sealed: followers join Raft and
-// receive the same threshold shares (CloudFerro rehearsal, 2026-10-31).
+// receive the same threshold shares (found in a 2026-10-31 installation rehearsal).
 func TestInit_UnsealsEveryHAMember(t *testing.T) {
 	repo := setupFleet(t)
 	runner := &fakeRunner{fireSentinel: true, sentinelPayload: []byte(canonicalShareJSON)}

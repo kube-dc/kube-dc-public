@@ -344,7 +344,7 @@ func patchPlatformPAYGRole(entry string) func([]string) ([]string, bool, error) 
 		}
 		if patchesAt >= 0 {
 			for _, l := range lines[patchesAt+1 : end] {
-				if strings.TrimSpace(l) == "" {
+				if t := strings.TrimSpace(l); t == "" || strings.HasPrefix(t, "#") {
 					continue
 				}
 				// A sequence may sit at its key's indentation ("  - ").

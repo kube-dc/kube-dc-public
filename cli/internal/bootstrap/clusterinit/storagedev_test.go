@@ -118,11 +118,11 @@ func TestProbeStorageDevice_NilSSHErrors(t *testing.T) {
 
 func TestRawOSDApplyGateRejectsEveryUnconfirmedState(t *testing.T) {
 	for _, state := range []StorageDeviceState{StorageDevMissing, StorageDevInUse, StorageDevUnknown, StorageDevCeph, ""} {
-		if err := RequireEmptyStorageDevice(StorageDeviceResult{Node: "node-1", Device: "sdb", State: state}, false); err == nil {
+		if err := RequireEmptyStorageDevice(StorageDeviceResult{Node: "node-1", Device: "sdb", State: state}, false, false); err == nil {
 			t.Fatalf("apply accepted %q disk", state)
 		}
 	}
-	if err := RequireEmptyStorageDevice(StorageDeviceResult{Node: "node-1", Device: "sdb", State: StorageDevEmpty}, false); err != nil {
+	if err := RequireEmptyStorageDevice(StorageDeviceResult{Node: "node-1", Device: "sdb", State: StorageDevEmpty}, false, false); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -130,14 +130,27 @@ func TestRawOSDApplyGateRejectsEveryUnconfirmedState(t *testing.T) {
 // Resuming the overlay that selected a device accepts its Ceph OSD, and only that.
 func TestRawOSDApplyGateResumeAcceptsOnlyCephOSD(t *testing.T) {
 	for _, state := range []StorageDeviceState{StorageDevMissing, StorageDevInUse, StorageDevUnknown, ""} {
-		if err := RequireEmptyStorageDevice(StorageDeviceResult{Node: "node-1", Device: "sdb", State: state}, true); err == nil {
+		if err := RequireEmptyStorageDevice(StorageDeviceResult{Node: "node-1", Device: "sdb", State: state}, true, true); err == nil {
 			t.Fatalf("resume accepted %q disk", state)
 		}
 	}
 	for _, state := range []StorageDeviceState{StorageDevEmpty, StorageDevCeph} {
-		if err := RequireEmptyStorageDevice(StorageDeviceResult{Node: "node-1", Device: "sdb", State: state}, true); err != nil {
+		if err := RequireEmptyStorageDevice(StorageDeviceResult{Node: "node-1", Device: "sdb", State: state}, true, true); err != nil {
 			t.Fatalf("resume refused %q disk: %v", state, err)
 		}
+	}
+}
+
+// An overlay without a running Ceph cluster refuses the OSD without telling
+// the operator to zero it; only a disk no overlay selects gets that advice.
+func TestRawOSDApplyGateCephWithoutFSIDIsNeutral(t *testing.T) {
+	res := StorageDeviceResult{Node: "node-1", Device: "sdb", State: StorageDevCeph}
+	err := RequireEmptyStorageDevice(res, true, false)
+	if err == nil || strings.Contains(err.Error(), "Zero its BlueStore labels") || !strings.Contains(err.Error(), "status.ceph.fsid") {
+		t.Fatalf("overlay without fsid: %v", err)
+	}
+	if err := RequireEmptyStorageDevice(res, false, true); err == nil || !strings.Contains(err.Error(), "Zero its BlueStore labels") {
+		t.Fatalf("no overlay: %v", err)
 	}
 }
 

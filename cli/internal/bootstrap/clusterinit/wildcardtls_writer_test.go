@@ -190,7 +190,8 @@ func TestWriteWildcardTLS_HandEditedPatchesRefused(t *testing.T) {
 	fleet := tlsFleet(t)
 	clusterDir := filepath.Join(fleet, "clusters", "c1")
 	plat, _ := os.ReadFile(filepath.Join(clusterDir, "platform.yaml"))
-	edited := string(plat) + "  patches:\n    - target:\n        kind: HelmRelease\n        name: hand-edit\n      patch: |\n        {}\n"
+	// A patches list that is not spec's last key cannot take appended entries.
+	edited := string(plat) + "  patches:\n    - target:\n        kind: HelmRelease\n        name: hand-edit\n      patch: |\n        {}\n  wait: true\n"
 	if err := os.WriteFile(filepath.Join(clusterDir, "platform.yaml"), []byte(edited), 0o644); err != nil {
 		t.Fatal(err)
 	}

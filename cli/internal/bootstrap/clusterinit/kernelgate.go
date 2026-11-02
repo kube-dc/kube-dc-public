@@ -31,7 +31,7 @@ type CephKernelGateOptions struct {
 // kernel older than 7.0. New overlays select AES256K CephX keys, which every
 // RBD/CephFS client kernel must support; the Fleet host-compatibility
 // DaemonSet otherwise stays unready and blocks the storage layer for good
-// (Ubuntu 24.04 GA kernel 6.8, CloudFerro rehearsal 2026-10-31).
+// (Ubuntu 24.04 GA kernel 6.8, found in a 2026-10-31 installation rehearsal).
 func CheckCephKernels(ctx context.Context, opts CephKernelGateOptions) error {
 	out := opts.Out
 	if out == nil {

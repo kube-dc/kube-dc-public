@@ -455,3 +455,27 @@ func TestDefaultTokenExecHidesTokenVariables(t *testing.T) {
 		t.Fatalf("an environment token reached the provider CLI: %q", got)
 	}
 }
+
+// Flux's GitLab bootstrap needs an HTTPS remote's port; an SSH port is not the
+// API's, and the bare host stays the credential key.
+func TestFleetRemoteWebHostKeepsHTTPSPortOnly(t *testing.T) {
+	for origin, want := range map[string]string{
+		"https://GitLab.example.test:8443/group/fleet.git": "gitlab.example.test:8443",
+		"https://gitlab.example.test/group/fleet.git":      "gitlab.example.test",
+		"ssh://git@gitlab.example.test:2222/group/fleet":   "gitlab.example.test",
+		"git@gitlab.example.test:group/fleet.git":          "gitlab.example.test",
+	} {
+		repo := t.TempDir()
+		for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", origin}} {
+			if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+				t.Fatalf("git %v: %v: %s", args, err, out)
+			}
+		}
+		if got := fleetRemoteWebHost(repo); got != want {
+			t.Errorf("%s: web host %q, want %q", origin, got, want)
+		}
+		if got := fleetRemoteHost(repo); got != strings.Split(want, ":")[0] {
+			t.Errorf("%s: credential host %q", origin, got)
+		}
+	}
+}

@@ -11,7 +11,7 @@ import (
 
 // A resumed init must not re-encrypt unchanged material. The decrypt-compare
 // needs the Fleet's own age.key; without it every resume committed a fake
-// rotation that restarted all dependent Flux layers (CloudFerro, 2026-10-31).
+// rotation that restarted all dependent Flux layers (found in a 2026-10-31 installation rehearsal).
 func TestWriteWildcardTLS_RealSopsResumeKeepsCiphertext(t *testing.T) {
 	for _, tool := range []string{"sops", "age-keygen"} {
 		if _, err := exec.LookPath(tool); err != nil {

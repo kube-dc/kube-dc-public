@@ -403,6 +403,32 @@ var ownedPlatformPatchMarkers = []string{
 	dns01Route53Marker,            // ClusterIssuer solvers → Route53 DNS-01
 	dns01CloudflareMarker,         // ClusterIssuer solvers → Cloudflare DNS-01 (all or wildcards)
 	paygDBRoleMarker,              // CNPG managed role for the PAYG collector (--payg)
+	s3ListenerMarker,              // https-s3 Gateway listener
+	registryListenerMarker,        // registry-depot Gateway listener
+}
+
+// patchesListIsLastSpecKey reports whether spec.patches is the last key of
+// the document's spec, which is what appending entries at EOF assumes. The
+// generated platform.yaml satisfies it whichever writer created the list
+// (including the managed-services scaffold, whose list carries no marker).
+func patchesListIsLastSpecKey(lines []string) bool {
+	at := -1
+	for i, l := range lines {
+		if strings.TrimRight(l, " ") == "  patches:" {
+			at = i
+		}
+	}
+	if at < 0 {
+		return false
+	}
+	for _, l := range lines[at+1:] {
+		t := strings.TrimSpace(l)
+		if t == "" || strings.HasPrefix(t, "#") || strings.HasPrefix(l, "  - ") || strings.HasPrefix(l, "   ") {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // EgressGatewayProbeOptions parameterizes ProbeEgressGateway.

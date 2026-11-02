@@ -460,9 +460,9 @@ func patchPlatformDNS01SolverWith(marker, header, entries string) func([]string)
 				hasPatchesKey = true
 			}
 		}
-		newBlock := strings.Split(dns01BlockBody(marker, header, entries), "\n")
+		newBlock := strings.Split(alignPatchEntries(lines, dns01BlockBody(marker, header, entries)), "\n")
 		if markerAt >= 0 {
-			end, err := dns01OwnedBlockEnd(lines, markerAt, marker)
+			end, err := dns01OwnedBlockEnd(lines, markerAt, marker, patchListIndent(lines))
 			if err != nil {
 				return nil, false, err
 			}
@@ -489,7 +489,7 @@ func patchPlatformDNS01SolverWith(marker, header, entries string) func([]string)
 					break
 				}
 			}
-			if !ours {
+			if !ours && !patchesListIsLastSpecKey(lines) {
 				return nil, false, fmt.Errorf("platform.yaml already has a patches: block (hand-edited?) — add the DNS-01 solver patch manually (docs/platform/certificates.md, marker: %q)", marker)
 			}
 		}
@@ -524,19 +524,20 @@ func dns01BlockBody(marker, header, entries string) string {
 // "    #" comment lines, then exactly ONE "    - " list entry with all its
 // deeper-indented lines. Anything structurally different means a human
 // rearranged the file — refuse rather than guess.
-func dns01OwnedBlockEnd(lines []string, markerAt int, marker string) (int, error) {
+func dns01OwnedBlockEnd(lines []string, markerAt int, marker string, itemIndent int) (int, error) {
+	ind := strings.Repeat(" ", itemIndent)
 	j := markerAt
-	for j < len(lines) && strings.HasPrefix(lines[j], "    #") {
+	for j < len(lines) && strings.HasPrefix(lines[j], ind+"#") {
 		j++
 	}
-	if j >= len(lines) || !strings.HasPrefix(lines[j], "    - ") {
+	if j >= len(lines) || !strings.HasPrefix(lines[j], ind+"- ") {
 		return 0, fmt.Errorf("platform.yaml: the DNS-01 marker is present but its patch entry is not where the writer left it — fix the block manually (marker: %q)", marker)
 	}
 	j++ // past the "    - target:" line
 	// Deeper-indented, non-blank lines belong to our entry; the block ends at
 	// the first sibling entry ("    - "), another writer's comment ("    #"),
 	// a blank, or any dedent.
-	for j < len(lines) && strings.HasPrefix(lines[j], "      ") && strings.TrimSpace(lines[j]) != "" {
+	for j < len(lines) && strings.HasPrefix(lines[j], ind+"  ") && strings.TrimSpace(lines[j]) != "" {
 		j++
 	}
 	return j, nil

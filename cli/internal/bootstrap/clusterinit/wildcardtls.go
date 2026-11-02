@@ -580,7 +580,7 @@ func patchKustomizationSuppression(stem, entries string) func([]string) ([]strin
 					break
 				}
 			}
-			if !ours {
+			if !ours && !patchesListIsLastSpecKey(lines) {
 				return nil, false, fmt.Errorf("platform.yaml already has a patches: block (hand-edited?) — add the ACME-suppression patches manually (docs/platform/certificates.md, marker: %q)", byoWildcardTLSMarker)
 			}
 		} else if hasPatchesKey {

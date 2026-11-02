@@ -131,6 +131,13 @@ func ProbeStorageDevice(ctx context.Context, opts StorageDeviceProbeOptions) (St
 			"HOLD=$(sudo -n find \"/sys/dev/block/$MM/holders\" -mindepth 1 -maxdepth 1 -print 2>/dev/null) || { echo KDCPROBE:UNKNOWN; exit 0; }; "+
 			"WIPE=$(sudo -n wipefs -n --noheadings -O TYPE -- \"$D\" 2>/dev/null) || { echo KDCPROBE:UNKNOWN; exit 0; }; "+
 			"BS=ceph_bluestore; "+
+			// Ceph 19 keeps BlueStore label copies at 1, 10, 100 and 1000 GiB;
+			// clearing the first megabytes leaves an OSD of an earlier cluster
+			// that Rook then skips. Any copy makes the disk a Ceph OSD.
+			"SZ=$(sudo -n blockdev --getsize64 \"$D\" 2>/dev/null) || { echo KDCPROBE:UNKNOWN; exit 0; }; LBL=; "+
+			"for G in 0 1 10 100 1000; do O=$((G*1024)); [ $(( (O+1)*1048576 )) -le \"$SZ\" ] || continue; "+
+			"if sudo -n dd if=\"$D\" bs=1M skip=$O count=1 status=none 2>/dev/null | head -c 22 | grep -q 'bluestore block device'; then LBL=1; fi; done; "+
+			"if [ -n \"$LBL\" ] && [ \"$RO\" = 0 ] && [ -z \"$(printf '%%s' \"$CH$HOLD$INFO\" | tr -d '[:space:]' | sed \"s/$BS//g\")\" ]; then echo KDCPROBE:CEPH; exit 0; fi; "+
 			"if [ \"$RO\" = 0 ] && [ -z \"$(printf '%%s' \"$CH$HOLD\" | tr -d '[:space:]')\" ] && [ \"$(printf '%%s' \"$WIPE\" | tr -d '[:space:]')\" = \"$BS\" ] && "+
 			"{ [ -z \"$(printf '%%s' \"$INFO\" | tr -d '[:space:]')\" ] || [ \"$(printf '%%s' \"$INFO\" | tr -d '[:space:]')\" = \"$BS\" ]; }; then echo KDCPROBE:CEPH; "+
 			"elif [ \"$RO\" != 0 ] || [ -n \"$(printf '%%s' \"$INFO$CH$HOLD$WIPE\" | tr -d '[:space:]')\" ]; then echo KDCPROBE:INUSE; else echo KDCPROBE:EMPTY; fi",
@@ -150,11 +157,24 @@ func ProbeStorageDevice(ctx context.Context, opts StorageDeviceProbeOptions) (St
 
 // RequireEmptyStorageDevice turns a read-only observation into the apply gate.
 // The caller probes again after review and before any Fleet or host mutation.
-// resumingOverlay permits a Ceph OSD: the caller has confirmed that the
-// committed overlay already selects this device, so Rook has consumed it.
-func RequireEmptyStorageDevice(res StorageDeviceResult, resumingOverlay bool) error {
-	if res.State == StorageDevEmpty || (resumingOverlay && res.State == StorageDevCeph) {
+// overlaySelects means the committed overlay already selects this device;
+// cephRunning that this cluster's CephCluster reports an fsid. Only both
+// together permit a Ceph OSD (Rook has consumed it). With the overlay alone,
+// the OSD may be this cluster's whose monitors are not up yet, so the error
+// must not tell the operator to zero it.
+func RequireEmptyStorageDevice(res StorageDeviceResult, overlaySelects, cephRunning bool) error {
+	if res.State == StorageDevEmpty || (overlaySelects && cephRunning && res.State == StorageDevCeph) {
 		return nil
+	}
+	if res.State == StorageDevCeph && overlaySelects {
+		return fmt.Errorf("selected raw OSD device /dev/%s on %s is %s and the existing overlay selects it, but "+
+			"CephCluster rook-ceph/rook-ceph does not report status.ceph.fsid yet (or the cluster is unreachable). "+
+			"If this install is resuming, wait for the Ceph monitors and run init again; zero the device only if "+
+			"it belongs to an earlier Ceph cluster", res.Device, res.Node, res.State)
+	}
+	if res.State == StorageDevCeph {
+		return fmt.Errorf("selected raw OSD device /dev/%s on %s is %s from an earlier Ceph cluster; Rook would skip it. "+
+			"Zero its BlueStore labels (the first MiB at 0, 1, 10, 100 and 1000 GiB, or the whole device) and run readiness again", res.Device, res.Node, res.State)
 	}
 	return fmt.Errorf("selected raw OSD device /dev/%s on %s is %s; inspect the device and run readiness again", res.Device, res.Node, res.State)
 }

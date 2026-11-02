@@ -176,9 +176,15 @@ func TestPatchPlatformDNS01Solver_ComposesWithOwnedBlock(t *testing.T) {
 		t.Errorf("must compose with a kube-dc-owned patches block: changed=%v err=%v", changed, err)
 	}
 
-	foreign := platformYAML("  patches:\n    - target:\n        kind: Gateway\n")
+	// An unmarked list that ends spec (the managed-services scaffold writes
+	// one) takes the appended entry; one followed by another key is refused.
+	unmarked := platformYAML("  patches:\n  - target:\n      kind: Gateway\n")
+	if _, changed, err := patch(unmarked); err != nil || !changed {
+		t.Errorf("must compose with a trailing unmarked patches list: changed=%v err=%v", changed, err)
+	}
+	foreign := platformYAML("  patches:\n    - target:\n        kind: Gateway\n  wait: true\n")
 	if _, _, err := patch(foreign); err == nil {
-		t.Error("hand-edited patches block must be refused")
+		t.Error("a patches list that is not spec's last key must be refused")
 	}
 }
 
@@ -313,5 +319,20 @@ func TestExportMap_RoundTripsDNS01(t *testing.T) {
 	// Default acme mode stays minimal: no TLS_MODE key at all.
 	if m2 := ExportMap(&InitOptions{TLSMode: TLSModeACME}); m2["TLS_MODE"] != "" {
 		t.Errorf("default acme must be canonicalized away, got %q", m2["TLS_MODE"])
+	}
+}
+
+// A resumed run finds its own DNS-01 block in a two-space list and leaves it.
+func TestPatchPlatformDNS01Solver_ResumeInTwoSpaceList(t *testing.T) {
+	m := validDNS01(t)
+	patch := patchPlatformDNS01Solver(RenderDNS01IssuerPatch(m))
+	base := platformYAML("  patches:\n  - target:\n      kind: HelmRelease\n    patch: |\n      - op: add\n        path: /x\n        value: 1\n")
+	first, changed, err := patch(base)
+	if err != nil || !changed {
+		t.Fatalf("first run: changed=%v err=%v", changed, err)
+	}
+	second, changed, err := patch(first)
+	if err != nil || changed || strings.Join(second, "\n") != strings.Join(first, "\n") {
+		t.Fatalf("resume changed=%v err=%v", changed, err)
 	}
 }

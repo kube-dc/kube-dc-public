@@ -12,8 +12,8 @@ import (
 // live in. The root Kustomization (flux-system) applies the private-CA
 // ConfigMap and the BYO wildcard Secrets, but their namespaces are created by
 // later layers that depend on the root. On a fresh cluster the root therefore
-// never applied and nothing else could start (CloudFerro rehearsal,
-// 2026-10-31). Flux applies Namespaces before other objects in one apply.
+// never applied and nothing else could start (found in a 2026-10-31
+// installation rehearsal). Flux applies Namespaces before other objects in one apply.
 const rootNamespacesFileName = "root-namespaces.yaml"
 
 // ensureRootNamespaces adds namespaces to the overlay's root Namespace list

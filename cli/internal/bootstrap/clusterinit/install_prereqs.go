@@ -83,7 +83,7 @@ type InstallPrereqsOptions struct {
 	// the engine enforce those exact, checksummed tool versions: missing or
 	// different versions are installed into ToolsDir, which UsePinnedTools
 	// puts first on PATH. Presence alone is not enough: the Fleet scripts
-	// refuse other versions (CloudFerro rehearsal, 2026-10-31).
+	// refuse other versions (found in a 2026-10-31 installation rehearsal).
 	FleetRepo string
 	// ToolsDir defaults to PinnedToolsDir().
 	ToolsDir string

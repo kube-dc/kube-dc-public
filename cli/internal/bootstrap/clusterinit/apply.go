@@ -478,16 +478,26 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 	// failed Scaffold: the clean-tree gate proved every untracked path is
 	// this run's, and leaving them would make the plain re-run refuse a
 	// dirty tree.
+	// With a nil cause it returns only a rollback failure.
 	abortFresh := func(cause error) error {
 		if resuming {
 			return cause
 		}
-		fmt.Fprintf(out, "[apply] rolling back this run's uncommitted scaffold to %s\n", preSHA)
-		if rerr := opts.Git.ResetHard(ctx, opts.FleetRepo, preSHA); rerr != nil {
-			return fmt.Errorf("%w (rollback failed, clean the checkout by hand: %v)", cause, rerr)
+		wrap := func(format string, a ...any) error {
+			if cause == nil {
+				return fmt.Errorf(format, a...)
+			}
+			return fmt.Errorf("%w ("+format+")", append([]any{cause}, a...)...)
 		}
-		if outB, cerr := exec.CommandContext(ctx, "git", "-C", opts.FleetRepo, "clean", "-fdq").CombinedOutput(); cerr != nil {
-			return fmt.Errorf("%w (removing untracked scaffold files failed: %v: %s)", cause, cerr, strings.TrimSpace(string(outB)))
+		if cause != nil {
+			fmt.Fprintf(out, "[apply] rolling back this run's uncommitted scaffold to %s\n", preSHA)
+		}
+		if rerr := opts.Git.ResetHard(ctx, opts.FleetRepo, preSHA); rerr != nil {
+			return wrap("rollback failed, clean the checkout by hand: %v", rerr)
+		}
+		// Not tied to ctx: a cancelled run must still finish its rollback.
+		if outB, cerr := exec.Command("git", "-C", opts.FleetRepo, "clean", "-fdq").CombinedOutput(); cerr != nil {
+			return wrap("removing untracked scaffold files failed: %v: %s", cerr, strings.TrimSpace(string(outB)))
 		}
 		return cause
 	}
@@ -563,7 +573,9 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 			// captured in Phase 1 is the canonical rollback target (per
 			// agent-rule 8: never HEAD~1; use captured SHA).
 			fmt.Fprintf(out, "[apply] commit-push failed; rolling back local commit to %s\n", preSHA)
-			if rerr := opts.Git.ResetHard(ctx, opts.FleetRepo, preSHA); rerr != nil {
+			// abortFresh resets to preSHA and removes this run's untracked
+			// scaffold too, which a failed commit leaves behind.
+			if rerr := abortFresh(nil); rerr != nil {
 				return fmt.Errorf("apply: commit-push failed AND rollback failed (manual recovery needed): commit-push=%w; rollback=%v",
 					cerr, rerr)
 			}

@@ -554,9 +554,17 @@ ip neigh show %[1]s
 	// few packets from default-VPC pods: the management router then ARPs the
 	// gateway, and an answer is recorded in mac_binding.
 	if triggerGatewayARP(ctx, o, gw) {
-		if port, mac := ovnGatewayMacBinding(ctx, o, gw); mac != "" {
-			return Check{Name: name, Required: true, Outcome: Pass,
-				Detail: fmt.Sprintf("%s is %s on the external segment, learned by OVN via %s after a probe from the default VPC", gw, mac, port)}
+		// ovn-controller records the binding shortly after the reply.
+		for attempt := 0; attempt < 5; attempt++ {
+			if port, mac := ovnGatewayMacBinding(ctx, o, gw); mac != "" {
+				return Check{Name: name, Required: true, Outcome: Pass,
+					Detail: fmt.Sprintf("%s is %s on the external segment, learned by OVN via %s after a probe from the default VPC", gw, mac, port)}
+			}
+			select {
+			case <-ctx.Done():
+				attempt = 5
+			case <-time.After(2 * time.Second):
+			}
 		}
 	}
 	if probed == 0 {

@@ -1,5 +1,14 @@
 # kube-dc CLI changelog
 
+## v0.9.13-rc.5 — 2026-11-02
+
+Fixes from the first full run of rc.4 on the ten-host rehearsal.
+
+- The OSD disk check reads every BlueStore label copy (0, 1, 10, 100 and 1000 GiB). A disk wiped only at its start, whose later copies still name an old Ceph cluster, is no longer reported empty; Rook would have skipped it.
+- On a resumed `init`, an OSD the existing overlay selects is never reported as "from an earlier Ceph cluster" while this cluster's monitors are still starting; the check asks you to wait and re-run instead.
+- `bootstrap accept` waits briefly for the gateway's MAC binding after its ARP probe, so a healthy gateway is no longer reported as untestable.
+- A self-managed GitLab served on a non-default HTTPS port (`https://host:8443/...`) is bootstrapped on that port.
+
 ## v0.9.13-rc.4 — 2026-11-01
 
 Release candidate for the fixes found in a ten-host bare-metal rehearsal with a self-managed GitLab, a private CA, a MetalLB VIP and ten-node Ceph. Installs on that shape no longer need manual `kubectl`, Flux or file edits.
