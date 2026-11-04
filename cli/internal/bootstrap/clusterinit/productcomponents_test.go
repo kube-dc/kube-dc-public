@@ -42,7 +42,7 @@ func productFleet(t *testing.T, objectStorage string) (repo, dir string) {
 		"    - ./gateway-config/components/host-bind\n",
 		"    - ./gateway-config/components/host-bind\n    - ./keycloak/components/keycloak-26\n", 1))
 	write(filepath.Join(repo, "infrastructure", "kube-ovn-network", "subnets.yaml"), "metadata:\n  labels:\n    network.kube-dc.com/default-external: \"true\"\n")
-	write(filepath.Join(dir, "cluster-config.env"), "EXT_NET_CIDR=10.83.134.0/24\nEXT_NET_EXCLUDE_IPS=10.83.134.1..10.83.134.64\nTLS_MODE=byo-wildcard\nOPENBAO_REPLICAS=3\n")
+	write(filepath.Join(dir, "cluster-config.env"), "EXT_NET_CIDR=192.0.2.0/24\nEXT_NET_EXCLUDE_IPS=192.0.2.1..192.0.2.64\nTLS_MODE=byo-wildcard\nOPENBAO_REPLICAS=3\n")
 	write(filepath.Join(dir, "infra-object-storage.yaml"), "apiVersion: kustomize.toolkit.fluxcd.io/v1\nkind: Kustomization\nmetadata:\n  name: infra-object-storage\n  namespace: flux-system\nspec:\n  path: ./clusters/site/object-storage\n  prune: false\n")
 	write(filepath.Join(dir, "rbd-vm.yaml"), "# VM disks on shared RBD\n")
 	write(filepath.Join(dir, "kustomization.yaml"), "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - platform.yaml\n")
@@ -97,7 +97,7 @@ func TestWriteProductComponentsFullInstallation(t *testing.T) {
 	caPEM, leafPEM := testCAAndLeaf(t)
 	err := WriteProductComponents(context.Background(), ProductComponentOptions{
 		FleetRepo: repo, ClusterName: "site",
-		Sets:            map[string]string{ExtraExcludeKey: "10.83.134.240..10.83.134.254"},
+		Sets:            map[string]string{ExtraExcludeKey: "192.0.2.240..192.0.2.254"},
 		TrustedCA:       &TrustedCAMaterial{PEM: caPEM},
 		WildcardCertPEM: leafPEM,
 		K8s:             managers(3),
@@ -122,7 +122,7 @@ func TestWriteProductComponentsFullInstallation(t *testing.T) {
 		t.Fatalf("infra-object-storage lacks the default class:\n%s", osLayer)
 	}
 	ex, _ := os.ReadFile(filepath.Join(dir, "ext-net-exclusions", "kustomization.yaml"))
-	if !strings.Contains(string(ex), `- "${EXT_NET_EXCLUDE_IPS}"`) || !strings.Contains(string(ex), `- "10.83.134.240..10.83.134.254"`) ||
+	if !strings.Contains(string(ex), `- "${EXT_NET_EXCLUDE_IPS}"`) || !strings.Contains(string(ex), `- "192.0.2.240..192.0.2.254"`) ||
 		!strings.Contains(string(ex), "network.kube-dc.com/default-external=true") {
 		t.Fatalf("exclusions component:\n%s", ex)
 	}
@@ -161,7 +161,7 @@ func TestExtraExcludesRejectAddressesOutsideTheNetwork(t *testing.T) {
 	repo, _ := productFleet(t, "")
 	err := WriteProductComponents(context.Background(), ProductComponentOptions{
 		FleetRepo: repo, ClusterName: "site",
-		Sets: map[string]string{ExtraExcludeKey: "10.83.135.1..10.83.135.9"},
+		Sets: map[string]string{ExtraExcludeKey: "198.51.100.1..198.51.100.9"},
 	}, nil)
 	if err == nil || !strings.Contains(err.Error(), ExtraExcludeKey) {
 		t.Fatalf("want a refusal, got %v", err)
@@ -176,7 +176,7 @@ func TestWriteProductComponentsGates(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, "rbd-vm.yaml")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "cluster-config.env"), []byte("EXT_NET_CIDR=10.83.134.0/24\nTLS_MODE=acme\nOPENBAO_REPLICAS=1\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "cluster-config.env"), []byte("EXT_NET_CIDR=192.0.2.0/24\nTLS_MODE=acme\nOPENBAO_REPLICAS=1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	err := WriteProductComponents(context.Background(), ProductComponentOptions{
@@ -200,12 +200,12 @@ func TestWriteProductComponentsGates(t *testing.T) {
 }
 
 func TestValidateExtraExcludes(t *testing.T) {
-	ok := map[string]string{ExtraExcludeKey: "10.83.134.240..10.83.134.254, 10.83.134.200", keyExtCIDR: "10.83.134.0/24"}
+	ok := map[string]string{ExtraExcludeKey: "192.0.2.240..192.0.2.254, 192.0.2.200", keyExtCIDR: "192.0.2.0/24"}
 	if errs := validateExtraExcludes(ok); len(errs) != 0 {
 		t.Fatal(errs)
 	}
-	for _, bad := range []string{"10.83.135.1", "10.83.134.9..10.83.134.2", "nope"} {
-		if errs := validateExtraExcludes(map[string]string{ExtraExcludeKey: bad, keyExtCIDR: "10.83.134.0/24"}); len(errs) != 1 {
+	for _, bad := range []string{"198.51.100.1", "192.0.2.9..192.0.2.2", "nope"} {
+		if errs := validateExtraExcludes(map[string]string{ExtraExcludeKey: bad, keyExtCIDR: "192.0.2.0/24"}); len(errs) != 1 {
 			t.Fatalf("%q: %v", bad, errs)
 		}
 	}
@@ -220,7 +220,7 @@ func TestExtraExcludesRequireTheSubnetLabel(t *testing.T) {
 	}
 	err := WriteProductComponents(context.Background(), ProductComponentOptions{
 		FleetRepo: repo, ClusterName: "site",
-		Sets: map[string]string{ExtraExcludeKey: "10.83.134.240..10.83.134.254"},
+		Sets: map[string]string{ExtraExcludeKey: "192.0.2.240..192.0.2.254"},
 	}, nil)
 	if err == nil || !strings.Contains(err.Error(), "default-external") {
 		t.Fatalf("want a refusal, got %v", err)
@@ -233,7 +233,7 @@ func TestWriteProductComponentsSkipsUnchainedCAAndOversizedOpenBao(t *testing.T)
 	repo, dir := productFleet(t, cephOverlay)
 	caPEM, _ := testCAAndLeaf(t)
 	_, otherLeaf := testCAAndLeaf(t)
-	if err := os.WriteFile(filepath.Join(dir, "cluster-config.env"), []byte("EXT_NET_CIDR=10.83.134.0/24\nTLS_MODE=byo-wildcard\nOPENBAO_REPLICAS=5\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "cluster-config.env"), []byte("EXT_NET_CIDR=192.0.2.0/24\nTLS_MODE=byo-wildcard\nOPENBAO_REPLICAS=5\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var out strings.Builder

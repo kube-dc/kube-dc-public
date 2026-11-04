@@ -404,7 +404,56 @@ Gateway hostname.
 
 ### Example: Custom hostname
 
-Override the auto-generated hostname:
+Override the auto-generated hostname. A Service answers on one hostname, so
+the custom one **replaces** `<service>-<project>.<domain>`: the old name stops
+working once the change is saved.
+
+1. Point DNS at the platform first: a CNAME record from your hostname to the
+   Service's current hostname (for a domain apex, A records to the gateway
+   address). Turn off any CDN proxying (for example Cloudflare "proxied").
+2. Then set the hostname, in the console (**Networking**, the service's
+   exposure) or with `deploy_app domain` in an AI app. Both refuse a hostname
+   that does not resolve to the gateway yet and say which record to add. A name
+   under the platform domain needs no record.
+3. The certificate is issued within 1 to 3 minutes; until then browsers warn.
+
+To switch back, clear the hostname: the Service returns to its platform
+hostname (a few minutes of certificate errors if the custom certificate was
+already issued).
+
+#### Verified domains
+
+Where the platform operator requires it (a platform setting; the console
+shows **Organization → Domains** only then), a hostname of your own must be
+under a domain your organization has verified. An organization admin adds the
+domain in the console (**Organization → Domains**) and publishes the TXT
+record shown there:
+
+```text
+_kube-dc.example.com  TXT  "kube-dc-verify=<organization>-<token>"
+```
+
+The platform checks it every minute. Once verified, every Service of the
+organization may use `example.com` and any name under it (`shop.example.com`,
+`api.eu.example.com`). The same object in YAML, in the organization namespace:
+
+```yaml
+apiVersion: kube-dc.com/v1
+kind: VerifiedDomain
+metadata:
+  name: example-com
+  namespace: <organization>
+spec:
+  domain: example.com
+```
+
+`kubectl get verifieddomain -n <organization>` shows the record to add
+(`status.recordName`, `status.recordValue`) and `status.verified`. Hostnames
+your Services already used when the requirement was turned on keep working
+without a record. A hostname that is not covered is not published, and the
+Service gets a `GatewayHostnameUnverified` event; once the domain is verified
+the route appears within a minute. Removing a domain, or the TXT record, never
+takes down a route already published.
 
 ```yaml
 apiVersion: v1

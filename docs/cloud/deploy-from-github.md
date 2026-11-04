@@ -88,7 +88,24 @@ others see placeholders to ask an admin for.
 | `build.kube-dc.com/image` | registry path without a tag, e.g. `images-my-project.<domain>/my-project/app` |
 | `build.kube-dc.com/push-secret` | own registry only: the Secret from step 2 |
 | `build.kube-dc.com/previews` | optional: a project for pull request previews |
+| `build.kube-dc.com/build-args` | optional: Dockerfile `ARG` values as JSON, e.g. `{"VITE_API_URL": "https://api.example.com"}`. Not for secrets: build arguments stay in the image history |
+| `build.kube-dc.com/preview-build-args` | optional: JSON that overrides `build-args` key by key for preview builds |
+| `build.kube-dc.com/build-secrets` | optional: comma-separated Secrets of the project; the Dockerfile reads each key with `RUN --mount=type=secret,id=<key>` (for example `NPM_TOKEN`), and nothing is stored in the image |
+
+### Secrets in previews
+
+A preview never reads the app's own Secrets. Where the app reads a Secret
+`<name>` (environment variables or a build secret), its preview reads
+`<name>-preview` when that exists in the preview's project, for example
+`stripe-preview` with Stripe's test key. In a separate previews project, a
+Secret named `<name>` there is used too. Variables from other Secrets are
+left out of the preview, and a preview build that needs a missing build
+secret is not started (the reason is in `build.kube-dc.com/last-error`).
 
 A failed build is named in the Deployment's `build.kube-dc.com/last-error`
 and in the check run. Builds count against the project quota (they request
 200m CPU and may use up to 2 CPU, 26Gi of disk and 60 minutes).
+
+A bad build can be rolled back in about a second when the application keeps
+its previous version running; a newer build always wins over a rollback. See
+[Roll back an application](rollback.md).

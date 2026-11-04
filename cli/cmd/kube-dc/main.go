@@ -32,7 +32,7 @@ var version = "dev"
 
 // starterBundleVersion is the platform bundle qualified with this CLI release.
 // Installer and platform releases have independent immutable version histories.
-var starterBundleVersion = "v0.9.11"
+var starterBundleVersion = "v0.9.16"
 
 func main() {
 	rootCmd := newRootCmd()

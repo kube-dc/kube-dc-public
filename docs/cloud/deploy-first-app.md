@@ -135,6 +135,14 @@ kubectl rollout history deployment/hello
 Kubernetes rolls out the new ReplicaSet according to the Deployment strategy.
 Availability depends on readiness checks, capacity, and application behavior.
 
+## Roll back
+
+`kubectl rollout undo deployment/hello` returns to the previous revision by
+starting new pods. To roll back in about a second instead, keep the previous
+version running: see [Roll back an application](rollback.md), which also
+covers database migrations (expand, then contract) and what the running
+previous version costs.
+
 ## Clean up
 
 To remove the Deployment and the Service, run:
@@ -148,6 +156,7 @@ Service and its route have finished cleanup.
 
 ## Next steps
 
+- [Roll back an application](rollback.md)
 - [Deploy a WordPress stack](deploy-wordpress-stack.md)
 - [Choose a service exposure method](service-exposure.md)
 - [Use block storage](block-storage.md)

@@ -1,5 +1,12 @@
 # kube-dc CLI changelog
 
+## v0.9.16 — 2026-11-04
+
+Installs platform bundle 0.9.16 by default (`oci://ghcr.io/kube-dc/fleet-starter:v0.9.16`). The bundle rebuilds every platform image and chart from one set of sources: manager, routing gateway, KMS plugin, backend, tenant and admin consoles, Kubernetes manager, managed services, OS mirror and the cloud shell. Legacy db-manager is not part of it.
+
+- `--set GRAFANA_TENANT_MODE=project` gives every Project its own Grafana organization, for installations whose Projects belong to different end customers. The default stays `org`.
+- Installer behaviour is otherwise that of v0.9.14.
+
 ## v0.9.14 — 2026-11-02
 
 Installs platform bundle 0.9.11. Same code as v0.9.14-rc.2, accepted by a clean ten-host bare-metal installation driven only by the CLI and the installation guide, with no hand-written overrides: `bootstrap init` exited 0 and `bootstrap accept` reported `usable`, 30 minutes from host verification to acceptance. Tenant checks passed: pod networking, a golden-image VM reachable over SSH, and managed PostgreSQL with verified TLS and a completed backup. Since v0.9.13:

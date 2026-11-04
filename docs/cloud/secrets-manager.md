@@ -130,6 +130,30 @@ spec:
 
 The **Used by** panel on the secret's detail view lists every workload in the project that references the synced `Secret` so you can see the blast radius before rotating or destroying it.
 
+### Set an app's environment in the console
+
+Open **Kubernetes → Workloads → Deployments**, choose the app's actions menu and **Environment**. There you can:
+
+- change plain variables (for example `LOG_LEVEL`);
+- add a variable from one key of a secret (**From a secret**: the secret and its key);
+- add or remove whole secrets, whose every key becomes a variable;
+- turn on **Restart when a managed secret it uses gets a new value**.
+
+Saving starts a rolling update. Keep credentials in a secret, never in a plain variable.
+
+### Restart apps when a secret changes
+
+A Deployment annotated `kube-dc.com/restart-on-secret-change: "true"` is rolled automatically when a synced secret it reads (through `env`, `envFrom` or a volume) gets new values. Apps deployed by an AI agent (`deploy_app`) have it on from the start; for others turn it on in **Environment** or add the annotation yourself. A value changed in the console reaches the app within a minute; a scheduled rotation arrives at the next sync refresh (`spec.sync.refreshInterval`, one hour by default).
+
+### With an AI agent
+
+An agent connected through the hosted MCP endpoint creates the secrets an app needs with `create_secret`:
+
+- **generated values** (session or signing keys): the platform generates the value, and nobody sees it;
+- **values only you know** (API keys, tokens): the agent creates an empty secret and gives you a link to its page, where you type the values. Never paste a secret into the conversation.
+
+The agent then deploys with `deploy_app` `secretEnv` (one variable from one key) or `envFromSecrets` (every key), and `list_secrets` shows each secret's keys (never values) and which apps use it.
+
 ## Rotate a password automatically (preview)
 
 For `type=password` secrets you can ask the platform to generate a new value on a schedule:
@@ -154,7 +178,7 @@ spec:
 
 The first version is written when the resource is created. Subsequent versions appear on the schedule. ESO then updates the projected Kubernetes `Secret` on its refresh interval (one hour by default; set `spec.sync.refreshInterval` to change it).
 
-A Secret volume is refreshed eventually, but the application must reread or reload the file. Values injected through `env` or `envFrom` never change in a running container; roll out the workload after rotation.
+A Secret volume is refreshed eventually, but the application must reread or reload the file. Values injected through `env` or `envFrom` never change in a running container: turn on [restart on change](#restart-apps-when-a-secret-changes) or roll out the workload after rotation.
 
 The Kube-DC CLI's `kube-dc secrets get app-password --value` always shows the current version. Older versions remain readable through the API for the secret's KV history window.
 

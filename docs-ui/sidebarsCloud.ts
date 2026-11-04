@@ -54,6 +54,16 @@ const sidebars: SidebarsConfig = {
         },
         {
           type: 'doc',
+          id: 'rollback',
+          label: 'Roll Back an Application',
+        },
+        {
+          type: 'doc',
+          id: 'app-jobs-and-workers',
+          label: 'Migrations, Workers and Cron Jobs',
+        },
+        {
+          type: 'doc',
           id: 'deploy-wordpress-stack',
           label: 'Deploy a Full WordPress Stack',
         },
@@ -62,7 +72,6 @@ const sidebars: SidebarsConfig = {
           id: 'gpu-shared-workloads',
           label: 'Run Shared GPU Workloads',
         },
-        {type: 'doc', id: 'deploy-from-github', label: 'Deploy from GitHub'},
         'gitops',
         'ai-ide-integration',
         {
@@ -135,7 +144,6 @@ const sidebars: SidebarsConfig = {
         {type: 'doc', id: 'managed-services-kafka', label: 'Kafka'},
         {type: 'doc', id: 'managed-services-rabbitmq', label: 'RabbitMQ'},
         {type: 'doc', id: 'managed-services-github-runners', label: 'GitHub Actions runners'},
-        {type: 'doc', id: 'managed-services-registry', label: 'Container registry'},
       ],
     },
     {

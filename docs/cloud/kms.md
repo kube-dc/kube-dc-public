@@ -87,8 +87,8 @@ the Project can delete its key material; `retain` is not a Project backup.
 
 Keys retained before this reservation mechanism was installed need verified
 historical ownership before recovery. The controller reports
-`TransitOwnershipUnproven` instead of adopting unproven material. Platform
-operators can follow the [security upgrade procedure](../internal/security-stable-upgrade-2026-10-28.md).
+`TransitOwnershipUnproven` instead of adopting unproven material. Ask your
+platform operator to recover such keys.
 
 ### Workload identities
 

@@ -350,3 +350,35 @@ the log tail. It needs the Checks permission; without it builds still run.
 The build Pod runs with Unconfined seccomp and AppArmor, like the runners'
 BuildKit sidecar; the pod baseline policies admit it because the manager
 creates it. The manager mounts the App's private key only with builds on.
+
+## Reference: Kube-DC stage
+
+The stage installation, set up as above on 2026-11-02:
+
+- App `stage-kube-dc-com` (App ID 5567652, owned by the `kube-dc` GitHub
+  organization), installed on `bohdaq/rws-fullstack-e2e`.
+- Fleet: `clusters/stage/github-app.enc.yaml` (private key, webhook secret),
+  `clusters/stage/github-app-client.enc.yaml` (client secret), values in the
+  `githubApp` patch of `clusters/stage/platform.yaml` (`appId`, `slug`,
+  `clientId`, `clientSecretName`, `webhook`, `builds`).
+- `/github/callback` is served by the backend (chart from kube-dc d0e43984a);
+  before that the manager answered it. The manager no longer has a callback
+  handler; it serves only `/github/webhook`.
+
+## Reference: Kube-DC cloud (prepared, not enabled)
+
+- App `kube-dc-cloud` (App ID 5555168, owned by the `kube-dc` GitHub
+  organization), Client ID `Iv23liMULhfOFFkc7Ioe`.
+- Fleet branch `cloud/github-app` (not on main, so Flux does not apply it):
+  `clusters/cloud/github-app-client.enc.yaml` (client secret, webhook secret),
+  listed in `clusters/cloud/kustomization.yaml`, and the `githubApp` patch in
+  `clusters/cloud/platform.yaml` (`slug`, `clientId`, `clientSecretName`,
+  `webhook.secretName`, `builds`). The private key is already on main in
+  `clusters/cloud/github-app.enc.yaml`.
+- Merge the branch only together with a cloud chart, manager, backend and
+  consoles that carry these values (kube-dc >= 6e37ad154); cloud runs chart
+  `v0.9.11-rc.19` today, which knows none of them.
+- On GitHub, before enabling: webhook URL `https://backend.<cloud domain>/github/webhook`
+  with the webhook secret, Callback URL `https://backend.<cloud domain>/github/callback`,
+  **Request user authorization (OAuth) during installation**, **Redirect on
+  update**, the permissions and events in [Register the App](#register-the-app).

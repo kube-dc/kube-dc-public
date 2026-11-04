@@ -600,7 +600,7 @@ func (f *arpK8s) PodExec(_ context.Context, _, pod string, _ []string, _ []byte)
 
 func TestTenantEgressGatewayProbesFromDefaultVPCWhenOVNIsIdle(t *testing.T) {
 	k := &arpK8s{fakeK8s: fakeK8s{cmData: map[string]string{
-		"enable-external-gw": "true", "external-gw-addr": "10.83.134.1/24",
+		"enable-external-gw": "true", "external-gw-addr": "192.0.2.1/24",
 	}}}
 	c := checkTenantEgressGateway(context.Background(), Options{K8s: k})
 	if c.Outcome != Pass || !k.pinged || !strings.Contains(c.Detail, "after a probe from the default VPC") {

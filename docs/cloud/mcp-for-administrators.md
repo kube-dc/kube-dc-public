@@ -126,6 +126,7 @@ Tools carry MCP annotations, so apps ask the person before a destructive one.
 | `get_logs` | read | The last lines of a pod's log. |
 | `get_resources` | read | Any Kubernetes object the person may read. Secret values are masked. |
 | `rollout_status` | read | Whether an app is live: ready, progressing or failed with the reason, its pods, recent log lines of a failing pod and its HTTPS URL. |
+| `list_secrets` | read | The project's managed secrets: type, key names (never values), which apps use each one, and its console page. |
 | `create_project` | write | Creates a project. |
 | `create_vm` | write | Creates a VM, with the console's own checks (image, quota, storage). |
 | `vm_power` | destructive | Starts, stops or restarts a VM. |
@@ -138,9 +139,12 @@ Tools carry MCP annotations, so apps ask the person before a destructive one.
 | `restore_snapshot` | write | Restores a snapshot to a new disk. |
 | `create_bucket` | write | Creates an object storage bucket. |
 | `create_managed_service` | write | Orders a managed database, cache or queue: the first call returns the price, the second (after the person saw it) creates it. |
-| `deploy_app` | write | Runs a container image as an app (Deployment and Service), with an HTTPS hostname when public. Called again with a new image, it ships a new version. |
+| `create_secret` | write | Creates a managed secret for an app: either a generated value nobody sees, or an empty secret whose values the person types on its console page. Values never pass through the agent. |
+| `deploy_app` | write | Runs a container image as an app (Deployment and Service), with an HTTPS hostname when public. Called again with a new image, it ships a new version. Without a port it runs a worker (no Service); it can also autoscale on CPU and mount a persistent volume. |
+| `run_job` | write | Runs a command once (a seed, a backfill) with an app's image, variables and secrets, or with an image. |
+| `schedule_job` | write | Runs a command on a schedule (a cron job), with an app's image and secrets; it follows the app's new image and is deleted with the app. |
 | `restart` | destructive | Restarts every pod of an app, one by one. Apps that support it ask the person to type the name first. |
-| `rollback` | destructive | Returns an app to an earlier revision. Apps that support it ask the person to type the name first. |
+| `rollback` | destructive | Returns an app to an earlier revision; with a warm previous version (`deploy_app warmPrevious`) traffic switches to it in seconds (`instant: true`). Apps that support it ask the person to type the name first. |
 | `apply_manifest` | write | Creates or updates one Kubernetes object. |
 | `delete` | destructive | Deletes a project, VM, disk, floating IP, external IP, event webhook or any Kubernetes object. Apps that support it ask the person to type the name first. |
 | `extend_preview` | write | Keeps a preview app longer before the platform removes it. |

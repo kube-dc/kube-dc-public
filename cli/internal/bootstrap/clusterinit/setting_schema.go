@@ -37,6 +37,7 @@ var settingInfo = map[string]SettingInfo{
 	"METALLB_MODE":             {"Address announcement mode.", "l2 or bgp"},
 	"INGRESS_ADDRESS_LAYER":    {"Component that owns the ingress address.", "none, metallb-l2, or metallb-bgp"},
 	"KUBE_OVN_GW_TYPE":         {"External gateway placement.", "centralized or distributed"},
+	"GRAFANA_TENANT_MODE":      {"Grafana tenancy: one Grafana organization per Organization, or also one per Project.", "org or project"},
 }
 
 // KnownSetting returns typed help for selected Fleet inputs. A missing entry
@@ -90,6 +91,10 @@ func validateKnownSetting(key, value string) error {
 	case "KUBE_OVN_GW_TYPE":
 		if value != "centralized" && value != "distributed" {
 			return bad("centralized or distributed")
+		}
+	case "GRAFANA_TENANT_MODE":
+		if value != "org" && value != "project" {
+			return bad("org or project")
 		}
 	}
 	return nil

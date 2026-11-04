@@ -24,13 +24,13 @@ Read the [Installation overview](installation-overview.md) first to understand t
 
 ## Phase 1: server preparation
 
-For the 0.9.11 fresh Ceph profile, use Linux 7.0 or later on every node;
+For the fresh Ceph profile, use Linux 7.0 or later on every node;
 FIPS mode requires Linux 7.2 or later. Ubuntu 26.04 is the selected non-FIPS
 baseline. The storage prerequisite gate holds Ceph installation if a node fails
 these checks. See [Rook's CephX client requirements](https://rook.github.io/docs/rook/v1.19/Storage-Configuration/Advanced/cephx-key-rotation/).
 Other RKE2-supported systems can be used with object storage disabled.
 
-Use CLI 0.9.13 for platform bundle 0.9.11. Their versions are independent;
+Use CLI 0.9.16 for platform bundle 0.9.16. Their versions are independent;
 `--starter-ref` pins the platform bundle, and its metadata declares the minimum
 supported CLI version.
 
@@ -871,6 +871,7 @@ kube-dc bootstrap init \
 | `--s3-hostname` / `--no-s3-exposure` | S3 endpoint hostname for the exposure layer (default `s3.<domain>`) / keep S3 cluster-internal (no Certificate + HTTPRoute) |
 | `--image-acceleration` (default true) | Wire the on-cluster image path: `cdi-os-mirror` (OS images), and `registry-depot` (zot) with spegel P2P. See [restricted-egress-operation](restricted-egress-operation.md) |
 | `--payg` (default off) | Turn on PAYG usage billing for this new installation. Requires `--set BILLING_PROVIDER=stripe` or `whmcs`; refused for installations billed by a partner. See [PAYG usage billing](#payg-usage-billing-optional) |
+| `--set GRAFANA_TENANT_MODE=project` (default `org`) | Give every Project its own Grafana organization and datasource, so end users see only their own Project's metrics and logs. Choose it when the Projects of one Organization belong to different end customers, such as a reseller or partner offering; with `org`, every member of an Organization sees all of its Projects |
 | `--mirror-registry` / `--bundle-pull-secret` | Air-gap: pull platform images through your mirror registry, with a Docker pull-secret JSON |
 | `--provider github` / `gitlab` | Remote hosting for `--fleet-mode=new-repo` (default github) |
 | `--no-push` · `--no-ssh` · `--no-create-repo` · `--no-install-prereqs` | Commit locally without pushing · skip the SSH kubeconfig pull and node probes when no raw Ceph disk is selected · skip remote-repo creation · skip prerequisite install |

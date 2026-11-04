@@ -160,9 +160,11 @@ spec:
 
 If the peer requires TCP-MD5, create a Secret named by
 `spec.bgp.authenticationSecretRef.name` in `kube-dc-routing`. Its required key is
-`password`. Supply it through the installation's secret-management workflow;
-do not put the value in the CR, a ConfigMap, shell history, or Git. The
-controller injects it only into a mode-0600 runtime FRR file.
+`password`. Use 1–80 printable ASCII characters without whitespace. The gateway
+rejects other values before starting FRR. Supply the Secret through your
+installation's secret-management workflow; do not put the value in the CR,
+a ConfigMap, shell history, or Git. The gateway writes it only into a mode-0640
+runtime FRR file, readable by root and the gateway's `frr` group.
 
 ```bash
 kubectl get routingfabric corporate-edge

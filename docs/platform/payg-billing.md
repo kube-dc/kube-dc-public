@@ -1,10 +1,11 @@
 # PAYG billing (optional)
 
 Pay-as-you-go (PAYG) billing is an optional, per-installation feature. It is
-**off by default**. Turn it on only on an installation that sells pay as you go
-from Kube-DC itself. An installation that bills its customers somewhere else,
-such as a hosting partner's own billing system, a plan-based provider, or no
-billing at all, keeps it off.
+**off by default**. Enable it when you use Kube-DC to price usage and prepare
+PAYG statements. You can export approved statements to an existing billing
+system; enabling PAYG does not require Stripe or payment collection inside
+Kube-DC. Keep it off when you use only fixed plans, quotas, or raw usage feeds
+and do not need Kube-DC's usage pricing and statement workflow.
 
 The switch is one Helm value on the `kube-dc` chart:
 
