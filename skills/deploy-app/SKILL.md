@@ -36,6 +36,25 @@ writing the manifests below:
   `deploy_app` that sets a different value for the same variable reports a
   field-ownership conflict: confirm with the user, then retry with
   `force: true`.
+- Release command (migrations): `deploy_app releaseCommand` (for example
+  `["npm", "run", "migrate"]`, optional `releaseTimeoutMinutes`, default 15)
+  runs once with each new image, with the app's variables and secrets,
+  before that image takes traffic. If it fails, the running version keeps
+  serving and `rollout_status` reports `failed` (`ReleaseFailed`) with the
+  command's log; deploying the same image again retries. It runs for builds
+  on push and previews too, never on a rollback: write migrations the
+  previous version can live with (expand/contract).
+- Workers: leave out `port` for a queue consumer (no Service, no hostname,
+  no `warmPrevious`).
+- Jobs: `run_job` runs a command once (`app` for the app's image and
+  secrets, or `image`); `schedule_job` runs one on a cron `schedule`
+  (`timeZone`, `concurrency`, `suspend`). A cron job made from an app follows
+  its new image and is deleted with it; previews run no schedules.
+  `list kind=jobs` shows runs and pods; `get_logs` reads them.
+- `autoscale: { min, max, cpuPercent }` scales on CPU as a share of the CPU
+  limit (not with `replicas`); `volume: { size, path }` mounts a persistent
+  volume `<app>-data` (one replica; kept when the app is deleted). Tell the
+  user that job pods and extra replicas are billed like the app's pods.
 - `rollout_status` reports `ready` with the HTTPS URL, `progressing`, or
   `failed` with the reason (image pull, crash loop, scheduling) and the
   failing pod's last log lines. Check about 30 seconds after a deploy; a new
