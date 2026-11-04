@@ -18,6 +18,24 @@ writing the manifests below:
   registry, `public: false` for in-Project only) creates or updates the
   Deployment and a ClusterIP Service with `expose-route: https`. Call it again
   with a new image tag to ship a new version.
+- Secrets (API keys, session keys): never ask the user for a value or put
+  one in `env`. `list_secrets` (project) shows the project's managed
+  secrets with key names only, never values, and which apps use each.
+  `create_secret` either generates a value nobody sees (`generate`, key
+  `password`, optional `rotateEvery` such as `90d`) or creates an empty
+  secret with the `keys` the user must set and returns its console page:
+  give the user that link and wait until they say the values are saved.
+  Then pass `secretEnv` (`{ "STRIPE_KEY": { "secret": "stripe", "key":
+  "STRIPE_SECRET_KEY" } }`, one variable from one key) or `envFromSecrets`
+  (every key becomes a variable) to `deploy_app`.
+- Restart on a new value: a new app restarts by itself when a managed
+  secret it uses gets a new value (a rotation, within an hour, or a console
+  edit); `restartOnSecretChange: false` turns that off, and an existing app
+  keeps its setting. The user can also edit variables, secret keys and the switch
+  in the console (**Environment** on the Deployment). After such an edit, a
+  `deploy_app` that sets a different value for the same variable reports a
+  field-ownership conflict: confirm with the user, then retry with
+  `force: true`.
 - `rollout_status` reports `ready` with the HTTPS URL, `progressing`, or
   `failed` with the reason (image pull, crash loop, scheduling) and the
   failing pod's last log lines. Check about 30 seconds after a deploy; a new
@@ -82,6 +100,20 @@ Then choose how builds run (one per app; both would deploy every push twice):
   `pushSecret`, a `kubernetes.io/dockerconfigjson` Secret the user created.
   Pushes build and deploy; pull requests build a preview when a previews
   project is given; the commit shows a `kube-dc` check run.
+  - Build arguments: `buildFrom.buildArgs` sets Dockerfile `ARG` values for
+    every build (for example `{ "VITE_API_URL": "https://api.example.com" }`)
+    and `previewBuildArgs` overrides them key by key for previews. They stay
+    in the image history: never put a secret in them.
+  - Build secrets: `buildFrom.buildSecrets` lists project secrets the
+    Dockerfile reads with `RUN --mount=type=secret,id=<key>` (a private
+    package registry token, for example); they never land in the image.
+  - Previews never read the app's own secrets: a preview reads
+    `<secret>-preview` in its project instead (in a separate previews
+    project, a secret of the same name there also counts), for runtime
+    variables and build secrets. Variables from other secrets are left out,
+    and a preview build missing a build secret is not started (reason in
+    `build.kube-dc.com/last-error`). Create the copies, with test keys,
+    using `create_secret` in the preview's project.
 - **A GitHub Actions workflow:** `connect_repository` (organization admins)
   sets up keyless deploys: GitHub Actions signs in with its own short-lived
   OIDC token through a machine identity that accepts only that repository's
