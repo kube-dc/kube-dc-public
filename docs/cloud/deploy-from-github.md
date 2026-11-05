@@ -91,6 +91,10 @@ others see placeholders to ask an admin for.
 | `build.kube-dc.com/build-args` | optional: Dockerfile `ARG` values as JSON, e.g. `{"VITE_API_URL": "https://api.example.com"}`. Not for secrets: build arguments stay in the image history |
 | `build.kube-dc.com/preview-build-args` | optional: JSON that overrides `build-args` key by key for preview builds |
 | `build.kube-dc.com/build-secrets` | optional: comma-separated Secrets of the project; the Dockerfile reads each key with `RUN --mount=type=secret,id=<key>` (for example `NPM_TOKEN`), and nothing is stored in the image |
+| `build.kube-dc.com/preview-database` | optional: a plan such as `postgresql-development`; every preview gets a new, empty database (see [Databases in previews](#databases-in-previews)) |
+| `build.kube-dc.com/preview-database-from` | optional, instead: a managed service in the app's project; every preview gets a copy of it. Previews must then go to the app's own project |
+| `build.kube-dc.com/preview-database-mode` | optional, with `preview-database-from`: `restore` (default) or `branch` |
+| `build.kube-dc.com/preview-database-secret` | optional: the Secret the app reads its database credentials from, default `<app>-db-owner`; the preview reads its own `<app>-pr-<n>-db-owner` there instead |
 
 ### Secrets in previews
 
@@ -104,10 +108,12 @@ secret is not started (the reason is in `build.kube-dc.com/last-error`).
 
 ### Databases in previews
 
-With a GitHub Actions workflow, each pull request preview can get its own
-database (`<app>-pr-<n>-db`, removed with the preview; the app reads its
-credentials from the Secret `<app>-pr-<n>-db-owner`). Set one of these on
-`connect_repository`, or the matching repository variables:
+Each pull request preview can get its own database (`<app>-pr-<n>-db`,
+removed with the preview; its credentials are in the Secret
+`<app>-pr-<n>-db-owner`). With builds on push, set the `preview-database`
+annotations above (`deploy_app` `buildFrom.previewDatabase`,
+`previewDatabaseFrom`, `previewDatabaseMode`). With a workflow, set the
+options on `connect_repository`, or the matching repository variables:
 
 | Option | Variable | The preview's database |
 |---|---|---|
@@ -115,7 +121,8 @@ credentials from the Secret `<app>-pr-<n>-db-owner`). Set one of these on
 | `previewDatabaseFrom: <service>` | `KUBE_DC_PREVIEW_DATABASE_FROM` | A copy of the service's latest backup (takes minutes; data as of that backup) |
 | also `previewDatabaseMode: branch` | `KUBE_DC_PREVIEW_DATABASE_MODE=branch` | A branch of the live service: a copy of its data as of the moment the preview deploys |
 
-The source service must be in the preview project. A branch starts from
+The source service must be in the preview project (with builds on push, the
+app's own project: an app must not copy another project's database). A branch starts from
 an online snapshot, so the source keeps serving, and the platform's part
 takes about two minutes. If the source can't be branched, the preview
 restores the latest backup instead. This happens when the plan doesn't

@@ -126,6 +126,13 @@ Then choose how builds run (one per app; both would deploy every push twice):
   - Build secrets: `buildFrom.buildSecrets` lists project secrets the
     Dockerfile reads with `RUN --mount=type=secret,id=<key>` (a private
     package registry token, for example); they never land in the image.
+  - Preview databases: `buildFrom.previewDatabase` (a plan, a new empty
+    database) or `buildFrom.previewDatabaseFrom` (a managed service in this
+    project, copied; `previewProject` must then be this project) with
+    optional `previewDatabaseMode: branch` (the live data, falls back to the
+    latest backup). The app must read its database from one Secret
+    (`envFromSecrets`/`secretEnv`), default `<name>-db-owner`, else name it
+    in `previewDatabaseSecret`; a preview reads `<name>-pr-<n>-db-owner` there.
   - Previews never read the app's own secrets: a preview reads
     `<secret>-preview` in its project instead (in a separate previews
     project, a secret of the same name there also counts), for runtime
