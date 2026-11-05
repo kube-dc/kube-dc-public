@@ -42,7 +42,7 @@ spec:
 ```
 
 When it is Ready, its address is `https://<name>-<project namespace>.<domain>`,
-for example `images-shalb-dev.stage.kube-dc.com`. The console shows it as the
+for example `images-acme-dev.example.com`. The console shows it as the
 service's `https` endpoint.
 
 ### Projects and rights

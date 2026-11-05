@@ -164,7 +164,6 @@ creating, and labels each one with what it can do: **Node-local**, **Snapshots**
 | Volume (PersistentVolumeClaim) | Block or file storage |
 | Clone of a disk (CSI clone) | Classes on the source disk's driver and storage pool; the source's own class is always offered |
 | Volume restored from a snapshot | Classes on the snapshot's driver and storage pool; the form starts on the source volume's class and modes |
-| Managed database (KdcDatabase) | Block storage, node-local included; **Platform default** leaves the choice to the platform |
 | Managed cluster worker disk | Block storage for a persistent disk, or an ephemeral container disk with no storage class |
 
 Object-storage (bucket) classes, internal scratch classes and classes without dynamic
@@ -180,9 +179,7 @@ request is refused with a message that names the class and the reason when:
 - the class cannot hold that kind of volume, for example `ceph-bucket` for a volume or a
   VM disk (`422`);
 - a restore or CSI clone names a class on a different driver or storage pool than its
-  source (`422`). The message names the source's class to use instead;
-- a database is grown on a class that cannot expand volumes, such as `local-path`
-  (`422`). The database keeps its current size.
+  source (`422`). The message names the source's class to use instead.
 
 If the platform cannot read the storage classes (for example during an API server
 restart), it does not block the request; Kubernetes still validates the claim.

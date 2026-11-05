@@ -302,22 +302,7 @@ spec:
 is hibernated, connections fail and `Ready` is `False`. `Resume` starts the
 instances again from the retained volumes.
 
-## Limits
-
-These cases are not yet qualified. Test them before you rely on them:
-
-- A successful `ExpandStorage`. Only the refusal on storage that cannot expand
-  has been qualified.
-- Waiting for and running in a `NextPlanWindow` maintenance window.
-- Cancelling an operation that you created.
-- A `MinorUpgrade` that advances the PostgreSQL patch version. Only a change of
-  image reference with the same patch version has been qualified.
-- Recovery after an interrupted `MinorUpgrade` or `MajorUpgrade`.
-- `Resize` when capacity is not available, and recovery after an interrupted
-  `Resize`.
-- `Scale`, `Switchover` and `Failover` after a lost node or during other
-  failures.
-- `UpdateParameters` requests that fail partway, and their retries.
+## Connections during operations
 
 Every disruptive operation, including scaling in, `Resize`, `Switchover`,
 `Failover`, upgrades and settings that need a restart, can interrupt existing

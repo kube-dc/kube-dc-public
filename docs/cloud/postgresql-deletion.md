@@ -89,9 +89,8 @@ which policies it allows.
 - The service's backup history records remain, and you can restore them into a
   new service.
 - Because retained resources can include a Gateway route, the database can stay
-  reachable. Gateway behavior under `Retain` is not yet qualified. Turn off
-  Gateway access and delete the bindings you no longer need before you delete
-  the service. See
+  reachable. Turn off Gateway access and delete the bindings you no longer need
+  before you delete the service. See
   [Disable Gateway access](postgresql-external-access.md#disable-gateway-access).
 
 ### SnapshotAndDelete
@@ -103,11 +102,8 @@ which policies it allows.
 - If the engine no longer exists when the deletion runs, no final backup can be
   taken. The data volumes and credential Secrets are then retained instead of
   deleted. Ask your provider.
-- Handling of a final backup that fails is not yet qualified. Ask your provider
-  for help.
 - You can create a new service from the final backup; see
   [Restore into a new service](postgresql-backup-restore.md#restore-into-a-new-service).
-  Test that restore before you rely on it.
 
 ### Delete
 
@@ -119,8 +115,7 @@ which policies it allows.
   and the engine is not touched. The message is
   `deletionPolicy Delete destroys data; annotate services.kube-dc.com/confirm-delete=<name> to confirm, or the instance stays retained`.
 - Set the annotation in the manifest before you delete the service.
-- Backup records made before the deletion remain. Restoring from them after a
-  `Delete` is not yet qualified.
+- Backup records made before the deletion remain.
 
 ### When the policy cannot be applied
 
@@ -216,14 +211,3 @@ A service whose `status.instanceNamespace` is not the Project namespace is
 outside the placement this chapter covers; ask your provider what deleting the
 Project does to it. See also
 [Delete a service or a Project](managed-services.md#delete-a-service-or-a-project).
-
-## Limits
-
-These cases are not yet qualified. Ask your provider if you need them:
-
-- Recovery from a deletion that fails or is interrupted part way.
-- Restoring from the backups of a service that was deleted with `Delete`.
-- `SnapshotAndDelete` when the final backup fails, or when the engine no longer
-  exists.
-- Deleting a service with `Retain` or `SnapshotAndDelete` while Gateway access
-  is on.

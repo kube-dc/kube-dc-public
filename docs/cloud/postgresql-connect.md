@@ -57,10 +57,9 @@ kubectl get managedservice orders-db -n my-project \
   -o jsonpath='{range .status.endpoints[*]}{.name}{"\t"}{.addresses[*].host}{"\t"}{.verification}{"\n"}{end}'
 ```
 
-- A binding over `read-only` has not yet been qualified end to end. Use
-  `read-write` for applications, as the examples on this page do, and ask your
-  provider before you depend on `read-only`. If you try it, check that its
-  `verification` is `Verified`; with a single instance there is no replica.
+- A binding over `read-only` connects to a replica. Check that the endpoint's
+  `verification` is `Verified`. A service with a single instance has no
+  replica, so use `read-write` there.
 - The endpoint and the role are independent. An `owner` credential on the
   `read-only` endpoint is still the owner; use the `readonly` role for
   read-only access.

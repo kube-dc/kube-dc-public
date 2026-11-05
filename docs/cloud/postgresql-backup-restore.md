@@ -619,16 +619,8 @@ archive and its restore authority has not expired; only a successful restore
 with verified data proves it. The time from submitting the operation to a
 `Ready` target with verified data is your recovery time.
 
-## Limits
+## After a switchover or restore
 
-These cases are not yet qualified. Do not rely on them without testing, and ask
-your provider if you need them:
-
-- Point-in-time recovery to a time across a PostgreSQL timeline change. A
-  switchover, failover or in-place restore starts a new timeline. We recommend
-  taking a new backup after such an event.
-- Point-in-time recovery when WAL archiving had gaps or failures.
-- Restoring a backup whose retention period has expired.
-- Creating a new service from a backup that was taken after an in-place restore.
-- Recovery from an interruption at every stage of an in-place restore, and the
-  remaining failure and retry cases.
+A switchover, a failover, or an in-place restore starts a new PostgreSQL
+timeline. Take a new backup after such an event, so that point-in-time
+recovery has a base on the current timeline.

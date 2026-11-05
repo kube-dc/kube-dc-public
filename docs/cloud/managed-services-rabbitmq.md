@@ -157,7 +157,7 @@ Use the [service operations API](managed-services-operations.md):
 | `RotateCredentials` | `role: owner`, `publisher`, or `consumer` | Verifies adoption and old-password rejection on every broker; closes that user's existing connections |
 | `Backup` | None | Exports the supported definitions below |
 
-On qualified local-path plans, storage is a recorded allocation rather than a
+On local-path plans, storage is a recorded allocation rather than a
 hard directory limit. Expansion reserves additional logical allocation without
 resizing the native PVC or moving data. Volume-backed plans require a storage
 class that supports physical expansion. Changes use the service's maintenance

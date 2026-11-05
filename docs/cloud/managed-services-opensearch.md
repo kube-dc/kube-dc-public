@@ -121,7 +121,7 @@ Use the existing [service operations API](managed-services-operations.md):
 | `RotateCredentials` | `role: owner` or `role: readonly` | Verifies the new password and retirement of the old password on every data node |
 | `Backup` | None | Captures the admitted application index scope |
 
-On qualified local-path plans, storage is a recorded reservation rather than a
+On local-path plans, storage is a recorded reservation rather than a
 directory limit. Expansion reserves the additional allocation without changing
 the native PVC request or moving existing data. Other storage classes must
 support physical volume expansion. Maintenance uses the service's recurring

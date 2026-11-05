@@ -6,8 +6,8 @@ how to declare one explicitly, and how to check what tenants are offered. For th
 tenant view see [Block storage](/cloud/block-storage); for VM tiers and live migration
 see [VM storage tiers](/platform/vm-storage-tiers).
 
-The same rules are applied by the console pickers, the backend create guards, the
-managed-cluster worker disk (k8-manager) and the database storage default (db-manager).
+The same rules are applied by the console pickers, the backend create guards, and the
+managed-cluster worker disk (k8-manager).
 
 ## Classes without labels
 
@@ -61,7 +61,6 @@ metadata:
     storage.kube-dc.com/display-name: Balanced (replicated SSD)
     storage.kube-dc.com/capabilities: snapshot,clone,expand,block-mode,rwx-block,live-migration
     storage.kube-dc.com/snapshot-class: block-snapshot
-    storage.kube-dc.com/roles: database
 provisioner: rook-ceph.rbd.csi.ceph.com
 allowVolumeExpansion: true
 parameters:
@@ -88,7 +87,6 @@ accepted but not offered.
 | `k8s-worker-root` | managed-cluster worker disks | block classes |
 | `k8s-etcd` | managed-cluster etcd | block, not the `capacity` tier |
 | `k8s-tenant-volumes` | volumes inside managed clusters | block; node-local only where the plan allows it |
-| `database` | KdcDatabase, managed services | block; node-local where the caller allows it (KdcDatabase does); not `capacity` for production plans. `expand` is not required, but a database grows only on a class that has it |
 | `backup-bucket` | backup buckets | object classes |
 
 Object, scratch and no-provisioner classes are refused for every volume purpose. Any
@@ -97,11 +95,6 @@ both pools are known, its pool.
 
 ## Roles and defaults
 
-- **`database`**: a KdcDatabase created without a storage class goes to the class with
-  this role, if the contract accepts it for a database; otherwise to `local-path`.
-  An existing database always keeps the class it already uses.
-  Several classes with the role are a configuration error, and the platform falls back
-  to `local-path`.
 - **`vm-root-default`**: the class a VM root disk gets by default; without a declaration,
   the cluster default class.
 - **Cluster default class**: the newest class annotated as default (GA or beta

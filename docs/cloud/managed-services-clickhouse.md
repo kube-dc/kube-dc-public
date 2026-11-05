@@ -66,7 +66,7 @@ kubectl get managedservice events -n my-project -w
 | `limits.max_execution_time`, `limits.max_result_rows`, `limits.max_concurrent_queries_for_user`, `limits.max_threads` | Per-query limits applied to the delivered logins' profiles, as strings | `OnlineDesired` |
 
 Use `Resize` to change data-server CPU and memory within the plan bounds,
-and `ExpandStorage` to increase storage allocation. Qualified local HA plans
+and `ExpandStorage` to increase storage allocation. Local HA plans
 record the larger allocation without changing native PVC requests; expandable
 volume classes grow their bound volumes. Storage class and shard shape stay
 fixed. Use RestoreToNew to move to another storage class.

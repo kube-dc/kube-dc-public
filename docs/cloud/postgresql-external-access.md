@@ -105,10 +105,6 @@ kubectl get managedservice orders-db -n my-project -w
 Wait until the service is `Ready` and its configuration is current, as
 described in [Is the result current?](managed-services-status.md#is-the-result-current)
 
-Turning Gateway access on for an existing service has been qualified. Setting
-`expose.type: gateway` in the first manifest of a new service is not yet
-qualified.
-
 When the plan or the service does not allow Gateway access, the service reports
 `Accepted=False` with reason `ParameterSchemaRejected`, and the message names
 `spec.parameters.expose.type`:
@@ -314,9 +310,6 @@ Existing connections close during the switchover, so applications must
 reconnect and retry. See
 [Switchover and failover](postgresql-operations.md#switchover-and-failover).
 
-A forced `Failover` and an unplanned primary outage while clients connect
-through the Gateway are not yet qualified.
-
 ## Disable Gateway access
 
 1. Move clients off the Gateway endpoint.
@@ -354,21 +347,12 @@ its `deletionPolicy`:
 | `deletionPolicy` | Gateway access |
 |------------------|----------------|
 | `Delete` | The Gateway route and the delivered Gateway binding `Secret` objects are removed together with the engine |
-| `Retain` | The platform stops managing the service, and the resources it created, including the Gateway route, are kept. Gateway behaviour under `Retain` is not yet qualified. Turn off Gateway access before you delete the service |
-| `SnapshotAndDelete` | Not yet qualified with Gateway access. Turn off Gateway access before you delete the service |
+| `Retain` | The platform stops managing the service, and the resources it created, including the Gateway route, are kept, so the database can stay reachable. Turn off Gateway access before you delete the service |
+| `SnapshotAndDelete` | The platform takes a final backup and removes the engine. Turn off Gateway access before you delete the service |
 
 See [Status and deletion](postgresql-deletion.md).
 
-## Limits
-
-These cases are not yet qualified. Do not rely on them without testing, and ask
-your provider if you need them:
-
-- A forced `Failover`, or an unplanned outage of the primary, while clients
-  connect through the Gateway.
-- Deleting a service with `SnapshotAndDelete` while Gateway access is on.
-- The remaining failure and recovery cases of the Gateway listener and its
-  route.
+## Endpoint verification
 
 The endpoint's `verification` shows only that the platform reached the Gateway
 listener. Test the connection from the networks your clients use.

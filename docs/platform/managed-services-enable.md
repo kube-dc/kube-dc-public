@@ -223,12 +223,11 @@ classes and plans, six family bundles, egress, placements, and console
 publication. Add `--greenfield` for a new installation; it also requires the
 starter's legacy plans to be disabled. It does not read signing-key Secrets.
 
-For deployment testing, reuse the previously qualified family lifecycle
-matrix when adapter code and plan inputs are unchanged. Render the starter
-and target overlay, run this gate, then perform one disposable backup/restore
-and deletion smoke. Test changed adapters or plan inputs separately. This
-checks an existing cluster; the fresh-install harness still qualifies RKE2,
-Flux ordering and first-install prerequisites on a clean host.
+To test a deployment, render the starter and the target overlay, run this
+command, and then create one disposable service: back it up, restore it, and
+delete it. When adapter code or plan inputs change, test each changed family
+separately. This command checks an existing cluster. It does not check RKE2,
+Flux ordering, or first-install prerequisites on a clean host.
 
 ## Upgrade a family operator on one cluster
 
@@ -247,18 +246,11 @@ The chart version also updates the ClickHouse catalog bundle's operator
 attestation. Other clusters retain their own pins. This upgrades the operator;
 engine and Keeper versions remain selected by service plans.
 
-Operator 0.27.4 removes `k8s_secret_password_sha256_hex`. Services source
-`f280b84` and the combined `v0.9.1-rc9-clickhouse.20261002.3` artifacts implement
-namespace-local `valueFrom.secretKeyRef` and a credential marker that rolls
-server Pods after Secret changes. Stage operator 0.27.4 passed both credential roles on every replica,
-explicit previous-password refusal, compute resize, volume expansion,
-RestoreToNew, and retained source data and PVC identities. Evidence is in the
-[ClickHouse migration checkpoint](https://github.com/kube-dc/kube-dc-services/blob/main/docs/operations-checkpoint-2026-10-02-clickhouse-migration.md).
-Stage, Cloud and the starter candidate now pin `.4`, which preserves that
-migration and fixes the user-visible status during Keeper loss. The
-[Cloud fault checkpoint](https://github.com/kube-dc/kube-dc-services/blob/main/docs/operations-checkpoint-2026-10-02-cloud-faults.md) records member replacement, Keeper unavailability,
-automatic data-preserving recovery and confirmed cleanup. These candidate
-pins do not promote the stable CLI/starter release.
+Operator 0.27.4 removes `k8s_secret_password_sha256_hex`. The services hub and
+runner set ClickHouse credentials through namespace-local
+`valueFrom.secretKeyRef`, and a credential marker rolls the server Pods after a
+Secret changes. Use operator 0.27.4 or later. It also keeps the service status
+correct while Keeper is unavailable.
 
 For an existing installation, use this order:
 
@@ -269,13 +261,13 @@ For an existing installation, use this order:
    credential marker through signed revision replay.
 3. Select the operator chart, operator image and metrics image together.
    Verify the operator and current-generation catalog bundle.
-4. Qualify credential rotation on every replica: the new password must work
-   and the previous password must receive an explicit authentication failure.
-   Check data markers and PVC identities before publication.
+4. Check credential rotation on every replica: the new password must work,
+   and the previous password must get an explicit authentication failure.
+   Check that the data and the PVC identities are unchanged.
 
 The published plans continue to select ClickHouse and Keeper 25.8.2. An operator
-upgrade does not upgrade database engines. Keep a cluster on its qualified
-operator pins until its migration gate passes.
+upgrade does not upgrade database engines. Keep a cluster on its existing
+operator pins until these checks pass.
 
 Before pushing, render and record the target catalog's changed bundle pin:
 
@@ -286,7 +278,7 @@ bash scripts/services-catalog-render-test.sh --update CLUSTER
 Review and commit the overlay, shared-template changes if needed, and
 `platform/kube-dc-services-catalog/revisions.lock` together. Wait for the
 operator HelmRelease and services catalog to become Ready, run
-`bootstrap services verify`, and qualify a disposable service. Existing
+`bootstrap services verify`, and test a disposable service. Existing
 instances keep their pinned catalog revision; use the reviewed catalog
 adoption procedure when their bundle inputs need to move.
 

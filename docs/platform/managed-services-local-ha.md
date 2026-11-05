@@ -2,8 +2,8 @@
 
 Use a separate local-path class for HA databases and Kafka while keeping an
 expandable block class for development services. Require three distinct Ready,
-schedulable hosts, a project bucket provider, and qualified managed-services
-artifacts.
+schedulable hosts, a project bucket provider, and a managed-services
+release.
 
 Add these options to your reviewed `kube-dc bootstrap init` invocation:
 
@@ -29,9 +29,10 @@ starter must advertise `managed-services-local-ha-v1`; an older starter is
 refused. With a verified target kubeconfig, the CLI checks the local-path
 provisioner, delayed volume binding, and three eligible hosts. For greenfield
 installation, it accepts the starter-owned `local-path` class and requires a
-reviewed three-manager inventory. Catalog publication remains subject to live
-storage, operator-version, backup and capacity qualification.
+reviewed three-manager inventory. Before you publish the catalog, check
+storage, operator versions, backups, and capacity on the live cluster.
 
 After scaffolding, inspect the generated storage-role and budget values and the
-`local-ha-storage` catalog component before catalog adoption. Do not treat a
-successful scaffold as runtime qualification.
+`local-ha-storage` catalog component before catalog adoption. A successful
+scaffold does not prove that services run: create and test a service before you
+publish the catalog.
