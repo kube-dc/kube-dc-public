@@ -4,79 +4,128 @@
     {
       "name": "create-project",
       "type": "archive",
-      "description": "Create a new Kube-DC project with isolated VPC networking inside an existing organization. Handles network type selection (cloud vs public), organization verification, and project manifest generation.",
+      "description": "Create a Kube-DC Project inside an existing Organization. Covers network selection, quota preflight, the Project manifest, and readiness verification.",
       "url": "/skills/create-project/",
       "digest": "sha256:placeholder"
     },
     {
       "name": "deploy-app",
       "type": "skill-md",
-      "description": "Deploy a containerized application to a Kube-DC project with optional database, service exposure (HTTPS via Gateway or direct EIP), and persistent storage. Covers Helm deployments, raw manifests, hosted MCP deploy tools, and keyless deploys with pull request previews from GitHub.",
+      "description": "Deploy a containerized application to a Kube-DC Project with optional persistent storage, a managed database, external exposure, or gated Shared GPU acceleration; set up keyless deploys, builds on push and pull request previews from a GitHub repository, with a managed container registry or the user's own.",
       "url": "/skills/deploy-app/SKILL.md",
       "digest": "sha256:placeholder"
     },
     {
       "name": "create-vm",
       "type": "archive",
-      "description": "Deploy a virtual machine in a Kube-DC project with SSH access, cloud-init configuration, and optional external IP exposure. Supports Ubuntu, Debian, and Windows images.",
+      "description": "Create a KubeVirt virtual machine in a Kube-DC Project using the live OS catalog, Project networking, supported storage, and the generated SSH keypair.",
       "url": "/skills/create-vm/",
       "digest": "sha256:placeholder"
     },
     {
       "name": "create-database",
       "type": "archive",
-      "description": "Create a managed PostgreSQL or MariaDB database in a Kube-DC project, configure access for workloads via environment variables and secrets, and optionally expose externally via Gateway or LoadBalancer.",
+      "description": "Create a managed database (PostgreSQL, MySQL, MariaDB, ClickHouse) or Valkey cache in a Kube-DC Project as a ManagedService, deliver its credential to workloads with a ServiceBinding Secret, and prepare backup and restore workflows.",
       "url": "/skills/create-database/",
       "digest": "sha256:placeholder"
     },
     {
       "name": "expose-service",
       "type": "archive",
-      "description": "Expose a Kube-DC service externally via Gateway Route (HTTP/HTTPS/gRPC with auto TLS) or Direct EIP + LoadBalancer (any TCP/UDP). Includes decision guide for choosing the right exposure method.",
+      "description": "Expose a Service from a Kube-DC Project with a hostname-based HTTP/HTTPS/TLS Gateway route or a dedicated EIP-backed LoadBalancer for selected TCP/UDP ports.",
       "url": "/skills/expose-service/",
       "digest": "sha256:placeholder"
     },
     {
       "name": "manage-cluster",
       "type": "archive",
-      "description": "Manage Kube-DC managed Kubernetes clusters — scale worker pools, upgrade versions, access kubeconfig, and monitor status. Covers day-2 operations via kubectl patch.",
+      "description": "\"Operate a Kube-DC Managed Cluster: download its external kubeconfig, scale or autoscale worker pools, perform supported upgrades, and inspect status.\"",
       "url": "/skills/manage-cluster/",
       "digest": "sha256:placeholder"
     },
     {
       "name": "manage-networking",
       "type": "archive",
-      "description": "Manage Kube-DC networking resources — create External IPs (EIp), Floating IPs (FIp), and understand VPC networking. Includes decision guide for choosing between EIP and FIP.",
+      "description": "Manage Kube-DC Project networking with EIp and FIp resources, Service exposure, and Organization-authorized Routed Network attachments to approved external destinations.",
       "url": "/skills/manage-networking/",
       "digest": "sha256:placeholder"
     },
     {
       "name": "manage-storage",
       "type": "archive",
-      "description": "Manage Kube-DC storage resources — create S3 buckets (ObjectBucketClaim), DataVolumes for VMs, and PersistentVolumeClaims for containers.",
+      "description": "Create ObjectBucketClaims for S3-compatible buckets, DataVolumes for VM disks, and PersistentVolumeClaims for Project workloads.",
       "url": "/skills/manage-storage/",
       "digest": "sha256:placeholder"
     },
     {
       "name": "manage-access",
       "type": "archive",
-      "description": "Manage Kube-DC organization groups and RBAC — create OrganizationGroup resources to map user groups to Kubernetes roles per project. Note that user management is UI-only (Keycloak).",
+      "description": "Manage Kube-DC Organization Groups and Project RBAC. Use OrganizationGroup resources to give teams standard or custom roles in selected Projects; manage individual users in the console.",
       "url": "/skills/manage-access/",
       "digest": "sha256:placeholder"
     },
     {
       "name": "ssh-into-vm",
       "type": "skill-md",
-      "description": "SSH into a Kube-DC virtual machine using the project's auto-generated SSH keypair. Covers extracting keys, finding VM IP, and connecting via internal IP or external FIP/EIP.",
+      "description": "Connect securely to a Kube-DC virtual machine through the browser, an approved private route, a Floating IP, or an EIP-bound LoadBalancer Service.",
       "url": "/skills/ssh-into-vm/SKILL.md",
       "digest": "sha256:placeholder"
     },
     {
       "name": "use-kube-dc-cli",
       "type": "skill-md",
-      "description": "Use the kube-dc CLI for authentication, context switching, and namespace management. Covers login, use, ns, config, and kubectl integration.",
+      "description": "Install and use the kube-dc CLI for Organization login, Project context switching, kubeconfig integration, and logout.",
       "url": "/skills/use-kube-dc-cli/SKILL.md",
       "digest": "sha256:placeholder"
+    },
+    {
+      "name": "check-quota",
+      "type": "skill-md",
+      "url": "/skills/check-quota/SKILL.md",
+      "digest": "sha256:placeholder",
+      "description": "Check Kube-DC Organization and Project quota before creating workloads, VMs, databases, Managed Clusters, public IPs, or storage."
+    },
+    {
+      "name": "deploy-web-stack",
+      "type": "skill-md",
+      "url": "/skills/deploy-web-stack/SKILL.md",
+      "digest": "sha256:placeholder",
+      "description": "Deploy a complete web application in a Kube-DC Project \u2014 a managed database (PostgreSQL, MySQL or MariaDB) with delivered credentials, an optional persistent volume, and an HTTPS hostname with a platform certificate through the shared Gateway, without a public IP. Use for WordPress, CMSs, APIs and any app that needs a database and a URL."
+    },
+    {
+      "name": "install-kube-dc",
+      "type": "skill-md",
+      "url": "/skills/install-kube-dc/SKILL.md",
+      "digest": "sha256:placeholder",
+      "description": "Plan and install a new Kube-DC platform on prepared servers with the kube-dc CLI. Gathers the site facts, checks hosts, disks and DNS, proposes the network, front door, Ceph storage, domain and certificate design, then runs bootstrap install, init and accept. Operator skill; needs SSH access to the servers and a Git repository for the fleet."
+    },
+    {
+      "name": "manage-certificates",
+      "type": "skill-md",
+      "url": "/skills/manage-certificates/SKILL.md",
+      "digest": "sha256:placeholder",
+      "description": "Request and manage a Project-scoped ManagedCertificate for private Organization PKI or public ACME issuance, then consume the resulting Kubernetes TLS Secret."
+    },
+    {
+      "name": "manage-database-credentials",
+      "type": "skill-md",
+      "url": "/skills/manage-database-credentials/SKILL.md",
+      "digest": "sha256:placeholder",
+      "description": "Deliver a managed service credential role to a workload with a ServiceBinding Secret, rotate it now with a RotateCredentials operation, or rotate it on a schedule with a ServiceCredentialPolicy."
+    },
+    {
+      "name": "manage-kms",
+      "type": "skill-md",
+      "url": "/skills/manage-kms/SKILL.md",
+      "digest": "sha256:placeholder",
+      "description": "Create and operate Kube-DC KMSKey resources backed by non-exportable OpenBao Transit keys, use the authenticated CLI for short payloads, and design envelope encryption for larger data."
+    },
+    {
+      "name": "manage-secrets",
+      "type": "skill-md",
+      "url": "/skills/manage-secrets/SKILL.md",
+      "digest": "sha256:placeholder",
+      "description": "Store Project application secrets in Kube-DC's managed secret service, optionally sync them into Kubernetes Secrets, and manage their lifecycle with the kube-dc CLI."
     }
   ]
 }

@@ -45,6 +45,7 @@ Master catalog for AI agents. Read this first, then dive into specific files as 
 | `manage-kms` | Per-project encryption keys; direct encrypt (≤64 KiB) + envelope encryption (Go & Python helpers) | SKILL.md, kmskey-template.yaml, envelope-encryption-go.md, envelope-encryption-py.md |
 | `ssh-into-vm` | SSH into VM using project keypair | SKILL.md |
 | `use-kube-dc-cli` | Authentication, context switching, namespace management | SKILL.md |
+| `install-kube-dc` | Operator: plan and install a new Kube-DC platform (host and disk checks, network, front door, Ceph, DNS, certificates, bootstrap install/init/accept) | SKILL.md, decisions.md, host-checks.md, install-input.env.example |
 
 Skills location: `skills/{skill-name}/SKILL.md`
 

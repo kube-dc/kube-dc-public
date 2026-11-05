@@ -1,0 +1,6 @@
+interface:
+  display_name: Install Kube-DC
+  short_description: Plan and install a new Kube-DC platform with the kube-dc CLI
+  brand_color: '#2563EB'
+policy:
+  allow_implicit_invocation: true
