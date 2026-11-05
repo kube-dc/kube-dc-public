@@ -92,7 +92,7 @@ others see placeholders to ask an admin for.
 | `build.kube-dc.com/preview-build-args` | optional: JSON that overrides `build-args` key by key for preview builds |
 | `build.kube-dc.com/build-secrets` | optional: comma-separated Secrets of the project; the Dockerfile reads each key with `RUN --mount=type=secret,id=<key>` (for example `NPM_TOKEN`), and nothing is stored in the image |
 | `build.kube-dc.com/preview-database` | optional: a plan such as `postgresql-development`; every preview gets a new, empty database (see [Databases in previews](#databases-in-previews)) |
-| `build.kube-dc.com/preview-database-from` | optional, instead: a managed service in the app's project; every preview gets a copy of it. Previews must then go to the app's own project |
+| `build.kube-dc.com/preview-database-from` | optional, instead: a managed service in the previews project; every preview gets a copy of it when a [ServiceCopyGrant](#copy-grants) allows it, else an empty database of its plan |
 | `build.kube-dc.com/preview-database-mode` | optional, with `preview-database-from`: `restore` (default) or `branch` |
 | `build.kube-dc.com/preview-database-secret` | optional: the Secret the app reads its database credentials from, default `<app>-db-owner`; the preview reads its own `<app>-pr-<n>-db-owner` there instead |
 
@@ -121,8 +121,7 @@ options on `connect_repository`, or the matching repository variables:
 | `previewDatabaseFrom: <service>` | `KUBE_DC_PREVIEW_DATABASE_FROM` | A copy of the service's latest backup (takes minutes; data as of that backup) |
 | also `previewDatabaseMode: branch` | `KUBE_DC_PREVIEW_DATABASE_MODE=branch` | A branch of the live service: a copy of its data as of the moment the preview deploys |
 
-The source service must be in the preview project (with builds on push, the
-app's own project: an app must not copy another project's database). A branch starts from
+The source service must be in the preview project. A branch starts from
 an online snapshot, so the source keeps serving, and the platform's part
 takes about two minutes. If the source can't be branched, the preview
 restores the latest backup instead. This happens when the plan doesn't
@@ -135,6 +134,32 @@ source are locked, so a password from production does not open a preview.
 While branches of a service exist, deleting that service, restoring it in
 place, and upgrading its major version wait until the branches are removed.
 They are removed with their previews.
+
+Problems with a preview's database are in the preview Deployment's
+annotation `build.kube-dc.com/preview-database-error`.
+
+#### Copy grants
+
+With builds on push, the platform makes the copy, not your CI, so a Project
+admin of the source's project must allow it first with a ServiceCopyGrant.
+Without one, a preview gets an empty database of the source's plan, and the
+error annotation says why.
+
+```yaml
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ServiceCopyGrant
+metadata:
+  name: notes-previews
+  namespace: <org>-<project>          # the source's project
+spec:
+  source: { name: notes-db, uid: <uid of notes-db> }   # a recreated service is not granted
+  app: notes                          # the app whose previews may copy it
+  appNamespace: <org>-<app project>   # omit when it is this project
+  modes: [Branch, Restore]
+```
+
+`modes` lists what the previews may use: `Branch` (the live data) and
+`Restore` (the latest backup, also the fallback when a branch fails).
 
 A failed build is named in the Deployment's `build.kube-dc.com/last-error`
 and in the check run. Builds count against the project quota (they request
