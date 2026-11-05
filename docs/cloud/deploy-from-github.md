@@ -102,6 +102,33 @@ Secret named `<name>` there is used too. Variables from other Secrets are
 left out of the preview, and a preview build that needs a missing build
 secret is not started (the reason is in `build.kube-dc.com/last-error`).
 
+### Databases in previews
+
+With a GitHub Actions workflow, each pull request preview can get its own
+database (`<app>-pr-<n>-db`, removed with the preview; the app reads its
+credentials from the Secret `<app>-pr-<n>-db-owner`). Set one of these on
+`connect_repository`, or the matching repository variables:
+
+| Option | Variable | The preview's database |
+|---|---|---|
+| `previewDatabase: postgresql-development` | `KUBE_DC_PREVIEW_DATABASE` | A new, empty database from that plan |
+| `previewDatabaseFrom: <service>` | `KUBE_DC_PREVIEW_DATABASE_FROM` | A copy of the service's latest backup (takes minutes; data as of that backup) |
+| also `previewDatabaseMode: branch` | `KUBE_DC_PREVIEW_DATABASE_MODE=branch` | A branch of the live service: a copy of its data as of the moment the preview deploys |
+
+The source service must be in the preview project. A branch starts from
+an online snapshot, so the source keeps serving, and the platform's part
+takes about two minutes. If the source can't be branched, the preview
+restores the latest backup instead. This happens when the plan doesn't
+allow branching, the storage has no snapshots, or the service was created
+before branching existed.
+
+A branch is a separate database. Writes to it never reach the source. Only
+the branch's own owner can log in to it; the other logins it copied from the
+source are locked, so a password from production does not open a preview.
+While branches of a service exist, deleting that service, restoring it in
+place, and upgrading its major version wait until the branches are removed.
+They are removed with their previews.
+
 A failed build is named in the Deployment's `build.kube-dc.com/last-error`
 and in the check run. Builds count against the project quota (they request
 200m CPU and may use up to 2 CPU, 26Gi of disk and 60 minutes).

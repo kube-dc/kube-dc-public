@@ -147,6 +147,19 @@ Then choose how builds run (one per app; both would deploy every push twice):
      runner pool, and `privateImage` for a private GHCR image (the user then
      adds a `GHCR_PULL_TOKEN` repository secret with `read:packages`; never
      ask for the token's value).
+     With `previewProject`, a preview database per pull request (the app
+     reads the Secret `<app>-pr-<n>-db-owner`; removed with the preview):
+     - `previewDatabase`: a plan such as `postgresql-development`, for a new,
+       empty database.
+     - `previewDatabaseFrom`: a managed service in the preview project. The
+       preview gets a copy of its latest backup, which takes minutes.
+     - Add `previewDatabaseMode: branch` to copy the live data as of the
+       deploy instead. The platform's part takes about two minutes. When the
+       source can't branch (the plan doesn't allow it, or an older service),
+       the preview falls back to the latest backup.
+     A branch locks every login it copied except its own owner. While
+     branches exist, the source can't be deleted, restored in place or
+     upgraded to a new major version; tell the user that before they try.
   3. Write every returned file into the repository unchanged, run the
      returned `gh variable set` commands, commit and push.
 
