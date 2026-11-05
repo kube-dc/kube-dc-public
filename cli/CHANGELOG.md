@@ -1,5 +1,15 @@
 # kube-dc CLI changelog
 
+## v0.9.18-rc.1 — 2026-11-05 (prerelease: TUI and input review)
+
+Installs platform bundle 0.9.16, like v0.9.17. This candidate brings the guided installer into `kube-dc bootstrap` and is for reviewing and saving site inputs; the installation procedure stays on v0.9.17 until a full installation with this build passes.
+
+- The New Cluster form in `kube-dc bootstrap` (Fleet / Contexts / New Cluster) keeps the complete site input across tabs; `kube-dc bootstrap --config FILE --review-only` opens it for review and private save with installation disabled. `b`/`f` and `Ctrl+u`/`Ctrl+d` page long panels.
+- Storage review covers one to ten hosts, several disks per host, explicit copies and monitor placement; host inspection over SSH verifies the selected device identity and classifies occupied devices.
+- `bootstrap init` binds a private Git provider host (`--provider-host`, for example a self-managed GitLab) for push and Flux, and checks the starter supports it; Python with PyYAML is a checked prerequisite.
+- Guided execution from the TUI is guarded and not yet qualified for production use; install with the documented `bootstrap init` commands.
+- The `bootstrap init` panel accepts Ceph device paths the flags and `--config` accept: a `/dev/` prefix and stable `/dev/disk/by-id/...` paths. Before, an input file naming disks that way loaded and saved correctly but showed false errors on the Ceph rows in Review.
+
 ## v0.9.17 — 2026-11-05
 
 Installs platform bundle 0.9.16 (`oci://ghcr.io/kube-dc/fleet-starter:v0.9.16`, the starter accepted by a clean ten-host installation with this CLI's front-door fix).

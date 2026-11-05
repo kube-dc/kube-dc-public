@@ -17,6 +17,9 @@ type NodeKernelLister interface {
 
 // CephKernelGateOptions configures CheckCephKernels.
 type CephKernelGateOptions struct {
+	// RequireEvidence makes unknown or partial node inventories blocking.
+	RequireEvidence bool
+	ExpectedNodes   []string
 	// Nodes is usually the session's K8s client; a client without
 	// NodeKernelLister makes the gate stand down.
 	Nodes any
@@ -45,12 +48,28 @@ func CheckCephKernels(ctx context.Context, opts CephKernelGateOptions) error {
 	}
 	lister, ok := opts.Nodes.(NodeKernelLister)
 	if !ok || lister == nil {
+		if opts.RequireEvidence {
+			return fmt.Errorf("Ceph kernel compatibility evidence is unavailable")
+		}
 		return nil
 	}
 	kernels, err := lister.NodeKernelVersions(ctx)
 	if err != nil || len(kernels) == 0 {
+		if opts.RequireEvidence {
+			return fmt.Errorf("Ceph kernel compatibility evidence is unavailable")
+		}
 		fmt.Fprintf(out, "[apply] Ceph kernel gate: skipped (node kernels unavailable)\n")
 		return nil
+	}
+	if opts.RequireEvidence {
+		if len(kernels) != len(opts.ExpectedNodes) {
+			return fmt.Errorf("Ceph kernel inventory differs from reviewed hosts")
+		}
+		for _, node := range opts.ExpectedNodes {
+			if kernels[node] == "" {
+				return fmt.Errorf("Ceph kernel evidence missing for %s", node)
+			}
+		}
 	}
 	var old []string
 	for node, kernel := range kernels {

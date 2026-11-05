@@ -100,6 +100,25 @@ func NewFinalizationRecorder(next StepReporter, gpuEnabled, hamiEnabled bool, ma
 
 func (r *FinalizationRecorder) Plan(steps []Step) { r.next.Plan(steps) }
 
+// ExecuteStep preserves the coordinator gate through the presentation wrapper.
+func (r *FinalizationRecorder) ExecuteStep(id StepID, run func() error) error {
+	if executor, ok := r.next.(StepExecutor); ok {
+		err := executor.ExecuteStep(id, run)
+		status := FinalizationDone
+		if err != nil {
+			status = FinalizationFailed
+		}
+		r.mu.Lock()
+		r.states[id] = FinalizationStep{ID: id, Status: status}
+		r.mu.Unlock()
+		return err
+	}
+	r.Start(id)
+	err := run()
+	r.Done(id, err)
+	return err
+}
+
 func (r *FinalizationRecorder) Start(id StepID) { r.next.Start(id) }
 
 func (r *FinalizationRecorder) Done(id StepID, err error) {

@@ -25,19 +25,39 @@ type GitBinding struct {
 
 var gitObjectID = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 
-type boundedGitOutput struct{ bytes.Buffer }
+type boundedGitOutput struct {
+	buffer bytes.Buffer
+	limit  int
+}
+
+func (b *boundedGitOutput) Len() int       { return b.buffer.Len() }
+func (b *boundedGitOutput) String() string { return b.buffer.String() }
 
 func (b *boundedGitOutput) Write(p []byte) (int, error) {
-	if b.Len()+len(p) > 64<<10 {
+	limit := b.limit
+	if limit == 0 {
+		limit = 64 << 10
+	}
+	if b.Len()+len(p) > limit {
 		return 0, fmt.Errorf("Git output exceeds its limit")
 	}
-	return b.Buffer.Write(p)
+	return b.buffer.Write(p)
 }
 
 // InspectGitBinding performs no fetch, credential enrollment, or index writes.
 // The first batch supports a clean existing branch with one matching upstream.
 // New repositories and divergent branches remain explicit coordinator gates.
 func InspectGitBinding(ctx context.Context, directory string) (GitBinding, error) {
+	return inspectGitBinding(ctx, directory, false)
+}
+
+// InspectGitWorkingBinding also observes an owned partial stage. It neither
+// synchronizes the branch nor interprets a difference as permission to retry.
+func InspectGitWorkingBinding(ctx context.Context, directory string) (GitBinding, error) {
+	return inspectGitBinding(ctx, directory, true)
+}
+
+func inspectGitBinding(ctx context.Context, directory string, partial bool) (GitBinding, error) {
 	var binding GitBinding
 	directory, err := filepath.Abs(directory)
 	if err != nil {
@@ -76,7 +96,7 @@ func InspectGitBinding(ctx context.Context, directory string) (GitBinding, error
 		return binding, fmt.Errorf("invalid local Git identity")
 	}
 	status, err := run("status", "--porcelain=v1", "--untracked-files=all")
-	if err != nil || status != "" {
+	if err != nil || (!partial && status != "") {
 		return binding, fmt.Errorf("review requires a clean tracked and untracked working tree")
 	}
 	remote, err := run("remote", "get-url", "--all", "origin")
@@ -99,14 +119,14 @@ func InspectGitBinding(ctx context.Context, directory string) (GitBinding, error
 		return binding, err
 	}
 	fields := strings.Fields(ref)
-	if len(fields) != 2 || !gitObjectID.MatchString(fields[0]) || fields[1] != "refs/heads/"+branch || fields[0] != head {
+	if len(fields) != 2 || !gitObjectID.MatchString(fields[0]) || fields[1] != "refs/heads/"+branch || (!partial && fields[0] != head) {
 		return binding, fmt.Errorf("local and remote Git branch differ; synchronize before review")
 	}
 	// Local state can change while the remote is queried.
 	finalHead, e1 := run("rev-parse", "HEAD")
 	finalBranch, e2 := run("symbolic-ref", "--quiet", "--short", "HEAD")
 	finalStatus, e3 := run("status", "--porcelain=v1", "--untracked-files=all")
-	if e1 != nil || e2 != nil || e3 != nil || finalHead != head || finalBranch != branch || finalStatus != "" {
+	if e1 != nil || e2 != nil || e3 != nil || finalHead != head || finalBranch != branch || finalStatus != status {
 		return binding, fmt.Errorf("Git checkout changed during review")
 	}
 	return GitBinding{Directory: directory, Branch: branch, Head: head, Remote: remote, RemoteHead: fields[0]}, nil

@@ -430,12 +430,18 @@ func KubeconfigTargetsCluster(domain, nodeIP string) (server string, targets boo
 // --server` writes before the VIP serves the API, but only when the current
 // context carries the cluster's name: private addresses repeat across sites.
 func KubeconfigTargetsNamedCluster(name, domain, nodeIP string, controlPlane []string) (server string, targets bool) {
-	if name == "" || currentKubeconfigContext() != name {
-		controlPlane = nil
-	}
 	server, ok := currentKubeconfigServer()
 	if !ok {
 		return "", false
+	}
+	return server, KubeconfigServerMatchesTarget(server, currentKubeconfigContext(), name, domain, nodeIP, controlPlane)
+}
+
+// KubeconfigServerMatchesTarget checks an already loaded configuration, so
+// callers can bind all reads to one context snapshot without rereading ambient state.
+func KubeconfigServerMatchesTarget(server, contextName, name, domain, nodeIP string, controlPlane []string) bool {
+	if name == "" || contextName != name {
+		controlPlane = nil
 	}
 	// EXACT host identity, not a substring. Contains() accepted
 	// old-pilot.example.com for pilot.example.com and 10.0.0.10 for 10.0.0.1 —
@@ -446,7 +452,7 @@ func KubeconfigTargetsNamedCluster(name, domain, nodeIP string, controlPlane []s
 	// no matter what we parse, but the substring class is entirely avoidable.
 	u, err := url.Parse(server)
 	if err != nil || u.Hostname() == "" {
-		return server, false
+		return false
 	}
 	host := strings.ToLower(u.Hostname())
 	for _, id := range append([]string{
@@ -461,10 +467,10 @@ func KubeconfigTargetsNamedCluster(name, domain, nodeIP string, controlPlane []s
 		// The API endpoint for <domain> is kube-api.<domain>; accept the domain
 		// itself too (older kubeconfigs), and the node IP only as an exact match.
 		if host == id || host == "kube-api."+id {
-			return server, true
+			return true
 		}
 	}
-	return server, false
+	return false
 }
 
 // ControlPlaneKubeconfigServer returns the current kubeconfig's server when the

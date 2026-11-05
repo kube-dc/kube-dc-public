@@ -26,18 +26,23 @@ func validClaimMachine(value string) bool {
 // HostClaim is a reservation and fencing identity, not installation readiness.
 // Monotonic expiry is meaningful only on the recorded host boot.
 type HostClaim struct {
-	HostID         string `json:"hostId"`
-	MachineID      string `json:"machineId"`
-	BootID         string `json:"bootId"`
-	ObservedBootID string `json:"observedBootId"`
-	SessionID      string `json:"sessionId"`
-	RunID          string `json:"runId"`
-	InputHash      string `json:"inputHash"`
-	ReviewHash     string `json:"reviewHash"`
-	ReleaseSHA256  string `json:"releaseSHA256"`
-	ExpiresTick    int64  `json:"expiresTick"`
-	ObservedTick   int64  `json:"observedTick"`
-	State          string `json:"state"`
+	HostID           string `json:"hostId"`
+	MachineID        string `json:"machineId"`
+	BootID           string `json:"bootId"`
+	ObservedBootID   string `json:"observedBootId"`
+	SessionID        string `json:"sessionId"`
+	RunID            string `json:"runId"`
+	InputHash        string `json:"inputHash"`
+	ReviewHash       string `json:"reviewHash"`
+	ReleaseSHA256    string `json:"releaseSHA256"`
+	ExpiresTick      int64  `json:"expiresTick"`
+	ObservedTick     int64  `json:"observedTick"`
+	State            string `json:"state"`
+	ExecutorProtocol string `json:"executorProtocol,omitempty"`
+	HandoffID        string `json:"handoffId,omitempty"`
+	SourceRunID      string `json:"sourceRunId,omitempty"`
+	ExecutorUnit     string `json:"executorUnit,omitempty"`
+	HandoffEpoch     int64  `json:"handoffEpoch,omitempty"`
 }
 
 type HostClaims struct {
@@ -137,11 +142,19 @@ func hostClaimCommand(claim HostClaim, action string, takeover bool, payload, ba
 	if !validClaimMachine(claim.MachineID) {
 		return "", fmt.Errorf("invalid claimed machine identity")
 	}
-	if action != "acquire" && action != "inspect" && action != "check" && action != "renew" && action != "release" && action != "execute" {
+	if action != "acquire" && action != "inspect" && action != "check" && action != "renew" && action != "release" && action != "execute" && action != "park" && action != "transfer" && action != "activate" {
 		return "", fmt.Errorf("unsupported claim action")
 	}
 	if action == "execute" && payload == "" {
 		return "", fmt.Errorf("guarded command is empty")
+	}
+	if action == "park" || action == "transfer" || action == "activate" {
+		if !validSessionHash(claim.HandoffID) || !validSessionHash(claim.SourceRunID) || !claimBootPattern.MatchString(claim.BootID) {
+			return "", fmt.Errorf("handoff requires exact source, nonce and boot")
+		}
+		if claim.HandoffEpoch < 0 || claim.HandoffEpoch > 65535 || (action != "park" && claim.HandoffEpoch == 0) {
+			return "", fmt.Errorf("invalid handoff epoch")
+		}
 	}
 	script := `set -euo pipefail
 umask 077
@@ -179,11 +192,18 @@ read_record() {
   test ! -L "$record" && test -f "$record" && test "$(stat -c '%u:%a:%h' "$record")" = '` + strconv.Itoa(uid) + `:600:1' || exit 1
   test "$(stat -c %s "$record")" -le 1024
   mapfile -t fields < "$record"
-  test "${#fields[@]}" = 10 && test "${fields[0]}" = KDC_CLAIM_V1 || exit 1
+  if [ "${#fields[@]}" = 10 ] && [ "${fields[0]}" = KDC_CLAIM_V1 ]; then fields[0]=KDC_CLAIM_V2; fields+=(legacy - - - 0); fi
+  test "${#fields[@]}" = 15 && test "${fields[0]}" = KDC_CLAIM_V2 || exit 1
   [[ ${fields[1]} =~ ^[a-f0-9]{32}$ ]] && [[ ${fields[2]} =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]] || exit 1
   for index in 3 4 5 6 7; do [[ ${fields[$index]} =~ ^[a-f0-9]{64}$ ]]; done
   [[ ${fields[8]} =~ ^[0-9]{1,12}$ ]]
-  [[ ${fields[9]} = reserved || ${fields[9]} = started || ${fields[9]} = released ]]
+  [[ ${fields[9]} = reserved || ${fields[9]} = started || ${fields[9]} = released || ${fields[9]} = handoff ]]
+  [[ ${fields[10]} = legacy || ${fields[10]} = legacy-running || ${fields[10]} = systemd-v1 || ${fields[10]} = systemd-running ]]
+  [[ ${fields[13]} = - || ${fields[13]} =~ ^kube-dc-setup-[a-f0-9-]{36}\.service$ ]]
+  [[ ${fields[14]} =~ ^(0|[1-9][0-9]{0,4})$ ]] && test "${fields[14]}" -le 65535 || exit 1
+  if [ "${fields[9]}" = handoff ]; then
+    [[ ${fields[11]} =~ ^[a-f0-9]{64}$ ]] && [[ ${fields[12]} =~ ^[a-f0-9]{64}$ ]] || exit 1
+  else test "${fields[11]}:${fields[12]}:${fields[14]}" = -:-:0; fi
   test "${fields[1]}" = ` + quoteClaim(claim.MachineID) + `
 }
 write_record() {
@@ -212,25 +232,59 @@ if [ ` + quoteClaim(action) + ` = acquire ]; then
     fi
   fi
   test "$available" = true
-  fields=(KDC_CLAIM_V1 ` + quoteClaim(claim.MachineID) + ` "$boot" ` + quoteClaim(claim.SessionID) + ` ` + quoteClaim(claim.RunID) + ` ` + quoteClaim(claim.InputHash) + ` ` + quoteClaim(claim.ReviewHash) + ` ` + quoteClaim(claim.ReleaseSHA256) + ` "$((now+` + strconv.FormatInt(int64(hostClaimTTL/time.Second), 10) + `))" reserved)
+  fields=(KDC_CLAIM_V2 ` + quoteClaim(claim.MachineID) + ` "$boot" ` + quoteClaim(claim.SessionID) + ` ` + quoteClaim(claim.RunID) + ` ` + quoteClaim(claim.InputHash) + ` ` + quoteClaim(claim.ReviewHash) + ` ` + quoteClaim(claim.ReleaseSHA256) + ` "$((now+` + strconv.FormatInt(int64(hostClaimTTL/time.Second), 10) + `))" reserved systemd-v1 - - - 0)
   write_record
 else
   read_record
-  if [ ` + quoteClaim(action) + ` != inspect ]; then
+  if [ ` + quoteClaim(action) + ` = transfer ]; then
+    test "${fields[9]}" = handoff && test "${fields[10]}" = systemd-v1 || exit 1
+    test "${fields[2]}" = "$boot" && test "$boot" = ` + quoteClaim(claim.BootID) + ` || exit 1
+    test "${fields[3]}" = ` + quoteClaim(claim.SessionID) + ` && test "${fields[5]}" = ` + quoteClaim(claim.InputHash) + ` && test "${fields[6]}" = ` + quoteClaim(claim.ReviewHash) + ` && test "${fields[7]}" = ` + quoteClaim(claim.ReleaseSHA256) + ` || exit 1
+    test "${fields[11]}" = ` + quoteClaim(claim.HandoffID) + ` && test "${fields[12]}" = ` + quoteClaim(claim.SourceRunID) + ` || exit 1
+    if [ "${fields[14]}" = ` + quoteClaim(strconv.FormatInt(claim.HandoffEpoch, 10)) + ` ]; then
+      test "${fields[4]}" = ` + quoteClaim(claim.RunID) + `
+    else test "${fields[14]}" -lt ` + quoteClaim(strconv.FormatInt(claim.HandoffEpoch, 10)) + `; fi
+    fields[14]=` + quoteClaim(strconv.FormatInt(claim.HandoffEpoch, 10)) + `
+    fields[4]=` + quoteClaim(claim.RunID) + `; fields[8]=$((now+1800)); write_record
+  elif [ ` + quoteClaim(action) + ` != inspect ]; then
     owned
     test "${fields[9]}" != released
-    if [ ` + quoteClaim(action) + ` = release ]; then
+    if [ ` + quoteClaim(action) + ` = park ]; then
+      test "$boot" = ` + quoteClaim(claim.BootID) + ` && test "${fields[10]}" = systemd-v1 || exit 1
+      if [ "${fields[9]}" = handoff ]; then
+        test "${fields[11]}" = ` + quoteClaim(claim.HandoffID) + ` && test "${fields[12]}" = ` + quoteClaim(claim.SourceRunID) + ` || exit 1
+      else
+        live; test "${fields[9]}" = started && test "${fields[4]}" = ` + quoteClaim(claim.SourceRunID) + ` || exit 1
+        fields[9]=handoff; fields[11]=` + quoteClaim(claim.HandoffID) + `; fields[12]=` + quoteClaim(claim.SourceRunID) + `; write_record
+      fi
+    elif [ ` + quoteClaim(action) + ` = activate ]; then
+      test "$boot" = ` + quoteClaim(claim.BootID) + ` && test "${fields[9]}" = handoff || exit 1
+      test "${fields[11]}" = ` + quoteClaim(claim.HandoffID) + ` && test "${fields[12]}" = ` + quoteClaim(claim.SourceRunID) + ` || exit 1
+      test "${fields[14]}" = ` + quoteClaim(strconv.FormatInt(claim.HandoffEpoch, 10)) + `
+      fields[9]=started; fields[11]=-; fields[12]=-; fields[14]=0; fields[8]=$((now+1800)); write_record
+    elif [ ` + quoteClaim(action) + ` = release ]; then
       test "${fields[9]}" = reserved
       fields[9]=released; write_record
     else
+      test "${fields[9]}" != handoff
+      test "${fields[10]}" != systemd-running && test "${fields[10]}" != legacy-running || exit 1
       live
       if [ ` + quoteClaim(action) + ` = renew ]; then fields[8]=$((now+` + strconv.FormatInt(int64(hostClaimTTL/time.Second), 10) + `)); write_record; fi
       if [ ` + quoteClaim(action) + ` = execute ]; then
+        command -v systemd-run >/dev/null
+        unit="kube-dc-setup-$(cat /proc/sys/kernel/random/uuid).service"
+        fields[13]=$unit
+        protocol=${fields[10]}
+        if [ "$protocol" = systemd-v1 ]; then fields[10]=systemd-running; else fields[10]=legacy-running; fi
         fields[9]=started; write_record
+        executor=$(mktemp "$root/.executor.XXXXXX")
+        printf '%s\n' ` + quoteClaim(payload) + ` > "$executor"
+        chmod 600 "$executor"
         trap '' HUP INT TERM
-        bash -o pipefail -c ` + quoteClaim(payload) + ` <&0 &
+        systemd-run --unit="$unit" --quiet --wait --pipe --collect --service-type=exec --property=KillMode=control-group --property=SendSIGKILL=yes --property=TimeoutStopSec=10s --property=Restart=no --property=RemainAfterExit=no -- bash -o pipefail "$executor" <&0 &
         child=$!
         result=0; wait "$child" || result=$?
+        if [ "$result" = 0 ]; then fields[10]=$protocol; write_record; rm -f -- "$executor"; fi
         exit "$result"
       fi
     fi
@@ -243,16 +297,47 @@ printf '%s\n' "${fields[@]}" "$now" "$boot"`
 func parseHostClaim(body []byte, host string) (HostClaim, error) {
 	var c HostClaim
 	fields := strings.Split(strings.TrimSuffix(string(body), "\n"), "\n")
-	if len(fields) != 12 || fields[0] != "KDC_CLAIM_V1" {
+	if !((len(fields) == 12 && fields[0] == "KDC_CLAIM_V1") || (len(fields) == 17 && fields[0] == "KDC_CLAIM_V2")) {
 		return c, fmt.Errorf("invalid claim record")
 	}
-	c = HostClaim{HostID: host, MachineID: fields[1], BootID: fields[2], SessionID: fields[3], RunID: fields[4], InputHash: fields[5], ReviewHash: fields[6], ReleaseSHA256: fields[7], State: fields[9], ObservedBootID: fields[11]}
+	tick := 10
+	c = HostClaim{HostID: host, MachineID: fields[1], BootID: fields[2], SessionID: fields[3], RunID: fields[4], InputHash: fields[5], ReviewHash: fields[6], ReleaseSHA256: fields[7], State: fields[9]}
+	if len(fields) == 17 {
+		tick = 15
+		var err error
+		c.HandoffEpoch, err = strconv.ParseInt(fields[14], 10, 64)
+		if err != nil || c.HandoffEpoch < 0 || c.HandoffEpoch > 65535 {
+			return c, fmt.Errorf("invalid handoff epoch")
+		}
+		if fields[13] != "-" {
+			unit := strings.TrimSuffix(strings.TrimPrefix(fields[13], "kube-dc-setup-"), ".service")
+			if fields[13] != "kube-dc-setup-"+unit+".service" || !claimBootPattern.MatchString(unit) {
+				return c, fmt.Errorf("invalid executor unit")
+			}
+			c.ExecutorUnit = fields[13]
+		}
+		if fields[10] != "legacy" && fields[10] != "systemd-v1" && fields[10] != "systemd-running" && fields[10] != "legacy-running" {
+			return c, fmt.Errorf("invalid executor protocol")
+		}
+		if fields[10] != "legacy" {
+			c.ExecutorProtocol = fields[10]
+		}
+		if c.State == "handoff" {
+			c.HandoffID, c.SourceRunID = fields[11], fields[12]
+			if !validSessionHash(c.HandoffID) || !validSessionHash(c.SourceRunID) || c.ExecutorProtocol == "" {
+				return c, fmt.Errorf("invalid handoff identity")
+			}
+		} else if fields[11] != "-" || fields[12] != "-" || c.HandoffEpoch != 0 {
+			return c, fmt.Errorf("unexpected handoff identity")
+		}
+	}
+	c.ObservedBootID = fields[tick+1]
 	var err error
 	c.ExpiresTick, err = strconv.ParseInt(fields[8], 10, 64)
 	if err != nil || c.ExpiresTick < 0 {
 		return c, fmt.Errorf("invalid claim expiry")
 	}
-	c.ObservedTick, err = strconv.ParseInt(fields[10], 10, 64)
+	c.ObservedTick, err = strconv.ParseInt(fields[tick], 10, 64)
 	if err != nil || c.ObservedTick < 0 {
 		return c, fmt.Errorf("invalid claim time")
 	}
@@ -261,7 +346,7 @@ func parseHostClaim(body []byte, host string) (HostClaim, error) {
 			return c, fmt.Errorf("invalid claim identity")
 		}
 	}
-	if !validClaimMachine(c.MachineID) || (!claimBootPattern.MatchString(c.BootID) || !claimBootPattern.MatchString(c.ObservedBootID)) || (c.State != "reserved" && c.State != "started" && c.State != "released") {
+	if !validClaimMachine(c.MachineID) || (!claimBootPattern.MatchString(c.BootID) || !claimBootPattern.MatchString(c.ObservedBootID)) || (c.State != "reserved" && c.State != "started" && c.State != "released" && !(c.State == "handoff" && c.HandoffID != "")) {
 		return c, fmt.Errorf("invalid claim state")
 	}
 	return c, nil

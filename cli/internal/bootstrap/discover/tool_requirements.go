@@ -52,6 +52,7 @@ func ToolRequirements(s ToolSelection) ([]ToolRequirement, error) {
 	add := func(name, reason string) { required[name] = reason }
 	switch s.Operation {
 	case ToolInit:
+		add("python3", "run Fleet scaffold with Python 3 and PyYAML")
 		add("kubectl", "Fleet scripts and cluster checks")
 		add("sops", "encrypt platform credentials")
 		add("age", "create the SOPS age key")
@@ -169,6 +170,8 @@ func toolProbeByName(name string) (ports.Probe, bool) {
 	switch name {
 	case "kubectl":
 		return newKubectlProbe(realExec), true
+	case "python3":
+		return newPythonScaffoldProbe(realExec), true
 	case "flux":
 		return newFluxProbe(realExec), true
 	case "sops":

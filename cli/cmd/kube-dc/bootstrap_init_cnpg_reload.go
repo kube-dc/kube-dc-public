@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
 
 // A platform database can start before Rook has created the Secret its backup
@@ -185,6 +187,9 @@ func (k managedServicesKubectl) ListPlatformCNPGClusters(ctx context.Context) ([
 }
 
 func (k managedServicesKubectl) AnnotateCNPGCluster(ctx context.Context, namespace, name, key, value string) error {
+	if err := ports.BeforeMutation(ctx); err != nil {
+		return err
+	}
 	callCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	args := append(k.kubectlArgs(), "--request-timeout=15s", "-n", namespace, "annotate",
@@ -213,6 +218,9 @@ func (k managedServicesKubectl) ListCNPGBackups(ctx context.Context, namespace s
 }
 
 func (k managedServicesKubectl) DeleteCNPGBackup(ctx context.Context, namespace, name string) error {
+	if err := ports.BeforeMutation(ctx); err != nil {
+		return err
+	}
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	args := append(k.kubectlArgs(), "--request-timeout=20s", "-n", namespace, "delete", "backups.postgresql.cnpg.io", name, "--ignore-not-found")
@@ -231,6 +239,9 @@ func kubectlStderr(err error) string {
 }
 
 func (k managedServicesKubectl) CreateCNPGBackup(ctx context.Context, backup map[string]any) error {
+	if err := ports.BeforeMutation(ctx); err != nil {
+		return err
+	}
 	body, err := json.Marshal(backup)
 	if err != nil {
 		return err

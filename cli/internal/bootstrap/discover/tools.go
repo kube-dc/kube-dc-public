@@ -30,6 +30,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
@@ -44,6 +45,7 @@ const InstallPrereqsHint = "Install via scripts/install-prerequisites.sh (in the
 // The generic doctor reports an older tool as a warning. A selected setup
 // operation requires a readable, supported version before apply continues.
 var MinVersions = map[string]Semver{
+	"python3":    {3, 9, 0},
 	"kubectl":    {1, 28, 0},
 	"flux":       {2, 4, 0},
 	"sops":       {3, 9, 0},
@@ -79,6 +81,8 @@ type ToolProbe struct {
 	versionFn func(ctx context.Context, exec execHook) (Semver, string, error)
 	extraFn   func(ctx context.Context, exec execHook) *extraResult
 	exec      execHook
+	fixHint   string
+	timeout   time.Duration
 
 	// optional marks a tool that is NICE to have locally but that the CLI
 	// never executes itself. A missing optional tool reports Info, not
@@ -104,6 +108,15 @@ var _ ports.Probe = (*ToolProbe)(nil)
 func (p *ToolProbe) Name() string { return p.name }
 
 func (p *ToolProbe) Run(ctx context.Context) ports.Result {
+	if p.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.timeout)
+		defer cancel()
+	}
+	fixHint := p.fixHint
+	if fixHint == "" {
+		fixHint = InstallPrereqsHint
+	}
 	if err := ctxCanceled(ctx); err != nil {
 		return *err
 	}
@@ -124,13 +137,14 @@ func (p *ToolProbe) Run(ctx context.Context) ports.Result {
 				Status:   ports.StatusMissing,
 				Severity: ports.SeverityBlocker,
 				Detail:   fmt.Sprintf("%s not found in PATH", p.name),
-				FixHint:  ports.FixHint{Text: InstallPrereqsHint},
+				FixHint:  ports.FixHint{Text: fixHint},
 			}
 		}
 		return ports.Result{
 			Status:   ports.StatusPartial,
 			Severity: ports.SeverityWarn,
 			Detail:   fmt.Sprintf("%s found but version probe failed: %v", p.name, err),
+			FixHint:  ports.FixHint{Text: fixHint},
 		}
 	}
 
@@ -141,7 +155,7 @@ func (p *ToolProbe) Run(ctx context.Context) ports.Result {
 			Severity: ports.SeverityWarn,
 			Version:  raw,
 			Detail:   fmt.Sprintf("%s %s < required %s", p.name, raw, minVer.String()),
-			FixHint:  ports.FixHint{Text: fmt.Sprintf("Upgrade %s to ≥%s via %s", p.name, minVer.String(), InstallPrereqsHint)},
+			FixHint:  ports.FixHint{Text: fmt.Sprintf("Upgrade %s to ≥%s. %s", p.name, minVer.String(), fixHint)},
 		}
 	}
 
@@ -171,10 +185,11 @@ func (p *ToolProbe) Run(ctx context.Context) ports.Result {
 	}
 }
 
-// AllToolProbes returns the canonical set of 8 probes wired to the
+// AllToolProbes returns the canonical workstation probes wired to the
 // real os/exec. Tests build their own slice with custom execHooks.
 func AllToolProbes() []ports.Probe {
 	return []ports.Probe{
+		newPythonScaffoldProbe(realExec),
 		newKubectlProbe(realExec),
 		newFluxProbe(realExec),
 		newSOPSProbe(realExec),

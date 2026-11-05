@@ -23,10 +23,10 @@ func TestToolRequirementsFollowOperation(t *testing.T) {
 		sel  ToolSelection
 		want []string
 	}{
-		{"local-no-push", ToolSelection{Operation: ToolInit}, []string{"age", "age-keygen", "kubectl", "sops"}},
-		{"github-new-repo", ToolSelection{Operation: ToolInit, Push: true, CreateRepo: true, Provider: "github", SSH: true}, []string{"age", "age-keygen", "flux", "gh", "git", "helm", "kubectl", "sops", "ssh"}},
-		{"gitlab-new-repo", ToolSelection{Operation: ToolInit, Push: true, CreateRepo: true, Provider: "gitlab"}, []string{"age", "age-keygen", "flux", "git", "glab", "helm", "kubectl", "sops"}},
-		{"existing-repo", ToolSelection{Operation: ToolInit, Push: true}, []string{"age", "age-keygen", "flux", "git", "helm", "kubectl", "sops"}},
+		{"local-no-push", ToolSelection{Operation: ToolInit}, []string{"age", "age-keygen", "kubectl", "python3", "sops"}},
+		{"github-new-repo", ToolSelection{Operation: ToolInit, Push: true, CreateRepo: true, Provider: "github", SSH: true}, []string{"age", "age-keygen", "flux", "gh", "git", "helm", "kubectl", "python3", "sops", "ssh"}},
+		{"gitlab-new-repo", ToolSelection{Operation: ToolInit, Push: true, CreateRepo: true, Provider: "gitlab"}, []string{"age", "age-keygen", "flux", "git", "glab", "helm", "kubectl", "python3", "sops"}},
+		{"existing-repo", ToolSelection{Operation: ToolInit, Push: true}, []string{"age", "age-keygen", "flux", "git", "helm", "kubectl", "python3", "sops"}},
 		{"prepare", ToolSelection{Operation: ToolPrepare}, []string{"curl", "sudo"}},
 		{"vendor", ToolSelection{Operation: ToolVendor}, []string{"clusterctl", "curl", "helm", "yq"}},
 		{"vendor-capi", ToolSelection{Operation: ToolVendor, Component: "capi"}, []string{"clusterctl", "curl"}},

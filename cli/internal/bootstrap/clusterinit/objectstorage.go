@@ -34,11 +34,11 @@
 package clusterinit
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -62,6 +62,7 @@ type ObjectStorageSpec struct {
 	// rook-ceph-multi-node — node → device; sorted keys map to
 	// CEPH_NODE_{1..3} deterministically.
 	CephNodes       map[string]string
+	CephDevices     map[string][]string
 	ReplicationSize int // zero selects the topology default
 	// MonNodes optionally pins the Ceph monitors (CEPH_MON_NODES).
 	MonNodes []string
@@ -82,13 +83,14 @@ type ObjectStorageSpec struct {
 
 // ObjectStorage projects the spec out of InitOptions.
 func (o *InitOptions) ObjectStorage() ObjectStorageSpec {
-	replicas, _ := objectStorageReplication(o.RookMode, len(o.CephNodes), o.Sets["CEPH_REPLICATION_SIZE"])
+	replicas, _ := objectStorageReplication(o.RookMode, len(canonicalCephDevices(o.CephNodes, o.CephDevices)), o.Sets["CEPH_REPLICATION_SIZE"])
 	return ObjectStorageSpec{
 		Mode:            o.RookMode,
 		OSDNode:         o.RookOSDNode,
 		OSDSizeGB:       o.RookOSDSizeGB,
 		OSDDevice:       o.RookOSDDevice,
 		CephNodes:       o.CephNodes,
+		CephDevices:     o.CephDevices,
 		ReplicationSize: replicas,
 		MonNodes:        cephMonNodes(o.Sets["CEPH_MON_NODES"]),
 		StorageClass:    o.CephStorageClass,
@@ -150,8 +152,14 @@ func WriteObjectStorage(fleetRepo, clusterName, domain string, spec ObjectStorag
 	}
 
 	if spec.Mode == RookCephMultiNode {
-		if len(spec.CephNodes) < 1 || len(spec.CephNodes) > MaxCephSlots || spec.replication() < 1 || spec.replication() > len(spec.CephNodes) {
+		if len(spec.DeviceSets()) < 1 || len(spec.deviceSlots()) > MaxCephSlots || spec.replication() < 1 || spec.replication() > len(spec.DeviceSets()) {
 			return fmt.Errorf("object-storage: select 1 to %d storage servers and no more replicas than servers", MaxCephSlots)
+		}
+		if len(spec.CephNodes) > 0 && len(spec.CephDevices) > 0 {
+			return fmt.Errorf("object-storage: do not combine legacy and multi-device selections")
+		}
+		if err := validateCephDeviceMap(spec.DeviceSets()); err != nil {
+			return err
 		}
 	}
 
@@ -637,16 +645,15 @@ func objectStorageEnvKeys(domain string, spec ObjectStorageSpec) [][2]string {
 		kv = append(kv, [2]string{"CEPH_REPLICATION_SIZE", "1"})
 	case RookCephMultiNode:
 		kv = append(kv, [2]string{"CEPH_REPLICATION_SIZE", strconv.Itoa(spec.replication())})
-		// Sorted node names → slots 1..3, deterministically.
-		nodes := make([]string, 0, len(spec.CephNodes))
-		for n := range spec.CephNodes {
-			nodes = append(nodes, n)
+		if len(spec.CephDevices) > 0 {
+			body, _ := json.Marshal(cephDevicesInput{Version: 1, Nodes: spec.DeviceSets()})
+			kv = append(kv, [2]string{KeyCephDevices, string(body)})
 		}
-		sort.Strings(nodes)
-		for i, n := range nodes {
+		// Every selected device has a stable slot, grouped by host.
+		for i, selected := range spec.deviceSlots() {
 			slot := fmt.Sprintf("%d", i+1)
-			kv = append(kv, [2]string{"CEPH_NODE_" + slot, n})
-			kv = append(kv, [2]string{"CEPH_NODE_" + slot + "_DEVICE", rookDeviceName(spec.CephNodes[n])})
+			kv = append(kv, [2]string{"CEPH_NODE_" + slot, selected[0]})
+			kv = append(kv, [2]string{"CEPH_NODE_" + slot + "_DEVICE", rookDeviceName(selected[1])})
 		}
 	case RookCephPVC:
 		kv = append(kv, [2]string{"CEPH_OSD_STORAGE_CLASS", spec.StorageClass})

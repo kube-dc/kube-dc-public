@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 	"io"
 	"os/exec"
 	"strconv"
@@ -62,6 +63,9 @@ func (k managedServicesKubectl) ResetHelmRelease(ctx context.Context, namespace,
 	defer cancel()
 	args := append(k.kubectlArgs(), "--request-timeout=15s", "-n", namespace,
 		"patch", "helmrelease", name, "--type=merge", "--field-manager=kube-dc-cli", "-p", string(body))
+	if err := ports.BeforeMutation(callCtx); err != nil {
+		return err
+	}
 	cmd := exec.CommandContext(callCtx, "kubectl", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("reset stalled HelmRelease %s/%s: %w: %s", namespace, name, err, strings.TrimSpace(string(output)))

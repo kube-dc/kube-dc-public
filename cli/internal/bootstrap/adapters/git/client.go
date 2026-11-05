@@ -48,6 +48,11 @@ var errNoSSHCredentials = errors.New(
 
 // Client implements ports.GitClient.
 type Client struct {
+	providerAuthority string
+	providerDirectory string
+	providerURLs      map[string]bool
+	// Test seam for configuration drift between authentication and transport.
+	afterRemoteSelection func()
 	// authorName + authorEmail are stamped on commits this adapter
 	// creates. Default to a generic "kube-dc bootstrap" identity;
 	// callers can override via NewWithIdentity (M4 may surface this
@@ -111,6 +116,9 @@ func (c *Client) Clone(ctx context.Context, repoURL, dir, token string) error {
 }
 
 func (c *Client) Pull(ctx context.Context, dir, token string) error {
+	if err := c.checkProviderDestination(ctx, dir); err != nil {
+		return err
+	}
 	repo, err := gogit.PlainOpen(dir)
 	if err != nil {
 		return fmt.Errorf("git: open %s: %w", dir, err)
@@ -119,13 +127,14 @@ func (c *Client) Pull(ctx context.Context, dir, token string) error {
 	if err != nil {
 		return fmt.Errorf("git: worktree %s: %w", dir, err)
 	}
-	auth, err := c.authForDirection(repo, dirFetch, token)
+	fetchURL, auth, err := c.requestForDirection(repo, dirFetch, token)
 	if err != nil {
 		return err
 	}
 	err = wt.PullContext(ctx, &gogit.PullOptions{
-		Auth:     auth,
-		Progress: io.Discard,
+		RemoteURL: fetchURL,
+		Auth:      auth,
+		Progress:  io.Discard,
 	})
 	if err != nil && err != gogit.NoErrAlreadyUpToDate {
 		return fmt.Errorf("git: pull %s: %w", dir, err)
@@ -169,6 +178,9 @@ func (c *Client) Head(_ context.Context, dir string) (string, error) {
 }
 
 func (c *Client) CommitAndPush(ctx context.Context, dir, msg, token string) (string, error) {
+	if err := c.checkProviderDestination(ctx, dir); err != nil {
+		return "", err
+	}
 	sha, err := c.commitLocal(dir, msg)
 	if err != nil {
 		return "", err
@@ -185,6 +197,9 @@ func (c *Client) CommitAndPush(ctx context.Context, dir, msg, token string) (str
 // Push pushes the current HEAD to upstream without creating a commit.
 // A no-op (nil) when already up to date. See ports/git.go.
 func (c *Client) Push(ctx context.Context, dir, token string) error {
+	if err := c.checkProviderDestination(ctx, dir); err != nil {
+		return err
+	}
 	repo, err := gogit.PlainOpen(dir)
 	if err != nil {
 		return fmt.Errorf("git: open %s: %w", dir, err)
@@ -204,14 +219,15 @@ func (c *Client) Push(ctx context.Context, dir, token string) error {
 	ref := head.Name() // refs/heads/<branch>
 	spec := config.RefSpec(fmt.Sprintf("%s:%s", ref, ref))
 	// Push auth MUST come from the push URL, not the fetch URL.
-	auth, err := c.authForDirection(repo, dirPush, token)
+	pushURL, auth, err := c.requestForDirection(repo, dirPush, token)
 	if err != nil {
 		return err
 	}
 	if pushErr := repo.PushContext(ctx, &gogit.PushOptions{
-		RefSpecs: []config.RefSpec{spec},
-		Auth:     auth,
-		Progress: io.Discard,
+		RemoteURL: pushURL,
+		RefSpecs:  []config.RefSpec{spec},
+		Auth:      auth,
+		Progress:  io.Discard,
 	}); pushErr != nil && pushErr != gogit.NoErrAlreadyUpToDate {
 		return fmt.Errorf("git: push %s (%s): %w", dir, ref.Short(), pushErr)
 	}
@@ -506,6 +522,9 @@ func sshAuthFor(user string) (transport.AuthMethod, error) {
 // commit back — leaving an initialized OpenBao with no shares in the
 // fleet (eu/dc1, 2026-07). Transport and credential type must agree.
 func (c *Client) authFor(remote, token string) (transport.AuthMethod, error) {
+	if err := c.matchProviderRemote(remote); err != nil {
+		return nil, err
+	}
 	if !isSSHURL(remote) {
 		// Includes the empty-remote case: preserve the historical
 		// behaviour of handing over the token (nil when unset).
@@ -534,12 +553,24 @@ const (
 // PUSH url — mutating the Push call site back to the fetch url still
 // passed the suite.
 func (c *Client) authForDirection(repo *gogit.Repository, d gitDirection, token string) (transport.AuthMethod, error) {
+	_, auth, err := c.requestForDirection(repo, d, token)
+	return auth, err
+}
+
+// Return the authenticated destination as immutable request data. Re-reading
+// configuration after authentication would permit a concurrent URL change to
+// send the selected token to an unchecked host.
+func (c *Client) requestForDirection(repo *gogit.Repository, d gitDirection, token string) (string, transport.AuthMethod, error) {
 	fetchURL, pushURL := remoteURLsOf(repo, "")
 	url := fetchURL
 	if d == dirPush {
 		url = pushURL
 	}
-	return c.authFor(url, token)
+	auth, err := c.authFor(url, token)
+	if err == nil && c.afterRemoteSelection != nil {
+		c.afterRemoteSelection()
+	}
+	return url, auth, err
 }
 
 // remoteURLsOf returns the fetch and push URLs configured for the named

@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/shalb/kube-dc/cli/internal/bootstrap"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
@@ -30,24 +32,34 @@ type TargetClaimStatus struct {
 	Claim            *HostClaim `json:"claim,omitempty"`
 }
 type CoordinatorStatus struct {
-	Session      SessionSummary      `json:"session"`
-	Targets      []TargetClaimStatus `json:"targets"`
-	ReadyToApply bool                `json:"readyToApply"`
+	Session           SessionSummary      `json:"session"`
+	Targets           []TargetClaimStatus `json:"targets"`
+	Cluster           ClusterClaimStatus  `json:"cluster"`
+	ReadyToApply      bool                `json:"readyToApply"`
+	ExecutorUncertain bool                `json:"executorUncertain"`
+	Handoff           *SessionHandoff     `json:"handoff,omitempty"`
 }
 
 // SessionCoordinator shares the session and ownership lifecycle between CLI
 // and the existing New Cluster panel. It cannot promote a saved review to
 // readiness. Constructors and Status do not acquire any remote target.
 type SessionCoordinator struct {
-	mu             sync.Mutex
-	compiled       Compiled
-	review         SafetyReview
-	writer         *SessionWriter
-	claims         claimOperations
-	realClaims     *HostClaims
-	runID, cliPath string
-	recheck        func(context.Context) error
-	closed         bool
+	mu                sync.Mutex
+	compiled          Compiled
+	review            SafetyReview
+	writer            *SessionWriter
+	claims            claimOperations
+	realClaims        *HostClaims
+	clusterClient     childClusterClientFactory
+	platformSession   func(context.Context, string) (*bootstrap.Session, error)
+	platformArtifacts func(context.Context) error
+	runID, cliPath    string
+	recheck           func(context.Context) error
+	closed            bool
+	sealed            bool
+	handoffHost       func(context.Context, Host, HostClaim, string) (HostClaim, error)
+	handoffTargets    func(context.Context) error
+	executorUncertain atomic.Bool
 }
 
 func NewSessionCoordinator(c Compiled, review SafetyReview, writer *SessionWriter, ssh ports.GuardedPutSSHClient, cliPath string) (*SessionCoordinator, error) {
@@ -80,7 +92,7 @@ func NewSessionCoordinator(c Compiled, review SafetyReview, writer *SessionWrite
 			return nil, err
 		}
 	}
-	return &SessionCoordinator{compiled: c, review: review, writer: writer, claims: claims, realClaims: claims, runID: run, cliPath: cliPath, recheck: func(ctx context.Context) error { return RecheckSafetyReview(ctx, c, review, ssh, cliPath) }}, nil
+	return &SessionCoordinator{compiled: c, review: review, writer: writer, claims: claims, realClaims: claims, runID: run, cliPath: cliPath, sealed: record.Ownership != nil && record.Ownership.Phase == "handoff", recheck: func(ctx context.Context) error { return RecheckSafetyReview(ctx, c, review, ssh, cliPath) }}, nil
 }
 
 // Inputs returns a copy for presentation. Editing it does not change the
@@ -106,6 +118,11 @@ func (c *SessionCoordinator) status(ctx context.Context) (CoordinatorStatus, err
 		return result, err
 	}
 	result.Session = SummarizeSession(record)
+	result.ExecutorUncertain = record.ExecutorUncertain || c.executorUncertain.Load()
+	if len(record.Handoffs) != 0 {
+		h := record.Handoffs[len(record.Handoffs)-1]
+		result.Handoff = &h
+	}
 	for _, h := range c.compiled.Spec.Hosts {
 		status := TargetClaimStatus{HostID: h.ID, State: "unknown"}
 		claim, err := c.claims.Inspect(ctx, h)
@@ -121,12 +138,13 @@ func (c *SessionCoordinator) status(ctx context.Context) (CoordinatorStatus, err
 		}
 		result.Targets = append(result.Targets, status)
 	}
+	result.Cluster = inspectSessionCluster(ctx, c.writer.directory, record, c.compiled, c.runID, c.childClient())
 	return result, ctx.Err()
 }
 func (c *SessionCoordinator) Acquire(ctx context.Context, takeover bool) (CoordinatorStatus, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.closed {
+	if c.closed || c.sealed {
 		return CoordinatorStatus{}, fmt.Errorf("session coordinator is closed")
 	}
 	record, err := c.writer.Snapshot()
@@ -199,6 +217,9 @@ func (c *SessionCoordinator) release(ctx context.Context) error {
 	if record.Ownership == nil || record.Ownership.Phase == "released" {
 		return nil
 	}
+	if c.sealed || record.Ownership.Phase == "handoff" {
+		return fmt.Errorf("handoff claims stay reserved; accept the prepared handoff or inspect ownership")
+	}
 	if record.Ownership.RunID != c.runID || record.Ownership.Phase != "held" {
 		return fmt.Errorf("ownership is uncertain or belongs to a previous run; retain claims and inspect targets")
 	}
@@ -237,7 +258,12 @@ func (c *SessionCoordinator) Close() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	err := c.release(ctx)
+	var err error
+	if r, readErr := c.writer.Snapshot(); readErr != nil {
+		err = readErr
+	} else if !c.sealed && !transferredDestination(r, c.runID) {
+		err = c.release(ctx)
+	}
 	c.closed = true
 	closeErr := c.writer.Close()
 	if err != nil {

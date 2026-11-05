@@ -102,6 +102,37 @@ func TestArtifactCacheVerifiesReachableBytesAndRunningCLI(t *testing.T) {
 	}
 }
 
+func TestChartArchiveMustBelongToSelectedOCIManifest(t *testing.T) {
+	for _, matching := range []bool{true, false} {
+		c, cache, cli, layer := artifactCacheFixture(t)
+		data, err := readReleaseRecord(c.Spec.Release.RecordFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var record InstallerReleaseRecord
+		if err := json.Unmarshal(data, &record); err != nil {
+			t.Fatal(err)
+		}
+		_, manifest, _ := strings.Cut(c.Spec.Release.StarterRef, "@sha256:")
+		chart := record.Artifacts.PlatformChart
+		if matching {
+			chart.SHA256 = layer
+		}
+		record.Artifacts.PlatformChart = chart
+		record.Artifacts.Charts = map[string]string{"kube-dc": "example.test/chart@sha256:" + manifest}
+		record.Artifacts.Files = map[string]ReleaseFile{"chart.kube-dc": chart}
+		writeReleaseTestRecord(t, c.Spec, record)
+		c, err = Compile(c.Spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = VerifyArtifactCache(context.Background(), c, cache, cli)
+		if (err == nil) != matching {
+			t.Fatalf("matching=%v: %v", matching, err)
+		}
+	}
+}
+
 func TestArtifactCacheRejectsDescriptorSizeMismatch(t *testing.T) {
 	c, cache, cli, _ := artifactCacheFixture(t)
 	_, digest, _ := strings.Cut(c.Spec.Release.StarterRef, "@sha256:")

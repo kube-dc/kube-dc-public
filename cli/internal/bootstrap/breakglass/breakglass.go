@@ -578,6 +578,9 @@ func kubectlArgs(kubeconfigPath, kubectlContext string, args []string) []string 
 }
 
 func kubectlApply(ctx context.Context, kubeconfigPath, kubectlContext, manifest string) error {
+	if err := ports.BeforeMutation(ctx); err != nil {
+		return err
+	}
 	args := kubectlArgs(kubeconfigPath, kubectlContext, []string{"apply", "-f", "-"})
 	cmd := exec.CommandContext(ctx, "kubectl", args...)
 	cmd.Stdin = strings.NewReader(manifest)
@@ -588,6 +591,9 @@ func kubectlApply(ctx context.Context, kubeconfigPath, kubectlContext, manifest 
 
 // kubectlRun is a small wrapper for one-off kubectl commands.
 func kubectlRun(ctx context.Context, kubeconfigPath, kubectlContext string, args ...string) error {
+	if err := ports.BeforeMutation(ctx); err != nil {
+		return err
+	}
 	args = kubectlArgs(kubeconfigPath, kubectlContext, args)
 	cmd := exec.CommandContext(ctx, "kubectl", args...)
 	cmd.Stdout = os.Stderr
@@ -674,6 +680,9 @@ func readToken(ctx context.Context, kubeconfigPath, kubectlContext string) ([]by
 //   - Tempfile name ends in `.enc.yaml` so it matches the .sops.yaml
 //     regex `\.enc\.yaml$` once sops finds the config.
 func sopsEncryptToFile(ctx context.Context, plain []byte, target string) error {
+	if err := ports.BeforeMutation(ctx); err != nil {
+		return err
+	}
 	dir := filepath.Dir(target)
 	fleetRoot := findFleetRoot(target)
 
@@ -721,6 +730,7 @@ func sopsEncryptToFile(ctx context.Context, plain []byte, target string) error {
 	if err := assertSecretsEncrypted(plain, encBytes); err != nil {
 		return err
 	}
+	if err:=ports.BeforeMutation(ctx);err!=nil{return err}
 	return os.Rename(tmpPath, target)
 }
 

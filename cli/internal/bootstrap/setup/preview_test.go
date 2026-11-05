@@ -2,13 +2,112 @@ package setup
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 )
+
+func TestPreviewMatchesCurrentInitStageInventory(t *testing.T) {
+	for _, tc := range []struct {
+		kind, services string
+		noPush         bool
+		wantServices   bool
+	}{
+		{"kube-dc", "on", false, true}, {"kube-dc", "off", false, false},
+		{"kube-dc", "auto", false, true}, {"kube-dc", "on", true, false},
+		{"cloudsigma", "auto", false, false},
+	} {
+		t.Run(tc.kind+"-"+tc.services+fmt.Sprint(tc.noPush), func(t *testing.T) {
+			s, dir := fixture(t)
+			s.Target.Intent = clusterinit.ModeInstall
+			s.Execution.NoPush = tc.noPush
+			body := strings.ReplaceAll(baseConfig("demo"), "OBJECT_STORAGE_MODE=disabled", "OBJECT_STORAGE_MODE=rook-ceph-pvc")
+			body += "KUBE_DC_INIT_INSTALLATION_KIND=" + tc.kind + "\nKUBE_DC_INIT_MANAGED_SERVICES=" + tc.services + "\nKUBE_DC_INIT_SERVICES_STORAGE_BUDGET=100Gi\n"
+			body += "CEPH_OSD_STORAGE_CLASS=provider-block\n"
+			if err := os.WriteFile(filepath.Join(dir, "cluster.env"), []byte(body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			c, err := Compile(s)
+			if err != nil {
+				t.Fatal(err)
+			}
+			preview, err := BuildPreview(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			selection, err := clusterinit.ResolveManagedServices(&c.Init)
+			if err != nil {
+				t.Fatal(err)
+			}
+			steps := clusterinit.InstallSteps(clusterinit.PlannedInstallStepInputs(&c.Init, c.Init.FleetMode, selection.Mode == "on"))
+			want, actual := []string{}, []string{}
+			for _, step := range steps {
+				if step.ID != clusterinit.StepFetchKubeconfig {
+					want = append(want, string(step.ID))
+				}
+			}
+			for _, stage := range preview.Stages {
+				if !strings.HasPrefix(stage.ID, "rke2-") && stage.ID != clusterClaimStage && stage.ID != string(clusterinit.StepPlatformAccept) && stage.ID != string(clusterinit.StepFetchKubeconfig) && !strings.HasPrefix(stage.ID, "verify-") {
+					actual = append(actual, stage.ID)
+				}
+			}
+			if !reflect.DeepEqual(want, actual) {
+				t.Fatalf("init=%v, preview=%v", want, actual)
+			}
+			stage, found := previewStage(preview, string(clusterinit.StepManagedServices))
+			if found != tc.wantServices {
+				t.Fatalf("services stage present=%v", found)
+			}
+			if found && (!stage.PotentialWrite || !hasScope(stage.Scopes, "git-provider") || !hasScope(stage.Scopes, "identity")) {
+				t.Fatalf("unclassified services effects: %+v", stage)
+			}
+		})
+	}
+}
+
+func TestPreviewRetainsUnresolvedLiveServiceStorageEffects(t *testing.T) {
+	for _, tc := range []struct{ mode, extra string }{
+		{"auto", "KUBE_DC_INIT_SERVICES_DATABASE_CLASS=private-db\n"},
+		{"on", "KUBE_DC_INIT_SERVICES_DATABASE_CLASS=private-db\nKUBE_DC_INIT_SERVICES_STORAGE_BUDGET=100Gi\n"},
+		{"auto", ""}, {"on", ""},
+	} {
+		s, _ := fixture(t)
+		s.Target.Intent = clusterinit.ModeInstall
+		s.Hosts[0].Disk = "/dev/sdb"
+		body := strings.Replace(baseConfig("demo"), "OBJECT_STORAGE_MODE=disabled", "OBJECT_STORAGE_MODE=rook-ceph-multi-node", 1)
+		body += "KUBE_DC_INIT_INSTALLATION_KIND=kube-dc\nKUBE_DC_INIT_MANAGED_SERVICES=" + tc.mode + "\nKUBE_DC_INIT_VM_STORAGE_MODE=shared-rbd\n" + tc.extra
+		if err := os.WriteFile(s.Platform.ConfigFile, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		c, err := Compile(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		preview, err := BuildPreview(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stage, found := previewStage(preview, string(clusterinit.StepManagedServices))
+		if !found || !stage.PotentialWrite || !hasScope(stage.Scopes, "host") || !hasScope(stage.Scopes, "workstation") || stage.Condition == "" || preview.ReadyToApply {
+			t.Fatalf("live storage effects hidden: %+v", stage)
+		}
+	}
+}
+
+func TestCompileRejectsMalformedImportedProviderHost(t *testing.T) {
+	s, _ := fixture(t)
+	if err := os.WriteFile(s.Platform.ConfigFile, []byte(baseConfig("demo")+"KUBE_DC_INIT_PROVIDER_HOST=https://git.example.test/path\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Compile(s); err == nil {
+		t.Fatal("malformed imported Git host accepted")
+	}
+}
 
 func previewStage(p Preview, id string) (StagePreview, bool) {
 	for _, stage := range p.Stages {
@@ -160,7 +259,7 @@ func TestPreviewJoinsServersBeforeWorkers(t *testing.T) {
 	for i, stage := range p.Stages {
 		indices[stage.ID] = i
 	}
-	ordered := []string{"prepare", "fleet-starter", "install-prereqs", "rke2-first-server", "rke2-join-z-server", "rke2-join-a-worker", "fetch-kubeconfig", "dns"}
+	ordered := []string{"prepare", "fleet-starter", "install-prereqs", "rke2-first-server", "rke2-join-z-server", "rke2-join-a-worker", "fetch-kubeconfig", clusterClaimStage, "dns"}
 	for i := 1; i < len(ordered); i++ {
 		prev, prevOK := indices[ordered[i-1]]
 		next, nextOK := indices[ordered[i]]

@@ -55,3 +55,12 @@ func TestCheckCephKernelsRejectsReleaseCandidates(t *testing.T) {
 		t.Fatal("a release-candidate kernel passed")
 	}
 }
+
+func TestCheckCephKernelsRequiresCompleteGuidedEvidence(t *testing.T) {
+	for _, nodes := range []any{nil, kernels{}, kernels{"server-1": "7.0.1"}, kernels{"server-1": "7.0.1", "worker-1": "6.8.0"}} {
+		err := CheckCephKernels(context.Background(), CephKernelGateOptions{Nodes: nodes, Mode: RookCephMultiNode, OverlayPath: filepath.Join(t.TempDir(), "not-yet-published"), RequireEvidence: true, ExpectedNodes: []string{"server-1", "worker-1"}})
+		if err == nil {
+			t.Fatal("missing or incompatible client kernel was accepted")
+		}
+	}
+}

@@ -7,8 +7,31 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/setupdemo"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/tui/screens/initform"
 )
+
+func TestConfiguredRootRetainsSiteInputsAcrossTabsAndDiscard(t *testing.T) {
+	o := &clusterinit.InitOptions{Name: "site-ten", Repo: t.TempDir(), SiteComponents: "platform=components/endpoints", PAYG: true, CephNodes: map[string]string{"one": "disk/by-id/example"}, Sets: map[string]string{"EXT_NET_NODE_EGRESS_ENABLED": "false", "CEPH_MON_NODES": "one"}}
+	r := NewConfiguredRootModel(o.Repo, o)
+	defer r.Close()
+	r.ConfigureInitServices(initform.PanelServices{})
+	r.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	if r.active != int(RootTabInit) || len(r.tabs) != 3 {
+		t.Fatal("config did not open in existing root navigation")
+	}
+	// Mutating the caller's map cannot change the reset snapshot.
+	o.CephNodes["one"] = "sdc"
+	r.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	r.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
+	if r.initOpts.CephNodes["one"] != "disk/by-id/example" || r.initOpts.SiteComponents == "" || !r.initOpts.PAYG || r.initOpts.Sets["EXT_NET_NODE_EGRESS_ENABLED"] != "false" {
+		t.Fatal("discard reset lost the imported inputs")
+	}
+	if _, accepted := r.AcceptedInit(); accepted {
+		t.Fatal("opening or resetting a config approved installation")
+	}
+}
 
 func TestIntegratedRootOwnsDiscoveryAcrossTabsAndDiscard(t *testing.T) {
 	d, err := setupdemo.NewCoordinator()

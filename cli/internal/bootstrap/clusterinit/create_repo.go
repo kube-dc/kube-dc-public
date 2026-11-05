@@ -167,7 +167,8 @@ type CreateRepoOptions struct {
 	// GitHub (backward compat with pre-multi-provider callers);
 	// unrecognised non-empty values fail via
 	// ErrCreateRepoUnknownProvider (no silent fall-through).
-	Provider Provider
+	Provider     Provider
+	ProviderHost string
 
 	// Owner is the account, org, or group namespace that will own
 	// the repo. Populated from --github-owner on InitOptions (the
@@ -256,6 +257,10 @@ var ErrCreateRepoFailed = errors.New("init: `repo create` failed")
 // initialized git repo with the remote already configured by the
 // time Apply's phases 4-5 (commit + push) fire.
 func CreateRemoteRepo(ctx context.Context, opts CreateRepoOptions) error {
+	host, err := ResolveProviderHost(opts.Provider, opts.ProviderHost)
+	if err != nil {
+		return err
+	}
 	if err := validateCreateRepoOptions(opts); err != nil {
 		return err
 	}
@@ -294,7 +299,23 @@ func CreateRemoteRepo(ctx context.Context, opts CreateRepoOptions) error {
 	// create, and treat the provider's already-exists response as
 	// success. Stderr sniffing is the standard idiom for both gh
 	// and glab — exit codes are generic, the messages are stable.
+	if opts.Provider == "" || opts.Provider == ProviderGitHub {
+		cfg.scrubEnvVars = append(append([]string{}, cfg.scrubEnvVars...), "GH_ENTERPRISE_TOKEN=", "GITHUB_ENTERPRISE_TOKEN=", "GH_REPO=")
+		if host != "github.com" {
+			cfg.tokenEnvVar = "GH_ENTERPRISE_TOKEN"
+		}
+	} else {
+		cfg.scrubEnvVars = append(append([]string{}, cfg.scrubEnvVars...), "GITLAB_REPO=", "GLAB_REPO=")
+	}
 	env := envWithProviderToken(cfg, opts.Token)
+	key := providerHostEnv(opts.Provider) + "="
+	filtered := make([]string, 0, len(env)+1)
+	for _, value := range env {
+		if !strings.HasPrefix(value, key) {
+			filtered = append(filtered, value)
+		}
+	}
+	env = append(filtered, key+host)
 	args := []string{"repo", "create", target, "--private"}
 	stderr, err := runner.Run(ctx, cfg.cli, env, args...)
 	if err == nil {

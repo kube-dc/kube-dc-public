@@ -10,6 +10,11 @@ import (
 )
 
 func (m *PanelModel) discoveryBlocker() string {
+	for _, devices := range m.st.storageDevices() {
+		if m.st.storageChoice() == "raw" && len(strings.Split(devices, ",")) > 1 {
+			return "Multiple disks per server: save and render are available. Installation needs per-device evidence that this TUI does not yet collect."
+		}
+	}
 	w := m.workflow
 	if w == nil || !w.attempted {
 		return ""
@@ -234,6 +239,12 @@ func (m *PanelModel) primaryBlocker() string {
 	}
 	w := m.workflow
 	if w == nil {
+		return ""
+	}
+	if w.services.ReviewOnly && m.currentSection() == "Review" {
+		if k := m.st.unresolvedCredentialRef(); k != "" {
+			return "Enter or clear the credential file path for " + k + " in Certificates."
+		}
 		return ""
 	}
 	switch m.currentSection() {

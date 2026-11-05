@@ -1,5 +1,7 @@
 package clusterinit
 
+import "context"
+
 // Install-run milestone reporting.
 //
 // The apply engine (`Apply`) and the init orchestrator (`runApplyEngine`
@@ -72,7 +74,8 @@ const (
 	// Before this was automated, adopting it was a separate operator
 	// command nobody had to run, and several clusters
 	// shipped with none committed at all (2026-09-04).
-	StepBreakGlass StepID = "break-glass"
+	StepBreakGlass     StepID = "break-glass"
+	StepPlatformAccept StepID = "platform-accept"
 )
 
 // Step is one milestone: a stable ID + a human title.
@@ -94,6 +97,30 @@ type StepReporter interface {
 	Done(id StepID, err error)
 	// Skip marks a milestone as intentionally not run (with a reason).
 	Skip(id StepID, reason string)
+}
+
+// StepExecutor controls execution as well as presentation. A guarded run must
+// return admission, verification, and persistence failures to its caller.
+type StepExecutor interface {
+	ExecuteStep(StepID, func() error) error
+}
+
+type ExecutionChecker interface{ CheckExecution(context.Context) error }
+
+// ExecuteStep brackets an effect with an optional abortable executor. Legacy
+// reporters retain the same start/done events and never grant execution rights.
+func ExecuteStep(rep StepReporter, id StepID, fn func() error) error {
+	rep = reporterOrNop(rep)
+	if executor, ok := rep.(StepExecutor); ok {
+		return executor.ExecuteStep(id, fn)
+	}
+	run := func() error {
+		rep.Start(id)
+		err := fn()
+		rep.Done(id, err)
+		return err
+	}
+	return run()
 }
 
 // NopReporter is the zero-behavior reporter used by the plain/CI apply
@@ -198,8 +225,7 @@ func InstallSteps(o InstallStepInputs) []Step {
 }
 
 // InstallStepInputs is the minimal decision surface InstallSteps needs.
-// Derived from InitOptions by the cobra layer so this package doesn't
-// re-encode flag semantics.
+// Both init and guided setup derive it through PlannedInstallStepInputs.
 type InstallStepInputs struct {
 	NoInstallPrereqs bool
 	Starter          bool // greenfield fleet-mode (new-repo/existing-repo): shared trees may need the OCI starter pull
@@ -214,6 +240,28 @@ type InstallStepInputs struct {
 	GPUEnabled      bool // track GPU Flux layers when products are installed
 	HAMiEnabled     bool // include the HAMi layer in GPU progress
 	ManagedServices bool // publish the reviewed managed-services installation
+}
+
+// PlannedInstallStepInputs keeps the executed and reviewed stage inventories
+// on the same decision surface. Callers pass the resolved Fleet and service
+// selections; auto mode retains both conditional paths until target inspection.
+func PlannedInstallStepInputs(o *InitOptions, fleet FleetMode, services bool) InstallStepInputs {
+	ssh := o.SSHHost != "" && !o.NoSSH
+	gpu := o.GPU()
+	return InstallStepInputs{
+		NoInstallPrereqs: o.NoInstallPrereqs,
+		Starter:          fleet != FleetExistingFleet,
+		Adopt:            o.Mode == ModeAdopt || o.Mode == ModeAuto,
+		SSH:              ssh,
+		StorageDevCheck:  ssh && (o.Mode == ModeInstall || o.Mode == ModeAuto) && len(o.ObjectStorage().RawOSDDevices()) > 0,
+		NewRepoCreate:    fleet == FleetNewRepo && !o.NoCreateRepo && !o.NoPush,
+		NewRepoRemote:    fleet == FleetNewRepo && !o.NoPush,
+		NoPush:           o.NoPush,
+		Finalize:         !o.NoPush,
+		GPUEnabled:       gpu.Platform == GPUPlatformEnabled,
+		HAMiEnabled:      gpu.HAMiEnabled,
+		ManagedServices:  services,
+	}
 }
 
 // GPUInstallStepIDs returns the terminal milestones that must be skipped when

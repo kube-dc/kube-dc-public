@@ -29,6 +29,64 @@ func (s *panelSessionFixture) Release(context.Context) (setup.CoordinatorStatus,
 	s.release++
 	return s.result, nil
 }
+
+type panelHandoffFixture struct {
+	*panelSessionFixture
+	prepared int
+	accepted string
+}
+
+func (s *panelHandoffFixture) PrepareExecutorHandoff(context.Context) (setup.SessionHandoff, error) {
+	s.prepared++
+	h := setup.SessionHandoff{CertificateSHA256: strings.Repeat("a", 64), Phase: "preparing"}
+	s.result.Handoff = &h
+	s.result.Session.OwnershipPhase = "handoff"
+	return h, nil
+}
+func (s *panelHandoffFixture) AcceptExecutorHandoff(_ context.Context, ref string) (setup.CoordinatorStatus, error) {
+	s.accepted = ref
+	return s.result, nil
+}
+
+func TestSessionHandoffUsesExistingControlsAndCapturesExactCertificate(t *testing.T) {
+	m, base := sessionPanel(t)
+	s := &panelHandoffFixture{panelSessionFixture: base}
+	m.ConfigureServices(PanelServices{Context: context.Background(), Session: s, SessionDirectory: "/private/session"})
+	m.OpenContinue()
+	complete(t, m, m.startSession("session-handoff"))
+	if s.prepared != 1 || m.workflow.sessionStatus.Handoff == nil {
+		t.Fatal("handoff not retained in existing session controls")
+	}
+	if !strings.Contains(strings.Join(m.sessionText(), "\n"), "previous run is sealed") {
+		t.Fatal(m.sessionText())
+	}
+	command := m.startSession("session-accept-handoff")
+	if command == nil {
+		t.Fatal("accept unavailable")
+	}
+	// UI edits reject the late result; the already scheduled control retains
+	// its exact immutable session/certificate rather than reading mutable UI.
+	m.st.Domain = "changed.example.test"
+	m.changed()
+	m.Update(command())
+	if s.accepted != strings.Repeat("a", 64) || m.workflow.sessionInspected {
+		t.Fatal("late handoff event used edited state")
+	}
+	if m.startSession("session-handoff") != nil || m.startSession("session-accept-handoff") != nil {
+		t.Fatal("edited settings authorized handoff")
+	}
+	for _, width := range []int{80, 120, 160} {
+		m.Update(tea.WindowSizeMsg{Width: width, Height: 40})
+		for _, line := range strings.Split(ansi.Strip(m.View().Content), "\n") {
+			if ansi.StringWidth(line) > width {
+				t.Fatal("handoff controls overflow terminal")
+			}
+		}
+	}
+	if m.Applied() {
+		t.Fatal("handoff escaped readiness gate")
+	}
+}
 func sessionPanel(t *testing.T) (*PanelModel, *panelSessionFixture) {
 	t.Helper()
 	s := &panelSessionFixture{result: setup.CoordinatorStatus{Session: setup.SessionSummary{OwnershipPhase: "held"}, Targets: []setup.TargetClaimStatus{{HostID: "server-1", State: "reserved", CurrentRun: true, SecondsRemaining: 1800}}}}
@@ -111,5 +169,73 @@ func TestSessionNarrowTerminalRetainsControls(t *testing.T) {
 	}
 	if !strings.Contains(view, "Continue") {
 		t.Fatal(view)
+	}
+}
+
+func TestSessionShowsClusterOwnershipWithoutGrantingApply(t *testing.T) {
+	for _, tc := range []struct {
+		status setup.ClusterClaimStatus
+		text   string
+	}{
+		{setup.ClusterClaimStatus{State: "not-recorded"}, "Cluster: not-recorded"},
+		{setup.ClusterClaimStatus{State: "held", CurrentRun: true, MatchesProof: true}, "Cluster: held · this run"},
+		{setup.ClusterClaimStatus{State: "held", MatchesProof: true}, "Cluster: held · inspection only"},
+		{setup.ClusterClaimStatus{State: "held", MatchesProof: false}, "no completion proof"},
+		{setup.ClusterClaimStatus{State: "conflict", Detail: "Retain claims and inspect."}, "Retain claims and inspect."},
+		{setup.ClusterClaimStatus{State: "unknown", Detail: "Inspect API access."}, "Inspect API access."},
+		{setup.ClusterClaimStatus{State: "absent", Detail: "Saved effects still require inspection."}, "Saved effects still require inspection."},
+	} {
+		t.Run(tc.text, func(t *testing.T) {
+			m, s := sessionPanel(t)
+			s.result.Cluster = tc.status
+			complete(t, m, m.startSession("session-inspect"))
+			if !strings.Contains(strings.Join(m.sessionText(), "\n"), tc.text) {
+				t.Fatal(m.sessionText())
+			}
+			for _, width := range []int{80, 120, 160} {
+				m.Update(tea.WindowSizeMsg{Width: width, Height: 40})
+				view := ansi.Strip(m.View().Content)
+				for _, line := range strings.Split(view, "\n") {
+					if ansi.StringWidth(line) > width {
+						t.Fatalf("overflow at %d: %q", width, line)
+					}
+				}
+			}
+			if m.Applied() || m.workflow.sessionStatus.ReadyToApply {
+				t.Fatal("ownership inspection granted apply")
+			}
+		})
+	}
+}
+
+func TestSessionPlatformActionsUseSharedNavigationAndRejectStaleEvidence(t *testing.T) {
+	m, _ := sessionPanel(t)
+	refresh, inspect, record := 0, 0, 0
+	m.workflow.services.Platform = &PlatformServices{
+		Refresh: func(context.Context) (setup.PlatformReview, error) {
+			refresh++
+			return setup.PlatformReview{Hash: strings.Repeat("a", 64), Effects: []setup.StagePreview{{ID: "scaffold"}}}, nil
+		},
+		Inspect: func(_ context.Context, save bool) (setup.PlatformRecoveryReport, error) {
+			inspect++
+			if save {
+				record++
+			}
+			return setup.PlatformRecoveryReport{Findings: []setup.PlatformRecoveryFinding{{Stage: "scaffold", State: "verified"}}}, nil
+		},
+	}
+	m.rebuildWorkflowFields()
+	complete(t, m, m.startSession("session-refresh-platform"))
+	complete(t, m, m.startSession("session-inspect-effects"))
+	complete(t, m, m.startSession("session-record-effects"))
+	if refresh != 1 || inspect != 2 || record != 1 || m.workflow.platformReview.Hash == "" || m.Applied() {
+		t.Fatal("incorrect platform action or legacy Apply escape")
+	}
+	command := m.startSession("session-refresh-platform")
+	m.st.Domain = "changed.example.test"
+	m.changed()
+	m.Update(command())
+	if m.workflow.platformReview.Hash != "" || m.startSession("session-record-effects") != nil {
+		t.Fatal("edited form reused old platform evidence")
 	}
 }

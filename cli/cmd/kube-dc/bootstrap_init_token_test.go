@@ -65,8 +65,8 @@ func TestResolveGitHubToken_GitHubDefault(t *testing.T) {
 	if gotBin != "gh" {
 		t.Errorf("default provider should invoke `gh`, got %q", gotBin)
 	}
-	if len(gotArgs) != 2 || gotArgs[0] != "auth" || gotArgs[1] != "token" {
-		t.Errorf("gh args = %v, want [auth token]", gotArgs)
+	if strings.Join(gotArgs, " ") != "auth token --hostname github.com" {
+		t.Errorf("gh args = %v, want [auth token --hostname github.com]", gotArgs)
 	}
 	if !strings.Contains(out.String(), "gh auth token") {
 		t.Errorf("expected 'gh auth token' in log")
@@ -477,5 +477,20 @@ func TestFleetRemoteWebHostKeepsHTTPSPortOnly(t *testing.T) {
 		if got := fleetRemoteHost(repo); got != strings.Split(want, ":")[0] {
 			t.Errorf("%s: credential host %q", origin, got)
 		}
+	}
+}
+
+func TestResolveGitHubTokenNewPrivateRepoRejectsHostedEnvironmentToken(t *testing.T) {
+	clearTokenEnv(t)
+	t.Setenv("GITHUB_TOKEN", "hosted-only-token")
+	var out bytes.Buffer
+	got := resolveGitHubTokenWithExec(&clusterinit.InitOptions{Provider: clusterinit.ProviderGitHub, ProviderHost: "git.example.test:8443", Repo: t.TempDir()}, &out, func(binary string, args ...string) ([]byte, error) {
+		if binary != "gh" || strings.Join(args, " ") != "auth token --hostname git.example.test" {
+			t.Fatalf("wrong private credential lookup: %s %v", binary, args)
+		}
+		return []byte("enterprise-only-token"), nil
+	})
+	if got != "enterprise-only-token" || strings.Contains(out.String(), "hosted-only-token") || strings.Contains(out.String(), got) {
+		t.Fatal("private authority selected or logged the wrong credential")
 	}
 }

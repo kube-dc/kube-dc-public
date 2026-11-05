@@ -3,6 +3,7 @@ package setup
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
@@ -27,7 +28,7 @@ type StorageAssignment struct {
 // SuggestStorageLayouts uses fresh, pinned, read-only host observations. It
 // suggests only layouts the generated Fleet overlay can express. It leaves
 // mounted/partitioned disks and unknown observations out of raw-disk plans.
-func SuggestStorageLayouts(hosts []HostResources, preferredHost string, now time.Time) []StorageLayout {
+func SuggestStorageLayouts(hosts []HostResources, preferredHost string, now time.Time, selections ...map[string]string) []StorageLayout {
 	var available []StorageAssignment
 	var backing []HostResources
 	seen := map[string]bool{}
@@ -48,18 +49,36 @@ func SuggestStorageLayouts(hosts []HostResources, preferredHost string, now time
 			continue
 		}
 		seen[h.ID], seenMachines[h.Facts.MachineID] = true, true
+		preferred := ""
+		if len(selections) > 0 {
+			preferred = selections[0][h.ID]
+		}
 		var best *DiskCandidate
 		for i := range host.Disks {
 			d := &host.Disks[i]
 			if !d.Checked || d.InUse || d.StableID == "" || d.SizeBytes == 0 || !validSelectedDevicePath(d.Path) {
 				continue
 			}
+			if preferred != "" {
+				path := "/dev/" + strings.TrimPrefix(preferred, "/dev/")
+				matches := d.Path == path
+				if selected := h.Facts.SelectedDisk; selected != nil && selected.SelectedPath == path && selected.ResolvedPath == d.Path {
+					matches = true
+				}
+				if !matches {
+					continue
+				}
+			}
 			if best == nil || d.SizeBytes > best.SizeBytes || (d.SizeBytes == best.SizeBytes && d.Path < best.Path) {
 				best = d
 			}
 		}
 		if best != nil {
-			available = append(available, StorageAssignment{Node: h.ID, Device: best.Path, StableID: best.StableID, SizeBytes: best.SizeBytes})
+			path := best.Path
+			if preferred != "" {
+				path = "/dev/" + strings.TrimPrefix(preferred, "/dev/")
+			}
+			available = append(available, StorageAssignment{Node: h.ID, Device: path, StableID: best.StableID, SizeBytes: best.SizeBytes})
 		}
 		if host.FileBackingAvailable && suggestedBackingGiB(host.Host.Facts.FreeBytes) > 0 {
 			backing = append(backing, host)
@@ -77,6 +96,20 @@ func SuggestStorageLayouts(hosts []HostResources, preferredHost string, now time
 		}
 	}
 	available = unique
+	// An incomplete imported selection must never become a smaller proposed
+	// topology. Leave it unchanged and require explicit per-host review.
+	if len(selections) > 0 && len(selections[0]) > 0 {
+		matched := map[string]bool{}
+		for _, disk := range available {
+			matched[disk.Node] = true
+		}
+		for node := range selections[0] {
+			if !matched[node] {
+				available = nil
+				break
+			}
+		}
+	}
 	sort.Slice(available, func(i, j int) bool {
 		if available[i].SizeBytes != available[j].SizeBytes {
 			return available[i].SizeBytes > available[j].SizeBytes
@@ -85,7 +118,7 @@ func SuggestStorageLayouts(hosts []HostResources, preferredHost string, now time
 	})
 	var layouts []StorageLayout
 	if len(available) > 0 {
-		selected := append([]StorageAssignment(nil), available[:min(3, len(available))]...)
+		selected := append([]StorageAssignment(nil), available[:min(clusterinit.MaxCephSlots, len(available))]...)
 		replicas := 2
 		if len(selected) == 1 {
 			replicas = 1

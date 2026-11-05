@@ -8,8 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/config"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
 
@@ -17,7 +19,7 @@ func preparedFixture(t *testing.T) (PreparedScaffold, string) {
 	return preparedFixtureWithHooks(t, nil, nil)
 }
 
-func preparedFixtureWithHooks(t *testing.T, setup func(string), afterScript func(string, map[string]string) error) (PreparedScaffold, string) {
+func preparedFixtureWithHooks(t *testing.T, setup func(string), afterScript func(string, map[string]string) error, adjust ...func(*ScaffoldOptions)) (PreparedScaffold, string) {
 	t.Helper()
 	fleet := t.TempDir()
 	writeStarterScaffoldSources(t, fleet)
@@ -48,7 +50,11 @@ func preparedFixtureWithHooks(t *testing.T, setup func(string), afterScript func
 		}}
 		return fake
 	}
-	prepared, err := PrepareScaffold(context.Background(), ScaffoldOptions{Sets: map[string]string{"EXT_NET_INTERFACE": "eth1", "EXT_NET_VLAN_ID": "1103"}, FleetRepo: fleet, NodeExternalIP: "192.0.2.10", Plan: &Plan{ClusterName: "demo", Domain: "example.test", Preset: PresetInternalOnly, IngressAddressLayer: AddressLayerNone}}, directory, runner, func(copy string) error { return nil })
+	opts := ScaffoldOptions{Sets: map[string]string{"EXT_NET_INTERFACE": "eth1", "EXT_NET_VLAN_ID": "1103"}, FleetRepo: fleet, NodeExternalIP: "192.0.2.10", Plan: &Plan{ClusterName: "demo", Domain: "example.test", Preset: PresetInternalOnly, IngressAddressLayer: AddressLayerNone}}
+	for _, fn := range adjust {
+		fn(&opts)
+	}
+	prepared, err := PrepareScaffold(context.Background(), opts, directory, runner, func(copy string) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,5 +183,179 @@ func TestPreparedSourceGuardRunsBeforeGenerator(t *testing.T) {
 	_, err := PrepareScaffold(context.Background(), ScaffoldOptions{FleetRepo: fleet, Plan: &Plan{ClusterName: "demo"}}, filepath.Join(t.TempDir(), "prepared"), func(string) ports.ScriptRunner { called = true; return &fakeScriptRunner{} }, func(string) error { return fmt.Errorf("release baseline mismatch") })
 	if err == nil || called {
 		t.Fatal("generator ran before copied source was verified")
+	}
+}
+
+func TestPreparedScaffoldRetainsProductAndCustomSiteComponents(t *testing.T) {
+	const component = "apiVersion: kustomize.config.k8s.io/v1alpha1\nkind: Component\n"
+	prepared, fleet := preparedFixtureWithHooks(t, func(root string) {
+		for _, path := range []string{"install/site-component", "platform/components/platform-state-on-managers", "platform/components/openbao-on-managers"} {
+			full := filepath.Join(root, path)
+			if err := os.MkdirAll(full, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(full, "kustomization.yaml"), []byte(component), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}, func(root string, _ map[string]string) error {
+		cluster := filepath.Join(root, "clusters/demo")
+		if err := os.WriteFile(filepath.Join(cluster, "platform.yaml"), []byte("apiVersion: kustomize.toolkit.fluxcd.io/v1\nkind: Kustomization\nmetadata:\n  name: platform\nspec:\n  path: ./platform\n"), 0600); err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(cluster, "cluster-config.env"), []byte("CLUSTER_NAME=demo\nDOMAIN=example.test\nOPENBAO_REPLICAS=3\n"), 0600)
+	}, func(opts *ScaffoldOptions) {
+		opts.Plan.ManagerNodes = 3
+		opts.ManagerNodeNames = []string{"server-1", "server-2", "server-3"}
+		opts.SiteComponents = []SiteComponent{{Layer: "platform", Path: "install/site-component"}}
+	})
+	body, err := os.ReadFile(filepath.Join(prepared.Directory, "clusters/demo/platform.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"platform-state-on-managers", "openbao-on-managers", "install/site-component"} {
+		if !strings.Contains(string(body), want) {
+			t.Fatalf("prepared output omitted %s", want)
+		}
+	}
+	if err := PublishPreparedScaffold(context.Background(), prepared, fleet, func(context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyPreparedPublication(prepared); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fleet, "install/site-component/kustomization.yaml"), []byte(component+"# changed\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyPreparedPublication(prepared); err == nil {
+		t.Fatal("unreviewed site component change accepted")
+	}
+}
+
+func TestPreparedComponentsRejectUncapturedSiblingAndRemoteResources(t *testing.T) {
+	for _, reference := range []string{"../shared/resource.yaml", "https://example.test/base?ref=main"} {
+		t.Run(reference, func(t *testing.T) {
+			root := t.TempDir()
+			component := filepath.Join(root, "sites/component")
+			if err := os.MkdirAll(component, 0700); err != nil {
+				t.Fatal(err)
+			}
+			body := "apiVersion: kustomize.config.k8s.io/v1alpha1\nkind: Component\nresources:\n  - " + reference + "\n"
+			if err := os.WriteFile(filepath.Join(component, "kustomization.yaml"), []byte(body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := SnapshotScaffoldSource(root, SiteComponent{Layer: "platform", Path: "sites/component"}); err == nil {
+				t.Fatal("uncaptured dependency entered the review baseline")
+			}
+		})
+	}
+}
+
+func TestPreparedComponentsRejectLegacyUncapturedSources(t *testing.T) {
+	for _, extra := range []string{
+		"configMapGenerator:\n  - name: local-config\n    env: ../shared/input.env\n",
+		"secretGenerator:\n  - name: local-secret\n    env: ../shared/input.env\n",
+		"helmChartInflationGenerator:\n  - chartName: remote-chart\n    chartRepoUrl: https://example.test/charts\n",
+	} {
+		root := t.TempDir()
+		component := filepath.Join(root, "sites/component")
+		if err := os.MkdirAll(component, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(component, "kustomization.yaml"), []byte("apiVersion: kustomize.config.k8s.io/v1alpha1\nkind: Component\n"+extra), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := SnapshotScaffoldSource(root, SiteComponent{Layer: "platform", Path: "sites/component"}); err == nil {
+			t.Fatal("legacy source bypassed preparation policy")
+		}
+	}
+}
+
+// Prepared Class D generation must keep the same internal VIP, anchors and
+// Project DNS component as ordinary initialization.
+func TestPreparedClassDMatchesOrdinaryFrontDoor(t *testing.T) {
+	cp := []string{"node-a", "node-b", "node-c"}
+	prepared, _ := preparedFixtureWithHooks(t, func(fleet string) {
+		files := map[string]string{
+			"scripts/services-catalog-render-test.sh":      "#!/bin/sh\nexit 0\n",
+			"bootstrap/add-cluster.sh":                     "# scaffold-capability: managed-services-v1\n",
+			"infrastructure/kube-ovn-network/vpc-dns.yaml": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: vpc-dns-corefile\ndata:\n  Corefile: |-\n    .:53 {\n      errors\n      ready\n      forward . /etc/resolv.conf\n      cache 30\n    }\n",
+		}
+		for name, body := range files {
+			path := filepath.Join(fleet, name)
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}, func(root string, _ map[string]string) error {
+		dir := filepath.Join(root, "clusters", "demo")
+		files := map[string]string{
+			"cluster-config.env":  "CLUSTER_NAME=demo\nDOMAIN=example.test\n" + classDEnv(),
+			"platform.yaml":       "apiVersion: kustomize.toolkit.fluxcd.io/v1\nkind: Kustomization\nmetadata:\n  name: platform\n  namespace: flux-system\nspec:\n  path: ./platform\n",
+			"infrastructure.yaml": "apiVersion: kustomize.toolkit.fluxcd.io/v1\nkind: Kustomization\nmetadata:\n  name: infra-core\n  namespace: flux-system\nspec:\n  path: ./infrastructure\n",
+		}
+		for name, body := range files {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+				return err
+			}
+		}
+		return nil
+	}, func(opts *ScaffoldOptions) {
+		opts.ControlPlaneNodes, opts.ManagerNodeNames = cp, cp
+		opts.Plan.ManagerNodes, opts.Plan.ManagedServicesMode = 3, "on"
+		opts.Plan.IngressNodes, opts.Plan.IngressAddressLayer = cp, AddressLayerMetalLBL2
+		for _, line := range strings.Split(classDEnv(), "\n") {
+			if k, v, ok := strings.Cut(line, "="); ok {
+				opts.Sets[k] = v
+			}
+		}
+	})
+	path := filepath.Join(prepared.Directory, "clusters", "demo", "cluster-config.env")
+	env, err := config.LoadEnv(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := env.AsMap()
+	if want["PROJECT_FRONT_DOOR_DNS"] != "zone" || want["ENVOY_GATEWAY_INTERNAL_VIP"] != "198.51.100.65" {
+		t.Fatal("prepared front door missing")
+	}
+	ordinary := t.TempDir()
+	if err := os.CopyFS(ordinary, os.DirFS(prepared.Directory)); err != nil {
+		t.Fatal(err)
+	}
+	for _, kv := range []string{"ENVOY_GATEWAY_INTERNAL_VIP=", "PLATFORM_ENDPOINT_ENVOY_GATEWAY_ENABLED=false", "EXT_NET_ANCHOR_IPS=", "EXT_NET_ANCHOR_REQUIRED=false", "PROJECT_FRONT_DOOR_DNS=", "EXT_NET_EXCLUDE_IPS=198.51.100.1..198.51.100.64"} {
+		k, v, _ := strings.Cut(kv, "=")
+		env.Set(k, v)
+	}
+	path = filepath.Join(ordinary, "clusters", "demo", "cluster-config.env")
+	if err := env.Write(path); err != nil {
+		t.Fatal(err)
+	}
+	if did, err := ResolveProjectFrontDoor(ordinary, "demo", cp, cp, "", nil); err != nil || !did {
+		t.Fatalf("ordinary front door: %v", err)
+	}
+	if err := WriteProductComponents(context.Background(), ProductComponentOptions{FleetRepo: ordinary, ClusterName: "demo"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	env, err = config.LoadEnv(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"ENVOY_GATEWAY_INTERNAL_VIP", "EXT_NET_ANCHOR_IPS", "EXT_NET_EXCLUDE_IPS", "PROJECT_FRONT_DOOR_DNS", "INGRESS_GLOBAL_ALLOWLIST", "EGRESS_GLOBAL_ALLOWLIST"} {
+		if env.AsMap()[key] != want[key] {
+			t.Errorf("ordinary and reviewed %s differ", key)
+		}
+	}
+	rel := filepath.Join("clusters", "demo", "vpc-dns-front-door", "kustomization.yaml")
+	expected, err := os.ReadFile(filepath.Join(prepared.Directory, rel))
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, err := os.ReadFile(filepath.Join(ordinary, rel))
+	if err != nil || string(actual) != string(expected) {
+		t.Fatal("ordinary and prepared DNS differ", err)
 	}
 }

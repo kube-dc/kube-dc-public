@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 	"strings"
 	"testing"
 	"time"
@@ -166,5 +167,20 @@ func TestReloadStalledPlatformArchivingKeepsStuckBackupWhenReplaceFails(t *testi
 	}
 	if len(f.deleted) != 0 || !strings.Contains(out.String(), "request timed out") {
 		t.Fatalf("deleted %v output %q", f.deleted, out.String())
+	}
+}
+
+func TestCNPGRepairRejectsLostOwnershipBeforeEveryWrite(t *testing.T) {
+	denied := errors.New("ownership lost")
+	ctx := ports.WithMutationGuard(context.Background(), func(context.Context) error { return denied })
+	k := managedServicesKubectl{}
+	for _, run := range []func() error{
+		func() error { return k.AnnotateCNPGCluster(ctx, "monitoring", "database", "cnpg.io/reloadedAt", "now") },
+		func() error { return k.CreateCNPGBackup(ctx, map[string]any{}) },
+		func() error { return k.DeleteCNPGBackup(ctx, "monitoring", "stuck-backup") },
+	} {
+		if err := run(); !errors.Is(err, denied) {
+			t.Fatalf("CNPG write bypassed ownership: %v", err)
+		}
 	}
 }

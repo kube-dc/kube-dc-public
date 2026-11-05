@@ -22,8 +22,8 @@ func baseState() *State {
 		PubExclude1: "203.0.113.49", PubExclude2: "203.0.113.50",
 		IngressAddressLayer: clusterinit.AddressLayerMetalLBL2,
 		MetalLBMode:         "l2", MetalLBVIP: "100.65.0.20", MetalLBInterface: "br-ext-cloud",
-		OSMode:    "rook-ceph-multi-node",
-		CephNode1: "host5-a=sdb", CephNode2: "host6-a=sdb", CephNode3: "host7-a=sdc",
+		OSMode:           "rook-ceph-multi-node",
+		CephNodes:        []string{"host5-a=sdb", "host6-a=sdb", "host7-a=sdc"},
 		AllowDNSNotReady: true,
 	}
 }
@@ -93,7 +93,7 @@ func TestApply_NonPublicPresetDropsPublicKeys(t *testing.T) {
 func TestApply_LocalModeFields(t *testing.T) {
 	st := baseState()
 	st.OSMode, st.OSDNode, st.OSDSizeGB, st.OSDDevice = "rook-ceph-local", "host6-a", "500", "sdb"
-	st.CephNode1, st.CephNode2, st.CephNode3 = "", "", ""
+	st.CephNodes = nil
 	o := &clusterinit.InitOptions{Yes: true}
 	if err := st.Apply(o); err != nil {
 		t.Fatal(err)
@@ -124,7 +124,7 @@ func TestApply_VMStorageMode_ClearedWhenNotRook(t *testing.T) {
 	// the user can no longer see (review P2).
 	st := baseState()
 	st.OSMode = "disabled"
-	st.CephNode1, st.CephNode2, st.CephNode3 = "", "", ""
+	st.CephNodes = nil
 	st.DisabledConsent = true
 	st.VMStorageMode = "shared-rbd" // stale, from before switching to disabled
 	o := &clusterinit.InitOptions{Yes: true}
@@ -185,7 +185,7 @@ func TestEquivalentFlags_PAYG(t *testing.T) {
 func TestEquivalentFlags_PVCSizing(t *testing.T) {
 	st := baseState()
 	st.OSMode = "rook-ceph-pvc"
-	st.CephNode1, st.CephNode2, st.CephNode3 = "", "", ""
+	st.CephNodes = nil
 	st.StorageClass = "fast-nvme"
 	st.CephOSDCount = "4"
 	st.CephOSDVolumeSize = "300"

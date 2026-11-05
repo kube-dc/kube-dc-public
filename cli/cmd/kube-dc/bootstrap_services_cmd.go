@@ -55,7 +55,7 @@ func bootstrapServicesVerifyCmd(fleetRepo *string) *cobra.Command {
 			if err := checkManagedServicesCatalog(cmd.Context(), reader, pins, greenfield); err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Managed-services release, six family bundles and twelve current-generation plans verified")
+			fmt.Fprintln(cmd.OutOrStdout(), "Managed-services release, selected family bundles and current-generation plans verified")
 			return nil
 		},
 	}

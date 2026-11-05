@@ -244,6 +244,9 @@ func Compile(spec Spec) (Compiled, error) {
 	if err := json.Unmarshal(record, &recordObject); err != nil || recordObject == nil {
 		return out, fmt.Errorf("release.recordFile: expected JSON release record")
 	}
+	if src[clusterinit.KeyCephDevices] != "" {
+		return out, fmt.Errorf("platform.configFile: multi-device storage is supported by init preview and rendering; guided execution requires a future per-device host evidence schema")
+	}
 	if err := checkHostConflicts(spec, src); err != nil {
 		return out, err
 	}
@@ -536,7 +539,7 @@ func checkHostConflicts(s Spec, src map[string]string) error {
 			return fmt.Errorf("hosts[].ingress conflicts with platform.configFile %s", clusterinit.KeyIngressNodes)
 		}
 	}
-	for i := 1; i <= 3; i++ {
+	for i := 1; i <= clusterinit.MaxCephSlots; i++ {
 		nameKey := fmt.Sprintf("CEPH_NODE_%d", i)
 		deviceKey := nameKey + "_DEVICE"
 		if node := strings.TrimSpace(src[nameKey]); node != "" {

@@ -132,23 +132,6 @@ func validateCredentialFile(v string) error {
 	return nil
 }
 
-// validateCephNodesMore checks servers 4 to 16 of a multi-node layout.
-func validateCephNodesMore(v string) error {
-	entries := strings.Split(v, ",")
-	if len(entries) > 13 {
-		return fmt.Errorf("at most 16 Ceph nodes")
-	}
-	for _, e := range entries {
-		if e = strings.TrimSpace(e); e == "" {
-			continue
-		}
-		if err := clusterinit.ValidateNodeDevicePairField(e); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // cloudflareWildcardZoneMissing mirrors LoadDNS01Cloudflare: under acme,
 // Cloudflare DNS-01 serves the wildcard only and needs the zone as its
 // explicit opt-in.
@@ -156,37 +139,6 @@ func (s *State) cloudflareWildcardZoneMissing() bool {
 	return s.tlsMode() == clusterinit.TLSModeACME &&
 		strings.TrimSpace(s.RetainedInputs[keyCloudflareTokenFile]) != "" &&
 		strings.TrimSpace(s.RetainedInputs[keyCloudflareZone]) == ""
-}
-
-// maxCephNodes is the multi-node OSD server limit of the flag path.
-const maxCephNodes = 16
-
-// cephPairs is every NODE=DEVICE entry of a multi-node layout: the three
-// rows, then "More Ceph nodes".
-func (s *State) cephPairs() []string {
-	var out []string
-	for _, p := range append([]string{s.CephNode1, s.CephNode2, s.CephNode3}, strings.Split(s.CephNodesMore, ",")...) {
-		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-// setCephPairs stores entries in order: the first three in the rows, the
-// rest in "More Ceph nodes".
-func (s *State) setCephPairs(pairs []string) {
-	s.CephNode1, s.CephNode2, s.CephNode3, s.CephNodesMore = "", "", "", ""
-	slots := []*string{&s.CephNode1, &s.CephNode2, &s.CephNode3}
-	var more []string
-	for i, p := range pairs {
-		if i < len(slots) {
-			*slots[i] = p
-		} else {
-			more = append(more, p)
-		}
-	}
-	s.CephNodesMore = strings.Join(more, ",")
 }
 
 // dropUnverifiedCredentialRefs removes credential file references that do

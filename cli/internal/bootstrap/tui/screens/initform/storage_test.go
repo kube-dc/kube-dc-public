@@ -57,7 +57,7 @@ func TestStorageGuideUsesPerServerInventoryAndExportsAssignments(t *testing.T) {
 		t.Fatal("host selector kept another host's disks")
 	}
 	m.selectStorageLayout("raw")
-	if m.st.CephNode1 != "server-1=sdb" || m.st.CephNode2 != "server-2=sdb" || m.st.CephNode3 != "server-3=sdb" {
+	if strings.Join(m.st.CephNodes, ",") != "server-1=sdb,server-2=sdb,server-3=sdb" {
 		t.Fatalf("wrong assignments %+v", m.st)
 	}
 	if m.discoveryBlocker() == "" {
@@ -80,8 +80,8 @@ func TestStorageGuideUsesPerServerInventoryAndExportsAssignments(t *testing.T) {
 	m.st.NodeSSHHostKeys = ""
 	m.changed()
 	m.selectStorageLayout("raw")
-	if len(m.st.storageDevices()) != 1 || m.st.storageDevices()["server-1"] != "sdb" {
-		t.Fatal("changed host pins reused untrusted assignments")
+	if len(m.st.storageDevices()) != 3 || !strings.Contains(m.notice, "no longer supported") {
+		t.Fatal("uncertain observations replaced the imported mapping")
 	}
 }
 
@@ -189,7 +189,7 @@ func TestStorageProposalDisabledIsNotANormalChoice(t *testing.T) {
 func TestStorageRadiosAreExclusiveAndDetailsAreOptional(t *testing.T) {
 	m := demoPanel(t)
 	m.st.OSMode = string(clusterinit.RookCephMultiNode)
-	m.st.CephNode1 = "server-1=sdb"
+	m.st.CephNodes = []string{"server-1=sdb"}
 	m.changed()
 	complete(t, m, m.startHostDiscovery())
 	m.openSection("Storage")

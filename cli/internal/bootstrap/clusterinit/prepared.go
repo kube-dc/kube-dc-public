@@ -21,13 +21,14 @@ import (
 // PreparedScaffold retains the actual generator output. Execution must publish
 // these bytes, including the randomized SOPS ciphertext, without rerendering.
 type PreparedScaffold struct {
-	Directory   string         `json:"directory"`
-	Destination string         `json:"destination"`
-	Cluster     string         `json:"cluster"`
-	SourceFiles []PreparedFile `json:"sourceFiles"`
-	SourceAfter []PreparedFile `json:"sourceAfter"`
-	Files       []PreparedFile `json:"files"`
-	Hash        string         `json:"hash"`
+	Directory      string          `json:"directory"`
+	Destination    string          `json:"destination"`
+	Cluster        string          `json:"cluster"`
+	SourceFiles    []PreparedFile  `json:"sourceFiles"`
+	SourceAfter    []PreparedFile  `json:"sourceAfter"`
+	Files          []PreparedFile  `json:"files"`
+	Hash           string          `json:"hash"`
+	SiteComponents []SiteComponent `json:"siteComponents,omitempty"`
 }
 
 type PreparedFile struct {
@@ -41,9 +42,25 @@ var reviewSourceEntries = []string{"bootstrap", "infrastructure", "platform", "a
 
 // SnapshotScaffoldSource includes every generator and shared Fleet input. It
 // refuses symlinks and special files instead of following them out of the root.
-func SnapshotScaffoldSource(directory string) ([]PreparedFile, error) {
+func SnapshotScaffoldSource(directory string, components ...SiteComponent) ([]PreparedFile, error) {
 	var files []PreparedFile
-	for _, entry := range reviewSourceEntries {
+	entries := append([]string{}, reviewSourceEntries...)
+	for _, component := range components {
+		if !safePreparedPath(component.Path) {
+			return nil, fmt.Errorf("unsafe reviewed component path")
+		}
+		covered := false
+		for _, entry := range entries {
+			covered = covered || component.Path == entry || strings.HasPrefix(component.Path, entry+"/")
+		}
+		if !covered {
+			entries = append(entries, component.Path)
+		}
+	}
+	if err := checkPreparedComponentDependencies(directory, components, entries); err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
 		part, err := snapshotTree(directory, entry, true)
 		if err != nil {
 			return nil, err
@@ -144,7 +161,7 @@ func PrepareScaffold(ctx context.Context, opts ScaffoldOptions, directory string
 	if err != nil {
 		return prepared, err
 	}
-	source, err := SnapshotScaffoldSource(opts.FleetRepo)
+	source, err := SnapshotScaffoldSource(opts.FleetRepo, opts.SiteComponents...)
 	if err != nil {
 		return prepared, err
 	}
@@ -192,7 +209,13 @@ func PrepareScaffold(ctx context.Context, opts ScaffoldOptions, directory string
 	if err := Scaffold(ctx, opts); err != nil {
 		return prepared, err
 	}
-	after, err := SnapshotScaffoldSource(directory)
+	if err := WriteProductComponents(ctx, ProductComponentOptions{FleetRepo: directory, ClusterName: opts.Plan.ClusterName, Sets: opts.Sets, TrustedCA: opts.TrustedCA, K8s: reviewedManagerNodes(opts.ManagerNodeNames), PlannedManagers: opts.Plan.ManagerNodes, WildcardCertPEM: wildcardCertPEM(opts.WildcardTLS)}, opts.Out); err != nil {
+		return prepared, err
+	}
+	if err := WriteSiteComponents(directory, opts.Plan.ClusterName, opts.SiteComponents, opts.Out); err != nil {
+		return prepared, err
+	}
+	after, err := SnapshotScaffoldSource(directory, opts.SiteComponents...)
 	if err != nil {
 		return prepared, err
 	}
@@ -215,6 +238,7 @@ func PrepareScaffold(ctx context.Context, opts ScaffoldOptions, directory string
 	files = append(files, added...)
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	prepared = PreparedScaffold{Directory: directory, Destination: destination, Cluster: opts.Plan.ClusterName, SourceFiles: source, SourceAfter: after, Files: files}
+	prepared.SiteComponents = append([]SiteComponent(nil), opts.SiteComponents...)
 	prepared.Hash = preparedHash(prepared)
 	complete = true
 	return prepared, nil
@@ -238,7 +262,7 @@ func VerifyPreparedScaffold(p PreparedScaffold) error {
 	if err != nil || !info.IsDir() || info.Mode().Perm()&0o077 != 0 {
 		return fmt.Errorf("prepared directory must remain private")
 	}
-	source, err := SnapshotScaffoldSource(p.Directory)
+	source, err := SnapshotScaffoldSource(p.Directory, p.SiteComponents...)
 	if err != nil || !reflect.DeepEqual(source, p.SourceAfter) {
 		return fmt.Errorf("prepared source changed")
 	}
@@ -261,6 +285,19 @@ func VerifyPreparedScaffold(p PreparedScaffold) error {
 		return fmt.Errorf("prepared output changed")
 	}
 	return nil
+}
+
+type reviewedManagerNodes []string
+
+func (n reviewedManagerNodes) NodeLabels(context.Context) (map[string]map[string]string, error) {
+	labels := map[string]map[string]string{}
+	for _, name := range n {
+		if !k8sNodeNameRegex.MatchString(name) {
+			return nil, fmt.Errorf("invalid reviewed manager node")
+		}
+		labels[name] = map[string]string{ManagerNodeLabel: "true"}
+	}
+	return labels, nil
 }
 
 // The generator can mint one shared encrypted registry credential and record
@@ -321,7 +358,7 @@ func PublishPreparedScaffold(ctx context.Context, p PreparedScaffold, fleet stri
 	if err != nil || destination != p.Destination {
 		return fmt.Errorf("publication destination differs from review")
 	}
-	source, err := SnapshotScaffoldSource(fleet)
+	source, err := SnapshotScaffoldSource(fleet, p.SiteComponents...)
 	if err != nil || !reflect.DeepEqual(source, p.SourceFiles) {
 		return fmt.Errorf("Fleet source changed since review")
 	}

@@ -37,12 +37,37 @@ var inputStringBindings = []inputStringBinding{
 	{InitPrefix + "DNS01_CLOUDFLARE_API_TOKEN_FILE", "dns01-cloudflare-api-token-file", func(o *InitOptions) *string { return &o.DNS01CloudflareAPITokenFile }},
 }
 
+// RestoreRetainedInputs seeds a form from a complete input snapshot. Missing
+// reference fields clear earlier values; runtime credentials and approvals stay
+// outside this contract. The shared bindings include future file references.
+func RestoreRetainedInputs(o *InitOptions, snapshot map[string]string) {
+	values := make(map[string]string, len(snapshot)+len(inputStringBindings)+12)
+	for k, v := range snapshot {
+		values[k] = v
+	}
+	values[KeySpecVersion] = InputSpecVersion
+	for _, b := range inputStringBindings {
+		if _, exists := values[b.key]; !exists {
+			values[b.key] = ""
+		}
+	}
+	for _, k := range []string{"TLS_MODE", "DNS01_ROUTE53_ZONE_ID", "DNS01_ROUTE53_REGION", "DNS01_ROUTE53_ACCESS_KEY_ID", "DNS01_CLOUDFLARE_ZONE", "DNS01_CLOUDFLARE_SCOPE", "GPU_SHARED_ALLOCATOR", KeyVMGolden, KeyVMGoldenBlock, KeyPAYG} {
+		if _, exists := values[k]; !exists {
+			values[k] = ""
+		}
+	}
+	ImportMap(o, values, func(string) bool { return false })
+}
+
 // ValidateInputSpec checks the file format without requiring complete cluster
 // settings. Errors name keys, never values, because an invalid entry can carry
 // a credential. Files are parsed as data and are never sourced by a shell.
 func ValidateInputSpec(src map[string]string) error {
 	if v, ok := src[KeySpecVersion]; ok && v != InputSpecVersion {
 		return fmt.Errorf("unsupported %s; supported version is %s", KeySpecVersion, InputSpecVersion)
+	}
+	if err := validateCephInputs(src); err != nil {
+		return err
 	}
 	for _, k := range SpecOrderedKeys(src) {
 		v := src[k]

@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
@@ -76,13 +75,8 @@ func (s ObjectStorageSpec) RawOSDDevices() [][2]string {
 	case RookCephLocal:
 		add(s.OSDNode, s.OSDDevice)
 	case RookCephMultiNode:
-		nodes := make([]string, 0, len(s.CephNodes))
-		for n := range s.CephNodes {
-			nodes = append(nodes, n)
-		}
-		sort.Strings(nodes)
-		for _, n := range nodes {
-			add(n, s.CephNodes[n])
+		for _, slot := range s.deviceSlots() {
+			add(slot[0], slot[1])
 		}
 	}
 	return out

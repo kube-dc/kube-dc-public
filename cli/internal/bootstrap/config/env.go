@@ -182,6 +182,16 @@ func (e *Env) AppendBlank() {
 // preset's defaults + --set deltas + inherited version pins onto
 // the env that `bootstrap/add-cluster.sh` generated.
 func (e *Env) Write(path string) error {
+	return e.writeMode(path, 0o644)
+}
+
+// WritePrivate atomically saves workstation inputs with owner-only access.
+// Fleet manifests continue to use Write and their normal repository mode.
+func (e *Env) WritePrivate(path string) error {
+	return e.writeMode(path, 0o600)
+}
+
+func (e *Env) writeMode(path string, mode os.FileMode) error {
 	if path == "" {
 		path = e.Path
 	}
@@ -200,7 +210,7 @@ func (e *Env) Write(path string) error {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("env: write %s: %w", tmpPath, werr)
 	}
-	if err := tmp.Chmod(0o644); err != nil {
+	if err := tmp.Chmod(mode); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("env: chmod %s: %w", tmpPath, err)

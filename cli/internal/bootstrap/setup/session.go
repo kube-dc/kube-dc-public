@@ -39,6 +39,9 @@ type SessionRecord struct {
 	Events            []SessionEvent    `json:"events"`
 	Ownership         *SessionOwnership `json:"ownership,omitempty"`
 	OwnershipEvents   []OwnershipEvent  `json:"ownershipEvents,omitempty"`
+	PlatformReviews   []string          `json:"platformReviews,omitempty"`
+	ExecutorUncertain bool              `json:"executorUncertain,omitempty"`
+	Handoffs          []SessionHandoff  `json:"handoffs,omitempty"`
 	Hash              string            `json:"hash"`
 }
 
@@ -283,7 +286,7 @@ func OpenSession(directory string) (*SessionWriter, error) {
 			}
 		}
 	}
-	if w.record.Ownership != nil && w.record.Ownership.Phase != "released" && w.record.Ownership.Phase != "uncertain" {
+	if w.record.Ownership != nil && w.record.Ownership.Phase != "released" && w.record.Ownership.Phase != "uncertain" && w.record.Ownership.Phase != "handoff" {
 		// The previous process may have stopped during a remote operation.
 		w.matched = true
 		err := w.ownership(w.record.Ownership.RunID, "uncertain", w.record.Ownership.Claims, false)
@@ -338,6 +341,12 @@ func readSessionRoot(root *os.Root) (SessionRecord, error) {
 		return record, err
 	}
 	if err := validateStoredStageEvidence(root, record); err != nil {
+		return record, err
+	}
+	if err := validatePlatformEvidence(root, record); err != nil {
+		return record, err
+	}
+	if err := validateHandoffEvidence(root, record); err != nil {
 		return record, err
 	}
 	return record, nil
@@ -404,11 +413,11 @@ func validateSession(record SessionRecord) error {
 				return fmt.Errorf("session completion has no matching attempt")
 			}
 			switch event.Source {
-			case "execution", "recovery", "coordinator":
+			case "execution", "recovery", "coordinator", "platform":
 				if old.State != "running" || (event.State != "succeeded" && event.State != "uncertain") || (event.Source == "recovery" && event.State != "uncertain") || (event.Source == "coordinator" && event.State != "succeeded") {
 					return fmt.Errorf("session completion state is invalid")
 				}
-			case "inspection":
+			case "inspection", "platform-inspection":
 				if old.State != "uncertain" || (event.State != "succeeded" && event.State != "absent") {
 					return fmt.Errorf("session inspection state is invalid")
 				}
@@ -649,6 +658,9 @@ func SummarizeSession(record SessionRecord) SessionSummary {
 		if record.Ownership.Phase != "released" {
 			result.State = "inspection-required"
 		}
+	}
+	if record.ExecutorUncertain {
+		result.State = "inspection-required"
 	}
 	return result
 }

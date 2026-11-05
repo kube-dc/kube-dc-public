@@ -107,6 +107,9 @@ func applyManagedServicesAdmission(ctx context.Context, transport managedService
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	args := append(transport.kubectlArgs(), "--request-timeout=20s", "apply", "--server-side", "--field-manager=kube-dc-cli", "-f", "-")
+	if err := ports.BeforeMutation(callCtx); err != nil {
+		return err
+	}
 	cmd := exec.CommandContext(callCtx, "kubectl", args...)
 	cmd.Stdin = bytes.NewReader(body)
 	output, err := cmd.CombinedOutput()

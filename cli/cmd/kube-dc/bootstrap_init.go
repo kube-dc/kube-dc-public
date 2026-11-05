@@ -66,6 +66,7 @@ func bootstrapInitCmd(fleetRepo *string) *cobra.Command {
 func bootstrapInitCmdWithOptions(fleetRepo *string, accepted *clusterinit.InitOptions) *cobra.Command {
 	o := &clusterinit.InitOptions{}
 	var (
+		cephDevicesFlag                                                                                                                string
 		setFlags, nodeNICFlags, nodeSSHHostFlags, nodeSSHHostKeyFlags, addonFlags, cephNodeFlags, gpuNodeModeFlags, gpuSSHHostMapFlags []string
 		gpuSSHHostOverrides                                                                                                            map[string]string
 		// --object-storage-mode is canonical (OS-1); --rook-mode is a
@@ -151,6 +152,11 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 				return fmt.Errorf("--ceph-node: %w", err)
 			} else if len(pairs) > 0 {
 				o.CephNodes = pairs
+			}
+			if cmd.Flags().Changed("ceph-devices") {
+				if err := o.ImportCephDevices(cephDevicesFlag); err != nil {
+					return err
+				}
 			}
 			o.Addons = addonFlags
 			if modes, err := clusterinit.ParseGPUNodeModes(gpuNodeModeFlags); err != nil {
@@ -568,6 +574,7 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 	// --- Fleet ---
 	cmd.Flags().StringVar((*string)(&o.FleetMode), "fleet-mode", "",
 		fmt.Sprintf("Fleet-repo relation (one of %s; required)", joinFleetModes(clusterinit.AllFleetModes)))
+	cmd.Flags().StringVar(&o.ProviderHost, "provider-host", "", "Git provider hostname and optional HTTPS port (default: provider public host)")
 	cmd.Flags().StringVar((*string)(&o.Provider), "provider", "",
 		"Remote-repo hosting provider (`github` or `gitlab`): selects the repo created in new-repo mode, the Flux bootstrap flavour and the push credential; unset with a non-github.com remote uses the credential glab or gh stored for that host")
 	cmd.Flags().StringVar(&o.GitHubOwner, "github-owner", "",
@@ -616,7 +623,8 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 	cmd.Flags().StringVar(&o.RookOSDDevice, "rook-osd-device", "",
 		"OSD device for --object-storage-mode=rook-ceph-local (default: fleet template's loop0)")
 	cmd.Flags().StringSliceVar(&cephNodeFlags, "ceph-node", nil,
-		"OSD node for --object-storage-mode=rook-ceph-multi-node (repeatable; NODE=DEVICE; 1 to 3 servers)")
+		"OSD node for --object-storage-mode=rook-ceph-multi-node (repeatable; NODE=DEVICE; up to 16 devices)")
+	cmd.Flags().StringVar(&cephDevicesFlag, "ceph-devices", "", "Versioned JSON device lists per server; use instead of --ceph-node")
 	cmd.Flags().StringVar(&o.CephStorageClass, "ceph-storage-class", "",
 		"StorageClass backing OSD PVCs for --object-storage-mode=rook-ceph-pvc")
 	cmd.Flags().IntVar(&o.CephOSDCount, "ceph-osd-count", 0,
@@ -957,10 +965,7 @@ func runGPUHostCompatibilityPreflight(ctx context.Context, out io.Writer, g clus
 // returned unchanged, so existing `if err := …; err != nil { return }`
 // call sites keep their semantics.
 func step(rep clusterinit.StepReporter, id clusterinit.StepID, fn func() error) error {
-	rep.Start(id)
-	err := fn()
-	rep.Done(id, err)
-	return err
+	return clusterinit.ExecuteStep(rep, id, fn)
 }
 
 // runInitDryRun derives the Plan from `o`, renders it for human
@@ -1196,7 +1201,7 @@ func runInitAdoptWizardStep(cmd *cobra.Command, out io.Writer, o *clusterinit.In
 	if !o.NoPush {
 		token = resolveGitHubToken(o, out)
 	}
-	return applyConfigSet(cmd, out, repoRoot, env, changes, o.Name, o.NoPush, token, string(o.Provider))
+	return applyConfigSet(cmd, out, repoRoot, env, changes, o.Name, o.NoPush, token, string(o.Provider), o.ProviderHost)
 }
 
 // runApplyEngine is the shared tail that both apply paths converge
@@ -1226,27 +1231,14 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	if err := clusterinit.ValidateStarterCLI(o.Repo, version); err != nil {
 		return err
 	}
-	rep.Plan(clusterinit.InstallSteps(clusterinit.InstallStepInputs{
-		NoInstallPrereqs: o.NoInstallPrereqs,
-		Starter:          starterNeeded,
-		Adopt:            o.Mode == clusterinit.ModeAdopt,
-		SSH:              sshEnabled,
-		StorageDevCheck:  o.Mode == clusterinit.ModeInstall && len(rawOSDs) > 0,
-		NewRepoCreate:    plan.FleetMode == clusterinit.FleetNewRepo && !o.NoCreateRepo && !o.NoPush,
-		NewRepoRemote:    plan.FleetMode == clusterinit.FleetNewRepo && !o.NoPush,
-		NoPush:           o.NoPush,
-		Finalize:         !o.NoPush,
-		GPUEnabled:       gpu.Platform == clusterinit.GPUPlatformEnabled,
-		HAMiEnabled:      gpu.HAMiEnabled,
-		ManagedServices:  plan.ManagedServicesMode == "on",
-	}))
+	rep.Plan(clusterinit.InstallSteps(clusterinit.PlannedInstallStepInputs(o, plan.FleetMode, plan.ManagedServicesMode == "on")))
 	if os.Getenv("KUBE_DC_MOCK") == "" {
 		checks, err := initWorkstationChecks(ctx, o)
 		if err != nil {
 			return fmt.Errorf("apply: check local tools: %w", err)
 		}
 		if blocked := manualToolBlockers(checks, !o.NoInstallPrereqs); len(blocked) != 0 {
-			return fmt.Errorf("apply: install or upgrade these local tools before continuing: %s", strings.Join(blocked, ", "))
+			return fmt.Errorf("apply: install or upgrade these local tools before continuing: %s", manualToolBlockerSummary(checks, blocked))
 		}
 	}
 
@@ -1370,6 +1362,11 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 			return e
 		}); err != nil {
 			return fmt.Errorf("apply: fleet starter: %w", err)
+		}
+	}
+	if !o.NoPush {
+		if err := clusterinit.CheckProviderHostSupport(o.Repo, o.Provider, o.ProviderHost); err != nil {
+			return err
 		}
 	}
 	// M4-T07 auto-install prereqs. Runs FIRST — before DNS / NFD /
@@ -1734,6 +1731,29 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	// unnecessary `gh auth token` subshell + log noise (M4-T12
 	// review-pass — P3).
 	var token string
+	bindProvider := func() error {
+		if os.Getenv("KUBE_DC_MOCK") != "" || o.NoPush {
+			return nil
+		}
+		host, err := clusterinit.ResolveRepositoryProviderHost(ctx, o.Provider, o.ProviderHost, o.Repo)
+		if err != nil {
+			return err
+		}
+		binder, ok := session.Git.(ports.GitProviderBinder)
+		if !ok {
+			return fmt.Errorf("Git adapter cannot bind the reviewed provider")
+		}
+		session.Git, err = binder.ForProvider(ctx, o.Repo, host)
+		if err != nil {
+			return fmt.Errorf("apply: review Git provider destination: %w", err)
+		}
+		return nil
+	}
+	if plan.FleetMode != clusterinit.FleetNewRepo {
+		if err := bindProvider(); err != nil {
+			return err
+		}
+	}
 	if !o.NoPush {
 		token = resolveGitHubToken(o, out)
 	}
@@ -1752,11 +1772,12 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	if plan.FleetMode == clusterinit.FleetNewRepo && !o.NoCreateRepo && !o.NoPush {
 		if err := step(rep, clusterinit.StepCreateRepo, func() error {
 			return clusterinit.CreateRemoteRepo(ctx, clusterinit.CreateRepoOptions{
-				Provider: o.Provider,
-				Owner:    o.GitHubOwner,
-				Name:     o.GitHubRepo,
-				Token:    token,
-				Out:      out,
+				Provider:     o.Provider,
+				ProviderHost: o.ProviderHost,
+				Owner:        o.GitHubOwner,
+				Name:         o.GitHubRepo,
+				Token:        token,
+				Out:          out,
 			})
 		}); err != nil {
 			return err
@@ -1773,10 +1794,13 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 	// failing.
 	if plan.FleetMode == clusterinit.FleetNewRepo && !o.NoPush {
 		if err := step(rep, clusterinit.StepRemote, func() error {
-			return ensureOriginRemote(ctx, out, o.Repo, o.Provider, o.GitHubOwner, o.GitHubRepo)
+			return ensureOriginRemoteAtHost(ctx, out, o.Repo, o.Provider, o.ProviderHost, o.GitHubOwner, o.GitHubRepo)
 		}); err != nil {
 			return err
 		}
+	}
+	if err := bindProvider(); err != nil {
+		return err
 	}
 
 	// Re-load the byo-wildcard material from the operator's paths. The RunE
@@ -1879,17 +1903,17 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		// committed. session.K8s is nil when the cluster is unreachable, and Apply
 		// skips the step in that case rather than failing — an unreachable cluster is
 		// already reported by the earlier gates.
-		K8s:         session.K8s,
-		GitHubToken: token,
-		Provider:    o.Provider,
-		GitHubOwner: o.GitHubOwner,
-		GitHubRepo:  o.GitHubRepo,
-		GitHost:     fleetRemoteWebHost(o.Repo),
-		// Validated with the other options.
-		SiteComponents: siteComponents(o),
+		K8s:            session.K8s,
+		GitHubToken:    token,
+		Provider:       o.Provider,
+		ProviderHost:   o.ProviderHost,
+		GitHubOwner:    o.GitHubOwner,
+		GitHubRepo:     o.GitHubRepo,
 		NoPush:         o.NoPush,
 		Out:            out,
 		Reporter:       rep,
+		GitHost:        fleetRemoteWebHost(o.Repo),
+		SiteComponents: siteComponents(o),
 	}); err != nil {
 		return err
 	}
@@ -2064,12 +2088,18 @@ func defaultTokenExec(binary string, args ...string) ([]byte, error) {
 
 // resolveGitHubTokenWithExec is the testable form of resolveGitHubToken.
 func resolveGitHubTokenWithExec(o *clusterinit.InitOptions, out io.Writer, execFn tokenExecFn) string {
+	provider := o.Provider
+	authority, err := clusterinit.ResolveRepositoryProviderHost(context.Background(), provider, o.ProviderHost, o.Repo)
+	if err != nil {
+		fmt.Fprintln(out, "[apply] Git provider authority is invalid or differs from the checkout")
+		return ""
+	}
+	u, _ := url.Parse("https://" + authority)
+	host := u.Hostname()
 	if o.GitHubToken != "" {
 		fmt.Fprintln(out, "[apply] using --github-token flag value")
 		return o.GitHubToken
 	}
-	provider := o.Provider
-	host := fleetRemoteHost(o.Repo)
 	if provider == "" && host != "" && host != "github.com" {
 		// No provider was named and the remote is not github.com: use only
 		// what glab or gh stored for this exact host.
@@ -2188,10 +2218,9 @@ func resolveProviderToken(component string, provider clusterinit.Provider, host 
 			return t
 		}
 	}
-	args := []string{"auth", "token"}
+	args := []string{"auth", "token", "--hostname", host}
 	label := "gh auth token"
 	if host != "github.com" {
-		args = append(args, "--hostname", host)
 		label += " --hostname " + host
 	}
 	raw, err := execFn("gh", args...)
@@ -2618,7 +2647,7 @@ func joinStringers[T ~string](in []T) string {
 func assertRequiredFlagsRegistered(fs *pflag.FlagSet) error {
 	required := []string{
 		"preset", "mode", "name", "domain", "node-external-ip", "email",
-		"fleet-mode", "provider", "github-owner", "github-repo", "github-token",
+		"fleet-mode", "provider", "provider-host", "github-owner", "github-repo", "github-token",
 		"set", "node-nic", "node-ssh-host", "node-ssh-host-key", "primary-node",
 		"object-storage-mode", "rook-mode", // rook-mode = deprecated alias, one release
 		"rook-osd-node", "rook-osd-size-gb", "rook-osd-device",
@@ -2653,9 +2682,13 @@ func assertRequiredFlagsRegistered(fs *pflag.FlagSet) error {
 // the create-repo step (review P1): --no-create-repo skips repo
 // creation but still needs a correct origin before CommitAndPush.
 func ensureOriginRemote(ctx context.Context, out io.Writer, repo string, provider clusterinit.Provider, owner, name string) error {
-	host := "github.com"
-	if provider == clusterinit.ProviderGitLab {
-		host = "gitlab.com"
+	return ensureOriginRemoteAtHost(ctx, out, repo, provider, "", owner, name)
+}
+
+func ensureOriginRemoteAtHost(ctx context.Context, out io.Writer, repo string, provider clusterinit.Provider, authority, owner, name string) error {
+	host, err := clusterinit.ResolveProviderHost(provider, authority)
+	if err != nil {
+		return err
 	}
 	want := fmt.Sprintf("https://%s/%s/%s.git", host, owner, name)
 

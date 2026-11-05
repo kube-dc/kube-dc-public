@@ -78,7 +78,7 @@ func ownershipTransition(from, to string) bool {
 	case "acquiring":
 		return to == "held" || to == "uncertain"
 	case "held":
-		return to == "releasing" || to == "uncertain"
+		return to == "releasing" || to == "uncertain" || to == "handoff"
 	case "releasing":
 		return to == "released" || to == "uncertain"
 	}
@@ -95,7 +95,7 @@ func validateOwnership(record SessionRecord) error {
 	if !validSessionHash(o.RunID) || len(o.Claims) > len(record.Targets) || len(record.OwnershipEvents) == 0 || len(record.OwnershipEvents) > maxOwnershipEvents {
 		return fmt.Errorf("invalid ownership identity or limits")
 	}
-	if o.Phase != "acquiring" && o.Phase != "held" && o.Phase != "releasing" && o.Phase != "released" && o.Phase != "uncertain" {
+	if o.Phase != "acquiring" && o.Phase != "held" && o.Phase != "releasing" && o.Phase != "released" && o.Phase != "uncertain" && o.Phase != "handoff" {
 		return fmt.Errorf("invalid ownership phase")
 	}
 	last := OwnershipEvent{}
@@ -108,6 +108,8 @@ func validateOwnership(record SessionRecord) error {
 			if last.RunID == e.RunID || (last.Phase != "" && last.Phase != "released" && last.Phase != "uncertain") {
 				return fmt.Errorf("invalid ownership acquisition")
 			}
+		} else if e.Phase == "held" && last.Phase == "handoff" && transferredOwner(record, last.RunID, e.RunID) {
+			// A retained transfer, never the saved run identity, binds this owner.
 		} else if e.RunID != last.RunID || !ownershipTransition(last.Phase, e.Phase) {
 			return fmt.Errorf("invalid ownership event transition")
 		}
@@ -144,7 +146,7 @@ func validateOwnership(record SessionRecord) error {
 		return fmt.Errorf("ownership lacks target evidence")
 	}
 	for _, c := range o.Claims {
-		if o.Phase == "held" && c.State != "reserved" || o.Phase == "released" && c.State != "released" {
+		if o.Phase == "held" && c.State != "reserved" && !(c.State == "started" && transferredDestination(record, o.RunID)) || o.Phase == "released" && c.State != "released" {
 			return fmt.Errorf("ownership evidence differs from phase")
 		}
 	}

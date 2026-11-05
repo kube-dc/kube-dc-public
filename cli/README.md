@@ -152,6 +152,35 @@ kube-dc ns                    # List accessible backing namespaces
 kube-dc ns shalb-dev          # Legacy: change only the current namespace
 ```
 
+### Review installation inputs in the TUI
+
+Open a saved input file in the existing Fleet, Contexts, and New Cluster tabs:
+
+```bash
+kube-dc bootstrap --repo ./fleet --config ./site.env --review-only
+```
+
+`--review-only` disables installation from New Cluster. You can edit settings,
+request read-only discovery, and press **S** to save a private input draft.
+Press **q** to return to Fleet, then **q** to exit. Keep credentials in their
+dedicated files; the input file stores references, not their contents.
+
+Use **b**/**f** or **Ctrl+u**/**Ctrl+d** to scroll long panels. PgUp/PgDn also
+work when the terminal sends those keys. Letters remain text during editing.
+SSH discovery uses your agent, SSH configuration, keys, and strict `known_hosts`
+checks. With no host-key pin, discovery reads identity first. Verify and enter
+the server key or fingerprint, then inspect again to read hardware facts.
+
+Server-disk storage supports up to 16 selected devices. One storage host defaults
+to one copy; two or more default to two copies. An explicit replica count and
+monitor list survive load and save. Separate several devices on one server with
+commas. These lists can be saved and rendered; TUI installation stays blocked
+until per-device evidence is supported. Custom device classes and pool layouts
+require explicit, reviewed Fleet components.
+
+Provider-class inspection reads the selected target's StorageClass settings.
+It does not prove raw-block support, available capacity, or failure tolerance.
+
 ### `kube-dc config`
 
 Manage CLI configuration.

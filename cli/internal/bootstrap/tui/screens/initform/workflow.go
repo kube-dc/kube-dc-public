@@ -22,12 +22,15 @@ import (
 // PanelServices supplies operations, not a second form. Both bootstrap entry
 // points use this PanelModel, State, field schema, validation, and Apply mapping.
 type PanelServices struct {
-	Context          context.Context
-	Discover         func(context.Context, setup.ResourceRequest) (setup.HostResources, error)
-	Demo             *setupdemo.Coordinator
-	DraftPath        string
-	Session          SessionControl
-	SessionDirectory string
+	ReviewOnly             bool
+	Context                context.Context
+	Discover               func(context.Context, setup.ResourceRequest) (setup.HostResources, error)
+	InspectProviderStorage func(context.Context, clusterinit.InitOptions) (setup.ProviderStorageObservation, error)
+	Demo                   *setupdemo.Coordinator
+	DraftPath              string
+	Session                SessionControl
+	SessionDirectory       string
+	Platform               *PlatformServices
 }
 
 type panelWorkflow struct {
@@ -54,20 +57,26 @@ type panelWorkflow struct {
 	sessionStatus    setup.CoordinatorStatus
 	sessionInputHash string
 	sessionInspected bool
+	platformReview   setup.PlatformReview
+	platformRecovery setup.PlatformRecoveryReport
+	providerStorage  setup.ProviderStorageObservation
 }
 
 // PanelEvent is addressed to the originating panel and generation. Root routes
 // it even when another tab is active; an old panel/result can never update a new one.
 type PanelEvent struct {
-	Owner         *PanelModel
-	generation    uint64
-	kind, hash    string
-	resources     setup.HostResources
-	sessionStatus setup.CoordinatorStatus
-	review        setupdemo.Review
-	result        string
-	err           error
-	hostSnapshots map[string]hostSnapshot
+	Owner            *PanelModel
+	generation       uint64
+	kind, hash       string
+	resources        setup.HostResources
+	sessionStatus    setup.CoordinatorStatus
+	platformReview   setup.PlatformReview
+	platformRecovery setup.PlatformRecoveryReport
+	review           setupdemo.Review
+	result           string
+	err              error
+	hostSnapshots    map[string]hostSnapshot
+	providerStorage  setup.ProviderStorageObservation
 }
 
 func (m *PanelModel) ConfigureServices(s PanelServices) {
@@ -124,10 +133,10 @@ func (m *PanelModel) requestForHost(node string) setup.ResourceRequest {
 		h.Disk = "/dev/" + strings.TrimPrefix(nonEmpty(m.st.OSDDevice, "loop0"), "/dev/")
 	}
 	if m.st.OSMode == string(clusterinit.RookCephMultiNode) {
-		for _, pair := range m.st.cephPairs() {
+		for _, pair := range m.st.CephNodes {
 			node, disk, ok := strings.Cut(pair, "=")
 			if ok && node == h.ID {
-				h.Disk = "/dev/" + disk
+				h.Disk = "/dev/" + strings.TrimPrefix(strings.Split(disk, ",")[0], "/dev/")
 			}
 		}
 	}
@@ -154,6 +163,10 @@ func (m *PanelModel) changed() {
 	}
 	m.Close()
 	w.reviewHash, w.reviewedHash, w.phase, w.result = "", "", "", ""
+	w.platformReview = setup.PlatformReview{}
+	w.platformRecovery = setup.PlatformRecoveryReport{}
+	w.providerStorage = setup.ProviderStorageObservation{}
+	w.sessionInspected = false
 	if w.resourceHash != "" && w.resourceHash != fingerprint(m.request()) {
 		w.resourceHash = ""
 		w.resources = setup.HostResources{}
@@ -174,6 +187,31 @@ func (m *PanelModel) handlePanelEvent(e PanelEvent) {
 		w.cancel = nil
 	}
 	switch e.kind {
+	case "provider-storage":
+		if e.hash != m.stateHash() {
+			return
+		}
+		w.providerStorage = e.providerStorage
+		if e.err == nil {
+			m.notice = "Class settings read. Block support, capacity, and placement remain unverified."
+		}
+
+	case "session-platform-review":
+		if e.hash != m.stateHash() {
+			return
+		}
+		if e.err == nil {
+			w.platformReview = e.platformReview
+			m.notice = "Execution review refreshed. Earlier proof hashes stay unchanged."
+		}
+	case "session-platform-inspect":
+		if e.hash != m.stateHash() {
+			return
+		}
+		if e.err == nil {
+			w.platformRecovery = e.platformRecovery
+			m.notice = "Effect inspection complete. No installation stage was retried."
+		}
 	case "session":
 		if e.hash != m.stateHash() {
 			return
@@ -275,8 +313,13 @@ func (m *PanelModel) activateWorkflow(action string) tea.Cmd {
 		return nil
 	}
 	switch {
+	case action == "review-only":
+		m.saveDraft()
+		return nil
 	case strings.HasPrefix(action, "session-"):
 		return m.startSession(action)
+	case action == "provider-storage":
+		return m.inspectProviderStorage()
 	case action == "discover-hosts":
 		return m.startHostDiscovery()
 	case strings.HasPrefix(action, "network-pattern:"):
@@ -401,23 +444,10 @@ func (m *PanelModel) activateWorkflow(action string) tea.Cmd {
 		if m.st.OSMode == string(clusterinit.RookCephLocal) {
 			m.st.OSDNode, m.st.OSDDevice = node, device
 		} else if m.st.OSMode == string(clusterinit.RookCephMultiNode) {
-			pairs := m.st.cephPairs()
-			found := false
-			for i, pair := range pairs {
-				if assignedNode, _, ok := strings.Cut(pair, "="); ok && assignedNode == node {
-					pairs[i] = node + "=" + device
-					found = true
-					break
-				}
+			if err := m.st.setStorageDevice(node, device); err != nil {
+				m.notice = err.Error()
+				return nil
 			}
-			if !found {
-				if len(pairs) >= maxCephNodes {
-					m.notice = "All Ceph node slots are filled. Edit the intended node explicitly."
-					return nil
-				}
-				pairs = append(pairs, node+"="+device)
-			}
-			m.st.setCephPairs(pairs)
 		} else {
 			m.notice = "Choose local or multi-node raw Ceph storage before selecting a disk."
 			return nil
@@ -451,7 +481,7 @@ func (m *PanelModel) rebuildWorkflowFields() {
 		return
 	}
 	current := m.currentSection()
-	base := panelFields()
+	base := panelFields(m.st)
 	var fields []panelField
 	storageAdded := false
 	networkAdded := false
@@ -495,6 +525,9 @@ func (m *PanelModel) rebuildWorkflowFields() {
 			fields = append(fields, hostFields...)
 		}
 		if f.Section == "Review" {
+			if w.services.ReviewOnly {
+				f.Label, f.Action, f.Desc = "Save inputs for later", "review-only", "Press S to save the configuration. This session cannot install."
+			}
 			if w.services.Session != nil {
 				f.Label = "Inspect installation session"
 				f.Action = "session-inspect"

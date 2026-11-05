@@ -2,6 +2,7 @@ package screens
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 
@@ -26,10 +27,28 @@ func (m *RootModel) Close() {
 }
 func (m *RootModel) Stopped() bool { return m.stopped }
 
+// NewConfiguredRootModel opens site inputs in the existing navigation. A fresh
+// copy also seeds Reset, so returning from another tab cannot drop the inputs.
+func NewConfiguredRootModel(repo string, options *clusterinit.InitOptions) *RootModel {
+	body, _ := json.Marshal(options)
+	makePanel := func() (*clusterinit.InitOptions, *initform.PanelModel) {
+		o := new(clusterinit.InitOptions)
+		_ = json.Unmarshal(body, o)
+		o.Repo = repo
+		return o, initform.NewEmbeddedPanel(o, "", nil)
+	}
+	m := NewRootModel(repo, RootTabInit)
+	m.initPanel.Close()
+	m.initOpts, m.initPanel = makePanel()
+	m.resetInit = makePanel
+	m.tabs[int(RootTabInit)].model = m.initPanel
+	return m
+}
+
 // AcceptedInit returns the same typed options used by standalone init. No shell
 // command parsing and no implicit --yes approval is involved in the handoff.
 func (m *RootModel) AcceptedInit() (*clusterinit.InitOptions, bool) {
-	if m.initPanel == nil || m.simulated || (m.panelServices != nil && m.panelServices.Session != nil) {
+	if m.initPanel == nil || m.simulated || (m.panelServices != nil && (m.panelServices.Session != nil || m.panelServices.ReviewOnly)) {
 		return nil, false
 	}
 	_, err := m.initPanel.Result(m.initOpts)
@@ -71,7 +90,7 @@ func (f fixtureTab) View() tea.View {
 
 // NewSessionRootModel opens protected continuation in the existing router and
 // New Cluster form. Its Review action cannot escape to legacy init Apply.
-func NewSessionRootModel(ctx context.Context, coordinator *setup.SessionCoordinator, directory string) *RootModel {
+func NewSessionRootModel(ctx context.Context, coordinator *setup.SessionCoordinator, directory string, platform ...initform.PlatformServices) *RootModel {
 	makePanel := func() (*clusterinit.InitOptions, *initform.PanelModel) {
 		o := coordinator.Inputs()
 		return &o, initform.NewEmbeddedPanel(&o, "", nil)
@@ -81,7 +100,11 @@ func NewSessionRootModel(ctx context.Context, coordinator *setup.SessionCoordina
 	m.initPanel.Close()
 	m.initOpts, m.initPanel, m.resetInit = o, p, makePanel
 	m.tabs[int(RootTabInit)].model = p
-	m.ConfigureInitServices(initform.PanelServices{Context: ctx, Session: coordinator, SessionDirectory: directory})
+	services := initform.PanelServices{Context: ctx, Session: coordinator, SessionDirectory: directory}
+	if len(platform) > 0 {
+		services.Platform = &platform[0]
+	}
+	m.ConfigureInitServices(services)
 	p.OpenContinue()
 	return m
 }

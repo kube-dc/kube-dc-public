@@ -58,6 +58,9 @@ import (
 // the cobra layer's apply path from the loaded Plan; tests build
 // it directly with a fake ScriptRunner.
 type ScaffoldOptions struct {
+	// Reviewed inputs for deterministic product/site component preparation.
+	ManagerNodeNames []string
+	SiteComponents   []SiteComponent
 	// Plan is the previously-validated init plan. Scaffold reads
 	// ClusterName, Domain, Preset, InheritedDefaults from it; never
 	// re-derives from fleet state (per the apply-plan verbatim

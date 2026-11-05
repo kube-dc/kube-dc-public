@@ -1,26 +1,11 @@
-// Package initform is the T6 Phase-1 wizard for `kube-dc bootstrap
-// init` (installer-agentic-implementation-plan §11.T6 + the OS-5
-// object-storage screen from installer-object-storage-scaffold.md §7).
-//
-// **Thin-generator contract** (the load-bearing rule): the form
-// populates the SAME `clusterinit.InitOptions` fields the flags do —
-// per-field validators delegate to the exported clusterinit checks,
-// and after submit the normal `Validate → BuildPlan → Render →
-// confirm → Apply` path runs unchanged. No TUI-only semantics;
-// anything the wizard produces is expressible as flags (the final
-// group shows the equivalent command line for scripting).
-//
-// v1 scope note: this is the STANDALONE huh runner launched by the
-// cobra layer when `init` starts in a TTY with no --name. Embedding
-// into the root screen router (formDoneMsg dispatch) + teatest
-// snapshots are the T6 polish half, tracked in the tracker row.
-// Probe-driven pre-fill (node list / StorageClass picker) is OS-5
-// §7.2's "when a kubeconfig is available" enhancement — free-text
-// with the shared validators is the designed degraded path and what
-// v1 ships.
+// Package initform supplies the New Cluster form used by the root Bootstrap
+// navigation and standalone init. State maps to the same typed InitOptions as
+// flags and versioned input files. Shared validation, planning, and rendering
+// remain authoritative. Read-only discovery and review never authorize apply.
 package initform
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -48,12 +33,13 @@ type State struct {
 	// inspection metadata; none authorizes a device change by itself.
 	HostID, HostKeySHA256, ManagementAddress, NodeSSHHosts, NodeSSHHostKeys string
 	// mode + fleet
-	Mode      string
-	FleetMode string
-	Repo      string
-	Provider  string
-	Owner     string
-	RepoName  string
+	Mode         string
+	FleetMode    string
+	Repo         string
+	Provider     string
+	ProviderHost string
+	Owner        string
+	RepoName     string
 	// network
 	Preset       string
 	NetVLANID    string
@@ -92,16 +78,12 @@ type State struct {
 	IngressNodes string
 	GWType       string
 	// object storage (OS-5)
-	OSMode    string
-	OSDNode   string
-	OSDSizeGB string
-	OSDDevice string
-	CephNode1 string
-	CephNode2 string
-	CephNode3 string
-	// CephNodesMore holds servers 4 to 16 as NODE=DEVICE,... (the flag path
-	// and --config accept 16).
-	CephNodesMore string
+	OSMode       string
+	OSDNode      string
+	OSDSizeGB    string
+	OSDDevice    string
+	CephNodes    []string
+	CephMonNodes string
 	// CephReplicationSize → CEPH_REPLICATION_SIZE: OSD replica count (disk
 	// durability pointer — copies also need separate failure domains). Empty = fleet default.
 	CephReplicationSize string
@@ -163,6 +145,7 @@ type State struct {
 // panel field (so FromOptions maps them to State fields, not ExtraSets).
 // Every other overlay key round-trips through ExtraSets.
 var fieldBackedOverlayKeys = map[string]bool{
+	"CEPH_MON_NODES":  true,
 	"EXT_NET_VLAN_ID": true, "EXT_NET_INTERFACE": true, "KUBE_OVN_MASTER_NODES": true,
 	"EXT_PUBLIC_VLAN_ID": true, "EXT_PUBLIC_CIDR": true, "EXT_PUBLIC_GATEWAY": true,
 	"EXT_PUBLIC_EXCLUDE_IPS_1": true, "EXT_PUBLIC_EXCLUDE_IPS_2": true,
@@ -179,22 +162,7 @@ var fieldBackedOverlayKeys = map[string]bool{
 // make them near-impossible, but Apply must not trust that).
 func (s *State) Apply(o *clusterinit.InitOptions) error {
 	if len(s.RetainedInputs) > 0 || s.retainedEdited {
-		retained := &clusterinit.InitOptions{}
-		clusterinit.ImportMap(retained, s.RetainedInputs, func(string) bool { return false })
-		// Replace the input fields that have no dedicated form row. In
-		// particular, removing a TLS path must clear the original options
-		// passed to RunPanel, not only a fresh preview scratch object.
-		o.StarterRef = retained.StarterRef
-		o.TLSMode, o.TLSCert, o.TLSKey = retained.TLSMode, retained.TLSCert, retained.TLSKey
-		o.TrustedCABundle = retained.TrustedCABundle
-		o.DNS01Route53ZoneID, o.DNS01Route53Region = retained.DNS01Route53ZoneID, retained.DNS01Route53Region
-		o.DNS01Route53AccessKeyID, o.DNS01Route53SecretKeyFile = retained.DNS01Route53AccessKeyID, retained.DNS01Route53SecretKeyFile
-		o.DNS01CloudflareZone, o.DNS01CloudflareScope = retained.DNS01CloudflareZone, retained.DNS01CloudflareScope
-		o.DNS01CloudflareAPITokenFile = retained.DNS01CloudflareAPITokenFile
-		o.VMGoldens, o.VMGoldensBlock = retained.VMGoldens, retained.VMGoldensBlock
-		o.GPUSharedAllocator = retained.GPUSharedAllocator
-		o.PAYG = retained.PAYG
-		o.SiteComponents = retained.SiteComponents
+		clusterinit.RestoreRetainedInputs(o, s.RetainedInputs)
 	}
 	// REPLACEMENT model (reviewer P1): State is the complete post-panel
 	// truth, so Apply REBUILDS every panel-owned field rather than layering
@@ -232,6 +200,7 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 	o.FleetMode = clusterinit.FleetMode(s.FleetMode)
 	o.Repo = strings.TrimSpace(s.Repo)
 	o.Provider = clusterinit.Provider(s.Provider)
+	o.ProviderHost = strings.TrimSpace(s.ProviderHost)
 	o.GitHubOwner = strings.TrimSpace(s.Owner)
 	o.GitHubRepo = strings.TrimSpace(s.RepoName)
 	o.Preset = clusterinit.Preset(s.Preset)
@@ -261,9 +230,7 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 	setIf("KUBE_OVN_MASTER_NODES", s.KubeOVNMasterNodes)
 	// The address layer is a DEDICATED option field, not a --set key (Validate
 	// rejects it in Sets so there is exactly one source of truth).
-	if v := strings.TrimSpace(s.IngressAddressLayer); v != "" {
-		o.IngressAddressLayer = v
-	}
+	o.IngressAddressLayer = strings.TrimSpace(s.IngressAddressLayer)
 	setIf("METALLB_MODE", s.MetalLBMode)
 	setIf("METALLB_FLOATING_IP", s.MetalLBVIP)
 	setIf("METALLB_INTERFACE", s.MetalLBInterface)
@@ -291,6 +258,9 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 		replicas = s.storageReplication()
 	}
 	setIf("CEPH_REPLICATION_SIZE", replicas)
+	if s.OSMode == string(clusterinit.RookCephMultiNode) {
+		setIf("CEPH_MON_NODES", s.CephMonNodes)
+	}
 	// Public-VLAN keys ONLY for the public preset — switching away drops the
 	// stale EXT_PUBLIC_* values (o.Sets was rebuilt fresh).
 	if clusterinit.PresetHasPublicNetwork(clusterinit.Preset(s.Preset)) {
@@ -305,7 +275,7 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 	// — switching e.g. multi-node → local must not leave stale CephNodes.
 	o.RookMode = clusterinit.RookMode(s.OSMode)
 	o.RookOSDNode, o.RookOSDDevice, o.RookOSDSizeGB = "", "", 0
-	o.CephNodes = nil
+	o.CephNodes, o.CephDevices = nil, nil
 	o.CephStorageClass, o.CephOSDCount, o.CephOSDVolumeSizeGB = "", 0, 0
 	switch o.RookMode {
 	case clusterinit.RookCephLocal:
@@ -319,10 +289,8 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 		}
 		o.RookOSDDevice = strings.TrimSpace(s.OSDDevice)
 	case clusterinit.RookCephMultiNode:
-		nodes := map[string]string{}
-		entries := []string{s.CephNode1, s.CephNode2, s.CephNode3}
-		entries = append(entries, strings.Split(s.CephNodesMore, ",")...)
-		for i, raw := range entries {
+		nodes := map[string][]string{}
+		for i, raw := range s.CephNodes {
 			raw = strings.TrimSpace(raw)
 			if raw == "" {
 				continue
@@ -331,14 +299,13 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 			if !ok {
 				return fmt.Errorf("ceph node %d: expected NODE=DEVICE", i+1)
 			}
-			node = strings.TrimSpace(node)
-			if _, dup := nodes[node]; dup {
-				return fmt.Errorf("ceph node %s is listed twice", node)
+			if _, exists := nodes[strings.TrimSpace(node)]; exists {
+				return fmt.Errorf("duplicate storage node %s", strings.TrimSpace(node))
 			}
-			nodes[node] = strings.TrimSpace(dev)
+			nodes[strings.TrimSpace(node)] = strings.Split(dev, ",")
 		}
 		if len(nodes) > 0 {
-			o.CephNodes = nodes
+			o.SetCephDevices(nodes)
 		}
 	case clusterinit.RookCephPVC:
 		o.CephStorageClass = strings.TrimSpace(s.StorageClass)
@@ -466,6 +433,7 @@ func (s *State) FromOptions(o *clusterinit.InitOptions) {
 	set(&s.FleetMode, string(o.FleetMode))
 	set(&s.Repo, o.Repo)
 	set(&s.Provider, string(o.Provider))
+	set(&s.ProviderHost, o.ProviderHost)
 	set(&s.Owner, o.GitHubOwner)
 	set(&s.RepoName, o.GitHubRepo)
 	set(&s.Preset, string(o.Preset))
@@ -498,6 +466,7 @@ func (s *State) FromOptions(o *clusterinit.InitOptions) {
 		set(&s.IngressNodes, strings.Join(o.IngressNodes, ","))
 		setOverlay(&s.GWType, "KUBE_OVN_GW_TYPE")
 		setOverlay(&s.CephReplicationSize, "CEPH_REPLICATION_SIZE")
+		setOverlay(&s.CephMonNodes, "CEPH_MON_NODES")
 		setOverlay(&s.PubVLANID, "EXT_PUBLIC_VLAN_ID")
 		setOverlay(&s.PubCIDR, "EXT_PUBLIC_CIDR")
 		setOverlay(&s.PubGateway, "EXT_PUBLIC_GATEWAY")
@@ -531,22 +500,11 @@ func (s *State) FromOptions(o *clusterinit.InitOptions) {
 		s.OSDSizeGB = strconv.Itoa(o.RookOSDSizeGB)
 	}
 	set(&s.OSDDevice, o.RookOSDDevice)
-	if len(o.CephNodes) > 0 {
-		nodes := make([]string, 0, len(o.CephNodes))
-		for n := range o.CephNodes {
-			nodes = append(nodes, n)
+	if selected := o.ObjectStorage().DeviceSets(); len(selected) > 0 {
+		s.CephNodes = nil
+		for _, node := range sortedStorageNodes(selected) {
+			s.CephNodes = append(s.CephNodes, node+"="+strings.Join(selected[node], ","))
 		}
-		sort.Strings(nodes)
-		slots := []*string{&s.CephNode1, &s.CephNode2, &s.CephNode3}
-		var more []string
-		for i, n := range nodes {
-			if i < len(slots) {
-				*slots[i] = n + "=" + o.CephNodes[n]
-			} else {
-				more = append(more, n+"="+o.CephNodes[n])
-			}
-		}
-		s.CephNodesMore = strings.Join(more, ",")
 	}
 	set(&s.StorageClass, o.CephStorageClass)
 	if o.CephOSDCount > 0 {
@@ -628,6 +586,7 @@ func (s *State) EquivalentFlags(o *clusterinit.InitOptions) string {
 	if o.Provider != "" && o.Provider != clusterinit.ProviderGitHub {
 		add("provider", string(o.Provider))
 	}
+	add("provider-host", o.ProviderHost)
 	add("github-owner", o.GitHubOwner)
 	add("github-repo", o.GitHubRepo)
 	add("preset", string(o.Preset))
@@ -681,6 +640,7 @@ func (s *State) EquivalentFlags(o *clusterinit.InitOptions) string {
 	for _, k := range nodeKeys {
 		add("ceph-node", k+"="+o.CephNodes[k])
 	}
+	add("ceph-devices", clusterinit.ExportMap(o)[clusterinit.KeyCephDevices])
 	add("ceph-storage-class", o.CephStorageClass)
 	if o.CephOSDCount > 0 {
 		add("ceph-osd-count", strconv.Itoa(o.CephOSDCount))
@@ -803,4 +763,28 @@ func shellQuote(s string) string {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// UnmarshalJSON migrates the former three-slot demo drafts without restoring
+// their readiness or execution state. Environment import uses InitOptions.
+func (s *State) UnmarshalJSON(body []byte) error {
+	type plain State
+	var value struct {
+		plain
+		CephNode1, CephNode2, CephNode3 string
+		CephNodesMore                   string
+	}
+	if err := json.Unmarshal(body, &value); err != nil {
+		return err
+	}
+	*s = State(value.plain)
+	if len(s.CephNodes) == 0 {
+		for _, pair := range append([]string{value.CephNode1, value.CephNode2, value.CephNode3}, strings.Split(value.CephNodesMore, ",")...) {
+			pair = strings.TrimSpace(pair)
+			if pair != "" {
+				s.CephNodes = append(s.CephNodes, pair)
+			}
+		}
+	}
+	return nil
 }

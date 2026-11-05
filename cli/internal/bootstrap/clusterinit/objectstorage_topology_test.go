@@ -112,14 +112,26 @@ spec: {failureDomain: host, replicated: {size: 3}}
 	for _, tc := range []struct {
 		hosts, replicas int
 		byID            bool
-	}{{1, 0, false}, {2, 0, false}, {3, 0, false}, {3, 3, false}, {2, 1, false}, {1, 0, true}, {2, 0, true}} {
-		t.Run(fmt.Sprintf("%d-hosts-%d-copies-by-id-%v", tc.hosts, tc.replicas, tc.byID), func(t *testing.T) {
+		disks           int
+	}{{1, 0, false, 1}, {2, 0, false, 1}, {3, 0, false, 1}, {3, 3, false, 1}, {2, 1, false, 1}, {1, 0, true, 1}, {2, 0, true, 1}, {10, 3, true, 1}, {3, 2, false, 2}} {
+		t.Run(fmt.Sprintf("%d-hosts-%d-copies-by-id-%v-disks-%d", tc.hosts, tc.replicas, tc.byID, tc.disks), func(t *testing.T) {
 			spec := ObjectStorageSpec{Mode: RookCephMultiNode, CephNodes: map[string]string{}, ReplicationSize: tc.replicas, NoS3Exposure: true}
 			for i := 1; i <= tc.hosts; i++ {
 				spec.CephNodes[fmt.Sprintf("server-%d", i)] = "sdb"
 				if tc.byID {
 					spec.CephNodes[fmt.Sprintf("server-%d", i)] = fmt.Sprintf("/dev/disk/by-id/wwn-test-%d", i)
 				}
+			}
+			if tc.disks > 1 {
+				spec.CephDevices = map[string][]string{}
+				for node, device := range spec.CephNodes {
+					spec.CephDevices[node] = []string{device, "sdc"}
+				}
+				spec.CephNodes = nil
+			}
+			spec.MonNodes = []string{"server-1", "server-2", "server-3"}
+			if tc.hosts == 1 {
+				spec.MonNodes = []string{"server-1"}
 			}
 			write("clusters/test/object-storage/kustomization.yaml", objectStorageOverlayYAML("test", spec))
 			out, err := exec.Command(kustomize, "build", filepath.Join(root, "clusters/test/object-storage")).CombinedOutput()
@@ -154,8 +166,14 @@ spec: {failureDomain: host, replicated: {size: 3}}
 			for _, entry := range storage["nodes"].([]any) {
 				node := entry.(map[string]any)
 				devices := node["devices"].([]any)
-				if len(devices) != 1 || devices[0].(map[string]any)["name"] != spec.CephNodes[node["name"].(string)] {
-					t.Fatal("Rook changed the reviewed device selector")
+				expected := spec.DeviceSets()[node["name"].(string)]
+				if len(devices) != len(expected) {
+					t.Fatal("Rook dropped a reviewed disk")
+				}
+				for i, device := range devices {
+					if device.(map[string]any)["name"] != rookDeviceName(expected[i]) {
+						t.Fatal("Rook changed the reviewed device selector")
+					}
 				}
 			}
 			mon := cluster["mon"].(map[string]any)

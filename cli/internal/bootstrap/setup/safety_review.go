@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -94,7 +95,11 @@ func CreateSafetyReview(ctx context.Context, c Compiled, o SafetyReviewOptions) 
 	if err != nil {
 		return review, err
 	}
-	sourceBaseline, err := clusterinit.SnapshotScaffoldSource(git.Directory)
+	components, err := clusterinit.ParseSiteComponents(c.Init.SiteComponents)
+	if err != nil {
+		return review, err
+	}
+	sourceBaseline, err := clusterinit.SnapshotScaffoldSource(git.Directory, components...)
 	if err != nil {
 		return review, err
 	}
@@ -146,6 +151,10 @@ func CreateSafetyReview(ctx context.Context, c Compiled, o SafetyReviewOptions) 
 	// Inputs used by the generators come from the compiled specification. The
 	// caller supplies only validated TLS/CA material and discovered CIDR facts.
 	scaffold := o.Scaffold
+	if err := bindReviewedScaffoldNodes(&scaffold, c.Spec.Hosts); err != nil {
+		return review, err
+	}
+	scaffold.SiteComponents = components
 	scaffold.Sets = c.Init.Sets
 	scaffold.NodeNICs = c.Init.NodeNICs
 	scaffold.ObjectStorage = bound
@@ -215,11 +224,8 @@ func CreateSafetyReview(ctx context.Context, c Compiled, o SafetyReviewOptions) 
 		planCopy.IngressHostCIDR = cidr
 	}
 	scaffold.Plan = &planCopy
-	if scaffold.SingleIPNAT || len(scaffold.ControlPlaneNodes) != 0 {
-		return review, fmt.Errorf("review requires explicit fresh-host address inputs")
-	}
 	prepared, err := clusterinit.PrepareScaffold(ctx, scaffold, directory, o.Runner, func(copy string) error {
-		source, err := clusterinit.SnapshotScaffoldSource(copy)
+		source, err := clusterinit.SnapshotScaffoldSource(copy, components...)
 		if err != nil || !reflect.DeepEqual(source, sourceBaseline) {
 			return fmt.Errorf("Fleet source changed before generation")
 		}
@@ -239,6 +245,9 @@ func CreateSafetyReview(ctx context.Context, c Compiled, o SafetyReviewOptions) 
 		return review, err
 	}
 	values := env.AsMap()
+	if err := VerifyStarterReleaseBindings(ctx, c, git.Directory, values); err != nil {
+		return review, err
+	}
 	if err := clusterinit.ValidateInputSpec(values); err != nil {
 		return review, fmt.Errorf("generated environment cannot enter review: %w", err)
 	}
@@ -475,6 +484,9 @@ func RecheckReviewFiles(ctx context.Context, c Compiled, review SafetyReview, cl
 	if err := validateSafetyReview(c, review); err != nil {
 		return err
 	}
+	if err := VerifyStarterReleaseBindings(ctx, c, review.Git.Directory, review.Environment); err != nil {
+		return err
+	}
 	proof, err := VerifyArtifactCache(ctx, c, review.Artifacts.CacheDirectory, cliPath)
 	if err != nil {
 		return err
@@ -485,9 +497,26 @@ func RecheckReviewFiles(ctx context.Context, c Compiled, review SafetyReview, cl
 	if err := RecheckGitBinding(ctx, review.Git); err != nil {
 		return err
 	}
-	source, err := clusterinit.SnapshotScaffoldSource(review.Git.Directory)
+	source, err := clusterinit.SnapshotScaffoldSource(review.Git.Directory, review.Prepared.SiteComponents...)
 	if err != nil || !reflect.DeepEqual(source, review.Prepared.SourceFiles) {
 		return fmt.Errorf("Fleet source changed since review")
 	}
 	return ctx.Err()
+}
+
+// Fresh installations bind control-plane names to verified server hosts for
+// the same front-door generation used by ordinary init.
+func bindReviewedScaffoldNodes(scaffold *clusterinit.ScaffoldOptions, hosts []Host) error {
+	if scaffold.SingleIPNAT || len(scaffold.ControlPlaneNodes) != 0 {
+		return fmt.Errorf("review requires explicit fresh-host address inputs")
+	}
+	scaffold.ManagerNodeNames = nil
+	for _, host := range hosts {
+		if host.Role == "server" {
+			scaffold.ManagerNodeNames = append(scaffold.ManagerNodeNames, host.ID)
+		}
+	}
+	sort.Strings(scaffold.ManagerNodeNames)
+	scaffold.ControlPlaneNodes = append([]string(nil), scaffold.ManagerNodeNames...)
+	return nil
 }

@@ -46,6 +46,24 @@ func TestStorageAdviceCapacityAndHostMapping(t *testing.T) {
 	}
 }
 
+func TestStorageAdvicePreservesImportedSmallerDiskAndAlias(t *testing.T) {
+	now := time.Now()
+	host := storageHostFixture("server-1", 100, now)
+	host.Disks = append(host.Disks, DiskCandidate{Path: "/dev/sdc", SizeBytes: 1000 << 30, Checked: true, StableID: "reserved-larger"})
+	host.Host.Facts.SelectedDisk = &DiskFact{SelectedPath: "/dev/disk/by-id/chosen", ResolvedPath: "/dev/sdb"}
+	for _, selection := range []map[string]string{{"server-1": "sdb"}, {"server-1": "disk/by-id/chosen"}} {
+		raw := layoutByID(SuggestStorageLayouts([]HostResources{host}, "server-1", now, selection), "raw")
+		if raw == nil || raw.Assignments[0].Device != "/dev/"+selection["server-1"] || raw.Assignments[0].SizeBytes != 100<<30 {
+			t.Fatal("suggestion replaced the imported disk with a larger one")
+		}
+	}
+	for _, selection := range []map[string]string{{"server-1": "missing"}, {"server-1": "sdb", "server-2": "sdb"}, {"server-1": "sdb,sdc"}} {
+		if layoutByID(SuggestStorageLayouts([]HostResources{host}, "server-1", now, selection), "raw") != nil {
+			t.Fatal("incomplete evidence produced a partial mapping")
+		}
+	}
+}
+
 func TestStorageAdviceRejectsUntrustedAndOccupiedDisks(t *testing.T) {
 	now := time.Now()
 	for _, variant := range []string{"stale", "future", "no-pin", "no-machine", "blocked-key", "unchecked", "occupied", "no-disk-id", "alias", "shared-disk"} {

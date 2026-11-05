@@ -97,7 +97,10 @@ func ValidateDeviceNameField(s string) error {
 	if s == "" {
 		return nil
 	}
-	if !deviceNameRegex.MatchString(s) {
+	// Validate strips a /dev/ prefix before checking a device (the flag
+	// and --config path); accept the same spellings here, so a stable
+	// /dev/disk/by-id/... path loaded into the init panel passes Review.
+	if !deviceNameRegex.MatchString(strings.TrimPrefix(s, "/dev/")) {
 		return fmt.Errorf("device name like sdb, nvme0n1, loop0")
 	}
 	return nil

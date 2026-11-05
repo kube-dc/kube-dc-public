@@ -305,6 +305,9 @@ func nonZeroValueFor(t reflect.Type) reflect.Value {
 			return reflect.ValueOf([]string{"sentinel"})
 		}
 	case reflect.Map:
+		if t == reflect.TypeOf(map[string][]string{}) {
+			return reflect.ValueOf(map[string][]string{"node": {"sdb", "sdc"}})
+		}
 		if t.Key().Kind() == reflect.String && t.Elem().Kind() == reflect.String {
 			m := reflect.MakeMapWithSize(t, 1)
 			m.SetMapIndex(reflect.ValueOf("k").Convert(t.Key()), reflect.ValueOf("v").Convert(t.Elem()))

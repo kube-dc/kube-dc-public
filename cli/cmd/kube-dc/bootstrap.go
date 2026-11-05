@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/config"
 	bttui "github.com/shalb/kube-dc/cli/internal/bootstrap/tui"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/tui/screens"
 	"github.com/shalb/kube-dc/cli/internal/telemetry"
@@ -20,6 +21,8 @@ import (
 // Subcommands also provide standalone installation and management operations.
 func bootstrapCmd() *cobra.Command {
 	var fleetRepo string
+	var configPath string
+	var reviewOnly bool
 
 	cmd := &cobra.Command{
 		Use:   "bootstrap",
@@ -50,12 +53,30 @@ Bootstrap opens the new-cluster form. To inspect an existing fleet, pass
 			clusterinit.UsePinnedTools(clusterinit.PinnedToolsDir())
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var inputs *clusterinit.InitOptions
+			if configPath != "" {
+				var err error
+				inputs, err = bootstrapSiteInputs(configPath, fleetRepo, cmd.Flags().Changed("repo"))
+				if err != nil {
+					return err
+				}
+				if inputs.Repo != "" {
+					fleetRepo = inputs.Repo
+				}
+			}
 			repo, startTab, err := bootstrapLandingRepo(fleetRepo)
 			if err != nil {
 				return err
 			}
-			root := screens.NewRootModel(repo, startTab)
-			root.ConfigureInitServices(bootstrapPanelServices(cmd.Context()))
+			var root *screens.RootModel
+			if inputs != nil {
+				root = screens.NewConfiguredRootModel(repo, inputs)
+			} else {
+				root = screens.NewRootModel(repo, startTab)
+			}
+			services := bootstrapPanelServices(cmd.Context())
+			services.ReviewOnly = reviewOnly
+			root.ConfigureInitServices(services)
 			defer root.Close()
 			if err := bttui.RunRoot(func() tea.Model { return root }); err != nil {
 				return err
@@ -74,6 +95,8 @@ Bootstrap opens the new-cluster form. To inspect an existing fleet, pass
 
 	cmd.PersistentFlags().StringVar(&fleetRepo, "repo", "",
 		"Path to a local kube-dc-fleet checkout (defaults to $KUBE_DC_FLEET, then ~/.kube-dc/fleet)")
+	cmd.Flags().StringVar(&configPath, "config", "", "Load installation inputs into the New Cluster tab")
+	cmd.Flags().BoolVar(&reviewOnly, "review-only", false, "Review and save New Cluster inputs with installation disabled")
 
 	cmd.AddCommand(bootstrapKubeconfigCmd(&fleetRepo))
 	cmd.AddCommand(bootstrapInstallCmd(&fleetRepo))
@@ -100,6 +123,23 @@ Bootstrap opens the new-cluster form. To inspect an existing fleet, pass
 	cmd.AddCommand(bootstrapServicesCmd(&fleetRepo))
 
 	return cmd
+}
+
+func bootstrapSiteInputs(path, repo string, explicitRepo bool) (*clusterinit.InitOptions, error) {
+	env, err := config.LoadEnv(path)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap --config: %w", err)
+	}
+	values := env.AsMap()
+	if err := clusterinit.ValidateInputSpec(values); err != nil {
+		return nil, err
+	}
+	o := &clusterinit.InitOptions{}
+	clusterinit.ImportMap(o, values, func(flag string) bool { return explicitRepo && flag == "repo" })
+	if explicitRepo || o.Repo == "" {
+		o.Repo = repo
+	}
+	return o, nil
 }
 
 // bootstrapLandingRepo keeps the no-argument TUI usable on a clean workstation.

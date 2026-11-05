@@ -117,6 +117,7 @@ func VerifyArtifactCache(ctx context.Context, c Compiled, cacheDirectory, cliPat
 	}
 	var walk func(string, int) error
 	manifestSeen := map[string]bool{}
+	childrenByDigest := map[string][]string{}
 	walk = func(hash string, depth int) error {
 		if depth > 8 {
 			return fmt.Errorf("OCI descriptor graph exceeds maximum depth")
@@ -160,6 +161,7 @@ func VerifyArtifactCache(ctx context.Context, c Compiled, cacheDirectory, cliPat
 				return fmt.Errorf("invalid OCI descriptor")
 			}
 			childHash := strings.TrimPrefix(child.Digest, "sha256:")
+			childrenByDigest[hash] = append(childrenByDigest[hash], childHash)
 			info, err := root.Stat("blobs/sha256/" + childHash)
 			if err != nil || info.Size() != child.Size {
 				return fmt.Errorf("OCI descriptor size differs from cached bytes")
@@ -183,6 +185,12 @@ func VerifyArtifactCache(ctx context.Context, c Compiled, cacheDirectory, cliPat
 		}
 		refs = append(refs, ref)
 	}
+	for name, ref := range record.Artifacts.Charts {
+		if !validDigestImage(ref) || !hexSHA256.MatchString(record.Artifacts.Files["chart."+name].SHA256) {
+			return proof, fmt.Errorf("chart lacks an immutable manifest and archive pin")
+		}
+		refs = append(refs, ref)
+	}
 	sort.Strings(refs)
 	for _, ref := range refs {
 		_, digest, ok := strings.Cut(ref, "@sha256:")
@@ -191,6 +199,29 @@ func VerifyArtifactCache(ctx context.Context, c Compiled, cacheDirectory, cliPat
 		}
 		if err := walk(digest, 0); err != nil {
 			return proof, err
+		}
+	}
+	for name, ref := range record.Artifacts.Charts {
+		_, manifest, _ := strings.Cut(ref, "@sha256:")
+		want := record.Artifacts.Files["chart."+name].SHA256
+		pending, visited, found := []string{manifest}, map[string]bool{}, false
+		for len(pending) > 0 {
+			current := pending[len(pending)-1]
+			pending = pending[:len(pending)-1]
+			if current == want {
+				found = true
+				break
+			}
+			if !visited[current] {
+				visited[current] = true
+				pending = append(pending, childrenByDigest[current]...)
+			}
+		}
+		if !found {
+			return proof, fmt.Errorf("chart archive is absent from its verified OCI graph")
+		}
+		if name == "kube-dc" && record.Artifacts.PlatformChart != record.Artifacts.Files["chart."+name] {
+			return proof, fmt.Errorf("platform chart differs from selected OCI chart")
 		}
 	}
 	files := []string{record.Artifacts.PlatformChart.SHA256}

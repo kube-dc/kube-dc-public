@@ -1,6 +1,7 @@
 package initform
 
 import (
+	"fmt"
 	"image/color"
 	"strings"
 
@@ -19,14 +20,15 @@ import (
 // updateNav/updateEditing actually handle; this exists so the footer's
 // short help + the '?' full-help overlay stay in sync with the bindings.
 type panelKeyMap struct {
-	Nav   key.Binding
-	Pane  key.Binding
-	Edit  key.Binding
-	Cycle key.Binding
-	Save  key.Binding
-	Help  key.Binding
-	Back  key.Binding
-	Quit  key.Binding
+	Nav              key.Binding
+	Pane             key.Binding
+	Edit             key.Binding
+	Cycle            key.Binding
+	Save             key.Binding
+	Help             key.Binding
+	Back             key.Binding
+	Quit             key.Binding
+	PageUp, PageDown key.Binding
 }
 
 func (k panelKeyMap) ShortHelp() []key.Binding {
@@ -36,6 +38,7 @@ func (k panelKeyMap) ShortHelp() []key.Binding {
 func (k panelKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Nav, k.Pane},
+		{k.PageUp, k.PageDown},
 		{k.Edit, k.Cycle, k.Save},
 		{k.Back, k.Help, k.Quit},
 	}
@@ -43,14 +46,16 @@ func (k panelKeyMap) FullHelp() [][]key.Binding {
 
 func defaultPanelKeys() panelKeyMap {
 	return panelKeyMap{
-		Nav:   key.NewBinding(key.WithKeys("up", "down", "k", "j"), key.WithHelp("↑↓", "move")),
-		Pane:  key.NewBinding(key.WithKeys("tab", "shift+tab"), key.WithHelp("tab", "switch pane")),
-		Edit:  key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "edit/apply")),
-		Cycle: key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("←→", "cycle option")),
-		Save:  key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "save draft")),
-		Help:  key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
-		Back:  key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
-		Quit:  key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		Nav:      key.NewBinding(key.WithKeys("up", "down", "k", "j"), key.WithHelp("↑↓", "move")),
+		Pane:     key.NewBinding(key.WithKeys("tab", "shift+tab"), key.WithHelp("tab", "switch pane")),
+		Edit:     key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "edit/apply")),
+		Cycle:    key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("←→", "cycle option")),
+		Save:     key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "save draft")),
+		Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
+		Back:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
+		Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		PageUp:   key.NewBinding(key.WithKeys("pgup", "b", "ctrl+u"), key.WithHelp("b/ctrl+u", "scroll up")),
+		PageDown: key.NewBinding(key.WithKeys("pgdown", "f", "ctrl+d"), key.WithHelp("f/ctrl+d", "scroll down")),
 	}
 }
 
@@ -114,7 +119,7 @@ func (f panelField) visible(st *State) bool { return f.Visible == nil || f.Visib
 
 // panelFields is the declarative form definition. Order defines section
 // order + within-section field order.
-func panelFields() []panelField {
+func panelFields(states ...*State) []panelField {
 	txt := func(sec, label, desc string, req bool, get func(*State) string, set func(*State, string), val func(string) error) panelField {
 		return panelField{Section: sec, Label: label, Desc: desc, Kind: panelText, Required: req, Get: get, Set: set, Validate: val}
 	}
@@ -175,8 +180,14 @@ func panelFields() []panelField {
 			func(s *State) string { return s.FleetMode }, func(s *State, v string) { s.FleetMode = v }),
 		txt("Fleet", "Fleet repo path", "local checkout (empty = $KUBE_DC_FLEET / ~/.kube-dc/fleet)", false,
 			func(s *State) string { return s.Repo }, func(s *State, v string) { s.Repo = v }, nil),
-		sel("Fleet", "Git provider", "for new-repo create + push", []string{"github", "gitlab"},
-			func(s *State) string { return s.Provider }, func(s *State, v string) { s.Provider = v }).with(isNewRepo),
+		sel("Fleet", "Git provider", "provider for credentials and Flux bootstrap", []string{"github", "gitlab"},
+			func(s *State) string { return s.Provider }, func(s *State, v string) { s.Provider = v }),
+		txt("Fleet", "Git provider host", "Optional hostname and HTTPS port for a private Git service. TLS verification stays enabled.", false,
+			func(s *State) string { return s.ProviderHost }, func(s *State, v string) { s.ProviderHost = v },
+			func(v string) error {
+				_, err := clusterinit.ResolveProviderHost(clusterinit.ProviderGitLab, v)
+				return err
+			}),
 		txt("Fleet", "Owner / group", "token resolves via gh/glab auth", false,
 			func(s *State) string { return s.Owner }, func(s *State, v string) { s.Owner = v }, nil).with(isNewRepo),
 		txt("Fleet", "Repo name", "new fleet repo name", false,
@@ -268,14 +279,8 @@ func panelFields() []panelField {
 			func(s *State) string { return s.OSDSizeGB }, func(s *State, v string) { s.OSDSizeGB = v }, validateOptionalInt).with(osIs("rook-ceph-local")),
 		txt("Storage", "OSD device", "A checked raw disk, or loop0 for an evaluation backing file.", false,
 			func(s *State) string { return s.OSDDevice }, func(s *State, v string) { s.OSDDevice = v }, clusterinit.ValidateDeviceNameField).with(osIs("rook-ceph-local")),
-		txt("Storage", "Ceph node 1", "NODE=DEVICE, e.g. host5-a=sdb", false,
-			func(s *State) string { return s.CephNode1 }, func(s *State, v string) { s.CephNode1 = v }, clusterinit.ValidateNodeDevicePairField).with(osIs("rook-ceph-multi-node")),
-		txt("Storage", "Ceph node 2", "NODE=DEVICE", false,
-			func(s *State) string { return s.CephNode2 }, func(s *State, v string) { s.CephNode2 = v }, clusterinit.ValidateNodeDevicePairField).with(osIs("rook-ceph-multi-node")),
-		txt("Storage", "Ceph node 3", "NODE=DEVICE (optional third server)", false,
-			func(s *State) string { return s.CephNode3 }, func(s *State, v string) { s.CephNode3 = v }, clusterinit.ValidateNodeDevicePairField).with(osIs("rook-ceph-multi-node")),
-		txt("Storage", "More Ceph nodes", "NODE=DEVICE, comma-separated: servers 4 to 16", false,
-			func(s *State) string { return s.CephNodesMore }, func(s *State, v string) { s.CephNodesMore = v }, validateCephNodesMore).with(osIs("rook-ceph-multi-node")),
+		txt("Storage", "Monitor nodes", "Comma-separated host names. Empty uses the storage topology default.", false,
+			func(s *State) string { return s.CephMonNodes }, func(s *State, v string) { s.CephMonNodes = v }, nil).with(osIs("rook-ceph-multi-node")),
 		txt("Storage", "StorageClass", "backing SC for OSD PVCs", false,
 			func(s *State) string { return s.StorageClass }, func(s *State, v string) { s.StorageClass = v }, clusterinit.ValidateStorageClassField).with(osIs("rook-ceph-pvc")),
 		txt("Storage", "OSD count", "number of PVC-backed OSDs (empty = fleet default)", false,
@@ -288,7 +293,7 @@ func panelFields() []panelField {
 		}),
 		toggle("Storage", "Object storage DISABLED consent", "REQUIRED to proceed with disabled (no metrics/logs storage)",
 			func(s *State) bool { return s.DisabledConsent }, func(s *State, v bool) { s.DisabledConsent = v }).with(osIs("disabled")),
-		sel("Storage", "Managed services", "auto enables all six families when storage and budget qualify", []string{"auto", "on", "off"},
+		sel("Storage", "Managed services", "auto enables the selected release catalog when storage and budget qualify", []string{"auto", "on", "off"},
 			func(s *State) string { return s.ManagedServicesMode }, func(s *State, v string) { s.ManagedServicesMode = v }),
 		txt("Storage", "Services database class", "optional expandable block StorageClass; derived when possible", false,
 			func(s *State) string { return s.ServicesDatabaseClass }, func(s *State, v string) { s.ServicesDatabaseClass = v }, nil),
@@ -355,6 +360,31 @@ func panelFields() []panelField {
 		{Section: "Configuration", Label: "Environment settings", Kind: panelAction},
 		// --- Review ---
 		{Section: "Review", Label: "Apply this configuration", Desc: "validate + build the plan + install", Kind: panelAction},
+	}
+	count := 3
+	if len(states) > 0 && states[0] != nil {
+		count = max(1, min(clusterinit.MaxCephSlots, len(states[0].CephNodes)+1))
+	}
+	var mappings []panelField
+	for i := 0; i < count; i++ {
+		index := i
+		mappings = append(mappings, txt("Storage", fmt.Sprintf("Ceph node %d", index+1), "NODE=DEVICE; leave empty to exclude this node", false, func(s *State) string {
+			if index >= len(s.CephNodes) {
+				return ""
+			}
+			return s.CephNodes[index]
+		}, func(s *State, v string) {
+			for len(s.CephNodes) <= index {
+				s.CephNodes = append(s.CephNodes, "")
+			}
+			s.CephNodes[index] = v
+		}, clusterinit.ValidateNodeDevicePairField).with(osIs("rook-ceph-multi-node")))
+	}
+	for i, f := range fields {
+		if f.Section == "Storage" && f.Label == "Monitor nodes" {
+			fields = append(fields[:i], append(mappings, fields[i:]...)...)
+			break
+		}
 	}
 	return fields
 }
@@ -453,7 +483,7 @@ func NewPanelModel(st *State, siblingHint string) *PanelModel {
 	h.Styles.FullDesc = h.Styles.ShortDesc
 
 	return &PanelModel{
-		st: st, fields: panelFields(), hint: siblingHint, input: ti,
+		st: st, fields: panelFields(st), hint: siblingHint, input: ti,
 		fieldsVP: viewport.New(), help: h, keys: defaultPanelKeys(),
 		draftPath: defaultDraftPath,
 	}

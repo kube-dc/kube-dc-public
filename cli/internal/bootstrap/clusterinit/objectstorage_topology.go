@@ -28,22 +28,24 @@ func (s ObjectStorageSpec) replication() int {
 	if s.ReplicationSize != 0 {
 		return s.ReplicationSize
 	}
-	n, _ := objectStorageReplication(s.Mode, len(s.CephNodes), "")
+	n, _ := objectStorageReplication(s.Mode, len(s.DeviceSets()), "")
 	return n
 }
 
 // Replace the template's three-slot list so unused nodes never become empty
 // Rook selectors. Patch every pool and the global default to the same count.
 func multiNodeStoragePatches(s ObjectStorageSpec) string {
-	names := make([]string, 0, len(s.CephNodes))
-	for name := range s.CephNodes {
-		names = append(names, name)
-	}
-	sort.Strings(names)
+	names := cephNodeNames(s.DeviceSets())
 	nodes := make([]map[string]any, 0, len(names))
-	for i := range names {
-		slot := strconv.Itoa(i + 1)
-		nodes = append(nodes, map[string]any{"name": "${CEPH_NODE_" + slot + "}", "devices": []map[string]string{{"name": "${CEPH_NODE_" + slot + "_DEVICE}"}}})
+	slot := 0
+	for _, name := range names {
+		firstSlot := strconv.Itoa(slot + 1)
+		var devices []map[string]string
+		for range s.DeviceSets()[name] {
+			slot++
+			devices = append(devices, map[string]string{"name": "${CEPH_NODE_" + strconv.Itoa(slot) + "_DEVICE}"})
+		}
+		nodes = append(nodes, map[string]any{"name": "${CEPH_NODE_" + firstSlot + "}", "devices": devices})
 	}
 	mon, mgr, gateways := 3, 2, 2
 	if len(names) == 1 {

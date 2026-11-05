@@ -86,6 +86,9 @@ func (m *PanelModel) primaryLabel() string {
 		case "Readiness":
 			return "Review current settings"
 		case "Review":
+			if m.workflow.services.ReviewOnly {
+				return "Save inputs for later"
+			}
 			if m.workflow.services.Demo != nil {
 				return "Run simulation"
 			}
@@ -161,6 +164,9 @@ func (m *PanelModel) View() tea.View {
 	if m.workflow != nil && m.workflow.services.Demo != nil {
 		status = "SIMULATED · No cluster changes"
 	}
+	if m.workflow != nil && m.workflow.services.ReviewOnly {
+		status = "REVIEW ONLY · Installation disabled"
+	}
 	title := spaced(bttui.Title.Render(" Kube-DC — New Cluster "), t.muted.Render(status), w)
 	title += "\n" + t.muted.Render(fit(safeText(nonEmpty(m.st.Name, "New cluster")+" / "+m.st.Mode+" · "+m.st.Preset), w))
 	m.help.SetWidth(w)
@@ -176,7 +182,7 @@ func (m *PanelModel) View() tea.View {
 	}
 	// Help must not displace the selected field or actions on short terminals.
 	if lipgloss.Height(footer) > 3 {
-		footer = m.help.ShortHelpView(m.keys.ShortHelp()) + "\n" + t.muted.Render("PgUp/PgDn scroll · n primary action · r recheck · Ctrl+C quit")
+		footer = m.help.ShortHelpView(m.keys.ShortHelp()) + "\n" + t.muted.Render("b/f or Ctrl+u/d scroll · n primary action · r recheck · Ctrl+C quit")
 	}
 	primary := bttui.Title.Render("[ n " + m.primaryLabel() + " ]")
 	blocker := m.primaryBlocker()
@@ -184,7 +190,7 @@ func (m *PanelModel) View() tea.View {
 		primary = t.muted.Render("[ n " + m.primaryLabel() + " (blocked) ]")
 	}
 	actions := primary + "  " + t.text.Render("[ S Save draft ]")
-	status = "Tab switches pane · PgUp/PgDn scroll · Enter edits or activates."
+	status = "Tab switches pane · b/f or Ctrl+u/d scroll · Enter edits or activates."
 	if m.editing {
 		status = "Enter keeps the value · Esc cancels the edit · Ctrl+C quits."
 	}
@@ -220,7 +226,7 @@ func (m *PanelModel) View() tea.View {
 	}
 	counter := ""
 	if m.fieldsVP.TotalLineCount() > vpH {
-		counter = fmt.Sprintf("%3.0f%% · PgUp/PgDn", m.fieldsVP.ScrollPercent()*100)
+		counter = fmt.Sprintf("%3.0f%% · b/f scroll", m.fieldsVP.ScrollPercent()*100)
 	}
 	style := t.pane
 	if m.focus == focusFields {

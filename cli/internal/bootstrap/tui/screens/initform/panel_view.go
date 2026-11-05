@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -44,6 +45,7 @@ func (m *PanelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseWheelMsg:
 		// Wheel scrolls the fields pane (the only scrollable region).
 		if m.focus == focusFields && !m.editing {
+			m.manualScroll = true
 			var cmd tea.Cmd
 			m.fieldsVP, cmd = m.fieldsVP.Update(msg)
 			return m, cmd
@@ -123,6 +125,19 @@ func (m *PanelModel) editingField() *panelField {
 // updateNav handles keys while navigating (not editing).
 func (m *PanelModel) updateNav(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	m.notice = "" // transient — cleared on the next keystroke, re-set by 'S'
+	if key.Matches(msg, m.keys.PageUp, m.keys.PageDown) {
+		m.manualScroll = true
+		lines := max(1, m.fieldsVP.Height()-1)
+		if msg.String() == "ctrl+u" || msg.String() == "ctrl+d" {
+			lines = max(1, m.fieldsVP.Height()/2)
+		}
+		if key.Matches(msg, m.keys.PageUp) {
+			m.fieldsVP.ScrollUp(lines)
+		} else {
+			m.fieldsVP.ScrollDown(lines)
+		}
+		return m, nil
+	}
 	switch msg.String() {
 	case "ctrl+c", "q":
 		// Quit keys match the Fleet TUI (q / ctrl+c). Only reachable in
@@ -217,14 +232,6 @@ func (m *PanelModel) updateNav(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		// from any pane, even with required fields still blank.
 		m.saveDraft()
 		return m, nil
-	case "pgup", "pgdown":
-		m.manualScroll = true
-		if msg.String() == "pgup" {
-			m.fieldsVP.ScrollUp(5)
-		} else {
-			m.fieldsVP.ScrollDown(5)
-		}
-		return m, nil
 	case "n":
 		return m, m.primaryAction()
 	case "r":
@@ -254,7 +261,7 @@ func (m *PanelModel) activate() (tea.Model, tea.Cmd) {
 		m.editError = ""
 		m.editing = true
 		m.input.CharLimit = 512
-		if f.Section == "Configuration" || f.Label == "More Ceph nodes" {
+		if f.Section == "Configuration" || strings.HasPrefix(f.Label, "Ceph node ") {
 			m.input.CharLimit = 1 << 20
 		}
 		m.input.SetValue(f.Get(m.st))
@@ -271,6 +278,9 @@ func (m *PanelModel) activate() (tea.Model, tea.Cmd) {
 	case panelRadio, panelAction:
 		if f.Action != "" {
 			return m, m.activateWorkflow(f.Action)
+		}
+		if m.workflow != nil && m.workflow.services.ReviewOnly {
+			return m, m.activateWorkflow("review-only")
 		}
 		if m.workflow != nil && m.workflow.services.Session != nil {
 			return m, m.startSession("session-gates")
@@ -595,6 +605,9 @@ func NewEmbeddedPanel(o *clusterinit.InitOptions, siblingHint string, probe *Pro
 // was cancelled — or never reached Apply — returns ErrPanelCancelled
 // and leaves o untouched.
 func (m *PanelModel) Result(o *clusterinit.InitOptions) (string, error) {
+	if m.workflow != nil && m.workflow.services.ReviewOnly {
+		return "", ErrPanelCancelled
+	}
 	if m.Cancelled() || !m.Applied() {
 		return "", ErrPanelCancelled
 	}

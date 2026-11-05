@@ -2,14 +2,22 @@ package setup
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
 
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
 
 func loadSessionInputs(record SessionRecord) (Compiled, SafetyReview, error) {
+	return loadSessionInputsMatching(record, matchSessionRecord)
+}
+
+func loadSessionInputsMatching(record SessionRecord, match func(SessionRecord, Compiled, SafetyReview) error) (Compiled, SafetyReview, error) {
 	var c Compiled
 	var review SafetyReview
 	spec, err := Load(record.SpecFile)
@@ -24,7 +32,7 @@ func loadSessionInputs(record SessionRecord) (Compiled, SafetyReview, error) {
 	if err != nil {
 		return c, review, err
 	}
-	if err := matchSessionRecord(record, c, review); err != nil {
+	if err := match(record, c, review); err != nil {
 		return c, review, err
 	}
 	return c, review, nil
@@ -34,6 +42,10 @@ func matchSessionRecord(record SessionRecord, c Compiled, review SafetyReview) e
 	if err != nil {
 		return err
 	}
+	return matchSessionPlan(record, c, review, stages, hash)
+}
+
+func matchSessionPlan(record SessionRecord, c Compiled, review SafetyReview, stages []SessionStage, hash string) error {
 	targets, err := sessionTargets(c, review)
 	if err != nil {
 		return err
@@ -42,6 +54,44 @@ func matchSessionRecord(record SessionRecord, c Compiled, review SafetyReview) e
 		return fmt.Errorf("session differs from compiled inputs or reviewed targets")
 	}
 	return nil
+}
+
+// Prior records without the additive reservation stage stay inspectable. Only
+// this known historical plan is accepted, with every original binding intact.
+// Writer/open/claim paths continue to require the exact current plan.
+func matchSessionInspectionRecord(record SessionRecord, c Compiled, review SafetyReview) error {
+	if err := matchSessionRecord(record, c, review); err == nil {
+		return nil
+	}
+	preview, err := BuildPreview(c)
+	if err != nil {
+		return err
+	}
+	for _, removeClaim := range []bool{false, true} {
+		prior := preview
+		stages := []SessionStage{}
+		filtered := []StagePreview{}
+		for _, stage := range preview.Stages {
+			if stage.ID == string(clusterinit.StepPlatformAccept) || (removeClaim && stage.ID == clusterClaimStage) {
+				continue
+			}
+			if stage.ID == string(clusterinit.StepReconcile) {
+				stage.PotentialWrite = false
+			}
+			filtered = append(filtered, stage)
+			stages = append(stages, SessionStage{stage.ID, stage.Target, stage.PotentialWrite})
+		}
+		prior.Stages, prior.PlanHash = filtered, ""
+		body, err := json.Marshal(prior)
+		if err != nil {
+			return err
+		}
+		hash := sha256.Sum256(body)
+		if err := matchSessionPlan(record, c, review, stages, hex.EncodeToString(hash[:])); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("session differs from current or known historical inspection plans")
 }
 
 func OpenSessionCoordinator(directory string, ssh ports.GuardedPutSSHClient, cliPath string) (*SessionCoordinator, error) {
@@ -77,11 +127,16 @@ func InspectSessionTargets(ctx context.Context, directory string, ssh ports.Capp
 	if err != nil {
 		return result, err
 	}
-	c, review, err := loadSessionInputs(record)
+	c, review, err := loadSessionInputsMatching(record, matchSessionInspectionRecord)
 	if err != nil {
 		return result, err
 	}
 	result.Session = SummarizeSession(record)
+	result.ExecutorUncertain = record.ExecutorUncertain
+	if len(record.Handoffs) != 0 {
+		h := record.Handoffs[len(record.Handoffs)-1]
+		result.Handoff = &h
+	}
 	for _, host := range c.Spec.Hosts {
 		target := TargetClaimStatus{HostID: host.ID, State: "unknown"}
 		observed, ok := reviewedHost(review.Hosts, host.ID)
@@ -112,5 +167,6 @@ func InspectSessionTargets(ctx context.Context, directory string, ssh ports.Capp
 		}
 		result.Targets = append(result.Targets, target)
 	}
+	result.Cluster = inspectSessionCluster(ctx, directory, record, c, "", verifiedChildClusterClient)
 	return result, ctx.Err()
 }

@@ -51,11 +51,18 @@ func (m *PanelModel) resourceRequests() ([]setup.ResourceRequest, error) {
 		}
 	}
 	if m.st.OSMode == string(clusterinit.RookCephMultiNode) {
-		for _, pair := range m.st.cephPairs() {
+		for _, pair := range m.st.CephNodes {
 			if node, _, ok := strings.Cut(pair, "="); ok {
 				if _, exists := targets[node]; !exists {
 					targets[node] = ""
 				}
+			}
+		}
+	}
+	if m.st.OSMode == string(clusterinit.RookCephMultiNode) {
+		for _, node := range splitComma(m.st.CephMonNodes) {
+			if _, ok := targets[node]; !ok {
+				targets[node] = ""
 			}
 		}
 	}

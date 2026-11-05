@@ -474,7 +474,9 @@ func setupToolFacts(checks []discover.ToolCheck, installPrereqs bool) []setup.To
 			Reason: check.Requirement.Reason, Detail: check.Result.Detail,
 		}
 		if check.Result.Status != ports.StatusInstalled && check.Result.Status != ports.StatusManaged {
-			if installPrereqs && check.Result.Status == ports.StatusMissing && check.Requirement.AutoInstall {
+			if check.Result.FixHint.Text != "" && !check.Requirement.AutoInstall {
+				fact.NextAction = check.Result.FixHint.Text
+			} else if installPrereqs && check.Result.Status == ports.StatusMissing && check.Requirement.AutoInstall {
 				fact.NextAction = "Review and run the Fleet prerequisite script before setup."
 			} else {
 				fact.NextAction = "Install or upgrade this tool before setup."
@@ -515,6 +517,21 @@ func manualToolBlockers(checks []discover.ToolCheck, installPrereqs bool) []stri
 		blocked = append(blocked, check.Requirement.Name)
 	}
 	return blocked
+}
+
+func manualToolBlockerSummary(checks []discover.ToolCheck, blocked []string) string {
+	items := make([]string, 0, len(blocked))
+	for _, name := range blocked {
+		item := name
+		for _, check := range checks {
+			if check.Requirement.Name == name && !check.Requirement.AutoInstall && check.Result.FixHint.Text != "" {
+				item += " (" + check.Result.FixHint.Text + ")"
+				break
+			}
+		}
+		items = append(items, item)
+	}
+	return strings.Join(items, ", ")
 }
 
 func needsFleetInstaller(checks []discover.ToolCheck) bool {

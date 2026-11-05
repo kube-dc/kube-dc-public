@@ -705,6 +705,17 @@ directory first on `PATH`; system tools are not changed. Ensure the control-plan
 loaded (`ssh-add <key>`); the CLI reads it from `ssh-agent`, never from a key
 flag.
 
+Before you continue, check Python 3 and PyYAML on the workstation. Fleet scaffold
+requires both. The prerequisite script reports a missing dependency but does not
+install it. Use the same `python3` environment for this check and installation:
+
+```sh
+python3 -c 'import sys, yaml; print(sys.version.split()[0], yaml.__version__)'
+```
+
+The command must print the Python and PyYAML versions. If the import fails,
+install PyYAML in that Python environment, then run the check again.
+
 ### 3.2 Configure wildcard DNS (required before init)
 
 Point a **wildcard A record** at the public IP of `master-1`. `init`

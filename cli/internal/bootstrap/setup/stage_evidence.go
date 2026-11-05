@@ -32,11 +32,16 @@ type sessionStageEvidence struct {
 	ChildPath     string            `json:"childPath,omitempty"`
 	ChildSHA256   string            `json:"childSHA256,omitempty"`
 	ObservedAt    time.Time         `json:"observedAt"`
+	Cluster       *ClusterClaim     `json:"cluster,omitempty"`
 }
 
 // saveStageEvidence publishes bounded non-secret proof before completion. The
 // hash in the session identifies this private report, not discarded memory.
 func (w *SessionWriter) saveStageEvidence(stage string, attempt int, host Host, node rke2.VerifiedNode, childPath string) (string, error) {
+	return w.saveVerifiedEvidence(stage, attempt, host, node, childPath, nil)
+}
+
+func (w *SessionWriter) saveVerifiedEvidence(stage string, attempt int, host Host, node rke2.VerifiedNode, childPath string, cluster *ClusterClaim) (string, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if err := w.usable(); err != nil {
@@ -59,7 +64,7 @@ func (w *SessionWriter) saveStageEvidence(stage string, attempt int, host Host, 
 		return "", fmt.Errorf("stage proof target is not reviewed")
 	}
 	if childPath != "" {
-		if stage != "fetch-kubeconfig" || filepath.Clean(childPath) != filepath.Join(w.directory, "child-bootstrap.kubeconfig") {
+		if (stage != "fetch-kubeconfig" && stage != clusterClaimStage) || filepath.Clean(childPath) != filepath.Join(w.directory, "child-bootstrap.kubeconfig") {
 			return "", fmt.Errorf("stage proof child path changed")
 		}
 		info, err := w.root.Lstat("child-bootstrap.kubeconfig")
@@ -71,6 +76,10 @@ func (w *SessionWriter) saveStageEvidence(stage string, attempt int, host Host, 
 		return "", err
 	}
 	proof := sessionStageEvidence{SessionID: w.record.ID, InputHash: w.record.InputHash, ReviewHash: w.record.ReviewHash, ReleaseSHA256: w.record.ReleaseSHA256, Stage: stage, Attempt: attempt, HostID: host.ID, Node: node, ChildPath: childPath, ObservedAt: time.Now().UTC()}
+	proof.Cluster = cluster
+	if err := checkClusterStageProof(w.record, proof); err != nil {
+		return "", err
+	}
 	if childPath != "" {
 		hash, err := privateChildFileHash(w.root)
 		if err != nil {
@@ -129,6 +138,17 @@ func validateStoredStageEvidence(root *os.Root, record SessionRecord) error {
 	return nil
 }
 func validateStoredStageProof(root *os.Root, record SessionRecord, event SessionEvent) error {
+	_, err := loadStoredStageProof(root, record, event)
+	return err
+}
+
+func loadStoredStageProof(root *os.Root, record SessionRecord, event SessionEvent) (sessionStageEvidence, error) {
+	var proof sessionStageEvidence
+	err := readStoredStageProof(root, record, event, &proof)
+	return proof, err
+}
+
+func readStoredStageProof(root *os.Root, record SessionRecord, event SessionEvent, proof *sessionStageEvidence) error {
 	if !validSessionHash(event.EvidenceSHA256) {
 		return fmt.Errorf("invalid stored proof hash")
 	}
@@ -154,10 +174,9 @@ func validateStoredStageProof(root *os.Root, record SessionRecord, event Session
 	if hex.EncodeToString(hash[:]) != event.EvidenceSHA256 {
 		return fmt.Errorf("stored proof hash changed")
 	}
-	var proof sessionStageEvidence
 	d := json.NewDecoder(bytes.NewReader(body))
 	d.DisallowUnknownFields()
-	if err := d.Decode(&proof); err != nil {
+	if err := d.Decode(proof); err != nil {
 		return fmt.Errorf("invalid stored proof")
 	}
 	var extra any
@@ -168,6 +187,9 @@ func validateStoredStageProof(root *os.Root, record SessionRecord, event Session
 		return fmt.Errorf("stored proof binding changed")
 	}
 	if err := checkStageProofTarget(record, proof.Stage, proof.HostID, proof.Node, proof.ChildPath); err != nil {
+		return err
+	}
+	if err := checkClusterStageProof(record, *proof); err != nil {
 		return err
 	}
 	if proof.ChildPath != "" {
@@ -181,6 +203,13 @@ func validateStoredStageProof(root *os.Root, record SessionRecord, event Session
 		}
 	} else if proof.ChildSHA256 != "" {
 		return fmt.Errorf("node proof has unexpected child bytes")
+	}
+	if proof.Stage == clusterClaimStage {
+		event, _ := lastSessionEvent(record, "fetch-kubeconfig")
+		handoff, err := loadStoredStageProof(root, record, event)
+		if err != nil || handoff.Node != proof.Node || handoff.ChildPath != proof.ChildPath || handoff.ChildSHA256 != proof.ChildSHA256 {
+			return fmt.Errorf("cluster proof differs from verified child handoff")
+		}
 	}
 	return nil
 }
@@ -198,12 +227,37 @@ func checkStageProofTarget(record SessionRecord, stage, hostID string, node rke2
 	if !target || node.Name != hostID || node.UID == "" || len(node.UID) > 128 || net.ParseIP(node.InternalIP) == nil || (node.Role != "server" && node.Role != "agent") {
 		return fmt.Errorf("stored proof node identity is invalid")
 	}
-	if stage == "fetch-kubeconfig" {
+	if stage == "fetch-kubeconfig" || stage == clusterClaimStage {
 		if childPath == "" || !filepath.IsAbs(childPath) || filepath.Base(childPath) != "child-bootstrap.kubeconfig" || node.Role != "server" {
 			return fmt.Errorf("child stage proof has no explicit bootstrap config")
 		}
 	} else if (stage != "rke2-first-server" && !strings.HasPrefix(stage, "rke2-join-")) || planned.Target != hostID || childPath != "" || (stage == "rke2-first-server" && node.Role != "server") {
 		return fmt.Errorf("stored proof stage target changed")
+	}
+	return nil
+}
+
+func checkClusterStageProof(record SessionRecord, proof sessionStageEvidence) error {
+	if proof.Stage != clusterClaimStage {
+		if proof.Cluster != nil {
+			return fmt.Errorf("unexpected cluster evidence on another stage")
+		}
+		return nil
+	}
+	if proof.Cluster == nil || record.Ownership == nil || validateClusterClaim(*proof.Cluster, true) != nil {
+		return fmt.Errorf("cluster proof needs a valid owner and API instance")
+	}
+	run := record.Ownership.RunID
+	if len(record.Handoffs) != 0 {
+		run = record.Handoffs[0].SourceRunID
+	}
+	expected := expectedClusterClaim(record, run, proof.Node)
+	if !sameClusterClaimOwner(*proof.Cluster, expected) {
+		return fmt.Errorf("cluster proof owner differs from the session")
+	}
+	event, ok := lastSessionEvent(record, "fetch-kubeconfig")
+	if !ok || event.State != "succeeded" || event.Source != "coordinator" {
+		return fmt.Errorf("cluster proof requires a verified child handoff")
 	}
 	return nil
 }

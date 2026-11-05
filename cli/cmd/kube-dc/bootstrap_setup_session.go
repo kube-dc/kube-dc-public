@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/tui/screens"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/setup"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/tui/screens/initform"
 	"github.com/spf13/cobra"
 )
 
@@ -95,12 +97,13 @@ func bootstrapSetupSessionCmd() *cobra.Command {
 		for _, target := range result.Targets {
 			fmt.Fprintf(cmd.OutOrStdout(), "Host %s: %s\n", target.HostID, target.State)
 		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Cluster reservation: %s\n%s\n", result.Cluster.State, result.Cluster.Detail)
 		fmt.Fprintln(cmd.OutOrStdout(), "Unknown is not proof of absence. No targets were claimed. Installation remains blocked.")
 		return nil
 	}}
 	inspect.Flags().StringVar(&inspectDirectory, "session-dir", "", "Existing private installation session directory")
 	inspect.Flags().StringVar(&inspectFormat, "format", "text", "Output format: text or json")
-	var openDirectory string
+	var openDirectory, acceptHandoff string
 	open := &cobra.Command{Use: "open", Short: "Open session ownership in the existing New Cluster TUI", Args: cobra.NoArgs, SilenceUsage: true, RunE: func(cmd *cobra.Command, _ []string) (runErr error) {
 		if openDirectory == "" {
 			return fmt.Errorf("--session-dir is required")
@@ -118,12 +121,24 @@ func bootstrapSetupSessionCmd() *cobra.Command {
 				}
 			}
 		}()
-		root := screens.NewSessionRootModel(cmd.Context(), coordinator, openDirectory)
+		if acceptHandoff != "" {
+			if _, err := coordinator.AcceptExecutorHandoff(cmd.Context(), acceptHandoff); err != nil {
+				return err
+			}
+		}
+		root := screens.NewSessionRootModel(cmd.Context(), coordinator, openDirectory, initform.PlatformServices{
+			Refresh: coordinator.RefreshPlatformReview,
+			Inspect: func(ctx context.Context, record bool) (setup.PlatformRecoveryReport, error) {
+				return coordinator.ReconcilePlatform(ctx, guidedPlatformEngine{}, record)
+			},
+		})
 		defer root.Close()
 		_, runErr = tea.NewProgram(root, tea.WithContext(cmd.Context())).Run()
 		return runErr
 	}}
 	open.Flags().StringVar(&openDirectory, "session-dir", "", "Existing private installation session directory")
+	open.Flags().StringVar(&acceptHandoff, "accept-handoff", "", "Exact prepared handoff hash to accept before opening the TUI")
+	cmd.AddCommand(platformSessionCommands()...)
 	cmd.AddCommand(create, status, inspect, open)
 	return cmd
 }

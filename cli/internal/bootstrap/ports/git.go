@@ -2,6 +2,12 @@ package ports
 
 import "context"
 
+// GitProviderBinder returns a client restricted to one reviewed provider host.
+// Production adapters implement this without changing ambient Git settings.
+type GitProviderBinder interface {
+	ForProvider(context.Context, string, string) (GitClient, error)
+}
+
 // GitClient is the contract for Git operations against the fleet repo.
 // Real adapter uses go-git (no shell-out for the core flow); mock adapter
 // simulates an in-memory repo.

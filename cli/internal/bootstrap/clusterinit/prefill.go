@@ -37,6 +37,7 @@ const (
 	KeyFleetMode        = InitPrefix + "FLEET_MODE"
 	KeyPreset           = InitPrefix + "PRESET"
 	KeyProvider         = InitPrefix + "PROVIDER"
+	KeyProviderHost     = InitPrefix + "PROVIDER_HOST"
 	KeyGitHubOwner      = InitPrefix + "GITHUB_OWNER"
 	KeyGitHubRepo       = InitPrefix + "GITHUB_REPO"
 	KeyRepo             = InitPrefix + "REPO"
@@ -82,7 +83,7 @@ const (
 // and would otherwise ride the catch-all into cluster-config.env verbatim as a
 // silent no-op. Keep this in sync with the const block above.
 var orchestrationKeys = map[string]bool{
-	KeyMode: true, KeyFleetMode: true, KeyPreset: true, KeyProvider: true,
+	KeyMode: true, KeyFleetMode: true, KeyPreset: true, KeyProvider: true, KeyProviderHost: true,
 	KeyGitHubOwner: true, KeyGitHubRepo: true, KeyRepo: true, KeySSHHost: true, KeySSHHostKeySHA256: true,
 	KeyPrimaryNode: true, KeyNodeSSHHosts: true, KeyNodeSSHHostKeys: true,
 	KeyAllowDNS: true, KeyAllowNoKVM: true, KeyAllowUnpin: true, KeyNoS3Exposure: true,
@@ -91,6 +92,7 @@ var orchestrationKeys = map[string]bool{
 	KeyVMStorageMode: true, KeyVMGolden: true, KeyVMGoldenBlock: true,
 	KeyGPUPlatform: true, KeyGPUAllowUnassigned: true, KeyVGPUSecretReady: true,
 	KeyPAYG:                 true,
+	KeyCephDevices:          true,
 	KeyServicesEgressProbes: true,
 }
 
@@ -258,7 +260,7 @@ var specOrder = []string{
 	"NVIDIA_DRIVER_VERSION", "NVIDIA_TOOLKIT_VERSION", "HAMI_ENABLED", "GPU_SHARED_ALLOCATOR",
 	"HAMI_VERSION", "HAMI_KUBE_SCHEDULER_VERSION", "GPU_NODE_MODES", "GPU_PROFILES",
 	KeyGPUAllowUnassigned, KeyVGPUSecretReady,
-	KeyMode, KeyFleetMode, KeyPreset, KeyProvider,
+	KeyMode, KeyFleetMode, KeyPreset, KeyProvider, KeyProviderHost,
 	KeyGitHubOwner, KeyGitHubRepo, KeyRepo, KeySSHHost, KeySSHHostKeySHA256, KeyPrimaryNode, KeyNodeSSHHosts, KeyNodeSSHHostKeys,
 	KeyAllowDNS, KeyAllowNoKVM, KeyAllowUnpin, KeyNoS3Exposure, KeyNoKubeVirt, KeyPAYG,
 	InitPrefix + "INSTALLATION_KIND", InitPrefix + "MANAGED_SERVICES", InitPrefix + "SERVICES_DATABASE_CLASS", InitPrefix + "SERVICES_STORAGE_BUDGET", KeyServicesEgressProbes,
@@ -394,8 +396,16 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 		}
 		if hasHost {
 			seen[nodeKey] = true
-			if strings.TrimSpace(host) != "" && !flagChanged("ceph-node") {
+			if strings.TrimSpace(host) != "" && src[KeyCephDevices] == "" && !flagChanged("ceph-node") && !flagChanged("ceph-devices") {
 				o.CephNodes[strings.TrimSpace(host)] = strings.TrimSpace(src[devKey])
+			}
+		}
+	}
+	if raw, exists := src[KeyCephDevices]; exists {
+		seen[KeyCephDevices] = true
+		if !flagChanged("ceph-node") && !flagChanged("ceph-devices") {
+			if devices, err := parseCephDevices(raw); err == nil {
+				o.CephDevices = devices
 			}
 		}
 	}
@@ -429,6 +439,7 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 		str(b.key, b.flag, b.field(o))
 	}
 	str(KeyRepo, "repo", &o.Repo)
+	str(KeyProviderHost, "provider-host", &o.ProviderHost)
 	str(KeyGitHubOwner, "github-owner", &o.GitHubOwner)
 	str(KeyGitHubRepo, "github-repo", &o.GitHubRepo)
 	if v, ok := src[KeyIngressNodes]; ok {
@@ -688,6 +699,10 @@ func ExportMap(o *InitOptions) map[string]string {
 		put("CEPH_NODE_"+slot, n)
 		put("CEPH_NODE_"+slot+"_DEVICE", o.CephNodes[n])
 	}
+	if len(o.CephDevices) > 0 {
+		body, _ := json.Marshal(cephDevicesInput{Version: 1, Nodes: canonicalCephDevices(nil, o.CephDevices)})
+		put(KeyCephDevices, string(body))
+	}
 	// The full --set overlay: network + gateway + MetalLB + anchors +
 	// platform-endpoints + feature keys all live in o.Sets (deny-list
 	// model), so emit every one — that's what makes a saved/cloned spec
@@ -725,6 +740,7 @@ func ExportMap(o *InitOptions) map[string]string {
 	if o.Provider != "" && o.Provider != ProviderGitHub {
 		put(KeyProvider, string(o.Provider))
 	}
+	put(KeyProviderHost, o.ProviderHost)
 	put(KeyGitHubOwner, o.GitHubOwner)
 	put(KeyGitHubRepo, o.GitHubRepo)
 	put(KeyRepo, o.Repo)
@@ -819,7 +835,7 @@ func WriteSpec(o *InitOptions, path string) error {
 	if err != nil {
 		return err
 	}
-	return e.Write(path)
+	return e.WritePrivate(path)
 }
 
 // RenderSpec shows the same input file WriteSpec saves. Scaffold adds the

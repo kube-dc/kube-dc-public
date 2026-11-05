@@ -24,7 +24,7 @@ func (m *PanelModel) storageLayouts() []setup.StorageLayout {
 		}
 		hosts = append(hosts, snapshot.Resources)
 	}
-	layouts := setup.SuggestStorageLayouts(hosts, m.request().Host.ID, time.Now().UTC())
+	layouts := setup.SuggestStorageLayouts(hosts, m.request().Host.ID, time.Now().UTC(), m.st.storageDevices())
 	// A disk-mapping suggestion must reflect an explicit durability choice.
 	if replicas, err := strconv.Atoi(m.st.CephReplicationSize); err == nil && replicas >= 1 && replicas <= 3 {
 		for i := range layouts {
@@ -61,7 +61,7 @@ func (s *State) storageReplication() string {
 
 func (s *State) storageDevices() map[string]string {
 	devices := map[string]string{}
-	for _, pair := range s.cephPairs() {
+	for _, pair := range s.CephNodes {
 		if node, device, ok := strings.Cut(pair, "="); ok && strings.TrimSpace(node) != "" && strings.TrimSpace(device) != "" {
 			devices[strings.TrimSpace(node)] = strings.TrimSpace(device)
 		}
@@ -75,19 +75,22 @@ func (s *State) setStorageDevice(node, device string) error {
 	if device != "" {
 		devices[node] = device
 	}
-	if len(devices) > maxCephNodes {
-		return fmt.Errorf("Select at most %d storage servers.", maxCephNodes)
+	count := 0
+	for _, selected := range devices {
+		count += len(strings.Split(selected, ","))
+	}
+	if count > clusterinit.MaxCephSlots {
+		return fmt.Errorf("Select at most %d storage devices.", clusterinit.MaxCephSlots)
 	}
 	names := make([]string, 0, len(devices))
 	for name := range devices {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	pairs := make([]string, 0, len(names))
+	s.CephNodes = nil
 	for _, name := range names {
-		pairs = append(pairs, name+"="+devices[name])
+		s.CephNodes = append(s.CephNodes, name+"="+devices[name])
 	}
-	s.setCephPairs(pairs)
 	return nil
 }
 
@@ -98,7 +101,7 @@ func (s *State) storageChoice() string {
 	case string(clusterinit.RookCephPVC):
 		return "pvc"
 	case string(clusterinit.RookCephLocal):
-		if s.OSDDevice == "" || strings.HasPrefix(s.OSDDevice, "loop") {
+		if s.OSDDevice == "" || strings.HasPrefix(strings.TrimPrefix(s.OSDDevice, "/dev/"), "loop") {
 			return "file-one"
 		}
 		return "raw"
@@ -134,7 +137,7 @@ func (m *PanelModel) selectStorageMode(id string) {
 func (m *PanelModel) storageFields() []panelField {
 	var fields []panelField
 	for _, option := range []struct{ id, title, hint string }{
-		{"raw", "Server disks (default)", "One disk per server. Default: two copies; one on a single server."},
+		{"raw", "Server disks (default)", "Select disks per server. Default: two copies; one on a single server."},
 		{"file-one", "Evaluation file", "Uses shared filesystem space on one server. No redundancy."},
 		{"pvc", "Provider volumes", "Uses a StorageClass that supplies raw block volumes."},
 	} {
@@ -168,8 +171,11 @@ func (m *PanelModel) storageFields() []panelField {
 						m.notice = err.Error()
 					}
 				},
-				Validate: clusterinit.ValidateDeviceNameField, Desc: "Device name, for example sdb. Leave empty to exclude this server from storage."})
+				Validate: clusterinit.ValidateDeviceListField, Desc: "Device paths separated by commas, for example sdb,sdc. Empty excludes this server."})
 		}
+	}
+	if m.st.OSMode == string(clusterinit.RookCephPVC) {
+		fields = append(fields, panelField{Section: "Storage", Label: "Inspect provider class", Kind: panelAction, Action: "provider-storage", Desc: "Read class settings on the selected target. Does not create test volumes."})
 	}
 	label := "Show disk details"
 	if m.workflow.storageDetails {
@@ -201,7 +207,7 @@ func (m *PanelModel) selectStorageLayout(id string) {
 		}
 		m.st.OSMode = string(layout.Mode)
 		m.st.DisabledConsent = false
-		m.st.setCephPairs(nil)
+		m.st.CephNodes = nil
 		m.st.OSDNode, m.st.OSDDevice, m.st.OSDSizeGB = "", "", ""
 		if layout.Mode == clusterinit.RookCephLocal {
 			m.st.OSDNode = layout.Assignments[0].Node
@@ -215,11 +221,9 @@ func (m *PanelModel) selectStorageLayout(id string) {
 			}
 		}
 		if layout.Mode == clusterinit.RookCephMultiNode {
-			pairs := make([]string, 0, len(layout.Assignments))
 			for _, assignment := range layout.Assignments {
-				pairs = append(pairs, assignment.Node+"="+strings.TrimPrefix(assignment.Device, "/dev/"))
+				m.st.CephNodes = append(m.st.CephNodes, assignment.Node+"="+strings.TrimPrefix(assignment.Device, "/dev/"))
 			}
-			m.st.setCephPairs(pairs)
 		}
 		m.changed()
 		m.notice = "Mapping selected. Inspect again before installation."
@@ -240,7 +244,11 @@ func (m *PanelModel) storageSummary() []string {
 		if count == 0 {
 			return []string{"Inspect hosts, then select a disk mapping."}
 		}
-		line := fmt.Sprintf("%d storage server(s) · %s data copies", count, m.st.storageReplication())
+		disks := 0
+		for _, devices := range m.st.storageDevices() {
+			disks += len(strings.Split(devices, ","))
+		}
+		line := fmt.Sprintf("%d server(s) · %d disk(s) · %s data copies", count, disks, m.st.storageReplication())
 		if m.st.storageReplication() == "1" {
 			line += " · no redundancy"
 		} else {
@@ -251,5 +259,17 @@ func (m *PanelModel) storageSummary() []string {
 	if m.st.storageChoice() == "file-one" {
 		return []string{"Evaluation only · shared disk space · no redundancy"}
 	}
-	return []string{"Verify block-volume support and placement before installation."}
+	if m.workflow != nil && m.workflow.providerStorage.Name == m.st.StorageClass && !m.workflow.providerStorage.ObservedAt.IsZero() && time.Since(m.workflow.providerStorage.ObservedAt) < 5*time.Minute {
+		return m.workflow.providerStorage.Summary()
+	}
+	return []string{"Provider storage: unverified. Inspect the class, then test block support and placement."}
+}
+
+func sortedStorageNodes(nodes map[string][]string) []string {
+	names := make([]string, 0, len(nodes))
+	for node := range nodes {
+		names = append(names, node)
+	}
+	sort.Strings(names)
+	return names
 }

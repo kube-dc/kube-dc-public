@@ -12,17 +12,21 @@ import (
 
 // RunHosts is the shared, fenced host-phase entry. The public readiness reducer
 // never authorizes this path yet; there is no CLI flag that bypasses that gate.
-// It deliberately retains started host claims for the future cluster handoff.
+// It adds a cluster reservation after the verified child handoff and retains
+// started host claims. Full platform execution and recovery remain gated.
 func (c *SessionCoordinator) RunHosts(ctx context.Context, readiness ReadinessReport) (HostPhaseResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	blocked := HostPhaseResult{State: "blocked", Completed: []string{}}
-	if c.closed || c.realClaims == nil || !readiness.ReadyToApply {
+	if c.closed || c.sealed || c.realClaims == nil || !readiness.ReadyToApply {
 		return blocked, fmt.Errorf("host execution requires qualified readiness and real owned targets")
 	}
 	record, err := c.writer.Snapshot()
 	if err != nil {
 		return blocked, err
+	}
+	if len(record.Handoffs) != 0 {
+		return blocked, fmt.Errorf("a transferred session continues with platform stages; host stages cannot be replayed")
 	}
 	if record.Ownership == nil || record.Ownership.RunID != c.runID || record.Ownership.Phase != "held" || len(SummarizeSession(record).NeedsInspection) != 0 {
 		return blocked, fmt.Errorf("host execution requires this run's ownership and reconciled stage evidence")
@@ -81,6 +85,14 @@ func (c *SessionCoordinator) RunHosts(ctx context.Context, readiness ReadinessRe
 		result.State = "action-required"
 		return result, journalErr
 	}
+	if err := c.reserveChildCluster(ctx); err != nil {
+		result.State, result.Failed = "action-required", clusterClaimStage
+		if ctx.Err() != nil {
+			result.State = "stopped"
+		}
+		return result, err
+	}
+	result.Completed = append(result.Completed, clusterClaimStage)
 	return result, nil
 }
 

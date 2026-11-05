@@ -47,6 +47,19 @@ import (
 // that would otherwise assert "--kube-context o.Name is always valid" only
 // does so when fetchVerified is true — see postApplyBreakGlassOptions.
 func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, rep clusterinit.StepReporter, fetchVerified, managedServices bool) (result clusterinit.FinalizationResult) {
+	return runPostApplyWithRuntime(ctx, out, o, rep, fetchVerified, managedServices, nil)
+}
+
+// postApplyRuntime keeps the guided path on its verified child connection.
+// It never reconstructs clients, fetches credentials, or reads SMTP from the
+// workstation environment. The standalone path retains its existing behavior.
+type postApplyRuntime struct {
+	Session    *bootstrap.Session
+	Kubeconfig string
+	Token      string
+}
+
+func runPostApplyWithRuntime(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, rep clusterinit.StepReporter, fetchVerified, managedServices bool, runtime *postApplyRuntime) (result clusterinit.FinalizationResult) {
 	fmt.Fprintln(out, "[post] Flux is reconciling — tracking convergence, then finalizing OpenBao + Keycloak")
 	gpu := o.GPU()
 	recorder := clusterinit.NewFinalizationRecorder(rep, gpu.Platform == clusterinit.GPUPlatformEnabled, gpu.HAMiEnabled, managedServices)
@@ -55,10 +68,16 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 
 	// Rebuild the session on the fetched admin kubeconfig (see doc).
 	kubeconfig := clusterinit.DefaultKubeconfigPath()
-	session, err := bootstrap.NewSession(bootstrap.Options{
-		FleetRepoPath: o.Repo,
-		Kubeconfig:    kubeconfig,
-	})
+	var session *bootstrap.Session
+	var err error
+	if runtime != nil {
+		session, kubeconfig = runtime.Session, runtime.Kubeconfig
+		if session == nil || kubeconfig == "" {
+			err = fmt.Errorf("guided finalization requires explicit child access")
+		}
+	} else {
+		session, err = bootstrap.NewSession(bootstrap.Options{FleetRepoPath: o.Repo, Kubeconfig: kubeconfig})
+	}
 	if err != nil {
 		reason := fmt.Sprintf("build session on %s failed: %v", kubeconfig, err)
 		rep.Skip(clusterinit.StepBreakGlass, reason)
@@ -73,14 +92,16 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 		finalizeHint(out, o, kubeconfig, fetchVerified)
 		return
 	}
-	if session != nil {
+	if session != nil && runtime == nil {
 		defer session.Close()
 	}
 
 	// Resolved once, up front: break-glass (below) and the Keycloak/OpenBao
 	// steps further down both need it for their own commit+push.
 	var token string
-	if !o.NoPush {
+	if runtime != nil {
+		token = runtime.Token
+	} else if !o.NoPush {
 		token = resolveGitHubToken(o, out)
 	}
 
@@ -147,7 +168,25 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 			return nil
 		})
 	}
-	reconcileErr := runReconcileWatchWithGPU(ctx, out, session.Flux, rep, gpu, stallChecks...)
+	var reconcileErr error
+	if runtime != nil {
+		reconcileErr = step(rep, clusterinit.StepReconcile, func() error {
+			return watchReconcileTargets(ctx, out, session.Flux, reconcileBudget, nil, nil, stallChecks...)
+		})
+		// GPU read-only watches retain separate stage admission and proofs.
+		if reconcileErr == nil {
+			for _, target := range gpuReconcileTargets(gpu) {
+				if err := step(rep, target.step, func() error {
+					return watchReconcileTargets(ctx, out, session.Flux, reconcileBudget, []string{target.name}, nil)
+				}); err != nil {
+					reconcileErr = err
+					break
+				}
+			}
+		}
+	} else {
+		reconcileErr = runReconcileWatchWithGPU(ctx, out, session.Flux, rep, gpu, stallChecks...)
+	}
 	if reconcileErr != nil {
 		fmt.Fprintf(out, "[finalize] platform convergence not confirmed (%v); finalization continues\n", reconcileErr)
 		fmt.Fprintf(out, "[finalize]   once `flux get all -A` shows every Kustomization and HelmRelease Ready, re-run `kube-dc bootstrap init` with the same --config and --repo (it resumes); a saved install plan needs a new --dry-run first\n")
@@ -222,6 +261,9 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 	// Keycloak OIDC ceremony because both need Keycloak answering, and
 	// skips itself when that ceremony was deferred.
 	smtpUser, smtpPass := os.Getenv("SMTP_USER"), os.Getenv("SMTP_PASSWORD")
+	if runtime != nil {
+		smtpUser, smtpPass = "", ""
+	}
 	switch {
 	case kcErr != nil:
 		// Keycloak isn't ready; the sso ceremony would only time out too.
@@ -282,7 +324,7 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 	var cutErr error
 	if !o.NoOIDCCutover {
 		cutErr = step(rep, clusterinit.StepOIDCCutover, func() error {
-			return runFinalizeOIDCCutover(ctx, out, o, session)
+			return runFinalizeOIDCCutoverAt(ctx, out, o, session, kubeconfig)
 		})
 	}
 	if cutErr != nil {
@@ -304,7 +346,9 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 	}
 
 	// Platform databases that started before their bucket credentials existed.
-	if reloader, err := pinnedManagedServicesKubectl(ctx, kubeconfig); err != nil {
+	if runtime != nil {
+		fmt.Fprintln(out, "[finalize] automatic platform backup repair is not admitted by the guided stage contract; inspect backup health before completion")
+	} else if reloader, err := pinnedManagedServicesKubectl(ctx, kubeconfig); err != nil {
 		fmt.Fprintf(out, "[finalize] platform database archiving check skipped: %v\n", err)
 	} else if err := reloadStalledPlatformArchiving(ctx, out, reloader, time.Now()); err != nil {
 		fmt.Fprintf(out, "[finalize] platform database archiving check failed: %v\n", err)
@@ -581,6 +625,10 @@ var (
 // Re-running is safe: the cutover is idempotent and snapshots each node's
 // config before touching it.
 func runFinalizeOIDCCutover(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, session *bootstrap.Session) error {
+	return runFinalizeOIDCCutoverAt(ctx, out, o, session, clusterinit.DefaultKubeconfigPath())
+}
+
+func runFinalizeOIDCCutoverAt(ctx context.Context, out io.Writer, o *clusterinit.InitOptions, session *bootstrap.Session, kubeconfig string) error {
 	if o.NoSSH {
 		return fmt.Errorf("--no-ssh: cannot reach the control-plane nodes to wire them")
 	}
@@ -591,7 +639,7 @@ func runFinalizeOIDCCutover(ctx context.Context, out io.Writer, o *clusterinit.I
 	// Discover every control-plane node from the cluster. sshUser "" means the
 	// resolver's default (root), matching `bootstrap oidc-cutover` with no
 	// --ssh-user, so the automatic path and the manual one agree.
-	nodes, err := resolveCutoverNodes(ctx, clusterinit.DefaultKubeconfigPath(), nil, oidcCutoverSSHUser(o), false)
+	nodes, err := resolveCutoverNodes(ctx, kubeconfig, nil, oidcCutoverSSHUser(o), false)
 	if err != nil {
 		return err
 	}

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -111,20 +112,16 @@ func buildPreviewStages(p Preview, spec Spec, o clusterinit.InitOptions) (Previe
 		}
 	}
 	ssh := o.SSHHost != "" && !o.NoSSH
-	gpu := o.GPU()
-	steps := clusterinit.InstallSteps(clusterinit.InstallStepInputs{
-		NoInstallPrereqs: o.NoInstallPrereqs,
-		Starter:          o.FleetMode != clusterinit.FleetExistingFleet,
-		Adopt:            o.Mode == clusterinit.ModeAdopt || o.Mode == clusterinit.ModeAuto,
-		SSH:              ssh,
-		StorageDevCheck:  ssh && (o.Mode == clusterinit.ModeInstall || o.Mode == clusterinit.ModeAuto) && len(o.ObjectStorage().RawOSDDevices()) > 0,
-		NewRepoCreate:    o.FleetMode == clusterinit.FleetNewRepo && !o.NoCreateRepo && !o.NoPush,
-		NewRepoRemote:    o.FleetMode == clusterinit.FleetNewRepo && !o.NoPush,
-		NoPush:           o.NoPush,
-		Finalize:         !o.NoPush,
-		GPUEnabled:       gpu.Platform == clusterinit.GPUPlatformEnabled,
-		HAMiEnabled:      gpu.HAMiEnabled,
-	})
+	services, err := clusterinit.ResolveManagedServices(&o)
+	if err != nil && !errors.Is(err, clusterinit.ErrManagedServicesReadinessRequired) {
+		return Preview{}, err
+	}
+	// Init measures raw capacity and checks custom StorageClasses before
+	// resolving auto/on. Local preview must retain those possible effects,
+	// rather than omit them or turn an unperformed live check into approval.
+	serviceRequested := o.InstallationKind == "kube-dc" && o.ManagedServicesMode != "off"
+	serviceConditional := serviceRequested && (err != nil || services.Mode != "on")
+	steps := clusterinit.InstallSteps(clusterinit.PlannedInstallStepInputs(&o, o.FleetMode, serviceRequested))
 	for _, step := range steps {
 		if step.ID == clusterinit.StepDNS {
 			// The guided coordinator prepares the workstation, installs or
@@ -132,6 +129,13 @@ func buildPreviewStages(p Preview, spec Spec, o clusterinit.InitOptions) (Previe
 			hostStages()
 			if ssh {
 				p.Stages = append(p.Stages, StagePreview{ID: string(clusterinit.StepFetchKubeconfig), Title: "Fetch kubeconfig", Scopes: []string{"workstation"}, Target: spec.Name, PotentialWrite: true})
+			}
+			if ssh && (spec.Target.Intent == clusterinit.ModeInstall || spec.Target.Intent == clusterinit.ModeAuto) {
+				condition := ""
+				if spec.Target.Intent == clusterinit.ModeAuto {
+					condition = "if the live target is a new cluster"
+				}
+				p.Stages = append(p.Stages, StagePreview{ID: clusterClaimStage, Title: "Reserve the verified child cluster and retain host claims", Scopes: []string{"cluster", "workstation"}, Target: spec.Name, PotentialWrite: true, Condition: condition})
 			}
 		}
 		if step.ID == clusterinit.StepFetchKubeconfig {
@@ -148,6 +152,11 @@ func buildPreviewStages(p Preview, spec Spec, o clusterinit.InitOptions) (Previe
 			stage.Target = spec.Name
 		}
 		switch step.ID {
+		case clusterinit.StepManagedServices:
+			if serviceConditional {
+				stage.Condition = "if live storage, capacity, and release checks enable managed services; unresolved"
+				p.Unresolved = append(p.Unresolved, "managed-services-storage-and-capacity")
+			}
 		case clusterinit.StepStarter:
 			stage.Condition = "if shared Fleet files are absent, or their Git checkout needs repair"
 		case clusterinit.StepInstallPrereqs:
@@ -175,6 +184,9 @@ func buildPreviewStages(p Preview, spec Spec, o clusterinit.InitOptions) (Previe
 		p.Stages = append(p.Stages, stage)
 	}
 	capabilities := append([]string(nil), spec.Verification.Capabilities...)
+	if !o.NoPush {
+		p.Stages = append(p.Stages, StagePreview{ID: string(clusterinit.StepPlatformAccept), Title: "Check platform acceptance", Scopes: []string{"cluster", "network"}, Target: spec.Name})
+	}
 	sort.Strings(capabilities)
 	for _, capability := range capabilities {
 		p.Stages = append(p.Stages, StagePreview{
@@ -206,7 +218,9 @@ func previewStepEffect(id clusterinit.StepID) (scopes []string, writes bool, err
 		return []string{"workstation"}, false, nil
 	case clusterinit.StepDNS:
 		return []string{"network"}, false, nil
-	case clusterinit.StepKubeVirt, clusterinit.StepReconcile,
+	case clusterinit.StepReconcile:
+		return []string{"cluster"}, true, nil
+	case clusterinit.StepKubeVirt,
 		clusterinit.StepGPUOperator, clusterinit.StepGPUHAMi,
 		clusterinit.StepGPUProduct:
 		return []string{"cluster"}, false, nil
@@ -234,6 +248,8 @@ func previewStepEffect(id clusterinit.StepID) (scopes []string, writes bool, err
 		return []string{"cluster", "fleet", "git-local", "git-provider"}, true, nil
 	case clusterinit.StepBreakGlass, clusterinit.StepOpenBao:
 		return []string{"cluster", "workstation", "fleet", "git-local", "git-provider"}, true, nil
+	case clusterinit.StepManagedServices:
+		return []string{"identity", "host", "cluster", "workstation", "fleet", "git-local", "git-provider"}, true, nil
 	case clusterinit.StepKeycloakOIDC:
 		return []string{"identity", "cluster", "fleet", "git-local", "git-provider"}, true, nil
 	case clusterinit.StepOIDCCutover:

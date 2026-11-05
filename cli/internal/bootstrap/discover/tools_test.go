@@ -354,16 +354,16 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-func TestAllToolProbes_IncludesEightTools(t *testing.T) {
+func TestAllToolProbes_IncludesScaffoldDependencies(t *testing.T) {
 	got := AllToolProbes()
-	if len(got) != 8 {
-		t.Errorf("AllToolProbes returned %d, want 8", len(got))
+	if len(got) != 9 {
+		t.Errorf("AllToolProbes returned %d, want 9", len(got))
 	}
 	names := map[string]bool{}
 	for _, p := range got {
 		names[p.Name()] = true
 	}
-	for _, want := range []string{"kubectl", "flux", "sops", "age", "git", "gh", "ssh", "bao"} {
+	for _, want := range []string{"python3", "kubectl", "flux", "sops", "age", "git", "gh", "ssh", "bao"} {
 		if !names[want] {
 			t.Errorf("missing probe %q", want)
 		}

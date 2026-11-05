@@ -9,6 +9,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -31,18 +32,20 @@ type InstallerReleaseRecord struct {
 }
 
 type ReleaseArtifacts struct {
-	CLI           ReleaseFile                `json:"cli"`
-	StarterRef    string                     `json:"starterRef"`
-	RKE2Version   string                     `json:"rke2Version"`
-	PlatformChart ReleaseFile                `json:"platformChart"`
-	BackendImage  string                     `json:"backendImage"`
-	FrontendImage string                     `json:"frontendImage"`
-	AdminImage    string                     `json:"adminImage"`
-	ThemeArchives map[string]string          `json:"themeArchives"`
-	RKE2Installer ReleaseDownload            `json:"rke2Installer,omitempty"`
-	RKE2Archives  map[string]ReleaseDownload `json:"rke2Archives,omitempty"`
-	Images        map[string]string          `json:"images,omitempty"`
-	Files         map[string]ReleaseFile     `json:"files,omitempty"`
+	CLI            ReleaseFile                `json:"cli"`
+	StarterRef     string                     `json:"starterRef"`
+	RKE2Version    string                     `json:"rke2Version"`
+	PlatformChart  ReleaseFile                `json:"platformChart"`
+	BackendImage   string                     `json:"backendImage"`
+	FrontendImage  string                     `json:"frontendImage"`
+	AdminImage     string                     `json:"adminImage"`
+	ThemeArchives  map[string]string          `json:"themeArchives"`
+	RKE2Installer  ReleaseDownload            `json:"rke2Installer,omitempty"`
+	RKE2Archives   map[string]ReleaseDownload `json:"rke2Archives,omitempty"`
+	Images         map[string]string          `json:"images,omitempty"`
+	Files          map[string]ReleaseFile     `json:"files,omitempty"`
+	Charts         map[string]string          `json:"charts,omitempty"`
+	StarterBinding *StarterReleaseBinding     `json:"starterBinding,omitempty"`
 }
 
 type ReleaseDownload struct {
@@ -167,6 +170,31 @@ func InspectRelease(c Compiled) (ReleaseReport, error) {
 		}
 	}
 	a := record.Artifacts
+	if a.StarterBinding != nil {
+		err := validateStarterReleaseBinding(a.StarterBinding)
+		add("artifacts.starterBinding", err == nil, "selected starter components and release pins", "Regenerate the installer record from the selected assembled starter.")
+	}
+	for _, group := range []struct {
+		name string
+		refs map[string]string
+	}{{"images", a.Images}, {"charts", a.Charts}} {
+		keys := make([]string, 0, len(group.refs))
+		for key := range group.refs {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for index, key := range keys {
+			name, valid := key, releaseIDPattern.MatchString(key)
+			if !valid {
+				name = strconv.Itoa(index) + "-invalid"
+			}
+			add("artifacts."+group.name+"."+name, valid && validDigestImage(group.refs[key]), "immutable selected component", "Pin selected images and charts by digest.")
+			if group.name == "charts" {
+				file := a.Files["chart."+key]
+				add("artifacts.chartArchive."+name, file.Version != "" && hexSHA256.MatchString(file.SHA256) && (key != "kube-dc" || file == a.PlatformChart), "selected chart archive", "Bind the archive to its chart manifest and version.")
+			}
+		}
+	}
 	add("artifacts.cli", a.CLI.Version != "" && hexSHA256.MatchString(a.CLI.SHA256), "CLI version and SHA-256", "Record the CLI version and binary SHA-256.")
 	add("artifacts.starterRef", a.StarterRef == c.Spec.Release.StarterRef && clusterinit.ValidateStarterOCIRef(a.StarterRef) == nil, "starter digest matches the setup specification", "Pin the same immutable starter digest in the record and setup specification.")
 	add("artifacts.rke2Version", a.RKE2Version != "" && a.RKE2Version == c.Spec.Release.RKE2Version, "RKE2 version matches the setup specification", "Use one RKE2 version in the record and setup specification.")

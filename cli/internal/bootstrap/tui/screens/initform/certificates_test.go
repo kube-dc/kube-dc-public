@@ -223,18 +223,18 @@ func TestPanel_SixteenCephNodesSurviveTheRoundTrip(t *testing.T) {
 	}
 	st := &State{}
 	st.FromOptions(in)
-	if strings.Count(st.CephNodesMore, "=") != 13 {
-		t.Fatalf("servers 4 to 16 not kept: %q", st.CephNodesMore)
+	if len(st.CephNodes) != 16 {
+		t.Fatalf("servers 4 to 16 not kept: %q", st.CephNodes)
 	}
 	out := &clusterinit.InitOptions{}
 	if err := st.Apply(out); err != nil {
 		t.Fatal(err)
 	}
-	if len(out.CephNodes) != 16 || out.CephNodes["node-16"] != "/dev/disk/by-id/nvme-16" {
+	if len(out.CephNodes) != 16 || out.CephNodes["node-16"] != "disk/by-id/nvme-16" {
 		t.Fatalf("nodes after round trip: %d %v", len(out.CephNodes), out.CephNodes)
 	}
-	st.CephNodesMore += ",node-01=/dev/sdz"
-	if err := st.Apply(&clusterinit.InitOptions{}); err == nil || !strings.Contains(err.Error(), "listed twice") {
+	st.CephNodes = append(st.CephNodes, "node-01=/dev/sdz")
+	if err := st.Apply(&clusterinit.InitOptions{}); err == nil || !strings.Contains(err.Error(), "duplicate storage node") {
 		t.Fatalf("duplicate node accepted: %v", err)
 	}
 }
@@ -288,15 +288,15 @@ func TestPanel_StorageEditsReachEveryCephNode(t *testing.T) {
 	for i := 1; i <= 5; i++ {
 		pairs = append(pairs, fmt.Sprintf("node-%d=nvme%dn1", i, i))
 	}
-	st.setCephPairs(pairs)
+	st.CephNodes = pairs
 	if got := st.storageDevices(); len(got) != 5 || got["node-5"] != "nvme5n1" {
 		t.Fatalf("storage view: %v", got)
 	}
 	if err := st.setStorageDevice("node-5", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, kept := st.storageDevices()["node-5"]; kept || strings.Contains(st.CephNodesMore, "node-5") {
-		t.Fatalf("clearing node 5 left it selected: %q", st.CephNodesMore)
+	if _, kept := st.storageDevices()["node-5"]; kept {
+		t.Fatalf("clearing node 5 left it selected: %q", st.CephNodes)
 	}
 	if err := st.setStorageDevice("node-6", "nvme6n1"); err != nil || st.storageDevices()["node-6"] != "nvme6n1" {
 		t.Fatalf("adding a fifth server: %v %v", err, st.storageDevices())
@@ -304,34 +304,35 @@ func TestPanel_StorageEditsReachEveryCephNode(t *testing.T) {
 	for i := 7; i <= 17; i++ {
 		_ = st.setStorageDevice(fmt.Sprintf("node-%d", i), "sdb")
 	}
-	if n := len(st.storageDevices()); n != maxCephNodes {
+	if n := len(st.storageDevices()); n != clusterinit.MaxCephSlots {
 		t.Fatalf("limit not applied: %d", n)
 	}
 }
 
-func TestPanel_LongCephNodeListOpensWhole(t *testing.T) {
+func TestPanel_LongCephDevicePathOpensWhole(t *testing.T) {
 	st := validE2EState()
 	st.OSMode = string(clusterinit.RookCephMultiNode)
 	var pairs []string
 	for i := 1; i <= 16; i++ {
 		pairs = append(pairs, fmt.Sprintf("storage-server-%02d=/dev/disk/by-id/nvme-INTEL_SSDPED1D480GA_%02dEXAMPLE", i, i))
 	}
-	st.setCephPairs(pairs)
-	if len(st.CephNodesMore) <= 512 {
-		t.Fatalf("fixture too short: %d", len(st.CephNodesMore))
+	st.CephNodes = pairs
+	st.CephNodes[15] += strings.Repeat("x", 512)
+	if len(st.CephNodes[15]) <= 512 {
+		t.Fatalf("fixture too short: %d", len(st.CephNodes[15]))
 	}
 	m := NewPanelModel(st, "")
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m.secCursor = sectionIndex(m, "Storage")
 	m.focus = focusFields
 	for i, f := range m.currentFields() {
-		if f.Label == "More Ceph nodes" {
+		if f.Label == "Ceph node 16" {
 			m.fieldCursor = i
 		}
 	}
 	_, _ = m.activate()
-	if !m.editing || m.input.Value() != st.CephNodesMore {
-		t.Fatalf("editor truncated the list: editing=%v len=%d want %d", m.editing, len(m.input.Value()), len(st.CephNodesMore))
+	if !m.editing || m.input.Value() != st.CephNodes[15] {
+		t.Fatalf("editor truncated the list: editing=%v len=%d want %d", m.editing, len(m.input.Value()), len(st.CephNodes[15]))
 	}
 }
 
@@ -434,5 +435,49 @@ func TestPanel_ClearingADroppedRowResolvesItAndSaveWaitsForIt(t *testing.T) {
 	m.saveDraft()
 	if !strings.HasPrefix(m.notice, "saved draft") {
 		t.Fatalf("save after resolving: %q", m.notice)
+	}
+}
+
+// A ten-server layout named by stable /dev/disk/by-id paths (as an input file
+// carries them) shows no Ceph row error in Review and keeps every node.
+func TestPanel_StableDevicePathsPassReview(t *testing.T) {
+	in := &clusterinit.InitOptions{RookMode: clusterinit.RookCephMultiNode, CephNodes: map[string]string{}}
+	for i := 1; i <= 10; i++ {
+		in.CephNodes[fmt.Sprintf("node-%02d", i)] = fmt.Sprintf("/dev/disk/by-id/nvme-EXAMPLE_%02d", i)
+	}
+	st := validE2EState()
+	st.FromOptions(in)
+	m := NewPanelModel(st, "")
+	for _, e := range m.validationErrors() {
+		if strings.Contains(e, "Ceph node") {
+			t.Fatalf("stable device path refused in Review: %v", m.validationErrors())
+		}
+	}
+	out := &clusterinit.InitOptions{}
+	if err := m.st.Apply(out); err != nil || len(out.CephNodes) != 10 || out.CephNodes["node-10"] != "disk/by-id/nvme-EXAMPLE_10" {
+		t.Fatalf("apply: %v %v", err, out.CephNodes)
+	}
+}
+
+// Device values with a /dev/ prefix reach host discovery with one /dev/, and
+// a /dev/loop backing file still counts as file-backed storage.
+func TestPanel_PrefixedDevicesInDiscoveryAndStorageChoice(t *testing.T) {
+	st := validE2EState()
+	st.OSMode = string(clusterinit.RookCephMultiNode)
+	st.CephNodes = []string{"node-01=/dev/disk/by-id/nvme-EXAMPLE_01", "node-02=sdb"}
+	m := NewPanelModel(st, "")
+	if got := m.requestForHost("node-01").Host.Disk; got != "/dev/disk/by-id/nvme-EXAMPLE_01" {
+		t.Fatalf("prefixed device: %q", got)
+	}
+	if got := m.requestForHost("node-02").Host.Disk; got != "/dev/sdb" {
+		t.Fatalf("short device: %q", got)
+	}
+	local := &State{OSMode: string(clusterinit.RookCephLocal), OSDDevice: "/dev/loop0"}
+	if got := local.storageChoice(); got != "file-one" {
+		t.Fatalf("/dev/loop0 classified as %q", got)
+	}
+	local.OSDDevice = "/dev/nvme1n1"
+	if got := local.storageChoice(); got != "raw" {
+		t.Fatalf("/dev/nvme1n1 classified as %q", got)
 	}
 }

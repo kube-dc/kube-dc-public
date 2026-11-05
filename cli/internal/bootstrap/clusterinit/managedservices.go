@@ -1,6 +1,7 @@
 package clusterinit
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"net/url"
@@ -11,6 +12,10 @@ import (
 )
 
 var dnsSubdomainLabel = regexp.MustCompile(`^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$`)
+
+// ErrManagedServicesReadinessRequired marks a valid selection whose storage
+// capacity or custom class still needs live evidence before installation.
+var ErrManagedServicesReadinessRequired = errors.New("managed-services storage qualification is unresolved")
 
 // ManagedServicesSelection is the reviewed, non-secret scaffold input. The
 // Fleet helper still validates every value before writing an overlay.
@@ -120,6 +125,9 @@ func ResolveManagedServices(o *InitOptions) (ManagedServicesSelection, error) {
 	availableBucket := o.RookMode == RookCephLocal || o.RookMode == RookCephPVC || o.RookMode == RookCephMultiNode
 	qualified := availableBucket && class != "" && budget != "" && (!result.NeedsClassExpansionCheck || o.ServicesClassExpansionVerified)
 	if (mode == "on" || haClass != "") && !qualified {
+		if availableBucket && (budget == "" || (result.NeedsClassExpansionCheck && !o.ServicesClassExpansionVerified)) {
+			return result, fmt.Errorf("%w: --managed-services=on needs a measured budget and a verified expandable class", ErrManagedServicesReadinessRequired)
+		}
 		return result, fmt.Errorf("--managed-services=on needs a rook-ceph bucket, an expandable database class and a bounded storage budget")
 	}
 	if mode == "off" || (mode == "auto" && !qualified) {

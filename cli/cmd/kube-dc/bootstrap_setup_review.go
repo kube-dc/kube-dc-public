@@ -37,7 +37,7 @@ func bootstrapSetupReviewCmd() *cobra.Command {
 				return err
 			}
 			if blocked := manualToolBlockers(checks, false); len(blocked) != 0 {
-				return fmt.Errorf("install or upgrade required tools before review: %v", blocked)
+				return fmt.Errorf("install or upgrade required tools before review: %s", manualToolBlockerSummary(checks, blocked))
 			}
 			plan, err := clusterinit.BuildPlan(&compiled.Init, clusterinit.FleetState{})
 			if err != nil {

@@ -14,6 +14,7 @@ import (
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/config"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/discover"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/fleetconfig"
+	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
 
 // errClusterNotInFleet is returned by loadClusterEnv when the named
@@ -125,12 +126,13 @@ func bootstrapConfigGetCmd(fleetRepo *string) *cobra.Command {
 
 func bootstrapConfigSetCmd(fleetRepo *string) *cobra.Command {
 	var (
-		add         bool
-		dryRun      bool
-		noPush      bool
-		yes         bool
-		githubToken string
-		provider    string
+		add          bool
+		dryRun       bool
+		noPush       bool
+		yes          bool
+		githubToken  string
+		provider     string
+		providerHost string
 	)
 	cmd := &cobra.Command{
 		Use:           "set <cluster> KEY=VALUE [KEY=VALUE ...]",
@@ -160,6 +162,9 @@ tree; on a commit/push failure the fleet repo is reset to its prior HEAD.`,
 			default:
 				return fmt.Errorf("bootstrap config set: --provider must be github or gitlab (got %q)", provider)
 			}
+			if _, err := clusterinit.ResolveProviderHost(clusterinit.Provider(provider), providerHost); err != nil {
+				return err
+			}
 
 			sets, err := fleetconfig.ParseAssignments(assignments)
 			if err != nil {
@@ -184,7 +189,7 @@ tree; on a commit/push failure the fleet repo is reset to its prior HEAD.`,
 				return nil
 			}
 
-			return applyConfigSet(cmd, out, repoRoot, env, changes, clusterName, noPush, githubToken, provider)
+			return applyConfigSet(cmd, out, repoRoot, env, changes, clusterName, noPush, githubToken, provider, providerHost)
 		},
 	}
 	cmd.Flags().BoolVar(&add, "add", false, "Allow creating keys that don't already exist (default: only update existing keys)")
@@ -192,6 +197,7 @@ tree; on a commit/push failure the fleet repo is reset to its prior HEAD.`,
 	cmd.Flags().BoolVar(&yes, "yes", false, "Apply: write + commit (+ push unless --no-push). Without this, set only previews")
 	cmd.Flags().BoolVar(&noPush, "no-push", false, "Commit to the fleet repo but do not push to the remote")
 	cmd.Flags().StringVar(&githubToken, "github-token", "", "Token for the push (default: `gh auth token`, or `glab auth status --show-token` with --provider gitlab)")
+	cmd.Flags().StringVar(&providerHost, "provider-host", "", "Reviewed Git provider hostname and optional HTTPS port")
 	cmd.Flags().StringVar(&provider, "provider", "", "Git host for the push credential: github (default) or gitlab")
 	return cmd
 }
@@ -200,7 +206,7 @@ tree; on a commit/push failure the fleet repo is reset to its prior HEAD.`,
 // clusterinit.Apply: snapshot HEAD, refuse a dirty tree, write, commit
 // (or commit+push), and reset to the prior HEAD on any failure so a
 // half-applied change never lingers in the fleet repo.
-func applyConfigSet(cmd *cobra.Command, out io.Writer, repoRoot string, env *config.Env, changes []fleetconfig.Change, clusterName string, noPush bool, githubToken, provider string) error {
+func applyConfigSet(cmd *cobra.Command, out io.Writer, repoRoot string, env *config.Env, changes []fleetconfig.Change, clusterName string, noPush bool, githubToken, provider string, providerHosts ...string) error {
 	ctx := cmd.Context()
 	// config only needs the Git port. NewSession builds k8s FIRST and
 	// returns ErrRealAdaptersNotReady before wiring Git, so a git-only
@@ -211,6 +217,22 @@ func applyConfigSet(cmd *cobra.Command, out io.Writer, repoRoot string, env *con
 		return fmt.Errorf("bootstrap config set: build git adapter: %w", err)
 	}
 
+	providerHost := ""
+	if len(providerHosts) > 0 {
+		providerHost = providerHosts[0]
+	}
+	host, err := clusterinit.ResolveProviderHost(clusterinit.Provider(provider), providerHost)
+	if err != nil {
+		return err
+	}
+	if !noPush {
+		if binder, ok := git.(ports.GitProviderBinder); ok {
+			git, err = binder.ForProvider(ctx, repoRoot, host)
+			if err != nil {
+				return err
+			}
+		}
+	}
 	preSHA, err := git.Head(ctx, repoRoot)
 	if err != nil {
 		return fmt.Errorf("bootstrap config set: read fleet HEAD: %w", err)
@@ -237,8 +259,9 @@ func applyConfigSet(cmd *cobra.Command, out io.Writer, repoRoot string, env *con
 		sha, err = git.Commit(ctx, repoRoot, msg)
 	} else {
 		token := resolveGitHubToken(&clusterinit.InitOptions{
-			GitHubToken: githubToken,
-			Provider:    clusterinit.Provider(provider),
+			GitHubToken:  githubToken,
+			ProviderHost: providerHost,
+			Provider:     clusterinit.Provider(provider),
 		}, out)
 		sha, err = git.CommitAndPush(ctx, repoRoot, msg, token)
 	}

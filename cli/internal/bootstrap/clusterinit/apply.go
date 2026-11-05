@@ -162,7 +162,8 @@ type ApplyOptions struct {
 	// `KUBE_DC_PROVIDER` env var passed to the fleet script (which
 	// dispatches `flux bootstrap github` vs `flux bootstrap gitlab`
 	// accordingly).
-	Provider Provider
+	Provider     Provider
+	ProviderHost string
 
 	// GitHubOwner / GitHubRepo are the fleet-repo coordinates on
 	// the selected provider — piped through as `GITHUB_OWNER` /
@@ -203,6 +204,10 @@ type ApplyOptions struct {
 	// identical to the pre-reporter engine (detail still goes to Out).
 	// The install-run TUI supplies one to drive its live checklist.
 	Reporter StepReporter
+
+	// Prepared publishes the exact reviewed ciphertext instead of rerendering.
+	// This path requires an abortable executor and retains ambiguous Git work.
+	Prepared *PreparedScaffold
 }
 
 // --- Errors ---
@@ -233,6 +238,27 @@ var ErrApplyMissingDependency = errors.New("init: apply missing required depende
 func Apply(ctx context.Context, opts ApplyOptions) error {
 	if err := validateApplyOptions(opts); err != nil {
 		return err
+	}
+	if opts.Prepared != nil {
+		return applyPrepared(ctx, opts)
+	}
+	if _, guarded := opts.Reporter.(StepExecutor); guarded {
+		return fmt.Errorf("guarded apply requires the exact prepared scaffold")
+	}
+	if !opts.NoPush {
+		if err := CheckProviderHostSupport(opts.FleetRepo, opts.Provider, opts.ProviderHost); err != nil {
+			return err
+		}
+		if binder, ok := opts.Git.(ports.GitProviderBinder); ok {
+			host, err := applyProviderHost(ctx, opts)
+			if err != nil {
+				return err
+			}
+			opts.Git, err = binder.ForProvider(ctx, opts.FleetRepo, host)
+			if err != nil {
+				return err
+			}
+		}
 	}
 	out := opts.Out
 	if out == nil {
@@ -674,6 +700,14 @@ func runFluxInstall(ctx context.Context, opts ApplyOptions, out io.Writer) error
 	env := map[string]string{
 		"KUBE_DC_PROVIDER": string(provider),
 	}
+	host, err := applyProviderHost(ctx, opts)
+	if err != nil {
+		return err
+	}
+	if err := CheckProviderHostSupport(opts.FleetRepo, provider, opts.ProviderHost); err != nil {
+		return err
+	}
+	env["KUBE_DC_PROVIDER_HOST"] = host
 	// A verified child-cluster kubeconfig must also govern the Flux script.
 	// The runner otherwise inherits the workstation's KUBECONFIG, which may
 	// point to an unrelated cluster even though Scaffold received this path.
@@ -686,8 +720,8 @@ func runFluxInstall(ctx context.Context, opts ApplyOptions, out io.Writer) error
 	if opts.GitHubRepo != "" {
 		env["GITHUB_REPO"] = opts.GitHubRepo
 	}
-	if provider == ProviderGitLab && opts.GitHost != "" {
-		env["GITLAB_HOST"] = opts.GitHost
+	if provider == ProviderGitLab {
+		env["GITLAB_HOST"] = host
 	}
 	// Token env var name differs per provider. Set the appropriate
 	// one so the fleet script's auth branch reads it directly; the

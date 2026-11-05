@@ -132,29 +132,40 @@ func inspectStorageIdentity(ctx context.Context, host Host, device string, ssh p
 func BoundObjectStorage(spec clusterinit.ObjectStorageSpec, identities []StorageIdentity) (clusterinit.ObjectStorageSpec, error) {
 	lookup := map[string]StorageIdentity{}
 	for _, entry := range identities {
-		if _, exists := lookup[entry.Node]; exists || !strings.HasPrefix(entry.ProvisioningPath, "/dev/disk/by-id/") || !validSelectedDevicePath(entry.ProvisioningPath) || entry.Device.SizeBytes == 0 || (entry.Device.WWN == "" && entry.Device.Serial == "") {
+		if _, exists := lookup[entry.Node+"\x00"+entry.Device.SelectedPath]; exists || !strings.HasPrefix(entry.ProvisioningPath, "/dev/disk/by-id/") || !validSelectedDevicePath(entry.ProvisioningPath) || entry.Device.SizeBytes == 0 || (entry.Device.WWN == "" && entry.Device.Serial == "") {
 			return spec, fmt.Errorf("invalid reviewed raw storage identity")
 		}
-		lookup[entry.Node] = entry
+		lookup[entry.Node+"\x00"+entry.Device.SelectedPath] = entry
 	}
 	bound := spec
-	bound.CephNodes = map[string]string{}
-	for node, dev := range spec.CephNodes {
-		bound.CephNodes[node] = dev
-	}
+	bound.CephNodes, bound.CephDevices = nil, nil
+	selected := map[string][]string{}
 	raw := spec.RawOSDDevices()
 	if len(raw) != len(lookup) {
 		return spec, fmt.Errorf("reviewed storage identities do not cover the exact raw OSD list")
 	}
 	for _, slot := range raw {
-		entry, ok := lookup[slot[0]]
+		entry, ok := lookup[slot[0]+"\x00/dev/"+slot[1]]
 		if !ok || entry.Device.SelectedPath != "/dev/"+slot[1] {
 			return spec, fmt.Errorf("reviewed raw storage selection changed")
 		}
 		if bound.Mode == clusterinit.RookCephLocal {
 			bound.OSDDevice = entry.ProvisioningPath
 		} else {
-			bound.CephNodes[slot[0]] = entry.ProvisioningPath
+			selected[slot[0]] = append(selected[slot[0]], entry.ProvisioningPath)
+		}
+	}
+	if bound.Mode == clusterinit.RookCephMultiNode {
+		var options clusterinit.InitOptions
+		options.SetCephDevices(selected)
+		bound.CephNodes, bound.CephDevices = options.CephNodes, options.CephDevices
+		// Keep the verified provisioning paths intact in the reviewed payload.
+		if bound.CephDevices != nil {
+			bound.CephDevices = selected
+		} else {
+			for node, devices := range selected {
+				bound.CephNodes[node] = devices[0]
+			}
 		}
 	}
 	return bound, nil

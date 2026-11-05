@@ -351,3 +351,19 @@ func TestSafetyReviewFileRejectsUnknownFieldsTamperingAndPublicModes(t *testing.
 		})
 	}
 }
+
+func TestReviewedScaffoldNodesUseServerHostRoles(t *testing.T) {
+	hosts := []Host{{ID: "server-b", Role: "server"}, {ID: "worker", Role: "agent"}, {ID: "server-a", Role: "server"}}
+	scaffold := clusterinit.ScaffoldOptions{ManagerNodeNames: []string{"unreviewed"}}
+	if err := bindReviewedScaffoldNodes(&scaffold, hosts); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(scaffold.ControlPlaneNodes, ",") != "server-a,server-b" || strings.Join(scaffold.ManagerNodeNames, ",") != "server-a,server-b" {
+		t.Fatal("control-plane names did not bind to reviewed server hosts")
+	}
+	for _, invalid := range []clusterinit.ScaffoldOptions{{ControlPlaneNodes: []string{"worker"}}, {SingleIPNAT: true}} {
+		if err := bindReviewedScaffoldNodes(&invalid, hosts); err == nil {
+			t.Fatal("unreviewed address inputs accepted")
+		}
+	}
+}

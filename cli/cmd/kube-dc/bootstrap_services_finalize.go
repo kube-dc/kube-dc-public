@@ -79,7 +79,7 @@ func finalizeManagedServices(ctx context.Context, out io.Writer, o *clusterinit.
 	} else if err := session.Git.Push(ctx, o.Repo, token); err != nil {
 		return fmt.Errorf("push existing managed-services publication: %w", err)
 	}
-	fmt.Fprintln(out, "[finalize] managed-services catalog pushed; waiting for six bundles and twelve plans")
+	fmt.Fprintln(out, "[finalize] managed-services catalog pushed; waiting for the selected release bundles and plans")
 	if err := waitManagedServicesPublished(ctx, reader, pins); err != nil {
 		return err
 	}

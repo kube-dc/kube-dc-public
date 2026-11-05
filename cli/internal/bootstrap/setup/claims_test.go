@@ -34,6 +34,20 @@ func localClaimCommand(t *testing.T, c HostClaim, action string, takeover bool, 
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Unit tests exercise the lock/state protocol without a service manager.
+	// The opt-in systemd test runs the exact production supervisor on Linux.
+	if os.Getenv("KUBE_DC_TEST_SYSTEMD") != "1" {
+		start := strings.Index(script, "systemd-run --unit=")
+		if start >= 0 {
+			end := strings.Index(script[start:], " -- bash -o pipefail ")
+			if end < 0 {
+				t.Fatal("supervisor contract changed")
+			}
+			script = script[:start] + "bash -o pipefail " + script[start+end+len(" -- bash -o pipefail "):]
+		}
+	} else if os.Getuid() != 0 {
+		script = strings.ReplaceAll(script, "systemd-run --unit=", "sudo -n systemd-run --unit=")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	t.Cleanup(cancel)
 	return exec.CommandContext(ctx, "bash", "-c", strings.TrimPrefix(script, "sudo -n "))

@@ -158,10 +158,11 @@ type InitOptions struct {
 	// slice may rename them to Owner/Name/Token; today they're
 	// spelled github-* at the CLI surface because that's what
 	// existing operators muscle-memory.
-	Provider    Provider
-	GitHubOwner string
-	GitHubRepo  string
-	GitHubToken string // never logged
+	Provider     Provider
+	ProviderHost string
+	GitHubOwner  string
+	GitHubRepo   string
+	GitHubToken  string // never logged
 
 	// --- Overrides (repeatable flags) ---
 	// Sets stores `--set KEY=VALUE` deltas applied on top of the
@@ -182,9 +183,12 @@ type InitOptions struct {
 	RookOSDNode   string
 	RookOSDSizeGB int
 	RookOSDDevice string // optional; fleet template defaults to loop0
-	// CephNodes maps one to three server names to raw OSD devices.
+	// CephNodes maps up to MaxCephSlots server names to one raw OSD each.
 	// Generated patches size the Fleet template to the selected topology.
 	CephNodes map[string]string
+	// CephDevices is the versioned multi-device input. Do not combine it
+	// with the legacy CephNodes representation.
+	CephDevices map[string][]string
 	// rook-ceph-pvc companions → CEPH_OSD_{STORAGE_CLASS,COUNT,
 	// VOLUME_SIZE_GB}. Count/size 0 = fleet template defaults (2/200).
 	CephStorageClass    string
@@ -716,6 +720,11 @@ func (o *InitOptions) Validate() error {
 // cluster or resolving an installation mode. Setup compilation uses the same
 // field rules as the established init command.
 func (o *InitOptions) ValidateFields() error {
+	if o.Provider == "" || o.Provider == ProviderGitHub || o.Provider == ProviderGitLab {
+		if _, err := ResolveProviderHost(o.Provider, o.ProviderHost); err != nil {
+			return err
+		}
+	}
 	var errs []string
 
 	// Structural — every field's own contract.
@@ -908,12 +917,12 @@ func validateObjectStorage(o *InitOptions) []string {
 		}
 
 	case RookCephMultiNode:
-		if len(o.CephNodes) < 1 || len(o.CephNodes) > MaxCephSlots {
-			errs = append(errs, fmt.Sprintf("--object-storage-mode=rook-ceph-multi-node requires 1 to %d --ceph-node NODE=DEVICE entries (got %d)", MaxCephSlots, len(o.CephNodes)))
+		if len(o.ObjectStorage().DeviceSets()) < 1 || len(o.ObjectStorage().DeviceSets()) > MaxCephSlots {
+			errs = append(errs, fmt.Sprintf("--object-storage-mode=rook-ceph-multi-node requires 1 to %d --ceph-node NODE=DEVICE entries (got %d)", MaxCephSlots, len(o.ObjectStorage().DeviceSets())))
 		}
 		if mons := cephMonNodes(o.Sets["CEPH_MON_NODES"]); len(mons) > 0 {
 			want := 3
-			if len(o.CephNodes) == 1 {
+			if len(o.ObjectStorage().DeviceSets()) == 1 {
 				want = 1
 			}
 			if len(mons) < want {
@@ -925,32 +934,23 @@ func validateObjectStorage(o *InitOptions) []string {
 				}
 			}
 		}
-		replicas, err := objectStorageReplication(o.RookMode, len(o.CephNodes), o.Sets["CEPH_REPLICATION_SIZE"])
+		replicas, err := objectStorageReplication(o.RookMode, len(o.ObjectStorage().DeviceSets()), o.Sets["CEPH_REPLICATION_SIZE"])
 		if err != nil {
 			errs = append(errs, err.Error())
-		} else if len(o.CephNodes) > 0 && replicas > len(o.CephNodes) {
+		} else if len(o.ObjectStorage().DeviceSets()) > 0 && replicas > len(o.ObjectStorage().DeviceSets()) {
 			errs = append(errs, "CEPH_REPLICATION_SIZE cannot exceed the number of selected storage servers")
 		}
-		// Canonicalize /dev/-prefixed devices (same rationale as
-		// --rook-osd-device above) before validation + the scaffold
-		// writer consume the map.
-		for n, d := range o.CephNodes {
-			o.CephNodes[n] = strings.TrimPrefix(d, "/dev/")
+		if len(o.CephNodes) > 0 && len(o.CephDevices) > 0 {
+			errs = append(errs, "do not combine --ceph-node with the versioned multi-device input")
 		}
-		// Deterministic error order: sorted node names.
-		nodes := make([]string, 0, len(o.CephNodes))
-		for n := range o.CephNodes {
-			nodes = append(nodes, n)
+		if err := validateCephDeviceMap(o.ObjectStorage().DeviceSets()); err != nil {
+			errs = append(errs, err.Error())
 		}
-		sort.Strings(nodes)
-		for _, node := range nodes {
-			dev := o.CephNodes[node]
-			if !k8sNodeNameRegex.MatchString(node) {
-				errs = append(errs, fmt.Sprintf("--ceph-node node %q is not a valid Kubernetes node name (lowercase RFC 1123: a-z, 0-9, '-', '.')", node))
-			}
-			if !deviceNameRegex.MatchString(dev) || loopDeviceRegex.MatchString(dev) {
-				errs = append(errs, fmt.Sprintf("--ceph-node device %q (node %s) is not a valid device name (e.g. sdb, nvme0n1)", dev, node))
-			}
+		for node, device := range o.CephNodes {
+			o.CephNodes[node] = strings.TrimPrefix(strings.TrimSpace(device), "/dev/")
+		}
+		if o.CephDevices != nil {
+			o.CephDevices = canonicalCephDevices(nil, o.CephDevices)
 		}
 	case RookCephPVC:
 		// → CEPH_OSD_STORAGE_CLASS (count/size have fleet defaults).
