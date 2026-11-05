@@ -11,14 +11,14 @@ import "testing"
 // (The C4 re-entrance lint already forces the field into one of the two
 // buckets; this test pins WHICH bucket.)
 func TestInputHash_NoOIDCCutoverIsSubstantive(t *testing.T) {
-	fleet := atlantisFleet()
+	fleet := east1Fleet()
 
-	base, err := BuildPlan(atlantisOpts(), fleet)
+	base, err := BuildPlan(east1Opts(), fleet)
 	if err != nil {
 		t.Fatalf("BuildPlan(base): %v", err)
 	}
 
-	opted := atlantisOpts()
+	opted := east1Opts()
 	opted.NoOIDCCutover = true
 	skipped, err := BuildPlan(opted, fleet)
 	if err != nil {

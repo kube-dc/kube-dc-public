@@ -121,7 +121,7 @@ func applyFleet(t *testing.T) string {
 // step has something to consume.
 func applyRunner(t *testing.T, repo string) *fakeScriptRunner {
 	t.Helper()
-	envBody := "CLUSTER_NAME=atlantis\nDOMAIN=kdc.atlantis.example.com\n"
+	envBody := "CLUSTER_NAME=east1\nDOMAIN=kdc.east1.example.com\n"
 	infraBody := `apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -188,12 +188,12 @@ sops:
 	}
 }
 
-func atlantisApplyOpts(t *testing.T, repo string, runner ports.ScriptRunner, git ports.GitClient) ApplyOptions {
+func east1ApplyOpts(t *testing.T, repo string, runner ports.ScriptRunner, git ports.GitClient) ApplyOptions {
 	t.Helper()
 	return ApplyOptions{
 		Plan: &Plan{
-			ClusterName: "atlantis",
-			Domain:      "kdc.atlantis.example.com",
+			ClusterName: "east1",
+			Domain:      "kdc.east1.example.com",
 			Preset:      PresetCloudPublicVLAN,
 		},
 		FleetRepo:      repo,
@@ -220,7 +220,7 @@ func TestApply_FluxInstall_GitHubEnv_Propagated(t *testing.T) {
 	repo := applyFleet(t)
 	runner := applyRunner(t, repo)
 	git := &fakeGit{preSHA: "abc123"}
-	opts := atlantisApplyOpts(t, repo, runner, git)
+	opts := east1ApplyOpts(t, repo, runner, git)
 	opts.Provider = "" // default → github
 	opts.GitHubOwner = "acme"
 	opts.GitHubRepo = "fleet"
@@ -262,7 +262,7 @@ func TestApply_FluxInstallUsesVerifiedChildKubeconfig(t *testing.T) {
 	t.Setenv("KUBECONFIG", "/operator/unrelated.yaml")
 	repo := applyFleet(t)
 	runner := applyRunner(t, repo)
-	opts := atlantisApplyOpts(t, repo, runner, &fakeGit{preSHA: "abc123"})
+	opts := east1ApplyOpts(t, repo, runner, &fakeGit{preSHA: "abc123"})
 	opts.KubeconfigPath = "/guided/private/child.yaml"
 	if err := Apply(context.Background(), opts); err != nil {
 		t.Fatal(err)
@@ -294,7 +294,7 @@ func TestApply_FluxInstall_GitLabEnv_Propagated(t *testing.T) {
 	repo := applyFleet(t)
 	runner := applyRunner(t, repo)
 	git := &fakeGit{preSHA: "abc123"}
-	opts := atlantisApplyOpts(t, repo, runner, git)
+	opts := east1ApplyOpts(t, repo, runner, git)
 	opts.Provider = ProviderGitLab
 	opts.GitHubOwner = "acme-group"
 	opts.GitHubRepo = "fleet"
@@ -336,7 +336,7 @@ func TestApply_HappyPath(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	opts := atlantisApplyOpts(t, repo, runner, git)
+	opts := east1ApplyOpts(t, repo, runner, git)
 	opts.Out = &out
 	if err := Apply(context.Background(), opts); err != nil {
 		t.Fatalf("Apply: %v\nout:\n%s", err, out.String())
@@ -363,14 +363,14 @@ func TestApply_HappyPath(t *testing.T) {
 		t.Errorf("second script = %v, want ScriptFluxInstall", runner.calls[1].Kind)
 	}
 	// flux-install args.
-	wantFlux := []string{"atlantis", "--new-cluster"}
+	wantFlux := []string{"east1", "--new-cluster"}
 	if len(runner.calls[1].Args) != len(wantFlux) {
 		t.Errorf("flux-install args = %v, want %v", runner.calls[1].Args, wantFlux)
 	}
 	// Operator-facing log mentions commit + completion.
 	for _, want := range []string{
 		"commit=def456",
-		"complete — Flux is reconciling cluster \"atlantis\"",
+		"complete — Flux is reconciling cluster \"east1\"",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())
@@ -393,7 +393,7 @@ func TestApply_PushFailure_RollsBackToPreSHA(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	opts := atlantisApplyOpts(t, repo, runner, git)
+	opts := east1ApplyOpts(t, repo, runner, git)
 	opts.Out = &out
 	err := Apply(context.Background(), opts)
 	if err == nil {
@@ -435,7 +435,7 @@ func TestApply_PushAndRollbackBothFail_Wraps(t *testing.T) {
 		pushErr:   pushErr,
 		resetErr:  resetErr,
 	}
-	opts := atlantisApplyOpts(t, repo, runner, git)
+	opts := east1ApplyOpts(t, repo, runner, git)
 	err := Apply(context.Background(), opts)
 	if err == nil {
 		t.Fatal("expected error")
@@ -461,7 +461,7 @@ func TestApply_DirtyTree_Refused(t *testing.T) {
 			},
 		},
 	}
-	opts := atlantisApplyOpts(t, repo, runner, git)
+	opts := east1ApplyOpts(t, repo, runner, git)
 	err := Apply(context.Background(), opts)
 	if !errors.Is(err, ErrDirtyWorkingTree) {
 		t.Fatalf("expected ErrDirtyWorkingTree, got %v", err)
@@ -492,7 +492,7 @@ func TestApply_NoPush_SkipsFluxInstall(t *testing.T) {
 		commitSHA: "def",
 	}
 	var out bytes.Buffer
-	opts := atlantisApplyOpts(t, repo, runner, git)
+	opts := east1ApplyOpts(t, repo, runner, git)
 	opts.NoPush = true
 	opts.Out = &out
 	if err := Apply(context.Background(), opts); err != nil {
@@ -588,7 +588,7 @@ sops:
 	git := &fakeGit{preSHA: "pre", commitSHA: "post"}
 
 	var out bytes.Buffer
-	opts := atlantisApplyOpts(t, repo, wrappedRunner, git)
+	opts := east1ApplyOpts(t, repo, wrappedRunner, git)
 	opts.Runner = wrappedRunner
 	opts.Out = &out
 	err := Apply(context.Background(), opts)
@@ -637,7 +637,7 @@ stringData:
 	}
 	git := &fakeGit{preSHA: "pre", commitSHA: "post"}
 	var out bytes.Buffer
-	opts := atlantisApplyOpts(t, repo, runner, git)
+	opts := east1ApplyOpts(t, repo, runner, git)
 	opts.Out = &out
 
 	err := Apply(context.Background(), opts)
@@ -671,7 +671,7 @@ func TestApply_MissingDependencies_Errors(t *testing.T) {
 	repo := applyFleet(t)
 	runner := applyRunner(t, repo)
 	git := &fakeGit{preSHA: "x", commitSHA: "y"}
-	base := atlantisApplyOpts(t, repo, runner, git)
+	base := east1ApplyOpts(t, repo, runner, git)
 
 	cases := []struct {
 		name   string
@@ -742,19 +742,19 @@ func TestApply_Resume_PushesThenFluxInstall(t *testing.T) {
 	repo := applyFleet(t)
 	// Pre-create the overlay so Scaffold's preflight returns
 	// ErrScaffoldTargetExists and Apply takes the resume branch.
-	overlay := filepath.Join(repo, "clusters", "atlantis")
+	overlay := filepath.Join(repo, "clusters", "east1")
 	if err := os.MkdirAll(overlay, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// Scaffold's "already initialised" marker is cluster-config.env —
 	// write it so the preflight returns ErrScaffoldTargetExists (resume).
-	if err := os.WriteFile(filepath.Join(overlay, "cluster-config.env"), []byte("CLUSTER_NAME=atlantis\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(overlay, "cluster-config.env"), []byte("CLUSTER_NAME=east1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	runner := applyRunner(t, repo)
 	git := &fakeGit{preSHA: "abc123", commitSHA: "def456"}
 
-	if err := Apply(context.Background(), atlantisApplyOpts(t, repo, runner, git)); err != nil {
+	if err := Apply(context.Background(), east1ApplyOpts(t, repo, runner, git)); err != nil {
 		t.Fatalf("resume apply: %v", err)
 	}
 	if !git.pushed {
@@ -782,20 +782,20 @@ func TestApply_Resume_PushesThenFluxInstall(t *testing.T) {
 // confirm contains the overlay.
 func TestApply_Resume_PushFailure_BlocksFluxInstall(t *testing.T) {
 	repo := applyFleet(t)
-	overlay := filepath.Join(repo, "clusters", "atlantis")
+	overlay := filepath.Join(repo, "clusters", "east1")
 	if err := os.MkdirAll(overlay, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// Scaffold's "already initialised" marker is cluster-config.env —
 	// write it so the preflight returns ErrScaffoldTargetExists (resume).
-	if err := os.WriteFile(filepath.Join(overlay, "cluster-config.env"), []byte("CLUSTER_NAME=atlantis\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(overlay, "cluster-config.env"), []byte("CLUSTER_NAME=east1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	runner := applyRunner(t, repo)
 	pushErr := errors.New("simulated resume push failure")
 	git := &fakeGit{preSHA: "abc123", pushErr: pushErr}
 
-	err := Apply(context.Background(), atlantisApplyOpts(t, repo, runner, git))
+	err := Apply(context.Background(), east1ApplyOpts(t, repo, runner, git))
 	if !errors.Is(err, pushErr) {
 		t.Fatalf("want resume push error, got %v", err)
 	}
@@ -811,16 +811,16 @@ func TestApply_Resume_PushFailure_BlocksFluxInstall(t *testing.T) {
 // push/flux-install instead of reporting success with PAYG still off.
 func TestApply_Resume_RefusesPAYGOnNonPAYGOverlay(t *testing.T) {
 	repo := applyFleet(t)
-	overlay := filepath.Join(repo, "clusters", "atlantis")
+	overlay := filepath.Join(repo, "clusters", "east1")
 	if err := os.MkdirAll(overlay, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(overlay, "cluster-config.env"), []byte("CLUSTER_NAME=atlantis\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(overlay, "cluster-config.env"), []byte("CLUSTER_NAME=east1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	runner := applyRunner(t, repo)
 	git := &fakeGit{preSHA: "abc123", commitSHA: "def456"}
-	opts := atlantisApplyOpts(t, repo, runner, git)
+	opts := east1ApplyOpts(t, repo, runner, git)
 	opts.PAYG = true
 
 	err := Apply(context.Background(), opts)
@@ -839,7 +839,7 @@ func TestApply_Resume_RefusesPAYGOnNonPAYGOverlay(t *testing.T) {
 
 func paygApplyOpts(t *testing.T, repo string, runner ports.ScriptRunner, git ports.GitClient) ApplyOptions {
 	t.Helper()
-	opts := atlantisApplyOpts(t, repo, runner, git)
+	opts := east1ApplyOpts(t, repo, runner, git)
 	opts.Sets = paygSets("stripe")
 	opts.NodeNICs = nil // the PAYG fake add-cluster.sh writes no infra-core layer
 	opts.PAYG = true
@@ -853,7 +853,7 @@ func TestApply_PAYG_SopsFailureThenRetry(t *testing.T) {
 	fixPAYGClock(t)
 	repo := applyFleet(t)
 	writePAYGStarter(t, repo)
-	clusterDir := filepath.Join(repo, "clusters", "atlantis")
+	clusterDir := filepath.Join(repo, "clusters", "east1")
 
 	failingSopsOnPath(t)
 	git := &fakeGit{preSHA: "abc123", commitSHA: "def456"}
@@ -877,7 +877,7 @@ func TestApply_PAYG_SopsFailureThenRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := inspectPAYGOverlay(repo, "atlantis", "kdc.atlantis.example.com", env)
+	st, err := inspectPAYGOverlay(repo, "east1", "kdc.east1.example.com", env)
 	if err != nil || !st.present || len(st.missing) > 0 {
 		t.Fatalf("retry left an incomplete PAYG contract: present=%v missing=%v err=%v", st.present, st.missing, err)
 	}
@@ -895,14 +895,14 @@ func TestApply_Resume_CompletesPartialPAYG(t *testing.T) {
 	writePAYGStarter(t, repo)
 	// First, a full scaffold (as a prior run would have produced) ...
 	if err := Scaffold(context.Background(), ScaffoldOptions{
-		Plan:      &Plan{ClusterName: "atlantis", Domain: "kdc.atlantis.example.com", Preset: PresetCloudPublicVLAN},
+		Plan:      &Plan{ClusterName: "east1", Domain: "kdc.east1.example.com", Preset: PresetCloudPublicVLAN},
 		FleetRepo: repo, NodeExternalIP: "203.0.113.52", Sets: paygSets("stripe"), PAYG: true,
 		Runner: paygAddClusterRunner(t, repo),
 	}); err != nil {
 		t.Fatal(err)
 	}
 	// ... then cut short: the layer file and the role patch never landed.
-	clusterDir := filepath.Join(repo, "clusters", "atlantis")
+	clusterDir := filepath.Join(repo, "clusters", "east1")
 	_ = os.Remove(filepath.Join(clusterDir, paygLayerFileName))
 	if err := os.WriteFile(filepath.Join(clusterDir, "platform.yaml"), []byte(addClusterPlatformYAML), 0o644); err != nil {
 		t.Fatal(err)
@@ -918,7 +918,7 @@ func TestApply_Resume_CompletesPartialPAYG(t *testing.T) {
 		t.Fatalf("the completion must be committed and pushed (commits=%d pushed=%v)", git.commitCall, git.pushed)
 	}
 	env, _ := config.LoadEnv(filepath.Join(clusterDir, "cluster-config.env"))
-	if st, err := inspectPAYGOverlay(repo, "atlantis", "kdc.atlantis.example.com", env); err != nil || len(st.missing) > 0 {
+	if st, err := inspectPAYGOverlay(repo, "east1", "kdc.east1.example.com", env); err != nil || len(st.missing) > 0 {
 		t.Fatalf("contract after completion: missing=%v err=%v", st.missing, err)
 	}
 	if got := paygEnvValue(env, PAYGInstallationUIDKey); got != uidBefore {
@@ -931,17 +931,17 @@ func TestApply_Resume_CompletesPartialPAYG(t *testing.T) {
 func TestApply_Resume_RefusesCopiedPAYGIdentity(t *testing.T) {
 	for _, payg := range []bool{false, true} {
 		repo := applyFleet(t)
-		overlay := filepath.Join(repo, "clusters", "atlantis")
+		overlay := filepath.Join(repo, "clusters", "east1")
 		if err := os.MkdirAll(overlay, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		env := "CLUSTER_NAME=atlantis\nBILLING_PROVIDER=stripe\nPAYG_ENABLED=true\n" +
+		env := "CLUSTER_NAME=east1\nBILLING_PROVIDER=stripe\nPAYG_ENABLED=true\n" +
 			"PAYG_INSTALLATION_UID=11111111-2222-4333-8444-555555555555\nPAYG_INSTALLATION_BINDING=source/source.example.com\n"
 		if err := os.WriteFile(filepath.Join(overlay, "cluster-config.env"), []byte(env), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		git := &fakeGit{preSHA: "abc123", commitSHA: "def456"}
-		opts := atlantisApplyOpts(t, repo, applyRunner(t, repo), git)
+		opts := east1ApplyOpts(t, repo, applyRunner(t, repo), git)
 		opts.PAYG = payg
 		if err := Apply(context.Background(), opts); !errors.Is(err, ErrPAYGIdentity) {
 			t.Fatalf("payg=%v: want ErrPAYGIdentity, got %v", payg, err)
@@ -963,7 +963,7 @@ func TestApply_SiteComponentFailure_RollsBackFreshScaffold(t *testing.T) {
 	runner := applyRunner(t, repo)
 	git := &fakeGit{preSHA: "PRE", commitSHA: "POST"}
 	var out bytes.Buffer
-	opts := atlantisApplyOpts(t, repo, runner, git)
+	opts := east1ApplyOpts(t, repo, runner, git)
 	opts.Out = &out
 	opts.SiteComponents = []SiteComponent{{Layer: "no-such-layer", Path: "install/x"}}
 	if err := Apply(context.Background(), opts); err == nil {
@@ -972,7 +972,7 @@ func TestApply_SiteComponentFailure_RollsBackFreshScaffold(t *testing.T) {
 	if len(git.resetCalls) != 1 || git.resetCalls[0] != "PRE" {
 		t.Fatalf("ResetHard calls = %v, want [PRE]", git.resetCalls)
 	}
-	if _, err := os.Stat(filepath.Join(repo, "clusters", "atlantis", "kustomization.yaml")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(repo, "clusters", "east1", "kustomization.yaml")); !os.IsNotExist(err) {
 		t.Fatalf("the uncommitted overlay was left behind: %v", err)
 	}
 	if git.commitCall != 0 {

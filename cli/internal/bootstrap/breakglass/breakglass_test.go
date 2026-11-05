@@ -116,12 +116,12 @@ var _ ports.GitClient = (*fakeGit)(nil)
 // surfacing as an error that names the file so the operator can recover
 // by hand rather than silently losing the write.
 func TestCommitBreakGlass(t *testing.T) {
-	const target = "/fleet/clusters/jed/break-glass-kubeconfig.enc.yaml"
+	const target = "/fleet/clusters/dc3/break-glass-kubeconfig.enc.yaml"
 
 	t.Run("nil Git — manual-CLI contract, no commit attempted", func(t *testing.T) {
 		err := commitBreakGlass(context.Background(), AdoptOpts{
 			FleetRoot:   "/fleet",
-			ClusterName: "jed",
+			ClusterName: "dc3",
 		}, target, "adopt break-glass recovery kubeconfig")
 		if err != nil {
 			t.Fatalf("expected nil (no Git configured is not an error), got %v", err)
@@ -132,7 +132,7 @@ func TestCommitBreakGlass(t *testing.T) {
 		g := &fakeGit{}
 		err := commitBreakGlass(context.Background(), AdoptOpts{
 			FleetRoot:   "/fleet",
-			ClusterName: "jed",
+			ClusterName: "dc3",
 			Git:         g,
 			NoPush:      true,
 			GitHubToken: "should-not-be-used",
@@ -143,7 +143,7 @@ func TestCommitBreakGlass(t *testing.T) {
 		if len(g.commitAndPushCalls) != 0 {
 			t.Fatalf("NoPush must not push: got CommitAndPush calls %v", g.commitAndPushCalls)
 		}
-		want := "/fleet|jed: adopt break-glass recovery kubeconfig"
+		want := "/fleet|dc3: adopt break-glass recovery kubeconfig"
 		if len(g.commitCalls) != 1 || g.commitCalls[0] != want {
 			t.Fatalf("Commit call = %v, want [%q]", g.commitCalls, want)
 		}
@@ -153,7 +153,7 @@ func TestCommitBreakGlass(t *testing.T) {
 		g := &fakeGit{}
 		err := commitBreakGlass(context.Background(), AdoptOpts{
 			FleetRoot:   "/fleet",
-			ClusterName: "jed",
+			ClusterName: "dc3",
 			Git:         g,
 			GitHubToken: "ghp_xxx",
 		}, target, "adopt break-glass recovery kubeconfig")
@@ -163,7 +163,7 @@ func TestCommitBreakGlass(t *testing.T) {
 		if len(g.commitCalls) != 0 {
 			t.Fatalf("push path must not use the local-only Commit: got %v", g.commitCalls)
 		}
-		want := "/fleet|jed: adopt break-glass recovery kubeconfig|ghp_xxx"
+		want := "/fleet|dc3: adopt break-glass recovery kubeconfig|ghp_xxx"
 		if len(g.commitAndPushCalls) != 1 || g.commitAndPushCalls[0] != want {
 			t.Fatalf("CommitAndPush call = %v, want [%q]", g.commitAndPushCalls, want)
 		}
@@ -173,7 +173,7 @@ func TestCommitBreakGlass(t *testing.T) {
 		g := &fakeGit{commitAndPushErr: errors.New("remote rejected")}
 		err := commitBreakGlass(context.Background(), AdoptOpts{
 			FleetRoot:   "/fleet",
-			ClusterName: "jed",
+			ClusterName: "dc3",
 			Git:         g,
 		}, target, "adopt break-glass recovery kubeconfig")
 		if err == nil {
@@ -186,11 +186,11 @@ func TestCommitBreakGlass(t *testing.T) {
 
 	t.Run("dirty file OTHER than the target blocks the commit (closes the post-check-pre-commit window)", func(t *testing.T) {
 		g := &fakeGitDiff{diff: ports.Diff{Files: []ports.FileDiff{
-			{Path: "clusters/jed/some-other-file.yaml", Status: "M"},
+			{Path: "clusters/dc3/some-other-file.yaml", Status: "M"},
 		}}}
 		err := commitBreakGlass(context.Background(), AdoptOpts{
 			FleetRoot:   "/fleet",
-			ClusterName: "jed",
+			ClusterName: "dc3",
 			Git:         g,
 		}, target, "adopt break-glass recovery kubeconfig")
 		if !errors.Is(err, ErrDirtyWorkingTree) {
@@ -203,11 +203,11 @@ func TestCommitBreakGlass(t *testing.T) {
 
 	t.Run("the target file's own diff does not self-block the commit", func(t *testing.T) {
 		g := &fakeGitDiff{diff: ports.Diff{Files: []ports.FileDiff{
-			{Path: "clusters/jed/break-glass-kubeconfig.enc.yaml", Status: "M"},
+			{Path: "clusters/dc3/break-glass-kubeconfig.enc.yaml", Status: "M"},
 		}}}
 		err := commitBreakGlass(context.Background(), AdoptOpts{
 			FleetRoot:   "/fleet",
-			ClusterName: "jed",
+			ClusterName: "dc3",
 			Git:         g,
 		}, target, "adopt break-glass recovery kubeconfig")
 		if err != nil {
@@ -254,7 +254,7 @@ func TestCheckCleanWorkingTree(t *testing.T) {
 
 	t.Run("dirty tree is refused, naming the offending paths", func(t *testing.T) {
 		g := &fakeGitDiff{diff: ports.Diff{Files: []ports.FileDiff{
-			{Path: "clusters/jed/some-other-file.yaml", Status: "M"},
+			{Path: "clusters/dc3/some-other-file.yaml", Status: "M"},
 		}}}
 		err := checkCleanWorkingTree(context.Background(), AdoptOpts{FleetRoot: "/fleet", Git: g}, "")
 		if !errors.Is(err, ErrDirtyWorkingTree) {
@@ -267,11 +267,11 @@ func TestCheckCleanWorkingTree(t *testing.T) {
 
 	t.Run("allow excludes exactly one path, everything else still blocks", func(t *testing.T) {
 		g := &fakeGitDiff{diff: ports.Diff{Files: []ports.FileDiff{
-			{Path: "clusters/jed/break-glass-kubeconfig.enc.yaml", Status: "M"},
-			{Path: "clusters/jed/some-other-file.yaml", Status: "M"},
+			{Path: "clusters/dc3/break-glass-kubeconfig.enc.yaml", Status: "M"},
+			{Path: "clusters/dc3/some-other-file.yaml", Status: "M"},
 		}}}
 		err := checkCleanWorkingTree(context.Background(), AdoptOpts{FleetRoot: "/fleet", Git: g},
-			"clusters/jed/break-glass-kubeconfig.enc.yaml")
+			"clusters/dc3/break-glass-kubeconfig.enc.yaml")
 		if !errors.Is(err, ErrDirtyWorkingTree) {
 			t.Fatalf("the OTHER dirty file must still block even with an allow path set, got %v", err)
 		}

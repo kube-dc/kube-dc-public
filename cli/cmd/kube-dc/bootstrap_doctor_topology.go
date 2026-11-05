@@ -38,9 +38,9 @@ Endpoints feature should be enabled.
 
 Classes:
 
-  A — 1:1-NAT hairpin (atlantis-class)          → REQUIRES the feature
-  B — Flat-L2 with per-node externalIPs (cloud-class) → does NOT need it
-  C — Cloud-provider LoadBalancer (AWS/GCP/Azure)     → does NOT need it
+  A — 1:1-NAT hairpin                          → REQUIRES the feature
+  B — Flat-L2 with per-node externalIPs         → does NOT need it
+  C — Cloud-provider LoadBalancer (AWS/GCP/Azure) → does NOT need it
 
 The classifier is a heuristic: probes look at cluster-side
 configuration (cloud-provider integration, EnvoyProxy CR shape,
@@ -57,7 +57,7 @@ Probes run against the current kubeconfig. Use KUBECONFIG env var or
   kube-dc bootstrap doctor topology
 
   # Target a specific cluster
-  KUBECONFIG=/path/to/atlantis_config kube-dc bootstrap doctor topology
+  KUBECONFIG=/path/to/cluster_config kube-dc bootstrap doctor topology
 
   # Or via flag
   kube-dc bootstrap doctor topology --kubeconfig /path/to/cluster_config`,

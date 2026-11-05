@@ -20,7 +20,7 @@
 # rolls out a fix), the names match and Server-Side Apply merges
 # cleanly — both managers describe the same target shape.
 #
-# Multi-tenant routing (cloud-class clusters running Alloy-metrics
+# Multi-tenant routing (clusters running Alloy-metrics
 # + cortex-tenant + Mimir): Alloy-metrics auto-discovers
 # cluster-wide SMs (empty `prometheus.operator.servicemonitors`
 # selector in alloy-metrics-values), reads each scraped sample's

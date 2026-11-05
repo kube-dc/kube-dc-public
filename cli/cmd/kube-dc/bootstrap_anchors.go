@@ -76,7 +76,7 @@ func bootstrapAnchorsApplyCmd(fleetRepo *string) *cobra.Command {
 		Args:          cobra.ExactArgs(1),
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		Example: `  kube-dc bootstrap anchors apply atlantis --repo ~/projects/kube-dc-fleet
+		Example: `  kube-dc bootstrap anchors apply east1 --repo ~/projects/kube-dc-fleet
   kube-dc bootstrap anchors apply eu/dc1 --dry-run
   kube-dc bootstrap anchors apply acme --ssh-host-map host5-a=10.0.0.5 --ssh-host-map host6-a=10.0.0.6`,
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -679,7 +679,7 @@ func TestPAYGUIDElsewhere_NestedClusters(t *testing.T) {
 
 func TestValidatePAYG(t *testing.T) {
 	base := func() *InitOptions {
-		return &InitOptions{Name: "atlantis", Domain: "kdc.atlantis.example.com", Sets: map[string]string{}}
+		return &InitOptions{Name: "east1", Domain: "kdc.east1.example.com", Sets: map[string]string{}}
 	}
 	cases := []struct {
 		name    string
@@ -825,7 +825,7 @@ func paygAddClusterRunner(t *testing.T, repo string) *fakeScriptRunner {
 				return nil
 			}
 			files := map[string]string{
-				"cluster-config.env":  "CLUSTER_NAME=atlantis\nDOMAIN=kdc.atlantis.example.com\nEXT_NET_VLAN_ID=CHANGEME\nEXT_NET_INTERFACE=CHANGEME\n\n# --- Component versions (release pins) ---\nPAYG_METERING_IMAGE=" + testMeteringImage + "\n",
+				"cluster-config.env":  "CLUSTER_NAME=east1\nDOMAIN=kdc.east1.example.com\nEXT_NET_VLAN_ID=CHANGEME\nEXT_NET_INTERFACE=CHANGEME\n\n# --- Component versions (release pins) ---\nPAYG_METERING_IMAGE=" + testMeteringImage + "\n",
 				"infrastructure.yaml": "apiVersion: kustomize.toolkit.fluxcd.io/v1\nkind: Kustomization\nmetadata:\n  name: infra-cni\n  namespace: flux-system\n",
 				"platform.yaml":       addClusterPlatformYAML,
 				"kustomization.yaml":  scaffoldRootKustomization,
@@ -870,7 +870,7 @@ func TestScaffold_PAYG(t *testing.T) {
 			writePAYGStarter(t, repo)
 			var out bytes.Buffer
 			err := Scaffold(context.Background(), ScaffoldOptions{
-				Plan:           &Plan{ClusterName: "atlantis", Domain: "kdc.atlantis.example.com", Preset: PresetCloudPublicVLAN},
+				Plan:           &Plan{ClusterName: "east1", Domain: "kdc.east1.example.com", Preset: PresetCloudPublicVLAN},
 				FleetRepo:      repo,
 				NodeExternalIP: "203.0.113.52",
 				Sets:           paygSets("stripe"),
@@ -881,7 +881,7 @@ func TestScaffold_PAYG(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Scaffold: %v\n%s", err, out.String())
 			}
-			clusterDir := filepath.Join(repo, "clusters", "atlantis")
+			clusterDir := filepath.Join(repo, "clusters", "east1")
 			env := readFile(t, filepath.Join(clusterDir, "cluster-config.env"))
 			kust := readFile(t, filepath.Join(clusterDir, "kustomization.yaml"))
 			platform := readFile(t, filepath.Join(clusterDir, "platform.yaml"))
@@ -906,8 +906,8 @@ func TestScaffold_PAYG(t *testing.T) {
 				return
 			}
 			if envValue(env, PAYGEnabledKey) != "true" || !v4UUID.MatchString(envValue(env, PAYGInstallationUIDKey)) ||
-				envValue(env, PAYGInstallationBindingKey) != "atlantis/kdc.atlantis.example.com" ||
-				envValue(env, PAYGProductsRevisionKey) != "atlantis-20261001" || envValue(env, billingProviderKey) != "stripe" {
+				envValue(env, PAYGInstallationBindingKey) != "east1/kdc.east1.example.com" ||
+				envValue(env, PAYGProductsRevisionKey) != "east1-20261001" || envValue(env, billingProviderKey) != "stripe" {
 				t.Errorf("PAYG keys not scaffolded:\n%s", env)
 			}
 			if layerErr != nil || secretErr != nil {
@@ -931,7 +931,7 @@ func TestScaffold_PAYG_RefusedWithoutKubeDCBilling(t *testing.T) {
 	writeStarterScaffoldSources(t, repo)
 	writePAYGStarter(t, repo)
 	err := Scaffold(context.Background(), ScaffoldOptions{
-		Plan:           &Plan{ClusterName: "atlantis", Domain: "kdc.atlantis.example.com", Preset: PresetCloudPublicVLAN},
+		Plan:           &Plan{ClusterName: "east1", Domain: "kdc.east1.example.com", Preset: PresetCloudPublicVLAN},
 		FleetRepo:      repo,
 		NodeExternalIP: "203.0.113.52",
 		Sets:           paygSets(""),

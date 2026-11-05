@@ -418,7 +418,7 @@ func (f *fakeK8s) SetNodeLabel(context.Context, string, string, string) error {
 	return nil
 }
 
-// The gateway check is the one that would have caught mod I-17 and the crk/jed
+// The gateway check is the one that would have caught a missing tenant gateway and a
 // bastion-subnet bug, all of which passed acceptance with tenant egress dead.
 func TestTenantEgressGateway(t *testing.T) {
 	const arpReply = "ARPREPLY"

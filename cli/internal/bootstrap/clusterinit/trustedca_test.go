@@ -95,7 +95,7 @@ func TestLoadTrustedCABundleValidatesCertificateOnlyMaterial(t *testing.T) {
 }
 
 func TestWriteTrustedCAWiresAllChartTrustConsumers(t *testing.T) {
-	repo := seedScaffold(t, "atlantis")
+	repo := seedScaffold(t, "east1")
 	cert, _ := testCAPEM(t, true)
 	path := filepath.Join(t.TempDir(), "ca.pem")
 	if err := os.WriteFile(path, cert, 0o600); err != nil {
@@ -105,10 +105,10 @@ func TestWriteTrustedCAWiresAllChartTrustConsumers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteTrustedCA(repo, "atlantis", material, nil); err != nil {
+	if err := WriteTrustedCA(repo, "east1", material, nil); err != nil {
 		t.Fatalf("WriteTrustedCA: %v", err)
 	}
-	clusterDir := filepath.Join(repo, "clusters", "atlantis")
+	clusterDir := filepath.Join(repo, "clusters", "east1")
 	manifest, err := os.ReadFile(filepath.Join(clusterDir, trustedCAFileName))
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func TestWriteTrustedCAWiresAllChartTrustConsumers(t *testing.T) {
 		values["BACKEND_TRUSTED_CA_FILENAME"] != trustedCAKey {
 		t.Fatalf("trust env not wired: %+v", values)
 	}
-	if err := WriteTrustedCA(repo, "atlantis", material, nil); err != nil {
+	if err := WriteTrustedCA(repo, "east1", material, nil); err != nil {
 		t.Fatalf("idempotent WriteTrustedCA: %v", err)
 	}
 }

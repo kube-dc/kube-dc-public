@@ -54,7 +54,7 @@ func localSpec() ObjectStorageSpec {
 // --- overlay rendering ---
 
 func TestObjectStorageOverlay_FlatName(t *testing.T) {
-	body := objectStorageOverlayYAML("atlantis", localSpec())
+	body := objectStorageOverlayYAML("east1", localSpec())
 	for _, want := range []string{
 		"- ../../../infrastructure/object-storage/modes/rook-ceph-local",
 		"- ../../../infrastructure/object-storage/bucket-provisioning",
@@ -81,7 +81,7 @@ func TestObjectStorageOverlay_NestedNameDepth(t *testing.T) {
 func TestObjectStorageOverlay_NoExposure(t *testing.T) {
 	spec := localSpec()
 	spec.NoS3Exposure = true
-	body := objectStorageOverlayYAML("atlantis", spec)
+	body := objectStorageOverlayYAML("east1", spec)
 	if strings.Contains(body, "exposure") && strings.Contains(body, "- ../../../infrastructure/object-storage/exposure") {
 		t.Errorf("--no-s3-exposure must omit the exposure resource\nFULL:\n%s", body)
 	}
@@ -214,12 +214,12 @@ func TestObjectStorageEnvKeys_PerMode(t *testing.T) {
 		{
 			"local with device",
 			ObjectStorageSpec{Mode: RookCephLocal, OSDNode: "host6-a", OSDSizeGB: 500, OSDDevice: "sdb"},
-			[]string{"OBJECT_STORAGE_MODE=rook-ceph-local", "S3_HOSTNAME=s3.atlantis.example.com", "CEPH_LOCAL_OSD_NODE=host6-a", "CEPH_LOCAL_OSD_SIZE_GB=500", "CEPH_LOCAL_OSD_DEVICE=sdb", "CEPH_REPLICATION_SIZE=1"},
+			[]string{"OBJECT_STORAGE_MODE=rook-ceph-local", "S3_HOSTNAME=s3.east1.example.com", "CEPH_LOCAL_OSD_NODE=host6-a", "CEPH_LOCAL_OSD_SIZE_GB=500", "CEPH_LOCAL_OSD_DEVICE=sdb", "CEPH_REPLICATION_SIZE=1"},
 		},
 		{
 			"local default device omitted",
 			ObjectStorageSpec{Mode: RookCephLocal, OSDNode: "host6-a", OSDSizeGB: 500},
-			[]string{"OBJECT_STORAGE_MODE=rook-ceph-local", "S3_HOSTNAME=s3.atlantis.example.com", "CEPH_LOCAL_OSD_NODE=host6-a", "CEPH_LOCAL_OSD_SIZE_GB=500", "CEPH_REPLICATION_SIZE=1"},
+			[]string{"OBJECT_STORAGE_MODE=rook-ceph-local", "S3_HOSTNAME=s3.east1.example.com", "CEPH_LOCAL_OSD_NODE=host6-a", "CEPH_LOCAL_OSD_SIZE_GB=500", "CEPH_REPLICATION_SIZE=1"},
 		},
 		{
 			"multi-node sorted slots",
@@ -228,7 +228,7 @@ func TestObjectStorageEnvKeys_PerMode(t *testing.T) {
 			}},
 			[]string{
 				"OBJECT_STORAGE_MODE=rook-ceph-multi-node",
-				"S3_HOSTNAME=s3.atlantis.example.com",
+				"S3_HOSTNAME=s3.east1.example.com",
 				"CEPH_REPLICATION_SIZE=2",
 				"CEPH_NODE_1=host5-a", "CEPH_NODE_1_DEVICE=sdb",
 				"CEPH_NODE_2=host6-a", "CEPH_NODE_2_DEVICE=sdb",
@@ -238,12 +238,12 @@ func TestObjectStorageEnvKeys_PerMode(t *testing.T) {
 		{
 			"pvc with defaults elided",
 			ObjectStorageSpec{Mode: RookCephPVC, StorageClass: "fast-ssd"},
-			[]string{"OBJECT_STORAGE_MODE=rook-ceph-pvc", "S3_HOSTNAME=s3.atlantis.example.com", "CEPH_OSD_STORAGE_CLASS=fast-ssd"},
+			[]string{"OBJECT_STORAGE_MODE=rook-ceph-pvc", "S3_HOSTNAME=s3.east1.example.com", "CEPH_OSD_STORAGE_CLASS=fast-ssd"},
 		},
 		{
 			"pvc explicit counts",
 			ObjectStorageSpec{Mode: RookCephPVC, StorageClass: "fast-ssd", OSDCount: 3, OSDVolumeSizeGB: 400},
-			[]string{"OBJECT_STORAGE_MODE=rook-ceph-pvc", "S3_HOSTNAME=s3.atlantis.example.com", "CEPH_OSD_STORAGE_CLASS=fast-ssd", "CEPH_OSD_COUNT=3", "CEPH_OSD_VOLUME_SIZE_GB=400"},
+			[]string{"OBJECT_STORAGE_MODE=rook-ceph-pvc", "S3_HOSTNAME=s3.east1.example.com", "CEPH_OSD_STORAGE_CLASS=fast-ssd", "CEPH_OSD_COUNT=3", "CEPH_OSD_VOLUME_SIZE_GB=400"},
 		},
 		{
 			"explicit s3 hostname wins",
@@ -261,7 +261,7 @@ func TestObjectStorageEnvKeys_PerMode(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			kv := objectStorageEnvKeys("atlantis.example.com", tc.spec)
+			kv := objectStorageEnvKeys("east1.example.com", tc.spec)
 			var got []string
 			for _, p := range kv {
 				got = append(got, p[0]+"="+p[1])
@@ -292,19 +292,19 @@ func seedScaffold(t *testing.T, clusterName string) string {
 	}
 	write("platform.yaml", genPlatformYAML)
 	write("kustomization.yaml", genKustomizationYAML)
-	write("cluster-config.env", "CLUSTER_NAME="+clusterName+"\nDOMAIN=atlantis.example.com\n")
+	write("cluster-config.env", "CLUSTER_NAME="+clusterName+"\nDOMAIN=east1.example.com\n")
 	return repo
 }
 
 func TestWriteObjectStorage_EndToEnd(t *testing.T) {
-	repo := seedScaffold(t, "atlantis")
+	repo := seedScaffold(t, "east1")
 	spec := ObjectStorageSpec{Mode: RookCephMultiNode, CephNodes: map[string]string{
 		"host5-a": "sdb", "host6-a": "sdb", "host7-a": "sdc",
 	}}
-	if err := WriteObjectStorage(repo, "atlantis", "atlantis.example.com", spec, nil); err != nil {
+	if err := WriteObjectStorage(repo, "east1", "east1.example.com", spec, nil); err != nil {
 		t.Fatalf("WriteObjectStorage: %v", err)
 	}
-	dir := filepath.Join(repo, "clusters", "atlantis")
+	dir := filepath.Join(repo, "clusters", "east1")
 
 	overlay, err := os.ReadFile(filepath.Join(dir, "object-storage", "kustomization.yaml"))
 	if err != nil {
@@ -318,7 +318,7 @@ func TestWriteObjectStorage_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Flux layer not written: %v", err)
 	}
-	if !strings.Contains(string(flux), "path: ./clusters/atlantis/object-storage") {
+	if !strings.Contains(string(flux), "path: ./clusters/east1/object-storage") {
 		t.Errorf("Flux layer wrong path:\n%s", flux)
 	}
 
@@ -335,7 +335,7 @@ func TestWriteObjectStorage_EndToEnd(t *testing.T) {
 	env, _ := os.ReadFile(filepath.Join(dir, "cluster-config.env"))
 	for _, want := range []string{
 		"OBJECT_STORAGE_MODE=rook-ceph-multi-node",
-		"S3_HOSTNAME=s3.atlantis.example.com",
+		"S3_HOSTNAME=s3.east1.example.com",
 		"CEPH_NODE_1=host5-a", "CEPH_NODE_3_DEVICE=sdc",
 	} {
 		if !strings.Contains(string(env), want) {
@@ -349,12 +349,12 @@ func TestWriteObjectStorage_DisabledDegradedWiring(t *testing.T) {
 	// key + the grafana-pg backup-path patches — but never the
 	// storage wiring (no overlay, no Flux layer, no dependsOn: a
 	// dangling dependsOn would block platform forever).
-	repo := seedScaffold(t, "atlantis")
-	if err := WriteObjectStorage(repo, "atlantis", "atlantis.example.com",
+	repo := seedScaffold(t, "east1")
+	if err := WriteObjectStorage(repo, "east1", "east1.example.com",
 		ObjectStorageSpec{Mode: RookDisabled}, nil); err != nil {
 		t.Fatalf("disabled wiring: %v", err)
 	}
-	dir := filepath.Join(repo, "clusters", "atlantis")
+	dir := filepath.Join(repo, "clusters", "east1")
 
 	// Storage wiring absent.
 	if _, err := os.Stat(filepath.Join(dir, "object-storage")); !os.IsNotExist(err) {
@@ -388,7 +388,7 @@ func TestWriteObjectStorage_DisabledDegradedWiring(t *testing.T) {
 
 	// Idempotent: second run changes nothing (exact marker match).
 	before := string(platform)
-	if err := WriteObjectStorage(repo, "atlantis", "atlantis.example.com",
+	if err := WriteObjectStorage(repo, "east1", "east1.example.com",
 		ObjectStorageSpec{Mode: RookDisabled}, nil); err != nil {
 		t.Fatalf("second disabled run: %v", err)
 	}
@@ -409,8 +409,8 @@ func TestPatchPlatformDisabled_ExistingPatchesBlockErrors(t *testing.T) {
 }
 
 func TestWriteObjectStorage_StubModeErrors(t *testing.T) {
-	repo := seedScaffold(t, "atlantis")
-	err := WriteObjectStorage(repo, "atlantis", "atlantis.example.com",
+	repo := seedScaffold(t, "east1")
+	err := WriteObjectStorage(repo, "east1", "east1.example.com",
 		ObjectStorageSpec{Mode: RookExternalS3}, nil)
 	if err == nil {
 		t.Fatal("stub mode must error (defense in depth — Validate normally refuses it upstream)")

@@ -19,7 +19,7 @@
 //   - IPs:        RFC 5737 documentation ranges (203.0.113.x,
 //     198.51.100.x, 192.0.2.x)
 //   - domains:    *.example.com / *.example.net
-//   - clusters:   fictional names (atlantis, prod1, eu/dc1, …)
+//   - clusters:   fictional names (east1, prod1, eu/dc1, …)
 //   - nodes:      HOST5-A / host5-a / node-a1 shapes
 //   - identities: alice / ops@example.com / user@example.com
 //
@@ -97,6 +97,14 @@ var bannedPatterns = []struct {
 	{re: regexp.MustCompile(`(?i)datapark`), reason: "real customer name — use a fictional name or just \"an on-prem install\""},
 	{re: regexp.MustCompile(`10\.191\.`), reason: "real customer LAN/public ranges — use RFC 5737 documentation addresses"},
 	{re: regexp.MustCompile(`(?i)kube-dev\.inf\.`), reason: "real customer cluster domain — use cluster.example.com"},
+	{re: regexp.MustCompile(`(?i)atlantis`), reason: "real installation codename — use a fictional cluster name (east1)"},
+	{re: regexp.MustCompile(`(?i)webdock`), reason: "real customer name — use a fictional name (metal1, partner-portal)"},
+	{re: regexp.MustCompile(`(?i)\bdiia\b|diia-`), reason: "real customer name — use corp-dc01 shapes"},
+	{re: regexp.MustCompile(`(?i)\bboc\b`), reason: "real customer name — say \"a hosting customer\""},
+	{re: regexp.MustCompile(`(?i)cs-hosting|cs[/-]next|cs%2Fnext`), reason: "real CloudSigma installation names — use eu/dc1 shapes"},
+	{re: regexp.MustCompile(`(?i)\b(crk|jed)\b`), reason: "real CloudSigma site names — use dc3/dc4 shapes"},
+	{re: regexp.MustCompile(`(atlantis|cloud)-class`), reason: "installation-named topology classes — use the class letter and shape"},
+	{re: regexp.MustCompile(`(?i)jumbolot`), reason: "real project name — use acme/demo shapes; take live targets from environment variables"},
 }
 
 // This denylist only catches infrastructure we already know about. It is a
@@ -262,4 +270,29 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// The banned-name patterns catch every spelling seen on the mirror, and do
+// not reject ordinary identifiers.
+func TestBannedNamePatternsSpellingsAndWords(t *testing.T) {
+	hits := []string{"Atlantis", "WEBDOCK", "kubedc.diia-dcir", "the diia site", "BOC", "boc", "JED", "crk", "cs/next", "cs-next", "cs%2Fnext", "cs-hosting-1", "shalb-jumbolot", "atlantis-class"}
+	clean := []string{"radiiArray", "rejected", "blocked", "jedi", "crkt", "east1", "eu/dc1", "eu-dc1", "corp-dc01", "dc3"}
+	match := func(s string) bool {
+		for _, b := range bannedPatterns {
+			if b.re.MatchString(s) && (b.allow == nil || !b.allow.MatchString(s)) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, s := range hits {
+		if !match(s) {
+			t.Errorf("%q is not caught", s)
+		}
+	}
+	for _, s := range clean {
+		if match(s) {
+			t.Errorf("%q is falsely caught", s)
+		}
+	}
 }

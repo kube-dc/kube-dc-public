@@ -22,7 +22,7 @@ import (
 // kube-ovn's legacy external-gateway handler picks that address itself when
 // it first creates the port — and on a greenfield cluster the pick was never
 // recorded as an OvnEip / in IPAM, so the OvnSnatRule never published it and
-// the first tenant EIP was allocated the SAME address (webdock 2026-08-31;
+// the first tenant EIP was allocated the SAME address (metal1 2026-08-31;
 // kube-dc docs/internal/issues/ovn-cluster-ext-cloud-lrp-missing.md). The fleet now
 // DECLARES the OvnEip (infra-mgmt-snat, applied before the ConfigMap that
 // wakes the handler, so the handler adopts it) and this file gives the

@@ -15,7 +15,7 @@ import (
 //   1. **Greenfield**: no fleet repo on disk, no key. `init` runs
 //      `bootstrap/generate-age-key.sh` and registers the operator
 //      as the sole `.sops.yaml` recipient.
-//   2. **Existing-fleet, operator enrolled** (the atlantis
+//   2. **Existing-fleet, operator enrolled** (the east1
 //      path): the operator already has a key, the pubkey is in
 //      `.sops.yaml`'s recipients — proceed silently.
 //   3. **Existing-fleet, NOT enrolled**: the pubkey isn't in

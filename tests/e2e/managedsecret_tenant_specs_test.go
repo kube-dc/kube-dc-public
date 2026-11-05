@@ -454,7 +454,7 @@ var _ = Describe("M1-T12b E02: developer cannot read values from another project
 		}
 		target := list.Items[0].Name
 
-		By("developer (only authorised on `docs`) reads from `jumbolot` — expect 403")
+		By("developer (only authorised on `docs`) reads from the secondary project — expect 403")
 		status, body, err := tenant.devUser.Backend.Do(ctxLocal,
 			"GET",
 			fmt.Sprintf("/api/secrets/%s/%s?includeValue=true", secondaryNS, target),

@@ -94,14 +94,14 @@ func sharedGPUScaffoldConfig() GPUConfig {
 }
 
 func TestWriteGPUInfrastructureSharedEndToEndAndIdempotent(t *testing.T) {
-	repo := seedGPUScaffold(t, "atlantis", true)
+	repo := seedGPUScaffold(t, "east1", true)
 	g := sharedGPUScaffoldConfig()
 	var out bytes.Buffer
-	if err := WriteGPUInfrastructure(repo, "atlantis", g, &out); err != nil {
+	if err := WriteGPUInfrastructure(repo, "east1", g, &out); err != nil {
 		t.Fatal(err)
 	}
 
-	rule := readGPUScaffoldFile(t, repo, "atlantis", "gpu-node-modes/nodefeaturerule.yaml")
+	rule := readGPUScaffoldFile(t, repo, "east1", "gpu-node-modes/nodefeaturerule.yaml")
 	for _, want := range []string{
 		"feature: system.name", `value: ["gpu-worker-a"]`,
 		"feature: pci.device", `value: ["10de"]`, `value: ["0300", "0302"]`,
@@ -116,7 +116,7 @@ func TestWriteGPUInfrastructureSharedEndToEndAndIdempotent(t *testing.T) {
 		t.Fatalf("disabled node received an ownership rule:\n%s", rule)
 	}
 
-	flux := readGPUScaffoldFile(t, repo, "atlantis", "gpu.yaml")
+	flux := readGPUScaffoldFile(t, repo, "east1", "gpu.yaml")
 	for _, want := range []string{
 		"name: gpu-node-mode", "name: gpu-operator", "name: hami",
 		"name: nvidia-driver-daemonset", "name: nvidia-container-toolkit-daemonset",
@@ -131,21 +131,21 @@ func TestWriteGPUInfrastructureSharedEndToEndAndIdempotent(t *testing.T) {
 		t.Fatalf("operator output does not state closed gates: %q", out.String())
 	}
 
-	firstKustomization := readGPUScaffoldFile(t, repo, "atlantis", "kustomization.yaml")
+	firstKustomization := readGPUScaffoldFile(t, repo, "east1", "kustomization.yaml")
 	if strings.Count(firstKustomization, "- gpu.yaml") != 1 {
 		t.Fatalf("gpu resource count after first write:\n%s", firstKustomization)
 	}
-	if err := WriteGPUInfrastructure(repo, "atlantis", g, nil); err != nil {
+	if err := WriteGPUInfrastructure(repo, "east1", g, nil); err != nil {
 		t.Fatal(err)
 	}
-	secondKustomization := readGPUScaffoldFile(t, repo, "atlantis", "kustomization.yaml")
+	secondKustomization := readGPUScaffoldFile(t, repo, "east1", "kustomization.yaml")
 	if firstKustomization != secondKustomization {
 		t.Fatalf("idempotent write changed kustomization:\nfirst:\n%s\nsecond:\n%s", firstKustomization, secondKustomization)
 	}
 }
 
 func TestWriteGPUInfrastructureDRAFirst(t *testing.T) {
-	repo := seedGPUScaffold(t, "atlantis", false)
+	repo := seedGPUScaffold(t, "east1", false)
 	if err := os.MkdirAll(filepath.Join(repo, "infrastructure", "hami-dra"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -156,14 +156,14 @@ func TestWriteGPUInfrastructureDRAFirst(t *testing.T) {
 	g := sharedGPUScaffoldConfig()
 	g.SharedAllocator = GPUSharedAllocatorDRA
 	g.NodeModes = map[string]GPUNodeMode{"gpu-worker-a": GPUNodePodHAMiDRA}
-	if err := WriteGPUInfrastructure(repo, "atlantis", g, nil); err != nil {
+	if err := WriteGPUInfrastructure(repo, "east1", g, nil); err != nil {
 		t.Fatal(err)
 	}
-	rule := readGPUScaffoldFile(t, repo, "atlantis", "gpu-node-modes/nodefeaturerule.yaml")
+	rule := readGPUScaffoldFile(t, repo, "east1", "gpu-node-modes/nodefeaturerule.yaml")
 	if !strings.Contains(rule, "kube-dc.com/gpu.workload-mode: pod-hami-dra") || !strings.Contains(rule, "nvidia.com/gpu.workload.config: container") {
 		t.Fatalf("DRA node ownership is incomplete:\n%s", rule)
 	}
-	flux := readGPUScaffoldFile(t, repo, "atlantis", "gpu.yaml")
+	flux := readGPUScaffoldFile(t, repo, "east1", "gpu.yaml")
 	for _, want := range []string{"name: hami-dra", "path: ./infrastructure/hami-dra", "name: hami-dra-driver-kubelet-plugin", "HAMI_DRA_CANARY_SUSPENDED: \"false\""} {
 		if !strings.Contains(flux, want) {
 			t.Errorf("DRA flux stack missing %q:\n%s", want, flux)
@@ -175,16 +175,16 @@ func TestWriteGPUInfrastructureDRAFirst(t *testing.T) {
 }
 
 func TestWriteGPUInfrastructureMixedModesAreSorted(t *testing.T) {
-	repo := seedGPUScaffold(t, "atlantis", true)
+	repo := seedGPUScaffold(t, "east1", true)
 	g := sharedGPUScaffoldConfig()
 	g.NodeModes = map[string]GPUNodeMode{
 		"gpu-worker-z": GPUNodeVMPassthrough,
 		"gpu-worker-a": GPUNodePodHAMi,
 	}
-	if err := WriteGPUInfrastructure(repo, "atlantis", g, nil); err != nil {
+	if err := WriteGPUInfrastructure(repo, "east1", g, nil); err != nil {
 		t.Fatal(err)
 	}
-	rule := readGPUScaffoldFile(t, repo, "atlantis", "gpu-node-modes/nodefeaturerule.yaml")
+	rule := readGPUScaffoldFile(t, repo, "east1", "gpu-node-modes/nodefeaturerule.yaml")
 	a := strings.Index(rule, "gpu-worker-a-pod-hami")
 	z := strings.Index(rule, "gpu-worker-z-vm-passthrough")
 	if a < 0 || z < 0 || a >= z {
@@ -196,16 +196,16 @@ func TestWriteGPUInfrastructureMixedModesAreSorted(t *testing.T) {
 }
 
 func TestWriteGPUInfrastructurePassthroughOnlyDoesNotRequireHAMi(t *testing.T) {
-	repo := seedGPUScaffold(t, "atlantis", false)
+	repo := seedGPUScaffold(t, "east1", false)
 	g := GPUConfig{
 		Platform:     GPUPlatformEnabled,
 		DriverSource: GPUDriverOperator,
 		NodeModes:    map[string]GPUNodeMode{"gpu-worker-a": GPUNodeVMPassthrough},
 	}
-	if err := WriteGPUInfrastructure(repo, "atlantis", g, nil); err != nil {
+	if err := WriteGPUInfrastructure(repo, "east1", g, nil); err != nil {
 		t.Fatal(err)
 	}
-	flux := readGPUScaffoldFile(t, repo, "atlantis", "gpu.yaml")
+	flux := readGPUScaffoldFile(t, repo, "east1", "gpu.yaml")
 	if strings.Contains(flux, "name: hami") || strings.Contains(flux, "./infrastructure/hami") {
 		t.Fatalf("passthrough-only stack unexpectedly enables HAMi:\n%s", flux)
 	}
@@ -214,11 +214,11 @@ func TestWriteGPUInfrastructurePassthroughOnlyDoesNotRequireHAMi(t *testing.T) {
 func TestWriteGPUInfrastructureNoOpModes(t *testing.T) {
 	for _, platform := range []GPUPlatformMode{"", GPUPlatformDisabled, GPUPlatformDetectOnly} {
 		t.Run(string(platform), func(t *testing.T) {
-			repo := seedScaffold(t, "atlantis")
-			if err := WriteGPUInfrastructure(repo, "atlantis", GPUConfig{Platform: platform}, nil); err != nil {
+			repo := seedScaffold(t, "east1")
+			if err := WriteGPUInfrastructure(repo, "east1", GPUConfig{Platform: platform}, nil); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := os.Stat(filepath.Join(repo, "clusters", "atlantis", "gpu.yaml")); !errors.Is(err, os.ErrNotExist) {
+			if _, err := os.Stat(filepath.Join(repo, "clusters", "east1", "gpu.yaml")); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("platform %q wrote gpu.yaml: %v", platform, err)
 			}
 		})
@@ -254,8 +254,8 @@ func TestWriteGPUInfrastructureDeferredPathsFailClosed(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			repo := seedGPUScaffold(t, "atlantis", true)
-			if err := WriteGPUInfrastructure(repo, "atlantis", tc.g, nil); !errors.Is(err, tc.want) {
+			repo := seedGPUScaffold(t, "east1", true)
+			if err := WriteGPUInfrastructure(repo, "east1", tc.g, nil); !errors.Is(err, tc.want) {
 				t.Fatalf("got %v, want %v", err, tc.want)
 			}
 		})
@@ -263,32 +263,32 @@ func TestWriteGPUInfrastructureDeferredPathsFailClosed(t *testing.T) {
 }
 
 func TestWriteGPUInfrastructureRequiresSharedPackages(t *testing.T) {
-	repo := seedScaffold(t, "atlantis")
-	err := WriteGPUInfrastructure(repo, "atlantis", sharedGPUScaffoldConfig(), nil)
+	repo := seedScaffold(t, "east1")
+	err := WriteGPUInfrastructure(repo, "east1", sharedGPUScaffoldConfig(), nil)
 	if err == nil || !strings.Contains(err.Error(), "infrastructure/gpu-operator") {
 		t.Fatalf("missing GPU Operator package: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(repo, "infrastructure/gpu-operator"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	err = WriteGPUInfrastructure(repo, "atlantis", sharedGPUScaffoldConfig(), nil)
+	err = WriteGPUInfrastructure(repo, "east1", sharedGPUScaffoldConfig(), nil)
 	if err == nil || !strings.Contains(err.Error(), "infrastructure/hami") {
 		t.Fatalf("missing HAMi package: %v", err)
 	}
 }
 
 func TestWriteGPUInfrastructureRejectsSharedProfileContractDrift(t *testing.T) {
-	repo := seedGPUScaffold(t, "atlantis", true)
+	repo := seedGPUScaffold(t, "east1", true)
 	path := filepath.Join(repo, "platform", "kube-dc", "helmrelease.yaml")
 	drifted := strings.Replace(installerSharedProfileFixture, "nvidia.com/gpumem", "requests.nvidia.com/gpumem", 1)
 	if err := os.WriteFile(path, []byte(drifted), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := WriteGPUInfrastructure(repo, "atlantis", sharedGPUScaffoldConfig(), nil)
+	err := WriteGPUInfrastructure(repo, "east1", sharedGPUScaffoldConfig(), nil)
 	if !errors.Is(err, ErrGPUProfileContractDrift) || !strings.Contains(err.Error(), "memoryResource") {
 		t.Fatalf("profile contract drift error=%v", err)
 	}
-	if _, statErr := os.Stat(filepath.Join(repo, "clusters", "atlantis", "gpu.yaml")); !errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := os.Stat(filepath.Join(repo, "clusters", "east1", "gpu.yaml")); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("contract drift wrote gpu.yaml: %v", statErr)
 	}
 }
@@ -297,8 +297,8 @@ func TestScaffoldGPUPreflightRunsBeforeClusterScript(t *testing.T) {
 	runner := &fakeScriptRunner{}
 	err := Scaffold(context.Background(), ScaffoldOptions{
 		Plan: &Plan{
-			ClusterName: "atlantis",
-			Domain:      "kdc.atlantis.example.com",
+			ClusterName: "east1",
+			Domain:      "kdc.east1.example.com",
 			Preset:      PresetCloudPublicVLAN,
 		},
 		FleetRepo:      t.TempDir(),
@@ -355,21 +355,21 @@ func TestGPUObjectNameAndPreview(t *testing.T) {
 	if strings.Join(files, "|") != strings.Join(want, "|") {
 		t.Fatalf("preview files=%v", files)
 	}
-	if got := gpuFiles("atlantis", GPUConfig{Platform: GPUPlatformDetectOnly}); got != nil {
+	if got := gpuFiles("east1", GPUConfig{Platform: GPUPlatformDetectOnly}); got != nil {
 		t.Fatalf("detect-only preview=%v", got)
 	}
 }
 
 func TestGPUGeneratedYAMLParses(t *testing.T) {
 	documents := map[string]string{
-		"node feature rule": gpuNodeFeatureRuleYAML("atlantis", map[string]GPUNodeMode{
+		"node feature rule": gpuNodeFeatureRuleYAML("east1", map[string]GPUNodeMode{
 			"gpu-a": GPUNodePodHAMi,
 			"gpu-b": GPUNodeVMPassthrough,
 		}),
 		"node mode kustomization": gpuNodeModesKustomizationYAML(),
-		"flux with hami":          gpuFluxYAML("atlantis", true, GPUSharedAllocatorLegacy),
-		"flux with hami dra":      gpuFluxYAML("atlantis", true, GPUSharedAllocatorDRA),
-		"flux without hami":       gpuFluxYAML("atlantis", false, GPUSharedAllocatorLegacy),
+		"flux with hami":          gpuFluxYAML("east1", true, GPUSharedAllocatorLegacy),
+		"flux with hami dra":      gpuFluxYAML("east1", true, GPUSharedAllocatorDRA),
+		"flux without hami":       gpuFluxYAML("east1", false, GPUSharedAllocatorLegacy),
 	}
 	for name, body := range documents {
 		t.Run(name, func(t *testing.T) {

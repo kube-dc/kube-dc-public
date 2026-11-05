@@ -105,12 +105,12 @@ func TestFinalizeOIDCCutoverRefusesWithoutSSH(t *testing.T) {
 // believing the name selected the right one. This command edits apiserver
 // configs; "which cluster" is the one thing not to be wrong about.
 func TestCutoverRerunCommandCarriesNoClusterName(t *testing.T) {
-	got := cutoverRerunCommand(&clusterinit.InitOptions{Name: "webdock", Domain: "webdock.online"})
+	got := cutoverRerunCommand(&clusterinit.InitOptions{Name: "metal1", Domain: "metal1.online"})
 	if got != "kube-dc bootstrap oidc-cutover" {
 		t.Fatalf("re-run hint must not name a cluster, got %q", got)
 	}
 	// --ssh-user IS load-bearing: without it every node is probed as root.
-	got = cutoverRerunCommand(&clusterinit.InitOptions{Name: "webdock", SSHHost: "ubuntu@10.0.0.5"})
+	got = cutoverRerunCommand(&clusterinit.InitOptions{Name: "metal1", SSHHost: "ubuntu@10.0.0.5"})
 	if got != "kube-dc bootstrap oidc-cutover --ssh-user ubuntu" {
 		t.Fatalf("re-run hint must carry the SSH user, got %q", got)
 	}
@@ -120,19 +120,19 @@ func TestCutoverRerunCommandCarriesNoClusterName(t *testing.T) {
 // happen, and it has to land on someone who has never heard of an OIDC webhook.
 func TestCutoverOutstandingBannerStatesTheConsequence(t *testing.T) {
 	var b strings.Builder
-	writeCutoverOutstandingBanner(&b, &clusterinit.InitOptions{Name: "webdock", Domain: "webdock.online"})
+	writeCutoverOutstandingBanner(&b, &clusterinit.InitOptions{Name: "metal1", Domain: "metal1.online"})
 	got := b.String()
 	for _, want := range []string{
-		"CANNOT BE LOGGED INTO",            // the consequence, not the mechanism
-		"401",                              // what the operator will actually see
-		"kube-dc bootstrap oidc-cutover",   // the fix
-		"kube-dc bootstrap accept webdock", // how to confirm it worked
+		"CANNOT BE LOGGED INTO",           // the consequence, not the mechanism
+		"401",                             // what the operator will actually see
+		"kube-dc bootstrap oidc-cutover",  // the fix
+		"kube-dc bootstrap accept metal1", // how to confirm it worked
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("banner is missing %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, "oidc-cutover webdock") {
+	if strings.Contains(got, "oidc-cutover metal1") {
 		t.Errorf("banner must not name a cluster on the cutover command:\n%s", got)
 	}
 }

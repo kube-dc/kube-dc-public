@@ -200,7 +200,7 @@ func TestPodList_EmptyListFailsWithoutInventingReplicas(t *testing.T) {
 // --post-file=-`. This is the M0-T06 batch-2 review's P1 fix
 // (argv exposure of OpenBao shares is unacceptable), updated for
 // OpenBao 2.5.3 which doesn't support `bao operator unseal -`
-// as a stdin form (atlantis bring-up 2026-05-26 — bao treats
+// as a stdin form (east1 bring-up 2026-05-26 — bao treats
 // `-` as a literal key and rejects it).
 func TestUnseal_FeedsShareViaStdinNotArgv(t *testing.T) {
 	var capturedArgv []string

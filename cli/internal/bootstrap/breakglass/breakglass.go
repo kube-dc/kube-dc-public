@@ -180,7 +180,7 @@ type AdoptOpts struct {
 	// --help: the file lands in the working tree and the operator
 	// commits it by hand. Automated callers set this so the fleet repo
 	// is push-current with no further operator action, closing the
-	// exact gap that left crk/jed/next without a recovery kubeconfig
+	// exact gap that left three clusters without a recovery kubeconfig
 	// in the fleet repo: `bootstrap init` never ran `adopt` at all, and
 	// even where an operator ran it manually, committing it was a
 	// separate step that was easy to forget (2026-09-04).
@@ -283,7 +283,7 @@ var ErrDirtyWorkingTree = errors.New("breakglass: fleet repo has uncommitted cha
 // sweep any such changes into the break-glass commit and push them.
 //
 // allow, when non-empty, is one path (relative to opts.FleetRoot, e.g.
-// "clusters/jed/break-glass-kubeconfig.enc.yaml") excluded from the dirty
+// "clusters/dc3/break-glass-kubeconfig.enc.yaml") excluded from the dirty
 // check — used for the SECOND call site (see commitBreakGlass) so the
 // break-glass file's own expected change doesn't self-trigger the guard.
 // Pass "" for the entry-point call in Adopt/Rotate, which must see a fully

@@ -14,7 +14,7 @@ import (
 // exercise WriteAddons against the real starting state.
 func baseOverlay(t *testing.T, env string) (repo, cluster string) {
 	t.Helper()
-	repo, cluster = t.TempDir(), "atlantis"
+	repo, cluster = t.TempDir(), "east1"
 	for _, source := range []string{addonPathMetalLB, addonPathConfigL2, addonPathConfigBGP} {
 		dir := filepath.Join(repo, source)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -326,15 +326,15 @@ func TestWriteAddons_NoGatewayPatch_WhenVIPUnset(t *testing.T) {
 
 func TestWriteAddons_NestedClusterUsesCorrectRelativePaths(t *testing.T) {
 	repo, _ := baseOverlay(t, "INGRESS_MODE=metallb-lb\nMETALLB_MODE=l2\n")
-	flat := filepath.Join(repo, "clusters", "atlantis")
-	nested := filepath.Join(repo, "clusters", "region", "atlantis")
+	flat := filepath.Join(repo, "clusters", "east1")
+	nested := filepath.Join(repo, "clusters", "region", "east1")
 	if err := os.MkdirAll(filepath.Dir(nested), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Rename(flat, nested); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteAddons(repo, "region/atlantis", nil); err != nil {
+	if err := WriteAddons(repo, "region/east1", nil); err != nil {
 		t.Fatalf("WriteAddons nested: %v", err)
 	}
 	operator := read(t, nested, "addons/kustomization.yaml")

@@ -324,7 +324,7 @@ func (c *Client) put(ctx context.Context, host ports.SSHHost, remotePath string,
 	session.Stdout = io.Discard
 
 	// Write via `sh` redirect + default-PATH coreutils (mktemp/cat/chmod/
-	// mv), NOT `install -m … /dev/stdin`: a field install (webdock,
+	// mv), NOT `install -m … /dev/stdin`: a field install (metal1,
 	// 2026-08-06, root login) died with a bare `install: No such file or
 	// directory` — some provider images break that invocation (a shadowed
 	// install(1) earlier in root's PATH, or a dead /dev/stdin symlink).

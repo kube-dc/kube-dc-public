@@ -27,7 +27,7 @@ you may not use this file except in compliance with the License.
 //
 //   KUBE_DC_E2E_ORG               default "shalb"     — target tenant realm
 //   KUBE_DC_E2E_PROJECT           default "docs"      — primary test project (kept clean)
-//   KUBE_DC_E2E_SECONDARY_PROJECT default "jumbolot"  — for E02 cross-project denial (Skip if absent)
+//   KUBE_DC_E2E_SECONDARY_PROJECT (no default) — for E02 cross-project denial (Skip if unset)
 //   KUBE_DC_E2E_DOMAIN            default "kube-dc.cloud" — backend hostname suffix
 //   KUBE_DC_E2E_KEEP_USERS        default ""          — non-empty: skip AfterSuite user deletion (debugging)
 //
@@ -174,7 +174,7 @@ func setupT12bTenant() {
 	tenant = &tenantFixture{
 		org:              envOrDefault("KUBE_DC_E2E_ORG", "shalb"),
 		project:          envOrDefault("KUBE_DC_E2E_PROJECT", "docs"),
-		secondaryProject: envOrDefault("KUBE_DC_E2E_SECONDARY_PROJECT", "jumbolot"),
+		secondaryProject: os.Getenv("KUBE_DC_E2E_SECONDARY_PROJECT"),
 		domain:           envOrDefault("KUBE_DC_E2E_DOMAIN", "kube-dc.cloud"),
 		keepUsers:        os.Getenv("KUBE_DC_E2E_KEEP_USERS") != "",
 	}

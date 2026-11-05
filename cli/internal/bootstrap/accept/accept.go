@@ -476,7 +476,7 @@ func checkTenantEgressGateway(ctx context.Context, o Options) Check {
 
 	// Nodes without an external-network anchor have no ON-LINK route to the
 	// gateway (either no route, or one "via" the default router on another
-	// VLAN — webdock 2026-08-31, where hosts deliberately carry no address on the
+	// VLAN — metal1 2026-08-31, where hosts deliberately carry no address on the
 	// ext-cloud VLAN); they report NOROUTE and are not counted as evidence
 	// either way. Probing the default-route device for a gateway that lives on
 	// a different VLAN reported a healthy cluster as a black hole.
@@ -543,7 +543,7 @@ ip neigh show %[1]s
 	// mac_binding table records the gateway's MAC once ANY logical router on
 	// the external switch resolved it — i.e. a tenant or management router
 	// actually got an ARP reply from the gateway. On a cluster whose hosts
-	// keep no address on the external VLAN (webdock) it is the ONLY evidence
+	// keep no address on the external VLAN (metal1) it is the ONLY evidence
 	// available, and on any cluster it beats a host-side probe that can be
 	// answered by the wrong VLAN.
 	if port, mac := ovnGatewayMacBinding(ctx, o, gw); mac != "" {

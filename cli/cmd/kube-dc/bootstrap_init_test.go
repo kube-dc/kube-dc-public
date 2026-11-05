@@ -16,26 +16,26 @@ import (
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 )
 
-// validAtlantisArgs returns the canonical CLI flags for the
-// atlantis bootstrap shape (M4-T01 acceptance). Used as the
+// validEast1Args returns the canonical CLI flags for the
+// east1 bootstrap shape (M4-T01 acceptance). Used as the
 // table baseline so each test case mutates one arg at a time.
 //
 // The 5 --set values are the cloud+public-vlan preset's required
-// keys (M4-T04) populated from the atlantis README's CGNAT +
+// keys (M4-T04) populated from the east1 README's CGNAT +
 // public-IP topology. Tests that exercise "missing required key"
 // paths filter --set entries out as needed.
 //
 // Note: --repo is a persistent flag on the parent `bootstrap`
 // command, not on `init` — `runInitCmd` injects it via the helper's
 // fleetRepo pointer rather than via the args slice.
-func validAtlantisArgs() []string {
+func validEast1Args() []string {
 	return []string{
 		"--preset=cloud+public-vlan",
 		"--mode=install",
-		"--name=atlantis",
-		"--domain=kdc.atlantis.example.com",
+		"--name=east1",
+		"--domain=kdc.east1.example.com",
 		"--node-external-ip=203.0.113.52",
-		"--email=ops@atlantis.example.com",
+		"--email=ops@east1.example.com",
 		"--fleet-mode=existing-fleet",
 		// M4-T05 P2 close: owner/repo required for any apply-path
 		// fleet mode (Validate check catches missing values when
@@ -61,7 +61,7 @@ func validAtlantisArgs() []string {
 		"--set=METALLB_INTERFACE=br-ext-cloud",
 		// A declared floating IP with NO address layer is now AMBIGUOUS and
 		// refused: the installer will not guess whether that address is a real
-		// floating VIP (cs/next reserves one its fabric does not deliver).
+		// floating VIP (eu/dc1 reserves one its fabric does not deliver).
 		"--ingress-address-layer=metallb-l2",
 		"--dry-run",
 		"--no-tty",
@@ -71,7 +71,7 @@ func validAtlantisArgs() []string {
 // runInitCmd executes `bootstrap init` with a fresh tmpdir fleet
 // pre-provisioned: `.sops.yaml` with a known recipient + a matching
 // age key file. This is the canonical happy-path shape for the
-// atlantis-style tests; M4-T09 agekey enrollment check passes
+// east1-style tests; M4-T09 agekey enrollment check passes
 // against it.
 //
 // Tests that need a different repo shape (no `.sops.yaml`, no key,
@@ -129,7 +129,7 @@ AGE-SECRET-KEY-1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 //   - `age.key` at the repo root with the matching secret + pubkey
 //
 // Returns the tmpdir path. Used by runInitCmd as the default --repo
-// value for the atlantis-style happy-path tests.
+// value for the east1-style happy-path tests.
 func setupValidFleet(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -158,7 +158,7 @@ func setupValidFleet(t *testing.T) string {
 }
 
 func TestBootstrapInit_DryRun_HappyPath(t *testing.T) {
-	body, err := runInitCmd(t, validAtlantisArgs())
+	body, err := runInitCmd(t, validEast1Args())
 	if err != nil {
 		t.Fatalf("dry-run with valid args should succeed, got %v\nout:\n%s", err, body)
 	}
@@ -167,9 +167,9 @@ func TestBootstrapInit_DryRun_HappyPath(t *testing.T) {
 	// that are stable across T04/T10/T13 refinements.
 	for _, want := range []string{
 		"DRY RUN",
-		"atlantis",
+		"east1",
 		"Files to write",
-		"clusters/atlantis/cluster-config.env",
+		"clusters/east1/cluster-config.env",
 		"Scripts to run",
 		"bootstrap/flux-install.sh",
 		"Cluster mutations",
@@ -186,7 +186,7 @@ func TestBootstrapInit_DryRun_HappyPath(t *testing.T) {
 func TestBootstrapInit_DryRun_PlanFileWritten(t *testing.T) {
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.json")
-	args := append(validAtlantisArgs(), "--plan-file="+planPath)
+	args := append(validEast1Args(), "--plan-file="+planPath)
 	body, err := runInitCmd(t, args)
 	if err != nil {
 		t.Fatalf("dry-run with --plan-file should succeed, got %v\nout:\n%s", err, body)
@@ -202,8 +202,8 @@ func TestBootstrapInit_DryRun_PlanFileWritten(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadPlan: %v", err)
 	}
-	if loaded.ClusterName != "atlantis" {
-		t.Errorf("loaded ClusterName = %q, want atlantis", loaded.ClusterName)
+	if loaded.ClusterName != "east1" {
+		t.Errorf("loaded ClusterName = %q, want east1", loaded.ClusterName)
 	}
 }
 
@@ -224,13 +224,13 @@ func TestBootstrapInit_ApplyPlan_ReachesEngineAfterVerify(t *testing.T) {
 	// the DNS gate works (that's dnsgate_test.go). The gate itself
 	// is bypassed by the flag; the apply engine then fails at the
 	// git step since the tmpdir isn't a real repo.
-	if _, err := runInitCmdWithRepo(t, repo, append(validAtlantisArgs(), "--plan-file="+planPath, "--allow-dns-not-ready")); err != nil {
+	if _, err := runInitCmdWithRepo(t, repo, append(validEast1Args(), "--plan-file="+planPath, "--allow-dns-not-ready")); err != nil {
 		t.Fatalf("dry-run prep: %v", err)
 	}
 
 	// Same substantive flag set (including --allow-dns-not-ready) so
 	// the InputHash matches.
-	args := filterFlag(validAtlantisArgs(), "--dry-run")
+	args := filterFlag(validEast1Args(), "--dry-run")
 	args = append(args, "--apply-plan="+planPath, "--yes", "--allow-dns-not-ready")
 	body, err := runInitCmdWithRepo(t, repo, args)
 	if err == nil {
@@ -257,19 +257,19 @@ func TestBootstrapInit_ApplyPlan_ReachesEngineAfterVerify(t *testing.T) {
 func TestBootstrapInit_ApplyPlan_DriftBlocksEngine(t *testing.T) {
 	// Reviewer's T12-P2 carry-forward: prove that input drift
 	// prevents the engine (Scaffold/Apply) from running. The flow:
-	//   1. Dry-run with atlantis flags → write plan
+	//   1. Dry-run with east1 flags → write plan
 	//   2. Apply-plan with a DIFFERENT --set value
 	//   3. VerifyApplyPlanInput must reject before runApplyEngine
 	//      is called (engine markers should NOT appear in output)
 	repo := setupValidFleet(t)
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.json")
-	if _, err := runInitCmdWithRepo(t, repo, append(validAtlantisArgs(), "--plan-file="+planPath)); err != nil {
+	if _, err := runInitCmdWithRepo(t, repo, append(validEast1Args(), "--plan-file="+planPath)); err != nil {
 		t.Fatalf("dry-run prep: %v", err)
 	}
 
 	// Drift: bump the EXT_NET_VLAN_ID from 1103 to 999.
-	args := filterFlag(validAtlantisArgs(), "--dry-run")
+	args := filterFlag(validEast1Args(), "--dry-run")
 	args = filterFlag(args, "--set=EXT_NET_VLAN_ID=1103")
 	args = append(args, "--set=EXT_NET_VLAN_ID=999", "--apply-plan="+planPath, "--yes")
 	body, err := runInitCmdWithRepo(t, repo, args)
@@ -298,12 +298,12 @@ func TestBootstrapInit_ApplyPlan_RefusesOnAllowNoKubevirtEligibleDrift(t *testin
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.json")
 	// Dry-run with the flag set.
-	prep := append(validAtlantisArgs(), "--plan-file="+planPath, "--allow-no-kubevirt-eligible")
+	prep := append(validEast1Args(), "--plan-file="+planPath, "--allow-no-kubevirt-eligible")
 	if _, err := runInitCmdWithRepo(t, repo, prep); err != nil {
 		t.Fatalf("dry-run prep: %v", err)
 	}
 	// Apply the plan WITHOUT the flag — should surface ErrPlanInputDrift.
-	args := filterFlag(validAtlantisArgs(), "--dry-run")
+	args := filterFlag(validEast1Args(), "--dry-run")
 	args = append(args, "--apply-plan="+planPath, "--yes", "--allow-dns-not-ready")
 	_, err := runInitCmdWithRepo(t, repo, args)
 	if err == nil {
@@ -322,10 +322,10 @@ func TestBootstrapInit_ApplyPlan_RefusesOnAllowNoKubevirtEligibleDrift(t *testin
 // into the apply path, not just unit-tested in isolation.
 func TestBootstrapInit_Adopt_GateBlocksBeforeMutation(t *testing.T) {
 	t.Setenv("KUBE_DC_MOCK", "cloud") // mock K8s reports the cert-manager CRD
-	repo := setupValidFleet(t)        // empty clusters/ → "atlantis" has no overlay
+	repo := setupValidFleet(t)        // empty clusters/ → "east1" has no overlay
 	// Relax every earlier apply gate so we actually REACH the adopt gate:
 	// no dry-run (apply path), prereqs skipped, DNS downgraded, no push.
-	args := filterFlag(validAtlantisArgs(), "--dry-run")
+	args := filterFlag(validEast1Args(), "--dry-run")
 	args = filterFlag(args, "--mode")
 	args = append(args,
 		"--mode=adopt", "--yes",
@@ -335,7 +335,7 @@ func TestBootstrapInit_Adopt_GateBlocksBeforeMutation(t *testing.T) {
 	if err == nil {
 		t.Fatalf("adopt gate should block (cert-manager detected, no overlay); out:\n%s", body)
 	}
-	// cert-manager is detected but "atlantis" has no overlay → the
+	// cert-manager is detected but "east1" has no overlay → the
 	// no-overlay boundary error (not the pin-versions nudge).
 	if !strings.Contains(err.Error(), "no fleet overlay") {
 		t.Errorf("expected the no-overlay boundary error, got: %v", err)
@@ -354,11 +354,11 @@ func TestBootstrapInit_Adopt_GateBlocksBeforeMutation(t *testing.T) {
 // mutation — foreign-cluster import isn't automated. Regression guard for
 // the ordering bug where "nothing to pin → pass" ran before the
 // OverlayMissing boundary. Uses the "fresh" scenario (reachable cluster,
-// no CRDs) with an empty test fleet (no clusters/atlantis overlay).
+// no CRDs) with an empty test fleet (no clusters/east1 overlay).
 func TestBootstrapInit_Adopt_NoOverlayNoComponentsFailsClosed(t *testing.T) {
 	t.Setenv("KUBE_DC_MOCK", "fresh") // reachable cluster, ListCRDs → none
-	repo := setupValidFleet(t)        // empty clusters/ → "atlantis" has no overlay
-	args := filterFlag(validAtlantisArgs(), "--dry-run")
+	repo := setupValidFleet(t)        // empty clusters/ → "east1" has no overlay
+	args := filterFlag(validEast1Args(), "--dry-run")
 	args = filterFlag(args, "--mode")
 	args = append(args,
 		"--mode=adopt", "--yes",
@@ -389,12 +389,12 @@ func TestBootstrapInit_ApplyPlan_RefusesOnAllowUnpinnedAdoptDrift(t *testing.T) 
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.json")
 	// Dry-run WITH the bypass set.
-	prep := append(validAtlantisArgs(), "--plan-file="+planPath, "--allow-unpinned-adopt")
+	prep := append(validEast1Args(), "--plan-file="+planPath, "--allow-unpinned-adopt")
 	if _, err := runInitCmdWithRepo(t, repo, prep); err != nil {
 		t.Fatalf("dry-run prep: %v", err)
 	}
 	// Apply the plan WITHOUT the bypass — should surface ErrPlanInputDrift.
-	args := filterFlag(validAtlantisArgs(), "--dry-run")
+	args := filterFlag(validEast1Args(), "--dry-run")
 	args = append(args, "--apply-plan="+planPath, "--yes", "--allow-dns-not-ready")
 	_, err := runInitCmdWithRepo(t, repo, args)
 	if err == nil {
@@ -560,7 +560,7 @@ func TestBootstrapInit_DryRun_GitLab_Allowed(t *testing.T) {
 		"--set=METALLB_INTERFACE=br-ext-cloud",
 		// A declared floating IP with NO address layer is now AMBIGUOUS and
 		// refused: the installer will not guess whether that address is a real
-		// floating VIP (cs/next reserves one its fabric does not deliver).
+		// floating VIP (eu/dc1 reserves one its fabric does not deliver).
 		"--ingress-address-layer=metallb-l2",
 		"--dry-run",
 		"--no-tty",
@@ -599,13 +599,13 @@ func TestBootstrapInit_ApplyPlan_RefusesOnInputDrift(t *testing.T) {
 	repo := setupValidFleet(t)
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.json")
-	if _, err := runInitCmdWithRepo(t, repo, append(validAtlantisArgs(), "--plan-file="+planPath)); err != nil {
+	if _, err := runInitCmdWithRepo(t, repo, append(validEast1Args(), "--plan-file="+planPath)); err != nil {
 		t.Fatalf("dry-run prep: %v", err)
 	}
 	// Mutate the inputs between dry-run and apply — different
 	// --node-external-ip. VerifyApplyPlanInput must catch this and
 	// surface ErrPlanInputDrift.
-	args := filterFlag(validAtlantisArgs(), "--dry-run")
+	args := filterFlag(validEast1Args(), "--dry-run")
 	args = filterFlag(args, "--node-external-ip=203.0.113.52")
 	args = append(args, "--node-external-ip=203.0.113.53", "--apply-plan="+planPath, "--yes")
 	_, err := runInitCmdWithRepo(t, repo, args)
@@ -626,10 +626,10 @@ func TestBootstrapInit_DefaultApply_ReachesEngine(t *testing.T) {
 	// not to test Apply itself (that's covered by the engine-
 	// level fakeGit tests). --allow-dns-not-ready bypasses the
 	// M4-T08 DNS gate so the test isn't dependent on real DNS
-	// resolution of the placeholder atlantis domain. The
+	// resolution of the placeholder east1 domain. The
 	// M6-T05 NFD gate soft-skips on nil K8sClient (test env has
 	// no kubeconfig) so it never fires here.
-	args := validAtlantisArgs()
+	args := validEast1Args()
 	args = append(filterFlag(args, "--dry-run"), "--yes", "--allow-dns-not-ready")
 	body, err := runInitCmd(t, args)
 	if err == nil {
@@ -659,7 +659,7 @@ func TestBootstrapInit_DefaultApply_ReachesEngine(t *testing.T) {
 func TestBootstrapInit_DefaultApply_DNSGateBlocksWithoutOptOut(t *testing.T) {
 	// The gate must be independent of the operator's kubeconfig and DNS.
 	t.Setenv("KUBE_DC_MOCK", "fresh")
-	args := validAtlantisArgs()
+	args := validEast1Args()
 	args = append(filterFlag(args, "--dry-run"), "--yes")
 	// Deliberately NO --allow-dns-not-ready — the gate should fire.
 	body, err := runInitCmd(t, args)
@@ -696,7 +696,7 @@ func TestBootstrapInit_DefaultApply_DNSGateBlocksWithoutOptOut(t *testing.T) {
 func TestBootstrapInit_ApplyPlan_NotImplemented(t *testing.T) {
 	// Apply-plan with a non-existent file errors at LoadPlan time;
 	// the error chain mentions load failure, not the engine.
-	args := validAtlantisArgs()
+	args := validEast1Args()
 	args = filterFlag(args, "--dry-run")
 	args = append(args, "--apply-plan=/tmp/does-not-exist-fake-plan.json")
 	body, err := runInitCmd(t, args)
@@ -720,7 +720,7 @@ func TestBootstrapInit_FlagConflicts(t *testing.T) {
 	}{
 		{
 			name: "dry-run + apply-plan rejected",
-			args: append(validAtlantisArgs(), "--apply-plan=/tmp/p.json"),
+			args: append(validEast1Args(), "--apply-plan=/tmp/p.json"),
 			// Validate's "mutually exclusive" error wraps ErrValidation.
 			wantSub: "mutually exclusive",
 			wantErr: clusterinit.ErrValidation,
@@ -728,12 +728,12 @@ func TestBootstrapInit_FlagConflicts(t *testing.T) {
 		{
 			name: "fleet-mode=new-repo without github-owner",
 			// Filter out the baseline's --github-owner + --github-repo
-			// (added by validAtlantisArgs post the M4-T05 P2
+			// (added by validEast1Args post the M4-T05 P2
 			// close) so we reach the actual "missing owner" case.
 			args: replaceFlag(
 				filterFlag(
 					filterFlag(
-						filterFlag(validAtlantisArgs(), "--fleet-mode=existing-fleet"),
+						filterFlag(validEast1Args(), "--fleet-mode=existing-fleet"),
 						"--github-owner=kube-dc"),
 					"--github-repo=kube-dc-fleet"),
 				"", "--fleet-mode=new-repo"),
@@ -742,44 +742,44 @@ func TestBootstrapInit_FlagConflicts(t *testing.T) {
 		},
 		{
 			name: "no-tty without --yes/--apply-plan/--dry-run",
-			args: replaceFlag(filterFlag(validAtlantisArgs(), "--dry-run"), "", ""),
+			args: replaceFlag(filterFlag(validEast1Args(), "--dry-run"), "", ""),
 			// Just --no-tty and no satisfier — Validate refuses.
 			wantSub: "--no-tty requires",
 			wantErr: clusterinit.ErrApplyGate,
 		},
 		{
 			name:    "bad preset",
-			args:    replaceFlag(validAtlantisArgs(), "--preset=cloud+public-vlan", "--preset=bogus"),
+			args:    replaceFlag(validEast1Args(), "--preset=cloud+public-vlan", "--preset=bogus"),
 			wantSub: "--preset",
 			wantErr: clusterinit.ErrValidation,
 		},
 		{
 			name:    "bad mode",
-			args:    replaceFlag(validAtlantisArgs(), "--mode=install", "--mode=upgrade"),
+			args:    replaceFlag(validEast1Args(), "--mode=install", "--mode=upgrade"),
 			wantSub: "--mode",
 			wantErr: clusterinit.ErrValidation,
 		},
 		{
 			name:    "bad domain",
-			args:    replaceFlag(validAtlantisArgs(), "--domain=kdc.atlantis.example.com", "--domain=localhost"),
+			args:    replaceFlag(validEast1Args(), "--domain=kdc.east1.example.com", "--domain=localhost"),
 			wantSub: "--domain",
 			wantErr: clusterinit.ErrValidation,
 		},
 		{
 			name:    "bad IP",
-			args:    replaceFlag(validAtlantisArgs(), "--node-external-ip=203.0.113.52", "--node-external-ip=not-an-ip"),
+			args:    replaceFlag(validEast1Args(), "--node-external-ip=203.0.113.52", "--node-external-ip=not-an-ip"),
 			wantSub: "not a valid IP",
 			wantErr: clusterinit.ErrValidation,
 		},
 		{
 			name:    "lowercase set rejected",
-			args:    append(validAtlantisArgs(), "--set=domain=foo.example.com"),
+			args:    append(validEast1Args(), "--set=domain=foo.example.com"),
 			wantSub: "SCREAMING_SNAKE_CASE",
 			wantErr: clusterinit.ErrValidation,
 		},
 		{
 			name:    "unknown addon rejected",
-			args:    append(validAtlantisArgs(), "--addon=cilium"),
+			args:    append(validEast1Args(), "--addon=cilium"),
 			wantSub: "not in registry",
 			wantErr: clusterinit.ErrValidation,
 		},
@@ -809,7 +809,7 @@ func TestBootstrapInit_RepeatableFlags(t *testing.T) {
 	// it now fails closed (see TestBootstrapInit_Addon_FailsClosed);
 	// its repeatable-parsing is covered by the unknown-addon case in
 	// FlagConflicts.
-	args := append(validAtlantisArgs(),
+	args := append(validEast1Args(),
 		"--set=PROM_STORAGE=50Gi",
 		"--set=PROM_RETENTION=730d",
 		"--node-nic=HOST5-A=enp1s0",
@@ -854,7 +854,7 @@ func TestBootstrapInit_Addon_FailsClosed(t *testing.T) {
 	// operator gets the actionable manual-path message. This fires even
 	// under --dry-run (a plan preview with phantom addons would be the
 	// same lie).
-	args := append(validAtlantisArgs(), "--addon=metallb")
+	args := append(validEast1Args(), "--addon=metallb")
 	_, err := runInitCmd(t, args)
 	if err == nil {
 		t.Fatal("expected --addon to fail closed, got nil")
@@ -870,7 +870,7 @@ func TestBootstrapInit_Addon_FailsClosed(t *testing.T) {
 // --- PAYG usage billing (--payg, default off) ------------------------
 
 func TestBootstrapInit_PAYG_OffByDefault_PlansNothing(t *testing.T) {
-	body, err := runInitCmd(t, validAtlantisArgs())
+	body, err := runInitCmd(t, validEast1Args())
 	if err != nil {
 		t.Fatalf("dry-run: %v\n%s", err, body)
 	}
@@ -882,13 +882,13 @@ func TestBootstrapInit_PAYG_OffByDefault_PlansNothing(t *testing.T) {
 }
 
 func TestBootstrapInit_PAYG_PlansTheWiring(t *testing.T) {
-	body, err := runInitCmd(t, append(validAtlantisArgs(), "--payg", "--set=BILLING_PROVIDER=stripe"))
+	body, err := runInitCmd(t, append(validEast1Args(), "--payg", "--set=BILLING_PROVIDER=stripe"))
 	if err != nil {
 		t.Fatalf("dry-run with --payg: %v\n%s", err, body)
 	}
 	for _, want := range []string{
-		"clusters/atlantis/payg.yaml",
-		"clusters/atlantis/metering-db.enc.yaml",
+		"clusters/east1/payg.yaml",
+		"clusters/east1/metering-db.enc.yaml",
 		"CNPG managed role kube_dc_metering",
 		"a new PAYG_INSTALLATION_UID",
 		"wire PAYG usage billing",
@@ -906,13 +906,13 @@ func TestBootstrapInit_PAYG_Refusals(t *testing.T) {
 		wantSub string
 	}{
 		// Kube-DC must be the installation's billing provider.
-		{"no billing provider", append(validAtlantisArgs(), "--payg"), "BILLING_PROVIDER is not set"},
-		{"provider none", append(validAtlantisArgs(), "--payg", "--set=BILLING_PROVIDER=none"), "BILLING_PROVIDER=none"},
+		{"no billing provider", append(validEast1Args(), "--payg"), "BILLING_PROVIDER is not set"},
+		{"provider none", append(validEast1Args(), "--payg", "--set=BILLING_PROVIDER=none"), "BILLING_PROVIDER=none"},
 		{"billed by a partner",
-			append(validAtlantisArgs(), "--payg", "--set=BILLING_PROVIDER=stripe", "--set=CLOUDSIGMA_CHART_VERSION=0.1.0"), "billed by a partner"},
-		{"switch via --set", append(validAtlantisArgs(), "--set=PAYG_ENABLED=true"), "use --payg"},
+			append(validEast1Args(), "--payg", "--set=BILLING_PROVIDER=stripe", "--set=CLOUDSIGMA_CHART_VERSION=0.1.0"), "billed by a partner"},
+		{"switch via --set", append(validEast1Args(), "--set=PAYG_ENABLED=true"), "use --payg"},
 		{"copied installation UID",
-			append(validAtlantisArgs(), "--payg", "--set=PAYG_INSTALLATION_UID=11111111-2222-4333-8444-555555555555"), "never copied"},
+			append(validEast1Args(), "--payg", "--set=PAYG_INSTALLATION_UID=11111111-2222-4333-8444-555555555555"), "never copied"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -929,10 +929,10 @@ func TestBootstrapInit_ApplyPlan_RefusesOnPAYGDrift(t *testing.T) {
 	repo := setupValidFleet(t)
 	planPath := filepath.Join(t.TempDir(), "plan.json")
 	// Same provider on both runs: only --payg differs.
-	if _, err := runInitCmdWithRepo(t, repo, append(validAtlantisArgs(), "--set=BILLING_PROVIDER=stripe", "--plan-file="+planPath)); err != nil {
+	if _, err := runInitCmdWithRepo(t, repo, append(validEast1Args(), "--set=BILLING_PROVIDER=stripe", "--plan-file="+planPath)); err != nil {
 		t.Fatalf("dry-run prep: %v", err)
 	}
-	args := append(filterFlag(validAtlantisArgs(), "--dry-run"), "--set=BILLING_PROVIDER=stripe", "--payg", "--apply-plan="+planPath, "--yes")
+	args := append(filterFlag(validEast1Args(), "--dry-run"), "--set=BILLING_PROVIDER=stripe", "--payg", "--apply-plan="+planPath, "--yes")
 	body, err := runInitCmdWithRepo(t, repo, args)
 	if !errors.Is(err, clusterinit.ErrPlanInputDrift) {
 		t.Fatalf("expected ErrPlanInputDrift, got %v\n%s", err, body)
@@ -956,7 +956,7 @@ func filterArgs(args []string, prefix string) []string {
 func TestBootstrapInit_ObjectStorageMode_Required(t *testing.T) {
 	// No mode at all → typed required error. No sibling in the
 	// default fixture fleet → no hint suffix.
-	args := filterArgs(validAtlantisArgs(), "--object-storage-mode")
+	args := filterArgs(validEast1Args(), "--object-storage-mode")
 	_, err := runInitCmd(t, args)
 	if !errors.Is(err, clusterinit.ErrObjectStorageModeRequired) {
 		t.Fatalf("expected ErrObjectStorageModeRequired, got %v", err)
@@ -989,7 +989,7 @@ func TestBootstrapInit_ObjectStorageMode_RequiredWithSiblingHint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	args := filterArgs(validAtlantisArgs(), "--object-storage-mode")
+	args := filterArgs(validEast1Args(), "--object-storage-mode")
 	_, err := runInitCmdWithRepo(t, repo, args)
 	if !errors.Is(err, clusterinit.ErrObjectStorageModeRequired) {
 		t.Fatalf("expected ErrObjectStorageModeRequired, got %v", err)
@@ -1003,7 +1003,7 @@ func TestBootstrapInit_ObjectStorageMode_DeprecatedAliasWorks(t *testing.T) {
 	// --rook-mode still binds for one release (pflag prints the
 	// deprecation notice); disabled via the alias must behave exactly
 	// like the canonical flag.
-	args := append(filterArgs(validAtlantisArgs(), "--object-storage-mode"),
+	args := append(filterArgs(validEast1Args(), "--object-storage-mode"),
 		"--rook-mode=disabled")
 	body, err := runInitCmd(t, args)
 	if err != nil {
@@ -1017,7 +1017,7 @@ func TestBootstrapInit_ObjectStorageMode_DeprecatedAliasWorks(t *testing.T) {
 func TestBootstrapInit_ObjectStorageMode_AliasConflict(t *testing.T) {
 	// Both flags with DIFFERENT values → hard error (silently
 	// preferring either would surprise).
-	args := append(validAtlantisArgs(), "--rook-mode=rook-ceph-local")
+	args := append(validEast1Args(), "--rook-mode=rook-ceph-local")
 	_, err := runInitCmd(t, args)
 	if err == nil || !strings.Contains(err.Error(), "conflicts") {
 		t.Fatalf("expected conflict error, got %v", err)
@@ -1030,7 +1030,7 @@ func TestBootstrapInit_ObjectStorageMode_RookDryRunRendersWiring(t *testing.T) {
 	// overlay + Flux layer files, the extended platform/kustomization
 	// descriptions, and the in-process writer step. (Replaces the
 	// OS-1 FailsClosedUntilOS2 test — the scaffold writer shipped.)
-	args := append(filterArgs(validAtlantisArgs(), "--object-storage-mode"),
+	args := append(filterArgs(validEast1Args(), "--object-storage-mode"),
 		"--object-storage-mode=rook-ceph-local",
 		"--rook-osd-node=host6-a",
 		"--rook-osd-size-gb=500",
@@ -1071,7 +1071,7 @@ func TestBootstrapInit_ObjectStorageMode_RookDryRunRendersWiring(t *testing.T) {
 func TestBootstrapInit_ObjectStorageMode_NoExposureRendered(t *testing.T) {
 	// --no-s3-exposure drops the exposure layer from the predicted
 	// overlay composition.
-	args := append(filterArgs(validAtlantisArgs(), "--object-storage-mode"),
+	args := append(filterArgs(validEast1Args(), "--object-storage-mode"),
 		"--object-storage-mode=rook-ceph-pvc",
 		"--ceph-storage-class=fast-ssd",
 		"--no-s3-exposure",
@@ -1089,7 +1089,7 @@ func TestBootstrapInit_ObjectStorageMode_NoExposureRendered(t *testing.T) {
 }
 
 func TestBootstrapInit_ObjectStorageMode_StubFailsClosed(t *testing.T) {
-	args := append(filterArgs(validAtlantisArgs(), "--object-storage-mode"),
+	args := append(filterArgs(validEast1Args(), "--object-storage-mode"),
 		"--object-storage-mode=external-s3")
 	_, err := runInitCmd(t, args)
 	if !errors.Is(err, clusterinit.ErrObjectStorageModeStub) {
@@ -1100,7 +1100,7 @@ func TestBootstrapInit_ObjectStorageMode_StubFailsClosed(t *testing.T) {
 func TestBootstrapInit_ObjectStorageMode_DisabledWarnsInPlan(t *testing.T) {
 	// The baseline args carry --object-storage-mode=disabled; the
 	// dry-run plan MUST state the consequence prominently.
-	body, err := runInitCmd(t, validAtlantisArgs())
+	body, err := runInitCmd(t, validEast1Args())
 	if err != nil {
 		t.Fatalf("disabled dry-run should succeed, got %v", err)
 	}
@@ -1129,7 +1129,7 @@ func TestBootstrapInit_GitHubTokenNeverInOutput(t *testing.T) {
 	const fakeToken = "ghp_FAKE_TOKEN_DO_NOT_LEAK_AAAAAA"
 
 	t.Run("dry-run path (existing-fleet)", func(t *testing.T) {
-		args := append(validAtlantisArgs(), "--github-token="+fakeToken)
+		args := append(validEast1Args(), "--github-token="+fakeToken)
 		body, err := runInitCmd(t, args)
 		if err != nil {
 			t.Fatalf("dry-run should pass, got %v\nout:\n%s", err, body)
@@ -1146,7 +1146,7 @@ func TestBootstrapInit_GitHubTokenNeverInOutput(t *testing.T) {
 		// which RunE downgrades to a WARNING so the plan
 		// renders. The token must not appear anywhere in the
 		// resulting output.
-		args := append(filterFlag(validAtlantisArgs(), "--fleet-mode=existing-fleet"),
+		args := append(filterFlag(validEast1Args(), "--fleet-mode=existing-fleet"),
 			"--fleet-mode=new-repo",
 			"--github-owner=kube-dc",
 			"--github-repo=kube-dc-fleet",
@@ -1183,8 +1183,8 @@ func TestBootstrapInit_DomainCollision_Rejected(t *testing.T) {
 	// synthetic sibling "prod1" owns the domain we try to reuse.
 	repo := setupFleetWithSibling(t, "prod1",
 		"CLUSTER_NAME=prod1\nDOMAIN=prod1.example.com\nKUBE_DC_VERSION=v0.0.1\n")
-	args := replaceFlag(validAtlantisArgs(),
-		"--domain=kdc.atlantis.example.com",
+	args := replaceFlag(validEast1Args(),
+		"--domain=kdc.east1.example.com",
 		"--domain=prod1.example.com") // collides with sibling prod1
 	_, err := runInitCmdWithRepo(t, repo, args)
 	if err == nil {
@@ -1206,7 +1206,7 @@ func TestBootstrapInit_InheritsFromFleetSiblings(t *testing.T) {
 	// same coverage, no local-checkout dependency).
 	repo := setupFleetWithSibling(t, "prod1",
 		"CLUSTER_NAME=prod1\nDOMAIN=prod1.example.com\nKUBE_DC_VERSION=v9.9.9\n")
-	body, err := runInitCmdWithRepo(t, repo, validAtlantisArgs())
+	body, err := runInitCmdWithRepo(t, repo, validEast1Args())
 	if err != nil {
 		t.Fatalf("dry-run should succeed; got %v\nout:\n%s", err, body)
 	}
@@ -1272,7 +1272,7 @@ func TestBootstrapInit_AgeKey_EnrolledPasses(t *testing.T) {
 	// pubkey in .sops.yaml and a matching age.key at the repo
 	// root. The dry-run prints "[sops] enrolled (pubkey=… via …)"
 	// and proceeds to the plan.
-	body, err := runInitCmd(t, validAtlantisArgs())
+	body, err := runInitCmd(t, validEast1Args())
 	if err != nil {
 		t.Fatalf("enrolled dry-run should succeed, got %v\nout:\n%s", err, body)
 	}
@@ -1307,7 +1307,7 @@ func TestBootstrapInit_AgeKey_NotEnrolled_Refuses(t *testing.T) {
 
 	// Strip --dry-run so the agekey gate fires as a hard error
 	// (dry-run downgrades it to a warning).
-	args := filterFlag(validAtlantisArgs(), "--dry-run")
+	args := filterFlag(validEast1Args(), "--dry-run")
 	args = append(args, "--yes")
 	_, err := runInitCmdWithRepo(t, dir, args)
 	if err == nil {
@@ -1345,7 +1345,7 @@ func TestBootstrapInit_AgeKey_DryRunDowngradesMissingKey(t *testing.T) {
 		t.Fatalf("mkdir clusters: %v", err)
 	}
 
-	body, err := runInitCmdWithRepo(t, dir, validAtlantisArgs())
+	body, err := runInitCmdWithRepo(t, dir, validEast1Args())
 	if err != nil {
 		t.Fatalf("dry-run with missing key should warn not error, got %v\nout:\n%s", err, body)
 	}
@@ -1415,7 +1415,7 @@ func TestBootstrapInit_AgeKey_FleetKeyPermissionError_Surfaces(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(keyPath, 0o600) })
 
-	args := filterFlag(validAtlantisArgs(), "--dry-run")
+	args := filterFlag(validEast1Args(), "--dry-run")
 	args = append(args, "--yes")
 	_, err := runInitCmdWithRepo(t, dir, args)
 	if err == nil {
@@ -1434,7 +1434,7 @@ func TestBootstrapInit_PresetEmptyRequiredValue_Rejected(t *testing.T) {
 	// the cobra layer via --set=KEY= (key present, value empty).
 	// ValidatePresetValues must surface ErrPresetInvalidValue so
 	// T10 doesn't write the empty value to cluster-config.env.
-	args := append(filterFlag(validAtlantisArgs(), "--set=EXT_PUBLIC_CIDR=203.0.113.48/29"),
+	args := append(filterFlag(validEast1Args(), "--set=EXT_PUBLIC_CIDR=203.0.113.48/29"),
 		"--set=EXT_PUBLIC_CIDR=")
 	_, err := runInitCmd(t, args)
 	if err == nil {
@@ -1453,7 +1453,7 @@ func TestBootstrapInit_NodeNICValidation_RejectsShellMetachar(t *testing.T) {
 	// ProviderNetwork patch on disk via M4-T11. They must pass the
 	// same NIC-name sanity check as EXT_NET_INTERFACE. Cobra
 	// surface relays the typed validation error.
-	args := append(validAtlantisArgs(),
+	args := append(validEast1Args(),
 		"--node-nic=HOST5-A=enp1s0;rm")
 	_, err := runInitCmd(t, args)
 	if err == nil {
@@ -1475,7 +1475,7 @@ func TestBootstrapInit_PresetSemanticValidation_BadVLAN(t *testing.T) {
 	// networks where the carrier NIC IS the VLAN), so the
 	// error-message check uses "0..4094" — the current accepted
 	// range documented by validateVLANID.
-	args := append(filterFlag(validAtlantisArgs(), "--set=EXT_NET_VLAN_ID=1103"),
+	args := append(filterFlag(validEast1Args(), "--set=EXT_NET_VLAN_ID=1103"),
 		"--set=EXT_NET_VLAN_ID=9999")
 	_, err := runInitCmd(t, args)
 	if err == nil {
@@ -1494,7 +1494,7 @@ func TestBootstrapInit_PresetMissingRequiredKey(t *testing.T) {
 	// required --set entry for the chosen preset must surface
 	// ErrPresetMissingRequired with the missing key name + the
 	// preset name in the error message.
-	args := filterFlag(validAtlantisArgs(), "--set=EXT_PUBLIC_VLAN_ID=1100")
+	args := filterFlag(validEast1Args(), "--set=EXT_PUBLIC_VLAN_ID=1100")
 	_, err := runInitCmd(t, args)
 	if err == nil {
 		t.Fatal("expected ErrPresetMissingRequired when --set=EXT_PUBLIC_VLAN_ID dropped")
@@ -1521,7 +1521,7 @@ func TestBootstrapInit_ModeAuto_TypodKubeconfigIsAnErrorNotGreenfield(t *testing
 	// keys on "no source configured at all").
 	bogus := filepath.Join(t.TempDir(), "absolutely-not-a-real-kubeconfig")
 	t.Setenv("KUBECONFIG", bogus)
-	args := append(replaceFlag(validAtlantisArgs(), "--mode=install", "--mode=auto"), "--dry-run")
+	args := append(replaceFlag(validEast1Args(), "--mode=install", "--mode=auto"), "--dry-run")
 	_, err := runInitCmd(t, args)
 	if err == nil {
 		t.Fatal("KUBECONFIG pointing at a missing file must error, not fall back to install")
@@ -1546,7 +1546,7 @@ func TestBootstrapInit_ModeAuto_NoSourceAtAllErrorsWithFetchHint(t *testing.T) {
 	if !noKubeconfigSourceConfigured() {
 		t.Skip("a real default kubeconfig exists on this machine; strict-greenfield error path covered by TestNoKubeconfigSourceIn")
 	}
-	args := append(replaceFlag(validAtlantisArgs(), "--mode=install", "--mode=auto"), "--dry-run")
+	args := append(replaceFlag(validEast1Args(), "--mode=install", "--mode=auto"), "--dry-run")
 	_, err := runInitCmd(t, args)
 	if err == nil {
 		t.Fatal("auto with no kubeconfig source must error, not guess install")
@@ -1578,7 +1578,7 @@ users:
 		t.Fatal(err)
 	}
 	t.Setenv("KUBECONFIG", kc)
-	args := append(replaceFlag(validAtlantisArgs(), "--mode=install", "--mode=auto"), "--dry-run")
+	args := append(replaceFlag(validEast1Args(), "--mode=install", "--mode=auto"), "--dry-run")
 	_, err := runInitCmd(t, args)
 	if err == nil {
 		t.Fatal("auto against an unreachable cluster must error, not fall back")
@@ -1600,7 +1600,7 @@ func TestBootstrapInit_ModeAuto_HonoursMockScenario(t *testing.T) {
 	// status/doctor consume; a scenario wanting resume must declare kube-dc).
 	for scenario, want := range map[string]string{"cloud": "resume", "fresh": "install", "openbao-sealed": "adopt"} {
 		t.Setenv("KUBE_DC_MOCK", scenario)
-		args := append(replaceFlag(validAtlantisArgs(), "--mode=install", "--mode=auto"), "--dry-run")
+		args := append(replaceFlag(validEast1Args(), "--mode=install", "--mode=auto"), "--dry-run")
 		body, err := runInitCmd(t, args)
 		if err != nil {
 			t.Fatalf("mock %s: %v\nout:\n%s", scenario, err, body)
@@ -1621,7 +1621,7 @@ func TestBootstrapInit_ConfigModeKeyBeatsAutoDefault(t *testing.T) {
 	}
 	bogus := filepath.Join(t.TempDir(), "must-not-be-read")
 	t.Setenv("KUBECONFIG", bogus) // a probe would ERROR — proving no probe ran
-	args := append(filterArgs(validAtlantisArgs(), "--mode"), "--config="+cfg, "--dry-run")
+	args := append(filterArgs(validEast1Args(), "--mode"), "--config="+cfg, "--dry-run")
 	body, err := runInitCmd(t, args)
 	if err != nil {
 		t.Fatalf("config MODE must pre-empt the auto probe: %v\nout:\n%s", err, body)
@@ -1695,7 +1695,7 @@ func TestBootstrapInit_ExistingFleetRequiresRepo(t *testing.T) {
 	// Review-pass — P2/P3: existing-fleet without --repo would
 	// produce a misleading plan with no priors. Refuse at Validate
 	// time so the cobra layer surfaces a clean error.
-	_, err := runInitCmdWithRepo(t, "", validAtlantisArgs())
+	_, err := runInitCmdWithRepo(t, "", validEast1Args())
 	if err == nil {
 		t.Fatal("existing-fleet without --repo should be rejected")
 	}
@@ -1883,7 +1883,7 @@ func TestBareInitInvocation_Gate(t *testing.T) {
 }
 
 func TestGPUHostMapFlagRejectsDuplicateNodesBeforeDiscovery(t *testing.T) {
-	args := append(validAtlantisArgs(),
+	args := append(validEast1Args(),
 		"--gpu-ssh-host-map=gpu-a=192.0.2.10",
 		"--gpu-ssh-host-map=gpu-a=192.0.2.11",
 	)
@@ -1904,7 +1904,7 @@ func TestGPUPreflightFlagsAreExposed(t *testing.T) {
 }
 
 func TestGPUEnabledRequiresExplicitTargetKubeconfigBeforeDiscovery(t *testing.T) {
-	args := append(validAtlantisArgs(),
+	args := append(validEast1Args(),
 		"--gpu-platform=enabled",
 		"--gpu-driver-source=gpu-operator",
 		"--gpu-node-mode=gpu-a=pod-hami",
@@ -2054,7 +2054,7 @@ func TestRunInitAdoptWizardStep_NoClusterSkipsCleanly(t *testing.T) {
 	var buf bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
-	o := &clusterinit.InitOptions{Repo: repo, Name: "atlantis", Mode: clusterinit.ModeAdopt}
+	o := &clusterinit.InitOptions{Repo: repo, Name: "east1", Mode: clusterinit.ModeAdopt}
 	if err := runInitAdoptWizardStep(cmd, &buf, o); err != nil {
 		t.Fatalf("no-cluster adopt step should return nil, got %v", err)
 	}
@@ -2064,7 +2064,7 @@ func TestRunInitAdoptWizardStep_NoClusterSkipsCleanly(t *testing.T) {
 }
 
 func TestRunInitAdoptWizardStep_NoOverlayPreviewNoPrompt(t *testing.T) {
-	// Mock cluster (cert-manager CRD) + empty fleet (no "atlantis"
+	// Mock cluster (cert-manager CRD) + empty fleet (no "east1"
 	// overlay) → the no-overlay boundary. NeedsPinning is false (nowhere
 	// to write), so the step prints the boundary preview and returns
 	// WITHOUT reaching the huh.Confirm — headless-safe.
@@ -2073,7 +2073,7 @@ func TestRunInitAdoptWizardStep_NoOverlayPreviewNoPrompt(t *testing.T) {
 	var buf bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
-	o := &clusterinit.InitOptions{Repo: repo, Name: "atlantis", Mode: clusterinit.ModeAdopt}
+	o := &clusterinit.InitOptions{Repo: repo, Name: "east1", Mode: clusterinit.ModeAdopt}
 	if err := runInitAdoptWizardStep(cmd, &buf, o); err != nil {
 		t.Fatalf("no-overlay adopt step should return nil (preview only), got %v", err)
 	}
@@ -2173,7 +2173,7 @@ func TestBootstrapInit_SaveConfigInsideRepoRefused(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(repo, "clusters"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	args := append(validAtlantisArgs(), "--save-config="+filepath.Join(repo, "review.env"))
+	args := append(validEast1Args(), "--save-config="+filepath.Join(repo, "review.env"))
 	_, err := runInitCmdWithRepo(t, repo, args)
 	if err == nil || !strings.Contains(err.Error(), "inside the fleet checkout") {
 		t.Fatalf("save-config inside the repo must be refused, got %v", err)

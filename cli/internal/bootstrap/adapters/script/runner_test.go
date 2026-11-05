@@ -396,9 +396,9 @@ func TestMergeEnv_AllowlistedHostKeys(t *testing.T) {
 		case "HOME":
 			return "/home/test"
 		case "KUBECONFIG":
-			// Regression atlantis 2026-05-26: without this
+			// Regression east1 2026-05-26: without this
 			// passthrough, flux-install.sh probed the wrong cluster.
-			return "/home/test/.kube/atlantis_config"
+			return "/home/test/.kube/east1_config"
 		case "SHELL":
 			return "/bin/zsh" // should NOT be in output (not in allowlist)
 		case "GITHUB_TOKEN":
@@ -413,7 +413,7 @@ func TestMergeEnv_AllowlistedHostKeys(t *testing.T) {
 	mustHave := []string{
 		"PATH=/usr/bin",
 		"HOME=/home/test",
-		"KUBECONFIG=/home/test/.kube/atlantis_config",
+		"KUBECONFIG=/home/test/.kube/east1_config",
 		"OPERATOR_VAR=value",
 	}
 	for _, want := range mustHave {

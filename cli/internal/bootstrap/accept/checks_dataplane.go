@@ -12,7 +12,7 @@ import (
 // Node-level dataplane checks. Everything in this file exists because of one
 // class of failure: the control plane (CRs, OVN NB/SB, lflows, even
 // ofproto/trace) looks perfect while the wire is dead. All three checks were
-// paid for on webdock 2026-08-31 (kube-dc
+// paid for on metal1 2026-08-31 (kube-dc
 // docs/internal/issues/ext-public-kernel-vlan-steals-ingress.md):
 //
 //   - a kernel VLAN subinterface on a provider VLAN steals every tagged frame

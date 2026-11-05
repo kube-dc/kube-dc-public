@@ -24,7 +24,7 @@ func withConsentDir(t *testing.T) string {
 	return dir
 }
 
-func atlantisOpts() *InitOptions {
+func east1Opts() *InitOptions {
 	o := validBase()
 	o.NodeNICs = map[string]string{
 		"HOST5-A": "enp1s0",
@@ -38,7 +38,7 @@ func atlantisOpts() *InitOptions {
 	return &o
 }
 
-func atlantisFleet() FleetState {
+func east1Fleet() FleetState {
 	return FleetState{
 		PriorClusters:   []string{"cloud", "stage", "eu/dc1"},
 		SOPSRecipients:  3,
@@ -49,8 +49,8 @@ func atlantisFleet() FleetState {
 // determinism + hash equality -----------------------------------
 
 func TestBuildPlan_Deterministic(t *testing.T) {
-	o := atlantisOpts()
-	fleet := atlantisFleet()
+	o := east1Opts()
+	fleet := east1Fleet()
 
 	p1, err := BuildPlan(o, fleet)
 	if err != nil {
@@ -86,8 +86,8 @@ func TestComputeInputHash_StableAcrossEquivalentOptions(t *testing.T) {
 	// this should hold automatically — this test guards against a
 	// regression where some future change uses a non-marshalled
 	// representation.
-	o1 := atlantisOpts()
-	o2 := atlantisOpts()
+	o1 := east1Opts()
+	o2 := east1Opts()
 	// Re-shuffle by rebuilding the maps in a different declaration
 	// order. Go's map literal is order-irrelevant but this still
 	// exercises the marshalling path.
@@ -105,7 +105,7 @@ func TestComputeInputHash_StableAcrossEquivalentOptions(t *testing.T) {
 
 func TestComputeInputHash_SensitiveToChange(t *testing.T) {
 	// Changing any meaningful field must change the hash.
-	o := atlantisOpts()
+	o := east1Opts()
 	base, _ := ComputeInputHash(o)
 
 	cases := []struct {
@@ -140,7 +140,7 @@ func TestComputeInputHash_SensitiveToChange(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			mod := *atlantisOpts()
+			mod := *east1Opts()
 			// deep-copy the maps so the parent's case-by-case
 			// mutation doesn't leak through to the next iteration.
 			mod.Sets = copyMap(mod.Sets)
@@ -174,7 +174,7 @@ func TestComputeInputHash_ExcludesApplyFlowFlags(t *testing.T) {
 	// behavior (skips push + flux-install) so a dry-run/apply
 	// mismatch there IS a real drift. See the "toggle no-push"
 	// case in TestComputeInputHash_SensitiveToChange.
-	base := atlantisOpts()
+	base := east1Opts()
 	baseHash, _ := ComputeInputHash(base)
 
 	cases := []struct {
@@ -192,7 +192,7 @@ func TestComputeInputHash_ExcludesApplyFlowFlags(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			o := *atlantisOpts()
+			o := *east1Opts()
 			o.Sets = copyMap(o.Sets)
 			o.NodeNICs = copyMap(o.NodeNICs)
 			tc.mutate(&o)
@@ -212,11 +212,11 @@ func TestBuildPlan_InheritedDefaults_DefensiveCopy(t *testing.T) {
 	// map after BuildPlan returns can't silently corrupt the
 	// plan's contents (which would also bypass PlanHash detection
 	// since the hash was computed before the mutation).
-	fleet := atlantisFleet()
+	fleet := east1Fleet()
 	fleet.InheritedDefaults = map[string]string{
 		"KUBE_DC_VERSION": "v0.3.63",
 	}
-	p, err := BuildPlan(atlantisOpts(), fleet)
+	p, err := BuildPlan(east1Opts(), fleet)
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -239,15 +239,15 @@ func TestPlan_PlanHashExcludesGeneratedAt(t *testing.T) {
 	// produced different PlanHash values — a silent determinism
 	// bug. Force two different timestamps and assert identical
 	// hashes.
-	o := atlantisOpts()
-	p1, err := BuildPlan(o, atlantisFleet())
+	o := east1Opts()
+	p1, err := BuildPlan(o, east1Fleet())
 	if err != nil {
 		t.Fatalf("first BuildPlan: %v", err)
 	}
 	// Build the second plan, then forcibly drift GeneratedAt by 12
 	// hours and recompute its PlanHash. The recomputed hash must
 	// match the first plan's.
-	p2, err := BuildPlan(o, atlantisFleet())
+	p2, err := BuildPlan(o, east1Fleet())
 	if err != nil {
 		t.Fatalf("second BuildPlan: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestPlan_PlanHashExcludesGeneratedAt(t *testing.T) {
 }
 
 func TestPlan_PlanHashExcludesItself(t *testing.T) {
-	p, err := BuildPlan(atlantisOpts(), atlantisFleet())
+	p, err := BuildPlan(east1Opts(), east1Fleet())
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -296,7 +296,7 @@ func TestPlan_PlanHashExcludesItself(t *testing.T) {
 // File I/O round-trip + atomic write ---------------------------
 
 func TestWritePlanFile_AtomicAndLoadable(t *testing.T) {
-	p, err := BuildPlan(atlantisOpts(), atlantisFleet())
+	p, err := BuildPlan(east1Opts(), east1Fleet())
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -333,7 +333,7 @@ func TestWritePlanFile_AtomicAndLoadable(t *testing.T) {
 }
 
 func TestLoadPlan_RejectsTamperedFile(t *testing.T) {
-	p, err := BuildPlan(atlantisOpts(), atlantisFleet())
+	p, err := BuildPlan(east1Opts(), east1Fleet())
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -361,7 +361,7 @@ func TestLoadPlan_RejectsTamperedFile(t *testing.T) {
 }
 
 func TestLoadPlan_RejectsWrongSchemaVersion(t *testing.T) {
-	p, err := BuildPlan(atlantisOpts(), atlantisFleet())
+	p, err := BuildPlan(east1Opts(), east1Fleet())
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -382,8 +382,8 @@ func TestLoadPlan_RejectsWrongSchemaVersion(t *testing.T) {
 // VerifyApplyPlanInput ------------------------------------------
 
 func TestVerifyApplyPlanInput(t *testing.T) {
-	o := atlantisOpts()
-	p, err := BuildPlan(o, atlantisFleet())
+	o := east1Opts()
+	p, err := BuildPlan(o, east1Fleet())
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -394,7 +394,7 @@ func TestVerifyApplyPlanInput(t *testing.T) {
 	}
 
 	// Mutate any meaningful field — verify fails with ErrPlanInputDrift.
-	o2 := *atlantisOpts()
+	o2 := *east1Opts()
 	o2.Sets = copyMap(o2.Sets)
 	o2.Sets["EXT_NET_VLAN_ID"] = "9999"
 	if err := VerifyApplyPlanInput(p, &o2); !errors.Is(err, ErrPlanInputDrift) {
@@ -405,12 +405,12 @@ func TestVerifyApplyPlanInput(t *testing.T) {
 // Render output --------------------------------------------------
 
 func TestRender_GreenfieldShape(t *testing.T) {
-	o := atlantisOpts()
+	o := east1Opts()
 	o.FleetMode = FleetNewRepo
 	o.GitHubOwner = "shalb"
 	o.GitHubRepo = "kube-dc-fleet"
 	o.StarterRef = "oci://ghcr.io/kube-dc/fleet-starter:v9.9.9:test"
-	o.OpenBaoSharesOut = "/secure/off-git/atlantis-openbao-shares.yaml"
+	o.OpenBaoSharesOut = "/secure/off-git/east1-openbao-shares.yaml"
 	p, err := BuildPlan(o, FleetState{}) // no priors
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
@@ -421,13 +421,13 @@ func TestRender_GreenfieldShape(t *testing.T) {
 	for _, want := range []string{
 		"== Reviewed inputs ==",
 		"Starter: oci://ghcr.io/kube-dc/fleet-starter:v9.9.9:test",
-		"OpenBao shares-out: /secure/off-git/atlantis-openbao-shares.yaml",
+		"OpenBao shares-out: /secure/off-git/east1-openbao-shares.yaml",
 		"Files to write",
 		"cluster-config.env",
 		"secrets.enc.yaml",
 		"Scripts to run",
-		"bootstrap/add-cluster.sh atlantis",
-		"bootstrap/flux-install.sh atlantis --new-cluster",
+		"bootstrap/add-cluster.sh east1",
+		"bootstrap/flux-install.sh east1 --new-cluster",
 		"deferred until HelmRelease/openbao Ready",
 		"Cluster mutations",
 		"Confirmations required",
@@ -456,8 +456,8 @@ func TestRender_GreenfieldShape(t *testing.T) {
 // in the hashed plan (a reviewed warning can't vanish between dry-run
 // and apply).
 func TestRender_ObjectStorageOS1Shape(t *testing.T) {
-	o := atlantisOpts() // baseline is explicit disabled
-	p, err := BuildPlan(o, atlantisFleet())
+	o := east1Opts() // baseline is explicit disabled
+	p, err := BuildPlan(o, east1Fleet())
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -515,7 +515,7 @@ func TestWarningsForGPUReviewCapacityRollbackAndNonMigration(t *testing.T) {
 // --no-push, so an operator dry-run+reviewed a preview that didn't
 // match the apply behavior.
 func TestRender_NoPushShape(t *testing.T) {
-	o := atlantisOpts()
+	o := east1Opts()
 	o.NoPush = true
 	o.FleetMode = FleetNewRepo
 	o.GitHubOwner = "kube-dc"
@@ -548,7 +548,7 @@ func TestRender_NoPushShape(t *testing.T) {
 }
 
 func TestRender_ExistingFleetShape(t *testing.T) {
-	p, err := BuildPlan(atlantisOpts(), atlantisFleet())
+	p, err := BuildPlan(east1Opts(), east1Fleet())
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -584,7 +584,7 @@ func TestRender_PreservesScriptExecutionOrder(t *testing.T) {
 	// The script list is order-sensitive (T10 scaffold must run
 	// before T12 commit which must run before flux-install). Verify
 	// the Render output reflects the BuildPlan order verbatim.
-	p, err := BuildPlan(atlantisOpts(), atlantisFleet())
+	p, err := BuildPlan(east1Opts(), east1Fleet())
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -596,10 +596,10 @@ func TestRender_PreservesScriptExecutionOrder(t *testing.T) {
 		"(in-process) scaffold from sibling templates",
 		"(in-process) apply form deltas to cluster-config.env",
 		"(in-process) render customInterfaces into infrastructure.yaml",
-		"(in-process) sops encrypt clusters/atlantis/secrets.enc.yaml",
+		"(in-process) sops encrypt clusters/east1/secrets.enc.yaml",
 		"(in-process) git add + commit + push",
-		"bootstrap/flux-install.sh atlantis --new-cluster",
-		"kube-dc bootstrap openbao init atlantis",
+		"bootstrap/flux-install.sh east1 --new-cluster",
+		"kube-dc bootstrap openbao init east1",
 	}
 	last := -1
 	for _, s := range steps {
@@ -619,7 +619,7 @@ func TestRender_PreservesScriptExecutionOrder(t *testing.T) {
 func TestConsentMarker_WriteAndLookup(t *testing.T) {
 	_ = withConsentDir(t)
 
-	p, err := BuildPlan(atlantisOpts(), atlantisFleet())
+	p, err := BuildPlan(east1Opts(), east1Fleet())
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -697,15 +697,15 @@ func TestFilesForOptions_ListsEveryGreenfieldScaffoldSideEffect(t *testing.T) {
 		got[file.Path] = file
 	}
 	for _, want := range []string{
-		"clusters/atlantis/addons-config.yaml",
-		"clusters/atlantis/addons-config/kustomization.yaml",
-		"clusters/atlantis/addons.yaml",
-		"clusters/atlantis/addons/kustomization.yaml",
-		"clusters/atlantis/cdi-block-device-access.yaml",
-		"clusters/atlantis/ext-net-bridge-tag.yaml",
-		"clusters/atlantis/vpc-dns-nad-provider.yaml",
-		"clusters/atlantis/trusted-ca.yaml",
-		"clusters/atlantis/root-namespaces.yaml",
+		"clusters/east1/addons-config.yaml",
+		"clusters/east1/addons-config/kustomization.yaml",
+		"clusters/east1/addons.yaml",
+		"clusters/east1/addons/kustomization.yaml",
+		"clusters/east1/cdi-block-device-access.yaml",
+		"clusters/east1/ext-net-bridge-tag.yaml",
+		"clusters/east1/vpc-dns-nad-provider.yaml",
+		"clusters/east1/trusted-ca.yaml",
+		"clusters/east1/root-namespaces.yaml",
 		"platform/registry-depot/secret.enc.yaml",
 	} {
 		if _, ok := got[want]; !ok {

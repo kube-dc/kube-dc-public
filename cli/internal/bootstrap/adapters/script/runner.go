@@ -290,9 +290,9 @@ func (r *Runner) rootPath(root ScriptRoot) (string, error) {
 // kubectl/flux invocation inside fleet/bootstrap/*.sh depends on
 // the operator's KUBECONFIG choice. Without passthrough, scripts
 // silently fell through to ~/.kube/config — which could point at a
-// completely different cluster. The atlantis install hit this:
+// completely different cluster. The east1 install hit this:
 // flux-install.sh probed the production cloud cluster instead of
-// the new atlantis cluster. No mutation landed (flux refused
+// the new east1 cluster. No mutation landed (flux refused
 // on a path mismatch) but the misroute was severe enough to make
 // KUBECONFIG a host-env citizen on par with HOME.
 //

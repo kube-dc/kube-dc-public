@@ -74,7 +74,7 @@ spec:
                     type: string
                   providerName:
                     description: ProviderName is shown to the organization's users,
-                      e.g. "Webdock".
+                      e.g. "Example Hosting".
                     maxLength: 64
                     minLength: 1
                     type: string

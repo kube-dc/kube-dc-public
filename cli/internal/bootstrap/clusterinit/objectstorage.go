@@ -335,7 +335,7 @@ func writeS3ListenerPatch(clusterDir, envBody string, out io.Writer) error {
 
 // objectStorageOverlayYAML renders clusters/<name>/object-storage/
 // kustomization.yaml. The relative depth back to the repo root
-// depends on the cluster-name nesting (atlantis → ../../../,
+// depends on the cluster-name nesting (east1 → ../../../,
 // eu/dc1 → ../../../../) — mirrors the live sibling overlays.
 func objectStorageOverlayYAML(clusterName string, spec ObjectStorageSpec) string {
 	// clusters/ + name components + object-storage/ dirs deep.

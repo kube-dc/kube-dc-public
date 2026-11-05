@@ -283,7 +283,7 @@ func (c *Client) PodList(ctx context.Context) ([]string, error) {
 // `wget --post-file=-`, which reads the JSON body from stdin. Argv
 // stays clean of secret material.
 //
-// **Why not `bao operator unseal -`** (atlantis bring-up
+// **Why not `bao operator unseal -`** (east1 bring-up
 // 2026-05-26): OpenBao 2.5.3 does NOT honor `-` as a stdin marker
 // the way HashiCorp Vault does — bao treats `-` as a literal key
 // value and rejects it as "must be a valid hex or base64 string".
@@ -1111,7 +1111,7 @@ func (c *Client) activePodCached(ctx context.Context) (string, error) {
 // parseStatus consumes `bao status -format=json` output and fills st.
 //
 // **Tolerance**: the K8sClient combines stdout+stderr into one
-// buffer, and in practice (atlantis bring-up 2026-05-26 + eu/dc1
+// buffer, and in practice (east1 bring-up 2026-05-26 + eu/dc1
 // 2026-06-08 on WebSocket exec) the apiserver remotecommand stream
 // can prepend or append a stray byte from the error channel —
 // enough to make json.Unmarshal reject the whole payload. Locate

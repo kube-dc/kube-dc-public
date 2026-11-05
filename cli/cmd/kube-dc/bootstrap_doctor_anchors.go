@@ -43,7 +43,7 @@ func bootstrapDoctorAnchorsCmd(fleetRepo *string) *cobra.Command {
 		Args:          cobra.ExactArgs(1),
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		Example: `  kube-dc bootstrap doctor anchors atlantis --repo ~/projects/kube-dc-fleet
+		Example: `  kube-dc bootstrap doctor anchors east1 --repo ~/projects/kube-dc-fleet
   kube-dc bootstrap doctor anchors eu/dc1
   kube-dc bootstrap doctor anchors acme --ssh-host-map host5-a=10.0.0.5`,
 		RunE: func(cmd *cobra.Command, args []string) error {

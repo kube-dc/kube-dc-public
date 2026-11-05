@@ -159,7 +159,7 @@ func TestUnseal_HappyPath_UnsealsSealedPodsOnly(t *testing.T) {
 	// Override the seeded empty secrets.enc.yaml so the path
 	// exists for the engine (real engine reads via SOPS, our
 	// fake returns the canned body regardless of path content).
-	_ = os.WriteFile(filepath.Join(repo, "clusters", "atlantis", "secrets.enc.yaml"),
+	_ = os.WriteFile(filepath.Join(repo, "clusters", "east1", "secrets.enc.yaml"),
 		[]byte("stub-encrypted"), 0o644)
 
 	sops := &fakeSOPSDecryptOnly{body: []byte(canonicalDecryptedSecrets)}
@@ -171,7 +171,7 @@ func TestUnseal_HappyPath_UnsealsSealedPodsOnly(t *testing.T) {
 
 	var out bytes.Buffer
 	err := Unseal(context.Background(), UnsealOptions{
-		ClusterName: "atlantis",
+		ClusterName: "east1",
 		FleetRepo:   repo,
 		SOPS:        sops,
 		OpenBao:     bao,
@@ -228,7 +228,7 @@ func TestUnseal_HappyPath_UnsealsSealedPodsOnly(t *testing.T) {
 //   - After join, the unseal proceeds normally (3 shares per pod)
 func TestUnseal_AutoJoinsUninitializedFollowers(t *testing.T) {
 	repo := setupFleet(t)
-	_ = os.WriteFile(filepath.Join(repo, "clusters", "atlantis", "secrets.enc.yaml"),
+	_ = os.WriteFile(filepath.Join(repo, "clusters", "east1", "secrets.enc.yaml"),
 		[]byte("stub"), 0o644)
 
 	sops := &fakeSOPSDecryptOnly{body: []byte(canonicalDecryptedSecrets)}
@@ -249,7 +249,7 @@ func TestUnseal_AutoJoinsUninitializedFollowers(t *testing.T) {
 
 	var out bytes.Buffer
 	err := Unseal(context.Background(), UnsealOptions{
-		ClusterName: "atlantis",
+		ClusterName: "east1",
 		FleetRepo:   repo,
 		SOPS:        sops,
 		OpenBao:     bao,
@@ -295,7 +295,7 @@ func TestUnseal_AutoJoinsUninitializedFollowers(t *testing.T) {
 func TestUnseal_RaftJoinErrorPropagates(t *testing.T) {
 	shortJoinRetry(t)
 	repo := setupFleet(t)
-	_ = os.WriteFile(filepath.Join(repo, "clusters", "atlantis", "secrets.enc.yaml"),
+	_ = os.WriteFile(filepath.Join(repo, "clusters", "east1", "secrets.enc.yaml"),
 		[]byte("stub"), 0o644)
 
 	sops := &fakeSOPSDecryptOnly{body: []byte(canonicalDecryptedSecrets)}
@@ -309,7 +309,7 @@ func TestUnseal_RaftJoinErrorPropagates(t *testing.T) {
 	}
 
 	err := Unseal(context.Background(), UnsealOptions{
-		ClusterName: "atlantis", FleetRepo: repo,
+		ClusterName: "east1", FleetRepo: repo,
 		SOPS: sops, OpenBao: bao,
 	})
 	if err == nil || !bytes.Contains([]byte(err.Error()), []byte("raft join openbao-1")) {
@@ -333,7 +333,7 @@ func shortJoinRetry(t *testing.T) {
 func TestUnseal_RaftJoinRetriesUntilLeaderIsActive(t *testing.T) {
 	shortJoinRetry(t)
 	repo := setupFleet(t)
-	_ = os.WriteFile(filepath.Join(repo, "clusters", "atlantis", "secrets.enc.yaml"),
+	_ = os.WriteFile(filepath.Join(repo, "clusters", "east1", "secrets.enc.yaml"),
 		[]byte("stub"), 0o644)
 
 	sops := &fakeSOPSDecryptOnly{body: []byte(canonicalDecryptedSecrets)}
@@ -347,7 +347,7 @@ func TestUnseal_RaftJoinRetriesUntilLeaderIsActive(t *testing.T) {
 	}
 
 	if err := Unseal(context.Background(), UnsealOptions{
-		ClusterName: "atlantis", FleetRepo: repo,
+		ClusterName: "east1", FleetRepo: repo,
 		SOPS: sops, OpenBao: bao,
 	}); err != nil {
 		t.Fatalf("unseal: %v", err)
@@ -362,7 +362,7 @@ func TestUnseal_RaftJoinRetriesUntilLeaderIsActive(t *testing.T) {
 func TestUnseal_FollowerStatusRetriedWhileStarting(t *testing.T) {
 	shortJoinRetry(t)
 	repo := setupFleet(t)
-	_ = os.WriteFile(filepath.Join(repo, "clusters", "atlantis", "secrets.enc.yaml"),
+	_ = os.WriteFile(filepath.Join(repo, "clusters", "east1", "secrets.enc.yaml"),
 		[]byte("stub"), 0o644)
 	bao := &fakeOpenBao{
 		pods:        []string{"openbao-0", "openbao-1"},
@@ -373,7 +373,7 @@ func TestUnseal_FollowerStatusRetriedWhileStarting(t *testing.T) {
 		statusFailN: 2,
 	}
 	if err := Unseal(context.Background(), UnsealOptions{
-		ClusterName: "atlantis", FleetRepo: repo,
+		ClusterName: "east1", FleetRepo: repo,
 		SOPS: &fakeSOPSDecryptOnly{body: []byte(canonicalDecryptedSecrets)}, OpenBao: bao,
 	}); err != nil {
 		t.Fatalf("unseal: %v", err)
@@ -403,7 +403,7 @@ func TestUnseal_ShareValuesNeverInOutput(t *testing.T) {
 
 	var out bytes.Buffer
 	if err := Unseal(context.Background(), UnsealOptions{
-		ClusterName: "atlantis",
+		ClusterName: "east1",
 		FleetRepo:   repo,
 		SOPS:        sops,
 		OpenBao:     bao,
@@ -429,7 +429,7 @@ func TestUnseal_RefusesMissingThresholdShares(t *testing.T) {
 	sops := &fakeSOPSDecryptOnly{body: []byte(body)}
 	bao := &fakeOpenBao{pods: []string{"openbao-0"}, sealed: map[string]bool{"openbao-0": true}, unsealCnt: map[string]int{}}
 	err := Unseal(context.Background(), UnsealOptions{
-		ClusterName: "atlantis", FleetRepo: repo,
+		ClusterName: "east1", FleetRepo: repo,
 		SOPS: sops, OpenBao: bao,
 	})
 	if !errors.Is(err, ErrUnsealMissingShares) {
@@ -448,12 +448,12 @@ func TestUnseal_RefusesMissingThresholdShares(t *testing.T) {
 
 func TestUnseal_RefusesEmptyPodList(t *testing.T) {
 	repo := setupFleet(t)
-	_ = os.WriteFile(filepath.Join(repo, "clusters", "atlantis", "secrets.enc.yaml"),
+	_ = os.WriteFile(filepath.Join(repo, "clusters", "east1", "secrets.enc.yaml"),
 		[]byte("stub"), 0o644)
 	sops := &fakeSOPSDecryptOnly{body: []byte(canonicalDecryptedSecrets)}
 	bao := &fakeOpenBao{pods: []string{}, sealed: map[string]bool{}, unsealCnt: map[string]int{}}
 	err := Unseal(context.Background(), UnsealOptions{
-		ClusterName: "atlantis", FleetRepo: repo,
+		ClusterName: "east1", FleetRepo: repo,
 		SOPS: sops, OpenBao: bao,
 	})
 	if err == nil || !bytes.Contains([]byte(err.Error()), []byte("no OpenBao pods found")) {
@@ -473,7 +473,7 @@ func TestUnseal_AllAlreadyUnsealed_NoOp(t *testing.T) {
 	}
 	var out bytes.Buffer
 	err := Unseal(context.Background(), UnsealOptions{
-		ClusterName: "atlantis", FleetRepo: repo,
+		ClusterName: "east1", FleetRepo: repo,
 		SOPS: sops, OpenBao: bao, Out: &out,
 	})
 	if err != nil {
@@ -501,7 +501,7 @@ func TestUnseal_UnsealErrorPropagates(t *testing.T) {
 		unsealErr: errors.New("bao unseal: SPDY connection lost"),
 	}
 	err := Unseal(context.Background(), UnsealOptions{
-		ClusterName: "atlantis", FleetRepo: repo,
+		ClusterName: "east1", FleetRepo: repo,
 		SOPS: sops, OpenBao: bao,
 	})
 	if err == nil {
@@ -519,7 +519,7 @@ func TestUnseal_SOPSDecryptError(t *testing.T) {
 	sops := &fakeSOPSDecryptOnly{err: errors.New("sops: no recipient matched")}
 	bao := &fakeOpenBao{pods: []string{"openbao-0"}, sealed: map[string]bool{"openbao-0": true}, unsealCnt: map[string]int{}}
 	err := Unseal(context.Background(), UnsealOptions{
-		ClusterName: "atlantis", FleetRepo: repo,
+		ClusterName: "east1", FleetRepo: repo,
 		SOPS: sops, OpenBao: bao,
 	})
 	if err == nil || !bytes.Contains([]byte(err.Error()), []byte("decrypt")) {
@@ -531,7 +531,7 @@ func TestUnseal_SOPSDecryptError(t *testing.T) {
 
 func TestUnseal_MissingDependencies(t *testing.T) {
 	base := UnsealOptions{
-		ClusterName: "atlantis",
+		ClusterName: "east1",
 		FleetRepo:   "/tmp",
 		SOPS:        &fakeSOPSDecryptOnly{body: []byte(canonicalDecryptedSecrets)},
 		OpenBao:     &fakeOpenBao{pods: []string{"openbao-0"}, sealed: map[string]bool{"openbao-0": true}, unsealCnt: map[string]int{}},

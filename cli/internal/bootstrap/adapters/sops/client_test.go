@@ -376,15 +376,15 @@ func equal(a, b []string) bool {
 // sops exit 100:
 //
 //	cannot operate on non-existent file
-//	  ".../clusters/atlantis/clusters/atlantis/secrets.enc.yaml"
+//	  ".../clusters/east1/clusters/east1/secrets.enc.yaml"
 //
 // The adapter chdirs to filepath.Dir(path); handing sops the *relative*
 // path again made it resolve against that new cwd. The argument must be
 // the base name so cwd + arg address the file exactly once.
 func TestRelativePath_NotDoubled(t *testing.T) {
 	for _, path := range []string{
-		"clusters/atlantis/secrets.enc.yaml",      // relative (--repo .)
-		"/abs/clusters/atlantis/secrets.enc.yaml", // absolute (--repo /abs)
+		"clusters/east1/secrets.enc.yaml",      // relative (--repo .)
+		"/abs/clusters/east1/secrets.enc.yaml", // absolute (--repo /abs)
 	} {
 		var gotDir string
 		var gotArgs []string
@@ -404,7 +404,7 @@ func TestRelativePath_NotDoubled(t *testing.T) {
 		if arg != filepath.Base(path) {
 			t.Errorf("Decrypt(%q): arg=%q want base %q", path, arg, filepath.Base(path))
 		}
-		if strings.Contains(filepath.Join(gotDir, arg), "clusters/atlantis/clusters/atlantis") {
+		if strings.Contains(filepath.Join(gotDir, arg), "clusters/east1/clusters/east1") {
 			t.Errorf("Decrypt(%q): path doubled: %q", path, filepath.Join(gotDir, arg))
 		}
 	}
@@ -414,9 +414,9 @@ func TestRelativePath_NotDoubled(t *testing.T) {
 // class as TestRelativePath_NotDoubled, but for the --output tempfile.
 //
 // os.CreateTemp(dir, …) returns a name that KEEPS a relative dir prefix, so
-// with dir="clusters/atlantis" tmpPath is "clusters/atlantis/.sops-…". The
+// with dir="clusters/east1" tmpPath is "clusters/east1/.sops-…". The
 // command already runs with cwd=dir, so passing that full relative path made
-// sops write to clusters/atlantis/clusters/atlantis/.sops-… and the follow-up
+// sops write to clusters/east1/clusters/east1/.sops-… and the follow-up
 // os.Chmod/os.Rename then failed on a file that was never created.
 //
 // The other SetStringData tests cannot catch this: they use absolute
@@ -426,7 +426,7 @@ func TestRelativePath_NotDoubled(t *testing.T) {
 func TestSetStringData_RelativePath_OutputNotDoubled(t *testing.T) {
 	t.Chdir(t.TempDir())
 
-	rel := filepath.Join("clusters", "atlantis", "secrets.enc.yaml")
+	rel := filepath.Join("clusters", "east1", "secrets.enc.yaml")
 	if err := os.MkdirAll(filepath.Dir(rel), 0o700); err != nil {
 		t.Fatal(err)
 	}

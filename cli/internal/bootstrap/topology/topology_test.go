@@ -37,7 +37,7 @@ func TestClassify(t *testing.T) {
 			// Ingress v2: the shape probe returns a hint-less low-confidence
 			// signal on a migrated cluster (PRD §6.E alignment note). The
 			// classifier must NOT turn that into a confident Class A —
-			// telling a cloud-class operator to enable internal endpoints would add
+			// telling a flat-L2 (Class B) operator to enable internal endpoints would add
 			// MetalLB VIPs, allowlists and Corefile churn for nothing.
 			name: "ingress-v2 uniform shape yields no confident class",
 			signals: []Signal{

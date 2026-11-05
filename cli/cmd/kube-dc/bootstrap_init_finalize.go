@@ -90,7 +90,7 @@ func runPostApply(ctx context.Context, out io.Writer, o *clusterinit.InitOptions
 	// ServiceAccount + ClusterRoleBinding + token Secret it creates are core
 	// API objects the apiserver already serves, so this works the moment
 	// the session above was built, independent of Flux/infra-core ever
-	// coming up. Closes the exact gap that left crk, jed and next without a
+	// coming up. Closes the exact gap that left three clusters without a
 	// committed recovery kubeconfig: `bootstrap init` never ran `break-glass
 	// adopt`, so the only way to get one was an operator remembering to run
 	// it — and commit it — by hand (2026-09-04).

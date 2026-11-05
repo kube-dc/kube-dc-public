@@ -100,14 +100,14 @@ mutate without an explicit operator vouch.
 The flag surface mirrors cluster-config.env; --set KEY=VALUE applies
 deltas on top of the preset's defaults (--set keys must be
 SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
-		Example: `  # Dry-run an existing-fleet add (atlantis-shape):
+		Example: `  # Dry-run an existing-fleet add (east1-shape):
   kube-dc bootstrap init \
     --preset=cloud+public-vlan \
     --mode=install \
-    --name=atlantis \
-    --domain=kdc.atlantis.example.com \
+    --name=east1 \
+    --domain=kdc.east1.example.com \
     --node-external-ip=203.0.113.52 \
-    --email=ops@atlantis.example.com \
+    --email=ops@east1.example.com \
     --fleet-mode=existing-fleet \
     --repo=~/projects/kube-dc-fleet \
     --object-storage-mode=rook-ceph-multi-node \
@@ -122,7 +122,7 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
     --dry-run
 
   # CI apply:
-  kube-dc bootstrap init --apply-plan=/tmp/atlantis-plan.json --no-tty`,
+  kube-dc bootstrap init --apply-plan=/tmp/east1-plan.json --no-tty`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Parse repeatable flags into the typed map shape before
 			// validation runs. Surface parse errors with the flag name
@@ -559,7 +559,7 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 	cmd.Flags().StringVar(&o.Name, "name", "",
 		"Cluster name (lowercase, dashes, optionally nested with /; required)")
 	cmd.Flags().StringVar(&o.Domain, "domain", "",
-		"Cluster FQDN (e.g. kdc.atlantis.example.com; required)")
+		"Cluster FQDN (e.g. kdc.east1.example.com; required)")
 	cmd.Flags().StringVar(&o.NodeExternalIP, "node-external-ip", "",
 		"External IP of the cluster's wildcard target (one of the public IPs of any node; required)")
 	cmd.Flags().StringVar(&o.Email, "email", "",

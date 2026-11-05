@@ -726,7 +726,7 @@ func (m *ContextModel) renderList(maxW int) string {
 
 	// Tight columns: marker + ★ + name + identity badge + namespace.
 	// Name column auto-fits the widest entry, capped so kubectx-style
-	// long names (kube-dc/kube-dc.cloud/shalb/jumbolot) don't push the
+	// long names (kube-dc/kube-dc.cloud/acme/a-long-project-name) don't push the
 	// identity badge off-screen.
 	nameW := 4
 	for _, e := range m.entries {

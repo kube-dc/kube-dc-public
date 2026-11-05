@@ -134,7 +134,7 @@ spec:
 func writePlatformFixture(t *testing.T, body string) string {
 	t.Helper()
 	dir := t.TempDir()
-	clusterDir := filepath.Join(dir, "clusters", "atlantis")
+	clusterDir := filepath.Join(dir, "clusters", "east1")
 	if err := os.MkdirAll(clusterDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

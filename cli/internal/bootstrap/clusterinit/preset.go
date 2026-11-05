@@ -143,7 +143,7 @@ var universalPlatformEndpointDefaults = map[string]string{
 // GARP announcements on br-ext-cloud; without one bound to a host
 // interface on every gateway node, MetalLB silently degrades to a
 // single-speaker-on-the-anchor-host topology (the load-bearing
-// failure mode that bit atlantis on 2026-05-30 — Phase-0's
+// failure mode that bit east1 on 2026-05-30 — Phase-0's
 // hand-bound .11 turned out to be MetalLB's only viable speaker).
 //
 // EXT_NET_ANCHOR_IPS is a comma-separated `host=CIDR` map; hostnames
@@ -464,7 +464,7 @@ var cloudVLANPreset = func() PresetSpec {
 // cloudPublicVLANPreset — production default. Both `EXT_NET_*`
 // (cloud NAT pool for internal egress) and `EXT_PUBLIC_*` (public
 // VLAN for routable EIPs) blocks. Used by kube-dc.cloud, stage, and
-// (per the atlantis sprint) atlantis once the operator
+// (per the east1 sprint) east1 once the operator
 // supplies the per-rack VLAN IDs.
 var cloudPublicVLANPreset = func() PresetSpec {
 	defaults := map[string]string{

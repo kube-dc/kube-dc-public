@@ -233,7 +233,7 @@ func TestCheckDomainCollision(t *testing.T) {
 		wantErr   bool
 		wantSub   string
 	}{
-		{"unique domain ok", "kdc.atlantis.example.com", false, ""},
+		{"unique domain ok", "kdc.east1.example.com", false, ""},
 		{"exact collision rejected", "kube-dc.cloud", true, "cloud"},
 		{"case-insensitive collision", "KUBE-DC.CLOUD", true, "cloud"},
 		{"nested-cluster collision", "kdc.eu-dc1.example.net", true, "eu/dc1"},

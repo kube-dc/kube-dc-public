@@ -92,7 +92,7 @@ spec:
   # Must match the k8-manager DEPLOYMENT's real pod labels
   # (app.kubernetes.io/name, NOT a bare `app` key) — the original selector
   # matched nothing, the Service had zero endpoints, and every CA dial hit
-  # i/o timeout (found live on cs/next enablement 2026-08-06).
+  # i/o timeout (found live on eu/dc1 enablement 2026-08-06).
   selector:
     app.kubernetes.io/name: kube-dc-k8-manager
   ports:
@@ -147,7 +147,7 @@ rules:
     verbs: [get, list, watch]
   # CA 1.35 starts DRA informers unconditionally; without these read-only
   # surfaces the informer sync loops forbidden BEFORE the externalgrpc
-  # provider ever dials (found live on cs/next enablement 2026-08-06 —
+  # provider ever dials (found live on eu/dc1 enablement 2026-08-06 —
   # same live-only-RBAC class as the M7 tenant-CA fixes). Read-only, no
   # delete verbs anywhere, unchanged posture.
   - apiGroups: [resource.k8s.io]
@@ -158,7 +158,7 @@ rules:
     verbs: [create, get, update]
 ---
 # CA writes its status ConfigMap in its own namespace; without this it logs
-# a forbidden every 10s (found live on cs/next — non-fatal, but noise that
+# a forbidden every 10s (found live on eu/dc1 — non-fatal, but noise that
 # buries real errors). create cannot be name-scoped; get/update are.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -218,7 +218,7 @@ spec:
         # Roll the CA whenever the k8-manager image moves: its grpc client
         # holds a backed-off subchannel to the OLD adapter pod after a
         # k8-manager roll and can sit on i/o timeouts for many minutes
-        # (observed live on cs/next enablement day). A pod-template change
+        # (observed live on eu/dc1 enablement day). A pod-template change
         # here forces a fresh dial.
         # EXACTLY the k8-manager Deployment's image expression — no invented
         # default (that template has none; Chart.AppVersion is the MANAGER's

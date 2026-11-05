@@ -1030,7 +1030,7 @@ func checkHelmReleases(ctx context.Context, o Options) Check {
 // with "no management SNAT address available" — on a cluster that otherwise
 // looks converged.
 //
-// The greenfield failure this catches (webdock 2026-08-31): kube-ovn's legacy
+// The greenfield failure this catches (metal1 2026-08-31): kube-ovn's legacy
 // external-gateway handler created the ovn-cluster-<ext> router port but never
 // the OvnEip that records its address, so the OvnSnatRule stayed empty AND the
 // first tenant EIP was allocated the same address. Fix recipe in the fleet's
@@ -1110,7 +1110,7 @@ func checkManagementSnat(ctx context.Context, o Options) Check {
 // peer switch port <ext>-ovn-cluster on the external switch, with the router
 // port carrying the published SNAT address. CR status alone cannot see this:
 // OvnSnatRule/OvnEip stayed "ready" on stage while the pair was broken, and on
-// webdock the router port existed with no switch port — the handler retried a
+// metal1 the router port existed with no switch port — the handler retried a
 // constraint violation every second and every system→tenant packet had no
 // datapath. Probed by exec'ing ovn-nbctl in an ovn-central pod.
 func checkManagementGatewayPair(ctx context.Context, o Options) Check {
@@ -1208,7 +1208,7 @@ func checkManagementGatewayPair(ctx context.Context, o Options) Check {
 // patch pair. kube-ovn creates the pair in one transaction and, if it ever
 // finds the router port alone, retries that transaction forever ("constraint
 // violation … Logical_Router_Port") — the Subnet never turns Ready and nothing
-// on the switch can reach the router. On webdock (2026-08-31) that was the
+// on the switch can reach the router. On metal1 (2026-08-31) that was the
 // state of BOTH ext-cloud (management SNAT dark) and infra-net (dual-homing
 // silently disabled: the Project controller withholds the opt-in label while
 // the infra Subnet is not Ready, so tenant pods stay single-homed and Kamaji

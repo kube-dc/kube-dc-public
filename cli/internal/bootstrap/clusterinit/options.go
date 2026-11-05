@@ -71,7 +71,7 @@ const (
 	// greenfield day-1 path).
 	FleetNewRepo FleetMode = "new-repo"
 	// FleetExistingFleet adds a cluster to an existing fleet repo with
-	// sibling clusters already enrolled (atlantis's path).
+	// sibling clusters already enrolled (east1's path).
 	FleetExistingFleet FleetMode = "existing-fleet"
 	// FleetExistingRepo adopts an existing repo that doesn't yet have
 	// kube-dc-fleet structure (greenfield-ish; rare).
@@ -118,7 +118,7 @@ var AllRookModes = []RookMode{
 // Zero-value safety: every field has a sensible zero (empty slice, "",
 // 0, false). The cobra binding fills in defaults that differ from
 // zero (e.g. FleetMode defaults to ExistingFleet for
-// atlantis-shape installs). RookMode deliberately has NO
+// east1-shape installs). RookMode deliberately has NO
 // default (OS-1) — empty fails Validate with
 // ErrObjectStorageModeRequired.
 //
@@ -498,13 +498,13 @@ var ErrModeAutoNotImplemented = ErrModeAutoUnresolved
 // Validate refuses any non-empty --addon until the addon engine slice
 // ships. The message points at the manual path so operators aren't
 // stuck: hand-author `clusters/<name>/addons.yaml` (see the live
-// siblings, e.g. clusters/atlantis/addons.yaml, for the
+// siblings, e.g. clusters/east1/addons.yaml, for the
 // Kustomization shape).
 //
 // When the addon slice lands, delete this sentinel + the guard in
 // Validate and wire the rendering hook — the registry + hash plumbing
 // is deliberately kept so that's the only change needed.
-var ErrAddonsNotImplemented = errors.New("init: --addon is not yet wired into apply (the flag validates but scaffolds nothing); omit it and hand-author clusters/<name>/addons.yaml post-install — see clusters/atlantis/addons.yaml for the shape")
+var ErrAddonsNotImplemented = errors.New("init: --addon is not yet wired into apply (the flag validates but scaffolds nothing); omit it and hand-author clusters/<name>/addons.yaml post-install — see clusters/east1/addons.yaml for the shape")
 
 // ErrObjectStorageModeRequired fires when --object-storage-mode is
 // unset. There is deliberately NO default: object storage is
@@ -559,9 +559,9 @@ func ValidClusterName(name string) bool { return clusterNameRegex.MatchString(na
 //
 // The last label must start with a letter and be at least two
 // characters, but it MAY contain digits and interior hyphens: private
-// enterprise zones such as `kubedc.diia-dcir` or `corp.site-01` are valid
+// enterprise zones such as `kubedc.corp-dc01` or `corp.site-01` are valid
 // DNS names (RFC 1035 allows hyphens inside any label), and a letters-only
-// TLD rule rejected them at `bootstrap install --domain` (diia, 2026-09-08).
+// TLD rule rejected them at `bootstrap install --domain` (2026-09-08).
 var domainRegex = regexp.MustCompile(`^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z](?:[a-z0-9-]*[a-z0-9])$`)
 
 // Validate runs every cobra-time check and returns ErrValidation
@@ -779,7 +779,7 @@ func validateDomain(domain string) []string {
 		return []string{"--domain is required"}
 	}
 	if !domainRegex.MatchString(strings.ToLower(domain)) {
-		return []string{fmt.Sprintf("--domain %q must be a FQDN (e.g. atlantis.example.com)", domain)}
+		return []string{fmt.Sprintf("--domain %q must be a FQDN (e.g. east1.example.com)", domain)}
 	}
 	return nil
 }

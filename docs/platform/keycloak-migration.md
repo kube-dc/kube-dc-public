@@ -52,7 +52,7 @@ theme keep their names.
 - Branding comes from cluster-config (`KUBEDC_BRAND_NAME`,
   `KUBE_DC_UI_ENVIRONMENT_LABEL`, logo/favicon), not from the theme
   component's HelmRelease env. Where a theme component carried branding,
-  patch the Deployment's env in the cluster (webdock does this for its brand
+  patch the Deployment's env in the cluster (a white-label installation does this for its brand
   name). Do not set `KUBEDC_BRAND_NAME` in cluster-config: the kube-dc chart
   nests it inside another default, which Flux substitution does not resolve.
 - CloudSigma installations set
@@ -118,8 +118,8 @@ identity providers and signing key ids; they must be identical. Then:
   `keycloak-db` instances report.
 - On CloudSigma: cs-bff's exchange (client `cs-partner-admin`,
   `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`,
-  `requested_subject`, `audience=kube-dc`) returns a token, and the BOC
-  `cs-hosting-*` managed clusters are unchanged.
+  `requested_subject`, `audience=kube-dc`) returns a token, and
+  existing managed clusters are unchanged.
 
 ## Roll back (before cleanup)
 
@@ -138,7 +138,7 @@ flux reconcile hr keycloak -n keycloak --force
 kubectl -n keycloak scale statefulset keycloak --replicas=1
 ```
 
-The Bitnami release comes back on its original, unmigrated database (cs/crk
+The Bitnami release comes back on its original, unmigrated database (one installation
 was rolled back this way on 2026-10-08 in about two minutes). Writes made
 while 26.8 ran are lost. Delete `cluster/keycloak-db` once you no longer need
 it for comparison.

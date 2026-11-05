@@ -118,13 +118,13 @@ func TestClassifyContext(t *testing.T) {
 
 func TestTenantRealmFromName(t *testing.T) {
 	cases := map[string]string{
-		"kube-dc/stage.kube-dc.com/shalb/dev":  "shalb",
-		"kube-dc/kube-dc.cloud/shalb/jumbolot": "shalb",
-		"kube-dc/kube-dc.cloud/admin":          "admin",
-		"kube-dc/foo":                          "",
-		"kube-dc":                              "",
-		"":                                     "",
-		"some-other-context":                   "",
+		"kube-dc/stage.kube-dc.com/shalb/dev":            "shalb",
+		"kube-dc/kube-dc.cloud/acme/a-long-project-name": "acme",
+		"kube-dc/kube-dc.cloud/admin":                    "admin",
+		"kube-dc/foo":                                    "",
+		"kube-dc":                                        "",
+		"":                                               "",
+		"some-other-context":                             "",
 	}
 	for in, want := range cases {
 		if got := tenantRealmFromName(in); got != want {

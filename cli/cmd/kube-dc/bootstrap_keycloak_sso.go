@@ -73,12 +73,12 @@ After it completes, reconcile so the platform picks the flag up:
   flux reconcile kustomization platform`,
 		Example: `  # Email-only sign-up (no Google):
   SMTP_USER=postmark-token SMTP_PASSWORD=postmark-token \
-    kube-dc bootstrap keycloak sso atlantis --repo ~/fleet \
+    kube-dc bootstrap keycloak sso east1 --repo ~/fleet \
     --smtp-host smtp.postmarkapp.com --smtp-port 587 --smtp-from noreply@example.com
 
   # With Google social login:
   SMTP_USER=... SMTP_PASSWORD=... GOOGLE_CLIENT_SECRET=... \
-    kube-dc bootstrap keycloak sso atlantis --repo ~/fleet \
+    kube-dc bootstrap keycloak sso east1 --repo ~/fleet \
     --smtp-host smtp.example.com --google-client-id 1234-abc.apps.googleusercontent.com`,
 		Args:          cobra.ExactArgs(1),
 		SilenceErrors: true,

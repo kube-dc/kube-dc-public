@@ -329,7 +329,7 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 	// for the operator to `git clean -fd` is a footgun. Instead
 	// we remove the cluster dir wholesale on Scaffold failure.
 	//
-	// EXCEPTION (atlantis bug 2026-05-26): if Scaffold's own
+	// EXCEPTION (east1 bug 2026-05-26): if Scaffold's own
 	// preflight refused (ErrScaffoldTargetExists), the cluster dir
 	// pre-existed this Apply call — operators sometimes pre-place a
 	// `docs/` README there. Removing it would destroy the operator's

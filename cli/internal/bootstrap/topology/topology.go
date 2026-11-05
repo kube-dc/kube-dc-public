@@ -299,7 +299,7 @@ func probeEnvoyExternalIPs(ctx context.Context, k *kubectl) Signal {
 	// is API-deprecated) and every cluster is either ClusterIP or
 	// LoadBalancer+metallb. The shape-based cases below would therefore
 	// report "Class A, internal endpoints required" for EVERY migrated cluster —
-	// including cloud-class installs where the feature is correctly OFF.
+	// including flat-L2 installs where the feature is correctly OFF.
 	// Until the classifier is re-based on the ADDRESS (is the platform
 	// address on-link on a node, or translated upstream?), say so instead
 	// of guessing: an explicit "cannot tell" is safe, a confident wrong

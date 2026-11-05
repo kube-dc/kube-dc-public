@@ -96,10 +96,10 @@ func TestWaitPodRunning_ContextCancel(t *testing.T) {
 
 func TestPostApplyOpenBaoInitOptionsCarriesSharesOutCustodyPath(t *testing.T) {
 	opts := &clusterinit.InitOptions{
-		Name:             "atlantis",
+		Name:             "east1",
 		Repo:             "/fleet",
 		NoPush:           true,
-		OpenBaoSharesOut: "/secure/off-git/atlantis-openbao-shares.yaml",
+		OpenBaoSharesOut: "/secure/off-git/east1-openbao-shares.yaml",
 	}
 	session := &bootstrap.Session{}
 	got := postApplyOpenBaoInitOptions(opts, session, "token", io.Discard)
@@ -111,14 +111,14 @@ func TestPostApplyOpenBaoInitOptionsCarriesSharesOutCustodyPath(t *testing.T) {
 	}
 }
 
-// TestPostApplyBreakGlassOptionsWiring guards the exact gap that left crk,
-// jed and next with no recovery kubeconfig committed: `bootstrap init` must
+// TestPostApplyBreakGlassOptionsWiring guards the exact gap that left three
+// clusters with no recovery kubeconfig committed: `bootstrap init` must
 // wire ClusterName/FleetRepo/NoPush straight through, and must pass the
 // freshly-merged admin kubeconfig PATH explicitly rather than leaving Adopt
 // to guess at the operator's ambient $KUBECONFIG.
 func TestPostApplyBreakGlassOptionsWiring(t *testing.T) {
 	opts := &clusterinit.InitOptions{
-		Name:   "atlantis",
+		Name:   "east1",
 		Repo:   "/fleet",
 		NoPush: true,
 	}
@@ -163,13 +163,13 @@ func TestPostApplyBreakGlassOptionsWiring(t *testing.T) {
 // failed), the hint must say so explicitly instead of silently omitting
 // any targeting.
 func TestFinalizeHintTargetsTheRightCluster(t *testing.T) {
-	o := &clusterinit.InitOptions{Name: "jed", Repo: "/fleet"}
+	o := &clusterinit.InitOptions{Name: "dc3", Repo: "/fleet"}
 
 	t.Run("fetchVerified: kubeconfig path AND context are both pinned", func(t *testing.T) {
 		var out bytes.Buffer
 		finalizeHint(&out, o, "/home/op/.kube/config", true)
 		got := out.String()
-		want := "KUBECONFIG='/home/op/.kube/config' kube-dc bootstrap break-glass adopt jed --repo '/fleet' --kube-context 'jed'\n"
+		want := "KUBECONFIG='/home/op/.kube/config' kube-dc bootstrap break-glass adopt dc3 --repo '/fleet' --kube-context 'dc3'\n"
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing the fully-targeted break-glass hint %q in:\n%s", want, got)
 		}
@@ -179,7 +179,7 @@ func TestFinalizeHintTargetsTheRightCluster(t *testing.T) {
 		var out bytes.Buffer
 		finalizeHint(&out, o, "/home/op/.kube/config", false)
 		got := out.String()
-		want := "KUBECONFIG='/home/op/.kube/config' kube-dc bootstrap break-glass adopt jed --repo '/fleet'\n"
+		want := "KUBECONFIG='/home/op/.kube/config' kube-dc bootstrap break-glass adopt dc3 --repo '/fleet'\n"
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing the file-only break-glass hint %q in:\n%s", want, got)
 		}
@@ -192,7 +192,7 @@ func TestFinalizeHintTargetsTheRightCluster(t *testing.T) {
 		var out bytes.Buffer
 		finalizeHint(&out, o, "/home/op ops/.kube/$USER-config", true)
 		got := out.String()
-		want := "KUBECONFIG='/home/op ops/.kube/$USER-config' kube-dc bootstrap break-glass adopt jed --repo '/fleet' --kube-context 'jed'\n"
+		want := "KUBECONFIG='/home/op ops/.kube/$USER-config' kube-dc bootstrap break-glass adopt dc3 --repo '/fleet' --kube-context 'dc3'\n"
 		if !strings.Contains(got, want) {
 			t.Fatalf("path must be single-quoted so a space doesn't split the command and $USER doesn't shell-expand:\nwant substring %q\ngot:\n%s", want, got)
 		}
@@ -200,7 +200,7 @@ func TestFinalizeHintTargetsTheRightCluster(t *testing.T) {
 
 	t.Run("a repo path with a space is quoted too", func(t *testing.T) {
 		var out bytes.Buffer
-		finalizeHint(&out, &clusterinit.InitOptions{Name: "jed", Repo: "/home/op ops/fleet"}, "", false)
+		finalizeHint(&out, &clusterinit.InitOptions{Name: "dc3", Repo: "/home/op ops/fleet"}, "", false)
 		got := out.String()
 		if strings.Contains(got, "--repo /home/op ops/fleet") {
 			t.Fatalf("unquoted repo path would split into multiple shell arguments:\n%s", got)
@@ -217,7 +217,7 @@ func TestFinalizeHintTargetsTheRightCluster(t *testing.T) {
 		if strings.Contains(got, "KUBECONFIG=") {
 			t.Fatalf("must not fabricate a KUBECONFIG= prefix with no known-good path:\n%s", got)
 		}
-		if !strings.Contains(got, "kube-dc bootstrap break-glass adopt jed --repo") {
+		if !strings.Contains(got, "kube-dc bootstrap break-glass adopt dc3 --repo") {
 			t.Fatalf("missing the break-glass command in:\n%s", got)
 		}
 		if !strings.Contains(got, "point --kube-context") && !strings.Contains(got, "$KUBECONFIG") {

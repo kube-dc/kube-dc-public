@@ -992,13 +992,13 @@ adminFrontend:
   tolerations: []
   affinity: {}
 
-# Platform machine identities (docs/prd/webdock-php-sdk-and-partner-removal.md).
+# Platform machine identities (platform machine identity PRD).
 # Each entry is a Keycloak master-realm service-account client whose tokens
 # carry the "kube-dc-machine" audience. It is bound to kube-dc:provisioner and
 # may only manage organizations named <prefix>-*. `grants` adds extension API
 # permissions (platformApi): users, consolelogins, organizationusages, and
 # plans (read the billing-plans catalog).
-#   - clientId: webdock-portal
+#   - clientId: partner-portal
 #     prefix: wd
 #     grants: [users, consolelogins, organizationusages, plans]
 platformMachines: []

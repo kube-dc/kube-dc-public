@@ -49,7 +49,7 @@ platformApi:
 
 Then, in the admin console, open **Provisioning API** (superadmin):
 
-1. **New client**: choose a client id (for example, `webdock-portal`), the
+1. **New client**: choose a client id (for example, `partner-portal`), the
    organization prefix (for example, `wd`) and the grants. Creating organizations is
    always included; `users`, `consolelogins`, `organizationusages` and `plans`
    are separate, so creating organizations does not imply signing users in or
@@ -71,7 +71,7 @@ enabling, disabling and rotating the secret:
 
 ```yaml
 platformMachines:
-  - clientId: webdock-portal
+  - clientId: partner-portal
     prefix: wd
     grants: [users, consolelogins, organizationusages, plans]
 ```

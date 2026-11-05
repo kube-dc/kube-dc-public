@@ -123,16 +123,16 @@ func TestCheckPAYGOnResume_WithoutFlagStillChecks(t *testing.T) {
 func TestApply_Resume_WithoutFlagRefusesPartnerBilledPAYG(t *testing.T) {
 	fleet, clusterDir := wiredPAYGFleet(t)
 	writeStarterScaffoldSources(t, fleet)
-	// The fleet's own directory layout: the overlay under clusters/atlantis.
-	target := filepath.Join(fleet, "clusters", "atlantis")
+	// The fleet's own directory layout: the overlay under clusters/east1.
+	target := filepath.Join(fleet, "clusters", "east1")
 	if err := os.Rename(clusterDir, target); err != nil {
 		t.Fatal(err)
 	}
 	env := filepath.Join(target, "cluster-config.env")
-	_ = os.WriteFile(env, []byte(strings.Replace(readFile(t, env), "PAYG_INSTALLATION_BINDING=c1/example.com", "PAYG_INSTALLATION_BINDING=atlantis/kdc.atlantis.example.com", 1)+"CLOUDSIGMA_CHART_VERSION=0.1.0\n"), 0o644)
+	_ = os.WriteFile(env, []byte(strings.Replace(readFile(t, env), "PAYG_INSTALLATION_BINDING=c1/example.com", "PAYG_INSTALLATION_BINDING=east1/kdc.east1.example.com", 1)+"CLOUDSIGMA_CHART_VERSION=0.1.0\n"), 0o644)
 
 	git := &fakeGit{preSHA: "abc123", commitSHA: "def456"}
-	opts := atlantisApplyOpts(t, fleet, applyRunner(t, fleet), git)
+	opts := east1ApplyOpts(t, fleet, applyRunner(t, fleet), git)
 	opts.PAYG = false
 	if err := Apply(context.Background(), opts); !errors.Is(err, ErrPAYGRefused) {
 		t.Fatalf("want ErrPAYGRefused, got %v", err)

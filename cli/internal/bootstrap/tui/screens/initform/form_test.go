@@ -11,8 +11,8 @@ import (
 // multi-node run.
 func baseState() *State {
 	return &State{
-		Name: "atlantis", Domain: "kdc.atlantis.example.com",
-		NodeIP: "203.0.113.52", Email: "ops@atlantis.example.com",
+		Name: "east1", Domain: "kdc.east1.example.com",
+		NodeIP: "203.0.113.52", Email: "ops@east1.example.com",
 		Mode: "install", FleetMode: "existing-fleet", Repo: "/tmp/fleet",
 		Provider: "github", Owner: "kube-dc", RepoName: "kube-dc-fleet",
 		Preset:    "cloud+public-vlan",
@@ -147,7 +147,7 @@ func TestEquivalentFlags_RoundTripsTheSurface(t *testing.T) {
 	}
 	flags := st.EquivalentFlags(o)
 	for _, want := range []string{
-		"--name=atlantis",
+		"--name=east1",
 		"--object-storage-mode=rook-ceph-multi-node",
 		"--ceph-node=host5-a=sdb",
 		"--ceph-node=host7-a=sdc",

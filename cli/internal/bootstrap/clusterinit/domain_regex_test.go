@@ -3,13 +3,14 @@ package clusterinit
 import "testing"
 
 // Private enterprise zones may carry hyphens and digits in the top-level
-// label (kubedc.diia-dcir); the validator must accept them while still
+// label (kubedc.corp-dc01); the validator must accept them while still
 // rejecting URLs, dotted IPs and malformed labels.
 func TestDomainRegexPrivateZones(t *testing.T) {
 	accept := []string{
 		"kdc.example.com",
-		"kubedc.diia-dcir",
-		"main.kubedc.diia-dcir",
+		"kubedc.corp-dc01",
+		"main.kubedc.corp-dc01",
+		"kubedc.corp-zone",
 		"corp.site-01",
 		"a.b2c",
 		"x.internal",

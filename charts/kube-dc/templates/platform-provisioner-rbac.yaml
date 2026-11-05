@@ -1,6 +1,6 @@
 # =============================================================================
 # Platform provisioner role and machine identities
-# (docs/prd/webdock-php-sdk-and-partner-removal.md §3.2).
+# (platform machine identity PRD §3.2).
 #
 # kube-dc:provisioner lets an automation identity create organization
 # namespaces, Organizations and Projects, size (allocate) and suspend them and

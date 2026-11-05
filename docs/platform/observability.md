@@ -419,7 +419,7 @@ sum by (component) (count_over_time({namespace="kube-dc"} | json | level="error"
    **Configuration → Datasources**. The `Mimir` datasource should exist and the
    **Custom HTTP Headers** section should show an `X-Scope-OrgID` value containing the
    Organization ID and its Project backing namespace IDs (for example,
-   `shalb|shalb-docs|shalb-jumbolot`). If it shows only the Organization ID,
+   `acme|acme-docs|acme-demo`). If it shows only the Organization ID,
    trigger reconciliation (§6.3) after confirming the Projects exist.
 
 3. **Check the metrics write path.** Look for rejected writes or tenant-header

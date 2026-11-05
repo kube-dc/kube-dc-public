@@ -27,7 +27,7 @@ func TestSSORealm_PassesEnvAndPushesOnNewCommit(t *testing.T) {
 	git := &recordingGit{heads: []string{"before", "after"}}
 	var out bytes.Buffer
 	err := SSORealm(context.Background(), SSOOptions{
-		ClusterName: "atlantis",
+		ClusterName: "east1",
 		FleetRepo:   "/fleet",
 		Runner:      runner,
 		Git:         git,
@@ -59,7 +59,7 @@ func TestSSORealm_ConvergedSkipsPush(t *testing.T) {
 	runner := &envRecordingRunner{fakeRunner: *successfulRunner()}
 	git := &recordingGit{heads: []string{"same", "same"}}
 	err := SSORealm(context.Background(), SSOOptions{
-		ClusterName: "atlantis", FleetRepo: "/fleet",
+		ClusterName: "east1", FleetRepo: "/fleet",
 		Runner: runner, Git: git,
 	})
 	if err != nil {
@@ -77,7 +77,7 @@ func TestSSORealm_NonZeroExitFails(t *testing.T) {
 	}}}
 	git := &recordingGit{}
 	err := SSORealm(context.Background(), SSOOptions{
-		ClusterName: "atlantis", FleetRepo: "/fleet",
+		ClusterName: "east1", FleetRepo: "/fleet",
 		Runner: runner, Git: git, NoPush: true,
 	})
 	if err == nil || !strings.Contains(err.Error(), "exit=1") {

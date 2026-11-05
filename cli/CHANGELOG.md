@@ -371,7 +371,7 @@ number. A v0.7.0 CLI installs a v0.7.0 cluster.
 ### Fixed
 
 - `--domain` accepts a private zone whose last label starts with a letter and
-  contains digits or interior hyphens (for example `kubedc.diia-dcir`), while
+  contains digits or interior hyphens (for example `kubedc.corp-dc01`), while
   still rejecting URLs, paths and dotted IPs.
 - Break-glass automation no longer risks leaking the credentials it handles.
 - `EXT_NET_MGMT_SNAT_IP` is derived before the placeholder scan, so a greenfield

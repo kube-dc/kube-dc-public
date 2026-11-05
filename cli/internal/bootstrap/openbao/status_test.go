@@ -96,7 +96,7 @@ func TestStatus_HappyPath_FullyReady(t *testing.T) {
 	bao := canonicalReadyBao()
 	var out bytes.Buffer
 	r, err := Status(context.Background(), StatusOptions{
-		ClusterName: "atlantis",
+		ClusterName: "east1",
 		OpenBao:     bao,
 		Out:         &out,
 	})
@@ -112,8 +112,8 @@ func TestStatus_HappyPath_FullyReady(t *testing.T) {
 	if r.AnyUninitialized() {
 		t.Errorf("no pod should be uninitialized")
 	}
-	if r.ClusterName != "atlantis" {
-		t.Errorf("ClusterName = %q, want atlantis", r.ClusterName)
+	if r.ClusterName != "east1" {
+		t.Errorf("ClusterName = %q, want east1", r.ClusterName)
 	}
 	if bao.podListCalls != 1 {
 		t.Errorf("PodList should be called exactly once, got %d", bao.podListCalls)

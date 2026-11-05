@@ -135,13 +135,13 @@ func TestRedactAddClusterLine(t *testing.T) {
 		// Negative cases — must be passed through unchanged.
 		{
 			name: "status line passthrough",
-			in:   "==> Creating cluster overlay: atlantis",
-			want: "==> Creating cluster overlay: atlantis",
+			in:   "==> Creating cluster overlay: east1",
+			want: "==> Creating cluster overlay: east1",
 		},
 		{
 			name: "non-password key passthrough",
-			in:   "    Domain:    kdc.atlantis.example.com",
-			want: "    Domain:    kdc.atlantis.example.com",
+			in:   "    Domain:    kdc.east1.example.com",
+			want: "    Domain:    kdc.east1.example.com",
 		},
 		{
 			name: "label that mentions PASSWORD but no value",
@@ -406,9 +406,9 @@ func TestPostProcessClusterConfig_AppliesPresetOverrides(t *testing.T) {
 	// the operator's --set values via the preset's resolved env.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "cluster-config.env")
-	scriptOutput := `# Cluster: atlantis
-CLUSTER_NAME=atlantis
-DOMAIN=kdc.atlantis.example.com
+	scriptOutput := `# Cluster: east1
+CLUSTER_NAME=east1
+DOMAIN=kdc.east1.example.com
 EXT_NET_NAME=ext-cloud
 EXT_NET_VLAN_ID=CHANGEME
 EXT_NET_INTERFACE=CHANGEME
@@ -420,7 +420,7 @@ POD_CIDR=10.100.0.0/16
 
 	plan := &Plan{
 		Preset:      PresetCloudPublicVLAN,
-		ClusterName: "atlantis",
+		ClusterName: "east1",
 		InheritedDefaults: map[string]string{
 			"KUBE_DC_VERSION": "v0.3.63",
 		},
@@ -455,7 +455,7 @@ POD_CIDR=10.100.0.0/16
 		t.Errorf("CHANGEME placeholders survived post-process:\n%s", out)
 	}
 	// Original comment header preserved.
-	if !strings.Contains(out, "# Cluster: atlantis") {
+	if !strings.Contains(out, "# Cluster: east1") {
 		t.Errorf("env header comment lost:\n%s", out)
 	}
 }
@@ -519,8 +519,8 @@ sops:
     age:
         - recipient: age1xxx
 `
-	envBody := `CLUSTER_NAME=atlantis
-DOMAIN=kdc.atlantis.example.com
+	envBody := `CLUSTER_NAME=east1
+DOMAIN=kdc.east1.example.com
 EXT_NET_VLAN_ID=CHANGEME
 EXT_NET_INTERFACE=CHANGEME
 `
@@ -547,7 +547,7 @@ EXT_NET_INTERFACE=CHANGEME
 			return os.WriteFile(filepath.Join(clusterDir, "secrets.enc.yaml"), []byte(encryptedSecrets), 0o644)
 		},
 		lines: []ports.Line{
-			{Stream: ports.StreamStdout, Text: "==> Creating cluster overlay: atlantis", Time: time.Now()},
+			{Stream: ports.StreamStdout, Text: "==> Creating cluster overlay: east1", Time: time.Now()},
 			// Password echo lines — must be redacted in output.
 			{Stream: ports.StreamStdout, Text: "    KEYCLOAK_ADMIN_PASSWORD: PLAINTEXT_LEAK_CANARY", Time: time.Now()},
 			{Stream: ports.StreamStdout, Text: "    GRAFANA_ADMIN_PASSWORD: PLAINTEXT_LEAK_CANARY", Time: time.Now()},
@@ -558,8 +558,8 @@ EXT_NET_INTERFACE=CHANGEME
 	var out bytes.Buffer
 	err := Scaffold(context.Background(), ScaffoldOptions{
 		Plan: &Plan{
-			ClusterName: "atlantis",
-			Domain:      "kdc.atlantis.example.com",
+			ClusterName: "east1",
+			Domain:      "kdc.east1.example.com",
 			Preset:      PresetCloudPublicVLAN,
 		},
 		FleetRepo:      repo,
@@ -594,7 +594,7 @@ EXT_NET_INTERFACE=CHANGEME
 	if call.Kind != ports.ScriptAddCluster {
 		t.Errorf("script kind = %v, want ScriptAddCluster", call.Kind)
 	}
-	wantArgs := []string{"atlantis", "kdc.atlantis.example.com", "203.0.113.52"}
+	wantArgs := []string{"east1", "kdc.east1.example.com", "203.0.113.52"}
 	if len(call.Args) != len(wantArgs) {
 		t.Fatalf("args length = %d, want %d (%v)", len(call.Args), len(wantArgs), call.Args)
 	}
@@ -604,7 +604,7 @@ EXT_NET_INTERFACE=CHANGEME
 		}
 	}
 	// Post-process kicked in — CHANGEMEs replaced.
-	body, _ := os.ReadFile(filepath.Join(repo, "clusters", "atlantis", "cluster-config.env"))
+	body, _ := os.ReadFile(filepath.Join(repo, "clusters", "east1", "cluster-config.env"))
 	if strings.Contains(string(body), "CHANGEME") {
 		t.Errorf("CHANGEME survived post-process:\n%s", body)
 	}
@@ -617,7 +617,7 @@ func TestScaffold_RefusesExistingTarget(t *testing.T) {
 	// Marker file present = already scaffolded. Operator must clean
 	// up before re-running.
 	repo := t.TempDir()
-	clusterDir := filepath.Join(repo, "clusters", "atlantis")
+	clusterDir := filepath.Join(repo, "clusters", "east1")
 	if err := os.MkdirAll(clusterDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -629,7 +629,7 @@ func TestScaffold_RefusesExistingTarget(t *testing.T) {
 	runner := &fakeScriptRunner{} // shouldn't be called
 
 	err := Scaffold(context.Background(), ScaffoldOptions{
-		Plan: &Plan{ClusterName: "atlantis", Domain: "kdc.atlantis.example.com",
+		Plan: &Plan{ClusterName: "east1", Domain: "kdc.east1.example.com",
 			Preset: PresetCloudPublicVLAN},
 		FleetRepo:      repo,
 		NodeExternalIP: "203.0.113.52",
@@ -653,7 +653,7 @@ func TestScaffold_AllowsPreExistingDocsOnly(t *testing.T) {
 	// just confirm the preflight passes and reaches the script
 	// invocation step.
 	repo := t.TempDir()
-	clusterDir := filepath.Join(repo, "clusters", "atlantis", "docs")
+	clusterDir := filepath.Join(repo, "clusters", "east1", "docs")
 	if err := os.MkdirAll(clusterDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -676,7 +676,7 @@ func TestScaffold_AllowsPreExistingDocsOnly(t *testing.T) {
 	}
 
 	err := Scaffold(context.Background(), ScaffoldOptions{
-		Plan: &Plan{ClusterName: "atlantis", Domain: "kdc.atlantis.example.com",
+		Plan: &Plan{ClusterName: "east1", Domain: "kdc.east1.example.com",
 			Preset: PresetCloudPublicVLAN},
 		FleetRepo:      repo,
 		NodeExternalIP: "203.0.113.52",
@@ -719,7 +719,7 @@ stringData:
 		},
 	}
 	err := Scaffold(context.Background(), ScaffoldOptions{
-		Plan: &Plan{ClusterName: "atlantis", Domain: "kdc.atlantis.example.com",
+		Plan: &Plan{ClusterName: "east1", Domain: "kdc.east1.example.com",
 			Preset: PresetCloudPublicVLAN},
 		FleetRepo:      repo,
 		NodeExternalIP: "203.0.113.52",
@@ -744,7 +744,7 @@ func TestScaffold_ScriptNonZeroExit(t *testing.T) {
 		},
 	}
 	err := Scaffold(context.Background(), ScaffoldOptions{
-		Plan: &Plan{ClusterName: "atlantis", Domain: "kdc.atlantis.example.com",
+		Plan: &Plan{ClusterName: "east1", Domain: "kdc.east1.example.com",
 			Preset: PresetCloudPublicVLAN},
 		FleetRepo:      repo,
 		NodeExternalIP: "203.0.113.52",
@@ -772,15 +772,15 @@ func TestScaffold_TruncatedStream_IsFailureNotSuccess(t *testing.T) {
 	runner := &fakeScriptRunner{
 		fleetRoot: repo,
 		lines: []ports.Line{
-			{Stream: ports.StreamStdout, Text: "==> Creating cluster overlay: atlantis", Time: time.Now()},
+			{Stream: ports.StreamStdout, Text: "==> Creating cluster overlay: east1", Time: time.Now()},
 			// No StreamExit record: the stream just ends.
 		},
 	}
 	var out bytes.Buffer
 	err := Scaffold(context.Background(), ScaffoldOptions{
 		Plan: &Plan{
-			ClusterName: "atlantis",
-			Domain:      "kdc.atlantis.example.com",
+			ClusterName: "east1",
+			Domain:      "kdc.east1.example.com",
 			Preset:      PresetCloudPublicVLAN,
 		},
 		FleetRepo:      repo,

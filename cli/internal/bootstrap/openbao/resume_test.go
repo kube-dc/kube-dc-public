@@ -42,7 +42,7 @@ func (f *fakeResumeBao) RevokeSelf(_ context.Context, token []byte) error {
 func resumeFixture(t *testing.T, authInstalled bool) (*fakeResumeBao, ResumeOptions) {
 	t.Helper()
 	repo := setupFleet(t)
-	_ = os.WriteFile(filepath.Join(repo, "clusters", "atlantis", "secrets.enc.yaml"), []byte("stub"), 0o644)
+	_ = os.WriteFile(filepath.Join(repo, "clusters", "east1", "secrets.enc.yaml"), []byte("stub"), 0o644)
 	bao := &fakeResumeBao{
 		fakeSetupBao: &fakeSetupBao{},
 		members: &fakeOpenBao{
@@ -55,7 +55,7 @@ func resumeFixture(t *testing.T, authInstalled bool) (*fakeResumeBao, ResumeOpti
 	}
 	return bao, ResumeOptions{
 		Unseal: UnsealOptions{
-			ClusterName: "atlantis", FleetRepo: repo,
+			ClusterName: "east1", FleetRepo: repo,
 			SOPS:    &fakeSOPSDecryptOnly{body: []byte(canonicalDecryptedSecrets)},
 			OpenBao: bao,
 			K8s:     &fakeSetupK8s{caCert: "-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n"},

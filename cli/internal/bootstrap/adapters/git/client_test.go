@@ -241,7 +241,7 @@ func TestCreateRepo_RequiresToken(t *testing.T) {
 	}
 }
 
-// --- SSH-vs-HTTPS auth selection (regression: cs/next 2026-07) ---
+// --- SSH-vs-HTTPS auth selection (regression: eu/dc1 2026-07) ---
 //
 // The adapter used to hand githttp.BasicAuth to every transport, so a
 // fleet cloned over SSH failed with go-git's opaque "invalid auth
@@ -349,7 +349,7 @@ func TestAuthFor_SSH_NeverBasicAuth(t *testing.T) {
 		return
 	}
 	if _, isBasic := auth.(*githttp.BasicAuth); isBasic {
-		t.Fatal("SSH remote was given HTTP BasicAuth — the cs/next bug")
+		t.Fatal("SSH remote was given HTTP BasicAuth — the eu/dc1 bug")
 	}
 }
 

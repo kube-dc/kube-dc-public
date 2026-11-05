@@ -437,7 +437,7 @@ func Init(ctx context.Context, opts InitOptions) error {
 	// un-initialize the vault; it just deletes the recovery material,
 	// turning a recoverable failure into a permanently sealed vault.
 	//
-	// That is exactly what happened on cs/next (2026-07): the push
+	// That is exactly what happened on eu/dc1 (2026-07): the push
 	// failed on an SSH remote, the old code rolled back, and the fleet
 	// lost the encrypted shares while OpenBao stayed Initialized. It
 	// was recoverable only because the operator happened to pass the
@@ -474,7 +474,7 @@ func Init(ctx context.Context, opts InitOptions) error {
 	msg := fmt.Sprintf("feat(%s): encrypt OpenBao Shamir shares into secrets.enc.yaml", opts.ClusterName)
 	commitSHA, err := commitAndMaybePush(ctx, opts, msg)
 	if err != nil {
-		// The cs/next case. The encrypted shares are in the working
+		// The eu/dc1 case. The encrypted shares are in the working
 		// tree (and possibly committed but unpushed). Keep them and
 		// hand the operator the exact remaining steps.
 		fmt.Fprintf(out, "[openbao] commit/push failed — NOT rolling back; "+
@@ -1040,8 +1040,8 @@ func pushedSuffix(noPush bool) string {
 // there:
 //
 //   - The cluster segment is percent-encoded, so nested names stay
-//     distinct: "cs/next" -> "cs%2Fnext", which can no longer be confused
-//     with a literal cluster named "cs-next" (the old "/"->"-" flattening
+//     distinct: "eu/dc1" -> "eu%2Fdc1", which can no longer be confused
+//     with a literal cluster named "eu-dc1" (the old "/"->"-" flattening
 //     mapped both to the same file).
 //   - Publication uses O_EXCL semantics (see writeSharesFile), and on
 //     EEXIST we advance to the next free suffix instead of replacing.

@@ -397,7 +397,7 @@ const canonicalShareJSON = `{
 func setupFleet(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	clusterDir := filepath.Join(dir, "clusters", "atlantis")
+	clusterDir := filepath.Join(dir, "clusters", "east1")
 	if err := os.MkdirAll(clusterDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -412,7 +412,7 @@ func setupFleet(t *testing.T) string {
 func baseInitOpts(t *testing.T, repo string, runner *fakeRunner, sops *fakeSOPS, git *fakeGit) InitOptions {
 	t.Helper()
 	return InitOptions{
-		ClusterName: "atlantis",
+		ClusterName: "east1",
 		FleetRepo:   repo,
 		Runner:      runner,
 		SOPS:        sops,
@@ -627,7 +627,7 @@ func TestInit_RoundTripMismatch_PreservesSharesNoRollback(t *testing.T) {
 		t.Fatalf("ResetHard must NEVER run after the vault is initialized; got %v", git.resetCalls)
 	}
 	// The shares must survive somewhere the operator can reach.
-	dump := filepath.Join(home, ".kube-dc", "openbao-emergency-shares-atlantis.yaml")
+	dump := filepath.Join(home, ".kube-dc", "openbao-emergency-shares-east1.yaml")
 	if _, statErr := os.Stat(dump); statErr != nil {
 		t.Fatalf("emergency dump missing at %s: %v", dump, statErr)
 	}
@@ -638,7 +638,7 @@ func TestInit_RoundTripMismatch_PreservesSharesNoRollback(t *testing.T) {
 
 // --- push failure rollback ---
 
-// P0 (review-pass): THE cs/next failure. A push failure must preserve
+// P0 (review-pass): THE eu/dc1 failure. A push failure must preserve
 // the encrypted shares, never roll back. Previously this rolled the
 // commit away, leaving OpenBao Initialized with zero shares in the
 // fleet — recoverable only because the operator happened to pass the
@@ -664,7 +664,7 @@ func TestInit_PushFailure_PreservesSharesNoRollback(t *testing.T) {
 	// No --openbao-shares-out was set, so init must have made an
 	// off-git copy itself: a stray `git checkout` in the fleet must
 	// not be able to destroy the only custody.
-	dump := filepath.Join(home, ".kube-dc", "openbao-emergency-shares-atlantis.yaml")
+	dump := filepath.Join(home, ".kube-dc", "openbao-emergency-shares-east1.yaml")
 	if _, statErr := os.Stat(dump); statErr != nil {
 		t.Fatalf("no off-git copy written on push failure (%s): %v", dump, statErr)
 	}
@@ -956,7 +956,7 @@ func TestInit_PostCommitUnsealFailure_NoRollback(t *testing.T) {
 		t.Errorf("expected 1 commit call, got %d", git.commitCalls)
 	}
 	// Recovery message + suggestion to re-run unseal.
-	if !strings.Contains(out.String(), "openbao unseal atlantis") {
+	if !strings.Contains(out.String(), "openbao unseal east1") {
 		t.Errorf("output should suggest the recovery command:\n%s", out.String())
 	}
 }
@@ -1499,7 +1499,7 @@ func TestInit_PostCaptureFailures_AlwaysPreserveShares(t *testing.T) {
 				t.Errorf("error should mention %q; got: %v", tc.wantMsg, err)
 			}
 			// The whole point: shares on disk, and the error says where.
-			path := sharesReachedDisk(t, home, "atlantis")
+			path := sharesReachedDisk(t, home, "east1")
 			if !strings.Contains(err.Error(), path) {
 				t.Errorf("error must tell the operator where the shares are (%s); got: %v", path, err)
 			}
@@ -1570,7 +1570,7 @@ func TestEmergencyDump_NeverOverwritesExistingDump(t *testing.T) {
 	if err := loadBufferFromJSON(buf, []byte(canonicalShareJSON)); err != nil {
 		t.Fatalf("seed buffer: %v", err)
 	}
-	opts := InitOptions{ClusterName: "atlantis"}
+	opts := InitOptions{ClusterName: "east1"}
 
 	first, err := emergencyDumpShares(opts, buf)
 	if err != nil {
@@ -1600,8 +1600,8 @@ func TestEmergencyDump_NeverOverwritesExistingDump(t *testing.T) {
 }
 
 // Nested cluster names must not collide with hyphenated ones. The old
-// "/"->"-" flattening mapped BOTH "cs/next" and "cs-next" onto
-// openbao-emergency-shares-cs-next.yaml.
+// "/"->"-" flattening mapped BOTH "eu/dc1" and "eu-dc1" onto
+// openbao-emergency-shares-eu-dc1.yaml.
 func TestEmergencyDump_NestedNameDoesNotCollideWithHyphen(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -1609,16 +1609,16 @@ func TestEmergencyDump_NestedNameDoesNotCollideWithHyphen(t *testing.T) {
 	if err := loadBufferFromJSON(buf, []byte(canonicalShareJSON)); err != nil {
 		t.Fatalf("seed buffer: %v", err)
 	}
-	nested, err := emergencyDumpShares(InitOptions{ClusterName: "cs/next"}, buf)
+	nested, err := emergencyDumpShares(InitOptions{ClusterName: "eu/dc1"}, buf)
 	if err != nil {
 		t.Fatalf("nested dump: %v", err)
 	}
-	hyphen, err := emergencyDumpShares(InitOptions{ClusterName: "cs-next"}, buf)
+	hyphen, err := emergencyDumpShares(InitOptions{ClusterName: "eu-dc1"}, buf)
 	if err != nil {
 		t.Fatalf("hyphen dump: %v", err)
 	}
 	if nested == hyphen {
-		t.Fatalf("cs/next and cs-next both dumped to %s", nested)
+		t.Fatalf("eu/dc1 and eu-dc1 both dumped to %s", nested)
 	}
 	// Both must still be single files directly under ~/.kube-dc — a
 	// nested name must never turn into a directory tree.
@@ -1640,7 +1640,7 @@ func TestEmergencyDump_PartialCaptureStillWritesWithWarning(t *testing.T) {
 	if err := loadBufferFromJSON(buf, []byte(partial)); err != nil {
 		t.Skipf("loader rejects partial payloads outright: %v", err)
 	}
-	path, err := emergencyDumpShares(InitOptions{ClusterName: "atlantis"}, buf)
+	path, err := emergencyDumpShares(InitOptions{ClusterName: "east1"}, buf)
 	if err != nil {
 		t.Fatalf("partial capture must still be preserved, got: %v", err)
 	}
@@ -1713,7 +1713,7 @@ func TestInit_TruncatedStreamAfterCapture_PreservesSharesAndNamesPath(t *testing
 	if !errors.Is(err, ErrScriptStreamTruncated) {
 		t.Fatalf("expected ErrScriptStreamTruncated, got %v", err)
 	}
-	path := sharesReachedDisk(t, home, "atlantis")
+	path := sharesReachedDisk(t, home, "east1")
 	if !strings.Contains(err.Error(), path) {
 		t.Errorf("error must name the custody path %s; got: %v", path, err)
 	}
@@ -1804,7 +1804,7 @@ func TestInit_MalformedExitRecords_AreRejectedAndPreserveShares(t *testing.T) {
 			}
 			// The vault is initialized regardless of how mangled the
 			// stream was, so custody still applies.
-			path := sharesReachedDisk(t, home, "atlantis")
+			path := sharesReachedDisk(t, home, "east1")
 			if !strings.Contains(err.Error(), path) {
 				t.Errorf("error must name the custody path %s; got: %v", path, err)
 			}

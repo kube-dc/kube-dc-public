@@ -52,8 +52,8 @@ func TestEnvMapFor_InternalOnly(t *testing.T) {
 	}
 }
 
-func TestEnvMapFor_CloudPublicVLAN_Atlantis(t *testing.T) {
-	// The actual atlantis flag set: --preset=cloud+public-vlan
+func TestEnvMapFor_CloudPublicVLAN_East1(t *testing.T) {
+	// The actual east1 flag set: --preset=cloud+public-vlan
 	// + the 5 required --set values mapped from the README's CGNAT
 	// + public-IP topology.
 	got, err := EnvMapFor(PresetCloudPublicVLAN, map[string]string{
@@ -64,7 +64,7 @@ func TestEnvMapFor_CloudPublicVLAN_Atlantis(t *testing.T) {
 		"EXT_PUBLIC_GATEWAY": "203.0.113.49",
 	})
 	if err != nil {
-		t.Fatalf("atlantis env should validate, got %v", err)
+		t.Fatalf("east1 env should validate, got %v", err)
 	}
 	// All EXT_* + DEFAULT_* + universal keys present.
 	for k, want := range map[string]string{
@@ -937,7 +937,7 @@ func TestValidatePresetValues_AnchorSSHHosts(t *testing.T) {
 	}{
 		{"empty ok", "host5-a,host6-a", "", "", false},
 		{
-			"valid atlantis-style",
+			"valid east1-style",
 			"host5-a,host6-a,host7-a",
 			"host5-a=203.0.113.52,host6-a=203.0.113.53,host7-a=203.0.113.54",
 			"", false,

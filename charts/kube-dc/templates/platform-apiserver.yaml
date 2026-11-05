@@ -2,7 +2,7 @@
 {{- /*
 =============================================================================
 platform.kube-dc.com/v1alpha1 extension API
-(docs/prd/webdock-php-sdk-and-partner-removal.md §3.4).
+(platform machine identity PRD §3.4).
 
 `manager platform-apiserver` is registered through the aggregation layer. The
 kube-apiserver authenticates every caller and the extension server authorizes

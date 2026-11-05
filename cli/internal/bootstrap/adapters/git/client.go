@@ -504,7 +504,7 @@ func sshAuthFor(user string) (transport.AuthMethod, error) {
 // That surfaced mid-ceremony: `bootstrap openbao init` initialized the
 // vault, encrypted the Shamir shares, then could not push and rolled the
 // commit back — leaving an initialized OpenBao with no shares in the
-// fleet (cs/next, 2026-07). Transport and credential type must agree.
+// fleet (eu/dc1, 2026-07). Transport and credential type must agree.
 func (c *Client) authFor(remote, token string) (transport.AuthMethod, error) {
 	if !isSSHURL(remote) {
 		// Includes the empty-remote case: preserve the historical

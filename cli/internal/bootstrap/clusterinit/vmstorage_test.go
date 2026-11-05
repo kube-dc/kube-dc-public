@@ -26,7 +26,7 @@ func seedGoldenCatalog(t *testing.T, repo string, names ...string) {
 // --- goldens overlay rendering ---
 
 func TestVMGoldensOverlay_SelectedAndDepth(t *testing.T) {
-	body := vmGoldensOverlayYAML("atlantis", []string{"debian-12", "alpine-3.21"})
+	body := vmGoldensOverlayYAML("east1", []string{"debian-12", "alpine-3.21"})
 	for _, want := range []string{
 		"- ../../../platform/rbd-vm/goldens-fs/os/debian-12.yaml",
 		"- ../../../platform/rbd-vm/goldens-fs/os/alpine-3.21.yaml",
@@ -160,26 +160,26 @@ func TestResolveVMGoldens_DefaultMissingErrors(t *testing.T) {
 // --- end-to-end writer ---
 
 func TestWriteVMStorage_Local_NoOp(t *testing.T) {
-	repo := seedScaffold(t, "atlantis")
+	repo := seedScaffold(t, "east1")
 	seedGoldenCatalog(t, repo, "debian-12")
 	for _, m := range []VMStorageMode{"", VMStorageLocal} {
-		if err := WriteVMStorage(repo, "atlantis", VMStorageSpec{Mode: m}, nil); err != nil {
+		if err := WriteVMStorage(repo, "east1", VMStorageSpec{Mode: m}, nil); err != nil {
 			t.Fatalf("local(%q): %v", m, err)
 		}
-		if _, err := os.Stat(filepath.Join(repo, "clusters", "atlantis", "rbd-vm.yaml")); !os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(repo, "clusters", "east1", "rbd-vm.yaml")); !os.IsNotExist(err) {
 			t.Errorf("mode %q must write no rbd-vm.yaml (VMs use local-path)", m)
 		}
 	}
 }
 
 func TestWriteVMStorage_SharedRBD_EndToEnd(t *testing.T) {
-	repo := seedScaffold(t, "atlantis")
+	repo := seedScaffold(t, "east1")
 	seedGoldenCatalog(t, repo, "debian-12", "alpine-3.21", "windows-11-golden")
 	spec := VMStorageSpec{Mode: VMStorageSharedRBD, Goldens: []string{"debian-12", "alpine-3.21"}}
-	if err := WriteVMStorage(repo, "atlantis", spec, nil); err != nil {
+	if err := WriteVMStorage(repo, "east1", spec, nil); err != nil {
 		t.Fatalf("WriteVMStorage: %v", err)
 	}
-	dir := filepath.Join(repo, "clusters", "atlantis")
+	dir := filepath.Join(repo, "clusters", "east1")
 
 	overlay, err := os.ReadFile(filepath.Join(dir, "rbd-vm-goldens", "kustomization.yaml"))
 	if err != nil {
@@ -196,7 +196,7 @@ func TestWriteVMStorage_SharedRBD_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rbd-vm.yaml not written: %v", err)
 	}
-	if !strings.Contains(string(rbdvm), "path: ./clusters/atlantis/rbd-vm-goldens") {
+	if !strings.Contains(string(rbdvm), "path: ./clusters/east1/rbd-vm-goldens") {
 		t.Errorf("rbd-vm-goldens must point at the cluster subset overlay:\n%s", rbdvm)
 	}
 
@@ -207,12 +207,12 @@ func TestWriteVMStorage_SharedRBD_EndToEnd(t *testing.T) {
 }
 
 func TestWriteVMStorage_SharedRBD_DefaultGolden(t *testing.T) {
-	repo := seedScaffold(t, "atlantis")
+	repo := seedScaffold(t, "east1")
 	seedGoldenCatalog(t, repo, "debian-12", "windows-11-golden")
-	if err := WriteVMStorage(repo, "atlantis", VMStorageSpec{Mode: VMStorageSharedRBD}, nil); err != nil {
+	if err := WriteVMStorage(repo, "east1", VMStorageSpec{Mode: VMStorageSharedRBD}, nil); err != nil {
 		t.Fatalf("default golden: %v", err)
 	}
-	overlay, _ := os.ReadFile(filepath.Join(repo, "clusters", "atlantis", "rbd-vm-goldens", "kustomization.yaml"))
+	overlay, _ := os.ReadFile(filepath.Join(repo, "clusters", "east1", "rbd-vm-goldens", "kustomization.yaml"))
 	for _, want := range defaultVMGoldens {
 		if !strings.Contains(string(overlay), "os/"+want+".yaml") {
 			t.Errorf("default subset must contain %q:\n%s", want, overlay)
@@ -226,21 +226,21 @@ func TestWriteVMStorage_SharedRBD_DefaultGolden(t *testing.T) {
 }
 
 func TestWriteVMStorage_LiveMigration_FailsClosed(t *testing.T) {
-	repo := seedScaffold(t, "atlantis")
+	repo := seedScaffold(t, "east1")
 	seedGoldenCatalog(t, repo, "debian-12")
-	err := WriteVMStorage(repo, "atlantis", VMStorageSpec{Mode: VMStorageSharedRBDLiveMigration}, nil)
+	err := WriteVMStorage(repo, "east1", VMStorageSpec{Mode: VMStorageSharedRBDLiveMigration}, nil)
 	if err == nil {
 		t.Fatal("shared-rbd-live-migration must fail closed at scaffold time (runtime egress + Block catalog unknown)")
 	}
-	if _, statErr := os.Stat(filepath.Join(repo, "clusters", "atlantis", "rbd-vm.yaml")); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(filepath.Join(repo, "clusters", "east1", "rbd-vm.yaml")); !os.IsNotExist(statErr) {
 		t.Error("a live-migration failure must not leave a partial rbd-vm.yaml")
 	}
 }
 
 func TestWriteVMStorage_UnknownGoldenErrors(t *testing.T) {
-	repo := seedScaffold(t, "atlantis")
+	repo := seedScaffold(t, "east1")
 	seedGoldenCatalog(t, repo, "debian-12")
-	err := WriteVMStorage(repo, "atlantis", VMStorageSpec{Mode: VMStorageSharedRBD, Goldens: []string{"not-a-golden"}}, nil)
+	err := WriteVMStorage(repo, "east1", VMStorageSpec{Mode: VMStorageSharedRBD, Goldens: []string{"not-a-golden"}}, nil)
 	if err == nil {
 		t.Fatal("a --vm-golden not in the catalog must error")
 	}
@@ -401,13 +401,13 @@ func TestCanonicalGoldens(t *testing.T) {
 // --- plan preview ---
 
 func TestVMStorageFiles_Preview(t *testing.T) {
-	if f := vmStorageFiles("atlantis", VMStorageSpec{Mode: VMStorageLocal}); f != nil {
+	if f := vmStorageFiles("east1", VMStorageSpec{Mode: VMStorageLocal}); f != nil {
 		t.Errorf("local previews no files, got %v", f)
 	}
-	if f := vmStorageFiles("atlantis", VMStorageSpec{Mode: VMStorageSharedRBDLiveMigration}); f != nil {
+	if f := vmStorageFiles("east1", VMStorageSpec{Mode: VMStorageSharedRBDLiveMigration}); f != nil {
 		t.Errorf("deferred live-migration previews no files, got %v", f)
 	}
-	f := vmStorageFiles("atlantis", VMStorageSpec{Mode: VMStorageSharedRBD})
+	f := vmStorageFiles("east1", VMStorageSpec{Mode: VMStorageSharedRBD})
 	if len(f) != 3 {
 		t.Fatalf("shared-rbd previews 3 files, got %v", f)
 	}

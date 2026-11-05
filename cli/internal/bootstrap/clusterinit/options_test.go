@@ -12,10 +12,10 @@ func validBase() InitOptions {
 	return InitOptions{
 		Preset:         PresetCloudPublicVLAN,
 		Mode:           ModeInstall,
-		Name:           "atlantis",
-		Domain:         "kdc.atlantis.example.com",
+		Name:           "east1",
+		Domain:         "kdc.east1.example.com",
 		NodeExternalIP: "203.0.113.52",
-		Email:          "ops@atlantis.example.com",
+		Email:          "ops@east1.example.com",
 		FleetMode:      FleetExistingFleet,
 		// Required for existing-fleet (review-pass — P2/P3 rule):
 		// pointing at an existing path so Validate accepts it. Tests

@@ -70,7 +70,7 @@ const (
 	// before Flux/infra-core exist — so it runs FIRST among the finalize
 	// steps, giving a recovery path even if everything after it defers.
 	// Before this was automated, adopting it was a separate operator
-	// command nobody had to run, and several clusters (crk, jed, next)
+	// command nobody had to run, and several clusters
 	// shipped with none committed at all (2026-09-04).
 	StepBreakGlass StepID = "break-glass"
 )

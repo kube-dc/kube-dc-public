@@ -129,7 +129,7 @@ func TestBootstrapOpenBaoInit_RequiresRepo(t *testing.T) {
 	// "no repo" error before constructing a Session.
 	t.Setenv("KUBE_DC_FLEET", "")
 	t.Setenv("HOME", t.TempDir())
-	_, err := runOpenBaoCmd(t, "", []string{"init", "atlantis"})
+	_, err := runOpenBaoCmd(t, "", []string{"init", "east1"})
 	if err == nil {
 		t.Fatal("expected error when no fleet repo is configured")
 	}
@@ -141,7 +141,7 @@ func TestBootstrapOpenBaoInit_RequiresRepo(t *testing.T) {
 func TestBootstrapOpenBaoUnseal_RequiresRepo(t *testing.T) {
 	t.Setenv("KUBE_DC_FLEET", "")
 	t.Setenv("HOME", t.TempDir())
-	_, err := runOpenBaoCmd(t, "", []string{"unseal", "atlantis"})
+	_, err := runOpenBaoCmd(t, "", []string{"unseal", "east1"})
 	if err == nil {
 		t.Fatal("expected error when no fleet repo is configured")
 	}

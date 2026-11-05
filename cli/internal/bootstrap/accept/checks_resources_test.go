@@ -857,7 +857,7 @@ func TestManagementSnat(t *testing.T) {
 		}
 	})
 
-	// The webdock 2026-08-31 shape: rule declared, status empty, no OvnEip.
+	// The metal1 2026-08-31 shape: rule declared, status empty, no OvnEip.
 	t.Run("rule present but unpublished and OvnEip missing fails with the recipe", func(t *testing.T) {
 		k := healthy()
 		k.stage("kubeovn.io/v1/ovn-snat-rules", rule("ovn-cluster-to-ext-cloud", map[string]any{}))
@@ -911,7 +911,7 @@ func TestManagementGatewayPair(t *testing.T) {
 			t.Fatalf("want SKIP, got %s: %s", c.Outcome, c.Detail)
 		}
 	})
-	// webdock 2026-08-31: LRP present, LSP absent.
+	// metal1 2026-08-31: LRP present, LSP absent.
 	t.Run("router port without its switch port fails with the heal", func(t *testing.T) {
 		c := find(t, runWith(t, withNB("LRP=100.64.0.4/16\n")), "network/management-gw-pair")
 		if c.Outcome != Fail || !c.Required || !strings.Contains(c.Detail, "switch port ext-cloud-ovn-cluster is missing") {
@@ -953,7 +953,7 @@ func TestDefaultVPCPatchPairs(t *testing.T) {
 		k.execOut = map[string]string{"ovn-central-0": nb}
 		return k
 	}
-	// webdock 2026-08-31: ext-cloud healed, infra-net still orphaned.
+	// metal1 2026-08-31: ext-cloud healed, infra-net still orphaned.
 	t.Run("router port without switch port fails and names the subnet", func(t *testing.T) {
 		k := with("ext-cloud LRP=100.64.0.4/16 LSP=router\ninfra-net LRP=100.66.0.1/16 LSP=\n",
 			subnet("ext-cloud", true), subnet("infra-net", false), obj("", "join", map[string]any{"spec": map[string]any{"vpc": "ovn-cluster"}}))

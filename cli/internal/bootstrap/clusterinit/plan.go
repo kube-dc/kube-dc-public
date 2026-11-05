@@ -989,7 +989,7 @@ func filesForOptions(o *InitOptions, fleet FleetState) []PlanFile {
 	}
 
 	// Compose the infrastructure.yaml description from the preset's
-	// Kustomization layer set (T04). Atlantis's
+	// Kustomization layer set (T04). East1's
 	// cloud+public-vlan adds infra-public-network; internal-only
 	// omits it. Listing the actual layers makes the dry-run
 	// self-documenting for operators reviewing a CI plan.
