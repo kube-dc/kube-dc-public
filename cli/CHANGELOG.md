@@ -1,5 +1,9 @@
 # kube-dc CLI changelog
 
+## v0.9.18 — 2026-11-05
+
+Installs platform bundle 0.9.16, like v0.9.17. Same code as v0.9.18-rc.1, accepted by a clean ten-host bare-metal installation driven only by the CLI and the installation guide: `bootstrap init` exited 0 and `bootstrap accept` reported `usable`, 30 minutes from host installation to acceptance. Platform database and OpenBao backups were verified, and tenant checks passed: front-door names from a Project pod, a golden-image VM over SSH, and managed PostgreSQL with a completed backup and a `verify-full` client. `kube-dc bootstrap --config FILE --review-only` opened the same input with no review errors, and its saved draft generated the same fleet. Guided execution from the TUI remains unqualified; install with the documented `bootstrap init` commands. Changes since v0.9.17 are listed under v0.9.18-rc.1.
+
 ## v0.9.18-rc.1 — 2026-11-05 (prerelease: TUI and input review)
 
 Installs platform bundle 0.9.16, like v0.9.17. This candidate brings the guided installer into `kube-dc bootstrap` and is for reviewing and saving site inputs; the installation procedure stays on v0.9.17 until a full installation with this build passes.
