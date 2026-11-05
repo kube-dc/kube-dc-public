@@ -134,7 +134,12 @@ Then choose how builds run (one per app; both would deploy every push twice):
     the app (and its namespace) and `modes` (`Branch`, `Restore`); only a
     Project admin there can create it (`apply_manifest`), so ask the user.
     Without it previews get an empty database and the preview's
-    `build.kube-dc.com/preview-database-error` says why. The app must read its database from one Secret
+    `build.kube-dc.com/preview-database-error` says why.
+    Copies carry production data: suggest masking. The grant's
+    `spec.masking: {configMap, key, sha256}` names a plain-SQL script (no
+    psql commands, idempotent, run as the database owner before anyone can
+    connect); the sha256 is of the ConfigMap value's exact bytes. A failed
+    script deletes the copy and the error annotation gives the SQL error. The app must read its database from one Secret
     (`envFromSecrets`/`secretEnv`), default `<name>-db-owner`, else name it
     in `previewDatabaseSecret`; a preview reads `<name>-pr-<n>-db-owner` there.
   - Previews never read the app's own secrets: a preview reads

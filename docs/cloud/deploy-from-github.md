@@ -161,6 +161,54 @@ spec:
 `modes` lists what the previews may use: `Branch` (the live data) and
 `Restore` (the latest backup, also the fallback when a branch fails).
 
+#### Masking copied data
+
+A copy carries production data, personal data included, into previews that
+run pull-request code. Add `masking` to the grant to change the data in every
+copy before anyone can connect to it:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: notes-masking }
+data:
+  mask.sql: |
+    UPDATE users SET email = 'user' || id || '@example.invalid', name = 'User ' || id;
+    UPDATE payments SET card_last4 = '0000';
+    TRUNCATE sessions;
+---
+apiVersion: services.kube-dc.com/v1alpha1
+kind: ServiceCopyGrant
+metadata: { name: notes-previews }
+spec:
+  source: { name: notes-db, uid: <uid of notes-db> }
+  app: notes
+  modes: [Branch, Restore]
+  masking:
+    configMap: notes-masking
+    key: mask.sql
+    sha256: <sha256 of the script>   # kubectl get cm notes-masking -o jsonpath='{.data.mask\.sql}' | sha256sum
+```
+
+- The script is plain SQL (no `psql` commands), at most 64 KiB, and runs as
+  the database's owner while the copy is still closed to everyone else, in
+  one transaction (unless it manages its own) with a 30-minute statement
+  timeout. Write it so it can run twice.
+- The owner must own every table in the database, and no table may use
+  `FORCE ROW LEVEL SECURITY`; otherwise the copy is refused rather than
+  half-masked. Copied logical replication subscriptions are disabled.
+- The digest pins the script: changing the ConfigMap afterwards fails the
+  copy, so a new script needs a new grant (grants cannot be edited).
+- When any grant for a service and app masks, every copy for them masks.
+- If the script fails, the copy is deleted and the preview has no database;
+  `build.kube-dc.com/preview-database-error` gives the SQL error (code and
+  message, never row values). Fix the script, then close and reopen the pull
+  request.
+- Preview copies keep no backups.
+- Masking protects data from pull-request code and the preview's public
+  address. It does not hide data from members of the project, who can read
+  the source anyway.
+
 A failed build is named in the Deployment's `build.kube-dc.com/last-error`
 and in the check run. Builds count against the project quota (they request
 200m CPU and may use up to 2 CPU, 26Gi of disk and 60 minutes).
